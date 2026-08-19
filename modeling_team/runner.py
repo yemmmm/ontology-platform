@@ -1633,7 +1633,9 @@ class TeamRunner:
             if self._ledger and (self.run.root / "evidence" / "semantic-start.jsonl").exists():
                 self.record_terminal_failure("runtime/infrastructure", False)
             if self._ledger and not (self.run.root / "evidence" / "semantic-start.jsonl").exists():
-                self._ledger.release_presemantic(self.run.run_id, "startup failure before business delivery")
+                self._ledger.release_presemantic(
+                    self.run.run_id, "startup-config: startup failure before business delivery"
+                )
             self.cleanup()
             raise
 
@@ -3164,7 +3166,8 @@ class TeamRunner:
                 },
             )
             self._latch_formal_candidate_failure(
-                "platform-contract", "candidate-receipt-wakeup-delivery-id-missing"
+                "platform-contract",
+                "internal-invariant:candidate-receipt-wakeup-delivery-id-missing",
             )
             raise TeamConfigurationError("candidate receipt registration wakeup failed")
         original_delivery_id = getattr(identity, "original_delivery_id", None)
@@ -3187,7 +3190,8 @@ class TeamRunner:
                 },
             )
             self._latch_formal_candidate_failure(
-                "platform-contract", "candidate-receipt-wakeup-notice-invalid"
+                "platform-contract",
+                "internal-invariant:candidate-receipt-wakeup-notice-invalid",
             )
             raise TeamConfigurationError("candidate receipt registration wakeup failed") from exc
         self._candidate_receipt_wakeup_sent.add(wakeup_key)
@@ -3227,7 +3231,8 @@ class TeamRunner:
                 },
             )
             self._latch_formal_candidate_failure(
-                "platform-contract", "candidate-receipt-wakeup-turn-binding-missing"
+                "platform-contract",
+                "internal-invariant:candidate-receipt-wakeup-turn-binding-missing",
             )
             raise TeamConfigurationError("candidate receipt registration wakeup failed")
         self._append_evidence(
@@ -3284,7 +3289,8 @@ class TeamRunner:
                         # I-class (mutation / internal binding): the R2.3-008
                         # start10 typed terminal failure with one cleanup pass.
                         self._latch_formal_candidate_failure(
-                            "platform-contract", "accepted-candidate-registration-rejected"
+                            "platform-contract",
+                            "internal-invariant:accepted-candidate-registration-rejected",
                         )
                         raise TeamConfigurationError(
                             f"accepted candidate registration failed: {exc}"
@@ -3399,6 +3405,25 @@ class TeamRunner:
         ("formal candidate revision reuses the invalidated candidate digest", "revision-digest-reused"),
         ("formal candidate Runtime attribution is invalid", "candidate-attribution-invalid"),
         ("formal candidate delivery ID is not bound", "candidate-delivery-id-not-bound"),
+    )
+
+    # R2.3-009 conservation contract (design §9 acceptance 2): the complete,
+    # declarative registry of run-killing latch call sites.  Every entry is
+    # either the single T3 run-fallback timeout, an I-class internal
+    # invariant, or the one runtime/infrastructure dispatch failure.  The
+    # conservation test in test_r23009_gate_conservation.py source-scans this
+    # module and fails when ``_latch_formal_candidate_failure`` is called with
+    # any (classification, reason) pair outside this registry.
+    _FORMAL_FAILURE_LATCH_WHITELIST: ClassVar[frozenset[str]] = frozenset(
+        {
+            "platform-contract:internal-invariant:candidate-receipt-wakeup-delivery-id-missing",
+            "platform-contract:internal-invariant:candidate-receipt-wakeup-notice-invalid",
+            "platform-contract:internal-invariant:candidate-receipt-wakeup-turn-binding-missing",
+            "platform-contract:internal-invariant:accepted-candidate-registration-rejected",
+            "platform-contract:internal-invariant:turn-binding-missing",
+            "runtime/infrastructure:candidate-receipt-wakeup-dispatch-failed",
+            "collaboration/routing:run-fallback-timeout",
+        }
     )
 
     def _formal_candidate_violation_code(self, exc: FormalCandidateError) -> str:
@@ -3678,7 +3703,14 @@ class TeamRunner:
     def _latch_formal_candidate_failure(
         self, classification: str, reason: str, *, terminal_evidence: dict[str, Any] | None = None
     ) -> None:
-        """Record one terminal failure before the foreground performs cleanup."""
+        """Record one terminal failure before the foreground performs cleanup.
+
+        R2.3-009 conservation contract: the only permitted call sites are the
+        whitelisted ``_FORMAL_FAILURE_LATCH_WHITELIST`` entries (T3
+        run-fallback, I-class internal invariants, and the one
+        runtime/infrastructure dispatch failure). The conservation test
+        source-scans this file and fails on any other call site.
+        """
 
         if self._formal_failure_latched:
             return
@@ -4721,7 +4753,9 @@ class TeamRunner:
                         dispatch_receipt, now=self.monotonic_clock()
                     )
             except FormalCandidatePlatformContractError:
-                self._latch_formal_candidate_failure("platform-contract", "turn-binding-missing")
+                self._latch_formal_candidate_failure(
+                    "platform-contract", "internal-invariant:turn-binding-missing"
+                )
                 raise
             except Exception:
                 if owner_answer:
@@ -4862,7 +4896,9 @@ class TeamRunner:
                 {"event": "redrive-guard-rejected", "detail": str(exc)},
             )
         except FormalCandidatePlatformContractError:
-            self._latch_formal_candidate_failure("platform-contract", "turn-binding-missing")
+            self._latch_formal_candidate_failure(
+                "platform-contract", "internal-invariant:turn-binding-missing"
+            )
             raise
         for message in messages:
             if message.agent_id == coordinator:
@@ -5054,7 +5090,7 @@ class TeamRunner:
                 if self._ledger and not (self.run.root / "evidence" / "semantic-start.jsonl").exists():
                     try:
                         self._ledger.release_presemantic(
-                            self.run.run_id, "Runner cleanup before semantic start"
+                            self.run.run_id, "startup-config: runner cleanup before semantic start"
                         )
                         self._append_evidence(
                             "start-ledger",
