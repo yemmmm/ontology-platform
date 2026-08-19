@@ -690,3 +690,24 @@
 - **Decision**：修复随本轮提交。**第二批 6 start 已全部消耗——start11 需用户新授权**；
   未获授权前不开跑，替代路径为以 R1（Luna 下 Examiner children 无 live 验证）为显式残留
   关闭本需求。
+
+## 2026-08-19 — 预防指引（required_paths 裸局部名契约下沉到 modeling 可读面）+ Round 12 PASS + 第三批预算授权
+
+- **用户决策**：授权 3 个新 start（ledger `budget_authorization` `r2-3-008-budget-20260819-3`，
+  28 事件），并明确要求"避免已经发现的错误在下次进行建模时依然犯错"。
+- **预防面真空**：modeling agent 可读的全部 surface（instructions / 中性 authoring reference /
+  task yaml）此前无一处写明 consumer_query `required_paths` 的裸谓词局部名契约——start10 的
+  路径表达式串是凭空猜测。defect 8 修复提供恢复路径，本轮补预防。
+- **修复（developer 第九轮，主代理复核后提交）**：
+  `modeling_team/agent-packages/modeling/instructions.md`（+7，envelope 约束区、003 段之外）+
+  `modeling_team/references/platform-neutral-candidate-authoring.json`（+6，
+  `consumer_query_required_paths` 规格用中性示例 `neutralAssociation` + closure_checklist 一行，
+  该文件未被 content-pin、增量容忍机制有 defect-6 先例）+ 新测试
+  `test_r23008_consumer_query_plan_guidance.py`（2 tests）。
+- **验证**：main agent 与 tester 独立各跑 full suite → **928 passed / 1 skipped / 302 subtests**
+  （R11 基线 926 + 新 2）；compileall / ruff / `git diff --check` 干净。
+- **Round 12（轻量）独立复测 PASS**：指引与 `_extract_plan` 契约逐点一致（含
+  `currentlyConsumesOutput` 与 005 基线实际局部名一致）；reference JSON scenario-neutrality
+  禁词扫描通过；003 段未触碰。
+- **Decision**：随本轮提交后立即执行 start11（第三批第 1 个 start），携带生效后的 agent 包，
+  冻结纪律 + `--enable-outer-input-fifo` + watchdog。

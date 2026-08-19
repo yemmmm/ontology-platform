@@ -95,6 +95,13 @@ its positive-integer sequence. `constraints` is a list of non-empty strings. Eve
 non-empty `item_id`, a non-empty `item_kind`, and an object `semantic`; an optional
 `evidence_citations` field is a list of objects.
 
+Every `consumer_query.semantic.required_paths` element is one bare predicate local name, exactly
+equal to the declared predicate local name of a `predicate` item in the same candidate (for example
+`currentlyConsumesOutput`); it is never a full path expression such as
+`subject--predicate-->object`, never an IRI, and never a path built from entity or class names. An
+illegal retrieval plan is rejected before the candidate receipt is built and requires exactly one
+complete revised candidate with corrected `required_paths`.
+
 Any item that Protocol will materialize as `create_entity` must carry its label as semantic
 content. For an ordinary `entity` or an `explicit_unknown`, provide a non-empty,
 source-grounded `semantic.values.label`; when a `negative_probe` includes a materialized

@@ -911,3 +911,36 @@
   /tmp 探针文件（含失败轮次泄漏目录）已全部删除。
 - 结论：defect 8 修复 **PASS**，无新缺陷、无回归。修复可提交；**下一 start（start11）需新的用户
   budget 授权**（第二批 6 start 已耗尽）。
+
+### Round 12（2026-08-19，start10 defect 8 配套预防指引轻量复核）
+
+- 测试对象：defect 8 防复发指引（Modeling 可读 surface 固定 consumer_query 计划格式）。工作区
+  `3abb692` 未提交树：`modeling_team/agent-packages/modeling/instructions.md`（+7）、
+  `modeling_team/references/platform-neutral-candidate-authoring.json`（+6）、新增
+  `modeling_team/tests/test_r23008_consumer_query_plan_guidance.py`（2 tests，surface 断言）。
+  轻量轮：未重跑深检探针，仅复核指引一致性/中性/放置 + 回归。
+- 指引与检索门禁契约一致性：`_extract_plan`（protocol_retrieval_gate.py:298-380）的有效契约是
+  每个 `required_paths` 元素须等于同候选内已声明 predicate item 的局部名且解析到连通候选
+  binding（`_local_name` 仅取 `#/:"` 分隔的末段；路径表达式/IRI 因不匹配任何声明谓词局部名被
+  "no relation/fact predicate"/"no candidate binding" 拒绝）。新指引"exactly equal to the
+  declared predicate local name of a predicate item in the same candidate；never a full path
+  expression such as subject--predicate-->object, never an IRI"与该有效契约一致；"rejected
+  before the candidate receipt is built"对应 R11 已验证的 receipt 前预检；"exactly one complete
+  revised candidate"对应 conflict/revision 循环语义。示例 `currentlyConsumesOutput` 与 005 基线
+  已接受候选（r23005 continuation exact-candidate）实际使用的谓词局部名一致。
+- 中性未破坏：test_r23005_candidate_authoring.py 的禁词扫描（dify/workflow/quality_score/
+  quality_rating/expected_answer/project_id/... + `[a-z]->[a-z]` 路径 regex）作用于整个
+  reference JSON 文本——新增文案通过（中性示例 `neutralAssociation`，通用
+  `subject--predicate-->object` 形式，无场景词）。instructions.md 不在禁词扫描范围（与 defect-6
+  先例一致：真实示例进 instructions，中性名进 reference）。该测试含于 928 内通过。
+- 放置核对：新增段位于 instructions.md 通用 envelope 约束区（第 ~98-104 行，紧接 defect-6
+  revision 合同段之后、任何 item 材料化段之前）；R2.3-003 段自第 220 行始，未被触碰，
+  003 候选作者流程无影响。
+- 回归：full suite → **928 passed / 1 skipped / 302 subtests**（与 main agent 复跑一致；R11 基线
+  926 + 新 2）；`compileall -q` OK；`ruff check` OK；`git diff --check` 干净。
+- 账本/证据卫生：`.r2-3-008-start-ledger.jsonl` 28 事件——较 R11 多 1 条 `budget_authorization`
+  （`r2-3-008-budget-20260819-3`，+3 starts，用户 2026-08-19 消息授权；semantic_start 仍 6，
+  新批次 0 消耗）。该写入为本轮之前 coordinator/Delivery-Agent 所为，非本轮触碰；
+  002/003/005 sha256 与冻结值一致；`workspaces/ backend/ frontend/` 零修改；本轮无探针临时文件。
+- 结论：预防指引 **PASS**，无缺陷。指引 + R11 门禁 + 结构化诊断构成 defect 8 的完整防线；
+  修复与指引可一并提交。新授权 3 start 可用于 start11（建议携带本轮指引生效后的 agent 包）。
