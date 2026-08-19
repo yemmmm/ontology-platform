@@ -76,10 +76,22 @@ R2_3_008_CONTRACT = FormalRunContract(
     ledger_requirement_id="R2.3-008",
 )
 
+R2_3_009_CONTRACT = FormalRunContract(
+    requirement_id="R2.3-009",
+    contract_id="r2-3-009-luna-route-create",
+    profile_id="r2-3-009-modeling-team",
+    task_id="r2-3-009-formal-acceptance",
+    scope_mode="create",
+    default_model_profile_id="openai-luna-medium",
+    acceptance_standard_path="modeling_team/references/r2-3-008-acceptance-standard.json",
+    ledger_requirement_id="R2.3-009",
+)
+
 FORMAL_RUN_CONTRACTS: tuple[FormalRunContract, ...] = (
     R2_3_005_CONTRACT,
     R2_3_003_CONTRACT,
     R2_3_008_CONTRACT,
+    R2_3_009_CONTRACT,
 )
 
 # Fail-closed cross-wire guard identities, derived from the closed registry so

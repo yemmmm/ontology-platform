@@ -439,8 +439,9 @@ def test_cli_validate_accepts_model_profile_and_defaults_to_contract(
     from modeling_team.formal_runs import FORMAL_RUN_CONTRACTS
 
     # The closed registry keeps the exact requirement-owned defaults: R2.3-008
-    # is the Luna subscription carrier; every other formal contract still
-    # defaults to the DeepSeek profile.
+    # and its R2.3-009 gate-relaxation successor are the Luna subscription
+    # carriers; every other formal contract still defaults to the DeepSeek
+    # profile.
     assert {
         contract.requirement_id: contract.default_model_profile_id
         for contract in FORMAL_RUN_CONTRACTS
@@ -448,6 +449,7 @@ def test_cli_validate_accepts_model_profile_and_defaults_to_contract(
         "R2.3-005": DEFAULT_MODEL_PROFILE_ID,
         "R2.3-003": DEFAULT_MODEL_PROFILE_ID,
         "R2.3-008": "openai-luna-medium",
+        "R2.3-009": "openai-luna-medium",
     }
 
 

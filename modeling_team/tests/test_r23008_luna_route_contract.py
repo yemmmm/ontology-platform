@@ -181,6 +181,7 @@ class R23008ContractTests(unittest.TestCase):
                 "r2-3-005-formal-create",
                 "r2-3-003-existing-incremental",
                 "r2-3-008-luna-route-create",
+                "r2-3-009-luna-route-create",
             ],
         )
         self.assertEqual(R2_3_005_CONTRACT.default_model_profile_id, "deepseek-v4-flash-max")
@@ -368,7 +369,7 @@ class R23008LedgerTests(unittest.TestCase):
             ):
                 resolve_ledger_config("R2.3-008", **kwargs)
         with self.assertRaisesRegex(TeamConfigurationError, "unknown start-ledger requirement ID"):
-            resolve_ledger_config("R2.3-009")
+            resolve_ledger_config("R2.3-010")
 
     def test_b2_budget_gates_three_starts_and_one_active_reservation(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
