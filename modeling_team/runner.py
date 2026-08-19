@@ -13,7 +13,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, ClassVar, Mapping
 
 
 from .contracts import (
@@ -241,6 +241,13 @@ class TeamRunner:
         self._coordination_runtime_signal_keys: set[str] = set()
         self._issue_abort_requested = False
         self._issue_abort_terminal_failure_recorded = False
+        # R2.3-009 feedback bookkeeping: typed conflict feedback is counted per
+        # (class, code, responsible agent) so later escalation tiers and the
+        # run-level timeout evidence can describe what the run already tried.
+        self._feedback_counts: dict[tuple[str, str, str], int] = {}
+        self._nudges_sent = 0
+        self._issues_opened = 0
+        self._last_responsible_agent: str | None = None
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -3356,6 +3363,202 @@ class TeamRunner:
         self._append_evidence("acceptance-stage-handoff", handoff_record)
         return handoff_record
 
+    # R2.3-009 B-class: candidate-channel protocol violations are mapped to a
+    # typed feedback code before the run-level evidence is written.  The mapped
+    # messages come from ``FormalCandidateProgress.observe_delivery`` gates;
+    # every other malformed envelope falls back to ``candidate-envelope-invalid``.
+    _FORMAL_CANDIDATE_VIOLATION_CODES: ClassVar[tuple[tuple[str, str], ...]] = (
+        ("formal candidate revision is not strictly newer", "revision-not-strictly-newer"),
+        ("formal candidate revision reuses the invalidated candidate digest", "revision-digest-reused"),
+        ("formal candidate Runtime attribution is invalid", "candidate-attribution-invalid"),
+        ("formal candidate delivery ID is not bound", "candidate-delivery-id-not-bound"),
+    )
+
+    def _formal_candidate_violation_code(self, exc: FormalCandidateError) -> str:
+        text = str(exc)
+        for prefix, code in self._FORMAL_CANDIDATE_VIOLATION_CODES:
+            if prefix in text:
+                return code
+        return "candidate-envelope-invalid"
+
+    @staticmethod
+    def _formal_violation_delivery_envelope(delivery: Any) -> dict[str, Any]:
+        return {
+            "delivery_id": getattr(delivery, "delivery_id", None),
+            "sender_id": getattr(delivery, "sender_id", None),
+            "recipient_id": getattr(delivery, "recipient_id", None),
+            "kind": getattr(delivery, "kind", None),
+            "text": getattr(delivery, "text", None),
+            "expects_reply": getattr(delivery, "expects_reply", None),
+            "reply_to_delivery_id": getattr(delivery, "reply_to_delivery_id", None),
+        }
+
+    def _record_observed_issue(
+        self,
+        delivery: Any,
+        *,
+        issue_class: str,
+        code: str,
+        responsible_agent: str | None,
+        detail: str,
+    ) -> None:
+        """Persist the offending delivery first, then record the typed issue."""
+
+        envelope = self._formal_violation_delivery_envelope(delivery)
+        # Evidence before judgment (defect-10 lesson): the original bytes are
+        # preserved exactly as delivered even though the gate rejected them.
+        self._append_evidence("deliveries", {"type": "delivery", **envelope})
+        identity = self._candidate_progress.identity if self._candidate_progress is not None else None
+        self._append_evidence(
+            "observed-issue",
+            {
+                "issue_class": issue_class,
+                "code": code,
+                "responsible_agent": responsible_agent,
+                "original_delivery_id": envelope["delivery_id"],
+                "original_text": envelope["text"],
+                "detail": detail,
+                "candidate_revision": identity.candidate_revision if identity is not None else None,
+            },
+        )
+        if isinstance(responsible_agent, str) and responsible_agent:
+            self._last_responsible_agent = responsible_agent
+
+    def _deliver_formal_feedback(
+        self,
+        *,
+        issue_class: str,
+        code: str,
+        responsible_agent: str | None,
+        original_delivery_id: str | None,
+        detail: str,
+        remediation: str,
+    ) -> None:
+        """Channel-2 typed conflict: readable Runtime feedback, never a run kill."""
+
+        if not isinstance(responsible_agent, str) or not responsible_agent:
+            return
+        notice = {
+            "conflict_code": code,
+            "conflict_detail": detail,
+            "original_delivery_id": original_delivery_id,
+            "remediation": remediation,
+        }
+        delivery = RuntimeDelivery(
+            sender_id="runner/candidate-gate",
+            recipient_id=responsible_agent,
+            kind="candidate-conflict",
+            text=json.dumps(notice, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            expects_reply=False,
+        )
+        try:
+            receipt = self.adapter.send_message(responsible_agent, delivery)
+        except Exception as exc:
+            # A dispatch failure of the feedback itself is recorded evidence;
+            # it must not convert a B-class issue into a new run kill.
+            self._append_evidence(
+                "validation-feedback",
+                {
+                    "issue_class": issue_class,
+                    "code": code,
+                    "responsible_agent": responsible_agent,
+                    "channel": 2,
+                    "dispatch_failed": True,
+                    "detail": str(exc),
+                },
+            )
+            return
+        key = (issue_class, code, responsible_agent)
+        self._feedback_counts[key] = self._feedback_counts.get(key, 0) + 1
+        self._last_responsible_agent = responsible_agent
+        self._append_evidence(
+            "validation-feedback",
+            {
+                "issue_class": issue_class,
+                "code": code,
+                "responsible_agent": responsible_agent,
+                "channel": 2,
+                "kind": "candidate-conflict",
+                "original_delivery_id": original_delivery_id,
+                "turn_id": getattr(receipt, "turn_id", None),
+                "detail": detail,
+                "remediation": remediation,
+            },
+        )
+
+    def _handle_formal_candidate_violation(self, delivery: Any, exc: FormalCandidateError) -> None:
+        """R2.3-009 B-class: a candidate artifact defect goes back to Modeling."""
+
+        roles = self._formal_candidate_roles()
+        modeling = roles[0] if roles is not None else None
+        code = self._formal_candidate_violation_code(exc)
+        self._record_observed_issue(
+            delivery,
+            issue_class="B",
+            code=code,
+            responsible_agent=modeling,
+            detail=str(exc),
+        )
+        self._deliver_formal_feedback(
+            issue_class="B",
+            code=code,
+            responsible_agent=modeling,
+            original_delivery_id=getattr(delivery, "delivery_id", None),
+            detail=str(exc),
+            remediation=(
+                "Send a complete, strictly newer formal candidate revision with a distinct "
+                "candidate digest; the rejected delivery did not advance the formal gate."
+            ),
+        )
+        self._ack_quarantined_delivery(getattr(delivery, "delivery_id", None))
+
+    def _ack_quarantined_delivery(self, delivery_id: Any) -> None:
+        """Acknowledge one quarantined delivery; a duplicate ack is only evidence."""
+
+        if not isinstance(delivery_id, str):
+            return
+        try:
+            self.transport.ack_delivery(delivery_id)
+        except RoutingError as exc:
+            self._append_evidence(
+                "observed-issue",
+                {
+                    "issue_class": "B",
+                    "code": "quarantine-ack-rejected",
+                    "original_delivery_id": delivery_id,
+                    "detail": str(exc),
+                },
+            )
+
+    def _handle_formal_response_violation(
+        self,
+        delivery: Any,
+        *,
+        protocol: str,
+        exc: RoutingError,
+    ) -> None:
+        """R2.3-009 B-class: a rejected reopen is typed feedback to Protocol."""
+
+        self._record_observed_issue(
+            delivery,
+            issue_class="B",
+            code="formal-reply-slot-reopen-rejected",
+            responsible_agent=protocol,
+            detail=str(exc),
+        )
+        self._deliver_formal_feedback(
+            issue_class="B",
+            code="formal-reply-slot-reopen-rejected",
+            responsible_agent=protocol,
+            original_delivery_id=getattr(delivery, "delivery_id", None),
+            detail=str(exc),
+            remediation=(
+                "The bound formal reply slot could not be reopened for the invalid response. "
+                "Resend one canonical receipt or conflict bound to the pending candidate."
+            ),
+        )
+        self._ack_quarantined_delivery(getattr(delivery, "delivery_id", None))
+
     def _latch_formal_candidate_failure(self, classification: str, reason: str) -> None:
         """Record one terminal failure before the foreground performs cleanup."""
 
@@ -4069,8 +4272,12 @@ class TeamRunner:
             try:
                 formal_candidate_event = self._observe_formal_candidate_delivery(delivery)
             except FormalCandidateError as exc:
-                self._latch_formal_candidate_failure("modeling-quality", "candidate-envelope-invalid")
-                raise TeamConfigurationError(str(exc)) from exc
+                # R2.3-009 B-class: a candidate-channel protocol violation is
+                # persisted evidence plus typed feedback to Modeling, not a run
+                # kill.  The revision/digest gates have already rejected the
+                # delivery; the run keeps waiting for a compliant candidate.
+                self._handle_formal_candidate_violation(delivery, exc)
+                continue
             self._register_stage_handoff_delivery_if_exact(delivery)
             formal_invalid_response = False
             formal_roles = self._formal_candidate_roles()
@@ -4113,11 +4320,16 @@ class TeamRunner:
                             protocol_agent_id=protocol,
                             formal_candidate=True,
                         )
-                    except RoutingError:
-                        self._latch_formal_candidate_failure(
-                            "collaboration/routing", "formal-reply-slot-reopen-rejected"
+                    except RoutingError as reopen_error:
+                        # R2.3-009 B-class: the reopen rejection is recorded as
+                        # an observed issue with typed feedback to Protocol; the
+                        # invalid response is quarantined and the run continues.
+                        self._handle_formal_response_violation(
+                            delivery,
+                            protocol=protocol,
+                            exc=reopen_error,
                         )
-                        raise
+                        continue
                     self._append_evidence(
                         "formal-candidate-progress",
                         {

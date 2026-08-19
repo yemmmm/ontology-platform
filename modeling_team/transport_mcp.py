@@ -79,7 +79,15 @@ def _call_terminal_report_guard(
 
 
 class RoutingError(ValueError):
-    pass
+    """A frozen-profile routing or reply-slot violation with a typed code.
+
+    R2.3-009: ``code`` lets the capability-MCP boundary surface a readable,
+    typed rejection to the responsible Agent instead of an opaque string.
+    """
+
+    def __init__(self, message: str, *, code: str | None = None) -> None:
+        super().__init__(message)
+        self.code = code
 
 
 @dataclass(frozen=True)
@@ -417,7 +425,10 @@ class TeamTransportBroker:
             or not isinstance(expects_reply, bool)
             or (reply_to_delivery_id is not None and not isinstance(reply_to_delivery_id, str))
         ):
-            raise RoutingError("recipient is not allowed by frozen Profile")
+            raise RoutingError(
+                "recipient is not allowed by frozen Profile",
+                code="recipient-not-allowed",
+            )
         if self.pre_send_validator is not None:
             self.pre_send_validator(
                 sender_id,
@@ -437,7 +448,10 @@ class TeamTransportBroker:
                     or reply_to_delivery_id not in self._pending_replies
                     or self._pending_replies[reply_to_delivery_id] is not None
                 ):
-                    raise RoutingError("Team Transport reply is not an active reversed request")
+                    raise RoutingError(
+                        "Team Transport reply is not an active reversed request",
+                        code="reply-slot-not-active",
+                    )
             self._delivery_sequence += 1
             delivery = Delivery(
                 self._delivery_sequence,
@@ -555,7 +569,10 @@ class TeamTransportBroker:
                 )
             )
         ):
-            raise RoutingError("formal reply slot reopen is not authorized")
+            raise RoutingError(
+                "formal reply slot reopen is not authorized",
+                code="formal-reply-slot-reopen-rejected",
+            )
         with self._lock:
             original = self._delivery_by_id.get(original_delivery_id)
             invalid = self._delivery_by_id.get(invalid_reply_delivery_id)
@@ -572,9 +589,15 @@ class TeamTransportBroker:
                 or invalid_reply_delivery_id not in self._reply_delivery_ids
                 or self._reply_delivery_ids[invalid_reply_delivery_id] != original_delivery_id
             ):
-                raise RoutingError("formal reply slot reopen binding is invalid")
+                raise RoutingError(
+                    "formal reply slot reopen binding is invalid",
+                    code="formal-reply-slot-reopen-rejected",
+                )
             if original_delivery_id in self._formal_reply_reopens:
-                raise RoutingError("formal reply slot reopen was already consumed")
+                raise RoutingError(
+                    "formal reply slot reopen was already consumed",
+                    code="formal-reply-slot-reopen-rejected",
+                )
 
             pending_marker = object()
             current = self._pending_replies.get(original_delivery_id, pending_marker)
@@ -584,7 +607,10 @@ class TeamTransportBroker:
                 and invalid_reply_delivery_id in self._acknowledged_deliveries
             )
             if not (occupied or acknowledged):
-                raise RoutingError("formal reply slot is not occupied by the exact invalid reply")
+                raise RoutingError(
+                    "formal reply slot is not occupied by the exact invalid reply",
+                    code="formal-reply-slot-reopen-rejected",
+                )
 
             self._formal_reply_reopens[original_delivery_id] = invalid_reply_delivery_id
             # ``None`` is the broker's active-but-unanswered marker.  A later
