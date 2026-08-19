@@ -3675,7 +3675,9 @@ class TeamRunner:
         )
         self._ack_quarantined_delivery(getattr(delivery, "delivery_id", None))
 
-    def _latch_formal_candidate_failure(self, classification: str, reason: str) -> None:
+    def _latch_formal_candidate_failure(
+        self, classification: str, reason: str, *, terminal_evidence: dict[str, Any] | None = None
+    ) -> None:
         """Record one terminal failure before the foreground performs cleanup."""
 
         if self._formal_failure_latched:
@@ -3699,7 +3701,7 @@ class TeamRunner:
                 "cleanup_required": True,
             },
         )
-        self.record_terminal_failure(classification, False)
+        self.record_terminal_failure(classification, False, terminal_evidence=terminal_evidence)
 
     def _check_formal_candidate_progress(self) -> None:
         """R2.3-009 T1: a candidate deadline miss is a bounded nudge, not a kill."""
@@ -3921,10 +3923,31 @@ class TeamRunner:
                 },
             },
         )
-        self._latch_formal_candidate_failure("collaboration/routing", "run-fallback-timeout")
+        self._latch_formal_candidate_failure(
+            "collaboration/routing",
+            "run-fallback-timeout",
+            terminal_evidence=self._run_fallback_terminal_evidence(),
+        )
         raise FormalCandidateProgressTimeout(
             f"run fallback timeout exceeded {active:.0f} active seconds"
         )
+
+    def _run_fallback_terminal_evidence(self) -> dict[str, Any] | None:
+        """The R2.3-009 refund binding for a T3 run-fallback terminal failure."""
+
+        ledger = getattr(self, "_ledger", None)
+        if ledger is None or not self.run:
+            return None
+        if not getattr(ledger.config, "strict_sequence", False):
+            # The legacy non-strict ledgers reject terminal evidence outright;
+            # they keep their historical accounting without refunds.
+            return None
+        return {
+            "run_id": self.run.run_id,
+            "classification": "collaboration/routing",
+            "mutation_state": "zero-mutation",
+            "reason": "run-fallback-timeout",
+        }
 
     def _issue_coordinator_id(self) -> str:
         if not self.run:
@@ -5043,6 +5066,7 @@ class TeamRunner:
                     except TeamConfigurationError:
                         # Startup failure may already have recorded the same immutable correction.
                         pass
+                self._record_terminal_settlement_and_refund()
                 secrets = self.run.root / "secrets"
                 if secrets.exists():
                     shutil.rmtree(secrets)
@@ -5057,6 +5081,69 @@ class TeamRunner:
             return evidence
         self._cleanup_evidence_cache = deepcopy(evidence)
         return deepcopy(self._cleanup_evidence_cache)
+
+    def _record_terminal_settlement_and_refund(self) -> None:
+        """R2.3-009 budget bookkeeping: settlement marker plus eligible refund.
+
+        Agent-terminal runs (every Agent reported completed/blocked) close the
+        consumed start with ``terminal_settlement``; a blocked exit or a T3
+        run-fallback terminal failure appends one ``budget_refund``. Every other
+        outcome keeps the consumed start. Failures here are recorded evidence,
+        never a cleanup abort.
+        """
+
+        if not self.run or not getattr(self, "_ledger", None):
+            return
+        if not (self.run.root / "evidence" / "semantic-start.jsonl").exists():
+            return
+        results = getattr(self.run, "terminal_results", None) or {}
+        statuses = [
+            value.get("status")
+            for value in results.values()
+            if isinstance(value, dict)
+        ]
+        if statuses:
+            outcome = "agent_blocked" if "blocked" in statuses else "agent_completed"
+            try:
+                self._ledger.record_terminal_settlement(  # type: ignore[union-attr]
+                    self.run.run_id, outcome=outcome
+                )
+            except TeamConfigurationError as exc:
+                self._append_evidence(
+                    "start-ledger",
+                    {
+                        "event": "terminal_settlement_skipped",
+                        "outcome": outcome,
+                        "detail": str(exc),
+                        **self._formal_ledger_identity(),
+                    },
+                )
+            else:
+                self._append_evidence(
+                    "start-ledger",
+                    {
+                        "event": "terminal_settlement",
+                        "outcome": outcome,
+                        **self._formal_ledger_identity(),
+                    },
+                )
+        try:
+            refunded = self._ledger.refund_budget(self.run.run_id)  # type: ignore[union-attr]
+        except TeamConfigurationError as exc:
+            self._append_evidence(
+                "start-ledger",
+                {
+                    "event": "budget_refund_skipped",
+                    "detail": str(exc),
+                    **self._formal_ledger_identity(),
+                },
+            )
+            return
+        if refunded:
+            self._append_evidence(
+                "start-ledger",
+                {"event": "budget_refund", **self._formal_ledger_identity()},
+            )
 
     def _record_runtime_core_hashes(self, phase: str) -> None:
         self._append_evidence(

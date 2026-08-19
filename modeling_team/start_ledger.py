@@ -65,6 +65,13 @@ _TERMINAL_EVIDENCE_FIELDS = frozenset(
         "evidence_digest",
     }
 )
+# R2.3-009 T3 refund binding: the run-fallback timeout terminal failure marks
+# its refund eligibility in the ledger itself (design §6 budget refund (a)).
+_RUN_FALLBACK_EVIDENCE_FIELDS = frozenset(
+    {"run_id", "classification", "mutation_state", "reason"}
+)
+_RUN_FALLBACK_TIMEOUT_REASON = "run-fallback-timeout"
+_TERMINAL_SETTLEMENT_OUTCOMES = frozenset({"agent_blocked", "agent_completed"})
 
 
 @dataclass(frozen=True)
@@ -439,7 +446,9 @@ class StartLedger:
                 starts = [record for record in records if record.get("event") == "semantic_start"]
                 if not starts or starts[-1].get("run_id") != run_id:
                     raise TeamConfigurationError("terminal failure must classify the latest semantic start")
-            if self._latest(records, run_id, "terminal_failure"):
+            if self._latest(records, run_id, "terminal_failure") or self._latest(
+                records, run_id, "terminal_settlement"
+            ):
                 raise TeamConfigurationError("terminal failure classification is immutable")
             record = {
                 "event": "terminal_failure",
@@ -453,6 +462,71 @@ class StartLedger:
             self._append(record)
 
         self._locked(write)
+
+    def record_terminal_settlement(self, run_id: str, *, outcome: str) -> bool:
+        """Mark one Agent-terminal settlement; R2.3-009 budget refund bookkeeping.
+
+        ``agent_blocked`` is the sanctioned exit for a run the Agents judged
+        unrepairable; ``agent_completed`` is recorded for the same closure
+        symmetry but never refunds budget.
+        """
+
+        if outcome not in _TERMINAL_SETTLEMENT_OUTCOMES:
+            raise TeamConfigurationError("terminal settlement outcome is invalid")
+
+        def write(records: list[dict[str, Any]]) -> bool:
+            if self.config.strict_sequence:
+                self._validate_strict_replay(records)
+            starts = [record for record in records if record.get("event") == "semantic_start"]
+            if not starts or starts[-1].get("run_id") != run_id:
+                raise TeamConfigurationError(
+                    "terminal settlement must classify the latest semantic start"
+                )
+            if self._latest(records, run_id, "terminal_failure") or self._latest(
+                records, run_id, "terminal_settlement"
+            ):
+                raise TeamConfigurationError("terminal settlement classification is immutable")
+            self._append({"event": "terminal_settlement", "run_id": run_id, "outcome": outcome})
+            return True
+
+        return self._locked(write)
+
+    def refund_budget(self, run_id: str) -> bool:
+        """Append one immutable ``budget_refund`` for a refund-eligible run.
+
+        Eligible (user 2026-08-19): Agent-terminal ``agent_blocked`` settlements
+        and T3 ``run-fallback-timeout`` terminal failures. Every other outcome
+        keeps the consumed start (return False, nothing appended).
+        """
+
+        def write(records: list[dict[str, Any]]) -> bool:
+            if self.config.strict_sequence:
+                self._validate_strict_replay(records)
+            starts = [record for record in records if record.get("event") == "semantic_start"]
+            if not starts or starts[-1].get("run_id") != run_id:
+                raise TeamConfigurationError("budget refund must target the latest semantic start")
+            if self._latest(records, run_id, "budget_refund"):
+                return False
+            settlement = self._latest(records, run_id, "terminal_settlement")
+            if settlement is not None:
+                if settlement.get("outcome") != "agent_blocked":
+                    return False
+                self._append({"event": "budget_refund", "run_id": run_id})
+                return True
+            failure = self._latest(records, run_id, "terminal_failure")
+            evidence = failure.get("terminal_evidence") if isinstance(failure, dict) else None
+            if (
+                isinstance(failure, dict)
+                and failure.get("classification") == "collaboration/routing"
+                and isinstance(evidence, dict)
+                and set(evidence) == _RUN_FALLBACK_EVIDENCE_FIELDS
+                and evidence.get("reason") == _RUN_FALLBACK_TIMEOUT_REASON
+            ):
+                self._append({"event": "budget_refund", "run_id": run_id})
+                return True
+            return False
+
+        return self._locked(write)
 
     def authorize_repair(
         self,
@@ -512,6 +586,8 @@ class StartLedger:
         started: set[str] = set()
         released: set[str] = set()
         failures: dict[str, tuple[int, dict[str, Any]]] = {}
+        settlements: dict[str, tuple[int, dict[str, Any]]] = {}
+        refunded: set[str] = set()
         authorization_ids: set[str] = set()
         references: set[str] = set()
         cap = self._initial_start_cap
@@ -522,6 +598,8 @@ class StartLedger:
             "semantic_start",
             "presemantic_release",
             "terminal_failure",
+            "terminal_settlement",
+            "budget_refund",
             "budget_authorization",
             "repair_authorization",
         }
@@ -573,14 +651,19 @@ class StartLedger:
                         item for item in records[:index] if item.get("event") == "semantic_start"
                     ][-1]
                     previous_run_id = previous.get("run_id")
-                    if previous_run_id not in failures:
+                    if previous_run_id not in failures and previous_run_id not in settlements:
                         raise TeamConfigurationError("start ledger replay is invalid")
                 reservations[run_id] = (index, record)
                 continue
             run_id = record.get("run_id")
-            if event in {"semantic_start", "presemantic_release", "terminal_failure", "repair_authorization"} and (
-                not isinstance(run_id, str) or not run_id.strip()
-            ):
+            if event in {
+                "semantic_start",
+                "presemantic_release",
+                "terminal_failure",
+                "terminal_settlement",
+                "budget_refund",
+                "repair_authorization",
+            } and (not isinstance(run_id, str) or not run_id.strip()):
                 raise TeamConfigurationError("start ledger replay is invalid")
             if event == "semantic_start":
                 if run_id not in reservations or run_id in started or run_id in released:
@@ -612,6 +695,7 @@ class StartLedger:
                 if (
                     run_id not in started
                     or run_id in failures
+                    or run_id in settlements
                     or classification not in _RETRYABLE | {"modeling-quality"}
                     or not isinstance(complete, bool)
                     or not any(
@@ -632,14 +716,52 @@ class StartLedger:
                         run_id=run_id,
                         classification=classification,
                     )
-                    reservation = reservations.get(run_id)
-                    if (
-                        reservation is None
-                        or terminal_evidence.get("baseline_hash")
-                        != reservation[1].get("baseline_hash")
-                    ):
-                        raise TeamConfigurationError("terminal evidence baseline drifts from reservation")
+                    if "baseline_hash" in terminal_evidence:
+                        reservation = reservations.get(run_id)
+                        if (
+                            reservation is None
+                            or terminal_evidence.get("baseline_hash")
+                            != reservation[1].get("baseline_hash")
+                        ):
+                            raise TeamConfigurationError(
+                                "terminal evidence baseline drifts from reservation"
+                            )
                 failures[run_id] = (index, record)
+                continue
+            if event == "terminal_settlement":
+                outcome = record.get("outcome")
+                prior_starts = [
+                    item for item in records[:index] if item.get("event") == "semantic_start"
+                ]
+                if (
+                    run_id not in started
+                    or run_id in failures
+                    or run_id in settlements
+                    or outcome not in _TERMINAL_SETTLEMENT_OUTCOMES
+                    or not prior_starts
+                    or prior_starts[-1].get("run_id") != run_id
+                ):
+                    raise TeamConfigurationError("start ledger replay is invalid")
+                settlements[run_id] = (index, record)
+                continue
+            if event == "budget_refund":
+                if run_id in refunded or (run_id not in failures and run_id not in settlements):
+                    raise TeamConfigurationError("budget refund replay is invalid")
+                if run_id in settlements:
+                    eligible = settlements[run_id][1].get("outcome") == "agent_blocked"
+                else:
+                    failure = failures[run_id][1]
+                    evidence = failure.get("terminal_evidence")
+                    eligible = (
+                        failure.get("classification") == "collaboration/routing"
+                        and isinstance(evidence, dict)
+                        and set(evidence) == _RUN_FALLBACK_EVIDENCE_FIELDS
+                        and evidence.get("reason") == _RUN_FALLBACK_TIMEOUT_REASON
+                    )
+                if not eligible:
+                    raise TeamConfigurationError("budget refund replay is invalid")
+                refunded.add(run_id)
+                cap += 1
                 continue
             if event == "budget_authorization":
                 additional = record.get("additional_starts")
@@ -732,7 +854,8 @@ class StartLedger:
         if consumed:
             previous = consumed[-1]
             failure = self._latest(records, previous["run_id"], "terminal_failure")
-            if not failure:
+            settlement = self._latest(records, previous["run_id"], "terminal_settlement")
+            if not failure and not settlement:
                 raise TeamConfigurationError("previous semantic start lacks a terminal failure")
         record: dict[str, Any] = {
             "event": "reservation",
@@ -769,6 +892,11 @@ class StartLedger:
                 semantic_start_count += 1
                 if semantic_start_count > cap:
                     raise TeamConfigurationError("budget authorization ledger is invalid")
+                continue
+            if event == "budget_refund":
+                # R2.3-009: each valid refund makes one consumed start available
+                # again without rewriting history.
+                cap += 1
                 continue
             if event != "budget_authorization":
                 continue
@@ -810,6 +938,17 @@ class StartLedger:
         run_id: str,
         classification: str,
     ) -> None:
+        if isinstance(value, dict) and set(value) == _RUN_FALLBACK_EVIDENCE_FIELDS:
+            # The T3 run-fallback shape carries no issue/baseline binding; it
+            # only marks the terminal failure as budget-refund eligible.
+            if (
+                value.get("run_id") != run_id
+                or value.get("classification") != "collaboration/routing"
+                or value.get("mutation_state") != "zero-mutation"
+                or value.get("reason") != _RUN_FALLBACK_TIMEOUT_REASON
+            ):
+                raise TeamConfigurationError("terminal evidence binding is invalid")
+            return
         if not isinstance(value, dict) or set(value) != _TERMINAL_EVIDENCE_FIELDS:
             raise TeamConfigurationError("terminal evidence binding is invalid")
         if (
