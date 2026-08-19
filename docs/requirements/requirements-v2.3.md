@@ -71,6 +71,7 @@ Semantic Platform Core 继续拥有权限、Build Session、Lease、Modeling Bat
 | R2.3-003 | 已有 Project/Ontology 增量建模 | P0 | `Accepted（start20 语义建模与 start20-2 Acceptance-only 均 PASS）` | R2.3-005 Start75 保留本体与运营基线；R2.3-002 批准来源 |
 | R2.3-006 | 精简隔离 Examiner Runtime | P0 | `已交付。完整 N=2 live-124 PASS：CQ-001/CQ-002 均 PASS,current=true,usable=true；六角色 fresh/typed/metrics complete 且全部有真实 tokenUsage；key exactly-once、post-revoke 401、cleanup 全 true、model/ledger 不变。证据：workspaces/modeling-acceptance/r23006-retained-n2-live-124/r23006-retained-acceptance.json` | R2.3-001 Team Runtime；R2.3-003 Acceptance-only 性能与隔离证据；R2.3-005 formal Acceptance |
 | R2.3-008 | Luna 全栈路由/终态验证（复用 R2.3-005 切片） | P0 | `Design-reviewed` | R2.3-007 路由与订阅认证交付；R2.3-005 formal 建模/验收基线 |
+| R2.3-009 | Modeling Team 校验降级与 Agent 自修复 | P0 | `Refinement 中` | R2.3-008 三次 typed 失败证据（defect 9/10/11） |
 | R2.3-004 | Pi Team Adapter | P1 | `待细化` | R2.3-005；R2.3-003；R2.0-002；R2.3-002/003 证据 |
 
 ## 总体交付顺序
@@ -3690,3 +3691,53 @@ B3 合同不能选择 model profile。缺少一个可合法消耗建模 start �
 - 不修改 R2.3-007 已交付的路由/认证/清理代码，除非本需求执行中发现缺陷并按缺陷流程修复。
 - 不改变六角色语义、权限、终态合同、Acceptance schema 或 StartLedger 治理规则。
 - 不新增 Provider、不引入运行中热切换或 fallback。
+
+## R2.3-009 Modeling Team 校验降级与 Agent 自修复
+
+当前状态：`Refinement 中（用户 2026-08-19 确认核心决策，设计与测试计划待 planner/review）`
+
+### 背景与问题
+
+R2.3-008 三次授权 start（11/12/13）全部死于工具层校验，而非建模质量：
+
+- start11（defect 9）：检索证据关卡把分页信号 `context_truncated`（携带有效 continuation
+  cursor）误判为数据丢失，阻塞验收 handoff。
+- start12（defect 10）：候选通道上的散文状态回复（等待 owner 答复期间回应 Protocol 启动
+  屏障催交）被当作初始候选，JSON 解码失败即 run-kill。
+- start13（defect 11）：typed conflict 的一次性回复槽被建模的 prose 提问消耗后无 reopen
+  路径，修正版候选进程内不可达，死锁至超时。
+
+三次事故的共性：确定性关卡把 Agent 的合理行为（回状态、先提问再改稿、分页续读）判为
+致命错误，剥夺了 Agent 自我修复的机会。现有实现累积的运行中致命校验远超项目优先级声明
+（"只保留直接保护源忠实度、业务范围、模型正确性、确定性 dry-run/apply、检索验收的质量
+关卡"）所允许的范围。
+
+### 已确认目标（用户 2026-08-19 确认）
+
+1. **任何校验失败都不终止运行**：运行只能由 Agent 自己的终态报告（completed/blocked）
+   或较长的兜底超时结束。不存在代码路径因校验失败直接 kill run。
+2. **失败即反馈**：包括 A 类（平台写入完整性：dry_run/apply 原子性、scope/权限、接受后
+   不可变、密钥卫生）在内的所有校验失败，都以 typed、可读的问题原因**返还给责任 Agent**
+   供其继续尝试修复，而非停止建模过程。
+3. **B 类（候选通道协议：格式/JSON/版本/digest/回复槽/检索计划预校验）整体降级**：记录
+   为 observed issue 证据 + 生成 Agent 可读冲突说明，Agent 自行决定修复方式与时机。
+4. **C 类（检索证据警告扫描）降级为记录**：扫描结果记入 evidence 不阻塞验收推进；检索
+   证据完整性由最终独立验收（Examiner）判断。
+5. 保留为致命的仅剩：启动期配置校验（Agent 尚未运行，无反馈对象）与真正的内部不变量
+   崩溃（代码 bug，非 Agent 行为）。
+6. 问题记录作为后续优化参考，不作为运行限制。
+
+### 非目标
+
+- 不放松平台侧（backend/）自身的 API 校验与原子性——本需求只改 modeling_team Runner
+  工具层对校验失败的处置方式。
+- 不改变最终语义验收独立性原则：验收官仍独立判断检索证据与模型质量。
+- 不移除证据记录——降级为"记录不阻塞"，不是"不看见"。
+
+### 待设计事项
+
+- ~370 处 raise/latch 站点的逐类处置（启动配置类/Agent 行为类/内部不变量类）。
+- 反馈通道的具体形式（typed conflict / capability 错误载荷 / issue escalation）与
+  责任 Agent 的路由规则。
+- 兜底超时的时长与分级。
+- 既有测试（约 60+ 断言 raise 行为）的改写策略。
