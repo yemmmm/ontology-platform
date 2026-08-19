@@ -3718,7 +3718,10 @@ R2.3-008 三次授权 start（11/12/13）全部死于工具层校验，而非建
    或较长的兜底超时结束。不存在代码路径因校验失败直接 kill run。
 2. **失败即反馈**：包括 A 类（平台写入完整性：dry_run/apply 原子性、scope/权限、接受后
    不可变、密钥卫生）在内的所有校验失败，都以 typed、可读的问题原因**返还给责任 Agent**
-   供其继续尝试修复，而非停止建模过程。
+   供其继续尝试修复，而非停止建模过程。边界澄清（2026-08-19 plan review）：A 类仅指
+   **Agent 行为可控**的写入完整性失败；由 runtime adapter 或 Runner 内部状态产生、Agent
+   无法修复的结构性失败（如 dispatch receipt 缺 turn_id、gate 文件系统守卫、接受后
+   identity 被内部 mutation）归入第 5 条内部不变量，保持 fail-fast。
 3. **B 类（候选通道协议：格式/JSON/版本/digest/回复槽/检索计划预校验）整体降级**：记录
    为 observed issue 证据 + 生成 Agent 可读冲突说明，Agent 自行决定修复方式与时机。
 4. **C 类（检索证据警告扫描）降级为记录**：扫描结果记入 evidence 不阻塞验收推进；检索
