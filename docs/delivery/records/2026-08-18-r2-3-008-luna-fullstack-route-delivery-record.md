@@ -741,3 +741,27 @@
   优先 env 导致 fallback-file 拒绝路径不触发；git stash 后在 HEAD 上复现同样 7 failed，与本轮
   改动无关）；scenario-neutral 禁词扫描通过。
 - **待 start11 终局后补**：终局判定、R1–R8 评估、key 回收、账本核对与提交。
+
+## 2026-08-19 — start11 issue-6：defect 9（context_truncated 分页告警被误判为阻塞）修复 + start11 终局收尾
+
+- **issue-6（protocol, platform_repair）**：governed retrieval 各链完成（lexical 回退、context
+  continuation 至最终非截断页、无 next cursor），validation/reasoning gates 通过，但
+  `protocol_build_acceptance_stage_handoff` 两次返回 `ordinary_retrieval_incomplete`——必需路径
+  `currentlyConsumesOutput` 的 lexical 链首页带 `context_truncated` 告警。
+- **defect 9（platform-contract，developer 第十一轮）**：`ProtocolRetrievalGate._validate_response_quality`
+  对链上每一页执行告警扫描，`context_truncated` 命中 "truncated" token 即 raise。而平台
+  （`backend/app/services/semantic_context_query.py:410-429`）恰在 context 页超过 `context_limit`
+  且发布 `next_context_cursor` 时发出该告警——与 gate 已跳过的 `matches_truncated` 同类的分页
+  信号。真实截断已由 cursor 绑定不变式（truncated 标志必须等于 cursor 存在）与 terminal-page
+  截断检查双重防护。修复：`context_truncated` 且 `context_page.next_context_cursor` 非空时跳过
+  （无 cursor 的 terminal 页保持阻塞）。潜在缺陷自 R2.3-005 起存在，005 各 run 检索链均为单页
+  故未触发；Luna 的检索量首次翻页即暴露。
+- **测试**：新 `test_r23008_context_truncated_pagination.py`（3 tests：start11 精确序列注册
+  成功、hybrid 同判、无 cursor terminal 页仍阻塞）；full suite **925 passed / 1 skipped /
+  302 subtests**（+3；仍 7 个预存环境性失败）；compileall/ruff 干净。
+- **start11 终局（进行中）**：修复无法注入已运行进程。issue-6 以 guidance 解决：确认缺陷、
+  禁止重试/改元组/新链，要求 protocol 通过 Team Transport 报告 terminal blocked 并保留全部
+  检索工件证据；随后按 typed retryable platform-contract terminal failure 收尾（如 blocked
+  上报路径受阻则 outer stop + guarded ledger recovery，start10 先例）。
+- **start12 展望**：携带 defect-7/8/9 修复 + required_paths/min_count 两轮预防指引；候选内部
+  一致性（探针 vs shape）仍取决于 Luna 建模输出，已由 Round 13 指引覆盖。

@@ -969,3 +969,23 @@
   resolver 优先 env，fallback 拒绝路径不触发；`git stash` 后 HEAD 同样 7 failed，证实与本轮
   无关；live run 命令一贯 `env -u DEEPSEEK_API_KEY`，不受影响）。
 - 结论：**PASS**。预防指引随本轮提交，供 start12+（如启动）携带。
+
+### Round 14（start11 live 期间，主代理直接验证——defect 9：context_truncated 分页误判）
+
+- 触发：start11 issue-6——lexical 链首页 `context_truncated` + 有效 `next_context_cursor`，
+  续页至非截断 terminal 页，gate 仍报 `ordinary_retrieval_incomplete`（"blocking warning:
+  context_truncated"）两次。
+- 修复面：`modeling_team/protocol_retrieval_gate.py` `_validate_response_quality`——
+  `context_truncated` 且该页 `context_page.next_context_cursor` 非空时按分页信号跳过；无
+  cursor 的 terminal 页命中原 token 检查仍阻塞；`matches_truncated`、hybrid evidence/lineage
+  保守契约、cursor 绑定不变式、terminal-page 截断检查全部不变。
+- 平台侧证据核对：`semantic_context_query.py` 中 warning 与 `context_page.truncated`/
+  `next_context_cursor` 同源同条件（`len(related_raw) > context_limit`），跳过条件与平台语义
+  一致；fail-closed（terminal 页带告警仍拒）。
+- 测试：`test_r23008_context_truncated_pagination.py` 3/3（含 start11 精确序列：首页
+  warning+cursor → 终页无 warning，receipt 注册成功且 artifact_paths=2）；现有
+  `test_protocol_retrieval_gate.py` 22/22 无回归；full suite **925 passed / 1 skipped /
+  302 subtests**（R13 基线 922+3；仍 7 个与代码无关的 `DEEPSEEK_API_KEY` 环境性失败）；
+  compileall OK；ruff OK。
+- 结论：**PASS**。修复随本轮提交；live start11 进程不可热载，按 typed terminal failure 收尾
+  后由 start12 携带。

@@ -467,6 +467,19 @@ class ProtocolRetrievalGate:
             # truncated/degraded/incomplete/evidence/lineage warning is not.
             if code == "matches_truncated":
                 continue
+            if code == "context_truncated":
+                # The platform emits ``context_truncated`` exactly when the
+                # context page exceeds ``context_limit`` and therefore carries
+                # a continuation cursor; that is the same page-level
+                # pagination signal as ``matches_truncated``.  A terminal page
+                # without a cursor keeps the warning blocking here and is also
+                # rejected by the terminal-page truncation check below.
+                context_page = data.get("context_page")
+                if (
+                    isinstance(context_page, Mapping)
+                    and context_page.get("next_context_cursor") is not None
+                ):
+                    continue
             if any(token in code or token in message for token in ("lineage", "evidence")):
                 # Retrieval warnings are aggregate over all returned resources.
                 # A lexical chain may carry an unrelated missing-evidence warning
