@@ -793,3 +793,38 @@
   账本闭合 = 路由/终态层行为符合合同（R2 建模路由 PASS、R3 协作/issue 路由 PASS、R4 平台
   合同失败为 typed 且可归因 PASS、R5 清理/账本 PASS）；R6–R8（evidence 保留、无明文密钥、
   预算纪律）PASS。R1 留待 start12。
+
+## 2026-08-19 — start12 终局：defect 10（候选通道上的非 JSON 中途消息 run-kill）修复
+
+- **start12 失败（~3 分钟，typed modeling-quality 自闭合）**：run log 终止于
+  `run failed: formal candidate delivery is not canonical JSON`。从 modeling rollout
+  （`runtime/modeling/home/sessions/…/rollout-*.jsonl` line 43）复原根因：modeling 就
+  delivery-4/5 向 coordinator 提出两处 owner 澄清（B 消费目标是否确认为 Version 2
+  quality_rating；C 无数值分数时 B 行为），等待 owner 答复期间 protocol 启动屏障
+  （delivery-6）催交候选，modeling 以**散文状态消息**回复 protocol
+  （"clarification is pending … I will freeze and send the complete candidate after …"）。
+  `candidate_progress.observe_delivery` 将任何 modeling→protocol、expects-reply、无
+  reply_to 的投递视为初始候选投递，prose 无法 JSON 解码 → raise →
+  `_latch_formal_candidate_failure("modeling-quality","candidate-envelope-invalid")` →
+  run 终止——owner 答复尚未送达即已死亡。致命投递文本因 raise 先于持久化而未留存于
+  deliveries.jsonl（6 条），由 rollout 复原。
+- **defect 10（modeling-quality 误判；developer 第十二轮）**：现有代码本身不对称——
+  合法 JSON 但非候选形状 → `return None`（忽略），prose/非 dict JSON → run-kill。按
+  CLAUDE.md "Tools own protocol formatting … and parsing"，中途状态消息属传输内容而非
+  建模质量。修复（`candidate_progress.py` observe_delivery）：初始/revision 槽位上
+  `value is None or not _is_candidate_like(value)` 一律 `return None`——与"非候选形状
+  JSON 忽略"完全对称；启动屏障/redrive 持续催交候选、conflict 槽保持开放等待正式
+  revision、dispatch deadline 仍约束等待。候选通道上真正语义违约（revision 非严格
+  更新、digest 复用、Runtime attribution 非法）仍保持 run-kill 语义不变。
+- **测试**：新 `test_r23008_nonjson_candidate_interim_messages.py`（3 tests：start12
+  精确 prose 在初始槽被忽略且后续真候选正常注册为 initial；prose 回复 conflict 不
+  消耗 revision 槽且正式 revision 仍被接受；裸 JSON 字符串/数字同判）。full suite
+  **928 passed / 1 skipped / 302 subtests**（7 个 `test_deepseek_codex_runtime` 失败为
+  环境性预存——`env -u DEEPSEEK_API_KEY` 下 21/21 全过，与本轮改动无关）。
+- **密钥卫生**：gate temp key `r23008-start12-temp` 已 revoke（200，revoked_at
+  02:07:03Z）+ 401 验证；key value 文件已删除；run root 795 文件模式扫描
+  （Bearer/admin env/sk- prefix）0 命中。
+- **start12 §4 R1–R8 判定**：R1 未达成（run 死于 owner 答复送达前，无 Examiner
+  children）；R2–R5 按 retryable-terminal-failure 条款评估——typed failure + 账本
+  自闭合 + CLEANED = PASS；R6–R8 PASS。R1 留待 start13（第三批最后一个预授权 start），
+  携带 defect-7/8/9/10 全部修复与 Round 12/13 预防指引。

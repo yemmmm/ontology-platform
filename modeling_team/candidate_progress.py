@@ -558,9 +558,15 @@ class FormalCandidateProgress:
             and reply_to == self.pending.conflict_delivery_id
         )
         if (initial and self.pending is None) or revision:
-            if value is None:
-                raise FormalCandidateError("formal candidate delivery is not canonical JSON")
-            if not self._is_candidate_like(value):
+            if value is None or not self._is_candidate_like(value):
+                # A Modeling->Protocol interim message (start12: prose status
+                # while owner clarification was still pending) is transport
+                # content, not a candidate.  Parsing belongs to the tool
+                # layer, so non-candidate text is ignored exactly like JSON
+                # that is not candidate-shaped instead of failing the run:
+                # the startup barrier/redrive keeps requesting the candidate,
+                # the conflict slot stays open for a proper revision, and the
+                # dispatch deadline still bounds the wait.
                 return None
             if revision:
                 assert self.pending is not None

@@ -989,3 +989,22 @@
   compileall OK；ruff OK。
 - 结论：**PASS**。修复随本轮提交；live start11 进程不可热载，按 typed terminal failure 收尾
   后由 start12 携带。
+
+### Round 15（start12 终局后，主代理直接验证——defect 10：候选通道非 JSON 中途消息）
+
+- 触发：start12 于 ~3 分钟 typed 失败 `formal candidate delivery is not canonical JSON`；
+  modeling rollout line 43 复原致命投递为散文状态消息（等待 owner 澄清答复期间回应
+  protocol 启动屏障催交），`observe_delivery` 将其判为初始候选投递后解码失败 run-kill，
+  且先于持久化（deliveries.jsonl 仅 6 条）。
+- 修复面：`modeling_team/candidate_progress.py` `observe_delivery`——初始/revision 槽位上
+  非 JSON/非 dict 文本与"合法 JSON 但非候选形状"同判 `return None`（忽略）；启动屏障/
+  redrive 持续催交、conflict 槽保持开放、dispatch deadline 仍约束。revision 非严格更新、
+  digest 复用、Runtime attribution 非法等真语义违约 run-kill 语义不变。
+  runner.py 侧 `candidate-envelope-invalid` latch 保留（仍覆盖其余 FormalCandidateError
+  来源）。
+- 测试：`test_r23008_nonjson_candidate_interim_messages.py` 3/3（start12 精确 prose；
+  conflict 槽 prose 不消耗且正式 revision 仍接受；裸 JSON 字符串/数字同判）；现有
+  candidate_progress 相关测试无回归；full suite **928 passed / 1 skipped / 302
+  subtests**（`env -u DEEPSEEK_API_KEY` 下 `test_deepseek_codex_runtime.py` 21/21 全过，
+  证实 7 失败纯环境性）。
+- 结论：**PASS**。修复随本轮提交，start13 携带。
