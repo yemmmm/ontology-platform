@@ -858,3 +858,56 @@
   gate 全链路不受影响；c) 921+ 回归全绿。
 - 账本 27 事件（6/6 消耗），start10 已以 platform-contract 关闭；卫生全零（key revoke+401，
   796 文件 0 命中）。**start11 需用户新授权。**
+
+### Round 11（2026-08-19，start10 defect 8 非法 consumer_query 检索计划 untyped 崩溃窄修复复测）
+
+- 测试对象：defect 8（platform-contract）修复 — start10 中 Modeling 将 `required_paths` 写成
+  全路径表达式（`workflow-b--currentlyConsumesOutput-->quality-rating-field`），检索门禁仅在
+  accepted-candidate registration 时（Protocol 已交付 receipt 后）拒绝，且
+  `ProtocolRetrievalGateError` 以未分类 `run failed:` 退出烧掉整个 run。工作区 `c6df8f1`
+  未提交树，仅 `modeling_team/runner.py`（+66/−7）+ 新增
+  `modeling_team/tests/test_r23008_retrieval_plan_gate.py`（5 tests）。
+- 实现审查：(1) `_build_protocol_candidate_receipt` 在出任何 receipt 前运行与注册时**完全相同**的
+  `ProtocolRetrievalGate` 构造（同构造器、同参数——runner.py:2333 与 acceptance.py:1763/1785/1798
+  逐参比对一致，candidate 为 `_active_protocol_candidate` 的 deepcopy 等价注册时 detach）；
+  拒绝时标记 `receipt_rejected` 并抛 `AcceptanceContractError(data={reason:
+  consumer_query_plan_invalid, detail, action})`。(2) conflict 前置集合扩为
+  `{"receipt","receipt_rejected"}`，仅放开计划拒绝后的 revision 循环。(3) 
+  `_observe_formal_candidate_delivery` 对 `register_accepted_candidate` 加
+  `except AcceptanceContractError` → latch `platform-contract/
+  accepted-candidate-registration-rejected` + typed `TeamConfigurationError`（防 start10
+  手工 receipt 绕过路径）。(4) capability 层既有机制（capability_mcp.py:672-708）：带 Mapping
+  `data` 的异常走 success-path `structuredContent {ok:False, error:{...}}`（-32001 仍保留给
+  token/schema/dispatch 类失败）——本次修复直接复用，未改 capability 层。
+- 新测试评估（5/5 通过，0.11s）：经真实 carrier capability + 真实 capability endpoint
+  `tools/call handle()`；test 1 覆盖 path-expression 计划 → 结构化诊断 + 仅 `receipt_rejected`
+  标记；test 2 验证 JSON-RPC 层 `{ok:False, error:{reason}}` 且无 error key；test 3/4/5 分别覆盖
+  拒绝后 conflict 可用、合法 bare-local-name 全链路（含 defect-7 replay）、start10 手工 receipt
+  绕过 → typed TeamConfigurationError + AcceptanceContractError cause + terminal latch。
+- 独立行为探针（21/21 通过，挂真实 R2.3-008 formal contract，非开发者 harness 复用）：
+  - (1) 非法计划 → `AcceptanceContractError`，data 三字段齐全；`_protocol_candidate_responses`
+    恰为 `{delivery-1: receipt_rejected}`、**digest 注册表为空**（未发出任何 receipt）、progress
+    未 latch；
+  - (2) capability endpoint：无 JSON-RPC error key，`structuredContent {ok:False,
+    error:{reason: consumer_query_plan_invalid}}` 直达 Agent（结构化 success path，非 -32001）；
+  - (3) 标记不被滥用：计划拒绝后 typed conflict 可用（revision 循环开放），但 duplicate
+    conflict / conflict 后 receipt 均 "already built" 拒绝；
+  - (4) `receipt_rejected` 标记下 foreign/stale、paused、terminal 仍全部拒绝（marker 无旁路）；
+  - (5) 重复 receipt 调用确定性重拒（两次异常与 data 完全相同），永不发出 accepted receipt；
+  - (6) 合法 bare-local-name（005 基线形状）在 008 合同下全链路不变：build → register accepted →
+    defect-7 replay 字节相同；
+  - (7) start10 绕过路径：手工 exact receipt bytes → typed `accepted candidate registration
+    failed: ...`（cause 为 AcceptanceContractError）、progress `terminal_failure_latched`、
+    `evidence/formal-candidate-terminal-failure.jsonl` 落盘且含
+    `"classification": "platform-contract"` 与 `accepted-candidate-registration-rejected`——
+    不再是未分类退出。
+- 回归：full suite → **926 passed / 1 skipped / 302 subtests**（与 main agent 复跑一致；R10 基线
+  921 + 新 5）；`compileall -q` OK；`ruff check` OK；`git diff --check` 干净。`_extract_plan`
+  bare-local-name 合同、transport 单次接受、003 专属路径均未改（既有测试全数通过）。
+- 账本/证据卫生：`.r2-3-008-start-ledger.jsonl` 27 事件
+  （10 reservation + 4 presemantic_release + 6 semantic_start + 6 terminal_failure +
+  1 budget_authorization；**6/6 消耗，budget 再次耗尽**）——与 start10 记录一致，本轮未触碰；
+  002/003/005 sha256 与冻结值一致；`workspaces/ backend/ frontend/` 零修改；
+  /tmp 探针文件（含失败轮次泄漏目录）已全部删除。
+- 结论：defect 8 修复 **PASS**，无新缺陷、无回归。修复可提交；**下一 start（start11）需新的用户
+  budget 授权**（第二批 6 start 已耗尽）。

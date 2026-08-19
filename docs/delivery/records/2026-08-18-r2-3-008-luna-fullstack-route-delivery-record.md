@@ -664,3 +664,29 @@
   Action/next step：defect 8 回 requirement_developer 窄修复（candidate 消费查询 plan 非法的
   typed/可修订处理；不得改动 retrieval gate 的 bare-local-name 契约本身）；Round 11 复测。
   **任何 start11 需用户新授权**（6/6 已耗尽）。
+
+## 2026-08-19 — defect 8 窄修复（retrieval plan 预检 + typed 防御）+ Round 11 独立复测 PASS
+
+- **修复（developer 第八轮，主代理复核后提交）**：`modeling_team/runner.py`（+66/−7）——
+  (1) `_build_protocol_candidate_receipt` 在构建任何 receipt 前，以与注册时完全相同的构造参数运行
+  `ProtocolRetrievalGate` 预检；非法 consumer_query plan 不再发 receipt，而是记
+  `receipt_rejected` 标记并抛携带 `data={reason:"consumer_query_plan_invalid",detail,action}`
+  的 `AcceptanceContractError`，经 capability 既有 success-path 机制直达 Agent 为
+  `{ok:False,error:{...}}` 结构化诊断（非 -32001）；Protocol 按指引走 typed conflict →
+  Modeling 完整修订 `required_paths` 为裸局部名 → 新候选重验。(2)
+  `_active_protocol_candidate` 的 conflict 前置集合扩为 `{"receipt","receipt_rejected"}`，
+  仅放开该修订回路；其余拒绝全部不变。(3) `_observe_formal_candidate_delivery` 对
+  `register_accepted_candidate` 包 `AcceptanceContractError` →
+  `_latch_formal_candidate_failure("platform-contract","accepted-candidate-registration-rejected")`
+  + typed `TeamConfigurationError`——start10 的未分类 exit-2 路径（含手工 exact receipt 绕过）
+  不可能再现。新增 `modeling_team/tests/test_r23008_retrieval_plan_gate.py`（5 tests）。
+  `_extract_plan` bare-local-name 契约、transport 单次接受、defect-7 replay、003 路径零改动。
+- **验证**：main agent 与 tester 独立各跑 full suite → **926 passed / 1 skipped / 302 subtests**
+  （R10 基线 921 + 新 5）；compileall / ruff / `git diff --check` 干净；backend/frontend 零改动。
+- **Round 11 独立复测（requirement_tester，同 test plan append-only）**：实现审查 + 5/5 新测试
+  + 独立探针（capability endpoint 直达 shape、标记不闭合 revision 循环、`receipt_rejected`
+  下全部防御仍在、gate 预检先于 digest 注册 fail-closed、latched 终态证据落盘）→
+  **PASS，无新缺陷、无回归**；账本 27 事件未触碰。
+- **Decision**：修复随本轮提交。**第二批 6 start 已全部消耗——start11 需用户新授权**；
+  未获授权前不开跑，替代路径为以 R1（Luna 下 Examiner children 无 live 验证）为显式残留
+  关闭本需求。

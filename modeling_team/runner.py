@@ -47,6 +47,10 @@ from .acceptance import (
     CoordinatorPhaseController,
     RunnerAcceptanceCarrier,
 )
+from .protocol_retrieval_gate import (
+    ProtocolRetrievalGate,
+    ProtocolRetrievalGateError,
+)
 from .preflight import (
     normalize_scope_for_contract,
     run_existing_scope_preflight,
@@ -2266,7 +2270,13 @@ class TeamRunner:
         previous_response = self._protocol_candidate_responses.get(delivery_id)
         if previous_response == "conflict":
             raise TeamConfigurationError("typed candidate response was already built")
-        if response_kind == "conflict" and previous_response != "receipt":
+        if response_kind == "conflict" and previous_response not in {
+            "receipt",
+            # R2.3-008 start10: a plan-rejected receipt attempt completed the
+            # same Runner-owned mechanical binding step, so the typed conflict
+            # path stays open for exactly that revision loop.
+            "receipt_rejected",
+        }:
             raise TeamConfigurationError(
                 "typed candidate conflict requires the canonical receipt first"
             )
@@ -2311,6 +2321,38 @@ class TeamRunner:
                 validate_r23003_candidate_declarations(candidate)
             except ValueError as exc:
                 raise TeamConfigurationError(str(exc)) from exc
+        # R2.3-008 start10: run the exact registration-time retrieval-plan
+        # validation before any receipt is issued.  An illegal consumer_query
+        # plan previously surfaced only inside accepted-candidate registration,
+        # after Protocol had already delivered a receipt, as an untyped
+        # exception that burned the whole run.  Here the same rejection is a
+        # structured success-path diagnostic the Protocol Agent can act on by
+        # building a typed conflict, so Modeling receives one revisable
+        # complete-revision request instead of a dead run.
+        try:
+            ProtocolRetrievalGate(
+                candidate,
+                candidate_revision=identity.candidate_revision,
+                candidate_digest=identity.candidate_digest,
+            )
+        except ProtocolRetrievalGateError as exc:
+            # Mark the delivery as a completed-but-rejected binding attempt so
+            # the typed conflict builder (which requires a prior receipt
+            # attempt) stays available for the revision loop.
+            self._protocol_candidate_responses[delivery_id] = "receipt_rejected"
+            raise AcceptanceContractError(
+                "typed candidate receipt gate rejected the consumer_query retrieval plan",
+                data={
+                    "reason": "consumer_query_plan_invalid",
+                    "detail": str(exc),
+                    "action": (
+                        "do not retry this call and do not send any accepted "
+                        "receipt; build a typed candidate conflict with a "
+                        "stable conflict_code and this detail, then send only "
+                        "its conflict_json"
+                    ),
+                },
+            ) from exc
         try:
             receipt = build_candidate_receipt(candidate)
         except ProtocolRetrievalFallbackError as exc:
@@ -2629,7 +2671,12 @@ class TeamRunner:
                         "translation cannot proceed, call protocol_build_candidate_conflict with exactly the same "
                         "protocol_id and delivery_id plus stable conflict_code and concrete conflict_detail, then "
                         "send only its unchanged conflict_json with expects_reply=true. If translation succeeds, "
-                        "send only the unchanged receipt_json with expects_reply=false. Every candidate or revision "
+                        "send only the unchanged receipt_json with expects_reply=false. If the receipt capability "
+                        "returns structuredContent {ok: false, error: {reason: consumer_query_plan_invalid, ...}}, "
+                        "its retrieval-plan rejection is final for that exact candidate: do not retry the capability "
+                        "and never send an accepted receipt; follow the error's action field and build the typed "
+                        "conflict with a stable conflict_code and that detail so Modeling receives one complete "
+                        "revision request. Every candidate or revision "
                         "gets exactly one of receipt_json or conflict_json, never both, with reply_to_delivery_id set "
                         "to the original delivery_id. The typed capability never sends Team Transport; it permits "
                         "one conflict immediately after that receipt build, before either response is sent. A "
@@ -3198,11 +3245,23 @@ class TeamRunner:
                     str(getattr(delivery, "delivery_id", "")), identity.candidate_digest
                 )
             if result == "accepted" and identity is not None and self.acceptance is not None:
-                self.acceptance.register_accepted_candidate(
-                    candidate_revision=identity.candidate_revision,
-                    candidate_digest=identity.candidate_digest,
-                    candidate=self._candidate_progress.candidate,
-                )
+                try:
+                    self.acceptance.register_accepted_candidate(
+                        candidate_revision=identity.candidate_revision,
+                        candidate_digest=identity.candidate_digest,
+                        candidate=self._candidate_progress.candidate,
+                    )
+                except AcceptanceContractError as exc:
+                    # R2.3-008 start10: a rejected accepted-candidate
+                    # registration is a typed platform-contract terminal
+                    # failure with evidence and one cleanup pass, never an
+                    # unclassified exception that escapes the run loop.
+                    self._latch_formal_candidate_failure(
+                        "platform-contract", "accepted-candidate-registration-rejected"
+                    )
+                    raise TeamConfigurationError(
+                        f"accepted candidate registration failed: {exc}"
+                    ) from exc
             if self._candidate_platform_gate is not None:
                 if result in {"candidate", "revision", "conflict"}:
                     self._candidate_platform_gate.close(
