@@ -249,3 +249,66 @@
 - **R1–R7 全部 PASS**；独立全量 970/1/302 与开发方申报一致。
 - R8（真实运行演练）未执行——未获用户 start 授权，按计划保留；R9 收尾归主 agent。
 - 临时测试文件 `modeling_team/tests/test_r23009_independent_round1_tmp.py` 已在轮次结束后删除（清理规则）。
+
+---
+
+## R8 真实运行演练记录（2026-08-20，主 agent 执行；用户已授权三次 start）
+
+预算授权：用户 2026-08-19 授权三次 start（R8 验证）。账本
+`workspaces/modeling-runs/.r2-3-009-start-ledger.jsonl`；run 根目录
+`workspaces/modeling-runs/<run-id>/`。
+
+### start1（r23009-luna-20260820-start1）
+
+- freeze 17:04:24Z，semantic_start 17:04:32；T3 兜底超时 terminal_failure
+  （collaboration/routing，run-fallback-timeout）18:43:29，`budget_refund` 18:43:32。
+- 语义层未到达验收；失败层为运行推进阻塞（未复现 defect 9/10/11 场景细节，见 run 根证据）。
+
+### start2（r23009-luna-20260820-start2）
+
+- freeze 18:47:34Z。**首次在 R2.3-009 活动运行上完成全部语义落地**：5 个 stage batch 全部
+  apply_atomic 成功、SHACL validation conforms、reasoning consistent、3 条治理检索 query 全部
+  matched、两个显式 unknown 保留。
+- 自修闭环真实触发并通过：issue-1（apply_atomic `idempotency_conflict`）→ coordinator 暂停 →
+  owner 经 FIFO 下发 guidance（mode-bound key：plan key 只服务 dry_run，apply 用 plan key +
+  字面 `-apply` 后缀；lease 重取）→ 同 epoch/线程恢复 → 继续完成全部 5 stage 落地。
+- 唯一失败层：验收 cq-001 轮 BLOCKED（runtime-infrastructure）——platform examiner 两次
+  （首次 + 唯一一次同输入重试）耗尽 10 步推理上限（`runtime-budget`），source examiner 不受影响。
+  无 Agent 终态 → T3 20:22:16 结算，`budget_refund` 20:22:20。
+- 窄修复：`_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS` 10→20 + 3 个回归测试
+  （test_r23009_examiner_step_budget.py），commit `080f551`。
+
+### start3（r23009-luna-20260820-start3）
+
+- freeze 20:24:28Z（baseline 含 080f551）。两轮冻结基线 owner 答复经 FIFO 正常闭环：
+  delivery-4（cross-release output meaning）与 delivery-7（B no-score behavior）均判定
+  not-confirmed，以显式 unknown 保留进候选。
+- 候选 `r23008-candidate-1`（digest 6a1fc934…）protocol 接受；5 stage 全部落地、session 完成。
+- 新失败层（platform-contract）：ordinary-retrieval gate 在
+  `bCurrentlyConsumesPublishedBehavior` 路径上观察到两条不同 frozen tuple
+  （首次 limit/context_limit=1 与自修重跑 20）后 fail-closed（"changed its frozen query tuple"）。
+  已观察记录不可移除 → Agent 侧结构性不可修复（违背 R2.3-009 自修目标）。
+- issue-1（21:00:59，platform_repair）→ owner guidance 确认缺陷并指示保留证据、停止重试、
+  以 blocked 收场；protocol `report_task_result` 被 Broker 拒绝（`missing_modeling_handoff`：
+  terminal result requires terminal handoffs）→ Agent-blocked 终态同样被该关卡阻断，T3 是唯一结算。
+- T3 22:02:33 结算（collaboration/routing），`budget_refund` 22:02:36。run 根
+  TERMINAL_FAILURE_CLEANED；临时 admin key `r23009-start3-temp` 已撤销、key 文件已删除。
+- 窄修复：frozen-tuple 冲突降级为 receipt warning（每条 tuple 组的链仍完整校验，
+  最早完成链被绑定）+ 3 个回归测试，commit `57556ab`。
+
+### R8 判定（截至 2026-08-20）
+
+- **未通过（保持开放）**：三次 start 均未到达真实 cq-001 验收 verdict。两次 live 证据驱动的
+  平台窄修复（080f551 examiner 步数预算；57556ab 检索 tuple 冲突）已合入并通过全量
+  984 passed / 1 skipped / 302 subtests。
+- 预算核算：3 次授权 start 全部以 T3 收场 → 3 条 `budget_refund`；净消耗 0。下一次 start
+  需用户重新授权。
+- 自修机制 live 证据（R8 判定项）：运行全程无 validator 直接 kill（终态均由 T3 兜底达成）；
+  issue 暂停/恢复、FIFO owner 答复、evidence 完整性三次均成立。
+- 实测暴露的遗留缺陷（记录待 R9 处置）：
+  1. T3 terminal evidence 强制 `mutation_state: "zero-mutation"`，语义已落地时标签失实
+     （runner.py `_run_fallback_terminal_evidence` + start_ledger.py:966/976 形状校验）。
+  2. handoff 被阻时 Broker 拒绝 `report_task_result`（terminal requires handoffs），
+     剥夺了「Agent 报告 blocked」这一更快的终态路径。
+  3. acceptance.py:1843-1844 死分支（R7 复核已记录）。
+  4. T1/T2/T3 时长参数未经真实运行标定（start3 实测 T3 在暂停排除后精确于 5400 活跃秒触发）。
