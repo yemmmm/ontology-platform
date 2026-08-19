@@ -765,3 +765,31 @@
   上报路径受阻则 outer stop + guarded ledger recovery，start10 先例）。
 - **start12 展望**：携带 defect-7/8/9 修复 + required_paths/min_count 两轮预防指引；候选内部
   一致性（探针 vs shape）仍取决于 Luna 建模输出，已由 Round 13 指引覆盖。
+
+## 2026-08-19 — start11 终局：typed platform-contract terminal failure（defect 9 + settle 顺序死锁）
+
+- **终局路径**：issue-6 guidance 后 protocol 依令报告 terminal blocked，但 Team Transport 两次
+  拒绝（`missing_modeling_handoff`：modeling 必须先报告终态）；coordinator 自 09:06 后未再向
+  modeling 派发回合，且无超时机制打破循环——settle 顺序死锁。Host 执行 outer `stop`：
+  确定性清理完成（state `CLEANED`；acceptance `runner-abort-before-settlement` aborted、
+  凭据销毁、zero_child_residue；run 内全部 scoped keys revoked；secrets 目录销毁）。
+  scope 判定为 `owned_project_preserved`——"non-empty scope is not Runner-deletable"：
+  start11 已实际 apply 全部建模 stage，project `47e00fcf…` 作为活证据按设计保留（与
+  start10 的 deleted-empty 不同，后者 apply 前崩溃）。
+- **账本**：stop 路径不写 terminal_failure——guarded recovery 补记
+  `terminal_failure(classification=platform-contract, complete_modeling_quality_result=False)`
+  （guard 确认末条为 semantic_start）；账本现 31 事件、7 semantic_starts、7 terminal_failures
+  （第三批 1/3 已消耗，2 个剩余）。
+- **密钥卫生**：gate temp key `r23008-start11-temp` 已 revoke（200）+ 401 验证；key value
+  文件已删除；run root 818 文件 secret 模式扫描 0 命中（exact-value 扫描因先删 value 文件
+  改用模式扫描，run 内 scoped keys 已由 cleanup 全量 revoke 且证据仅含 digest）。
+- **start11 成果（保留证据）**：Luna 下首个被接受的 formal candidate（`r23008-candidate-3`，
+  经两轮 conflict/revision）；class/property/entity/relation/shape 五 stage dry_run+apply 原子
+  完成；validation/reasoning gates 通过；governed retrieval 各链完成（lexical 回退 + context
+  continuation 翻页）；六个 cooperative issue 全部按合同处理。未达成：acceptance handoff
+  （defect 9 阻塞）→ R1（Luna 下两个 fresh Examiner children）仍未 live 验证。
+- **§4 R1–R8 判定（start11）**：R1 未达成（无 Examiner children）；R2–R5 按"结局 settled 或
+  retryable terminal failure 均不影响判定"评估——typed terminal failure + 确定性清理 +
+  账本闭合 = 路由/终态层行为符合合同（R2 建模路由 PASS、R3 协作/issue 路由 PASS、R4 平台
+  合同失败为 typed 且可归因 PASS、R5 清理/账本 PASS）；R6–R8（evidence 保留、无明文密钥、
+  预算纪律）PASS。R1 留待 start12。
