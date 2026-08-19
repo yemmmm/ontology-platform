@@ -629,3 +629,38 @@
 - **Decision**：修复随本轮提交；按 Priority L0 立即消耗最后 1 个授权 start（start10）执行
   R2.3-008 §4 R1–R8 路由/终态验证（`--enable-outer-input-fifo`，同一冻结纪律；R1 的
   Examiner children 尚无 live 验证记录）。
+
+## 2026-08-19 — start10（第 6/6 个授权 start）：defect 7 修复 live 生效，新 defect 8（untyped crash）终止
+
+- **Run**：`r23008-luna-20260819-start10`，freeze `2026-08-19T00:06:00Z`，`--enable-outer-input-fifo`，
+  账本 reservation 00:06:04 / semantic_start 00:06:10。工作树基线 commit `ddb4c3e`（defect 7 修复
+  + Round 10 PASS 已提交）。
+- **FIFO 外问闭环再次 live 生效**：两个外问均按冻结基线即时携带转发——delivery-4（B↔C 版本选择）
+  → “B 消费 C Version 2（quality_rating），latest published 绑定”（用户 start9 决定）；delivery-6
+  （B 无分数行为）→ “断言 explicit unknown `unknown-b-no-score-behavior`，不得发明行为”（005 基线
+  owner answer 2）。owner-answer 两条均带 owner_answer_id/release_id 入册。
+- **完整候选 delivery-8（r23008-candidate-1）**：29 items（含 currentlyConsumesOutput
+  workflow-b→quality-rating-field、unknown-b-no-score-behavior、consumer_query×2），语义与 005
+  基线一致；formal-candidate-progress 记 `candidate`/awaiting_receipt。
+- **defect 7 修复 live 验证**：protocol 00:08:29 首次 `protocol_build_candidate_receipt` ok=true，
+  00:08:33 **重复调用同一 capability → ok=true 幂等 replay**（start9 的致死序列原样存活，
+  capability-calls.jsonl 两行 ok=true）。
+- **新缺陷（defect 8，platform-contract）**：protocol 交付 receipt 后，acceptance
+  `register_accepted_candidate` → `ProtocolRetrievalGate._extract_plan` 抛
+  "consumer_query required_path has no candidate binding:
+  workflow-b--currentlyConsumesOutput-->quality-rating-field"——Luna modeling agent 将
+  consumer_query `required_paths` 写成完整路径表达式串（`subject--predicate-->object`），而平台契约
+  （及 005 已验收基线）要求**裸谓词局部名**（`_extract_plan` 的 `_local_name(path) != path` 检查
+  对不含 `#`/`/`/`:` 的路径表达式串不拦截，落入 declarations 键（谓词局部名）缺失 → 该错误在
+  receipt 已交付后以 **untyped 异常击穿整run**（exit 2），无 quarantine、无 revision/redrive、
+  无 typed 终态分类。触发面为 modeling 质量偏差，失败层为平台契约：非法候选必须以 typed、可修订
+  的 invalid-response 呈现，不能在 receipt 交付后以未分类异常烧掉整个 run。
+- **Cleanup/卫生**：crash 路径确定性清理完整——state `CLEANED`、scope `deleted-empty`、residual
+  全零、acceptance aborted/zero_child_residue、全部 key non-active；temp admin key
+  `r23008-start10-temp`（id `c7d4e64f…`）revoke 200 / 复验 401；digest-only 扫描 796 保留文件
+  **0 plaintext 命中**。账本 guarded recovery 关闭（platform-contract，27 事件：
+  **6/6 消耗，授权 start 全部用尽**）。
+- 定层：**platform-contract**（untyped crash on malformed candidate retrieval plan）；
+  Action/next step：defect 8 回 requirement_developer 窄修复（candidate 消费查询 plan 非法的
+  typed/可修订处理；不得改动 retrieval gate 的 bare-local-name 契约本身）；Round 11 复测。
+  **任何 start11 需用户新授权**（6/6 已耗尽）。

@@ -842,3 +842,19 @@
   /tmp/r10probe 探针文件已删除。
 - 结论：defect 7 修复 **PASS**，无新缺陷、无回归。修复可提交；消耗最后 1 个 start（start10）
   前 main agent 自行决策（余量 1，无需新授权），按实验规则该 start 应在修复后尽快用于真实建模。
+
+### Round 11 前置记录（2026-08-19，start10 终态：defect 7 修复 live 验证通过，defect 8 击穿）
+
+- start10（6/6 授权 start，freeze 00:06:00Z，FIFO 启用）live 证据：FIFO 外问闭环两次携带转发
+  （delivery-4 → C Version 2/quality_rating；delivery-6 → explicit unknown
+  unknown-b-no-score-behavior）；完整候选 r23008-candidate-1（29 items）经 formal 验证；
+  **defect 7 修复 live 生效**（protocol 重复 `protocol_build_candidate_receipt` → ok=true 幂等
+  replay，capability-calls.jsonl 00:08:29/00:08:33 两行）。
+- **defect 8（platform-contract，待修复）**：protocol 交付 receipt 后
+  `ProtocolRetrievalGate._extract_plan` 因 modeling 将 consumer_query `required_paths` 写成
+  路径表达式串（契约与 005 基线为裸谓词局部名）抛错，以 untyped 异常击穿整 run（exit 2），
+  无 quarantine/revision/typed 终态。修复后需 Round 11 独立复测：a) 非法 required_paths 走
+  typed invalid-response/revision 路径而非 crash；b) 合法裸局部名候选（005 基线格式）retrieval
+  gate 全链路不受影响；c) 921+ 回归全绿。
+- 账本 27 事件（6/6 消耗），start10 已以 platform-contract 关闭；卫生全零（key revoke+401，
+  796 文件 0 命中）。**start11 需用户新授权。**
