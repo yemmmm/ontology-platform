@@ -248,6 +248,17 @@ class TeamRunner:
         self._nudges_sent = 0
         self._issues_opened = 0
         self._last_responsible_agent: str | None = None
+        # R2.3-009 timeout tiers: one cooperative issue per stall cause, the
+        # run-level fallback active clock, and the issue-pending exclusion it
+        # must subtract while a cooperative issue pauses the candidate gate.
+        self._stall_issue_opened = False
+        self._feedback_issue_keys: set[tuple[str, str, str]] = set()
+        self._run_fallback_started: float | None = None
+        self._issue_pending_started: float | None = None
+        self._issue_pending_elapsed = 0.0
+        self._run_fallback_timeout_seconds = 5400.0
+        self._candidate_redrive_limit = 3
+        self._feedback_escalation_repeat = 3
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -578,6 +589,9 @@ class TeamRunner:
                 clock=self.monotonic_clock,
                 timeout_seconds=config.profile.parameters.get(
                     "candidate_progress_timeout_seconds", 120.0
+                ),
+                redrive_limit=config.profile.parameters.get(
+                    "candidate_redrive_limit", 3
                 ),
                 allow_post_receipt_revision=(formal_contract is not None),
                 # R2.3-008 start7: keep the envelope gate aligned with
@@ -1598,6 +1612,17 @@ class TeamRunner:
                     self._finalize_runtime_failure(failures)
                     return
             self._state("RUNNING", identities=[item.agent_id for item in identities])
+            # R2.3-009 T3: the run-level fallback clock starts only after the
+            # whole role Runtime came up, and excludes later issue-pending time.
+            parameters = self.run.configuration.profile.parameters
+            self._candidate_redrive_limit = int(parameters.get("candidate_redrive_limit", 3))
+            self._feedback_escalation_repeat = int(
+                parameters.get("feedback_escalation_repeat", 3)
+            )
+            self._run_fallback_timeout_seconds = float(
+                parameters.get("run_fallback_timeout_seconds", 5400.0)
+            )
+            self._run_fallback_started = self.monotonic_clock()
         except Exception:
             failures = self._consume_runtime_failures()
             if failures:
@@ -2259,7 +2284,7 @@ class TeamRunner:
             and not post_receipt_conflict
         ) or progress.paused:
             raise TeamConfigurationError("typed candidate is not awaiting a Protocol response")
-        if progress.timeout_latched or progress.terminal_failure_latched:
+        if progress.terminal_failure_latched:
             raise TeamConfigurationError("typed candidate progress is terminal")
         try:
             candidate_digest, semantic_digest = formal_candidate_digests(candidate)
@@ -3125,7 +3150,6 @@ class TeamRunner:
             or progress is None
             or self._formal_failure_latched
             or progress.paused
-            or progress.timeout_latched
             or progress.terminal_failure_latched
         ):
             return
@@ -3474,6 +3498,8 @@ class TeamRunner:
         key = (issue_class, code, responsible_agent)
         self._feedback_counts[key] = self._feedback_counts.get(key, 0) + 1
         self._last_responsible_agent = responsible_agent
+        if self._feedback_counts[key] >= getattr(self, "_feedback_escalation_repeat", 3):
+            self._escalate_repeated_feedback(issue_class, code, responsible_agent, detail)
         self._append_evidence(
             "validation-feedback",
             {
@@ -3676,13 +3702,25 @@ class TeamRunner:
         self.record_terminal_failure(classification, False)
 
     def _check_formal_candidate_progress(self) -> None:
+        """R2.3-009 T1: a candidate deadline miss is a bounded nudge, not a kill."""
+
         roles = self._formal_candidate_roles()
         if roles is None or self._candidate_progress is None:
+            return
+        if self._candidate_progress.terminal_failure_latched:
             return
         issue_ledger = self._issue_ledger()
         if issue_ledger is not None and issue_ledger.pending:
             return
-        self._candidate_progress.check_deadline(now=self.monotonic_clock())
+        if not self._candidate_progress.check_deadline(now=self.monotonic_clock()):
+            return
+        self._nudge_formal_candidate()
+
+    def _nudge_formal_candidate(self) -> None:
+        progress = self._candidate_progress
+        if progress is None:
+            return
+        self._maybe_redrive_formal_candidate()
 
     def _maybe_redrive_formal_candidate(self) -> None:
         roles = self._formal_candidate_roles()
@@ -3693,6 +3731,10 @@ class TeamRunner:
             return
         _, protocol = roles
         if not self._candidate_progress.redrive_ready(now=self.monotonic_clock()):
+            # R2.3-009 T2: when the bounded nudge budget is spent without a
+            # typed response, escalate cooperatively instead of killing.
+            if self._candidate_progress.redrive_exhausted:
+                self._escalate_candidate_stall()
             return
         attribution = self._candidate_progress.original_runtime_attribution
         if attribution is None:
@@ -3710,6 +3752,7 @@ class TeamRunner:
         self._candidate_progress.mark_redrive_dispatch(
             receipt, now=self.monotonic_clock()
         )
+        self._nudges_sent += 1
         self._append_evidence(
             "formal-candidate-progress",
             {
@@ -3718,8 +3761,169 @@ class TeamRunner:
                 "state": self._candidate_progress.state,
                 "dispatch_mode": getattr(receipt, "mode", None),
                 "turn_id": getattr(receipt, "turn_id", None),
-                "redrive_count": 1,
+                "redrive_count": (
+                    self._candidate_progress.pending.redrive_count
+                    if self._candidate_progress.pending is not None
+                    else None
+                ),
+                "redrive_limit": getattr(self, "_candidate_redrive_limit", 3),
             },
+        )
+
+    def _open_cooperative_issue(
+        self,
+        *,
+        reason_code: str,
+        summary: str,
+        error: str,
+    ) -> bool:
+        """Open one cooperative issue as the Coordinator (T2 escalation)."""
+
+        if not self.run:
+            return False
+        ledger = self._issue_ledger()
+        if ledger is not None and ledger.pending:
+            return False
+        report_issue = getattr(self.transport, "report_issue", None)
+        if not callable(report_issue):
+            self._append_evidence(
+                "issue-escalation-unavailable",
+                {"reason_code": reason_code, "detail": "issue escalation is unavailable"},
+            )
+            return False
+        try:
+            coordinator = self._issue_coordinator_id()
+        except TeamConfigurationError:
+            self._append_evidence(
+                "issue-escalation-unavailable",
+                {"reason_code": reason_code, "detail": "issue Coordinator is unavailable"},
+            )
+            return False
+        try:
+            issue = report_issue(
+                coordinator,
+                category="protocol_guidance",
+                summary=summary,
+                failing_operation="formal candidate progress",
+                error=error,
+                mutation_state="zero-mutation",
+                requested_action="provide guidance so the run can resume",
+            )
+        except Exception as exc:
+            self._append_evidence(
+                "issue-escalation-unavailable",
+                {"reason_code": reason_code, "detail": str(exc)},
+            )
+            return False
+        self._issues_opened += 1
+        self._append_evidence(
+            "issue-escalation",
+            {
+                "reason_code": reason_code,
+                "issue_id": issue.get("issue_id") if isinstance(issue, dict) else None,
+                "reporter": "runner",
+                "category": "protocol_guidance",
+                "summary": summary,
+            },
+        )
+        return True
+
+    def _escalate_candidate_stall(self) -> None:
+        """R2.3-009 T2: bounded nudges exhausted, escalate cooperatively once."""
+
+        if getattr(self, "_stall_issue_opened", False):
+            return
+        progress = self._candidate_progress
+        if progress is None:
+            return
+        redrive_count = progress.pending.redrive_count if progress.pending is not None else None
+        opened = self._open_cooperative_issue(
+            reason_code="candidate-stall",
+            summary=(
+                "formal candidate progress stalled: nudges exhausted without a "
+                "valid Protocol receipt"
+            ),
+            error=(
+                f"redrive_count={redrive_count}; "
+                f"redrive_limit={getattr(self, '_candidate_redrive_limit', 3)}; "
+                f"nudges_sent={getattr(self, '_nudges_sent', 0)}"
+            ),
+        )
+        if opened:
+            self._stall_issue_opened = True
+
+    def _escalate_repeated_feedback(
+        self, issue_class: str, code: str, responsible_agent: str, detail: str
+    ) -> None:
+        """R2.3-009 T2: the same typed feedback repeated too often escalates."""
+
+        key = (issue_class, code, responsible_agent)
+        if key in getattr(self, "_feedback_issue_keys", set()):
+            return
+        opened = self._open_cooperative_issue(
+            reason_code="repeated-validation-feedback",
+            summary=(
+                f"typed feedback {issue_class}/{code} to {responsible_agent} repeated "
+                f"{self._feedback_counts.get(key, 0)} times without repair"
+            ),
+            error=detail,
+        )
+        if opened:
+            self._feedback_issue_keys = getattr(self, "_feedback_issue_keys", set()) | {key}
+
+    def _track_issue_pending(self) -> None:
+        """Keep the T3 issue-pending exclusion aligned with the issue ledger."""
+
+        ledger = self._issue_ledger()
+        pending = bool(ledger is not None and ledger.pending)
+        clock = getattr(self, "monotonic_clock", None) or time.monotonic
+        started = getattr(self, "_issue_pending_started", None)
+        if pending and started is None:
+            self._issue_pending_started = clock()
+        elif not pending and started is not None:
+            self._issue_pending_elapsed = (
+                getattr(self, "_issue_pending_elapsed", 0.0) + max(0.0, clock() - started)
+            )
+            self._issue_pending_started = None
+
+    def _check_run_fallback_timeout(self) -> None:
+        """R2.3-009 T3: the only run-level timeout latch left in the Runner."""
+
+        if getattr(self, "_formal_failure_latched", False):
+            return
+        started = getattr(self, "_run_fallback_started", None)
+        if started is None:
+            return
+        if self.acceptance is not None and getattr(self.acceptance, "is_settled", False):
+            return
+        now = (getattr(self, "monotonic_clock", None) or time.monotonic)()
+        excluded = getattr(self, "_issue_pending_elapsed", 0.0)
+        pending_started = getattr(self, "_issue_pending_started", None)
+        if pending_started is not None:
+            excluded += max(0.0, now - pending_started)
+        active = max(0.0, now - started - excluded)
+        timeout_seconds = getattr(self, "_run_fallback_timeout_seconds", 5400.0)
+        if active < timeout_seconds:
+            return
+        self._append_evidence(
+            "run-fallback-timeout",
+            {
+                "active_seconds": active,
+                "timeout_seconds": timeout_seconds,
+                "nudges_sent": getattr(self, "_nudges_sent", 0),
+                "issues_opened": getattr(self, "_issues_opened", 0),
+                "last_responsible_agent": getattr(self, "_last_responsible_agent", None),
+                "feedback_counts": {
+                    f"{issue_class}:{code}:{agent}": count
+                    for (issue_class, code, agent), count in sorted(
+                        getattr(self, "_feedback_counts", {}).items()
+                    )
+                },
+            },
+        )
+        self._latch_formal_candidate_failure("collaboration/routing", "run-fallback-timeout")
+        raise FormalCandidateProgressTimeout(
+            f"run fallback timeout exceeded {active:.0f} active seconds"
         )
 
     def _issue_coordinator_id(self) -> str:
@@ -4299,11 +4503,9 @@ class TeamRunner:
         failures = self._consume_runtime_failures()
         if failures:
             return self._finalize_runtime_failure(failures)
-        try:
-            self._check_formal_candidate_progress()
-        except FormalCandidateProgressTimeout:
-            self._latch_formal_candidate_failure("collaboration/routing", "candidate-progress-timeout")
-            raise
+        self._track_issue_pending()
+        self._check_run_fallback_timeout()
+        self._check_formal_candidate_progress()
         output: list[dict[str, Any]] = []
         self._handle_issue_events(output)
         if self._issue_abort_requested:
@@ -4629,12 +4831,13 @@ class TeamRunner:
                     )
                 self._maybe_redrive_formal_candidate()
                 self._check_formal_candidate_progress()
-        except FormalCandidateProgressTimeout:
-            self._latch_formal_candidate_failure("collaboration/routing", "candidate-progress-timeout")
-            raise
-        except FormalCandidateRoutingError:
-            self._latch_formal_candidate_failure("collaboration/routing", "candidate-redrive-exhausted")
-            raise
+        except FormalCandidateRoutingError as exc:
+            # The redrive quota guard is defensive (redrive_ready already bounds
+            # dispatches); a hit is recorded, never a run kill by itself.
+            self._append_evidence(
+                "formal-candidate-progress",
+                {"event": "redrive-guard-rejected", "detail": str(exc)},
+            )
         except FormalCandidatePlatformContractError:
             self._latch_formal_candidate_failure("platform-contract", "turn-binding-missing")
             raise

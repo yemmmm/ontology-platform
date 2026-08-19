@@ -179,7 +179,6 @@ class ReceiptIdempotencyTests(unittest.TestCase):
         self.assertEqual(second["receipt"], first["receipt"])
         self.assertEqual(second["receipt_json"], first["receipt_json"])
         self.assertEqual(second["candidate"], first["candidate"])
-        self.assertFalse(progress.timeout_latched)
         self.assertFalse(progress.terminal_failure_latched)
 
     def test_repeat_in_redrive_sent_state_replays_receipt(self) -> None:

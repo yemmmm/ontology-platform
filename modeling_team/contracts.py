@@ -66,6 +66,12 @@ _FORMAL_PROFILE_IDS = frozenset(
 )
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
 _CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0
+# R2.3-009 timeout tiers: bounded nudge quota, cooperative-escalation repeat
+# threshold, and the run-level fallback active-clock budget.
+_CANDIDATE_REDRIVE_LIMIT_PARAMETER = "candidate_redrive_limit"
+_FEEDBACK_ESCALATION_REPEAT_PARAMETER = "feedback_escalation_repeat"
+_RUN_FALLBACK_TIMEOUT_PARAMETER = "run_fallback_timeout_seconds"
+_RUN_FALLBACK_TIMEOUT_MAX = 24 * 3600.0
 
 
 def _validate_candidate_progress_timeout(value: object) -> None:
@@ -77,6 +83,22 @@ def _validate_candidate_progress_timeout(value: object) -> None:
         raise TeamConfigurationError("candidate progress timeout is invalid") from exc
     if not math.isfinite(normalized) or not 0 < normalized <= _CANDIDATE_PROGRESS_TIMEOUT_MAX:
         raise TeamConfigurationError("candidate progress timeout is invalid")
+
+
+def _validate_positive_int_parameter(name: str, value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 1:
+        raise TeamConfigurationError(f"{name} is invalid")
+
+
+def _validate_run_fallback_timeout(value: object) -> None:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise TeamConfigurationError("run fallback timeout is invalid")
+    try:
+        normalized = float(value)
+    except (OverflowError, TypeError, ValueError) as exc:
+        raise TeamConfigurationError("run fallback timeout is invalid") from exc
+    if not math.isfinite(normalized) or not 0 < normalized <= _RUN_FALLBACK_TIMEOUT_MAX:
+        raise TeamConfigurationError("run fallback timeout is invalid")
 
 
 class TeamConfigurationError(ValueError):
@@ -432,6 +454,32 @@ def load_profile(
             )
         _validate_candidate_progress_timeout(
             data["parameters"][_CANDIDATE_PROGRESS_TIMEOUT_PARAMETER]
+        )
+    if _CANDIDATE_REDRIVE_LIMIT_PARAMETER in data["parameters"]:
+        if profile_id not in _FORMAL_PROFILE_IDS:
+            raise TeamConfigurationError(
+                "candidate redrive limit is restricted to the formal Profile"
+            )
+        _validate_positive_int_parameter(
+            _CANDIDATE_REDRIVE_LIMIT_PARAMETER,
+            data["parameters"][_CANDIDATE_REDRIVE_LIMIT_PARAMETER],
+        )
+    if _FEEDBACK_ESCALATION_REPEAT_PARAMETER in data["parameters"]:
+        if profile_id not in _FORMAL_PROFILE_IDS:
+            raise TeamConfigurationError(
+                "feedback escalation repeat is restricted to the formal Profile"
+            )
+        _validate_positive_int_parameter(
+            _FEEDBACK_ESCALATION_REPEAT_PARAMETER,
+            data["parameters"][_FEEDBACK_ESCALATION_REPEAT_PARAMETER],
+        )
+    if _RUN_FALLBACK_TIMEOUT_PARAMETER in data["parameters"]:
+        if profile_id not in _FORMAL_PROFILE_IDS:
+            raise TeamConfigurationError(
+                "run fallback timeout is restricted to the formal Profile"
+            )
+        _validate_run_fallback_timeout(
+            data["parameters"][_RUN_FALLBACK_TIMEOUT_PARAMETER]
         )
     if strict:
         required_edges = {

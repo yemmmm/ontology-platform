@@ -10,8 +10,6 @@ from modeling_team.candidate_progress import (
     FORMAL_CANDIDATE_KIND,
     FormalCandidateError,
     FormalCandidateProgress,
-    FormalCandidateProgressTimeout,
-    FormalCandidateRoutingError,
     canonical_digest,
     formal_candidate_digests,
 )
@@ -512,9 +510,9 @@ def test_r23003_post_receipt_revision_rejects_same_revision_and_accepts_next() -
     ) == "revision"
 
 
-def test_turn_barrier_allows_one_redrive_then_exhausts() -> None:
+def test_turn_barrier_allows_bounded_redrives_then_reports_exhaustion() -> None:
     now = [0.0]
-    progress = _progress(lambda: now[0])
+    progress = FormalCandidateProgress(clock=lambda: now[0], redrive_limit=1)
     progress.observe_delivery(
         _delivery("modeling", "protocol", json.dumps(_candidate()), "d1"),
         modeling_agent_id="modeling", protocol_agent_id="protocol", run_id="run-1", protocol_thread_id="thread-1"
@@ -525,12 +523,17 @@ def test_turn_barrier_allows_one_redrive_then_exhausts() -> None:
     assert progress.redrive_ready()
     progress.mark_redrive_dispatch(RuntimeDispatchReceipt("start", "turn-2"))
     progress.observe_states([AgentState("protocol", "idle", "turn-2", "turn-2")], protocol_agent_id="protocol")
-    with pytest.raises(FormalCandidateRoutingError):
-        progress.redrive_ready()
-    assert progress.state == "exhausted"
+    # R2.3-009 T1: the quota end is a boolean signal for cooperative
+    # escalation, never a raise and never a terminal state.
+    assert progress.redrive_ready() is False
+    assert progress.redrive_exhausted is True
+    assert progress.state not in progress._TERMINAL_STATES
+    # The quota guard stays purely defensive: the channel is never re-armed
+    # past the limit, so no further dispatch can be marked.
+    assert progress.redrive_ready() is False
 
 
-def test_timeout_is_injected_and_latched_after_dispatch_deadline() -> None:
+def test_deadline_miss_reports_a_boolean_without_latching() -> None:
     now = [0.0]
     progress = _progress(lambda: now[0])
     progress.observe_delivery(
@@ -538,14 +541,24 @@ def test_timeout_is_injected_and_latched_after_dispatch_deadline() -> None:
         modeling_agent_id="modeling", protocol_agent_id="protocol", run_id="run-1", protocol_thread_id="thread-1"
     )
     progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    now[0] = 119.9
+    assert progress.check_deadline() is False
     now[0] = 120.0
-    with pytest.raises(FormalCandidateProgressTimeout):
-        progress.check_deadline()
+    assert progress.check_deadline() is True
+    # The query is repeatable and never mutates progress into a terminal state.
+    assert progress.check_deadline() is True
+    assert progress.state == "awaiting_receipt"
 
 
-def _started_progress(now: list[float]) -> tuple[FormalCandidateProgress, dict[str, object]]:
+def _started_progress(
+    now: list[float], *, redrive_limit: int | None = None
+) -> tuple[FormalCandidateProgress, dict[str, object]]:
     candidate = _candidate()
-    progress = _progress(lambda: now[0])
+    progress = (
+        FormalCandidateProgress(clock=lambda: now[0], redrive_limit=redrive_limit)
+        if redrive_limit is not None
+        else _progress(lambda: now[0])
+    )
     assert progress.observe_delivery(
         _delivery("modeling", "protocol", json.dumps(candidate), "d1"),
         modeling_agent_id="modeling",
@@ -584,51 +597,39 @@ def _observe_late(
     )
 
 
-def test_exhausted_progress_ignores_late_receipt_and_conflict() -> None:
+def test_redrive_quota_end_still_accepts_the_late_receipt() -> None:
     now = [0.0]
-    progress, candidate = _started_progress(now)
+    progress, candidate = _started_progress(now, redrive_limit=1)
     progress.observe_states([AgentState("protocol", "idle", "turn-1", "turn-1")], protocol_agent_id="protocol")
     assert progress.redrive_ready()
     progress.mark_redrive_dispatch(RuntimeDispatchReceipt("start", "turn-2"))
     progress.observe_states([AgentState("protocol", "idle", "turn-2", "turn-2")], protocol_agent_id="protocol")
-    with pytest.raises(FormalCandidateRoutingError):
-        progress.redrive_ready()
-    identity = progress.identity
-    conflict = build_candidate_conflict(candidate, "late", "late response")
-    assert _observe_late(progress, _receipt_for(progress), "late-receipt") is None
-    assert _observe_late(progress, conflict, "late-conflict") is None
-    assert progress.state == "exhausted"
-    assert progress.identity == identity
+    assert progress.redrive_exhausted is True
+    # R2.3-009: the nudge budget end is not terminal; the late typed
+    # response still completes the channel instead of burning the run.
+    assert _observe_late(progress, _receipt_for(progress), "late-receipt") == "accepted"
+    assert progress.state == "complete"
 
 
-def test_receipt_timeout_ignores_late_receipt_and_conflict_and_latches_deadline() -> None:
+def test_deadline_missed_receipt_is_still_accepted() -> None:
     now = [0.0]
     progress, candidate = _started_progress(now)
     now[0] = 120.0
-    with pytest.raises(FormalCandidateProgressTimeout):
-        progress.check_deadline()
-    identity = progress.identity
+    assert progress.check_deadline() is True
+    assert _observe_late(progress, _receipt_for(progress), "late-receipt") == "accepted"
+    assert progress.state == "complete"
+    # A late conflict for the already-completed channel stays ignored.
     conflict = build_candidate_conflict(candidate, "late", "late response")
-    assert _observe_late(progress, _receipt_for(progress), "late-receipt") is None
     assert _observe_late(progress, conflict, "late-conflict") is None
-    assert progress.state == "awaiting_receipt"
-    assert progress.identity == identity
-    assert progress.timeout_latched is True
-    with pytest.raises(FormalCandidateProgressTimeout):
-        progress.check_deadline()
-    assert progress.timeout_latched is True
 
 
-def test_revision_timeout_ignores_late_complete_revision_and_conflict() -> None:
+def test_deadline_missed_revision_is_still_accepted() -> None:
     now = [0.0]
     progress, candidate = _started_progress(now)
     conflict = build_candidate_conflict(candidate, "needs_revision", "revise item")
     assert _observe_late(progress, conflict, "conflict-1") == "conflict"
-    identity = progress.identity
-    assert identity is not None
     now[0] = 120.0
-    with pytest.raises(FormalCandidateProgressTimeout):
-        progress.check_deadline()
+    assert progress.check_deadline() is True
     revised = _candidate("rev-2")
     revision = _delivery(
         "modeling",
@@ -643,11 +644,8 @@ def test_revision_timeout_ignores_late_complete_revision_and_conflict() -> None:
         protocol_agent_id="protocol",
         run_id="run-1",
         protocol_thread_id="thread-1",
-    ) is None
-    assert _observe_late(progress, conflict, "late-conflict") is None
-    assert progress.state == "awaiting_revision"
-    assert progress.identity == identity
-    assert progress.timeout_latched is True
+    ) == "revision"
+    assert progress.state == "awaiting_receipt"
 
 
 def test_terminal_failure_latch_ignores_all_late_progress() -> None:

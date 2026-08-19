@@ -321,6 +321,7 @@ class FormalCandidateProgress:
         timeout_seconds: float = 120.0,
         allow_post_receipt_revision: bool = False,
         integer_revisions: bool = False,
+        redrive_limit: int = 3,
     ):
         self.clock = clock
         self.timeout_seconds = float(timeout_seconds)
@@ -328,6 +329,13 @@ class FormalCandidateProgress:
         # revision sequence; every other formal task must deliver the safe
         # stable string identifier that candidate registration requires.
         self._integer_revisions = bool(integer_revisions)
+        # R2.3-009 T1: the deadline is a nudge, not a kill.  The number of
+        # candidate redrives/nudges is bounded by this limit (profile
+        # parameter ``candidate_redrive_limit``, default 3); after it the
+        # Runner escalates to a cooperative issue (T2) instead of latching.
+        if not isinstance(redrive_limit, int) or isinstance(redrive_limit, bool) or redrive_limit < 1:
+            raise ValueError("redrive_limit must be a positive integer")
+        self.redrive_limit = redrive_limit
         # R2.3-003 existing-scope runs have one additional, explicitly
         # bounded transition: a receipt accepted before a live binding read
         # may be invalidated by a typed zero-mutation conflict.  R2.3-005 and
@@ -335,7 +343,6 @@ class FormalCandidateProgress:
         self._allow_post_receipt_revision = bool(allow_post_receipt_revision)
         self.pending: _PendingCandidate | None = None
         self._invalidated_original_delivery_ids: set[str] = set()
-        self._timeout_latched = False
         self._terminal_failure_latched = False
 
     _TERMINAL_STATES = frozenset({"complete", "exhausted", "terminal_failure"})
@@ -355,10 +362,6 @@ class FormalCandidateProgress:
     @property
     def original_runtime_attribution(self) -> CandidateRuntimeAttribution | None:
         return self.pending.attribution if self.pending is not None else None
-
-    @property
-    def timeout_latched(self) -> bool:
-        return self._timeout_latched
 
     @property
     def terminal_failure_latched(self) -> bool:
@@ -516,7 +519,6 @@ class FormalCandidateProgress:
         if (
             pending is None
             or pending.state != "complete"
-            or self._timeout_latched
             or self._terminal_failure_latched
         ):
             return False
@@ -570,7 +572,7 @@ class FormalCandidateProgress:
         expects_reply = getattr(delivery, "expects_reply", False)
         reply_to = getattr(delivery, "reply_to_delivery_id", None)
         value = self._decode_candidate(getattr(delivery, "text", None))
-        if self._timeout_latched or self._terminal_failure_latched:
+        if self._terminal_failure_latched:
             return None
         if self.pending is not None and self.pending.state in self._TERMINAL_STATES:
             if not self._post_receipt_conflict_envelope(delivery, value):
@@ -732,7 +734,7 @@ class FormalCandidateProgress:
         bound response with an invalid payload and is therefore included.
         """
 
-        if self._timeout_latched or self._terminal_failure_latched or self.pending is None:
+        if self._terminal_failure_latched or self.pending is None:
             return False
         if self.pending.state in self._TERMINAL_STATES and not (
             self._allow_post_receipt_revision and self.pending.state == "complete"
@@ -872,44 +874,55 @@ class FormalCandidateProgress:
                 return True
         return False
 
-    def check_deadline(self, *, now: float | None = None) -> None:
-        if self._timeout_latched:
-            raise FormalCandidateProgressTimeout(
-                f"formal candidate progress exceeded {self.timeout_seconds:.0f}s"
-            )
+    def check_deadline(self, *, now: float | None = None) -> bool:
+        """Report whether the candidate channel exceeded its progress deadline.
+
+        R2.3-009 T1: the deadline no longer latches or raises.  The Runner
+        uses the boolean to deliver one bounded nudge/redrive to the
+        responsible Agent; late receipts and revisions stay acceptable.
+        """
+
         if self.pending is None or self.pending.state in self._TERMINAL_STATES:
-            return
+            return False
         if self.pending.paused:
-            return
+            return False
         accepted_at = self.pending.accepted_at
         if accepted_at is None:
-            return
+            return False
         current = self.clock() if now is None else now
-        if self.pending.active_elapsed + (current - accepted_at) >= self.timeout_seconds:
-            self._timeout_latched = True
-            raise FormalCandidateProgressTimeout(
-                f"formal candidate progress exceeded {self.timeout_seconds:.0f}s"
-            )
+        return self.pending.active_elapsed + (current - accepted_at) >= self.timeout_seconds
 
     def redrive_ready(self, *, now: float | None = None) -> bool:
-        self.check_deadline(now=now)
         if self.pending is None or not self.pending.turn_barrier_complete:
             return False
-        if self.pending.state == "awaiting_receipt" and self.pending.redrive_count == 0:
-            return True
-        if self.pending.state == "redrive_sent":
-            self.pending.state = "exhausted"
-            raise FormalCandidateRoutingError(
-                "formal candidate redrive completed without a valid receipt or conflict"
-            )
+        if self.pending.state == "redrive_sent" and self.pending.redrive_count < self.redrive_limit:
+            # The previous nudge completed without a typed response; the
+            # channel may be nudged again while the limit allows it.
+            self.pending.state = "awaiting_receipt"
+            self.pending.turn_barrier_complete = False
+            return False
+        if self.pending.state == "awaiting_receipt":
+            return self.pending.redrive_count < self.redrive_limit
         return False
+
+    @property
+    def redrive_exhausted(self) -> bool:
+        """R2.3-009 T2: every bounded nudge was consumed without progress."""
+
+        pending = self.pending
+        return bool(
+            pending is not None
+            and pending.turn_barrier_complete
+            and pending.state in {"awaiting_receipt", "redrive_sent"}
+            and pending.redrive_count >= self.redrive_limit
+        )
 
     def mark_redrive_dispatch(self, receipt: Any, *, now: float | None = None) -> None:
         if self.pending is None or self.pending.state != "awaiting_receipt":
             return
-        if self.pending.redrive_count != 0:
-            raise FormalCandidateRoutingError("formal candidate redrive was attempted more than once")
-        self.pending.redrive_count = 1
+        if self.pending.redrive_count >= self.redrive_limit:
+            raise FormalCandidateRoutingError("formal candidate redrive limit was exceeded")
+        self.pending.redrive_count += 1
         self.pending.turn_barrier_complete = False
         self.pending.dispatch_mode = None
         self.pending.dispatch_turn_id = None

@@ -439,9 +439,8 @@ class IssueEscalationTests(unittest.TestCase):
         self.assertTrue(progress.paused)
         self.assertFalse(progress.redrive_ready(now=now[0]))
         progress.resume(now=now[0])
-        progress.check_deadline(now=1001)
-        with self.assertRaises(TimeoutError):
-            progress.check_deadline(now=1002)
+        self.assertFalse(progress.check_deadline(now=1001))
+        self.assertTrue(progress.check_deadline(now=1002))
 
     def test_unknown_write_cannot_resume_via_guidance(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
