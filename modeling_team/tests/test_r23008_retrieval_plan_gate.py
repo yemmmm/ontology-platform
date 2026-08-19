@@ -16,9 +16,9 @@ Two narrow guards, both reusing the exact registration-time validator:
    ``{ok: False, error: {reason: consumer_query_plan_invalid, detail, action}}``
    so the sanctioned conflict/revision loop delivers one complete revised
    candidate instead of a burned run.
-2. Registration failures at the accepted-receipt observation are latched as a
-   typed ``platform-contract`` terminal failure instead of an unclassified
-   exception.
+2. Registration failures at the accepted-receipt observation are R2.3-009
+   A-class typed feedback to Modeling with a reopen for one strictly newer
+   revision, instead of a burned run.
 
 The bare-local-name contract itself, ``_extract_plan``, transport
 single-acceptance semantics, and the defect-7 idempotent replay are unchanged.
@@ -41,7 +41,7 @@ from modeling_team.candidate_progress import (
     FORMAL_CANDIDATE_KIND,
     FormalCandidateProgress,
 )
-from modeling_team.contracts import TeamConfigurationError, repository_root
+from modeling_team.contracts import repository_root
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.base import RuntimeDelivery, RuntimeDispatchReceipt
 
@@ -118,6 +118,22 @@ def _delivery(
         expects_reply=expects_reply,
         reply_to_delivery_id=reply_to,
     )
+
+
+class _RecordingAdapter:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, RuntimeDelivery]] = []
+
+    def send_message(self, recipient: str, delivery: RuntimeDelivery):
+        self.sent.append((recipient, delivery))
+        return RuntimeDispatchReceipt("start", f"turn-{len(self.sent)}")
+
+
+def _evidence(runner: TeamRunner, name: str) -> list[dict[str, object]]:
+    path = runner.run.root / "evidence" / f"{name}.jsonl"  # type: ignore[union-attr]
+    if not path.exists():
+        return []
+    return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line]
 
 
 class RetrievalPlanGateTests(unittest.TestCase):
@@ -259,11 +275,15 @@ class RetrievalPlanGateTests(unittest.TestCase):
         self.assertIs(replay.get("idempotent_replay"), True)
         self.assertEqual(replay["receipt_json"], built["receipt_json"])
 
-    def test_registration_rejection_after_accepted_receipt_is_typed_terminal(self) -> None:
+    def test_registration_rejection_after_accepted_receipt_is_typed_feedback(self) -> None:
         # Reproduce the start10 crash path: an exact hand-built receipt bytes
         # bypass the receipt builder, so registration is the first plan check.
+        # R2.3-009 A-class: the rejection is typed feedback to Modeling plus a
+        # reopen for one strictly newer revision, not a terminal failure.
         runner, progress, delivery_id = self._runner(_illegal_candidate())
-        self._carrier(runner)
+        carrier = self._carrier(runner)
+        adapter = _RecordingAdapter()
+        runner.adapter = adapter
         identity = progress.identity
         assert identity is not None
         receipt = {
@@ -272,20 +292,39 @@ class RetrievalPlanGateTests(unittest.TestCase):
             "semantic_digest": identity.semantic_digest,
             "candidate_digest": identity.candidate_digest,
         }
-        with self.assertRaisesRegex(
-            TeamConfigurationError, "accepted candidate registration failed"
-        ) as raised:
-            runner._observe_formal_candidate_delivery(
-                _delivery(
-                    "protocol",
-                    "modeling",
-                    json.dumps(receipt),
-                    "receipt-1",
-                    reply_to=delivery_id,
-                )
+        result = runner._observe_formal_candidate_delivery(
+            _delivery(
+                "protocol",
+                "modeling",
+                json.dumps(receipt),
+                "receipt-1",
+                reply_to=delivery_id,
             )
-        self.assertIsInstance(raised.exception.__cause__, AcceptanceContractError)
-        self.assertTrue(progress.terminal_failure_latched)
+        )
+        self.assertIsNone(result)
+        self.assertFalse(progress.terminal_failure_latched)
+        self.assertFalse(runner._formal_failure_latched)
+        self.assertEqual(progress.state, "awaiting_revision")
+        self.assertTrue(progress.pending.receipt_invalidated)  # type: ignore[union-attr]
+        self.assertIsNone(carrier._accepted_candidate_identity)
+        conflicts = [
+            delivery
+            for recipient, delivery in adapter.sent
+            if recipient == "modeling" and delivery.kind == "candidate-conflict"
+        ]
+        self.assertEqual(len(conflicts), 1)
+        self.assertEqual(
+            json.loads(conflicts[0].text)["conflict_code"], "consumer-query-plan-invalid"
+        )
+        issues = _evidence(runner, "observed-issue")
+        self.assertEqual(issues[-1]["code"], "consumer-query-plan-invalid")
+        self.assertEqual(issues[-1]["responsible_agent"], "modeling")
+        feedback = _evidence(runner, "validation-feedback")
+        self.assertTrue(feedback and feedback[-1]["retry_allowed"] is True)
+        reopened = _evidence(runner, "formal-candidate-progress")
+        self.assertTrue(
+            any(entry.get("event") == "registration-rejected-reopened" for entry in reopened)
+        )
 
 
 if __name__ == "__main__":  # pragma: no cover

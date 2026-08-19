@@ -500,6 +500,39 @@ class FormalCandidateProgress:
             return current > previous
         return False
 
+    def reopen_after_registration_rejection(self) -> bool:
+        """Migrate one complete candidate back to ``awaiting_revision``.
+
+        R2.3-009 A-class: the Runner calls this after an accepted-candidate
+        registration was rejected as Agent-controllable.  The receipt is
+        invalidated exactly like a post-receipt conflict, so the next strictly
+        newer standalone revision re-enters the normal revision gates while a
+        stale receipt for the invalidated revision can never re-complete the
+        gate.  The Runner must invalidate the acceptance-side registration in
+        the same transition (see ``invalidate_accepted_candidate``).
+        """
+
+        pending = self.pending
+        if (
+            pending is None
+            or pending.state != "complete"
+            or self._timeout_latched
+            or self._terminal_failure_latched
+        ):
+            return False
+        pending.state = "awaiting_revision"
+        # The Runner-delivered conflict notice is not a Broker delivery, so the
+        # revision arrives standalone (the defect-11 path): candidate-shaped,
+        # strictly newer, distinct digest, still gated below in observe_delivery.
+        pending.conflict_delivery_id = None
+        pending.receipt_invalidated = True
+        self._invalidated_original_delivery_ids.add(pending.identity.original_delivery_id)
+        pending.accepted_at = self.clock()
+        pending.dispatch_turn_id = None
+        pending.turn_barrier_complete = False
+        pending.redrive_count = 0
+        return True
+
     def _post_receipt_conflict_envelope(self, delivery: Any, value: Any) -> bool:
         pending = self.pending
         return bool(

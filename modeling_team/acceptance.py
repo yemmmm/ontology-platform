@@ -637,21 +637,51 @@ def validate_page_chain(refs: Iterable[Mapping[str, Any]]) -> None:
 
 def validate_modeling_receipt(value: Any, *, run_id: str, project_id: str, ontology_id: str, slice_revision: str, state_digest: str, ticket_digest: str) -> dict[str, Any]:
     fields = {"stage", "status", "receipt_digest", "run_id", "project_id", "ontology_id", "slice_revision", "model_state_digest", "evidence_ref"}
+
+    def _receipt_error(message: str, code: str, remediation: str) -> None:
+        # R2.3-009 A-class channel 1: the modeling dry-run/apply receipts are
+        # built by an Agent tool call, so the rejection returns a typed
+        # {code, detail, remediation} payload instead of an opaque error.
+        _error(
+            message,
+            data={"code": code, "detail": message, "remediation": remediation},
+        )
+
     data = _require_exact_keys(value, fields, "modeling receipt")
     if data["stage"] not in MODELING_STAGES:
-        _error("modeling receipt stage is invalid")
+        _receipt_error(
+            "modeling receipt stage is invalid",
+            "modeling-receipt-stage-invalid",
+            "Use one of the five modeling stages: dry-run, apply, readback, validation, reasoning.",
+        )
     required_status = {"dry-run": "validated", "apply": "applied", "readback": "complete", "validation": "succeeded", "reasoning": "succeeded"}[data["stage"]]
     if data["status"] != required_status:
-        _error("modeling receipt status is not successful for its stage")
+        _receipt_error(
+            "modeling receipt status is not successful for its stage",
+            "modeling-receipt-status-invalid",
+            "Rebuild the receipt from the canonical platform response for this stage.",
+        )
     _safe_digest(data["receipt_digest"], "modeling receipt digest")
     if data["receipt_digest"] != modeling_receipt_digest(data):
-        _error("modeling receipt digest does not match canonical preimage")
+        _receipt_error(
+            "modeling receipt digest does not match canonical preimage",
+            "modeling-receipt-digest-mismatch",
+            "Recompute receipt_digest over the canonical receipt preimage after any field change.",
+        )
     for field, expected in (("run_id", run_id), ("project_id", project_id), ("ontology_id", ontology_id), ("slice_revision", slice_revision), ("model_state_digest", state_digest)):
         if data[field] != expected:
-            _error(f"modeling receipt {field} mismatch")
+            _receipt_error(
+                f"modeling receipt {field} mismatch",
+                "modeling-receipt-binding-mismatch",
+                f"Bind {field} to the current run ticket value ({expected!r}) and rebuild the receipt.",
+            )
     ref = validate_typed_evidence_ref(data["evidence_ref"], expected_ticket=ticket_digest, expected_state=state_digest)
     if ref["type"] != "platform_read":
-        _error("modeling receipt evidence must be platform_read")
+        _receipt_error(
+            "modeling receipt evidence must be platform_read",
+            "modeling-receipt-evidence-invalid",
+            "Reference the platform_read evidence record produced by the stage tool call.",
+        )
     return data
 
 
@@ -1750,17 +1780,40 @@ class RunnerAcceptanceCarrier:
             "candidate_digest": candidate_digest,
         }
         if (
-            self.task_id == "r2-3-003-existing-scope-incremental"
-            and self._accepted_candidate_identity is not None
+            self._accepted_candidate_identity is not None
             and self._accepted_candidate_identity != record
         ):
             previous = self._accepted_candidate_identity
             if candidate_revision <= previous["candidate_revision"]:
-                _error("accepted candidate_revision must strictly increase for replacement")
+                _error(
+                    "accepted candidate_revision must strictly increase for replacement",
+                    data={
+                        "reason": "replacement_revision_not_newer",
+                        "code": "replacement-revision-not-newer",
+                        "detail": "accepted candidate_revision must strictly increase for replacement",
+                        "remediation": "Send one strictly newer complete revision for the invalidated receipt.",
+                    },
+                )
             if candidate_digest == previous["candidate_digest"]:
-                _error("accepted candidate_digest must change for replacement")
+                _error(
+                    "accepted candidate_digest must change for replacement",
+                    data={
+                        "reason": "replacement_digest_reused",
+                        "code": "replacement-digest-reused",
+                        "detail": "accepted candidate_digest must change for replacement",
+                        "remediation": "The replacement must change the candidate payload, not only its label.",
+                    },
+                )
             if candidate is None:
-                _error("replacement candidate payload is required")
+                _error(
+                    "replacement candidate payload is required",
+                    data={
+                        "reason": "replacement_payload_missing",
+                        "code": "replacement-payload-missing",
+                        "detail": "replacement candidate payload is required",
+                        "remediation": "Re-register together with the complete replacement candidate payload.",
+                    },
+                )
             detached = _safe_copy(dict(candidate))
             try:
                 gate = ProtocolRetrievalGate(
@@ -1769,7 +1822,18 @@ class RunnerAcceptanceCarrier:
                     candidate_digest=candidate_digest,
                 )
             except ProtocolRetrievalGateError as exc:
-                _error(str(exc))
+                _error(
+                    str(exc),
+                    data={
+                        "reason": "ordinary_retrieval_plan_invalid",
+                        "code": "consumer-query-plan-invalid",
+                        "detail": str(exc),
+                        "remediation": (
+                            "Fix the consumer_query retrieval plan in the candidate items "
+                            "so every governed path is declarable, then send a strictly newer revision."
+                        ),
+                    },
+                )
             self._accepted_candidate_identity = record
             self._accepted_candidate = detached
             self._ordinary_retrieval_gate = gate if gate.enabled else None
@@ -1791,7 +1855,18 @@ class RunnerAcceptanceCarrier:
                             candidate_digest=candidate_digest,
                         )
                     except ProtocolRetrievalGateError as exc:
-                        _error(str(exc))
+                        _error(
+                            str(exc),
+                            data={
+                                "reason": "ordinary_retrieval_plan_invalid",
+                                "code": "consumer-query-plan-invalid",
+                                "detail": str(exc),
+                                "remediation": (
+                                    "Fix the consumer_query retrieval plan in the candidate items "
+                                    "so every governed path is declarable, then send a strictly newer revision."
+                                ),
+                            },
+                        )
                     self._ordinary_retrieval_gate = gate if gate.enabled else None
             return _safe_copy(record)
         self._accepted_candidate_identity = record
@@ -1804,10 +1879,40 @@ class RunnerAcceptanceCarrier:
                     candidate_digest=candidate_digest,
                 )
             except ProtocolRetrievalGateError as exc:
-                _error(str(exc))
+                _error(
+                    str(exc),
+                    data={
+                        "reason": "ordinary_retrieval_plan_invalid",
+                        "code": "consumer-query-plan-invalid",
+                        "detail": str(exc),
+                        "remediation": (
+                            "Fix the consumer_query retrieval plan in the candidate items "
+                            "so every governed path is declarable, then send a strictly newer revision."
+                        ),
+                    },
+                )
             self._accepted_candidate = detached
             self._ordinary_retrieval_gate = gate if gate.enabled else None
         return _safe_copy(record)
+
+    def invalidate_accepted_candidate(self) -> bool:
+        """Forget one rejected accepted-candidate registration (R2.3-009 A-class).
+
+        The Runner calls this only after ``FormalCandidateProgress`` migrated
+        the complete candidate back to ``awaiting_revision`` because the
+        registration was rejected as Agent-controllable.  Dropping the accepted
+        identity (and the candidate/gate/receipt bound to it) lets the next
+        strictly newer revision register through the first-registration path
+        instead of dying on the identity-mutation guard.
+        """
+
+        if self._accepted_candidate_identity is None:
+            return False
+        self._accepted_candidate_identity = None
+        self._accepted_candidate = None
+        self._ordinary_retrieval_gate = None
+        self._ordinary_retrieval_receipt = None
+        return True
 
     @property
     def ordinary_retrieval_receipt(self) -> dict[str, Any] | None:
@@ -1822,7 +1927,12 @@ class RunnerAcceptanceCarrier:
         if gate is None:
             _error(
                 "ordinary retrieval candidate plan is unavailable",
-                data={"reason": "ordinary_retrieval_plan_unavailable"},
+                data={
+                    "reason": "ordinary_retrieval_plan_unavailable",
+                    "code": "ordinary-retrieval-plan-unavailable",
+                    "detail": "ordinary retrieval candidate plan is unavailable",
+                    "remediation": "Register an accepted candidate whose consumer_query plan is declarable.",
+                },
             )
         try:
             state = self._observed_model_state(None)
@@ -1830,7 +1940,12 @@ class RunnerAcceptanceCarrier:
         except ProtocolRetrievalGateError as exc:
             _error(
                 str(exc),
-                data={"reason": "ordinary_retrieval_incomplete", "detail": str(exc)},
+                data={
+                    "reason": "ordinary_retrieval_incomplete",
+                    "code": "ordinary-retrieval-incomplete",
+                    "detail": str(exc),
+                    "remediation": "Re-run the declared governed queries to complete the evidence chain.",
+                },
             )
         existing = self._ordinary_retrieval_receipt
         if existing is not None and existing != receipt:
@@ -1972,7 +2087,19 @@ class RunnerAcceptanceCarrier:
             try:
                 self._ordinary_retrieval_gate.observe(record, target)
             except ProtocolRetrievalGateError as exc:
-                _error(str(exc))
+                _error(
+                    str(exc),
+                    data={
+                        "reason": "platform_read_observation_invalid",
+                        "code": "platform-read-observation-invalid",
+                        "detail": str(exc),
+                        "remediation": (
+                            "The platform read did not match the governed consumer_query plan. "
+                            "Re-issue the declared query with matching arguments and consume the "
+                            "returned pages without mutation."
+                        ),
+                    },
+                )
             self._try_register_ordinary_retrieval()
         return {
             key: record[key]

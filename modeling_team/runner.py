@@ -579,10 +579,7 @@ class TeamRunner:
                 timeout_seconds=config.profile.parameters.get(
                     "candidate_progress_timeout_seconds", 120.0
                 ),
-                allow_post_receipt_revision=(
-                    formal_contract is not None
-                    and formal_contract.requirement_id == "R2.3-003"
-                ),
+                allow_post_receipt_revision=(formal_contract is not None),
                 # R2.3-008 start7: keep the envelope gate aligned with
                 # candidate registration so an integer revision for any other
                 # task is a typed first-delivery rejection, not a post-gate
@@ -2253,7 +2250,6 @@ class TeamRunner:
         post_receipt_conflict = (
             response_kind == "conflict"
             and formal_contract is not None
-            and formal_contract.requirement_id == "R2.3-003"
             and progress.state == "complete"
             and self._protocol_candidate_responses.get(delivery_id) == "receipt"
             and progress.post_receipt_revision_enabled
@@ -3259,16 +3255,23 @@ class TeamRunner:
                         candidate=self._candidate_progress.candidate,
                     )
                 except AcceptanceContractError as exc:
-                    # R2.3-008 start10: a rejected accepted-candidate
-                    # registration is a typed platform-contract terminal
-                    # failure with evidence and one cleanup pass, never an
-                    # unclassified exception that escapes the run loop.
-                    self._latch_formal_candidate_failure(
-                        "platform-contract", "accepted-candidate-registration-rejected"
-                    )
-                    raise TeamConfigurationError(
-                        f"accepted candidate registration failed: {exc}"
-                    ) from exc
+                    disposition = self._classify_registration_rejection(exc)
+                    if disposition is None:
+                        # I-class (mutation / internal binding): the R2.3-008
+                        # start10 typed terminal failure with one cleanup pass.
+                        self._latch_formal_candidate_failure(
+                            "platform-contract", "accepted-candidate-registration-rejected"
+                        )
+                        raise TeamConfigurationError(
+                            f"accepted candidate registration failed: {exc}"
+                        ) from exc
+                    # R2.3-009 A-class: an Agent-controllable registration
+                    # defect is typed feedback plus a reopen for one strictly
+                    # newer revision, never a run kill.  The receipt delivery
+                    # is consumed by the reopen: no platform-gate open, no
+                    # receipt-registered wakeup for the invalidated receipt.
+                    self._handle_registration_rejected(delivery, identity, exc, disposition)
+                    return None
             if self._candidate_platform_gate is not None:
                 if result in {"candidate", "revision", "conflict"}:
                     self._candidate_platform_gate.close(
@@ -3483,6 +3486,7 @@ class TeamRunner:
                 "turn_id": getattr(receipt, "turn_id", None),
                 "detail": detail,
                 "remediation": remediation,
+                "retry_allowed": True,
             },
         )
 
@@ -3529,6 +3533,92 @@ class TeamRunner:
                     "detail": str(exc),
                 },
             )
+
+    # R2.3-009 A-class registration-rejected responsibility table (design
+    # section 3.A).  The acceptance carrier raises AcceptanceContractError;
+    # Agent-controllable rejections carry a typed ``data`` payload from the
+    # upgraded ``_error`` sites, while mutation/internal rejections stay opaque
+    # and therefore I-class fatal.
+    _REGISTRATION_REJECTION_PROTOCOL_SITES: ClassVar[frozenset[str]] = frozenset(
+        {
+            "replacement_revision_not_newer",
+            "replacement_digest_reused",
+            "replacement_payload_missing",
+        }
+    )
+    _REGISTRATION_REJECTION_MODELING_SITES: ClassVar[frozenset[str]] = frozenset(
+        {"ordinary_retrieval_plan_invalid"}
+    )
+
+    def _classify_registration_rejection(
+        self, exc: AcceptanceContractError
+    ) -> tuple[str, str, str] | None:
+        """Return ``(issue_class, code, responsible_agent)`` or None for I-class."""
+
+        roles = self._formal_candidate_roles()
+        modeling = roles[0] if roles is not None else None
+        protocol = roles[1] if roles is not None else None
+        payload = getattr(exc, "data", None)
+        reason = payload.get("reason") if isinstance(payload, Mapping) else None
+        code = payload.get("code") if isinstance(payload, Mapping) else None
+        if not isinstance(code, str) or not code:
+            # Opaque rejections are mutation/internal invariants (I-class).
+            return None
+        if reason in self._REGISTRATION_REJECTION_MODELING_SITES:
+            return ("A", code, modeling)
+        if reason in self._REGISTRATION_REJECTION_PROTOCOL_SITES:
+            return ("A", code, protocol)
+        # A typed payload that is not mutation-classified defaults to the
+        # Agent-visible defect going back to Modeling (the candidate artifact
+        # owner) rather than killing the run.
+        return ("A", code, modeling)
+
+    def _handle_registration_rejected(
+        self,
+        delivery: Any,
+        identity: Any,
+        exc: AcceptanceContractError,
+        disposition: tuple[str, str, str],
+    ) -> None:
+        issue_class, code, responsible_agent = disposition
+        self._record_observed_issue(
+            delivery,
+            issue_class=issue_class,
+            code=code,
+            responsible_agent=responsible_agent,
+            detail=str(exc),
+        )
+        reopened = bool(
+            self._candidate_progress is not None
+            and self._candidate_progress.reopen_after_registration_rejection()
+        )
+        invalidated = bool(
+            self.acceptance is not None and self.acceptance.invalidate_accepted_candidate()
+        )
+        if self._candidate_platform_gate is not None and reopened:
+            self._candidate_platform_gate.close("registration_rejected_reopen")
+        self._append_evidence(
+            "formal-candidate-progress",
+            {
+                "event": "registration-rejected-reopened",
+                "state": self._candidate_progress.state if self._candidate_progress else None,
+                "original_delivery_id": identity.original_delivery_id if identity else None,
+                "candidate_revision": identity.candidate_revision if identity else None,
+                "responsible_agent": responsible_agent,
+                "acceptance_registration_invalidated": invalidated,
+            },
+        )
+        self._deliver_formal_feedback(
+            issue_class=issue_class,
+            code=code,
+            responsible_agent=responsible_agent,
+            original_delivery_id=getattr(delivery, "delivery_id", None),
+            detail=str(exc),
+            remediation=(
+                "The accepted-candidate registration was rejected. Send one strictly newer "
+                "complete revision (distinct digest) so the run can re-register it."
+            ),
+        )
 
     def _handle_formal_response_violation(
         self,

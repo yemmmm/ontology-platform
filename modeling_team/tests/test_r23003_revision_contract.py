@@ -262,11 +262,18 @@ def test_r23005_and_default_carriers_keep_safe_string_revision_contract() -> Non
                     candidate_revision=1,
                     candidate_digest="b" * 64,
                 )
-            with pytest.raises(AcceptanceContractError, match="accepted candidate identity was mutated"):
+            # R2.3-009: the replacement branch is generalized beyond R2.3-003,
+            # so a differing record without a payload is the typed A-class
+            # replacement contract error instead of the opaque mutation kill.
+            with pytest.raises(
+                AcceptanceContractError, match="replacement candidate payload is required"
+            ) as raised:
                 carrier.register_accepted_candidate(
                     candidate_revision="revision-2",
                     candidate_digest="c" * 64,
                 )
+            assert raised.value.data is not None
+            assert raised.value.data["code"] == "replacement-payload-missing"
 
 
 def test_single_question_pass_reaches_settlement_without_next_cq_boundary() -> None:
