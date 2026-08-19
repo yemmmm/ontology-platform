@@ -803,3 +803,42 @@
   revoke 复验 401；digest-only 扫描 782 文件 0 plaintext 命中。账本 24 事件，5/6 消耗。
 - 结论：FIFO 机制闭环（start8 死锁面解除）；defect 7 回 developer 窄修复（重复 receipt 构建的
   幂等/结构化诊断面），Round 10 复测后决定最后 1 个 start。
+
+### Round 10（2026-08-19，start9 defect 7 receipt 二次构建 opaque 拒绝窄修复复测）
+
+- 测试对象：defect 7（collaboration/routing，含 platform-contract 窄缺口）修复 — 同一
+  still-answerable candidate 的重复 `protocol_build_candidate_receipt` 请求由 opaque 拒绝改为
+  字节相同幂等 replay。工作区 `32c9b0f` 未提交树，仅 `modeling_team/runner.py`（+38/−6）+
+  新增 `modeling_team/tests/test_r23008_receipt_idempotency.py`（5 tests）。
+- 实现审查：`_active_protocol_candidate` 新增 keyword-only `idempotent_receipt=False`；
+  "already built" 拒绝仅对非 replay 生效，且位于既有 conflict/terminal/foreign/paused/state
+  检查之后（replay 旁路不能绕过任何前置防御）。`_build_protocol_candidate_receipt` 先读
+  replay 标记，replay 时 canonical digest 与已注册 digest 比对，不匹配即抛
+  "typed candidate receipt replay is not byte-stable"——该检查在两处状态写入之前（fail-closed，
+  零状态突变）。replay 结果标记 `idempotent_replay: True`；startup guidance 增补 replay 语义
+  （原样重发 receipt_json、勿据此升级 issue）。
+- 新测试评估（5/5 通过，0.10s）：经真实 `RunnerAcceptanceCarrier` capability token 调用真实
+  runner builder；test 2 精确复现 start9 序列（build → quarantined 后 pending.state=redrive_sent →
+  重复调用 → replay）；test 3/4/5 分别守住 post-conflict、post-terminal、R2.3-003 整数
+  revision replay + post-receipt conflict 后拒绝。
+- 独立行为探针（15/15 通过，挂真实 R2.3-008 formal contract，非开发者 harness 复用）：
+  - (1) 首建无 `idempotent_replay` 标记；redrive 后重复调用 replay 标记为 True、receipt_json
+    逐字节相同（len=234）、registry 状态/digest 完好；
+  - (2) 篡改已注册 digest → typed "not byte-stable" 拒绝，且 digest/registry 零突变（fail-closed
+    时序确认）；(7) digest 注册缺失（del）同样 fail-closed 而非静默重建；
+  - (3) foreign/stale delivery_id 在 replay 路径仍拒绝；(4) paused（经 `pause()`）拒绝；
+    (5) terminal progress 拒绝；
+  - (6) receipt→conflict 单次构建保留，duplicate conflict 与 conflict 后 receipt 均
+    "already built" 拒绝——transport 单次接受语义未变。
+- 回归：full suite `env -u DEEPSEEK_API_KEY -u OPENAI_API_KEY PYTHONPATH=backend:. ... pytest
+  modeling_team/tests/ -q` → **921 passed / 1 skipped / 302 subtests**（与 main agent 复跑一致；
+  R9 基线 916 + 新 5）；`compileall -q` OK；`ruff check` OK；`git diff --check` 干净。
+- R2.3-003 无回归：003 integer-revision replay 保真（receipt.candidate_revision == 1 字节相同）、
+  post-receipt conflict 路径仍可用、其后 receipt 再拒绝；既有 003 conflict 流测试全部在 921 内通过。
+- 账本/证据卫生：`.r2-3-008-start-ledger.jsonl` 24 事件
+  （9 reservation + 4 presemantic_release + 5 semantic_start + 5 terminal_failure +
+  1 budget_authorization；**5/6 消耗，剩 1 start**）——与 start9 记录一致，本轮未触碰；
+  002/003/005 sha256 与冻结值一致；`workspaces/ backend/ frontend/` 零修改；
+  /tmp/r10probe 探针文件已删除。
+- 结论：defect 7 修复 **PASS**，无新缺陷、无回归。修复可提交；消耗最后 1 个 start（start10）
+  前 main agent 自行决策（余量 1，无需新授权），按实验规则该 start 应在修复后尽快用于真实建模。

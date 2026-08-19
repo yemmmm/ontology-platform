@@ -606,3 +606,26 @@
 - Action/decision: 回 requirement_developer 窄修复 defect 7（receipt 构建 capability 对重复请求的
   幂等/结构化诊断面；不改变 transport 单次接受语义）；Round 10 复测后决定是否消耗最后 1 个 start。
 - Outcome/next step: developer 缺陷修复循环（第七轮）。
+
+## 2026-08-19 — defect 7 窄修复（receipt 二次构建幂等 replay）+ Round 10 独立复测 PASS
+
+- **修复（developer 第七轮，主代理复核后提交）**：`modeling_team/runner.py`（+38/−6）——
+  `_active_protocol_candidate` 新增 keyword-only `idempotent_receipt=False`，"already built"
+  拒绝仅对非 replay 生效且位于全部既有防御（conflict/terminal/foreign/stale/paused/state）
+  之后；`_build_protocol_candidate_receipt` 对 still-answerable candidate 的重复请求走同一
+  确定性重建路径，canonical digest 与注册 digest 比对（不匹配即 fail-closed
+  "typed candidate receipt replay is not byte-stable"，检查先于任何状态写入），replay 结果标记
+  `idempotent_replay: True`；protocol startup guidance 增补 replay 语义（原样重发 receipt_json、
+  勿据此升级 issue）。新增 `modeling_team/tests/test_r23008_receipt_idempotency.py`（5 tests，
+  含 start9 精确序列 redrive_sent replay、post-conflict/post-terminal 拒绝、R2.3-003 整数
+  revision 回归）。transport 单次接受语义、capability 层 opaque `-32001`、R2.3-003
+  post-receipt conflict 路径均未改动。
+- **验证**：main agent 与 tester 独立各跑 full suite → **921 passed / 1 skipped / 302 subtests**
+  （R9 基线 916 + 新 5）；compileall / ruff / `git diff --check` 干净；backend/frontend 零改动。
+- **Round 10 独立复测（requirement_tester，同 test plan append-only）**：实现审查 + 5/5 新测试
+  + 15/15 独立行为探针（真实 R2.3-008 formal contract，含篡改 digest fail-closed、digest 注册
+  缺失 fail-closed、foreign/stale/paused/terminal 拒绝、receipt→conflict 单次构建保留）→
+  **PASS，无新缺陷、无回归**；账本 24 事件未触碰（5/6 消耗，剩 1 start）。
+- **Decision**：修复随本轮提交；按 Priority L0 立即消耗最后 1 个授权 start（start10）执行
+  R2.3-008 §4 R1–R8 路由/终态验证（`--enable-outer-input-fifo`，同一冻结纪律；R1 的
+  Examiner children 尚无 live 验证记录）。

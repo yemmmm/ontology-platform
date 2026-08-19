@@ -2214,6 +2214,7 @@ class TeamRunner:
         delivery_id: str,
         *,
         response_kind: str,
+        idempotent_receipt: bool = False,
     ) -> tuple[dict[str, Any], Any]:
         """Resolve one live formal candidate without accepting model-supplied bytes."""
 
@@ -2269,7 +2270,16 @@ class TeamRunner:
             raise TeamConfigurationError(
                 "typed candidate conflict requires the canonical receipt first"
             )
-        if previous_response == "receipt" and response_kind == "receipt":
+        # R2.3-008 start9: a repeat receipt request for the same still-answerable
+        # candidate is an idempotent replay, not a rejection.  The receipt is a
+        # deterministic function of Runner-retained state, so the replay returns
+        # the identical canonical bytes and the Agent can deliver them as the
+        # formal reply instead of escalating an opaque -32001.
+        if (
+            previous_response == "receipt"
+            and response_kind == "receipt"
+            and not idempotent_receipt
+        ):
             raise TeamConfigurationError("typed candidate response was already built")
         return deepcopy(candidate), identity
 
@@ -2278,12 +2288,22 @@ class TeamRunner:
         protocol_id: str,
         delivery_id: str,
     ) -> dict[str, Any]:
-        """Build an exact formal receipt from Runner-retained candidate state."""
+        """Build an exact formal receipt from Runner-retained candidate state.
 
+        A repeat request for the same delivery_id while the candidate is still
+        awaiting or redriving replays the identical canonical receipt.  The
+        transport-side single-acceptance semantics are unchanged: the replay is
+        byte-stable (verified against the registered digest) and the Runner
+        still rejects requests after a conflict, terminal progress, or foreign
+        delivery IDs.
+        """
+
+        replay = self._protocol_candidate_responses.get(delivery_id) == "receipt"
         candidate, identity = self._active_protocol_candidate(
             protocol_id,
             delivery_id,
             response_kind="receipt",
+            idempotent_receipt=True,
         )
         formal_contract = formal_run_contract_for(self.run.configuration)
         if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
@@ -2304,14 +2324,22 @@ class TeamRunner:
             )
         except FormalCandidateError as exc:
             raise TeamConfigurationError("canonical candidate receipt does not match active identity") from exc
+        replay_digest = canonical_digest(normalized)
+        if replay:
+            registered_digest = self._protocol_candidate_receipt_digests.get(delivery_id)
+            if registered_digest != replay_digest:
+                raise TeamConfigurationError("typed candidate receipt replay is not byte-stable")
         self._protocol_candidate_responses[delivery_id] = "receipt"
-        self._protocol_candidate_receipt_digests[delivery_id] = canonical_digest(normalized)
-        return {
+        self._protocol_candidate_receipt_digests[delivery_id] = replay_digest
+        result = {
             "delivery_id": delivery_id,
             "candidate": candidate,
             "receipt": deepcopy(normalized),
             "receipt_json": self._canonical_bytes(normalized).decode("utf-8"),
         }
+        if replay:
+            result["idempotent_replay"] = True
+        return result
 
     def _build_protocol_candidate_conflict(
         self,
@@ -2604,8 +2632,12 @@ class TeamRunner:
                         "send only the unchanged receipt_json with expects_reply=false. Every candidate or revision "
                         "gets exactly one of receipt_json or conflict_json, never both, with reply_to_delivery_id set "
                         "to the original delivery_id. The typed capability never sends Team Transport; it permits "
-                        "one conflict immediately after that receipt build, before either response is sent, but "
-                        "rejects duplicate receipt/conflict calls, stale or foreign IDs, and terminal delivery IDs."
+                        "one conflict immediately after that receipt build, before either response is sent. A "
+                        "repeat receipt call for the same original delivery_id while that candidate is still "
+                        "awaiting its reply or redriving returns the identical canonical receipt (marked "
+                        "idempotent_replay): send that unchanged receipt_json as the formal reply; never escalate "
+                        "an issue over it. It still rejects duplicate conflict calls, receipt calls after a "
+                        "conflict was built, stale or foreign IDs, and terminal delivery IDs."
                     )
                     if is_r23003:
                         text += (
