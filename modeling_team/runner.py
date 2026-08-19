@@ -2281,9 +2281,22 @@ class TeamRunner:
             and self._protocol_candidate_responses.get(delivery_id) == "receipt"
             and progress.post_receipt_revision_enabled
         )
+        # R2.3-009 start1: after the receipt is registered the Protocol Agent
+        # still needs the retained candidate for the platform translation
+        # stage, and a pause/resume can leave the transcript copy unusable as
+        # an exact tool argument.  A read-only replay of the same receipt is a
+        # deterministic function of Runner-retained state (byte-verified against
+        # the registered digest below), so it is the authorized re-fetch path.
+        post_registration_replay = (
+            response_kind == "receipt"
+            and formal_contract is not None
+            and progress.state == "complete"
+            and self._protocol_candidate_responses.get(delivery_id) == "receipt"
+        )
         if (
             progress.state not in {"awaiting_receipt", "redrive_sent"}
             and not post_receipt_conflict
+            and not post_registration_replay
         ) or progress.paused:
             raise TeamConfigurationError("typed candidate is not awaiting a Protocol response")
         if progress.terminal_failure_latched:
@@ -2331,11 +2344,15 @@ class TeamRunner:
         """Build an exact formal receipt from Runner-retained candidate state.
 
         A repeat request for the same delivery_id while the candidate is still
-        awaiting or redriving replays the identical canonical receipt.  The
-        transport-side single-acceptance semantics are unchanged: the replay is
-        byte-stable (verified against the registered digest) and the Runner
-        still rejects requests after a conflict, terminal progress, or foreign
-        delivery IDs.
+        awaiting or redriving replays the identical canonical receipt.  After
+        the receipt has been registered (progress complete, prior response
+        receipt) the same replay remains available read-only: it re-exposes the
+        retained candidate and byte-identical receipt for the Protocol Agent's
+        platform translation stage without reopening any Team Transport reply
+        slot.  The transport-side single-acceptance semantics are unchanged:
+        the replay is byte-stable (verified against the registered digest) and
+        the Runner still rejects requests after a conflict, terminal progress,
+        or foreign delivery IDs.
         """
 
         replay = self._protocol_candidate_responses.get(delivery_id) == "receipt"
@@ -2714,7 +2731,12 @@ class TeamRunner:
                         "awaiting its reply or redriving returns the identical canonical receipt (marked "
                         "idempotent_replay): send that unchanged receipt_json as the formal reply; never escalate "
                         "an issue over it. It still rejects duplicate conflict calls, receipt calls after a "
-                        "conflict was built, stale or foreign IDs, and terminal delivery IDs."
+                        "conflict was built, stale or foreign IDs, and terminal delivery IDs. After the receipt "
+                        "for that delivery_id is registered and accepted, one further receipt call is the "
+                        "authorized read-only re-fetch for the platform translation stage: it returns the same "
+                        "retained candidate and byte-identical receipt marked idempotent_replay. Use it instead "
+                        "of transcribing the candidate from transcript text, and never re-send the replayed "
+                        "receipt_json as a new Team Transport reply."
                     )
                     if is_r23003:
                         text += (
