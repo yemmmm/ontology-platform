@@ -446,17 +446,31 @@ class ProtocolRetrievalGate:
         return data
 
     @staticmethod
-    def _validate_response_quality(data: Mapping[str, Any], *, search_mode: str) -> None:
+    def _validate_response_quality(
+        data: Mapping[str, Any], *, search_mode: str
+    ) -> list[str]:
+        """Scan response-quality signals without blocking the chain (R2.3-009 C-class).
+
+        Every quality defect -- an unmatched result status, degraded recall, or a
+        blocking warning token -- is returned as an observed warning string for
+        the receipt's ``warnings_observed`` field instead of raising.  Retrieval
+        evidence completeness is judged independently by the Examiner; only the
+        structural invariants elsewhere in this module (cursor binding, artifact
+        digest/identity, frozen query tuple) still fail closed.
+        """
+
+        warnings_observed: list[str] = []
         if data.get("result_status") != "matched":
-            raise ProtocolRetrievalGateError("retrieval response is not matched")
+            warnings_observed.append("retrieval response is not matched")
         recall = data.get("recall")
         if not isinstance(recall, Mapping) or recall.get("completeness") != "complete":
-            raise ProtocolRetrievalGateError("retrieval recall is incomplete or degraded")
+            warnings_observed.append("retrieval recall is incomplete or degraded")
         warnings = data.get("warnings", [])
         if warnings is None:
             warnings = []
         if not isinstance(warnings, list):
-            raise ProtocolRetrievalGateError("retrieval warnings are invalid")
+            warnings_observed.append("retrieval warnings are invalid")
+            return warnings_observed
         for warning in warnings:
             if not isinstance(warning, Mapping):
                 continue
@@ -464,16 +478,17 @@ class ProtocolRetrievalGate:
             message = str(warning.get("message", "")).lower()
             # ``matches_truncated`` is a normal page-level pagination signal
             # when the page advertises a valid continuation cursor.  A generic
-            # truncated/degraded/incomplete/evidence/lineage warning is not.
+            # truncated/degraded/incomplete/evidence/lineage warning is not,
+            # but it is now recorded rather than blocking.
             if code == "matches_truncated":
                 continue
             if code == "context_truncated":
                 # The platform emits ``context_truncated`` exactly when the
                 # context page exceeds ``context_limit`` and therefore carries
-                # a continuation cursor; that is the same page-level
-                # pagination signal as ``matches_truncated``.  A terminal page
-                # without a cursor keeps the warning blocking here and is also
-                # rejected by the terminal-page truncation check below.
+                # a continuation cursor; that is the same page-level pagination
+                # signal as ``matches_truncated``.  A terminal page without a
+                # cursor records the warning for the Examiner instead of
+                # blocking the chain.
                 context_page = data.get("context_page")
                 if (
                     isinstance(context_page, Mapping)
@@ -485,9 +500,9 @@ class ProtocolRetrievalGate:
                 # A lexical chain may carry an unrelated missing-evidence warning
                 # while its candidate-bound statement is fully supported; the
                 # row-level evidence/lineage checks below decide that case.  For
-                # hybrid, however, keep the conservative fallback contract.
+                # hybrid, the conservative fallback signal is recorded too.
                 if search_mode == "hybrid":
-                    raise ProtocolRetrievalGateError(
+                    warnings_observed.append(
                         f"retrieval response has blocking warning: {code or message}"
                     )
                 continue
@@ -495,9 +510,10 @@ class ProtocolRetrievalGate:
                 token in code or token in message
                 for token in ("vector_index_missing", "degraded", "incomplete", "truncated")
             ):
-                raise ProtocolRetrievalGateError(
+                warnings_observed.append(
                     f"retrieval response has blocking warning: {code or message}"
                 )
+        return warnings_observed
 
     @classmethod
     def _split_observed_chains(
@@ -788,6 +804,16 @@ class ProtocolRetrievalGate:
             "candidate_digest": self.candidate_digest,
             "model_state_digest": model_state.get("state_digest"),
             "chains": chains,
+            # R2.3-009 C-class: response-quality scan results are recorded on
+            # the receipt and judged by the independent Examiner; they never
+            # block handoff.
+            "warnings_observed": sorted(
+                {
+                    warning
+                    for chain in chains
+                    for warning in chain.get("warnings_observed", [])
+                }
+            ),
             "receipt_digest": None,
         }
         receipt["receipt_digest"] = _digest(receipt)
@@ -818,6 +844,7 @@ class ProtocolRetrievalGate:
         expected_cursor: tuple[str | None, str | None] = (None, None)
         pending_match_cursor: str | None = None
         artifact_paths: list[str] = []
+        warnings_observed: list[str] = []
         terminal = False
         for index, (record, artifact_path) in enumerate(entries):
             sequence = self._sequence(record)
@@ -849,7 +876,11 @@ class ProtocolRetrievalGate:
             ):
                 raise ProtocolRetrievalGateError("retrieval artifact digest binding is invalid")
             data = self._read_result(record, artifact_path)
-            self._validate_response_quality(data, search_mode=str(first_arguments["search_mode"]))
+            warnings_observed.extend(
+                self._validate_response_quality(
+                    data, search_mode=str(first_arguments["search_mode"])
+                )
+            )
             next_context, next_match, _truncated = self._page_cursor(data)
             rows = self._selected_rows(
                 data,
@@ -881,7 +912,9 @@ class ProtocolRetrievalGate:
                 expected_cursor = (None, None)
                 terminal = True
             if terminal and data.get("truncated") not in {False, None}:
-                raise ProtocolRetrievalGateError("retrieval terminal page is truncated")
+                # R2.3-009 C-class: a truncated terminal page is a recorded
+                # quality signal for the Examiner, not a chain blocker.
+                warnings_observed.append("retrieval terminal page is truncated")
             if index == len(entries) - 1 and not terminal:
                 raise ProtocolRetrievalGateError("retrieval chain did not reach a terminal cursor")
         if not terminal:
@@ -902,6 +935,7 @@ class ProtocolRetrievalGate:
             "ontology_id": ontology_id,
             "project_id": project_id,
             "search_mode": first_arguments["search_mode"],
+            "warnings_observed": warnings_observed,
             "binding": {
                 key: binding.get(key)
                 for key in (

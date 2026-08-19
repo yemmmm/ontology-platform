@@ -41,6 +41,9 @@ from .protocol_retrieval_gate import (
 from .r23003_contract import validate_deletion_policy
 
 
+_RETRIEVAL_QUALITY_WARNINGS_LOCK = threading.Lock()
+
+
 class AcceptanceContractError(ValueError):
     """A malformed or out-of-scope Acceptance contract must fail closed."""
 
@@ -1836,7 +1839,39 @@ class RunnerAcceptanceCarrier:
                 data={"reason": "ordinary_retrieval_receipt_mutated"},
             )
         self._ordinary_retrieval_receipt = _safe_copy(receipt)
+        warnings_observed = receipt.get("warnings_observed")
+        if isinstance(warnings_observed, list) and warnings_observed:
+            self._record_retrieval_quality_warnings(receipt, warnings_observed)
         return _safe_copy(receipt)
+
+    def _record_retrieval_quality_warnings(
+        self,
+        receipt: Mapping[str, Any],
+        warnings_observed: list[Any],
+    ) -> None:
+        """Persist C-class retrieval-quality warnings as record-only run evidence.
+
+        R2.3-009: the response-quality scan never blocks the handoff; the
+        observed warning codes are appended next to the receipt evidence so the
+        independent Examiner can judge completeness from the run record.
+        """
+
+        record = {
+            "event": "warnings_observed",
+            "candidate_revision": receipt.get("candidate_revision"),
+            "receipt_digest": receipt.get("receipt_digest"),
+            "warnings_observed": list(warnings_observed),
+        }
+        path = self.root.parent / "evidence" / "retrieval-quality-warnings.jsonl"
+        encoded = (json.dumps(record, ensure_ascii=False, sort_keys=True) + "\n").encode("utf-8")
+        try:
+            with _RETRIEVAL_QUALITY_WARNINGS_LOCK:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                with open(path, "ab") as handle:
+                    handle.write(encoded)
+        except OSError:
+            # Evidence appending must never break the retrieval event sink.
+            return
 
     def _try_register_ordinary_retrieval(self) -> None:
         """Promote a complete gate result without failing the MCP event sink early."""

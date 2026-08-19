@@ -89,10 +89,12 @@ def test_cursor_bound_context_truncated_hybrid_page_is_also_pagination(tmp_path:
     assert receipt["chains"][0]["search_mode"] == "hybrid"
 
 
-def test_terminal_context_truncated_warning_is_still_blocking(tmp_path: Path) -> None:
+def test_terminal_context_truncated_warning_is_recorded_not_blocking(tmp_path: Path) -> None:
     candidate = _candidate(paths=[("q-one", "invokesTool")])
     carrier = _carrier(tmp_path, candidate)
-    # A terminal page (no cursor) that still carries the warning is real loss.
+    # A terminal page (no cursor) that still carries the warning may be real
+    # loss.  R2.3-009 C-class: that judgment belongs to the independent
+    # Examiner, so the chain completes and the warning is recorded.
     _register_query(
         carrier,
         "invokesTool",
@@ -101,5 +103,9 @@ def test_terminal_context_truncated_warning_is_still_blocking(tmp_path: Path) ->
             warnings=[{"code": "context_truncated", "message": "Semantic context was truncated."}],
         ),
     )
-    with pytest.raises(AcceptanceContractError, match="context_truncated"):
-        carrier.validate_ordinary_retrieval()
+    receipt = carrier.validate_ordinary_retrieval()
+    assert receipt["chains"][0]["statement_ids"] == ["statement-invokesTool"]
+    assert (
+        "retrieval response has blocking warning: context_truncated"
+        in receipt["warnings_observed"]
+    )

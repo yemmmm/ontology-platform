@@ -450,7 +450,7 @@ def test_same_path_cross_cq_binding_is_rejected(tmp_path: Path) -> None:
         carrier.validate_ordinary_retrieval()
 
 
-def test_blocking_hybrid_warning_is_replaced_by_complete_lexical_chain(tmp_path: Path) -> None:
+def test_degraded_hybrid_warning_is_recorded_and_chain_completes(tmp_path: Path) -> None:
     candidate = _candidate(paths=[("q-one", "invokesTool")])
     carrier = _carrier(tmp_path, candidate)
     hybrid = _result(
@@ -461,10 +461,25 @@ def test_blocking_hybrid_warning_is_replaced_by_complete_lexical_chain(tmp_path:
     _register_query(carrier, "invokesTool", search_mode="hybrid", result=hybrid)
     _register_query(carrier, "invokesTool", search_mode="lexical")
     receipt = carrier.validate_ordinary_retrieval()
-    assert receipt["chains"][0]["search_mode"] == "lexical"
+    # R2.3-009 C-class: quality warnings never block the chain.  The completed
+    # chain carries the observed warning codes and the receipt aggregates them
+    # for the independent Examiner instead of failing the handoff.
+    assert receipt["chains"][0]["search_mode"] == "hybrid"
+    assert (
+        "retrieval recall is incomplete or degraded"
+        in receipt["chains"][0]["warnings_observed"]
+    )
+    assert (
+        "retrieval response has blocking warning: vector_index_missing"
+        in receipt["warnings_observed"]
+    )
+    warnings_path = carrier.root.parent / "evidence" / "retrieval-quality-warnings.jsonl"
+    recorded = [json.loads(line) for line in warnings_path.read_text().splitlines()]
+    assert recorded and recorded[-1]["event"] == "warnings_observed"
+    assert "retrieval recall is incomplete or degraded" in recorded[-1]["warnings_observed"]
 
 
-def test_only_degraded_chain_is_rejected(tmp_path: Path) -> None:
+def test_only_degraded_chain_builds_receipt_with_recorded_warnings(tmp_path: Path) -> None:
     candidate = _candidate(paths=[("q-one", "invokesTool")])
     carrier = _carrier(tmp_path, candidate)
     degraded = _result(
@@ -473,8 +488,9 @@ def test_only_degraded_chain_is_rejected(tmp_path: Path) -> None:
         warnings=[{"code": "degraded", "message": "incomplete recall"}],
     )
     _register_query(carrier, "invokesTool", search_mode="hybrid", result=degraded)
-    with pytest.raises(AcceptanceContractError, match="required retrieval path"):
-        carrier.validate_ordinary_retrieval()
+    receipt = carrier.validate_ordinary_retrieval()
+    assert receipt["schema_version"] == ORDINARY_RETRIEVAL_RECEIPT_SCHEMA
+    assert "retrieval recall is incomplete or degraded" in receipt["warnings_observed"]
 
 
 def test_hybrid_failure_then_lexical_chain_completes(tmp_path: Path) -> None:
