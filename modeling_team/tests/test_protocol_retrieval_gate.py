@@ -673,3 +673,55 @@ def test_legacy_carrier_without_candidate_plan_is_unchanged(tmp_path: Path) -> N
     assert carrier.ordinary_retrieval_receipt is None
     with pytest.raises(AcceptanceContractError, match="candidate plan"):
         carrier.validate_ordinary_retrieval()
+
+
+def test_repaired_re_run_with_different_limit_completes_with_recorded_conflict(
+    tmp_path: Path,
+) -> None:
+    candidate = _candidate(paths=[("q-one", "invokesTool")])
+    carrier = _carrier(tmp_path, candidate)
+    # R2.3-009 start3 (r23009-luna-20260820-start3): the degraded first chain
+    # ran with limit/context_limit=1 and the Agent's repaired re-run used 20.
+    # The earlier observation can never be removed, so the handoff must accept
+    # the complete re-run chain and record the conflict for the Examiner
+    # instead of failing closed with "changed its frozen query tuple".
+    failed_first = _result("invokesTool")
+    failed_first["structuredContent"]["data"]["primary_matches"] = []
+    failed_first["structuredContent"]["data"]["result_status"] = "no_match"
+    _register_query(
+        carrier,
+        "invokesTool",
+        result=failed_first,
+        limit=1,
+        context_limit=1,
+    )
+    _register_query(carrier, "invokesTool", limit=20, context_limit=20)
+    receipt = carrier.validate_ordinary_retrieval()
+    assert receipt["schema_version"] == ORDINARY_RETRIEVAL_RECEIPT_SCHEMA
+    assert "retrieval frozen tuple conflict: invokesTool" in receipt["warnings_observed"]
+    assert len(receipt["chains"][0]["artifact_paths"]) == 1
+
+
+def test_single_tuple_chain_does_not_record_a_conflict(tmp_path: Path) -> None:
+    candidate = _candidate(paths=[("q-one", "invokesTool")])
+    carrier = _carrier(tmp_path, candidate)
+    _register_query(carrier, "invokesTool")
+    receipt = carrier.validate_ordinary_retrieval()
+    assert not [
+        warning
+        for warning in receipt["warnings_observed"]
+        if "frozen tuple conflict" in warning
+    ]
+
+
+def test_all_conflicting_tuples_incomplete_still_fails_closed(tmp_path: Path) -> None:
+    candidate = _candidate(paths=[("q-one", "invokesTool")])
+    carrier = _carrier(tmp_path, candidate)
+    no_match = _result("invokesTool")
+    no_match["structuredContent"]["data"]["primary_matches"] = []
+    no_match["structuredContent"]["data"]["result_status"] = "no_match"
+    _register_query(carrier, "invokesTool", result=no_match, limit=1, context_limit=1)
+    _register_query(carrier, "invokesTool", result=no_match, limit=20, context_limit=20)
+    with pytest.raises(AcceptanceContractError) as excinfo:
+        carrier.validate_ordinary_retrieval()
+    assert "invokesTool" in str(excinfo.value)

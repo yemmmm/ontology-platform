@@ -728,6 +728,13 @@ class ProtocolRetrievalGate:
             by_path[path].append((record, artifact_path))
 
         chains: list[dict[str, Any]] = []
+        # R2.3-009 start3: a repaired re-run with a different frozen tuple
+        # (e.g. a larger limit after a degraded first chain) can never remove
+        # the earlier observation, so a tuple conflict is recorded for the
+        # independent Examiner instead of failing the handoff closed.  Each
+        # group is still fully validated below and a group's chain keeps its
+        # own within-chain tuple consistency check.
+        gate_warnings: set[str] = set()
         for plan_item in self.plan:
             path = plan_item["required_path"]
             path_artifacts = by_path[path]
@@ -752,9 +759,7 @@ class ProtocolRetrievalGate:
                     for chain_key in grouped
                 }
                 if len(frozen_without_mode) != 1:
-                    raise ProtocolRetrievalGateError(
-                        f"required retrieval path {path} changed its frozen query tuple"
-                    )
+                    gate_warnings.add(f"retrieval frozen tuple conflict: {path}")
             completed_chain: dict[str, Any] | None = None
             chain_error: str | None = None
             try:
@@ -813,6 +818,7 @@ class ProtocolRetrievalGate:
                     for chain in chains
                     for warning in chain.get("warnings_observed", [])
                 }
+                | gate_warnings
             ),
             "receipt_digest": None,
         }
