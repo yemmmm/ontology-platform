@@ -5669,6 +5669,11 @@ class RunnerAcceptanceCarrier:
         ]
         if self._handles:
             return False
+        # R2.3-009 start7 crash (2026-08-20): settlement readiness ran after
+        # the acceptance-stage handoff but before the first round existed;
+        # indexing rounds[0] on the empty list tore the whole run down.
+        if not rounds:
+            return False
         first_ticket = self._tickets.get(rounds[0][0])
         if not isinstance(first_ticket, Mapping):
             return False

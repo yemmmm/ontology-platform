@@ -592,6 +592,20 @@ class R23005CSettlementTests(unittest.TestCase):
             with self.assertRaisesRegex(AcceptanceContractError, "explicit model-state reader"):
                 carrier.settle()
 
+    def test_c_settlement_readiness_with_zero_rounds_returns_false(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = RunnerAcceptanceCarrier(Path(directory) / "carrier", task_id="task-r23005", acceptance_id="acceptance")
+            ticket = _two_cq_ticket("zero-rounds", "cq1")
+            carrier.bind_model_state(
+                ticket["model_state"],
+                state_reader=lambda: ticket["model_state"],
+            )
+            # R2.3-009 start7 crash (2026-08-20): settlement readiness ran
+            # after the acceptance-stage handoff but before the first round
+            # existed; empty rounds must report not-ready instead of raising
+            # IndexError and tearing the whole run down.
+            self.assertFalse(carrier.settlement_ready())
+
     def test_c_model_state_digest_rejects_arbitrary_hex_placeholder(self) -> None:
         ticket = _two_cq_ticket("digest", "cq1")
         forged = dict(ticket["model_state"])
