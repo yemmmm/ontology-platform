@@ -1084,8 +1084,43 @@ class _CodexChildResource:
         self.spec.pop("_runtime_report_sink", None)
         self.stopped = True
 
+    def _retain_child_session(self) -> None:
+        """Copy the child Codex session rollout into run evidence before teardown.
+
+        R2.3-009 (2026-08-20): the operator explicitly authorized retaining full
+        Examiner child session content in evidence, overriding the historical
+        destroy-without-trace rule, so live child-timeouts can be diagnosed from
+        the child's own conversation afterwards.  Credentials (auth cache,
+        proxy/report token files, key material) are still excluded: they are not
+        session content and serve no diagnosis.
+        """
+
+        agent = self._child_agent
+        run_root = getattr(self._adapter, "_run_root", None) if self._adapter is not None else None
+        if agent is None or not isinstance(run_root, Path):
+            return
+        target_root = run_root / "evidence" / "child-sessions"
+        sessions = Path(agent.home) / "sessions"
+        if sessions.is_dir() and not sessions.is_symlink():
+            target_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+            target = target_root / agent.agent_id
+            if target.exists():
+                shutil.rmtree(target, ignore_errors=True)
+            shutil.copytree(sessions, target)
+        for name in ("config.toml", "child-config.json", "examiner-descriptor.json", "input.json"):
+            source = Path(agent.home) / name
+            if source.is_file() and not source.is_symlink():
+                target_root.mkdir(parents=True, exist_ok=True, mode=0o700)
+                shutil.copy2(source, target_root / f"{agent.agent_id}.{name}")
+
     def destroy(self) -> None:
         self.stop()
+        try:
+            self._retain_child_session()
+        except OSError:
+            # Retention is best-effort diagnosis support; it must never block
+            # the mandatory credential teardown below.
+            pass
         private_root = self.spec.get("private_root")
         if isinstance(private_root, str) and private_root:
             path = Path(private_root)
@@ -4461,6 +4496,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if self._is_progress_notification(value):
             self._reset_activity_clock(agent)
         if isinstance(method, str):
+            # R2.3-009 (2026-08-20): the operator explicitly authorized retaining
+            # full notification payloads in run evidence, overriding the
+            # historical header-only rule, so a live Examiner child-timeout can
+            # be attributed step by step (item types plus startedAtMs/
+            # completedAtMs) after the child session itself is destroyed.
+            # ``param_keys`` stays for backward-compatible readers.
             self._append_runtime_evidence(
                 "app-server-events",
                 {
@@ -4468,6 +4509,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "method": method,
                     "has_request_id": "id" in value,
                     "param_keys": sorted(params) if isinstance(params, dict) else [],
+                    "params": params if isinstance(params, dict) else None,
                     **(
                         {"action": "decline", "decision": "decline"}
                         if method

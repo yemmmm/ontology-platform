@@ -563,6 +563,40 @@ class ExaminerStdoutPumpTests(unittest.TestCase):
             self.assertTrue(resource.destroyed)
             self.assertFalse(socket_root.exists())
 
+    def test_destroy_retains_child_session_rollout_in_evidence(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            server = _ScriptedAppServer(kind="source", post_lines=())
+            self.addCleanup(server.close)
+            resource, _adapter = _launch_with_script(kind="source", server=server, base=base)
+            agent_id = resource._child_agent.agent_id
+            home = _child_home(base)
+            rollout_dir = home / "sessions" / "2026" / "08" / "20"
+            rollout_dir.mkdir(parents=True, mode=0o700)
+            rollout = rollout_dir / "rollout-test.jsonl"
+            rollout.write_text('{"type": "session_meta"}\n', encoding="utf-8")
+            (home / "config.toml").write_text("model = \"gpt-5.6-luna\"\n", encoding="utf-8")
+            (home / "auth.json").write_text("{\"token\": \"secret\"}\n", encoding="utf-8")
+
+            resource.destroy()
+
+            retained_root = base / "evidence" / "child-sessions"
+            retained_rollout = retained_root / agent_id / "2026" / "08" / "20" / "rollout-test.jsonl"
+            self.assertEqual(
+                retained_rollout.read_text(encoding="utf-8"), '{"type": "session_meta"}\n'
+            )
+            self.assertEqual(
+                (retained_root / f"{agent_id}.config.toml").read_text(encoding="utf-8"),
+                "model = \"gpt-5.6-luna\"\n",
+            )
+            # Credentials are not session content and stay excluded.
+            auth_files = [path.name for path in retained_root.rglob("auth.json")]
+            self.assertEqual(auth_files, [])
+            self.assertTrue(resource.destroyed)
+            self.assertFalse(_child_home(base).exists())
+            server.join()
+            self.assertFalse(server._thread.is_alive())
+
     def test_startup_failure_leaves_no_pump_residue(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
