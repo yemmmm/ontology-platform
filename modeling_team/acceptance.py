@@ -3071,11 +3071,17 @@ class RunnerAcceptanceCarrier:
             "allowed_read_tools": list(canonical_platform_allowlist()),
             "modeling_receipts": receipts,
             # R2.3-009 start8/9 (2026-08-20): the live platform Examiner child
-            # needs roughly 30-75s per platform step (large context pages plus
-            # model turnaround), so the 20-step budget legitimately exceeds the
-            # old 600s wall — it was killed on time four times across two runs
-            # while the platform itself stayed healthy.  1800s still bounds a
-            # runaway child but fits verified legitimate work.
+            # was killed on time four times across two runs while the platform
+            # itself stayed healthy.  start9 evidence (app-server events plus
+            # auth-barrier monotonic anchors) shows each attempt completed only
+            # ~9-10 model inference steps in 600s — roughly 60-75s per MODEL
+            # step on the shared Luna/medium binding, matching the 75-85s/step
+            # measured for the protocol agent in the same run.  Platform reads
+            # are not the cost: the read proxy's MCP server reaches the store
+            # directly and each child issued only 1-2 read calls.  A 20-step
+            # verification therefore legitimately needs ~1400s of wall clock;
+            # 1800s still bounds a runaway child but fits verified legitimate
+            # work.
             "timeout_seconds": 1800,
             "quality_standard_ref": policy["quality_standard_ref"],
             "quality_standard_digest": policy["quality_standard_digest"],
