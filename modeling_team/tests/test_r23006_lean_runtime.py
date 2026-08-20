@@ -161,6 +161,64 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             build_source_examiner_packet(**payload)
         self.assertEqual(blocked.exception.reason, "source-missing")
 
+    def test_scoped_proxy_auto_injects_frozen_scope(self) -> None:
+        # R2.3-009 (2026-08-21): live evidence showed the Examiner child never
+        # receives ticket_digest/model_state_digest, so the proxy now injects
+        # the frozen bindings itself and rejects only explicit contradictions.
+        forwarded = []
+
+        def forward(tool, arguments, read_key):
+            forwarded.append((tool, dict(arguments)))
+            return {"items": []}
+
+        proxy = ScopedReadProxy(
+            socket_path=Path("/tmp/r23006-test-proxy-inject.sock"),
+            token="proxy-token",
+            read_key="read-key",
+            project_id="project-1",
+            ontology_id="ontology-1",
+            graph_set_id="graph-1",
+            ticket_digest="a" * 64,
+            model_state_digest="b" * 64,
+            allowed_tools=list(PLATFORM_PROXY_READ_TOOLS),
+            exact_schemas=examiner_proxy_schemas(PLATFORM_PROXY_READ_TOOLS),
+            forward=forward,
+        )
+        bare = proxy.handle({
+            "token": "proxy-token",
+            "operation": "tools/call",
+            "tool": "query_semantic_context",
+            "arguments": {"query": "release", "scope_mode": "ontologies"},
+        })
+        self.assertTrue(bare["ok"])
+        self.assertEqual(proxy.backend_calls, 1)
+        tool, arguments = forwarded[0]
+        self.assertEqual(tool, "query_semantic_context")
+        self.assertEqual(arguments["project_id"], "project-1")
+        self.assertEqual(arguments["ontology_id"], "ontology-1")
+        self.assertEqual(arguments["graph_set_id"], "graph-1")
+        self.assertEqual(arguments["ticket_digest"], "a" * 64)
+        self.assertEqual(arguments["model_state_digest"], "b" * 64)
+        self.assertEqual(arguments["ontology_ids"], ["ontology-1"])
+        # An explicit contradiction still fails closed without a backend call.
+        denied = proxy.handle({
+            "token": "proxy-token",
+            "operation": "tools/call",
+            "tool": "query_semantic_context",
+            "arguments": {"query": "release", "scope_mode": "ontologies", "ontology_id": "foreign-ontology"},
+        })
+        self.assertEqual(denied["code"], "read-scope-denied")
+        self.assertEqual(proxy.backend_calls, 1)
+        # The compact projection parameter stays an accepted optional field.
+        detail = proxy.handle({
+            "token": "proxy-token",
+            "operation": "tools/call",
+            "tool": "query_semantic_context",
+            "arguments": {"query": "release", "scope_mode": "ontologies", "context_detail": "compact"},
+        })
+        self.assertTrue(detail["ok"])
+        self.assertEqual(forwarded[1][1]["context_detail"], "compact")
+
     def test_exact_proxy_schema_rejects_extra_missing_wrong_type(self) -> None:
         schema = examiner_proxy_schemas(["query_semantic_context"])["query_semantic_context"]
         scope = {

@@ -417,6 +417,7 @@ def query_semantic_context(
             depth=request.depth,
             limit=request.limit,
             context_limit=request.context_limit,
+            context_detail=request.context_detail,
             principal=principal,
             match_cursor=request.match_cursor,
             context_cursor=request.context_cursor,

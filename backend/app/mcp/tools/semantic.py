@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from sqlalchemy import select
 
@@ -231,6 +231,7 @@ def register_semantic(server: FastMCP) -> None:
         depth: int = 1,
         limit: int = 20,
         context_limit: int = 100,
+        context_detail: Literal["full", "compact"] = "compact",
         match_cursor: str | None = None,
         context_cursor: str | None = None,
     ) -> dict[str, Any]:
@@ -247,6 +248,7 @@ def register_semantic(server: FastMCP) -> None:
                 depth=depth,
                 limit=limit,
                 context_limit=context_limit,
+                context_detail=context_detail,
                 principal=runtime_principal(),
                 match_cursor=match_cursor,
                 context_cursor=context_cursor,

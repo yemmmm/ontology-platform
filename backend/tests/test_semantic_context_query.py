@@ -1853,3 +1853,77 @@ def test_multi_expression_rejects_missing_principal(in_memory_session):
             queries=["topic"],
             depth=0,
         )
+
+
+def test_compact_context_detail_projects_related_rows_to_essentials(in_memory_session):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    rows = _candidate_rows(settings, "ontology-1")
+    store = FakeStore(rows[:1], neighbors=rows[1:])
+    service = SemanticContextQueryService(
+        in_memory_session,
+        store,
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    )
+    kwargs = dict(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        queries=["发布工作流需要哪些参数"],
+        depth=1,
+        limit=20,
+        principal=_principal(),
+    )
+
+    compact = service.query_multi(**kwargs, context_detail="compact")
+    full = service.query_multi(**kwargs)
+
+    # R2.3-009 (2026-08-21): compact keeps identity/kind/label, statement
+    # essentials, evidence status, and root-path anchors only.
+    assert compact["result_status"] == "matched"
+    assert compact["related_context"]
+    allowed_row = {"id", "kind", "label", "evidence_status", "root_paths", "data"}
+    allowed_data = {
+        "subject_label",
+        "predicate_label",
+        "predicate",
+        "object",
+        "object_label",
+        "object_type",
+    }
+    for item in compact["related_context"]:
+        assert set(item) <= allowed_row
+        assert set(item.get("data") or {}) <= allowed_data
+    facts = [
+        item
+        for item in compact["related_context"]
+        if (item.get("data") or {}).get("object") is not None
+    ]
+    assert facts, "compact projection must keep readable fact statements"
+    assert any(item["data"]["object"] == "datasetId" for item in facts)
+    assert any(item["data"].get("subject_label") == "发布工作流" for item in facts)
+    # The default projection stays unchanged for existing REST consumers.
+    assert len(full["related_context"]) == len(compact["related_context"])
+    assert any("lineage" in item for item in full["related_context"])
+    assert any("iri" in item for item in full["related_context"])
+
+
+def test_context_detail_rejects_unknown_value(in_memory_session):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    service = SemanticContextQueryService(
+        in_memory_session,
+        FakeStore([]),
+        SemanticQueryScopeResolver(in_memory_session, settings),
+    )
+    with pytest.raises(SemanticContextQueryError):
+        service.query_multi(
+            project_id="project-1",
+            scope_mode="ontologies",
+            ontology_ids=["ontology-1"],
+            queries=["发布工作流"],
+            principal=_principal(),
+            context_detail="verbose",
+        )

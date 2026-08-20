@@ -1567,6 +1567,7 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "limit": {"type": "integer", "minimum": 1, "maximum": 10},
         "context_limit": {"type": "integer", "minimum": 0, "maximum": 3},
         "match_cursor": {"type": "string"}, "context_cursor": {"type": "string"},
+        "context_detail": {"type": "string", "enum": ["full", "compact"]},
     },
     "semantic_sparql_query": {
         "scope_mode": {"type": "string", "const": "ontologies"}, "query": {"type": "string"},
@@ -1970,12 +1971,23 @@ class ScopedReadProxy:
                 "ticket_digest": self.ticket_digest,
                 "model_state_digest": self.model_state_digest,
             }
-            if any(arguments.get(key) != value for key, value in required.items()):
+            # R2.3-009 examiner diagnosis (2026-08-21): live evidence showed the
+            # Examiner child's projected input carries no ticket_digest or
+            # model_state_digest and its instructions never name the five frozen
+            # bindings, so demanding the model repeat them denied every real
+            # platform read (start8/9 left zero forwarded reads).  Scope binding
+            # is protocol mechanics the tool layer owns: inject the frozen scope
+            # here and reject only a call that explicitly contradicts it.
+            if any(
+                key in arguments and arguments[key] != value
+                for key, value in required.items()
+            ):
                 return {"ok": False, "error": "read-scope-denied", "code": "read-scope-denied", "backend_calls": 0}
+            arguments = {**required, **arguments}
             if (
                 self.exact_schemas is not None
                 and tool in {"query_semantic_context", "semantic_sparql_query"}
-                and arguments.get("ontology_ids") != [self.ontology_id]
+                and arguments.get("ontology_ids") not in (None, [self.ontology_id])
             ):
                 return {
                     "ok": False,
@@ -1983,6 +1995,12 @@ class ScopedReadProxy:
                     "code": "read-scope-denied",
                     "backend_calls": 0,
                 }
+            if (
+                self.exact_schemas is not None
+                and tool in {"query_semantic_context", "semantic_sparql_query"}
+                and arguments.get("ontology_ids") is None
+            ):
+                arguments = {**arguments, "ontology_ids": [self.ontology_id]}
             if self.exact_schemas is not None:
                 try:
                     arguments = validate_examiner_proxy_arguments(

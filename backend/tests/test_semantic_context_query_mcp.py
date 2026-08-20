@@ -293,6 +293,7 @@ def test_context_mcp_strips_unknown_shape_lineage_marker(scoped_mcp, monkeypatch
         resource_types=["concept", "fact"],
         depth=1,
         context_limit=1,
+        context_detail="full",
     )
 
     assert result["ok"] is True
@@ -533,3 +534,13 @@ def test_mcp_context_cursor_survives_service_recreation_and_keeps_bindings(
     )
     assert missing_query["ok"] is False
     assert missing_query["error_code"] == "invalid_query"
+
+
+def test_context_mcp_defaults_to_compact_related_context():
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    schema = tools["query_semantic_context"].inputSchema
+    detail = schema["properties"]["context_detail"]
+    # R2.3-009 (2026-08-21): MCP consumers (Examiner/Protocol) default to the
+    # compact related-context projection; REST keeps ``full`` as default.
+    assert detail["default"] == "compact"
+    assert detail["enum"] == ["full", "compact"]

@@ -649,6 +649,7 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
     depth: int = Field(default=1, ge=0, le=3)
     limit: int = Field(default=20, ge=1, le=100)
     context_limit: int = Field(default=100, ge=0, le=1000)
+    context_detail: Literal["full", "compact"] = "full"
     match_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
     context_cursor: str | None = Field(default=None, min_length=1, max_length=4096)
 

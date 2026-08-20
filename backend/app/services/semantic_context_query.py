@@ -202,6 +202,7 @@ class SemanticContextQueryService:
         principal: AuthPrincipal | None = None,
         match_cursor: str | None = None,
         context_cursor: str | None = None,
+        context_detail: str = "full",
     ) -> dict[str, Any]:
         """Run the R1.2-004 multi-expression Context Query pipeline.
 
@@ -209,11 +210,16 @@ class SemanticContextQueryService:
         submits one bounded embedding batch for all distinct normalized
         expressions, fuses candidates before decoration/expansion, and emits
         one response with independent match/context page state and cursors.
+        ``context_detail`` selects the ``related_context`` row projection:
+        ``compact`` keeps identity/kind/label/statement essentials/evidence
+        status/root paths only.
         """
         if principal is None:
             raise SemanticContextQueryError(
                 "A server-derived principal binding is required for Context Query"
             )
+        if context_detail not in {"full", "compact"}:
+            raise SemanticContextQueryError("context_detail must be full or compact")
         if (match_cursor is not None) and (context_cursor is not None):
             raise SemanticContextQueryError(
                 "Provide at most one of match_cursor or context_cursor"
@@ -236,6 +242,7 @@ class SemanticContextQueryService:
                 context_limit=context_limit,
                 principal=principal,
                 context_cursor=context_cursor,
+                context_detail=context_detail,
             )
         normalized_input = _normalize_input_queries(queries)
         original_queries = list(normalized_input.original)
@@ -299,6 +306,7 @@ class SemanticContextQueryService:
                 context_truncated=False,
                 match_cursor_out=None,
                 context_cursor_out=None,
+                context_detail=context_detail,
             )
 
         candidate_limit = min(5000, max(500, limit * 50))
@@ -467,6 +475,7 @@ class SemanticContextQueryService:
             context_truncated=context_truncated,
             match_cursor_out=next_match_cursor,
             context_cursor_out=next_context_cursor,
+            context_detail=context_detail,
         )
 
     def _query_anchor(
@@ -484,6 +493,7 @@ class SemanticContextQueryService:
         context_limit: int,
         principal: AuthPrincipal | None,
         context_cursor: str | None,
+        context_detail: str = "full",
     ) -> dict[str, Any]:
         """Exact-IRI mode.
 
@@ -496,6 +506,8 @@ class SemanticContextQueryService:
         _validate_context_limit(context_limit)
         if search_mode not in {"hybrid", "lexical"}:
             raise SemanticContextQueryError("search_mode must be hybrid or lexical")
+        if context_detail not in {"full", "compact"}:
+            raise SemanticContextQueryError("context_detail must be full or compact")
         selected_resource_types = set(resource_types or RESOURCE_TYPES)
         selected_assertion_types = set(assertion_types or ASSERTION_TYPES)
         scope = self.scope_resolver.resolve(
@@ -548,6 +560,7 @@ class SemanticContextQueryService:
                 context_truncated=False,
                 match_cursor_out=None,
                 context_cursor_out=None,
+                context_detail=context_detail,
             )
         candidate_fetch_limit = min(5000, max(500, context_limit * 50 + 100))
         result = self.rdf_store.query_sparql(
@@ -586,6 +599,7 @@ class SemanticContextQueryService:
                 context_truncated=False,
                 match_cursor_out=None,
                 context_cursor_out=None,
+                context_detail=context_detail,
             )
 
         decorated_primary, related_raw, root_paths_by_item = self._expand_multi_primary(
@@ -653,6 +667,7 @@ class SemanticContextQueryService:
             context_truncated=context_truncated,
             match_cursor_out=None,
             context_cursor_out=next_context_cursor,
+            context_detail=context_detail,
         )
 
     def _lexical_candidate_rows(
@@ -967,6 +982,7 @@ class SemanticContextQueryService:
         context_truncated: bool,
         match_cursor_out: str | None,
         context_cursor_out: str | None,
+        context_detail: str = "full",
     ) -> dict[str, Any]:
         decorated_primary: list[dict[str, Any]] = []
         for item in primary:
@@ -990,6 +1006,8 @@ class SemanticContextQueryService:
             key = self._identity_key(item)
             item_copy["root_paths"] = list(root_paths_by_item.get(key, []))
             decorated_related.append(item_copy)
+        if context_detail == "compact":
+            decorated_related = [_compact_related_row(row) for row in decorated_related]
         truncated = bool(matches_truncated or context_truncated)
         # The consumer already knows what it asked for.  Keep only the stable
         # echo needed by multi-expression callers and cursor binding.
@@ -1931,6 +1949,47 @@ def _public_item(item: Mapping[str, Any]) -> dict[str, Any]:
     if item.get("mapping_evidence") is not None:
         public["mapping_evidence"] = item.get("mapping_evidence")
     return {key: value for key, value in public.items() if value is not None}
+
+
+_COMPACT_RELATED_DATA_KEYS = (
+    # Statement essentials only: subject/predicate/object identity the consumer
+    # needs to read a fact or relation.  Long IRIs, evidence-id lists, lineage,
+    # warnings, and match metadata stay in the ``full`` projection.
+    "subject_label",
+    "predicate_label",
+    "predicate",
+    "object",
+    "object_label",
+    "object_type",
+)
+
+
+def _compact_related_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Project one decorated related-context row to its compact form.
+
+    R2.3-009 examiner diagnosis (2026-08-21): live measurement showed
+    ``related_context`` dominates the context-query payload (97KB of 115KB on a
+    default examiner question) and most of each row is repeated IRIs and
+    template metadata the consumer re-derives from ``primary_matches``.  The
+    compact projection keeps identity, kind, label, statement essentials,
+    evidence status, and the root-path anchors that explain adjacency.
+    """
+    data = row.get("data")
+    essentials = (
+        {key: data[key] for key in _COMPACT_RELATED_DATA_KEYS if data.get(key) is not None}
+        if isinstance(data, Mapping)
+        else {}
+    )
+    compact: dict[str, Any] = {
+        "id": row.get("id"),
+        "kind": row.get("kind"),
+        "label": row.get("label"),
+        "evidence_status": row.get("evidence_status"),
+        "root_paths": list(row.get("root_paths") or []),
+    }
+    if essentials:
+        compact["data"] = essentials
+    return {key: value for key, value in compact.items() if value is not None}
 
 
 def _public_scope(scope: Mapping[str, Any]) -> dict[str, Any]:
