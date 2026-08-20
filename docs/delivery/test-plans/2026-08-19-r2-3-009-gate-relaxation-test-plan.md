@@ -353,3 +353,54 @@
 - 验证：`modeling_team/tests` 全量 986 passed / 1 skipped / 302 subtests
   （`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
   modeling_team/tests -q`）。
+
+## R8 第二批真实运行记录（2026-08-20，用户再次授权三次 start：start4-6）
+
+### start4（r23009-luna-20260820-start4）
+
+- 走到哪：语义全程落地（5 阶段 receipts、validation/reasoning/retrieval、session complete）；
+  issue-1（apply 原子模式幂等键冲突）经 FIFO guidance 关闭；coordinator 成功构建 cq-001
+  ticket draft 一次。
+- 卡死层：平台合同 + Agent 行为。coordinator 解析自身 MCP 响应的脚本 bug
+  （读取 `structuredContent.data`，实际响应在 `content[0].text`）后重试同一 draft 请求，
+  被平台「already built」拒绝且无恢复路径（平台合同缺陷）；随后 coordinator 未上报
+  blocked、静默放弃直至 T3（Agent 行为缺陷，与遗留缺陷「无唤醒机制」同类）。
+- T3 04:10:21（collaboration/routing，run-fallback-timeout）；`budget_refund` 04:10:24，
+  净消耗 0；临时 admin key 已吊销。
+- 窄修复：同参数 delivery-bound draft 请求幂等重放——返回已保留的同一张不可变草稿，
+  不同 revision 仍按 stale 拒绝（`acceptance.py`
+  `coordinator_build_acceptance_ticket_draft_from_delivery` + 回归测试改写），
+  commit `ec04750`；全量 986 passed / 1 skipped / 302 subtests。
+
+### start5（r23009-luna-20260820-start5）
+
+- 走到哪：语义全程落地；两轮 frozen-baseline owner 问题（unknown-c-score-rating-continuity、
+  unknown-c-score-quality-score-vs-rating-continuity）按「未确认 → 保留显式 unknown」答复；
+  issue-1（同 start4 幂等键）经 guidance 关闭；handoff 投递、两张 acceptance ticket 发布、
+  cq-002 Examiner 对启动。
+- 卡死层：平台合同 + Agent 行为（复合）。
+  1. **round 顺序守卫**：coordinator 先发布了 cq-002 的 ticket（round 先创建），acceptance
+     先启动 cq-001 的 Examiner 被平台 `prior_round_cleanup_required` 拒绝；经 issue-2
+     guidance 指示按发布顺序先结算 cq-002 后恢复。
+  2. **Examiner 报告合同**：两个 Examiner 的唯一一次提交均被拒——source examiner 以
+     「证据不足」结论提交了空 `evidence_refs`（合同要求至少一个 locator）；platform
+     examiner 以 `{}` 调用 `query_semantic_context` 被 `read-scope-denied` 拒绝后以零次
+     成功调用提交空 `evidence_refs` 报告。子进程单回合设计下无第二次提交机会。
+  3. **无唤醒机制（致死层）**：watchdog 于 04:52:55 记录 child-timeout 后，持久
+     Acceptance 角色（04:43:34 结束回合「awaiting terminal reports」）没有任何唤醒路径，
+     run 死锁直至 T3。
+- T3（collaboration/routing，run-fallback-timeout）；`budget_refund` 随后入账，净消耗 0；
+  临时 admin key 已吊销（key id 24c1739c-2c18-40d3-8d24-308ce5b28773）。
+- 窄修复（T3 后、start6 前实施）：
+  1. **examiner-terminal 唤醒**（commit `e695a11`）：carrier 在报告入账/基础设施失败
+     记录时排队 terminal 事件，Host drain 循环向 Acceptance 投递一条机械通知
+     （round/kind/outcome/digest，无业务语义）；issue pending 时事件保留待恢复后投递；
+     Acceptance 已结算或无事件时不投递。
+  2. **Examiner 指令补强**（同 commit）：source/platform examiner instructions 明确
+     「报告的 `evidence_refs` 不得为空；证据不足/不可用结论仍须引用实际检视位置；
+     平台 Examiner 零成功调用不得直接判 unavailable，须先按检索规则重发正确查询」。
+  - 新增回归测试 `test_r23009_examiner_terminal_wake.py`（5 项）；全量 991 passed /
+    1 skipped / 302 subtests。
+- 遗留（记录待处置）：平台 Examiner「全部调用失败」仍无合法报告形状（指令层要求至少
+  一次成功调用是缓解，非合同解）；round 发布顺序守卫依赖 coordinator 按 question 顺序
+  发布 ticket（Agent 行为，未改平台）。
