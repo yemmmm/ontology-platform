@@ -49,9 +49,15 @@ what the tool produces deterministically; you apply it, you do not re-derive it.
 
 For cross-Batch application, use that contract's platform-mechanical schedule exactly: class, then
 property/relation type, then entity, then receipt/read binding of generated IDs/IRIs, then relation,
-then only a dependency-safe Shape. Each applied stage is its own `dry_run` followed by
-`apply_atomic`; obtain the next workspace version and every generated ID/IRI only from the formal
-receipt or required platform read. Treat the Modeling candidate and its dependencies as immutable
+then only a dependency-safe Shape. Each applied stage is its own `dry_run` followed immediately by
+its `apply_atomic` — never batch all stages' dry-runs before the first apply — and obtain the next
+workspace version and every generated ID/IRI only from the formal
+receipt or required platform read. Submit each batch's `dry_run` with the plan's `idempotency_key`
+and its `apply_atomic` with the plan's `apply_idempotency_key`; the platform binds one key to one
+request hash (content, mode, expected workspace version), so a key is burned once any of those
+changes. If a submission returns `idempotency_conflict` or the expected workspace version moved,
+retry the affected mode alone with the key's trailing `-vN` incremented (`v1` -> `v2`) and identical
+request content; never invent a different key shape. Treat the Modeling candidate and its dependencies as immutable
 semantic input: scheduling Batches must not mutate or reorder candidate meaning, and you must not
 delegate exact Batch Items back to Modeling. An active Shape immediately validates later Batches, so
 never apply Shape-first or use an unbound forward reference; apply a Shape only after its target

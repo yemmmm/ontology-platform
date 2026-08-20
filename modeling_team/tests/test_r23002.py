@@ -454,7 +454,9 @@ class R23002Tests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         for phrase in (
             "receipt/read binding of generated IDs/IRIs",
-            "dry_run` followed by\n`apply_atomic",
+            "dry_run` followed immediately by\nits `apply_atomic`",
+            "with the plan's `apply_idempotency_key`",
+            "trailing `-vN` incremented (`v1` -> `v2`)",
             "must not mutate or reorder candidate meaning",
             "immediately validates later Batches",
             "unbound forward reference",

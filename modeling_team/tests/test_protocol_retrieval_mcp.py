@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import os
+import re
 import stat
 import sys
 import tempfile
@@ -655,7 +656,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
         )
         self.assertNotIn("error", before_phase_b)
         blocked_plan = before_phase_b["result"]["structuredContent"]
-        self.assertEqual(blocked_plan["batches"], [{"stage_kind": "class", "client_batch_id": "1-stage1-class", "idempotency_key": "1-stage1-class-v1", "items": [{"client_item_id": "new-class", "command_kind": "create_class", "payload": {"class_id": "ReviewOutcome", "name": "ReviewOutcome"}, "evidence": []}]}])
+        self.assertEqual(blocked_plan["batches"], [{"stage_kind": "class", "client_batch_id": "1-stage1-class", "idempotency_key": "1-stage1-class-v1", "apply_idempotency_key": "1-stage1-class-apply-v1", "items": [{"client_item_id": "new-class", "command_kind": "create_class", "payload": {"class_id": "ReviewOutcome", "name": "ReviewOutcome"}, "evidence": []}]}])
         self.assertEqual(
             {conflict["code"] for conflict in blocked_plan["conflicts"]},
             {"phase_a_readback_required"},
@@ -679,6 +680,47 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
         )
         self.assertEqual(extra_005["error"]["code"], -32602)
         self.assertIn("restricted to R2.3-003", extra_005["error"]["message"])
+
+    def test_translate_tool_owns_dry_and_apply_key_convention(self) -> None:
+        wrapper = self._wrapper()
+        candidate = {
+            "candidate_kind": "platform-neutral-candidate-v2",
+            "candidate_revision": 3,
+            "scope": "new",
+            "constraints": [],
+            "items": [
+                {"item_id": "class-a", "item_kind": "class", "semantic": {"class_id": "Tool"}},
+                {"item_id": "class-b", "item_kind": "class", "semantic": {"class_id": "Workflow"}},
+                {"item_id": "prop-a", "item_kind": "predicate", "semantic": {"predicate": "hasTool", "predicate_kind": "fact", "range": "string", "domain": "class-a"}},
+            ],
+        }
+        response = wrapper.handle(
+            {
+                "jsonrpc": "2.0",
+                "id": 41,
+                "method": "tools/call",
+                "params": {"name": wrapper.TRANSLATE_CANDIDATE_TOOL_NAME, "arguments": {"candidate": candidate}},
+            }
+        )
+        assert response is not None
+        self.assertNotIn("error", response)
+        plan = response["result"]["structuredContent"]
+        batches = plan["batches"]
+        self.assertGreaterEqual(len(batches), 2)
+        dry_keys = [batch["idempotency_key"] for batch in batches]
+        apply_keys = [batch["apply_idempotency_key"] for batch in batches]
+        self.assertEqual(len(set(dry_keys)), len(dry_keys))
+        self.assertEqual(len(set(apply_keys)), len(apply_keys))
+        self.assertFalse(set(dry_keys) & set(apply_keys))
+        for batch in batches:
+            self.assertRegex(batch["idempotency_key"], r"-v\d+$")
+            self.assertEqual(
+                batch["apply_idempotency_key"],
+                re.sub(r"-v(\d+)$", r"-apply-v\1", batch["idempotency_key"]),
+            )
+        self.assertIn("key_convention", plan)
+        for fragment in ("apply_idempotency_key", "idempotency_conflict", "v1 -> v2"):
+            self.assertIn(fragment, plan["key_convention"])
 
     def test_candidate_map_tool_emits_exact_map_and_is_idempotent(self) -> None:
         wrapper = self._wrapper()

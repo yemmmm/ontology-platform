@@ -1994,6 +1994,7 @@ def translate_candidate_to_batches(
                 "stage_kind": stage,
                 "client_batch_id": f"{revision}-stage{index}-{stage}",
                 "idempotency_key": f"{revision}-stage{index}-{stage}-v1",
+                "apply_idempotency_key": f"{revision}-stage{index}-{stage}-apply-v1",
                 "items": stage_items,
             }
         )
@@ -2013,6 +2014,7 @@ def translate_candidate_to_batches(
                     "stage_kind": "delete-only",
                     "client_batch_id": f"{revision}-{batch_suffix}",
                     "idempotency_key": f"{revision}-{batch_suffix}-v1",
+                    "apply_idempotency_key": f"{revision}-{batch_suffix}-apply-v1",
                     "phase": "B",
                     "delete_only": True,
                     "items": [delete_item],
@@ -2032,6 +2034,19 @@ def translate_candidate_to_batches(
             }
         ),
         "stage_order": list(_TRANSLATE_STAGE_ORDER),
+        # R2.3-009 start7/8 (2026-08-20): the platform binds one idempotency key
+        # to one request hash (content, mode, expected workspace version), so a
+        # dry-run key and its apply must differ, and a retry after any apply or
+        # version change must not reuse a burned key.  Own that convention here
+        # instead of leaving it to agent derivation.
+        "key_convention": (
+            "dry_run submits with idempotency_key; apply_atomic submits with "
+            "apply_idempotency_key for the same batch; run each batch's dry_run "
+            "then apply_atomic before starting the next batch; if a submission "
+            "returns idempotency_conflict or the expected workspace version "
+            "changed, retry the affected mode with the trailing -vN incremented "
+            "(v1 -> v2) and identical request content"
+        ),
         "batches": batches,
         "conflicts": conflicts,
     }
