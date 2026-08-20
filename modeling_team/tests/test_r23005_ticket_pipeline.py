@@ -768,17 +768,20 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 self.assertEqual(second["question_id"], "cq-002")
                 self.assertEqual(first["ticket_revision"], 1)
                 self.assertEqual(second["ticket_revision"], 1)
-                with self.assertRaisesRegex(AcceptanceContractError, "already built"):
-                    carrier._dispatch_capability(
-                        "coordinator",
-                        operation,
-                        {
-                            "coordinator_id": "coordinator",
-                            "handoff_delivery_id": "delivery-bound",
-                            "question_id": "cq-001",
-                            "ticket_revision": 1,
-                        },
-                    )
+                # R2.3-009 follow-up (start4 live evidence): an identical replay
+                # after a lost response returns the retained immutable draft.
+                replay = carrier._dispatch_capability(
+                    "coordinator",
+                    operation,
+                    {
+                        "coordinator_id": "coordinator",
+                        "handoff_delivery_id": "delivery-bound",
+                        "question_id": "cq-001",
+                        "ticket_revision": 1,
+                    },
+                )
+                self.assertEqual(replay["ticket_digest"], first["ticket_digest"])
+                self.assertEqual(replay["question_id"], "cq-001")
                 carrier._dispatch_capability(
                     "coordinator",
                     operation,

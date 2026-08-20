@@ -2870,6 +2870,24 @@ class RunnerAcceptanceCarrier:
             if isinstance(binding, Mapping)
         )
         if request_key in self._typed_ticket_draft_requests or already_bound:
+            # R2.3-009 follow-up (start4 live evidence 2026-08-20): the
+            # Coordinator's first draft build succeeded but its own response
+            # parsing failed, and the identical retry was rejected here,
+            # leaving the run with no ticket-publication path and no
+            # acceptance start.  An identical replay now returns the retained
+            # immutable draft (the same repair class as post-registration
+            # receipt replay); the draft content and digest are untouched and
+            # a replay with a different revision is still rejected below.
+            for draft_digest, binding in self._ticket_draft_bindings.items():
+                if (
+                    isinstance(binding, Mapping)
+                    and binding.get("handoff_delivery_id") == handoff_delivery_id
+                    and binding.get("question_id") == question_id
+                    and binding.get("ticket_revision") == ticket_revision
+                ):
+                    retained = self._ticket_drafts.get(draft_digest)
+                    if retained is not None:
+                        return _safe_copy(retained)
             _error("delivery-bound ticket draft request was already built")
         previous_revisions = [
             int(binding["ticket_revision"])
