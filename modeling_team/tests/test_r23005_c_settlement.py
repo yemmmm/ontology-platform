@@ -677,8 +677,11 @@ class R23005CSettlementTests(unittest.TestCase):
         )
         runner.acceptance = AcceptanceState()
         self.assertFalse(runner._terminal_report_guard("protocol", True, "blocked"))
-        self.assertTrue(runner._terminal_report_guard("acceptance", True, "blocked"))
-        self.assertTrue(runner._terminal_report_guard("coordinator", True, "blocked"))
+        # T0 defense review (user 2026-08-20): acceptance/coordinator
+        # ``blocked`` self-declares too -- gating it on verdict settlement
+        # left an unrepairable run no exit but the 90-minute T3 timeout.
+        self.assertFalse(runner._terminal_report_guard("acceptance", True, "blocked"))
+        self.assertFalse(runner._terminal_report_guard("coordinator", True, "blocked"))
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(
                 Path(directory) / "transport",
@@ -695,17 +698,18 @@ class R23005CSettlementTests(unittest.TestCase):
                 broker.report("protocol", "completed", "retrieval incomplete")
             # R2.3-009 follow-up (user 2026-08-20): ``blocked`` self-declares
             # and bypasses both the retrieval guard and the handoff
-            # dependency, while acceptance/coordinator ``blocked`` remains
-            # gated by the settlement machinery.
+            # dependency.  T0 defense review (same day): acceptance and
+            # coordinator ``blocked`` self-declare as well; settlement
+            # machinery gates only ``completed``.
             broker.report("protocol", "blocked", "bounded recovery")
             broker.report("modeling", "blocked", "modeling awaits Acceptance")
             self.assertEqual(broker.results["protocol"].status, "blocked")
             self.assertEqual(broker.results["modeling"].status, "blocked")
 
-            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
-                broker.report("acceptance", "blocked", "acceptance is not settled")
-            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
-                broker.report("coordinator", "blocked", "coordinator is not settled")
+            broker.report("acceptance", "blocked", "acceptance is not settled")
+            broker.report("coordinator", "blocked", "coordinator is not settled")
+            self.assertEqual(broker.results["acceptance"].status, "blocked")
+            self.assertEqual(broker.results["coordinator"].status, "blocked")
 
     def test_c_acceptance_finalization_serializes_drain_and_completed_guard(self) -> None:
         """Two concurrent settlement observers produce one CAS, evidence row, and handoff."""
@@ -820,10 +824,11 @@ class R23005CSettlementTests(unittest.TestCase):
             self.assertEqual(len(list((root / "carrier").rglob("settlement-cas.json"))), 1)
             self.assertEqual(len(list((root / "carrier").rglob("settlement.json"))), 1)
 
-            # A settled carrier still cannot accept an incorrect blocked terminal
-            # status; the completed report is the only Acceptance terminal path.
-            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
-                broker.report("acceptance", "blocked", "settled but blocked")
+            # T0 defense review (user 2026-08-20): a settled carrier no longer
+            # rejects ``blocked`` (covered in the guard test above; one
+            # terminal result per agent prevents exercising both here).
+            # ``completed`` remains the verdict-bearing path and still
+            # requires settlement.
             completed = broker.report("acceptance", "completed", "acceptance settled")
             self.assertEqual(completed.status, "completed")
 

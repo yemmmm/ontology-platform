@@ -320,6 +320,7 @@ class FormalCandidateProgress:
         clock: Any,
         timeout_seconds: float = 120.0,
         allow_post_receipt_revision: bool = False,
+        plain_post_receipt_conflict: bool = False,
         integer_revisions: bool = False,
         redrive_limit: int = 3,
     ):
@@ -341,6 +342,7 @@ class FormalCandidateProgress:
         # may be invalidated by a typed zero-mutation conflict.  R2.3-005 and
         # all legacy callers retain the original complete terminal latch.
         self._allow_post_receipt_revision = bool(allow_post_receipt_revision)
+        self._plain_post_receipt_conflict = bool(plain_post_receipt_conflict)
         self.pending: _PendingCandidate | None = None
         self._invalidated_original_delivery_ids: set[str] = set()
         self._terminal_failure_latched = False
@@ -692,12 +694,22 @@ class FormalCandidateProgress:
             if self.pending.state == "complete":
                 if not self._post_receipt_conflict_envelope(delivery, value):
                     return None
-                if set(value) != FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS:
-                    return None
-                if value.get("original_delivery_id") != identity.original_delivery_id:
-                    return None
-                if value.get("receipt_digest") != self.pending.accepted_receipt_digest:
-                    return None
+                # T0 defense review (user 2026-08-20, R2.3-009 start6): the
+                # typed-only envelope had no reachable builder for this
+                # requirement, deleting the Agent's only repair channel.
+                # R2.3-008/009 runs therefore also accept the plain six-field
+                # conflict -- still digest-bound to the pending identity by
+                # validate_formal_conflict below.  R2.3-003 keeps requiring
+                # the typed receipt/workspace/zero-mutation binding.
+                if not self._plain_post_receipt_conflict:
+                    if set(value) != (
+                        FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS
+                    ):
+                        return None
+                    if value.get("original_delivery_id") != identity.original_delivery_id:
+                        return None
+                    if value.get("receipt_digest") != self.pending.accepted_receipt_digest:
+                        return None
             try:
                 validate_formal_conflict(
                     value,
@@ -774,6 +786,12 @@ class FormalCandidateProgress:
                 )
             except FormalCandidateError:
                 return True
+            if self._plain_post_receipt_conflict and set(value) == FORMAL_CONFLICT_FIELDS:
+                # T0 defense review (user 2026-08-20): the plain six-field
+                # conflict is a valid post-receipt response for R2.3-008/009;
+                # classifying it invalid delivered it as ordinary peer text
+                # (start6 delivery-12) and silently dropped the repair.
+                return False
             return not (
                 set(value) == FORMAL_CONFLICT_FIELDS | FORMAL_TYPED_CONFLICT_FIELDS
                 and value.get("original_delivery_id") == identity.original_delivery_id

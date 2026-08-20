@@ -594,6 +594,17 @@ class TeamRunner:
                     "candidate_redrive_limit", 3
                 ),
                 allow_post_receipt_revision=(formal_contract is not None),
+                # R2.3-009 start6 + T0 defense review (user 2026-08-20): the
+                # typed-only post-receipt conflict envelope was unreachable
+                # for this requirement (the typed builder is R2.3-003-only),
+                # so an accepted-but-defective candidate had no repair
+                # channel.  R2.3-008/009 additionally accept the plain
+                # six-field conflict; the digest/revision gates below are
+                # unchanged, and R2.3-003 keeps its typed envelope contract.
+                plain_post_receipt_conflict=(
+                    formal_contract is not None
+                    and formal_contract.requirement_id in {"R2.3-008", "R2.3-009"}
+                ),
                 # R2.3-008 start7: keep the envelope gate aligned with
                 # candidate registration so an integer revision for any other
                 # task is a typed first-delivery rejection, not a post-gate
@@ -1381,15 +1392,26 @@ class TeamRunner:
             }
             coordinator_id = role_ids.get("coordinator", "coordinator")
             if agent_id == coordinator_id:
+                # T0 defense review (user 2026-08-20, R2.3-009 start6): a
+                # blocked Coordinator no longer requires Acceptance
+                # settlement.  Settlement protects verdict completeness for
+                # ``completed`` runs; a run the roles judge unrepairable must
+                # reach the agent-blocked exit instead of deadlocking to T3.
+                if status == "blocked":
+                    return False
                 return self.acceptance is None or not self.acceptance.is_settled
             acceptance_id = role_ids.get("acceptance", "acceptance")
             if agent_id == acceptance_id:
-                # Acceptance itself cannot terminate after merely producing a
+                # Acceptance cannot terminate after merely producing a
                 # verdict. Only a completed report may cross this boundary, and
                 # the Delivery/Runner path must first perform the complete
-                # cleanup + CAS/readback settlement transition. Incomplete,
-                # failed, and blocked reports remain live even if a stale carrier
-                # happens to expose a settled flag.
+                # cleanup + CAS/readback settlement transition. Incomplete and
+                # failed reports remain live even if a stale carrier happens
+                # to expose a settled flag.  ``blocked`` is the one exception
+                # (T0 defense review, user 2026-08-20): without it an
+                # unrepairable run has no exit but the 90-minute T3 timeout.
+                if status == "blocked":
+                    return False
                 if status != "completed":
                     return True
                 self._finalize_acceptance_if_ready()

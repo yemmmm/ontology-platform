@@ -347,6 +347,119 @@ def test_r23003_receipt_v1_binding_mismatch_invalidates_receipt_and_accepts_revi
     assert progress.state == "complete"
 
 
+def test_r23009_plain_post_receipt_conflict_reopens_revision_after_receipt() -> None:
+    """start6: the plain six-field conflict must repair a completed receipt.
+
+    T0 defense review (user 2026-08-20): R2.3-008/009 progress accepts the
+    plain builder conflict in the complete state, binds the revision to its
+    delivery ID, and must not classify it as an invalid response.
+    """
+
+    now = [0.0]
+    progress = FormalCandidateProgress(
+        clock=lambda: now[0],
+        allow_post_receipt_revision=True,
+        plain_post_receipt_conflict=True,
+    )
+    candidate = _candidate()
+    assert progress.observe_delivery(
+        _delivery("modeling", "protocol", json.dumps(candidate), "delivery-10"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start6-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "candidate"
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    receipt = build_candidate_receipt(candidate)
+    assert progress.observe_delivery(
+        _delivery("protocol", "modeling", json.dumps(receipt), "delivery-11", reply_to="delivery-10"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start6-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "accepted"
+    assert progress.state == "complete"
+
+    conflict = build_candidate_conflict(
+        candidate,
+        "post_receipt_context_drift",
+        "workspace version drifted after the receipt",
+    )
+    conflict_delivery = _delivery(
+        "protocol",
+        "modeling",
+        json.dumps(conflict),
+        "delivery-12",
+    )
+    assert progress.observe_delivery(
+        conflict_delivery,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start6-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "conflict"
+    assert progress.state == "awaiting_revision"
+    assert progress.pending is not None
+    assert progress.pending.conflict_delivery_id == "delivery-12"
+    assert progress.is_invalid_response(
+        conflict_delivery,
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+    ) is False
+
+    revised = _candidate("rev-2")
+    assert progress.observe_delivery(
+        _delivery("modeling", "protocol", json.dumps(revised), "delivery-13", reply_to="delivery-12"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start6-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "revision"
+    assert progress.identity is not None
+    assert progress.identity.original_delivery_id == "delivery-13"
+
+
+def test_plain_post_receipt_conflict_still_rejected_without_the_r23009_flag() -> None:
+    """R2.3-003/005 progress keeps requiring the typed post-receipt envelope."""
+
+    now = [0.0]
+    progress = FormalCandidateProgress(
+        clock=lambda: now[0],
+        allow_post_receipt_revision=True,
+    )
+    candidate = _candidate()
+    progress.observe_delivery(
+        _delivery("modeling", "protocol", json.dumps(candidate), "delivery-10"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start6-fixture",
+        protocol_thread_id="protocol-thread",
+    )
+    progress.bind_dispatch(RuntimeDispatchReceipt("start", "turn-1"))
+    receipt = build_candidate_receipt(candidate)
+    assert progress.observe_delivery(
+        _delivery("protocol", "modeling", json.dumps(receipt), "delivery-11", reply_to="delivery-10"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start6-fixture",
+        protocol_thread_id="protocol-thread",
+    ) == "accepted"
+    conflict = build_candidate_conflict(candidate, "post_receipt_context_drift", "drift")
+    assert progress.observe_delivery(
+        _delivery("protocol", "modeling", json.dumps(conflict), "delivery-12"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+        run_id="start6-fixture",
+        protocol_thread_id="protocol-thread",
+    ) is None
+    assert progress.state == "complete"
+    assert progress.is_invalid_response(
+        _delivery("protocol", "modeling", json.dumps(conflict), "delivery-12"),
+        modeling_agent_id="modeling",
+        protocol_agent_id="protocol",
+    ) is True
+
+
 def test_r23003_broker_allows_standalone_post_receipt_conflict_and_revision_reply(
     tmp_path: Path,
 ) -> None:
