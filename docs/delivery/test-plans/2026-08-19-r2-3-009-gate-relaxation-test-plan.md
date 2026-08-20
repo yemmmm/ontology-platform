@@ -439,3 +439,49 @@
      本批三轮均因此拉长收尾；owner-stop 可提前结束但结算/退款不自动入账（本次按用户
      决定记为消耗）。
   3. revision-1 已应用且无 revision-2；scope 清理证据见 run root cleanup 记录。
+
+## R9 第三批授权实跑记录（starts 7-9，2026-08-20）
+
+T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本批前置代码：
+`019baec`（R2.3-008/009 允许六字段简装 post-receipt 冲突重开修订；acceptance/coordinator
+可自报 blocked）。
+
+### start7（r23009-luna-20260820-start7）
+- 走到：候选 delivery-11 / receipt delivery-12 / 交接 delivery-13、14；5 批 dry+apply 全部落库
+  （apply key 由 Agent 自行推导 `-apply` 后缀，花了一轮 issue 指导）。
+- 死因：**运行基础设施**——runner 在「交接已建、首轮未开」时序下运行结算就绪检查，
+  `rounds[0]` 空列表索引崩溃，整 run teardown。ledger：terminal_failure
+  (runtime/infrastructure)，按规则不退款。
+- 窄修复：`820b362`——`_settlement_prerequisites_ready` 空轮次返回 False + 回归测试。
+- 过程缺陷（自记）：start8 未先落 key 约定的持久修复，导致同类 issue 复发。
+
+### start8（r23009-luna-20260820-start8）
+- 走到：模型 5 阶段全部落库（live version 81959f4d…）；验收交接 delivery-9/10；cq-001
+  验收轮启动，source Examiner 正常报告；**平台 Examiner 子进程两次整 600s child-timeout**
+  （09:06:27、09:16:40），verdict BLOCKED(runtime-infrastructure)；运行空转至 T3
+  （10:08）terminal_failure (collaboration/routing, run-fallback-timeout) → 自动退款。
+- 子进程超时根因当时证据不足：child-session 随清理销毁，仅存摘要。
+- 本轮后窄修复：`130ea66`——translate 工具直接输出 dry/apply 双 key + `-vN` 重试规则
+  （key_convention 字段 + 协议说明书同步），start9 验证不再复发。
+
+### start9（r23009-luna-20260820-start9）
+- 走到：三轮业务澄清（版本绑定→latest published Version 2、无分数行为→显式 unknown、
+  版本连续性→显式 unknown）；候选一次通过；**5 批 dry+apply 零 key 冲突**（130ea66 生效）；
+  validation/reasoning 通过；受治理检索两度被 bounded execution 截断（issue-1/issue-2，
+  3 页/链 × ~75s/页 > ~600s 窗口），经实测定位为「翻页尺寸 limit=20 导致链长」而非平台
+  故障，guidance 指示 limit=60 单页终止（实测 40/45/46 行单页 10s）；receipt 注册、
+  交接 delivery、cq-001 启动；source Examiner 报告；**平台 Examiner 又两次整 600s
+  child-timeout**（11:24:16、11:34:30）→ verdict BLOCKED → 空转至 T3（12:07）
+  terminal_failure (collaboration/routing) → 自动退款。
+- 平台 Examiner 600s 根因（跨 start8/9 四次复现，平台端点全程健康）：每步大上下文页 +
+  模型回合 ~30-75s，20 步合法工作量 > 600s 墙；非挂死。
+- 本轮后窄修复：`282ab8f`——examiner ticket 模板 timeout 600→1800s（注释含证据）。
+- 预算：本批三次授权（7-9）全部消耗；start7 不退款、start8/9 自动退款；临时 admin key
+  均已吊销（start8: 733518c7…；start9: 3024f77c…），/tmp 目录已清理。
+
+### 本批逐轮对比
+| 轮次 | 走到哪 | 死因 |
+|---|---|---|
+| start7 | 5 批全部落库、交接完成 | 运行基础设施（runner 空轮次索引崩溃） |
+| start8 | 模型落库+交接+cq-001 验收轮 | 运行基础设施（平台 Examiner 600s 超时×2，空转至 T3） |
+| start9 | 落库零冲突+检索 receipt+交接+cq-001 验收轮 | 运行基础设施（平台 Examiner 600s 超时×2 复现，空转至 T3） |
