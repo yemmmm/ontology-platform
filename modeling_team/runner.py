@@ -1357,8 +1357,13 @@ class TeamRunner:
         issue_ledger = self._issue_ledger()
         if issue_ledger is not None and issue_ledger.pending:
             return True
+        # R2.3-009 follow-up (user 2026-08-20): a role self-declares that its
+        # task is complete or definitively stuck, so the host-side Runtime
+        # guard (e.g. Protocol retrieval-evidence completeness) gates only
+        # ``completed`` reports.  A ``blocked`` role must always be able to
+        # report, otherwise a platform-side deadlock has no exit but T3.
         adapter_guard = getattr(self.adapter, "terminal_report_blocked", None)
-        if callable(adapter_guard):
+        if callable(adapter_guard) and status == "completed":
             try:
                 if _call_terminal_report_guard(
                     adapter_guard,
@@ -4670,63 +4675,70 @@ class TeamRunner:
                         and delivery.reply_to_delivery_id is None
                     )
                     if standalone_response:
+                        # R2.3-009 follow-up (user 2026-08-20): the formal
+                        # candidate channel stays typed, but ordinary peer
+                        # communication is free.  A post-receipt standalone
+                        # Protocol-to-Modeling message that is not a perfectly
+                        # typed conflict no longer disappears into quarantine
+                        # (start1's dead end); it is delivered below as an
+                        # ordinary peer message that simply cannot advance the
+                        # formal state machine.
+                        self._append_evidence(
+                            "formal-candidate-progress",
+                            {
+                                "event": "invalid-standalone-conflict-delivered-as-ordinary",
+                                "state": self._candidate_progress.state,
+                                "original_delivery_id": identity.original_delivery_id,
+                                "invalid_reply_delivery_id": delivery.delivery_id,
+                            },
+                        )
+                    else:
+                        try:
+                            self.transport.reopen_formal_reply_slot(
+                                original_delivery_id=identity.original_delivery_id,
+                                invalid_reply_delivery_id=delivery.delivery_id,
+                                modeling_agent_id=modeling,
+                                protocol_agent_id=protocol,
+                                formal_candidate=True,
+                            )
+                        except RoutingError as reopen_error:
+                            # R2.3-009 B-class: the reopen rejection is recorded as
+                            # an observed issue with typed feedback to Protocol; the
+                            # invalid response is quarantined and the run continues.
+                            self._handle_formal_response_violation(
+                                delivery,
+                                protocol=protocol,
+                                exc=reopen_error,
+                            )
+                            continue
+                        self._append_evidence(
+                            "formal-candidate-progress",
+                            {
+                                "event": "invalid-response-slot-reopened",
+                                "state": self._candidate_progress.state,
+                                "original_delivery_id": identity.original_delivery_id,
+                                "invalid_reply_delivery_id": delivery.delivery_id,
+                            },
+                        )
+                        # An invalid formal response is a transport-level recovery
+                        # artifact, not a peer message.  Do not expose free text or
+                        # malformed receipt payloads to Modeling: doing so would let
+                        # the payload become a second, non-formal reply anchor (for
+                        # example, a revision replying to an invalid guidance ID).
+                        # The original formal slot was already reopened above, so the
+                        # next candidate redrive can elicit one canonical conflict or
+                        # receipt from Protocol.
                         self.transport.ack_delivery(delivery.delivery_id)
                         self._append_evidence(
                             "formal-candidate-progress",
                             {
-                                "event": "invalid-standalone-conflict-quarantined",
+                                "event": "invalid-response-quarantined",
                                 "state": self._candidate_progress.state,
                                 "original_delivery_id": identity.original_delivery_id,
                                 "invalid_reply_delivery_id": delivery.delivery_id,
                             },
                         )
                         continue
-                    try:
-                        self.transport.reopen_formal_reply_slot(
-                            original_delivery_id=identity.original_delivery_id,
-                            invalid_reply_delivery_id=delivery.delivery_id,
-                            modeling_agent_id=modeling,
-                            protocol_agent_id=protocol,
-                            formal_candidate=True,
-                        )
-                    except RoutingError as reopen_error:
-                        # R2.3-009 B-class: the reopen rejection is recorded as
-                        # an observed issue with typed feedback to Protocol; the
-                        # invalid response is quarantined and the run continues.
-                        self._handle_formal_response_violation(
-                            delivery,
-                            protocol=protocol,
-                            exc=reopen_error,
-                        )
-                        continue
-                    self._append_evidence(
-                        "formal-candidate-progress",
-                        {
-                            "event": "invalid-response-slot-reopened",
-                            "state": self._candidate_progress.state,
-                            "original_delivery_id": identity.original_delivery_id,
-                            "invalid_reply_delivery_id": delivery.delivery_id,
-                        },
-                    )
-                    # An invalid formal response is a transport-level recovery
-                    # artifact, not a peer message.  Do not expose free text or
-                    # malformed receipt payloads to Modeling: doing so would let
-                    # the payload become a second, non-formal reply anchor (for
-                    # example, a revision replying to an invalid guidance ID).
-                    # The original formal slot was already reopened above, so the
-                    # next candidate redrive can elicit one canonical conflict or
-                    # receipt from Protocol.
-                    self.transport.ack_delivery(delivery.delivery_id)
-                    self._append_evidence(
-                        "formal-candidate-progress",
-                        {
-                            "event": "invalid-response-quarantined",
-                            "state": self._candidate_progress.state,
-                            "original_delivery_id": identity.original_delivery_id,
-                            "invalid_reply_delivery_id": delivery.delivery_id,
-                        },
-                    )
-                    continue
             owner_answer = delivery.owner_answer_id is not None
             if delivery.recipient_id in self.transport.results:
                 self._append_evidence(

@@ -802,6 +802,72 @@ def test_runner_reopens_invalid_reply_then_accepts_exact_redrive_reply(tmp_path:
     assert len(runner.transport._delivery_by_id) == 3
 
 
+def test_runner_delivers_post_receipt_standalone_nonconflict_as_ordinary_peer(
+    tmp_path: Path,
+) -> None:
+    """start1 dead end: a post-receipt standalone Protocol note reaches Modeling."""
+
+    adapter = _FormalProgressAdapter()
+    runner = _formal_progress_runner(tmp_path, adapter)
+    # start1 ran under the R2.3-009 carrier contract, which enables
+    # post-receipt standalone conflicts; the shared helper defaults it off.
+    runner._candidate_progress = FormalCandidateProgress(
+        clock=lambda: 0.0, allow_post_receipt_revision=True
+    )
+    candidate = _candidate()
+    candidate_text = json.dumps(candidate, ensure_ascii=False, separators=(",", ":"))
+    original = runner.transport.send("modeling", "protocol", candidate_text, expects_reply=True)
+    runner.drain()
+    identity = runner._candidate_progress.identity
+    assert identity is not None
+    _, semantic_digest = formal_candidate_digests(candidate)
+    receipt = {
+        "status": "accepted",
+        "candidate_revision": identity.candidate_revision,
+        "semantic_digest": semantic_digest,
+        "candidate_digest": identity.candidate_digest,
+    }
+    runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(receipt, ensure_ascii=False, separators=(",", ":")),
+        expects_reply=True,
+        reply_to_delivery_id=original.delivery_id,
+    )
+    runner.drain()
+    assert runner._candidate_progress.state == "complete"
+
+    # A standalone post-receipt conflict-shaped reply that fails exact typing
+    # used to disappear into quarantine (start1's final dead end): Protocol
+    # thought it had sent a usable conflict, Modeling never saw anything.
+    imperfect_conflict = build_candidate_conflict(
+        candidate, "competency_question_count_mismatch", "scope mismatch"
+    )
+    imperfect_conflict["receipt_digest"] = "not-the-accepted-receipt-digest"
+    standalone = runner.transport.send(
+        "protocol",
+        "modeling",
+        json.dumps(imperfect_conflict, ensure_ascii=False, separators=(",", ":")),
+        expects_reply=True,
+    )
+    runner.drain()
+    assert any(
+        recipient == "modeling" and delivery.delivery_id == standalone.delivery_id
+        for recipient, delivery in adapter.sent
+    )
+    events = [
+        json.loads(line)
+        for line in (tmp_path / "run" / "evidence" / "formal-candidate-progress.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    event_names = [event["event"] for event in events]
+    assert "invalid-standalone-conflict-delivered-as-ordinary" in event_names
+    assert "invalid-response-quarantined" not in event_names
+    # The ordinary message cannot advance the formal state machine.
+    assert runner._candidate_progress.state == "complete"
+
+
 def test_runner_quarantines_invalid_guidance_then_binds_revision_to_formal_conflict(
     tmp_path: Path,
 ) -> None:

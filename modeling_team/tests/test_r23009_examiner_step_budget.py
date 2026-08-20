@@ -1,15 +1,17 @@
-"""R2.3-009 start2: live platform examiner step-budget calibration.
+"""R2.3-009 follow-up: unified examiner step-budget guardrail.
 
-In the start2 live run (r23009-luna-20260820-start2, cq-001 acceptance round)
-the platform examiner child exhausted its 10-step inference cap on both the
-first attempt and the single permitted identical-input retry
-(``reason_code=runtime-budget``), while the source examiner passed unchanged.
-The live platform examiner drives the full 19-tool read allowlist plus the
-typed report submission, so the runaway-only cap is calibrated to 20 steps.
+Live history: start2 (r23009-luna-20260820-start2, cq-001 acceptance round)
+showed the platform examiner exhausting the previous platform-only 10-step
+inference cap on both the first attempt and the single permitted
+identical-input retry (``reason_code=runtime-budget``) while the source
+examiner passed unchanged; 20 (platform-only) then passed that layer in
+start3.  User decision 2026-08-20: one unified cap of 30 for every examiner
+child, no per-role distinction.  The cap bounds runaway children only; it is
+not an acceptance-quality gate.
 
-These tests pin the calibrated live budget and the retry child's identical
-budget so a future edit cannot silently shrink the live acceptance path back
-below the observed live requirement.
+These tests pin the unified budget for every role and the retry child's
+identical budget so a future edit cannot silently shrink the live acceptance
+path back below the observed live requirement.
 """
 
 from __future__ import annotations
@@ -17,9 +19,10 @@ from __future__ import annotations
 import unittest
 
 from modeling_team.acceptance_runtime import (
+    ExaminerRunMetrics,
     ExaminerRuntimeBlocked,
     LeanExaminerRuntime,
-    _PLATFORM_EXAMINER_MAX_INFERENCE_STEPS,
+    _EXAMINER_MAX_INFERENCE_STEPS,
 )
 
 
@@ -61,8 +64,12 @@ def _platform_report() -> dict:
 
 
 class R23009ExaminerStepBudgetTests(unittest.TestCase):
-    def test_live_platform_examiner_budget_is_calibrated(self) -> None:
-        self.assertEqual(_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS, 20)
+    def test_unified_examiner_budget_is_calibrated(self) -> None:
+        self.assertEqual(_EXAMINER_MAX_INFERENCE_STEPS, 30)
+
+    def test_every_role_defaults_to_the_unified_budget(self) -> None:
+        for role in ("source", "platform", "acceptance"):
+            self.assertEqual(ExaminerRunMetrics(role).max_inference_steps, 30)
 
     def test_platform_children_receive_the_calibrated_budget(self) -> None:
         observed: list[int] = []
@@ -101,7 +108,7 @@ class R23009ExaminerStepBudgetTests(unittest.TestCase):
             verdict_schema={"type": "verdict"},
         )
         self.assertEqual(result["status"], "PASS")
-        self.assertEqual(observed, [_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS])
+        self.assertEqual(observed, [_EXAMINER_MAX_INFERENCE_STEPS])
 
     def test_platform_retry_child_receives_the_same_calibrated_budget(self) -> None:
         observed: list[int] = []
@@ -151,7 +158,7 @@ class R23009ExaminerStepBudgetTests(unittest.TestCase):
         self.assertEqual(attempts["count"], 2)
         self.assertEqual(
             observed,
-            [_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS, _PLATFORM_EXAMINER_MAX_INFERENCE_STEPS],
+            [_EXAMINER_MAX_INFERENCE_STEPS, _EXAMINER_MAX_INFERENCE_STEPS],
         )
 
     def _source_payload(self) -> dict:

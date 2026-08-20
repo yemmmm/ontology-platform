@@ -147,13 +147,13 @@ class TransportTests(unittest.TestCase):
                 mcp_response(request, broker=broker, agent_id="coordinator")
             self.assertNotIn("coordinator", broker.results)
             broker.report("modeling", "completed", "modeling result")
-            with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
-                broker.report("protocol", "blocked", "protocol result")
-            broker.ack_terminal_handoff("protocol", "modeling")
-            broker.ack_terminal_handoff("coordinator", "modeling")
+            # R2.3-009 follow-up (user 2026-08-20): a role self-declares that it
+            # is definitively stuck, so ``blocked`` no longer requires upstream
+            # terminal handoffs; only ``completed`` does.
             broker.report("protocol", "blocked", "protocol result")
-            with self.assertRaisesRegex(RoutingError, "terminal handoffs: protocol"):
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling, protocol"):
                 broker.report("coordinator", "completed", "early coordinator retry")
+            broker.ack_terminal_handoff("coordinator", "modeling")
             broker.ack_terminal_handoff("coordinator", "protocol")
             broker.report("coordinator", "completed", "coordinator retry")
             self.assertEqual(set(broker.results), {"coordinator", "modeling", "protocol"})

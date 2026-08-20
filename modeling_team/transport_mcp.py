@@ -814,7 +814,7 @@ class TeamTransportBroker:
                     for delivery_id in self._pending_replies
                     if self._delivery_by_id[delivery_id].sender_id == agent_id
                 ]
-                if pending:
+                if pending and status == "completed":
                     raise RoutingError("terminal result requires delivered reply")
                 inbound_revision_requests = [
                     delivery_id
@@ -834,7 +834,14 @@ class TeamTransportBroker:
                 for dependency in self.terminal_dependencies.get(agent_id, frozenset())
                 if dependency not in self._results or (agent_id, dependency) not in self._terminal_handoff_acks
             )
-            if missing:
+            # R2.3-009 follow-up (user 2026-08-20): a role self-declares that
+            # its task is complete or definitively stuck.  ``blocked`` therefore
+            # never requires upstream terminal handoffs -- start3 died precisely
+            # because Protocol could not report blocked while the acceptance
+            # handoff was blocked by the retrieval gate.  ``completed`` still
+            # requires them: a role whose inputs never arrived cannot have
+            # completed its task.
+            if missing and status == "completed":
                 if not all(isinstance(role, str) and _TERMINAL_ROLE_ID.fullmatch(role) for role in missing):
                     raise RoutingError("terminal result dependencies are invalid")
                 raise RoutingError("terminal result requires terminal handoffs: " + ", ".join(missing))

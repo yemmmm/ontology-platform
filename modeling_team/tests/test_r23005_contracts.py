@@ -1935,13 +1935,16 @@ class R23005ContractTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance, modeling, protocol"):
                 broker.report("coordinator", "completed", "coordinator must be last")
-            with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance"):
-                broker.report("modeling", "blocked", "modeling must await Acceptance")
-            broker.report("acceptance", "completed", "acceptance settled")
-            broker.ack_terminal_handoff("modeling", "acceptance")
             request = broker.send("modeling", "protocol", "handoff", expects_reply=True)
             reply = broker.send("protocol", "modeling", "handoff-ack", reply_to_delivery_id=request.delivery_id)
             broker.ack_delivery(reply.delivery_id)
+            # R2.3-009 follow-up (user 2026-08-20): ``completed`` still requires
+            # the settled-Acceptance handoff (start2's settlement ordering),
+            # while a self-declared ``blocked`` no longer waits for it.
+            with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance"):
+                broker.report("modeling", "completed", "modeling must await Acceptance")
+            broker.report("acceptance", "completed", "acceptance settled")
+            broker.ack_terminal_handoff("modeling", "acceptance")
             broker.report("modeling", "completed", "modeling")
             broker.ack_terminal_handoff("protocol", "modeling")
             broker.report("protocol", "blocked", "protocol")

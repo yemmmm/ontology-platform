@@ -331,12 +331,16 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(metrics.as_dict()["inference_steps"], 2)
         self.assertIsNotNone(metrics.as_dict()["ttft_ms"])
         self.assertTrue(metrics.observe_notification(usage(30)))
+        # Unified examiner guardrail (user 2026-08-20): every role caps at 30
+        # inference steps, so the budget exhausts only after 30 increments.
+        for total in range(40, 310, 10):
+            self.assertTrue(metrics.observe_notification(usage(total)))
         with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
-            metrics.observe_notification(usage(40))
+            metrics.observe_notification(usage(310))
         self.assertEqual(blocked.exception.reason, "runtime-budget")
         metrics = ExaminerRunMetrics("platform")
         metrics.bind_thread("thread-1")
-        for total in (10, 20, 30):
+        for total in range(10, 310, 10):
             self.assertTrue(metrics.observe_notification(usage(total)))
         metrics.record_terminal_report({
             "answerability": "answerable", "conclusion": "ok", "evidence": [],
@@ -344,12 +348,12 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "evidence_refs": [{"location": "source.md"}],
         })
         self.assertIsNotNone(metrics.as_dict()["terminal_wall_ms"])
-        self.assertTrue(metrics.observe_notification(usage(40)))
+        self.assertTrue(metrics.observe_notification(usage(310)))
         self.assertIsNone(metrics.blocked)
-        self.assertEqual(metrics.inference_steps, 3)
+        self.assertEqual(metrics.inference_steps, 30)
         snapshot = metrics.as_dict()
         increments = snapshot["token_usage_increments"]
-        self.assertEqual(len(increments), 4)
+        self.assertEqual(len(increments), 31)
         self.assertEqual(
             snapshot["total_tokens"],
             sum(row["totalTokens"] for row in increments),

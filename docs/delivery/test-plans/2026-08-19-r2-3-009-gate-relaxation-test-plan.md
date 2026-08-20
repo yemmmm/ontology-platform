@@ -333,3 +333,23 @@
   无需 coordinator 或 Runner 代为判定。
 - **正式候选通道保持类型化**（候选/回执/冲突仍走带校验的通道）；只放开普通沟通与状态上报。
 - 问题 3（coordinator 终态结算节奏）用户未理解，待重新解释后决定——实施继续暂缓。
+
+### 用户决策定稿与实施记录（2026-08-20 第三轮）
+
+- **问题 3（coordinator 终态结算节奏）确定为方案 B**：保留"三个角色全部上报后
+  coordinator 才能结算"的既有节奏。由于 blocked 现在始终可上报，不再存在角色
+  因平台侧闸门而卡死无法上报、进而拖死结算的路径，故该项无需代码改动。
+- 四项放开决策已一并实施（本批提交）：
+  1. examiner 推理步数护栏统一为 30（`_EXAMINER_MAX_INFERENCE_STEPS`，全部角色，
+     含重试子进程）；
+  2. `blocked` 终态为角色自我声明：不再要求上游 terminal handoff、pending reply、
+     或 Runtime 侧守卫（如 protocol 检索证据完整性）；`completed` 仍保留全部前置
+     条件（handoff/依赖/reply 槽/守卫）；
+  3. 正式候选通道保持类型化，但 receipt 之后 protocol→modeling 的非完全类型化
+     standalone 消息不再隔离消失，作为普通对端消息投递并记录
+     `invalid-standalone-conflict-delivered-as-ordinary` 证据（start1 死角的窄修复）；
+  4. 结算节奏 B：无代码改动（coordinator 依赖建模/协议/验收三角色 handoff 的
+     既有语义即为目标节奏）。
+- 验证：`modeling_team/tests` 全量 986 passed / 1 skipped / 302 subtests
+  （`env -u DEEPSEEK_API_KEY PYTHONPATH=backend:. backend/.venv/bin/python -m pytest
+  modeling_team/tests -q`）。

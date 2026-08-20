@@ -2857,7 +2857,7 @@ class CodexIsolationTests(unittest.TestCase):
             self.assertEqual((noneligible.retrieval_episode, noneligible.retrieval_state), (0, "idle"))
 
     def test_blocked_protocol_report_waits_for_handoff_not_retrieval_gate(self) -> None:
-        """Blocked recovery may settle only after the ordinary terminal handoff gate."""
+        """Blocked self-declaration settles immediately; completed stays gated."""
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -2882,11 +2882,15 @@ class CodexIsolationTests(unittest.TestCase):
 
             with self.assertRaisesRegex(RoutingError, f"^{TERMINAL_REPORT_GUARD_ERROR}$"):
                 broker.report("protocol", "completed", "retrieval is incomplete")
+            agent.retrieval_state = None
             with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
-                broker.report("protocol", "blocked", "recovery is bounded")
+                broker.report("protocol", "completed", "completed without handoff")
             self.assertEqual(broker.results, {})
 
-            broker.report("modeling", "completed", "modeling terminal handoff")
-            broker.ack_terminal_handoff("protocol", "modeling")
+            # R2.3-009 follow-up (user 2026-08-20): a role self-declares that
+            # it is definitively stuck, so ``blocked`` bypasses both the
+            # retrieval-evidence guard and the terminal handoff dependency --
+            # start3 died because Protocol could not report blocked while the
+            # acceptance handoff was blocked by the retrieval gate.
             broker.report("protocol", "blocked", "recovery is bounded")
             self.assertEqual(broker.results["protocol"].status, "blocked")

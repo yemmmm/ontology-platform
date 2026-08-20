@@ -378,13 +378,15 @@ _TOKEN_FIELDS = (
     "reasoningOutputTokens", "totalTokens", "modelContextWindow",
 )
 
-# Live calibration (r23009-luna-20260820-start2, cq-001 acceptance round): the
-# full live platform examiner drives the 19-tool read allowlist plus the typed
-# report submission and exhausted the previous 10-step cap on both the first
-# attempt and the single permitted identical-input retry (reason_code
-# ``runtime-budget``), while the source examiner passed unchanged.  The cap
-# bounds runaway children only; it is not an acceptance-quality gate.
-_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS = 20
+# Examiner inference-step guardrail (user decision 2026-08-20): one unified
+# cap of 30 for every examiner child, with no per-role distinction.  The cap
+# bounds runaway children only; it is not an acceptance-quality gate.  Live
+# calibration history: 10 (platform-only) was exhausted by the full live
+# platform examiner on both attempts in r23009-luna-20260820-start2; 20
+# (platform-only) passed that layer in start3; the unified 30 keeps the same
+# runaway margin for source/acceptance children without re-introducing
+# per-role calibration drift.
+_EXAMINER_MAX_INFERENCE_STEPS = 30
 
 
 @dataclass
@@ -395,7 +397,7 @@ class ExaminerRunMetrics:
     thread_id: str | None = None
     turn_start_count: int = 0
     inference_steps: int = 0
-    max_inference_steps: int = 3
+    max_inference_steps: int = _EXAMINER_MAX_INFERENCE_STEPS
     ttft_ms: float | None = None
     terminal_wall_ms: float | None = None
     proxy_time_ms: float = 0.0
@@ -857,9 +859,7 @@ class LeanExaminerRuntime:
                 except BaseException as exc:
                     self._capture_failure_metrics([*completed_metrics, source_metrics], exc)
                     raise
-            platform_metrics = ExaminerRunMetrics(
-                "platform", max_inference_steps=_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS
-            )
+            platform_metrics = ExaminerRunMetrics("platform")
             platform_retry_used = False
             try:
                 platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
@@ -873,9 +873,7 @@ class LeanExaminerRuntime:
                     if not getattr(self, "_platform_retry_limit", 1) or platform_retry_used:
                         raise
                     platform_retry_used = True
-                    platform_metrics = ExaminerRunMetrics(
-                        "platform", max_inference_steps=_PLATFORM_EXAMINER_MAX_INFERENCE_STEPS
-                    )
+                    platform_metrics = ExaminerRunMetrics("platform")
                     platform_metrics.bind_first_turn_input([{"type": "packet", "digest": platform_packet.canonical_digest}], packet=platform_packet)
                     platform_report = self.platform_executor(platform_packet, platform_metrics)
                 platform_evidence_ids = _platform_report_ref_ids(platform_report)

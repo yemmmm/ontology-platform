@@ -331,7 +331,12 @@ class RunnerTests(unittest.TestCase):
             )
             runner.start()
             assert runner.transport is not None
-            runner.transport.report("modeling", "blocked", "runtime guard binding")
+            # R2.3-009 follow-up (user 2026-08-20): the adapter-side runtime
+            # guard gates only ``completed`` reports; a self-declared
+            # ``blocked`` role must always be able to report.
+            runner.transport.report("modeling", "blocked", "no guard for blocked")
+            self.assertEqual(adapter.terminal_guard_calls, [])
+            runner._terminal_report_guard("modeling", False, "completed")
             self.assertEqual(adapter.terminal_guard_calls, [("modeling", False)])
         finally:
             runner.cleanup()
@@ -370,8 +375,9 @@ class RunnerTests(unittest.TestCase):
                         runner.transport.report("coordinator", "completed", "premature")
                     self.assertNotIn("coordinator", runner.transport.results)
                     runner.transport.report("modeling", "blocked", "modeling handoff")
-                    with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
-                        runner.transport.report("protocol", "blocked", "protocol handoff")
+                    # R2.3-009 follow-up (user 2026-08-20): ``blocked`` no
+                    # longer waits for upstream terminal handoffs, so protocol
+                    # self-declares immediately.
                     modeling_handoffs = runner.drain()
                     self.assertEqual(
                         [item["type"] for item in modeling_handoffs].count("terminal-result-handoff"), 2

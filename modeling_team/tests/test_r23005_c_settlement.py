@@ -631,12 +631,15 @@ class R23005CSettlementTests(unittest.TestCase):
             with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
                 broker.report("acceptance", "completed", "premature")
             self.assertNotIn("acceptance", broker.results)
-            with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance"):
-                broker.report("modeling", "blocked", "modeling must await settled Acceptance")
+            # R2.3-009 follow-up (user 2026-08-20): ``blocked`` is a
+            # self-declaration and no longer waits for the settled-Acceptance
+            # handoff; ``completed`` still cannot cross it.
+            with self.assertRaises(RoutingError):
+                broker.report("modeling", "completed", "modeling must await settled Acceptance")
+            broker.report("modeling", "blocked", "modeling self-declared stuck")
             acceptance.is_settled = True
             broker.report("acceptance", "completed", "acceptance settled")
             broker.ack_terminal_handoff("modeling", "acceptance")
-            broker.report("modeling", "blocked", "modeling")
             broker.ack_terminal_handoff("protocol", "modeling")
             broker.report("protocol", "completed", "protocol")
             broker.ack_terminal_handoff("coordinator", "modeling")
@@ -690,15 +693,14 @@ class R23005CSettlementTests(unittest.TestCase):
             )
             with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
                 broker.report("protocol", "completed", "retrieval incomplete")
-            with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
-                broker.report("protocol", "blocked", "bounded recovery")
-
-            with self.assertRaisesRegex(RoutingError, "terminal handoffs: acceptance"):
-                broker.report("modeling", "blocked", "modeling awaits Acceptance")
-            with self.assertRaisesRegex(RoutingError, "terminal handoffs: modeling"):
-                broker.report("protocol", "blocked", "bounded recovery")
-            self.assertNotIn("modeling", broker.results)
-            self.assertNotIn("protocol", broker.results)
+            # R2.3-009 follow-up (user 2026-08-20): ``blocked`` self-declares
+            # and bypasses both the retrieval guard and the handoff
+            # dependency, while acceptance/coordinator ``blocked`` remains
+            # gated by the settlement machinery.
+            broker.report("protocol", "blocked", "bounded recovery")
+            broker.report("modeling", "blocked", "modeling awaits Acceptance")
+            self.assertEqual(broker.results["protocol"].status, "blocked")
+            self.assertEqual(broker.results["modeling"].status, "blocked")
 
             with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
                 broker.report("acceptance", "blocked", "acceptance is not settled")
