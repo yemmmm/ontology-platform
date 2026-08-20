@@ -2382,11 +2382,28 @@ class TeamRunner:
         # building a typed conflict, so Modeling receives one revisable
         # complete-revision request instead of a dead run.
         try:
-            ProtocolRetrievalGate(
+            gate = ProtocolRetrievalGate(
                 candidate,
                 candidate_revision=identity.candidate_revision,
                 candidate_digest=identity.candidate_digest,
             )
+            # R2.3-009 start6: an accepted candidate with zero consumer_query
+            # items leaves the gate disabled, so the receipt used to succeed
+            # and the defect surfaced only at governed retrieval time -- after
+            # the revision-1 application, where no formal revision channel
+            # exists for this requirement.  Reject the empty plan at the same
+            # pre-receipt boundary so the proven conflict/revision loop runs
+            # before any platform mutation.  R2.3-005 keeps its accepted
+            # planless-candidate contract: governed retrieval became a
+            # mandatory stage only in R2.3-008.
+            if formal_contract is not None and formal_contract.requirement_id in {
+                "R2.3-008",
+                "R2.3-009",
+            } and not gate.enabled:
+                raise ProtocolRetrievalGateError(
+                    "accepted candidate carries no consumer_query item; "
+                    "governed retrieval would have no retrieval plan to execute"
+                )
         except ProtocolRetrievalGateError as exc:
             # Mark the delivery as a completed-but-rejected binding attempt so
             # the typed conflict builder (which requires a prior receipt

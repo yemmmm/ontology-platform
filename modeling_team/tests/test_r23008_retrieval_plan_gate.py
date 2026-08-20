@@ -42,6 +42,7 @@ from modeling_team.candidate_progress import (
     FormalCandidateProgress,
 )
 from modeling_team.contracts import repository_root
+from modeling_team.formal_runs import R2_3_009_CONTRACT
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.base import RuntimeDelivery, RuntimeDispatchReceipt
 
@@ -274,6 +275,45 @@ class RetrievalPlanGateTests(unittest.TestCase):
         )
         self.assertIs(replay.get("idempotent_replay"), True)
         self.assertEqual(replay["receipt_json"], built["receipt_json"])
+
+    def test_planless_candidate_is_rejected_pre_receipt_not_post_apply(self) -> None:
+        # R2.3-009 start6: a candidate with zero consumer_query items left the
+        # gate disabled, the receipt succeeded, revision-1 was applied, and the
+        # defect surfaced only at governed retrieval time where no revision
+        # channel exists.  The same typed pre-receipt rejection now applies.
+        candidate = _legal_candidate()
+        candidate["items"] = [  # type: ignore[assignment]
+            item for item in candidate["items"] if item.get("item_kind") != "consumer_query"  # type: ignore[union-attr]
+        ]
+        runner, _progress, delivery_id = self._runner(candidate)
+        # Governed retrieval became a mandatory stage in R2.3-008; the 005
+        # harness contract keeps its accepted planless-candidate behavior.
+        runner.run.configuration.profile.profile_id = "r2-3-009-modeling-team"  # type: ignore[union-attr]
+        runner.run.configuration.task.task_id = "r2-3-009-formal-acceptance"  # type: ignore[union-attr]
+        runner.run.formal_contract = R2_3_009_CONTRACT  # type: ignore[attr-defined]
+        carrier = self._carrier(runner)
+        token = carrier.capability_token("protocol")
+        with self.assertRaises(AcceptanceContractError) as raised:
+            carrier.protocol_build_candidate_receipt(
+                protocol_id="protocol", delivery_id=delivery_id, capability=token
+            )
+        data = getattr(raised.exception, "data", None)
+        self.assertIsInstance(data, dict)
+        self.assertEqual(data["reason"], "consumer_query_plan_invalid")
+        self.assertIn("no consumer_query item", data["detail"])
+        self.assertEqual(
+            runner._protocol_candidate_responses, {delivery_id: "receipt_rejected"}
+        )
+        # The sanctioned conflict/revision loop stays available, exactly like
+        # the start10 illegal-plan rejection.
+        conflict = carrier.protocol_build_candidate_conflict(
+            protocol_id="protocol",
+            delivery_id=delivery_id,
+            conflict_code="consumer_query_plan_invalid",
+            conflict_detail="candidate must carry at least one consumer_query item",
+            capability=token,
+        )
+        self.assertEqual(conflict["conflict"]["status"], "conflict")
 
     def test_registration_rejection_after_accepted_receipt_is_typed_feedback(self) -> None:
         # Reproduce the start10 crash path: an exact hand-built receipt bytes
