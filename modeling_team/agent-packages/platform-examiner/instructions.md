@@ -99,3 +99,12 @@ If a response is truncated, incomplete, ambiguous, or missing a fact, preserve t
 completeness markers and record the resulting unknown and explicit gap in the same typed
 report. An incomplete retrieval cannot support a definitive conclusion: distinguish "the
 platform has not modeled this fact" from "the current query missed it".
+
+A submitted report always carries at least one `evidence_refs` locator: the sink rejects a
+report whose locator list is empty and the rejection cannot be repaired by a second submission.
+If a proxy call is denied (for example `read-scope-denied` after a malformed or empty query),
+that call produced no receipt; do not conclude `unavailable` from zero successful calls —
+re-issue a correct, smaller query per the retrieval rules above until at least one call
+succeeds, then keep its locator. Only treat the platform read as genuinely unavailable when
+correct, well-formed queries keep failing, and in that case still record every attempted
+direction in `coverage.queries_or_sections` and the failure in `gaps`.

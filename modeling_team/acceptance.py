@@ -1516,6 +1516,15 @@ class RunnerAcceptanceCarrier:
         self._lifecycle_lock = threading.RLock()
         self._cleanup_started = False
         self._recycling_tokens: set[str] = set()
+        # R2.3-009 follow-up (start5 live evidence 2026-08-20): a child reaching
+        # a terminal state (ingested report or recorded infrastructure failure)
+        # left the persistent Acceptance role asleep with nothing to poll.  The
+        # carrier records each terminal transition here so the Host loop can
+        # wake Acceptance with one mechanical notification; report/failure
+        # callbacks run on pump/watchdog threads, so the queue takes its own
+        # lock and never touches lifecycle state.
+        self._child_terminal_events_lock = threading.Lock()
+        self._child_terminal_events: list[dict[str, Any]] = []
         # C-stage integrity state is deliberately kept in the Runner-owned carrier.
         # It is not model-visible and does not introduce a write gate: the carrier only
         # decides whether previously persisted acceptance evidence is still consumable.
@@ -4843,6 +4852,12 @@ class RunnerAcceptanceCarrier:
         self._reports[found.token] = valid
         self._rounds[round_id]["reports"][found.kind] = valid
         self._rounds[round_id]["status"] = "reports_ready" if len(self._rounds[round_id]["reports"]) == 2 else "active"
+        self._record_child_terminal_event(
+            round_id=round_id,
+            kind=found.kind,
+            outcome="report",
+            report_digest=valid["report_digest"],
+        )
         return _safe_copy(valid)
 
     def report_sink(
@@ -4963,6 +4978,33 @@ class RunnerAcceptanceCarrier:
         with self._lifecycle_lock:
             return self._record_infrastructure_failure_locked(*args, **kwargs)
 
+    def _record_child_terminal_event(
+        self,
+        *,
+        round_id: str,
+        kind: str,
+        outcome: str,
+        **digests: str,
+    ) -> None:
+        """Queue one child terminal transition for the Host wake loop."""
+
+        event = {
+            "acceptance_round_id": round_id,
+            "examiner_kind": kind,
+            "outcome": outcome,
+            **digests,
+        }
+        with self._child_terminal_events_lock:
+            self._child_terminal_events.append(event)
+
+    def drain_child_terminal_events(self) -> list[dict[str, Any]]:
+        """Hand the queued terminal transitions to the Host and clear them."""
+
+        with self._child_terminal_events_lock:
+            events = self._child_terminal_events
+            self._child_terminal_events = []
+            return events
+
     def _record_infrastructure_failure_locked(self, *, acceptance_id: str, round_id: str, handle: ChildHandle | str, failure_category: str, reason_code: str, capability: str | None = None) -> InfrastructureFailure | None:
         found = self._lookup_handle(acceptance_id=acceptance_id, round_id=round_id, handle=handle, capability=capability)
         if not isinstance(failure_category, str) or not failure_category or not isinstance(reason_code, str) or not reason_code:
@@ -4991,6 +5033,13 @@ class RunnerAcceptanceCarrier:
         except Exception:
             raise
         self._failures[digest] = failure
+        self._record_child_terminal_event(
+            round_id=round_id,
+            kind=found.kind,
+            outcome="failure",
+            failure_digest=digest,
+            reason_code=reason_code,
+        )
         if found.attempt == 1:
             # Attempt 0 plus one identical-input retry is the complete
             # infrastructure budget. The persistent Acceptance and the other

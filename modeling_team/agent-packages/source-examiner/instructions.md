@@ -13,3 +13,10 @@ top-level fields and no Runner-owned bindings: `answerability`, `conclusion`, `e
 digests, artifact paths, or source-bundle fields; the Host derives those from the current ticket
 and approved manifest. For missing evidence preserve the exact explicit unknown
 `因缺少相关证据无法回答` and identify the gap.
+
+`evidence_refs` must never be empty: every submitted report cites at least one approved-source
+location you actually examined, even when the conclusion is missing-evidence or unavailable.
+When the sources do not contain the answer, cite the locations you searched that establish the
+gap (the same sections listed in `coverage.queries_or_sections`) and record the missing fact in
+`gaps`. A report with zero `evidence_refs` items is rejected by the sink and cannot be repaired
+by a second submission, so build the locator list while you read.

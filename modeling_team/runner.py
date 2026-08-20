@@ -3947,6 +3947,62 @@ class TeamRunner:
             )
             self._issue_pending_started = None
 
+    def _wake_acceptance_on_child_terminal(self) -> None:
+        """R2.3-009 follow-up (start5 live evidence 2026-08-20).
+
+        Examiner children reach their terminal state (ingested report or
+        recorded infrastructure failure) on pump/watchdog threads with no
+        delivery to the persistent Acceptance role, which ends its turn while
+        "awaiting terminal reports" and then sleeps forever.  The carrier now
+        queues each terminal transition; this Host-loop hook drains the queue
+        and wakes Acceptance with one mechanical notification so it can poll
+        ``acceptance_child_get_report``, recycle, and retry or settle the
+        round instead of deadlocking into T3.  The notification carries only
+        protocol facts (round, kind, outcome, digest) -- no business
+        semantics -- so deterministic mechanics stay out of model reasoning.
+        """
+
+        carrier = getattr(self, "acceptance", None)
+        if carrier is None:
+            return
+        if getattr(carrier, "is_settled", False):
+            return
+        issue_ledger = self._issue_ledger()
+        if issue_ledger is not None and issue_ledger.pending:
+            # Keep events queued; the next drain after the issue resolves
+            # delivers the wake with the resume guidance.
+            return
+        drain_events = getattr(carrier, "drain_child_terminal_events", None)
+        if not callable(drain_events):
+            return
+        events = drain_events()
+        if not events or not self.run:
+            return
+        try:
+            acceptance_agent = next(
+                agent.agent_id
+                for agent in self.run.configuration.profile.agents
+                if agent.package.role == "acceptance"
+            )
+        except StopIteration:
+            return
+        for event in events:
+            delivery = RuntimeDelivery(
+                sender_id="runner/examiner-terminal",
+                recipient_id=acceptance_agent,
+                kind="examiner-terminal",
+                text=json.dumps(event, ensure_ascii=False, sort_keys=True),
+            )
+            receipt = self.adapter.send_message(acceptance_agent, delivery)
+            self._append_evidence(
+                "examiner-terminal-wake",
+                {
+                    "recipient_id": acceptance_agent,
+                    "event": event,
+                    "turn_id": getattr(receipt, "turn_id", None),
+                },
+            )
+
     def _check_run_fallback_timeout(self) -> None:
         """R2.3-009 T3: the only run-level timeout latch left in the Runner."""
 
@@ -4588,6 +4644,7 @@ class TeamRunner:
         self._track_issue_pending()
         self._check_run_fallback_timeout()
         self._check_formal_candidate_progress()
+        self._wake_acceptance_on_child_terminal()
         output: list[dict[str, Any]] = []
         self._handle_issue_events(output)
         if self._issue_abort_requested:
