@@ -188,7 +188,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "token": "proxy-token",
             "operation": "tools/call",
             "tool": "query_semantic_context",
-            "arguments": {"query": "release", "scope_mode": "ontologies"},
+            "arguments": {"query": "release"},
         })
         self.assertTrue(bare["ok"])
         self.assertEqual(proxy.backend_calls, 1)
@@ -200,12 +200,13 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(arguments["ticket_digest"], "a" * 64)
         self.assertEqual(arguments["model_state_digest"], "b" * 64)
         self.assertEqual(arguments["ontology_ids"], ["ontology-1"])
+        self.assertEqual(arguments["scope_mode"], "ontologies")
         # An explicit contradiction still fails closed without a backend call.
         denied = proxy.handle({
             "token": "proxy-token",
             "operation": "tools/call",
             "tool": "query_semantic_context",
-            "arguments": {"query": "release", "scope_mode": "ontologies", "ontology_id": "foreign-ontology"},
+            "arguments": {"query": "release", "ontology_id": "foreign-ontology"},
         })
         self.assertEqual(denied["code"], "read-scope-denied")
         self.assertEqual(proxy.backend_calls, 1)
@@ -214,7 +215,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "token": "proxy-token",
             "operation": "tools/call",
             "tool": "query_semantic_context",
-            "arguments": {"query": "release", "scope_mode": "ontologies", "context_detail": "compact"},
+            "arguments": {"query": "release", "context_detail": "compact"},
         })
         self.assertTrue(detail["ok"])
         self.assertEqual(forwarded[1][1]["context_detail"], "compact")

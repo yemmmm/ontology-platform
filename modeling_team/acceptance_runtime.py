@@ -2001,6 +2001,14 @@ class ScopedReadProxy:
                 and arguments.get("ontology_ids") is None
             ):
                 arguments = {**arguments, "ontology_ids": [self.ontology_id]}
+            # ``scope_mode`` is equally mechanical: the proxy is ontology-bound,
+            # so the only legal value is the one frozen here.  A caller-supplied
+            # value still flows through the exact-schema const check.
+            if (
+                tool in {"query_semantic_context", "semantic_sparql_query"}
+                and arguments.get("scope_mode") is None
+            ):
+                arguments = {**arguments, "scope_mode": "ontologies"}
             if self.exact_schemas is not None:
                 try:
                     arguments = validate_examiner_proxy_arguments(
