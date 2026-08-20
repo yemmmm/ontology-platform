@@ -312,3 +312,15 @@
      剥夺了「Agent 报告 blocked」这一更快的终态路径。
   3. acceptance.py:1843-1844 死分支（R7 复核已记录）。
   4. T1/T2/T3 时长参数未经真实运行标定（start3 实测 T3 在暂停排除后精确于 5400 活跃秒触发）。
+
+### 用户决策记录（2026-08-20，方向已确认、实施暂缓）
+
+- **放开 Agent 间沟通与上报限制**（处置遗留缺陷 2 的方向）：除需要隔离的 Examiner
+  （不得随意向外询问信息，保持验收独立性）外，其余 Agent（modeling / protocol /
+  coordinator）应可随时互相沟通与上报状态；唯一保留的约束是**终态提交
+  （report_task_result 的 completed/blocked）必须在对应任务已到达完成或确定无法完成之后**，
+  不再以"验收 handoff 未完成"为由拒绝 blocked 上报。
+- 实施时机：用户明确"暂时不做修改"，待本轮三个问题（start1 超时根因、examiner 步数上限
+  设计目的、本条沟通放开方案）讨论清楚后一并修改。
+- 关联证据：start1 的 `invalid-standalone-conflict-quarantined`（protocol 冲突投递被隔离，
+  modeling 未收到）；start3 的 `missing_modeling_handoff`（blocked 上报被拒）。

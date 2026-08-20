@@ -113,6 +113,11 @@ acceptance stage.
 - Track time spent on semantic modeling versus infrastructure, harness, review, and documentation.
   If semantic modeling is less than half of active effort, pause and propose a smaller path before
   expanding the harness.
+- 多轮建模任务（授权多次 start 的真实运行）在每轮到达终态后，必须立即用简明中文向用户总结该轮
+  状况，格式固定为：本轮走到哪一步、卡死在哪一层（建模质量 / 平台合同 / 协作路由 / 运行基础设施）、
+  Agent 自身行为是否正确、本轮结束后做了什么窄修复（含 commit）、该轮预算消耗或退款情况。多轮
+  结束时附一张逐轮对比表（轮次 / 走到哪 / 死因）。总结面向非工程读者：不堆内部术语，内部名词
+  首次出现时用一句话解释。证据引用保留在测试计划或 delivery record 中，总结正文保持简短。
 
 ## Platform and Reference-Ontology Boundary
 
