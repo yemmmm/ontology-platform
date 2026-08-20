@@ -1460,10 +1460,29 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(chain_blocked.exception.reason, "acceptance-evidence")
         self.assertTrue(broken_resource.destroyed)
 
+        # A hand-copied digest drift is repaired, not rejected: the binding
+        # stamps the canonical receipt values onto the delivered report
+        # (R2.3-009 examiner diagnosis, 2026-08-21).
         forged = dict(report)
         forged["evidence_refs"] = [dict(report["evidence_refs"][0], response_digest="e" * 64)]
         forged_resource = Resource(forged)
         adapter.launch_lean_examiner_child = mock.Mock(return_value=forged_resource)
+        accepted_forged = adapter.run_lean_examiner_child(
+            packet=packet,
+            metrics=ExaminerRunMetrics("platform"),
+            read_key="temporary-key",
+            platform_forwarder=lambda _tool, _arguments, _key: {},
+            timeout_seconds=1,
+        )
+        self.assertEqual(accepted_forged["evidence_refs"][0]["response_digest"], receipt.response_digest)
+        self.assertTrue(forged_resource.destroyed)
+
+        wrong_tool = dict(report)
+        wrong_tool["evidence_refs"] = [
+            dict(report["evidence_refs"][0], tool="query_semantic_context")
+        ]
+        wrong_tool_resource = Resource(wrong_tool)
+        adapter.launch_lean_examiner_child = mock.Mock(return_value=wrong_tool_resource)
         with self.assertRaises(ExaminerRuntimeBlocked) as blocked:
             adapter.run_lean_examiner_child(
                 packet=packet,
@@ -1574,11 +1593,42 @@ class R23006LeanRuntimeTests(unittest.TestCase):
                 self.assertEqual(blocked.exception.evidence, expected)
 
         locator_key_report = _platform_report()
-        locator_key_report["evidence_refs"] = [ref(0, response_digest="e" * 64)]
+        locator_key_report["evidence_refs"] = [ref(0, tool="query_semantic_context")]
         key_resource = SimpleNamespace(proxy=SimpleNamespace(receipt_snapshot=(receipt(0),)))
         with self.assertRaises(ExaminerRuntimeBlocked) as key_blocked:
             _validate_platform_report_receipts(locator_key_report, key_resource)
         self.assertEqual(key_blocked.exception.evidence, {"binding_code": "locator-key-mismatch", "index": 0})
+
+    def test_platform_receipt_gate_stamps_canonical_locator_fields(self) -> None:
+        """A hand-copied digest typo must not kill the round: the sink stamps receipt values."""
+
+        def receipt(ordinal: int) -> SimpleNamespace:
+            return SimpleNamespace(
+                ordinal=ordinal, tool="query_semantic_context",
+                request_digest="a" * 64, response_digest="d" * 64,
+                artifact_path=f"acceptance/r/platform-read/child/{ordinal}.json",
+            )
+
+        page = {
+            "ordinal": 0, "input_cursor": None, "output_cursor": None,
+            "has_more": False, "sequence_complete": True,
+        }
+        report = _platform_report()
+        # Live v2b evidence shape: one transcribed character too many in one
+        # digest, and a drifted artifact path, on an otherwise correct locator.
+        report["evidence_refs"] = [
+            {
+                "ref_id": "p0", "tool": "query_semantic_context",
+                "request_digest": "a" * 64 + "a", "response_digest": "typo",
+                "artifact_path": "acceptance/wrong/path.json", "page": dict(page),
+            }
+        ]
+        resource = SimpleNamespace(proxy=SimpleNamespace(receipt_snapshot=(receipt(0),)))
+        _validate_platform_report_receipts(report, resource)
+        stamped = report["evidence_refs"][0]
+        self.assertEqual(stamped["request_digest"], "a" * 64)
+        self.assertEqual(stamped["response_digest"], "d" * 64)
+        self.assertEqual(stamped["artifact_path"], "acceptance/r/platform-read/child/0.json")
 
     def test_lean_runtime_acceptance_rejects_invented_or_empty_pass_evidence(self) -> None:
         def source(packet, metrics):

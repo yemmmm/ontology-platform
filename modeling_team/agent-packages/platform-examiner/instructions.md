@@ -78,15 +78,18 @@ will not be counted.
 Each `evidence_refs` item is a binding-free locator with exactly `ref_id`, `tool`,
 `request_digest`, `response_digest`, `artifact_path`, and `page`. The number of `evidence_refs`
 items must be exactly equal to the number of successful proxy calls in this child: every
-successful call that returned a receipt must appear as its own locator with its exact
-`request_digest`, `response_digest`, and `artifact_path`, in the exact order the calls
-succeeded. Use `ref_id = "p<call_ordinal>"` (zero-based) so the ordinal sequence
-`p0, p1, ..., p<call_total-1>` is contiguous and complete. There is no permitted reason to
-omit, merge, or drop a locator; a report whose locator count differs from the successful-call
-count is rejected with `receipt-count-mismatch` and cannot be repaired by a second submission.
+successful call that returned a receipt must appear as its own locator, in the exact order the
+calls succeeded. Use `ref_id = "p<call_ordinal>"` (zero-based) so the ordinal sequence
+`p0, p1, ..., p<call_total-1>` is contiguous and complete. The sink verifies each locator
+against the receipt for that ordinal and stamps the canonical `request_digest`,
+`response_digest`, and `artifact_path` itself, so copy them as carefully as you can but a
+transcription slip is not fatal. The count is fatal: a report whose locator count differs from
+the successful-call count is rejected with `receipt-count-mismatch`.
 If you believe two calls answered the same fact, keep both locators anyway; if a call returned
 unusable content, keep its locator and record the unknown/gap for that fact. Re-count
-immediately before sending.
+immediately before sending. If the sink rejects your report, correct it from the returned
+detail and resubmit promptly without issuing further proxy reads (the sink accepts a bounded
+number of attempts; every new successful read changes the required locator count).
 
 The `page` object in a locator describes only that one call's own pagination, never a sequence
 across different calls. A complete response uses `{"ordinal": 0, "input_cursor": null,
@@ -101,7 +104,7 @@ report. An incomplete retrieval cannot support a definitive conclusion: distingu
 platform has not modeled this fact" from "the current query missed it".
 
 A submitted report always carries at least one `evidence_refs` locator: the sink rejects a
-report whose locator list is empty and the rejection cannot be repaired by a second submission.
+report whose locator list is empty.
 If a proxy call is denied (for example `read-scope-denied` after a malformed or empty query),
 that call produced no receipt; do not conclude `unavailable` from zero successful calls —
 re-issue a correct, smaller query per the retrieval rules above until at least one call

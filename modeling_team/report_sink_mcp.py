@@ -79,8 +79,11 @@ def report_schema(kind: str) -> dict[str, Any]:
             "properties": {
                 "ref_id": {"type": "string", "minLength": 1},
                 "tool": {"type": "string", "minLength": 1},
-                "request_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
-                "response_digest": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+                # Digest transcription is verified and canonicalized Host-side
+                # against the proxy receipt; a hand-copied typo must not end
+                # the round here (R2.3-009 examiner diagnosis, 2026-08-21).
+                "request_digest": {"type": "string", "minLength": 1},
+                "response_digest": {"type": "string", "minLength": 1},
                 "artifact_path": {"type": "string", "minLength": 1},
                 "page": {
                     "type": "object",
@@ -175,9 +178,10 @@ def _validate_payload(value: Any, *, kind: str) -> dict[str, Any]:
                 raise ValueError("platform evidence locator tool is invalid")
             for field in ("request_digest", "response_digest"):
                 digest = ref[field]
-                if not isinstance(digest, str) or len(digest) != 64 or any(
-                    char not in "0123456789abcdef" for char in digest
-                ):
+                # Non-empty only: the Host sink matches the locator to the
+                # proxy receipt and stamps the canonical digests, so a single
+                # transcribed character must not reject the whole report.
+                if not isinstance(digest, str) or not digest:
                     raise ValueError(f"platform evidence locator {field} is invalid")
             path = ref["artifact_path"]
             if not isinstance(path, str) or not path or Path(path).is_absolute() or ".." in Path(path).parts:

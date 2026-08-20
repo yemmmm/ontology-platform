@@ -2633,8 +2633,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "type": "text",
                         "text": (
                             "Read only /agent/home/input.json. Call the MCP tool "
-                            "submit_examiner_report exactly once with one bounded terminal "
-                            "report. Do not use raw sockets or any other capability."
+                            "submit_examiner_report with one bounded terminal report. If the "
+                            "sink rejects it, correct the report from the returned detail and "
+                            "resubmit without issuing further proxy reads; do not use raw "
+                            "sockets or any other capability."
                         ),
                     }
                 ]
