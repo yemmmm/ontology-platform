@@ -3070,7 +3070,13 @@ class RunnerAcceptanceCarrier:
             "competency_questions": _safe_copy(expected_questions),
             "allowed_read_tools": list(canonical_platform_allowlist()),
             "modeling_receipts": receipts,
-            "timeout_seconds": 600,
+            # R2.3-009 start8/9 (2026-08-20): the live platform Examiner child
+            # needs roughly 30-75s per platform step (large context pages plus
+            # model turnaround), so the 20-step budget legitimately exceeds the
+            # old 600s wall — it was killed on time four times across two runs
+            # while the platform itself stayed healthy.  1800s still bounds a
+            # runaway child but fits verified legitimate work.
+            "timeout_seconds": 1800,
             "quality_standard_ref": policy["quality_standard_ref"],
             "quality_standard_digest": policy["quality_standard_digest"],
             "quality_standard_artifact": _safe_copy(policy["quality_standard_artifact"]),
