@@ -324,3 +324,12 @@
   设计目的、本条沟通放开方案）讨论清楚后一并修改。
 - 关联证据：start1 的 `invalid-standalone-conflict-quarantined`（protocol 冲突投递被隔离，
   modeling 未收到）；start3 的 `missing_modeling_handoff`（blocked 上报被拒）。
+
+### 用户决策补录（2026-08-20 第二轮讨论）
+
+- **examiner 推理步数护栏统一为 30，不区分角色**（取代 source/acceptance=3、platform=20
+  的分角色标定；仍是防失控资源护栏，不是质量关卡）。
+- **终态前置条件由角色自己判定**：角色自行确定自己的任务是否已到达完成或确定无法完成，
+  无需 coordinator 或 Runner 代为判定。
+- **正式候选通道保持类型化**（候选/回执/冲突仍走带校验的通道）；只放开普通沟通与状态上报。
+- 问题 3（coordinator 终态结算节奏）用户未理解，待重新解释后决定——实施继续暂缓。
