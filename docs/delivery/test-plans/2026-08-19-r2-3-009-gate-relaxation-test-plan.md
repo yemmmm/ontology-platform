@@ -404,3 +404,38 @@
 - 遗留（记录待处置）：平台 Examiner「全部调用失败」仍无合法报告形状（指令层要求至少
   一次成功调用是缓解，非合同解）；round 发布顺序守卫依赖 coordinator 按 question 顺序
   发布 ticket（Agent 行为，未改平台）。
+
+### start6（r23009-luna-20260820-start6）
+
+- 走到哪：本批最深——第一版候选（r23008-candidate-1）收据被接受并于 06:08 **已应用到
+  平台**（revision-1 mutation 生效）；两个 frozen-baseline owner 问题按「未确认 → 保留
+  显式 unknown」答复；issue-1（protocol 抄错 Project ID 尾部）／issue-2（apply 幂等键）
+  经 FIFO guidance 关闭；issue-3：受治理检索发现已接受候选**不含任何 consumer_query
+  检索计划项**，经 guidance 由 Modeling 补发修订候选 r23008-candidate-2（delivery-13）。
+- 卡死层：**平台合同**（issue-4，本轮致死层）。收据被接受后（progress state complete），
+  唯一能重开修订的载体是「带类型字段的冲突包」（original_delivery_id/receipt_digest/
+  workspace_version/mutation_state），而 `protocol_build_candidate_conflict` 只在
+  R2.3-003 分支构造该形状——R2.3-009 生成六字段简装冲突，被通道按 complete-state 规则
+  丢弃（standalone 与 reply-to 两种投递形态均不可达）。对 delivery-13 的 receipt/conflict
+  能力调用均以 `typed candidate delivery_id is foreign or stale` 拒绝（通道仍绑定
+  delivery-10）。Agent 行为正确：发现缺陷、上报、按指引补发修订，均无可指摘。
+- 收尾：owner 经 issue-4 guidance 裁定平台合同缺口、指示各角色 blocked 收尾；
+  protocol/modeling 报告 blocked；**acceptance 被终端守卫禁止报告 blocked**
+  （仅 completed 可终止，见 runner `_terminal_report_guard`），「全员终态」不可达，
+  唯自动出路为 T3。owner 随后以 FIFO `stop` 结束运行（07:1x），清理完成。
+- 预算：`semantic_start` 06:01:52 已消耗；owner-stop 路径因 `terminal_results` 需全员
+  报告才赋值，结算/退款未自动入账。经用户决定（2026-08-20）：**记为消耗**，本批三次
+  授权净消耗 1。临时 admin key 已吊销（key id 77893bea-2414-4abc-9c61-a6d49a4fc62e）。
+- 窄修复（本轮后实施）：commit `02d1241`——R2.3-008/009 下，候选完全不含 consumer_query
+  项时，收据阶段即以结构化 `consumer_query_plan_invalid` 诊断拒绝（与 start10 非法
+  required_paths 同路径），使已验证的「冲突→修订」循环发生在任何平台 mutation 之前；
+  R2.3-005 的 planless 候选合同保持不变。新增回归测试 1 项，全量 992 passed / 1 skipped /
+  302 subtests。
+- 遗留（记录待处置）：
+  1. **收据接受后的修订通道**：R2.3-009 无合法 post-receipt revision 载体（003 类型包
+     语义为 pre-mutation zero-mutation，不适用于已应用 revision-1 的新建 scope 场景），
+     需要一次正式合同设计，不能窄修。
+  2. **acceptance 无法报告 blocked**：不可修复 run 只能靠 T3（90 分钟活跃时间）退出，
+     本批三轮均因此拉长收尾；owner-stop 可提前结束但结算/退款不自动入账（本次按用户
+     决定记为消耗）。
+  3. revision-1 已应用且无 revision-2；scope 清理证据见 run root cleanup 记录。
