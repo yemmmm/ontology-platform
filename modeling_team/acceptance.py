@@ -5618,12 +5618,23 @@ class RunnerAcceptanceCarrier:
         self._append(round_id, "verdict.json", normalized)
         return receipt
 
+    def _verdict_drift_invalidated(self, round_id: str) -> bool:
+        """True only for genuine model-state drift invalidation.
+
+        ``verdict_usable`` records whether a PASS still counts toward
+        settlement; it is ``False`` for every durably submitted FAIL/BLOCKED
+        verdict by construction (start11 of R2.3-009 lost its BLOCKED verdict
+        to that conflation).  Only the revalidation path marks the whole round
+        ``state_invalidated``, which is the drift signal readers must honor.
+        """
+        return self._rounds.get(round_id, {}).get("status") == "state_invalidated"
+
     def get_verdict(self, *, acceptance_id: str, round_id: str, verdict_digest_value: str | None = None, capability: str | None = None) -> VerdictReceipt:
         self._check_capability("acceptance", acceptance_id, capability)
         receipt = self._verdicts.get(round_id)
         if receipt is None:
             _error("verdict receipt not found")
-        if self._rounds.get(round_id, {}).get("verdict_usable") is False:
+        if self._verdict_drift_invalidated(round_id):
             _error("Acceptance verdict was invalidated by model-state drift")
         if verdict_digest_value is not None and receipt.verdict_digest != verdict_digest_value:
             _error("verdict digest mismatch")
@@ -5641,7 +5652,7 @@ class RunnerAcceptanceCarrier:
         receipt = self._verdicts.get(round_id)
         if receipt is None:
             _error("verdict receipt not found")
-        if self._rounds.get(round_id, {}).get("verdict_usable") is False:
+        if self._verdict_drift_invalidated(round_id):
             _error("Acceptance verdict was invalidated by model-state drift")
         if verdict_digest_value is not None and receipt.verdict_digest != verdict_digest_value:
             _error("verdict digest mismatch")

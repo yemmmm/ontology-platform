@@ -2436,13 +2436,19 @@ class ReportSinkServer:
                                 "detail": detail,
                                 "attempts_remaining": attempts_remaining,
                             }
-                        except Exception:
-                            self._rejections.append("report-rejected")
+                        except Exception as exc:
+                            # Preserve the validator's own reason (exception
+                            # type plus message) instead of a bare
+                            # "report-rejected": start11 of R2.3-009 lost the
+                            # real rejection cause for two examiner reports
+                            # this way, leaving the failure undiagnosable.
+                            detail = f"{type(exc).__name__}: {exc}".strip()
+                            self._rejections.append(detail)
                             attempts_remaining = max(0, self.max_attempts - len(self._rejections))
                             response = {
                                 "ok": False,
                                 "code": "report-rejected",
-                                "detail": "report rejected by the Host validator",
+                                "detail": detail,
                                 "attempts_remaining": attempts_remaining,
                             }
                         else:

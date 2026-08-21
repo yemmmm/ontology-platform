@@ -587,3 +587,46 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
     resource.destroy()
     adapter.stop()
     assert not socket_root.exists()
+
+
+def test_report_sink_preserves_generic_validator_rejection_detail(tmp_path: Path) -> None:
+    # start11 fix (R2.3-009): a validator that raises outside the typed
+    # ChildRuntimeError/ExaminerRuntimeBlocked pair (for example the carrier's
+    # AcceptanceContractError) previously collapsed into a bare
+    # "report-rejected" with no reason, leaving the rejection undiagnosable.
+    # The sink must surface the exception type and message.
+    socket_path = tmp_path / "report.sock"
+    accepted: list[dict] = []
+
+    def validator(report: dict) -> None:
+        raise RuntimeError("ticket digest mismatch: published ticket is stale")
+
+    sink = ReportSinkServer(socket_path, "token", accepted.append, kind="platform", validator=validator)
+    sink.start()
+    try:
+        payload = _semantic_payload({
+            "ref_id": "p0",
+            "tool": "get_modeling_context",
+            "request_digest": "a" * 64,
+            "response_digest": "b" * 64,
+            "artifact_path": "acceptance/round/platform-read/handle/0.json",
+            "page": {
+                "ordinal": 0,
+                "input_cursor": None,
+                "output_cursor": None,
+                "has_more": False,
+                "sequence_complete": True,
+            },
+        })
+        rejected = _socket_request(socket_path, {"token": "token", "report": payload})
+        assert rejected["ok"] is False
+        assert rejected["code"] == "report-rejected"
+        assert "RuntimeError" in rejected["detail"]
+        assert "ticket digest mismatch" in rejected["detail"]
+        assert rejected["attempts_remaining"] == 2
+        assert accepted == []
+        assert sink._rejections == [
+            rejected["detail"]
+        ], "rejection history must retain the validator reason, not a bare label"
+    finally:
+        sink.stop()

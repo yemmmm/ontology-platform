@@ -839,13 +839,46 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 infrastructure_failures=[failure0, failure1],
             )
             self.assertEqual(renormalized["verdict_digest"], receipt["verdict_digest"])
-            # round_summary exposes the BLOCKED verdict to the Coordinator
-            # (coordinator_get_verdict only retrieves PASS verdicts by design;
-            # the merged recording path persists the BLOCKED verdict regardless).
+            # round_summary exposes the BLOCKED verdict to the Coordinator.
             self.assertEqual(
                 carrier.round_summary(ticket["acceptance_round_id"])["verdict"],
                 "BLOCKED",
             )
+            # start11 fix (R2.3-009): a durably submitted BLOCKED verdict is
+            # readable by both verdict getters.  ``verdict_usable`` records
+            # whether a PASS still counts toward settlement; it must not be
+            # mistaken for model-state drift invalidation, which previously
+            # made every BLOCKED verdict unreadable by construction.
+            coordinator_receipt = carrier.coordinator_get_verdict(
+                coordinator_id="coordinator",
+                round_id=ticket["acceptance_round_id"],
+                capability=carrier.capability_token("coordinator"),
+            )
+            self.assertEqual(coordinator_receipt.verdict_digest, receipt["verdict_digest"])
+            self.assertEqual(coordinator_receipt.verdict, "BLOCKED")
+            acceptance_receipt = carrier.get_verdict(
+                acceptance_id="acceptance",
+                round_id=ticket["acceptance_round_id"],
+                verdict_digest_value=receipt["verdict_digest"],
+                capability=carrier.capability_token("acceptance"),
+            )
+            self.assertEqual(acceptance_receipt.verdict_digest, receipt["verdict_digest"])
+            # Genuine model-state drift still invalidates the round and the
+            # getter must refuse: only the revalidation path flips the round
+            # status to ``state_invalidated``.
+            changed_state = deepcopy(ticket["model_state"])
+            changed_state["workspace_version"] = "workspace-drifted"
+            changed_state["state_digest"] = model_state_digest(changed_state)
+            invalidation = carrier.revalidate_model_state(
+                boundary="after-pass-before-next-cq", observed=changed_state
+            )
+            self.assertEqual(invalidation["status"], "state_invalidated")
+            with self.assertRaisesRegex(AcceptanceContractError, "model-state drift"):
+                carrier.coordinator_get_verdict(
+                    coordinator_id="coordinator",
+                    round_id=ticket["acceptance_round_id"],
+                    capability=carrier.capability_token("coordinator"),
+                )
             carrier.cleanup()
 
     def test_build_rejects_unknown_round_and_bad_capability(self) -> None:
