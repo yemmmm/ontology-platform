@@ -6,7 +6,13 @@ receives a Modeling clarification and never files the owner question (or a
 capability probe that gives up) idles with every role quiet, and the only
 remaining watchdog is the 5400s run-fallback timeout — the whole round is
 burned for a stall a single inquiry could have rescued.  These tests lock
-the bounded mechanical behavior of ``TeamRunner._check_cooperative_idle``.
+the mechanical behavior of ``TeamRunner._check_cooperative_idle``.
+
+R2.3-009 start15 (2026-08-21): the original per-run budget of two inquiries
+was consumed while legitimately waiting for an owner answer; the real
+protocol/modeling deadlock an hour later then got no inquiry at all.  The
+inquiry is therefore no longer budget-capped — the idle window between two
+inquiries is the only rate limit.
 """
 
 from __future__ import annotations
@@ -77,7 +83,6 @@ def _idle_runner(
     )
     runner.acceptance = acceptance
     runner._idle_inquiry_seconds = 300.0
-    runner._idle_inquiry_limit = 2
     runner._idle_inquiries_sent = 0
     runner._idle_inquiry_baseline = 1000.0
     return runner
@@ -101,19 +106,30 @@ def test_idle_run_sends_one_bounded_inquiry_to_coordinator(tmp_path: Path) -> No
     assert evidence[0]["inquiry_count"] == 1
     assert evidence[0]["idle_seconds"] == pytest.approx(300.0)
     # A second call inside the same idle window is suppressed by the reset
-    # baseline; the inquiry counter still has budget.
+    # baseline; the next inquiry must wait a full window again.
     runner._check_cooperative_idle()
     assert len(adapter.sent) == 1
 
 
-def test_inquiry_limit_is_bounded(tmp_path: Path) -> None:
+def test_inquiries_repeat_every_idle_window_without_budget_cap(tmp_path: Path) -> None:
+    # start15: the two-inquiry budget was spent waiting for an owner answer,
+    # so the later deadlock got no inquiry.  The idle window is now the only
+    # rate limit: every further full window of silence sends one more
+    # inquiry, indefinitely.
     now = [3000.0]
     adapter = _IdleAdapter(last_output=1000.0)
     runner = _idle_runner(tmp_path, adapter, now=now)
     for _ in range(4):
         now[0] += 300.0
         runner._check_cooperative_idle()
-    assert len(adapter.sent) == 2
+    assert len(adapter.sent) == 4
+    evidence = [
+        json.loads(line)
+        for line in (tmp_path / "run" / "evidence" / "idle-inquiry.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    assert [record["inquiry_count"] for record in evidence] == [1, 2, 3, 4]
 
 
 def test_running_turn_or_recent_activity_suppresses_inquiry(tmp_path: Path) -> None:

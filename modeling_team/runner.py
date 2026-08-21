@@ -262,9 +262,10 @@ class TeamRunner:
         # Cooperative idle inquiry (start10/12): no role activity + no work in
         # flight + no candidate channel yet is a silent stall the candidate
         # nudges cannot see.  ``_idle_inquiry_baseline`` is reset when the run
-        # actually starts so the pre-start period cannot count as idle.
+        # actually starts so the pre-start period cannot count as idle.  There
+        # is deliberately no per-run budget (start15): the idle window between
+        # two inquiries is the only rate limit.
         self._idle_inquiry_seconds = 300.0
-        self._idle_inquiry_limit = 2
         self._idle_inquiries_sent = 0
         self._idle_inquiry_baseline: float | None = None
 
@@ -1660,12 +1661,11 @@ class TeamRunner:
             self._run_fallback_started = self.monotonic_clock()
             # R2.3-009 start10/12: the slice-assignment-to-first-candidate
             # window has no progress owner, so an idle Coordinator silently
-            # burns the whole fallback window.  Bounded cooperative inquiries
-            # close that gap; see ``_check_cooperative_idle``.
+            # burns the whole fallback window.  Cooperative inquiries close
+            # that gap; see ``_check_cooperative_idle``.
             self._idle_inquiry_seconds = float(
                 parameters.get("idle_inquiry_seconds", 300.0)
             )
-            self._idle_inquiry_limit = int(parameters.get("idle_inquiry_limit", 2))
             self._idle_inquiries_sent = 0
             self._idle_inquiry_baseline = self.monotonic_clock()
         except Exception:
@@ -4116,9 +4116,11 @@ class TeamRunner:
         is in a turn, no notification was observed for the idle window, no
         cooperative issue is pending, no Examiner child is live, and no
         candidate channel is open, it asks the Coordinator to state the
-        blocker and continue.  Bounded by ``idle_inquiry_limit`` inquiries
-        per run; the baseline resets after each inquiry so the follow-up
-        waits another full idle window.
+        blocker and continue.  There is no per-run budget (start15 showed a
+        budget can be consumed by legitimate waiting and leave a later
+        deadlock unwatched); the baseline resets after each inquiry so the
+        follow-up waits another full idle window — that window is the only
+        rate limit.
         """
 
         if not self.run or not self._formal_coordination_enabled():
@@ -4152,8 +4154,6 @@ class TeamRunner:
         if idle_seconds < getattr(self, "_idle_inquiry_seconds", 300.0):
             return
         inquiries_sent = getattr(self, "_idle_inquiries_sent", 0)
-        if inquiries_sent >= getattr(self, "_idle_inquiry_limit", 2):
-            return
         coordinator = next(
             (
                 agent.agent_id
@@ -4188,7 +4188,6 @@ class TeamRunner:
             {
                 "idle_seconds": idle_seconds,
                 "inquiry_count": self._idle_inquiries_sent,
-                "inquiry_limit": getattr(self, "_idle_inquiry_limit", 2),
                 "recipient_id": coordinator,
                 "delivery_kind": getattr(receipt, "mode", None),
                 "turn_id": getattr(receipt, "turn_id", None),

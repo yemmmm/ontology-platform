@@ -610,6 +610,8 @@ T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本�
 | start14 | 建模开工、提问后等待 owner 回答 | 协作路由（owner 侧未盯提问窗口，回答缺位至超时；操作层过失） |
 | start15 | 历次最深：owner 作答生效、候选过协议校验、翻译拒绝未声明实体、issue 裁定下达 | 协作路由（裁定只达 reporter、protocol/modeling 对峙、协调者不仲裁、idle 预算已尽） |
 
-第 5 批候选窄修复方向（供下批授权前评估，未实施）：issue 裁定 resume 时同步向
-候选 owner 角色（modeling）投递裁定摘要 delivery；idle-inquiry 预算在 owner 回答
-落地后重置。
+第 5 批候选窄修复方向：issue 裁定 resume 时同步向候选 owner 角色（modeling）
+投递裁定摘要 delivery（未实施）；idle-inquiry 取消每运行 2 次预算——owner 决策
+（2026-08-21）：预算会被合法等待耗尽而放过后续真实死锁，两次询问之间隔满一个
+完整空闲窗口（300s）即为唯一限流，已实施（见 `Remove idle-inquiry budget cap` 提交，
+`test_inquiries_repeat_every_idle_window_without_budget_cap` 锁定）。
