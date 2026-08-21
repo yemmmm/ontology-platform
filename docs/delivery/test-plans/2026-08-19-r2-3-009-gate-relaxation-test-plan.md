@@ -542,3 +542,74 @@ T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本�
 | start10 | 候选交接完成 | 协作路由（codex 64 字符工具名重命名，协调者探测失败即放弃，空转至 T3） |
 | start11 | 历次最深：cq-001 验收轮、BLOCKED verdict 持久、四角色终报 | 平台合同（verdict 误报漂移拒读致无法结算）+ Agent 路由 text 违规 |
 | start12 | 模型推进至版本冲突澄清 | 协作路由（协调者未登记正式提问；指派→首候选窗口无进度 owner，静默 90 分钟至 T3） |
+
+### start13（r23009-luna-20260821-start13，第 5 批授权第 1 轮）
+- 走到：业务澄清（owner 作答生效）、候选推进、协议校验循环、交接、cq-001 验收轮
+  启动；source Examiner 正常；平台 Examiner 回合完成但 3 次
+  `submit_examiner_report` 均收到无 detail、无 attempts 计账的 bare
+  `report-rejected`，子进程无报告终局；issue-1 上报，owner guidance 裁定平台缺陷、
+  按终报关闭；随后 acceptance BLOCKED verdict 提交也被同类 bare 拒绝（issue-2，
+  owner 裁定走终报通道关闭）；四角色终报受理后空转至 5400s run-fallback-timeout
+  terminal_failure → 自动退款；zero-mutation。
+- 死因分层：**平台合同**——ReportSink 的 submit 回调（Host 侧 handle 查找、信封
+  校验、receipt 绑定、持久化）抛出的异常逃逸到 `_serve` 最外层通用 except，被回答
+  为 bare `report-rejected`，真实原因（scoped proxy receipt scope binding drifted
+  家族）既不给子进程纠错线索、也不进 attempts 计账。start11 的 9d2b2c3 只修了验证器
+  异常分支，submit 回调分支是同一缺陷族的孪生路径。
+- Agent 自身行为：Examiner 报告 payload 形状有效、digest 64-hex（旁证排除转写
+  错误）；其余角色均正确。
+- 本轮后窄修复：`ea9ea16`——`_serve` 的 submit 分支独立 try/except，把回调异常
+  以 `report-submit-rejected` + `type: message` detail + attempts_remaining 回给子
+  进程并计入 `_rejections`。回归测试
+  `test_report_sink_preserves_submit_callback_rejection_detail`；全量 1008 通过。
+- 运行期操作：issue-1 首次 FIFO 投递因缺尾随换行被拒（`invalid_outer_input`），
+  补换行重发成功。
+- 临时 admin key `r23009-batch5-start13-admin` 已吊销。
+
+### start14（r23009-luna-20260821-start14，第 5 批授权第 2 轮）
+- 走到：建模角色开工、发出业务澄清问题；owner（操作方）在启动后未盯提问窗口，
+  问题始终无人作答；空闲询问机制按上限向协调者发 2 次 `idle-inquiry`（行为正确，
+  协调者不得编造业务答案）；Agent 保留未知项继续有限工作；空转至 5400s
+  run-fallback-timeout terminal_failure → 自动退款。
+- 死因分层：**协作路由**（owner 侧回答缺位，操作层过失，非 Agent、非平台缺陷）。
+- Agent 自身行为：全部正确。
+- 本轮后窄修复：无代码修复；操作修复为「启动后立即盯提问窗口」（start15 生效，
+  开场提问 2 分钟内作答）。另发现 FIFO 半行缓冲陷阱：未带尾随换行的 JSON 会滞留
+  缓冲并与下一条拼接成非法行，两条消息同时静默丢失（start15 首条回答即中招，
+  补发成功）；已写入会话记忆与下轮操作规程。
+- 临时 admin key `r23009-batch5-start14-admin` 已吊销。
+
+### start15（r23009-luna-20260821-start15，第 5 批授权第 3 轮）
+- 走到：**历次最深**——开场提问 2 分钟内 owner 作答（owner-answer-delivery-1 生效，
+  `outer-user.jsonl` 落档）；建模推进至候选通过协议校验（delivery-7/8，receipt
+  屏障前）；翻译环节发现建模质量问题：候选把 no-score 未知项编码为未声明实体引用
+  `unknown-no-score`（unbound_relation_object，zero-mutation 正确拒绝）；issue-1
+  上报，owner guidance 裁定改为契约显式未知机制表达并要求完整修订重驱动；此后
+  protocol（"等建模修订候选"）与 modeling（"owner 回答确认未知项、无需修订，等
+  protocol 放行"）对峙，协调者未仲裁、idle-inquiry 预算（2 次）已在等待 owner
+  回答阶段耗尽；11:02Z 起全线静默至 5400s run-fallback-timeout（12:19:20Z）
+  terminal_failure → 自动退款。
+- 死因分层：**协作路由**——issue 裁定只送达 reporter（protocol），建模角色未收到
+  裁定文本、按 owner 回答字面理解为"无需修订"；protocol 在终局消息里表达对修订
+  候选的期待而未向 modeling 发 RuntimeDelivery；协调者 resume 后不再跟进。层内
+  三因叠加：裁定分发面窄、角色间无请求传递、仲裁缺位。
+- 平台侧新证据：`ea9ea16` 的 sink detail 修复在本轮装载的代码中未再出现 bare
+  `report-rejected`（本轮未进入验收轮，未触发该路径，属无反例而非验证）。
+- Agent 自身行为：modeling 把未知项编码为未声明实体是**建模质量**缺陷（issue-1
+  根因，owner 已裁定修复路径）；死锁阶段的角色行为是理解分歧+路由缺失，非违规
+  罢工。
+- 运行期操作：FIFO 半行拼接陷阱实测确认（start15 首条 owner 回答丢失即为该机制，
+  补发成功）；`status` 探测确认缓冲清洁后重发策略有效。
+- 本轮后窄修复：无代码修复（死因为协作路由，候选修复方向见下）；临时 admin key
+  `r23009-batch5-start15-admin`（d661ea1b-1863…）已吊销。
+
+### 第 5 批逐轮对比
+| 轮次 | 走到哪 | 死因 |
+|---|---|---|
+| start13 | 候选+交接+cq-001 验收轮，平台 Examiner 3 次报告被 bare 拒绝 | 平台合同（ReportSink submit 回调异常逃逸为无 detail 拒绝，ea9ea16 修复） |
+| start14 | 建模开工、提问后等待 owner 回答 | 协作路由（owner 侧未盯提问窗口，回答缺位至超时；操作层过失） |
+| start15 | 历次最深：owner 作答生效、候选过协议校验、翻译拒绝未声明实体、issue 裁定下达 | 协作路由（裁定只达 reporter、protocol/modeling 对峙、协调者不仲裁、idle 预算已尽） |
+
+第 5 批候选窄修复方向（供下批授权前评估，未实施）：issue 裁定 resume 时同步向
+候选 owner 角色（modeling）投递裁定摘要 delivery；idle-inquiry 预算在 owner 回答
+落地后重置。
