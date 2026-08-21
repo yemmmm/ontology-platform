@@ -14,6 +14,14 @@
 
 依据：R2.3-009 R8 三轮真实运行（start4/5/6，2026-08-20）的死因均为「不可恢复的硬拒绝叠加无自修复通道」，而非建模质量问题。
 
+## 用户咨询时的双层解释法
+
+在进行较长时间的任务时，如果用户就某个概念、当前进度或方案向 Agent 咨询信息，Agent 应使用「双层解释法」（`two-layer-explanation` skill）回答：
+
+1. **小白版**：用生活化语言和一个具体例子，让没有背景的人也能听懂；
+2. **专业版**：使用准确术语，讲清核心机制、适用边界和常见误解；
+3. **收尾整理**：列出小白说法与专业术语的对应关系、用户最容易理解错的地方，以及 1 个用于检查是否真正理解的问题。
+
 ## Project Structure & Module Organization
 
 This repository contains a FastAPI backend and a Vite/React frontend for an ontology and knowledge graph platform. Key paths:
