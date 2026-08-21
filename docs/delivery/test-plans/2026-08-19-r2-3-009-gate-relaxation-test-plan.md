@@ -485,3 +485,34 @@ T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本�
 | start7 | 5 批全部落库、交接完成 | 运行基础设施（runner 空轮次索引崩溃） |
 | start8 | 模型落库+交接+cq-001 验收轮 | 运行基础设施（平台 Examiner 600s 超时×2，空转至 T3） |
 | start9 | 落库零冲突+检索 receipt+交接+cq-001 验收轮 | 运行基础设施（平台 Examiner 600s 超时×2 复现，空转至 T3） |
+
+### start10（r23009-luna-20260821-start10，本批第 4 次授权第 1 轮）
+- 走到：候选交接后协调者子串探测 ALL_TOOLS 即放弃，未开验收轮。
+- 死因：**协作路由**——codex 0.148 把超过 64 字符的 MCP 工具名重命名
+  （`<截断名>_<sha1>`）；`coordinator_build_acceptance_ticket_draft(_from_delivery)`
+  模型可见名 80/94 字符被重命名，start9 能碰巧调用、start10 探测失败即放弃；
+  空转至 T3 terminal_failure (collaboration/routing, run-fallback-timeout) → 自动退款。
+- 本轮后窄修复：`ee06e78`——两个操作改名 `coordinator_ticket_draft(_from_delivery)`
+  （48/62 字符）+ 契约测试 `test_capability_tool_names.py` 锁定全部操作 ≤64 字符。
+- 临时 admin key 已吊销。
+
+### start11（r23009-luna-20260821-start11，本批第 4 次授权第 2 轮）
+- 走到：**历次最深**——业务澄清、候选 receipt、stage 交接、coordinator 两次
+  ticket 草稿+发布（ee06e78 改名生效）、cq-001 验收轮启动；source Examiner 报告正常；
+  平台 Examiner attempt-0 整 600s child-timeout，attempt-1 同输入重试 43s 完成回合但
+  两次 `submit_examiner_report` 均被 bare `report-rejected` 拒绝（真实原因被通用
+  except 吞掉）；acceptance 按 attempt 预算规则提交 BLOCKED verdict（02:36:35 持久成功）；
+  随后 `acceptance_get_verdict` 误报 "invalidated by model-state drift" 拒读、
+  `acceptance_verdict_route` 因 text 非规范 JSON 被拒（Agent 侧合同违规，prompt 已写明
+  要求 canonical JSON）；issue-1 上报，owner guidance 裁定平台缺陷、blocked 关闭；
+  四角色 terminal report 全部受理（02:39:4x），但 acceptance 载体未 settle、runner 无法
+  进入结算播报，空转至 5400s run-fallback-timeout（02:57）terminal_failure
+  (collaboration/routing) → 自动退款；zero-mutation。
+- 死因分层：**平台合同**（verdict 可读性缺陷为主）+ Agent 侧路由 text 违规（次要）。
+- 平台 Examiner 600s 复现一次（`282ab8f` 的 1800s 模板修复为何未覆盖 attempt-0 待
+  start12 观察；attempt-1 43s 完成说明不是必然超时）。
+- 本轮后窄修复：`9d2b2c3`——(1) `get_verdict`/`coordinator_get_verdict` 只在轮次真实
+  `state_invalidated` 时拒读（`verdict_usable` 不再被误当漂移信号，BLOCKED/FAIL
+  verdict 持久即可读）；(2) ReportSink 通用异常分支保留验证器异常类型+消息，不再输出
+  bare `report-rejected`。回归测试：BLOCKED verdict 双读+漂移后仍拒读、sink detail 保留。
+- 临时 admin key `r23009-batch4-start11-admin`（2cd63bea-b2ad…）已吊销。
