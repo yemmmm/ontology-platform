@@ -661,3 +661,41 @@ T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本�
   handoff；modeling 自 16:24:54Z 起静默（不知 protocol 已收口）。装载代码为修复
   前版本，运行中不可热补；预期空转至 5400s run-fallback-timeout（约 17:55Z，
   含 issue-pending 172s 扣除）→ terminal_failure（协作路由）→ 退款预期。
+
+### start17 终局补充（2026-08-21 17:54Z）
+- 16:33Z 起全线静默（装载代码含 idle-inquiry 永久静默缺陷，见 `08f98bd`）；
+  17:54:46Z `terminal_failure`（collaboration/routing，run-fallback-timeout，
+  mutation_state zero-mutation）→ 17:54:50Z **budget_refund 已入账**。
+- 平台上该 run 应用的模型（validation/reasoning/retrieval/checkpoint 全过）随
+  scope 清理删除（run 未达验收，不留终局产物）；两份 readback 工件与全部证据
+  保留在 run 目录。
+- 临时 admin key `r23009-batch6-start17-admin`（382511e2-3198…）已吊销。
+
+### start18（r23009-luna-20260821-start18，第 6 批授权第 3 轮）
+- 走到：启动正常，装载 `f12c234`（settled-lease readback 修复）与 `08f98bd`
+  （idle-inquiry 解除静默）；建模开场提问（delivery-4，21:10:46Z）已到提问窗口。
+- **操作事故**：owner 回答误用 `{"action":"question"}` 外层动作（正确为
+  `{"action":"user"}`——schema-v2 的问题归 Runner 所有，宿主不得注入问题），
+  `receive_outer` 按设计 fail-closed 抛 `TeamConfigurationError` → 全 run 拆除、
+  项目删除（scope cleanup 完好，`deleted-empty`，state CLEANED）。
+- 死因分层：**运行基础设施（宿主操作错误）**——非 Agent、非平台合同；fail-closed
+  行为本身正确。
+- 账本：拆除路径未自动结算（缺陷），手动经 `classify-failure` 补记
+  `terminal_failure`（runtime/infrastructure，21:14:00Z）；**不退款**。
+- 本轮后窄修复：`b336e27`——`__main__` 通用 fatal 处理器在 run 已过
+  semantic_start 且未终局时自动结算账本（runtime/infrastructure，幂等、不遮蔽
+  原始错误）；回归 `test_fatal_host_failure_settlement.py` 4 例；全量 1016 通过。
+  操作侧教训（action 必须为 `user`）已更新入会话记忆。
+- 临时 admin key `r23009-batch6-start18-admin`（29114bd9-c6ef…）已吊销。
+
+### 第 6 批逐轮对比
+| 轮次 | 走到哪 | 死因 |
+|---|---|---|
+| start16 | 开场两问即时作答；protocol LLM 中途停产出 | 运行基础设施（llm-inactivity-timeout，不退款） |
+| start17 | 历次最深：模型完整应用+全平台阶段通过；终局 handoff readback 选择歧义 fail-closed；issue 裁定后 blocked 收口，空转至兜底 | 平台合同（选择器缺 settled-lease 判别，f12c234 修复；退款） |
+| start18 | 启动正常、装载双修复、开场提问已到窗口 | 运行基础设施（宿主误用 question 动作致 fail-closed 拆除，不退款；b336e27 补账本自动结算） |
+
+第 6 批三个窄修复均已带回归测试合入：`f12c234`（readback settled-lease 优先）、
+`08f98bd`（idle-inquiry 在候选终态后恢复发声）、`b336e27`（fatal 宿主错误的账本
+结算）。下一批次的候选目标：以完整装载三修复的 fresh run 走通 start17 未竟的
+acceptance-stage handoff → 双问题验收。
