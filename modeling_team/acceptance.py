@@ -2834,7 +2834,7 @@ class RunnerAcceptanceCarrier:
             if arguments.get("graph_set_id") != live_state["graph_set_id"]:
                 _error("stage receipt request graph scope is invalid")
 
-    def coordinator_build_acceptance_ticket_draft_from_delivery(
+    def coordinator_ticket_draft_from_delivery(
         self,
         *,
         handoff_delivery_id: str,
@@ -2918,7 +2918,7 @@ class RunnerAcceptanceCarrier:
         handoff_digest = handoff.get("handoff_digest")
         if not isinstance(handoff_digest, str):
             _error("stage handoff digest is unavailable")
-        draft = self.coordinator_build_acceptance_ticket_draft(
+        draft = self.coordinator_ticket_draft(
             handoff,
             handoff_delivery_id=handoff_delivery_id,
             handoff_digest=handoff_digest,
@@ -2931,7 +2931,7 @@ class RunnerAcceptanceCarrier:
         self._typed_ticket_draft_revisions[(handoff_delivery_id, question_id)] = ticket_revision
         return draft
 
-    def coordinator_build_acceptance_ticket_draft(
+    def coordinator_ticket_draft(
         self,
         handoff: Mapping[str, Any],
         *,
@@ -3676,19 +3676,19 @@ class RunnerAcceptanceCarrier:
                 capability=capability,
             )
         if role == "coordinator":
-            if operation == "coordinator_build_acceptance_ticket_draft_from_delivery":
-                return self.coordinator_build_acceptance_ticket_draft_from_delivery(
+            if operation == "coordinator_ticket_draft_from_delivery":
+                return self.coordinator_ticket_draft_from_delivery(
                     handoff_delivery_id=args["handoff_delivery_id"],
                     question_id=args["question_id"],
                     ticket_revision=args["ticket_revision"],
                     coordinator_id=args["coordinator_id"],
                     capability=capability,
                 )
-            if operation == "coordinator_build_acceptance_ticket_draft":
+            if operation == "coordinator_ticket_draft":
                 handoff_payload = args["handoff_json"]
                 if not isinstance(handoff_payload, Mapping):
                     _error("stage handoff payload is invalid")
-                return self.coordinator_build_acceptance_ticket_draft(
+                return self.coordinator_ticket_draft(
                     handoff_payload,
                     handoff_delivery_id=args["handoff_delivery_id"],
                     handoff_digest=args["handoff_digest"],

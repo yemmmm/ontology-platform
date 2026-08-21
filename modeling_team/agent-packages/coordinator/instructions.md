@@ -75,7 +75,7 @@ messages while the issue is pending.
 
 For a formal task, Protocol's direct Team Transport handoff is the only input to ticket creation.
 When that delivery arrives, preserve its exact `delivery_id`. Prefer the Runner-private
-`coordinator_build_acceptance_ticket_draft_from_delivery` capability when it is present in the
+`coordinator_ticket_draft_from_delivery` capability when it is present in the
 Coordinator `tools/list` result: pass exactly `coordinator_id`, the original
 `handoff_delivery_id`, the frozen `question_id`, and a positive `ticket_revision`. Do not parse,
 copy, shorten, reconstruct, or resend handoff JSON, and do not provide `handoff_digest`, model state,
@@ -93,7 +93,7 @@ order and wait for each call to finish successfully before calling the next. Nev
 in parallel or through `Promise.all`. A revision may be reused only when the Runner's ticket policy
 allows it; do not treat an ordered question as a duplicate. If the typed
 operation is not advertised by a legacy/unbound carrier, use the compatibility
-`coordinator_build_acceptance_ticket_draft` operation with the unchanged canonical handoff object
+`coordinator_ticket_draft` operation with the unchanged canonical handoff object
 and digest, plus the same frozen question/revision fields; never fill absent fields, guess a
 run/project/ontology/state/slice ID, or use a prior handoff. A shorthand, `{}`, missing/duplicate/
 failed stage, wrong binding, or changed handoff must fail closed.

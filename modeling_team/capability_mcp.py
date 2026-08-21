@@ -28,13 +28,13 @@ _AUDIT_LOCK = threading.Lock()
 
 
 COORDINATOR_OPERATIONS: tuple[str, ...] = (
-    "coordinator_build_acceptance_ticket_draft",
+    "coordinator_ticket_draft",
     "coordinator_publish_acceptance_ticket",
     "coordinator_get_verdict",
 )
 COORDINATOR_FORMAL_OPERATIONS: tuple[str, ...] = (
     *COORDINATOR_OPERATIONS,
-    "coordinator_build_acceptance_ticket_draft_from_delivery",
+    "coordinator_ticket_draft_from_delivery",
 )
 PROTOCOL_OPERATIONS: tuple[str, ...] = (
     "protocol_list_platform_artifacts",
@@ -127,7 +127,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["protocol_id", "delivery_id", "conflict_code", "conflict_detail"],
         "additionalProperties": False,
     },
-    "coordinator_build_acceptance_ticket_draft": {
+    "coordinator_ticket_draft": {
         "type": "object",
         "properties": {
             "coordinator_id": {"type": "string"},
@@ -147,7 +147,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         ],
         "additionalProperties": False,
     },
-    "coordinator_build_acceptance_ticket_draft_from_delivery": {
+    "coordinator_ticket_draft_from_delivery": {
         "type": "object",
         "properties": {
             "coordinator_id": {"type": "string"},

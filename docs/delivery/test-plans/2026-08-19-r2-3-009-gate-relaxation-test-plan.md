@@ -369,7 +369,7 @@
   净消耗 0；临时 admin key 已吊销。
 - 窄修复：同参数 delivery-bound draft 请求幂等重放——返回已保留的同一张不可变草稿，
   不同 revision 仍按 stale 拒绝（`acceptance.py`
-  `coordinator_build_acceptance_ticket_draft_from_delivery` + 回归测试改写），
+  `coordinator_ticket_draft_from_delivery` + 回归测试改写），
   commit `ec04750`；全量 986 passed / 1 skipped / 302 subtests。
 
 ### start5（r23009-luna-20260820-start5）

@@ -952,7 +952,7 @@ class TeamRunner:
                 "protocol_build_acceptance_stage_handoff",
             ],
             "coordinator": [
-                "coordinator_build_acceptance_ticket_draft",
+                "coordinator_ticket_draft",
                 "coordinator_publish_acceptance_ticket",
                 "coordinator_get_verdict",
             ],
@@ -969,7 +969,7 @@ class TeamRunner:
         }
         if formal_acceptance_contract:
             runner_capability_roles["coordinator"].insert(
-                1, "coordinator_build_acceptance_ticket_draft_from_delivery"
+                1, "coordinator_ticket_draft_from_delivery"
             )
         if task_overlay is not None:
             runner_capability_roles["modeling"] = ["modeling_publish_staged_candidate"]
@@ -2825,7 +2825,7 @@ class TeamRunner:
                     advertised = coordinator_descriptor.get("operations", [])
                     typed_ticket_binding = (
                         isinstance(advertised, list)
-                        and "coordinator_build_acceptance_ticket_draft_from_delivery" in advertised
+                        and "coordinator_ticket_draft_from_delivery" in advertised
                     )
                 frozen_question_ids = self._frozen_acceptance_question_ids()
                 frozen_question_instruction = ""
@@ -2856,7 +2856,7 @@ class TeamRunner:
                     ticket_instruction = (
                         " When Protocol sends the structured acceptance-stage handoff, retain only the "
                         "original delivery_id from the direct Team Transport envelope and call the "
-                        "Runner-private coordinator_build_acceptance_ticket_draft_from_delivery once "
+                        "Runner-private coordinator_ticket_draft_from_delivery once "
                         "per frozen question, passing exactly coordinator_id=coordinator, "
                         "handoff_delivery_id, question_id, and positive ticket_revision. Do not parse, "
                         "copy, shorten, reconstruct, or resend handoff JSON; do not provide handoff_digest, "
@@ -2872,7 +2872,7 @@ class TeamRunner:
                 else:
                     ticket_instruction = (
                         " When Protocol sends the structured acceptance-stage handoff, parse its exact JSON and "
-                        "call the Runner-private coordinator_build_acceptance_ticket_draft once per question, "
+                        "call the Runner-private coordinator_ticket_draft once per question, "
                         "passing the delivery_id from the direct Team Transport envelope, the unchanged "
                         "handoff object and digest, the frozen question_id, and the positive ticket_revision. "
                         "The capability owns staged source digests, authenticated live model_state, canonical "

@@ -284,7 +284,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 )
                 self.assertEqual(delivery["text_digest"], _digest(handoff))
                 self.assertEqual(handoff["slice_revision"], "revision-1")
-                draft = carrier.coordinator_build_acceptance_ticket_draft(
+                draft = carrier.coordinator_ticket_draft(
                     handoff,
                     handoff_delivery_id="delivery-1",
                     handoff_digest=handoff["handoff_digest"],
@@ -345,7 +345,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     sender_role="protocol",
                     recipient_role="coordinator",
                 )
-                draft = carrier.coordinator_build_acceptance_ticket_draft(
+                draft = carrier.coordinator_ticket_draft(
                     handoff,
                     handoff_delivery_id="delivery-003",
                     handoff_digest=handoff["handoff_digest"],
@@ -428,7 +428,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     sender_role="protocol",
                     recipient_role="coordinator",
                 )
-                operation = "coordinator_build_acceptance_ticket_draft_from_delivery"
+                operation = "coordinator_ticket_draft_from_delivery"
                 with self.assertRaisesRegex(AcceptanceContractError, "not in the acceptance standard"):
                     carrier._dispatch_capability(
                         "coordinator",
@@ -519,7 +519,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 self.assertEqual([name for name, _ in evidence], ["acceptance-stage-handoff"])
                 first = carrier._dispatch_capability(
                     "coordinator",
-                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    "coordinator_ticket_draft_from_delivery",
                     {
                         "coordinator_id": "coordinator",
                         "handoff_delivery_id": "delivery-5",
@@ -529,7 +529,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 )
                 second = carrier._dispatch_capability(
                     "coordinator",
-                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    "coordinator_ticket_draft_from_delivery",
                     {
                         "coordinator_id": "coordinator",
                         "handoff_delivery_id": "delivery-5",
@@ -598,7 +598,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 )
                 draft = carrier._dispatch_capability(
                     "coordinator",
-                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    "coordinator_ticket_draft_from_delivery",
                     {
                         "coordinator_id": "coordinator",
                         "handoff_delivery_id": "delivery-6",
@@ -741,7 +741,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     sender_role="protocol",
                     recipient_role="coordinator",
                 )
-                operation = "coordinator_build_acceptance_ticket_draft_from_delivery"
+                operation = "coordinator_ticket_draft_from_delivery"
                 descriptor = carrier.capability_descriptors["coordinator"]
                 self.assertIn(operation, descriptor["operations"])
                 first = carrier._dispatch_capability(
@@ -856,7 +856,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
             )
             try:
                 self.assertNotIn(
-                    "coordinator_build_acceptance_ticket_draft_from_delivery",
+                    "coordinator_ticket_draft_from_delivery",
                     carrier.capability_descriptors["coordinator"]["operations"],
                 )
             finally:
@@ -924,7 +924,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 mutated = json.loads(text)
                 mutated["slice_revision"] = "revision-2"
                 with self.assertRaisesRegex(AcceptanceContractError, "unchanged delivered object"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         mutated,
                         handoff_delivery_id="delivery-1",
                         handoff_digest=handoff["handoff_digest"],
@@ -932,7 +932,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                         ticket_revision=1,
                         capability=carrier.capability_token("coordinator"),
                     )
-                draft = carrier.coordinator_build_acceptance_ticket_draft(
+                draft = carrier.coordinator_ticket_draft(
                     handoff,
                     handoff_delivery_id="delivery-1",
                     handoff_digest=handoff["handoff_digest"],
@@ -973,7 +973,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 with self.assertRaisesRegex(AcceptanceContractError, "operation is not available"):
                     carrier._dispatch_capability(
                         "acceptance",
-                        "coordinator_build_acceptance_ticket_draft",
+                        "coordinator_ticket_draft",
                         {},
                     )
                 wrong_run = _handoff(
@@ -986,7 +986,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     delivery_id="delivery-2", text=wrong_text, sender_role="protocol", recipient_role="coordinator"
                 )
                 with self.assertRaisesRegex(AcceptanceContractError, "run does not match"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         wrong_run,
                         handoff_delivery_id="delivery-2",
                         handoff_digest=wrong_run["handoff_digest"],
@@ -1064,7 +1064,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     recipient_role="coordinator",
                 )
                 with self.assertRaisesRegex(AcceptanceContractError, "request mode"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         handoff,
                         handoff_delivery_id="delivery-stage-binding",
                         handoff_digest=handoff["handoff_digest"],
@@ -1108,7 +1108,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     recipient_role="coordinator",
                 )
                 with self.assertRaisesRegex(AcceptanceContractError, "result status"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         status_handoff,
                         handoff_delivery_id="delivery-stage-status",
                         handoff_digest=status_handoff["handoff_digest"],
@@ -1169,7 +1169,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     recipient_role="coordinator",
                 )
                 with self.assertRaisesRegex(AcceptanceContractError, "workspace version"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         stale_apply_handoff,
                         handoff_delivery_id="delivery-stale-apply",
                         handoff_digest=stale_apply_handoff["handoff_digest"],
@@ -1230,7 +1230,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     recipient_role="coordinator",
                 )
                 with self.assertRaisesRegex(AcceptanceContractError, "source signature"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         stale_source_handoff,
                         handoff_delivery_id="delivery-stale-source",
                         handoff_digest=stale_source_handoff["handoff_digest"],
@@ -1260,7 +1260,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     recipient_role="coordinator",
                 )
                 with self.assertRaisesRegex(AcceptanceContractError, "graph scope"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         scope_handoff,
                         handoff_delivery_id="delivery-stage-scope",
                         handoff_digest=scope_handoff["handoff_digest"],
@@ -1281,7 +1281,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 os.chmod(artifact_path, 0o600)
                 artifact_path.write_bytes(b"tampered")
                 with self.assertRaisesRegex(AcceptanceContractError, "artifact bytes"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         good_handoff,
                         handoff_delivery_id="delivery-artifact-tamper",
                         handoff_digest=good_handoff["handoff_digest"],
@@ -1308,7 +1308,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     recipient_role="coordinator",
                 )
                 with self.assertRaisesRegex(AcceptanceContractError, "candidate binding"):
-                    carrier.coordinator_build_acceptance_ticket_draft(
+                    carrier.coordinator_ticket_draft(
                         candidate_mismatch,
                         handoff_delivery_id="delivery-candidate-binding",
                         handoff_digest=candidate_mismatch["handoff_digest"],
@@ -1336,8 +1336,8 @@ class R23005TicketPipelineTests(unittest.TestCase):
             protocol,
         )
         self.assertIn("explicit Modeling `terminal-handoff`", modeling)
-        self.assertIn("coordinator_build_acceptance_ticket_draft", coordinator)
-        self.assertIn("coordinator_build_acceptance_ticket_draft_from_delivery", coordinator)
+        self.assertIn("coordinator_ticket_draft", coordinator)
+        self.assertIn("coordinator_ticket_draft_from_delivery", coordinator)
         self.assertIn("Runner-provided frozen-question list", coordinator)
         self.assertIn("do not guess an abbreviated ID", coordinator)
         self.assertIn("owner_revision", coordinator)
