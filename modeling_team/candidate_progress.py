@@ -378,6 +378,18 @@ class FormalCandidateProgress:
         return self.pending is not None and self.pending.paused
 
     @property
+    def channel_open(self) -> bool:
+        """Whether a candidate handoff is still in flight.
+
+        The pending record survives its own terminal states — R2.3-009
+        start17 kept a ``complete`` candidate pending forever — so callers
+        watching for "is a candidate owning progress right now" (the
+        cooperative idle inquiry) must key on the state, not on the pending
+        record's existence.
+        """
+        return self.pending is not None and self.pending.state not in self._TERMINAL_STATES
+
+    @property
     def active_elapsed(self) -> float:
         if self.pending is None:
             return 0.0

@@ -147,6 +147,32 @@ def test_running_turn_or_recent_activity_suppresses_inquiry(tmp_path: Path) -> N
     assert adapter.sent == []
 
 
+def test_open_candidate_channel_suppresses_inquiry(tmp_path: Path) -> None:
+    # A candidate handoff in flight owns progress; the candidate nudges
+    # watch it, so the idle inquiry must stay silent.
+    now = [1300.0]
+    adapter = _IdleAdapter(last_output=1000.0)
+    runner = _idle_runner(tmp_path, adapter, now=now)
+    runner._candidate_progress = SimpleNamespace(channel_open=True)
+    runner._check_cooperative_idle()
+    assert adapter.sent == []
+
+
+def test_completed_candidate_channel_no_longer_suppresses_inquiry(tmp_path: Path) -> None:
+    # R2.3-009 start17 (2026-08-21): after the candidate receipt was accepted
+    # the pending record stays alive with state "complete" forever, so the old
+    # ``pending is not None`` gate muted the idle inquiry for the rest of the
+    # run — the post-candidate protocol/modeling stall got no inquiry at all.
+    # A terminal (completed/exhausted/failed) candidate channel is closed and
+    # must not suppress the inquiry.
+    now = [1300.0]
+    adapter = _IdleAdapter(last_output=1000.0)
+    runner = _idle_runner(tmp_path, adapter, now=now)
+    runner._candidate_progress = SimpleNamespace(channel_open=False)
+    runner._check_cooperative_idle()
+    assert len(adapter.sent) == 1
+
+
 def test_live_acceptance_children_suppress_inquiry(tmp_path: Path) -> None:
     now = [1300.0]
     adapter = _IdleAdapter(last_output=1000.0)

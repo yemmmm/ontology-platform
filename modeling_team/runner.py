@@ -4135,7 +4135,9 @@ class TeamRunner:
         issue_ledger = self._issue_ledger()
         if issue_ledger is not None and issue_ledger.pending:
             return
-        if self._candidate_progress is not None and self._candidate_progress.pending is not None:
+        # A terminal candidate (accepted receipt, exhausted redrives) leaves
+        # its pending record alive; only an open channel owns progress.
+        if self._candidate_progress is not None and self._candidate_progress.channel_open:
             return
         if self.acceptance is not None and self.acceptance.has_live_children:
             return

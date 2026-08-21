@@ -1440,3 +1440,25 @@ def test_issue_pending_latches_candidate_before_recovery_turn_overwrites_state(t
     runner.drain()
     assert [delivery.kind for _, delivery in adapter.sent] == ["peer", "candidate-redrive"]
     assert progress.state == "redrive_sent"
+
+
+def test_channel_open_tracks_terminal_candidate_states() -> None:
+    # R2.3-009 start17: the idle inquiry reads ``channel_open`` to decide
+    # whether a candidate handoff still owns progress.  The pending record
+    # survives every terminal state ("complete", "exhausted",
+    # "terminal_failure"), so openness must key on the state, not on the
+    # pending record's existence.
+    progress = FormalCandidateProgress(clock=lambda: 0.0)
+    assert progress.channel_open is False
+
+    progress.pending = SimpleNamespace(state="awaiting_receipt")
+    assert progress.channel_open is True
+    progress.pending = SimpleNamespace(state="redrive_sent")
+    assert progress.channel_open is True
+
+    progress.pending = SimpleNamespace(state="complete")
+    assert progress.channel_open is False
+    progress.pending = SimpleNamespace(state="exhausted")
+    assert progress.channel_open is False
+    progress.pending = SimpleNamespace(state="terminal_failure")
+    assert progress.channel_open is False
