@@ -294,6 +294,38 @@ def _runner_root(runner: object | None) -> Path | None:
     return value if isinstance(value, Path) else None
 
 
+def _settle_ledger_after_fatal_host_failure(runner: object | None) -> None:
+    """Best-effort ledger settlement when a fatal host error kills a live run.
+
+    R2.3-009 start18 (2026-08-21): an invalid outer ``question`` action raised
+    ``TeamConfigurationError`` after the run had recorded ``semantic_start``;
+    the generic fatal handler cleaned up but left the consumed start dangling
+    until a manual ``classify-failure``.  Mirror the Runner's startup-failure
+    settlement: a run that semantic-started and never emitted its terminal
+    settlement is classified ``runtime/infrastructure`` (host-side fault,
+    start not refunded).  Settlement here is bookkeeping only — a ledger that
+    refuses (a terminal record raced in from another path) must never mask
+    the original fatal error.
+    """
+
+    if runner is None:
+        return
+    run_root = _runner_root(runner)
+    settle = getattr(runner, "record_terminal_failure", None)
+    if run_root is None or not callable(settle):
+        return
+    if not (run_root / "evidence" / "semantic-start.jsonl").exists():
+        return
+    if getattr(runner, "_terminal_emitted", False):
+        return
+    try:
+        settle("runtime/infrastructure", False)
+    except Exception:
+        # Idempotence is owned by the immutable ledger; a refusal here means
+        # another path already classified this run.
+        return
+
+
 def _await_monitor_extraction(handoff_root: Path, run_root: Path) -> None:
     contract = load_handoff_contract(repository_root() / HANDOFF_CONTRACT_RELATIVE_PATH)
     deadline = time.monotonic() + float(contract["phase_deadlines_seconds"]["extraction_complete"])
@@ -694,6 +726,7 @@ def main() -> int:
     except (OSError, ValueError, RuntimeError, TeamConfigurationError) as exc:
         _write_runner_handoff_failed(handoff_root, _runner_root(runner))
         cleanup_once()
+        _settle_ledger_after_fatal_host_failure(runner)
         print(f"run failed: {exc}", file=sys.stderr)
         return 2
     else:
