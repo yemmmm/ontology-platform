@@ -2158,6 +2158,21 @@ class RunnerAcceptanceCarrier:
     def is_settled(self) -> bool:
         return bool(self._settlement_payload and self._settlement_payload.get("status") == "settled")
 
+    @property
+    def has_live_children(self) -> bool:
+        """True while any round has an Examiner child that was not recycled.
+
+        Recycle removes the child binding, so a non-empty ``children`` mapping
+        means a child runtime is legitimately in flight (its long turns do not
+        produce main-role App Server activity).  The Runner's cooperative idle
+        inquiry must not fire during that wait.
+        """
+        with self._lifecycle_lock:
+            return any(
+                bool(round_data.get("children"))
+                for round_data in self._rounds.values()
+            )
+
     def _observed_model_state(self, observed: Mapping[str, Any] | None) -> dict[str, Any]:
         value: Mapping[str, Any] | None = observed
         if value is None and self._model_state_reader is not None:

@@ -5946,6 +5946,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             for key, value in self.agents.items()
         ]
 
+    def last_output_monotonic(self) -> float:
+        """Most recent App Server notification timestamp across all roles.
+
+        Read by the Runner's cooperative idle inquiry (R2.3-009 start10/12):
+        when no role has emitted any notification and no turn is running, the
+        run is idle between phases and the Coordinator is nudged.  Returns
+        ``0.0`` before any role has produced output; callers must seed their
+        own baseline at run start.
+        """
+        return max(
+            (agent.last_output_monotonic for agent in self.agents.values()),
+            default=0.0,
+        )
+
     def wait_settled(self, agent_ids: list[str], timeout: float) -> bool:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:

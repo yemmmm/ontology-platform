@@ -259,6 +259,14 @@ class TeamRunner:
         self._run_fallback_timeout_seconds = 5400.0
         self._candidate_redrive_limit = 3
         self._feedback_escalation_repeat = 3
+        # Cooperative idle inquiry (start10/12): no role activity + no work in
+        # flight + no candidate channel yet is a silent stall the candidate
+        # nudges cannot see.  ``_idle_inquiry_baseline`` is reset when the run
+        # actually starts so the pre-start period cannot count as idle.
+        self._idle_inquiry_seconds = 300.0
+        self._idle_inquiry_limit = 2
+        self._idle_inquiries_sent = 0
+        self._idle_inquiry_baseline: float | None = None
 
     @staticmethod
     def _safe_run_id(value: str) -> bool:
@@ -1650,6 +1658,16 @@ class TeamRunner:
                 parameters.get("run_fallback_timeout_seconds", 5400.0)
             )
             self._run_fallback_started = self.monotonic_clock()
+            # R2.3-009 start10/12: the slice-assignment-to-first-candidate
+            # window has no progress owner, so an idle Coordinator silently
+            # burns the whole fallback window.  Bounded cooperative inquiries
+            # close that gap; see ``_check_cooperative_idle``.
+            self._idle_inquiry_seconds = float(
+                parameters.get("idle_inquiry_seconds", 300.0)
+            )
+            self._idle_inquiry_limit = int(parameters.get("idle_inquiry_limit", 2))
+            self._idle_inquiries_sent = 0
+            self._idle_inquiry_baseline = self.monotonic_clock()
         except Exception:
             failures = self._consume_runtime_failures()
             if failures:
@@ -4086,6 +4104,97 @@ class TeamRunner:
             f"run fallback timeout exceeded {active:.0f} active seconds"
         )
 
+    def _check_cooperative_idle(self) -> None:
+        """Send one bounded inquiry to Coordinator when the run is fully idle.
+
+        R2.3-009 start10/12 (2026-08-21): between the initial slice
+        assignment and the first candidate dispatch, no component owns
+        progress — the candidate-progress nudges require an already
+        dispatched candidate.  A Coordinator that idles there (an unasked
+        owner question, a capability probe given up) silently burns the whole
+        run-fallback window.  This check is purely mechanical: when no role
+        is in a turn, no notification was observed for the idle window, no
+        cooperative issue is pending, no Examiner child is live, and no
+        candidate channel is open, it asks the Coordinator to state the
+        blocker and continue.  Bounded by ``idle_inquiry_limit`` inquiries
+        per run; the baseline resets after each inquiry so the follow-up
+        waits another full idle window.
+        """
+
+        if not self.run or not self._formal_coordination_enabled():
+            return
+        idle_baseline = getattr(self, "_idle_inquiry_baseline", None)
+        if idle_baseline is None:
+            return
+        if getattr(self, "_terminal_emitted", False):
+            return
+        if getattr(self, "_post_settlement_reporting_requested", False):
+            return
+        issue_ledger = self._issue_ledger()
+        if issue_ledger is not None and issue_ledger.pending:
+            return
+        if self._candidate_progress is not None and self._candidate_progress.pending is not None:
+            return
+        if self.acceptance is not None and self.acceptance.has_live_children:
+            return
+        states_reader = getattr(self.adapter, "get_agent_states", None)
+        if callable(states_reader) and any(
+            state.state in {"starting", "running"} for state in states_reader()
+        ):
+            return
+        activity_reader = getattr(self.adapter, "last_output_monotonic", None)
+        last_activity = float(activity_reader()) if callable(activity_reader) else None
+        now = self.monotonic_clock()
+        idle_started = idle_baseline
+        if last_activity is not None:
+            idle_started = max(idle_started, last_activity)
+        idle_seconds = now - idle_started
+        if idle_seconds < getattr(self, "_idle_inquiry_seconds", 300.0):
+            return
+        inquiries_sent = getattr(self, "_idle_inquiries_sent", 0)
+        if inquiries_sent >= getattr(self, "_idle_inquiry_limit", 2):
+            return
+        coordinator = next(
+            (
+                agent.agent_id
+                for agent in self.run.configuration.profile.agents
+                if agent.package.role == "coordinator"
+            ),
+            None,
+        )
+        if not coordinator:
+            return
+        self._idle_inquiries_sent = inquiries_sent + 1
+        self._idle_inquiry_baseline = now
+        receipt = self.adapter.send_message(
+            coordinator,
+            RuntimeDelivery(
+                sender_id="runner/idle-inquiry",
+                recipient_id=coordinator,
+                kind="idle-inquiry",
+                text=(
+                    "The Runner observed no role activity for "
+                    f"{idle_seconds:.0f} seconds with no candidate, Acceptance "
+                    "child, or cooperative issue in flight. State the current "
+                    "blocker and continue the assigned task: file any pending "
+                    "owner question through the formal channel, dispatch the "
+                    "next delivery, or submit your terminal report if the run "
+                    "cannot proceed. Do not wait silently."
+                ),
+            ),
+        )
+        self._append_evidence(
+            "idle-inquiry",
+            {
+                "idle_seconds": idle_seconds,
+                "inquiry_count": self._idle_inquiries_sent,
+                "inquiry_limit": getattr(self, "_idle_inquiry_limit", 2),
+                "recipient_id": coordinator,
+                "delivery_kind": getattr(receipt, "mode", None),
+                "turn_id": getattr(receipt, "turn_id", None),
+            },
+        )
+
     def _run_fallback_terminal_evidence(self) -> dict[str, Any] | None:
         """The R2.3-009 refund binding for a T3 run-fallback terminal failure."""
 
@@ -4683,6 +4792,7 @@ class TeamRunner:
         self._track_issue_pending()
         self._check_run_fallback_timeout()
         self._check_formal_candidate_progress()
+        self._check_cooperative_idle()
         self._wake_acceptance_on_child_terminal()
         output: list[dict[str, Any]] = []
         self._handle_issue_events(output)
