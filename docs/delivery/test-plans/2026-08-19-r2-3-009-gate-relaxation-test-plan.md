@@ -615,3 +615,49 @@ T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本�
 （2026-08-21）：预算会被合法等待耗尽而放过后续真实死锁，两次询问之间隔满一个
 完整空闲窗口（300s）即为唯一限流，已实施（见 `Remove idle-inquiry budget cap` 提交，
 `test_inquiries_repeat_every_idle_window_without_budget_cap` 锁定）。
+
+## 第 6 批运行记录（starts 16–18，授权 user-20260821-r23009-start16-18）
+
+### start16（r23009-luna-20260821-start16，第 6 批授权第 1 轮）
+- 走到：建模开工、开场两条业务澄清（quality_score/quality_rating 跨版本连续性、
+  no-score 行为）在提问窗口内即时作答（两条 owner answer 均入 `outer-user.jsonl`）；
+  protocol LLM 在一轮中途停止产出，触发 15 分钟 role-inactivity watchdog
+  （`llm-inactivity-timeout`）→ run 拆除、临时 project 清理。
+- 死因分层：**运行基础设施**（模型端点中途无产出，typed fail-fast，非 Agent、
+  非平台合同）。
+- Agent 自身行为：已发声角色全部正确。
+- 本轮后窄修复：无代码修复（基础设施抖动，一次性）；操作侧无过失。
+- 预算：start **不退款**（退款规则仅覆盖 agent_blocked 与
+  collaboration/routing 的 run-fallback-timeout；运行基础设施失败保留消耗），
+  本批第 3 次授权经 `--requirement-id R2.3-009` 补记。
+- 临时 admin key `r23009-batch6-start16-admin` 已吊销。
+
+### start17（r23009-luna-20260821-start17，第 6 批授权第 2 轮，运行至发文仍在途）
+- 走到：**历次最深**——开场把三项裁定（V2 消费、连续性不断言、no-score 显式未知）
+  打包为一条 owner answer 即时作答；候选过协议校验（delivery-7/8）；protocol 完成
+  全部平台阶段：有序 dry-run + apply_atomic、readback、negative-probe 拒绝、
+  asserted-only validation、reasoning、governed retrieval、final checkpoint、
+  Build Session completed——**模型已完整落到平台**。终局 acceptance-stage handoff
+  的 readback 自动选择拒绝猜测：两个 `get_modeling_context` 工件同请求 digest、
+  同报 live workspace_version，仅 `lease.active` 不同（租约中读 vs 结算后读），
+  `stage_auto_select_ambiguous` 正确 fail-closed。
+- issue-1（platform_repair）上报后 owner 以 guidance 裁定：确认为 Runner 侧平台
+  合同缺陷（选择器缺 settled-lease 判别），本运行内不得重试/手选，经正常终局通道
+  以 blocked 收口；protocol terminal handoff（blocked）已被接受，证据全量保留
+  （含两份 readback 工件）。
+- 死因分层：**平台合同**（readback 自动选择歧义；Agent 行为正确，fail-closed 是
+  设计行为）。
+- 本轮后窄修复（为 start18 备好）：
+  - `f12c234`——`_auto_select_stage_calls` readback 选择器在多个 live 读中优先
+    唯一 settled（无活动租约）读；回归
+    `test_auto_select_prefers_settled_readback_when_two_live_reads_observed`。
+  - `08f98bd`——诊断 start17 后半程无 idle-inquiry 时发现：候选受理后 pending 记录
+    永不清空（state 停在 `complete`），`_check_cooperative_idle` 的
+    `pending is not None` 门在**首次候选派发后永久静默全部空闲询问**（start15
+    的询问全部发生在候选派发前，与此一致）。新增 `channel_open`（按终态判定）
+    替换该门；回归 `test_completed_candidate_channel_no_longer_suppresses_inquiry`
+    等；全量 1012 通过。
+- 运行内时序：16:33Z coordinator 记录 protocol blocked 终局后等待 modeling 终局
+  handoff；modeling 自 16:24:54Z 起静默（不知 protocol 已收口）。装载代码为修复
+  前版本，运行中不可热补；预期空转至 5400s run-fallback-timeout（约 17:55Z，
+  含 issue-pending 172s 扣除）→ terminal_failure（协作路由）→ 退款预期。
