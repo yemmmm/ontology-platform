@@ -2452,9 +2452,33 @@ class ReportSinkServer:
                                 "attempts_remaining": attempts_remaining,
                             }
                         else:
-                            self._submit(report)
-                            self._submitted = True
-                            response = {"ok": True}
+                            try:
+                                self._submit(report)
+                            except Exception as exc:
+                                # The submit callback runs the full Host
+                                # binding (handle lookup, envelope validation,
+                                # receipt binding, persistence); any failure
+                                # there used to escape to the outer handler
+                                # and answer with a bare "report-rejected".
+                                # start13 of R2.3-009 lost the real cause of
+                                # three consecutive examiner reports that way
+                                # (start11 lost two through the twin path
+                                # fixed above), so surface it here with the
+                                # same detail and attempts accounting.
+                                detail = f"{type(exc).__name__}: {exc}".strip()
+                                self._rejections.append(detail)
+                                attempts_remaining = max(
+                                    0, self.max_attempts - len(self._rejections)
+                                )
+                                response = {
+                                    "ok": False,
+                                    "code": "report-submit-rejected",
+                                    "detail": detail,
+                                    "attempts_remaining": attempts_remaining,
+                                }
+                            else:
+                                self._submitted = True
+                                response = {"ok": True}
                     conn.sendall(_canonical(response))
                 except Exception:
                     try:

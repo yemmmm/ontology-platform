@@ -630,3 +630,48 @@ def test_report_sink_preserves_generic_validator_rejection_detail(tmp_path: Path
         ], "rejection history must retain the validator reason, not a bare label"
     finally:
         sink.stop()
+
+def test_report_sink_preserves_submit_callback_rejection_detail(tmp_path: Path) -> None:
+    # start13 fix (R2.3-009): the production submit callback runs the full
+    # Host binding (handle lookup, envelope validation, receipt binding,
+    # persistence).  Its exceptions escaped to the sink's outermost handler
+    # and answered with a bare "report-rejected" with no detail and no
+    # attempts accounting, so the examiner could neither correct its payload
+    # nor exhaust its budget — three identical opaque rejections killed the
+    # cq-001 round.  The submit path must surface the reason like the
+    # validator paths do.
+    socket_path = tmp_path / "report.sock"
+    submitted: list[dict] = []
+
+    def submit(report: dict) -> dict:
+        submitted.append(report)
+        raise RuntimeError("scoped proxy receipt scope binding drifted")
+
+    sink = ReportSinkServer(socket_path, "token", submit, kind="platform", validator=None)
+    sink.start()
+    try:
+        payload = _semantic_payload({
+            "ref_id": "p0",
+            "tool": "get_modeling_context",
+            "request_digest": "a" * 64,
+            "response_digest": "b" * 64,
+            "artifact_path": "acceptance/round/platform-read/handle/0.json",
+            "page": {
+                "ordinal": 0,
+                "input_cursor": None,
+                "output_cursor": None,
+                "has_more": False,
+                "sequence_complete": True,
+            },
+        })
+        rejected = _socket_request(socket_path, {"token": "token", "report": payload})
+        assert rejected["ok"] is False
+        assert rejected["code"] == "report-submit-rejected"
+        assert "RuntimeError" in rejected["detail"]
+        assert "scope binding drifted" in rejected["detail"]
+        assert rejected["attempts_remaining"] == 2
+        assert len(submitted) == 1, "the callback ran and its failure was surfaced"
+        assert sink._submitted is False, "a failed submit must not latch submitted"
+        assert sink._rejections == [rejected["detail"]]
+    finally:
+        sink.stop()
