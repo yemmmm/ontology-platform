@@ -516,3 +516,29 @@ T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本�
   verdict 持久即可读）；(2) ReportSink 通用异常分支保留验证器异常类型+消息，不再输出
   bare `report-rejected`。回归测试：BLOCKED verdict 双读+漂移后仍拒读、sink detail 保留。
 - 临时 admin key `r23009-batch4-start11-admin`（2cd63bea-b2ad…）已吊销。
+
+### start12（r23009-luna-20260821-start12，本批第 4 次授权第 3 轮）
+- 走到：模型阶段正常推进，modeling 就版本冲突（Version 1 `quality_score` vs
+  latest Version 2 `quality_rating`）通过 `ready_for_acceptance` 协调频道发出澄清
+  （coordination-1）；协调者接收、复述问题后结束回合，**未通过正式频道登记 owner
+  question**（03:10:27 后全线静默）；空转至 5400s run-fallback-timeout（04:40:01）
+  terminal_failure (collaboration/routing, zero-mutation) → 自动退款。
+- 死因分层：**协作路由**——协调者把协调频道澄清当聊天处理，未走正式提问通道；
+  且「切片指派→首个候选」窗口内无任何进度 owner：FIFO `user` 动作需要已登记的
+  外层提问、issue 通道无活跃 issue、候选进度通道未开——start10 与 start12 均死在
+  该空窗，唯一兜底是 5400s 全程超时，整轮只为一次可被一条询问救回的停滞烧掉。
+- Agent 自身行为：modeling 正确发起澄清；协调者违规（收到的澄清必须登记为正式
+  owner question 或直接作答，不得搁置）。
+- 本轮后窄修复：`6c811e1`——runner 新增协作空转询问：当正式运行中无角色回合、
+  无任何通知输出达 `idle_inquiry_seconds`（默认 300s），且无候选/验收子进程/协作
+  issue 在途时，向协调者发送一条有界（默认 2 次）`idle-inquiry` delivery 并落
+  evidence；复用现有 `last_output_monotonic` 活动时钟与 0.1s drain 循环，无新增
+  外部脚本。测试 `test_cooperative_idle_inquiry.py`（5 例）+ 全量 1007 通过。
+- 临时 admin key `r23009-batch4-start12-admin` 已吊销。
+
+### 第 4 批逐轮对比
+| 轮次 | 走到哪 | 死因 |
+|---|---|---|
+| start10 | 候选交接完成 | 协作路由（codex 64 字符工具名重命名，协调者探测失败即放弃，空转至 T3） |
+| start11 | 历次最深：cq-001 验收轮、BLOCKED verdict 持久、四角色终报 | 平台合同（verdict 误报漂移拒读致无法结算）+ Agent 路由 text 违规 |
+| start12 | 模型推进至版本冲突澄清 | 协作路由（协调者未登记正式提问；指派→首候选窗口无进度 owner，静默 90 分钟至 T3） |
