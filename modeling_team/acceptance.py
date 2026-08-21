@@ -3335,6 +3335,14 @@ class RunnerAcceptanceCarrier:
         # readback: the get_modeling_context whose workspace.workspace_version
         # is the live workspace_version.  Repeated reads whose response changed
         # remain distinct artifact paths; only the final-state read matches.
+        # A mid-lease read can also report the live version (R2.3-009 start17:
+        # two reads differed only in lease.active), so when several live reads
+        # are observed the settled ones — no active lease — win; a unique
+        # settled read is the deterministic final-state readback.
+        def _lease_active(data: Mapping[str, Any] | None) -> bool:
+            lease = data.get("lease") if isinstance(data, Mapping) else None
+            return isinstance(lease, Mapping) and lease.get("active") is True
+
         readback_candidates: list[Mapping[str, Any]] = []
         for record in records:
             if record["tool"] != "get_modeling_context":
@@ -3346,6 +3354,14 @@ class RunnerAcceptanceCarrier:
                 and workspace.get("workspace_version") == live_workspace
             ):
                 readback_candidates.append(record)
+        if len(readback_candidates) > 1:
+            settled = [
+                record
+                for record in readback_candidates
+                if not _lease_active(_data(record))
+            ]
+            if len(settled) == 1:
+                readback_candidates = settled
         readback_record = _select(
             "readback",
             readback_candidates,

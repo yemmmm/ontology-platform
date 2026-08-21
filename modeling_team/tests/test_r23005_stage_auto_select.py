@@ -269,16 +269,14 @@ def _submit_result(*, mode: str, attempt_status: str, before: str, after: str | 
     }
 
 
-def _readback_result(workspace_version: str) -> dict:
-    return {
-        "structuredContent": {
-            "ok": True,
-            "data": {
-                "ontology": {"id": "ontology-syn"},
-                "workspace": {"workspace_version": workspace_version},
-            },
-        }
+def _readback_result(workspace_version: str, *, lease_active: bool | None = None) -> dict:
+    data: dict[str, Any] = {
+        "ontology": {"id": "ontology-syn"},
+        "workspace": {"workspace_version": workspace_version},
     }
+    if lease_active is not None:
+        data["lease"] = {"active": lease_active}
+    return {"structuredContent": {"ok": True, "data": data}}
 
 
 def _graph_result(status: str, graph_set_id: str, *, kind: str) -> dict:
@@ -466,6 +464,68 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     capability=carrier.capability_token("protocol"),
                 )
                 self.assertEqual(auto["handoff_digest"], manual["handoff_digest"])
+            finally:
+                carrier.cleanup()
+
+    def test_auto_select_prefers_settled_readback_when_two_live_reads_observed(self) -> None:
+        """R2.3-009 start17: mid-lease and settled reads can both show live.
+
+        Two ``get_modeling_context`` observations may both report the live
+        workspace_version and differ only in the transient ``lease.active``
+        field (the first read happened while the mutation lease was still
+        active).  The settled read — no active lease — is the final-state
+        readback and auto-select must resolve to it instead of raising
+        ``stage_auto_select_ambiguous``.
+        """
+
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = _synthetic_carrier(Path(directory))
+            try:
+                carrier.register_platform_tool_result(
+                    tool="submit_modeling_batch",
+                    arguments=_submit_args(mode="apply_atomic"),
+                    result=_submit_result(
+                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
+                    ),
+                )
+                carrier.register_platform_tool_result(
+                    tool="submit_modeling_batch",
+                    arguments=_submit_args(mode="dry_run"),
+                    result=_submit_result(
+                        mode="dry_run", attempt_status="validated", before="ws-prev", after=None
+                    ),
+                )
+                # Mid-lease read: live workspace version but lease still active.
+                carrier.register_platform_tool_result(
+                    tool="get_modeling_context",
+                    arguments={"ontology_id": "ontology-syn"},
+                    result=_readback_result("ws-live", lease_active=True),
+                )
+                settled_readback = carrier.register_platform_tool_result(
+                    tool="get_modeling_context",
+                    arguments={"ontology_id": "ontology-syn"},
+                    result=_readback_result("ws-live", lease_active=False),
+                )
+                carrier.register_platform_tool_result(
+                    tool="run_semantic_validation",
+                    arguments={"graph_set_id": "graph-syn"},
+                    result=_graph_result("succeeded", "graph-syn", kind="validation"),
+                )
+                carrier.register_platform_tool_result(
+                    tool="run_semantic_reasoning",
+                    arguments={"graph_set_id": "graph-syn"},
+                    result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
+                )
+
+                built = carrier.protocol_build_acceptance_stage_handoff(
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                by_stage = {r["stage"]: r for r in built["handoff_json"]["modeling_receipts"]}
+                self.assertEqual(
+                    by_stage["readback"]["evidence_ref"]["artifact_path"],
+                    settled_readback["artifact_path"],
+                )
             finally:
                 carrier.cleanup()
 
