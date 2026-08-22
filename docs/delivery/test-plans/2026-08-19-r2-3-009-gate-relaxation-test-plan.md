@@ -791,3 +791,34 @@ acceptance-stage handoff → 双问题验收。
   `117c1bf` 缓解后果）。Agent 行为：modeling 保守拒绝（正确方向）、protocol
   如实上报书写错误（正确）、coordinator 信念错误（行为缺陷，无机制修复）。
 - 临时 admin key `r23009-start20-launch`（8a34946b…）已吊销。
+
+### start21（2026-08-22 02:39Z–04:12Z，commit 840f86f）
+
+- 历史最佳运行：opening question 一次作答（02:45:25Z，含三项长期裁定复述）→
+  acceptance 越位索票（issue-1，runtime_recovery）→ owner 裁定"等待 Runner
+  的 acceptance-start，不得自行构造标识"→ **resume 无致命错误**
+  （`840f86f` 实跑验证：自报/他报 issue 均按设计恢复）→ **candidate-1 一次
+  通过受理（delivery-8，digest df4cfd38…）**（历次首次无 `fact` 项冲突）→
+  handoff（delivery-9）→ 验收段通知（delivery-10）→ **验收工单签发、
+  cq-001-1 / cq-002-1 两轮建卷**（历次首次进入真实验收）。
+- 卡点：cq-001 的 Examiner 子进程对（platform + source 各一）**两次尝试全部
+  child-timeout**（infrastructure-failure 证据 4 条，failure_digests
+  fb306d25…/1c05419…/c992036…/ec75806…）→ cq-001 判 BLOCKED
+  （blocked_reason runtime-infrastructure，checks 全 BLOCKED 除 scope PASS）
+  → cq-002 依序无法启动 → acceptance 依合同"非终局 BLOCKED 保持 live、
+  不许 report_task_result"，modeling/protocol 终局报告未交 → 全队收口
+  无法形成 → T3 兜底：04:12:38Z `terminal_failure`
+  （collaboration/routing，run-fallback-timeout）→ 04:12:42Z
+  **budget_refund 已入账**。run state `TERMINAL_FAILURE_CLEANED`，
+  32 项证据文件保留。
+- 死因分层：**运行基础设施**（Examiner 子进程超时预算/子进程不产出；上一批
+  的 examiner runtime budget 修复（task #16）未覆盖验收轮的 child-timeout
+  路径）。Agent 行为全部正确：modeling 一次成型、protocol 无冲突、
+  acceptance 严格守合同拒绝提前终报、coordinator 正确串行两轮并如实转达。
+- 下一批授权前的窄诊断方向：Examiner child 的超时预算与唤醒路径
+  （`examiner-terminal-wake.jsonl` 显示两 kind 均在终局唤醒但无产出回传）。
+- 账本核对：cap=21（3 隐式 + 1 授权 3 + 15 退款），count=21——**batch 7
+  三次授权全部消耗，start21 退款 1 次**；`authorize-budget` 补登被正确拒绝
+  （已有未消费授权条目 start16-18，退款抵扣已覆盖本批）。**无新授权不得
+  再启动任何 run。**
+- 临时 admin key `r23009-start21-launch`（9a4c1820…）已吊销。
