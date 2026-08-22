@@ -940,3 +940,41 @@ cfceaa69 已吊销。全量测试 **1036 通过、1 skipped、302 subtests**。
 **start24 预期**：digest 格式误拒与未知短语误拒均已消除；剩余观察点是
 平台阅卷员能否在 3 次提交内交付语义合格报告，以及 cq-001 的真实检索
 质量表现。
+
+## start24 运行记录（2026-08-22，batch 8 第 3 轮）
+
+运行 `r23009-luna-20260822-start24`（08:45:21Z 冻结启动，10:16:34Z 终结）。
+
+**进展**：owner 答复（B consumes C Version 2 / `quality_rating`）08:47:10 经
+FIFO 发布并送达 modeling；候选模型 `r23009-candidate-1` 一次提交即被接受
+（08:48:57，digest `a960d416…`，无任何拒绝往返——历次最干净）；08:52:34
+protocol 发出 acceptance-stage handoff，08:52:35 modeling 发出
+ready_for_acceptance。start23 修复的两个平台合同缺陷本轮未被触及。
+
+**卡死点（协作路由）**：coordinator 对 owner 答复结构性失明。正式
+`publish_owner_answer` 只投递给原提问方 modeling（transport_mcp.py:475），
+coordinator 全程未收到任何通知，于是从 08:57:55 起以"澄清未获答复"为由
+循环阻塞（idle inquiry 8 次、coordinator 输出 14 轮），始终不启动
+acceptance 阶段——**acceptance/examiner 阶段根本没有开始**。outer 侧无
+合法解卡手段：重发答复被 consumed-once 拒绝（"already consumed"），外层
+提问仅允许 modeling 来源，且无未决 issue 可供 resolution。等待 T3。
+
+**窄修复（commit ed83d4e）**：`_release_owner_answer` 在正式发布成功后，
+向 coordinator 追加一条 `user/outer → coordinator` 的 `outer-user` 通知
+（与 issue resolution 已有的 coordinator 通知机制对齐）；通知失败仅记
+evidence 不烧答复。配套更新 owner-answer 两组测试（sent 序列变为
+question → outer-user 通知 → owner-answer）。全量测试 **1036 通过、
+1 skipped、302 subtests**。
+
+**终态**：T3 `run-fallback-timeout`（5400 活跃秒）终结，状态
+`TERMINAL_FAILURE_CLEANED`。ledger：terminal_failure
+（collaboration/routing）+ budget_refund（10:15:35/10:15:39Z）。临时管理
+密钥 aa9bbc3e 已吊销，keyfile 已删除。
+
+**batch 8 小结**：三次 start 均未到达语义验收报告，但暴露并修复了三个
+真实窄缺陷——carrier 页链全局序模型误拒（start22，e7dbd5e）、回执盖戳
+前的 digest 手抄格式误拒 + 平台阅卷员缺"因缺少相关证据无法回答"短语
+要求（start23，2ecc8d3）、coordinator 对 owner 答复失明（start24，
+ed83d4e）。start24 中 modeling→候选→接受链路首次全程零拒绝，下一批的
+观察点收敛为：coordinator 能否在获知 owner 答复后正常启动 acceptance
+阶段，以及平台阅卷员在放松后的合同下能否交付语义合格报告。
