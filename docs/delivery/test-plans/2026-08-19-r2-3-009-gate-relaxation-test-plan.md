@@ -699,3 +699,58 @@ T0 规则（AGENTS.md `40c4ac4`）落地后，用户授权三次新启动。本�
 `08f98bd`（idle-inquiry 在候选终态后恢复发声）、`b336e27`（fatal 宿主错误的账本
 结算）。下一批次的候选目标：以完整装载三修复的 fresh run 走通 start17 未竟的
 acceptance-stage handoff → 双问题验收。
+
+## 第 7 批运行记录（starts 19–21，授权 2026-08-22 “授权3次，继续”）
+
+### start19（r23009-luna-20260822-start19，第 7 批授权第 1 轮，运行至发文仍在途）
+- 走到：**历次最深**。装载 `f12c234`+`08f98bd`+`b336e27`；23:33:59Z semantic
+  start；开场提问（delivery-4）23:34:14Z 到窗口，23:35:03Z 以 `user` 动作打包
+  三项裁定即时作答（对照 start18 操作事故，本次动作正确）。
+- 修复实战验证：`08f98bd` 生效——23:59:11Z 全线静默后 idle-inquiry 于整 300.08s
+  处触发（start17 同场景永默），此后按窗口持续；协调者经仲裁约 30 秒内驱动全部
+  四角色交出终局报告（start17 同阶段烧掉 85 分钟）。
+- 语义修订闭环首次走通：候选 r23008-candidate-1（delivery-6）受理后 asserted-only
+  validation `conforms=false`（实体值键 `publishedOutput` 与 Shape 谓词
+  `publishedOutputField` 不一致，3 处 MinCount）。issue-1（protocol_guidance）
+  上报 → owner 裁定为**建模质量缺陷**（非平台缺陷）→ 六字段 conflict 信封
+  （delivery-8）→ modeling 交付完整修订 r23008-candidate-2（delivery-9，统一为
+  `publishedOutputField`，保留全部既有裁定与显式未知）→ 受理（delivery-10）。
+  修订后全平台阶段通过：readback、conformant validation、reasoning、governed
+  retrieval、final checkpoint、Build Session completed——**修订模型完整落平台**。
+- 终局被第二个同族选择器缺陷挡住：acceptance-stage handoff 的 validation 选择器
+  在两个 `status=succeeded`、同请求 digest、同 live `graph_set_id` 的工件间
+  拒绝猜测（仅 `conforms` 不同：修订-1 false / 修订-2 true），
+  `stage_auto_select_ambiguous` fail-closed。issue-2（platform_repair）→ owner
+  裁定本运行内不重试、以 blocked 收口、证据全量保留（含两份 validation 工件
+  `9a87bdf0…-{7f55c85…,50ed516…}.json`）。
+- 23:59:09Z–00:04:34Z：四角色终局报告（全 blocked）依序被接受，coordinator 交出
+  终局消息（“Run blocked…Acceptance was not started because no valid handoff
+  existed”）——**运行首次达成完整的全队自收口**。
+- 收口后暴露第三个平台合同缺陷（运行内不可热补）：terminal-report 门
+  （T0 防御评审）放行全 blocked 报告，但 `drain` 的结算门仍要求
+  `acceptance.is_settled`——acceptance 从未启动（无 handoff）时永 False，
+  run 无法发出 `settled` 信封，只能空转至 T3 兜底并被误记为协作路由失败。
+- 本轮后窄修复：
+  - `40570e4`——validation 选择器在多个 live 匹配中优先唯一 `conforms=true`
+    （终局 validation 证据）；回归
+    `test_auto_select_prefers_conformant_validation_when_two_live_validations_observed`。
+  - `959b35d`——`drain` 结算门：全角色 blocked（agent-blocked 出口）时豁免
+    acceptance-settled 子句（与 terminal-report 门同判），pending issue 仍阻塞；
+    回归 `test_r23009_agent_blocked_settlement.py` 4 例；全量 1021 通过。
+- 死因分层：**平台合同**（validation 选择器歧义 + agent-blocked 结算门缺失；
+  Agent 行为全部正确，两次 fail-closed 与修订闭环均为设计行为）。
+- 预算：待终局（预期 T3 兜底 terminal_failure collaboration/routing → 退款；
+  误分类由 `959b35d` 修复后不再发生）。
+
+### start19 终局补充（2026-08-22 01:18Z）
+- 全队 blocked 收口后运行内无法结算（见上），空转至 T3：01:18:28Z
+  `terminal_failure`（collaboration/routing，run-fallback-timeout）→ 01:18:31Z
+  **budget_refund 已入账**。run state `TERMINAL_FAILURE_CLEANED`，scope 清理
+  完成（run 未达验收，平台上的修订模型随 scope 删除），32 项证据文件全量保留。
+- 该 terminal_failure 的协作路由分类是结算门缺陷造成的**误分类**（运行实际已达
+  完整全队 blocked 自收口）；`959b35d` 修复后同类 run 将以 `settled`/
+  `terminal_settlement(agent_blocked)` 正常结算。账本记录按实际事件保留，不做
+  事后改写。
+- 临时 admin key `r23009-start19-launch`（7693f401-10df…）已吊销。
+- 首次启动 start20 时被 clean-baseline 门拒绝（本文件未提交），属预期防线；
+  提交本记录后重新启动。
