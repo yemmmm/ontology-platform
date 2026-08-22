@@ -754,3 +754,40 @@ acceptance-stage handoff → 双问题验收。
 - 临时 admin key `r23009-start19-launch`（7693f401-10df…）已吊销。
 - 首次启动 start20 时被 clean-baseline 门拒绝（本文件未提交），属预期防线；
   提交本记录后重新启动。
+
+### start20（2026-08-22 01:19Z–02:32Z，commit 40570e4+959b35d）
+
+- 历史最远推进：opening question 一次作答即释放；candidate-1（含 `fact` 项）
+  → 冲突 → 修订 candidate-2 → issue-1（fact 项不支持，protocol 上报）→ owner
+  裁定"用 entity values + fact 谓词 + Shape path 表达"→ candidate-3 →
+  validation 选择器冲突 → candidate-4（delivery-13）→ **receipt-14 受理**
+  → **acceptance-stage handoff delivery-15 首次通过**（`40570e4` 修复的
+  选择器路径实跑验证）→ 全平台落库完成（platform_and_session_complete）→
+  protocol 发出 silent_for_acceptance（01:44:57Z）。
+- 停在 readiness：protocol 的一次性 gate-complete 通知（delivery-16）回显了
+  过期的 candidate-2 digest（书写性错误）→ modeling 以"等待匹配通知"为由
+  拒绝 ready_for_acceptance（一次性通知不可重发）；issue-2 owner 裁定
+  receipt-14+handoff-15（eefbf95…）为权威绑定、通知文本无机制消费。此后
+  coordinator 固化错误信念"无分数行为问题无人作答"（实际 01:20:07Z 已作答且
+  被 candidates 引用 5 次），持续 idle 询问 8 次并于 02:30Z 上报 issue-3
+  （business_clarification，coordinator 自报）。
+- 02:32:43Z owner 经 FIFO 裁定 issue-3（答案已在历史中 + 复述 issue-2 绑定
+  裁定 + 指示转达 modeling）。12 秒后 run 致命中止：
+  `run failed: issue resume requires an idle reporter`——**自报 issue 的
+  resume 由 coordinator 从自己活动回合内发出，空闲上报者检查永不可能满足**。
+  02:32:55Z `terminal_failure` runtime/infrastructure，**不退款**（不符合
+  退款条件：非 agent_blocked、非 collaboration/routing+T3）。
+- 本轮后窄修复：
+  - `117c1bf`——issue_resolution 经 FIFO 入账时同步机械投递裁定给 modeling
+    角色（start15/start20 两次协调者 discretionary 转达失败的结构性补偿）；
+    投递失败记 evidence 不拆运行。回归
+    `test_r23009_resolution_reaches_modeling.py` 3 例。
+  - `840f86f`——coordinator 自报 issue 的 resume 跳过"空闲上报者 + 新回合"
+    要求（coordinator 自己已持有裁定，无需再投递）；非 coordinator 上报者
+    忙时仍 fail-closed。回归 `test_r23009_self_reported_issue_resume.py`
+    2 例；全量 1026 通过。
+- 死因分层：记录为 **runtime/infrastructure**（resume 空闲检查把 owner 裁定
+  变成致命错误）；上游链条是协作路由（coordinator 陈旧信念 + 转达缺口，
+  `117c1bf` 缓解后果）。Agent 行为：modeling 保守拒绝（正确方向）、protocol
+  如实上报书写错误（正确）、coordinator 信念错误（行为缺陷，无机制修复）。
+- 临时 admin key `r23009-start20-launch`（8a34946b…）已吊销。
