@@ -475,6 +475,54 @@ def test_platform_child_payload_matches_current_proxy_receipt_and_rejects_duplic
         validate_examiner_payload(duplicate, kind="platform")
 
 
+def test_platform_payload_accepts_mistranscribed_digests_before_stamping() -> None:
+    """R2.3-009 start23: hand-copied digests must not burn report attempts.
+
+    The payload gate runs before ``ingest_child_report`` stamps the canonical
+    receipt digests, so a one-character transcription error in a child-copied
+    digest must pass this gate; the receipt binding, not this gate, owns
+    digest truth.  Identity for the repeats check is the child's own
+    (tool, ref_id) coordinates.
+    """
+
+    def locator_with(digests: tuple[str, str], ref_id: str) -> dict:
+        return {
+            "ref_id": ref_id,
+            "tool": "query_semantic_context",
+            "request_digest": digests[0],
+            "response_digest": digests[1],
+            "artifact_path": "acceptance/round/platform-read/handle/0.json",
+            "page": {
+                "ordinal": 0,
+                "input_cursor": None,
+                "output_cursor": None,
+                "has_more": False,
+                "sequence_complete": True,
+            },
+        }
+
+    payload = _semantic_payload(locator_with(("ac29ff42d279fa9b301dff956c3d3", "b58199a0bc99da573f51ca3c38757"), "p0"))
+    validate_examiner_payload(payload, kind="platform")
+
+    payload = _semantic_payload(locator_with(("", "b" * 64), "p0"))
+    with pytest.raises(AcceptanceContractError, match="request_digest is invalid"):
+        validate_examiner_payload(payload, kind="platform")
+
+    two = _semantic_payload(locator_with(("a" * 64, "b" * 64), "p0"))
+    two["evidence_refs"] = [
+        locator_with(("a" * 64, "b" * 64), "p0"),
+        locator_with(("a" * 64, "b" * 64), "p0"),
+    ]
+    with pytest.raises(AcceptanceContractError, match="repeats"):
+        validate_examiner_payload(two, kind="platform")
+    distinct = _semantic_payload(locator_with(("a" * 64, "b" * 64), "p0"))
+    distinct["evidence_refs"] = [
+        locator_with(("a" * 64, "b" * 64), "p0"),
+        locator_with(("a" * 64, "b" * 64), "p1"),
+    ]
+    validate_examiner_payload(distinct, kind="platform")
+
+
 @pytest.mark.parametrize("field, forged", [("input_cursor", {}), ("output_cursor", [])])
 def test_stored_platform_typed_ref_rejects_forged_cursor_types(field: str, forged: object) -> None:
     ref = {

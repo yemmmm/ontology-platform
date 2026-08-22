@@ -76,7 +76,9 @@ fields. The report is ONLY accepted through the `submit_examiner_report` tool ca
 will not be counted.
 
 Each `evidence_refs` item is a binding-free locator; the two fields you must supply are
-`ref_id` and `tool`. The number of `evidence_refs`
+`ref_id` and `tool`, and `tool` must be the exact tool name as invoked on the proxy (for
+example `query_semantic_context`) — do not paraphrase or abbreviate it, because the sink
+rejects any tool string outside the ticket's read-tool allowlist. The number of `evidence_refs`
 items must be exactly equal to the number of successful proxy calls in this child: every
 successful call that returned a receipt must appear as its own locator, in the exact order the
 calls succeeded. Use `ref_id = "p<call_ordinal>"` (zero-based) so the ordinal sequence
@@ -101,7 +103,10 @@ page is `ordinal 0` and sequence-complete by construction.
 If a response is truncated, incomplete, ambiguous, or missing a fact, preserve the response's
 completeness markers and record the resulting unknown and explicit gap in the same typed
 report. An incomplete retrieval cannot support a definitive conclusion: distinguish "the
-platform has not modeled this fact" from "the current query missed it".
+platform has not modeled this fact" from "the current query missed it". When you submit with
+`answerability: "insufficient-evidence"`, the `conclusion` text MUST contain the exact
+explicit unknown phrase `因缺少相关证据无法回答` verbatim (the sink rejects the report
+otherwise); state the unknown first in that phrase, then add the per-fact gap detail after it.
 
 A submitted report always carries at least one `evidence_refs` locator: the sink rejects a
 report whose locator list is empty.

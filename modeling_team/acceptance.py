@@ -193,8 +193,16 @@ def _validate_evidence_locator(value: Any, *, kind: str) -> dict[str, Any]:
     _safe_id(locator["ref_id"], "Platform evidence locator ref_id")
     if not isinstance(locator["tool"], str) or not locator["tool"]:
         _error("Platform evidence locator tool is invalid")
-    _safe_digest(locator["request_digest"], "Platform evidence locator request_digest")
-    _safe_digest(locator["response_digest"], "Platform evidence locator response_digest")
+    # R2.3-009 start23 (2026-08-22): the child hand-copied digest strings and
+    # mis-transcribed one character, and this payload gate burned all three
+    # report attempts before receipt stamping could replace the values.  The
+    # locator is already pinned by count + ordinal + tool, and digest
+    # transcription is protocol mechanics the tool layer owns: accept any
+    # non-empty string here and let ``ingest_child_report`` stamp the
+    # canonical receipt digests before the full-envelope validation.
+    for field in ("request_digest", "response_digest"):
+        if not isinstance(locator[field], str) or not locator[field]:
+            _error(f"Platform evidence locator {field} is invalid")
     _safe_relative_path(locator["artifact_path"], "Platform evidence locator artifact_path")
     page = _require_exact_keys(
         locator["page"],
@@ -254,12 +262,10 @@ def validate_examiner_payload(value: Any, *, kind: str) -> dict[str, Any]:
         if kind == "source":
             identity = (locator["location"],)
         else:
-            identity = (
-                locator["tool"],
-                locator["request_digest"],
-                locator["response_digest"],
-                locator["artifact_path"],
-            )
+            # Identity is the child's own coordinates (tool + ref_id); the
+            # digest strings may be hand-copied and are stamped from receipts
+            # after this gate, so they cannot serve as identity.
+            identity = (locator["tool"], locator["ref_id"])
         if identity in seen:
             _error("Examiner payload repeats an evidence locator")
         seen.add(identity)
