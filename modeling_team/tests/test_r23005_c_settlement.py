@@ -401,11 +401,17 @@ class R23005CSettlementTests(unittest.TestCase):
             # The same successful scoped call cannot satisfy two report pages.
             duplicate_report = copy.deepcopy(valid)
             duplicate_report["evidence_refs"][0]["page"].update(
-                {"output_cursor": "cursor-1", "sequence_complete": False}
+                {"output_cursor": "cursor-1", "sequence_complete": False, "has_more": True}
             )
             duplicate_page = copy.deepcopy(duplicate_report["evidence_refs"][0])
             duplicate_page["page"].update(
-                {"ordinal": 1, "input_cursor": "cursor-1", "output_cursor": None, "sequence_complete": True}
+                {
+                    "ordinal": 1,
+                    "input_cursor": "cursor-1",
+                    "output_cursor": None,
+                    "has_more": False,
+                    "sequence_complete": True,
+                }
             )
             duplicate_report["evidence_refs"].append(duplicate_page)
             with self.assertRaisesRegex(AcceptanceContractError, "repeats"):

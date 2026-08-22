@@ -442,7 +442,7 @@ def test_platform_child_payload_matches_current_proxy_receipt_and_rejects_duplic
         "artifact_path": path,
         "page": {
             "ordinal": 0,
-            "input_cursor": "cursor-in",
+            "input_cursor": None,
             "output_cursor": None,
             "has_more": False,
             "sequence_complete": True,

@@ -1668,6 +1668,34 @@ class R23005ContractTests(unittest.TestCase):
         with self.assertRaises(AcceptanceContractError):
             validate_typed_evidence_ref({"type": "platform_read", "ref": "generic"})
 
+    def test_page_chain_accepts_receipt_continuation_and_rejects_interruption(self) -> None:
+        # R2.3-009 start22: the sink stamps pages from proxy receipts, where a
+        # paginated continuation is a distinct call with its own request
+        # digest.  The carrier chain must accept that truth (one global
+        # sequence in call order) and still reject an interleaved fresh read
+        # that abandons a truncated sequence.
+        ticket = _ticket()
+        truncated = {
+            "type": "platform_read", "ref_id": "p0", "ticket_digest": ticket["ticket_digest"],
+            "model_state_digest": ticket["model_state_digest"], "tool": "query_semantic_context",
+            "request_digest": "e" * 64, "response_digest": "f" * 64, "artifact_path": "evidence/p0.json",
+            "page": {"ordinal": 0, "input_cursor": None, "output_cursor": "cursor-1", "has_more": True, "sequence_complete": False},
+        }
+        continuation = {
+            **truncated, "ref_id": "p1", "request_digest": "a" * 64, "response_digest": "b" * 64,
+            "artifact_path": "evidence/p1.json",
+            "page": {"ordinal": 1, "input_cursor": "cursor-1", "output_cursor": None, "has_more": False, "sequence_complete": True},
+        }
+        validate_page_chain([truncated, continuation])
+        interleaved = {
+            "type": "platform_read", "ref_id": "p1", "ticket_digest": ticket["ticket_digest"],
+            "model_state_digest": ticket["model_state_digest"], "tool": "get_modeling_context",
+            "request_digest": "a" * 64, "response_digest": "b" * 64, "artifact_path": "evidence/p1.json",
+            "page": {"ordinal": 0, "input_cursor": None, "output_cursor": None, "has_more": False, "sequence_complete": True},
+        }
+        with self.assertRaises(AcceptanceContractError):
+            validate_page_chain([truncated, interleaved])
+
     def test_scope_shim_rejects_foreign_graph_and_settlement_cas_withholds_drift(self) -> None:
         ticket = _ticket()
         shim = PlatformScopeShim(ticket)

@@ -613,26 +613,43 @@ def validate_typed_evidence_ref(value: Any, *, expected_ticket: str | None = Non
 
 
 def validate_page_chain(refs: Iterable[Mapping[str, Any]]) -> None:
-    pages: list[dict[str, Any]] = []
+    # R2.3-009 start22 (2026-08-22): the carrier used to group pages by
+    # (tool, request_digest) and require per-group contiguous ordinals, but a
+    # paginated continuation necessarily carries a different request digest
+    # (the cursor is part of the forwarded arguments), so a real continuation
+    # could never chain and every paginated report died on "gap".  The sink's
+    # receipt validator already defines the canonical model: one global
+    # sequence in call order, where a page may follow a truncated page only as
+    # the same tool's cursor continuation.  Mirror that model here so both
+    # gates accept the same stamped truth.
+    previous_ref: dict[str, Any] | None = None
+    previous_page: dict[str, Any] | None = None
     for ref in refs:
-        if ref.get("type") == "platform_read":
-            pages.append(validate_typed_evidence_ref(ref))
-    grouped: dict[tuple[str, str], list[dict[str, Any]]] = {}
-    for ref in pages:
-        grouped.setdefault((str(ref["tool"]), str(ref["request_digest"])), []).append(ref)
-    for chain in grouped.values():
-        chain.sort(key=lambda item: item["page"]["ordinal"])
-        for index, item in enumerate(chain):
-            page = item["page"]
-            if page["ordinal"] != index:
+        if ref.get("type") != "platform_read":
+            continue
+        typed = validate_typed_evidence_ref(ref)
+        page = typed["page"]
+        if page["ordinal"] == 0:
+            if page["input_cursor"] is not None:
+                _error("platform evidence first page carries an input cursor")
+            if previous_page is not None and previous_page.get("has_more"):
+                _error("platform evidence page chain interrupts a truncated sequence")
+        else:
+            if (
+                previous_ref is None
+                or previous_page is None
+                or previous_page.get("has_more") is not True
+                or typed["tool"] != previous_ref["tool"]
+                or page["ordinal"] != previous_page.get("ordinal", -1) + 1
+                or page["input_cursor"] != previous_page.get("output_cursor")
+            ):
                 _error("platform evidence page chain has a gap")
-            if index < len(chain) - 1:
-                if page["output_cursor"] is None:
-                    _error("platform evidence cursor chain is broken")
-                if chain[index + 1]["page"]["input_cursor"] != page["output_cursor"]:
-                    _error("platform evidence input cursor does not continue the prior page")
-            if index == len(chain) - 1 and not page["sequence_complete"]:
-                _error("platform evidence page chain is incomplete")
+        if page["has_more"]:
+            if page["sequence_complete"] or not page["output_cursor"]:
+                _error("platform evidence cursor chain is broken")
+        elif page["sequence_complete"] is not True or page["output_cursor"] is not None:
+            _error("platform evidence page chain is incomplete")
+        previous_ref, previous_page = typed, page
 
 
 def validate_modeling_receipt(value: Any, *, run_id: str, project_id: str, ontology_id: str, slice_revision: str, state_digest: str, ticket_digest: str) -> dict[str, Any]:
