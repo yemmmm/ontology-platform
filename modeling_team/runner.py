@@ -4418,23 +4418,34 @@ class TeamRunner:
             )
             raise TeamConfigurationError("issue control candidate binding drift")
         before_turn = getattr(agent, "active_turn_id", None) if agent is not None else None
-        if control.action == "resume" and before_turn is not None:
+        # R2.3-009 start20: a Coordinator-reported issue is resumed from inside
+        # the Coordinator's own live turn, so the idle-reporter and fresh-turn
+        # expectations below can never hold for it.  The Coordinator already
+        # holds the resolution (it dispatched this control itself); skipping
+        # the reporter delivery is the recoverable path, not a teardown.
+        self_resumed = (
+            control.action == "resume"
+            and control.reporter_id == control.coordinator_id
+        )
+        if control.action == "resume" and not self_resumed and before_turn is not None:
             self.transport.fail_issue_rebind(
                 issue_id=control.issue_id,
                 reporter_id=control.reporter_id,
                 reason="reporter did not finish its paused turn",
             )
             raise TeamConfigurationError("issue resume requires an idle reporter")
+        receipt: RuntimeDispatchReceipt | None = None
         try:
-            receipt = self.adapter.send_message(
-                control.reporter_id,
-                RuntimeDelivery(
-                    sender_id="runner/issue-control",
-                    recipient_id=control.reporter_id,
-                    kind="issue-control",
-                    text=json.dumps(control.as_dict(), ensure_ascii=False, sort_keys=True),
-                ),
-            )
+            if not self_resumed:
+                receipt = self.adapter.send_message(
+                    control.reporter_id,
+                    RuntimeDelivery(
+                        sender_id="runner/issue-control",
+                        recipient_id=control.reporter_id,
+                        kind="issue-control",
+                        text=json.dumps(control.as_dict(), ensure_ascii=False, sort_keys=True),
+                    ),
+                )
         except Exception as exc:
             self.transport.fail_issue_rebind(
                 issue_id=control.issue_id,
@@ -4444,7 +4455,11 @@ class TeamRunner:
             raise TeamConfigurationError("issue control Runtime delivery failed") from exc
         after_thread = self._formal_protocol_thread_id(control.reporter_id)
         after_turn = getattr(agent, "active_turn_id", None) if agent is not None else getattr(receipt, "turn_id", None)
-        if control.action == "resume" and getattr(receipt, "mode", None) != "start":
+        if (
+            control.action == "resume"
+            and not self_resumed
+            and getattr(receipt, "mode", None) != "start"
+        ):
             self.transport.fail_issue_rebind(
                 issue_id=control.issue_id,
                 reporter_id=control.reporter_id,
