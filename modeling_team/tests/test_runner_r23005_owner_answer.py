@@ -534,9 +534,17 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             self.assertTrue(owner["owner_answer_id"].startswith("owner-answer-"))
             self.assertEqual(owner["release_id"], owner["delivery_id"])
             self.assertEqual(
-                [recipient for recipient, _ in adapter.sent], ["coordinator", "modeling"]
+                [recipient for recipient, _ in adapter.sent],
+                # start24: the answer is also copied to the Coordinator so its
+                # terminal-handoff orchestration cannot stay blind to it.  The
+                # Coordinator notify is sent inside ``receive_outer``, before
+                # the loop emits the Modeling envelope.
+                ["coordinator", "coordinator", "modeling"],
             )
-            self.assertEqual(adapter.sent[1][1].kind, "owner-answer")
+            self.assertEqual(adapter.sent[2][1].kind, "owner-answer")
+            self.assertEqual(adapter.sent[1][1].kind, "outer-user")
+            self.assertEqual(adapter.sent[1][1].sender_id, "user/outer")
+            self.assertEqual(adapter.sent[1][1].text, "未知")
             self.assertTrue(
                 runner.transport.report("modeling", "completed", "answered")
             )
@@ -1477,7 +1485,13 @@ class RunnerR23005FifoOuterInputTests(unittest.TestCase):
         self.assertEqual(owner["recipient_id"], "modeling")
         self.assertEqual(owner["reply_to_delivery_id"], question.delivery_id)
         self.assertTrue(owner["owner_answer_id"].startswith("owner-answer-"))
-        self.assertEqual(adapter.sent[1][1].kind, "owner-answer")
+        # The coordinator notify (kind "outer-user" from "user/outer") fires
+        # inside receive_outer, before the loop emits the modeling envelope
+        # and releases the owner-answer delivery to modeling.
+        self.assertEqual(adapter.sent[1][1].kind, "outer-user")
+        self.assertEqual(adapter.sent[1][1].sender_id, "user/outer")
+        self.assertEqual(adapter.sent[1][1].text, "captured")
+        self.assertEqual(adapter.sent[2][1].kind, "owner-answer")
 
     def test_formal_owner_answer_via_fifo_without_displayed_question_is_fatal(self) -> None:
         # With no displayed question, the FIFO owner answer hits the same

@@ -4784,6 +4784,30 @@ class TeamRunner:
             raise
         self._owner_answers[key] = record
         self._outer_user_texts.add(text)
+        # R2.3-009 start24 (2026-08-22): the formal publication above reaches
+        # only Modeling, while the Coordinator — which owns terminal handoffs —
+        # stayed structurally blind to owner answers.  start24 wedged when the
+        # Coordinator kept blocking on an "unanswered" owner question long
+        # after the answer had been delivered to and acknowledged by Modeling.
+        # Issue resolutions already notify the Coordinator; mirror that here.
+        # The Modeling delivery already succeeded, so a notify failure must not
+        # burn the answer — record it and continue.
+        if formal:
+            try:
+                self.adapter.send_message(
+                    coordinator,
+                    RuntimeDelivery(
+                        sender_id="user/outer",
+                        recipient_id=coordinator,
+                        kind="outer-user",
+                        text=text,
+                    ),
+                )
+            except Exception:
+                self._append_evidence(
+                    "owner-answer-coordinator-notify-failure",
+                    {"owner_answer_id": owner_answer_id, "release_id": release_id},
+                )
 
     def _append_exact_outer_user(self, record: dict[str, str]) -> None:
         assert self.run
