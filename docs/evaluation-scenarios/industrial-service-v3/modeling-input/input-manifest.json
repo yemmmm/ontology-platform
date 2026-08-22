@@ -1,0 +1,14 @@
+{
+  "manifest_version": "v3.0",
+  "scenario_id": "industrial-service-v3",
+  "purpose": "bounded source bundle for a future modeling interview",
+  "allowed_files": [
+    "scenario-brief.md",
+    "business-terms.md",
+    "schema.sql",
+    "sample-data.sql"
+  ],
+  "runtime_boundary": "Only files in this directory named above may be mounted for modeling; this manifest does not grant access to parent directories.",
+  "data_policy": "Representative rows stay in PostgreSQL. Do not create RDF individuals for source rows.",
+  "interview_policy": "Schema names and samples are evidence; confirm lifecycle, metric, causality, and authorization meanings with the user."
+}

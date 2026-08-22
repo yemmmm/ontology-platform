@@ -223,6 +223,28 @@ Pull requests should include a clear description, relevant issue links, migratio
 
 Copy `.env.example` to `backend/.env` for local development. Do not commit real credentials, API keys, database dumps, `backend/.venv/`, `frontend/node_modules/`, or generated `frontend/dist/` artifacts unless explicitly required.
 
+## Relational Semantic-Layer Guidance
+
+These principles apply to any relational business-scenario modeling work:
+
+- Keep business rows in the relational source. The RDF/ontology semantic layer describes business meaning,
+  relationships, metrics, policies, and mappings; it must not be populated with source-table row instances merely
+  to make SQL question answering work.
+- Treat database schema (table names, columns, keys, constraints, and sample values) as mapping evidence, not as
+  business truth. Confirm terminology, lifecycle, causality, metric definitions, and unknowns through the business
+  interview before asserting them as semantics.
+- Model a complete scenario as logical slices and preserve a project-level view of shared terms, dependencies,
+  mappings, and cross-slice questions. A logical slice does not imply one Ontology; do not preselect one or many
+  Ontologies from table count alone.
+- A Consumer Agent must obtain an authorized semantic context before generating SQL. NL2SQL may be used only after
+  the semantic concepts, join paths, and metric rules in that context constrain and explain the generated query.
+- Separate semantic-knowledge authorization from business-data authorization. A denied semantic read must use the
+  platform's `forbidden` contract without leaking protected concepts or mappings, but that result does not secure
+  rows or columns in a database reachable through another client.
+- Keep the current external SQL execution adapter minimal: execute the supplied SQL and return rows or a database
+  error. Do not add data authorization, policy rewriting, auditing, or connector-framework behavior to this adapter;
+  production data authorization belongs to an external query gateway, business service, or database policy layer.
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 

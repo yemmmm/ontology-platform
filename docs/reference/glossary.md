@@ -442,3 +442,40 @@ A classification of authentication material that an Operation caller must supply
 as `api_key`, `oauth2`, or `mcp_server_auth`. It never contains a credential instance, reference ID,
 token, password, authorization header, or secret value.
 _Avoid_: credential reference, stored secret, authentication header
+
+**Business Scenario**:
+A bounded end-to-end operational domain used to elicit, model, and verify shared business semantics across one or
+more logical modeling slices. It includes the source boundary and cross-slice questions, but it does not prescribe
+whether the resulting semantics are stored in one Ontology or several.
+_Avoid_: database schema, one Ontology, isolated business slice
+
+**Logical Modeling Slice**:
+A deliberately bounded semantic work unit inside a Business Scenario, with a primary subject area, explicit
+dependencies, shared terms, and competency questions. A slice is a planning and modeling boundary, not a storage
+or authorization boundary by itself.
+_Avoid_: table group, Ontology, named graph
+
+**Semantic Mapping**:
+A semantic-layer description that connects a business concept, property, relation, or metric to source tables,
+columns, keys, joins, enumerations, and calculation metadata. It is evidence for query generation and must not be
+treated as the source of business rows or as a substitute for confirmed business meaning.
+_Avoid_: database row, connector configuration, SQL result
+
+**Semantic Knowledge Authorization**:
+The platform decision governing whether a principal may discover or read a semantic resource, such as a concept,
+mapping, join path, metric, or evidence reference. A denied protected read returns the stable `forbidden` contract
+without revealing existence, names, fields, or topology.
+_Avoid_: row-level security, database login, empty search result
+
+**Business Data Authorization**:
+The external-system decision governing which database rows or columns a principal may query after SQL execution is
+requested. It belongs to a business service, query gateway, tenant policy, or database policy and is independent of
+Semantic Knowledge Authorization.
+_Avoid_: Ontology visibility, semantic `forbidden`, SQL generation permission
+
+**SQL Execution Adapter**:
+A minimal external component that receives an already-generated SQL statement, executes it against the configured
+relational source, and returns structured rows/columns or a database error. In the current evaluation boundary it
+does not perform semantic authorization, business-data authorization, SQL rewriting, policy enforcement, or query
+auditing.
+_Avoid_: connector framework, policy engine, semantic query interface
