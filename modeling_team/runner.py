@@ -3035,6 +3035,41 @@ class TeamRunner:
                 )
             except Exception as exc:
                 raise TeamConfigurationError("issue resolution Coordinator delivery failed") from exc
+            # R2.3-009 start15/start20: the Coordinator's discretionary relay of
+            # the ruling to Modeling proved unreliable twice — Modeling kept a
+            # stale precondition (an unanswered owner question in start15, a
+            # digest-mismatched gate notice in start20) while the ruling that
+            # lifted it never arrived. The ruling directly constrains the
+            # candidate author's next action, so it is also delivered to the
+            # Modeling role mechanically. Failures surface as evidence, not a
+            # teardown of the already-persisted resolution.
+            if self._formal_coordination_enabled():
+                modeling_id = next(
+                    (
+                        agent.agent_id
+                        for agent in self.run.configuration.profile.agents
+                        if agent.package.role == "modeling"
+                    ),
+                    None,
+                )
+                if modeling_id is not None:
+                    try:
+                        self.adapter.send_message(
+                            modeling_id,
+                            RuntimeDelivery(
+                                sender_id="user/outer",
+                                recipient_id=modeling_id,
+                                kind="issue-resolution",
+                                text=json.dumps(
+                                    resolution.as_dict(), ensure_ascii=False, sort_keys=True
+                                ),
+                            ),
+                        )
+                    except Exception:
+                        self._append_evidence(
+                            "issue-resolution",
+                            {"event": "modeling_delivery_failed"},
+                        )
         elif action == "user":
             if self._formal_coordination_enabled() and set(message) - {
                 "action",
