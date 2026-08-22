@@ -5150,14 +5150,30 @@ class TeamRunner:
                 envelope = {"type": "coordinator", "text": message.text}
                 output.append(envelope)
                 self._append_evidence("coordinator", envelope)
+        # R2.3-009 start19: the terminal-report guard already lets every role
+        # report ``blocked`` when a run is judged unrepairable (the agent-blocked
+        # exit), but this gate still demanded a settled Acceptance carrier.  When
+        # Acceptance never started (no handoff existed) the carrier can never
+        # settle, so a fully agent-blocked run deadlocked here until the T3
+        # fallback timeout misclassified it.  A unanimous-blocked result set
+        # waives only the Acceptance clause, mirroring the guard's ruling.
+        agent_blocked_exit = bool(self.transport.results) and all(
+            getattr(result, "status", None) == "blocked"
+            for result in self.transport.results.values()
+        )
         formal_settlement_ready = (
             not self._formal_coordination_enabled()
             or (
-                self.acceptance is not None
-                and self.acceptance.is_settled
-                and not (
+                not (
                     self._issue_ledger() is not None
                     and self._issue_ledger().pending
+                )
+                and (
+                    agent_blocked_exit
+                    or (
+                        self.acceptance is not None
+                        and self.acceptance.is_settled
+                    )
                 )
             )
         )
