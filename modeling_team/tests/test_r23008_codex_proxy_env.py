@@ -162,6 +162,9 @@ def test_acceptance_child_env_carries_proxy_vars(monkeypatch, tmp_path: Path) ->
     private_root = tmp_path / "private-root"
     private_root.mkdir(mode=0o700)
     private_input = tmp_path / "input.json"
+    sources = private_root / "sources"
+    sources.mkdir()
+    (sources / "source.md").write_text("# approved source\n", encoding="utf-8")
     private_input.write_text("{}", encoding="utf-8")
     digest = hashlib.sha256(str(tmp_path).encode("utf-8")).hexdigest()
     spec = {

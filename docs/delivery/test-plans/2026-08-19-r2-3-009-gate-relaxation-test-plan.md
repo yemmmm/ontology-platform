@@ -822,3 +822,54 @@ acceptance-stage handoff → 双问题验收。
   （已有未消费授权条目 start16-18，退款抵扣已覆盖本批）。**无新授权不得
   再启动任何 run。**
 - 临时 admin key `r23009-start21-launch`（9a4c1820…）已吊销。
+
+## start21 阅卷子程序超时根因诊断与窄修复（2026-08-22，batch 8 启动前）
+
+用户授权 batch 8（"授权三次"，start22–24）。按 batch 7 收尾承诺，先完成
+Examiner child-timeout 的窄层诊断再启动。
+
+### 根因（两项，均为平台合同/运行基础设施层，Agent 行为无过错）
+
+对 start21 验收轮证据（`app-server-events.jsonl`、报告 sink 拒绝记录、
+两 kind 子进程终局消息）逐条分析：
+
+1. **Source Examiner 无源文本通道**。正式路径 `_launch_acceptance_child_impl`
+   的首回合只写"Read only /agent/home/input.json"，而 input.json 是投影
+   （`approved_sources` 仅 path/sha256，无源字节）；SOURCE_TEXT_JSON 注入
+   只存在于 lean 路径（codex.py:1582 一带）；包指令又禁止读取任何 staged
+   文件。子进程结构上不可能拿到报告必须引用的原文 → 引用了 input.json 的
+   位置 → sink 正确拒绝（`source-path-unauthorized`）。该缺陷自 r2-3-006
+   lean 指令改写（2026-08-12）起存在，start21 是正式路径第一次真正拉起
+   Examiner 子进程。
+2. **Platform Examiner 页链要求人工转写**。sink 的
+   `_validate_platform_report_receipts` 要求每个 locator 带 `page` 对象
+   并形成链（ordinal 0 / 游标链接 / has_more / sequence_complete），但
+   ProxyCallReceipt 从不记录分页事实，全部由子进程手抄。两次尝试均死于
+   "incomplete evidence page chain" 类拒绝。
+
+子进程本身并不慢：它们都完成了推理回合，是报告被 sink 拒绝、耗尽尝试后
+闲置，被 1800s 看门狗按 child-timeout 清理。start20 的 acceptance-round
+死锁（BLOCKED 非终局 → 不许终报 → T3）是此故障的下游表现。
+
+### 窄修复（协议机械归工具层，语义归 Agent 的既定原则）
+
+1. **SOURCE_TEXT_JSON 注入正式路径**（`runtimes/codex.py`）：source kind
+   从已 staged、已按 manifest 校验的 `private_root/sources` 树构建
+   `[{path, sha256, text}]` 注入首回合（复刻 lean 接缝）；正式 source
+   子进程无 staged 源时 **child-start 即 fail-closed**（不再烧到看门狗）。
+2. **页链机械化**（`acceptance_runtime.py`）：`ScopedReadProxy` 在转发时
+   从真实请求游标与平台返回的 `matches_page/context_page`（truncated/
+   next_*_cursor）确定性推导每调用的 page 元组，记入 `ProxyCallReceipt.page`；
+   sink 校验时像 digest 一样**直接盖戳到 locator**，子进程只需提供
+   `ref_id` + `tool`。截断序列后必须先续完同一工具的游标链才能换工具
+   （指令已同步改写）。
+3. **deferred pump 任务集补 r2-3-009**（`acceptance.py`）：
+   `formal_deferred_pump` 的任务 id 集合漏了 `r2-3-009-formal-acceptance`，
+   start21 的子进程未享受"工厂返回后再起泵"的注册合同。
+4. 载体侧 receipt 字段集合加入 `page`（`acceptance.py`
+   `_validate_platform_proxy_evidence`）。
+
+回归：`test_r23009_examiner_page_and_source_text.py` 8 例（page 推导 5、
+盖戳与交错拒绝 2、formal source fail-closed 1）；受影响 fixtures 补
+staged sources / receipt page 字段。全量 `modeling_team/tests` **1034
+通过、1 skipped、302 subtests**（2026-08-22）。

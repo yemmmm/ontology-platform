@@ -1295,6 +1295,14 @@ def _validate_platform_report_receipts(report: Mapping[str, Any], resource: Any)
             ref["request_digest"] = receipt.request_digest
             ref["response_digest"] = receipt.response_digest
             ref["artifact_path"] = receipt.artifact_path
+            # R2.3-009 start21 (2026-08-22): the page chain is the second piece
+            # of deterministic receipt data the child was asked to transcribe,
+            # and hand-built page objects were the rejection that burned the
+            # round to the child-timeout watchdog.  The proxy derived each
+            # page from the live cursors at call time; stamp it in place too.
+            stamped_page = getattr(receipt, "page", None)
+            if isinstance(stamped_page, Mapping) and stamped_page:
+                ref["page"] = dict(stamped_page)
         page = ref.get("page")
         if (
             not isinstance(page, Mapping)
@@ -1790,6 +1798,61 @@ class ProxyCallReceipt:
     request_digest: str
     response_digest: str
     artifact_path: str
+    # Deterministic pagination tuple for this one call, derived by the proxy
+    # from the exact cursor arguments and the platform's truncated/next-cursor
+    # markers (R2.3-009 start21: asking the child to transcribe it by hand was
+    # the rejection cause).  Empty for receipts recorded before this field.
+    page: Mapping[str, Any] = field(default_factory=dict)
+
+
+def _proxy_page_for_call(
+    previous_page: Mapping[str, Any] | None,
+    arguments: Mapping[str, Any],
+    result: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Derive the report locator page tuple for one forwarded read.
+
+    The proxy is the only party that saw the exact request cursors and the
+    platform's own ``truncated``/``next_*_cursor`` markers, so the receipt
+    records the page chain deterministically instead of asking the Examiner
+    child to transcribe it.
+    """
+
+    input_cursor = arguments.get("match_cursor") or arguments.get("context_cursor") or None
+    has_more = False
+    output_cursor: str | None = None
+    for page_key, next_key in (
+        ("matches_page", "next_match_cursor"),
+        ("context_page", "next_context_cursor"),
+    ):
+        marker = result.get(page_key) if isinstance(result, Mapping) else None
+        if isinstance(marker, Mapping) and bool(marker.get("truncated")):
+            has_more = True
+            if output_cursor is None:
+                nxt = marker.get(next_key)
+                if isinstance(nxt, str) and nxt:
+                    output_cursor = nxt
+    if not has_more and bool(result.get("truncated")):
+        has_more = True
+        nxt = result.get("next_cursor")
+        if isinstance(nxt, str) and nxt:
+            output_cursor = nxt
+    if (
+        isinstance(previous_page, Mapping)
+        and previous_page.get("has_more") is True
+        and input_cursor is not None
+        and input_cursor == previous_page.get("output_cursor")
+    ):
+        ordinal = int(previous_page["ordinal"]) + 1
+    else:
+        ordinal = 0
+    return {
+        "ordinal": ordinal,
+        "input_cursor": input_cursor,
+        "output_cursor": output_cursor if has_more else None,
+        "has_more": has_more,
+        "sequence_complete": not has_more,
+    }
 
 
 class ScopedReadProxy:
@@ -2047,6 +2110,8 @@ class ScopedReadProxy:
                 f"acceptance/{self.acceptance_round_id}/platform-read/"
                 f"{self.child_handle_digest}/{len(self._call_receipts)}.json"
             )
+            previous_page = self._call_receipts[-1].page if self._call_receipts else None
+            page = _proxy_page_for_call(previous_page, arguments, result)
             self._call_receipts.append(
                 ProxyCallReceipt(
                     ordinal=len(self._call_receipts),
@@ -2059,6 +2124,7 @@ class ScopedReadProxy:
                     request_digest=request_digest,
                     response_digest=response_digest,
                     artifact_path=artifact_path,
+                    page=page,
                 )
             )
             call_total = len(self._call_receipts)

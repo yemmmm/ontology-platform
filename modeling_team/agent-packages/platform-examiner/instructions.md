@@ -75,15 +75,16 @@ fields. The report is ONLY accepted through the `submit_examiner_report` tool ca
 `examiner_report` MCP server; writing the report in your reply text is not a submission and
 will not be counted.
 
-Each `evidence_refs` item is a binding-free locator with exactly `ref_id`, `tool`,
-`request_digest`, `response_digest`, `artifact_path`, and `page`. The number of `evidence_refs`
+Each `evidence_refs` item is a binding-free locator; the two fields you must supply are
+`ref_id` and `tool`. The number of `evidence_refs`
 items must be exactly equal to the number of successful proxy calls in this child: every
 successful call that returned a receipt must appear as its own locator, in the exact order the
 calls succeeded. Use `ref_id = "p<call_ordinal>"` (zero-based) so the ordinal sequence
 `p0, p1, ..., p<call_total-1>` is contiguous and complete. The sink verifies each locator
 against the receipt for that ordinal and stamps the canonical `request_digest`,
-`response_digest`, and `artifact_path` itself, so copy them as carefully as you can but a
-transcription slip is not fatal. The count is fatal: a report whose locator count differs from
+`response_digest`, `artifact_path`, and the `page` pagination object itself from what the proxy
+recorded at call time, so you never need to transcribe digests or build page objects by hand.
+The count is fatal: a report whose locator count differs from
 the successful-call count is rejected with `receipt-count-mismatch`.
 If you believe two calls answered the same fact, keep both locators anyway; if a call returned
 unusable content, keep its locator and record the unknown/gap for that fact. Re-count
@@ -91,12 +92,11 @@ immediately before sending. If the sink rejects your report, correct it from the
 detail and resubmit promptly without issuing further proxy reads (the sink accepts a bounded
 number of attempts; every new successful read changes the required locator count).
 
-The `page` object in a locator describes only that one call's own pagination, never a sequence
-across different calls. A complete response uses `{"ordinal": 0, "input_cursor": null,
-"output_cursor": null, "has_more": false, "sequence_complete": true}`. Only when the same call
-itself returns `has_more: true` with a cursor would the next page of that same call use
-`ordinal: 1`; never invent ordinal `1, 2, ...` across different tool calls (rejected with
-`page-sequence-invalid`).
+When a call returns truncated results with a next cursor, finish paging through that same
+tool's cursor sequence before making any other tool call: the receipt-stamped page chain
+requires the call after a truncated page to be the same tool's continuation with the returned
+cursor. A fresh, complete call (no cursor in, nothing truncated) needs nothing special — its
+page is `ordinal 0` and sequence-complete by construction.
 
 If a response is truncated, incomplete, ambiguous, or missing a fact, preserve the response's
 completeness markers and record the resulting unknown and explicit gap in the same typed

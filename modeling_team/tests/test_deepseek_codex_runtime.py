@@ -387,6 +387,14 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
     private_root = tmp_path / "private"
     private_root.mkdir(mode=0o700)
     (private_root / "input.json").write_text("{}", encoding="utf-8")
+
+    if kind == "source":
+        # A formal Source Examiner now requires the carrier-staged approved
+        # bytes (R2.3-009 start21 SOURCE_TEXT_JSON seam); stage a minimal
+        # manifest-shaped tree for the formal fixtures.
+        sources = private_root / "sources"
+        sources.mkdir()
+        (sources / "source.md").write_text("# approved source\n", encoding="utf-8")
     spec: dict[str, object] = {
         "task_id": "r2-3-005-formal-acceptance",
         "acceptance_round_id": "round-1",

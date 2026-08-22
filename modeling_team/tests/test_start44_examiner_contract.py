@@ -394,6 +394,13 @@ def test_platform_child_payload_matches_current_proxy_receipt_and_rejects_duplic
                         f"acceptance/{spec['acceptance_round_id']}/platform-read/"
                         f"{spec['child_handle_digest']}/0.json"
                     ),
+                    "page": {
+                        "ordinal": 0,
+                        "input_cursor": None,
+                        "output_cursor": None,
+                        "has_more": False,
+                        "sequence_complete": True,
+                    },
                 }
             )
             self.spec = spec
@@ -514,6 +521,14 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
     private_root = base / "private"
     private_root.mkdir(parents=True, mode=0o700)
     (private_root / "input.json").write_text("{}", encoding="utf-8")
+
+    if kind == "source":
+        # A formal Source Examiner now requires the carrier-staged approved
+        # bytes (R2.3-009 start21 SOURCE_TEXT_JSON seam); stage a minimal
+        # manifest-shaped tree for the formal fixtures.
+        sources = private_root / "sources"
+        sources.mkdir()
+        (sources / "source.md").write_text("# approved source\n", encoding="utf-8")
     host_auth = tmp_path / "auth.json"
     host_auth.write_text("{}", encoding="utf-8")
     host_auth.chmod(0o600)

@@ -4429,6 +4429,12 @@ class RunnerAcceptanceCarrier:
             "r2-3-005-formal-acceptance",
             "r2-3-003-existing-scope-incremental",
             "r2-3-008-formal-acceptance",
+            # R2.3-009 start21: the formal examiner-child pump deferral was
+            # registered per task id and never included this requirement's id,
+            # so its children started the stdout pump immediately and a report
+            # racing ``acceptance_child_factory`` return had no registered
+            # consumer contract.
+            "r2-3-009-formal-acceptance",
         }
         if formal_deferred_pump:
             resource_spec["defer_output_pump"] = True
@@ -4594,6 +4600,10 @@ class RunnerAcceptanceCarrier:
                 "request_digest",
                 "response_digest",
                 "artifact_path",
+                # R2.3-009 start21: the proxy now records the deterministic
+                # pagination tuple for each forwarded read so the sink can
+                # stamp the locator page chain like the digests.
+                "page",
             }
             if set(receipt) != required:
                 _error("scoped proxy receipt fields drifted")

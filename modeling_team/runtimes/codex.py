@@ -2228,6 +2228,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             }
         )
         child_package_id = f"{kind}-examiner" if kind != "acceptance" else "acceptance"
+        # R2.3-009 start21 (2026-08-22): a formal Source Examiner without the
+        # carrier-staged approved bytes can only produce a manifest-citing
+        # report the sink must reject; fail the child start loudly instead of
+        # burning the round to the watchdog timeout.
+        if formal and kind == "source":
+            staged_sources_check = Path(str(spec["private_root"])) / "sources"
+            if (
+                not staged_sources_check.is_dir()
+                or staged_sources_check.is_symlink()
+                or not any(staged_sources_check.rglob("*"))
+            ):
+                raise CodexRuntimeError("Source Examiner approved material is unavailable")
         if formal:
             # Every fresh Examiner child uses its own package-ID binding from the
             # frozen profile: its provider session base URL, model, and effective
@@ -2291,17 +2303,50 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("Examiner projected input is unavailable")
         self._write_child_private(home / "input.json", input_path.read_bytes(), 0o400)
         staged_sources = private_root / "sources"
-        if kind == "source" and staged_sources.exists():
-            if staged_sources.is_symlink() or not staged_sources.is_dir():
-                raise CodexRuntimeError("Source Examiner material tree is invalid")
-            shutil.copytree(staged_sources, home / "sources", symlinks=False, dirs_exist_ok=False)
-            for item in (home / "sources").rglob("*"):
-                if item.is_symlink():
-                    raise CodexRuntimeError("Source Examiner material tree contains a symlink")
-                if item.is_dir():
-                    os.chmod(item, 0o700)
-                if item.is_file():
-                    os.chmod(item, 0o400)
+        source_text_json = ""
+        if kind == "source":
+            if staged_sources.exists():
+                if staged_sources.is_symlink() or not staged_sources.is_dir():
+                    raise CodexRuntimeError("Source Examiner material tree is invalid")
+                shutil.copytree(staged_sources, home / "sources", symlinks=False, dirs_exist_ok=False)
+                for item in (home / "sources").rglob("*"):
+                    if item.is_symlink():
+                        raise CodexRuntimeError("Source Examiner material tree contains a symlink")
+                    if item.is_dir():
+                        os.chmod(item, 0o700)
+                    if item.is_file():
+                        os.chmod(item, 0o400)
+                # R2.3-009 start21 (2026-08-22): the projected input.json names
+                # the approved sources by path/digest only, while the package
+                # instructions forbid reading staged files — so the formal
+                # Source child could never quote the bytes its report must
+                # cite and cited input.json locations instead.  The lean path
+                # already solves this by injecting SOURCE_TEXT_JSON into the
+                # first turn; replicate that seam here from the exact staged
+                # bytes the carrier digest-verified against the manifest.
+                source_text = []
+                for path in sorted(staged_sources.rglob("*"), key=lambda p: p.relative_to(staged_sources).as_posix()):
+                    if not path.is_file():
+                        continue
+                    data = path.read_bytes()
+                    try:
+                        text = data.decode("utf-8")
+                    except UnicodeDecodeError as exc:
+                        raise CodexRuntimeError(
+                            "Source Examiner approved material is not UTF-8"
+                        ) from exc
+                    source_text.append({
+                        "path": path.relative_to(staged_sources).as_posix(),
+                        "sha256": hashlib.sha256(data).hexdigest(),
+                        "text": text,
+                    })
+                source_text_json = " SOURCE_TEXT_JSON=" + json.dumps(
+                    source_text, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+                )
+                if formal and not source_text:
+                    # The pre-launch gate above normally catches this; keep the
+                    # backstop for a staged-but-empty tree.
+                    raise CodexRuntimeError("Source Examiner approved material is unavailable")
         report_token = secrets.token_urlsafe(24)
         self._remember_secret(report_token.encode("utf-8"))
         report_token_path = home / "report-sink.token"
@@ -2637,7 +2682,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                             "sink rejects it, correct the report from the returned detail and "
                             "resubmit without issuing further proxy reads; do not use raw "
                             "sockets or any other capability."
-                        ),
+                        )
+                        # The formal Source child's input.json is a path/digest
+                        # projection without source bytes; SOURCE_TEXT_JSON is
+                        # its only legitimate channel to the approved text (the
+                        # lean path pioneered this seam; see the staging block).
+                        + source_text_json,
                     }
                 ]
             turn_result = self._rpc(child_agent, "turn/start", {"threadId": thread_id, "input": first_turn_input})
