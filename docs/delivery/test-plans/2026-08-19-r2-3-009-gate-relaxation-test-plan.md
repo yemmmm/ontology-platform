@@ -910,3 +910,33 @@ zero-mutation）+ **budget_refund**（T3 退款绑定首次实际生效）。
 **start23 预期**：attempt 0 的 allowlist/explicit-unknown 语义拒绝已被
 attempt 1 的行为证明可修复（子进程两次尝试间已自我纠正）；载体假拒绝
 已由 e7dbd5e 消除。
+
+## start23 运行记录（2026-08-22，batch 8 第 2 轮）
+
+运行 `r23009-luna-20260822-start23`（06:49:47Z 冻结启动，08:44Z 前后终结）。
+
+**进展**：源文阅卷员报告连续第二次被接受；候选模型交付即被接受（06:52）。
+issue-1（协议角色对后续修订 delivery-9 的 -32001 "foreign or stale" 拒绝）
+按 start22 issue-2 先例裁定作废、继续已接受候选，恢复运行。
+
+**暴露的两个窄缺陷（commit 2ecc8d3）**：
+1. 载体 `validate_examiner_payload` → `_validate_evidence_locator` 在回执
+   盖戳**之前**仍严格要求 64-hex `request_digest/response_digest`：平台
+   阅卷员 attempt 0 手抄 digest 各错一个字符（69/67 位），3 次提交机会
+   全部烧在格式拒绝上（`Platform evidence locator response_digest must
+   be a lowercase sha256 digest`）。修复：该入口只要求非空字符串，由
+   `ingest_child_report` 盖戳规范回执值；`repeats` 去重身份改为
+   (tool, ref_id)。
+2. `insufficient-evidence` 结论必须含精确短语 `因缺少相关证据无法回答`，
+   但平台阅卷员指令从未写明（源文阅卷员指令有）。attempt 1 因此被拒
+   2 次（另 1 次为工具名不在 allowlist）。修复：平台指令补该短语要求
+   与"tool 必须原样使用调用名"两条。
+
+**终态**：两平台阅卷员尝试耗尽（child-timeout ×2）→ cq-001 BLOCKED
+（runtime-infrastructure）；T3 `run-fallback-timeout` 终结。ledger：
+terminal_failure（collaboration/routing）+ budget_refund。临时管理密钥
+cfceaa69 已吊销。全量测试 **1036 通过、1 skipped、302 subtests**。
+
+**start24 预期**：digest 格式误拒与未知短语误拒均已消除；剩余观察点是
+平台阅卷员能否在 3 次提交内交付语义合格报告，以及 cq-001 的真实检索
+质量表现。
