@@ -3381,6 +3381,21 @@ class RunnerAcceptanceCarrier:
                 and data.get("graph_set_id") == live_graph_set
             ):
                 validation_candidates.append(record)
+        # A post-receipt revision re-validates on the same live graph set
+        # (R2.3-009 start19): the rejected revision's validation succeeds
+        # operationally with conforms=False and matches the selector together
+        # with the revision's conformant validation.  The conformant run is
+        # the deterministic final validation evidence; a unique conformant
+        # match wins.
+        if len(validation_candidates) > 1:
+            conformant = [
+                record
+                for record in validation_candidates
+                if isinstance(_data(record), Mapping)
+                and _data(record).get("conforms") is True
+            ]
+            if len(conformant) == 1:
+                validation_candidates = conformant
         validation_record = _select(
             "validation",
             validation_candidates,

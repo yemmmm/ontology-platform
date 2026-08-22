@@ -529,6 +529,74 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
             finally:
                 carrier.cleanup()
 
+    def test_auto_select_prefers_conformant_validation_when_two_live_validations_observed(self) -> None:
+        """R2.3-009 start19: a revised candidate re-validates on the same graph.
+
+        After a post-receipt conflict the revised candidate re-runs the stage
+        sequence on the same workspace: the revision-1 validation (operational
+        success, ``conforms=False``) and the revision-2 validation
+        (``conforms=True``) share status, graph_set_id, and request digest, so
+        the validation selector sees two live matches.  The conformant read
+        is the final validation evidence and auto-select must resolve to it
+        instead of raising ``stage_auto_select_ambiguous``.
+        """
+
+        def _validation_result(conforms: bool) -> dict:
+            result = _graph_result("succeeded", "graph-syn", kind="validation")
+            result["structuredContent"]["data"]["conforms"] = conforms
+            return result
+
+        with tempfile.TemporaryDirectory() as directory:
+            carrier = _synthetic_carrier(Path(directory))
+            try:
+                carrier.register_platform_tool_result(
+                    tool="submit_modeling_batch",
+                    arguments=_submit_args(mode="apply_atomic"),
+                    result=_submit_result(
+                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
+                    ),
+                )
+                carrier.register_platform_tool_result(
+                    tool="submit_modeling_batch",
+                    arguments=_submit_args(mode="dry_run"),
+                    result=_submit_result(
+                        mode="dry_run", attempt_status="validated", before="ws-prev", after=None
+                    ),
+                )
+                carrier.register_platform_tool_result(
+                    tool="get_modeling_context",
+                    arguments={"ontology_id": "ontology-syn"},
+                    result=_readback_result("ws-live"),
+                )
+                # Revision-1 validation: operationally succeeded, nonconformant.
+                carrier.register_platform_tool_result(
+                    tool="run_semantic_validation",
+                    arguments={"graph_set_id": "graph-syn"},
+                    result=_validation_result(conforms=False),
+                )
+                conformant_validation = carrier.register_platform_tool_result(
+                    tool="run_semantic_validation",
+                    arguments={"graph_set_id": "graph-syn"},
+                    result=_validation_result(conforms=True),
+                )
+                carrier.register_platform_tool_result(
+                    tool="run_semantic_reasoning",
+                    arguments={"graph_set_id": "graph-syn"},
+                    result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
+                )
+
+                built = carrier.protocol_build_acceptance_stage_handoff(
+                    protocol_id="protocol",
+                    capability=carrier.capability_token("protocol"),
+                )
+                by_stage = {r["stage"]: r for r in built["handoff_json"]["modeling_receipts"]}
+                self.assertEqual(
+                    by_stage["validation"]["evidence_ref"]["artifact_path"],
+                    conformant_validation["artifact_path"],
+                )
+            finally:
+                carrier.cleanup()
+
     def test_auto_select_raises_structured_ambiguous_when_two_applies_match_live(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             carrier = _synthetic_carrier(Path(directory))
