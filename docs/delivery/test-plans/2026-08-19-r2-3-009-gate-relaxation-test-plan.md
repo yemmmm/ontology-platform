@@ -873,3 +873,40 @@ Examiner child-timeout 的窄层诊断再启动。
 盖戳与交错拒绝 2、formal source fail-closed 1）；受影响 fixtures 补
 staged sources / receipt page 字段。全量 `modeling_team/tests` **1034
 通过、1 skipped、302 subtests**（2026-08-22）。
+
+## start22 运行记录（2026-08-22，batch 8 第 1 轮）
+
+运行 `r23009-luna-20260822-start22`（04:55:08Z 启动，06:47:50Z 终结）。
+
+**首次突破**：source examiner attempt 0 报告 **ACCEPTED**（3faef9b 两个窄修复
+直接见效）——这是全部 22 次启动中第一次有源文阅卷子报告被接受；
+`verdict.json` 的 `source_fidelity`/`scope`/`evidence_lineage`/`explicit_unknowns`
+四项 PASS。
+
+**暴露的新缺陷（载体/汇聚点页链模型不一致）**：platform examiner
+attempt 0 被 sink 拒 3 次（allowlist 工具引用 1、explicit-unknown 保留 2）后
+child-timeout；attempt 1 的报告被**载体**以 "page chain has a gap" 拒绝——
+载体 `validate_page_chain` 按 (tool, request_digest) 分组要求连续 ordinal，
+但续页必然携带不同 request_digest（游标在转发参数里），真实分页永远过不了。
+证据：`evidence/child-sessions/platform-examiner-323bf060/.../rollout-*.jsonl`
+含该拒绝串。子进程随后在 1800s 预算内未再交付，child-timeout。
+
+**窄修复（commit e7dbd5e）**：`validate_page_chain` 重写为与 sink 相同的
+全局调用序模型（ordinal 0 ⇒ 无 input_cursor 且前页未截断；ordinal>0 ⇒
+同工具、ordinal+1、input_cursor==prev output_cursor；has_more ⇒ 未完成且
+有 output_cursor，否则完成且无 output_cursor）。夹具同步：
+`test_r23005_contracts.py` 新增续页接受/截断后交错拒绝用例，
+`test_r23005_c_settlement.py` c49 duplicate-page 夹具改为内部一致的两页链，
+`test_start44_examiner_contract.py` locator 首页 input_cursor 改 None。
+全量 **1035 通过、1 skipped、302 subtests**。
+
+**终态**：两 examiner 预算耗尽 → cq-001 `BLOCKED`（runtime-infrastructure）；
+协调者以闲聊形式给结论后未发终态报告，按设计走 T3 `run-fallback-timeout`
+（5400 活跃秒）终结。ledger：`terminal_failure`（collaboration/routing，
+zero-mutation）+ **budget_refund**（T3 退款绑定首次实际生效）。
+临时管理密钥 674828ad 已吊销。issue 机制两次实战（协议 digest 转录、
+外来 candidate-2 判 void）均通过 FIFO 指引解决。
+
+**start23 预期**：attempt 0 的 allowlist/explicit-unknown 语义拒绝已被
+attempt 1 的行为证明可修复（子进程两次尝试间已自我纠正）；载体假拒绝
+已由 e7dbd5e 消除。
