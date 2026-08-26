@@ -21,6 +21,8 @@ from .contracts import (
     TeamConfigurationError,
     digest_file,
     load_formal_team_configuration,
+    load_multi_slice_team_configuration,
+    task_declares_multi_slice_workflow,
 )
 from .model_routing import (
     MODEL_PROFILE_DIRECTORY,
@@ -89,6 +91,14 @@ from .interventions import (
 from .protocol_mcp_launch import (
     canonical_protocol_mcp_mode_contract,
     protocol_mcp_reasoner_contract,
+)
+from .scenario_map import (
+    ScenarioMapArtifactError,
+    load_scenario_map,
+    load_topology_decision,
+    scenario_map_artifact_paths,
+    validate_scenario_map,
+    validate_topology_decision,
 )
 from .protocol_mechanics import (
     ProtocolRetrievalFallbackError,
@@ -212,6 +222,12 @@ class TeamRunner:
         self._cleanup_evidence_cache: dict[str, Any] | None = None
         self._candidate_progress: FormalCandidateProgress | None = None
         self._candidate_platform_gate: CandidatePlatformGate | None = None
+        # R3.0-002: independent platform MCP gate state for multi-slice tasks.
+        # Every flag stays False for tasks without ``multi_slice_workflow``.
+        self._multi_slice_workflow = False
+        self._multi_slice_artifact_paths: dict[str, Path] = {}
+        self._multi_slice_gate_opened = False
+        self._multi_slice_gate_feedback_fingerprints: set[str] = set()
         self._candidate_receipt_wakeup_sent: set[tuple[str, str]] = set()
         # One typed Protocol response is allowed for each active original
         # Modeling delivery.  The set is Runner-owned so a capability retry
@@ -385,9 +401,18 @@ class TeamRunner:
     ) -> TeamRun:
         if self.run is not None or not self._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
-        config = load_formal_team_configuration(
-            profile_path, task_path, root=self.repository_root
-        )
+        # R3.0-002 increment 6(b): non-formal multi-slice tasks load through
+        # the three-role branch; every other task keeps the strict formal
+        # loader unchanged.
+        multi_slice_workflow = task_declares_multi_slice_workflow(task_path)
+        if multi_slice_workflow:
+            config = load_multi_slice_team_configuration(
+                profile_path, task_path, root=self.repository_root
+            )
+        else:
+            config = load_formal_team_configuration(
+                profile_path, task_path, root=self.repository_root
+            )
         formal_contract = formal_run_contract_for(config)
         if formal_contract is None and (
             config.profile.profile_id in FORMAL_PROFILE_IDS
@@ -626,11 +651,33 @@ class TeamRunner:
             if formal_acceptance
             else None
         )
-        self._candidate_platform_gate = (
+        multi_slice_gate = (
             CandidatePlatformGate.ensure(root / "candidate-gate")
-            if formal_acceptance
+            if formal_acceptance or multi_slice_workflow
             else None
         )
+        self._candidate_platform_gate = multi_slice_gate
+        if multi_slice_workflow and not formal_acceptance and multi_slice_gate is not None:
+            # R3.0-002 increment 7: the independent platform MCP gate starts
+            # fail-closed on the missing topology decision and registers the
+            # canonical scenario-map artifact paths for the whole run.
+            self._multi_slice_workflow = True
+            self._multi_slice_artifact_paths = scenario_map_artifact_paths(root)
+            self._multi_slice_gate_opened = False
+            self._multi_slice_gate_feedback_fingerprints = set()
+            multi_slice_gate.close("topology_missing_artifact")
+            self._append_evidence(
+                "multi-slice-workflow",
+                {
+                    "event": "artifacts-registered",
+                    "gate_state": "closed",
+                    "reason_code": "topology_missing_artifact",
+                    "artifact_paths": {
+                        name: path.relative_to(root).as_posix()
+                        for name, path in self._multi_slice_artifact_paths.items()
+                    },
+                },
+            )
         self._protocol_candidate_responses = {}
         self._protocol_candidate_receipt_digests = {}
         self._candidate_receipt_wakeup_sent = set()
@@ -3367,6 +3414,190 @@ class TeamRunner:
             },
         )
 
+    def _multi_slice_role_ids(self) -> dict[str, str]:
+        return {
+            agent.package.role: agent.agent_id
+            for agent in self.run.configuration.profile.agents  # type: ignore[union-attr]
+        }
+
+    def _deliver_multi_slice_gate_feedback(
+        self, reason_code: str, artifact: str
+    ) -> None:
+        """Typed, deduplicated closed-gate feedback to the Coordinator (T0)."""
+
+        if not self.run:
+            return
+        coordinator = self._multi_slice_role_ids().get("coordinator")
+        if not isinstance(coordinator, str) or not coordinator:
+            return
+        notice = {
+            "schema_version": "r3-0-002-multi-slice-gate-feedback/v1",
+            "run_id": self.run.run_id,
+            "gate_state": "closed",
+            "reason_code": reason_code,
+            "artifact": artifact,
+            "remediation": (
+                "Repair the scenario-map artifact per "
+                "modeling_team/references/r3-0-002-scenario-map-contract.json; "
+                "the platform MCP gate re-checks it on the next Runner cycle. "
+                "The run is not terminated; do not retry platform calls."
+            ),
+        }
+        delivery = RuntimeDelivery(
+            sender_id="runner/multi-slice-gate",
+            recipient_id=coordinator,
+            kind="multi-slice-topology-gate",
+            text=json.dumps(notice, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            expects_reply=False,
+        )
+        try:
+            receipt = self.adapter.send_message(coordinator, delivery)
+        except Exception as exc:
+            # A dispatch failure of the feedback itself is recorded evidence
+            # only; it must never kill the run or block self-repair (T0).
+            self._append_evidence(
+                "multi-slice-gate",
+                {
+                    "event": "gate-feedback-dispatch-failed",
+                    "reason_code": reason_code,
+                    "artifact": artifact,
+                    "detail": str(exc),
+                },
+            )
+            return
+        self._append_evidence(
+            "multi-slice-gate",
+            {
+                "event": "gate-feedback-delivered",
+                "reason_code": reason_code,
+                "artifact": artifact,
+                "recipient": coordinator,
+                "turn_id": getattr(receipt, "turn_id", None),
+            },
+        )
+
+    def _multi_slice_gate_reject(
+        self, reason_code: str, artifact: str, fingerprint: str
+    ) -> None:
+        """Keep the gate closed with one deterministic reason, feedback once."""
+
+        gate = self._candidate_platform_gate
+        if gate is not None:
+            gate.close(reason_code)
+        self._append_evidence(
+            "multi-slice-gate",
+            {
+                "event": "topology-gate-closed",
+                "reason_code": reason_code,
+                "artifact": artifact,
+            },
+        )
+        if fingerprint in self._multi_slice_gate_feedback_fingerprints:
+            return
+        self._multi_slice_gate_feedback_fingerprints.add(fingerprint)
+        self._deliver_multi_slice_gate_feedback(reason_code, artifact)
+
+    def _check_multi_slice_topology_gate(self) -> None:
+        """R3.0-002: open the independent platform MCP gate only after a
+        structurally complete topology decision (plus the scenario map whose
+        bytes synthesize the open identity, design A.1).
+
+        The check is mechanical existence/coverage only, fail-closed, and
+        self-repairable: the run keeps waiting and the Coordinator receives a
+        typed reason code instead of a terminal failure.
+        """
+
+        # ``getattr`` defaults keep this a no-op for runners constructed without
+        # ``__init__`` (resumed-run doubles); the flags only ever turn on in
+        # ``prepare`` for a multi-slice task.
+        if (
+            not getattr(self, "_multi_slice_workflow", False)
+            or self.run is None
+            or getattr(self, "_candidate_platform_gate", None) is None
+            or getattr(self, "_multi_slice_gate_opened", False)
+        ):
+            return
+        run_root = self.run.root
+        decision_path = self._multi_slice_artifact_paths["topology_decision"]
+        map_path = self._multi_slice_artifact_paths["scenario_map"]
+        decision_rel = decision_path.relative_to(run_root).as_posix()
+        map_rel = map_path.relative_to(run_root).as_posix()
+        if not decision_path.exists() or decision_path.is_symlink():
+            self._multi_slice_gate_reject(
+                "topology_missing_artifact", decision_rel, "topology_missing_artifact"
+            )
+            return
+        try:
+            decision = load_topology_decision(decision_path)
+            decision_digest = digest_file(decision_path)
+        except (ScenarioMapArtifactError, OSError) as exc:
+            code = getattr(exc, "reason_code", "topology_unparsable")
+            self._multi_slice_gate_reject(code, decision_rel, f"{code}:unreadable")
+            return
+        issues = validate_topology_decision(decision)
+        if issues:
+            code = issues[0].reason_code
+            self._multi_slice_gate_reject(code, decision_rel, f"{code}:{decision_digest}")
+            return
+        if not map_path.exists() or map_path.is_symlink():
+            self._multi_slice_gate_reject("map_unparsable", map_rel, "map_missing")
+            return
+        try:
+            scenario_map = load_scenario_map(map_path)
+            map_digest = digest_file(map_path)
+        except (ScenarioMapArtifactError, OSError) as exc:
+            code = getattr(exc, "reason_code", "map_unparsable")
+            self._multi_slice_gate_reject(code, map_rel, f"{code}:unreadable")
+            return
+        map_issues = validate_scenario_map(scenario_map)
+        if map_issues:
+            code = map_issues[0].reason_code
+            self._multi_slice_gate_reject(code, map_rel, f"{code}:{map_digest}")
+            return
+        role_ids = self._multi_slice_role_ids()
+        protocol_agent_id = role_ids.get("protocol", "protocol")
+        identity = {
+            "run_id": self.run.run_id,
+            "protocol_agent_id": protocol_agent_id,
+            "protocol_thread_id": self._formal_protocol_thread_id(protocol_agent_id),
+            "original_delivery_id": f"r30002-topology:{self.run.run_id}",
+            "candidate_revision": "1",
+            "semantic_digest": map_digest,
+            "candidate_digest": decision_digest,
+        }
+        try:
+            self._candidate_platform_gate.open(identity)
+        except (CandidatePlatformGateError, OSError) as exc:
+            # Internal open failure: deterministic typed evidence, gate stays
+            # closed, run continues (no terminal kill).
+            self._multi_slice_gate_reject(
+                "multi_slice_gate_open_failed",
+                decision_rel,
+                f"open-failed:{decision_digest}",
+            )
+            self._append_evidence(
+                "multi-slice-gate",
+                {
+                    "event": "gate-open-failed",
+                    "classification": "runtime/infrastructure",
+                    "detail": str(exc),
+                },
+            )
+            return
+        self._multi_slice_gate_opened = True
+        self._append_evidence(
+            "multi-slice-gate",
+            {
+                "event": "topology-decision-accepted",
+                "gate_state": "open",
+                "run_id": identity["run_id"],
+                "original_delivery_id": identity["original_delivery_id"],
+                "candidate_revision": identity["candidate_revision"],
+                "semantic_digest": identity["semantic_digest"],
+                "candidate_digest": identity["candidate_digest"],
+            },
+        )
+
     def _observe_formal_candidate_delivery(self, delivery: Any) -> str | None:
         roles = self._formal_candidate_roles()
         if roles is None or self._candidate_progress is None or not self.run:
@@ -4867,6 +5098,7 @@ class TeamRunner:
         self._track_issue_pending()
         self._check_run_fallback_timeout()
         self._check_formal_candidate_progress()
+        self._check_multi_slice_topology_gate()
         self._check_cooperative_idle()
         self._wake_acceptance_on_child_terminal()
         output: list[dict[str, Any]] = []

@@ -1,0 +1,464 @@
+{
+  "namespace_note": "Fixture-only content; every IRI stays in the https://r30002.test/ namespace and never enters production code.",
+  "scenario_map": {
+    "valid": {
+      "schema_version": "r3-0-002-scenario-map/v1",
+      "scenario_id": "r30002-test-scenario",
+      "slices": [
+        {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"},
+        {"slice_id": "S2", "name": "placeholder slice 2", "scope": "placeholder scope 2", "owner": "modeling", "status": "planned"},
+        {"slice_id": "S3", "name": "placeholder slice 3", "scope": "placeholder scope 3", "owner": "modeling", "status": "planned"},
+        {"slice_id": "S4", "name": "placeholder slice 4", "scope": "placeholder scope 4", "owner": "modeling", "status": "planned"},
+        {"slice_id": "S5", "name": "placeholder slice 5", "scope": "placeholder scope 5", "owner": "modeling", "status": "planned"}
+      ],
+      "shared_terms": [
+        {"term": "placeholder-shared-term", "used_by_slices": ["S1", "S2"], "owner_slice": "S1", "notes": "placeholder note"}
+      ],
+      "cross_slice_dependencies": [
+        {"from_slice": "S1", "to_slice": "S2", "direction": "S1 before S2", "connection_points": ["placeholder-connection"]}
+      ],
+      "cross_slice_competency_questions": [
+        {"question_id": "cq-1", "question": "placeholder cross-slice question", "spans_slices": ["S1", "S2"]}
+      ],
+      "explicit_unknowns": [],
+      "adjustments": [],
+      "topology_decision_ref": "topology-decision.json"
+    },
+    "invalid": {
+      "missing_section": {
+        "schema_version": "r3-0-002-scenario-map/v1",
+        "scenario_id": "r30002-test-scenario",
+        "slices": [
+          {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"}
+        ],
+        "shared_terms": [],
+        "cross_slice_dependencies": [],
+        "cross_slice_competency_questions": [],
+        "adjustments": [],
+        "topology_decision_ref": ""
+      },
+      "schema_mismatch": {
+        "schema_version": "r3-0-002-scenario-map/v2",
+        "scenario_id": "r30002-test-scenario",
+        "slices": [
+          {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"}
+        ],
+        "shared_terms": [],
+        "cross_slice_dependencies": [],
+        "cross_slice_competency_questions": [],
+        "explicit_unknowns": [],
+        "adjustments": [],
+        "topology_decision_ref": ""
+      },
+      "dangling_dependency": {
+        "schema_version": "r3-0-002-scenario-map/v1",
+        "scenario_id": "r30002-test-scenario",
+        "slices": [
+          {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"}
+        ],
+        "shared_terms": [],
+        "cross_slice_dependencies": [
+          {"from_slice": "S1", "to_slice": "S9", "direction": "S1 before S9", "connection_points": ["placeholder-connection"]}
+        ],
+        "cross_slice_competency_questions": [],
+        "explicit_unknowns": [],
+        "adjustments": [],
+        "topology_decision_ref": ""
+      },
+      "dangling_term_owner": {
+        "schema_version": "r3-0-002-scenario-map/v1",
+        "scenario_id": "r30002-test-scenario",
+        "slices": [
+          {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"}
+        ],
+        "shared_terms": [
+          {"term": "placeholder-shared-term", "used_by_slices": ["S1"], "owner_slice": "S9"}
+        ],
+        "cross_slice_dependencies": [],
+        "cross_slice_competency_questions": [],
+        "explicit_unknowns": [],
+        "adjustments": [],
+        "topology_decision_ref": ""
+      },
+      "term_owner_not_unique": {
+        "schema_version": "r3-0-002-scenario-map/v1",
+        "scenario_id": "r30002-test-scenario",
+        "slices": [
+          {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"},
+          {"slice_id": "S2", "name": "placeholder slice 2", "scope": "placeholder scope 2", "owner": "modeling", "status": "planned"}
+        ],
+        "shared_terms": [
+          {"term": "placeholder-shared-term", "used_by_slices": ["S1"], "owner_slice": "S1"},
+          {"term": "placeholder-shared-term", "used_by_slices": ["S2"], "owner_slice": "S2"}
+        ],
+        "cross_slice_dependencies": [],
+        "cross_slice_competency_questions": [],
+        "explicit_unknowns": [],
+        "adjustments": [],
+        "topology_decision_ref": ""
+      },
+      "cq_spans_too_few": {
+        "schema_version": "r3-0-002-scenario-map/v1",
+        "scenario_id": "r30002-test-scenario",
+        "slices": [
+          {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"},
+          {"slice_id": "S2", "name": "placeholder slice 2", "scope": "placeholder scope 2", "owner": "modeling", "status": "planned"}
+        ],
+        "shared_terms": [],
+        "cross_slice_dependencies": [],
+        "cross_slice_competency_questions": [
+          {"question_id": "cq-1", "question": "placeholder question", "spans_slices": ["S1"]}
+        ],
+        "explicit_unknowns": [],
+        "adjustments": [],
+        "topology_decision_ref": ""
+      },
+      "unknown_cq_span": {
+        "schema_version": "r3-0-002-scenario-map/v1",
+        "scenario_id": "r30002-test-scenario",
+        "slices": [
+          {"slice_id": "S1", "name": "placeholder slice 1", "scope": "placeholder scope 1", "owner": "modeling", "status": "planned"}
+        ],
+        "shared_terms": [],
+        "cross_slice_dependencies": [],
+        "cross_slice_competency_questions": [
+          {"question_id": "cq-1", "question": "placeholder question", "spans_slices": ["S1", "S9"]}
+        ],
+        "explicit_unknowns": [],
+        "adjustments": [],
+        "topology_decision_ref": ""
+      }
+    }
+  },
+  "topology_decision": {
+    "valid": {
+      "schema_version": "r3-0-002-topology-decision/v1",
+      "scenario_id": "r30002-test-scenario",
+      "options": [
+        {
+          "option_id": "single_ontology",
+          "assessment": {
+            "concept_cohesion": "placeholder cohesion assessment",
+            "relation_density": "placeholder density assessment",
+            "reuse": "placeholder reuse assessment",
+            "permission_boundary": "placeholder permission assessment",
+            "change_cadence": "placeholder cadence assessment",
+            "cross_domain_query": "placeholder query assessment"
+          }
+        },
+        {
+          "option_id": "domain_ontology_split",
+          "assessment": {
+            "concept_cohesion": "placeholder cohesion assessment",
+            "relation_density": "placeholder density assessment",
+            "reuse": "placeholder reuse assessment",
+            "permission_boundary": "placeholder permission assessment",
+            "change_cadence": "placeholder cadence assessment",
+            "cross_domain_query": "placeholder query assessment"
+          }
+        },
+        {
+          "option_id": "shared_core_plus_domain",
+          "assessment": {
+            "concept_cohesion": "placeholder cohesion assessment",
+            "relation_density": "placeholder density assessment",
+            "reuse": "placeholder reuse assessment",
+            "permission_boundary": "placeholder permission assessment",
+            "change_cadence": "placeholder cadence assessment",
+            "cross_domain_query": "placeholder query assessment"
+          }
+        }
+      ],
+      "selected_option": "domain_ontology_split",
+      "rationale": "placeholder rationale across the six fixed dimensions",
+      "decided_by": "coordinator"
+    },
+    "single_ontology_selected_valid": {
+      "schema_version": "r3-0-002-topology-decision/v1",
+      "scenario_id": "r30002-test-scenario",
+      "options": [
+        {
+          "option_id": "single_ontology",
+          "assessment": {
+            "concept_cohesion": "placeholder cohesion assessment",
+            "relation_density": "placeholder density assessment",
+            "reuse": "placeholder reuse assessment",
+            "permission_boundary": "placeholder permission assessment",
+            "change_cadence": "placeholder cadence assessment",
+            "cross_domain_query": "placeholder query assessment"
+          }
+        },
+        {
+          "option_id": "domain_ontology_split",
+          "assessment": {
+            "concept_cohesion": "placeholder cohesion assessment",
+            "relation_density": "placeholder density assessment",
+            "reuse": "placeholder reuse assessment",
+            "permission_boundary": "placeholder permission assessment",
+            "change_cadence": "placeholder cadence assessment",
+            "cross_domain_query": "placeholder query assessment"
+          }
+        },
+        {
+          "option_id": "shared_core_plus_domain",
+          "assessment": {
+            "concept_cohesion": "placeholder cohesion assessment",
+            "relation_density": "placeholder density assessment",
+            "reuse": "placeholder reuse assessment",
+            "permission_boundary": "placeholder permission assessment",
+            "change_cadence": "placeholder cadence assessment",
+            "cross_domain_query": "placeholder query assessment"
+          }
+        }
+      ],
+      "selected_option": "single_ontology",
+      "rationale": "placeholder rationale; the comparison is still complete",
+      "decided_by": "coordinator"
+    },
+    "invalid": {
+      "schema_mismatch": {
+        "schema_version": "r3-0-002-topology-decision/v2",
+        "scenario_id": "r30002-test-scenario",
+        "options": [],
+        "selected_option": "single_ontology",
+        "rationale": "placeholder rationale",
+        "decided_by": "coordinator"
+      },
+      "insufficient_options": {
+        "schema_version": "r3-0-002-topology-decision/v1",
+        "scenario_id": "r30002-test-scenario",
+        "options": [
+          {
+            "option_id": "single_ontology",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "domain_ontology_split",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          }
+        ],
+        "selected_option": "single_ontology",
+        "rationale": "placeholder rationale",
+        "decided_by": "coordinator"
+      },
+      "missing_required_option": {
+        "schema_version": "r3-0-002-topology-decision/v1",
+        "scenario_id": "r30002-test-scenario",
+        "options": [
+          {
+            "option_id": "single_ontology",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "domain_ontology_split",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "custom-fourth-option",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          }
+        ],
+        "selected_option": "single_ontology",
+        "rationale": "placeholder rationale",
+        "decided_by": "coordinator"
+      },
+      "missing_dimension": {
+        "schema_version": "r3-0-002-topology-decision/v1",
+        "scenario_id": "r30002-test-scenario",
+        "options": [
+          {
+            "option_id": "single_ontology",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "domain_ontology_split",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "shared_core_plus_domain",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          }
+        ],
+        "selected_option": "shared_core_plus_domain",
+        "rationale": "placeholder rationale",
+        "decided_by": "coordinator"
+      },
+      "empty_dimension": {
+        "schema_version": "r3-0-002-topology-decision/v1",
+        "scenario_id": "r30002-test-scenario",
+        "options": [
+          {
+            "option_id": "single_ontology",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "  ",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "domain_ontology_split",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "shared_core_plus_domain",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          }
+        ],
+        "selected_option": "domain_ontology_split",
+        "rationale": "placeholder rationale",
+        "decided_by": "coordinator"
+      },
+      "missing_selection": {
+        "schema_version": "r3-0-002-topology-decision/v1",
+        "scenario_id": "r30002-test-scenario",
+        "options": [
+          {
+            "option_id": "single_ontology",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "domain_ontology_split",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "shared_core_plus_domain",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          }
+        ],
+        "selected_option": "",
+        "rationale": "placeholder rationale",
+        "decided_by": "coordinator"
+      },
+      "empty_rationale": {
+        "schema_version": "r3-0-002-topology-decision/v1",
+        "scenario_id": "r30002-test-scenario",
+        "options": [
+          {
+            "option_id": "single_ontology",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "domain_ontology_split",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          },
+          {
+            "option_id": "shared_core_plus_domain",
+            "assessment": {
+              "concept_cohesion": "a", "relation_density": "a", "reuse": "a",
+              "permission_boundary": "a", "change_cadence": "a", "cross_domain_query": "a"
+            }
+          }
+        ],
+        "selected_option": "single_ontology",
+        "rationale": "   ",
+        "decided_by": "coordinator"
+      }
+    }
+  },
+  "protection_iri_suggestions": {
+    "valid": {
+      "schema_version": "r3-0-002-protection-iri-suggestions/v1",
+      "scenario_id": "r30002-test-scenario",
+      "entries": [
+        {
+          "iri": "https://r30002.test/terms/placeholder-a",
+          "reason": "placeholder protection reason",
+          "proposing_slice": "S1",
+          "target_protection_set": "existing:r30002-test-set"
+        },
+        {
+          "iri": "https://r30002.test/terms/dangling-until-created",
+          "reason": "placeholder dangling member reason",
+          "proposing_slice": "S2",
+          "target_protection_set": "new:r30002-test-core-terms"
+        }
+      ],
+      "summarized_by": "coordinator"
+    },
+    "invalid": {
+      "invalid_iri": {
+        "schema_version": "r3-0-002-protection-iri-suggestions/v1",
+        "scenario_id": "r30002-test-scenario",
+        "entries": [
+          {
+            "iri": "not-an-absolute-iri",
+            "reason": "placeholder reason",
+            "proposing_slice": "S1",
+            "target_protection_set": "new:r30002-test-set"
+          }
+        ],
+        "summarized_by": "coordinator"
+      },
+      "invalid_target": {
+        "schema_version": "r3-0-002-protection-iri-suggestions/v1",
+        "scenario_id": "r30002-test-scenario",
+        "entries": [
+          {
+            "iri": "https://r30002.test/terms/placeholder-b",
+            "reason": "placeholder reason",
+            "proposing_slice": "S1",
+            "target_protection_set": "r30002-test-set"
+          }
+        ],
+        "summarized_by": "coordinator"
+      },
+      "dangling_slice": {
+        "schema_version": "r3-0-002-protection-iri-suggestions/v1",
+        "scenario_id": "r30002-test-scenario",
+        "entries": [
+          {
+            "iri": "https://r30002.test/terms/placeholder-c",
+            "reason": "placeholder reason",
+            "proposing_slice": "S9",
+            "target_protection_set": "new:r30002-test-set"
+          }
+        ],
+        "summarized_by": "coordinator"
+      }
+    }
+  }
+}

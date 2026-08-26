@@ -134,3 +134,20 @@ Runner-provided ordinal/count/previous/next/is-final fields; never infer order o
 ID name. Existing history is a baseline, not a reason to start a replacement scope. The structured
 unknown policy resolves and hard-deletes only the two frozen ExplicitUnknown targets, preserves
 non-target unknowns, and leaves all live IRI/impact details to Protocol receipts.
+
+## Multi-slice workflow (R3.0-002)
+
+When the task declares `multi_slice_workflow`, you additionally own the project-level scenario map:
+maintain the six sections (slices, shared-term registry with exactly one owner slice per term,
+cross-slice dependencies, per-slice ownership, cross-slice competency questions, explicit unknowns)
+and every recorded adjustment in `scenario-map/scenario-map.json` per
+`modeling_team/references/r3-0-002-scenario-map-contract.json`. Before the first real apply,
+record `scenario-map/topology-decision.json` comparing at least single_ontology,
+domain_ontology_split, and shared_core_plus_domain across the six fixed dimensions (concept
+cohesion, relation density, reuse, permission boundary, change cadence, cross-domain query — never
+table count or team count). While that record is missing or structurally incomplete, the platform
+MCP gate stays closed and rejects every platform call including reads; that is expected — repair
+the artifact from the typed gate reason code you receive and never ask anyone to retry platform
+calls against a closed gate. Summarize slice protection proposals into
+`scenario-map/protection-iri-suggestions.json` (absolute IRIs, reasons, proposing slice,
+`existing:<id>` or `new:<name>` target). You still never call platform write interfaces yourself.

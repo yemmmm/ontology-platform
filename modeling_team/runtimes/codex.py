@@ -2784,11 +2784,33 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             or getattr(profile, "profile_id", None) == "r2-3-003-modeling-team"
         )
 
+    @staticmethod
+    def _is_multi_slice_run(run: Any) -> bool:
+        """R3.0-002: a v2 Task declaring ``multi_slice_workflow: true``."""
+
+        task = getattr(getattr(run, "configuration", None), "task", None)
+        if getattr(task, "schema_version", 1) != 2:
+            return False
+        parameters = getattr(task, "parameters", None)
+        return isinstance(parameters, dict) and parameters.get("multi_slice_workflow") is True
+
     @classmethod
     def _candidate_platform_gate_enabled_for_run(cls, run: Any) -> bool:
+        """One predicate for BOTH gate wiring points (design increment 7).
+
+        The MCP env passing point (``_write_config``) and the sandbox
+        bind-mount point (``_candidate_platform_gate_enabled`` assignment in
+        ``start_roster`` plus the mount block in ``namespace_command``) must
+        derive from this single predicate: extending only one of the two
+        leaves the in-sandbox gate state file unreachable and every backend
+        MCP platform call fails closed forever (plan review High-4).
+        """
+
         configuration = getattr(run, "configuration", None)
         task = getattr(configuration, "task", None)
-        return cls._is_formal_acceptance_run(run) and getattr(task, "schema_version", 1) == 2
+        if getattr(task, "schema_version", 1) != 2:
+            return False
+        return cls._is_formal_acceptance_run(run) or cls._is_multi_slice_run(run)
 
     @staticmethod
     def _proof_gate_enabled(run: Any) -> bool:
@@ -3011,14 +3033,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "formal provider session startup failed"
                     ) from exc
                 self._provider_sessions = sessions
+        # R3.0-002: derive the sandbox bind-mount gate flag from the same
+        # single predicate as the MCP env point in ``_write_config`` (formal
+        # acceptance OR multi_slice_workflow, both v2-only).
         self._candidate_platform_gate_enabled = (
-            self._coordination_enabled
-            and getattr(
-                getattr(getattr(run, "configuration", None), "task", None),
-                "schema_version",
-                1,
-            )
-            == 2
+            self._candidate_platform_gate_enabled_for_run(run)
         )
         self._formal_turn_binding_required = self._coordination_enabled
         parameters = getattr(getattr(getattr(run, "configuration", None), "profile", None), "parameters", None)
@@ -3638,15 +3657,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._remember_secret(key)
             platform = agent.home / "platform"
             shutil.copytree(self.root / "backend" / "app", platform / "app")
-            formal_candidate_gate = self._candidate_platform_gate_enabled_for_run(run)
-            if formal_candidate_gate:
+            # R3.0-002: the same unified predicate covers formal acceptance
+            # runs and multi_slice_workflow tasks (see the predicate docstring).
+            platform_gate_enabled = self._candidate_platform_gate_enabled_for_run(run)
+            if platform_gate_enabled:
                 CandidatePlatformGate.ensure(run.root / "candidate-gate")
             lines.extend(
                 protocol_mcp_launch_spec(
                     agent.platform_tools,
                     schema_version=getattr(task, "schema_version", 1),
                     candidate_gate_path=(
-                        CANDIDATE_PLATFORM_GATE_MOUNT if formal_candidate_gate else None
+                        CANDIDATE_PLATFORM_GATE_MOUNT if platform_gate_enabled else None
                     ),
                 ).config_lines(api_key=key)
             )

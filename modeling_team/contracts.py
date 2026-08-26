@@ -28,6 +28,9 @@ PLATFORM_VALUES = {"none", "read", "write"}
 # ``FORMAL_ROLE_VALUES`` below and rejects it before scope or Agent startup.
 ROLE_VALUES = {"coordinator", "modeling", "protocol", "source-specialist", "acceptance"}
 FORMAL_ROLE_VALUES = {"coordinator", "modeling", "protocol", "acceptance"}
+# R3.0-002 non-formal multi-slice roster: exactly the three modeling roles.
+# Acceptance stays out until the R3.0-006 real-run requirement adds it.
+MULTI_SLICE_ROLE_VALUES = {"coordinator", "modeling", "protocol"}
 # The v2 Task may narrow this set, but never broaden it.  Keep lifecycle/key/project
 # mechanics outside the Agent-visible platform surface.
 SAFE_PROTOCOL_TOOLS = frozenset(
@@ -60,11 +63,32 @@ SAFE_PROTOCOL_TOOLS = frozenset(
 # entity statement projection.  Keep the historical SAFE_PROTOCOL_TOOLS value
 # byte-compatible for 005/legacy task and P2 driver contracts.
 SAFE_PROTOCOL_TOOLS_R23003 = SAFE_PROTOCOL_TOOLS | {"get_entity_statement_context"}
+# R3.0-002 extends the ordinary allowlist with the six R3.0-004 protection-set
+# MCP tools (model scope, exact registered names in
+# backend/app/mcp/tools/protection_sets.py).  SAFE_PROTOCOL_TOOLS itself stays
+# byte-unchanged for every pre-existing task and P2 driver contract.
+SEMANTIC_PROTECTION_SET_TOOLS = frozenset(
+    {
+        "list_semantic_protection_sets",
+        "create_semantic_protection_set",
+        "update_semantic_protection_set",
+        "delete_semantic_protection_set",
+        "add_semantic_protection_set_members",
+        "remove_semantic_protection_set_members",
+    }
+)
+SAFE_PROTOCOL_TOOLS_R30002 = SAFE_PROTOCOL_TOOLS | SEMANTIC_PROTECTION_SET_TOOLS
 SOURCE_CLASSIFICATIONS = {"business-source", "coordination", "protocol", "consumer-question"}
 _FORMAL_PROFILE_IDS = frozenset(
     {"r2-3-005-modeling-team", "r2-3-003-modeling-team", "r2-3-008-modeling-team",
      "r2-3-009-modeling-team"}
 )
+# Closed registry for the R3.0-002 non-formal multi-slice Profile kind, mirroring
+# the formal cross-wire guard pattern.
+MULTI_SLICE_PROFILE_IDS = frozenset({"r3-0-002-modeling-team"})
+# R3.0-002 Task ``parameters`` is a closed, optional key set on the v2 Task.
+MULTI_SLICE_TASK_PARAMETER = "multi_slice_workflow"
+_TASK_PARAMETER_NAMES = frozenset({MULTI_SLICE_TASK_PARAMETER})
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
 _CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0
 # R2.3-009 timeout tiers: bounded nudge quota, cooperative-escalation repeat
@@ -147,6 +171,7 @@ class TeamTask:
     retain_nonempty: bool = False
     semantic_start_evidence: tuple[str, ...] = ()
     expected_matrix_binding: dict[str, str] | None = None
+    parameters: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True)
@@ -374,7 +399,11 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
 
 
 def load_profile(
-    path: Path, *, root: Path | None = None, strict: bool = False
+    path: Path,
+    *,
+    root: Path | None = None,
+    strict: bool = False,
+    multi_slice: bool = False,
 ) -> TeamProfile:
     root = root or repository_root()
     data = _yaml(path)
@@ -418,6 +447,19 @@ def load_profile(
         expected_ids = set(FORMAL_ROLE_VALUES)
         if ids != expected_ids:
             raise TeamConfigurationError("formal Profile Agent IDs must match the four role IDs")
+    elif multi_slice:
+        # R3.0-002 non-formal branch: exactly the three modeling roles, no
+        # Acceptance (added by the R3.0-006 real-run requirement only).
+        if profile_id not in MULTI_SLICE_PROFILE_IDS:
+            raise TeamConfigurationError("multi-slice Profile is not registered")
+        if len(agents) != 3 or set(roles) != MULTI_SLICE_ROLE_VALUES or len(set(roles)) != 3:
+            raise TeamConfigurationError(
+                "multi-slice Profile requires exactly Coordinator, Modeling, and Protocol"
+            )
+        if ids != set(MULTI_SLICE_ROLE_VALUES):
+            raise TeamConfigurationError(
+                "multi-slice Profile Agent IDs must match the three role IDs"
+            )
     elif roles.count("coordinator") != 1 or roles.count("protocol") != 1:
         raise TeamConfigurationError(
             "Profile requires exactly one Coordinator and Protocol"
@@ -495,6 +537,17 @@ def load_profile(
         }
         if edges != required_edges:
             raise TeamConfigurationError("formal Profile communication graph drift")
+    if multi_slice:
+        required_edges = {
+            ("coordinator", "modeling"),
+            ("coordinator", "protocol"),
+            ("modeling", "coordinator"),
+            ("modeling", "protocol"),
+            ("protocol", "coordinator"),
+            ("protocol", "modeling"),
+        }
+        if edges != required_edges:
+            raise TeamConfigurationError("multi-slice Profile communication graph drift")
     parameter_binding = data["parameters"].get("expected_matrix_binding")
     top_level_binding = data.get("expected_matrix_binding")
     if parameter_binding is not None and top_level_binding is not None and parameter_binding != top_level_binding:
@@ -583,6 +636,10 @@ def load_task(
         "semantic_start_evidence",
     }
     v2_fields_with_binding = v2_fields | {"expected_matrix_binding"}
+    v2_fields_with_parameters = v2_fields | {"parameters"}
+    v2_fields_with_parameters_with_binding = v2_fields_with_parameters | {
+        "expected_matrix_binding"
+    }
     version = data.get("schema_version")
     if version not in {1, 2} or not isinstance(data.get("objective"), str):
         raise TeamConfigurationError("Task schema is invalid")
@@ -609,8 +666,28 @@ def load_task(
             tuple(_repo_path(root, item, field="allowed_sources") for item in sources),
             tuple(str(item) for item in evidence),
         )
-    if set(data) != v2_fields and set(data) != v2_fields_with_binding:
+    if (
+        set(data)
+        != v2_fields
+        and set(data) != v2_fields_with_binding
+        and set(data) != v2_fields_with_parameters
+        and set(data) != v2_fields_with_parameters_with_binding
+    ):
         raise TeamConfigurationError("v2 Task fields drift from schema")
+    # R3.0-002 (c): the optional, closed ``parameters`` key set.  Nothing else
+    # may ride on this extension, and every pre-existing v2 Task (no
+    # ``parameters`` key) keeps its exact previous validation behavior.
+    raw_parameters = data.get("parameters")
+    parameters: dict[str, Any] = {}
+    if raw_parameters is not None:
+        if (
+            not isinstance(raw_parameters, dict)
+            or not raw_parameters
+            or set(raw_parameters) - _TASK_PARAMETER_NAMES
+            or not isinstance(raw_parameters.get(MULTI_SLICE_TASK_PARAMETER), bool)
+        ):
+            raise TeamConfigurationError("v2 Task parameters are invalid")
+        parameters = dict(raw_parameters)
     raw_sources = data["role_sources"]
     tools = data["protocol_tools"]
     evidence = data["expected_terminal_evidence"]
@@ -624,11 +701,13 @@ def load_task(
     )
     if not sources:
         raise TeamConfigurationError("v2 Task requires role-private sources")
-    allowed_tools = (
-        SAFE_PROTOCOL_TOOLS_R23003
-        if data.get("task_id") == "r2-3-003-existing-scope-incremental"
-        else SAFE_PROTOCOL_TOOLS
-    )
+    if parameters.get(MULTI_SLICE_TASK_PARAMETER) is True:
+        # R3.0-002: the multi-slice task adds the protection-set tools.
+        allowed_tools = SAFE_PROTOCOL_TOOLS_R30002
+    elif data.get("task_id") == "r2-3-003-existing-scope-incremental":
+        allowed_tools = SAFE_PROTOCOL_TOOLS_R23003
+    else:
+        allowed_tools = SAFE_PROTOCOL_TOOLS
     if not all(isinstance(tool, str) and tool in allowed_tools for tool in tools):
         raise TeamConfigurationError("v2 Task Protocol tool is not permitted")
     if len(set(tools)) != len(tools) or not tools:
@@ -649,6 +728,7 @@ def load_task(
         retain_nonempty=data["retain_nonempty"],
         semantic_start_evidence=tuple(str(item) for item in start_evidence),
         expected_matrix_binding=expected_matrix_binding,
+        parameters=parameters,
     )
 
 
@@ -687,6 +767,63 @@ def load_formal_team_configuration(
     or Agent startup.
     """
     return load_team_configuration(profile_path, task_path, root=root, strict=True)
+
+
+def task_declares_multi_slice_workflow(task_path: Path) -> bool:
+    """Peek the frozen Task YAML for the R3.0-002 multi-slice parameter.
+
+    This dispatch peek is the only place the CLI ``validate``/run loader and
+    ``TeamRunner.prepare`` need to decide between the strict formal loader and
+    the non-formal multi-slice loader (design increment 6(b)).  It is a hint,
+    not a validator: an unreadable or malformed Task peeks False and the
+    subsequently chosen loader produces the authoritative typed error, so the
+    peek never changes pre-existing failure behavior.
+    """
+
+    try:
+        data = _yaml(task_path)
+    except TeamConfigurationError:
+        return False
+    if not isinstance(data.get("schema_version"), int) or data.get("schema_version") != 2:
+        return False
+    parameters = data.get("parameters")
+    return (
+        isinstance(parameters, dict)
+        and parameters.get(MULTI_SLICE_TASK_PARAMETER) is True
+    )
+
+
+def load_multi_slice_team_configuration(
+    profile_path: Path, task_path: Path, *, root: Path | None = None
+) -> TeamConfiguration:
+    """Load only the non-formal R3.0-002 three-role multi-slice workflow.
+
+    The strict four-role formal check is unchanged; this explicit branch
+    accepts exactly the registered multi-slice Profile paired with a Task that
+    declares ``parameters.multi_slice_workflow: true``.
+    """
+
+    root = root or repository_root()
+    profile = load_profile(profile_path, root=root, multi_slice=True)
+    task = load_task(
+        task_path,
+        root=root,
+        allowed_roles={agent.package.role for agent in profile.agents},
+    )
+    if task.parameters is None or task.parameters.get(MULTI_SLICE_TASK_PARAMETER) is not True:
+        raise TeamConfigurationError(
+            "multi-slice Profile requires a Task declaring multi_slice_workflow"
+        )
+    if (
+        profile.expected_matrix_binding is not None
+        and task.expected_matrix_binding is not None
+        and profile.expected_matrix_binding != task.expected_matrix_binding
+    ):
+        raise TeamConfigurationError("Profile and Task expected_matrix_binding drift")
+    return TeamConfiguration(
+        profile,
+        task,
+    )
 
 
 def digest_file(path: Path) -> str:

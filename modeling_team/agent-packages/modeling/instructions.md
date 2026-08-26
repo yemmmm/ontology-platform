@@ -292,3 +292,13 @@ receipt request, or invent an accepted receipt. Reply to the delivered conflict 
 one full, self-contained revised candidate (`expects_reply=true`) containing every unchanged item,
 citation, constraint, and business-slice dependency plus the corrected delete declarations. A
 revision must be complete even when the conflict concerns only one delete item.
+
+## Multi-slice workflow (R3.0-002)
+
+When the task declares `multi_slice_workflow`, produce one complete semantic candidate per
+scenario-map slice instead of one candidate for the whole scenario. In each candidate, declare the
+shared terms it uses (they must be registered in the Coordinator's scenario map with exactly one
+owner slice), name its cross-slice dependencies, and keep every unresolved item as an explicit
+unknown — never silently merge or split a shared term across slices. You still own business
+semantics only: platform translation, batching, ordering, and protection-set execution belong to
+Protocol.

@@ -1,0 +1,93 @@
+{
+  "schema_version": "r3-0-002-scenario-map-contract/v1",
+  "purpose": "Agent-readable artifact contract for the R3.0-002 multi-slice workflow: scenario map, topology decision record, and protection IRI suggestion handover. Mechanical only; semantic quality is judged by the Coordinator, the user interview, and R3.0-006.",
+  "artifact_locations": {
+    "base": "workspaces/modeling-runs/<run-id>/scenario-map/",
+    "scenario_map": "scenario-map.json",
+    "topology_decision": "topology-decision.json",
+    "protection_iri_suggestions": "protection-iri-suggestions.json",
+    "note": "These are run-workspace process artifacts, not platform storage. A missing, non-JSON, symlinked, or escaping path is rejected without touching anything outside the run directory."
+  },
+  "scenario_map": {
+    "schema_version": "r3-0-002-scenario-map/v1",
+    "maintainer": "coordinator",
+    "required_sections": [
+      "slices",
+      "shared_terms",
+      "cross_slice_dependencies",
+      "cross_slice_competency_questions",
+      "explicit_unknowns",
+      "adjustments"
+    ],
+    "identity_fields": ["scenario_id", "topology_decision_ref"],
+    "slices_item_fields": ["slice_id", "name", "scope", "owner", "status"],
+    "rules": [
+      "slices is non-empty; every field is a non-empty string; slice_id values are unique",
+      "each shared_terms entry has term, used_by_slices, and exactly one owner_slice inside the slice list; notes is optional; a term registered more than once is rejected",
+      "each cross_slice_dependencies entry has from_slice and to_slice inside the slice list, a non-empty direction, and a non-empty connection_points list",
+      "each cross-slice competency question has question_id, question, and spans_slices of at least two known slices",
+      "explicit_unknowns may be empty; each entry has topic, needed_from, and status",
+      "adjustments may be empty; each entry records change and approved_by_coordinator",
+      "topology_decision_ref is empty until the decision record exists, then exactly topology-decision.json"
+    ],
+    "failure_reason_codes": [
+      "map_schema_mismatch",
+      "map_missing_section",
+      "map_dangling_reference",
+      "map_term_owner_not_unique",
+      "map_unparsable"
+    ]
+  },
+  "topology_decision": {
+    "schema_version": "r3-0-002-topology-decision/v1",
+    "timing": "Recorded before the first real apply; while it is missing or structurally incomplete, the independent platform MCP gate stays closed and rejects every platform call, including reads. That is expected behavior: repair the artifact from the typed reason code sent to Coordinator and wait for the next Runner re-check; do not retry platform calls.",
+    "fields": ["schema_version", "scenario_id", "options", "selected_option", "rationale", "decided_by"],
+    "required_option_ids": [
+      "single_ontology",
+      "domain_ontology_split",
+      "shared_core_plus_domain"
+    ],
+    "dimensions": [
+      "concept_cohesion",
+      "relation_density",
+      "reuse",
+      "permission_boundary",
+      "change_cadence",
+      "cross_domain_query"
+    ],
+    "rules": [
+      "at least three options and always the three required option_ids; custom options may be appended",
+      "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
+      "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
+      "selected_option must be one of the listed options and rationale must be non-empty"
+    ],
+    "gate_failure_reason_codes": [
+      "topology_missing_artifact",
+      "topology_unparsable",
+      "topology_schema_mismatch",
+      "topology_insufficient_options",
+      "topology_missing_required_option",
+      "topology_missing_dimension",
+      "topology_empty_dimension",
+      "topology_missing_selection",
+      "topology_empty_rationale"
+    ]
+  },
+  "protection_iri_suggestions": {
+    "schema_version": "r3-0-002-protection-iri-suggestions/v1",
+    "maintainer": "coordinator (summarized from slice proposals)",
+    "fields": ["schema_version", "scenario_id", "entries", "summarized_by"],
+    "entry_fields": ["iri", "reason", "proposing_slice", "target_protection_set"],
+    "rules": [
+      "iri is one non-empty absolute IRI; dangling IRIs for resources not yet created are allowed",
+      "target_protection_set is existing:<id> or new:<name>",
+      "proposing_slice must be a slice of the current scenario map",
+      "format only: the decision to protect, and every execution failure, follows the existing R3.0-004 protection-set contract"
+    ]
+  },
+  "execution": {
+    "multi_ontology_batches": "One Modeling Batch binds exactly one Ontology. A multi-Ontology topology means at least one batch per Ontology, applied by Protocol in scenario-map dependency order; dry_run then apply_atomic per batch; no cross-batch atomicity is required or provided.",
+    "protection_sets": "Protection sets are Project-level, may span Ontologies, and must never drive the Ontology split. Protection-set changes and ontology publication are two independent operations and are never part of the same Modeling Batch. Protecting target IRIs before creating the resources is the recommended order, not a platform constraint.",
+    "order": "Slices run serially in scenario-map dependency order; any slice-set or order adjustment must be recorded in scenario-map adjustments and approved by Coordinator."
+  }
+}

@@ -609,3 +609,16 @@ never combine or reorder them. Missing binding or
 impact receipts and a false Phase-A readback must remain fail-closed (no delete batch); do not
 override those conflicts or delete before the durable readback barrier. Extra R2.3-003 arguments
 must never be sent on the R2.3-005 candidate-only path.
+
+## Multi-slice workflow (R3.0-002)
+
+When the task declares `multi_slice_workflow`, platform MCP calls stay rejected (including reads)
+until the Runner's independent topology gate opens after the Coordinator's topology decision
+record passes its structural check; treat any closed-gate rejection as a wait condition, never as a
+platform failure to retry or a reason to kill the run. After the gate opens, translate the approved
+per-slice candidates yourself: when the selected topology has multiple Ontologies, submit at least
+one Modeling Batch per Ontology in scenario-map dependency order, each batch bound to exactly one
+ontology, with `dry_run` then `apply_atomic` per batch and no cross-batch atomicity. Execute the
+Coordinator's protection IRI suggestions through the six semantic protection set tools as
+operations fully independent of any Modeling Batch; never batch a protection-set change together
+with ontology publication.

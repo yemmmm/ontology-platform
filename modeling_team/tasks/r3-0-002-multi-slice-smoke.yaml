@@ -1,0 +1,38 @@
+# R3.0-002 mechanical multi-slice smoke task: zero modeling writes.
+# Exercises only the scenario-map artifact chain and the independent platform
+# MCP topology gate.  schema_version must stay 2 (gate env/mount wiring is
+# v2-only) and parameters.multi_slice_workflow must stay true.
+schema_version: 2
+task_id: r3-0-002-multi-slice-smoke
+objective: >-
+  Mechanical multi-slice workflow smoke only, with zero modeling writes and no
+  semantic content. Coordinator maintains the six-section scenario map under
+  scenario-map/ in the run workspace exactly per the mounted
+  modeling_team/references/r3-0-002-scenario-map-contract.json, then drafts a
+  topology decision record that compares at least the three required options
+  (single_ontology, domain_ontology_split, shared_core_plus_domain) across all
+  six fixed dimensions (concept cohesion, relation density, reuse, permission
+  boundary, change cadence, cross-domain query — never table count or team
+  count), plus a format-valid protection IRI suggestion handover with
+  placeholder IRIs. Modeling declares per-slice candidate placeholders that
+  name shared terms and explicit unknowns only. Protocol only observes that
+  every platform MCP call stays rejected while the topology decision is
+  missing or invalid, and reports the typed gate reason codes Coordinator
+  receives back from the Runner. Zero Modeling Batch submission, zero
+  dry-run, zero apply_atomic, zero protection-set mutation, zero RDF write,
+  zero Build Session or Lease creation.
+role_sources:
+  - path: modeling_team/references/r3-0-002-scenario-map-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
+protocol_tools:
+  - check_platform_health
+expected_terminal_evidence:
+  - scenario-map-artifact-structurally-valid
+  - topology-decision-accepted-by-gate
+  - protection-iri-suggestions-format-valid
+  - closed-gate-reason-codes-reported
+retain_nonempty: false
+semantic_start_evidence: []
+parameters:
+  multi_slice_workflow: true

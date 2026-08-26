@@ -10,7 +10,13 @@ from pathlib import Path
 
 import yaml
 
-from .contracts import TeamConfigurationError, load_formal_team_configuration, repository_root
+from .contracts import (
+    TeamConfigurationError,
+    load_formal_team_configuration,
+    load_multi_slice_team_configuration,
+    repository_root,
+    task_declares_multi_slice_workflow,
+)
 from .formal_runs import (
     FORMAL_PROFILE_IDS,
     FORMAL_TASK_IDS,
@@ -532,13 +538,23 @@ def main() -> int:
             return 2
         return 0
     try:
-        configuration = load_formal_team_configuration(args.profile, args.task, root=root)
-        formal_contract = formal_run_contract_for(configuration)
+        # R3.0-002 increment 6(b): multi-slice tasks load through the
+        # non-formal three-role branch; every other task keeps the strict
+        # formal loader (and its cross-wire guard) unchanged.
+        multi_slice = task_declares_multi_slice_workflow(args.task)
+        if multi_slice:
+            configuration = load_multi_slice_team_configuration(
+                args.profile, args.task, root=root
+            )
+            formal_contract = None
+        else:
+            configuration = load_formal_team_configuration(args.profile, args.task, root=root)
+            formal_contract = formal_run_contract_for(configuration)
         if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
             configuration, formal_contract = load_formal_run_configuration(
                 args.profile, args.task, root=root
             )
-        elif formal_contract is None and (
+        elif formal_contract is None and not multi_slice and (
             getattr(getattr(configuration, "profile", None), "profile_id", None)
             in FORMAL_PROFILE_IDS
             or getattr(getattr(configuration, "task", None), "task_id", None)

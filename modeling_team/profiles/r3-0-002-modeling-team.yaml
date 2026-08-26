@@ -1,0 +1,21 @@
+# R3.0-002 non-formal multi-slice roster: Coordinator, Modeling, Protocol.
+# Acceptance is intentionally absent; it is added only by the R3.0-006
+# real-run requirement.  Loaded via load_multi_slice_team_configuration.
+schema_version: 1
+profile_id: r3-0-002-modeling-team
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: protocol
+    package: protocol
+communication:
+  - from: coordinator
+    to: [modeling, protocol]
+  - from: modeling
+    to: [coordinator, protocol]
+  - from: protocol
+    to: [coordinator, modeling]
+parameters: {}
