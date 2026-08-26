@@ -2,9 +2,9 @@
 
 Read models are compiled from versioned SPARQL templates over graph sets.
 Every statement-bearing row is decorated with origin, assertion-kind,
-evidence status, provenance, and staleness metadata. Phase 6 visibility
-policy is optional; when supplied, rows from graphs whose label is not in
-the caller's visibility context are filtered out.
+evidence status, provenance, and staleness metadata. An optional
+``SemanticAccessView`` (R3.0-004) filters rows that reference unauthorized
+protected members before pagination, counting, or truncation.
 """
 
 from __future__ import annotations
@@ -15,6 +15,7 @@ from typing import Any, Protocol
 from app.repositories.fact_evidence_repository import FactEvidenceBindingRepository
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.fact_id import canonical_object_term, compute_fact_id
+from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_read_scope import (
     ScopeMember,
     ScopeResolution,
@@ -35,10 +36,10 @@ class ReadModelError(RuntimeError):
     status_code = 400
 
 
-class _VisibilityPolicy(Protocol):
-    def evaluate(
-        self, graph_iri: str, visibility_context: dict[str, Any] | None
-    ) -> Any: ...
+# When row-level access filtering is active, templates over-fetch beyond the
+# caller's bounded limit so filtering happens before pagination; the caller's
+# limit is applied to the authorized subset afterwards.
+_FILTERED_FETCH_LIMIT = 10_000
 
 
 class _ShapeEndpointProtocol(Protocol):
@@ -61,7 +62,7 @@ class SemanticReadModelService:
         scope_resolver: SemanticReadScopeResolver,
         timeout_seconds: float = 5.0,
         default_limit: int = 500,
-        visibility_policy: _VisibilityPolicy | None = None,
+        access_view: SemanticAccessView | None = None,
         shape_endpoint: _ShapeEndpointProtocol | None = None,
         session: Any = None,
         retrieval_service: SemanticResourceRetrievalService | None = None,
@@ -70,7 +71,7 @@ class SemanticReadModelService:
         self.scope_resolver = scope_resolver
         self.timeout_seconds = timeout_seconds
         self.default_limit = default_limit
-        self.visibility_policy = visibility_policy
+        self.access_view = access_view or SemanticAccessView.all_visible()
         # shape_endpoint is injected by the API layer (which owns the SQLAlchemy
         # session); unit tests can pass a fake. When None, entity-shape raises
         # a ReadModelError at call time.
@@ -90,7 +91,6 @@ class SemanticReadModelService:
         allow_stale_derived: bool = True,
         limit: int | None = None,
         field_set: str = "summary",
-        visibility_context: dict[str, Any] | None = None,
         entity_iri: str | None = None,
         class_iri: str | None = None,
         kind: str | None = None,
@@ -217,38 +217,24 @@ class SemanticReadModelService:
         query = self._compile_template_query(
             template,
             graph_iris,
-            bounded_limit,
+            self._fetch_limit(bounded_limit),
             entity_iri=entity_iri,
         )
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=graph_iris,
             timeout_seconds=self.timeout_seconds,
-            limit=bounded_limit,
+            limit=self._fetch_limit(bounded_limit),
         )
         items: list[dict[str, Any]] = []
         warnings = list(scope.warnings)
         for row in self._rows(result):
             decorated = self._decorate_row(row, scope, template)
-            if self.visibility_policy is not None:
-                decision = self.visibility_policy.evaluate(
-                    decorated["source_graph_iri"], visibility_context
-                )
-                if not decision.allow:
-                    warnings.append(
-                        {
-                            "code": "visibility_graph_omitted",
-                            "message": (
-                                f"Graph {decorated['source_graph_iri']} "
-                                "omitted by visibility policy."
-                            ),
-                        }
-                    )
-                    continue
-                if decision.redact_evidence:
-                    decorated["evidence_ids"] = []
-                    decorated["evidence_status"] = "not_applicable"
             items.append(decorated)
+        # R3.0-004: drop rows referencing unauthorized members BEFORE the
+        # caller's limit is applied, so pagination never leaks hidden rows.
+        items = self.access_view.filter_items(items)
+        items = items[:bounded_limit]
         if q and template.name in {"ontology-schema-summary", "entity-list"}:
             items, retrieval = self._compose_public_list_search(
                 template,
@@ -292,6 +278,13 @@ class SemanticReadModelService:
             "warnings": warnings,
             "items": items,
         }
+
+    def _fetch_limit(self, bounded_limit: int) -> int:
+        """Elevate the fetch limit while access filtering so filtering happens
+        before the caller-visible pagination."""
+        if self.access_view.requires_filtering:
+            return max(bounded_limit, _FILTERED_FETCH_LIMIT)
+        return bounded_limit
 
     @staticmethod
     def _compile_template_query(
@@ -556,6 +549,15 @@ class SemanticReadModelService:
                 "entity-shape read model cannot yet resolve class_iri from "
                 "entity_iri; supply class_iri explicitly"
             )
+        if not self.access_view.is_member_visible(target):
+            # R3.0-004: a protected class returns exactly the same response as
+            # an unknown class (empty fields, echoed target_class).
+            merged = self.shape_endpoint.read_merged_guidance(
+                graph_set_id=graph_set_id,
+                class_iri="urn:ontology-platform:unknown-class-probe",
+            )
+            merged["target_class"] = target
+            return merged
         return self.shape_endpoint.read_merged_guidance(
             graph_set_id=graph_set_id,
             class_iri=target,
@@ -720,17 +722,23 @@ class SemanticReadModelService:
             "LIMIT {limit}"
         )
         values = " ".join(f"<{i}>" for i in asserted_iris)
+        fetch_limit = self._fetch_limit(limit)
         query = (
-            sparql.replace("{graph_iris}", values).replace("{limit}", str(limit))
+            sparql.replace("{graph_iris}", values).replace("{limit}", str(fetch_limit))
         )
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=asserted_iris,
             timeout_seconds=self.timeout_seconds,
-            limit=limit,
+            limit=fetch_limit,
         )
         fact_ids: list[str] = []
-        for row in self._rows(result):
+        for row in self.access_view.filter_statement_rows(
+            list(self._rows(result)),
+            subject_key="s",
+            predicate_key="p",
+            object_keys=("o",),
+        ):
             s = self._cell(row, "s") or ""
             p = self._cell(row, "p") or ""
             o_value = self._cell(row, "o") or ""
@@ -1139,6 +1147,8 @@ class SemanticReadModelService:
             s = self._cell(row, "s") or self._cell(row, "subject") or ""
             p = self._cell(row, "p") or self._cell(row, "predicate") or ""
             o = self._cell(row, "o") or self._cell(row, "object") or ""
+            if not self.access_view.is_statement_visible(s, p, [o]):
+                continue
             triples.add((s, p, o))
         return triples
 
@@ -1374,19 +1384,26 @@ class SemanticReadModelService:
             return []
         template = get_template(template_name)
         bounded_limit = min(limit or template.default_limit, template.default_limit)
+        fetch_limit = self._fetch_limit(bounded_limit)
         query = self._compile_template_query(
             template,
             graph_iris,
-            bounded_limit,
+            fetch_limit,
             entity_iri=entity_iri,
         )
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=graph_iris,
             timeout_seconds=self.timeout_seconds,
-            limit=bounded_limit,
+            limit=fetch_limit,
         )
-        return list(self._rows(result))
+        rows = self.access_view.filter_statement_rows(
+            list(self._rows(result)),
+            subject_key="subject",
+            predicate_key="predicate",
+            object_keys=("object",),
+        )
+        return rows[: bounded_limit if self.access_view.requires_filtering else None]
 
     def _decorate_fact_row(
         self,
@@ -1499,9 +1516,10 @@ class SemanticReadModelService:
         extensions declared in spec §4.1."""
         graph_iris = list(scope.source_graph_iris) or []
         bounded_limit = min(limit or template.default_limit, template.default_limit)
+        fetch_limit = self._fetch_limit(bounded_limit)
         body = template.body
         body = body.replace("{graph_iris}", " ".join(f"<{i}>" for i in graph_iris))
-        body = body.replace("{limit}", str(bounded_limit))
+        body = body.replace("{limit}", str(fetch_limit))
         # Bind the search substring ?q as a literal. Defaulting to the empty
         # string makes the FILTER a no-op so the same template can serve an
         # unfiltered listing call. A comment marker is appended so test fakes
@@ -1520,7 +1538,7 @@ class SemanticReadModelService:
             query=body,
             graph_iris=graph_iris,
             timeout_seconds=self.timeout_seconds,
-            limit=bounded_limit,
+            limit=fetch_limit,
         )
         items: list[dict[str, Any]] = []
         for row in self._rows(result):
@@ -1531,6 +1549,7 @@ class SemanticReadModelService:
             decorated["class_label"] = self._cell(row, "class_label")
             decorated["graph_set_id"] = scope.graph_set_id
             items.append(decorated)
+        items = self.access_view.filter_items(items)
         retrieval: dict[str, Any] = {
             "candidates": [], "indexes": [], "warnings": [], "completeness": "complete"
         }
@@ -1545,6 +1564,9 @@ class SemanticReadModelService:
                     limit=bounded_limit,
                 )
                 semantic_items = retrieval["candidates"]
+            semantic_items = [
+                item for item in semantic_items if self.access_view.filter_candidate(item)
+            ]
             promote_exact_label_candidates(semantic_items, q)
             if class_iri:
                 semantic_items = [
@@ -1556,19 +1578,22 @@ class SemanticReadModelService:
             lexical_items = [
                 self._entity_lexical_candidate(item, q, ontology_id) for item in items
             ]
+            mapping_candidates = [
+                candidate
+                for candidate in governed_mapping_lexical_candidates(
+                    self.session,
+                    ontology_ids=[ontology_id],
+                    query=q,
+                    resource_kinds={"instance"},
+                )
+                if self.access_view.filter_candidate(candidate)
+            ]
             semantic_rows = [
                 self._entity_semantic_row(candidate, scope)
-                for candidate in [
-                    *semantic_items,
-                    *governed_mapping_lexical_candidates(
-                        self.session,
-                        ontology_ids=[ontology_id],
-                        query=q,
-                        resource_kinds={"instance"},
-                    ),
-                ]
+                for candidate in [*semantic_items, *mapping_candidates]
             ]
             items = fuse_context_candidates(lexical_items, semantic_rows)
+            items = self.access_view.filter_items(items)
             items.sort(key=_entity_search_sort_key)
             items = items[:bounded_limit]
         return items, retrieval
@@ -1620,6 +1645,9 @@ class SemanticReadModelService:
                 limit=limit,
             )
             semantic_items = retrieval["candidates"]
+        semantic_items = [
+            item for item in semantic_items if self.access_view.filter_candidate(item)
+        ]
         promote_exact_label_candidates(semantic_items, q)
         if class_iri and resource_kind == "instance":
             semantic_items = [
@@ -1646,6 +1674,8 @@ class SemanticReadModelService:
                 resource_kinds={resource_kind},
             ),
         ]:
+            if not self.access_view.filter_candidate(candidate):
+                continue
             row = self._public_list_semantic_row(
                 candidate,
                 scope,
@@ -1655,6 +1685,7 @@ class SemanticReadModelService:
             if row is not None:
                 semantic_rows.append(row)
         fused = fuse_context_candidates(lexical_items, semantic_rows)
+        fused = self.access_view.filter_items(fused)
         fused.sort(key=_entity_search_sort_key)
         return fused[:limit], retrieval
 

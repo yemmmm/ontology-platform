@@ -180,11 +180,30 @@ def get_ontology_lineage(
     include_history: Annotated[bool, Query()] = False,
     max_depth: Annotated[int, Query(ge=0, le=5)] = 3,
     limit: Annotated[int, Query(ge=1, le=200)] = 100,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
 ):
+    from app.repositories.models import OntologyModel
+    from app.services.semantic_access import (
+        SemanticAccessDependencyError,
+        SemanticAccessResolver,
+    )
+
+    ontology = session.get(OntologyModel, ontology_id)
     try:
-        return OntologyLineageService(session, rdf_store).get_lineage(
+        access_view = SemanticAccessResolver(session).resolve(
+            principal, ontology.project_id if ontology else None
+        )
+    except SemanticAccessDependencyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dependency_error", "message": str(exc)},
+        ) from exc
+    try:
+        return OntologyLineageService(
+            session, rdf_store, access_view=access_view
+        ).get_lineage(
             ontology_id=ontology_id,
             target_type=target_type,
             target_id=target_id,

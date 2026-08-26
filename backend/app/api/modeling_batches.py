@@ -30,6 +30,10 @@ from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_read_model import ReadModelError, SemanticReadModelService
 from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
 from app.services.semantic_retrieval import SemanticResourceRetrievalService
+from app.services.semantic_access import (
+    SemanticAccessDependencyError,
+    SemanticAccessResolver,
+)
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
 
@@ -142,6 +146,7 @@ def get_ontology_read_model(
     kind: str | None = None,
     q: str | None = None,
     search_mode: str = "hybrid",
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -189,9 +194,20 @@ def get_ontology_read_model(
             status_code=400,
             detail={"code": "unsupported_read_model", "message": "Unsupported Ontology read model"},
         )
+    try:
+        ontology_for_access = session.get(OntologyModel, ontology_id)
+        access_view = SemanticAccessResolver(session).resolve(
+            principal, ontology_for_access.project_id if ontology_for_access else None
+        )
+    except SemanticAccessDependencyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dependency_error", "message": str(exc)},
+        ) from exc
     service = SemanticReadModelService(
         rdf_store=rdf_store,
         scope_resolver=SemanticReadScopeResolver(session),
+        access_view=access_view,
         session=session,
         retrieval_service=SemanticResourceRetrievalService(session, settings),
     )

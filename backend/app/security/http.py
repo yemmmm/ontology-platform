@@ -24,6 +24,7 @@ from app.repositories.models import (
     ProjectModel,
     SemanticGraphSetModel,
     SemanticGraphRegistryModel,
+    SemanticProtectionSetModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
     SemanticRuleRunModel,
@@ -75,6 +76,7 @@ OWNER_RESOURCE_KEYS = frozenset(
         "projection_job_id",
         "audit_id",
         "edit_audit_id",
+        "protection_set_id",
     }
 )
 
@@ -91,6 +93,8 @@ _ADMIN_PATHS = (
 def required_scope(method: str, path: str) -> str:
     if any(path.startswith(prefix) for prefix in _ADMIN_PATHS):
         return "admin"
+    if "/protection-sets" in path:
+        return "model"
     if method == "GET":
         return "read"
     if path == "/api/projects" or (
@@ -287,6 +291,9 @@ def _project_for_resource(session: Session, kind: str, value: str) -> str | None
         return row.project_id if row else None
     if kind == "question_id":
         row = session.get(CompetencyQuestionModel, value)
+        return row.project_id if row else None
+    if kind == "protection_set_id":
+        row = session.get(SemanticProtectionSetModel, value)
         return row.project_id if row else None
     if kind == "graph_set_id":
         row = session.get(SemanticGraphSetModel, value)

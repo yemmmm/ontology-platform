@@ -1156,7 +1156,6 @@ class SemanticExportRequest(BaseModel):
     include_policy: bool = False
     include_metadata: bool = False
     allow_stale_derived: bool = False
-    visibility_context: dict[str, Any] | None = None
 
 
 class SemanticProjectionJobCreate(BaseModel):

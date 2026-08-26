@@ -36,6 +36,7 @@ _TOOL_FILES: tuple[tuple[str, Path], ...] = (
     ("build_sessions", _TOOLS_DIR / "modeling_workflow.py"),
     ("semantic", _TOOLS_DIR / "evidence.py"),
     ("semantic", _TOOLS_DIR / "semantic.py"),
+    ("semantic", _TOOLS_DIR / "protection_sets.py"),
 )
 
 

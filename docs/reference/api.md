@@ -125,6 +125,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | authentication | `POST` | `/api/api-keys/{key_id}:revoke` | Revoke Api Key |
 | authentication | `POST` | `/api/auth/login` | Login |
 | authentication | `POST` | `/api/auth/logout` | Logout |
+| authentication | `PATCH` | `/api/api-keys/{key_id}` | Update Api Key |
 | build sessions | `GET` | `/api/build-sessions/{session_id}` | Get Build Session |
 | build sessions | `GET` | `/api/projects/{project_id}/build-context` | Get Project Build Context |
 | build sessions | `POST` | `/api/build-sessions/{session_id}/checkpoints` | Save Build Checkpoint |
@@ -245,6 +246,13 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `PATCH` | `/api/semantic/rule-definitions/{rule_id}` | Update Rule Definition |
 | semantic | `DELETE` | `/api/semantic/graph-sets/{graph_set_id}/fact-evidence/{binding_id}` | Delete Fact Evidence |
 | semantic | `DELETE` | `/api/semantic/rule-definitions/{rule_id}` | Delete Rule Definition |
+| semantic-protection-sets | `GET` | `/api/projects/{project_id}/protection-sets` | List Protection Sets |
+| semantic-protection-sets | `GET` | `/api/protection-sets/{protection_set_id}` | Get Protection Set |
+| semantic-protection-sets | `POST` | `/api/projects/{project_id}/protection-sets` | Create Protection Set |
+| semantic-protection-sets | `POST` | `/api/protection-sets/{protection_set_id}/members` | Add Protection Set Members |
+| semantic-protection-sets | `PATCH` | `/api/protection-sets/{protection_set_id}` | Update Protection Set |
+| semantic-protection-sets | `DELETE` | `/api/protection-sets/{protection_set_id}` | Delete Protection Set |
+| semantic-protection-sets | `DELETE` | `/api/protection-sets/{protection_set_id}/members` | Remove Protection Set Members |
 | untagged | `GET` | `/api/health` | Health |
 | untagged | `GET` | `/api/health/dependencies` | Dependency Health |
 | untagged | `GET` | `/api/health/postgres` | Postgres Health |

@@ -18,6 +18,7 @@ from app.mcp.runtime import (
 )
 from app.repositories.rdf_store import RdfStoreRepository
 from app.repositories.models import (
+    OntologyModel,
     SemanticGraphSetModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
@@ -60,7 +61,10 @@ from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
 )
 from app.services.embedding import EmbeddingClient
-from app.services.semantic_visibility import SemanticVisibilityPolicy
+from app.services.semantic_access import (
+    SemanticAccessResolver,
+    project_id_for_graph_set,
+)
 from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
 
 
@@ -81,12 +85,15 @@ def _scope_resolver(session) -> SemanticQueryScopeResolver:
     return SemanticQueryScopeResolver(session, Settings())
 
 
-def _context_query_service(session) -> SemanticContextQueryService:
+def _context_query_service(session, project_id: str | None = None) -> SemanticContextQueryService:
     return SemanticContextQueryService(
         session,
         _rdf_store(),
         _scope_resolver(session),
         cursor_codec=get_context_cursor_codec(),
+        access_view=SemanticAccessResolver(session).resolve(
+            runtime_principal(), project_id
+        ),
     )
 
 
@@ -105,9 +112,16 @@ def _normalize_mcp_queries(*, query: str | None, queries: list[str] | None) -> l
     raise SemanticContextQueryError("Provide exactly one of 'queries' or 'query'")
 
 
-def _scoped_sparql_service(session) -> ScopedSparqlQueryService:
+def _scoped_sparql_service(session, project_id: str | None = None) -> ScopedSparqlQueryService:
     settings = Settings()
-    return ScopedSparqlQueryService(_scope_resolver(session), _rdf_store(), settings)
+    return ScopedSparqlQueryService(
+        _scope_resolver(session),
+        _rdf_store(),
+        settings,
+        access_view=SemanticAccessResolver(session).resolve(
+            runtime_principal(), project_id
+        ),
+    )
 
 
 def _graph_set_service(session) -> SemanticGraphSetService:
@@ -149,8 +163,14 @@ def _rule_execution_service(session) -> SemanticRuleExecutionService:
     return SemanticRuleExecutionService(session, _rdf_store(), settings)
 
 
-def _lineage_service(session) -> OntologyLineageService:
-    return OntologyLineageService(session, _rdf_store())
+def _lineage_service(session, project_id: str | None = None) -> OntologyLineageService:
+    return OntologyLineageService(
+        session,
+        _rdf_store(),
+        access_view=SemanticAccessResolver(session).resolve(
+            runtime_principal(), project_id
+        ),
+    )
 
 
 def _list_scoped_run_records(
@@ -208,7 +228,9 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Run scoped read-only SPARQL against current Ontology semantic state."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _scoped_sparql_service(session).query(
+            lambda session, _driver, _embedding_client: _scoped_sparql_service(
+                session, project_id
+            ).query(
                 project_id=project_id,
                 scope_mode=scope_mode,
                 ontology_ids=ontology_ids or [],
@@ -237,7 +259,9 @@ def register_semantic(server: FastMCP) -> None:
     ) -> dict[str, Any]:
         """Recall structured semantic context from one Project's current Ontologies."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _context_query_service(session).query_multi(
+            lambda session, _driver, _embedding_client: _context_query_service(
+                session, project_id
+            ).query_multi(
                 project_id=project_id,
                 scope_mode=scope_mode,
                 ontology_ids=ontology_ids or [],
@@ -614,8 +638,11 @@ def register_semantic(server: FastMCP) -> None:
         limit: int = 100,
     ) -> dict[str, Any]:
         """Read bounded statement, resource, or Rule Definition lineage for an Ontology."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _lineage_service(session).get_lineage(
+        def _handle(session, _driver, _embedding_client):
+            ontology = session.get(OntologyModel, ontology_id)
+            return _lineage_service(
+                session, ontology.project_id if ontology else None
+            ).get_lineage(
                 ontology_id=ontology_id,
                 target_type=target_type,
                 target_id=target_id,
@@ -623,7 +650,8 @@ def register_semantic(server: FastMCP) -> None:
                 max_depth=max_depth,
                 limit=limit,
             )
-        )
+
+        return _run_tool(_handle)
 
     @server.tool()
     def inspect_semantic_statement_provenance(
@@ -750,27 +778,29 @@ def _resolve_role_graphs(session, graph_set_id: str, role: str) -> list[str]:
     return [member["graph_iri"] for member in description["members"] if member["role"] == role]
 
 
-def _read_model_service(session) -> SemanticReadModelService:
+def _read_model_service(
+    session, project_id: str | None = None
+) -> SemanticReadModelService:
     settings = Settings()
     return SemanticReadModelService(
         rdf_store=_rdf_store(),
         scope_resolver=SemanticReadScopeResolver(session),
-        visibility_policy=SemanticVisibilityPolicy(
-            graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
+        access_view=SemanticAccessResolver(session).resolve(
+            runtime_principal(), project_id
         ),
         session=session,
         retrieval_service=SemanticResourceRetrievalService(session, settings),
     )
 
 
-def _export_service(session) -> SemanticExportService:
+def _export_service(session, project_id: str | None = None) -> SemanticExportService:
     settings = Settings()
     return SemanticExportService(
         rdf_store=_rdf_store(),
         scope_resolver=SemanticReadScopeResolver(session),
         settings=settings,
-        visibility_policy=SemanticVisibilityPolicy(
-            graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
+        access_view=SemanticAccessResolver(session).resolve(
+            runtime_principal(), project_id
         ),
     )
 
@@ -812,7 +842,7 @@ def _read_model(
     allow_stale_derived: bool,
     limit: int | None,
 ) -> dict[str, Any]:
-    service = _read_model_service(session)
+    service = _read_model_service(session, project_id_for_graph_set(session, graph_set_id))
     try:
         return service.read_model(
             graph_set_id=graph_set_id,
@@ -832,7 +862,7 @@ def _export_graph_set(
     include: str,
     allow_stale_derived: bool,
 ) -> dict[str, Any]:
-    service = _export_service(session)
+    service = _export_service(session, project_id_for_graph_set(session, graph_set_id))
     try:
         payload, warnings = service.export(
             graph_set_id=graph_set_id,
@@ -894,7 +924,9 @@ def _statement_provenance(
     graph_set = _graph_set_service(session).get_graph_set(graph_set_id)
     if graph_set.scope_type != "ontology" or not graph_set.scope_id:
         raise LineageTargetNotFound("Graph Set is not scoped to an Ontology")
-    result = _lineage_service(session).get_lineage(
+    result = _lineage_service(
+        session, project_id_for_graph_set(session, graph_set_id)
+    ).get_lineage(
         ontology_id=graph_set.scope_id,
         target_type="resource",
         target_id=statement_iri,

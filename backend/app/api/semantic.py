@@ -76,6 +76,7 @@ from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
 from app.repositories.models import (
     OntologyModel,
+    SemanticGraphRegistryModel,
     SemanticGraphSetModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
@@ -137,7 +138,13 @@ from app.services.semantic_retrieval import (
     mark_retrieval_stale,
 )
 from app.services.embedding import EmbeddingClient
-from app.services.semantic_visibility import SemanticVisibilityPolicy
+from app.services.semantic_access import (
+    SemanticAccessDependencyError,
+    SemanticAccessResolver,
+    SemanticAccessView,
+    project_id_for_graph_iri,
+    project_id_for_graph_set,
+)
 from app.services.semantic_reasoning import SemanticReasoningService
 from app.services.semantic_rule_definition import (
     RuleDefinitionError,
@@ -234,16 +241,26 @@ def _scope_resolver(session: Session) -> SemanticReadScopeResolver:
     return SemanticReadScopeResolver(session)
 
 
-def _visibility_policy(settings: Settings) -> SemanticVisibilityPolicy:
-    return SemanticVisibilityPolicy(
-        graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
-    )
+def _access_view(
+    session: Session,
+    principal: AuthPrincipal | None,
+    project_id: str | None,
+) -> SemanticAccessView:
+    """R3.0-004 shared authorization view; DB failures fail closed as 503."""
+    try:
+        return SemanticAccessResolver(session).resolve(principal, project_id)
+    except SemanticAccessDependencyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dependency_error", "message": str(exc)},
+        ) from exc
 
 
 def _read_model_service(
     session: Session,
     rdf_store: RdfStoreRepository,
     settings: Settings,
+    access_view: SemanticAccessView | None = None,
 ) -> SemanticReadModelService:
     from app.services.semantic_shape_endpoint_service import (
         SemanticShapeEndpointService,
@@ -252,7 +269,7 @@ def _read_model_service(
     return SemanticReadModelService(
         rdf_store=rdf_store,
         scope_resolver=_scope_resolver(session),
-        visibility_policy=_visibility_policy(settings),
+        access_view=access_view,
         shape_endpoint=SemanticShapeEndpointService(session, rdf_store, settings),
         session=session,
         retrieval_service=SemanticResourceRetrievalService(session, settings),
@@ -263,12 +280,13 @@ def _export_service(
     session: Session,
     rdf_store: RdfStoreRepository,
     settings: Settings,
+    access_view: SemanticAccessView | None = None,
 ) -> SemanticExportService:
     return SemanticExportService(
         rdf_store=rdf_store,
         scope_resolver=_scope_resolver(session),
         settings=settings,
-        visibility_policy=_visibility_policy(settings),
+        access_view=access_view,
     )
 
 
@@ -401,11 +419,13 @@ def query_semantic_context(
 ) -> SemanticContextQueryResponse:
     try:
         resolver = SemanticQueryScopeResolver(session, settings)
+        access_view = _access_view(session, principal, request.project_id)
         result = SemanticContextQueryService(
             session,
             rdf_store,
             resolver,
             cursor_codec=cursor_codec,
+            access_view=access_view,
         ).query_multi(
             project_id=request.project_id,
             scope_mode=request.scope_mode,
@@ -430,13 +450,18 @@ def query_semantic_context(
 @router.post("/sparql:query", response_model=SemanticSparqlQueryResponse)
 def query_sparql(
     request: SemanticSparqlQueryRequest,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticSparqlQueryResponse:
     try:
+        access_view = _access_view(session, principal, request.project_id)
         result = ScopedSparqlQueryService(
-            SemanticQueryScopeResolver(session, settings), rdf_store, settings
+            SemanticQueryScopeResolver(session, settings),
+            rdf_store,
+            settings,
+            access_view=access_view,
         ).query(
             project_id=request.project_id,
             scope_mode=request.scope_mode,
@@ -583,12 +608,36 @@ def update_graph_editability(
 def export_dataset(
     format: Annotated[str, Query(pattern="^(trig|json-ld|turtle)$")] = "trig",
     graph_iri: Annotated[list[str] | None, Query()] = None,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
     try:
-        content = _service(session, rdf_store, settings).export_dataset(format, graph_iri)
+        access_view = _access_view(session, principal, principal.project_id)
+        requested = list(graph_iri) if graph_iri else None
+        effective: list[str] | None = requested
+        if principal.project_id is not None and not principal.is_org_admin:
+            # R3.0-004 row 6: a project key only exports its own Project's
+            # ontology graphs; unauthorized graph_iris are silently omitted.
+            project_graphs = set(
+                session.scalars(select(SemanticGraphRegistryModel.graph_iri))
+            )
+            project_graphs = {
+                iri
+                for iri in project_graphs
+                if project_id_for_graph_iri(session, iri) == principal.project_id
+            }
+            effective = (
+                sorted(project_graphs) if requested is None
+                else [iri for iri in requested if iri in project_graphs]
+            )
+        if access_view.requires_filtering and effective:
+            content = _filtered_export(rdf_store, access_view, format, effective)
+        else:
+            content = _service(session, rdf_store, settings).export_dataset(
+                format, effective
+            )
     except RdfStoreError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     media_type = {
@@ -597,6 +646,36 @@ def export_dataset(
         "turtle": "text/turtle",
     }[format]
     return Response(content=content, media_type=media_type)
+
+
+def _filtered_export(
+    rdf_store: RdfStoreRepository,
+    access_view: SemanticAccessView,
+    format: str,
+    graph_iris: list[str],
+) -> str:
+    """Serialize the authorized quads only (R3.0-004 quad-level filtering)."""
+    from rdflib import Dataset, Graph
+
+    from app.repositories.rdf_store import RdfFormat
+
+    dataset = Dataset()
+    for iri in graph_iris:
+        raw = rdf_store.get_graph(iri, RdfFormat.TRIG.value)
+        if raw:
+            dataset.parse(data=raw, format=RdfFormat.TRIG.value)
+    access_view.filter_quads(dataset)
+    if format == "trig":
+        return dataset.serialize(format="trig")
+    if format == "json-ld":
+        return dataset.serialize(format="json-ld", indent=2)
+    merged = Graph()
+    for graph in dataset.graphs():
+        if str(graph.identifier) == "urn:x-rdflib:default":
+            continue
+        for triple in graph:
+            merged.add(triple)
+    return merged.serialize(format="turtle")
 
 
 @router.get("/graphs", response_model=SemanticGraphRegistryListResponse)
@@ -1496,11 +1575,15 @@ def read_model(
     target: Annotated[str | None, Query()] = None,
     q: Annotated[str | None, Query()] = None,
     search_mode: Annotated[str, Query(pattern="^(hybrid|lexical)$")] = "hybrid",
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticReadModelEnvelope:
-    service = _read_model_service(session, rdf_store, settings)
+    access_view = _access_view(
+        session, principal, project_id_for_graph_set(session, graph_set_id)
+    )
+    service = _read_model_service(session, rdf_store, settings, access_view=access_view)
     try:
         envelope = service.read_model(
             graph_set_id=graph_set_id,
@@ -1530,6 +1613,7 @@ def read_model(
 def read_class_shape_guidance(
     graph_set_id: str,
     class_iri: str,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -1541,12 +1625,25 @@ def read_class_shape_guidance(
         ShapeEndpointError,
     )
 
+    access_view = _access_view(
+        session, principal, project_id_for_graph_set(session, graph_set_id)
+    )
     service = SemanticShapeEndpointService(session, rdf_store, settings)
     try:
-        return service.read_merged_guidance(
+        if access_view.is_member_visible(class_iri):
+            return service.read_merged_guidance(
+                graph_set_id=graph_set_id,
+                class_iri=class_iri,
+            )
+        # R3.0-004 row 9: a protected class returns exactly the unknown-class
+        # response: same envelope, no fields, requested class echoed.
+        merged = service.read_merged_guidance(
             graph_set_id=graph_set_id,
-            class_iri=class_iri,
+            class_iri="urn:ontology-platform:unknown-class-probe",
         )
+        merged["target_class"] = class_iri
+        merged.pop("target_class_label", None)
+        return merged
     except GraphSetNotFound as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except OntologyGraphMissing as exc:
@@ -1560,11 +1657,15 @@ def read_resource(
     resource_iri: str,
     graph_set_id: Annotated[str, Query()],
     include: Annotated[str, Query()] = "asserted",
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticResourceRead:
-    service = _read_model_service(session, rdf_store, settings)
+    access_view = _access_view(
+        session, principal, project_id_for_graph_set(session, graph_set_id)
+    )
+    service = _read_model_service(session, rdf_store, settings, access_view=access_view)
     envelope = service.read_model(
         graph_set_id=graph_set_id,
         model_name="entity-detail",
@@ -1593,11 +1694,15 @@ def list_statements(
     include: Annotated[str, Query()] = "asserted",
     allow_stale_derived: Annotated[bool, Query()] = True,
     limit: Annotated[int | None, Query(ge=1, le=5000)] = None,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticReadModelEnvelope:
-    service = _read_model_service(session, rdf_store, settings)
+    access_view = _access_view(
+        session, principal, project_id_for_graph_set(session, graph_set_id)
+    )
+    service = _read_model_service(session, rdf_store, settings, access_view=access_view)
     envelope = service.read_model(
         graph_set_id=graph_set_id,
         model_name="statement-list",
@@ -1618,11 +1723,15 @@ def export_graph_set(
     include_policy: Annotated[bool, Query()] = False,
     include_metadata: Annotated[bool, Query()] = False,
     allow_stale_derived: Annotated[bool, Query()] = False,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
-    service = _export_service(session, rdf_store, settings)
+    access_view = _access_view(
+        session, principal, project_id_for_graph_set(session, graph_set_id)
+    )
+    service = _export_service(session, rdf_store, settings, access_view=access_view)
     try:
         payload, _warnings = service.export(
             graph_set_id=graph_set_id,

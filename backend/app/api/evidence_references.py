@@ -10,18 +10,38 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
-from app.repositories.models import EvidenceAssociationModel, SemanticEditAuditModel
+from app.repositories.models import (
+    EvidenceAssociationModel,
+    EvidenceReferenceModel,
+    SemanticEditAuditModel,
+)
 from app.services.evidence_reference import (
     EvidenceReferenceError,
     EvidenceReferenceService,
     association_to_dict,
     reference_to_dict,
 )
+from app.services.semantic_access import (
+    SemanticAccessDependencyError,
+    SemanticAccessResolver,
+)
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
 
 
 router = APIRouter(tags=["evidence-references"])
+
+
+def _access_view(
+    session: Session, principal: AuthPrincipal, project_id: str | None
+):
+    try:
+        return SemanticAccessResolver(session).resolve(principal, project_id)
+    except SemanticAccessDependencyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dependency_error", "message": str(exc)},
+        ) from exc
 
 
 class EvidenceReferenceInput(BaseModel):
@@ -116,27 +136,36 @@ def list_evidence_references(
     search: Annotated[str | None, Query()] = None,
     limit: Annotated[int, Query(ge=1, le=200)] = 50,
     offset: Annotated[int, Query(ge=0)] = 0,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
-    service = EvidenceReferenceService(session)
+    access_view = _access_view(session, principal, project_id)
+    service = EvidenceReferenceService(session, access_view=access_view)
     try:
         rows, total = service.list_references(project_id, search=search, limit=limit, offset=offset)
     except EvidenceReferenceError as exc:
         _raise(exc)
-    counts = (
-        dict(
-            session.execute(
-                select(
-                    EvidenceAssociationModel.evidence_reference_id,
-                    func.count(EvidenceAssociationModel.id),
-                )
-                .where(EvidenceAssociationModel.evidence_reference_id.in_([row.id for row in rows]))
-                .group_by(EvidenceAssociationModel.evidence_reference_id)
-            ).all()
+    if access_view.requires_filtering:
+        counts = {row.id: service.visible_association_count(row.id) for row in rows}
+    else:
+        counts = (
+            dict(
+                session.execute(
+                    select(
+                        EvidenceAssociationModel.evidence_reference_id,
+                        func.count(EvidenceAssociationModel.id),
+                    )
+                    .where(
+                        EvidenceAssociationModel.evidence_reference_id.in_(
+                            [row.id for row in rows]
+                        )
+                    )
+                    .group_by(EvidenceAssociationModel.evidence_reference_id)
+                ).all()
+            )
+            if rows
+            else {}
         )
-        if rows
-        else {}
-    )
     return {
         "items": [
             reference_to_dict(row, association_count=int(counts.get(row.id, 0))) for row in rows
@@ -150,24 +179,39 @@ def list_evidence_references(
 @router.get("/evidence-references/{reference_id}")
 def get_evidence_reference(
     reference_id: str,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
-    service = EvidenceReferenceService(session)
+    owning_row = session.get(EvidenceReferenceModel, reference_id)
+    access_view = _access_view(
+        session, principal, owning_row.project_id if owning_row else None
+    )
+    service = EvidenceReferenceService(session, access_view=access_view)
     try:
-        row = service.get(reference_id)
+        row = service.get_visible(reference_id)
     except EvidenceReferenceError as exc:
         _raise(exc)
-    return reference_to_dict(row, association_count=_association_count(session, row.id))
+    count = (
+        service.visible_association_count(row.id)
+        if access_view.requires_filtering
+        else _association_count(session, row.id)
+    )
+    return reference_to_dict(row, association_count=count)
 
 
 @router.get("/evidence-references/{reference_id}/associations")
 def list_evidence_associations(
     reference_id: str,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
-    service = EvidenceReferenceService(session)
+    owning_row = session.get(EvidenceReferenceModel, reference_id)
+    access_view = _access_view(
+        session, principal, owning_row.project_id if owning_row else None
+    )
+    service = EvidenceReferenceService(session, access_view=access_view)
     try:
-        service.get(reference_id)
+        service.get_visible(reference_id)
         rows = service.list_associations(reference_id=reference_id)
     except EvidenceReferenceError as exc:
         _raise(exc)
@@ -180,9 +224,11 @@ def list_target_evidence_associations(
     ontology_id: Annotated[str, Query()],
     target_type: Annotated[str, Query(min_length=1)],
     target_id: Annotated[str, Query(min_length=1)],
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
 ) -> dict:
-    service = EvidenceReferenceService(session)
+    access_view = _access_view(session, principal, project_id)
+    service = EvidenceReferenceService(session, access_view=access_view)
     try:
         service.require_project(project_id)
         service.require_ontology_scope(project_id, ontology_id, None)

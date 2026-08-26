@@ -65,9 +65,10 @@ _Avoid_: table, project graph, property graph
 
 **Graph Set**:
 The group of named graphs that together define the current semantic state, such as an ontology
-graph plus its data graph, governing policy graph, and current effective reasoning/rule result
-graphs where inferred or derived statements are needed.
-_Avoid_: snapshot, bundle
+graph plus its data graph, and current effective reasoning/rule result graphs where inferred or
+derived statements are needed. The legacy `policy` canonical role remains a governance graph slot;
+semantic knowledge protection itself is stored in PostgreSQL Protection Sets, not in a policy graph.
+_Avoid_: snapshot, bundle, Protection Set storage
 
 **Build Context**:
 A project-level, server-derived recovery view for external modeling Agents. It summarizes the
@@ -461,11 +462,40 @@ columns, keys, joins, enumerations, and calculation metadata. It is evidence for
 treated as the source of business rows or as a substitute for confirmed business meaning.
 _Avoid_: database row, connector configuration, SQL result
 
+**Protection Set（保护集）**:
+A Project-scoped semantic knowledge security control-plane object stored in PostgreSQL: a named set of explicit
+semantic resource IRIs plus an `allowed_grants` list. It may cover resources from multiple Ontologies within the
+same Project and never crosses Projects. A resource not covered by any Protection Set stays ordinarily readable
+inside its Project; a resource covered by at least one set requires the principal to satisfy at least one covering
+set. Multiple sets over the same resource and multiple grants within one set both combine with OR. Protection
+Sets, their members, and grants never enter Ontology/RDF content, semantic queries, RDF export, or SPARQL, and
+the object carries no business-data (row/column/tenant) security meaning.
+_Avoid_: Permission Set / 权限集, Ontology policy graph, business data permission, access control list
+
+**Protection Set Member**:
+One explicit semantic resource IRI recorded in a Protection Set. Files or bulk selections are only ingestion
+entry points and must be expanded into explicit IRIs. Members may reference resources that do not exist yet
+(dangling IRIs keep their protection semantics), and deleting an Ontology does not delete its member records.
+An optional `ontology_id` may be stored as a scope locator metadata, but it does not make the Ontology the
+owner of the Protection Set.
+_Avoid_: policy statement target, file attachment, RDF list membership
+
+**Semantic Grant**:
+A normalized string bound to an API key (`api_keys.semantic_grants`) that satisfies Protection Set
+`allowed_grants` entries. Grants are assigned and revoked only by admins through the `/api-keys` management
+surface, take effect without restart, and disappear when the key is revoked. Grants in this stage are plain
+strings, not a formal Role model; a Role-to-grant mapping may be added later.
+_Avoid_: formal Role, RBAC role, API key scope, permission token object
+
 **Semantic Knowledge Authorization**:
 The platform decision governing whether a principal may discover or read a semantic resource, such as a concept,
-mapping, join path, metric, or evidence reference. A denied protected read returns the stable `forbidden` contract
-without revealing existence, names, fields, or topology.
-_Avoid_: row-level security, database login, empty search result
+mapping, join path, metric, or evidence reference, computed from Protection Sets and the principal's Semantic
+Grants. A denied protected read presents the resource as non-existent (indistinguishable from absence): exact
+requests return the same 404/empty contract as a truly missing resource, wide queries return the silently
+filtered authorized subset computed before pagination/cursor/total/sorting, and SPARQL fails as a whole with a
+generic scope error only when the resolved query scope intersects an unauthorized protected member. Project
+Admins bypass Protection Sets in their own Project; Org Admins bypass all.
+_Avoid_: row-level security, database login, empty search result, `forbidden`/403 probe, Permission Set
 
 **Business Data Authorization**:
 The external-system decision governing which database rows or columns a principal may query after SQL execution is

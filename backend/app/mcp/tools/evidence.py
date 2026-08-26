@@ -6,12 +6,14 @@ from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 
-from app.mcp.runtime import _run_tool, runtime_actor
+from app.mcp.runtime import _run_tool, runtime_actor, runtime_principal
+from app.repositories.models import EvidenceReferenceModel
 from app.services.evidence_reference import (
     EvidenceReferenceService,
     association_to_dict,
     reference_to_dict,
 )
+from app.services.semantic_access import SemanticAccessResolver
 
 
 def register_evidence(server: FastMCP) -> None:
@@ -89,15 +91,27 @@ def _create(session, project_id: str, document_name: str, excerpt: str, actor: s
 def _list(session, project_id: str, search: str | None, limit: int, offset: int):
     if limit < 1 or limit > 200 or offset < 0:
         raise ValueError("limit must be 1..200 and offset must be non-negative")
-    rows, total = EvidenceReferenceService(session).list_references(
+    view = SemanticAccessResolver(session).resolve(runtime_principal(), project_id)
+    service = EvidenceReferenceService(session, access_view=view)
+    rows, total = service.list_references(
         project_id, search=search, limit=limit, offset=offset
     )
-    return {"items": [reference_to_dict(row) for row in rows], "total": total}
+    items = [
+        reference_to_dict(row, association_count=service.visible_association_count(row.id))
+        if view.requires_filtering
+        else reference_to_dict(row)
+        for row in rows
+    ]
+    return {"items": items, "total": total}
 
 
 def _get(session, reference_id: str):
-    service = EvidenceReferenceService(session)
-    row = service.get(reference_id)
+    owning_row = session.get(EvidenceReferenceModel, reference_id)
+    view = SemanticAccessResolver(session).resolve(
+        runtime_principal(), owning_row.project_id if owning_row else None
+    )
+    service = EvidenceReferenceService(session, access_view=view)
+    row = service.get_visible(reference_id)
     associations = service.list_associations(reference_id=reference_id)
     return {
         **reference_to_dict(row, association_count=len(associations)),

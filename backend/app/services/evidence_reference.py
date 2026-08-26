@@ -20,6 +20,7 @@ from app.repositories.models import (
     SemanticEditAuditModel,
     SemanticGraphSetModel,
 )
+from app.services.semantic_access import SemanticAccessView
 
 
 class EvidenceReferenceError(RuntimeError):
@@ -59,8 +60,41 @@ def normalize_evidence(document_name: str, excerpt: str) -> NormalizedEvidence:
 
 
 class EvidenceReferenceService:
-    def __init__(self, session: Session) -> None:
+    def __init__(
+        self, session: Session, access_view: SemanticAccessView | None = None
+    ) -> None:
         self.session = session
+        self.access_view = access_view or SemanticAccessView.all_visible()
+
+    def _association_visible(self, row: EvidenceAssociationModel) -> bool:
+        """R3.0-004 §5.4: an association attached to an invisible member is
+        hidden; statement-hash and other non-member targets stay visible."""
+        return self.access_view.is_member_visible(row.target_id)
+
+    def reference_is_visible(self, reference_id: str) -> bool:
+        """A reference is visible when it has no associations at all or at
+        least one visible association."""
+        if not self.access_view.requires_filtering:
+            return True
+        rows = list(
+            self.session.scalars(
+                select(EvidenceAssociationModel).where(
+                    EvidenceAssociationModel.evidence_reference_id == reference_id
+                )
+            )
+        )
+        return not rows or any(self._association_visible(row) for row in rows)
+
+    def visible_association_count(self, reference_id: str) -> int:
+        return len(self.list_associations(reference_id=reference_id))
+
+    def get_visible(self, reference_id: str) -> EvidenceReferenceModel:
+        """Read-path fetch: a fully hidden reference follows the exact same
+        not-found contract as an unknown id."""
+        row = self.get(reference_id)
+        if not self.reference_is_visible(row.id):
+            raise EvidenceReferenceNotFound("Evidence reference not found")
+        return row
 
     def require_project(self, project_id: str) -> ProjectModel:
         project = self.session.get(ProjectModel, project_id)
@@ -153,6 +187,22 @@ class EvidenceReferenceService:
                     EvidenceReferenceModel.excerpt.ilike(pattern),
                 )
             )
+        if self.access_view.requires_filtering:
+            # R3.0-004 §5.2/§5.4: reference visibility filtering must happen
+            # before pagination and the reported total, so page windows and
+            # totals describe the authorized subset only.
+            rows = list(
+                self.session.scalars(
+                    select(EvidenceReferenceModel)
+                    .where(*filters)
+                    .order_by(
+                        EvidenceReferenceModel.created_at.desc(),
+                        EvidenceReferenceModel.id,
+                    )
+                )
+            )
+            visible = [row for row in rows if self.reference_is_visible(row.id)]
+            return visible[offset : offset + limit], len(visible)
         statement = (
             select(EvidenceReferenceModel)
             .where(*filters)
@@ -323,13 +373,16 @@ class EvidenceReferenceService:
             filters.append(EvidenceAssociationModel.target_type == target_type)
         if target_id:
             filters.append(EvidenceAssociationModel.target_id == target_id)
-        return list(
+        rows = list(
             self.session.scalars(
                 select(EvidenceAssociationModel)
                 .where(*filters)
                 .order_by(EvidenceAssociationModel.created_at.desc())
             )
         )
+        if self.access_view.requires_filtering:
+            rows = [row for row in rows if self._association_visible(row)]
+        return rows
 
 
 def reference_to_dict(

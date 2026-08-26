@@ -196,8 +196,8 @@ def test_entity_list_exposes_explicit_canonical_identity_projection():
     assert item["class_iri"] == class_iri
 
 
-def test_visibility_policy_filters_restricted_graphs():
-    from app.services.semantic_visibility import SemanticVisibilityPolicy
+def test_access_view_filters_rows_referencing_unauthorized_members():
+    from app.services.semantic_access import SemanticAccessView
 
     resolver = FakeScopeResolver(
         _resolution(["http://op/s/graph/data/a", "http://op/s/graph/data/b"])
@@ -218,20 +218,17 @@ def test_visibility_policy_filters_restricted_graphs():
             ]
         }
     )
-    policy = SemanticVisibilityPolicy(
-        graph_labels={"http://op/s/graph/data/b": "restricted"}
+    view = SemanticAccessView(
+        requires_filtering=True,
+        _unauthorized_iris=frozenset({"http://op/s/class/y"}),
     )
     service = SemanticReadModelService(
-        rdf_store=store, scope_resolver=resolver, visibility_policy=policy
+        rdf_store=store, scope_resolver=resolver, access_view=view
     )
-    envelope = service.read_model(
-        "gs-1",
-        "ontology-schema-summary",
-        visibility_context={"labels": ["internal"]},
-    )
-    iris = {item["source_graph_iri"] for item in envelope["items"]}
-    assert iris == {"http://op/s/graph/data/a"}
-    assert any(w["code"] == "visibility_graph_omitted" for w in envelope["warnings"])
+    envelope = service.read_model("gs-1", "ontology-schema-summary")
+    classes = {item["class_iri"] for item in envelope["items"]}
+    assert classes == {"http://op/s/class/x"}
+    assert envelope.get("warnings", []) == []
 
 
 # ------------------------------------------------------------------

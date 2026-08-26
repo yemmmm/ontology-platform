@@ -7,12 +7,13 @@ context plus projection metadata terms.
 
 from __future__ import annotations
 
-from typing import Any, Protocol
+from typing import Any
 
 from rdflib import Dataset, Graph
 
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
+from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_export import jsonld_context
 from app.services.semantic_read_scope import (
     ScopeResolution,
@@ -34,24 +35,18 @@ _PROJECTION_TERMS = {
 }
 
 
-class _VisibilityPolicy(Protocol):
-    def filter_graphs(
-        self, graph_iris: list[str], visibility_context: dict[str, Any] | None
-    ) -> tuple[list[str], list[dict[str, str]]]: ...
-
-
 class SemanticExportService:
     def __init__(
         self,
         rdf_store: RdfStoreRepository,
         scope_resolver: SemanticReadScopeResolver,
         settings: Settings | None,
-        visibility_policy: _VisibilityPolicy | None = None,
+        access_view: SemanticAccessView | None = None,
     ) -> None:
         self.rdf_store = rdf_store
         self.scope_resolver = scope_resolver
         self.settings = settings
-        self.visibility_policy = visibility_policy
+        self.access_view = access_view or SemanticAccessView.all_visible()
 
     def export(
         self,
@@ -63,7 +58,6 @@ class SemanticExportService:
         include_policy: bool = False,
         include_metadata: bool = False,
         allow_stale_derived: bool = False,
-        visibility_context: dict[str, Any] | None = None,
     ) -> tuple[str, list[dict[str, str]]]:
         scope = self.scope_resolver.resolve(
             graph_set_id=graph_set_id,
@@ -85,13 +79,11 @@ class SemanticExportService:
             graph_iris.append(scope.rule_result_graph_iri)
 
         warnings = list(scope.warnings)
-        if self.visibility_policy is not None:
-            graph_iris, visibility_warnings = self.visibility_policy.filter_graphs(
-                graph_iris, visibility_context
-            )
-            warnings.extend(visibility_warnings)
 
         dataset = self._load_dataset(graph_iris)
+        # R3.0-004: drop quads whose s/p/o names an unauthorized protected
+        # member, including evidence attachment graphs, without warnings.
+        self.access_view.filter_quads(dataset)
         payload = self._serialize(
             dataset,
             format,

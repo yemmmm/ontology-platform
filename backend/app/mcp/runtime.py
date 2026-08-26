@@ -21,7 +21,13 @@ from app.repositories.postgres import create_session_factory
 from app.services.embedding import EmbeddingClient
 from app.services.semantic_context_cursor import ContextCursorCodec
 from app.repositories.models import ApiKeyModel
-from app.security.auth import AuthPrincipal, audit_security_event, resolve_api_key, validate_scopes
+from app.security.auth import (
+    AuthPrincipal,
+    audit_security_event,
+    parse_semantic_grants,
+    resolve_api_key,
+    validate_scopes,
+)
 from app.security.http import _collect_resource_ids, _project_for_resource
 from app.security.secrets import scan_domain_payload
 
@@ -195,6 +201,24 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     ),
     "cutover_semantic_migration_run": _policy("admin", McpOwnership.ORG_ONLY, mutates_state=True),
     "rollback_semantic_migration_run": _policy("admin", McpOwnership.ORG_ONLY, mutates_state=True),
+    "list_semantic_protection_sets": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=False
+    ),
+    "create_semantic_protection_set": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
+    ),
+    "update_semantic_protection_set": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
+    ),
+    "delete_semantic_protection_set": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
+    ),
+    "add_semantic_protection_set_members": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
+    ),
+    "remove_semantic_protection_set_members": _policy(
+        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
+    ),
 }
 
 
@@ -328,6 +352,7 @@ def _authorize_tool(session: Session, tool_name: str, fn: Callable) -> AuthPrinc
         scopes=current_scopes,
         project_id=record.project_id,
         auth_method="mcp",
+        semantic_grants=parse_semantic_grants(record.semantic_grants),
     )
     # R1.2-004: refresh the process-wide principal so tool callbacks can read
     # the verified identity through ``runtime_principal()`` instead of trusting

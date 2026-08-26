@@ -30,6 +30,7 @@ from app.repositories.models import (
 )
 from app.repositories.rdf_store import RdfStoreRepository
 from app.repositories.semantic_lineage_repository import SemanticLineageRepository
+from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_lineage_identity import (
     canonical_iri,
     occurrence_id_for,
@@ -63,11 +64,22 @@ class OntologyLineageService:
         session: Session,
         rdf_store: RdfStoreRepository | None = None,
         authorize_read: Callable[[str, Any], None] | None = None,
+        access_view: SemanticAccessView | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
         self.repository = SemanticLineageRepository(session)
+        self.access_view = access_view or SemanticAccessView.all_visible()
         self._authorize_read = authorize_read or (lambda _ontology_id, _actor: None)
+
+    def _occurrence_visible(self, occurrence) -> bool:
+        """R3.0-004 §5.4: statement occurrences referencing an unauthorized
+        member in s/p/o are hidden from lineage expansion."""
+        return self.access_view.is_statement_visible(
+            occurrence.subject_iri,
+            occurrence.predicate_iri,
+            [occurrence.object_ntriples],
+        )
 
     def get_lineage(
         self,
@@ -94,6 +106,10 @@ class OntologyLineageService:
         state = _ExpansionState(max_depth=max_depth, limit=limit)
 
         if target_type == "rule":
+            if not self.access_view.is_member_visible(target_id):
+                # R3.0-004: an unauthorized rule target follows the exact
+                # same not-found contract as an unknown rule.
+                raise LineageTargetNotFound("Rule was not found in this Ontology")
             items = self._rule_items(
                 ontology=ontology,
                 rule_iri=target_id,
@@ -104,6 +120,12 @@ class OntologyLineageService:
             canonical_target = target_id
             if target_type == "resource":
                 canonical_target = canonical_iri(target_id)
+                if not self.access_view.is_member_visible(canonical_target):
+                    # R3.0-004: an unauthorized resource target follows the
+                    # exact same not-found contract as an unknown target.
+                    raise LineageTargetNotFound(
+                        "Lineage target was not found in this Ontology"
+                    )
                 rows = self.repository.list_occurrences(
                     ontology_id=ontology_id,
                     subject_iri=canonical_target,
@@ -118,6 +140,8 @@ class OntologyLineageService:
                     limit=limit + 1,
                 )
             rows = self._filter_current(rows, scope, include_history)
+            if self.access_view.requires_filtering:
+                rows = [row for row in rows if self._occurrence_visible(row)]
             if len(rows) > limit:
                 state.truncated = True
                 rows = rows[:limit]
@@ -234,6 +258,10 @@ class OntologyLineageService:
                 for premise_id in premise_ids:
                     premise = self.repository.get_occurrence(premise_id)
                     if premise is None or premise.ontology_id != ontology.id:
+                        continue
+                    if self.access_view.requires_filtering and not self._occurrence_visible(
+                        premise
+                    ):
                         continue
                     premise_items.append(
                         self._statement_item(premise, ontology, state, depth=depth + 1)
@@ -698,6 +726,10 @@ class OntologyLineageService:
             statements = self._rdf_statements(scope["current_graphs"], target_id, limit)
         result = []
         for subject, predicate, obj, graph_iri in statements:
+            if self.access_view.requires_filtering and not (
+                self.access_view.is_statement_visible(subject, predicate, [obj])
+            ):
+                continue
             revision = (
                 self.session.scalar(
                     select(SemanticGraphRevisionModel.revision).where(

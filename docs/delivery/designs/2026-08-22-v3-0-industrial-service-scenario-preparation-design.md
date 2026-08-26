@@ -7,6 +7,13 @@
 - 共享测试计划：
   `docs/delivery/test-plans/2026-08-22-v3-0-industrial-service-scenario-preparation-test-plan.md`
 
+## 后续架构边界说明（2026-08-25）
+
+本设计及其 R3.0-001 验收结论保持不变。后续需求概要设计已补充于
+`docs/delivery/designs/2026-08-25-v3-0-remaining-requirements-outline-design.md`。后续已确认：保护集是
+Project 级平台控制面，可跨同一 Project 的多个 Ontology，不属于 Ontology 内容；本设计中关于
+R3.0-002～R3.0-006 的未来方向如与该概要设计冲突，以 `requirements-v3.0.md` 和新概要设计为准。
+
 ## 1. 设计结果
 
 本轮建立一个可以供后续真实建模使用、但不会提前替建模 Agent 作答的场景基线。交付物分为三个
@@ -29,7 +36,7 @@ R3.0-006 运行时只挂载 `modeling-input/`，并验证路径逃逸被拒绝�
 | 能力 | 当前证据 | v3.0 最终目标 | 本轮处理 |
 | --- | --- | --- | --- |
 | 项目/本体级主体 | Context Query 要求服务端 `AuthPrincipal` | 所有语义读取面主体绑定 | 记录基线，不改代码 |
-| 细粒度语义可见性 | `SemanticVisibilityPolicy` 明示为 light labels、not full RBAC，且使用调用方 context label | 受保护概念/映射无权即 `forbidden` | 记录 R3.0-004 缺口 |
+| 细粒度语义可见性 | `SemanticVisibilityPolicy` 明示为 light labels、not full RBAC，且使用调用方 context label | 由 Project 级保护集约束受保护概念/映射的读取 | 记录 R3.0-004 缺口 |
 | 项目级语义范围 | `SemanticQueryScopeResolver` 可汇聚项目内可查询 Ontology | 拓扑无关的场景全局视图 | 后续复用，当前不建模 |
 | 关系 Schema 语义映射 | 未形成 v3.0 所需表/列/join/metric 合同 | Ontology 保存业务语义与映射 | 后续 R3.0-003 |
 | 数据执行 | 平台没有本场景 Connector | 外部最小 SQL executor | 后续 R3.0-005 |
@@ -194,7 +201,8 @@ modeling input：
 
 - `ServiceOperator`：后续可见日常服务运营语义。
 - `ServiceManager`：后续额外可见 `standard_cost`、备件成本和成本指标的语义与 Schema 映射。
-- 当 Operator 明确查询成本语义时，未来语义接口必须 `forbidden`，不能只返回空结果或带泄露性 warning。
+- 当 Operator 查询无权成本语义时，未来语义接口必须遵循本次已确认、待 R3.0-004 文档统一修订的
+  不存在/无痕过滤/SPARQL scope 合同，不能通过结果或 warning 泄露受保护知识。
 - 当前 SQL 文件和开发数据库是评估环境资产，对能直接连库的开发者可见；这不构成权限测试失败，
   也不能作为生产数据权限设计。
 
@@ -224,6 +232,6 @@ modeling input：
   正确执行，就记录为环境残余风险。
 - 样例数据可能让建模 Agent从数据分布猜中部分规则，但不能因此删除 Schema/样例；后续验收重点是
   它是否把推测标为假设并主动访谈。
-- 多 Ontology 下的项目级检索和权限组合尚未冻结。R3.0-002/R3.0-004 细化时需基于真实切片关系做
-  ADR；本轮保持可逆。
+- 多 Ontology 下的项目级检索仍待 R3.0-002 细化；保护集已确认归属于 Project，可跨同一 Project
+  的多个 Ontology，不能反向决定 Ontology 拓扑。该后续结论不改变 R3.0-001 的准备与数据验收。
 - 最小 SQL executor 只适合受控评估环境。进入真实业务前必须由外部安全边界替换或包裹。

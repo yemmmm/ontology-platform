@@ -20,6 +20,7 @@ from app.repositories.models import SemanticRuleDefinitionModel, SemanticRuleMod
 from app.repositories.rdf_store import RdfStoreRepository
 from app.security.auth import AuthPrincipal
 from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
+from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_context_cursor import (
     CURSOR_KIND_CONTEXT,
     CURSOR_KIND_MATCH,
@@ -133,10 +134,12 @@ class SemanticContextQueryService:
         lineage_service: OntologyLineageService | None = None,
         shape_endpoint: SemanticShapeEndpointService | None = None,
         cursor_codec: ContextCursorCodec | None = None,
+        access_view: SemanticAccessView | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
         self.scope_resolver = scope_resolver
+        self.access_view = access_view or SemanticAccessView.all_visible()
         self.lineage_service = lineage_service or OntologyLineageService(session, rdf_store)
         self.shape_endpoint = shape_endpoint or SemanticShapeEndpointService(
             session, rdf_store, scope_resolver.settings
@@ -328,6 +331,13 @@ class SemanticContextQueryService:
                     resource_kinds=selected_resource_types,
                 )
             )
+            # R3.0-004: apply the authorization view to every candidate source
+            # (lexical RDF, rules, operations, governed mappings) before
+            # fusion so ranking, fusion summaries, truncation, and cursors
+            # are computed on the authorized subset only.
+            candidates = [
+                item for item in candidates if self.access_view.filter_candidate(item)
+            ]
             for item in candidates:
                 item.setdefault("_expression_indexes", set()).update(expression.original_indexes)
             lexical_by_expression.append(candidates)
@@ -346,6 +356,9 @@ class SemanticContextQueryService:
             promoted = promote_exact_label_candidates(
                 candidates, execution_set[expression_index].text
             )
+            promoted = [
+                item for item in promoted if self.access_view.filter_candidate(item)
+            ]
             for item in promoted:
                 item.setdefault("_expression_indexes", set()).update(
                     execution_set[expression_index].original_indexes
@@ -577,6 +590,10 @@ class SemanticContextQueryService:
         anchor_item = _anchor_candidate_from_rows(
             _bindings(result.result), scope, anchor_iri
         )
+        # R3.0-004: an unauthorized anchor IRI follows the exact same
+        # anchor_not_found path as an IRI absent from the scope.
+        if anchor_item is not None and not self.access_view.is_member_visible(anchor_iri):
+            anchor_item = None
         if anchor_item is None:
             warnings.append(
                 {
@@ -848,8 +865,13 @@ class SemanticContextQueryService:
                 related_raw.append(related_item)
 
         # Dedupe by (ontology, kind, id), aggregating all root paths per identity.
+        # R3.0-004: hide unauthorized related items before dedupe and the
+        # canonical context ordering so the context cursor, context_limit, and
+        # truncation flags describe the authorized subset only.
         deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
         for item in related_raw:
+            if not self.access_view.filter_candidate(item):
+                continue
             key = self._identity_key(item)
             existing = deduped.get(key)
             if existing is None:
@@ -1329,6 +1351,8 @@ LIMIT 5000
             )
             ontology_scope = scope_by_ontology[match["ontology_id"]]
             for target_class in target_classes:
+                if not self.access_view.is_member_visible(target_class):
+                    continue
                 try:
                     guidance = self.shape_endpoint.read_merged_guidance(
                         ontology_scope.graph_set_id, target_class

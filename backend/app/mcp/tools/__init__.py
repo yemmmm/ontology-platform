@@ -19,6 +19,7 @@ from app.mcp.tools.modeling_workflow import register_modeling_workflow
 from app.mcp.tools.build_sessions import register_build_sessions
 from app.mcp.tools.evidence import register_evidence
 from app.mcp.tools.semantic import register_semantic
+from app.mcp.tools.protection_sets import register_protection_sets
 from app.mcp.tools.system import register_system
 
 
@@ -31,6 +32,7 @@ def register_all(server: FastMCP) -> None:
     register_modeling_workflow(server)
     register_evidence(server)
     register_semantic(server)
+    register_protection_sets(server)
 
 
 __all__ = ["register_all"]

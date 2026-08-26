@@ -136,8 +136,8 @@ def test_warns_on_stale_reasoning_when_requested():
     assert any(w["code"] == "stale_reasoning_result" for w in warnings)
 
 
-def test_export_filters_restricted_graphs_via_visibility_policy():
-    from app.services.semantic_visibility import SemanticVisibilityPolicy
+def test_export_drops_quads_referencing_unauthorized_members():
+    from app.services.semantic_access import SemanticAccessView
 
     store = FakeStore(
         {
@@ -150,21 +150,17 @@ def test_export_filters_restricted_graphs_via_visibility_policy():
             ["http://op/s/graph/data/a", "http://op/s/graph/data/b"]
         )
     )
-    policy = SemanticVisibilityPolicy(
-        graph_labels={"http://op/s/graph/data/b": "restricted"}
+    view = SemanticAccessView(
+        requires_filtering=True,
+        _unauthorized_iris=frozenset({"http://example.test/x"}),
     )
     service = SemanticExportService(
         rdf_store=store,
         scope_resolver=resolver,
         settings=None,
-        visibility_policy=policy,
+        access_view=view,
     )
-    payload, warnings = service.export(
-        "gs-1",
-        format="trig",
-        include="asserted",
-        visibility_context={"labels": ["internal"]},
-    )
-    assert "data/a" in payload
-    assert "data/b" not in payload
-    assert any(w["code"] == "visibility_graph_omitted" for w in warnings)
+    payload, warnings = service.export("gs-1", format="trig", include="asserted")
+    assert "ex:a" in payload
+    assert "ex:x" not in payload
+    assert warnings == []

@@ -59,7 +59,6 @@ class Settings(BaseSettings):
     semantic_shacl_inference: str = "none"
     semantic_reasoner_command: str = ""
     semantic_reasoner_timeout_seconds: float = Field(default=60, gt=0, le=600)
-    semantic_graph_visibility_labels: dict[str, str] = Field(default_factory=dict)
 
     build_session_lease_ttl_seconds: int = Field(default=300, ge=30, le=3600)
     modeling_batch_max_items: int = Field(default=100, ge=1, le=10_000)

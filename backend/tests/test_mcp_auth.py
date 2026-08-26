@@ -53,6 +53,7 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
                 "job_id",
                 "ontology_ids",
                 "scope_id",
+                "protection_set_id",
             }
         ) or any(name.endswith("graph_iri") or name.endswith("graph_iris") for name in properties)
         if policy.ownership is McpOwnership.PROJECT_RESOURCE:

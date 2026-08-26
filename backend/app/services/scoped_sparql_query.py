@@ -13,6 +13,7 @@ from rdflib.plugins.sparql.parserutils import CompValue
 
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreRepository, RdfStoreUnavailable
+from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_query_scope import (
     SemanticQueryScope,
     SemanticQueryScopeNotReady,
@@ -39,10 +40,12 @@ class ScopedSparqlQueryService:
         scope_resolver: SemanticQueryScopeResolver,
         rdf_store: RdfStoreRepository,
         settings: Settings,
+        access_view: SemanticAccessView | None = None,
     ) -> None:
         self.scope_resolver = scope_resolver
         self.rdf_store = rdf_store
         self.settings = settings
+        self.access_view = access_view or SemanticAccessView.all_visible()
 
     def query(
         self,
@@ -67,6 +70,17 @@ class ScopedSparqlQueryService:
         )
         if not scope.graph_iris:
             raise SemanticQueryScopeNotReady("Semantic query scope has no queryable graphs")
+        # R3.0-004 §8: when any unauthorized protected member could be in this
+        # query's scope, reject the whole request with the same generic scope
+        # error used for a scope without queryable graphs (fail-closed, no
+        # per-resource rewriting and no filtering signal).
+        in_scope_ontology_ids = [
+            getattr(ontology, "ontology_id", None) for ontology in scope.ontologies
+        ]
+        if self.access_view.scope_unauthorized_members(in_scope_ontology_ids):
+            raise SemanticQueryScopeNotReady(
+                "Semantic query scope has no queryable graphs"
+            )
         scoped_query = inject_dataset_clauses(query, scope.graph_iris, query_type=query_type)
         bounded_query = enforce_top_level_limit(
             scoped_query, max_solutions=limit + 1, query_type=query_type

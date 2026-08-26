@@ -8,6 +8,7 @@ from app.api.interview import router as interview_router
 from app.api.build_sessions import router as build_sessions_router
 from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
+from app.api.protection_sets import router as protection_sets_router
 from app.api.evidence import router as evidence_router
 from app.api.evidence_references import router as evidence_references_router
 from app.api.fact_evidence import router as fact_evidence_router
@@ -25,6 +26,7 @@ router.include_router(build_sessions_router)
 router.include_router(modeling_batches_router)
 router.include_router(modeling_workflow_router)
 router.include_router(semantic_router)
+router.include_router(protection_sets_router)
 router.include_router(evidence_router)
 router.include_router(evidence_references_router)
 router.include_router(fact_evidence_router)

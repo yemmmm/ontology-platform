@@ -115,7 +115,6 @@ backend 从进程工作目录的 `.env` 读取配置；仓库命令以 `backend/
 | `SEMANTIC_QUERY_RESULT_LIMIT` | Semantic query result limit | `1000` |
 | `SEMANTIC_SHACL_INFERENCE` | pySHACL inference mode | `none` |
 | `SEMANTIC_REASONER_COMMAND` / `SEMANTIC_REASONER_TIMEOUT_SECONDS` | Optional reasoner command/timeout | empty / `60` |
-| `SEMANTIC_GRAPH_VISIBILITY_LABELS` | JSON visibility-label mapping | `{}` |
 | `BUILD_SESSION_LEASE_TTL_SECONDS` | Ontology lease TTL | `300` |
 | `MODELING_BATCH_MAX_ITEMS` | Maximum items per batch | `100` |
 | `MODELING_BATCH_MAX_REQUEST_BYTES` | Maximum serialized request size | `1048576` |

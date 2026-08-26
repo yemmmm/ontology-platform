@@ -53,7 +53,7 @@ def scoped_mcp(in_memory_session, monkeypatch, mcp_principal_factory):
     def install(store):
         monkeypatch.setattr(
             "app.mcp.tools.semantic._scoped_sparql_service",
-            lambda session: ScopedSparqlQueryService(
+            lambda session, project_id=None: ScopedSparqlQueryService(
                 SemanticQueryScopeResolver(session, settings), store, settings
             ),
         )
@@ -165,7 +165,7 @@ def test_context_mcp_keeps_bilingual_asserted_label_exactness(scoped_mcp, monkey
 
     monkeypatch.setattr(
         "app.mcp.tools.semantic._context_query_service",
-        lambda session: SemanticContextQueryService(
+        lambda session, project_id=None: SemanticContextQueryService(
             session,
             BilingualStore(),
             SemanticQueryScopeResolver(session, settings),
@@ -238,7 +238,7 @@ def test_context_mcp_strips_unknown_shape_lineage_marker(scoped_mcp, monkeypatch
 
     monkeypatch.setattr(
         "app.mcp.tools.semantic._context_query_service",
-        lambda session: SemanticContextQueryService(
+        lambda session, project_id=None: SemanticContextQueryService(
             session,
             CandidateStore(),
             SemanticQueryScopeResolver(session, settings),
@@ -323,7 +323,7 @@ def test_mcp_context_query_accepts_canonical_queries(scoped_mcp, monkeypatch):
 
     monkeypatch.setattr(
         "app.mcp.tools.semantic._context_query_service",
-        lambda session: SemanticContextQueryService(
+        lambda session, project_id=None: SemanticContextQueryService(
             session,
             EmptyCandidates(),
             SemanticQueryScopeResolver(session, settings),
@@ -379,7 +379,7 @@ def test_mcp_context_query_forwards_refreshed_principal(scoped_mcp, monkeypatch)
 
     monkeypatch.setattr(
         "app.mcp.tools.semantic._context_query_service",
-        lambda session: SemanticContextQueryService(
+        lambda session, project_id=None: SemanticContextQueryService(
             session,
             CapturingStore(),
             SemanticQueryScopeResolver(session, settings),

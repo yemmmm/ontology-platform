@@ -80,6 +80,12 @@ ALLOWED_TOOLS = {
     "cutover_semantic_migration_run",
     "rollback_semantic_migration_run",
     "compile_and_apply_canonical_command",
+    "list_semantic_protection_sets",
+    "create_semantic_protection_set",
+    "update_semantic_protection_set",
+    "delete_semantic_protection_set",
+    "add_semantic_protection_set_members",
+    "remove_semantic_protection_set_members",
 }
 
 

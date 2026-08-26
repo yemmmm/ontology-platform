@@ -47,6 +47,11 @@ class ApiKeyCreate(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     project_id: str | None = None
     scopes: list[str] = Field(min_length=1)
+    semantic_grants: list[str] | None = None
+
+
+class ApiKeyUpdate(BaseModel):
+    semantic_grants: list[str] | None = None
 
 
 class ApiKeyRead(BaseModel):
@@ -54,6 +59,7 @@ class ApiKeyRead(BaseModel):
     name: str
     project_id: str | None
     scopes: list[str]
+    semantic_grants: list[str]
     created_at: datetime
     revoked_at: datetime | None
 
@@ -64,9 +70,32 @@ class ApiKeyRead(BaseModel):
             name=record.name,
             project_id=record.project_id,
             scopes=list(record.scopes),
+            semantic_grants=list(record.semantic_grants or []),
             created_at=record.created_at,
             revoked_at=record.revoked_at,
         )
+
+
+def _validate_semantic_grants(grants: list[str] | None) -> list[str] | None:
+    if grants is None:
+        return None
+    if len(grants) > 64:
+        raise HTTPException(status_code=422, detail="semantic_grants supports at most 64 items")
+    normalized: list[str] = []
+    for item in grants:
+        if (
+            not isinstance(item, str)
+            or not item.strip()
+            or len(item) > 128
+            or not item.isprintable()
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail="semantic_grants items must be non-empty printable strings of at most 128 characters",
+            )
+        if item not in normalized:
+            normalized.append(item)
+    return normalized
 
 
 class ApiKeyCreated(ApiKeyRead):
@@ -199,6 +228,7 @@ def create_key(
             name=payload.name,
             project_id=payload.project_id,
             scopes=payload.scopes,
+            semantic_grants=_validate_semantic_grants(payload.semantic_grants),
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -229,6 +259,39 @@ def get_api_key(
 ) -> ApiKeyRead:
     _require_admin(principal)
     return ApiKeyRead.from_record(_visible_key(session, key_id, principal))
+
+
+@router.patch("/api-keys/{key_id}", response_model=ApiKeyRead)
+def update_api_key(
+    key_id: str,
+    payload: ApiKeyUpdate,
+    request: Request,
+    principal: Annotated[AuthPrincipal, Depends(principal_dependency)],
+    session: Session = Depends(get_db_session),
+) -> ApiKeyRead:
+    _require_admin(principal)
+    record = _visible_key(session, key_id, principal)
+    if record.project_id is None and not principal.is_org_admin:
+        raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
+    grants = _validate_semantic_grants(payload.semantic_grants)
+    previous_grants = list(record.semantic_grants or [])
+    record.semantic_grants = grants
+    session.commit()
+    session.refresh(record)
+    audit_security_event(
+        request.app.state.session_factory,
+        "api_key_updated",
+        "success",
+        principal,
+        project_id=record.project_id,
+        resource_type="api_key",
+        resource_id=record.id,
+        details={
+            "grants_added": sorted(set(grants or []) - set(previous_grants)),
+            "grants_removed": sorted(set(previous_grants) - set(grants or [])),
+        },
+    )
+    return ApiKeyRead.from_record(record)
 
 
 @router.post("/api-keys/{key_id}:revoke", response_model=ApiKeyRead)

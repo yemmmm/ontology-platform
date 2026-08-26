@@ -26,7 +26,17 @@ _password_hasher = PasswordHasher()
 _BASE62 = string.ascii_letters + string.digits
 _VALID_SCOPES = {"read", "model", "admin"}
 _SCOPE_ORDER = {"read": 1, "model": 2, "admin": 3}
-_AUDIT_DETAIL_KEYS = {"reason", "required_scope", "presented_auth_methods", "category"}
+_AUDIT_DETAIL_KEYS = {
+    "reason",
+    "required_scope",
+    "presented_auth_methods",
+    "category",
+    "name",
+    "member_count",
+    "allowed_grants",
+    "grants_added",
+    "grants_removed",
+}
 
 
 @dataclass(frozen=True)
@@ -37,6 +47,7 @@ class AuthPrincipal:
     scopes: frozenset[str]
     project_id: str | None
     auth_method: str
+    semantic_grants: frozenset[str] = frozenset()
 
     @property
     def effective_scopes(self) -> frozenset[str]:
@@ -85,6 +96,23 @@ def validate_scopes(scopes: list[str] | set[str], project_id: str | None) -> fro
     return normalized
 
 
+def parse_semantic_grants(raw: Any) -> frozenset[str]:
+    """Parse an ``api_keys.semantic_grants`` JSONB value into a grant set.
+
+    Fail-closed: a record that is not a JSON list of non-empty printable
+    strings yields an empty grant set (plus one warning log) instead of an
+    error, so a corrupted record can never widen access or break requests.
+    """
+    if raw is None:
+        return frozenset()
+    if not isinstance(raw, list) or not all(
+        isinstance(item, str) and item.strip() for item in raw
+    ):
+        logger.warning("Ignoring malformed semantic_grants record: %r", raw)
+        return frozenset()
+    return frozenset(item.strip() for item in raw)
+
+
 def resolve_api_key(session: Session, plaintext: str) -> AuthPrincipal | None:
     record = session.scalar(
         select(ApiKeyModel).where(ApiKeyModel.key_hash == hash_api_key(plaintext))
@@ -102,6 +130,7 @@ def resolve_api_key(session: Session, plaintext: str) -> AuthPrincipal | None:
         scopes=scopes,
         project_id=record.project_id,
         auth_method="bearer",
+        semantic_grants=parse_semantic_grants(record.semantic_grants),
     )
 
 
@@ -112,6 +141,7 @@ def create_api_key(
     project_id: str | None,
     scopes: list[str],
     plaintext: str | None = None,
+    semantic_grants: list[str] | None = None,
 ) -> tuple[ApiKeyModel, str]:
     normalized = validate_scopes(scopes, project_id)
     key = plaintext or generate_api_key(set(normalized))
@@ -124,6 +154,7 @@ def create_api_key(
         key_hash=hash_api_key(key),
         project_id=project_id,
         scopes=sorted(normalized, key=_SCOPE_ORDER.__getitem__),
+        semantic_grants=sorted(set(semantic_grants)) if semantic_grants else None,
     )
     session.add(record)
     session.commit()

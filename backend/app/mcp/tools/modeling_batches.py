@@ -14,7 +14,7 @@ from pydantic import Field
 from app.api.modeling_batches import get_ontology_read_model as read_model_adapter
 from app.api.schemas import ModelingBatchSubmit, ModelingItemInput
 from app.core.config import Settings
-from app.mcp.runtime import _run_tool, runtime_actor
+from app.mcp.runtime import _run_tool, runtime_actor, runtime_principal
 from app.repositories.models import OntologyModel
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_batches import ModelingAuthorizationContext, ModelingBatchService
@@ -243,6 +243,20 @@ def register_modeling_batches(server: FastMCP) -> None:
                         "graph": graph,
                     }
                 )
+            # R3.0-004: hide statements whose s/p/o names an unauthorized
+            # protected member before digest, cursor, and page computation.
+            from app.services.semantic_access import SemanticAccessResolver
+
+            access_view = SemanticAccessResolver(session).resolve(
+                runtime_principal(), ontology.project_id
+            )
+            statements = [
+                item
+                for item in statements
+                if access_view.is_statement_visible(
+                    item["subject"], item["predicate"], [item["object"]]
+                )
+            ]
             encoded = [json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")) for item in statements]
             if len(set(encoded)) != len(encoded):
                 raise ValueError("entity statement projection contains duplicate statements")
@@ -323,6 +337,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                 class_iri=class_iri,
                 kind=kind,
                 q=q,
+                principal=runtime_principal(),
                 session=session,
                 rdf_store=RdfStoreRepository(settings.oxigraph_url),
                 settings=settings,

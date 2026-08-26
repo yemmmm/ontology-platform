@@ -37,7 +37,11 @@ from app.services.semantic_read_scope import SemanticReadScopeResolver
 from app.services.semantic_shape_endpoint_service import (
     SemanticShapeEndpointService,
 )
-from app.services.semantic_visibility import SemanticVisibilityPolicy
+from app.services.semantic_access import (
+    SemanticAccessDependencyError,
+    SemanticAccessResolver,
+)
+from app.services.semantic_access import project_id_for_graph_set
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
 
@@ -235,16 +239,14 @@ def _build_read_model_service(
     session: Session,
     rdf_store: RdfStoreRepository,
     settings: Settings,
+    access_view=None,
 ) -> SemanticReadModelService:
     """Construct a SemanticReadModelService wired to the same dependencies
     used by the read-model endpoint in ``app.api.semantic``."""
-    visibility = SemanticVisibilityPolicy(
-        graph_labels=getattr(settings, "semantic_graph_visibility_labels", {}) or {}
-    )
     return SemanticReadModelService(
         rdf_store=rdf_store,
         scope_resolver=SemanticReadScopeResolver(session),
-        visibility_policy=visibility,
+        access_view=access_view,
         shape_endpoint=SemanticShapeEndpointService(session, rdf_store, settings),
         session=session,
     )
@@ -263,6 +265,7 @@ class MissingEvidenceFactsResponse(BaseModel):
 def list_missing_evidence_facts(
     graph_set_id: str,
     limit: int = 5000,
+    principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
@@ -273,7 +276,16 @@ def list_missing_evidence_facts(
     member graph(s), computes the canonical ``fact_id`` for each, then
     subtracts the subset that appears in ``fact_evidence_bindings``.
     """
-    service = _build_read_model_service(session, rdf_store, settings)
+    try:
+        access_view = SemanticAccessResolver(session).resolve(
+            principal, project_id_for_graph_set(session, graph_set_id)
+        )
+    except SemanticAccessDependencyError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail={"code": "dependency_error", "message": str(exc)},
+        ) from exc
+    service = _build_read_model_service(session, rdf_store, settings, access_view)
     scope = service.scope_resolver.resolve(
         graph_set_id=graph_set_id,
         include="asserted",

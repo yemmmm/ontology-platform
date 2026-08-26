@@ -615,12 +615,54 @@ class ApiKeyModel(Base):
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    semantic_grants: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
         nullable=False,
     )
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
+class SemanticProtectionSetModel(Base):
+    __tablename__ = "semantic_protection_sets"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    allowed_grants: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+    __table_args__ = (
+        UniqueConstraint("project_id", "name", name="uq_protection_set_project_name"),
+    )
+
+
+class SemanticProtectionSetMemberModel(Base):
+    __tablename__ = "semantic_protection_set_members"
+
+    protection_set_id: Mapped[str] = mapped_column(
+        ForeignKey("semantic_protection_sets.id", ondelete="CASCADE"), primary_key=True
+    )
+    resource_iri: Mapped[str] = mapped_column(String(1024), primary_key=True)
+    ontology_id: Mapped[str | None] = mapped_column(String(36))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        nullable=False,
+    )
 
 
 class UserModel(Base):
