@@ -1,0 +1,3 @@
+== GET /api/semantic/resources/https://r307.test/target/T1?graph_set_id=38e73116-f393-4952-9e5d-4b398934f437 (org-admin) ==
+HTTP 404
+{"detail":"Resource not found: https://r307.test/target/T1"}

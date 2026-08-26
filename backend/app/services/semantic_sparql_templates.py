@@ -98,6 +98,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         body="""# template: entity-detail
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?entity ?label ?graph WHERE {
+          VALUES ?graph { {graph_iris} }
           GRAPH ?graph { ?entity rdfs:label ?label . }
         }
         LIMIT {limit}

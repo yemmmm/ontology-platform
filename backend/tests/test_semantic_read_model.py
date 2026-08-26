@@ -15,10 +15,12 @@ class FakeStore:
         self.rows_by_template = rows_by_template
         self.last_query: str | None = None
         self.last_graph_iris: list[str] | None = None
+        self.last_limit: int | None = None
 
     def query_read_model(self, query, graph_iris, timeout_seconds, limit):
         self.last_query = query
         self.last_graph_iris = list(graph_iris)
+        self.last_limit = limit
         for marker, rows in self.rows_by_template.items():
             if marker in query:
                 return FakeSparqlResult(rows)
@@ -667,3 +669,143 @@ def test_fact_audit_queue_invalid_kind_raises_read_model_error():
             kind="not_a_kind",
         )
     assert "kind" in str(exc_info.value).lower()
+
+
+# R3.0-007 — entity-detail graph scoping and LIMIT semantics ------------------
+
+
+R307_DATA_GRAPH = "https://r307.test/data/graph-1"
+R307_REASONING_GRAPH = "https://r307.test/reasoning-result/run-1"
+R307_RULE_GRAPH = "https://r307.test/rule-result/run-2"
+
+
+def _r307_entity_detail_service(store, resolution=None, **service_kwargs):
+    resolution = resolution or _resolution([R307_DATA_GRAPH])
+    return SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(resolution),
+        **service_kwargs,
+    )
+
+
+def test_entity_detail_compiles_with_graph_scoping_values():
+    """S1: entity-detail compiles to a VALUES-bounded query (R3.0-007).
+
+    The compiled query must bind ?graph to the scope's data graph IRIs so a
+    shared store is not scanned across every project's named graphs.
+    """
+    store = FakeStore(
+        {
+            "entity-detail": [
+                {
+                    "entity": "https://r307.test/entity/T1",
+                    "label": "r307-target",
+                    "graph": R307_DATA_GRAPH,
+                }
+            ]
+        }
+    )
+    service = _r307_entity_detail_service(store)
+
+    envelope = service.read_model("gs-1", "entity-detail")
+
+    assert store.last_query is not None
+    assert "{graph_iris}" not in store.last_query
+    assert f"VALUES ?graph {{ <{R307_DATA_GRAPH}> }}" in store.last_query
+    assert "LIMIT 500" in store.last_query
+    assert len(envelope["items"]) == 1
+    assert envelope["items"][0]["iri"] == "https://r307.test/entity/T1"
+
+
+def test_entity_detail_without_source_graphs_returns_empty_without_query():
+    """B1: no source graphs -> fail-closed empty envelope, no query issued."""
+    store = FakeStore({"entity-detail": []})
+    service = _r307_entity_detail_service(store, resolution=_resolution([]))
+
+    envelope = service.read_model("gs-1", "entity-detail")
+
+    assert envelope["items"] == []
+    assert envelope["warnings"][0]["code"] == "read_model_no_source_graphs"
+    assert store.last_query is None
+
+
+def test_entity_detail_full_working_view_compiles_derived_graphs_into_values():
+    """B2: include=full-working-view adds reasoning/rule result graphs to the
+    compiled VALUES clause, not just to the side-channel graph_iris list."""
+    store = FakeStore({"entity-detail": []})
+    resolution = _resolution(
+        [R307_DATA_GRAPH],
+        reasoning=R307_REASONING_GRAPH,
+        rule=R307_RULE_GRAPH,
+    )
+    service = _r307_entity_detail_service(store, resolution=resolution)
+
+    service.read_model("gs-1", "entity-detail", include="full-working-view")
+
+    assert store.last_query is not None
+    assert "{graph_iris}" not in store.last_query
+    expected_values = (
+        f"VALUES ?graph {{ <{R307_DATA_GRAPH}> "
+        f"<{R307_REASONING_GRAPH}> <{R307_RULE_GRAPH}> }}"
+    )
+    assert expected_values in store.last_query
+
+
+def test_entity_detail_limit_semantics_bound_by_default_limit():
+    """B4: the limit passed to the store and the compiled LIMIT reflect
+    min(limit or default_limit, default_limit)."""
+    # Default: no explicit limit -> template default_limit of 500.
+    store = FakeStore({"entity-detail": []})
+    _r307_entity_detail_service(store).read_model("gs-1", "entity-detail")
+    assert store.last_limit == 500
+    assert "LIMIT 500" in store.last_query
+
+    # Explicit smaller limit is honored.
+    store = FakeStore({"entity-detail": []})
+    _r307_entity_detail_service(store).read_model("gs-1", "entity-detail", limit=100)
+    assert store.last_limit == 100
+    assert "LIMIT 100" in store.last_query
+
+    # Oversized limit is capped at default_limit (500).
+    store = FakeStore({"entity-detail": []})
+    _r307_entity_detail_service(store).read_model("gs-1", "entity-detail", limit=9999)
+    assert store.last_limit == 500
+    assert "LIMIT 500" in store.last_query
+
+
+def test_every_executable_template_binds_graph_iris():
+    """F1 conservation gate: any template body with a SELECT must carry the
+    {graph_iris} placeholder so no future template scans all named graphs."""
+    from app.services.semantic_sparql_templates import list_templates
+
+    violations = [
+        template.name
+        for template in list_templates()
+        if "SELECT" in template.body and "{graph_iris}" not in template.body
+    ]
+    assert violations == []
+
+
+def test_entity_detail_values_addition_preserves_decorated_row_shape():
+    """F2: adding VALUES ?graph keeps ?graph a projected variable, so the
+    decorator still maps it to source_graph_iri without any drift."""
+    store = FakeStore(
+        {
+            "entity-detail": [
+                {
+                    "entity": "https://r307.test/entity/T1",
+                    "label": "r307-target",
+                    "graph": R307_DATA_GRAPH,
+                }
+            ]
+        }
+    )
+    service = _r307_entity_detail_service(store)
+
+    item = service.read_model("gs-1", "entity-detail")["items"][0]
+
+    assert item["source_graph_iri"] == R307_DATA_GRAPH
+    assert item["assertion_kind"] == "asserted"
+    assert item["evidence_status"] == "not_applicable"
+    assert item["iri"] == "https://r307.test/entity/T1"
+    assert item["label"] == "r307-target"

@@ -1,0 +1,4 @@
+rows: 500
+distinct graphs in window: 201
+decoy entities in window: 0
+target T1 in window: 0

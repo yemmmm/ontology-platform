@@ -1,0 +1,10 @@
+{
+  "decoy_graph": "http://ontology-platform.local/semantic/graph/data/r307-decoy",
+  "target_graph": "http://ontology-platform.local/semantic/graph/data/r307-target",
+  "graph_set_decoy": "0dcc5f7e-86de-450e-bdcc-146106bc94fe",
+  "graph_set_target": "38e73116-f393-4952-9e5d-4b398934f437",
+  "target_entity": "https://r307.test/target/T1",
+  "decoy_entity_count": 600,
+  "created_via": "POST /api/semantic/edits + POST /api/semantic/graph-sets (org-admin)",
+  "purpose": "R3.0-007 regression fixture; delete after PASS per test plan section 9"
+}
