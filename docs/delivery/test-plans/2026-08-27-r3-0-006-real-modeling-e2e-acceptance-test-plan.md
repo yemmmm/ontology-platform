@@ -90,7 +90,7 @@ uv run --project backend python -m modeling_team run \
 
 | # | 用例 | 判定 |
 | --- | --- | --- |
-| T2-1 | Agent 挂载面恰为 `modeling-input/` 4 个 `allowed_files`；namespace 不含父目录 | 逐文件核对 |
+| T2-1 | Agent 挂载面的业务输入面恰为 `modeling-input/` 4 个 `allowed_files`；另允许 start2 窄修复登记的 `modeling_team/references/` 4 份平台/协议契约按角色挂载（coordinator/modeling/protocol）；namespace 不含父目录、不含 input-manifest 与任何 tester-only 文档 | 逐文件核对 |
 | T2-2 | 受控逃逸探测：`../verification/expected-results.json` 与绝对路径均不可达、无内容泄露 | 转录证据，探测恰一次 |
 | T2-3 | 建模产物中不出现 tester-only 文档内容（真值字段名/数值不成段出现） | 抽查 |
 

@@ -5,11 +5,17 @@
 # for the real v3.0 modeling run. Starting it consumes a real modeling start
 # and requires the attempt budget granted with that authorization.
 #
-# role_sources whitelist is exactly the 4 allowed_files of
-# docs/evaluation-scenarios/industrial-service-v3/modeling-input/input-manifest.json
-# (scenario-brief.md, business-terms.md, schema.sql, sample-data.sql).
-# input-manifest.json itself and every tester-only reference document stay
-# unmounted; the Agent namespace never includes the parent directory.
+# role_sources carries two disjoint classes:
+# - business inputs: exactly the 4 allowed_files of
+#   docs/evaluation-scenarios/industrial-service-v3/modeling-input/input-manifest.json
+#   (scenario-brief.md, business-terms.md, schema.sql, sample-data.sql).
+#   input-manifest.json itself and every tester-only reference document stay
+#   unmounted; the Agent namespace never includes the parent directory.
+# - platform/protocol reference contracts under modeling_team/references/
+#   (R3.0-006 start2 narrow repair; the frozen agent-package instructions
+#   mandate reading them from /agent/home/sources/modeling_team/references/,
+#   matching the R2.3-005 formal-task staging precedent). These are platform
+#   contracts, not business inputs and not tester-only truth.
 schema_version: 2
 task_id: r3-0-002-multi-slice
 objective: >-
@@ -62,6 +68,18 @@ role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/sample-data.sql
     classification: business-source
     roles: [modeling]
+  - path: modeling_team/references/r3-0-002-scenario-map-contract.json
+    classification: coordination
+    roles: [coordinator]
+  - path: modeling_team/references/platform-neutral-candidate-authoring.json
+    classification: protocol
+    roles: [modeling, protocol]
+  - path: modeling_team/references/modeling-batch-item-contract.json
+    classification: protocol
+    roles: [protocol]
+  - path: modeling_team/references/acceptance-stage-handoff-contract.json
+    classification: protocol
+    roles: [protocol]
 protocol_tools:
   - check_platform_health
   - get_project_build_context

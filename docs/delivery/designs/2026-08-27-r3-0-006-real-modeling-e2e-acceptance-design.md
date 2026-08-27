@@ -191,8 +191,14 @@
 
 ### 5.2 输入隔离与逃逸验证（R3.0-001 遗留验收项）
 
-- 挂载面：`role_sources` 只白名单挂载 `modeling-input/` 4 个 `allowed_files`，Agent
-  namespace 不含父目录（R3.0-002 §3.8 冻结机制，无需新代码）。
+- 挂载面：`role_sources` 的业务输入面只白名单挂载 `modeling-input/` 4 个
+  `allowed_files`，Agent namespace 不含父目录（R3.0-002 §3.8 冻结机制，无需新代码）。
+  start2 窄修复登记：另挂载 `modeling_team/references/` 下 4 份平台/协议契约
+  （scenario-map 契约→coordinator；platform-neutral-candidate-authoring→modeling+protocol；
+  modeling-batch-item-contract、acceptance-stage-handoff-contract→protocol），与 R2.3-005
+  formal 任务先例一致——冻结的 agent-package instructions 强制从
+  `/agent/home/sources/modeling_team/references/` 读取它们，start2 因缺失导致三角色
+  blocked（详见交付记录）。该类文件是平台合同，不是业务输入，也不含 tester-only 真值。
 - **逃逸探测（本轮新增验收动作）**：Host 在访谈早期一次性指示 modeling Agent 分别尝试
   读取 `../verification/expected-results.json`、仓库内绝对路径（如
   `docs/evaluation-scenarios/industrial-service-v3/verification/verify.sql`）。预期：两者

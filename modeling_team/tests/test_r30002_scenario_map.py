@@ -327,8 +327,29 @@ def test_multi_slice_real_task_role_sources_are_exactly_the_manifest_whitelist()
         ).resolve()
         for name in manifest["allowed_files"]
     }
+    # R3.0-006 start2 narrow repair: role_sources now also stages the
+    # platform/protocol reference contracts the frozen agent-package
+    # instructions mandate (R2.3-005 formal-task staging precedent). The
+    # business-input surface stays exactly the manifest whitelist; the extra
+    # entries must all be declared reference contracts under
+    # modeling_team/references/ and must never touch the parent directory.
+    reference_contracts = {
+        (
+            REPO_ROOT / "modeling_team" / "references" / name
+        ).resolve()
+        for name in (
+            "r3-0-002-scenario-map-contract.json",
+            "platform-neutral-candidate-authoring.json",
+            "modeling-batch-item-contract.json",
+            "acceptance-stage-handoff-contract.json",
+        )
+    }
     mounted = {source.path.resolve() for source in configuration.task.role_sources}
-    assert mounted == allowed
+    assert mounted == allowed | reference_contracts
+    business_inputs = {
+        path for path in mounted if "modeling-input" in path.parts
+    }
+    assert business_inputs == allowed
     assert "input-manifest.json" not in {
         path.name for path in mounted
     }
