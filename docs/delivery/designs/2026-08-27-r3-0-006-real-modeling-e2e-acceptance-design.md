@@ -1,9 +1,10 @@
 # R3.0-006 真实建模与端到端问数验收 — 交付设计
 
 - 日期：2026-08-27
-- 状态：Round 3 复核 PASS 后，用户于 2026-08-27 变更实现方向——删除建模次数与建模
-  Agent 数量的代码硬校验（M1/M2 重写为软记录与角色无关化）、M3 重述为"协调 Agent 判断
-  拆分：单 Ontology 走原路径、多 Ontology 串行建模"；已按新方向修订，**待重新计划评审**
+- 状态：Round 3 复核 PASS 后用户于 2026-08-27 变更实现方向（删除建模次数/Agent 数量
+  硬校验、M3 重述为协调 Agent 判断拆分 + 多 Ontology 串行建模）；Round 4 评审判 REVISE
+  （H-1 多 Ontology 清理/终态通路缺失、M-2 ontology_id 交付机制、L-3 contracts.py 放宽
+  面未枚举），均已修订进 §3.1；**待 Round 5 复核**
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-006
 - 概要设计基线：`docs/delivery/designs/2026-08-25-v3-0-remaining-requirements-outline-design.md` §6
 - 前置实现基线：R3.0-001（2026-08-22）、R3.0-002（2026-08-26）、R3.0-003（2026-08-27）、
@@ -67,6 +68,9 @@
   消耗/退款），不新增 ledger 条目、不新增 `authorize-initial` 入口；
 - 守恒边界：既有 R2.3-002/003/005/008/009 等 v2 task 的 ledger 行为字节不变（守恒测试
   覆盖）；用户授权仍是不可绕过的过程规则（CLAUDE.md），只是不再用代码强制。
+  **预期行为变更声明**：R3.0-002 既有测试中针对 multi-slice task 断言 ledger 预留的
+  用例随本增量改写为断言"无 ledger 预留"——这是本需求登记的行为变更，不是回归
+  （守恒边界只覆盖 R2.3-* task 的 ledger 行为）。
 
 **M2 — Runner 角色无关化（删除固定角色集硬校验，为动态 Agent 留通路）**
 （`modeling_team/runner.py`、`modeling_team/contracts.py`）
@@ -77,7 +81,11 @@
   必然 KeyError；
 - 消息路由仍需的核心角色（coordinator/modeling/protocol）保留**存在性**要求（缺失时
   fail-closed 报类型化错误），但不再限定"恰好这些角色"：profile 携带额外角色（未来
-  动态 Agent）时加载与运行通路不因此拒绝；
+  动态 Agent）时加载与运行通路不因此拒绝。`contracts.py` 中三处硬检查同步放宽为
+  **包含性**检查（评审 Round 4 L-3 枚举）：multi-slice profile 封闭注册表
+  （`MULTI_SLICE_PROFILE_IDS`）、`agent_id == role` 恒等要求、通信边精确相等
+  （额外角色的边不再破坏 `edges != required_edges`，改为核心角色边集为所需子集）；
+  formal 分支三处行为字节不变；
 - formal 四角色工作流自身的既有合同与守恒测试不变；
 - `--freeze-started-at` 为 v2 Task 强制参数，真实启动命令必须携带（§5.1 已修正）。
 
@@ -103,11 +111,27 @@
   冻结合同的**登记修订**（见 §2 例外条款），不是"已冻结语义决策输出"——语义内容由
   建模团队在本轮真实 run 中产出，机械合同由本增量扩展；
 - `PlatformScope` 在 multi-slice scope 模式下按已放行的拓扑决策（含 `ontology_plan`）
-  创建并登记全部 Ontology，`read_protocol_context` 对 multi-slice run 返回全部
-  ontology_id（formal 单值合同不变）。挂点在拓扑门放行（`_multi_slice_gate_opened`
-  置位）后；run 内 runner 是 scope 的单点写者，无并发冲突；
-- 协议上下文把全部 ontology_id 交给 Protocol Agent，Protocol 按既有 R3.0-002 冻结规则
-  逐 Ontology 提交单绑定的 Modeling Batch（每 batch dry-run → apply_atomic，串行）；
+  创建并登记全部 Ontology（formal 单值合同不变）。挂点在拓扑门放行
+  （`_multi_slice_gate_opened` 置位）后；run 内 runner 是 scope 的单点写者，无并发冲突。
+  **身份映射规则**：`ontology_plan` 首个条目即 scope 预建的 owned Ontology（创建
+  Project 时已建），其余 N−1 个由 runner 在门放行后创建并登记；
+- **ontology_id 交付机制（评审 Round 4 M-2）**：Protocol 任务文本在 `start()` 时冻结，
+  早于门放行，不能作为多 Ontology 信息载体。交付改为双通道：(a) 门放行后 runner 把
+  全部 ontology_id 经既有 gate-open 消息通道补充投递给 Protocol；(b) Protocol 侧以
+  `get_project_build_context` 返回的项目 Ontology 列表为准（任务 objective 已指示逐
+  Ontology 建 batch）。任务文本措辞同步写明"冻结 scope JSON 仅含首个 Ontology，完整
+  清单以 (a)/(b) 为准"；
+- **`PlatformScope` 终态/清理通路的多 Ontology 扩展（评审 Round 4 H-1）**：现清理
+  合同按单 Ontology 写死（ownership 恒等恰一、恰一 completed session、`_has_writes`/
+  final context/删除证据只看首个 Ontology），多 Ontology 成功 run 会必然落入
+  `blocked`/`failed-written-retained` 假失败。扩展为：multi-slice 分支的
+  `_terminal_state` ownership 规则改为"involved 集合恰等于 `ontology_plan` 全集"；
+  完成判定改为"每个 Ontology 恰一个 completed owned Build Session 且无 in-flight
+  lease"；`_has_writes`、final workspace context/version、删除证据核验覆盖全部
+  Ontology；runner 侧 retained-handoff 证据按 Ontology 集合记录。单 Ontology 与
+  formal 路径行为字节不变（守恒测试）；
+- Protocol 按既有 R3.0-002 冻结规则逐 Ontology 提交单绑定的 Modeling Batch（每 batch
+  dry-run → apply_atomic，串行）；
 - 增量含 task YAML/协议提示的最小措辞同步与守恒测试（单 Ontology 拓扑路径不回归）。
 
 **M4 — RDF 全量确定性检查**（验收侧，见 §8 修订）：以全量个体枚举 + 逐类分类替代
