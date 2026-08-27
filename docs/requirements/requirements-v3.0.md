@@ -9,7 +9,10 @@
   独立测试 Round 2 PASS——Round 1 发现新模板命名空间错位与既有 export 缺图 500 两缺陷，修复后
   复测通过）；R3.0-005 已完成（2026-08-27 实现并通过独立测试 Round 2 PASS——Round 1 发现
   discovery 不暴露 `graph_set_id` 的读路径缺口与冒烟 prompt 合同缺陷，修复并经用户独立审核
-  追加口径/类型合同修订后复测通过）；R3.0-006 已补充概要设计边界，仍待细化、实现与验收
+  追加口径/类型合同修订后复测通过）；R3.0-006 交付设计与共享测试计划已完成并通过计划
+  评审（2026-08-27，Round 2 PASS——Round 1 发现 Consumer 驱动复用与冻结资产约束冲突，
+  修订为新建 `scripts/r3-0-006/consumer_rounds.py` 外部化问句与判分输入后复核通过），
+  真实 modeling start 仍待用户显式授权
 - 基础版本：`docs/requirements/requirements-v2.3.md` 的建模团队与通用语义查询基线
 - 关联版本：`docs/requirements/requirements-v1.0.md` 的项目/本体权限边界；
   `docs/requirements/requirements-v2.4.md` 为独立的 RDF Literal 能力，不是本版本前置
@@ -32,6 +35,9 @@
 - R3.0-005 交付设计与测试计划：
   `docs/delivery/designs/2026-08-27-r3-0-005-ontology-guided-sql-qa-design.md`、
   `docs/delivery/test-plans/2026-08-27-r3-0-005-ontology-guided-sql-qa-test-plan.md`
+- R3.0-006 交付设计与测试计划（计划评审 Round 2 PASS，待用户授权真实 modeling start）：
+  `docs/delivery/designs/2026-08-27-r3-0-006-real-modeling-e2e-acceptance-design.md`、
+  `docs/delivery/test-plans/2026-08-27-r3-0-006-real-modeling-e2e-acceptance-test-plan.md`
 - 更新日期：2026-08-27
 
 ## 1. 背景与目标
@@ -114,7 +120,7 @@ v3.0 的最终目标是：业务事实仍由 PostgreSQL 保存；Ontology 只作
 | R3.0-003 | 纯语义 Ontology 与关系型 Schema 映射 | P0 | `已完成（2026-08-27）` | 独立测试 Round 2 PASS（Round 1 缺陷修复后复测） |
 | R3.0-004 | 主体绑定的语义知识访问控制 | P0 | `已完成（2026-08-26）` | 独立测试 Round 1 PASS |
 | R3.0-005 | Ontology 引导的 SQL 问数链路 | P0 | `已完成（2026-08-27）` | 独立测试 Round 2 PASS（Round 1 两缺陷修复后复测） |
-| R3.0-006 | 真实建模与端到端问数验收 | P0 | `概要设计，待细化/验收` | 后续阶段 |
+| R3.0-006 | 真实建模与端到端问数验收 | P0 | `交付设计与测试计划完成（计划评审 Round 2 PASS），待用户授权真实 modeling start` | 后续阶段 |
 | R3.0-007 | 读取模型图限定与 LIMIT 截断修复 | P1 | `已完成（2026-08-26）` | 独立测试 Round 1 PASS |
 
 ### R3.0-001 场景资料与 PostgreSQL 数据基线
