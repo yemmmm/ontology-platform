@@ -18,7 +18,7 @@
 | 发运 | 仓库向申请分配并发送备件的记录 | `part_shipments` |
 | 兼容性 | 备件与设备型号之间的适配关系 | `part_compatibilities` |
 | 库存变动 | 仓库中备件数量的一次变化 | `inventory_movements` |
-| 标准成本 | 备件主数据上的成本参考值；可见角色待确认 | `spare_parts.standard_cost` |
+| 标准成本 | 备件主数据上的成本参考值；允许访问的业务受众待确认 | `spare_parts.standard_cost` |
 
 待确认词汇包括“有效合同”“SLA 达标”“解决”“一次修复”“重复故障”“备件短缺”“延迟原因未知”
 和“服务绩效”。这些词不能仅由 Schema 或样例行决定。

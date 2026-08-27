@@ -11,7 +11,7 @@
 ## 1. 测试边界
 
 本计划只验收 R3.0-001。它不创建 Ontology/RDF 业务实例，不启动 Modeling Agent，不调用 Consumer
-Agent，不证明 `forbidden` 已实现，也不把直接 SQL 查询成功解释为安全验收。
+Agent，不证明保护集读取合同已实现，也不把直接 SQL 查询成功解释为安全验收。
 
 所有破坏性数据库操作只能由安全 loader 命中精确 schema `industrial_service_v3`。loader 必须先以
 只读 SQL 确认当前数据库、目标 schema owner/comment marker 和非目标 relation sentinel；不允许对
@@ -44,7 +44,7 @@ sentinel 和装载结果，但不得输出密码。查询验证使用提交的 `
 3. 建模输入中的业务术语保持简短，显式列出需要用户澄清的未知项；不直接给出完整 SLA/重复故障/
    一次修复/延迟归因口径。
 4. `docs/delivery/reference/industrial-service-v3-business-process-reference.md` 明确标记“不得作为建模
-   输入”，并包含切片关系、主流程、异常分支、指标口径、权限示例和 competency questions。
+   输入”，并包含切片关系、主流程、异常分支、指标口径、保护受众示例和 competency questions。
 5. 全仓新增场景文件不含密码、真实连接串、API key 或个人信息。
 
 ### T2 SQL 静态结构
@@ -102,7 +102,7 @@ sentinel 和装载结果，但不得输出密码。查询验证使用提交的 `
 ### T5 全局原则、术语和范围守恒
 
 1. 根 `AGENTS.md` 记录可跨场景复用的关系型语义层指导：RDF 不存业务行、Schema 非业务真理、
-   完整场景切片但不预判 Ontology 拓扑、先授权语义后 SQL、语义权限与数据权限分离。
+   完整场景切片但不预判 Ontology 拓扑、先授权语义后 SQL、语义知识保护与数据权限分离。
 2. `docs/reference/glossary.md` 定义 Business Scenario、Logical Modeling Slice、Semantic Mapping、
    Semantic Knowledge Authorization、Business Data Authorization、SQL Execution Adapter，并避免将其与
   现有 Project/Ontology/Graph Set 混同。

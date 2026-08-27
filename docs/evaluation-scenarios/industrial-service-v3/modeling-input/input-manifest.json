@@ -10,5 +10,5 @@
   ],
   "runtime_boundary": "Only files in this directory named above may be mounted for modeling; this manifest does not grant access to parent directories.",
   "data_policy": "Representative rows stay in PostgreSQL. Do not create RDF individuals for source rows.",
-  "interview_policy": "Schema names and samples are evidence; confirm lifecycle, metric, causality, and authorization meanings with the user."
+  "interview_policy": "Schema names and samples are evidence; confirm lifecycle, metric, causality, protected business audiences, and the semantic-versus-data authorization boundary with the user."
 }
