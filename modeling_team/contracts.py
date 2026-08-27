@@ -448,17 +448,27 @@ def load_profile(
         if ids != expected_ids:
             raise TeamConfigurationError("formal Profile Agent IDs must match the four role IDs")
     elif multi_slice:
-        # R3.0-002 non-formal branch: exactly the three modeling roles, no
-        # Acceptance (added by the R3.0-006 real-run requirement only).
-        if profile_id not in MULTI_SLICE_PROFILE_IDS:
+        # R3.0-002 non-formal branch, relaxed inclusively by R3.0-006 M2: the
+        # closed Profile registration now excludes only the formal Profile
+        # registry (cross-wire guard); any other Profile loads when it carries
+        # each core modeling role exactly once.  Extra roles (future dynamic
+        # Agents) are admitted as long as their role names stay in
+        # ROLE_VALUES, and only the core-role Agents keep the agent_id == role
+        # identity requirement.  The formal branch above is byte-unchanged.
+        if profile_id in _FORMAL_PROFILE_IDS:
             raise TeamConfigurationError("multi-slice Profile is not registered")
-        if len(agents) != 3 or set(roles) != MULTI_SLICE_ROLE_VALUES or len(set(roles)) != 3:
+        role_set = set(roles)
+        if len(roles) != len(role_set) or not MULTI_SLICE_ROLE_VALUES <= role_set:
             raise TeamConfigurationError(
-                "multi-slice Profile requires exactly Coordinator, Modeling, and Protocol"
+                "multi-slice Profile requires exactly one Coordinator, Modeling, and Protocol"
             )
-        if ids != set(MULTI_SLICE_ROLE_VALUES):
+        if any(
+            agent.agent_id != agent.package.role
+            for agent in agents
+            if agent.package.role in MULTI_SLICE_ROLE_VALUES
+        ):
             raise TeamConfigurationError(
-                "multi-slice Profile Agent IDs must match the three role IDs"
+                "multi-slice Profile core Agent IDs must match the role IDs"
             )
     elif roles.count("coordinator") != 1 or roles.count("protocol") != 1:
         raise TeamConfigurationError(
@@ -538,6 +548,8 @@ def load_profile(
         if edges != required_edges:
             raise TeamConfigurationError("formal Profile communication graph drift")
     if multi_slice:
+        # R3.0-006 M2 inclusive edge check: the core-role edge set is a
+        # required subset; edges of extra roles no longer break the graph.
         required_edges = {
             ("coordinator", "modeling"),
             ("coordinator", "protocol"),
@@ -546,7 +558,7 @@ def load_profile(
             ("protocol", "coordinator"),
             ("protocol", "modeling"),
         }
-        if edges != required_edges:
+        if not required_edges <= edges:
             raise TeamConfigurationError("multi-slice Profile communication graph drift")
     parameter_binding = data["parameters"].get("expected_matrix_binding")
     top_level_binding = data.get("expected_matrix_binding")

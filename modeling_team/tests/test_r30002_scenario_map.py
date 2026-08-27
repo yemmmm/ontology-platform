@@ -202,11 +202,16 @@ def test_invalid_scenario_map_reports_expected_reason_code(variant, expected_cod
 
 
 def test_valid_topology_decisions_have_no_issues():
-    valid = FIXTURES["topology_decision"]["valid"]
+    valid = FIXTURES["topology_decision"]["multi_ontology_plan_valid"]
     single = FIXTURES["topology_decision"]["single_ontology_selected_valid"]
     assert scenario_map.validate_topology_decision(valid) == ()
     # Selecting single_ontology never waives the three-option comparison.
     assert scenario_map.validate_topology_decision(single) == ()
+    # R3.0-006 M3 registered revision: a non-single_ontology selection without
+    # ontology_plan is no longer valid (topology_missing_ontology_plan).
+    legacy = FIXTURES["topology_decision"]["valid"]
+    codes = _issue_codes(scenario_map.validate_topology_decision(legacy))
+    assert list(codes) == ["topology_missing_ontology_plan"]
 
 
 @pytest.mark.parametrize(

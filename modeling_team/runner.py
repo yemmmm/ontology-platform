@@ -93,6 +93,7 @@ from .protocol_mcp_launch import (
     protocol_mcp_reasoner_contract,
 )
 from .scenario_map import (
+    TOPOLOGY_ONTOLOGY_PLAN_FIELD,
     ScenarioMapArtifactError,
     load_scenario_map,
     load_topology_decision,
@@ -133,6 +134,10 @@ _P2A_PASS_RELATIVE = "workspaces/modeling-runs/.r2-3-002-proof-v2-gates/p2a-pass
 _MATRIX_SCHEMA = "r2-3-002-proof-v2-assertion-matrix/v1"
 _P2A_SCHEMA = "r2-3-002-proof-v2-gates/p2a-pass/v1"
 _OWNER_ANSWER_AUTHORIZATION = "r2-3-002-owner-answer-authorization"
+# R3.0-006 M2: the roles message routing cannot work without.  The Runner
+# requires their existence (fail-closed) but no longer assumes an exact
+# roster; extra Profile roles carry no terminal dependency.
+RUNNER_CORE_ROLE_VALUES = frozenset({"coordinator", "modeling", "protocol"})
 
 
 @dataclass
@@ -572,7 +577,12 @@ class TeamRunner:
             if expected_binding
             else None
         )
-        if config.task.schema_version == 2:
+        # R3.0-006 M1: non-formal multi_slice_workflow runs skip the StartLedger
+        # budget gate entirely (no reservation, no rejection, no ledger entry);
+        # attempts are recorded by the Delivery Agent instead.  Every other v2
+        # task keeps its byte-identical ledger binding and reservation.
+        multi_slice_budget_exempt = multi_slice_workflow and not formal_acceptance
+        if config.task.schema_version == 2 and not multi_slice_budget_exempt:
             ledger_config = resolve_ledger_config(
                 formal_contract.ledger_requirement_id
                 if formal_contract is not None and formal_contract.ledger_requirement_id
@@ -1602,13 +1612,24 @@ class TeamRunner:
                 with self._issue_event_lock:
                     self._issue_event_queue.append(deepcopy(event))
 
+            # R3.0-006 M2: the dependency graph is derived from the Profile's
+            # actual role set instead of a hard-coded four-role roster.  The
+            # three message-routing core roles stay mandatory (fail-closed
+            # typed error); extra roles (future dynamic Agents) carry no
+            # terminal dependency.  For every historical roster that includes
+            # Acceptance this graph is byte-identical to the previous one.
+            missing_core_roles = RUNNER_CORE_ROLE_VALUES - set(role_agents)
+            if missing_core_roles:
+                raise TeamConfigurationError(
+                    "Team Profile is missing the core roles: "
+                    + ",".join(sorted(missing_core_roles))
+                )
+            coordinator_dependencies = {role_agents["modeling"], role_agents["protocol"]}
+            if "acceptance" in role_agents:
+                coordinator_dependencies.add(role_agents["acceptance"])
             terminal_dependencies = {
                 role_agents["protocol"]: {role_agents["modeling"]},
-                role_agents["coordinator"]: {
-                    role_agents["modeling"],
-                    role_agents["protocol"],
-                    role_agents["acceptance"],
-                },
+                role_agents["coordinator"]: coordinator_dependencies,
             }
             if formal_coordination:
                 # Formal Acceptance is the semantic gate for the Modeling
@@ -1665,16 +1686,20 @@ class TeamRunner:
                 self.run, self.run.configuration.profile.agents
             )
             roster = [identity.agent_id for identity in identities]
-            if self._ledger:
+            # R3.0-006 M1: the pre-delivery visibility probe and the
+            # semantic-start evidence belong to every v2 run, with or without
+            # a StartLedger (multi_slice_workflow runs carry no ledger).
+            if self._ledger or self.run.configuration.task.schema_version == 2:
                 self._probe_role_visibility()
                 runtime_probe = self.adapter.probe_role_visibility(self.run)
                 self._append_evidence("runtime-visibility-probe", {"passed": True, "roles": runtime_probe})
                 if self.run.configuration.task.schema_version == 2 and self.run.gate_binding is not None:
                     self._preflight_proof_v2_gate()
-                self._ledger.mark_semantic_start(
-                    self.run.run_id,
-                    gate_binding=self.run.gate_binding,
-                )
+                if self._ledger:
+                    self._ledger.mark_semantic_start(
+                        self.run.run_id,
+                        gate_binding=self.run.gate_binding,
+                    )
                 self._append_evidence(
                     "semantic-start",
                     {
@@ -3562,6 +3587,24 @@ class TeamRunner:
             code = map_issues[0].reason_code
             self._multi_slice_gate_reject(code, map_rel, f"{code}:{map_digest}")
             return
+        # R3.0-006 M3 second pass: the topology decision is validated before
+        # the map exists (so a missing map never blocks structural repair
+        # feedback), and once the map is loaded its slice list closes the
+        # decision's ``ontology_plan`` slice references (the
+        # ``validate_protection_iri_suggestions`` precedent).
+        if TOPOLOGY_ONTOLOGY_PLAN_FIELD in decision:
+            slice_ids = {
+                item["slice_id"]
+                for item in scenario_map["slices"]
+                if isinstance(item, dict) and isinstance(item.get("slice_id"), str)
+            }
+            closure_issues = validate_topology_decision(decision, slice_ids=slice_ids)
+            if closure_issues:
+                code = closure_issues[0].reason_code
+                self._multi_slice_gate_reject(
+                    code, decision_rel, f"{code}:{decision_digest}"
+                )
+                return
         role_ids = self._multi_slice_role_ids()
         protocol_agent_id = role_ids.get("protocol", "protocol")
         identity = {
@@ -3603,6 +3646,106 @@ class TeamRunner:
                 "candidate_revision": identity["candidate_revision"],
                 "semantic_digest": identity["semantic_digest"],
                 "candidate_digest": identity["candidate_digest"],
+            },
+        )
+        self._apply_multi_slice_ontology_plan(decision)
+
+    def _apply_multi_slice_ontology_plan(self, decision: dict[str, Any]) -> None:
+        """R3.0-006 M3: apply an accepted multi-Ontology plan after gate open.
+
+        The first plan entry is the scope-precreated Ontology; the Runner
+        creates the remaining N-1 Ontologies as the single scope writer, then
+        delivers the full ontology-id set to the Protocol Agent.  Apply or
+        delivery failures are recorded evidence (runtime/infrastructure) and
+        never terminate the run; ``PlatformScope.apply_ontology_plan`` stays
+        idempotent so the next cycle can retry.
+        """
+
+        plan = decision.get(TOPOLOGY_ONTOLOGY_PLAN_FIELD)
+        if not plan:
+            return
+        scope = getattr(self, "scope", None)
+        if scope is None:
+            self._append_evidence(
+                "multi-slice-gate",
+                {
+                    "event": "ontology-plan-scope-unavailable",
+                    "classification": "runtime/infrastructure",
+                },
+            )
+            return
+        try:
+            ontology_ids = scope.apply_ontology_plan(plan)
+        except Exception as exc:
+            self._append_evidence(
+                "multi-slice-gate",
+                {
+                    "event": "ontology-plan-apply-failed",
+                    "classification": "runtime/infrastructure",
+                    "detail": str(exc),
+                },
+            )
+            return
+        self._append_evidence(
+            "multi-slice-gate",
+            {
+                "event": "ontology-plan-applied",
+                "ontology_ids": list(ontology_ids),
+            },
+        )
+        try:
+            self.run.protocol_context = scope.read_protocol_context()
+        except Exception as exc:
+            self._append_evidence(
+                "multi-slice-gate",
+                {
+                    "event": "ontology-plan-context-refresh-failed",
+                    "classification": "runtime/infrastructure",
+                    "detail": str(exc),
+                },
+            )
+        self._deliver_multi_slice_ontology_ids(ontology_ids)
+
+    def _deliver_multi_slice_ontology_ids(self, ontology_ids: list[str]) -> None:
+        """Gate-open delivery of the full ontology-id set to Protocol (M3)."""
+
+        if not self.run or not ontology_ids:
+            return
+        protocol = self._multi_slice_role_ids().get("protocol", "protocol")
+        notice = {
+            "schema_version": "r3-0-006-multi-slice-ontology-plan/v1",
+            "run_id": self.run.run_id,
+            "ontology_ids": list(ontology_ids),
+            "source_of_truth": (
+                "get_project_build_context lists every planned Ontology and is "
+                "authoritative; this delivery is a supplementary notification."
+            ),
+        }
+        delivery = RuntimeDelivery(
+            sender_id="runner/multi-slice-gate",
+            recipient_id=protocol,
+            kind="multi-slice-ontology-plan",
+            text=json.dumps(notice, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            expects_reply=False,
+        )
+        try:
+            receipt = self.adapter.send_message(protocol, delivery)
+        except Exception as exc:
+            self._append_evidence(
+                "multi-slice-gate",
+                {
+                    "event": "ontology-plan-delivery-failed",
+                    "detail": str(exc),
+                },
+            )
+            return
+        self._append_evidence(
+            "multi-slice-gate",
+            {
+                "event": "ontology-plan-delivered",
+                "recipient": protocol,
+                "ontology_ids": list(ontology_ids),
+                "turn_id": getattr(receipt, "turn_id", None),
             },
         )
 
@@ -5793,13 +5936,49 @@ class TeamRunner:
             or scope.get("admin_key_revoked") is not True
         ):
             raise TeamConfigurationError("retained scope cleanup safety gate is incomplete")
-        if any(not isinstance(scope.get(field), str) or not scope[field] for field in required):
-            raise TeamConfigurationError("retained scope evidence is incomplete")
+        # R3.0-006 M3: a multi-Ontology retained scope records the aggregate
+        # ontology set (workspace version and completed Build Session per
+        # planned Ontology) instead of the single-Ontology tuple.
+        ontology_ids = scope.get("ontology_ids")
+        if isinstance(ontology_ids, list) and len(ontology_ids) > 1:
+            versions = scope.get("workspace_versions")
+            sessions = scope.get("completed_session_ids")
+            if (
+                not isinstance(scope.get("project_id"), str)
+                or not scope["project_id"]
+                or not isinstance(versions, dict)
+                or not isinstance(sessions, dict)
+                or set(versions) != set(ontology_ids)
+                or set(sessions) != set(ontology_ids)
+                or any(
+                    not isinstance(versions.get(ontology_id), str)
+                    or not versions[ontology_id]
+                    or not isinstance(sessions.get(ontology_id), str)
+                    or not sessions[ontology_id]
+                    for ontology_id in ontology_ids
+                )
+            ):
+                raise TeamConfigurationError("retained multi-Ontology scope evidence is incomplete")
+            scope_fields = {
+                "project_id": scope["project_id"],
+                "ontology_id": scope["ontology_id"],
+                "ontology_ids": list(ontology_ids),
+                "workspace_versions": {key: versions[key] for key in ontology_ids},
+                "completed_session_ids": {key: sessions[key] for key in ontology_ids},
+                "scope_disposition": scope["scope_disposition"],
+                "owned": True,
+            }
+        else:
+            if any(not isinstance(scope.get(field), str) or not scope[field] for field in required):
+                raise TeamConfigurationError("retained scope evidence is incomplete")
+            scope_fields = {
+                field: scope[field] for field in (*required, "scope_disposition", "owned")
+            }
         results = self._completed_terminal_statuses(self.run.terminal_results)
         payload = {
             "run_id": self.run.run_id,
             "terminal_statuses": results,
-            "scope": {field: scope[field] for field in (*required, "scope_disposition", "owned")},
+            "scope": scope_fields,
         }
         path = self.run.root / "evidence" / "retained-handoff-input.json"
         encoded = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode()
@@ -5813,15 +5992,27 @@ class TeamRunner:
             os.fsync(stream.fileno())
         os.chmod(path, 0o444)
 
-    @staticmethod
-    def _completed_terminal_statuses(results: Any) -> dict[str, str]:
-        roles = {"coordinator", "modeling", "protocol", "acceptance"}
+    def _completed_terminal_statuses(self, results: Any) -> dict[str, str]:
+        # R3.0-006 M2: the completed-status contract is derived from the
+        # Profile's actual role set (e.g. the three-role multi-slice roster)
+        # instead of a hard-coded four-role requirement.  Doubles without a
+        # configuration keep the historical four-role default.
+        configuration = getattr(self.run, "configuration", None)
+        profile = getattr(configuration, "profile", None) if configuration is not None else None
+        agents = getattr(profile, "agents", None) if profile is not None else None
+        roles = (
+            {agent.package.role for agent in agents}
+            if agents
+            else {"coordinator", "modeling", "protocol", "acceptance"}
+        )
         if (
             not isinstance(results, dict)
             or set(results) != roles
             or any(not isinstance(value, dict) or value.get("status") != "completed" for value in results.values())
         ):
-            raise TeamConfigurationError("retained scope requires exactly four completed Agent statuses")
+            raise TeamConfigurationError(
+                "retained scope requires every Profile Agent status completed"
+            )
         return {role: "completed" for role in sorted(roles)}
 
     def _append_evidence(self, name: str, value: dict[str, Any]) -> None:

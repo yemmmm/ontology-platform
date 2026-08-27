@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable
 
 
@@ -59,6 +59,10 @@ class PlatformScope:
     final_workspace_version: str | None = None
     completed_session_id: str | None = None
     scope_disposition: str | None = None
+    # R3.0-006 M3: the full planned Ontology set once a topology decision's
+    # ``ontology_plan`` has been applied (empty for the single-Ontology path).
+    ontology_ids: list[str] = field(default_factory=list)
+    completed_session_ids: dict[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.request is None:
@@ -148,6 +152,71 @@ class PlatformScope:
         self.project_id, self.ontology_id, self.owned = project, ontology, False
         self.existing_strict = isinstance(scope.get("handoff_path"), str)
         self.existing_context_before = self._existing_context(strict=self.existing_strict)
+
+    def apply_ontology_plan(self, plan: Any) -> list[str]:
+        """R3.0-006 M3: create every planned Ontology (idempotent, single writer).
+
+        The first plan entry is the scope-precreated Ontology; the remaining
+        N-1 are created by the Runner here.  Re-applying the same plan reuses
+        already-created same-name Ontologies instead of duplicating them.
+        """
+
+        if self.ontology_ids:
+            return list(self.ontology_ids)
+        if (
+            not isinstance(plan, list)
+            or len(plan) < 2
+            or not all(
+                isinstance(entry, dict)
+                and set(entry) == {"name", "slice_ids"}
+                and isinstance(entry.get("name"), str)
+                and bool(entry["name"].strip())
+                and isinstance(entry.get("slice_ids"), list)
+                and bool(entry["slice_ids"])
+                and all(isinstance(item, str) and item for item in entry["slice_ids"])
+                and len(set(entry["slice_ids"])) == len(entry["slice_ids"])
+                for entry in plan
+            )
+        ):
+            raise PlatformScopeError("ontology plan is structurally invalid")
+        names = [entry["name"] for entry in plan]
+        if len(set(names)) != len(names):
+            raise PlatformScopeError("ontology plan names are not unique")
+        if not self.project_id or not self.ontology_id:
+            raise PlatformScopeError("scope identity is unavailable")
+        listed = self._ok("GET", f"/api/projects/{self.project_id}/ontologies")
+        if not isinstance(listed, list):
+            raise PlatformScopeError("Project Ontology listing is invalid")
+        existing = {
+            item.get("name"): item.get("id")
+            for item in listed
+            if isinstance(item, dict)
+            and isinstance(item.get("name"), str)
+            and isinstance(item.get("id"), str)
+        }
+        ontology_ids = [self.ontology_id]
+        for entry in plan[1:]:
+            name = entry["name"]
+            ontology_id = existing.get(name)
+            if ontology_id is None:
+                ontology = self._ok(
+                    "POST",
+                    f"/api/projects/{self.project_id}/ontologies",
+                    {
+                        "name": name,
+                        "description": "R3.0-006 ontology plan entry",
+                        "external_mappings": {},
+                    },
+                    statuses={201},
+                )
+                ontology_id = (
+                    ontology.get("id") if isinstance(ontology.get("id"), str) else None
+                )
+            if not ontology_id:
+                raise PlatformScopeError("planned Ontology has no identity")
+            ontology_ids.append(ontology_id)
+        self.ontology_ids = ontology_ids
+        return list(ontology_ids)
 
     def _empty_context(self) -> dict[str, Any]:
         if not self.ontology_id:
@@ -334,13 +403,36 @@ class PlatformScope:
                         evidence["owned_project_preserved"] = terminal["success_blocker"]
                         self._revoke_keys(evidence)
                         return evidence
-                    context = self._modeling_context()
-                    self.final_workspace_context = context
-                    self.scope_disposition = "retained-pending-acceptance"
-                    self.final_workspace_version = self._workspace_version(context)
-                    evidence["scope_disposition"] = self.scope_disposition
-                    evidence["workspace_version"] = self.final_workspace_version
-                    evidence["completed_session_id"] = self.completed_session_id
+                    if len(self.ontology_ids) > 1:
+                        # R3.0-006 M3: the retained evidence covers every
+                        # planned Ontology (final context and workspace
+                        # version per Ontology, one completed Build Session
+                        # per Ontology).
+                        contexts = {
+                            ontology_id: self._modeling_context(ontology_id)
+                            for ontology_id in self.ontology_ids
+                        }
+                        versions = {
+                            ontology_id: self._workspace_version(context)
+                            for ontology_id, context in contexts.items()
+                        }
+                        self.final_workspace_context = contexts[self.ontology_id]
+                        self.final_workspace_version = versions[self.ontology_id]
+                        self.scope_disposition = "retained-pending-acceptance"
+                        evidence["scope_disposition"] = self.scope_disposition
+                        evidence["ontology_ids"] = list(self.ontology_ids)
+                        evidence["workspace_versions"] = versions
+                        evidence["completed_session_ids"] = dict(
+                            self.completed_session_ids
+                        )
+                    else:
+                        context = self._modeling_context()
+                        self.final_workspace_context = context
+                        self.scope_disposition = "retained-pending-acceptance"
+                        self.final_workspace_version = self._workspace_version(context)
+                        evidence["scope_disposition"] = self.scope_disposition
+                        evidence["workspace_version"] = self.final_workspace_version
+                        evidence["completed_session_id"] = self.completed_session_id
                 elif nonempty:
                     self.scope_disposition = "failed-written-retained"
                     evidence["scope_disposition"] = self.scope_disposition
@@ -480,6 +572,11 @@ class PlatformScope:
                 "owned": self.owned,
                 "project_id": self.project_id,
                 "ontology_id": self.ontology_id,
+                **(
+                    {"ontology_ids": list(self.ontology_ids)}
+                    if len(self.ontology_ids) > 1
+                    else {}
+                ),
             },
             "cleanup_receipts": {
                 "protocol_key_revoked": evidence.get("protocol_key_revoked") is True,
@@ -516,15 +613,31 @@ class PlatformScope:
                 "residual_counts": None,
             }
         checks: dict[str, Any] = {}
-        for label, path in (
-            ("project_absent", f"/api/projects/{self.project_id}"),
-            ("ontology_absent", f"/api/ontologies/{self.ontology_id}"),
-        ):
+        try:
+            status, _ = self.request(
+                "GET", f"/api/projects/{self.project_id}", None, self.admin_key
+            )
+        except Exception:
+            status = 0
+        checks["project_absent"] = status == 404
+        ontology_ids = self.ontology_ids or (
+            [self.ontology_id] if self.ontology_id else []
+        )
+        ontology_absent: dict[str, bool] = {}
+        for ontology_id in ontology_ids:
             try:
-                status, _ = self.request("GET", path, None, self.admin_key)
+                status, _ = self.request(
+                    "GET", f"/api/ontologies/{ontology_id}", None, self.admin_key
+                )
             except Exception:
                 status = 0
-            checks[label] = status == 404
+            ontology_absent[ontology_id] = status == 404
+        if ontology_absent:
+            checks["ontology_absent"] = all(ontology_absent.values())
+            if len(ontology_absent) > 1:
+                checks["ontology_absent_by_id"] = ontology_absent
+        else:
+            checks["ontology_absent"] = None
         try:
             status, value = self.request("GET", "/api/api-keys", None, self.admin_key)
             if status != 200 or not isinstance(value, list):
@@ -563,15 +676,16 @@ class PlatformScope:
             raise PlatformScopeError("ontology workspace is not ready")
         return context
 
-    def _modeling_context(self) -> dict[str, Any]:
-        if not self.ontology_id:
+    def _modeling_context(self, ontology_id: str | None = None) -> dict[str, Any]:
+        ontology_id = ontology_id or self.ontology_id
+        if not ontology_id:
             raise PlatformScopeError("ontology unavailable")
-        context = self._ok("GET", f"/api/ontologies/{self.ontology_id}/modeling-context")
+        context = self._ok("GET", f"/api/ontologies/{ontology_id}/modeling-context")
         if not isinstance(context, dict):
             raise PlatformScopeError("modeling context is invalid")
         project = context.get("project", {})
         ontology = context.get("ontology", {})
-        if project.get("id") != self.project_id or ontology.get("id") != self.ontology_id:
+        if project.get("id") != self.project_id or ontology.get("id") != ontology_id:
             raise PlatformScopeError("modeling context ownership drifted")
         version = self._workspace_version(context)
         if not version:
@@ -586,11 +700,16 @@ class PlatformScope:
         workspace_version = self._workspace_version(context)
         if not workspace_version:
             raise PlatformScopeError("Protocol scope context has no workspace version")
-        return {
+        values: dict[str, str] = {
             "project_id": self.project_id,
             "ontology_id": self.ontology_id,
             "workspace_version": workspace_version,
         }
+        # R3.0-006 M3: a multi-Ontology plan exposes the full planned set;
+        # Protocol treats get_project_build_context as authoritative.
+        if len(self.ontology_ids) > 1:
+            values["ontology_ids"] = ",".join(self.ontology_ids)
+        return values
 
     @staticmethod
     def _workspace_version(context: dict[str, Any]) -> str | None:
@@ -602,20 +721,28 @@ class PlatformScope:
         """Cancel safe failed Sessions before any scope disposition is considered."""
         if not self.owned or not self.project_id or not self.admin_key:
             return {}
+        # R3.0-006 M3: a multi-Ontology plan uses aggregate ownership — each
+        # Session involves exactly one planned Ontology, the cross-Session
+        # union is the whole plan, and completion means one completed owned
+        # Build Session per planned Ontology.
+        multi = len(self.ontology_ids) > 1
+        plan_ids = set(self.ontology_ids) if multi else set()
         build = self._ok("GET", f"/api/projects/{self.project_id}/build-context")
         agent_state = build.get("agent_state") if isinstance(build, dict) else None
         if not isinstance(agent_state, dict):
             return {"cleanup_blocker": "Build Context agent state is invalid"}
         sessions = []
-        for field in ("active_sessions", "recent_sessions"):
-            values = agent_state.get(field)
+        for agent_field in ("active_sessions", "recent_sessions"):
+            values = agent_state.get(agent_field)
             if not isinstance(values, list):
-                return {"cleanup_blocker": f"Build Context {field} is invalid"}
+                return {"cleanup_blocker": f"Build Context {agent_field} is invalid"}
             sessions.extend(values)
         if not isinstance(sessions, list):
             return {"cleanup_blocker": "Build Context sessions are invalid"}
         seen_sessions: set[str] = set()
         completed_candidates: list[str] = []
+        completed_by_ontology: dict[str, str] = {}
+        involved_union: set[str] = set()
         for summary in sessions:
             if not isinstance(summary, dict) or not isinstance(summary.get("id"), str):
                 return {"cleanup_blocker": "Build Session identity is ambiguous"}
@@ -638,7 +765,15 @@ class PlatformScope:
             involved = detail.get("involved_ontology_ids", []) if isinstance(detail, dict) else []
             if not isinstance(involved, list):
                 return {"cleanup_blocker": "Build Session Ontology ownership is invalid"}
-            if involved and set(involved) != {self.ontology_id}:
+            if multi:
+                if (
+                    not involved
+                    or len(set(involved)) != 1
+                    or set(involved) - plan_ids
+                ):
+                    return {"cleanup_blocker": "Build Session Ontology ownership drifted"}
+                involved_union.update(involved)
+            elif involved and set(involved) != {self.ontology_id}:
                 return {"cleanup_blocker": "Build Session Ontology ownership drifted"}
             state = session.get("status") if isinstance(session, dict) else None
             if state not in {"completed", "cancelled"}:
@@ -664,11 +799,35 @@ class PlatformScope:
                 return {
                     "success_blocker" if require_completed else "cleanup_blocker": "an owned Ontology Lease is not released"
                 }
-            if involved == [self.ontology_id] or set(involved) == {self.ontology_id}:
+            if multi:
+                if state == "completed":
+                    ontology_id = involved[0]
+                    if ontology_id in completed_by_ontology:
+                        return {
+                            "success_blocker": "multiple completed owned Build Sessions for one planned Ontology"
+                        }
+                    completed_by_ontology[ontology_id] = session_id
+                elif require_completed:
+                    return {"success_blocker": "Build Session is cancelled or not completed"}
+            elif involved == [self.ontology_id] or set(involved) == {self.ontology_id}:
                 if state == "completed":
                     completed_candidates.append(session_id)
                 elif require_completed:
                     return {"success_blocker": "Build Session is cancelled or not completed"}
+        if multi:
+            if involved_union != plan_ids:
+                return {"cleanup_blocker": "Build Session Ontology coverage drifted"}
+            if require_completed:
+                if set(completed_by_ontology) != plan_ids:
+                    return {
+                        "success_blocker": "every planned Ontology requires exactly one completed owned Build Session"
+                    }
+                self.completed_session_ids = dict(completed_by_ontology)
+                return {
+                    "sessions_terminal": True,
+                    "completed_session_ids": dict(self.completed_session_ids),
+                }
+            return {"sessions_terminal": True}
         if require_completed:
             if len(completed_candidates) != 1:
                 return {"success_blocker": "successful producer requires exactly one completed owned Build Session"}
@@ -677,11 +836,17 @@ class PlatformScope:
         return {"sessions_terminal": True}
 
     def _has_writes(self) -> bool:
-        if not self.ontology_id:
-            return False
-        batches = self._ok("GET", f"/api/ontologies/{self.ontology_id}/modeling-batches")
-        items = batches.get("items", batches.get("batches", [])) if isinstance(batches, dict) else []
-        return isinstance(items, list) and bool(items)
+        ontology_ids = self.ontology_ids or (
+            [self.ontology_id] if self.ontology_id else []
+        )
+        for ontology_id in ontology_ids:
+            if not ontology_id:
+                continue
+            batches = self._ok("GET", f"/api/ontologies/{ontology_id}/modeling-batches")
+            items = batches.get("items", batches.get("batches", [])) if isinstance(batches, dict) else []
+            if isinstance(items, list) and items:
+                return True
+        return False
 
     def _retain_nonempty(self) -> bool:
         # Scope receives its policy from the TeamRun when constructed by the delivery controller.

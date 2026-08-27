@@ -59,8 +59,20 @@
       "at least three options and always the three required option_ids; custom options may be appended",
       "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
       "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
-      "selected_option must be one of the listed options and rationale must be non-empty"
+      "selected_option must be one of the listed options and rationale must be non-empty",
+      "R3.0-006 additive optional field ontology_plan: must be absent when selected_option is single_ontology, required for every other selection; value is a mechanical list [{name, slice_ids}] with at least two entries, non-empty unique names, and every scenario-map slice assigned to exactly one planned Ontology (slice references close against the scenario map's slice list)"
     ],
+    "optional_fields": {
+      "ontology_plan": {
+        "entry_fields": ["name", "slice_ids"],
+        "rules": [
+          "at least two planned Ontologies",
+          "name values are non-empty and unique",
+          "slice_ids is a non-empty list of distinct slice_ids of the current scenario map",
+          "every scenario-map slice belongs to exactly one planned Ontology"
+        ]
+      }
+    },
     "gate_failure_reason_codes": [
       "topology_missing_artifact",
       "topology_unparsable",
@@ -70,7 +82,10 @@
       "topology_missing_dimension",
       "topology_empty_dimension",
       "topology_missing_selection",
-      "topology_empty_rationale"
+      "topology_empty_rationale",
+      "topology_missing_ontology_plan",
+      "topology_invalid_ontology_plan",
+      "topology_dangling_slice"
     ]
   },
   "protection_iri_suggestions": {

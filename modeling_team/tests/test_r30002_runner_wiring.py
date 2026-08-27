@@ -272,11 +272,27 @@ def test_runner_multi_slice_gate_lifecycle(tmp_path):
         ]
         assert runner.run is not None
 
-        # Valid decision but no scenario map yet: still closed, map-unparsable.
+        # Non-single selection without ontology_plan: registered R3.0-006 M3
+        # revision, closed on the typed missing-plan code.
         _write_artifact(
             run_root,
             "topology-decision.json",
             FIXTURES["topology_decision"]["valid"],
+        )
+        runner._check_multi_slice_topology_gate()
+        assert _gate_state(run_root)["reason_code"] == "topology_missing_ontology_plan"
+        assert _feedback_reasons(adapter) == [
+            "topology_missing_artifact",
+            "topology_empty_rationale",
+            "topology_missing_ontology_plan",
+        ]
+
+        # Decision with a plan but no scenario map yet: still closed on the
+        # map (the plan's slice closure cannot be checked without it).
+        _write_artifact(
+            run_root,
+            "topology-decision.json",
+            FIXTURES["topology_decision"]["multi_ontology_plan_valid"],
         )
         runner._check_multi_slice_topology_gate()
         assert _gate_state(run_root)["reason_code"] == "map_unparsable"

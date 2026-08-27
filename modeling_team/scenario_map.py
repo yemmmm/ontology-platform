@@ -63,7 +63,24 @@ TOPOLOGY_REASON_CODES = (
     "topology_empty_dimension",
     "topology_missing_selection",
     "topology_empty_rationale",
+    # R3.0-006 M3 additive extension: the optional ``ontology_plan`` field.
+    "topology_missing_ontology_plan",
+    "topology_invalid_ontology_plan",
+    "topology_dangling_slice",
 )
+# The additive R3.0-006 extension of the frozen six-field record: optional
+# ``ontology_plan`` (mandatory for every non-single-Ontology selection).
+TOPOLOGY_DECISION_FIELDS = frozenset(
+    {
+        "schema_version",
+        "scenario_id",
+        "options",
+        "selected_option",
+        "rationale",
+        "decided_by",
+    }
+)
+TOPOLOGY_ONTOLOGY_PLAN_FIELD = "ontology_plan"
 SUGGESTIONS_REASON_CODES = (
     "suggestions_schema_mismatch",
     "suggestions_invalid_iri",
@@ -299,12 +316,92 @@ def validate_scenario_map(value: Any) -> tuple[ScenarioMapIssue, ...]:
     return tuple(issues)
 
 
-def validate_topology_decision(value: Any) -> tuple[ScenarioMapIssue, ...]:
+def _validate_ontology_plan(
+    value: Any, *, slice_ids: set[str] | frozenset[str] | None
+) -> list[ScenarioMapIssue]:
+    """Structural (and, with ``slice_ids``, closure) check of ``ontology_plan``.
+
+    R3.0-006 M3 additive extension: a mechanical ``[{name, slice_ids}]`` list
+    with at least two Ontologies, non-empty unique names, and every slice of
+    the scenario map assigned to exactly one planned Ontology.  Slice closure
+    mirrors the ``validate_protection_iri_suggestions`` precedent: it is only
+    checked when the caller passes the scenario map's slice list.
+    """
+
+    issues: list[ScenarioMapIssue] = []
+    if not isinstance(value, list) or len(value) < 2:
+        return [
+            ScenarioMapIssue(
+                "topology_invalid_ontology_plan", "ontology_plan requires at least two entries"
+            )
+        ]
+    names: set[str] = set()
+    assigned: set[str] = set()
+    for entry in value:
+        if not isinstance(entry, dict) or set(entry) != {"name", "slice_ids"}:
+            issues.append(
+                ScenarioMapIssue("topology_invalid_ontology_plan", "entry fields drift")
+            )
+            continue
+        name = entry["name"]
+        if not _nonempty(name):
+            issues.append(ScenarioMapIssue("topology_invalid_ontology_plan", "name is empty"))
+            continue
+        if name in names:
+            issues.append(
+                ScenarioMapIssue("topology_invalid_ontology_plan", f"duplicate name {name}")
+            )
+            continue
+        names.add(name)
+        entry_slices = entry["slice_ids"]
+        if (
+            not _nonempty_strings(entry_slices)
+            or len(set(entry_slices)) != len(entry_slices)
+        ):
+            issues.append(
+                ScenarioMapIssue(
+                    "topology_invalid_ontology_plan", f"slice_ids of {name} are invalid"
+                )
+            )
+            continue
+        overlap = assigned.intersection(entry_slices)
+        if overlap:
+            issues.append(
+                ScenarioMapIssue(
+                    "topology_invalid_ontology_plan",
+                    f"slice {sorted(overlap)[0]} belongs to more than one Ontology",
+                )
+            )
+            continue
+        assigned.update(entry_slices)
+        if slice_ids is not None:
+            dangling = [slice_id for slice_id in entry_slices if slice_id not in slice_ids]
+            if dangling:
+                issues.append(
+                    ScenarioMapIssue("topology_dangling_slice", ",".join(sorted(dangling)))
+                )
+    if slice_ids is not None and assigned != set(slice_ids):
+        issues.append(
+            ScenarioMapIssue(
+                "topology_invalid_ontology_plan",
+                "every scenario-map slice must belong to exactly one planned Ontology",
+            )
+        )
+    return issues
+
+
+def validate_topology_decision(
+    value: Any, *, slice_ids: set[str] | frozenset[str] | None = None
+) -> tuple[ScenarioMapIssue, ...]:
     """Existence/coverage check of the topology decision record (A.3).
 
     The gate never judges decision quality; it only rejects records that do
     not compare at least the three required options across all six fixed
-    dimensions with a selection and a rationale.
+    dimensions with a selection and a rationale.  R3.0-006 M3 adds the
+    optional ``ontology_plan``: absent is only legal for a
+    ``single_ontology`` selection, every other selection requires it, and its
+    slice references must close against the scenario map when ``slice_ids``
+    is provided.
     """
 
     issues: list[ScenarioMapIssue] = []
@@ -312,14 +409,9 @@ def validate_topology_decision(value: Any) -> tuple[ScenarioMapIssue, ...]:
         return (ScenarioMapIssue("topology_schema_mismatch", "decision is not an object"),)
     if value.get("schema_version") != TOPOLOGY_DECISION_SCHEMA:
         issues.append(ScenarioMapIssue("topology_schema_mismatch", "schema_version drift"))
-    if set(value) != {
-        "schema_version",
-        "scenario_id",
-        "options",
-        "selected_option",
-        "rationale",
-        "decided_by",
-    }:
+    if not set(value) <= TOPOLOGY_DECISION_FIELDS | {TOPOLOGY_ONTOLOGY_PLAN_FIELD} or (
+        TOPOLOGY_DECISION_FIELDS - set(value)
+    ):
         issues.append(
             ScenarioMapIssue("topology_schema_mismatch", "top-level fields drift")
         )
@@ -383,6 +475,26 @@ def validate_topology_decision(value: Any) -> tuple[ScenarioMapIssue, ...]:
         issues.append(ScenarioMapIssue("topology_missing_selection", "selected_option"))
     if not _nonempty(value.get("rationale")):
         issues.append(ScenarioMapIssue("topology_empty_rationale", "rationale"))
+    # R3.0-006 M3 additive ontology_plan extension (registered revision of the
+    # frozen R3.0-002 six-field record; see the design's exception list).
+    plan_present = TOPOLOGY_ONTOLOGY_PLAN_FIELD in value
+    if plan_present and selected == "single_ontology":
+        issues.append(
+            ScenarioMapIssue(
+                "topology_schema_mismatch",
+                "ontology_plan must be absent for a single_ontology selection",
+            )
+        )
+    if not plan_present and _nonempty(selected) and selected != "single_ontology":
+        issues.append(
+            ScenarioMapIssue("topology_missing_ontology_plan", str(selected)[:80])
+        )
+    if plan_present:
+        issues.extend(
+            _validate_ontology_plan(
+                value[TOPOLOGY_ONTOLOGY_PLAN_FIELD], slice_ids=slice_ids
+            )
+        )
     return tuple(issues)
 
 

@@ -173,6 +173,22 @@
       "rationale": "placeholder rationale across the six fixed dimensions",
       "decided_by": "coordinator"
     },
+    "multi_ontology_plan_valid": {
+      "schema_version": "r3-0-002-topology-decision/v1",
+      "scenario_id": "r30002-test-scenario",
+      "options": [
+        {"option_id": "single_ontology", "assessment": {"concept_cohesion": "placeholder cohesion assessment", "relation_density": "placeholder density assessment", "reuse": "placeholder reuse assessment", "permission_boundary": "placeholder permission assessment", "change_cadence": "placeholder cadence assessment", "cross_domain_query": "placeholder query assessment"}},
+        {"option_id": "domain_ontology_split", "assessment": {"concept_cohesion": "placeholder cohesion assessment", "relation_density": "placeholder density assessment", "reuse": "placeholder reuse assessment", "permission_boundary": "placeholder permission assessment", "change_cadence": "placeholder cadence assessment", "cross_domain_query": "placeholder query assessment"}},
+        {"option_id": "shared_core_plus_domain", "assessment": {"concept_cohesion": "placeholder cohesion assessment", "relation_density": "placeholder density assessment", "reuse": "placeholder reuse assessment", "permission_boundary": "placeholder permission assessment", "change_cadence": "placeholder cadence assessment", "cross_domain_query": "placeholder query assessment"}}
+      ],
+      "selected_option": "domain_ontology_split",
+      "rationale": "placeholder rationale across the six fixed dimensions",
+      "decided_by": "coordinator",
+      "ontology_plan": [
+        {"name": "core-plus-service", "slice_ids": ["S1", "S2"]},
+        {"name": "parts-plus-finance", "slice_ids": ["S3", "S4", "S5"]}
+      ]
+    },
     "single_ontology_selected_valid": {
       "schema_version": "r3-0-002-topology-decision/v1",
       "scenario_id": "r30002-test-scenario",

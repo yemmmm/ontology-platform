@@ -37,7 +37,11 @@ objective: >-
   approved candidates: when the topology selects multiple Ontologies, submit
   at least one Modeling Batch per Ontology in scenario-map dependency order
   (each batch bound to exactly one ontology, dry_run then apply_atomic per
-  batch, no cross-batch atomicity), and execute protection-set changes through
+  batch, no cross-batch atomicity); the frozen scope JSON names only the
+  first Ontology, and the full planned list is delivered by the gate-open
+  runner notice and held authoritatively by get_project_build_context, so
+  treat that build-context listing as the ontology set of record. Protocol
+  executes protection-set changes through
   the six semantic protection set tools as independent operations that never
   share a Modeling Batch with ontology publication; protecting target IRIs
   before creating the resources is the recommended order, not a platform
