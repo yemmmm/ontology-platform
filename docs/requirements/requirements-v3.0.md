@@ -17,7 +17,9 @@
   方向：删除建模次数与建模 Agent 数量的代码硬校验（建模次数由 Agent 自身记录，
   Agent 数量为未来动态 Agent 留通路），M3 重述为"协调 Agent 判断业务是否适合拆分多
   Ontology——单 Ontology 直接按原有建模方式、多 Ontology 串行建模"；设计与测试计划
-  已按新方向修订，**待重新计划评审**；真实 modeling start 仍需用户显式授权
+  已按新方向修订，并经 Round 4 REVISE（多 Ontology 清理/终态通路、ontology_id 交付
+  机制、contracts.py 放宽面三项）修订后 **Round 5 复核 PASS**；下一步为实现 M1～M3
+  机械增量并通过 T0 验收；真实 modeling start 仍需用户显式授权
 - 基础版本：`docs/requirements/requirements-v2.3.md` 的建模团队与通用语义查询基线
 - 关联版本：`docs/requirements/requirements-v1.0.md` 的项目/本体权限边界；
   `docs/requirements/requirements-v2.4.md` 为独立的 RDF Literal 能力，不是本版本前置
@@ -40,9 +42,9 @@
 - R3.0-005 交付设计与测试计划：
   `docs/delivery/designs/2026-08-27-r3-0-005-ontology-guided-sql-qa-design.md`、
   `docs/delivery/test-plans/2026-08-27-r3-0-005-ontology-guided-sql-qa-test-plan.md`
-- R3.0-006 交付设计与测试计划（Round 3 复核 PASS 后按用户 2026-08-27 方向变更修订：
+- R3.0-006 交付设计与测试计划（按用户 2026-08-27 方向变更修订：
   删建模次数/Agent 数量硬校验、M3 重述为协调 Agent 判断拆分 + 多 Ontology 串行建模；
-  待重新计划评审，评审通过并实现增量、通过 T0 验收后方可申请真实 modeling start 授权）：
+  计划评审 Round 5 复核 PASS；实现增量、通过 T0 验收后方可申请真实 modeling start 授权）：
   `docs/delivery/designs/2026-08-27-r3-0-006-real-modeling-e2e-acceptance-design.md`、
   `docs/delivery/test-plans/2026-08-27-r3-0-006-real-modeling-e2e-acceptance-test-plan.md`
 - 更新日期：2026-08-27
@@ -127,7 +129,7 @@ v3.0 的最终目标是：业务事实仍由 PostgreSQL 保存；Ontology 只作
 | R3.0-003 | 纯语义 Ontology 与关系型 Schema 映射 | P0 | `已完成（2026-08-27）` | 独立测试 Round 2 PASS（Round 1 缺陷修复后复测） |
 | R3.0-004 | 主体绑定的语义知识访问控制 | P0 | `已完成（2026-08-26）` | 独立测试 Round 1 PASS |
 | R3.0-005 | Ontology 引导的 SQL 问数链路 | P0 | `已完成（2026-08-27）` | 独立测试 Round 2 PASS（Round 1 两缺陷修复后复测） |
-| R3.0-006 | 真实建模与端到端问数验收 | P0 | `交付设计与测试计划按用户方向变更修订（删 M1/M2 硬校验、M3 重述为协调 Agent 判断拆分 + 多 Ontology 串行建模）；待重新计划评审，其后实现增量、T0 验收与用户授权` | 后续阶段 |
+| R3.0-006 | 真实建模与端到端问数验收 | P0 | `交付设计与测试计划按用户方向变更修订并通过计划评审 Round 5 复核 PASS；待实现 M1～M3 机械增量、T0 验收与用户授权` | 后续阶段 |
 | R3.0-007 | 读取模型图限定与 LIMIT 截断修复 | P1 | `已完成（2026-08-26）` | 独立测试 Round 1 PASS |
 
 ### R3.0-001 场景资料与 PostgreSQL 数据基线
