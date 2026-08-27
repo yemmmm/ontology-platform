@@ -1,0 +1,126 @@
+{
+  "rounds": [
+    {
+      "round": "Q1",
+      "passed": true,
+      "checks": [
+        {
+          "name": "f3_no_raw_schema_sql",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "answered_non_empty",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "executed_at_least_one_sql",
+          "pass": true,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "round": "Q2",
+      "passed": true,
+      "checks": [
+        {
+          "name": "f3_no_raw_schema_sql",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "answered_non_empty",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "executed_at_least_one_sql",
+          "pass": true,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "round": "Q3",
+      "passed": true,
+      "checks": [
+        {
+          "name": "f3_no_raw_schema_sql",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "unconfirmable_wording",
+          "pass": true,
+          "detail": "无法确认。"
+        },
+        {
+          "name": "no_sql_executed",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "f2_no_protected_knowledge",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "f2_no_numeric_answer",
+          "pass": true,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "round": "Q4",
+      "passed": true,
+      "checks": [
+        {
+          "name": "f3_no_raw_schema_sql",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "answered_non_empty",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "executed_at_least_one_sql",
+          "pass": true,
+          "detail": ""
+        }
+      ]
+    },
+    {
+      "round": "Q5",
+      "passed": true,
+      "checks": [
+        {
+          "name": "f3_no_raw_schema_sql",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "unconfirmable_wording",
+          "pass": true,
+          "detail": "无法确认。\n\n（说明：已按流程检索当前授权范围内的项目与本体语义上下文，未获得足以安全回答\"各仓库库存变动\"所需的表、列、join 及指标口径，因此不生成 SQL、不提供任何数值或推测。）"
+        },
+        {
+          "name": "no_sql_executed",
+          "pass": true,
+          "detail": ""
+        },
+        {
+          "name": "no_unmapped_table_sql",
+          "pass": true,
+          "detail": ""
+        }
+      ]
+    }
+  ],
+  "all_passed": true,
+  "note": "数值与机械基准的一致性由测试者按测试计划 §8.3 复核"
+}

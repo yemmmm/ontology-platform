@@ -1,0 +1,150 @@
+{
+  "round": "Q1",
+  "principal": "grant",
+  "expectation": "positive",
+  "question": "状态为已完成（RESOLVED）的工单有多少？请说明口径。",
+  "answer": "**状态为已完成（RESOLVED）的工单共 10 条。**\n\n**口径说明：**\n\n| 口径项 | 说明 |\n|---|---|\n| 指标 | 已完成工单数（计数 COUNT(*)） |\n| 业务对象 | 工单（work-order），对应表 `industrial_service_v3.work_orders`（表映射 tm-wo） |\n| 状态判定 | 状态属性 statusCode 映射到列 `status`，枚举含义 em-status-resolved 定义 `status = 'RESOLVED'` 的业务含义为\"已完成工单\" |\n| 粒度 | 工单行级（业务键 work_order_id），每条工单计 1 |\n| 时间范围 | 未限定时间窗口（全量历史数据） |\n| 过滤条件 | 仅 `status = 'RESOLVED'`，无其他维度过滤 |\n| 空值/分母规则 | 纯计数指标，无分母；status 为 NULL 或其他值的工单不计入 |\n\n**关键映射依据：**\n- 表映射 tm-wo：类 work-order → 表 `industrial_service_v3.work_orders`，属性 statusCode → 列 `status`（schema 来源：industrial-service-v3-schema-2026-08-22）\n- 枚举含义 em-status-resolved：属性 statusCode 的值 `RESOLVED` = \"已完成工单\"\n\n如需按时间窗口（如按 opened_at / resolved_at）或按事件（incident）维度细分，请告知。",
+  "executed_sql": [
+    {
+      "sql": "SELECT COUNT(*) AS resolved_work_orders FROM industrial_service_v3.work_orders WHERE status = 'RESOLVED'",
+      "adapter_output": {
+        "ok": true,
+        "columns": [
+          "resolved_work_orders"
+        ],
+        "rows": [
+          [
+            10
+          ]
+        ]
+      }
+    }
+  ],
+  "transcript": [
+    {
+      "role": "user",
+      "content": "状态为已完成（RESOLVED）的工单有多少？请说明口径。"
+    },
+    {
+      "role": "tool",
+      "tool": "discover_semantic_scopes",
+      "arguments": {},
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"resource_type\": \"project\",\n        \"id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n        \"name\": \"R3.0-005 smoke r2 c92edd455eac\",\n        \"description\": null,\n        \"matched_on\": [],\n        \"query_status\": \"complete\",\n        \"query_scope\": {\n          \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n          \"scope_mode\": \"project\",\n          \"ontology_ids\": []\n        },\n        \"excluded_ontologies\": []\n      },\n      {\n        \"resource_type\": \"ontology\",\n        \"id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"project\": {\n          \"id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n          \"name\": \"R3.0-005 smoke r2 c92edd455eac\",\n          \"description\": null\n        },\n        \"name\": \"R3.0-005 smoke r2 O_m\",\n        \"description\": null,\n        \"status\": \"draft\",\n        \"queryable\": true,\n        \"unavailable_reason\": null,\n        \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\",\n        \"graph_set_id\": \"7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e\",\n        \"derived_warnings\": [\n          {\n            \"code\": \"derived_result_missing\",\n            \"message\": \"No current reasoning result pointer.\"\n          },\n          {\n            \"code\": \"derived_result_missing\",\n            \"message\": \"No current rule result pointer.\"\n          }\n        ],\n        \"matched_on\": [],\n        \"query_scope\": {\n          \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n          \"scope_mode\": \"ontologies\",\n          \"ontology_ids\": [\n            \"f5298b33-31f1-4906-8241-d5084075168f\"\n          ]\n        }\n      }\n    ],\n    \"has_more\": false,\n    \"next_cursor\": null,\n    \"generated_at\": \"2026-08-27 06:13:44.604985+00:00\"\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "已枚举到可用范围：项目 \"R3.0-005 smoke r2 c92edd455eac\" 下有可查询本体 \"R3.0-005 smoke r2 O_m\"（graph_set_id: 7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e）。下面检索工单状态相关的语义上下文。"
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "工单 状态 已完成 RESOLVED",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "ontologies"
+      },
+      "result": "{\n  \"ok\": false,\n  \"error\": \"ontology_ids must not be empty for ontologies scope\",\n  \"error_code\": \"invalid_scope\"\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "改用项目范围检索。"
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "工单 状态 已完成 RESOLVED",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"工单 状态 已完成 RESOLVED\"\n      ],\n      \"normalized_queries\": [\n        \"工单 状态 已完成 RESOLVED\"\n      ]\n    },\n    \"result_status\": \"matched\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [\n      {\n        \"id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"kind\": \"mapping\",\n        \"origin\": \"resource\",\n        \"label\": \"status RESOLVED\",\n        \"iri\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"rdf_types\": [\n            \"http://ontology-platform.local/semantic/vocab/EnumValueMeaning\"\n          ],\n          \"label_evidence\": [\n            \"status RESOLVED\"\n          ],\n          \"mapped_property\": \"http://ontology-platform.local/semantic/property/statusCode\",\n          \"enum_value\": \"RESOLVED\",\n          \"business_meaning\": \"已完成工单\",\n          \"schema_source\": \"industrial-service-v3-schema-2026-08-22\"\n        },\n        \"evidence_reference_ids\": [\n          \"86e9dd16-00e7-5905-972b-2b9583e18d8e\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"resource\",\n          \"target_id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 750,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 750,\n          \"matched_fields\": [\n            \"description\",\n            \"enum_value\",\n            \"identifier\",\n            \"label\"\n          ],\n          \"reasons\": [\n            \"label_contains\"\n          ]\n        },\n        \"target_kind\": \"resource\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      }\n    ],\n    \"related_context\": [],\n    \"matches_page\": {\n      \"returned\": 1,\n      \"truncated\": false,\n      \"next_match_cursor\": null\n    },\n    \"context_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_context_cursor\": null\n    },\n    \"truncated\": false,\n    \"recall\": {\n      \"mode\": \"hybrid\",\n      \"match_status\": \"candidate\",\n      \"completeness\": \"degraded\"\n    },\n    \"warnings\": [\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current reasoning result pointer.\"\n      },\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current rule result pointer.\"\n      },\n      {\n        \"code\": \"vector_index_missing\",\n        \"message\": \"Semantic vector recall is unavailable for one Ontology.\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "命中枚举含义 em-status-resolved（属性 statusCode，值 RESOLVED，业务含义\"已完成工单\"）。接下来并行读取该枚举详情，并检索工单表映射。"
+    },
+    {
+      "role": "tool",
+      "tool": "get_semantic_read_model",
+      "arguments": {
+        "entity_iri": "http://ontology-platform.local/semantic/enum-meaning/em-status-resolved",
+        "graph_set_id": "7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e",
+        "model_name": "enum-meaning-detail"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"graph_set_id\": \"7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e\",\n    \"source_signature\": \"08596af4291e2992f9aee069b008ac79\",\n    \"projection_version\": \"semantic-read-v1\",\n    \"model_name\": \"enum-meaning-detail\",\n    \"include\": \"asserted\",\n    \"derived_state\": {\n      \"reasoning\": {\n        \"status\": \"missing\",\n        \"run_id\": null,\n        \"result_graph_iri\": null\n      },\n      \"rule\": {\n        \"status\": \"missing\",\n        \"run_id\": null,\n        \"result_graph_iri\": null\n      }\n    },\n    \"warnings\": [],\n    \"items\": [\n      {\n        \"id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"iri\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"label\": \"status RESOLVED\",\n        \"source_graph_iri\": \"http://ontology-platform.local/semantic/graph/ontology/f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"evidence_status\": \"not_applicable\",\n        \"evidence_ids\": [],\n        \"provenance\": {\n          \"generated_by\": null,\n          \"run_id\": null,\n          \"actor\": null,\n          \"timestamp\": null\n        },\n        \"audit_status\": \"system_accepted\",\n        \"staleness\": {\n          \"is_stale\": false,\n          \"reason\": null\n        },\n        \"detail_fields\": {\n          \"mapped_property\": \"http://ontology-platform.local/semantic/property/statusCode\",\n          \"enum_value\": \"RESOLVED\",\n          \"business_meaning\": \"已完成工单\",\n          \"schema_source\": \"industrial-service-v3-schema-2026-08-22\"\n        }\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "工单 表 映射 work order",
+        "resource_types": [
+          "mapping"
+        ],
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"工单 表 映射 work order\"\n      ],\n      \"normalized_queries\": [\n        \"工单 表 映射 work order\"\n      ]\n    },\n    \"result_status\": \"matched\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [\n      {\n        \"id\": \"http://ontology-platform.local/semantic/table-mapping/tm-wo\",\n        \"kind\": \"mapping\",\n        \"origin\": \"resource\",\n        \"label\": \"industrial_service_v3.work_orders mapping\",\n        \"iri\": \"http://ontology-platform.local/semantic/table-mapping/tm-wo\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"rdf_types\": [\n            \"http://ontology-platform.local/semantic/vocab/TableMapping\"\n          ],\n          \"label_evidence\": [\n            \"industrial_service_v3.work_orders mapping\"\n          ],\n          \"mapped_class\": \"http://ontology-platform.local/semantic/class/work-order\",\n          \"table_name\": \"industrial_service_v3.work_orders\",\n          \"schema_source\": \"industrial-service-v3-schema-2026-08-22\",\n          \"column_mappings\": [\n            {\n              \"property_iri\": \"http://ontology-platform.local/semantic/property/workOrderId\",\n              \"column\": \"work_order_id\",\n              \"role\": \"business_key\"\n            },\n            {\n              \"property_iri\": \"http://ontology-platform.local/semantic/property/statusCode\",\n              \"column\": \"status\",\n              \"role\": \"value\"\n            },\n            {\n              \"property_iri\": \"http://ontology-platform.local/semantic/property/openedAt\",\n              \"column\": \"opened_at\",\n              \"role\": \"value\"\n            },\n            {\n              \"property_iri\": \"http://ontology-platform.local/semantic/property/resolvedAt\",\n              \"column\": \"resolved_at\",\n              \"role\": \"value\"\n            },\n            {\n              \"property_iri\": \"http://ontology-platform.local/semantic/property/incidentRef\",\n              \"column\": \"incident_id\",\n              \"role\": \"value\"\n            }\n          ]\n        },\n        \"evidence_reference_ids\": [\n          \"f608534e-251f-5293-aa89-33a0855ba2ff\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"resource\",\n          \"target_id\": \"http://ontology-platform.local/semantic/table-mapping/tm-wo\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 750,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 750,\n          \"matched_fields\": [\n            \"label\",\n            \"table_name\"\n          ],\n          \"reasons\": [\n            \"label_contains\"\n          ]\n        },\n        \"target_kind\": \"resource\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      },\n      {\n        \"id\": \"http://ontology-platform.local/semantic/join-mapping/jm-wo-incident\",\n        \"kind\": \"mapping\",\n        \"origin\": \"resource\",\n        \"label\": \"industrial_service_v3.work_orders to industrial_service_v3.incidents\",\n        \"iri\": \"http://ontology-platform.local/semantic/join-mapping/jm-wo-incident\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"rdf_types\": [\n            \"http://ontology-platform.local/semantic/vocab/JoinMapping\"\n          ],\n          \"label_evidence\": [\n            \"industrial_service_v3.work_orders to industrial_service_v3.incidents\"\n          ],\n          \"mapped_relation\": \"http://ontology-platform.local/semantic/relation-type/addresses-incident\",\n          \"schema_source\": \"industrial-service-v3-schema-2026-08-22\",\n          \"join_path\": [\n            {\n              \"from_table\": \"industrial_service_v3.work_orders\",\n              \"to_table\": \"industrial_service_v3.incidents\",\n              \"from_columns\": [\n                \"incident_id\"\n              ],\n              \"to_columns\": [\n                \"incident_id\"\n              ]\n            }\n          ]\n        },\n        \"evidence_reference_ids\": [\n          \"5fca1fba-2885-53db-b382-3f1a4ccc89e1\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"resource\",\n          \"target_id\": \"http://ontology-platform.local/semantic/join-mapping/jm-wo-incident\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 750,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 750,\n          \"matched_fields\": [\n            \"label\"\n          ],\n          \"reasons\": [\n            \"label_contains\"\n          ]\n        },\n        \"target_kind\": \"resource\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      },\n      {\n        \"id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"kind\": \"mapping\",\n        \"origin\": \"resource\",\n        \"label\": \"status RESOLVED\",\n        \"iri\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"rdf_types\": [\n            \"http://ontology-platform.local/semantic/vocab/EnumValueMeaning\"\n          ],\n          \"label_evidence\": [\n            \"status RESOLVED\"\n          ],\n          \"mapped_property\": \"http://ontology-platform.local/semantic/property/statusCode\",\n          \"enum_value\": \"RESOLVED\",\n          \"business_meaning\": \"已完成工单\",\n          \"schema_source\": \"industrial-service-v3-schema-2026-08-22\"\n        },\n        \"evidence_reference_ids\": [\n          \"86e9dd16-00e7-5905-972b-2b9583e18d8e\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"resource\",\n          \"target_id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 200,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 200,\n          \"matched_fields\": [\n            \"description\"\n          ],\n          \"reasons\": [\n            \"description_contains\"\n          ]\n        },\n        \"target_kind\": \"resource\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      }\n    ],\n    \"related_context\": [],\n    \"matches_page\": {\n      \"returned\": 3,\n      \"truncated\": false,\n      \"next_match_cursor\": null\n    },\n    \"context_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_context_cursor\": null\n    },\n    \"truncated\": false,\n    \"recall\": {\n      \"mode\": \"hybrid\",\n      \"match_status\": \"ambiguous\",\n      \"completeness\": \"degraded\"\n    },\n    \"warnings\": [\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current reasoning result pointer.\"\n      },\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current rule result pointer.\"\n      },\n      {\n        \"code\": \"vector_index_missing\",\n        \"message\": \"Semantic vector recall is unavailable for one Ontology.\"\n      },\n      {\n        \"code\": \"ambiguous_match\",\n        \"message\": \"Multiple primary matches have similar retrieval scores.\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "已获得表映射 tm-wo。再读取 table-mapping-detail 确认完整列映射后执行统计。"
+    },
+    {
+      "role": "tool",
+      "tool": "get_semantic_read_model",
+      "arguments": {
+        "entity_iri": "http://ontology-platform.local/semantic/table-mapping/tm-wo",
+        "graph_set_id": "7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e",
+        "model_name": "table-mapping-detail"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"graph_set_id\": \"7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e\",\n    \"source_signature\": \"08596af4291e2992f9aee069b008ac79\",\n    \"projection_version\": \"semantic-read-v1\",\n    \"model_name\": \"table-mapping-detail\",\n    \"include\": \"asserted\",\n    \"derived_state\": {\n      \"reasoning\": {\n        \"status\": \"missing\",\n        \"run_id\": null,\n        \"result_graph_iri\": null\n      },\n      \"rule\": {\n        \"status\": \"missing\",\n        \"run_id\": null,\n        \"result_graph_iri\": null\n      }\n    },\n    \"warnings\": [],\n    \"items\": [\n      {\n        \"id\": \"http://ontology-platform.local/semantic/table-mapping/tm-wo\",\n        \"iri\": \"http://ontology-platform.local/semantic/table-mapping/tm-wo\",\n        \"label\": \"industrial_service_v3.work_orders mapping\",\n        \"source_graph_iri\": \"http://ontology-platform.local/semantic/graph/ontology/f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"evidence_status\": \"not_applicable\",\n        \"evidence_ids\": [],\n        \"provenance\": {\n          \"generated_by\": null,\n          \"run_id\": null,\n          \"actor\": null,\n          \"timestamp\": null\n        },\n        \"audit_status\": \"system_accepted\",\n        \"staleness\": {\n          \"is_stale\": false,\n          \"reason\": null\n        },\n        \"detail_fields\": {\n          \"table_name\": \"industrial_service_v3.work_orders\",\n          \"mapped_class\": \"http://ontology-platform.local/semantic/class/work-order\",\n          \"column_mappings\": \"[{\\\"property_iri\\\": \\\"http://ontology-platform.local/semantic/property/workOrderId\\\", \\\"column\\\": \\\"work_order_id\\\", \\\"role\\\": \\\"business_key\\\"}, {\\\"property_iri\\\": \\\"http://ontology-platform.local/semantic/property/statusCode\\\", \\\"column\\\": \\\"status\\\", \\\"role\\\": \\\"value\\\"}, {\\\"property_iri\\\": \\\"http://ontology-platform.local/semantic/property/openedAt\\\", \\\"column\\\": \\\"opened_at\\\", \\\"role\\\": \\\"value\\\"}, {\\\"property_iri\\\": \\\"http://ontology-platform.local/semantic/property/resolvedAt\\\", \\\"column\\\": \\\"resolved_at\\\", \\\"role\\\": \\\"value\\\"}, {\\\"property_iri\\\": \\\"http://ontology-platform.local/semantic/property/incidentRef\\\", \\\"column\\\": \\\"incident_id\\\", \\\"role\\\": \\\"value\\\"}]\",\n          \"schema_source\": \"industrial-service-v3-schema-2026-08-22\"\n        }\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "映射确认完毕，执行统计 SQL。"
+    },
+    {
+      "role": "tool",
+      "tool": "execute_sql",
+      "arguments": {
+        "sql": "SELECT COUNT(*) AS resolved_work_orders FROM industrial_service_v3.work_orders WHERE status = 'RESOLVED'"
+      },
+      "result": "{\"ok\": true, \"columns\": [\"resolved_work_orders\"], \"rows\": [[10]]}"
+    },
+    {
+      "role": "assistant",
+      "content": "**状态为已完成（RESOLVED）的工单共 10 条。**\n\n**口径说明：**\n\n| 口径项 | 说明 |\n|---|---|\n| 指标 | 已完成工单数（计数 COUNT(*)） |\n| 业务对象 | 工单（work-order），对应表 `industrial_service_v3.work_orders`（表映射 tm-wo） |\n| 状态判定 | 状态属性 statusCode 映射到列 `status`，枚举含义 em-status-resolved 定义 `status = 'RESOLVED'` 的业务含义为\"已完成工单\" |\n| 粒度 | 工单行级（业务键 work_order_id），每条工单计 1 |\n| 时间范围 | 未限定时间窗口（全量历史数据） |\n| 过滤条件 | 仅 `status = 'RESOLVED'`，无其他维度过滤 |\n| 空值/分母规则 | 纯计数指标，无分母；status 为 NULL 或其他值的工单不计入 |\n\n**关键映射依据：**\n- 表映射 tm-wo：类 work-order → 表 `industrial_service_v3.work_orders`，属性 statusCode → 列 `status`（schema 来源：industrial-service-v3-schema-2026-08-22）\n- 枚举含义 em-status-resolved：属性 statusCode 的值 `RESOLVED` = \"已完成工单\"\n\n如需按时间窗口（如按 opened_at / resolved_at）或按事件（incident）维度细分，请告知。"
+    }
+  ],
+  "recorded_at": "2026-08-27T14:14:40+0800",
+  "verdict": {
+    "round": "Q1",
+    "passed": true,
+    "checks": [
+      {
+        "name": "f3_no_raw_schema_sql",
+        "pass": true,
+        "detail": ""
+      },
+      {
+        "name": "answered_non_empty",
+        "pass": true,
+        "detail": ""
+      },
+      {
+        "name": "executed_at_least_one_sql",
+        "pass": true,
+        "detail": ""
+      }
+    ]
+  }
+}

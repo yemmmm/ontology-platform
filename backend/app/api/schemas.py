@@ -626,6 +626,7 @@ class SemanticDiscoveryOntologyItem(BaseModel):
     queryable: bool
     unavailable_reason: Literal["ontology_archived", "workspace_not_ready"] | None
     workspace_version: str | None
+    graph_set_id: str | None = None
     derived_warnings: list[dict[str, str]] = Field(default_factory=list)
     matched_on: list[Literal["id", "name", "project"]] = Field(default_factory=list)
     query_scope: SemanticDiscoveryQueryScope

@@ -60,6 +60,18 @@ def _service(catalog) -> AuthorizedScopeDiscoveryService:
     return AuthorizedScopeDiscoveryService(session, settings)
 
 
+def _flat_keys(value) -> set[str]:
+    keys: set[str] = set()
+    if isinstance(value, dict):
+        for key, item in value.items():
+            keys.add(key)
+            keys |= _flat_keys(item)
+    elif isinstance(value, list):
+        for item in value:
+            keys |= _flat_keys(item)
+    return keys
+
+
 def test_discovery_filters_authorization_before_catalog_matching(catalog):
     result = _service(catalog).discover(authorized_project_id="p1")
 
@@ -75,8 +87,33 @@ def test_discovery_filters_authorization_before_catalog_matching(catalog):
     assert ready["queryable"] is True
     assert ready["workspace_version"]
     assert {warning["code"] for warning in ready["derived_warnings"]} == {"derived_result_missing"}
-    assert "graph_set" not in str(result)
+    # Only the opaque graph set handle is projected; internal graph IRIs stay hidden.
     assert "graph_iri" not in str(result)
+    assert all("graph_set" not in key or key == "graph_set_id" for key in _flat_keys(result))
+
+
+def test_discovery_projects_workspace_default_graph_set_id(catalog):
+    session, settings = catalog
+    result = _service(catalog).discover(authorized_project_id="p1")
+
+    ready = next(item for item in result["items"] if item["id"] == "o1")
+    assert ready["queryable"] is True
+    # Exposed handle must equal the workspace default graph set so consumers can
+    # call get_semantic_read_model without guessing (R3.0-005 D-2).
+    default_graph_set_id = OntologyWorkspaceService(session, settings).context("o1")[
+        "default_graph_set_id"
+    ]
+    assert ready["graph_set_id"] == default_graph_set_id
+
+    unavailable = {
+        item["id"]: item
+        for item in result["items"]
+        if item["resource_type"] == "ontology" and item["id"] in {"o2", "o3"}
+    }
+    assert set(unavailable) == {"o2", "o3"}
+    for item in unavailable.values():
+        assert item["queryable"] is False
+        assert item["graph_set_id"] is None
 
 
 def test_discovery_metadata_matching_and_queryable_filter(catalog):
@@ -232,6 +269,10 @@ def test_mcp_discovery_matches_rest_and_filters_project_principal(
     assert result["data"]["next_cursor"] == rest.json()["next_cursor"]
     assert "p2" not in str(result)
     assert "o4" not in str(result)
+    # MCP surface exposes the same graph set handle as REST (R3.0-005 D-2).
+    assert result["data"]["items"][0]["graph_set_id"] == rest.json()["items"][0][
+        "graph_set_id"
+    ]
 
 
 def test_discovery_requires_http_authentication(r008_client):

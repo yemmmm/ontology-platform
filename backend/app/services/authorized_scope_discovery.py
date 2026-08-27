@@ -280,6 +280,7 @@ class AuthorizedScopeDiscoveryService:
             "queryable": readiness.queryable,
             "unavailable_reason": readiness.unavailable_reason,
             "workspace_version": readiness.workspace_version,
+            "graph_set_id": readiness.graph_set_id,
             "derived_warnings": list(readiness.derived_warnings),
             "matched_on": matched_on,
             "query_scope": {

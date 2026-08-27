@@ -5,8 +5,9 @@
   零 Batch 矛盾、H-2 机械链测试依赖运行中 backend 且无可用性门控；修订为 Batch seeding
   + F6 核对范围收窄至 seeding 之后、进程内 TestClient + 真实 store + 既有门控 skip，
   窄幅复审 PASS。附注采纳：`valueExpression` 经 `metric-detail` 模板取得、不在
-  context:query 候选 `data` 中）。待实现后由开发者自测；`requirement_tester` 在稳定状态
-  独立复核并把轮次追加到本文
+  context:query 候选 `data` 中）。独立测试 **Round 2 PASS**（2026-08-27；Round 1 FAIL
+  的 D-1/D-2 修复确认，另经用户独立审核采纳 H-1 口径对齐/H-3 机械收窄/H-4 类型合同修订；
+  H-2 降级——冒烟驱动结构性工具边界已在位）。轮次记录见文末
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-005
 - 设计：`docs/delivery/designs/2026-08-27-r3-0-005-ontology-guided-sql-qa-design.md`
 - 执行者：开发者先自测；`requirement_tester` 独立复核
@@ -62,13 +63,15 @@ cd backend && uv run pytest tests/test_r3005_sql_exec_adapter.py \
    Modeling Batch dry-run → apply 提交，R3.0-003 先例，seeding 批次 ID 登记为基线）**：
    项目 P、本体 `O_m`、
    默认图集；类 WorkOrder/Incident/Asset/EquipmentModel/SparePart 及属性（与
-   `industrial_service_v3` 真实列一一对应，含 WorkOrder 上的 `repairDuration` 派生属性与
-   `valueExpression` 文本）；TableMapping ×5（`work_orders`/`incidents`/`assets`/
-   `equipment_models`/`spare_parts`，各含 business_key）；JoinMapping 链 ×3
-   （work_orders↔incidents↔assets↔equipment_models）；EnumValueMeaning
-   （statusCode 值 `RESOLVED` → 已完成工单）；MetricDefinition ×2——`METRIC_MTTR`
-   （avg repairDuration，grain=设备型号属性，filters=statusCode eq RESOLVED）与
-   `METRIC_PARTCOST`（avg standardCost，公共）。
+   `industrial_service_v3` 真实列一一对应，含 WorkOrder 上的 `resolutionDuration` 派生属性
+   与 `valueExpression` 文本——口径与业务参考冻结口径一致：解决时长 =
+   `resolved_at − reported_at`，`reported_at` 经 incidents 取得）；TableMapping ×5
+   （`work_orders`/`incidents`/`assets`/`equipment_models`/`spare_parts`，各含
+   business_key）；JoinMapping 链 ×3（work_orders↔incidents↔assets↔equipment_models）；
+   EnumValueMeaning（statusCode 值 `RESOLVED` → 已完成工单）；MetricDefinition ×2——
+   `METRIC_MTTR`（avg resolutionDuration，派生表达式指标：机械链只验证读取闭合性，
+   数值归冒烟轮，见设计 §3.4；grain=设备型号属性，filters=statusCode eq RESOLVED）与
+   `METRIC_PARTCOST`（avg standardCost，直接列映射，公共）。
 3. **语义缺口 fixture**：`warehouses`/`inventory_movements` **不建任何映射**（Q5 前提）。
 4. **保护集与主体**（复用 R3.0-004 管理面）：`PS_COST`（`allowed_grants=["cost-visibility"]`）
    成员 = `METRIC_PARTCOST` IRI + `standardCost` 属性 IRI + 备件 TableMapping IRI；
@@ -84,10 +87,14 @@ cd backend && uv run pytest tests/test_r3005_sql_exec_adapter.py \
   → `{"ok":true,...}`，列/行与机械基准一致；`LIMIT`/参数形状正常；退出码 0。
 - **S2 DSN 与进程合同**：DSN 来自环境变量；`ok` 真假与退出码 0/1 一致；stdout 恰一个 JSON
   对象。
-- **S3 机械授权链（持权）**：`KEY_GRANT` 经进程内 TestClient HTTP 读面（detail 模板
-  `entity` 精确读取 + context:query 定位）机械恢复 Q1/Q2 全部口径 → 按设计 §3.4 规则推导
-  SQL → 适配器执行 →
-  结果与基准一致；推导记录中每个标识符都有授权出处（出处不闭合即失败）。
+- **S3 机械授权链（持权，直接列映射）**：`KEY_GRANT` 经进程内 TestClient HTTP 读面
+  （detail 模板 `entity` 精确读取 + context:query 定位）机械恢复 Q1/Q4 全部口径 → 按设计
+  §3.4 规则（仅直接列映射）推导 SQL → 适配器执行 → 结果与基准一致；推导记录中每个标识符
+  都有授权出处（出处不闭合即失败）。对 Q2 派生指标只验证**读取闭合性**：授权读取面取到
+  完整 `valueExpression` 文本与其引用的全部映射；数值正确性归 S5 冒烟轮（设计 §3.4）。
+- **S3b 适配器结果类型合同**：`AVG(numeric)`（如 standard_cost）→ 十进制字符串；
+  timestamp/date/interval 列 → 稳定字符串；NULL/bool/int/float → JSON 原生类型
+  （设计 §3.2 最小转换集），各有正例。
 - **S4 机械授权链（成本持权）**：`KEY_GRANT` 可见 `METRIC_PARTCOST` 与备件映射，链路产出
   成本 SQL 且数值与基准一致（Q4 的机械形态）。
 - **S5 冒烟轮（详见 §8 判定）**：Q1–Q5 全部按判定清单通过并留档。
@@ -140,8 +147,9 @@ cd backend && uv run pytest tests/test_r3005_sql_exec_adapter.py \
      转录不含 key 明文。
 3. **判定清单（测试者执行，机械辅助）**：
    - 正向轮（Q1/Q2/Q4）：SQL 标识符 ⊆ 授权映射白名单（机械抽取比对）；适配器结果数值与
-     机械基准一致；回答说明业务口径（指标/聚合/粒度/过滤）；MCP 调用序列与设计 §3.3
-     链路一致。
+     独立基准一致（Q2 派生表达式的唯一数值证据来源即本轮）；回答说明业务口径
+     （指标/聚合/粒度/过滤，Q2 口径须与业务参考冻结口径一致：解决时长 =
+     resolved_at − reported_at）；MCP 调用序列与设计 §3.3 链路一致。
    - 无权轮（Q3）：回答为无法确认形态；F2 子串检查全过；转录中无可疑探测行为。
    - 缺口轮（Q5）：回答为无法确认形态；F3 检查全过。
    - 全轮：F6 账面核对零建模消耗。
@@ -166,3 +174,123 @@ cd backend && uv run pytest tests/test_r3005_sql_exec_adapter.py \
 ## 轮次记录
 
 （开发者自测与独立测试轮次由执行者追加，不得改写历史轮次。）
+
+### 独立测试 Round 1（2026-08-27，requirement_tester）— FAIL
+
+- 代码版本：main `a011595` + 四个未跟踪新路径（`backend/tests/test_r3005_sql_exec_adapter.py`、
+  `backend/tests/test_r3005_authorized_sql_chain.py`、`scripts/r3-0-005/sql_exec_adapter.py`、
+  `scripts/r3-0-005/consumer_smoke.py`）；`backend/app/`、`backend/migrations/` 零 diff（F5 复核通过）。
+- **机械部分（全 PASS）**：
+  - 聚焦：`RUN_OXIGRAPH_SPARQL_RUNNER_TESTS=1 R3005_SQL_ADAPTER_DSN=postgresql://ontology:ontology@localhost:5434/ontology_platform
+    uv run pytest tests/test_r3005_sql_exec_adapter.py tests/test_r3005_authorized_sql_chain.py` → **24 passed**（70s）。
+  - 全量（同门控）：`uv run pytest` → **956 passed, 8 skipped**（116s）。
+  - 默认门控（不设环境变量）：**941 passed, 23 skipped，0 failed**——skip 干净，无假失败。
+  - `uv run alembic current` → `0032_semantic_protection_sets (head)`。
+  - S1/S2/B1/B2/B3/F1：适配器合同、只读封禁（含 WRITE 型 CTE）、多语句/非法载荷、DSN 缺失/不可达、
+    错误透传无栈——全部由上述用例覆盖并通过（数据前后计数一致，探针表未创建）。
+  - S3/S4/B4/B5/F6（机械形态，进程内 TestClient + 真实 store + Modeling Batch seeding）：全部通过；
+    B4 无权终态与"真不存在"逐字节等价（`protected == nonexistent`），泄露子串零命中；
+    seeding 批次恰好 2 条（dry-run + apply），消费期零新建 Batch/Session。
+  - F5：适配器源码 grep 无 `cost-visibility`/fixture 表列名等领域字符串；`scripts/r3-0-005/` 内
+    rewrite/policy/authorize 仅出现在"不做"声明文本中，无实现体。
+- **真实运行部分（L1–L3）**：
+  - L1 PASS：service active；backend 8001 `/api/health` 200；frontend 5173 200；`industrial_service_v3`
+    21 表在库（`work_orders` 12 行、RESOLVED 10 行）。
+  - fixture：org-admin key 建项目 `9ee6edff-…`/本体/graph set；`KEY_MODEL` 经 Build Session
+    `d7dd06d8-…` + 批次 `531da952-…`（dry-run）/`f56a8bdd-…`（apply_atomic）seeding（登记为基线）；
+    `PS_COST`（allowed_grants=["cost-visibility"]，成员=PARTCOST 指标 + standardCost 属性 + tm-part 映射）
+    经 model 面创建；双 read key 建立后复核：grant 见 5 个表映射、nogrant 见 4 个（spare_parts 不可见）。
+    独立数值基准（测试者直连 psycopg 另写）：Q1=10；Q2 四型号 5.7222/5.5556/5.9167/9.5 小时；
+    Q4=527.5（6 件）。
+  - L2 执行：`consumer_smoke.py --check` PASS；全轮 Q1–Q5 已执行并留档
+    `docs/delivery/evidence/2026-08-27-r3-0-005/smoke/`。LLM 端点备注：`backend/.env` 的
+    DeepSeek key 已失效（401），复用用户现有 Zhipu OpenAI 兼容端点（glm-5.3）执行，未新建基础设施。
+  - **L2 判定：Q1/Q2/Q4 FAIL（未执行任何 SQL，回答"无法确认"）；Q3/Q5 驱动判定 PASS 但属无效通过**
+    （其"无法确认"由 D-1 导致的 scope 发现失败引起，而非预期的授权缺失/语义缺口终态）。
+    §8.3 正向轮判定项（标识符白名单、数值一致、口径说明）因无 SQL 而无法评估。
+  - F6 PASS：冒烟前后 build_sessions=196、modeling_batches=861，与 seeding 后基线完全一致。
+  - R3 PASS：测试后重跑装载器，guard 生效、21 表恢复、基准数值不变。
+- **缺陷（按严重度）**：
+  - **D-1（High，验收工具 prompt 合同缺陷，`scripts/r3-0-005/consumer_smoke.py`）**：SYSTEM_PROMPT
+    第 1 条与 `_llm_tools()` 的 `discover_semantic_scopes.query` 参数描述均未告知"以空 query 枚举授权
+    scope"。该工具 query 对项目/本体名称做词法匹配，业务词（"工单""备件 标准成本"）必然零命中，
+    Q1/Q3/Q4/Q5 的 Agent 在 discover 阶段即放弃（证据：`Q1-grant.json` transcript 四次 discover 均
+    `items: []`，终答"无法确认"）。Q2 第五次调用不带 query 才恢复，属模型运气而非合同保证。
+  - **D-2（High，平台读路径缺口，触发设计 §4.3 窄修复）**：`get_semantic_read_model` 必需
+    `graph_set_id`，但三个收窄读工具均不暴露它——`AuthorizedScopeDiscoveryService` 已计算
+    `readiness.graph_set_id`（`backend/app/services/authorized_scope_discovery.py` 约 60 行），
+    `_ontology_item` 序列化时丢弃（约 265–288 行）；`query_semantic_context`（compact 与 full）也
+    不含。收窄工具面的外部 Agent 无法闭合设计 §3.3 第 2 步；错误猜测返回通用 `forbidden_scope`
+    无自修复通道（证据：`Q2-grant.json` 中以 ontology_id/workspace_version/project_id 三次猜测
+    graph_set_id 均失败；测试者直连 MCP 验证：正确 id 读取 200、错误 id `forbidden_scope`）。
+    窄修复建议：discovery 的 ontology item 序列化补 `graph_set_id`（数据已在手），登记为 §4.3 修复。
+  - 附注（环境）：`backend/.env` 的 `LLM_API_KEY` 失效需开发者或运维更新；不判 FAIL。
+- **无泄露复核**：全轮 SQL 总数为零，F2/F3 子串检查未触发（空转）；授权侧无痕合同由机械 B4/B5
+  与 R3.0-004 套件全绿复证。证据转录经真实 key 值扫描确认零残留。
+- **清理**：6 把 fixture key（含首轮失败 seeding 残留 3 把）已 revoke；fixture 项目与孤儿项目已删
+  （204）；Oxigraph 无残留图；`/tmp` 临时 seeding/基准文件已删；冒烟转录留存（已脱 key）。
+- **结论：FAIL**。S1–S4、B1–B5、F1、F4–F6、R1–R3、L1、A1–A4、A6–A8 全部 PASS；
+  S5/A5（冒烟 5 轮按判定通过）因 D-1、D-2 未达成。建议：开发 agent 窄修复 D-2（平台读路径，
+  §4.3 登记）与 D-1（冒烟驱动 prompt/工具描述），随后进行 Round 2 复测（复用本计划，重点
+  S5/A5 与 §8.3 正向轮判定）。
+
+### 独立测试 Round 2（2026-08-27，requirement_tester）— PASS
+
+- 代码版本：main `a011595` + 已跟踪修改（`backend/app/api/schemas.py`、
+  `backend/app/services/authorized_scope_discovery.py`——D-2 窄修复恰好 2 行，F5 登记核对通过；
+  `backend/tests/test_authorized_scope_discovery.py` 回归；设计/测试计划按用户审核修订）+ Round 1
+  的四个未跟踪新路径（内容含 D-1/H-1/H-3/H-4 修复）。服务已重启，8001/5173 健康。
+- **复测 Round 1 失败项（全部 FIXED）**：
+  - **D-2 FIXED**：discovery 本体条目现含 `graph_set_id`（queryable 非空）。机械复证：
+    `tests/test_authorized_scope_discovery.py` 13 项全 PASS（含 REST/MCP 一致性）；活体复证：
+    MCP `discover_semantic_scopes` 返回的 `graph_set_id` 与 fixture 实际 graph set 一致；
+    Q2 转录显示 Agent 直接取用 discovery 的 `graph_set_id`，无猜测。
+  - **D-1 FIXED**：SYSTEM_PROMPT 规则 1 明确"空 query 枚举 scope、graph_set_id 直接使用、
+    禁止猜测"；全部 5 轮的首个工具调用即空 query discover，随后正常进入 context 查询与
+    detail 读取（各轮工具序列见转录）。
+- **机械复测（全 PASS）**：
+  - 聚焦（含 scope discovery 回归）：门控开启 → **38 passed**（72s）。
+  - 全量（门控开启）→ **960 passed, 8 skipped**；默认门控 → **942 passed, 26 skipped，0 failed**。
+  - `alembic current` → `0032_semantic_protection_sets (head)`；`backend/app/` diff 恰 2 行（F5）。
+  - 新增 S3b ×3（Decimal→十进制字符串、timestamp/date→ISO、NULL/bool/int/float 原生 JSON）
+    PASS；H-3 修订后 `test_s3_authorized_chain_derived_metric_read_closure`（读取闭合性，
+    含 `resolved_at`/`reported_at` 与 `incidents.reported_at` 授权列断言）PASS；S3/S4/B4/B5/F6
+    机械形态零回归。
+- **真实冒烟（S5/A5，全部 PASS）**：
+  - L1：service active、backend 200、frontend 200、schema 21 表在库。
+  - fixture 重建：项目 `09aeb19a-…`、graph set `7fd6af0e-…`；seeding Build Session
+    `cebeb7c6-…` + 批次 `53938d68-…`（dry-run）/`0700e078-…`（apply_atomic）登记为 Round 2
+    基线；PS_COST 三成员同 Round 1；grant 见 5 表映射、nogrant 见 4（spare_parts 隐藏）。
+  - LLM：Zhipu OpenAI 兼容端点（glm-5.3），仅经 `R3005_SMOKE_LLM_*` 注入（驱动已不读
+    backend/.env）。`--check` PASS 后执行 Q1–Q5，驱动判定 5/5 PASS。
+  - **§8.3 独立判定（测试者执行）**：
+    - Q1：SQL `SELECT COUNT(*) FROM industrial_service_v3.work_orders WHERE status='RESOLVED'`
+      → 10，与独立基准一致；标识符（work_orders/status/'RESOLVED'）均在 tm-wo + em-status-resolved
+      授权出处内；口径表完整（指标/粒度/过滤/空值规则）；工具序列符合 §3.3。
+    - Q2：SQL 使用 `wo.resolved_at - i.reported_at`（reported_at 经 work_orders→incidents join
+      取得）、status='RESOLVED' 过滤、双端点非空保护、GROUP BY model_name——与业务参考冻结口径
+      逐项一致；数值 5.72/5.56/5.92/9.50 与独立基准（5.7222/5.5556/5.9167/9.5，本轮按新口径
+      重算）两位小数一致；口径说明显式引用 `resolved_at − reported_at`（数据集中
+      opened_at 与 reported_at 逐行相等，数值与旧口径重合属数据属性，非口径混淆——SQL 文本
+      用的确是 incidents.reported_at）。
+    - Q4：`SELECT AVG(standard_cost) FROM industrial_service_v3.spare_parts` → 十进制字符串
+      `"527.5000000000000000"`，与基准 527.5 一致（H-4 转换在真实轮生效）；口径说明含
+      指标/聚合/度量列/分母/空值规则与 tm-part 映射依据。
+    - Q3（无权）：回答"无法确认"；零 SQL、零数值；全转录（含全部 8 次 context 查询响应）
+      F2 禁词扫描零命中（spare_parts/standard_cost/standardCost/cost-visibility/protection/
+      PS_COST/metric-partcost/tm-part/备件平均标准成本 均未出现）；无探测行为。
+    - Q5（缺口）：回答"无法确认"且措辞中立（未区分未建模/无权）；零 SQL；全轮 F3 扫描
+      （information_schema/pg_catalog/pg_class 等）零命中；gap 表未出现在任何 SQL。
+    - F6 PASS：冒烟前后 build_sessions=196、modeling_batches=861，与 Round 2 seeding 后基线
+      完全一致，零新建。
+  - 证据：`docs/delivery/evidence/2026-08-27-r3-0-005/smoke/Q1…Q5-*.json + summary.json`
+    （已脱 key，真实 key 值扫描零残留）。
+- **测试者操作瑕疵登记（不影响判定，须避免复现）**：本轮冒烟使用驱动默认输出目录，
+  Q1–Q5 转录文件名与 Round 1 相同，Round 1 的原始转录被覆盖。Round 1 的缺陷证据摘录已完整
+  保留在本计划 Round 1 记录中；后续轮次执行前应先将既有转录归档或使用 `--out` 分目录。
+- **清理**：3 把 fixture key 已 revoke；fixture 项目已删（204）；Oxigraph 残留本体图（1 个，
+  项目删除未级联该图）已手工 DROP 并复核为零；`/tmp` 临时文件已删；转录留存。
+- **结论：PASS**。Round 1 缺陷 D-1、D-2 均 FIXED；S1–S5、S3b、B1–B5、F1–F6、R1–R3、L1–L3、
+  A1–A8 全部通过。未宣称业务数据安全成立；未宣称 v3.0 完成；R3.0-006 保持待验收。
+  遗留事项：`backend/.env` 的 DeepSeek `LLM_API_KEY` 仍失效（本轮继续用 Zhipu 兼容端点，
+  环境项，不判 FAIL）；冒烟驱动 SYSTEM_PROMPT 存在两个"规则 3"编号（纯文案，无行为影响）。

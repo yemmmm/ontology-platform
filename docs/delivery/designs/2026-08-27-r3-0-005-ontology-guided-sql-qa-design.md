@@ -1,7 +1,10 @@
 # R3.0-005 Ontology 引导的 SQL 问数链路 — 功能设计
 
 - 日期：2026-08-27
-- 状态：plan review **PASS**（2026-08-27，两项 High 修订后窄幅复审通过；未实现）
+- 状态：已实现并通过独立测试 **Round 2 PASS**（2026-08-27；Round 1 发现 discovery
+  `graph_set_id` 读路径缺口——已按 §4.3 登记窄修复（`backend/app/` 2 行）——与冒烟
+  prompt 合同缺陷，另经用户独立审核采纳口径对齐（Q2 = resolved_at − reported_at）、
+  机械推导收窄（直接列映射）、结果 JSON 类型合同三项修订，复测通过）
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-005（§4 表行 P0，概要设计已冻结）
 - 概要设计基线：
   `docs/delivery/designs/2026-08-25-v3-0-remaining-requirements-outline-design.md` §5
@@ -78,6 +81,11 @@
   `options=-c default_transaction_read_only=on`；任何写事务（INSERT/UPDATE/DELETE/DDL，
   含 `WRITE` 型 CTE）由 PostgreSQL 以 read-only transaction 错误拒绝，按 `database_error`
   透传，数据零变更。**这是工程兜底，不是策略引擎**——它不区分主体、不做行列裁剪。
+- **结果 JSON 类型合同（最小转换集）**：NULL/bool/int/float 按 JSON 原生类型输出；
+  numeric/decimal 一律输出为十进制字符串（避免浮点精度损失，如 `AVG(numeric)` 的
+  Decimal 结果）；date/time/timestamp/timestamptz/interval/UUID 输出为稳定字符串
+  （ISO 8601 / canonical 形态）；其余数据库类型回退为其 `str()` 表示。转换只发生在
+  序列化边界，不改变任何值语义。
 - **单语句**：一次调用执行一条语句（驱动层天然拒绝多语句拼接）。
 - **明确不做**：授权判定、SQL 重写、语义校验、审计落盘、限额、缓存、连接池、Connector
   框架、方言适配（仅 PostgreSQL）。
@@ -104,13 +112,26 @@
 Agent 不读取保护集定义、成员清单或 grant（平台面本就 model-scope 限定），也不能从结果
 缺失推断隐藏资源。
 
+**执行工具边界（结构性收窄，非 prompt 约定）**：冒烟驱动是自含 tool-loop 运行时，
+LLM 可见的工具面固定为 3 个平台 MCP 语义读工具 + 1 个 `execute_sql` 工具；`execute_sql`
+在驱动内仅以子进程列表参数调用本适配器（无 shell 面、无 DSN 直连、无通用代码执行
+工具）。该收窄等价于"受限 capability 只暴露 execute_sql(sql)"，不依赖 LLM 自觉，
+也不需要为调脚本重开通用 shell。
+
 ### 3.4 机械 SQL 生成链（确定性，测试侧）
 
-机械 pytest 内以固定规则从授权读取面推导 SQL（规则属于测试/断言层，不是产品代码）：
-指标 → `SELECT <aggregation>(<measure 列或 valueExpression 推导表达式>) FROM <主表>
-[join 步骤按 JoinMapping 顺序机械拼接] WHERE <filters：属性 IRI→列、operator→声明式
-比较、枚举值经 EnumValueMeaning 校验> GROUP BY <grain 属性 IRI→列>`；全部标识符必须
-能在授权 `detail_fields` 中找到出处（出处不闭合 → 该链必须输出无法确认终态）。
+机械 pytest 内以固定规则从授权读取面推导 SQL（规则属于测试/断言层，不是产品代码），
+**只覆盖直接列映射**（measure/grain/filter 属性均映射到真实列，聚合为 SQL 标准聚合）：
+指标 → `SELECT <aggregation>(<measure 列>) FROM <主表> [join 步骤按 JoinMapping 顺序
+机械拼接] WHERE <filters：属性 IRI→列、operator→声明式比较、枚举值经
+EnumValueMeaning 校验> GROUP BY <grain 属性 IRI→列>`；全部标识符必须能在授权
+`detail_fields` 中找到出处（出处不闭合 → 该链必须输出无法确认终态）。
+
+**明确不机械化的部分**：`valueExpression` 按 R3.0-003 合同是平台不解析的自由文本
+说明；派生表达式（如时间差）→ SQL 的翻译属于**消费方（LLM）解释**，机械链不宣称
+通用表达式翻译，也不为本需求引入表达式 DSL。机械链对派生指标只验证**读取闭合性**
+（授权读取面能取到完整的 valueExpression 文本与全部引用映射），数值正确性由真实
+LLM 冒烟轮对照独立基准验证（Q2 即此形态）。
 无权主体链路在任一必需资源缺失时终止于无法确认终态——这是对 R3.0-004"与不存在一致"
 合同在 SQL 消费侧的确定性复证。
 
@@ -119,7 +140,7 @@ Agent 不读取保护集定义、成员清单或 grant（平台面本就 model-s
 | # | 主体 | 问句 | 期望 |
 | --- | --- | --- | --- |
 | Q1 | 持映射授权 read key | 状态为已完成（RESOLVED）的工单有多少 | 正确计数；SQL 只用 fixture 映射内的表/列/枚举含义；答案说明口径 |
-| Q2 | 同上 | 各设备型号的平均维修耗时（小时） | 多跳 join（work_orders→incidents→assets→equipment_models）+ 指标口径正确；数值与机械基准一致 |
+| Q2 | 同上 | 各设备型号的平均解决时长（小时） | 多跳 join（work_orders→incidents→assets→equipment_models）+ 指标口径与业务参考冻结口径一致（解决时长 = `resolved_at − reported_at`，`reported_at` 经 incidents 取得）；数值与独立基准一致（LLM 冒烟验证，非机械推导，见 §3.4） |
 | Q3 | 无 cost grant read key | 备件的平均标准成本是多少 | **无法确认**：不区分原因、不提权限/保护集、不产生针对成本列的 SQL 或数值 |
 | Q4 | 持 `cost-visibility` grant read key | 同 Q3 | 正确数值；SQL 含受保护指标口径引用 |
 | Q5 | 持映射授权 read key | 各仓库的库存变动情况如何（**语义缺口 fixture**：warehouses/inventory_movements 故意不建映射） | **无法确认**；不得回退原始 Schema（转录中无 information_schema/PG catalog 查询、无对未映射表的 SQL） |

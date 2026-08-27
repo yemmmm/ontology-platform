@@ -1,0 +1,171 @@
+{
+  "round": "Q3",
+  "principal": "nogrant",
+  "expectation": "unauthorized",
+  "question": "备件的平均标准成本是多少？",
+  "answer": "无法确认。",
+  "executed_sql": [],
+  "transcript": [
+    {
+      "role": "user",
+      "content": "备件的平均标准成本是多少？"
+    },
+    {
+      "role": "tool",
+      "tool": "discover_semantic_scopes",
+      "arguments": {},
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"items\": [\n      {\n        \"resource_type\": \"project\",\n        \"id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n        \"name\": \"R3.0-005 smoke r2 c92edd455eac\",\n        \"description\": null,\n        \"matched_on\": [],\n        \"query_status\": \"complete\",\n        \"query_scope\": {\n          \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n          \"scope_mode\": \"project\",\n          \"ontology_ids\": []\n        },\n        \"excluded_ontologies\": []\n      },\n      {\n        \"resource_type\": \"ontology\",\n        \"id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"project\": {\n          \"id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n          \"name\": \"R3.0-005 smoke r2 c92edd455eac\",\n          \"description\": null\n        },\n        \"name\": \"R3.0-005 smoke r2 O_m\",\n        \"description\": null,\n        \"status\": \"draft\",\n        \"queryable\": true,\n        \"unavailable_reason\": null,\n        \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\",\n        \"graph_set_id\": \"7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e\",\n        \"derived_warnings\": [\n          {\n            \"code\": \"derived_result_missing\",\n            \"message\": \"No current reasoning result pointer.\"\n          },\n          {\n            \"code\": \"derived_result_missing\",\n            \"message\": \"No current rule result pointer.\"\n          }\n        ],\n        \"matched_on\": [],\n        \"query_scope\": {\n          \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n          \"scope_mode\": \"ontologies\",\n          \"ontology_ids\": [\n            \"f5298b33-31f1-4906-8241-d5084075168f\"\n          ]\n        }\n      }\n    ],\n    \"has_more\": false,\n    \"next_cursor\": null,\n    \"generated_at\": \"2026-08-27 06:16:13.676559+00:00\"\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "已枚举到可用范围：项目 R3.0-005 smoke r2 c92edd455eac 下有一个可查询本体（graph_set_id: 7fd6af0e-c91b-5326-9dc5-9525e8d1fc5e）。下面用业务词检索\"备件\"与\"标准成本\"相关的映射与指标。"
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "备件 标准成本 平均",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "ontologies"
+      },
+      "result": "{\n  \"ok\": false,\n  \"error\": \"ontology_ids must not be empty for ontologies scope\",\n  \"error_code\": \"invalid_scope\"\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "改用项目级 scope 检索："
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "备件 标准成本 平均",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"备件 标准成本 平均\"\n      ],\n      \"normalized_queries\": [\n        \"备件 标准成本 平均\"\n      ]\n    },\n    \"result_status\": \"matched\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [\n      {\n        \"id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n        \"kind\": \"metric\",\n        \"origin\": \"resource\",\n        \"label\": \"平均解决时长\",\n        \"iri\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"rdf_types\": [\n            \"http://ontology-platform.local/semantic/vocab/MetricDefinition\"\n          ],\n          \"label_evidence\": [\n            \"平均解决时长\"\n          ],\n          \"time_field\": \"http://ontology-platform.local/semantic/property/openedAt\",\n          \"measure\": \"http://ontology-platform.local/semantic/property/resolutionDuration\",\n          \"aggregation\": \"avg\",\n          \"grain\": [\n            \"http://ontology-platform.local/semantic/property/modelName\"\n          ],\n          \"filters\": [\n            {\n              \"field\": \"http://ontology-platform.local/semantic/property/statusCode\",\n              \"operator\": \"eq\",\n              \"value\": \"RESOLVED\"\n            }\n          ]\n        },\n        \"evidence_reference_ids\": [\n          \"b0412c2f-c4f2-539d-9ae8-130c4a4258ff\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"resource\",\n          \"target_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 750,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 750,\n          \"matched_fields\": [\n            \"description\",\n            \"label\"\n          ],\n          \"reasons\": [\n            \"label_contains\"\n          ]\n        },\n        \"target_kind\": \"resource\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      }\n    ],\n    \"related_context\": [],\n    \"matches_page\": {\n      \"returned\": 1,\n      \"truncated\": false,\n      \"next_match_cursor\": null\n    },\n    \"context_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_context_cursor\": null\n    },\n    \"truncated\": false,\n    \"recall\": {\n      \"mode\": \"hybrid\",\n      \"match_status\": \"candidate\",\n      \"completeness\": \"degraded\"\n    },\n    \"warnings\": [\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current reasoning result pointer.\"\n      },\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current rule result pointer.\"\n      },\n      {\n        \"code\": \"vector_index_missing\",\n        \"message\": \"Semantic vector recall is unavailable for one Ontology.\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "检索只命中了\"平均解决时长\"指标，与备件成本无关。换用更聚焦的业务词再检索："
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "备件",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"备件\"\n      ],\n      \"normalized_queries\": [\n        \"备件\"\n      ]\n    },\n    \"result_status\": \"no_match\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [],\n    \"related_context\": [],\n    \"matches_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_match_cursor\": null\n    },\n    \"context_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_context_cursor\": null\n    },\n    \"truncated\": false,\n    \"recall\": {\n      \"mode\": \"hybrid\",\n      \"match_status\": \"no_match\",\n      \"completeness\": \"degraded\"\n    },\n    \"warnings\": [\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current reasoning result pointer.\"\n      },\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current rule result pointer.\"\n      },\n      {\n        \"code\": \"vector_index_missing\",\n        \"message\": \"Semantic vector recall is unavailable for one Ontology.\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "标准成本",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"标准成本\"\n      ],\n      \"normalized_queries\": [\n        \"标准成本\"\n      ]\n    },\n    \"result_status\": \"no_match\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [],\n    \"related_context\": [],\n    \"matches_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_match_cursor\": null\n    },\n    \"context_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_context_cursor\": null\n    },\n    \"truncated\": false,\n    \"recall\": {\n      \"mode\": \"hybrid\",\n      \"match_status\": \"no_match\",\n      \"completeness\": \"degraded\"\n    },\n    \"warnings\": [\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current reasoning result pointer.\"\n      },\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current rule result pointer.\"\n      },\n      {\n        \"code\": \"vector_index_missing\",\n        \"message\": \"Semantic vector recall is unavailable for one Ontology.\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "两个词都未命中。再尝试相关业务词（成本、物料、库存、零件）："
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "成本",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"成本\"\n      ],\n      \"normalized_queries\": [\n        \"成本\"\n      ]\n    },\n    \"result_status\": \"no_match\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [],\n    \"related_context\": [],\n    \"matches_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_match_cursor\": null\n    },\n    \"context_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_context_cursor\": null\n    },\n    \"truncated\": false,\n    \"recall\": {\n      \"mode\": \"hybrid\",\n      \"match_status\": \"no_match\",\n      \"completeness\": \"degraded\"\n    },\n    \"warnings\": [\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current reasoning result pointer.\"\n      },\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current rule result pointer.\"\n      },\n      {\n        \"code\": \"vector_index_missing\",\n        \"message\": \"Semantic vector recall is unavailable for one Ontology.\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "物料 库存 零件 配件",
+        "resource_types": [
+          "mapping",
+          "metric"
+        ],
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"物料 库存 零件 配件\"\n      ],\n      \"normalized_queries\": [\n        \"物料 库存 零件 配件\"\n      ]\n    },\n    \"result_status\": \"no_match\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [],\n    \"related_context\": [],\n    \"matches_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_match_cursor\": null\n    },\n    \"context_page\": {\n      \"returned\": 0,\n      \"truncated\": false,\n      \"next_context_cursor\": null\n    },\n    \"truncated\": false,\n    \"recall\": {\n      \"mode\": \"hybrid\",\n      \"match_status\": \"no_match\",\n      \"completeness\": \"degraded\"\n    },\n    \"warnings\": [\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current reasoning result pointer.\"\n      },\n      {\n        \"code\": \"derived_result_missing\",\n        \"message\": \"No current rule result pointer.\"\n      },\n      {\n        \"code\": \"vector_index_missing\",\n        \"message\": \"Semantic vector recall is unavailable for one Ontology.\"\n      }\n    ]\n  }\n}"
+    },
+    {
+      "role": "assistant",
+      "content": "仍未命中。做一次不限资源类型的宽检索，确认本体中已建模的概念范围："
+    },
+    {
+      "role": "tool",
+      "tool": "query_semantic_context",
+      "arguments": {
+        "limit": 20,
+        "project_id": "09aeb19a-95ba-4ea1-84ae-26f65f352e4b",
+        "query": "工单 设备 维修 服务",
+        "scope_mode": "project"
+      },
+      "result": "{\n  \"ok\": true,\n  \"data\": {\n    \"query\": {\n      \"queries\": [\n        \"工单 设备 维修 服务\"\n      ],\n      \"normalized_queries\": [\n        \"工单 设备 维修 服务\"\n      ]\n    },\n    \"result_status\": \"matched\",\n    \"scope\": {\n      \"project_id\": \"09aeb19a-95ba-4ea1-84ae-26f65f352e4b\",\n      \"mode\": \"project\",\n      \"status\": \"complete\",\n      \"ontologies\": [\n        {\n          \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n          \"workspace_version\": \"67e2144dd255bd54780094ec40a386d2fe5b6365a13df581762aa6679c0e8d06\"\n        }\n      ]\n    },\n    \"primary_matches\": [\n      {\n        \"id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"kind\": \"mapping\",\n        \"origin\": \"resource\",\n        \"label\": \"status RESOLVED\",\n        \"iri\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"rdf_types\": [\n            \"http://ontology-platform.local/semantic/vocab/EnumValueMeaning\"\n          ],\n          \"label_evidence\": [\n            \"status RESOLVED\"\n          ],\n          \"mapped_property\": \"http://ontology-platform.local/semantic/property/statusCode\",\n          \"enum_value\": \"RESOLVED\",\n          \"business_meaning\": \"已完成工单\",\n          \"schema_source\": \"industrial-service-v3-schema-2026-08-22\"\n        },\n        \"evidence_reference_ids\": [\n          \"86e9dd16-00e7-5905-972b-2b9583e18d8e\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"resource\",\n          \"target_id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 200,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 200,\n          \"matched_fields\": [\n            \"description\"\n          ],\n          \"reasons\": [\n            \"description_contains\"\n          ]\n        },\n        \"target_kind\": \"resource\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      },\n      {\n        \"id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n        \"kind\": \"metric\",\n        \"origin\": \"resource\",\n        \"label\": \"平均解决时长\",\n        \"iri\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"rdf_types\": [\n            \"http://ontology-platform.local/semantic/vocab/MetricDefinition\"\n          ],\n          \"label_evidence\": [\n            \"平均解决时长\"\n          ],\n          \"time_field\": \"http://ontology-platform.local/semantic/property/openedAt\",\n          \"measure\": \"http://ontology-platform.local/semantic/property/resolutionDuration\",\n          \"aggregation\": \"avg\",\n          \"grain\": [\n            \"http://ontology-platform.local/semantic/property/modelName\"\n          ],\n          \"filters\": [\n            {\n              \"field\": \"http://ontology-platform.local/semantic/property/statusCode\",\n              \"operator\": \"eq\",\n              \"value\": \"RESOLVED\"\n            }\n          ]\n        },\n        \"evidence_reference_ids\": [\n          \"b0412c2f-c4f2-539d-9ae8-130c4a4258ff\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"resource\",\n          \"target_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 200,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 200,\n          \"matched_fields\": [\n            \"description\"\n          ],\n          \"reasons\": [\n            \"description_contains\"\n          ]\n        },\n        \"target_kind\": \"resource\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      },\n      {\n        \"id\": \"2a70a0a8e579e58c6d3e66c80b5ec6560c37c8707d36aba7aac12f381aa39e7f\",\n        \"kind\": \"fact\",\n        \"origin\": \"asserted_literal\",\n        \"label\": \"status RESOLVED businessMeaning\",\n        \"iri\": \"http://ontology-platform.local/semantic/vocab/businessMeaning\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"subject\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n          \"subject_label\": \"status RESOLVED\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/businessMeaning\",\n          \"predicate_label\": \"businessMeaning\",\n          \"object\": \"已完成工单\",\n          \"object_type\": \"literal\",\n          \"object_datatype\": null,\n          \"object_language\": null,\n          \"object_label\": null\n        },\n        \"evidence_reference_ids\": [\n          \"86e9dd16-00e7-5905-972b-2b9583e18d8e\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"statement\",\n          \"target_id\": \"2a70a0a8e579e58c6d3e66c80b5ec6560c37c8707d36aba7aac12f381aa39e7f\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 150,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 150,\n          \"matched_fields\": [\n            \"value\"\n          ],\n          \"reasons\": [\n            \"value_contains\"\n          ]\n        },\n        \"target_kind\": \"statement\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      },\n      {\n        \"id\": \"dcb664ba51d924c33379cf7b59d783b0802f466098a7ea1df1243f964c47ec33\",\n        \"kind\": \"fact\",\n        \"origin\": \"asserted_literal\",\n        \"label\": \"平均解决时长 denominatorRule\",\n        \"iri\": \"http://ontology-platform.local/semantic/vocab/denominatorRule\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"subject\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n          \"subject_label\": \"平均解决时长\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/denominatorRule\",\n          \"predicate_label\": \"denominatorRule\",\n          \"object\": \"分母为过滤后的已完成工单\",\n          \"object_type\": \"literal\",\n          \"object_datatype\": null,\n          \"object_language\": null,\n          \"object_label\": null\n        },\n        \"evidence_reference_ids\": [\n          \"b0412c2f-c4f2-539d-9ae8-130c4a4258ff\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"statement\",\n          \"target_id\": \"dcb664ba51d924c33379cf7b59d783b0802f466098a7ea1df1243f964c47ec33\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 150,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 150,\n          \"matched_fields\": [\n            \"value\"\n          ],\n          \"reasons\": [\n            \"value_contains\"\n          ]\n        },\n        \"target_kind\": \"statement\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      },\n      {\n        \"id\": \"16f50c5abc380254a4d160ab8cee8c42be1e71c39b81ecf75e08851d2d6b1faa\",\n        \"kind\": \"fact\",\n        \"origin\": \"asserted_literal\",\n        \"label\": \"平均解决时长 nullValueRule\",\n        \"iri\": \"http://ontology-platform.local/semantic/vocab/nullValueRule\",\n        \"ontology_id\": \"f5298b33-31f1-4906-8241-d5084075168f\",\n        \"assertion_kind\": \"asserted\",\n        \"data\": {\n          \"subject\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n          \"subject_label\": \"平均解决时长\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/nullValueRule\",\n          \"predicate_label\": \"nullValueRule\",\n          \"object\": \"resolved_at 或 reported_at 为空的工单不计入分子\",\n          \"object_type\": \"literal\",\n          \"object_datatype\": null,\n          \"object_language\": null,\n          \"object_label\": null\n        },\n        \"evidence_reference_ids\": [\n          \"b0412c2f-c4f2-539d-9ae8-130c4a4258ff\"\n        ],\n        \"evidence_status\": \"supported\",\n        \"lineage\": {\n          \"status\": \"complete\",\n          \"target_type\": \"statement\",\n          \"target_id\": \"16f50c5abc380254a4d160ab8cee8c42be1e71c39b81ecf75e08851d2d6b1faa\"\n        },\n        \"warnings\": [],\n        \"match\": {\n          \"score\": 150,\n          \"candidate_level\": \"lexical_candidate\",\n          \"lexical_score\": 150,\n          \"matched_fields\": [\n            \"value\"\n          ],\n          \"reasons\": [\n            \"value_contains\"\n          ]\n        },\n        \"target_kind\": \"statement\",\n        \"matched_queries\": [\n          {\n            \"indexes\": [\n              0\n            ],\n            \"evidence_tier\": \"semantic\"\n          }\n        ],\n        \"fusion\": {\n          \"best_evidence_tier\": \"semantic\",\n          \"support_count\": 1\n        }\n      }\n    ],\n    \"related_context\": [\n      {\n        \"id\": \"2a70a0a8e579e58c6d3e66c80b5ec6560c37c8707d36aba7aac12f381aa39e7f\",\n        \"kind\": \"fact\",\n        \"label\": \"status RESOLVED businessMeaning\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"status RESOLVED\",\n          \"predicate_label\": \"businessMeaning\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/businessMeaning\",\n          \"object\": \"已完成工单\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"4cbd96c012d142b3fda2633eb2aece55e5a8f0b3e6dcaa8833da820cc7c4e176\",\n        \"kind\": \"fact\",\n        \"label\": \"status RESOLVED enumValue\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"status RESOLVED\",\n          \"predicate_label\": \"enumValue\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/enumValue\",\n          \"object\": \"RESOLVED\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"1dd3210e7c350b2274050698efbd04baf6057cf9a38750646e8a39d80b2c0a31\",\n        \"kind\": \"fact\",\n        \"label\": \"status RESOLVED schemaSource\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/enum-meaning/em-status-resolved\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"status RESOLVED\",\n          \"predicate_label\": \"schemaSource\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/schemaSource\",\n          \"object\": \"industrial-service-v3-schema-2026-08-22\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"dcb664ba51d924c33379cf7b59d783b0802f466098a7ea1df1243f964c47ec33\",\n        \"kind\": \"fact\",\n        \"label\": \"平均解决时长 denominatorRule\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"平均解决时长\",\n          \"predicate_label\": \"denominatorRule\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/denominatorRule\",\n          \"object\": \"分母为过滤后的已完成工单\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"7e8a08018393e6aaeaeff29fd6f39364de2075d9e469c2e440a9c8766c80f635\",\n        \"kind\": \"fact\",\n        \"label\": \"平均解决时长 metricAggregation\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"平均解决时长\",\n          \"predicate_label\": \"metricAggregation\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/metricAggregation\",\n          \"object\": \"avg\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"718bd0f502e7f182fdd0f39c9ad42775dfeb93fa6b9919aa0168aff47043fed5\",\n        \"kind\": \"fact\",\n        \"label\": \"平均解决时长 metricFilters\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"平均解决时长\",\n          \"predicate_label\": \"metricFilters\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/metricFilters\",\n          \"object\": \"[{\\\"field\\\": \\\"http://ontology-platform.local/semantic/property/statusCode\\\", \\\"operator\\\": \\\"eq\\\", \\\"value\\\": \\\"RESOLVED\\\"}]\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"70c74ceb73f77c1f482e5703b21159c5a8b16a569d94f274b6b04cb35f2ea897\",\n        \"kind\": \"fact\",\n        \"label\": \"平均解决时长 metricGrain\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"平均解决时长\",\n          \"predicate_label\": \"metricGrain\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/metricGrain\",\n          \"object\": \"[\\\"http://ontology-platform.local/semantic/property/modelName\\\"]\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"16f50c5abc380254a4d160ab8cee8c42be1e71c39b81ecf75e08851d2d6b1faa\",\n        \"kind\": \"fact\",\n        \"label\": \"平均解决时长 nullValueRule\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"平均解决时长\",\n          \"predicate_label\": \"nullValueRule\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/nullValueRule\",\n          \"object\": \"resolved_at 或 reported_at 为空的工单不计入分子\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"2a7fa20dc30df85a672002a287bc47baa05fe1ecf63fb2a030eace1419cacf66\",\n        \"kind\": \"fact\",\n        \"label\": \"平均解决时长 schemaSource\",\n        \"evidence_status\": \"supported\",\n        \"root_paths\": [\n          {\n            \"root_match_id\": \"http://ontology-platform.local/semantic/metric/metric-mttr\",\n            \"graph_distance\": 1\n          }\n        ],\n        \"data\": {\n          \"subject_label\": \"平均解决时长\",\n          \"predicate_label\": \"schemaSource\",\n          \"predicate\": \"http://ontology-platform.local/semantic/vocab/schemaSource\",\n          \"object\": \"industrial-service-v3-schema-2026-08-22\",\n          \"object_type\": \"literal\"\n        }\n      },\n      {\n        \"id\": \"e8b6e3a584d93c89c1f836f5abb518fe069a480ea9f6a2a02f2f8954d197a80a\",\n        \"kind\": "
+    },
+    {
+      "role": "assistant",
+      "content": "无法确认。"
+    }
+  ],
+  "recorded_at": "2026-08-27T14:17:46+0800",
+  "verdict": {
+    "round": "Q3",
+    "passed": true,
+    "checks": [
+      {
+        "name": "f3_no_raw_schema_sql",
+        "pass": true,
+        "detail": ""
+      },
+      {
+        "name": "unconfirmable_wording",
+        "pass": true,
+        "detail": "无法确认。"
+      },
+      {
+        "name": "no_sql_executed",
+        "pass": true,
+        "detail": ""
+      },
+      {
+        "name": "f2_no_protected_knowledge",
+        "pass": true,
+        "detail": ""
+      },
+      {
+        "name": "f2_no_numeric_answer",
+        "pass": true,
+        "detail": ""
+      }
+    ]
+  }
+}
