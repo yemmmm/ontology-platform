@@ -1265,9 +1265,17 @@ class TeamRunner:
         """Compute the prepare-time binding without creating any run or ledger state."""
         if not cls._safe_run_id(run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
-        configuration = load_formal_team_configuration(
-            profile_path, task_path, root=repository_root
-        )
+        # R3.0-002 increment 6(b) completion: the prepare-time preview loads
+        # through the same dispatch as ``prepare`` itself, so a non-formal
+        # multi-slice Task no longer trips the strict four-role loader here.
+        if task_declares_multi_slice_workflow(task_path):
+            configuration = load_multi_slice_team_configuration(
+                profile_path, task_path, root=repository_root
+            )
+        else:
+            configuration = load_formal_team_configuration(
+                profile_path, task_path, root=repository_root
+            )
         formal_contract = formal_run_contract_for(configuration)
         if model_profile_id is not None and formal_contract is None:
             raise TeamConfigurationError(

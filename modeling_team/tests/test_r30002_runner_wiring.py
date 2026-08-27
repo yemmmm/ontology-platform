@@ -14,7 +14,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from shutil import rmtree
 from types import SimpleNamespace
+from unittest.mock import patch
 
+import pytest
+
+from modeling_team import __main__ as team_main
+from modeling_team.contracts import TeamConfigurationError
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.tests.test_runner import CapturingAdapter
@@ -330,3 +335,85 @@ def test_runner_existing_v2_task_keeps_no_multi_slice_gate(tmp_path):
         runner.cleanup()
         if run_root.exists():
             rmtree(run_root)
+
+
+# --- W4: preview_baseline / CLI baseline dispatch (increment 6(b) completion) ---
+
+
+def test_preview_baseline_accepts_multi_slice_profile_and_task():
+    manifest, baseline_hash = TeamRunner.preview_baseline(
+        repository_root=REPO_ROOT,
+        run_id="r30002-preview-multi-slice",
+        profile_path=PROFILE,
+        task_path=SMOKE_TASK,
+    )
+    assert manifest["run_id"] == "r30002-preview-multi-slice"
+    assert manifest["files"]["profile"] == hashlib.sha256(
+        PROFILE.read_bytes()
+    ).hexdigest()
+    assert manifest["files"]["task"] == hashlib.sha256(
+        SMOKE_TASK.read_bytes()
+    ).hexdigest()
+    assert len(baseline_hash) == 64
+    assert int(baseline_hash, 16) >= 0
+
+
+def test_preview_baseline_multi_slice_rejects_model_profile_selection():
+    with pytest.raises(TeamConfigurationError, match="model profile selection"):
+        TeamRunner.preview_baseline(
+            repository_root=REPO_ROOT,
+            run_id="r30002-preview-multi-slice-profile",
+            profile_path=PROFILE,
+            task_path=SMOKE_TASK,
+            model_profile_id="any-profile",
+        )
+
+
+def test_preview_baseline_multi_slice_task_rejects_formal_profile():
+    # The dispatch must widen the loader, not the roster: pairing the
+    # multi-slice Task with the strict four-role formal Profile still fails.
+    with pytest.raises(TeamConfigurationError, match="multi-slice Profile is not registered"):
+        TeamRunner.preview_baseline(
+            repository_root=REPO_ROOT,
+            run_id="r30002-preview-crosswire",
+            profile_path=REPO_ROOT
+            / "modeling_team" / "profiles" / "r2-3-005-modeling-team.yaml",
+            task_path=SMOKE_TASK,
+        )
+
+
+def test_cli_baseline_accepts_multi_slice_profile_and_task(capsys):
+    argv = [
+        "modeling-team",
+        "baseline",
+        "--run-id",
+        "r30002-cli-baseline-multi-slice",
+        "--profile",
+        str(PROFILE),
+        "--task",
+        str(SMOKE_TASK),
+    ]
+    with patch.object(team_main.sys, "argv", argv):
+        assert team_main.main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "r30002-cli-baseline-multi-slice"
+    assert len(payload["baseline_hash"]) == 64
+    assert payload["manifest"]["run_id"] == "r30002-cli-baseline-multi-slice"
+
+
+def test_cli_baseline_multi_slice_rejects_model_profile_selection(capsys):
+    argv = [
+        "modeling-team",
+        "baseline",
+        "--run-id",
+        "r30002-cli-baseline-multi-slice-profile",
+        "--profile",
+        str(PROFILE),
+        "--task",
+        str(SMOKE_TASK),
+        "--model-profile",
+        "any-profile",
+    ]
+    with patch.object(team_main.sys, "argv", argv):
+        assert team_main.main() == 2
+    assert "model profile selection" in capsys.readouterr().err

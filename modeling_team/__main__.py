@@ -502,9 +502,15 @@ def main() -> int:
         return 0
     if args.command == "baseline":
         try:
-            baseline_formal_contract = formal_run_contract_for(
-                load_formal_team_configuration(args.profile, args.task, root=root)
-            )
+            # R3.0-002 increment 6(b) completion: mirror the validate/run
+            # dispatch so a multi-slice Task previews its baseline without the
+            # strict four-role loader rejecting the three-role Profile.
+            if task_declares_multi_slice_workflow(args.task):
+                baseline_formal_contract = None
+            else:
+                baseline_formal_contract = formal_run_contract_for(
+                    load_formal_team_configuration(args.profile, args.task, root=root)
+                )
             _resolve_model_profile_selection(
                 args.model_profile, baseline_formal_contract
             )
