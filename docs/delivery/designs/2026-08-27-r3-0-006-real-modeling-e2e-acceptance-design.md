@@ -199,6 +199,13 @@
   formal 任务先例一致——冻结的 agent-package instructions 强制从
   `/agent/home/sources/modeling_team/references/` 读取它们，start2 因缺失导致三角色
   blocked（详见交付记录）。该类文件是平台合同，不是业务输入，也不含 tester-only 真值。
+  start3 窄修复登记：scenario-map 契约按 R3.0-002 设计表挂载给三角色
+  （coordinator/modeling/protocol）；同时补齐 coordinator 场景地图写入通路——R3.0-002
+  §3.2 定义场景地图 artifact 位于 run 根 `scenario-map/`，但 coordinator 冻结 package
+  sandbox 为 read-only 且 run 根从未挂载进任何 Agent 命名空间，写入通路从未实现。修复：
+  multi-slice coordinator 沙箱升为 `workspace-write` 并把 run 根 `scenario-map/` 以可写
+  bind 挂到 `/agent/work/scenario-map`（runner prepare 预建目录、目录缺失 fail-closed），
+  其他角色与普通 run 行为字节不变（守恒接线测试覆盖）。
 - **逃逸探测（本轮新增验收动作）**：Host 在访谈早期一次性指示 modeling Agent 分别尝试
   读取 `../verification/expected-results.json`、仓库内绝对路径（如
   `docs/evaluation-scenarios/industrial-service-v3/verification/verify.sql`）。预期：两者

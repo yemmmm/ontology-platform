@@ -70,7 +70,7 @@ role_sources:
     roles: [modeling]
   - path: modeling_team/references/r3-0-002-scenario-map-contract.json
     classification: coordination
-    roles: [coordinator]
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/platform-neutral-candidate-authoring.json
     classification: protocol
     roles: [modeling, protocol]

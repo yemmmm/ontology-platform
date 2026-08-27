@@ -3039,6 +3039,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._candidate_platform_gate_enabled = (
             self._candidate_platform_gate_enabled_for_run(run)
         )
+        # R3.0-006 start3 narrow repair: the Coordinator owns the run-root
+        # scenario-map artifacts (R3.0-002 §3.2) but its frozen package sandbox
+        # is read-only and the run root is otherwise unmounted in every Agent
+        # namespace, so no role can create ``scenario-map/`` files.  For
+        # multi-slice runs only, ``namespace_command`` binds exactly that one
+        # directory writable at the cwd-relative path the frozen instructions
+        # name, and the thread sandbox is raised to workspace-write.
+        self._multi_slice_scenario_map_enabled = self._is_multi_slice_run(run)
         self._formal_turn_binding_required = self._coordination_enabled
         parameters = getattr(getattr(getattr(run, "configuration", None), "profile", None), "parameters", None)
         if isinstance(parameters, Mapping):
@@ -3902,6 +3910,49 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             mounts.extend(["--ro-bind", str(directory), str(directory)])
         return mounts
 
+    def _thread_sandbox(self, agent: _Agent) -> str:
+        """R3.0-006 start3: only the multi-slice Coordinator writes run-root
+        artifacts; every other role/task keeps the frozen package sandbox
+        byte-for-byte."""
+
+        if agent.package.role == "coordinator" and getattr(
+            self, "_multi_slice_scenario_map_enabled", False
+        ):
+            return "workspace-write"
+        return agent.package.runtime["codex"]["sandbox"]
+
+    def _coordinator_scenario_map_bind(self, agent: _Agent) -> list[str]:
+        """R3.0-006 start3: writable bind of the run-root ``scenario-map/``
+        directory into the Coordinator namespace.
+
+        The frozen Coordinator instructions maintain the six-section map,
+        topology decision, and protection-IRI suggestions at cwd-relative
+        ``scenario-map/...`` paths; without this bind (and the matching
+        workspace-write thread sandbox) every creation attempt is rejected by
+        the read-only package sandbox and the topology gate can never open.
+        Multi-slice runs only; every other task keeps the byte-identical
+        namespace command.
+        """
+
+        if agent.package.role != "coordinator" or not getattr(
+            self, "_multi_slice_scenario_map_enabled", False
+        ):
+            return []
+        if self._run_root is None:
+            raise CodexRuntimeError(
+                "multi-slice Coordinator scenario-map mount is missing its run root"
+            )
+        scenario_map_directory = self._run_root / "scenario-map"
+        if not scenario_map_directory.is_dir():
+            raise CodexRuntimeError(
+                "multi-slice Coordinator scenario-map directory was not prepared"
+            )
+        return [
+            "--bind",
+            str(scenario_map_directory),
+            "/agent/work/scenario-map",
+        ]
+
     def namespace_command(self, agent: _Agent) -> list[str]:
         binary = shutil.which(self.codex_binary) or self.codex_binary
         if not self.use_bwrap:
@@ -3943,6 +3994,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "--bind",
             str(agent.work),
             "/agent/work",
+            *self._coordinator_scenario_map_bind(agent),
             "--ro-bind",
             str(agent.skills),
             "/skills",
@@ -4811,7 +4863,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     encoding="utf-8"
                 ),
             },
-            "sandbox": agent.package.runtime["codex"]["sandbox"],
+            "sandbox": self._thread_sandbox(agent),
         }
         if self._coordination_enabled:
             # Formal R2.3-005 binds the App Server's Thread to the same validated

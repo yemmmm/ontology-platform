@@ -673,6 +673,10 @@ class TeamRunner:
             # canonical scenario-map artifact paths for the whole run.
             self._multi_slice_workflow = True
             self._multi_slice_artifact_paths = scenario_map_artifact_paths(root)
+            # R3.0-006 start3: the Coordinator maintains these artifacts from
+            # inside its sandbox through the writable runtime bind of exactly
+            # this directory (runtimes/codex.py), so it must exist up front.
+            (root / "scenario-map").mkdir(mode=0o700, exist_ok=True)
             self._multi_slice_gate_opened = False
             self._multi_slice_gate_feedback_fingerprints = set()
             multi_slice_gate.close("topology_missing_artifact")

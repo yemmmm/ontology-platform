@@ -433,3 +433,101 @@ def test_cli_baseline_multi_slice_rejects_model_profile_selection(capsys):
     with patch.object(team_main.sys, "argv", argv):
         assert team_main.main() == 2
     assert "model profile selection" in capsys.readouterr().err
+
+
+# --- W4: R3.0-006 start3 narrow repair — Coordinator scenario-map write path ---
+
+
+def _role_agent(root: Path, role: str):
+    home, work, skills = (root / f"{role}-home", root / f"{role}-work", root / f"{role}-skills")
+    for path in (home, work, skills):
+        path.mkdir(parents=True, mode=0o700)
+    package = SimpleNamespace(
+        role=role,
+        package_id=role,
+        runtime={"codex": {"sandbox": "read-only" if role != "protocol" else "workspace-write"}},
+    )
+    from modeling_team.runtimes.codex import _Agent
+
+    return _Agent(
+        role,
+        package,
+        home,
+        work,
+        skills,
+        platform_tools=frozenset({"check_platform_health"}) if role == "protocol" else frozenset(),
+        schema_version=2,
+    )
+
+
+def _multi_slice_run_double():
+    return _run_double(
+        schema_version=2,
+        task_id="r3-0-002-multi-slice",
+        profile_id="r3-0-002-modeling-team",
+        parameters={"multi_slice_workflow": True},
+    )
+
+
+def test_multi_slice_coordinator_gets_scenario_map_bind_and_workspace_write(tmp_path):
+    base = tmp_path / "run"
+    base.mkdir()
+    (base / "scenario-map").mkdir(mode=0o700)
+    adapter = CodexRuntimeAdapter(repository_root=REPO_ROOT)
+    adapter._run_root = base
+    adapter._multi_slice_scenario_map_enabled = adapter._is_multi_slice_run(
+        _multi_slice_run_double()
+    )
+    coordinator = _role_agent(base, "coordinator")
+
+    command = adapter.namespace_command(coordinator)
+    mount = ["--bind", str(base / "scenario-map"), "/agent/work/scenario-map"]
+    assert any(command[index : index + 3] == mount for index in range(len(command) - 2))
+    assert adapter._thread_sandbox(coordinator) == "workspace-write"
+    adapter.stop()
+
+
+def test_multi_slice_other_roles_and_artifacts_dir_unchanged(tmp_path):
+    base = tmp_path / "run"
+    base.mkdir()
+    (base / "scenario-map").mkdir(mode=0o700)
+    adapter = CodexRuntimeAdapter(repository_root=REPO_ROOT)
+    adapter._run_root = base
+    adapter._multi_slice_scenario_map_enabled = True
+
+    for role in ("modeling", "protocol"):
+        agent = _role_agent(base, role)
+        command = adapter.namespace_command(agent)
+        assert "/agent/work/scenario-map" not in command
+        # Package sandbox is preserved for non-Coordinator roles.
+        assert adapter._thread_sandbox(agent) == agent.package.runtime["codex"]["sandbox"]
+    adapter.stop()
+
+
+def test_ordinary_runs_keep_coordinator_read_only_without_scenario_map_bind(tmp_path):
+    base = tmp_path / "run"
+    base.mkdir()
+    adapter = CodexRuntimeAdapter(repository_root=REPO_ROOT)
+    adapter._run_root = base
+    adapter._multi_slice_scenario_map_enabled = adapter._is_multi_slice_run(
+        _run_double(schema_version=2, parameters={})
+    )
+    coordinator = _role_agent(base, "coordinator")
+
+    command = adapter.namespace_command(coordinator)
+    assert "/agent/work/scenario-map" not in command
+    assert adapter._thread_sandbox(coordinator) == "read-only"
+    adapter.stop()
+
+
+def test_scenario_map_bind_fails_closed_when_directory_missing(tmp_path):
+    base = tmp_path / "run"
+    base.mkdir()
+    adapter = CodexRuntimeAdapter(repository_root=REPO_ROOT)
+    adapter._run_root = base
+    adapter._multi_slice_scenario_map_enabled = True
+    coordinator = _role_agent(base, "coordinator")
+
+    with pytest.raises(Exception, match="scenario-map directory was not prepared"):
+        adapter.namespace_command(coordinator)
+    adapter.stop()
