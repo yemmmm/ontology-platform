@@ -1082,6 +1082,45 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             self.assertEqual(owner["project_id"], "legacy-project")
             self.assertEqual(runner._outer_questions["legacy-question"]["project_id"], "legacy-project")
 
+    def test_schema_v2_nonformal_multi_slice_create_run_binds_interview_to_live_scope(self) -> None:
+        # R3.0-006 start1 regression: a non-formal multi-slice create run keeps
+        # ``TeamRun.scope`` at ``{"mode": "create"}``, so the legacy dict lookup
+        # left the interview channel without a Project binding and the first
+        # Host question registration killed the run.
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            runner.run.configuration.task.task_id = "r3-0-002-multi-slice"
+            runner.run.configuration.profile.profile_id = "r3-0-002-modeling-team"
+            runner.run.scope = {"mode": "create"}
+            runner.scope = SimpleNamespace(project_id="live-multi-slice-project")
+            runner._multi_slice_workflow = True
+            runner._record_outer_question(
+                {"action": "question", "delivery_id": "ms-question", "text": "覆盖语义？"}
+            )
+            runner._release_owner_answer("coordinator", "闭区间；SUSPENDED 无效", "ms-question")
+            owner = runner._owner_answers[("ms-question", "闭区间；SUSPENDED 无效")]
+            self.assertEqual(owner["project_id"], "live-multi-slice-project")
+            self.assertEqual(
+                runner._outer_questions["ms-question"]["project_id"], "live-multi-slice-project"
+            )
+
+    def test_schema_v2_nonformal_non_multi_slice_create_scope_still_requires_dict_binding(self) -> None:
+        # Conservation: without the multi-slice flag the live PlatformScope
+        # binding must not leak into legacy non-formal runs.
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            runner.run.configuration.task.task_id = "r2-3-002-t"
+            runner.run.configuration.profile.profile_id = "r2-3-002-profile"
+            runner.run.scope = {"mode": "create"}
+            runner.scope = SimpleNamespace(project_id="must-not-leak-into-legacy")
+            runner._multi_slice_workflow = False
+            with self.assertRaisesRegex(
+                TeamConfigurationError, "outer question project binding is missing"
+            ):
+                runner._record_outer_question(
+                    {"action": "question", "delivery_id": "legacy-question", "text": "legacy"}
+                )
+
     def test_formal_owner_answer_publication_keeps_modeling_terminal_blocked_until_ack(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner, _adapter = _formal_runner(Path(directory))

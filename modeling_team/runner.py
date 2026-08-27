@@ -1345,6 +1345,15 @@ class TeamRunner:
             project_id = getattr(self.scope, "project_id", None) if self.scope is not None else None
         elif self.run is not None:
             project_id = self.run.scope.get("project_id")
+            if project_id is None and self._multi_slice_workflow and self.scope is not None:
+                # R3.0-006 start1: a non-formal multi-slice create run also
+                # normalizes ``TeamRun.scope`` to ``{"mode": "create"}``, so the
+                # legacy dict lookup left the outer question/answer interview
+                # channel without a Project binding and killed the run on the
+                # first Host question registration.  The live PlatformScope is
+                # the single writer that created the Project; resolve the
+                # binding from it exactly as the formal branch does.
+                project_id = getattr(self.scope, "project_id", None)
         else:
             project_id = None
         return project_id if isinstance(project_id, str) and project_id else None
