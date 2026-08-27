@@ -565,6 +565,7 @@ def register_semantic(server: FastMCP) -> None:
         include: str = "asserted",
         allow_stale_derived: bool = True,
         limit: int | None = None,
+        entity_iri: str | None = None,
     ) -> dict[str, Any]:
         """Read a compact graph-derived business JSON read model for a graph set."""
         return _run_tool(
@@ -575,6 +576,7 @@ def register_semantic(server: FastMCP) -> None:
                 include,
                 allow_stale_derived,
                 limit,
+                entity_iri,
             )
         )
 
@@ -841,6 +843,7 @@ def _read_model(
     include: str,
     allow_stale_derived: bool,
     limit: int | None,
+    entity_iri: str | None = None,
 ) -> dict[str, Any]:
     service = _read_model_service(session, project_id_for_graph_set(session, graph_set_id))
     try:
@@ -850,6 +853,7 @@ def _read_model(
             include=include,
             allow_stale_derived=allow_stale_derived,
             limit=limit,
+            entity_iri=entity_iri,
         )
     except (ReadModelError, ReadScopeError) as exc:
         return {"error": str(exc), "status_code": getattr(exc, "status_code", 400)}

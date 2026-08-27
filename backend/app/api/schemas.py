@@ -642,7 +642,19 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
     queries: list[str] | None = Field(default=None, min_length=1, max_length=8)
     query: str | None = Field(default=None, min_length=1, max_length=2000)
     resource_types: (
-        list[Literal["concept", "instance", "relation", "fact", "rule", "operation"]] | None
+        list[
+            Literal[
+                "concept",
+                "instance",
+                "relation",
+                "fact",
+                "rule",
+                "operation",
+                "mapping",
+                "metric",
+            ]
+        ]
+        | None
     ) = None
     assertion_types: list[Literal["asserted", "derived"]] | None = None
     search_mode: Literal["hybrid", "lexical"] = "hybrid"

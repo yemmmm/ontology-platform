@@ -33,6 +33,7 @@ from app.services.semantic_context_cursor import (
     binding_digest,
     make_binding,
 )
+from app.services.semantic_export import namespace_from_settings
 from app.services.semantic_lineage_identity import (
     InvalidLineageStatement,
     canonical_iri,
@@ -60,7 +61,16 @@ from app.services.operation_semantics import (
 )
 
 
-RESOURCE_TYPE_ORDER = ("concept", "instance", "relation", "fact", "rule", "operation")
+RESOURCE_TYPE_ORDER = (
+    "concept",
+    "instance",
+    "relation",
+    "fact",
+    "rule",
+    "operation",
+    "mapping",
+    "metric",
+)
 RESOURCE_TYPES = set(RESOURCE_TYPE_ORDER)
 ASSERTION_TYPES = {"asserted", "derived"}
 _KIND_ORDER = {kind: index for index, kind in enumerate(RESOURCE_TYPE_ORDER)}
@@ -323,6 +333,10 @@ class SemanticContextQueryService:
             candidates.extend(self._rule_candidates(scope, expression.text, expression.terms))
             if "operation" in selected_resource_types:
                 candidates.extend(self._operation_candidates(scope, expression.text, expression.terms))
+            if "mapping" in selected_resource_types:
+                candidates.extend(self._mapping_candidates(scope, expression.text, expression.terms))
+            if "metric" in selected_resource_types:
+                candidates.extend(self._metric_candidates(scope, expression.text, expression.terms))
             candidates.extend(
                 governed_mapping_lexical_candidates(
                     self.session,
@@ -1287,6 +1301,193 @@ LIMIT 5000
                 )
         return candidates
 
+    def _mapping_candidates(
+        self, scope: SemanticQueryScope, text: str, terms: list[str]
+    ) -> list[dict[str, Any]]:
+        """Lexical candidates for relational schema mapping resources
+        (TableMapping / JoinMapping / EnumValueMeaning), pattern-aligned with
+        ``_operation_candidates``: explicit graph scope injection, exact
+        label first, reference fields carried in the candidate ``data``
+        payload so consumers see the reference topology."""
+        graph_values = " ".join(URIRef(graph).n3() for graph in scope.graph_iris)
+        vocab = str(namespace_from_settings(self.settings).vocab)
+        query = f"""# template: semantic-context-mappings
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX op: <{vocab}>
+SELECT ?graph ?mapping ?type ?label ?mappedClass ?mappedRelation ?mappedProperty
+       ?tableName ?enumValue ?businessMeaning ?columnMappings ?joinPath ?schemaSource
+WHERE {{
+  VALUES ?graph {{ {graph_values} }}
+  VALUES ?type {{ op:TableMapping op:JoinMapping op:EnumValueMeaning }}
+  GRAPH ?graph {{
+    ?mapping a ?type ;
+             rdfs:label ?label .
+    OPTIONAL {{ ?mapping op:mappedClass ?mappedClass . }}
+    OPTIONAL {{ ?mapping op:mappedRelationType ?mappedRelation . }}
+    OPTIONAL {{ ?mapping op:mappedProperty ?mappedProperty . }}
+    OPTIONAL {{ ?mapping op:tableName ?tableName . }}
+    OPTIONAL {{ ?mapping op:enumValue ?enumValue . }}
+    OPTIONAL {{ ?mapping op:businessMeaning ?businessMeaning . }}
+    OPTIONAL {{ ?mapping op:columnMappings ?columnMappings . }}
+    OPTIONAL {{ ?mapping op:joinPath ?joinPath . }}
+    OPTIONAL {{ ?mapping op:schemaSource ?schemaSource . }}
+  }}
+}}
+ORDER BY ?graph ?mapping
+LIMIT 5000
+"""
+        try:
+            result = self.rdf_store.query_sparql(query, timeout_seconds=10, limit=5000)
+        except Exception:
+            return []
+        candidates: list[dict[str, Any]] = []
+        for row in _bindings(result.result):
+            graph = _value(row, "graph")
+            iri = _value(row, "mapping")
+            if not graph or graph not in scope.graph_to_ontology or not iri:
+                continue
+            label = _value(row, "label") or _local_name(iri)
+            data: dict[str, Any] = {
+                "rdf_types": [_value(row, "type")],
+                "label_evidence": [label],
+            }
+            for payload_key, row_key in (
+                ("mapped_class", "mappedClass"),
+                ("mapped_relation", "mappedRelation"),
+                ("mapped_property", "mappedProperty"),
+                ("table_name", "tableName"),
+                ("enum_value", "enumValue"),
+                ("business_meaning", "businessMeaning"),
+                ("schema_source", "schemaSource"),
+            ):
+                value = _value(row, row_key)
+                if value:
+                    data[payload_key] = value
+            for payload_key, row_key in (("column_mappings", "columnMappings"), ("join_path", "joinPath")):
+                value = _value(row, row_key)
+                if value:
+                    try:
+                        data[payload_key] = json.loads(value)
+                    except json.JSONDecodeError:
+                        data[payload_key] = value
+            match = _best_match(
+                text,
+                terms,
+                [
+                    ("label", label, 1000, "exact_label"),
+                    ("identifier", iri, 600, "identifier"),
+                    ("table_name", data.get("table_name"), 500, "table_name"),
+                    ("enum_value", data.get("enum_value"), 450, "enum_value"),
+                    ("description", data.get("business_meaning"), 450, "description"),
+                ],
+            )
+            if match:
+                candidates.append(
+                    {
+                        "id": iri,
+                        "kind": "mapping",
+                        "ontology_id": scope.graph_to_ontology[graph],
+                        "iri": iri,
+                        "label": label,
+                        "aliases": [],
+                        "description": None,
+                        "data": data,
+                        "distance": 0,
+                        "assertion_kind": "asserted",
+                        "match": match,
+                    }
+                )
+        return candidates
+
+    def _metric_candidates(
+        self, scope: SemanticQueryScope, text: str, terms: list[str]
+    ) -> list[dict[str, Any]]:
+        """Lexical candidates for MetricDefinition resources (label/comment)."""
+        graph_values = " ".join(URIRef(graph).n3() for graph in scope.graph_iris)
+        vocab = str(namespace_from_settings(self.settings).vocab)
+        query = f"""# template: semantic-context-metrics
+PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+PREFIX op: <{vocab}>
+SELECT ?graph ?metric ?label ?comment ?grain ?timeField ?measure ?aggregation ?filters
+WHERE {{
+  VALUES ?graph {{ {graph_values} }}
+  GRAPH ?graph {{
+    ?metric a op:MetricDefinition ;
+            rdfs:label ?label .
+    OPTIONAL {{ ?metric rdfs:comment ?comment . }}
+    OPTIONAL {{ ?metric op:metricGrain ?grain . }}
+    OPTIONAL {{ ?metric op:metricTimeField ?timeField . }}
+    OPTIONAL {{ ?metric op:metricMeasure ?measure . }}
+    OPTIONAL {{ ?metric op:metricAggregation ?aggregation . }}
+    OPTIONAL {{ ?metric op:metricFilters ?filters . }}
+  }}
+}}
+ORDER BY ?graph ?metric
+LIMIT 5000
+"""
+        try:
+            result = self.rdf_store.query_sparql(query, timeout_seconds=10, limit=5000)
+        except Exception:
+            return []
+        candidates: list[dict[str, Any]] = []
+        for row in _bindings(result.result):
+            graph = _value(row, "graph")
+            iri = _value(row, "metric")
+            if not graph or graph not in scope.graph_to_ontology or not iri:
+                continue
+            label = _value(row, "label") or _local_name(iri)
+            data: dict[str, Any] = {
+                "rdf_types": [f"{vocab}MetricDefinition"],
+                "label_evidence": [label],
+            }
+            for payload_key, row_key in (
+                ("time_field", "timeField"),
+                ("measure", "measure"),
+                ("aggregation", "aggregation"),
+            ):
+                value = _value(row, row_key)
+                if value:
+                    data[payload_key] = value
+            grain_value = _value(row, "grain")
+            if grain_value:
+                try:
+                    data["grain"] = json.loads(grain_value)
+                except json.JSONDecodeError:
+                    data["grain"] = grain_value
+            filters_value = _value(row, "filters")
+            if filters_value:
+                try:
+                    data["filters"] = json.loads(filters_value)
+                except json.JSONDecodeError:
+                    data["filters"] = filters_value
+            comment = _value(row, "comment")
+            match = _best_match(
+                text,
+                terms,
+                [
+                    ("label", label, 1000, "exact_label"),
+                    ("identifier", iri, 600, "identifier"),
+                    ("description", comment, 450, "description"),
+                ],
+            )
+            if match:
+                candidates.append(
+                    {
+                        "id": iri,
+                        "kind": "metric",
+                        "ontology_id": scope.graph_to_ontology[graph],
+                        "iri": iri,
+                        "label": label,
+                        "aliases": [],
+                        "description": comment,
+                        "data": data,
+                        "distance": 0,
+                        "assertion_kind": "asserted",
+                        "match": match,
+                    }
+                )
+        return candidates
+
     def _operation_target_context(
         self,
         primary: list[dict[str, Any]],
@@ -1877,6 +2078,14 @@ def _anchor_candidate_from_rows(
         kind = "relation"
     elif any(str(value) for value in types if _local_name(str(value)) == "Operation"):
         kind = "operation"
+    elif any(
+        str(value)
+        for value in types
+        if _local_name(str(value)) in {"TableMapping", "JoinMapping", "EnumValueMeaning"}
+    ):
+        kind = "mapping"
+    elif any(str(value) for value in types if _local_name(str(value)) == "MetricDefinition"):
+        kind = "metric"
     else:
         kind = "instance"
     return {

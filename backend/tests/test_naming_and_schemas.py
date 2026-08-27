@@ -34,3 +34,20 @@ def test_normalize_neo4j_relationship_type(value: str, expected: str) -> None:
 def test_schema_rejects_empty_project_name() -> None:
     with pytest.raises(ValidationError):
         ProjectCreate(name="")
+
+
+def test_context_query_resource_types_accept_mapping_and_metric() -> None:
+    from app.api.schemas import SemanticContextQueryRequest
+
+    payload = {
+        "project_id": "p",
+        "scope_mode": "ontologies",
+        "ontology_ids": ["o"],
+        "query": "工单表映射",
+    }
+    accepted = SemanticContextQueryRequest(**payload, resource_types=["mapping", "metric"])
+    assert set(accepted.resource_types) == {"mapping", "metric"}
+    legacy = SemanticContextQueryRequest(**payload, resource_types=["concept", "fact"])
+    assert set(legacy.resource_types) == {"concept", "fact"}
+    with pytest.raises(ValidationError):
+        SemanticContextQueryRequest(**payload, resource_types=["mapping", "unknown_kind"])

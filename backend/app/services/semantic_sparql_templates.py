@@ -12,6 +12,21 @@ from dataclasses import dataclass
 
 from rdflib import Literal, URIRef
 
+from app.core.config import DEFAULT_SEMANTIC_BASE_IRI
+
+# ``op:`` vocabulary namespace shared with ``SemanticNamespace.vocab``
+# (app/services/semantic_export.py), which appends "/vocab/" to the same
+# configured base IRI. Derived once at import from the single default
+# constant — never spelled out again — so compiler writes and template
+# reads stay in one namespace. Template bodies are static strings and
+# cannot read Settings per request; they carry the ``{op_prefix}`` token
+# resolved here at definition time.
+OP_VOCAB_PREFIX = f"{DEFAULT_SEMANTIC_BASE_IRI.rstrip('/')}/vocab/"
+
+
+def _op_body(body: str) -> str:
+    return body.replace("{op_prefix}", OP_VOCAB_PREFIX)
+
 
 @dataclass(frozen=True)
 class ReadModelTemplate:
@@ -34,6 +49,10 @@ class ReadModelTemplate:
     # binding has been resolved. The PG-derived read path overrides this with
     # "with_evidence" / "missing_evidence" at apply time.
     evidence_status: str = "not_applicable"
+    # Non-whitelist SELECT variables that the row decorator passes through
+    # into the response item's ``detail_fields`` subobject (keys omitted when
+    # unbound). The default keeps every existing template byte-identical.
+    detail_variables: tuple[str, ...] = ()
 
 
 _TEMPLATES: dict[str, ReadModelTemplate] = {
@@ -628,6 +647,332 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # ``consistency`` and projects spec §4.3 fields. The body is a
         # placeholder; the composer never executes it directly.
         """,
+    ),
+    # ------------------------------------------------------------------
+    # R3.0-003 relational schema mapping read models (list + exact detail
+    # pairs). All eight carry VALUES ?g { {graph_iris} } (R3.0-007 frozen
+    # lesson), read the ontology graph, and declare detail_variables for
+    # the row decorator's detail_fields passthrough.
+    # ------------------------------------------------------------------
+    "table-mapping-list": ReadModelTemplate(
+        name="table-mapping-list",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        primary_iri_variable="table_mapping",
+        detail_variables=(
+            "table_name",
+            "mapped_class",
+            "column_mappings",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: table-mapping-list
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?table_mapping ?label ?table_name ?mapped_class ?column_mappings
+                        ?schema_source ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?table_mapping a op:TableMapping .
+            OPTIONAL { ?table_mapping rdfs:label ?label . }
+            OPTIONAL { ?table_mapping op:tableName ?table_name . }
+            OPTIONAL { ?table_mapping op:mappedClass ?mapped_class . }
+            OPTIONAL { ?table_mapping op:columnMappings ?column_mappings . }
+            OPTIONAL { ?table_mapping op:schemaSource ?schema_source . }
+            OPTIONAL { ?table_mapping op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY ?label ?table_mapping
+        LIMIT {limit}
+        """),
+    ),
+    "table-mapping-detail": ReadModelTemplate(
+        name="table-mapping-detail",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=1,
+        assertion_kind="asserted",
+        primary_iri_variable="table_mapping",
+        detail_variables=(
+            "table_name",
+            "mapped_class",
+            "column_mappings",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: table-mapping-detail
+        # Exact single-resource lookup driven by the entity IRI parameter
+        # ({entity_iri} placeholder mechanism, entity-literal-facts precedent).
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?table_mapping ?label ?table_name ?mapped_class ?column_mappings
+                        ?schema_source ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          VALUES ?table_mapping { <{entity_iri}> }
+          GRAPH ?g {
+            ?table_mapping a op:TableMapping .
+            OPTIONAL { ?table_mapping rdfs:label ?label . }
+            OPTIONAL { ?table_mapping op:tableName ?table_name . }
+            OPTIONAL { ?table_mapping op:mappedClass ?mapped_class . }
+            OPTIONAL { ?table_mapping op:columnMappings ?column_mappings . }
+            OPTIONAL { ?table_mapping op:schemaSource ?schema_source . }
+            OPTIONAL { ?table_mapping op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """),
+    ),
+    "join-mapping-list": ReadModelTemplate(
+        name="join-mapping-list",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        primary_iri_variable="join_mapping",
+        detail_variables=(
+            "mapped_relation",
+            "join_direction",
+            "join_path",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: join-mapping-list
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?join_mapping ?label ?mapped_relation ?join_direction ?join_path
+                        ?schema_source ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?join_mapping a op:JoinMapping .
+            OPTIONAL { ?join_mapping rdfs:label ?label . }
+            OPTIONAL { ?join_mapping op:mappedRelationType ?mapped_relation . }
+            OPTIONAL { ?join_mapping op:joinDirection ?join_direction . }
+            OPTIONAL { ?join_mapping op:joinPath ?join_path . }
+            OPTIONAL { ?join_mapping op:schemaSource ?schema_source . }
+            OPTIONAL { ?join_mapping op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY ?label ?join_mapping
+        LIMIT {limit}
+        """),
+    ),
+    "join-mapping-detail": ReadModelTemplate(
+        name="join-mapping-detail",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=1,
+        assertion_kind="asserted",
+        primary_iri_variable="join_mapping",
+        detail_variables=(
+            "mapped_relation",
+            "join_direction",
+            "join_path",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: join-mapping-detail
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?join_mapping ?label ?mapped_relation ?join_direction ?join_path
+                        ?schema_source ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          VALUES ?join_mapping { <{entity_iri}> }
+          GRAPH ?g {
+            ?join_mapping a op:JoinMapping .
+            OPTIONAL { ?join_mapping rdfs:label ?label . }
+            OPTIONAL { ?join_mapping op:mappedRelationType ?mapped_relation . }
+            OPTIONAL { ?join_mapping op:joinDirection ?join_direction . }
+            OPTIONAL { ?join_mapping op:joinPath ?join_path . }
+            OPTIONAL { ?join_mapping op:schemaSource ?schema_source . }
+            OPTIONAL { ?join_mapping op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """),
+    ),
+    "enum-meaning-list": ReadModelTemplate(
+        name="enum-meaning-list",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        primary_iri_variable="enum_meaning",
+        detail_variables=(
+            "mapped_property",
+            "enum_value",
+            "business_meaning",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: enum-meaning-list
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?enum_value ?business_meaning
+                        ?schema_source ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?enum_meaning a op:EnumValueMeaning .
+            OPTIONAL { ?enum_meaning rdfs:label ?label . }
+            OPTIONAL { ?enum_meaning op:mappedProperty ?mapped_property . }
+            OPTIONAL { ?enum_meaning op:enumValue ?enum_value . }
+            OPTIONAL { ?enum_meaning op:businessMeaning ?business_meaning . }
+            OPTIONAL { ?enum_meaning op:schemaSource ?schema_source . }
+            OPTIONAL { ?enum_meaning op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY ?label ?enum_meaning
+        LIMIT {limit}
+        """),
+    ),
+    "enum-meaning-detail": ReadModelTemplate(
+        name="enum-meaning-detail",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=1,
+        assertion_kind="asserted",
+        primary_iri_variable="enum_meaning",
+        detail_variables=(
+            "mapped_property",
+            "enum_value",
+            "business_meaning",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: enum-meaning-detail
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?enum_value ?business_meaning
+                        ?schema_source ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          VALUES ?enum_meaning { <{entity_iri}> }
+          GRAPH ?g {
+            ?enum_meaning a op:EnumValueMeaning .
+            OPTIONAL { ?enum_meaning rdfs:label ?label . }
+            OPTIONAL { ?enum_meaning op:mappedProperty ?mapped_property . }
+            OPTIONAL { ?enum_meaning op:enumValue ?enum_value . }
+            OPTIONAL { ?enum_meaning op:businessMeaning ?business_meaning . }
+            OPTIONAL { ?enum_meaning op:schemaSource ?schema_source . }
+            OPTIONAL { ?enum_meaning op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """),
+    ),
+    "metric-list": ReadModelTemplate(
+        name="metric-list",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=200,
+        assertion_kind="asserted",
+        primary_iri_variable="metric",
+        detail_variables=(
+            "grain",
+            "time_field",
+            "measure",
+            "value_expression",
+            "filters",
+            "aggregation",
+            "null_value_rule",
+            "denominator_rule",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: metric-list
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?metric ?label ?grain ?time_field ?measure ?value_expression ?filters
+                        ?aggregation ?null_value_rule ?denominator_rule ?schema_source
+                        ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          GRAPH ?g {
+            ?metric a op:MetricDefinition .
+            OPTIONAL { ?metric rdfs:label ?label . }
+            OPTIONAL { ?metric op:metricGrain ?grain . }
+            OPTIONAL { ?metric op:metricTimeField ?time_field . }
+            OPTIONAL { ?metric op:metricMeasure ?measure . }
+            OPTIONAL { ?metric op:valueExpression ?value_expression . }
+            OPTIONAL { ?metric op:metricFilters ?filters . }
+            OPTIONAL { ?metric op:metricAggregation ?aggregation . }
+            OPTIONAL { ?metric op:nullValueRule ?null_value_rule . }
+            OPTIONAL { ?metric op:denominatorRule ?denominator_rule . }
+            OPTIONAL { ?metric op:schemaSource ?schema_source . }
+            OPTIONAL { ?metric op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        ORDER BY ?label ?metric
+        LIMIT {limit}
+        """),
+    ),
+    "metric-detail": ReadModelTemplate(
+        name="metric-detail",
+        projection_version="semantic-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        needs_rules=False,
+        default_limit=1,
+        assertion_kind="asserted",
+        primary_iri_variable="metric",
+        detail_variables=(
+            "grain",
+            "time_field",
+            "measure",
+            "value_expression",
+            "filters",
+            "aggregation",
+            "null_value_rule",
+            "denominator_rule",
+            "schema_source",
+            "semantic_version",
+        ),
+        body=_op_body("""# template: metric-detail
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT DISTINCT ?metric ?label ?grain ?time_field ?measure ?value_expression ?filters
+                        ?aggregation ?null_value_rule ?denominator_rule ?schema_source
+                        ?semantic_version ?graph WHERE {
+          VALUES ?g { {graph_iris} }
+          VALUES ?metric { <{entity_iri}> }
+          GRAPH ?g {
+            ?metric a op:MetricDefinition .
+            OPTIONAL { ?metric rdfs:label ?label . }
+            OPTIONAL { ?metric op:metricGrain ?grain . }
+            OPTIONAL { ?metric op:metricTimeField ?time_field . }
+            OPTIONAL { ?metric op:metricMeasure ?measure . }
+            OPTIONAL { ?metric op:valueExpression ?value_expression . }
+            OPTIONAL { ?metric op:metricFilters ?filters . }
+            OPTIONAL { ?metric op:metricAggregation ?aggregation . }
+            OPTIONAL { ?metric op:nullValueRule ?null_value_rule . }
+            OPTIONAL { ?metric op:denominatorRule ?denominator_rule . }
+            OPTIONAL { ?metric op:schemaSource ?schema_source . }
+            OPTIONAL { ?metric op:semanticVersion ?semantic_version . }
+          }
+          BIND(?g AS ?graph)
+        }
+        LIMIT {limit}
+        """),
     ),
 }
 

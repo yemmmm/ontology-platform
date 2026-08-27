@@ -164,3 +164,43 @@ def test_export_drops_quads_referencing_unauthorized_members():
     assert "ex:a" in payload
     assert "ex:x" not in payload
     assert warnings == []
+
+
+def test_export_treats_missing_graph_as_empty():
+    """D2 regression: Oxigraph answers GET /store?graph= for a never-written
+    graph with 404 (surfaced as RdfStoreUnavailable). A graph-set whose data
+    graph has no statements yet must export the remaining graphs instead of
+    failing with 500."""
+    from app.repositories.rdf_store import RdfStoreUnavailable
+
+    ontology_graph = "http://op/s/graph/ontology/ov-2"
+    data_graph = "http://op/s/graph/data/ov-2"
+    ontology_content = (
+        "@prefix ex: <http://example.test/> .\n"
+        f"<{ontology_graph}> {{ ex:a ex:b ex:c . }}\n"
+    )
+
+    class OxigraphLikeStore:
+        """Mimics the real store: 404 (as RdfStoreUnavailable) for graphs
+        that were never written, graph_exists only for present graphs."""
+
+        def graph_exists(self, iri):
+            return iri == ontology_graph
+
+        def get_graph(self, iri, format):  # noqa: ARG002
+            if iri == ontology_graph:
+                return ontology_content
+            raise RdfStoreUnavailable("404 Not Found")
+
+    store = OxigraphLikeStore()
+    resolver = FakeScopeResolver(_resolution([ontology_graph, data_graph]))
+    service = SemanticExportService(rdf_store=store, scope_resolver=resolver, settings=None)
+
+    payload, warnings = service.export("gs-1", format="trig")
+    assert "ex:b" in payload
+    assert data_graph not in payload
+    assert warnings == []
+
+    turtle, _ = service.export("gs-1", format="turtle")
+    # rdflib may rename prefixes on serialization; assert on the terms.
+    assert "ns1:b" in turtle and "ns1:c" in turtle

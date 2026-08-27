@@ -54,6 +54,30 @@ _READ_MODEL_FIELD_ALIASES = {
     "type": "type_iri",
 }
 
+# Variables already decorated into the top-level shape by
+# ``_graph_display_fields``; ``detail_variables`` passthrough skips them so
+# whitelist decoration stays byte-identical for every existing template.
+_READ_MODEL_WHITELIST_VARIABLES = frozenset(
+    {
+        "semantic_id",
+        "parent",
+        "class",
+        "class_semantic_id",
+        "class_label",
+        "source",
+        "target",
+        "relation",
+        "range",
+        "type",
+        "evidence_status",
+        "subject",
+        "predicate",
+        "object",
+        "label",
+        "graph",
+    }
+)
+
 
 class SemanticReadModelService:
     def __init__(
@@ -351,7 +375,7 @@ class SemanticReadModelService:
             # Keep the existing id/iri aliases for compatibility, while making
             # the canonical identity projection explicit for Protocol callers.
             display_fields["entity_iri"] = iri
-        return {
+        item = {
             "id": iri,
             "iri": iri,
             "label": label,
@@ -372,6 +396,26 @@ class SemanticReadModelService:
             },
             **display_fields,
         }
+        # R3.0-003: incremental passthrough of template-declared non-whitelist
+        # projection variables into a stable detail_fields subobject. The
+        # default (no declared variables) keeps responses byte-identical.
+        detail_fields = self._detail_fields(row, template)
+        if detail_fields:
+            item["detail_fields"] = detail_fields
+        return item
+
+    @staticmethod
+    def _detail_fields(
+        row: dict[str, Any], template: ReadModelTemplate
+    ) -> dict[str, Any]:
+        fields: dict[str, Any] = {}
+        for variable in template.detail_variables:
+            if variable in _READ_MODEL_WHITELIST_VARIABLES:
+                continue
+            value = SemanticReadModelService._cell(row, variable)
+            if value is not None:
+                fields[variable] = value
+        return fields
 
     def _graph_display_fields(self, row: dict[str, Any]) -> dict[str, Any]:
         fields: dict[str, Any] = {}

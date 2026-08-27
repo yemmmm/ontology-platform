@@ -1927,3 +1927,250 @@ def test_context_detail_rejects_unknown_value(in_memory_session):
             principal=_principal(),
             context_detail="verbose",
         )
+
+
+# ------------------------------------------------------------------
+# R3.0-003 mapping/metric resource types
+# ------------------------------------------------------------------
+
+
+class R3003MappingMetricStore(FakeStore):
+    """Dispatches on the R3.0-003 candidate query templates."""
+
+    def __init__(self, mapping_rows, metric_rows, neighbors=None):
+        super().__init__([], neighbors or [])
+        self.mapping_rows = mapping_rows
+        self.metric_rows = metric_rows
+
+    def query_sparql(self, query, timeout_seconds, limit):
+        self.queries.append(query)
+        if "semantic-context-neighborhood" in query:
+            rows = self.neighbors
+        elif "semantic-context-mappings" in query:
+            rows = self.mapping_rows
+        elif "semantic-context-metrics" in query:
+            rows = self.metric_rows
+        else:
+            rows = []
+        return SparqlResult(
+            result={"head": {"vars": []}, "results": {"bindings": rows}}
+        )
+
+
+def _r3003_mapping_rows(settings: Settings, ontology_id: str = "ontology-1"):
+    graph = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/{ontology_id}"
+    vocab = settings.semantic_base_iri.rstrip("/") + "/vocab/"
+    mapping_iri = f"{settings.semantic_base_iri.rstrip('/')}/table-mapping/tm-1"
+    return [
+        {
+            "graph": _binding(graph),
+            "mapping": _binding(mapping_iri),
+            "type": _binding(f"{vocab}TableMapping"),
+            "label": _binding("工单表映射", "literal"),
+            "mappedClass": _binding(f"{settings.semantic_base_iri.rstrip('/')}/class/WorkOrder"),
+            "tableName": _binding("service.work_orders", "literal"),
+            "columnMappings": _binding(
+                json.dumps(
+                    [
+                        {
+                            "property_iri": f"{settings.semantic_base_iri.rstrip('/')}/property/workOrderNo",
+                            "column": "work_order_no",
+                            "role": "business_key",
+                        }
+                    ],
+                    ensure_ascii=False,
+                ),
+                "literal",
+            ),
+            "schemaSource": _binding("schema-dump-2026-08-22", "literal"),
+        }
+    ]
+
+
+def _r3003_metric_rows(settings: Settings, ontology_id: str = "ontology-1"):
+    graph = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/{ontology_id}"
+    base = settings.semantic_base_iri.rstrip("/")
+    return [
+        {
+            "graph": _binding(graph),
+            "metric": _binding(f"{base}/metric/mttr"),
+            "label": _binding("平均修复时长 MTTR", "literal"),
+            "comment": _binding("关闭工单的平均修复时长", "literal"),
+            "grain": _binding(
+                json.dumps([f"{base}/property/workOrderNo"], ensure_ascii=False), "literal"
+            ),
+            "timeField": _binding(f"{base}/property/reportedAt"),
+            "measure": _binding(f"{base}/property/repairDuration"),
+            "aggregation": _binding("avg", "literal"),
+        }
+    ]
+
+
+def test_r3003_mapping_candidates_returned_for_mapping_resource_type(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall([]),
+    )
+    store = R3003MappingMetricStore(_r3003_mapping_rows(settings), [])
+    result = SemanticContextQueryService(
+        in_memory_session,
+        store,
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="工单表映射",
+        resource_types=["mapping"],
+        depth=0,
+        principal=_principal(),
+    )
+    match = result["primary_matches"][0]
+    assert match["kind"] == "mapping"
+    assert match["iri"].endswith("/table-mapping/tm-1")
+    assert match["data"]["mapped_class"].endswith("/class/WorkOrder")
+    assert match["data"]["table_name"] == "service.work_orders"
+    assert match["data"]["column_mappings"][0]["column"] == "work_order_no"
+    assert any("semantic-context-mappings" in query for query in store.queries)
+
+
+def test_r3003_metric_candidates_returned_for_metric_resource_type(
+    in_memory_session, monkeypatch
+):
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall([]),
+    )
+    store = R3003MappingMetricStore([], _r3003_metric_rows(settings))
+    result = SemanticContextQueryService(
+        in_memory_session,
+        store,
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="平均修复时长",
+        resource_types=["metric"],
+        depth=0,
+        principal=_principal(),
+    )
+    match = result["primary_matches"][0]
+    assert match["kind"] == "metric"
+    assert match["iri"].endswith("/metric/mttr")
+    assert match["data"]["aggregation"] == "avg"
+    assert match["data"]["grain"][0].endswith("/property/workOrderNo")
+    assert any("semantic-context-metrics" in query for query in store.queries)
+
+
+def test_r3003_mapping_and_metric_kinds_excluded_from_old_resource_types(
+    in_memory_session, monkeypatch
+):
+    """The original six resource types keep their structure: mapping/metric
+    candidates are simply not fetched when not selected."""
+    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
+    _ready_ontology(in_memory_session, settings)
+    monkeypatch.setattr(
+        "app.services.semantic_context_query.SemanticResourceRetrievalService.recall_multi",
+        _lexical_recall([]),
+    )
+    store = R3003MappingMetricStore(
+        _r3003_mapping_rows(settings), _r3003_metric_rows(settings)
+    )
+    result = SemanticContextQueryService(
+        in_memory_session,
+        store,
+        SemanticQueryScopeResolver(in_memory_session, settings),
+        lineage_service=FakeLineage(),
+        shape_endpoint=FakeShapes(),
+    ).query(
+        project_id="project-1",
+        scope_mode="ontologies",
+        ontology_ids=["ontology-1"],
+        query="工单表映射",
+        resource_types=["concept", "fact"],
+        depth=0,
+        principal=_principal(),
+    )
+    assert result["primary_matches"] == []
+    assert not any(
+        "semantic-context-mappings" in query or "semantic-context-metrics" in query
+        for query in store.queries
+    )
+
+
+def test_r3003_anchor_classification_for_mapping_and_metric():
+    from types import SimpleNamespace
+
+    from app.services.semantic_context_query import _anchor_candidate_from_rows
+
+    scope = SimpleNamespace(
+        graph_to_ontology={"https://g.test/ontology/o1": "o1"},
+        graph_assertion_kinds={},
+    )
+    base = Settings().semantic_base_iri.rstrip("/")
+    vocab = base + "/vocab/"
+    rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    mapping_iri = f"{base}/table-mapping/tm-1"
+    metric_iri = f"{base}/metric/mttr"
+
+    mapping = _anchor_candidate_from_rows(
+        [
+            {
+                "subject": _binding(mapping_iri),
+                "predicate": _binding(rdf_type),
+                "object": _binding(f"{vocab}TableMapping"),
+                "graph": _binding("https://g.test/ontology/o1"),
+            },
+            {
+                "subject": _binding(mapping_iri),
+                "predicate": _binding("http://www.w3.org/2000/01/rdf-schema#label"),
+                "object": _binding("工单表映射", "literal"),
+                "graph": _binding("https://g.test/ontology/o1"),
+            },
+        ],
+        scope,
+        mapping_iri,
+    )
+    assert mapping["kind"] == "mapping"
+    assert mapping["label"] == "工单表映射"
+
+    metric = _anchor_candidate_from_rows(
+        [
+            {
+                "subject": _binding(metric_iri),
+                "predicate": _binding(rdf_type),
+                "object": _binding(f"{vocab}MetricDefinition"),
+                "graph": _binding("https://g.test/ontology/o1"),
+            }
+        ],
+        scope,
+        metric_iri,
+    )
+    assert metric["kind"] == "metric"
+
+
+def test_r3003_resource_type_order_places_mapping_and_metric_last():
+    from app.services.semantic_context_query import RESOURCE_TYPE_ORDER
+
+    assert RESOURCE_TYPE_ORDER[-2:] == ("mapping", "metric")
+    assert set(RESOURCE_TYPE_ORDER) == {
+        "concept",
+        "instance",
+        "relation",
+        "fact",
+        "rule",
+        "operation",
+        "mapping",
+        "metric",
+    }

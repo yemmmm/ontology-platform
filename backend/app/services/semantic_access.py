@@ -9,6 +9,7 @@ truncation so wide-scope responses never leak protected members.
 
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass, field
 from typing import Any, Iterable, Mapping
@@ -27,6 +28,35 @@ from app.repositories.models import SemanticProtectionSetModel
 from app.security.auth import AuthPrincipal
 
 logger = logging.getLogger(__name__)
+
+
+def _iter_reference_strings(node: Any) -> Iterable[str]:
+    """Yield every string leaf of a value, expanding embedded JSON strings.
+
+    Generic JSON reference extraction (R3.0-003, review round-4 H-1): JSON
+    literals stored inside statement objects (column mappings, join paths,
+    metric filters) can embed protected member IRIs; parsing them makes the
+    references visible to exact-match visibility filtering. Parsing failures
+    simply leave the raw string as the only candidate.
+    """
+    if isinstance(node, str):
+        yield node
+        stripped = node.strip()
+        if stripped[:1] in {"{", "["}:
+            try:
+                parsed = json.loads(stripped)
+            except (ValueError, TypeError):
+                return
+            if isinstance(parsed, (dict, list)):
+                yield from _iter_reference_strings(parsed)
+        return
+    if isinstance(node, Mapping):
+        for value in node.values():
+            yield from _iter_reference_strings(value)
+        return
+    if isinstance(node, (list, tuple)):
+        for value in node:
+            yield from _iter_reference_strings(value)
 
 
 class SemanticAccessDependencyError(RuntimeError):
@@ -57,15 +87,19 @@ class SemanticAccessView:
         """True when any of the values names an unauthorized member IRI.
 
         Used to hide whole result rows (relations, paths, derived rows) that
-        reference an unauthorized resource in any projected field.
+        reference an unauthorized resource in any projected field. Nested
+        values (``detail_fields`` dicts, JSON literals) are recursively
+        expanded through the generic JSON reference extraction helper.
         """
         if not self.requires_filtering:
             return False
-        return any(self._term_unauthorized(value) for value in values)
+        return any(self._references_unauthorized(value) for value in values)
 
     def filter_items(self, items: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Drop dict items whose shallow string values reference an
-        unauthorized member (covers id/iri plus any projected IRI field)."""
+        """Drop dict items whose shallow string values or nested
+        ``detail_fields`` values reference an unauthorized member (covers
+        id/iri plus any projected IRI field, including IRIs embedded in
+        JSON literals)."""
         if not self.requires_filtering:
             return items
         return [
@@ -80,6 +114,19 @@ class SemanticAccessView:
                 return term[1:-1] in self._unauthorized_iris
         return False
 
+    def _references_unauthorized(self, value: Any) -> bool:
+        """Exact-match every string leaf (JSON-parsed when embedded) against
+        the unauthorized member set."""
+        if not self.requires_filtering:
+            return False
+        for text in _iter_reference_strings(value):
+            if text in self._unauthorized_iris:
+                return True
+            if text.startswith("<") and text.endswith(">"):
+                if text[1:-1] in self._unauthorized_iris:
+                    return True
+        return False
+
     def is_statement_visible(
         self,
         subject: Any,
@@ -88,12 +135,15 @@ class SemanticAccessView:
     ) -> bool:
         """A statement is hidden when s, p, or any o position names an
         unauthorized protected member (predicate hiding is a conservative
-        tightening)."""
+        tightening), including references embedded in JSON literal objects."""
         if not self.requires_filtering:
             return True
         if self._term_unauthorized(subject) or self._term_unauthorized(predicate):
             return False
-        return not any(self._term_unauthorized(obj) for obj in objects)
+        for obj in objects:
+            if self._references_unauthorized(obj):
+                return False
+        return True
 
     def filter_statement_rows(
         self,
@@ -118,7 +168,9 @@ class SemanticAccessView:
 
     def filter_candidate(self, item: Mapping[str, Any]) -> bool:
         """Visibility test for context-query candidate dicts (id/iri plus
-        statement positions and shallow mapping-evidence references)."""
+        statement positions, shallow mapping-evidence references, and the
+        entire ``data`` payload recursively, including IRIs embedded in JSON
+        literals such as mapping reference fields)."""
         if not self.requires_filtering:
             return True
         for key in ("id", "iri"):
@@ -133,6 +185,14 @@ class SemanticAccessView:
                 [data.get("object")],
             ):
                 return False
+            # Recursively scan the whole candidate data payload: mapping and
+            # metric candidates carry IRI reference fields (mapped_class,
+            # mapped_relation, mapped_property, grain/time_field/measure,
+            # embedded JSON) whose values must hide the candidate entirely
+            # when they reference an unauthorized member.
+            for value in data.values():
+                if self._references_unauthorized(value):
+                    return False
         evidence = item.get("mapping_evidence")
         if isinstance(evidence, list):
             for record in evidence:

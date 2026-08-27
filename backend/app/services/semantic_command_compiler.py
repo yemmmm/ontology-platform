@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -30,6 +31,7 @@ from app.services.operation_semantics import (
     operation_vocabulary,
     validate_operation_payload,
 )
+from app.security.secrets import SecretDetected, scan_domain_payload
 from app.services.semantic_lineage_identity import InvalidLineageStatement, canonical_iri
 
 
@@ -1975,6 +1977,849 @@ def compile_unbind_fact_evidence(
     )
 
 
+# ======================================================================
+# R3.0-003 relational schema mapping commands (table / join / enum /
+# metric). Pure-payload shape validation (G1/G4/G7) lives here; scope
+# existence and cross-resource gates (G2/G3/G5/G6) run in the Modeling
+# Batch validation on a merged view (see modeling_batches.py).
+# ======================================================================
+
+_RELATIONAL_IDENTIFIER_RE = re.compile(r"^[A-Za-z0-9_]+(\.[A-Za-z0-9_]+)?$")
+_DSN_SCHEME_PREFIX_RE = re.compile(r"^[a-z][a-z0-9+.\-]*:")
+_DSN_USERINFO_RE = re.compile(r"[A-Za-z0-9._%+-]+:[^@\s]+@[A-Za-z0-9.\-]+")
+# Fields whose values are structural IRI references or update/delete
+# locators. They are constrained by IRI shape validation (G1) plus scope
+# existence validation (G2 create-side / G6 update-side), which already
+# rejects DSN-shaped strings, so the DSN/URL rejection gate exempts them
+# instead of re-scanning their content (design §3.3, review H-A).
+_RELATIONAL_DSN_EXEMPT_FIELDS = frozenset(
+    {
+        "mapped_class_iri",
+        "relation_type_iri",
+        "property_iri",
+        "time_field",
+        "measure_property_iri",
+        "field",
+        "grain",
+        "table_mapping_iri",
+        "join_mapping_iri",
+        "enum_meaning_iri",
+        "metric_iri",
+    }
+)
+
+_METRIC_AGGREGATIONS = frozenset({"sum", "avg", "count", "count_distinct", "min", "max"})
+_METRIC_MEASURE_REQUIRED_AGGREGATIONS = frozenset({"sum", "avg", "min", "max", "count_distinct"})
+
+_RDF_TYPE = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
+_RDFS_LABEL = "<http://www.w3.org/2000/01/rdf-schema#label>"
+_RDFS_COMMENT = "<http://www.w3.org/2000/01/rdf-schema#comment>"
+_RDF_JSON_DATATYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#JSON"
+
+
+def _relational_string(
+    payload: dict[str, Any], key: str, *, required: bool, allow_empty: bool = False
+) -> str | None:
+    if key not in payload or payload[key] is None:
+        if required:
+            raise InvalidCommandPayload(f"Missing required field: {key}")
+        return None
+    value = payload[key]
+    if not isinstance(value, str):
+        raise InvalidCommandPayload(f"{key} must be a string")
+    if not value and not allow_empty:
+        raise InvalidCommandPayload(f"{key} must not be empty")
+    return value
+
+
+def _relational_iri_value(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not value:
+        raise InvalidCommandPayload(f"{label} must be an absolute RDF IRI")
+    try:
+        return canonical_iri(value)
+    except InvalidLineageStatement as exc:
+        raise InvalidCommandPayload(f"{label} must be an absolute RDF IRI") from exc
+
+
+def _relational_iri_ref(payload: dict[str, Any], key: str) -> str:
+    if key not in payload or payload[key] is None:
+        raise InvalidCommandPayload(f"Missing required field: {key}")
+    return _relational_iri_value(payload[key], key)
+
+
+def _relational_identifier_value(value: Any, label: str) -> str:
+    if not isinstance(value, str) or not _RELATIONAL_IDENTIFIER_RE.fullmatch(value):
+        raise InvalidCommandPayload(
+            f"{label} must match {_RELATIONAL_IDENTIFIER_RE.pattern}"
+        )
+    return value
+
+
+def _scan_relational_dsn_strings(
+    node: Any, *, exempt: bool = False, label: str = "payload"
+) -> None:
+    """Field-scoped DSN/URL rejection gate (design §3.3, review H-2/H-A).
+
+    Three deterministic rules on every non-exempt string value, including
+    strings embedded in JSON payloads; fail-closed by design.
+    """
+    if isinstance(node, str):
+        if exempt:
+            return
+        if "://" in node:
+            raise InvalidCommandPayload(f"{label} must not contain a URL/DSN value")
+        if _DSN_SCHEME_PREFIX_RE.match(node):
+            raise InvalidCommandPayload(
+                f"{label} must not contain a scheme-prefixed connection string"
+            )
+        if _DSN_USERINFO_RE.search(node):
+            raise InvalidCommandPayload(
+                f"{label} must not contain embedded credentials (user:pass@host)"
+            )
+        return
+    if isinstance(node, dict):
+        for key, child in node.items():
+            _scan_relational_dsn_strings(
+                child,
+                exempt=exempt or key in _RELATIONAL_DSN_EXEMPT_FIELDS,
+                label=f"{label}.{key}",
+            )
+        return
+    if isinstance(node, (list, tuple)):
+        for index, child in enumerate(node):
+            _scan_relational_dsn_strings(child, exempt=exempt, label=f"{label}[{index}]")
+
+
+def _validate_relational_payload(payload: dict[str, Any]) -> None:
+    try:
+        scan_domain_payload(payload)
+    except SecretDetected as exc:
+        raise InvalidCommandPayload(
+            f"invalid_command_payload: payload rejected by secret scanning ({exc})"
+        ) from exc
+    _scan_relational_dsn_strings(payload)
+
+
+def _relational_json_literal(value: Any) -> str:
+    """Canonical JSON literal: ``json.dumps(payload, ensure_ascii=False)``.
+
+    The repr path of ``_literal_term(dict)`` is forbidden here — it stores a
+    Python repr that is not valid JSON and would silently defeat the
+    authorization layer's JSON reference extraction helper.
+    """
+    encoded = json.dumps(value, ensure_ascii=False)
+    return Literal(encoded, datatype=URIRef(_RDF_JSON_DATATYPE)).n3()
+
+
+def _normalize_column_mappings(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list) or not value:
+        raise InvalidCommandPayload("column_mappings must be a non-empty JSON array")
+    normalized: list[dict[str, str]] = []
+    for index, entry in enumerate(value):
+        label = f"column_mappings[{index}]"
+        if not isinstance(entry, dict):
+            raise InvalidCommandPayload(f"{label} must be a JSON object")
+        unknown = sorted(set(entry) - {"property_iri", "column", "role"})
+        if unknown:
+            raise InvalidCommandPayload(f"{label} has unknown field(s): {', '.join(unknown)}")
+        missing = sorted({"property_iri", "column"} - set(entry))
+        if missing:
+            raise InvalidCommandPayload(f"{label} is missing field(s): {', '.join(missing)}")
+        role = entry.get("role", "value")
+        if role not in {"value", "business_key"}:
+            raise InvalidCommandPayload(f"{label}.role must be 'value' or 'business_key'")
+        normalized.append(
+            {
+                "property_iri": _relational_iri_value(entry["property_iri"], f"{label}.property_iri"),
+                "column": _relational_identifier_value(entry["column"], f"{label}.column"),
+                "role": role,
+            }
+        )
+    if not any(item["role"] == "business_key" for item in normalized):
+        raise InvalidCommandPayload(
+            "column_mappings must declare at least one business_key column"
+        )
+    return normalized
+
+
+def _normalize_join_path(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value:
+        raise InvalidCommandPayload(
+            "join_path must be a non-empty JSON array of ordered steps"
+        )
+    steps: list[dict[str, Any]] = []
+    for index, step in enumerate(value):
+        label = f"join_path[{index}]"
+        if not isinstance(step, dict):
+            raise InvalidCommandPayload(f"{label} must be a JSON object")
+        if set(step) != {"from_table", "to_table", "from_columns", "to_columns"}:
+            raise InvalidCommandPayload(
+                f"{label} must have exactly from_table, to_table, from_columns, to_columns"
+            )
+        from_columns = step["from_columns"]
+        to_columns = step["to_columns"]
+        if not isinstance(from_columns, list) or not from_columns:
+            raise InvalidCommandPayload(f"{label}.from_columns must be a non-empty array")
+        if not isinstance(to_columns, list) or not to_columns:
+            raise InvalidCommandPayload(f"{label}.to_columns must be a non-empty array")
+        if len(from_columns) != len(to_columns):
+            raise InvalidCommandPayload(
+                f"{label}.from_columns and to_columns must have equal length"
+            )
+        steps.append(
+            {
+                "from_table": _relational_identifier_value(step["from_table"], f"{label}.from_table"),
+                "to_table": _relational_identifier_value(step["to_table"], f"{label}.to_table"),
+                "from_columns": [
+                    _relational_identifier_value(column, f"{label}.from_columns[{position}]")
+                    for position, column in enumerate(from_columns)
+                ],
+                "to_columns": [
+                    _relational_identifier_value(column, f"{label}.to_columns[{position}]")
+                    for position, column in enumerate(to_columns)
+                ],
+            }
+        )
+    for index in range(len(steps) - 1):
+        if steps[index]["to_table"] != steps[index + 1]["from_table"]:
+            raise InvalidCommandPayload(
+                f"join_path steps {index} and {index + 1} are not adjacent: "
+                f"{steps[index]['to_table']} != {steps[index + 1]['from_table']}"
+            )
+    return steps
+
+
+def _normalize_metric_filters(value: Any) -> list[dict[str, str]]:
+    if not isinstance(value, list):
+        raise InvalidCommandPayload("filters must be a JSON array")
+    normalized: list[dict[str, str]] = []
+    for index, entry in enumerate(value):
+        label = f"filters[{index}]"
+        if not isinstance(entry, dict):
+            raise InvalidCommandPayload(f"{label} must be a JSON object")
+        if set(entry) != {"field", "operator", "value"}:
+            raise InvalidCommandPayload(f"{label} must have exactly field, operator, value")
+        for field in ("operator", "value"):
+            if not isinstance(entry[field], str) or not entry[field]:
+                raise InvalidCommandPayload(f"{label}.{field} must be a non-empty string")
+        normalized.append(
+            {
+                "field": _relational_iri_value(entry["field"], f"{label}.field"),
+                "operator": entry["operator"],
+                "value": entry["value"],
+            }
+        )
+    return normalized
+
+
+def _normalize_metric_grain(value: Any) -> list[str]:
+    if not isinstance(value, list):
+        raise InvalidCommandPayload("grain must be a JSON array of property IRIs")
+    return [
+        _relational_iri_value(item, f"grain[{index}]") for index, item in enumerate(value)
+    ]
+
+
+def _relational_subject(
+    payload: dict[str, Any], ns: SemanticNamespace, *, id_key: str, iri_key: str, kind: str
+) -> tuple[str, str | None]:
+    """Resolve an update/delete target: explicit ``*_iri`` or ``*_id`` derived."""
+    iri = payload.get(iri_key)
+    resource_id = payload.get(id_key)
+    if iri is not None:
+        return _relational_iri_value(iri, iri_key), None
+    if resource_id is not None:
+        if not isinstance(resource_id, str) or not resource_id:
+            raise InvalidCommandPayload(f"{id_key} must be a non-empty string")
+        return str(ns.resource(kind, resource_id)), resource_id
+    raise InvalidCommandPayload(f"{id_key} or {iri_key} is required")
+
+
+def _relational_common_quads(
+    *,
+    subject_iri: str,
+    resource_id: str,
+    ontology_id: str,
+    payload: dict[str, Any],
+    ns: SemanticNamespace,
+    type_name: str,
+    name: str,
+    schema_source_required: bool,
+) -> list[tuple[str, str, str, str]]:
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    ontology_iri = str(ns.resource("ontology", ontology_id))
+    subject = f"<{subject_iri}>"
+    quads: list[tuple[str, str, str, str]] = [
+        (subject, _RDF_TYPE, f"<{op}{type_name}>", graph_iri),
+        (subject, f"<{op}id>", _literal_term(resource_id), graph_iri),
+        (subject, f"<{op}ontology>", f"<{ontology_iri}>", graph_iri),
+        (subject, _RDFS_LABEL, _literal_term(name), graph_iri),
+    ]
+    description = payload.get("description")
+    if description is not None:
+        quads.append((subject, _RDFS_COMMENT, _literal_term(description), graph_iri))
+    if "schema_source" in payload:
+        schema_source = _relational_string(payload, "schema_source", required=False)
+        if schema_source is not None:
+            quads.append(
+                (subject, f"<{op}schemaSource>", _literal_term(schema_source), graph_iri)
+            )
+    elif schema_source_required:
+        raise InvalidCommandPayload("Missing required field: schema_source")
+    if "semantic_version" in payload:
+        semantic_version = _relational_string(payload, "semantic_version", required=False)
+        if semantic_version is not None:
+            quads.append(
+                (subject, f"<{op}semanticVersion>", _literal_term(semantic_version), graph_iri)
+            )
+    return quads
+
+
+def _relational_update_delta(
+    payload: dict[str, Any],
+    *,
+    subject_iri: str,
+    graph_iri: str,
+    literal_fields: dict[str, str],
+    iri_fields: dict[str, str],
+    json_fields: dict[str, str],
+) -> tuple[list[tuple[str, str, str, str]], list[tuple[str, str, str, str]]]:
+    """Per-predicate delete+insert for update_* relational commands."""
+    subject = f"<{subject_iri}>"
+    deletes: list[tuple[str, str, str, str]] = []
+    inserts: list[tuple[str, str, str, str]] = []
+    for field, predicate in literal_fields.items():
+        if field not in payload:
+            continue
+        deletes.append((subject, f"<{predicate}>", "?o", graph_iri))
+        value = payload[field]
+        if value is None or value == "":
+            continue
+        if not isinstance(value, str):
+            raise InvalidCommandPayload(f"{field} must be a string")
+        inserts.append((subject, f"<{predicate}>", _literal_term(value), graph_iri))
+    for field, predicate in iri_fields.items():
+        if field not in payload:
+            continue
+        deletes.append((subject, f"<{predicate}>", "?o", graph_iri))
+        if payload[field] is None or payload[field] == "":
+            continue
+        value = _relational_iri_value(payload[field], field)
+        inserts.append((subject, f"<{predicate}>", f"<{value}>", graph_iri))
+    for field, predicate in json_fields.items():
+        if field not in payload:
+            continue
+        deletes.append((subject, f"<{predicate}>", "?o", graph_iri))
+        value = payload[field]
+        if value is None:
+            continue
+        inserts.append(
+            (subject, f"<{predicate}>", _relational_json_literal(value), graph_iri)
+        )
+    return inserts, deletes
+
+
+def compile_create_table_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    resource_id = payload.get("table_mapping_id") or str(uuid.uuid4())
+    if not isinstance(resource_id, str) or not resource_id:
+        raise InvalidCommandPayload("table_mapping_id must be a non-empty string")
+    name = _relational_string(payload, "name", required=True) or ""
+    mapped_class_iri = _relational_iri_ref(payload, "mapped_class_iri")
+    table_name = _relational_identifier_value(payload.get("table_name"), "table_name")
+    column_mappings = _normalize_column_mappings(payload.get("column_mappings"))
+    subject_iri = str(ns.resource("table-mapping", resource_id))
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    quads = _relational_common_quads(
+        subject_iri=subject_iri,
+        resource_id=resource_id,
+        ontology_id=ontology_id,
+        payload=payload,
+        ns=ns,
+        type_name="TableMapping",
+        name=name,
+        schema_source_required=True,
+    )
+    subject = f"<{subject_iri}>"
+    quads.extend(
+        [
+            (subject, f"<{op}mappedClass>", f"<{mapped_class_iri}>", graph_iri),
+            (subject, f"<{op}tableName>", _literal_term(table_name), graph_iri),
+            (subject, f"<{op}columnMappings>", _relational_json_literal(column_mappings), graph_iri),
+        ]
+    )
+    return CompiledCommand(
+        command_kind="create_table_mapping",
+        delta=RdfGraphDelta(inserts=sorted(quads)),
+        object_kind="table_mapping",
+        source_ids=[resource_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "table_mapping_id": resource_id,
+            "table_mapping_iri": subject_iri,
+            "table_name": table_name,
+        },
+    )
+
+
+def compile_update_table_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    if "column_mappings" in payload:
+        _normalize_column_mappings(payload["column_mappings"])
+    if "table_name" in payload and payload["table_name"]:
+        _relational_identifier_value(payload["table_name"], "table_name")
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="table_mapping_id", iri_key="table_mapping_iri", kind="table-mapping"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    inserts, deletes = _relational_update_delta(
+        payload,
+        subject_iri=subject_iri,
+        graph_iri=graph_iri,
+        literal_fields={
+            "name": "http://www.w3.org/2000/01/rdf-schema#label",
+            "description": "http://www.w3.org/2000/01/rdf-schema#comment",
+            "table_name": f"{op}tableName",
+            "schema_source": f"{op}schemaSource",
+            "semantic_version": f"{op}semanticVersion",
+        },
+        iri_fields={},
+        json_fields={"column_mappings": f"{op}columnMappings"},
+    )
+    return CompiledCommand(
+        command_kind="update_table_mapping",
+        delta=RdfGraphDelta(inserts=sorted(inserts), deletes=sorted(deletes)),
+        object_kind="table_mapping",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "table_mapping_id": payload.get("table_mapping_id"),
+            "table_mapping_iri": subject_iri,
+        },
+    )
+
+
+def compile_delete_table_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="table_mapping_id", iri_key="table_mapping_iri", kind="table-mapping"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    return CompiledCommand(
+        command_kind="delete_table_mapping",
+        delta=RdfGraphDelta(deletes=[(f"<{subject_iri}>", "?p", "?o", graph_iri)]),
+        object_kind="table_mapping",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "table_mapping_id": payload.get("table_mapping_id"),
+            "table_mapping_iri": subject_iri,
+        },
+    )
+
+
+def compile_create_join_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    resource_id = payload.get("join_mapping_id") or str(uuid.uuid4())
+    if not isinstance(resource_id, str) or not resource_id:
+        raise InvalidCommandPayload("join_mapping_id must be a non-empty string")
+    name = _relational_string(payload, "name", required=True) or ""
+    relation_type_iri = _relational_iri_ref(payload, "relation_type_iri")
+    join_direction = _relational_string(payload, "join_direction", required=True) or ""
+    if join_direction not in {"forward", "reverse"}:
+        raise InvalidCommandPayload("join_direction must be 'forward' or 'reverse'")
+    join_path = _normalize_join_path(payload.get("join_path"))
+    subject_iri = str(ns.resource("join-mapping", resource_id))
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    quads = _relational_common_quads(
+        subject_iri=subject_iri,
+        resource_id=resource_id,
+        ontology_id=ontology_id,
+        payload=payload,
+        ns=ns,
+        type_name="JoinMapping",
+        name=name,
+        schema_source_required=True,
+    )
+    subject = f"<{subject_iri}>"
+    quads.extend(
+        [
+            (subject, f"<{op}mappedRelationType>", f"<{relation_type_iri}>", graph_iri),
+            (subject, f"<{op}joinDirection>", _literal_term(join_direction), graph_iri),
+            (subject, f"<{op}joinPath>", _relational_json_literal(join_path), graph_iri),
+        ]
+    )
+    return CompiledCommand(
+        command_kind="create_join_mapping",
+        delta=RdfGraphDelta(inserts=sorted(quads)),
+        object_kind="join_mapping",
+        source_ids=[resource_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "join_mapping_id": resource_id,
+            "join_mapping_iri": subject_iri,
+            "join_path": join_path,
+        },
+    )
+
+
+def compile_update_join_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    if "join_path" in payload and payload["join_path"] is not None:
+        _normalize_join_path(payload["join_path"])
+    if "join_direction" in payload and payload["join_direction"]:
+        if payload["join_direction"] not in {"forward", "reverse"}:
+            raise InvalidCommandPayload("join_direction must be 'forward' or 'reverse'")
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="join_mapping_id", iri_key="join_mapping_iri", kind="join-mapping"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    inserts, deletes = _relational_update_delta(
+        payload,
+        subject_iri=subject_iri,
+        graph_iri=graph_iri,
+        literal_fields={
+            "name": "http://www.w3.org/2000/01/rdf-schema#label",
+            "description": "http://www.w3.org/2000/01/rdf-schema#comment",
+            "join_direction": f"{op}joinDirection",
+            "schema_source": f"{op}schemaSource",
+            "semantic_version": f"{op}semanticVersion",
+        },
+        iri_fields={},
+        json_fields={"join_path": f"{op}joinPath"},
+    )
+    return CompiledCommand(
+        command_kind="update_join_mapping",
+        delta=RdfGraphDelta(inserts=sorted(inserts), deletes=sorted(deletes)),
+        object_kind="join_mapping",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "join_mapping_id": payload.get("join_mapping_id"),
+            "join_mapping_iri": subject_iri,
+        },
+    )
+
+
+def compile_delete_join_mapping(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="join_mapping_id", iri_key="join_mapping_iri", kind="join-mapping"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    return CompiledCommand(
+        command_kind="delete_join_mapping",
+        delta=RdfGraphDelta(deletes=[(f"<{subject_iri}>", "?p", "?o", graph_iri)]),
+        object_kind="join_mapping",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "join_mapping_id": payload.get("join_mapping_id"),
+            "join_mapping_iri": subject_iri,
+        },
+    )
+
+
+def compile_create_enum_meaning(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    resource_id = payload.get("enum_meaning_id") or str(uuid.uuid4())
+    if not isinstance(resource_id, str) or not resource_id:
+        raise InvalidCommandPayload("enum_meaning_id must be a non-empty string")
+    name = _relational_string(payload, "name", required=True) or ""
+    property_iri = _relational_iri_ref(payload, "property_iri")
+    enum_value = _relational_string(payload, "enum_value", required=True)
+    business_meaning = _relational_string(payload, "business_meaning", required=True)
+    subject_iri = str(ns.resource("enum-meaning", resource_id))
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    quads = _relational_common_quads(
+        subject_iri=subject_iri,
+        resource_id=resource_id,
+        ontology_id=ontology_id,
+        payload=payload,
+        ns=ns,
+        type_name="EnumValueMeaning",
+        name=name,
+        schema_source_required=True,
+    )
+    subject = f"<{subject_iri}>"
+    quads.extend(
+        [
+            (subject, f"<{op}mappedProperty>", f"<{property_iri}>", graph_iri),
+            (subject, f"<{op}enumValue>", _literal_term(enum_value), graph_iri),
+            (subject, f"<{op}businessMeaning>", _literal_term(business_meaning), graph_iri),
+        ]
+    )
+    return CompiledCommand(
+        command_kind="create_enum_meaning",
+        delta=RdfGraphDelta(inserts=sorted(quads)),
+        object_kind="enum_meaning",
+        source_ids=[resource_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "enum_meaning_id": resource_id,
+            "enum_meaning_iri": subject_iri,
+            "mapped_property_iri": property_iri,
+            "enum_value": enum_value,
+        },
+    )
+
+
+def compile_update_enum_meaning(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="enum_meaning_id", iri_key="enum_meaning_iri", kind="enum-meaning"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    inserts, deletes = _relational_update_delta(
+        payload,
+        subject_iri=subject_iri,
+        graph_iri=graph_iri,
+        literal_fields={
+            "name": "http://www.w3.org/2000/01/rdf-schema#label",
+            "description": "http://www.w3.org/2000/01/rdf-schema#comment",
+            "enum_value": f"{op}enumValue",
+            "business_meaning": f"{op}businessMeaning",
+            "schema_source": f"{op}schemaSource",
+            "semantic_version": f"{op}semanticVersion",
+        },
+        iri_fields={},
+        json_fields={},
+    )
+    return CompiledCommand(
+        command_kind="update_enum_meaning",
+        delta=RdfGraphDelta(inserts=sorted(inserts), deletes=sorted(deletes)),
+        object_kind="enum_meaning",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "enum_meaning_id": payload.get("enum_meaning_id"),
+            "enum_meaning_iri": subject_iri,
+        },
+    )
+
+
+def compile_delete_enum_meaning(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="enum_meaning_id", iri_key="enum_meaning_iri", kind="enum-meaning"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    return CompiledCommand(
+        command_kind="delete_enum_meaning",
+        delta=RdfGraphDelta(deletes=[(f"<{subject_iri}>", "?p", "?o", graph_iri)]),
+        object_kind="enum_meaning",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "enum_meaning_id": payload.get("enum_meaning_id"),
+            "enum_meaning_iri": subject_iri,
+        },
+    )
+
+
+def _validate_metric_aggregation(payload: dict[str, Any]) -> None:
+    aggregation = payload.get("aggregation")
+    if aggregation is not None and aggregation not in _METRIC_AGGREGATIONS:
+        raise InvalidCommandPayload(
+            "aggregation must be one of: " + ", ".join(sorted(_METRIC_AGGREGATIONS))
+        )
+    if (
+        aggregation in _METRIC_MEASURE_REQUIRED_AGGREGATIONS
+        and not payload.get("measure_property_iri")
+    ):
+        raise InvalidCommandPayload(
+            "measure_property_iri is required when aggregation is "
+            f"{aggregation} (row-count 'count' is the only aggregation without one)"
+        )
+
+
+def compile_create_metric_definition(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    _validate_metric_aggregation(payload)
+    if not payload.get("aggregation"):
+        raise InvalidCommandPayload("Missing required field: aggregation")
+    resource_id = payload.get("metric_id") or str(uuid.uuid4())
+    if not isinstance(resource_id, str) or not resource_id:
+        raise InvalidCommandPayload("metric_id must be a non-empty string")
+    name = _relational_string(payload, "name", required=True) or ""
+    grain = _normalize_metric_grain(payload.get("grain"))
+    time_field = _relational_iri_ref(payload, "time_field")
+    measure_property_iri = (
+        _relational_iri_ref(payload, "measure_property_iri")
+        if payload.get("measure_property_iri")
+        else None
+    )
+    value_expression = _relational_string(payload, "value_expression", required=False)
+    filters = _normalize_metric_filters(payload.get("filters"))
+    null_value_rule = _relational_string(payload, "null_value_rule", required=True)
+    denominator_rule = _relational_string(payload, "denominator_rule", required=True)
+    aggregation = payload["aggregation"]
+    subject_iri = str(ns.resource("metric", resource_id))
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    quads = _relational_common_quads(
+        subject_iri=subject_iri,
+        resource_id=resource_id,
+        ontology_id=ontology_id,
+        payload=payload,
+        ns=ns,
+        type_name="MetricDefinition",
+        name=name,
+        schema_source_required=True,
+    )
+    subject = f"<{subject_iri}>"
+    quads.append((subject, f"<{op}metricGrain>", _relational_json_literal(grain), graph_iri))
+    quads.append((subject, f"<{op}metricTimeField>", f"<{time_field}>", graph_iri))
+    if measure_property_iri is not None:
+        quads.append((subject, f"<{op}metricMeasure>", f"<{measure_property_iri}>", graph_iri))
+    if value_expression is not None:
+        quads.append((subject, f"<{op}valueExpression>", _literal_term(value_expression), graph_iri))
+    quads.append((subject, f"<{op}metricFilters>", _relational_json_literal(filters), graph_iri))
+    quads.append((subject, f"<{op}metricAggregation>", _literal_term(aggregation), graph_iri))
+    quads.append((subject, f"<{op}nullValueRule>", _literal_term(null_value_rule), graph_iri))
+    quads.append(
+        (subject, f"<{op}denominatorRule>", _literal_term(denominator_rule), graph_iri)
+    )
+    return CompiledCommand(
+        command_kind="create_metric_definition",
+        delta=RdfGraphDelta(inserts=sorted(quads)),
+        object_kind="metric",
+        source_ids=[resource_id],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "metric_id": resource_id,
+            "metric_iri": subject_iri,
+        },
+    )
+
+
+def compile_update_metric_definition(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    _validate_metric_aggregation(payload)
+    if "grain" in payload and payload["grain"] is not None:
+        _normalize_metric_grain(payload["grain"])
+    if "filters" in payload and payload["filters"] is not None:
+        _normalize_metric_filters(payload["filters"])
+    for field in ("null_value_rule", "denominator_rule"):
+        if field in payload and (payload[field] is None or payload[field] == ""):
+            raise InvalidCommandPayload(
+                f"{field} must be explicit non-empty text (empty metric rules are not allowed)"
+            )
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="metric_id", iri_key="metric_iri", kind="metric"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    op = str(ns.vocab)
+    inserts, deletes = _relational_update_delta(
+        payload,
+        subject_iri=subject_iri,
+        graph_iri=graph_iri,
+        literal_fields={
+            "name": "http://www.w3.org/2000/01/rdf-schema#label",
+            "description": "http://www.w3.org/2000/01/rdf-schema#comment",
+            "value_expression": f"{op}valueExpression",
+            "aggregation": f"{op}metricAggregation",
+            "null_value_rule": f"{op}nullValueRule",
+            "denominator_rule": f"{op}denominatorRule",
+            "schema_source": f"{op}schemaSource",
+            "semantic_version": f"{op}semanticVersion",
+        },
+        iri_fields={
+            "time_field": f"{op}metricTimeField",
+            "measure_property_iri": f"{op}metricMeasure",
+        },
+        json_fields={
+            "grain": f"{op}metricGrain",
+            "filters": f"{op}metricFilters",
+        },
+    )
+    return CompiledCommand(
+        command_kind="update_metric_definition",
+        delta=RdfGraphDelta(inserts=sorted(inserts), deletes=sorted(deletes)),
+        object_kind="metric",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "metric_id": payload.get("metric_id"),
+            "metric_iri": subject_iri,
+        },
+    )
+
+
+def compile_delete_metric_definition(
+    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
+) -> CompiledCommand:
+    ontology_id = _required(payload, "ontology_id")
+    _validate_relational_payload(payload)
+    subject_iri, resource_id = _relational_subject(
+        payload, ns, id_key="metric_id", iri_key="metric_iri", kind="metric"
+    )
+    graph_iri = _ontology_graph_iri(ns, ontology_id)
+    return CompiledCommand(
+        command_kind="delete_metric_definition",
+        delta=RdfGraphDelta(deletes=[(f"<{subject_iri}>", "?p", "?o", graph_iri)]),
+        object_kind="metric",
+        source_ids=[resource_id or subject_iri],
+        target_graph_iris=[graph_iri],
+        metadata={
+            "ontology_id": ontology_id,
+            "metric_id": payload.get("metric_id"),
+            "metric_iri": subject_iri,
+        },
+    )
+
+
 _COMPILERS: dict[str, Compiler] = {
     "create_operation": compile_create_operation,
     "update_operation": compile_update_operation,
@@ -2003,6 +2848,18 @@ _COMPILERS: dict[str, Compiler] = {
     "create_mapping": compile_create_mapping,
     "update_mapping": compile_update_mapping,
     "delete_mapping": compile_delete_mapping,
+    "create_table_mapping": compile_create_table_mapping,
+    "update_table_mapping": compile_update_table_mapping,
+    "delete_table_mapping": compile_delete_table_mapping,
+    "create_join_mapping": compile_create_join_mapping,
+    "update_join_mapping": compile_update_join_mapping,
+    "delete_join_mapping": compile_delete_join_mapping,
+    "create_enum_meaning": compile_create_enum_meaning,
+    "update_enum_meaning": compile_update_enum_meaning,
+    "delete_enum_meaning": compile_delete_enum_meaning,
+    "create_metric_definition": compile_create_metric_definition,
+    "update_metric_definition": compile_update_metric_definition,
+    "delete_metric_definition": compile_delete_metric_definition,
     "review_assertion": compile_review_assertion,
 }
 

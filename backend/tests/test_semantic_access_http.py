@@ -8,6 +8,8 @@ live HTTP path (D1: SPARQL whole-request rejection).
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlalchemy.orm import sessionmaker
 
@@ -28,6 +30,8 @@ from fastapi.testclient import TestClient
 
 COST_IRI = "https://r304.test/SparePartStandardCost"
 PUBLIC_IRI = "https://r304.test/PublicResource"
+PUBLIC_TM_IRI = "https://r304.test/table-mapping/public-tm"
+COST_TM_IRI = "https://r304.test/table-mapping/cost-tm"
 NAME_PREDICATE = "https://r304.test/name"
 
 
@@ -52,6 +56,47 @@ class AccessStore:
         )
 
     def query_sparql(self, query, timeout_seconds, limit):  # noqa: ARG002
+        if "template: table-mapping-list" in query:
+            return self._select(
+                [
+                    {
+                        "table_mapping": _uri(PUBLIC_TM_IRI),
+                        "label": _literal("public table mapping"),
+                        "table_name": _literal("service.public"),
+                        "mapped_class": _uri(PUBLIC_IRI),
+                        "column_mappings": _literal(
+                            json.dumps(
+                                [
+                                    {
+                                        "property_iri": PUBLIC_IRI,
+                                        "column": "id",
+                                        "role": "business_key",
+                                    }
+                                ]
+                            )
+                        ),
+                        "graph": _uri(self.data_graph),
+                    },
+                    {
+                        "table_mapping": _uri(COST_TM_IRI),
+                        "label": _literal("cost table mapping"),
+                        "table_name": _literal("service.cost"),
+                        "mapped_class": _uri(COST_IRI),
+                        "column_mappings": _literal(
+                            json.dumps(
+                                [
+                                    {
+                                        "property_iri": COST_IRI,
+                                        "column": "cost",
+                                        "role": "business_key",
+                                    }
+                                ]
+                            )
+                        ),
+                        "graph": _uri(self.data_graph),
+                    },
+                ]
+            )
         if "template: entity-detail" in query or "template: entity-list" in query:
             return self._select(
                 [
@@ -369,3 +414,26 @@ def test_context_query_route_filters_protected_candidates(http_env, monkeypatch)
     )
     assert manager.status_code == 200
     assert COST_IRI in manager.text
+
+
+def test_read_model_route_filters_mapping_rows_by_reference_and_json(http_env):
+    """R3.0-003 A5: HTTP read-model rows are hidden when the mapping
+    references an unauthorized member via a detail field or the embedded
+    column-mappings JSON; the granted manager sees both."""
+    client = http_env["client"]
+    operator = client.get(
+        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/read-models/table-mapping-list",
+        headers=http_env["operator"],
+    )
+    assert operator.status_code == 200, operator.text
+    assert PUBLIC_TM_IRI in operator.text
+    assert COST_TM_IRI not in operator.text
+    assert "service.cost" not in operator.text
+
+    manager = client.get(
+        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/read-models/table-mapping-list",
+        headers=http_env["manager"],
+    )
+    assert manager.status_code == 200, manager.text
+    assert PUBLIC_TM_IRI in manager.text
+    assert COST_TM_IRI in manager.text

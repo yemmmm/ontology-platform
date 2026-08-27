@@ -195,3 +195,15 @@ def test_submit_modeling_batch_schema_exposes_nested_modeling_items() -> None:
         "add_* aliases are forbidden",
     ):
         assert required_phrase in guidance
+
+
+def test_get_semantic_read_model_accepts_optional_entity_iri() -> None:
+    """R3.0-003: the MCP read-model tool exposes the detail-template
+    entity_iri passthrough as an optional trailing parameter."""
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    schema = tools["get_semantic_read_model"].inputSchema or {}
+    entity = schema["properties"]["entity_iri"]
+    assert entity.get("default") is None
+    assert {"type": "string"} in entity.get("anyOf", [])
+    assert "entity_iri" not in schema.get("required", [])
+    assert list(schema["properties"])[-1] == "entity_iri"

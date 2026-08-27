@@ -12,7 +12,7 @@ from typing import Any
 from rdflib import Dataset, Graph
 
 from app.core.config import Settings
-from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
+from app.repositories.rdf_store import RdfFormat, RdfStoreError, RdfStoreRepository
 from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_export import jsonld_context
 from app.services.semantic_read_scope import (
@@ -95,6 +95,17 @@ class SemanticExportService:
     def _load_dataset(self, graph_iris: list[str]) -> Dataset:
         dataset = Dataset()
         for iri in graph_iris:
+            # A graph named by the scope but not yet present in the store
+            # (for example a workspace whose data graph has no statements
+            # yet) exports as an empty graph instead of failing the whole
+            # request: Oxigraph answers GET /store?graph= with 404, which
+            # the repository surfaces as RdfStoreUnavailable.
+            if hasattr(self.rdf_store, "graph_exists"):
+                try:
+                    if not self.rdf_store.graph_exists(iri):
+                        continue
+                except RdfStoreError:
+                    pass  # fall through; get_graph reports the real error
             content = self.rdf_store.get_graph(iri, RdfFormat.TRIG.value)
             if content:
                 dataset.parse(data=content, format=RdfFormat.TRIG.value)

@@ -29,7 +29,17 @@
   `table.column` 引用契约不自洽（无存在性校验、与两段式 `tableName` 矛盾；修订：收敛为
   属性 IRI 唯一形态，物理列经 TableMapping 由 R3.0-005 解析，§3.2(d)/§3.3/G1/G2）。
   审查范围含：读模型装饰机制、授权过滤接线、MCP 枚举派生、无 migration 结论、legacy
-  合同隔离、守恒测试覆盖。未实现，待开发交接）
+  合同隔离、守恒测试覆盖。已实现（2026-08-27）：独立测试 Round 2 PASS——Round 1 发现两项缺陷均已修复：① 8 个新模板
+  命名空间硬编码为 `semantic/op/`（编译器实际写 `semantic/vocab/`）致真实运行 0 行，修复为经
+  `config.DEFAULT_SEMANTIC_BASE_IRI` 派生的 `OP_VOCAB_PREFIX`（`_op_body()`）并补真实 Oxigraph
+  执行级回归；② 既有平台缺陷窄修复（记录在案）：graph-set export 对 scope 声明但未写入的图
+  未捕获 404 → 500，修复为 `graph_exists` 门控、缺图按空集。实现偏差（均已独立复核为非缺陷）：
+  G3 合并视图需先投影同批 deletes、update_metric 对 measure 必需型聚合 fail-closed、detail
+  模板以主变量绑定 `{entity_iri}`、同批 create+update 同资源由既有 `conflicting_item_effects`
+  阻断、G5 逐 item finding。已知既有平台缺陷（本需求未引入，建议另立修复项）：legacy
+  `mapping-list`/`import-graph-mappings` 模板与 Stage-2 写入侧存在同类命名空间错位（legacy
+  合同逐字不变边界内不修）；export `turtle` 格式对单图数据返回空载荷（Oxigraph dump 落
+  default graph、turtle 序列化排除 default graph；A5 未单独强制 turtle，不阻断本需求））
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-003（§4 表行 P0，概要设计待细化）
 - 概要设计基线：
   `docs/delivery/designs/2026-08-25-v3-0-remaining-requirements-outline-design.md` §2、§4

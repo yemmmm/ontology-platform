@@ -3,6 +3,12 @@ from typing import Annotated
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, NoDecode, SettingsConfigDict
 
+# Single source of the default semantic base IRI. ``SemanticNamespace.vocab``
+# appends "/vocab/" to the configured (default: this constant)
+# ``Settings.semantic_base_iri``; read-model SPARQL templates derive their
+# ``op:`` prefix from the same constant so the two can never drift apart.
+DEFAULT_SEMANTIC_BASE_IRI = "http://ontology-platform.local/semantic/"
+
 
 class Settings(BaseSettings):
     app_env: str = "development"
@@ -51,7 +57,7 @@ class Settings(BaseSettings):
     semantic_context_query_cursor_lifetime_seconds: int = Field(default=600, ge=1, le=86_400)
 
     oxigraph_url: str = "http://localhost:7878"
-    semantic_base_iri: str = "http://ontology-platform.local/semantic/"
+    semantic_base_iri: str = DEFAULT_SEMANTIC_BASE_IRI
     semantic_graph_iri_prefix: str = "http://ontology-platform.local/semantic/graph/"
     semantic_query_timeout_seconds: float = Field(default=10, gt=0, le=120)
     competency_question_sparql_timeout_seconds: float = Field(default=5.0, gt=0, le=60)

@@ -349,3 +349,189 @@ fixture 项目 P（本体 `O_m`，默认图集齐备），内容为一个小型�
 ## 轮次记录
 
 （开发者自测与独立测试轮次由执行者追加，不得改写历史轮次。）
+
+### Round 1（独立测试，2026-08-27）
+
+- 工作区：`/home/yangxiang/ontology-platform`，HEAD `de52099` + 未提交实现改动
+  （`backend/app/services/` 9 文件、`backend/app/api/schemas.py`、
+  `backend/app/mcp/tools/semantic.py`、`docs/reference/mcp.md` 再生成块、5 个扩展测试文件、
+  2 个新测试文件）。运行时已重启且健康（backend `/api/health` 200，frontend 5173 200），
+  测试针对该运行时。测试者未修改产品代码、未放宽验收标准、未 commit。
+
+**结论：FAIL**（读模型面真实运行不通过，见缺陷 D1）。
+
+#### 执行范围与结果
+
+- 实现审查 vs 设计附录 A：完成。命令面（12 编译器）、G1-G7 校验、DSN 三规则门、JSON 字面量
+  规范化、R3.0-004 授权复用（`_iter_reference_strings` 泛化接入 filter_items/statements/quads/
+  candidate）、context:query 扩展（`mapping`/`metric` 类型 + anchor 分类）均与设计一致。
+- A10 全量 pytest：`cd backend && uv run pytest` → **928 passed, 10 skipped**（43.76s）。
+- L1：Alembic head `0032_semantic_protection_sets`，无新 migration（设计 §6 无 schema 变更）——通过。
+- S 组（pytest + live）：S1/S2 建模批 dry-run/apply 真实运行通过（含 TBox + 4 类映射资源 +
+  206 条 bulk 分 3 批）；**S3/S3a/S3b/S8（8 个新读模型模板 list/detail）真实运行全部返回
+  0 行——FAIL（D1）**；S4 context:query（宽词、anchor IRI、类型过滤）live 通过；S5/S6/S7 随
+  pytest 通过。
+- B 组：B1-B7 随 pytest；B8（TableMapping rename/update/delete 致既有 JoinMapping 悬空被 G3
+  阻塞）经一次性探针在真实服务上验证通过（store 侧与同批两侧）。
+- F 组：F1-F5、F7 随 pytest；F2（grain DSN `postgresql://…`）实测在编译期以
+  `invalid_command_payload` fail-closed（G1 IRI 形状门先于 G2 拒绝，向量闭合）；F6 grep 门
+  通过（`backend/app` 无 fixture 名 `work_orders`/`spare_parts`/`R01`/`r303-visibility`/
+  `METRIC_MTTR`，校验路径无 LLM 调用）。
+- R 组：R1（`resources/{iri}`）live 200 且 label 正确；R2 legacy 读模型模板逐字节回归随
+  pytest；**R5（export 面）BLOCKED**（见 D2）；R3/R4 随 pytest。
+- L 组：L2 读检查中模板面 FAIL（D1）；L3 授权双 key 全部通过（受保护/不存在字节等价、
+  无授权读取为子集、H-B 行整体隐藏、SPARQL 409 scope_not_ready、跨项目阴性对照）；L4 消费
+  演示因 detail 模板空结果无法完成（下游于 D1）。
+- A1-A10 对照：A1-A7、A9、A10 有证据；A3（读模型面）真实运行不满足（D1）；A8 export 面
+  BLOCKED（D2）。
+
+#### 缺陷（按严重度）
+
+- **D1（CRITICAL）读模型面运行时不返回数据**：`backend/app/services/semantic_sparql_templates.py`
+  8 个新模板（table-mapping/join-mapping/enum-meaning/metric 的 list+detail，约 L642-936）
+  硬编码 `PREFIX op: <http://ontology-platform.local/semantic/op/>`，而编译器写入的命名空间是
+  `{semantic_base_iri}/vocab/`（默认 `http://ontology-platform.local/semantic/vocab/`，
+  `SemanticNamespace.vocab`，config.py `semantic_base_iri`）。复现（真实服务 127.0.0.1:8001，
+  grant/model key，fixture：create_class wo + create_property dur + create_table_mapping tm1
+  apply 成功后）：
+  - `GET /api/semantic/graph-sets/{gs}/read-models/table-mapping-list` → 200 `items: []`；
+    同 fixture 下 detail（`entity=…/table-mapping/tm1`）、join/enum/metric list/detail 全部
+    0 项；
+  - `POST /api/semantic/sparql:query`（org-admin）同图 `?s a op:TableMapping`：
+    `PREFIX op: <…/semantic/vocab/>` → 1 行；`PREFIX op: <…/semantic/op/>` → 0 行；
+  - `GET /api/semantic/resources/{…/table-mapping/tm1}` → 200（数据确实在图内），
+    `POST /api/semantic/context:query`（query=IRI）→ `primary_matches[0].kind == "mapping"`
+    （anchor 分类正常）。
+  pytest 未拦截原因：新增测试的 FakeStore/SeededRdfStore 桩不解析 SPARQL，模板文本从未在
+  真实 Oxigraph 上执行。影响：S3/S3a/S3b/S8、A3、L2 模板面、L4。修复面窄：8 处 `PREFIX op:`
+  一行修正（或改为动态 `namespace_from_settings`）。注：同文件 L433/L461 两处 legacy 模板
+  同样硬编码 `semantic/op/`，是否受影响需开发侧一并核对（本轮未单独验证 legacy 模板行数
+  是否非零）。
+- **D2（MAJOR，既有平台缺陷，非本需求引入）export 面 500**：`GET
+  /api/semantic/graph-sets/{gs}/export?format=trig|n-quads|json-ld` → 500。journalctl 定位：
+  `semantic_graph_set_export.py:98 _load_dataset → rdf_store.get_graph(data graph)` 对
+  `…/graph/data/{oid}` 的 Oxigraph GET 返回 404（空 data graph 不存在）→ 未捕获 → 500。
+  该文件在本变更集内未修改；仅含 class 的 fixture 同样 500（与 R3.0-003 资源无关）。
+  影响：R5/A8 export 面无法验收 → BLOCKED；L3 export 双 key 等价检查在 500/500 上平凡
+  成立，不具证据力。处置建议由主 agent 决定（另行立项或顺带修复）。
+
+#### 观察与裁定（非缺陷）
+
+- 开发者报告的 5 项偏差逐项复核：合并视图先投影 deletes 再 inserts、update_metric 对
+  `aggregation` 变更 fail-closed、detail 模板主变量绑定 entity IRI、同批 create+update 由既有
+  `conflicting_item_effects` 阻断、G5 逐 item finding——均与设计/测试计划判定的 fail-closed、
+  等价性或既有门一致，**不构成缺陷**。
+- `update_join_mapping`/`update_enum_meaning` ALLOWED_FIELDS 不含 `relation_type_iri`/
+  `property_iri` 与 update_table_mapping 不含 `mapped_class_iri` 模式一致，设计"同上模式"如此
+  解读合理，仅记录不改判。
+- 首轮驱动脚本误读 anchor 响应键（应为 `primary_matches[0].kind`，无 `anchor` 顶层键），
+  已用修正后的探针重验：anchor 分类通过。
+- `create_metric_definition` 的 `time_field*`、`filters*`（可空数组）必填：设计 §3.3 明确，
+  实测缺省拒绝为 `invalid_command_payload`，符合 G1，非缺陷。
+
+#### 未执行/受阻用例
+
+- R5/A8（export 面）：BLOCKED（D2）。
+- L4（SQL 生成依据说明消费演示）：BLOCKED（D1 下游；detail 模板 0 行使演示无法取样）。
+
+#### 清理确认
+
+- 临时驱动 `/tmp/r3003_live.py` 与全部一次性探针脚本（heredoc，未落盘）已删除；
+  fixture 项目（probe-*、r3003-live-*）全部删除（复查 leftover 为空），key 随项目级联撤销；
+  未新增仓库内临时文件；6 个用户既有变更文件未触碰。
+
+#### 复测建议
+
+优先修复 D1（8 处 `PREFIX op:` 命名空间修正 + 在真实 Oxigraph 上补一条模板执行级回归，
+防止桩测试再次漏过），D2 由主 agent 决定处置；随后按本计划执行 Round 2，重点复测
+S3/S3a/S3b/S8、L2 模板面、L4 及 R5（若 D2 解除）。
+
+### Round 2（独立复测，2026-08-27）
+
+- 工作区：`/home/yangxiang/ontology-platform`，HEAD `de52099` + 未提交实现与 D1/D2 修复改动；
+  运行时已重启并加载修复后代码（`/api/health` 200、frontend 200）。测试者未修改产品代码、
+  未放宽验收标准、未 commit、未触碰用户既有变更文件。
+
+**结论：PASS（R3.0-003 验收口径）；另记录 1 项与本需求无关的既有平台缺陷 D3（export
+turtle 空载荷），处置由主 agent 决定。**
+
+#### 修复复核（实现面）
+
+- **D1 FIXED**：`semantic_sparql_templates.py` 新增 `OP_VOCAB_PREFIX`（由
+  `config.py` 新常量 `DEFAULT_SEMANTIC_BASE_IRI` 拼出，值与原默认逐字相同，无行为变化）与
+  `_op_body()`；8 个 R3.0-003 模板经 `{op_prefix}` 解析为 `…/semantic/vocab/`。新增门控回归
+  `test_r3003_table_mapping_list_reads_compiler_vocabulary_on_real_store`
+  （`RUN_OXIGRAPH_SPARQL_RUNNER_TESTS=1`）先编译再在真实 Oxigraph 上执行模板并断言 IRI 与
+  `detail_fields`——经审查该测试确实执行 SPARQL（非桩），本轮实跑 1 passed。
+- **D2 FIXED**：`semantic_graph_set_export.py::_load_dataset` 以 `graph_exists` 门控缺失图
+  （`RdfStoreError` 时回退到 `get_graph` 上抛真实错误，fail-closed 保持）；新增
+  `test_export_treats_missing_graph_as_empty`（7 passed 全文件）。
+- **legacy 两模板边界复核**：`mapping-list`（L433）与 `import-graph-mappings`（L461）仍硬
+  编码 `semantic/op/`，而 Stage-2 编译器写入 `{base}/vocab/`（`semantic_command_compiler.py`
+  L1557 `op = str(ns.vocab)`）——**两者在真实存储上确实同样错位**，但属既有问题、不在本
+  变更集（A9 只要求逐字回归，模板文本未动）。开发者"按边界不修"的结论成立；建议另立
+  修复项。
+
+#### 复测结果（FAIL/BLOCKED 用例 → 受影响回归 → 全量/运行时门）
+
+- **S3/S3a/S3b/S8 与 L2 模板面（Round 1 FAIL）→ 全部 PASS**（真实服务，grant key，
+  fixture：3 类 + 关系类型 + 11 属性 + 3 TableMapping + 2 跳 JoinMapping + EnumMeaning +
+  MetricDefinition，apply_atomic applied）：
+  - `table-mapping-list` 200，3 行；TM_WO `detail_fields` 完整（table_name
+    `service.work_orders`、mapped_class、5 列 column_mappings JSON 字面量含 business_key
+    role、schema_source、semantic_version）；
+  - `table-mapping-detail`（`entity` 参数）200 单行；`join-mapping-list/detail` join_path
+    两步（work_orders→work_parts→spare_parts）；`enum-meaning-list/detail`
+    enum_value R01/business_meaning；`metric-list/detail` aggregation avg/measure/grain/
+    time_field/filters；
+  - S3b：`limit=1` 窗口仍生效（1 行）。
+- **L4 消费演示（Round 1 BLOCKED）→ PASS**：仅用授权读取面机械重建"SQL 生成依据说明"：
+  表 `service.work_orders`（5 列含 business_key 标注）、枚举 R01=已完成工单、连接
+  forward `consumes-part` 两跳路径、指标口径 avg(repair-duration) grain equipment-id
+  time created-date filter status-code='R01'，产出 SELECT…JOIN…WHERE…GROUP BY 样本（见本
+  轮存档输出，临时脚本已删除）。
+- **R5/A8 export 面（Round 1 BLOCKED）→ PASS（trig/json-ld）**：grant key 导出 200 且
+  含 TM_WO/JM/EM/MT 语句（trig 10259 字节、json-ld 14610 字节）；nogrant 导出隐藏受保护
+  TM_SP/MT、保留公共 TM_WO（H-B 整体隐藏 + grant 超集成立）。HTTP export 路由仅接受
+  `trig|json-ld|turtle`（`n-quads` 400 属路由合同，非缺陷）。**turtle 200 但载荷为空 →
+  缺陷 D3（见下）**。
+- **L3 授权回归**：模板面 nogrant 隐藏 TM_SP 保留 TM_WO/TM_PS、metric-list 空、受保护
+  detail 与真不存在 detail 逐字节相等（200 空集）；`resources/{iri}` 404 形状与 R3.0-004
+  已验收合同一致（detail 为 `Resource not found: {请求 IRI}`，受保护与真不存在同形；本轮
+  驱动对"不同 IRI 逐字节相等"的更强断言失败属驱动口径过严，已核对已验收测试
+  `test_resource_route_returns_not_found_for_protected_member` 断言形状相同，非缺陷）。
+- **A10 全量**：`cd backend && uv run pytest` → **929 passed, 11 skipped**（44s；较 Round 1
+  +1 passed 为新 export 测试，+1 skipped 为未设门控环境变量的真实存储回归）。
+- **L1**：`alembic current` 仍 `0032_semantic_protection_sets`（无新 migration）；backend/
+  frontend 健康。
+- Round 1 通过项（S1/S2/S4-S7、B、F、R1-R4、L3 其余）未受修复影响（修复仅触及模板前缀、
+  export 缺图门控与 config 常量抽取），由全量 pytest 与本轮授权/模板回归覆盖。
+
+#### 缺陷与观察
+
+- **D3（MODERATE，既有平台缺陷，非本需求引入；由 D2 解封后暴露）**：graph-set export
+  `turtle` 真实存储上返回 200 空载荷。根因：Oxigraph 单图 dump 为无 GRAPH 块的 trig，
+  rdflib `Dataset.parse` 将其落入 default graph，而 `_serialize` turtle 分支排除
+  `urn:x-rdflib:default` → 合并图为空（trig/json-ld 不受影响）。单元测试桩内容带 GRAPH
+  块故通过。复现：任意含本体图的项目 `GET /api/semantic/graph-sets/{gs}/export?format=turtle`
+  → 200，正文仅 1 字节；`format=trig` 同项目 402+ 字节含语句。turtle 分支在本变更集中未
+  修改（属既有代码）。窄修复建议：按图 IRI 定向 parse 进命名图，或 turtle 合并时纳入
+  default graph。设计 §7 A5 未单独强制 turtle，R3.0-003 验收以语句承载与隐藏为准（trig/
+  json-ld 已证），故不判本需求 FAIL。
+- 观察：`semantic_base_iri` 若经环境覆盖为非默认值，模板前缀仍取默认常量（代码注释已声明
+  该限制，静态模板无法读 Settings）；本地实验用默认值，仅记录为残余限制。
+
+#### 未执行用例
+
+- 无 BLOCKED 项。turtle 格式的"含映射语句"断言 FAIL（D3，已定性为既有缺陷）。
+
+#### 清理确认
+
+- 一次性驱动 `/tmp/r3003_r2_live.py` 与诊断探针均已删除；fixture 项目（r3r2-live/r2diag/
+  r2exp）与 key 全部删除（复查 leftover 为空）；未新增仓库文件。
+
+#### 复测建议
+
+R3.0-003 可收口（PASS）。建议主 agent：① 将 legacy `semantic/op/` 模板错位与 D3 turtle 空
+载荷作为平台既有缺陷另立修复项（均非本需求回归）；② 若需 turtle 可用，修复后补一条真实
+存储级 export turtle 内容断言。

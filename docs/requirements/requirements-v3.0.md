@@ -5,8 +5,9 @@
 - 文档状态：总体目标已确认；R3.0-001 已完成（2026-08-22）；R3.0-004 已完成（2026-08-26 实现并
   通过独立测试 Round 1 PASS，Project 级 PostgreSQL 保护集）；R3.0-007 已完成（2026-08-26 实现并
   通过独立测试 Round 1 PASS，读模型图限定与 LIMIT 截断修复）；R3.0-002 已完成（2026-08-26 实现
-  并通过独立测试 Round 1 PASS，多切片建模流程机械增量）；R3.0-003、R3.0-005、R3.0-006 已补充
-  概要设计边界，仍待详细设计、实现与验收
+  并通过独立测试 Round 1 PASS，多切片建模流程机械增量）；R3.0-003 已完成（2026-08-27 实现并通过
+  独立测试 Round 2 PASS——Round 1 发现新模板命名空间错位与既有 export 缺图 500 两缺陷，修复后
+  复测通过）；R3.0-005、R3.0-006 已补充概要设计边界，仍待详细设计、实现与验收
 - 基础版本：`docs/requirements/requirements-v2.3.md` 的建模团队与通用语义查询基线
 - 关联版本：`docs/requirements/requirements-v1.0.md` 的项目/本体权限边界；
   `docs/requirements/requirements-v2.4.md` 为独立的 RDF Literal 能力，不是本版本前置
@@ -23,7 +24,10 @@
 - R3.0-007 交付设计与测试计划：
   `docs/delivery/designs/2026-08-26-r3-0-007-read-model-graph-scoping-design.md`、
   `docs/delivery/test-plans/2026-08-26-r3-0-007-read-model-graph-scoping-test-plan.md`
-- 更新日期：2026-08-26
+- R3.0-003 交付设计与测试计划：
+  `docs/delivery/designs/2026-08-26-r3-0-003-relational-schema-mapping-design.md`、
+  `docs/delivery/test-plans/2026-08-26-r3-0-003-relational-schema-mapping-test-plan.md`
+- 更新日期：2026-08-27
 
 ## 1. 背景与目标
 
@@ -102,7 +106,7 @@ v3.0 的最终目标是：业务事实仍由 PostgreSQL 保存；Ontology 只作
 | --- | --- | --- | --- | --- |
 | R3.0-001 | 场景资料与 PostgreSQL 数据基线 | P0 | `已完成（2026-08-22）` | 独立测试 T1～T5 PASS |
 | R3.0-002 | 完整场景多切片建模流程 | P0 | `已完成（2026-08-26）` | 独立测试 Round 1 PASS（机械验证） |
-| R3.0-003 | 纯语义 Ontology 与关系型 Schema 映射 | P0 | `概要设计，待细化/实现` | 后续阶段 |
+| R3.0-003 | 纯语义 Ontology 与关系型 Schema 映射 | P0 | `已完成（2026-08-27）` | 独立测试 Round 2 PASS（Round 1 缺陷修复后复测） |
 | R3.0-004 | 主体绑定的语义知识访问控制 | P0 | `已完成（2026-08-26）` | 独立测试 Round 1 PASS |
 | R3.0-005 | Ontology 引导的 SQL 问数链路 | P0 | `概要设计，待细化/实现` | 后续阶段 |
 | R3.0-006 | 真实建模与端到端问数验收 | P0 | `概要设计，待细化/验收` | 后续阶段 |

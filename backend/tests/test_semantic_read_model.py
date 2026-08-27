@@ -1,3 +1,8 @@
+import json
+import os
+
+import pytest
+
 from app.services.semantic_read_model import ReadModelError, SemanticReadModelService
 
 
@@ -809,3 +814,206 @@ def test_entity_detail_values_addition_preserves_decorated_row_shape():
     assert item["evidence_status"] == "not_applicable"
     assert item["iri"] == "https://r307.test/entity/T1"
     assert item["label"] == "r307-target"
+
+
+# ------------------------------------------------------------------
+# R3.0-003 relational schema mapping read models
+# ------------------------------------------------------------------
+
+R3003_ONTOLOGY_GRAPH = "http://op/s/graph/ontology/ov-r3003"
+R3003_BASE = "http://op/s/"
+
+
+def _r3003_table_mapping_rows():
+    return [
+        {
+            "table_mapping": f"{R3003_BASE}table-mapping/tm-1",
+            "label": "work orders mapping",
+            "table_name": "service.work_orders",
+            "mapped_class": f"{R3003_BASE}class/WorkOrder",
+            "column_mappings": json.dumps(
+                [
+                    {
+                        "property_iri": f"{R3003_BASE}property/workOrderNo",
+                        "column": "work_order_no",
+                        "role": "business_key",
+                    }
+                ],
+                ensure_ascii=False,
+            ),
+            "schema_source": "schema-dump-2026-08-22",
+            "semantic_version": "v1",
+            "graph": R3003_ONTOLOGY_GRAPH,
+        }
+    ]
+
+
+def test_r3003_table_mapping_list_passes_detail_fields():
+    resolver = FakeScopeResolver(_resolution([R3003_ONTOLOGY_GRAPH]))
+    store = FakeStore({"table-mapping-list": _r3003_table_mapping_rows()})
+    service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
+
+    item = service.read_model("gs-1", "table-mapping-list")["items"][0]
+
+    assert item["iri"] == f"{R3003_BASE}table-mapping/tm-1"
+    assert item["label"] == "work orders mapping"
+    detail = item["detail_fields"]
+    assert detail["table_name"] == "service.work_orders"
+    assert detail["mapped_class"] == f"{R3003_BASE}class/WorkOrder"
+    assert detail["schema_source"] == "schema-dump-2026-08-22"
+    assert detail["semantic_version"] == "v1"
+    assert json.loads(detail["column_mappings"])[0]["column"] == "work_order_no"
+
+
+def test_r3003_detail_templates_bind_entity_iri():
+    resolver = FakeScopeResolver(_resolution([R3003_ONTOLOGY_GRAPH]))
+    store = FakeStore({"table-mapping-detail": _r3003_table_mapping_rows()})
+    service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
+    entity = f"{R3003_BASE}table-mapping/tm-1"
+
+    try:
+        service.read_model("gs-1", "table-mapping-detail")
+        raise AssertionError("expected ReadModelError")
+    except ReadModelError as exc:
+        assert "requires an entity IRI" in str(exc)
+
+    item = service.read_model("gs-1", "table-mapping-detail", entity_iri=entity)["items"][0]
+    assert item["detail_fields"]["table_name"] == "service.work_orders"
+    assert f"VALUES ?table_mapping {{ <{entity}> }}" in store.last_query
+
+
+def test_r3003_all_mapping_templates_declare_detail_variables():
+    from app.services.semantic_sparql_templates import get_template
+
+    for name in (
+        "table-mapping-list",
+        "table-mapping-detail",
+        "join-mapping-list",
+        "join-mapping-detail",
+        "enum-meaning-list",
+        "enum-meaning-detail",
+        "metric-list",
+        "metric-detail",
+    ):
+        template = get_template(name)
+        assert template.detail_variables, name
+        assert template.required_roles == ("asserted_ontology",), name
+
+
+def test_r3003_existing_templates_stay_without_detail_fields():
+    """Byte-regression: templates without declared detail variables keep
+    their historical response shape (no detail_fields key)."""
+    resolver = FakeScopeResolver(_resolution([R3003_ONTOLOGY_GRAPH]))
+    store = FakeStore(
+        {
+            "schema-summary": [
+                {
+                    "class": f"{R3003_BASE}class/WorkOrder",
+                    "label": "Work Order",
+                    "graph": R3003_ONTOLOGY_GRAPH,
+                }
+            ]
+        }
+    )
+    service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
+    item = service.read_model("gs-1", "ontology-schema-summary")["items"][0]
+    assert "detail_fields" not in item
+
+
+def test_r3003_access_view_hides_rows_by_detail_field_and_embedded_json():
+    """Authorization A-consistency: a mapping row whose mapped_class or
+    embedded column_mappings JSON references an unauthorized member is
+    hidden entirely, without any change to decision logic."""
+    from app.services.semantic_access import SemanticAccessView
+
+    unauthorized = f"{R3003_BASE}class/ProtectedParty"
+    rows = [
+        _r3003_table_mapping_rows()[0],
+        {
+            "table_mapping": f"{R3003_BASE}table-mapping/tm-2",
+            "label": "protected mapping",
+            "table_name": "service.protected",
+            "mapped_class": unauthorized,
+            "column_mappings": json.dumps(
+                [
+                    {
+                        "property_iri": f"{R3003_BASE}property/protectedNo",
+                        "column": "protected_no",
+                        "role": "business_key",
+                    }
+                ]
+            ),
+            "graph": R3003_ONTOLOGY_GRAPH,
+        },
+    ]
+    resolver = FakeScopeResolver(_resolution([R3003_ONTOLOGY_GRAPH]))
+    store = FakeStore({"table-mapping-list": rows})
+    view = SemanticAccessView(
+        requires_filtering=True,
+        _unauthorized_iris=frozenset({unauthorized, f"{R3003_BASE}property/protectedNo"}),
+    )
+    service = SemanticReadModelService(
+        rdf_store=store, scope_resolver=resolver, access_view=view
+    )
+    items = service.read_model("gs-1", "table-mapping-list")["items"]
+    assert [item["iri"] for item in items] == [f"{R3003_BASE}table-mapping/tm-1"]
+
+
+# ------------------------------------------------------------------
+# R3.0-003 D1 regression: templates must read the compiler's vocabulary
+# namespace against a real SPARQL engine (Oxigraph). Gated like the
+# sparql-runner tests: requires a running local Oxigraph server.
+# ------------------------------------------------------------------
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_OXIGRAPH_SPARQL_RUNNER_TESTS") != "1",
+    reason="requires a running local Oxigraph server",
+)
+def test_r3003_table_mapping_list_reads_compiler_vocabulary_on_real_store():
+    import uuid
+
+    from app.core.config import Settings
+    from app.repositories.rdf_store import RdfStoreRepository
+    from app.services.semantic_command_compiler import compile_command
+
+    token = uuid.uuid4().hex
+    settings = Settings(
+        semantic_graph_iri_prefix=f"http://ontology-platform.test/r3003-d1/{token}/graph/",
+    )
+    # semantic_base_iri stays at the default: the compiler writes predicates
+    # into {base}/vocab/ and the template prefix must resolve to the same
+    # namespace, or this test fails — that is exactly the D1 regression.
+    compiled = compile_command(
+        "create_table_mapping",
+        {
+            "ontology_id": "o1",
+            "table_mapping_id": "tm-d1",
+            "name": "work orders mapping",
+            "mapped_class_iri": f"{settings.semantic_base_iri.rstrip('/')}/class/WorkOrder",
+            "table_name": "service.work_orders",
+            "column_mappings": [
+                {
+                    "property_iri": f"{settings.semantic_base_iri.rstrip('/')}/property/workOrderNo",
+                    "column": "work_order_no",
+                    "role": "business_key",
+                },
+            ],
+            "schema_source": "schema-dump-2026-08-22",
+        },
+        settings,
+    )
+    ontology_graph = compiled.target_graph_iris[0]
+    statements = " ".join(f"{s} {p} {o} ." for s, p, o, _g in compiled.delta.inserts)
+    store = RdfStoreRepository(os.environ.get("OXIGRAPH_URL", "http://127.0.0.1:7878"))
+    try:
+        store.update_sparql(f"INSERT DATA {{ GRAPH <{ontology_graph}> {{ {statements} }} }}")
+        resolver = FakeScopeResolver(_resolution([ontology_graph]))
+        service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
+        items = service.read_model("gs-1", "table-mapping-list")["items"]
+        assert [item["iri"] for item in items] == [
+            f"{settings.semantic_base_iri.rstrip('/')}/table-mapping/tm-d1"
+        ]
+        assert items[0]["detail_fields"]["table_name"] == "service.work_orders"
+    finally:
+        store.update_sparql(f"CLEAR GRAPH <{ontology_graph}>")
