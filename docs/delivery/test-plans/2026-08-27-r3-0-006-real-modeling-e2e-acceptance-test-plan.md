@@ -3,7 +3,9 @@
 - 日期：2026-08-27
 - 状态：用户 2026-08-27 变更实现方向（删除建模次数/Agent 数量硬校验、M3 重述为协调
   Agent 判断拆分 + 多 Ontology 串行建模）；Round 4 REVISE 三项修订后 **Round 5 复核
-  PASS**（Low 措辞修订与聚合语义澄清已并入）；下一步为 T0 机械增量实现与验收
+  PASS**；M1～M3 已实现（commit `0cfabf7`）并通过 **T0 独立验收 Round 1 PASS**
+  （`docs/delivery/test-docs/2026-08-27-r3-0-006-t0-mechanical-increments-test.md`）；
+  下一步为 T1 前置与用户授权后的真实 modeling start
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-006
 - 交付设计：`docs/delivery/designs/2026-08-27-r3-0-006-real-modeling-e2e-acceptance-design.md`
 
@@ -67,7 +69,7 @@ uv run --project backend python -m modeling_team run \
 | T0-2 | M1 守恒：`new-scope-business-slice` 等既有非 formal v2 task 仍绑 R2.3-002 ledger，行为字节不变；R2.3-003/005/008/009 ledger 行为不变；R3.0-002 既有 multi-slice ledger 预留断言按设计声明改写为"无预留"（登记的行为变更，非回归） | 守恒测试通过 |
 | T0-3 | M2：Runner 角色无关化——三角色 profile 的 `run` 可通过 `start()`（依赖图按 profile 实际角色集推导、无 `role_agents["acceptance"]` 一类 KeyError）；formal 四角色依赖图字节不变 | 单元/守恒测试通过 |
 | T0-4 | M2：额外角色兼容——profile 携带核心三角色之外的额外角色时加载与启动通路不拒绝（`contracts.py` 封闭注册表、角色集精确相等、`agent_id == role` 恒等、通信边精确相等四处同步放宽为包含性检查）；缺任一核心三角色时 fail-closed 类型化错误；formal 分支四处行为字节不变 | 单元/守恒测试通过 |
-| T0-5a | M3 合同扩展：`topology_decision.ontology_plan`（`single_ontology` 时必须缺省、否则必填；`[{name, slice_ids}]` 结构、切片引用闭合、总数 ≥2、每切片恰归属一个 Ontology）；既有无该字段的 artifact 校验行为字节不变。实现提示（评审 Round 3）：门现行为先校验 topology-decision 再加载 scenario map，切片闭合校验需先取得 map 的 slice 清单（或把 slice_ids 传入扩展校验器）；用例须覆盖"map 缺失 + 含 `ontology_plan` 的决策"的拒绝路径 | 校验器单元/守恒测试通过 |
+| T0-5a | M3 合同扩展：`topology_decision.ontology_plan`（`single_ontology` 时必须缺省、否则必填；`[{name, slice_ids}]` 结构、切片引用闭合、总数 ≥2、每切片恰归属一个 Ontology）；选择 `single_ontology` 的存量 artifact 校验行为字节不变（登记行为变更：非 single 选择的存量 artifact 现在产出 `topology_missing_ontology_plan`，仓库内无此类冻结资产受影响）。实现提示（评审 Round 3）：门现行为先校验 topology-decision 再加载 scenario map，切片闭合校验需先取得 map 的 slice 清单（或把 slice_ids 传入扩展校验器）；用例须覆盖"map 缺失 + 含 `ontology_plan` 的决策"的拒绝路径 | 校验器单元/守恒测试通过 |
 | T0-5b | M3 执行闭环：含 `ontology_plan` 的决策放行后，PlatformScope 依决策创建全部 Ontology（门放行挂点、runner 单点写 scope；首条目 = scope 预建 Ontology、其余 N−1 由 runner 建）；ontology_id 交付双通道（gate-open 消息补充投递 + Protocol 以 `get_project_build_context` 列表为准，任务文本措辞同步）；单 Ontology 路径不回归 | 单元/守恒测试通过 |
 | T0-5c | M3 清理/终态：多 Ontology run 的 `_terminal_state` ownership = **聚合语义**下 involved 恰等于 `ontology_plan` 全集（每 session involved 为计划内单例，跨 session 并集等于全集）；完成判定 = 每 Ontology 恰一 completed owned session 且无 in-flight lease；`_has_writes`/final context/删除证据覆盖全部 Ontology；retained-handoff 证据按 Ontology 集合记录——成功多 Ontology run 到达 `retained-pending-acceptance` 而非 `blocked`/`failed-written-retained`；单 Ontology/formal 清理路径字节不变 | 单元/守恒测试通过 |
 | T0-6 | M1～M3 全部增量通过 `modeling_team` 全量 pytest 与 ruff（无新增告警），实现 commit 落档 | 全绿 + commit 在档 |

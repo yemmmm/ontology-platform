@@ -111,8 +111,10 @@
   新增可选字段 `ontology_plan`（`selected_option = single_ontology` 时必须缺省；其他
   选项时必填），值为机械结构清单 `[{name, slice_ids}]`（名称非空、切片引用必须在
   场景地图 `map_dangling_reference` 闭合、总数 ≥2 且每个切片恰归属一个 Ontology）。
-  同步登记三处改动：合同 JSON、`scenario_map.py` 校验器、守恒测试（既有无
-  `ontology_plan` 的 artifact 与单 Ontology 路径行为字节不变）。该扩展是 R3.0-002
+  同步登记三处改动：合同 JSON、`scenario_map.py` 校验器、守恒测试（选择
+  `single_ontology` 的存量 artifact 与单 Ontology 路径行为字节不变；登记行为变更：非
+  single 选择的存量 artifact 现在产出 `topology_missing_ontology_plan`，仓库内无此类
+  冻结资产受影响）。该扩展是 R3.0-002
   冻结合同的**登记修订**（见 §2 例外条款），不是"已冻结语义决策输出"——语义内容由
   建模团队在本轮真实 run 中产出，机械合同由本增量扩展；
 - `PlatformScope` 在 multi-slice scope 模式下按已放行的拓扑决策（含 `ontology_plan`）

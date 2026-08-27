@@ -3658,7 +3658,8 @@ class TeamRunner:
         delivers the full ontology-id set to the Protocol Agent.  Apply or
         delivery failures are recorded evidence (runtime/infrastructure) and
         never terminate the run; ``PlatformScope.apply_ontology_plan`` stays
-        idempotent so the next cycle can retry.
+        idempotent so a later resume (or a fresh run over the same scope)
+        can retry.
         """
 
         plan = decision.get(TOPOLOGY_ONTOLOGY_PLAN_FIELD)
