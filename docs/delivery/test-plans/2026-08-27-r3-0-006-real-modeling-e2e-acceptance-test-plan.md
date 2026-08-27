@@ -1,8 +1,9 @@
 # R3.0-006 真实建模与端到端问数验收 — 共享测试计划
 
 - 日期：2026-08-27
-- 状态：计划评审通过（Round 3 复核 PASS；Round 1/2 的 High 问题均已修订）；下一步为
-  T0 机械增量实现与验收
+- 状态：Round 3 复核 PASS 后用户于 2026-08-27 变更实现方向（删除建模次数/Agent 数量
+  硬校验、M3 重述为协调 Agent 判断拆分 + 多 Ontology 串行建模）；已按新方向修订 T0 与
+  命令段，**待重新计划评审**
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-006
 - 交付设计：`docs/delivery/designs/2026-08-27-r3-0-006-real-modeling-e2e-acceptance-design.md`
 
@@ -41,12 +42,9 @@ uv run --project backend python -m modeling_team baseline \
   --run-id r30006-<date>-start<N> \
   --profile modeling_team/profiles/r3-0-002-modeling-team.yaml \
   --task modeling_team/tasks/r3-0-002-multi-slice.yaml
-# attempt 预算登记（依赖设计 §3.1 M1 增量：R3.0-006 ledger 注册后此命令才可执行；
-# 授权 ID 由用户授权记录决定）
-uv run --project backend python -m modeling_team authorize-initial \
-  --requirement-id R3.0-006 --additional-starts 3 \
-  --authorization-id <user-auth-id> --reference <user-auth-id>
-# 真实 run 启动形态（v2 Task 强制 --freeze-started-at；授权与预算登记之后才可执行）
+# attempt 记录：不经代码硬控（无 R3.0-006 ledger、无 authorize-initial）；每次 start 的
+# 轮次、run-id 与授权消耗由 Delivery Agent 在交付记录与每轮中文总结中自行记录
+# 真实 run 启动形态（v2 Task 强制 --freeze-started-at；用户显式授权之后才可执行）
 uv run --project backend python -m modeling_team run \
   --profile modeling_team/profiles/r3-0-002-modeling-team.yaml \
   --task modeling_team/tasks/r3-0-002-multi-slice.yaml \
@@ -65,10 +63,10 @@ uv run --project backend python -m modeling_team run \
 
 | # | 用例 | 判定 |
 | --- | --- | --- |
-| T0-1 | M1：`R3.0-006` ledger 注册（cap 0、increment 3、独立文件名；旗标集 = `strict_sequence`/`allow_incomplete_modeling_quality_repair`/`allow_variable_authorization` 全 True，循 R2.3-003 先例并逐项断言）；`authorize-initial --requirement-id R3.0-006 --additional-starts 3` 成功；R2.3-003 initial_authorization 行为不变 | 单元/CLI 测试通过 |
-| T0-2 | M1：multi-slice run 绑定 R3.0-006 ledger；`new-scope-business-slice` 等既有非 formal v2 task 仍绑 R2.3-002 | 守恒测试通过 |
-| T0-3 | M2：三角色 profile 的 `run` 可通过 `start()`（coordinator 依赖集无 acceptance 键、无 KeyError）；formal 四角色依赖图字节不变 | 单元/守恒测试通过 |
-| T0-4 | M2：三角色 run 终态后保留 handoff 判定按实际角色集（恰三角色 completed）；formal 四角色合同不变 | 单元/守恒测试通过 |
+| T0-1 | M1：multi-slice run 不经 StartLedger 预算门（无预留/无拒绝，不落 R2.3-002 ledger 的 cap-2 硬门）；attempt 由 Agent 在交付记录中自记录（记录格式核对：轮次、run-id、授权消耗） | 单元测试 + 记录面核对 |
+| T0-2 | M1 守恒：`new-scope-business-slice` 等既有非 formal v2 task 仍绑 R2.3-002 ledger，行为字节不变；R2.3-003/005/008/009 ledger 行为不变 | 守恒测试通过 |
+| T0-3 | M2：Runner 角色无关化——三角色 profile 的 `run` 可通过 `start()`（依赖图按 profile 实际角色集推导、无 `role_agents["acceptance"]` 一类 KeyError）；formal 四角色依赖图字节不变 | 单元/守恒测试通过 |
+| T0-4 | M2：额外角色兼容——profile 携带核心三角色之外的额外角色时加载与启动通路不拒绝（为动态 Agent 留通路）；缺任一核心三角色时 fail-closed 类型化错误 | 单元/守恒测试通过 |
 | T0-5a | M3 合同扩展：`topology_decision.ontology_plan`（`single_ontology` 时必须缺省、否则必填；`[{name, slice_ids}]` 结构、切片引用闭合、总数 ≥2、每切片恰归属一个 Ontology）；既有无该字段的 artifact 校验行为字节不变。实现提示（评审 Round 3）：门现行为先校验 topology-decision 再加载 scenario map，切片闭合校验需先取得 map 的 slice 清单（或把 slice_ids 传入扩展校验器）；用例须覆盖"map 缺失 + 含 `ontology_plan` 的决策"的拒绝路径 | 校验器单元/守恒测试通过 |
 | T0-5b | M3 执行闭环：含 `ontology_plan` 的决策放行后，PlatformScope 依决策创建全部 Ontology（门放行挂点、runner 单点写 scope）且协议上下文携带全部 ontology_id；单 Ontology 路径不回归 | 单元/守恒测试通过 |
 | T0-6 | M1～M3 全部增量通过 `modeling_team` 全量 pytest 与 ruff（无新增告警），实现 commit 落档 | 全绿 + commit 在档 |
@@ -79,7 +77,7 @@ uv run --project backend python -m modeling_team run \
 | --- | --- | --- |
 | T1-1 | 服务健康三项 + fixture 双装载稳定 | 全部通过 |
 | T1-2 | R3.0-001～005、007 证据在档；增量 6(b) commit `12fab82` 在基线内 | 全部在档 |
-| T1-3 | 用户显式授权 + StartLedger 初始预算 3 starts 登记 | ledger 可查 |
+| T1-3 | 用户显式授权 + Delivery Agent attempt 记录建立（轮次、run-id、授权额度 3 starts；无 ledger 登记） | 记录在档 |
 | T1-4 | Priority L0：授权后 20 分钟内进入第一次真实 start | 时间戳差 ≤ 20 分钟 |
 | T1-5 | A0 预检：codex runtime 缺省路由一次最小调用可用 | 调用成功留证 |
 | T1-6 | `scripts/r3-0-006/consumer_rounds.py` 驱动就绪：问句清单与判分输入为外部 JSON；判分禁止子串/受保护口径源自保护集控制面实际成员（不硬编码 fixture 命名）；不改 `scripts/r3-0-005/` 冻结脚本（**时机：建模终态后、Phase B/C 前**，不是 start 前置，不占 20 分钟门） | 脚本与输入文件核对 |
@@ -144,7 +142,7 @@ uv run --project backend python -m modeling_team run \
 | --- | --- | --- |
 | T7-1 | 证据归档到 `docs/delivery/evidence/<日期>-r3-0-006/` 且未改动 | 目录核对 |
 | T7-2 | 验收后按既有规则清理运行时临时物；保留项列明 | 清单核对 |
-| T7-3 | StartLedger 预算消耗/退款与逐轮总结一致 | ledger 核对 |
+| T7-3 | Agent 自记录的 attempt 消耗与逐轮总结一致（无 ledger，记录面核对） | 记录核对 |
 | T7-4 | 每轮终态中文总结（四层分类 + 预算）；多轮附对比表 | 会话记录核对 |
 
 ## 4. 判定规则与完成门
@@ -163,7 +161,8 @@ uv run --project backend python -m modeling_team run \
 ## 5. 真实运行记录（L 轮，独立于机械用例）
 
 每轮记录：run-id、起止时间、走到哪一步、卡死层（建模质量/平台合同/协作路由/运行基础
-设施）、Agent 行为是否正确、窄修复（含 commit）、预算消耗/退款。多轮结束时附逐轮对比表。
+设施）、Agent 行为是否正确、窄修复（含 commit）、attempt 消耗（Agent 自记录）。多轮结束
+时附逐轮对比表。
 
 ### 轮次记录
 
@@ -172,6 +171,6 @@ uv run --project backend python -m modeling_team run \
 ## 6. 清理
 
 - 测试过程中的临时过程文件在完成后删除；证据目录、run workspace（保留期内）与
-  StartLedger 记录为保留项。
+  Agent 自记录的 attempt 交付记录为保留项。
 - 若创建最小第二 Ontology fixture（设计 §6.1），验收结束后从保护集移除并删除该
   fixture Ontology，清理动作留证。
