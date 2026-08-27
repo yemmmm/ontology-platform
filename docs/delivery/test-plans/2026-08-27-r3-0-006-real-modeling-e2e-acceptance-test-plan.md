@@ -1,7 +1,8 @@
 # R3.0-006 真实建模与端到端问数验收 — 共享测试计划
 
 - 日期：2026-08-27
-- 状态：待计划审查
+- 状态：计划评审通过（Round 3 复核 PASS；Round 1/2 的 High 问题均已修订）；下一步为
+  T0 机械增量实现与验收
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-006
 - 交付设计：`docs/delivery/designs/2026-08-27-r3-0-006-real-modeling-e2e-acceptance-design.md`
 
@@ -40,10 +41,17 @@ uv run --project backend python -m modeling_team baseline \
   --run-id r30006-<date>-start<N> \
   --profile modeling_team/profiles/r3-0-002-modeling-team.yaml \
   --task modeling_team/tasks/r3-0-002-multi-slice.yaml
-# attempt 预算登记（授权 ID 由用户授权记录决定）
+# attempt 预算登记（依赖设计 §3.1 M1 增量：R3.0-006 ledger 注册后此命令才可执行；
+# 授权 ID 由用户授权记录决定）
 uv run --project backend python -m modeling_team authorize-initial \
   --requirement-id R3.0-006 --additional-starts 3 \
   --authorization-id <user-auth-id> --reference <user-auth-id>
+# 真实 run 启动形态（v2 Task 强制 --freeze-started-at；授权与预算登记之后才可执行）
+uv run --project backend python -m modeling_team run \
+  --profile modeling_team/profiles/r3-0-002-modeling-team.yaml \
+  --task modeling_team/tasks/r3-0-002-multi-slice.yaml \
+  --run-id r30006-<date>-start<N> --scope <scope.yaml> \
+  --freeze-started-at <ISO8601> --enable-outer-input-fifo
 ```
 
 真实 run 启动、Consumer 问数轮与 RDF 检查由设计 §5～§8 的流程命令在运行时执行并逐条
@@ -52,6 +60,18 @@ uv run --project backend python -m modeling_team authorize-initial \
 用例面、RDF 导出/SPARQL）。
 
 ## 3. 用例矩阵
+
+### T0 机械增量 M1～M3（真实 run 启动前置，实现阶段验收）
+
+| # | 用例 | 判定 |
+| --- | --- | --- |
+| T0-1 | M1：`R3.0-006` ledger 注册（cap 0、increment 3、独立文件名；旗标集 = `strict_sequence`/`allow_incomplete_modeling_quality_repair`/`allow_variable_authorization` 全 True，循 R2.3-003 先例并逐项断言）；`authorize-initial --requirement-id R3.0-006 --additional-starts 3` 成功；R2.3-003 initial_authorization 行为不变 | 单元/CLI 测试通过 |
+| T0-2 | M1：multi-slice run 绑定 R3.0-006 ledger；`new-scope-business-slice` 等既有非 formal v2 task 仍绑 R2.3-002 | 守恒测试通过 |
+| T0-3 | M2：三角色 profile 的 `run` 可通过 `start()`（coordinator 依赖集无 acceptance 键、无 KeyError）；formal 四角色依赖图字节不变 | 单元/守恒测试通过 |
+| T0-4 | M2：三角色 run 终态后保留 handoff 判定按实际角色集（恰三角色 completed）；formal 四角色合同不变 | 单元/守恒测试通过 |
+| T0-5a | M3 合同扩展：`topology_decision.ontology_plan`（`single_ontology` 时必须缺省、否则必填；`[{name, slice_ids}]` 结构、切片引用闭合、总数 ≥2、每切片恰归属一个 Ontology）；既有无该字段的 artifact 校验行为字节不变。实现提示（评审 Round 3）：门现行为先校验 topology-decision 再加载 scenario map，切片闭合校验需先取得 map 的 slice 清单（或把 slice_ids 传入扩展校验器）；用例须覆盖"map 缺失 + 含 `ontology_plan` 的决策"的拒绝路径 | 校验器单元/守恒测试通过 |
+| T0-5b | M3 执行闭环：含 `ontology_plan` 的决策放行后，PlatformScope 依决策创建全部 Ontology（门放行挂点、runner 单点写 scope）且协议上下文携带全部 ontology_id；单 Ontology 路径不回归 | 单元/守恒测试通过 |
+| T0-6 | M1～M3 全部增量通过 `modeling_team` 全量 pytest 与 ruff（无新增告警），实现 commit 落档 | 全绿 + commit 在档 |
 
 ### T1 前置与环境
 
@@ -109,13 +129,14 @@ uv run --project backend python -m modeling_team authorize-initial \
 | T5-5 | Q11（范围外）无法确认/超范围，不编造 SQL | 转录审查 |
 | T5-6 | 适配器连接级只读：写语句被拒绝且数据零变更 | 抽测一次 |
 
-### T6 RDF 无业务行实例（建模层收尾）
+### T6 RDF 无业务行实例（建模层收尾，全量确定性——设计 §8 / M4）
 
 | # | 用例 | 判定 |
 | --- | --- | --- |
-| T6-1 | RDF 导出与 SPARQL 双路径均不命中 fixture 行标识探针（`AST-001`、`WO-1001`、`INC-1001`、`SHIP-1001` 等） | 零命中 |
-| T6-2 | 个体仅为语义资源本体（类/属性/映射/指标/枚举含义） | 抽查清单 |
-| T6-3 | PostgreSQL 行数与 C01～C08 复验稳定（业务事实唯一存储） | verify 全绿 |
+| T6-1 | **全量个体枚举**：导出 RDF 中每个命名个体进入清单并逐个分类（词汇/语义资源个体 vs 非词汇个体）；清单与分类落证 `rdf-check/` | 清单完整可复核 |
+| T6-2 | **非词汇个体计数为 0**：任何一个即 FAIL；不以标识符形态（业务 ID/UUID/客户名/其他 IRI）限定检查范围 | 计数 = 0 |
+| T6-3 | 探针冗余复证：fixture 行标识（`AST-001`、`WO-1001`、`INC-1001`、`SHIP-1001` 等）导出与 SPARQL 双路径零命中 | 零命中 |
+| T6-4 | PostgreSQL 行数与 C01～C08 复验稳定（业务事实唯一存储） | verify 全绿 |
 
 ### T7 清理与预算结算
 

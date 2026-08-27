@@ -1,7 +1,9 @@
 # R3.0-006 真实建模与端到端问数验收 — 交付设计
 
 - 日期：2026-08-27
-- 状态：待计划审查
+- 状态：计划评审通过（Round 1 REVISE 4 项 High、Round 2 REVISE 1 项 High 均已修订，
+  Round 3 复核 PASS）；下一步为实现 §3.1 M1～M3 机械增量（T0 验收），实现与测试通过
+  后方可申请用户授权真实 modeling start
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-006
 - 概要设计基线：`docs/delivery/designs/2026-08-25-v3-0-remaining-requirements-outline-design.md` §6
 - 前置实现基线：R3.0-001（2026-08-22）、R3.0-002（2026-08-26）、R3.0-003（2026-08-27）、
@@ -28,12 +30,16 @@
 ## 2. 非目标
 
 - 不新增平台功能、API、migration 或 UI；本需求是既有能力的真实运行与独立验收。
+  §3.1 的 M1～M3 是 `modeling_team/` 侧（建模实验机械层）的增量，平台产品代码零改动；
   平台外工具的唯一登记增量是 §7 的 R3.0-006 Consumer 驱动小脚本（新建，不改
   R3.0-005 冻结脚本）。
 - 不宣称业务数据安全成立：`scripts/r3-0-005/sql_exec_adapter.py` 只有连接级只读兜底，
   行/列/租户级数据安全归外部系统（R3.0-005 已冻结的生产替换边界继续适用）。
 - 不引入切片并行、自动一致性引擎、跨批次事务、崩溃恢复等未来产品化能力。
-- 不修改 R3.0-001～R3.0-005 的既有合同与冻结资产。
+- 不修改 R3.0-001～R3.0-005 的既有合同与冻结资产，**唯一例外**：§3.1 M3 对
+  R3.0-002 拓扑决策合同（`r3-0-002-scenario-map-contract.json` + `scenario_map.py`
+  校验器）的**加性扩展**（新增可选 `ontology_plan` 字段），已作为登记修订显式列出并
+  附守恒测试；除此之外任何冻结资产零改动。
 
 ## 3. 前置条件与授权门
 
@@ -41,13 +47,69 @@
 | --- | --- |
 | R3.0-002～R3.0-005 实现与独立测试证据 | 需求文档 §4 状态表与各自 evidence 目录 |
 | 增量 6(b) `preview_baseline`/`baseline` 分派 | commit `12fab82` + `test_r30002_runner_wiring.py` W4 用例 |
-| 用户显式授权真实 modeling start | 本设计通过计划审查后，用户在会话中显式授权；每次授权 3 次 fresh start |
-| attempt 预算登记 | `StartLedger.authorize-initial --requirement-id R3.0-006`（授权 ID 与引用由用户授权记录决定） |
+| 用户显式授权真实 modeling start | 本设计通过计划审查且 §3.1 M1～M3 增量实现并测试通过后，用户在会话中显式授权；每次授权 3 次 fresh start |
+| attempt 预算登记 | 依赖 M1 增量：`StartLedger` 注册 `R3.0-006` ledger（cap 0、increment 3、独立文件名），`authorize-initial --requirement-id R3.0-006 --additional-starts 3` 可执行（授权 ID 与引用由用户授权记录决定） |
 | 服务健康 | `systemctl --user` 单元 active；`curl --fail http://127.0.0.1:8001/api/health`；`curl --fail http://127.0.0.1:5173/` |
 | fixture 稳定 | `./scripts/load-industrial-service-v3-postgres.sh` 后 `verification/verify.sql` 全部 C01～C08 与基线一致 |
 
+### 3.1 启动前机械增量（M1～M3，实现并通过测试后方可启动真实 run）
+
+计划评审 Round 1 证实现有代码无法按本设计启动真实 run，以下机械增量是启动前置项。
+全部循 R3.0-002"机械增量"先例：只做确定性机制扩展，不含语义判断；每个增量配守恒测试
+（既有任务/合同字节不变）；实现与测试证据在真实 run 启动前落档。
+
+**M1 — R3.0-006 专属预算合同**（`modeling_team/start_ledger.py`、`modeling_team/runner.py`）
+
+- `_LEDGER_CONFIGS` 新增 `R3.0-006`：`initial_start_cap=0`、`authorization_increment=3`、
+  独立 `ledger_filename`/`lock_filename`（不与任何既有 ledger 共享文件）；旗标集循
+  R2.3-003/008/009 先例：`strict_sequence=True`、
+  `allow_incomplete_modeling_quality_repair=True`、`allow_variable_authorization=True`
+  （后续用户再授权可带不同正数额度，仍受严格消耗/前驱门约束）；
+- `initial_authorization` 接受 `R3.0-006`（恰 `+3`、必须是首事件，循 R2.3-003 先例；
+  R2.3-003 行为不变）；
+- `runner.py` v2 非 formal 分支的 ledger 解析：`multi_slice_workflow` run 解析 `R3.0-006`
+  ledger；其余非 formal v2 task 维持 `R2.3-002`（守恒测试覆盖 `new-scope-business-slice`
+  等既有任务仍绑 R2.3-002）。
+
+**M2 — 三角色启动与保留产物通路**（`modeling_team/runner.py`）
+
+- `start()` 的 `terminal_dependencies`：profile 无 acceptance 角色的非 formal multi-slice
+  run 中，coordinator 依赖集省略 acceptance 键；formal 四角色依赖图字节不变（守恒测试）；
+- `_completed_terminal_statuses` 与保留 handoff：完成角色集改为按 profile 实际角色集合
+  判定（三角色 run 要求恰 coordinator/modeling/protocol 三者 completed）；formal 四角色
+  合同不变；
+- `--freeze-started-at` 为 v2 Task 强制参数，真实启动命令必须携带（§5.1 已修正）。
+
+**M3 — 多 Ontology 执行闭环**（`modeling_team/references/r3-0-002-scenario-map-contract.json`、
+`modeling_team/scenario_map.py`、`modeling_team/platform_scope.py`、多切片任务合同）
+（平台侧零改动：Ontology 创建走既有 `POST /api/projects/{id}/ontologies`，不新增
+平台 API/MCP 工具）
+
+- **拓扑决策合同加性扩展（本增量第一项，评审 Round 2 H-1）**：现冻结合同的
+  `topology_decision` 是封闭六字段集，option 条目封闭为 `{option_id, assessment}`，
+  校验器 `scenario_map.py` 为封闭世界检查——多 Ontology 计划在现有合同下**没有合法
+  载体**，写入即 `topology_schema_mismatch`。扩展为：`topology_decision` 新增可选字段
+  `ontology_plan`（`selected_option = single_ontology` 时必须缺省；其他选项时必填），
+  值为机械结构清单 `[{name, slice_ids}]`（名称非空、切片引用必须在场景地图
+  `map_dangling_reference` 闭合、总数 ≥2 且每个切片恰归属一个 Ontology）。同步登记
+  三处改动：合同 JSON、`scenario_map.py` 校验器、守恒测试（既有无 `ontology_plan` 的
+  artifact 与单 Ontology 路径行为字节不变）。该扩展是 R3.0-002 冻结合同的**登记修订**
+  （见 §2 例外条款），不是"已冻结语义决策输出"——语义内容由建模团队在本轮真实 run
+  中产出，机械合同由本增量扩展；
+- `PlatformScope` 在 multi-slice scope 模式下按已放行的拓扑决策（含 `ontology_plan`）
+  创建并登记全部 Ontology，`read_protocol_context` 对 multi-slice run 返回全部
+  ontology_id（formal 单值合同不变）。挂点在拓扑门放行（`_multi_slice_gate_opened`
+  置位）后；run 内 runner 是 scope 的单点写者，无并发冲突；
+- 协议上下文把全部 ontology_id 交给 Protocol Agent，Protocol 按既有 R3.0-002 冻结规则
+  逐 Ontology 提交单绑定的 Modeling Batch（每 batch dry-run → apply_atomic）；
+- 增量含 task YAML/协议提示的最小措辞同步与守恒测试（单 Ontology 拓扑路径不回归）。
+
+**M4 — RDF 全量确定性检查**（验收侧，见 §8 修订）：以全量个体枚举 + 逐类分类替代
+探针抽查，任何非词汇个体即 FAIL。
+
 **Priority L0 时间约束**：授权后 20 分钟内进入第一次真实建模 start；预检只做上表最小项，
 不重复审计、不新增 smoke harness。若门被错过，停下报告时间消耗并直接进入真实建模。
+（M1～M3 属于计划审查后的实现阶段工作，不占用 20 分钟门。）
 
 ## 4. 角色与职责
 
@@ -74,10 +136,15 @@
    不可用时按 `runtime/infrastructure` 窄修复，不展开替代性 harness。
 1. 冻结基线：`uv run --project backend python -m modeling_team validate` + `baseline`
    （三角色 profile 经增量 6(b) 分派通路），记录 baseline hash。
-2. 启动命令形态（沿用 R2.3-002 new-scope 真实 run 先例 + R3.0-002 冻结资产）：
-   `python -m modeling_team run --profile modeling_team/profiles/r3-0-002-modeling-team.yaml
+2. 启动命令形态（沿用 R2.3-002 new-scope 真实 run 先例 + R3.0-002 冻结资产；环境无裸
+   `python`，统一 `uv run --project backend python`；v2 Task 强制
+   `--freeze-started-at`）：
+   `uv run --project backend python -m modeling_team run
+   --profile modeling_team/profiles/r3-0-002-modeling-team.yaml
    --task modeling_team/tasks/r3-0-002-multi-slice.yaml --run-id r30006-<date>-start<N>
-   --scope <scope.yaml> --enable-outer-input-fifo`，scope 为 create 新 Project/Ontology。
+   --scope <scope.yaml> --freeze-started-at <ISO8601> --enable-outer-input-fifo`，
+   scope 为 create 新 Project（首个 Ontology 由 scope 创建；若拓扑决策选多 Ontology，
+   其余 Ontology 按 §3.1 M3 在门放行后由 runner 依决策 artifact 机械创建）。
 3. LLM 路由沿用该 profile 的 codex runtime 缺省路由；不为本需求新建 model profile。
 
 ### 5.2 输入隔离与逃逸验证（R3.0-001 遗留验收项）
@@ -168,14 +235,19 @@
 - Q2 口径冻结沿用 R3.0-005：解决时长 = `resolved_at − reported_at`（`reported_at` 经
   incidents 取得）。
 
-## 8. Phase D — RDF 无业务行实例验证
+## 8. Phase D — RDF 无业务行实例验证（全量确定性，M4）
 
-- 对建模产出的全部命名图执行 RDF 导出与 SPARQL 检查：
-  - 断言不存在客户、现场、资产、工单、故障、备件申请、发运等业务行的 RDF 个体
-    （以 fixture 确定性行标识如 `AST-001`、`WO-1001`、`INC-1001`、`SHIP-1001` 作为
-    反例探针，导出与 SPARQL 双路径均不得命中）；
-  - 允许存在的个体仅为语义资源本体（类、属性、映射、指标、枚举含义等）；
-  - PostgreSQL 仍是业务事实唯一存储（fixture 行数与 C01～C08 稳定）。
+- 对建模产出的全部命名图执行 RDF 导出与 SPARQL 检查，**全量枚举分类，不以探针/抽查
+  代替**：
+  1. **全量个体枚举**：对导出 RDF 中每一个命名个体（`rdf:type` 指向建模产出的类，或
+     显式/隐式个体声明）生成完整清单，逐个分类为"词汇/语义资源个体"（类、属性、映射、
+     指标、枚举含义、Shape 等模型定义资源）或"非词汇个体"；
+  2. **判定**：非词汇个体计数必须为 0，任何一个即 FAIL——不要求其标识符形如
+     `AST-001`（UUID、客户名称、其他 IRI 形态同样被枚举覆盖）；
+  3. **探针保留为冗余复证**：fixture 确定性行标识（`AST-001`、`WO-1001`、`INC-1001`、
+     `SHIP-1001` 等）在导出与 SPARQL 双路径零命中；
+  4. 枚举清单与分类结果落证（`rdf-check/`），PostgreSQL 仍是业务事实唯一存储
+     （fixture 行数与 C01～C08 复验稳定）。
 
 ## 9. 失败分层与窄修复
 
@@ -195,18 +267,21 @@ workspace 与证据保留，不覆盖。禁止为修复窄失败引入新产品�
 
 ## 11. 当前最小范围 vs 未来产品化
 
-- **current minimal scope**：Phase A～D 的真实运行、独立验收与四层结论报告；新增验收
-  动作是 §5.2 一次性逃逸探测、（若需要）§6.1 的最小第二 Ontology fixture、§7 的
-  R3.0-006 Consumer 驱动小脚本（`scripts/r3-0-006/consumer_rounds.py`，问句与判分输入
-  外部化，不改 R3.0-005 冻结脚本）。
+- **current minimal scope**：§3.1 启动前机械增量 M1～M3（预算合同、三角色启动/保留
+  产物、多 Ontology 执行闭环；平台侧零改动）、Phase A～D 的真实运行、独立验收与四层
+  结论报告；新增验收动作是 §5.2 一次性逃逸探测、（若需要）§6.1 的最小第二 Ontology
+  fixture、§7 的 R3.0-006 Consumer 驱动小脚本（`scripts/r3-0-006/consumer_rounds.py`，
+  问句与判分输入外部化，不改 R3.0-005 冻结脚本）、§8 全量 RDF 枚举分类检查（M4）。
 - **future productization（不进完成门）**：OS 级沙箱审计、自动化逃逸测试 harness、
   run 内 acceptance 角色、验收流水线与看板、业务数据安全边界、多轮建模调度与恢复
   编排、保护集变更审批流。
 
 ## 12. 假设（错误则需重设计）
 
-1. 三角色 profile/task 资产与独立平台 MCP 门在真实 run 中按 R3.0-002 独立测试所验证的
-   行为工作（无需代码改动即可跑通真实链路）。
+1. §3.1 M1～M3 机械增量实现并通过测试后，三角色 profile/task 资产与独立平台 MCP 门
+   可在真实 run 中按 R3.0-002 独立测试所验证的行为工作（Round 1 已证实**不改造不可
+   启动**：`start()` 对三角色 roster 的 acceptance 索引、四角色保留 handoff、R2.3-002
+   ledger 绑定与缺失的 R3.0-006 预算合同都是现实阻断）。
 2. codex runtime 缺省路由在当前环境可用，无需新建 model profile；A0 预检含一次路由
    可用性确认，不可用时按 `runtime/infrastructure` 分层窄修复后再启动。
 3. R3.0-005 的 `sql_exec_adapter.py` 可按 DSN 环境变量直接复用；其 `consumer_smoke.py`
