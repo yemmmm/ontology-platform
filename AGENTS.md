@@ -1,18 +1,81 @@
 # Repository Guidelines
 
-## T0 — 平台限制阻断建模流程时的防御复核规则
+## 建模优先、平台防御与失败恢复规则
 
-当某条平台限制、校验或守卫导致整个建模流程走不通（run 因此死锁、超时或不可修复）时，在动手修复暴露出的问题之前，必须先依次回答这些问题：
+本节是建模流程优先级、平台校验和失败处理的统一规则。除非用户或适用的权威需求明确变更，
+后续章节中的实验、实现和验收规则均不得与本节冲突。详细战术、案例和历史教训只作为参考，
+不能扩大这里的完成门。
 
-1. 这个防御功能本身是否有必要？它保护的不变量在当前场景是否真实存在？
-2. 它是否是过度防御——即用一个不可恢复的硬拒绝去防一个后果轻微、本可重试的情形？
-3. 直接删除该防御，对流程会产生什么具体后果？
-4. 该后果是否可控？出现后能否由 Agent 通过现有反馈通道自我修复？
-5. 是否已有更高层级（平台侧原子性、验收独立性、证据记录、dry-run/apply 完整性等）对同一风险做过防护？
+### 目标与启动优先级
 
-若以上判断表明风险已被高层覆盖、或后果可控可自修复，则优先考虑**删除该防御**，而不是修补它暴露出的报错路径。删除防御与修复报错二选一时，以「让建模流程可走通、让 Agent 能自我修复」为准则。只有当删除会直接损害源忠实度、业务范围、模型正确性、确定性 dry-run/apply、或检索验收的正确性时，才保留并收窄该防御。
+- 当前首要目标是获得真实的建模质量与语义检索质量证据。平台流程、运行框架和机械校验只为这个
+  目标服务，不能成为独立的优化目标。当前实验必须有界，并与正在验收的阶段成比例；本节的
+  `Priority L0` 表示最高运行优先级，与后文的 `L0 Runtime` 验收阶段不是同一概念。
+- 优先复用最近已验收的需求、场景、代码、提示、角色配置、协议工具、fixture、证据读取方式和测试
+  模式，只实现当前需求的必要差异。未经证明确实不兼容，不得重建已验证的执行路径；再次踩中已有
+  记录的失败应视为流程缺陷。
+- 用户授权真实建模后，除非用户明确允许更长准备期，必须在 20 分钟内开始第一次真实 semantic
+  modeling start。启动前只做安全开始所必需的最小检查，不得前置全面审计、重复评审、mock run、
+  smoke harness 或推测性验证。如果超时，停止扩展准备工作，报告耗时来源，缩短路径并进入真实建模。
+- 每次授权默认包含三次 fresh semantic modeling starts，除非用户明确指定其他数量。授权额度是禁止
+  未授权运行的边界，不是通过增加准备工作来保护的稀缺资产。Agent 负责记录轮次、run ID 和额度消耗；
+  平台代码不得用建模次数硬门代替用户授权。当一次 start 能产生语义证据时应及时使用；额度用尽后
+  必须停止并申请新授权。
 
-依据：R2.3-009 R8 三轮真实运行（start4/5/6，2026-08-20）的死因均为「不可恢复的硬拒绝叠加无自修复通道」，而非建模质量问题。
+### 校验层级与运行存活
+
+- 只有直接保护以下结果的校验才可以成为硬门：源材料忠实度、业务范围、模型正确性、确定性
+  dry-run/application、授权与受治理检索正确性，以及已经发生写入时的资源完整性。
+- `fail-closed` 默认表示“不允许当前不安全或不完整的内容写入”，不表示“整个 run 永久死亡”。只要
+  没有不确定写入或不可控污染，缺字段、格式错误、产物不完整、参数错误和可重试的协作问题都必须
+  返回准确、可操作的反馈，并允许 Agent 修正后继续同一目标。
+- Agent 数量、额外角色、具体协作顺序、尝试次数的代码内计数，以及其他不直接保护上述结果的流程
+  偏好，不得成为不可恢复的平台硬拒绝。必要依赖可以排序，授权仍由用户控制，但平台不得把一种当前
+  编排形态固化成所有建模的合法性条件。
+- 平台应严格判断可观察的输入、写入和验收结果，不得替建模 Agent 决定业务语义、Ontology 拓扑或
+  其他需要推理的建模选择。
+
+### T0 — 阻断建模流程时的防御复核
+
+当某条平台限制、校验或守卫导致 run 死锁、超时或不可修复时，在修补它暴露出的报错路径之前，
+必须依次回答：
+
+1. 这个防御功能是否必要，它保护的不变量在当前场景是否真实存在？
+2. 它是否用不可恢复的硬拒绝防范了后果轻微、本可重试的情形？
+3. 直接删除或降级该防御会产生什么具体后果？
+4. 该后果是否可控，Agent 能否通过现有反馈通道自行修复？
+5. 平台原子性、独立验收、证据记录、dry-run/apply 完整性等更高层机制是否已经覆盖同一风险？
+
+若风险已被高层覆盖，或后果可控且可自修复，则优先删除该防御或降级为可恢复反馈，而不是修补
+它的硬拒绝路径。只有删除会直接损害本节列出的硬门结果时，才保留并收窄该防御；保留时必须返回
+类型化、可定位和可操作的错误。删除防御与修复报错二选一时，以“让建模流程可走通、让 Agent
+能自我修复”为准则。
+
+依据：R2.3-009 R8 三轮真实运行（start4/5/6，2026-08-20）的死因均为“不可恢复的硬拒绝叠加
+无自修复通道”，而非建模质量问题。
+
+### 失败归因、修复与继续
+
+- 实时进度和终态失败必须可观察，并保留第一阻塞层。失败只归入 `modeling-quality`、
+  `platform-contract`、`collaboration/routing` 或 `runtime/infrastructure`；不得用基础设施或平台失败
+  推导模型质量结论，也不得用机械流程 PASS 代替真实语义 E2E PASS。
+- 只修复真实证据指向的最窄失败层，然后恢复原始建模目标。若同一 run 可安全恢复，优先继续同一
+  start；若必须创建 fresh start，则仍消耗用户授权额度，Agent 不得自行追加尝试。失败 workspace、
+  原始事件和写入/清理证据必须保留，不得用后续成功覆盖。
+- 若失败可由更清晰的 Task、角色、Skill、工具使用或交接说明预防，必须记录为 prompt-contract
+  缺陷并修复权威提示面，然后才能开始下一次 semantic start。运行时指导可以解锁当前 run，但不能
+  代替持久修复；平台或运行时缺陷也不得用提示文字掩盖。
+- 修复窄失败时，不得顺带引入新的治理、Consumer、mutation、恢复、编排、审计或产品化机制。
+
+### 验收与停止条件
+
+- 使用 `L0 Runtime`、`L1 Modeling quality`、`L2 Repeatability`、`L3 Productization` 分阶段验收，
+  后一阶段不得成为前一阶段的前置条件。
+- 模型最终接受仍必须具有 dry-run/application 完整性、源忠实度、有界业务范围、验证/推理和受治理
+  检索证据。最终语义验收必须独立于证据生产过程，不能创建、继续或修复被验收的 run，也不能修改
+  保留证据。
+- 分别记录语义建模与基础设施、harness、评审、文档所花的有效时间。如果语义建模不足一半，暂停
+  扩展平台和 harness，报告原因并提出更短的通路；不得在真实语义证据缺失时继续增加控制机制。
 
 ## 用户咨询时的双层解释法
 
@@ -59,8 +122,10 @@ versioned requirements.
 
 ## Current Development Priority
 
-The current project stage prioritizes **modeling quality and semantic retrieval quality**. Prefer
-the simplest implementation and operating workflow that preserves or improves those two outcomes.
+The unified modeling and guardrail priorities are defined in
+`建模优先、平台防御与失败恢复规则`. This section limits productization scope. Prefer the
+simplest implementation and operating workflow that preserves or improves modeling and semantic
+retrieval quality.
 
 - Do not make productization concerns such as fine-grained security, generalized version
   management, immutable audit history, cross-machine coordination, automatic crash recovery,
@@ -70,8 +135,6 @@ the simplest implementation and operating workflow that preserves or improves th
   modeling correctness, retrieval correctness, or the integrity of an immediately applied model.
 - For local Agent workflow experiments, prefer a repo-local, gitignored, human-readable shared
   directory and small deterministic scripts over new backend tables, APIs, services, or frameworks.
-- Keep only the quality gates that directly protect source fidelity, business scope, model
-  correctness, deterministic dry-run/application, and competency-question or retrieval acceptance.
 - Separate every new modeling-workflow design into `current minimal scope` and `future
   productization`. Do not silently promote future features into the current completion gate.
 - Existing platform capabilities may be reused, but do not require every available governance,
@@ -82,39 +145,10 @@ the simplest implementation and operating workflow that preserves or improves th
 The rules in this section are mandatory unless the user or an authoritative requirement explicitly
 changes them. Detailed tactics, examples, and historical lessons are reference-only in
 `docs/reference/modeling-agent-experiment-lessons.md`; that document cannot override these rules.
-`Priority L0` below means the highest operating priority and is distinct from the `L0 Runtime`
-acceptance stage.
+The unified start priority, attempt authorization, guardrail hierarchy, failure recovery, and
+acceptance boundaries are defined in `建模优先、平台防御与失败恢复规则`; do not restate or weaken
+them here.
 
-- Prioritize evidence about modeling and semantic retrieval quality. Keep the current experiment
-  bounded, proportional to its acceptance stage, and separate from future productization.
-- **Priority L0 — enter real modeling early.** Start the first real modeling attempt within 20
-  minutes unless the user explicitly authorizes a longer preparation phase. Before it, perform only
-  the minimum checks needed to start safely. Do not front-load extensive audits, repeated reviews,
-  mock runs, smoke harnesses, or speculative verification; they can consume most of the attempt
-  time while leaving the first real semantic error undiscovered. If the gate is missed, stop,
-  report the time consumers, reduce the setup, and move to live modeling. Repair the narrow failing
-  layer from real evidence.
-- **Priority L0 — reuse the closest accepted baseline.** A new requirement must not rebuild an
-  already proven workflow from scratch. Before implementation, inventory the closest accepted
-  requirement, scenario, code, prompts, role configuration, protocol helpers, fixtures, evidence
-  readers and patterns, tests, and recorded lessons. Carry them forward wherever compatible and
-  implement only the requirement-specific delta. Document and review any proven incompatibility
-  before replacement; treat rediscovering a previously documented failure as a process defect.
-- **Repair prompt-correctable failures before the next start.** When live evidence shows that an
-  Agent error could have been prevented by clearer Task, role, Skill, tool-use, or handoff
-  instructions, record the exact failure as a prompt-contract defect and identify the owning
-  prompt surface. Runtime guidance may unblock the current run, but it is not the durable fix.
-  Before launching the next semantic start, update and verify that authoritative prompt surface;
-  do not consume another attempt while knowingly carrying the same avoidable instruction gap.
-  Keep platform/runtime defects classified separately and do not hide them with prompt wording.
-- **Priority L0 — use the three authorized modeling attempts.** Each authorization grants three
-  fresh semantic modeling starts unless the user explicitly sets a different amount. The budget is
-  a boundary against unapproved runs, not a scarce asset to protect by delaying real modeling or
-  adding speculative preparation. Use attempts promptly when they can produce semantic evidence,
-  preserve each attempt, and request the next authorization after all three are consumed. Never
-  start an additional attempt until that authorization is granted.
-- Use staged acceptance: `L0 Runtime`, `L1 Modeling quality`, `L2 Repeatability`, and
-  `L3 Productization`. Never make a later stage a prerequisite for an earlier one.
 - The Delivery Agent owns deterministic execution, resource lifecycle, cleanup, and evidence
   handoff. A repo-local script is only its tool, not a Host layer, autonomous modeling role, or
   semantic acceptance authority.
@@ -127,21 +161,9 @@ acceptance stage.
 - Keep deterministic mechanics out of model reasoning. Tools own protocol formatting, stable
   identities, immutable publication, retries, and parsing; modeling Agents own business semantics,
   ontology structure, evidence, Shapes, relations, and explicit unknowns.
-- Require dry-run/application integrity, source fidelity, bounded scope, validation/reasoning, and
-  governed retrieval evidence before accepting a model. Do not add unrelated governance,
-  Consumer, mutation, recovery, or orchestration scope to repair a narrow failure.
-- Make live progress and terminal failures observable, fail fast, and preserve the failing layer as
-  `modeling-quality`, `platform-contract`, `collaboration/routing`, or
-  `runtime/infrastructure`. Repair only the narrow layer and resume the original modeling goal.
 - Preserve requested parallel execution. Freeze contracts and assign non-overlapping ownership of
   files, ports, Project/Ontology IDs, runtime directories, shared records, and cleanup before work
   begins.
-- Final semantic acceptance must be independent from the process that produced the live evidence.
-  Independent testing must not create or continue the run it evaluates and must not mutate retained
-  evidence.
-- Track time spent on semantic modeling versus infrastructure, harness, review, and documentation.
-  If semantic modeling is less than half of active effort, pause and propose a smaller path before
-  expanding the harness.
 
 ## Platform and Reference-Ontology Boundary
 
