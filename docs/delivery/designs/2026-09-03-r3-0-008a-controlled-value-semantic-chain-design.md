@@ -1,9 +1,9 @@
 # R3.0-008A 受控值 L1/L2/L3 表达合同与 `semanticValue` 映射链 — 功能设计
 
 - 日期：2026-09-03
-- 状态：设计冻结（计划评审 Round 1 两项 accepted-high 已修订：G7 扩展合并视图改
-  ontology+data 双图装载与投影；`_RELATIONAL_DSN_EXEMPT_FIELDS` 增补 `semantic_value`），
-  待复审、待实现、待独立验收
+- 状态：已实现并交付（计划评审 Round 1 两项 accepted-high 已修订：G7 扩展合并视图改
+  ontology+data 双图装载与投影；`_RELATIONAL_DSN_EXEMPT_FIELDS` 增补 `semantic_value`；
+  Round 2 复核 PASS；实现后独立测试 Round 1 PASS，证据见共享测试计划轮次记录）
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-008A（含「2026-09-03 细化决策」小节，
   用户已确认三项决策与低影响保守口径）
 - 冻结依赖合同：

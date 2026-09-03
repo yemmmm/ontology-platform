@@ -817,6 +817,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             "mapped_property",
             "enum_value",
             "business_meaning",
+            "semantic_value",
             "schema_source",
             "semantic_version",
         ),
@@ -824,7 +825,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         PREFIX op: <{op_prefix}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?enum_value ?business_meaning
-                        ?schema_source ?semantic_version ?graph WHERE {
+                        ?semantic_value ?schema_source ?semantic_version ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?enum_meaning a op:EnumValueMeaning .
@@ -832,6 +833,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             OPTIONAL { ?enum_meaning op:mappedProperty ?mapped_property . }
             OPTIONAL { ?enum_meaning op:enumValue ?enum_value . }
             OPTIONAL { ?enum_meaning op:businessMeaning ?business_meaning . }
+            OPTIONAL { ?enum_meaning op:semanticValue ?semantic_value . }
             OPTIONAL { ?enum_meaning op:schemaSource ?schema_source . }
             OPTIONAL { ?enum_meaning op:semanticVersion ?semantic_version . }
           }
@@ -854,6 +856,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             "mapped_property",
             "enum_value",
             "business_meaning",
+            "semantic_value",
             "schema_source",
             "semantic_version",
         ),
@@ -861,7 +864,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         PREFIX op: <{op_prefix}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?enum_value ?business_meaning
-                        ?schema_source ?semantic_version ?graph WHERE {
+                        ?semantic_value ?schema_source ?semantic_version ?graph WHERE {
           VALUES ?g { {graph_iris} }
           VALUES ?enum_meaning { <{entity_iri}> }
           GRAPH ?g {
@@ -870,6 +873,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             OPTIONAL { ?enum_meaning op:mappedProperty ?mapped_property . }
             OPTIONAL { ?enum_meaning op:enumValue ?enum_value . }
             OPTIONAL { ?enum_meaning op:businessMeaning ?business_meaning . }
+            OPTIONAL { ?enum_meaning op:semanticValue ?semantic_value . }
             OPTIONAL { ?enum_meaning op:schemaSource ?schema_source . }
             OPTIONAL { ?enum_meaning op:semanticVersion ?semantic_version . }
           }

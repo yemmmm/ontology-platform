@@ -1068,7 +1068,18 @@ class ModelingBatchService:
             and item.client_item_id in prepared
             and prepared[item.client_item_id].command_kind in _RELATIONAL_MAPPING_COMMAND_KINDS
         ]
-        if not relational_items:
+        # R3.0-008A G7-d trigger: delete_entity is the command-surface carrier
+        # of L3 first-class nodes (written to the data graph), so a batch that
+        # deletes an entity must also run the semanticValue dangling scan even
+        # when it carries no relational mapping command at all.
+        delete_entity_items = [
+            (item.client_item_id, prepared[item.client_item_id])
+            for item in sorted(batch.items, key=lambda entry: entry.ordinal)
+            if item.client_item_id in selected
+            and item.client_item_id in prepared
+            and prepared[item.client_item_id].command_kind == "delete_entity"
+        ]
+        if not relational_items and not delete_entity_items:
             return []
         if self.rdf_store is None:
             return [
@@ -1361,6 +1372,170 @@ class ModelingBatchService:
                     path=["payload"],
                 )
             )
+
+        # ---- G7: semanticValue structural gate (R3.0-008A design §3.3) ----
+        # Runs on its own dual-graph merged view (ontology graph + data graph
+        # of the batch target Ontology, plus same-batch projections filtered
+        # to both graphs). G2/G3/G5/G6 above keep the ontology-graph-only view
+        # and are untouched: EnumValueMeaning subjects live in the ontology
+        # graph while their L3 targets live in the data graph, so a dual view
+        # is the mechanical precondition for target existence to be visible.
+        enum_command_items = [
+            (item_id, command)
+            for item_id, command in relational_items
+            if command.command_kind in {"create_enum_meaning", "update_enum_meaning"}
+        ]
+        if enum_command_items or delete_entity_items:
+            data_graph_iri = str(ns.graph("data", batch.ontology_id))
+            g7_graphs = {graph_iri, data_graph_iri}
+            g7_view = Graph()
+            for source_graph in (graph_iri, data_graph_iri):
+                source_exists = not hasattr(self.rdf_store, "graph_exists") or (
+                    self.rdf_store.graph_exists(source_graph)
+                )
+                source_content = (
+                    self.rdf_store.get_graph(source_graph, "turtle") if source_exists else ""
+                )
+                if source_content and source_content.strip():
+                    g7_view.parse(data=source_content, format="turtle")
+            # Project the same-batch commands onto the dual view (deletes
+            # first, then inserts — same ordering contract as the merged view
+            # above). Note the object-position wildcard of delete_entity is a
+            # no-op under this projection by design: dangling protection is
+            # defined by the target appearing as a subject (design review
+            # note), which the whole-subject wildcard delete already removes.
+            for item_id in sorted(selected):
+                command = prepared.get(item_id)
+                if command is None or command.compiled is None:
+                    continue
+                for subject, predicate, obj, target_graph in command.compiled.delta.deletes:
+                    if target_graph not in g7_graphs:
+                        continue
+                    if predicate == "?p":
+                        for triple in list(g7_view.triples((URIRef(subject[1:-1]), None, None))):
+                            g7_view.remove(triple)
+                    elif obj == "?o":
+                        for triple in list(
+                            g7_view.triples(
+                                (URIRef(subject[1:-1]), URIRef(predicate[1:-1]), None)
+                            )
+                        ):
+                            g7_view.remove(triple)
+                    else:
+                        g7_view.remove(
+                            (
+                                from_n3(subject),
+                                from_n3(predicate),
+                                from_n3(obj),
+                            )
+                        )
+            g7_insert_lines = []
+            for item_id in sorted(selected):
+                command = prepared.get(item_id)
+                if command is None or command.compiled is None:
+                    continue
+                for subject, predicate, obj, target_graph in command.compiled.delta.inserts:
+                    if target_graph in g7_graphs:
+                        g7_insert_lines.append(f"{subject} {predicate} {obj} .")
+            if g7_insert_lines:
+                g7_view.parse(data="\n".join(g7_insert_lines), format="nt")
+
+            semantic_predicate = URIRef(f"{op}semanticValue")
+            mapping_type_iris = {
+                URIRef(f"{op}{type_name}")
+                for type_name in (
+                    "EnumValueMeaning",
+                    "TableMapping",
+                    "JoinMapping",
+                    "MetricDefinition",
+                )
+            }
+
+            # G7-a (target exists) / G7-b (non-mapping resource type).
+            for item_id, command in enum_command_items:
+                semantic_value = (
+                    command.compiled.metadata.get("semantic_value_iri")
+                    or command.payload.get("semantic_value")
+                )
+                if not semantic_value:
+                    continue
+                target = URIRef(str(semantic_value))
+                if not any(g7_view.triples((target, None, None))):
+                    findings.append(
+                        _finding(
+                            "invalid_resource_reference",
+                            "error",
+                            "semantic_value does not reference an existing first-class semantic "
+                            f"node in the target Ontology: {semantic_value}",
+                            item_ids=[item_id],
+                            path=["payload", "semantic_value"],
+                        )
+                    )
+                    continue
+                if any((target, RDF.type, type_iri) in g7_view for type_iri in mapping_type_iris):
+                    findings.append(
+                        _finding(
+                            "invalid_resource_reference",
+                            "error",
+                            "semantic_value must reference a non-mapping first-class semantic "
+                            f"node: {semantic_value}",
+                            item_ids=[item_id],
+                            path=["payload", "semantic_value"],
+                        )
+                    )
+
+            # G7-c (at most one semanticValue per EnumValueMeaning, catching
+            # direct-write residue) and, when the batch deletes entities, the
+            # G7-d dangling scan over every EnumValueMeaning in the dual view.
+            enum_subject_items = {
+                _relational_resource_iri(command.compiled.metadata): item_id
+                for item_id, command in enum_command_items
+                if _relational_resource_iri(command.compiled.metadata) is not None
+            }
+            dangling_targets: list[str] = []
+            for subject, _, _ in g7_view.triples((None, RDF.type, URIRef(f"{op}EnumValueMeaning"))):
+                values = list(g7_view.objects(subject, semantic_predicate))
+                if len(values) > 1:
+                    owner_item = enum_subject_items.get(str(subject))
+                    findings.append(
+                        _finding(
+                            "invalid_resource_reference",
+                            "error",
+                            "EnumValueMeaning must carry at most one semanticValue: "
+                            f"{subject}",
+                            item_ids=[owner_item] if owner_item else [],
+                            scope="item" if owner_item else "batch",
+                            path=["payload", "semantic_value"],
+                        )
+                    )
+                    continue
+                if not values:
+                    continue
+                target = URIRef(str(values[0]))
+                if not any(g7_view.triples((target, None, None))):
+                    dangling_targets.append(str(values[0]))
+            if dangling_targets and delete_entity_items:
+                deleted_subject_items = {
+                    str(command.compiled.metadata.get("entity_iri") or ""): item_id
+                    for item_id, command in delete_entity_items
+                }
+                for target in dangling_targets:
+                    attributed = [
+                        item_id
+                        for deleted_iri, item_id in deleted_subject_items.items()
+                        if deleted_iri == target
+                    ]
+                    findings.append(
+                        _finding(
+                            "semantic_value_dangling",
+                            "error",
+                            "Deleting this entity would leave an EnumValueMeaning "
+                            f"semanticValue dangling: {target}",
+                            item_ids=sorted(set(attributed)),
+                            scope="item" if attributed else "batch",
+                            path=["payload"],
+                        )
+                    )
         return findings
 
     def _validate_rule_command(

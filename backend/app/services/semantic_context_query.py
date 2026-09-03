@@ -1316,6 +1316,7 @@ PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX op: <{vocab}>
 SELECT ?graph ?mapping ?type ?label ?mappedClass ?mappedRelation ?mappedProperty
        ?tableName ?enumValue ?businessMeaning ?columnMappings ?joinPath ?schemaSource
+       ?semanticValue
 WHERE {{
   VALUES ?graph {{ {graph_values} }}
   VALUES ?type {{ op:TableMapping op:JoinMapping op:EnumValueMeaning }}
@@ -1331,6 +1332,7 @@ WHERE {{
     OPTIONAL {{ ?mapping op:columnMappings ?columnMappings . }}
     OPTIONAL {{ ?mapping op:joinPath ?joinPath . }}
     OPTIONAL {{ ?mapping op:schemaSource ?schemaSource . }}
+    OPTIONAL {{ ?mapping op:semanticValue ?semanticValue . }}
   }}
 }}
 ORDER BY ?graph ?mapping
@@ -1359,6 +1361,7 @@ LIMIT 5000
                 ("enum_value", "enumValue"),
                 ("business_meaning", "businessMeaning"),
                 ("schema_source", "schemaSource"),
+                ("semantic_value", "semanticValue"),
             ):
                 value = _value(row, row_key)
                 if value:

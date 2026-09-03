@@ -2005,6 +2005,10 @@ _RELATIONAL_DSN_EXEMPT_FIELDS = frozenset(
         "join_mapping_iri",
         "enum_meaning_iri",
         "metric_iri",
+        # R3.0-008A: intra-ontology IRI reference constrained by G7-a/b, and
+        # an absolute IRI always contains "://", which the DSN gate would
+        # otherwise misread as an embedded URL.
+        "semantic_value",
     }
 )
 
@@ -2582,6 +2586,15 @@ def compile_create_enum_meaning(
             (subject, f"<{op}businessMeaning>", _literal_term(business_meaning), graph_iri),
         ]
     )
+    # R3.0-008A L3 form: optional single op:semanticValue IRI reference to a
+    # first-class business semantic node. Absent/empty stays L2; a non-string
+    # or non-IRI shape is rejected here (G7-c single-value enforcement at the
+    # command surface — multi-value lists never compile).
+    semantic_value = payload.get("semantic_value")
+    semantic_value_iri: str | None = None
+    if semantic_value is not None and semantic_value != "":
+        semantic_value_iri = _relational_iri_value(semantic_value, "semantic_value")
+        quads.append((subject, f"<{op}semanticValue>", f"<{semantic_value_iri}>", graph_iri))
     return CompiledCommand(
         command_kind="create_enum_meaning",
         delta=RdfGraphDelta(inserts=sorted(quads)),
@@ -2594,6 +2607,7 @@ def compile_create_enum_meaning(
             "enum_meaning_iri": subject_iri,
             "mapped_property_iri": property_iri,
             "enum_value": enum_value,
+            "semantic_value_iri": semantic_value_iri,
         },
     )
 
@@ -2620,8 +2634,16 @@ def compile_update_enum_meaning(
             "schema_source": f"{op}schemaSource",
             "semantic_version": f"{op}semanticVersion",
         },
-        iri_fields={},
+        iri_fields={"semantic_value": f"{op}semanticValue"},
         json_fields={},
+    )
+    # R3.0-008A: null/"" clears op:semanticValue (L3 -> L2 downgrade); a new
+    # IRI replaces/adds it (L2 -> L3 upgrade), per-predicate delete-then-insert.
+    update_semantic_value = payload.get("semantic_value")
+    update_semantic_value_iri = (
+        _relational_iri_value(update_semantic_value, "semantic_value")
+        if update_semantic_value is not None and update_semantic_value != ""
+        else None
     )
     return CompiledCommand(
         command_kind="update_enum_meaning",
@@ -2633,6 +2655,7 @@ def compile_update_enum_meaning(
             "ontology_id": ontology_id,
             "enum_meaning_id": payload.get("enum_meaning_id"),
             "enum_meaning_iri": subject_iri,
+            "semantic_value_iri": update_semantic_value_iri,
         },
     )
 

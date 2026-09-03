@@ -1,7 +1,7 @@
 # R3.0-008A 受控值 L1/L2/L3 表达合同与 `semanticValue` 映射链 — 共享测试计划
 
 - 日期：2026-09-03
-- 状态：待执行（开发者自测 → `requirement_tester` 独立验收）
+- 状态：独立测试 Round 1 **PASS**（2026-09-03，`requirement_tester`；详见文末轮次记录）
 - 需求：`docs/requirements/requirements-v3.0.md` R3.0-008A（含 2026-09-03 细化决策）
 - 设计：`docs/delivery/designs/2026-09-03-r3-0-008a-controlled-value-semantic-chain-design.md`
 - 执行者：开发者先自测；`requirement_tester` 独立复核（独立验收轮次结构见 §8）
@@ -208,3 +208,22 @@ cd backend && uv run pytest tests/test_r3008a_semantic_value_integrity.py \
 ## 轮次记录
 
 （开发者自测与独立测试轮次由执行者追加，不得改写历史轮次。）
+
+### 独立测试 Round 1（2026-09-03，`requirement_tester`）— PASS
+
+- 基线：commit `b8c4f84` + 工作区未提交变更（`git status` 核对仅限计划附录 A 五个产品文件与两个新增
+  测试文件；未发现范围外产品变更）。证据：
+  `docs/delivery/evidence/2026-09-03-r3-0-008a/independent-test-round1.md`
+- 实现复核先行：开发者五项声明（G7 独立双图视图、G7-d 仅 subject 位存在性、DSN 豁免、投影两处、
+  fixture graph set 含 `asserted_data` 成员）逐条与 diff/测试对照，全部属实。
+- L1：service active；backend 200 / frontend 200；`alembic current` = `0032`（零 migration）；
+  `industrial_service_v3` 已装载；G7/投影代码已合入。
+- 读取面登记：进程内 TestClient + 真实 Oxigraph（token 域图）+ DSN 实测（`R3005_SQL_ADAPTER_DSN`
+  可用，S5 适配器真实执行并与测试者独立基准 `[WO-1001, WO-1008]` 一致，无退化）。
+- 执行结果：聚焦 25 passed / 0 skipped（35.35s）；全量默认门控 957 passed / 36 skipped（47.31s）；
+  全量门控 985 passed / 8 skipped（95.44s，8 skip 均为既有无关门控）。S1–S6、B1–B7、F1–F6、
+  R1–R3 全部 PASS；缺陷：无。
+- 清理：token 域 Oxigraph 图残留复核为 0；8001 共享运行时库/RDF 零写入（F6 账面：build_sessions /
+  modeling_batches 近 3 小时新建 0）；无临时文件与 key 残留；R3 以只读访问 + 基线复核等效满足。
+- 残余风险（非缺陷，非 FAIL）：G7-c/G7-d 扫描随触发集合（枚举命令/delete_entity）限定；
+  `businessMeaning` 措辞不仲裁——均为设计既记录边界。
