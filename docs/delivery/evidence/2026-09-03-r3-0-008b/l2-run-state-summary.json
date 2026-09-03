@@ -1,0 +1,13 @@
+{
+ "run_id": "r30008b-l2-smoke-r1",
+ "state": "CLEANED",
+ "scope": "create",
+ "owned_project_deleted": true,
+ "residual_counts": {
+  "lease": 0,
+  "ontology": 0,
+  "project": 0,
+  "project_scoped_key": 0,
+  "session": 0
+ }
+}

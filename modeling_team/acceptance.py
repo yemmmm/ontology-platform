@@ -31,6 +31,7 @@ from .capability_mcp import (
     PROTOCOL_OPERATIONS,
     PROTOCOL_STAGE_OPERATIONS,
     ROLE_OPERATIONS,
+    STAGED_PROTOCOL_OPERATION,
     RunnerCapabilityEndpoint,
     token_digest,
 )
@@ -1451,6 +1452,8 @@ class RunnerAcceptanceCarrier:
         candidate_publisher: Callable[[str], Mapping[str, Any]] | None = None,
         candidate_receipt_builder: Callable[[str, str], Mapping[str, Any]] | None = None,
         candidate_conflict_builder: Callable[[str, str, str, str], Mapping[str, Any]] | None = None,
+        staged_submission_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        staged_protocol_capability: bool = False,
     ):
         self.root = root
         self.task_id = _safe_id(task_id, "task_id")
@@ -1492,6 +1495,13 @@ class RunnerAcceptanceCarrier:
         self._candidate_publisher = candidate_publisher
         self._candidate_receipt_builder = candidate_receipt_builder
         self._candidate_conflict_builder = candidate_conflict_builder
+        # R3.0-008B: the staged Modeling Batch submission path.  The handler is
+        # Runner-owned (TeamRunner injects the mechanical envelope validation,
+        # durable intent write, host-side write forward, and receipt write);
+        # the boolean only widens the protocol capability operation set for
+        # staged runs, leaving every non-staged assembly byte-identical.
+        self._staged_submission_handler = staged_submission_handler
+        self._staged_protocol_capability = staged_protocol_capability
         # Prompt E state is Runner-private.  The nonce is surfaced to Protocol
         # as a non-secret binding in its task text, while exact delivery bytes
         # are recorded only as a digest by TeamRunner before Coordinator can
@@ -1606,6 +1616,10 @@ class RunnerAcceptanceCarrier:
                 operations = COORDINATOR_OPERATIONS
             elif role == "coordinator":
                 operations = COORDINATOR_FORMAL_OPERATIONS
+            elif role == "protocol" and staged_protocol_capability:
+                # R3.0-008B staged runs: the protocol role additionally owns the
+                # Runner-private Modeling Batch submission operation.
+                operations = (*operations, STAGED_PROTOCOL_OPERATION)
             self._capability_endpoints[role] = RunnerCapabilityEndpoint(
                 role=role,
                 socket_path=self.capability_socket_path(role),
@@ -3744,6 +3758,11 @@ class RunnerAcceptanceCarrier:
                 conflict_detail=args["conflict_detail"],
                 capability=capability,
             )
+        if role == "protocol" and operation == "protocol_staged_submit_modeling_batch":
+            self._check_capability("protocol", args["protocol_id"], capability)
+            if self._staged_submission_handler is None:
+                _error("staged Modeling Batch submission is unavailable")
+            return self._staged_submission_handler(args)
         if role == "coordinator":
             if operation == "coordinator_ticket_draft_from_delivery":
                 return self.coordinator_ticket_draft_from_delivery(

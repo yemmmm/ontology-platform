@@ -43,6 +43,13 @@ PROTOCOL_OPERATIONS: tuple[str, ...] = (
     "protocol_build_candidate_conflict",
 )
 PROTOCOL_STAGE_OPERATIONS: tuple[str, ...] = PROTOCOL_OPERATIONS[:2]
+# R3.0-008B: the staged protocol role additionally owns the Runner-private
+# Modeling Batch submission capability.  The role registry carries the full
+# superset so the dispatcher can validate it; every endpoint assembly still
+# picks its exact operation set, so non-staged endpoints never configure the
+# staged operation.
+STAGED_PROTOCOL_OPERATION = "protocol_staged_submit_modeling_batch"
+STAGED_PROTOCOL_OPERATIONS: tuple[str, ...] = (*PROTOCOL_OPERATIONS, STAGED_PROTOCOL_OPERATION)
 MODELING_OPERATIONS: tuple[str, ...] = ("modeling_publish_staged_candidate",)
 ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_get_ticket",
@@ -60,7 +67,7 @@ ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
     # advertising the delivery-bound capability to an unbound carrier.
     "coordinator": COORDINATOR_FORMAL_OPERATIONS,
     "modeling": MODELING_OPERATIONS,
-    "protocol": PROTOCOL_OPERATIONS,
+    "protocol": STAGED_PROTOCOL_OPERATIONS,
     "acceptance": ACCEPTANCE_OPERATIONS,
 }
 
@@ -125,6 +132,46 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "conflict_detail": {"type": "string"},
         },
         "required": ["protocol_id", "delivery_id", "conflict_code", "conflict_detail"],
+        "additionalProperties": False,
+    },
+    "protocol_staged_submit_modeling_batch": {
+        "type": "object",
+        "properties": {
+            "protocol_id": {"type": "string"},
+            # ``batch`` mirrors the real submit_modeling_batch envelope
+            # (session_id, client_batch_id, ontology_id, idempotency_key,
+            # expected_workspace_version, items[{command_kind, payload}],
+            # mode, lease_token).  value_traces and l3_nodes are Runner-side
+            # trace attachments and are never forwarded to the backend.
+            "batch": {"type": "object"},
+            "value_traces": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "command_index": {"type": "integer", "minimum": 0},
+                        "conclusion_id": {"type": "string"},
+                        "mapped_property": {"type": "string"},
+                    },
+                    "required": ["command_index", "conclusion_id"],
+                    "additionalProperties": False,
+                },
+            },
+            "l3_nodes": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "command_index": {"type": "integer", "minimum": 0},
+                        "entity_id": {"type": "string"},
+                        "semantic_value_iri": {"type": "string"},
+                    },
+                    "required": ["command_index", "entity_id", "semantic_value_iri"],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["protocol_id", "batch", "value_traces", "l3_nodes"],
         "additionalProperties": False,
     },
     "coordinator_ticket_draft": {
@@ -788,7 +835,10 @@ __all__ = [
     "COORDINATOR_OPERATIONS",
     "COORDINATOR_FORMAL_OPERATIONS",
     "MODELING_OPERATIONS",
+    "PROTOCOL_OPERATIONS",
     "ROLE_OPERATIONS",
+    "STAGED_PROTOCOL_OPERATION",
+    "STAGED_PROTOCOL_OPERATIONS",
     "RunnerCapabilityEndpoint",
     "run_stdio_client",
     "token_digest",

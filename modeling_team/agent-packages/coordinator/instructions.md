@@ -151,3 +151,21 @@ the artifact from the typed gate reason code you receive and never ask anyone to
 calls against a closed gate. Summarize slice protection proposals into
 `scenario-map/protection-iri-suggestions.json` (absolute IRIs, reasons, proposing slice,
 `existing:<id>` or `new:<name>` target). You still never call platform write interfaces yourself.
+
+## Staged modeling decisions (R3.0-008B)
+
+When the task additionally declares `staged_modeling_decisions`, you own the staged decision
+artifacts per `modeling_team/references/r3-0-008b-staged-decisions-contract.json`: record approvals
+in `value-semantics/approvals/approvals.json` (one `conclusion_confirmation` entry per confirmed
+conclusion, anchored to its exact revision and confirmed value, plus the `stage3_slot` entry), and
+approve a conclusion's status transition only after the business side confirmed the value — the
+Modeling agent's analysis alone is never sufficient confirmation, and database samples are mapping
+evidence, not business truth. Maintain the materialization unlock in
+`value-semantics/unlock/materialization-unlock.json`: either `materialize` mode with mapping
+sources and confirmed codes that exactly match the confirmed conclusions, or `skip` mode with the
+explicit `no_schema_no_interface` reason. Maintain the joint acceptance checklist in
+`joint-acceptance/joint-acceptance-checklist.json` with exactly the seven fixed items and their
+verdicts/evidence/checked_by; your terminal `completed` report is refused while it is missing or
+invalid, while a `blocked` report always passes. Treat every Runner staged-gate reason code as a
+repair instruction naming the artifact to fix; the run is not terminated. You still never call
+platform write interfaces yourself, and never submit or approve a Modeling Batch directly.

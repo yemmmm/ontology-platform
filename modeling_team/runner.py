@@ -17,6 +17,7 @@ from typing import Any, Callable, ClassVar, Mapping
 
 
 from .contracts import (
+    STAGED_MODELING_DECISIONS_PARAMETER,
     TeamConfiguration,
     TeamConfigurationError,
     digest_file,
@@ -101,6 +102,35 @@ from .scenario_map import (
     validate_scenario_map,
     validate_topology_decision,
 )
+from .staged_decisions import (
+    ENUM_COMMAND_KINDS,
+    StagedBatchForwardError,
+    StagedBatchForwardUnknown,
+    StagedDecisionArtifactError,
+    StagedDecisionIssue,
+    StagedSubmissionRejection,
+    build_submission_intent,
+    build_submission_receipt,
+    candidate_gate_open,
+    load_analysis_conclusions,
+    load_approvals,
+    load_materialization_unlock,
+    mark_intent_status,
+    next_intent_ordinal,
+    next_receipt_ordinal,
+    read_submission_intents,
+    read_submission_receipts,
+    staged_artifact_issues,
+    staged_checklist_issue,
+    staged_decision_artifact_paths,
+    staged_decision_directories,
+    staged_intent_receipt_issues,
+    staged_stage3_issue,
+    validate_materialization_unlock,
+    validate_staged_submission,
+    write_submission_intent,
+    write_submission_receipt,
+)
 from .protocol_mechanics import (
     ProtocolRetrievalFallbackError,
     build_candidate_conflict,
@@ -179,6 +209,7 @@ class TeamRunner:
         canonical_admin_key: str | None = None,
         monotonic_clock: Callable[[], float] | None = None,
         deepseek_credential_path: Path | None = None,
+        staged_batch_forwarder: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -193,6 +224,13 @@ class TeamRunner:
         self.canonical_base_url = canonical_base_url
         self.canonical_admin_key = canonical_admin_key
         self.monotonic_clock = monotonic_clock or time.monotonic
+        # R3.0-008B: the injected host-side write forwarder for staged Modeling
+        # Batch submissions.  Production wiring (cli/runtime assembly) binds the
+        # real backend submit_modeling_batch write path; ``None`` keeps the
+        # staged capability fail-closed with the typed
+        # ``staged_batch_forward_failed`` reason code.  It must NOT reuse the
+        # read-only McpReadForwarder/PLATFORM_PROXY_READ_TOOLS surface.
+        self.staged_batch_forwarder = staged_batch_forwarder
         # This path is a constructor-only test seam.  Production callers leave it
         # unset and therefore bind the fixed external credential location.
         self.deepseek_credential_path = deepseek_credential_path
@@ -233,6 +271,11 @@ class TeamRunner:
         self._multi_slice_artifact_paths: dict[str, Path] = {}
         self._multi_slice_gate_opened = False
         self._multi_slice_gate_feedback_fingerprints: set[str] = set()
+        # R3.0-008B segment 1: staged modeling decision state.  Every flag stays
+        # False for tasks without ``staged_modeling_decisions``.
+        self._staged_decisions = False
+        self._staged_gate_feedback_fingerprints: set[str] = set()
+        self._staged_gate_killed = False
         self._candidate_receipt_wakeup_sent: set[tuple[str, str]] = set()
         # One typed Protocol response is allowed for each active original
         # Modeling delivery.  The set is Runner-owned so a capability retry
@@ -692,6 +735,29 @@ class TeamRunner:
                     },
                 },
             )
+        staged_parameters = config.task.parameters or {}
+        if multi_slice_workflow and not formal_acceptance and staged_parameters.get(
+            STAGED_MODELING_DECISIONS_PARAMETER
+        ) is True:
+            # R3.0-008B segment 1: staged modeling decisions ride on the
+            # R3.0-002 multi-slice workflow.  The Runner prepares only the
+            # artifact directories (mkdir); absent files ARE the gate
+            # semantics, so no staged artifact is ever pre-created here.
+            self._staged_decisions = True
+            self._staged_gate_feedback_fingerprints = set()
+            self._staged_gate_killed = False
+            for directory in staged_decision_directories(root):
+                directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._append_evidence(
+                "staged-decisions",
+                {
+                    "event": "directories-registered",
+                    "artifact_directories": [
+                        path.relative_to(root).as_posix()
+                        for path in staged_decision_directories(root)
+                    ],
+                },
+            )
         self._protocol_candidate_responses = {}
         self._protocol_candidate_receipt_digests = {}
         self._candidate_receipt_wakeup_sent = set()
@@ -739,6 +805,10 @@ class TeamRunner:
                 if formal_acceptance
                 else None
             ),
+            staged_submission_handler=(
+                self._handle_staged_submit_modeling_batch if self._staged_decisions else None
+            ),
+            staged_protocol_capability=self._staged_decisions,
         )
         self.coordinator_phase = CoordinatorPhaseController()
         self.run.acceptance = self.acceptance
@@ -1503,6 +1573,26 @@ class TeamRunner:
                     return True
                 self._finalize_acceptance_if_ready()
                 return self.acceptance is None or not self.acceptance.is_settled
+        # R3.0-008B staged runs: the Coordinator may not report ``completed``
+        # while the joint acceptance checklist is missing or structurally
+        # invalid (design section 3.7 terminal gate).  A ``blocked`` report
+        # always passes (T0: an unrepairable run keeps its exit).
+        if (
+            status == "completed"
+            and getattr(self, "_staged_decisions", False)
+            and self.run is not None
+            and agent_id
+            == {
+                agent.package.role: agent.agent_id
+                for agent in self.run.configuration.profile.agents
+            }.get("coordinator", "coordinator")
+        ):
+            issue = staged_checklist_issue(self.run.root)
+            if issue is not None:
+                self._deliver_staged_gate_feedback(
+                    issue.reason_code, issue.artifact or issue.detail
+                )
+                return True
         return False
 
     def _finalize_acceptance_if_ready(self) -> None:
@@ -3543,6 +3633,335 @@ class TeamRunner:
         self._multi_slice_gate_feedback_fingerprints.add(fingerprint)
         self._deliver_multi_slice_gate_feedback(reason_code, artifact)
 
+    # --- R3.0-008B segment 1: staged modeling decision gates -----------------
+
+    def _deliver_staged_gate_feedback(
+        self, reason_code: str, artifact: str, recipient_role: str = "coordinator"
+    ) -> None:
+        """Typed, deduplicated staged-gate feedback (T0: never a terminal kill)."""
+
+        if not self.run:
+            return
+        recipient = self._multi_slice_role_ids().get(recipient_role)
+        if not isinstance(recipient, str) or not recipient:
+            return
+        fingerprint = f"{recipient_role}:{reason_code}:{artifact}"
+        if fingerprint in self._staged_gate_feedback_fingerprints:
+            return
+        self._staged_gate_feedback_fingerprints.add(fingerprint)
+        notice = {
+            "schema_version": "r3-0-008b-staged-gate-feedback/v1",
+            "run_id": self.run.run_id,
+            "gate_state": "closed",
+            "reason_code": reason_code,
+            "artifact": artifact,
+            "remediation": (
+                "Repair the staged artifact per "
+                "modeling_team/references/r3-0-008b-staged-decisions-contract.json; "
+                "the Runner re-checks it on the next cycle. The run is not "
+                "terminated; fix the named artifact and retry."
+            ),
+        }
+        delivery = RuntimeDelivery(
+            sender_id="runner/staged-decision-gate",
+            recipient_id=recipient,
+            kind="staged-decision-gate",
+            text=json.dumps(notice, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+            expects_reply=False,
+        )
+        try:
+            receipt = self.adapter.send_message(recipient, delivery)
+        except Exception as exc:
+            # A dispatch failure of the feedback itself is recorded evidence
+            # only; it must never kill the run or block self-repair (T0).
+            self._append_evidence(
+                "staged-decisions",
+                {
+                    "event": "gate-feedback-dispatch-failed",
+                    "reason_code": reason_code,
+                    "artifact": artifact,
+                    "recipient": recipient,
+                    "detail": str(exc),
+                },
+            )
+            return
+        self._append_evidence(
+            "staged-decisions",
+            {
+                "event": "gate-feedback-delivered",
+                "reason_code": reason_code,
+                "artifact": artifact,
+                "recipient": recipient,
+                "turn_id": getattr(receipt, "turn_id", None),
+            },
+        )
+
+    def _staged_gate_kill_switch(self, reason_code: str, detail: str) -> None:
+        """The one hard stop: an unreconciled platform write integrity break.
+
+        The shared platform MCP gate closes with ``staged_unreconciled_batch``
+        and the latch keeps every later staged check intervening until a human
+        adjudicates the durable intent with the deterministic
+        ``adjudicate_unknown_intent`` branches.
+        """
+
+        if self._staged_gate_killed:
+            return
+        self._staged_gate_killed = True
+        gate = self._candidate_platform_gate
+        if gate is not None:
+            gate.close("staged_unreconciled_batch")
+        self._append_evidence(
+            "staged-decisions",
+            {
+                "event": "kill-switch",
+                "gate_state": "closed",
+                "reason_code": "staged_unreconciled_batch",
+                "detail": detail,
+                "classification": "platform-contract",
+                "remediation": (
+                    "Manual adjudication required: reconcile the platform batch "
+                    "listing with value-semantics/submission-intents and "
+                    "submission-receipts before any further staged submission."
+                ),
+            },
+        )
+        self._deliver_staged_gate_feedback(
+            "staged_unreconciled_batch", "platform-reconciliation", "protocol"
+        )
+
+    def _load_staged_approvals(self, run_root: Path) -> dict[str, Any] | None:
+        paths = staged_decision_artifact_paths(run_root)
+        if not paths["approvals"].exists():
+            return None
+        try:
+            return load_approvals(paths["approvals"])
+        except StagedDecisionArtifactError:
+            return None
+
+    def _check_staged_decision_gates(self) -> bool:
+        """R3.0-008B staged checks; returns whether the topology check may run.
+
+        Ordering (design section 3): the stage 3 minimal slot is a
+        prerequisite of the R3.0-002 topology decision, so an invalid slot
+        skips the topology check for this tick WITHOUT latching
+        ``_multi_slice_gate_opened`` and WITHOUT re-closing the shared gate
+        (its state.json keeps the prepare-time ``topology_missing_artifact``
+        reason).  Stage 3 ``stage3_*`` reason codes surface only through
+        feedback and evidence streams.  Once the slot is valid, this check
+        stops intervening and the 002 topology gate logic is byte-identical.
+        """
+
+        if not getattr(self, "_staged_decisions", False) or self.run is None:
+            return True
+        run_root = self.run.root
+        if self._staged_gate_killed:
+            return False
+        # 1) Write-integrity kill-switch first: suspended unknown intents or
+        #    receipt/intent cross-check failures are unreconciled batches.
+        #    A corrupt (unparsable) intent/receipt JSON file is the same
+        #    write-integrity break: it converges to the typed kill-switch
+        #    instead of escaping this monitor tick and crashing the run
+        #    (design section 4.1: every failure is typed and fail-closed).
+        try:
+            intent_issues = staged_intent_receipt_issues(run_root)
+        except StagedDecisionArtifactError as exc:
+            self._staged_gate_kill_switch(exc.reason_code, exc.detail)
+            return False
+        for issue in intent_issues:
+            self._staged_gate_kill_switch(issue.reason_code, issue.detail)
+            return False
+        # 2) Cross-artifact checks (conclusions state machine + archive chain,
+        #    approvals anchoring, unlock consistency, ledger-vs-receipts).
+        for issue in staged_artifact_issues(run_root):
+            if issue.reason_code == "staged_unreconciled_batch":
+                self._staged_gate_kill_switch(issue.reason_code, issue.detail)
+                return False
+            self._deliver_staged_gate_feedback(issue.reason_code, issue.artifact)
+        # 3) Stage 3 minimal slot prerequisite (approval cross-validated).
+        approvals = self._load_staged_approvals(run_root)
+        slot_issue = staged_stage3_issue(run_root, approvals)
+        if slot_issue is not None:
+            # Prerequisite model: intervene without latch or gate close.
+            self._deliver_staged_gate_feedback(slot_issue.reason_code, slot_issue.artifact)
+            return False
+        return True
+
+    def _handle_staged_submit_modeling_batch(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """The Runner-private staged Modeling Batch submission capability.
+
+        Mechanical checks run in the fixed design section 3.6 order; every
+        rejection is a typed, self-healing ``StagedSubmissionRejection`` so the
+        capability endpoint returns ``{ok: False, error: {...}}`` instead of an
+        opaque transport error.  ``value_traces``/``l3_nodes`` never leave the
+        Runner: only the verbatim ``batch`` envelope reaches the injected
+        host-side write forwarder.
+        """
+
+        if not getattr(self, "_staged_decisions", False) or self.run is None:
+            raise StagedSubmissionRejection(
+                "staged_gate_closed", "staged decisions are not enabled for this run"
+            )
+        run_root = self.run.root
+        paths = staged_decision_artifact_paths(run_root)
+        gate_open = candidate_gate_open(run_root)
+        conclusions: Mapping[str, Any] | None = None
+        if paths["conclusions"].exists():
+            try:
+                conclusions = load_analysis_conclusions(paths["conclusions"])
+            except StagedDecisionArtifactError as exc:
+                if gate_open:
+                    raise StagedSubmissionRejection(exc.reason_code, exc.detail) from exc
+        unlock: Mapping[str, Any] | None = None
+        unlock_issues: tuple = ()
+        if paths["unlock"].exists():
+            try:
+                unlock = load_materialization_unlock(paths["unlock"])
+            except StagedDecisionArtifactError as exc:
+                unlock_issues = (StagedDecisionIssue(exc.reason_code, exc.detail, ""),)
+            else:
+                unlock_issues = validate_materialization_unlock(unlock, conclusions=conclusions)
+        try:
+            receipts = read_submission_receipts(run_root)
+        except StagedDecisionArtifactError as exc:
+            self._staged_gate_kill_switch(exc.reason_code, exc.detail)
+            raise StagedSubmissionRejection("staged_unreconciled_batch", exc.detail) from exc
+        issues = validate_staged_submission(
+            args,
+            gate_open=gate_open,
+            conclusions=conclusions,
+            unlock=unlock,
+            unlock_issues=unlock_issues,
+            receipts=receipts,
+        )
+        if issues:
+            raise StagedSubmissionRejection(issues[0].reason_code, issues[0].detail)
+        batch = args["batch"]
+        try:
+            intents = read_submission_intents(run_root)
+        except StagedDecisionArtifactError as exc:
+            self._staged_gate_kill_switch(exc.reason_code, exc.detail)
+            raise StagedSubmissionRejection("staged_unreconciled_batch", exc.detail) from exc
+        if any(intent.get("status") == "unknown" for intent in intents):
+            # An adjudication is still pending: no new submission may race it.
+            raise StagedSubmissionRejection(
+                "staged_unreconciled_batch", "an unknown-result intent is pending"
+            )
+        idempotency_key = batch["idempotency_key"]
+        existing = [item for item in intents if item.get("idempotency_key") == idempotency_key]
+        if existing:
+            intent_record = existing[0]
+            if intent_record.get("status") == "receipted":
+                raise StagedSubmissionRejection(
+                    "staged_conclusion_already_materialized",
+                    f"idempotency key {idempotency_key} is already receipted",
+                )
+            ordinal = intent_record["ordinal"]
+        else:
+            ordinal = next_intent_ordinal(intents)
+        # The Runner stamps the enum-command target on each enum trace so a
+        # later ``update_enum_meaning`` without ``enum_value`` can close its
+        # target against receipts (additive field, Runner-side only).
+        stamped_traces = []
+        for trace in args["value_traces"]:
+            stamped = dict(trace)
+            command_index = trace.get("command_index")
+            items = batch.get("items") or []
+            item = items[command_index] if isinstance(command_index, int) and 0 <= command_index < len(items) else None
+            if (
+                isinstance(item, Mapping)
+                and item.get("command_kind") in ENUM_COMMAND_KINDS
+                and not stamped.get("enum_target")
+            ):
+                payload = item.get("payload") or {}
+                stamped["enum_target"] = payload.get("enum_meaning_id") or payload.get(
+                    "enum_meaning_iri"
+                )
+            stamped_traces.append(stamped)
+        intent = build_submission_intent(
+            ordinal,
+            idempotency_key=idempotency_key,
+            client_batch_id=batch["client_batch_id"],
+            session_id=batch["session_id"],
+            mode=batch["mode"],
+            commands=list(batch["items"]),
+            value_traces=stamped_traces,
+            l3_nodes=list(args["l3_nodes"]),
+        )
+        write_submission_intent(run_root, intent)
+        self._append_evidence(
+            "staged-decisions",
+            {
+                "event": "submission-intent-written",
+                "intent_ordinal": ordinal,
+                "idempotency_key": idempotency_key,
+                "mode": batch["mode"],
+                "command_digests": list(intent["commands"]),
+            },
+        )
+        forwarder = getattr(self, "staged_batch_forwarder", None)
+        if not callable(forwarder):
+            raise StagedSubmissionRejection(
+                "staged_batch_forward_failed",
+                "no host-side write forwarder is configured for this run",
+            )
+        try:
+            result = forwarder(batch)
+        except StagedBatchForwardUnknown as exc:
+            write_submission_intent(run_root, mark_intent_status(intent, "unknown"))
+            self._append_evidence(
+                "staged-decisions",
+                {
+                    "event": "submission-forward-unknown",
+                    "intent_ordinal": ordinal,
+                    "idempotency_key": idempotency_key,
+                    "detail": str(exc),
+                },
+            )
+            self._staged_gate_kill_switch(
+                "staged_unreconciled_batch",
+                f"intent {ordinal} result is unknown and requires adjudication",
+            )
+            raise StagedSubmissionRejection("staged_batch_forward_unknown", str(exc)) from exc
+        except StagedBatchForwardError as exc:
+            raise StagedSubmissionRejection("staged_batch_forward_failed", str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - typed re-wrap, evidence below
+            raise StagedSubmissionRejection("staged_batch_forward_failed", str(exc)) from exc
+        if not isinstance(result, Mapping) or not result.get("batch_id"):
+            raise StagedSubmissionRejection(
+                "staged_batch_forward_failed", "forwarder returned no batch identity"
+            )
+        batch_id = str(result["batch_id"])
+        response_digest = str(
+            result.get("response_digest")
+            or f"sha256:{hashlib.sha256(json.dumps(result, ensure_ascii=False, sort_keys=True).encode()).hexdigest()}"
+        )
+        receipt = build_submission_receipt(
+            next_receipt_ordinal(read_submission_receipts(run_root)),
+            intent,
+            batch_id=batch_id,
+            response_digest=response_digest,
+        )
+        write_submission_receipt(run_root, receipt)
+        write_submission_intent(run_root, mark_intent_status(intent, "receipted"))
+        self._append_evidence(
+            "staged-decisions",
+            {
+                "event": "submission-receipt-written",
+                "intent_ordinal": ordinal,
+                "receipt_ordinal": receipt["ordinal"],
+                "batch_id": batch_id,
+                "mode": batch["mode"],
+            },
+        )
+        return {
+            "ok": True,
+            "batch_id": batch_id,
+            "intent_ordinal": ordinal,
+            "receipt_ordinal": receipt["ordinal"],
+            "response_digest": response_digest,
+        }
+
     def _check_multi_slice_topology_gate(self) -> None:
         """R3.0-002: open the independent platform MCP gate only after a
         structurally complete topology decision (plus the scenario map whose
@@ -5263,7 +5682,12 @@ class TeamRunner:
         self._track_issue_pending()
         self._check_run_fallback_timeout()
         self._check_formal_candidate_progress()
-        self._check_multi_slice_topology_gate()
+        # R3.0-008B: the staged checks run BEFORE the R3.0-002 topology gate
+        # and gate its invocation (stage 3 slot is a topology prerequisite).
+        # The call count of ``_check_multi_slice_topology_gate`` itself stays
+        # exactly one per drain tick for every run.
+        if self._check_staged_decision_gates():
+            self._check_multi_slice_topology_gate()
         self._check_cooperative_idle()
         self._wake_acceptance_on_child_terminal()
         output: list[dict[str, Any]] = []

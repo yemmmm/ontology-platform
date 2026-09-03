@@ -1,0 +1,43 @@
+# R3.0-008B staged modeling decisions mechanical smoke task: zero modeling
+# writes.  Exercises only the staged artifact chain, the stage 3 minimal slot
+# prerequisite, the joint acceptance checklist terminal gate, the typed
+# capability rejection path, and the zero-modeling-writes accounting.
+# schema_version must stay 2 and parameters must keep both flags true.
+schema_version: 2
+task_id: r3-0-008b-staged-decisions-smoke
+objective: >-
+  Mechanical staged-decisions smoke only, with zero modeling writes and no
+  semantic content. Modeling registers placeholder analysis conclusions in
+  analyzed status (never self-confirmed) under
+  value-semantics/conclusions/analysis-conclusions.json with an archived
+  revision chain, and writes the minimal stage 3 slot
+  stage3-neutral-graph/neutral-candidate.json with placeholder candidate
+  artifacts and deferred_contract R3.0-009. Coordinator records approvals in
+  value-semantics/approvals/approvals.json (placeholder conclusion values only
+  after business-style confirmation inside this smoke), a skip-mode
+  materialization unlock with skip_reason no_schema_no_interface, and a
+  format-valid joint acceptance checklist with the seven fixed items.
+  Protocol attempts one protocol_staged_submit_modeling_batch capability call
+  with a placeholder dry_run envelope and reports the typed reason code it
+  receives, then records a materialization ledger whose entries close against
+  authoritative receipts only. Zero real Modeling Batch submission, zero
+  apply_atomic, zero protection-set mutation, zero RDF write, zero Build
+  Session or Lease creation. All artifacts follow the mounted
+  modeling_team/references/r3-0-008b-staged-decisions-contract.json.
+role_sources:
+  - path: modeling_team/references/r3-0-008b-staged-decisions-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
+protocol_tools:
+  - check_platform_health
+expected_terminal_evidence:
+  - staged-artifacts-structurally-valid
+  - stage3-slot-accepted
+  - staged-gate-reason-codes-reported
+  - capability-rejection-receipted
+  - zero-modeling-writes
+retain_nonempty: false
+semantic_start_evidence: []
+parameters:
+  multi_slice_workflow: true
+  staged_modeling_decisions: true

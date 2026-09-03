@@ -55,7 +55,7 @@ from ..acceptance_runtime import (
     prepare_child_tree,
 )
 from ..modeling_readonly import MODELING_READ_TOOLS
-from ..capability_mcp import ROLE_OPERATIONS
+from ..capability_mcp import ROLE_OPERATIONS, STAGED_PROTOCOL_OPERATION
 from ..candidate_platform_gate import (
     CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
     CANDIDATE_PLATFORM_GATE_MOUNT,
@@ -1192,6 +1192,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._acceptance: Any | None = None
         self._coordination_enabled = False
         self._candidate_platform_gate_enabled = False
+        self._staged_decisions_enabled = False
         self._formal_turn_binding_required = False
         self._team_model_profile: TeamModelProfile | None = None
         self._private_credentials_destroyed: dict[str, bool] = {}
@@ -2794,6 +2795,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         parameters = getattr(task, "parameters", None)
         return isinstance(parameters, dict) and parameters.get("multi_slice_workflow") is True
 
+    @staticmethod
+    def _is_staged_decisions_run(run: Any) -> bool:
+        """R3.0-008B: a v2 Task declaring ``staged_modeling_decisions: true``."""
+
+        task = getattr(getattr(run, "configuration", None), "task", None)
+        if getattr(task, "schema_version", 1) != 2:
+            return False
+        parameters = getattr(task, "parameters", None)
+        return isinstance(parameters, dict) and parameters.get("staged_modeling_decisions") is True
+
     @classmethod
     def _candidate_platform_gate_enabled_for_run(cls, run: Any) -> bool:
         """One predicate for BOTH gate wiring points (design increment 7).
@@ -2834,12 +2845,27 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         )
 
     def _role_capability_operations(self, role: str, *, run: Any | None = None) -> tuple[str, ...]:
-        """Return only capabilities actually configured for this formal run."""
+        """Return only capabilities actually configured for this formal run.
+
+        R3.0-008B: a staged (non-formal) run additionally advertises the staged
+        Modeling Batch submission operation to the protocol role.  The
+        formal-run expression below is unchanged (it considers only the
+        explicit ``run`` argument); staged advertisement is a separate branch
+        keyed on the active run, so non-staged assemblies stay byte-identical.
+        """
 
         formal_run = self._coordination_enabled or (
             run is not None and self._is_formal_acceptance_run(run)
         )
         if not formal_run or self._acceptance is None:
+            if (
+                role == "protocol"
+                and not formal_run
+                and self._staged_decisions_enabled_for_active_run(run)
+            ):
+                # Staged non-formal protocol: only the staged submission
+                # operation; the formal protocol set stays formal-only.
+                return (STAGED_PROTOCOL_OPERATION,)
             return ()
         expected = ROLE_OPERATIONS.get(role, ())
         if not hasattr(self._acceptance, "capability_descriptors"):
@@ -2858,6 +2884,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         if not normalized or len(set(normalized)) != len(normalized):
             return ()
         return normalized if set(normalized).issubset(expected) else ()
+
+    def _staged_decisions_enabled_for_active_run(self, run: Any | None) -> bool:
+        """Staged decisions flag with the active-run fallback for late callers.
+
+        Elicititation allowlists and expected-server checks call
+        ``_role_capability_operations(role)`` without an explicit run; the
+        active run captured by ``start_roster`` answers for them.
+        """
+
+        candidate = run if run is not None else getattr(self, "_active_run", None)
+        return self._is_staged_decisions_run(candidate)
 
     @staticmethod
     def preflight_host_auth() -> Path:
@@ -3047,6 +3084,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # directory writable at the cwd-relative path the frozen instructions
         # name, and the thread sandbox is raised to workspace-write.
         self._multi_slice_scenario_map_enabled = self._is_multi_slice_run(run)
+        # R3.0-008B: staged modeling decision binds/advertisement are keyed on
+        # the task parameter; every non-staged run keeps its exact previous
+        # bind set and capability operations.
+        self._staged_decisions_enabled = self._is_staged_decisions_run(run)
         self._formal_turn_binding_required = self._coordination_enabled
         parameters = getattr(getattr(getattr(run, "configuration", None), "profile", None), "parameters", None)
         if isinstance(parameters, Mapping):
@@ -3760,7 +3801,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             list(capability_operations)
             if formal_capability
             else (
-                list(ROLE_OPERATIONS.get(agent.package.role, ()))
+                # R3.0-008B conservation: the non-staged manifest keeps the
+                # pre-008B role registry view (the staged operation never
+                # appears in a non-staged capability manifest).
+                [
+                    operation
+                    for operation in ROLE_OPERATIONS.get(agent.package.role, ())
+                    if operation != STAGED_PROTOCOL_OPERATION
+                ]
                 if agent.package.role != "modeling"
                 else []
             )
@@ -3913,10 +3961,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def _thread_sandbox(self, agent: _Agent) -> str:
         """R3.0-006 start3: only the multi-slice Coordinator writes run-root
         artifacts; every other role/task keeps the frozen package sandbox
-        byte-for-byte."""
+        byte-for-byte.
+
+        R3.0-008B staged runs additionally elevate the modeling and protocol
+        roles: each owns writable staged artifact directories (design §3.9
+        bind table) inside the otherwise read-only package sandbox.
+        """
 
         if agent.package.role == "coordinator" and getattr(
             self, "_multi_slice_scenario_map_enabled", False
+        ):
+            return "workspace-write"
+        if agent.package.role in {"modeling", "protocol"} and getattr(
+            self, "_staged_decisions_enabled", False
         ):
             return "workspace-write"
         return agent.package.runtime["codex"]["sandbox"]
@@ -3952,6 +4009,54 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             str(scenario_map_directory),
             "/agent/work/scenario-map",
         ]
+
+    def _staged_decision_binds(self, agent: _Agent) -> list[str]:
+        """R3.0-008B staged-decision directory binds (design §3.9 item 5).
+
+        Bind units are directories, prepared (mkdir-only) by TeamRunner before
+        the roster starts; no staged file is ever pre-created because an absent
+        file IS the gate semantics.  All three roles see the ``value-semantics/``
+        tree read-only; each role additionally receives writable binds for
+        exactly the directories it uniquely owns.  ``submission-receipts/``
+        and ``submission-intents/`` are Runner-host-owned and never bound.
+        Non-staged runs return an empty list (byte-identical command, F1).
+        """
+
+        if not getattr(self, "_staged_decisions_enabled", False):
+            return []
+        if self._run_root is None:
+            raise CodexRuntimeError("staged decision mounts are missing their run root")
+        role = agent.package.role
+        read_only: list[str] = ["--ro-bind"]
+        value_semantics = self._run_root / "value-semantics"
+        if not value_semantics.is_dir():
+            raise CodexRuntimeError("staged value-semantics directory was not prepared")
+        writable_by_role: dict[str, tuple[str, ...]] = {
+            "modeling": (
+                "value-semantics/conclusions",
+                "value-semantics/conclusions-archive",
+                "stage3-neutral-graph",
+            ),
+            "coordinator": (
+                "value-semantics/unlock",
+                "value-semantics/approvals",
+                "joint-acceptance",
+            ),
+            "protocol": ("value-semantics/ledger",),
+        }
+        owned = writable_by_role.get(role, ())
+        mounts: list[str] = list(read_only)
+        mounts.extend([str(value_semantics), "/agent/work/value-semantics"])
+        for relative in owned:
+            directory = self._run_root / relative
+            if not directory.is_dir():
+                raise CodexRuntimeError(
+                    f"staged writable directory was not prepared: {relative}"
+                )
+            # The later per-subdirectory --bind nests on top of the read-only
+            # value-semantics bind (bwrap applies arguments sequentially).
+            mounts.extend(["--bind", str(directory), f"/agent/work/{relative}"])
+        return mounts
 
     def namespace_command(self, agent: _Agent) -> list[str]:
         binary = shutil.which(self.codex_binary) or self.codex_binary
@@ -3995,6 +4100,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             str(agent.work),
             "/agent/work",
             *self._coordinator_scenario_map_bind(agent),
+            *self._staged_decision_binds(agent),
             "--ro-bind",
             str(agent.skills),
             "/skills",
@@ -4013,8 +4119,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "xterm-256color",
         ]
         if (
-            self._coordination_enabled
-            and self._acceptance is not None
+            # A non-empty operation set already implies formal coordination or
+            # the R3.0-008B staged protocol capability, so the staged
+            # non-formal protocol role also gets its capability socket bound.
+            self._acceptance is not None
             and self._role_capability_operations(agent.package.role)
         ):
             command[command.index("--chdir") : command.index("--chdir")] = [

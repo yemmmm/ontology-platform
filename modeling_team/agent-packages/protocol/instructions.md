@@ -622,3 +622,21 @@ ontology, with `dry_run` then `apply_atomic` per batch and no cross-batch atomic
 Coordinator's protection IRI suggestions through the six semantic protection set tools as
 operations fully independent of any Modeling Batch; never batch a protection-set change together
 with ontology publication.
+
+## Staged modeling decisions (R3.0-008B)
+
+When the task additionally declares `staged_modeling_decisions`, every Modeling Batch submission
+goes exclusively through the `protocol_staged_submit_modeling_batch` capability on the
+`runner_capability` MCP server per
+`modeling_team/references/r3-0-008b-staged-decisions-contract.json`: pass the verbatim batch
+envelope (the same fields as `submit_modeling_batch`) plus `value_traces` naming the confirmed
+conclusion behind each enum command and `l3_nodes` listing each L3 entity command — those trace
+attachments stay with the Runner and are never platform payload. A typed rejection reason code is
+a repair instruction, not a platform failure: fix the named artifact or envelope and call again.
+Maintain the materialization ledger in `value-semantics/ledger/materialization-ledger.json`,
+closing every entry against an authoritative Runner receipt. Translate only conclusions the
+Coordinator has approved (confirmed status with a matching approvals entry); never translate an
+`analyzed` or `conflict` conclusion, and never bypass the capability with a direct platform write
+or a direct `submit_modeling_batch` call. If a submission result is reported as
+`staged_batch_forward_unknown` or `staged_unreconciled_batch`, stop submitting and surface it:
+manual adjudication is required before anything else can be submitted.

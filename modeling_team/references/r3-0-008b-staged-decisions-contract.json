@@ -1,0 +1,344 @@
+{
+  "schema_version": "r3-0-008b-staged-decisions-contract/v1",
+  "purpose": "Agent-readable artifact and capability contract for the R3.0-008B staged modeling decisions (segment 1, mechanical increment): the analyzed_not_materialized analysis conclusions, the stage 3 minimal slot prerequisite, the materialization unlock, coordinator approvals, the materialization ledger, the joint acceptance checklist, and the Runner-private staged Modeling Batch submission capability. Mechanical only; business semantics are owned by the modeling Agents and confirmed by the Coordinator.",
+  "artifact_locations": {
+    "base": "workspaces/modeling-runs/<run-id>/",
+    "analysis_conclusions": "value-semantics/conclusions/analysis-conclusions.json",
+    "conclusions_archive": "value-semantics/conclusions-archive/<conclusion_id>.r<revision>.json",
+    "stage3_slot": "stage3-neutral-graph/neutral-candidate.json",
+    "materialization_unlock": "value-semantics/unlock/materialization-unlock.json",
+    "approvals": "value-semantics/approvals/approvals.json",
+    "materialization_ledger": "value-semantics/ledger/materialization-ledger.json",
+    "joint_acceptance_checklist": "joint-acceptance/joint-acceptance-checklist.json",
+    "submission_intents": "value-semantics/submission-intents/intent-<ordinal>.json",
+    "submission_receipts": "value-semantics/submission-receipts/receipt-<ordinal>.json",
+    "note": "These are run-workspace process artifacts, not platform storage. Directories are prepared (mkdir only) at run prepare time; files are created only by their unique writer. A missing file IS the gate semantics. A symlinked, non-JSON, or escaping path is rejected without touching anything outside the run directory."
+  },
+  "directory_writers": {
+    "modeling": [
+      "value-semantics/conclusions/",
+      "value-semantics/conclusions-archive/",
+      "stage3-neutral-graph/"
+    ],
+    "coordinator": [
+      "value-semantics/unlock/",
+      "value-semantics/approvals/",
+      "joint-acceptance/"
+    ],
+    "protocol": [
+      "value-semantics/ledger/"
+    ],
+    "runner_host": [
+      "value-semantics/submission-receipts/",
+      "value-semantics/submission-intents/"
+    ],
+    "read_visibility": "All three roles see the value-semantics/ tree read-only in their sandbox; only the listed unique writer receives a writable bind. submission-receipts/ and submission-intents/ are never sandbox-bound."
+  },
+  "stage_timing": {
+    "order": [
+      "1 scenario understanding",
+      "2 logical slicing",
+      "3 platform-neutral base graph candidate (minimal slot, deferred_contract R3.0-009)",
+      "4 Ontology topology decision (R3.0-002 gate)",
+      "5 base business semantics modeling + value analysis (analyzed_not_materialized)",
+      "6 database mapping and value semantics materialization (unlock + staged submission)",
+      "7 joint acceptance (checklist)"
+    ],
+    "rules": [
+      "the stage 3 slot is a prerequisite of the R3.0-002 topology gate: while the slot is missing or invalid the topology check is skipped without closing or latching the shared platform gate; stage3_* reason codes surface only through feedback and evidence streams",
+      "value semantics materialization (stage 6) requires a valid materialize-mode unlock and confirmed conclusions; while locked, every staged submission carrying create_enum_meaning, update_enum_meaning, or L3 create_entity commands is rejected with staged_value_materialization_locked",
+      "the Coordinator may not report terminal completed while the joint acceptance checklist is missing or structurally invalid; blocked reports always pass"
+    ]
+  },
+  "analysis_conclusions": {
+    "schema_version": "r3-0-008b-analysis-conclusions/v1",
+    "maintainer": "modeling",
+    "fields": ["schema_version", "scenario_id", "maintained_by", "entries"],
+    "entry_fields": [
+      "conclusion_id",
+      "mapped_property",
+      "candidate_value",
+      "business_meaning_hypothesis",
+      "evidence_refs",
+      "proposed_level",
+      "blocking_unknowns",
+      "status",
+      "confirmed_enum_value",
+      "confirmed_level",
+      "confirmed_by",
+      "conflict_note",
+      "revision"
+    ],
+    "statuses": ["analyzed", "confirmed", "materialized", "conflict"],
+    "legal_transitions": [
+      "analyzed -> confirmed",
+      "confirmed -> materialized",
+      "analyzed -> conflict",
+      "confirmed -> conflict",
+      "conflict -> analyzed (via revision increment with archived predecessor)"
+    ],
+    "rules": [
+      "mapped_property is an absolute IRI; evidence_refs is a non-empty list; proposed_level is one of L1, L2, L3; blocking_unknowns is an optional list",
+      "status analyzed forbids confirmed_enum_value, confirmed_by, and conflict_note",
+      "status confirmed and materialized require confirmed_enum_value and confirmed_by and forbid conflict_note",
+      "status conflict requires conflict_note and forbids confirmed_by; confirmed_enum_value may record the disputed candidate",
+      "revision is a positive integer; when an archive exists for the conclusion_id the current revision must be exactly max(archived)+1 and the (previous_status, current_status) pair must be a legal transition; without an archive the revision must be 1",
+      "the immutable predecessor is archived first at conclusions-archive/<conclusion_id>.r<revision>.json; every other transition is illegal",
+      "status materialized additionally requires a ledger entry naming the conclusion_id",
+      "the modeling Agent never self-confirms from database samples: confirmation is recorded by the Coordinator through approvals after business confirmation"
+    ],
+    "failure_reason_codes": [
+      "conclusions_unparsable",
+      "conclusions_schema_mismatch",
+      "conclusions_invalid_status_fields",
+      "conclusions_illegal_transition",
+      "conclusions_revision_regression",
+      "conclusions_materialized_without_ledger",
+      "conclusions_approval_missing"
+    ]
+  },
+  "stage3_slot": {
+    "schema_version": "r3-0-008b-stage3-slot/v1",
+    "maintainer": "modeling",
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "produced_by",
+      "approved_by",
+      "candidate_artifacts",
+      "deferred_contract",
+      "slot_note"
+    ],
+    "rules": [
+      "approved_by is non-empty (the minimal approval record; the Coordinator also anchors it in approvals with kind stage3_slot and target_id equal to scenario_id)",
+      "deferred_contract is exactly R3.0-009 (explicit backfill point for the full stage 3 contract)",
+      "candidate_artifacts is a non-empty list of run-workspace-relative paths without escape; each must exist as a regular file",
+      "slot_note is optional free text"
+    ],
+    "failure_reason_codes": [
+      "stage3_missing_artifact",
+      "stage3_unparsable",
+      "stage3_schema_mismatch",
+      "stage3_missing_approval",
+      "stage3_approval_record_missing",
+      "stage3_candidate_artifact_unavailable"
+    ]
+  },
+  "materialization_unlock": {
+    "schema_version": "r3-0-008b-materialization-unlock/v1",
+    "maintainer": "coordinator",
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "unlocked_by",
+      "mode",
+      "mapping_sources",
+      "confirmed_codes",
+      "skip_reason"
+    ],
+    "modes": ["materialize", "skip"],
+    "mapping_source_types": ["database_schema", "interface"],
+    "rules": [
+      "mode materialize requires a non-empty mapping_sources list of {source_type, reference} and a confirmed_codes list whose entries carry conclusion_id, mapped_property, confirmed_enum_value, and confirmed_level exactly matching the referenced confirmed conclusion",
+      "mode skip requires skip_reason exactly no_schema_no_interface, no mapping_sources, no confirmed_codes, and no conclusion in confirmed or materialized status",
+      "a dangling confirmed_codes reference is rejected with unlock_dangling_conclusion; any field drift against the confirmed conclusion is rejected with unlock_code_mismatch",
+      "an absent unlock file means stage 6 stays locked (staged_value_materialization_locked)"
+    ],
+    "failure_reason_codes": [
+      "unlock_unparsable",
+      "unlock_schema_mismatch",
+      "unlock_code_mismatch",
+      "unlock_dangling_conclusion",
+      "unlock_skip_inconsistent"
+    ]
+  },
+  "approvals": {
+    "schema_version": "r3-0-008b-approvals/v1",
+    "maintainer": "coordinator",
+    "fields": ["schema_version", "scenario_id", "maintained_by", "entries"],
+    "entry_fields": [
+      "kind",
+      "target_id",
+      "revision",
+      "confirmed_enum_value",
+      "approved_by",
+      "note"
+    ],
+    "kinds": ["conclusion_confirmation", "stage3_slot"],
+    "rules": [
+      "kind conclusion_confirmation: target_id is the conclusion_id, revision equals the current conclusion revision, and confirmed_enum_value equals the conclusion's confirmed_enum_value; every confirmed or materialized conclusion must be anchored by such an entry (conclusions_approval_missing otherwise)",
+      "kind stage3_slot: target_id is the slot's scenario_id and approved_by matches the slot's approved_by; confirmed_enum_value must be absent (stage3_approval_record_missing otherwise)",
+      "the approvals artifact is the authoritative approval record; approval authority is anchored mechanically by the coordinator-exclusive writable directory bind"
+    ],
+    "failure_reason_codes": [
+      "approvals_unparsable",
+      "approvals_schema_mismatch",
+      "conclusions_approval_missing",
+      "stage3_approval_record_missing"
+    ]
+  },
+  "materialization_ledger": {
+    "schema_version": "r3-0-008b-materialization-ledger/v1",
+    "maintainer": "protocol",
+    "fields": ["schema_version", "scenario_id", "maintained_by", "entries"],
+    "entry_fields": [
+      "conclusion_id",
+      "receipt_ordinal",
+      "batch_id",
+      "command_digest",
+      "semantic_value_iri"
+    ],
+    "rules": [
+      "each entry must close against an authoritative Runner receipt: the receipt_ordinal names an existing receipt whose batch_id matches, whose mode is apply_atomic, and whose commands list contains command_digest",
+      "semantic_value_iri is optional; when present it must be non-empty",
+      "a conclusions entry with status materialized requires a ledger entry naming it"
+    ],
+    "failure_reason_codes": ["staged_ledger_stale"]
+  },
+  "joint_acceptance_checklist": {
+    "schema_version": "r3-0-008b-joint-acceptance-checklist/v1",
+    "maintainer": "coordinator",
+    "fields": ["schema_version", "scenario_id", "produced_by", "items"],
+    "fixed_item_ids": [
+      "business_semantics_recall",
+      "commonality_recall",
+      "cross_slice_cross_ontology_recall",
+      "value_semantics_recall",
+      "sql_mapping_chain",
+      "r30008a_representative_question_recheck",
+      "rdf_no_business_rows"
+    ],
+    "verdicts": ["pass", "fail", "pending"],
+    "rules": [
+      "exactly the seven fixed items, each once, each with item_id, verdict, evidence_ref, and checked_by",
+      "the Coordinator's terminal completed report is refused while the checklist is missing or structurally invalid; blocked reports always pass",
+      "R3.0-008A evidence does not substitute for the r30008a_representative_question_recheck item and vice versa"
+    ],
+    "failure_reason_codes": [
+      "acceptance_checklist_missing",
+      "acceptance_checklist_unparsable",
+      "acceptance_checklist_schema_mismatch"
+    ]
+  },
+  "staged_submission_capability": {
+    "operation": "protocol_staged_submit_modeling_batch",
+    "owner": "protocol (via the runner_capability MCP server)",
+    "arguments": ["protocol_id", "batch", "value_traces", "l3_nodes"],
+    "batch_envelope": {
+      "required_fields": [
+        "session_id",
+        "client_batch_id",
+        "ontology_id",
+        "idempotency_key",
+        "expected_workspace_version",
+        "items",
+        "mode"
+      ],
+      "optional_fields": ["lease_token"],
+      "modes": ["dry_run", "apply_atomic"],
+      "rules": [
+        "the envelope mirrors the platform submit_modeling_batch signature verbatim; only the batch object is forwarded to the platform, byte-for-byte",
+        "mode apply_atomic additionally requires a non-empty lease_token",
+        "items is a non-empty list of {command_kind, payload}; payload is an object"
+      ]
+    },
+    "value_traces": {
+      "entry_fields": ["command_index", "conclusion_id", "mapped_property"],
+      "rules": [
+        "every create_enum_meaning and update_enum_meaning command must carry at least one trace naming a known conclusion (staged_missing_trace / staged_trace_mismatch otherwise)",
+        "the traced conclusion must be in confirmed status (staged_conclusion_not_confirmed, staged_conclusion_conflict, staged_conclusion_already_materialized otherwise)",
+        "create_enum_meaning payload must carry property_iri equal to the conclusion's mapped_property and enum_value equal to the conclusion's confirmed_enum_value",
+        "update_enum_meaning traces must carry mapped_property equal to the conclusion's mapped_property; update_enum_meaning payload must not carry property_iri",
+        "an update_enum_meaning without enum_value must name its enum target (enum_meaning_id or enum_meaning_iri) already covered by an authoritative receipt traced to the same conclusion (staged_unknown_enum_target otherwise)"
+      ]
+    },
+    "l3_nodes": {
+      "entry_fields": ["command_index", "entity_id", "semantic_value_iri"],
+      "rules": [
+        "every L3 create_entity command must be listed (it is a materialization command: the unlock precondition applies)",
+        "each node must reference the create_entity payload identity and carry a semantic_value_iri that either appears in this batch or was already receipted",
+        "an L3 node is only backed by a confirmed conclusion whose effective level (confirmed_level or proposed_level) is L3 (staged_l3_unapproved otherwise)"
+      ]
+    },
+    "execution_rules": [
+      "mechanical checks run in a fixed order: gate state, envelope schema, unlock precondition, create_enum_meaning matching, update_enum_meaning matching, L3 nodes, durable intent write, host-side forward, unknown adjudication, receipt",
+      "a durable submission intent is written BEFORE the host-side forward; the Runner-supplied idempotency_key and client_batch_id are reused verbatim on retries",
+      "the host-side forward is a Runner-injected write path; value_traces and l3_nodes never leave the Runner",
+      "an indeterminate forward result marks the intent unknown, rejects every new submission with staged_unreconciled_batch, and fires the kill-switch (manual adjudication via the three deterministic branches: claim the platform-listing hit, retry with the same key, or suspend)",
+      "an authoritative receipt is written after a definite result; the intent transitions submitted -> receipted; a receipted idempotency key is rejected with staged_conclusion_already_materialized",
+      "every rejection is a typed reason code returned as structured error content; each code names the artifact to repair and the run continues"
+    ],
+    "submission_intent": {
+      "schema_version": "r3-0-008b-submission-intent/v1",
+      "fields": [
+        "schema_version",
+        "ordinal",
+        "idempotency_key",
+        "client_batch_id",
+        "session_id",
+        "mode",
+        "commands",
+        "value_traces",
+        "l3_nodes",
+        "status"
+      ],
+      "statuses": ["submitted", "receipted", "unknown"]
+    },
+    "submission_receipt": {
+      "schema_version": "r3-0-008b-submission-receipt/v1",
+      "fields": [
+        "schema_version",
+        "ordinal",
+        "intent_ordinal",
+        "idempotency_key",
+        "mode",
+        "batch_id",
+        "commands",
+        "value_traces",
+        "l3_nodes",
+        "response_digest",
+        "submitted_via"
+      ],
+      "rules": [
+        "receipts are the authoritative application record; submitted_via is always protocol_staged_submit_modeling_batch",
+        "the Runner stamps an additive enum_target field on receipt value_traces entries whose traced command is an enum command, so later update_enum_meaning without enum_value can close its target against receipts"
+      ]
+    },
+    "failure_reason_codes": [
+      "staged_gate_closed",
+      "staged_submit_unparsable",
+      "staged_submit_schema_mismatch",
+      "staged_conclusions_unavailable",
+      "staged_value_materialization_locked",
+      "staged_missing_trace",
+      "staged_conclusion_not_confirmed",
+      "staged_conclusion_conflict",
+      "staged_conclusion_already_materialized",
+      "staged_trace_mismatch",
+      "staged_unknown_enum_target",
+      "staged_l3_unapproved",
+      "staged_dangling_semantic_value",
+      "staged_batch_forward_failed",
+      "staged_batch_forward_unknown",
+      "staged_ledger_stale",
+      "staged_unreconciled_batch"
+    ]
+  },
+  "kill_switch": {
+    "reason_code": "staged_unreconciled_batch",
+    "triggers": [
+      "a suspended (unknown) submission intent",
+      "a receipted intent with no receipt file",
+      "a platform batch listing entry with no Runner intent (bypassed direct submission)",
+      "a receipted intent with no platform batch (fake receipt)"
+    ],
+    "behavior": "The shared platform MCP gate closes and stays closed until a human adjudicates the durable intents with the deterministic branches; every staged submission is rejected meanwhile. This is the only hard stop; every other failure is typed, repairable feedback and the run continues."
+  },
+  "execution": {
+    "smoke_task": "modeling_team/tasks/r3-0-008b-staged-decisions-smoke.yaml",
+    "real_task": "modeling_team/tasks/r3-0-008b-staged-real.yaml",
+    "profile": "modeling_team/profiles/r3-0-002-modeling-team.yaml (reused unchanged)",
+    "task_parameter": "parameters.staged_modeling_decisions: true (requires parameters.multi_slice_workflow: true)",
+    "non_staged_conservation": "Tasks without the staged parameter keep byte-identical capability operation sets, sandbox binds, and validation behavior."
+  }
+}

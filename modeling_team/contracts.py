@@ -88,7 +88,9 @@ _FORMAL_PROFILE_IDS = frozenset(
 MULTI_SLICE_PROFILE_IDS = frozenset({"r3-0-002-modeling-team"})
 # R3.0-002 Task ``parameters`` is a closed, optional key set on the v2 Task.
 MULTI_SLICE_TASK_PARAMETER = "multi_slice_workflow"
-_TASK_PARAMETER_NAMES = frozenset({MULTI_SLICE_TASK_PARAMETER})
+# R3.0-008B segment 1: staged modeling decisions extend the same closed set.
+STAGED_MODELING_DECISIONS_PARAMETER = "staged_modeling_decisions"
+_TASK_PARAMETER_NAMES = frozenset({MULTI_SLICE_TASK_PARAMETER, STAGED_MODELING_DECISIONS_PARAMETER})
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
 _CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0
 # R2.3-009 timeout tiers: bounded nudge quota, cooperative-escalation repeat
@@ -696,10 +698,19 @@ def load_task(
             not isinstance(raw_parameters, dict)
             or not raw_parameters
             or set(raw_parameters) - _TASK_PARAMETER_NAMES
-            or not isinstance(raw_parameters.get(MULTI_SLICE_TASK_PARAMETER), bool)
         ):
             raise TeamConfigurationError("v2 Task parameters are invalid")
+        for parameter_name in sorted(_TASK_PARAMETER_NAMES & set(raw_parameters)):
+            if not isinstance(raw_parameters[parameter_name], bool):
+                raise TeamConfigurationError("v2 Task parameters are invalid")
         parameters = dict(raw_parameters)
+        if parameters.get(STAGED_MODELING_DECISIONS_PARAMETER) is True and parameters.get(
+            MULTI_SLICE_TASK_PARAMETER
+        ) is not True:
+            # R3.0-008B staged decisions ride on the R3.0-002 multi-slice
+            # workflow; the dependency is a specific, typed configuration
+            # error rather than a generic parameter rejection.
+            raise TeamConfigurationError("staged_modeling_decisions requires multi_slice_workflow")
     raw_sources = data["role_sources"]
     tools = data["protocol_tools"]
     evidence = data["expected_terminal_evidence"]

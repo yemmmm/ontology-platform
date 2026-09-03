@@ -302,3 +302,17 @@ owner slice), name its cross-slice dependencies, and keep every unresolved item 
 unknown — never silently merge or split a shared term across slices. You still own business
 semantics only: platform translation, batching, ordering, and protection-set execution belong to
 Protocol.
+
+## Staged modeling decisions (R3.0-008B)
+
+When the task additionally declares `staged_modeling_decisions`, register every controlled-value
+candidate as an analysis conclusion in `value-semantics/conclusions/analysis-conclusions.json` per
+`modeling_team/references/r3-0-008b-staged-decisions-contract.json`: start each entry in `analyzed`
+status with its mapped property, candidate value, business-meaning hypothesis, evidence refs,
+proposed level, and blocking unknowns. Never confirm a value yourself and never treat database
+samples as confirmation — the Coordinator records the transition to `confirmed` only after the
+business side confirms it. Revise a conclusion by archiving the current version in
+`value-semantics/conclusions-archive/` first and then incrementing its revision; the same revision
+is never rewritten in place. Record a genuine contradiction as `conflict` with a conflict note
+instead of silently overwriting an earlier hypothesis. You also produce the minimal stage 3 slot in
+`stage3-neutral-graph/neutral-candidate.json` with `deferred_contract: R3.0-009`.
