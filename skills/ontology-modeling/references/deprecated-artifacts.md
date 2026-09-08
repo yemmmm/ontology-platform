@@ -33,8 +33,9 @@ handoffs, and role-specific evals are not completion requirements of `ontology-m
 - `.claude/agents/semantic-analyst.md`
 
 Do not reactivate the two-top-level-Claude session experiment, mailbox, Hook recorder, fixed role
-team, local adapter, or shared-directory orchestration. A new run uses the current skill directly
-with a single modeling Agent and an optional fresh read-only consumer.
+team, local adapter, or shared-directory orchestration. Use the current skill with the selected
+task/Profile. The current `modeling_team/` Runner is distinct from this deprecated Harness;
+preserve its Modeling/Protocol separation and the selected independent acceptance contract.
 
 Historical requirements, designs, test plans, delivery records, traces, and workspaces may still
 describe these components. Treat their PASS status as evidence about the historical version, not as

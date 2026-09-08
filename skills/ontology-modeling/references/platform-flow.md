@@ -2,6 +2,8 @@
 
 Use the concrete registered tool schemas or public API contract exposed to the current modeling
 Agent. Do not invent an operation, payload, alternate storage, or orchestration layer.
+The table describes responsibilities and evidence, not a universal phase scheduler. The selected
+versioned task controls staged decisions, dependencies, and whether Protocol performs the calls.
 
 ## Sequence
 
@@ -11,7 +13,7 @@ Agent. Do not invent an operation, payload, alternate storage, or orchestration 
 | Session | Build Session creation and lease | Project, Ontology, Build Session IDs |
 | Schema | vocabulary, relations, Shapes, rationale | dry-run findings and applied immutable Batch ID |
 | Negative proof | intentionally invalid instance | rejected Batch ID and Shape violation |
-| Instances | valid facts and provenance | dry-run findings and applied immutable Batch ID |
+| Instances | semantic facts and provenance; no relational business-row copies | dry-run findings and applied immutable Batch ID |
 | Validation | response to deterministic findings | validation ID, `conforms`, findings |
 | Reasoning | interpretation of consistency evidence | reasoning ID, `consistent`, findings |
 | Retrieval | scoped query and completeness checks | request, public results, truncation/completeness |
@@ -52,10 +54,11 @@ governed query projection. This is ontology data, not a new platform domain conc
 
 ## Attempt ledger
 
-For an evaluation with a fixed attempt budget, the Host writes append-only JSONL outside the frozen
-Agent input. Write `modeling_started` before each launch and exactly one terminal
+Use the existing Delivery run ledger and the authorized budget described in SKILL.md; do not add
+a second ledger or platform counter. Keep it outside frozen Agent input. Write `modeling_started`
+before each launch and a terminal
 `modeling_completed` or `modeling_blocked` event afterward. Each event includes attempt number,
-timestamp, fresh Project/Ontology/Build Session identifiers when available, subagent identifier, and
+timestamp, run and Project/Ontology/Build Session identifiers when available, Agent identifier, and
 evidence locator. Exclude credentials, hidden answers, prompts, and model content.
 
 ## Retrieval checks

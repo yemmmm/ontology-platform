@@ -1,11 +1,14 @@
 # Prompt patterns
 
-Adapt identifiers and paths, but preserve the information boundary and ownership language.
+Use these patterns for standalone/fresh-scope work. For a Team Profile, use its supplied role
+instructions: Modeling authors semantics and Protocol executes platform calls. Do not paste a
+standalone direct-write prompt into an isolated Modeling role. Adapt identifiers and paths while
+preserving information boundaries and ownership.
 
 ## Fresh modeling Agent
 
 ```text
-You are the sole ontology-modeling Agent for this attempt.
+You own ontology semantics for this attempt under the supplied execution Profile.
 
 Visible inputs:
 - source root: <agent-visible-directory>
@@ -30,9 +33,13 @@ default; an unconfirmed answer must become a named, queryable model resource wit
 kind=explicit_unknown, stable identifier, affected scope, unanswered question, evidence, and
 rationale, with no asserted answer value.
 
-Create and own the Build Session and every semantic payload. Use immutable Modeling Batch
+Own every semantic payload; execute platform operations only if your Profile assigns that
+responsibility to you, otherwise pass the unchanged payload to Protocol. Use immutable Modeling Batch
 dry-run/apply, an executable Shape with a rejected negative example, valid instance application,
-validation, reasoning, a governed complete query, checkpoint, and completion.
+validation, reasoning, a governed complete query, checkpoint, and completion. In relational
+scenarios, semantic resources may be instances; business rows remain in the source database.
+Correct recoverable findings in the same run using exact platform feedback. Do not treat a
+format error as semantic failure or invent a new attempt allowance.
 ```
 
 ## Answering one clarification
@@ -60,8 +67,10 @@ request unchanged, and return the exact status/result. Do not give alternatives 
 construct, repair, combine, or retry semantic content.
 ```
 
-If the visible contract does not define the required operation or is inconsistent, return
-`BLOCKED: missing_or_inconsistent_public_api_contract` instead of guessing.
+If the visible contract does not define the required operation or is inconsistent, report
+`missing_or_inconsistent_public_api_contract` with the exact missing operation/field. Wait for
+corrected input for that operation; resume the same run when safe. This is a platform-contract
+blocker, not evidence of modeling-quality failure or permission for a fresh start.
 
 The Host response must be limited to:
 

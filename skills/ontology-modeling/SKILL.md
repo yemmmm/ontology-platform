@@ -1,13 +1,14 @@
 ---
 name: ontology-modeling
-description: Build or update an evidence-grounded ontology by discovering consequential semantic gaps, clarifying them in business language, applying the model through deterministic platform validation, and proving that a fresh consumer can retrieve the intended meaning. Use for ontology modeling from business sources, semantic-gap discovery, modeling-quality experiments, formal application, or blind-consumer verification.
+description: Build or update source-grounded ontologies, clarify consequential business gaps, and verify applied semantics through governed retrieval. Use for semantic modeling and modeling-quality experiments, not ordinary platform code edits.
 ---
 
 # Ontology Modeling
 
-Use one Modeling Agent to own source interpretation, clarification, semantic design, and every
-modeling payload. Use the platform for deterministic validation, persistence, provenance,
-governance, and retrieval. Do not insert a role Harness between them.
+The Modeling role owns source interpretation, clarification, semantic design, and semantic
+payloads. The platform owns deterministic validation, persistence, provenance, governance, and
+retrieval. Follow the selected requirement and Profile for role allocation; a standalone Agent
+may hold multiple responsibilities. Do not reactivate the deprecated role Harness.
 
 ## Team Profile execution boundary
 
@@ -23,9 +24,9 @@ candidate-approval mechanics to the Skill.
 
 ## Establish the contract
 
-1. Read the authoritative requirement and only the declared business sources. In
-   `ontology-platform`, read the relevant entry in `docs/requirements/requirements-v1.0.md` or the
-   active versioned requirement before changing platform behavior.
+1. The Delivery Agent identifies the owning entry in `docs/requirements/` and reads only its
+   applicable base/related links. No historical version is the default. An isolated Modeling
+   Agent follows the supplied task and declared sources, without opening repository requirements.
 2. State the modeling scope, declared sources, consumer questions, available platform interface,
    and any explicit attempt budget.
 3. Keep business concepts in ontology data. Do not add domain-specific platform routes, fields, or
@@ -55,43 +56,35 @@ Before creating the principal schema, decide whether the visible evidence unique
 Identify material gaps yourself. Do not rely on a prewritten question list, question count, or
 category names.
 
-Ask one consequential business question at a time. Cite the visible evidence or tension, explain
-which model or consumer conclusion changes, and wait for the answer before asking the next question.
+Ask one consequential business question at a time. Cite the visible evidence or tension and explain
+which model or consumer conclusion changes. Wait before asserting the dependent meaning, while
+continuing independent analysis. Use an already confirmed answer without asking it again.
 Do not ask the user to design Classes, Properties, Shapes, IRIs, or Batch payloads. Do not repeat an
 explicit fact or ask generic questionnaire items.
 
-If the answer cannot be confirmed, preserve a named, queryable model resource with
-`kind=explicit_unknown`, a stable identifier, the affected subject/scope, the unanswered business
-question, source evidence, and rationale. Assert no answer value. Define and validate this
-model-local representation in the schema so a generic semantic query and a fresh consumer can
-recover it. Never convert silence, uncertainty, or missing evidence into a default.
+If the answer cannot be confirmed, preserve a queryable `kind=explicit_unknown` using the
+representation in [platform-flow.md](references/platform-flow.md). Never convert silence,
+uncertainty, or missing evidence into an asserted answer.
 
 Use the modeling and Host prompt patterns in [references/prompts.md](references/prompts.md).
 
 ## Build through the platform
 
-Follow [references/platform-flow.md](references/platform-flow.md):
-
-1. Let the Host create only an empty Project and Ontology when credentials or scope creation are not
-   available to the modeling Agent.
-2. Create and own a fresh Build Session.
-3. Submit the schema, vocabulary, constraints, and rationale through immutable Modeling Batch
-   dry-run and apply.
-4. Prove at least one important executable Shape with a negative instance that is rejected and not
-   applied.
-5. Submit valid instances through dry-run and apply. Make at most one narrow,
-   validation-evidence-driven correction per defect; do not silently redesign the model.
-6. Run validation and reasoning.
-7. Run a governed, scoped, complete semantic query that exercises the consumer questions.
-8. Save the checkpoint and complete the Build Session only after the evidence is coherent.
+Follow the evidence sequence in [references/platform-flow.md](references/platform-flow.md), with
+the selected task's stages and role ownership. Use immutable Modeling Batch dry-run/apply, prove
+an important Shape rejects an unapplied negative example, and verify validation, reasoning, and
+governed retrieval before closure. For relational scenarios, instances are semantic resources;
+business rows remain in the source database. Correct evidenced defects and retry safely in the
+same run. Do not silently redesign the model; uncertain writes require state inspection first.
 
 Prefer registered platform tools or MCP. If the available interface is read-only, the Host must first
 provide the current public OpenAPI fragments or equivalent request schemas for the allowed
 operations as declared Agent-visible input. Then emit exactly one request at a time as
 `{method, path, body}`. The Host may attach the base URL and credentials, forward the request
 unchanged, and return the exact status and result. The Host must not write, repair, reorder,
-synthesize, or retry semantic content. Stop as blocked instead of guessing when the supplied
-contract is missing or inconsistent.
+synthesize, or retry semantic content. If the supplied contract is missing or inconsistent, report
+the exact missing operation/field and request corrected input. Suspend that operation without
+guessing; resume the same run when the contract is repaired and state is safe.
 
 ## Verify with a fresh consumer
 
@@ -105,21 +98,22 @@ unknowns unknown. Treat a plausible answer without retrievable evidence as failu
 
 ## Control attempts
 
-Apply an attempt limit only when the user or evaluation contract sets one. One modeling attempt is
-one fresh modeling Agent, fresh input workspace, fresh Project/Ontology, and fresh Build Session.
-The Host owns an append-only JSONL ledger outside the frozen Agent-visible input. Append one
-`modeling_started` record before launch and one terminal `modeling_completed` or `modeling_blocked`
-record afterward; include `attempt`, timestamp, fresh scope identifiers, subagent identifier, and
-evidence locator. Never store hidden answers or credentials in the ledger and never reuse a
-deprecated Harness ledger. Tester, reviewer, blind-consumer, and same-run mechanical repairs are not
-new modeling attempts.
+Use the current user authorization and repository default (three fresh semantic starts per
+authorization unless specified otherwise). This skill does not authorize a start. A fresh semantic
+modeling start consumes one attempt; scope freshness follows the selected new-scope or existing-scope
+task, rather than requiring every attempt to create a Project/Ontology.
+The Delivery Agent records starts, terminal state, identifiers, and evidence in the existing run
+ledger as described in platform-flow.md. Tester, reviewer, blind-consumer, and same-run mechanical
+repairs are not new modeling attempts.
 
 When the configured limit is reached, stop modeling, preserve the evidence, and report the current
 state. Do not increase the limit or launch another modeler to tune the result.
 
-## Completion gate
+## Semantic acceptance evidence
 
-Report completion only when:
+Apply the selected acceptance stage. Mechanical verification is not final semantic acceptance;
+later repeatability/productization stages do not block an earlier stage. Final semantic acceptance
+requires:
 
 - every modeled claim is grounded in a declared source, confirmed answer, or explicit unknown;
 - material gaps were discovered without leaking the expected question set;

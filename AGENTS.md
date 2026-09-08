@@ -77,33 +77,24 @@
 - 分别记录语义建模与基础设施、harness、评审、文档所花的有效时间。如果语义建模不足一半，暂停
   扩展平台和 harness，报告原因并提出更短的通路；不得在真实语义证据缺失时继续增加控制机制。
 
-## 用户咨询时的双层解释法
+## 工作方式与沟通
 
-在进行较长时间的任务时，如果用户就某个概念、当前进度或方案向 Agent 咨询信息，Agent 应使用「双层解释法」（`two-layer-explanation` skill）回答：
+- 用户明确要求执行后，完成授权范围内的工作；常规、可逆的实现选择自行决定。只有答案会实质改变
+  业务语义、范围、兼容性或授权边界时才提问，同时继续不依赖答案的工作。不要重复请求已有授权。
+- 用户中途补充要求时保留原目标和已完成工作；先简短回答进度或概念问题，再继续任务。
+- 默认用简洁中文，先结论后证据。复杂概念先用具体例子解释，再补必要术语；仅在用户要求教学式
+  讲解时使用完整 `two-layer-explanation`，不为普通进度汇报强制生成术语表和检查题。
+- 根据任务选用 skills，仅加载相关 references。用户指令优先于 skill 指南；若某条规则确实阻塞
+  已授权工作，指出文件、原文和具体原因，区分硬要求与自己的推断。
+- 需要并行工作或独立验收时按当前授权、需求和运行环境分工；交接目标、输入、输出、文件/资源归属
+  和证据边界。不要仅为满足角色数量增加 Agent，也不要用自评代替要求的独立验收。
 
-1. **小白版**：用生活化语言和一个具体例子，让没有背景的人也能听懂；
-2. **专业版**：使用准确术语，讲清核心机制、适用边界和常见误解；
-3. **收尾整理**：列出小白说法与专业术语的对应关系、用户最容易理解错的地方，以及 1 个用于检查是否真正理解的问题。
+## 项目导航
 
-## Project Structure & Module Organization
-
-This repository contains a FastAPI backend and a Vite/React frontend for an ontology and knowledge graph platform. Key paths:
-
-- `backend/app/api/`: HTTP routes, dependencies, and schemas.
-- `backend/app/api/semantic.py`: semantic graph, query, validation, reasoning, and migration routes.
-- `backend/app/api/build_sessions.py`: project Build Session, checkpoint, and lease routes.
-- `backend/app/api/modeling_batches.py`: modeling batch dry-run, apply, query, and recovery routes.
-- `backend/app/domain/`: ontology and graph domain models.
-- `backend/app/repositories/`: PostgreSQL and RDF/Oxigraph persistence.
-- `backend/app/services/`: validation and application workflows.
-- `backend/app/services/modeling_batches.py`: external-Agent modeling application workflow.
-- `backend/app/services/semantic_context_query.py`: structured Agent query pipeline.
-- `backend/app/mcp/`: MCP server entrypoint.
-- `backend/app/mcp/tools/`: current system, interview, build-session, modeling, evidence, and semantic tools.
-- `backend/migrations/`: Alembic migrations.
-- `frontend/src/`: React UI entrypoint and styles.
-- `frontend/src/pages/BuildContextDebugPage.tsx`: read-only Build Session/modeling diagnostics.
-- `docs/`: architecture, API, MCP, UI docs, and ADRs.
+FastAPI 后端位于 `backend/app/`：`api/` 为 HTTP 合同，`services/` 为工作流，`repositories/`
+为 PostgreSQL/RDF 持久化，`domain/` 为领域模型，`mcp/tools/` 为 Agent 工具。
+重点服务为 `modeling_batches.py` 与 `semantic_context_query.py`；迁移在 `backend/migrations/`。
+React/Vite 前端在 `frontend/src/`；运行与建模诊断可从 `BuildContextDebugPage.tsx` 入手。
 
 ## Project Target Guidance
 
@@ -120,50 +111,20 @@ and update the owning requirement when the target or delivery decision changes.
 architectural decisions. Neither current code nor older planning documents override the applicable
 versioned requirements.
 
-## Current Development Priority
+## 工作流与按需读取
 
-The unified modeling and guardrail priorities are defined in
-`建模优先、平台防御与失败恢复规则`. This section limits productization scope. Prefer the
-simplest implementation and operating workflow that preserves or improves modeling and semantic
-retrieval quality.
-
-- Do not make productization concerns such as fine-grained security, generalized version
-  management, immutable audit history, cross-machine coordination, automatic crash recovery,
-  complex orchestration, or polished management UI prerequisites for a modeling-quality experiment.
-- Design documents may reserve extension points and list those concerns as future capabilities, but
-  current implementation and acceptance must not include them unless they are necessary to protect
-  modeling correctness, retrieval correctness, or the integrity of an immediately applied model.
-- For local Agent workflow experiments, prefer a repo-local, gitignored, human-readable shared
-  directory and small deterministic scripts over new backend tables, APIs, services, or frameworks.
-- Separate every new modeling-workflow design into `current minimal scope` and `future
-  productization`. Do not silently promote future features into the current completion gate.
-- Existing platform capabilities may be reused, but do not require every available governance,
-  recovery, lineage, event, or audit mechanism in each local iteration merely because it exists.
-
-## External Modeling Agent Experiment Rules
-
-The rules in this section are mandatory unless the user or an authoritative requirement explicitly
-changes them. Detailed tactics, examples, and historical lessons are reference-only in
-`docs/reference/modeling-agent-experiment-lessons.md`; that document cannot override these rules.
-The unified start priority, attempt authorization, guardrail hierarchy, failure recovery, and
-acceptance boundaries are defined in `建模优先、平台防御与失败恢复规则`; do not restate or weaken
-them here.
-
-- The Delivery Agent owns deterministic execution, resource lifecycle, cleanup, and evidence
-  handoff. A repo-local script is only its tool, not a Host layer, autonomous modeling role, or
-  semantic acceptance authority.
-- Do not create hard-coded programs that inspect one temporary requirement's or one stage's output
-  merely to support that implementation run. Such one-off checkers are slow to build, brittle, and
-  prone to validating the script's assumptions instead of the real result. Prefer direct evidence
-  inspection and existing generic validators. This restriction does not apply to validation that
-  protects a stable, reusable requirement or platform contract; temporary implementation scripts
-  must remain small, disposable, and non-authoritative.
-- Keep deterministic mechanics out of model reasoning. Tools own protocol formatting, stable
-  identities, immutable publication, retries, and parsing; modeling Agents own business semantics,
-  ontology structure, evidence, Shapes, relations, and explicit unknowns.
-- Preserve requested parallel execution. Freeze contracts and assign non-overlapping ownership of
-  files, ports, Project/Ontology IDs, runtime directories, shared records, and cleanup before work
-  begins.
+- 新建模使用 [ontology-modeling](skills/ontology-modeling/SKILL.md)；当前 Team 执行以选定的
+  `modeling_team/tasks/`、`profiles/` 和 `agent-packages/` 合同为准。Delivery Agent 负责版本与
+  授权检查，隔离建模 Agent 只接收获准输入。不要把完整仓库、记忆或隐藏答案注入盲测。
+- `.codex/`、`.claude/` 中标为 DEPRECATED 的旧 Harness、角色及 `ontology-builder` 仅为历史
+  证据，不是当前 Team Runner，也不是启动依赖。
+- 建模与平台防御遵循上方统一规则。仅在具体失败需要历史经验时读取
+  [实验经验](docs/reference/modeling-agent-experiment-lessons.md)，不把经验扩成完成门。
+- Delivery Agent 负责确定性执行、资源生命周期、清理和证据交接；脚本只是工具，不是语义裁判。
+  本地实验优先复用现有工具和 gitignored 可读目录。不创建只匹配本次阶段输出的一次性验收器；
+  可复用平台合同的确定性验证不受此限制。
+- 明确区分当前最小范围与未来产品化；安全细分、跨机器协调、自动恢复、审计框架和管理 UI
+  只有在直接保护当前建模、检索或已写入资源完整性时才纳入本次范围。
 
 ## Platform and Reference-Ontology Boundary
 
@@ -210,15 +171,19 @@ Frontend code uses TypeScript, React, and ES modules. Use `PascalCase` for compo
 
 Backend dev dependencies include `pytest`; place tests under `backend/tests/` with names like `test_metadata.py` or `test_graph_validation.py`, then run `cd backend && uv run pytest`. Prefer service-level tests for validation rules.
 
-Any change under `backend/` must include new or updated tests when behavior changes and must be
-verified with `cd backend && uv run pytest` before the work is considered complete. v0.4 work
-should keep coverage around semantic services, modeling application, relation metadata, lineage,
-governance application, and import/export round-trips. Do not report a backend change as complete while tests are failing.
+Changes to executable code under `backend/` must include new or updated tests when behavior changes
+and must be verified with `cd backend && uv run pytest` before the work is considered complete.
+Do not report a backend change as complete while tests are failing.
 If the test command cannot be run because an external dependency is unavailable, document the exact
 blocker and the narrower checks that were run.
 
 For UI changes, run `cd frontend && npm run build` and `cd frontend && npx playwright test`, then
 document any manual browser checks that were necessary.
+
+Documentation-only and instruction-only changes require relevant link, format, and contract checks;
+they do not require backend/frontend suites or a service restart. Run changed skill validators when
+available. These checks do not establish model quality or real-runtime acceptance. After required
+checks pass, repeat or broaden them only for new changes, failures, or unresolved evidence gaps.
 
 ## Runtime Restart Rules
 

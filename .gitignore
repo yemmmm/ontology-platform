@@ -19,7 +19,10 @@ build/
 .DS_Store
 
 # Agent tooling (external skills, caches, critique output)
-.agents/
+.agents/*
+!.agents/skills/
+.agents/skills/*
+!.agents/skills/ontology-modeling
 .playwright-mcp/
 workspaces/
 skills-lock.json
