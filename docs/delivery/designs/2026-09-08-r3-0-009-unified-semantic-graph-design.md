@@ -1,6 +1,6 @@
 # R3.0-009 统一语义图与共性抽象：功能设计
 
-状态：需求细化完成，独立计划评审 Round 3 PASS（2026-09-08）；待实现、待独立验收。本轮不实现代码或启动真实 modeling start。
+状态：Round 4 REVISE 的两项 High 已核实、修订并通过 Round 5 专项独立复审 PASS（2026-09-08）；此前评审记录保留。待实现、待独立验收；本轮只修改文档。
 
 关联需求：`docs/requirements/requirements-v3.0.md` 的 R3.0-009（D1-D9、节点/兼容合同、候选批准合同与
 最小验收条件）；基线为 R3.0-002、R3.0-004、R3.0-006、R3.0-007、R3.0-008A、R3.0-008B、R3.0-011。
@@ -44,7 +44,7 @@ Class 建立，同时保留正式类型、Shape、规则、权限、dry-run/appl
 | D5 | 无有价值共性可带理由继续；过期/冲突只阻止受影响写入 | ≥90%，符合按需抽象与可恢复失败规则 |
 | D6 | 复用 EntitiesPage/ClassesPage，补最小创建、分类和导航能力 | ≥85%，同时覆盖用户与 Agent，不引入画布 |
 | D7 | Graph Set 内按 IRI 跨资源种类读取、遍历、双向召回 | ≥90%，复用现有授权查询和来源边界 |
-| D8 | 复用现有 Rules/Shapes，冲突显式；不自动传播共性属性 | ≥90%，避免平台替建模者决定语义 |
+| D8 | 复用 SHACL 引擎和 Shape 资源，补齐节点/谓词主体 target 的托管写读路径；冲突显式，不自动传播共性属性 | ≥85%，R4 证据纠正“无类 Shape 已有”的假设；不建设新引擎 |
 | D9 | 先做机械/平台独立验收，真实质量随 008B 第二段、011、006 取证 | ≥90%，机械 PASS 不等于语义完成 |
 
 ## 3. 参与者与路径选择
@@ -176,10 +176,38 @@ profile；不转发为新的普通后端 payload 字段。intent 在转发前保
 
 ### 6.1 Shape/规则适用
 
-Shape 解析以实体的完整显式 Class 集合为输入，排除 `owl:NamedIndividual`。多类约束按来源合并并保留
-每条约束的 class/predicate 来源；同一节点对同一谓词的冲突返回可定位的 `shape_conflict`，不取第一类、
-不静默丢弃、也不自动猜优先级。无 Class 节点不伪造 class-target Shape，但显式节点 Shape、谓词 Shape、
-值类型和 cardinality 仍可验证。实体 IRI 导航必须能解析当前完整类集合，不再要求调用者预填某一个 class IRI。
+**当前缺口**：托管 create/update Shape 只编译 `sh:targetClass`；guidance reader、Shape endpoint 和
+class-shape 模板也只按 Class 读取。节点/谓词 target 是 009 必须交付的增量，不是现有可用能力；底层
+pySHACL 能执行标准 target 不等于上述入口、权限、存储和投影已打通。
+
+最小 target 合同如下；复用现有 Shape 资源、constraints、编辑命令及 custom shapes graph：
+
+| create_shape / update_shape 目标字段 | RDF target | 选择的对象 |
+| --- | --- | --- |
+| `target_class_id`（旧合同） | `sh:targetClass` | 正式 Class 的适用成员，旧输入及类读取入口兼容 |
+| `target_node_iri`（新增） | `sh:targetNode` | 一个明确获批的稳定节点 IRI，无需 Class |
+| `target_subjects_of_iri`（新增） | `sh:targetSubjectsOf` | 当前数据图中实际使用该谓词的主语，不是谓词资源自身或所有节点 |
+
+每次 create/update 恰有一个非空目标字段；多目标需明确拆成现有多个 Shape，不增加组合 target 语法。
+新字段必须是绝对 IRI，沿现有范围/权限与候选批准校验；不从名称猜 IRI。update 沿现有完整定义替换
+语义，必须携带目标与 constraints，切换目标时清除旧 target，不把旧新目标并集叠加。delete 复用原路径。
+暂不增加 `targetObjectsOf`、字面量 target、自动扫描全图生成 Shape 或新的 Shape 管理页面。
+
+这里“谓词级”仅指上述 subjects-of 选择。`sh:path` 决定检查哪个属性，与选择焦点节点的 target 不同；
+subjects-of 无法发现完全缺少该谓词的节点，要求检查缺失必填属性时须选明确节点或 Class target。
+这些语义采用 [W3C SHACL targets](https://www.w3.org/TR/shacl/#targets)，不自建 target 推理规则。
+
+`entity-shape` 按 entity IRI 查询时，在同一获准 Graph Set 中收集完整正式类集合（排除
+`owl:NamedIndividual`）、匹配该节点的 targetNode，以及匹配其实际主语谓词的 targetSubjectsOf。
+拓展现有 endpoint/guidance reader，并为 custom Shape 查询增加这两种 target 分支；旧
+class-shape-generated/custom 与 class 端点继续保持按类过滤，不冒充通用列表。无 Class 时不执行虚构
+class-target 生成；跨 Ontology 不能只读第一个 ontology/custom graph。匹配和投影只使用当前可见图与
+资源，保留 shape IRI、target 类型/值、predicate、来源及完整性；隐藏目标不能通过提示或错误泄漏。
+
+多 Class、节点与谓词主体的适用约束按来源汇集，guidance 不得沿旧“custom/后者覆盖”策略丢弃仍生效的
+约束；冲突返回可定位 `shape_conflict`，不猜优先级。旧 class-only 入口保持其既有兼容行为。真实
+validation/dry-run/apply 路径仍用原引擎、原校验策略和原子性，必须证明新 target 的实际违例能被检测，
+不能以表单提示代替校验，也不因本需求另设所有编辑必须执行新一轮验证的流程硬门。
 
 规则只按既有规则标识、授权 scope 和批准的适用范围读取/执行；共性描述可以作为关联证据返回，
 但不能自动改写成成员自身的事实。
@@ -247,9 +275,17 @@ ClassesPage 保留正式类拓扑、关系类型和编辑能力，增加从类�
 `forbidden`、`workspace_version_conflict` 和既有 `staged_unreconciled_batch`。错误包含对象/命令、当前
 版本、修复动作和是否可同 run 重试；不以“整次 run 永久失败”替代反馈。
 
-实施顺序为：先扩展编译/读模型/Shape 的零多 Class合同与共享投影，再接入 UI 和 Agent；随后接入 009
-profile 的候选/批准绑定、intent/receipt 与旧合同回归；最后执行平台机械验收。真实语义验收待 008B 第二
-段、011 能力问题和 R3.0-006 授权运行，且由独立验收者读取保留证据，不生产或修复被验收 run。
+实施顺序（R4 补齐，不得只改 compiler）：
+
+1. 同步命令入口白名单、payload 校验及 compiler：零/多 Class、可选 domain/range，以及 §6.1 新 Shape
+   target 的 create/update；保留未声明字段拒绝、身份、范围及确定性写入边界。
+2. 完成 §9.3 的 entity-list、entity-search、property-list、装饰/过滤/混合召回与身份交接，再接 UI；
+   不以向量召回偶然命中代替正常列表/词法搜索。落实五项 T0 处置与旧身份负例。
+3. 打通 Shape 写入、目标匹配、entity-shape/custom 查询、guidance 合并和实际 validation；覆盖节点、
+   谓词主体与多 Class，旧 class-only 入口回归。此项是必要新增能力，不得列为“仅复用”而跳过。
+4. 接入 UI/Agent、009 候选批准及 intent/receipt；确认新字段/目标也进入获批完整投影和旧模式兼容校验。
+5. 执行真实存储的写后读、授权、Shape 违例及旧合同机械验收。真实语义验收仍待 008B 第二段、011 与
+   006 新授权，独立验收者只读取保留证据，不生产或修复被验收 run。
 
 ### 8.1 高风险假设（最多三项）
 
@@ -257,8 +293,8 @@ profile 的候选/批准绑定、intent/receipt 与旧合同回归；最后执�
    当前 create/read/Shape 有强制单类缺口，但跨存储 apply、权限和真实 SHACL 仍待验收。
 2. Runner 私有 `decision_bindings` 可复用既有 sidecar/intent/receipt，不改后端 ModelingItem schema 或
    建立全平台审批；现有 008B 结构支持该边界，实际 intent/receipt 回放与旧任务回归仍待验收。
-3. 多 Class Shape 合并、无 Class Shape 和 Graph Set 跨 IRI 读取能在保留 forbidden/来源边界的情况下保持
-   确定性；`_compose_entity_shape` 当前只接受 class IRI，实际合并、冲突及授权行为须覆盖专项回归。
+3. 新节点/谓词主体 Shape 可复用当前 pySHACL 引擎；R4 内存探针已证明两种 target 的错误 datatype
+   报违例、修正后通过。但托管入口、跨图读取、合并、权限及真实 apply 完整链仍是待实现/待验收能力。
 
 ## 9. 源码证据与最小实施附录
 
@@ -267,6 +303,11 @@ profile 的候选/批准绑定、intent/receipt 与旧合同回归；最后执�
 | 现状 | 路径/位置 | 对本需求的影响 |
 | --- | --- | --- |
 | entity 编译要求 `class_iri_or_legacy_id`，写 NamedIndividual 与单个 class type | `backend/app/services/semantic_command_compiler.py:1241-1317` | 需改为可选集合；旧 scalar 仍兼容 |
+| create_entity 白名单没有 class_iris；create/update Shape 仅含 target_class_id | `backend/app/services/modeling_handlers.py:146`；`backend/app/services/modeling_handlers.py:469` | 与 compiler 同步扩白名单及 typed 校验；不移除 Unknown payload 拒绝 |
+| entity-list 强制类型与类身份；entity-search SPARQL 强制类型；property-list 强制 domain | `backend/app/services/semantic_sparql_templates.py:202`；`backend/app/services/semantic_sparql_templates.py:306`；`backend/app/services/semantic_sparql_templates.py:611` | 补 §9.3 非 Class/domain 身份锚、可选关联、过滤及 T0 决策 |
+| 列表混合召回四字段 canonical gate 再次要求 Class；UI 实际消费 entity-list | `backend/app/services/semantic_read_model.py:1702`；`backend/app/services/semantic_read_model.py:1791`；`frontend/src/pages/EntitiesPage.tsx:199` | 不能只改 SPARQL；身份必需字段与可选分类拆开，009 交接同步适配 |
+| Shape compiler / guidance / endpoint / custom 模板均只支持类 target | `backend/app/services/semantic_command_compiler.py:850`；`backend/app/services/semantic_shape_guidance_reader.py:17`；`backend/app/services/semantic_shape_endpoint_service.py:54`；`backend/app/services/semantic_sparql_templates.py:279` | §6.1 节点与谓词主体 target 为新增全链路工作；generated class Shape 不冒充支持 |
+| 原校验服务把完整 data/shapes graph 交给 pySHACL；guidance 摘要不区分目标 | `backend/app/services/semantic_validation.py:114`；`backend/app/services/semantic_validation.py:327` | 复用引擎；新增适用目标的读取不能把全图 guidance 摘要当作节点的约束 |
 | relation type 要求两端 class 并写 domain/range | `backend/app/services/semantic_command_compiler.py:396-485` | 全局命令路径需放宽非必要前置；009 profile 只选择候选/批准绑定 |
 | `scope_policy` 已有使用位置语义，不能挪为关系量词 | `backend/app/repositories/models.py:37`；`frontend/src/types.ts:59`；`docs/requirements/requirements-v0.4.md:205` | 保持旧字段含义；限定关系使用获批谓词含义、description、Evidence/Rule/Shape |
 | property 要求 `class_id`、datatype 或 object class | `backend/app/services/semantic_command_compiler.py:559-640` | domain 前置需区分“已批准约束”和普通谓词 |
@@ -367,16 +408,56 @@ approval_stale/content_mismatch，不转发。接收后的新候选/审批修订
 已批准快照，要么因既有 workspace version/lease/apply 条件失败，不能切换成新内容。若较新的批次
 先行改变工作区，旧快照仍由现有 expected_workspace_version 拒绝，不新增跨文件或持有网络调用的锁。
 
+### 9.3 零 Class/domain 读侧与 T0 防御处置（R4-H1）
+
+读侧必须覆盖以下实际消费链，保持现有 Graph Set、权限、来源与分页 envelope：
+
+- `entity-list`：以获准 asserted data 中的 NamedIndividual、稳定 entity IRI 和自身 `/vocab/id`
+  为身份锚，不以业务 Class 为存在条件；类型及类身份元数据分别可选，身份与类型来自不同图时也可
+  关联。class_iris 只表示可见正式类；按实体 IRI 汇总再分页，不能把多类行截断成不完整的单类对象。
+- `entity-search` 词法分支与列表 q/hybrid 路径：采用相同合法实体锚；无 class 过滤时可命中零类，
+  显式 class 过滤则只匹配该正式成员。过滤使用全部 class_iris，不能只比较旧标量。修正
+  `_public_list_semantic_row` 及 canonical_by_iri 的四字段硬条件；向量数据只能排序，身份必须从
+  当前受治理 RDF/回执读取补齐，不能靠关闭 canonical gate 放行陈旧或伪造候选。
+- `property-list`：以显式 `owl:DatatypeProperty` / `owl:ObjectProperty` 为资源锚，domain 可选，
+  不能任意枚举全图谓词。无 class 过滤时返回无 domain 属性及可选 domain 信息；有 class 过滤时
+  只返回声明匹配 domain 的属性，不能将无 domain 解释为自动属于全部 Class。同步 caller 过滤/装饰。
+- 平台 API、MCP、UI 均走上述投影；009 Protocol 的 canonical read/receipt 身份绑定允许合法零类，
+  但每条已有类型边独立核实。旧 R2.3 class-first 任务仍保持自己的必需 Class 合同，不全局放宽
+  `modeling_team/r23003_contract.py`；按既有 009 模式在 `modeling_team/protocol_mechanics.py`
+  的 read/receipt bind 入口选择新合同，不能把旧四字段验证原样套到零类后再永久终止 run。
+
+原列表注释的 fail-closed 是为避免不完整身份传给 Protocol，不是 Class 必须存在的业务要求。
+虽本轮未产生运行死锁，按仓库 T0 五问预先记录该已知防御的收窄决定：
+
+1. **必要不变量**：资源自身身份、真实图成员、已声明类型身份和授权可验证，仍须保护；“每个实体
+   至少有一类”在 009 不再成立。无类不能等同于损坏身份。
+2. **当前拒绝后果**：mandatory join 静默抹掉合法零类实体；补交相同合法内容也无法自修复。
+3. **直接删除的风险**：可能把索引提示、缺身份或损坏类型当作完整回执绑定，因此不直接取消全部校验。
+4. **最小处置**：移除 Class/domain 的存在性前置，保留实体身份锚与每条可见已声明关系的有效性。
+   可见 Class 缺少自身 ID 等元数据时，节点仍可读，保留已知类型 IRI及可定位的不完整身份提示；
+   不伪装成“确定无类”，也不允许需要该类身份的 Protocol 命令绑定通过。隐藏类别不输出此类提示。
+5. **已有覆盖**：受治理 Graph Set/保护集负责可见范围；canonical read、版本/lease、批准投影和原子
+   dry-run/apply 负责写入身份及一致性。它们不替代读取锚点，所以保留锚点，仅收窄错误的类前置。
+
+推荐把握≥90%；这是达成原零类可见合同的必要改动，不是新增通用身份治理。所有新增反馈均可修复，
+不创建占位类，不从 IRI 尾段补造 semantic ID。有关类缺 ID 的旧测试应保留其身份保护目标，新增
+“合法零类”和“已声明类元数据不完整”对照，不能仅删除负例。
+
 ## 10. 计划评审记录（由主 Agent 填写）
 
 | 项目 | 记录 |
 | --- | --- |
-| 评审状态 | Round 1 REVISE；Round 2 确认 H1/H3 与 H2 字段绑定部分闭合，保留一项批准快照 High；Round 3 PASS，无遗留 Critical/High |
+| 评审状态 | Round 1/2 REVISE、Round 3 PASS 保留；用户提供 Round 4 REVISE 两项新 High，均 accepted-high；修订后 Round 5 专项复审 PASS |
 | H1 | accepted-high：旧 approvals 为封闭 schema，原方案未定义新版与旧 entries 的共存/交叉校验；§9.1 补齐同路径新版 schema、旧 entries 保留及模式分派 |
 | H2 | accepted-high：原 sidecar/物化清单缺少可执行字段、摘要及归属，不能证明实际命令一致；§9.1/9.2 冻结完整投影、写入子目录、意图/回执版本与比较顺序 |
 | H3 | accepted-high：原“009 profile”没有合法选择面；§3.2 改为复用已注册 Profile，加显式 Task boolean，并列明 loader/广告/引用/bind 传递路径 |
 | Round 2 H2 | accepted-high（收窄）：采用不可变批准版本及明确请求接收时点，转发只用已保存快照；不采用跨文件 CAS/持网络调用锁，已有不可变 Batch 和 workspace version 承担接收后的串行完整性 |
 | Round 3 复核 | 独立 plan_reviewer 确认批准版本不可变、接收后快照固定、intent 保存失败零转发、后续请求重新校验与 F14 一致；剩余 High 闭合，无待确认项 |
+| R4-H1 | accepted-high：列表/词法搜索/属性列表、handler 白名单及混合召回 canonical gate 确有缺口；补 §8/9 端到端改动面与 §9.3 T0 五问，不能只改 compiler |
+| R4-H2 | accepted-high：原设计将节点/谓词 Shape 当既有能力；§6.1 明列三个互斥 target 字段及完整写读/校验增量，更新 D8 与实施顺序；不扩建引擎或管理 UI |
+| R4 证据边界 | 用户外部评审及主 Agent 源码复核；现有模板在内存 RDF 探针中只返回有类 n1、无 domain 属性为零行；两种新 target 的 pySHACL 内存正反例通过。不是 API/存储/授权/建模验收 |
+| Round 5 专项复核 | 独立 plan_reviewer 确认 R4-H1/H2 的实际读写、身份交接、T0 和 Shape 目标链路已明确纳入设计与用例，无剩余关键假设；未扩展审计 context-query 旁路或完整 UI 实现，不表示实现/验收通过 |
 | 决策依据 | 三项原始问题及批准快照边界均为功能合同的必要明确化，推荐把握≥85%；不改变业务语义或增加全平台审批/编排机制 |
 
 本文件不记录测试通过、服务健康、真实 modeling、apply 或生产写入结论；对应证据由实现和独立验收阶段

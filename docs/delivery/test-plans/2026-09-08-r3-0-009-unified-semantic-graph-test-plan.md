@@ -1,6 +1,6 @@
 # R3.0-009 统一语义图与共性抽象：共享测试计划
 
-状态：独立计划评审 Round 3 PASS（2026-09-08），无遗留 Critical/High；以下功能测试均**尚未执行**。
+状态：Round 4 两项 High 已修订并通过 Round 5 专项独立复审 PASS（2026-09-08）；历史轮次保留。以下功能测试均**尚未执行**。
 
 关联设计：`docs/delivery/designs/2026-09-08-r3-0-009-unified-semantic-graph-design.md`。
 关联需求：`docs/requirements/requirements-v3.0.md` R3.0-009 的 D1-D9、8 项最低验收条件及证据边界。
@@ -24,7 +24,9 @@
 - `n1`：同时属于两个语义不同的正式 Class，另有一个普通业务分类谓词；
 - `c1/c2`：两个都有独立业务证据、最终均获批的共性节点；`c_rejected` 只有重复字段/相同字面量且被拒绝；
 - `r1`：`c1` 与 `c2` 间有证据且范围明确的关系，另有 `typical/possible/unknown` 对照项；
-- `shape0/shape1`：无类节点 Shape、两个 Class 的可合并 Shape 和一个显式冲突；
+- `shape0/shape1/shapeP`：通过新增托管入口创建的无类节点 targetNode Shape、两个 Class 的
+  可合并 Shape 和一个显式冲突、使用指定谓词的主语 targetSubjectsOf Shape；不能直接注入 RDF
+  来替代平台创建与更新验收。另有未使用该谓词的对照节点，以及无 domain 属性；
 - 一个跨 Ontology（同 Project、可授权）和一个受保护资源；受控值包含数据库编码未知的
   `analyzed_not_materialized` 项；fixture 不含客户、设备、工单等业务行。
 
@@ -70,6 +72,10 @@ cd frontend && npx playwright test
 | S12 | EntitiesPage 可选 Class/多选分类、显示完整类别并导航；ClassesPage 可反向查看成员；Agent 获得同一能力 | Playwright、API/MCP 对照 |
 | S13 | 已注册 r3-0-002 Profile + 新 Task 参数选择009合同；validate/baseline/Runner加载一致，不传formal-only model-profile | CLI与loader定向测试，零semantic start |
 | S14 | 新 approvals 同时含旧值确认/stage3 entries、新decisions与translation approvals，均通过各自闭合校验 | schema/读写/角色/交叉引用测试 |
+| S15 | 真实存储写入零类 n0 与无 domain 属性后，entity-list、entity-search 词法分支及 property-list 均返回；显式 class 筛选不误包含零类/无 domain | 执行真实模板及 service/API；禁用向量召回仍通过，不用 fake rows 替代 |
+| S16 | class_iris 经 HTTP/MCP 的正常 Modeling handler 白名单、payload 校验及 compiler 后完成 dry-run/apply，再在 UI 列表/详情可读 | 外层命令链正例；不能仅直调 compiler |
+| S17 | create/update Shape 经正常入口分别接受 target_node_iri、target_subjects_of_iri；RDF target、entity-shape 匹配、guidance 与实际 validation 选择一致 | 真实命令、custom shapes graph、focusNode/sourceShape/resultPath；不直接注入目标 RDF |
+| S18 | Shape 更新从 Class 切换至节点/谓词主体目标后旧目标不再生效，删除后不再匹配；跨已授权 Ontology 收集全部匹配 Shape | 更新/删除回执、写后读及实际校验；新增目标进入 009 批准投影 |
 
 ### 3.2 边界与分类（B）
 
@@ -85,6 +91,9 @@ cd frontend && npx playwright test
 | B08 | 无候选抽象、无 worthwhile commonality 的生产样本不被数量硬门阻断，但缺少代表性验收样本仍失败 |
 | B09 | 未物化 candidate/unknown 仅在 Team run 产物/诊断可见，统一 Graph Set/read model 不返回候选当作 RDF 事实 |
 | B10 | scalar-only、array-only、同传且匹配/冲突、空数组、重复/乱序成员各有用例；旧标量取首个可见类或 null，不覆盖多类全集 |
+| B11 | 合法零类、可见已声明类缺 semantic ID、隐藏类别、实体自身缺 ID 分开验证；合法零类可读，缺类 ID 不抹节点、不伪装无类且相关身份绑定不放行；隐藏类别不产生提示泄漏 |
+| B12 | targetSubjectsOf 只选实际使用谓词的主语，非主语及无该谓词节点不匹配；缺必填属性由 targetNode/Class 的 min_count 负例验证，不误用 subjects-of 检查全图 |
+| B13 | 类型与实体身份在不同获准图、多类超过分页行数、q/hybrid 同节点命中时仍汇总完整可见类别；无 domain 不自动生成适用于全部类的 Shape |
 
 ### 3.3 失败、批准和恢复（F）
 
@@ -104,6 +113,8 @@ cd frontend && npx playwright test
 | F12 | 新模式喂旧schema、旧模式喂新schema、参数组合非法、旧intent缺009绑定，不静默降级/迁移；修正合法配置/产物后可继续 |
 | F13 | Protocol只能写materialization-plans子目录，不能修改Modeling候选/Coordinator审批；Coordinator可读清单；角色无法读取隐藏题/答案或Runner私有资料 |
 | F14 | 在接收前插入版本/摘要不匹配应零转发；在捕获批准快照后修改源路径或发布新版本，转发仍只能使用原获批投影，后续新请求重验新批准；同revision重写拒绝、intent保存失败不转发、较新批次先apply则旧请求workspace-version冲突 |
+| F15 | create/update Shape 的目标缺失、多目标、空串、非绝对 IRI、越权引用以及批准后变更 target 均返回可修复错误并零不安全写入；修正后同 run 可继续 |
+| F16 | 无类节点的 datatype、min/max_count 违例被实际 SHACL 检出；多来源约束冲突不被 guidance 的后者/custom 覆盖掩盖；隐藏 Shape/target 不经 guidance 或报告泄漏 |
 
 ## 4. 兼容与回归矩阵（R）
 
@@ -120,6 +131,8 @@ cd frontend && npx playwright test
 | R09 | 规则只按批准 scope 读取/执行；共性描述属性不自动传播 | 无错误继承、默认或类型级关系 |
 | R10 | 既有跨切片/跨 Ontology 查询、上下文游标和截断摘要 | cursor digest 和 complete 状态稳定 |
 | R11 | 008B v1审批/intent/receipt/ledger原样回放；009新schema保存完整projection并在未知响应后按旧intent对账 | 无旧证据迁移/补造，无重复写；新请求仍核对当前批准 |
+| R12 | 原 class-first Protocol 身份绑定、类缺 ID 负例与列表语义召回 identity gate | 旧任务保留要求；009 模式可绑定零类，向量命中仍须当前 canonical 身份，不从索引/IRI 尾段补造 ID |
+| R13 | 旧 create/update Shape target_class_id、class-only 读取和未知 payload 拒绝 | 旧类目标合同不变；新增目标只扩明确字段，generated class Shape 不误称通用 Shape |
 
 ## 5. 真实语义验收（独立于平台证据）
 
@@ -152,12 +165,17 @@ cd frontend && npx playwright test
 
 | 项目 | 记录 |
 | --- | --- |
-| 评审状态 | Round 1 REVISE；Round 2 确认 H1/H3 与 H2 字段绑定部分闭合，保留批准快照 High；Round 3 PASS，无遗留 Critical/High |
+| 评审状态 | Round 1/2 REVISE、Round 3 PASS 保留；外部 Round 4 两项 High 经核实 accepted-high，修订后 Round 5 专项复审 PASS |
 | 发现/处置 | H1/H2/H3 均 accepted-high；审批schema兼容、投影绑定及Task选择路径分别按设计§9.1/9.2/3.2补齐 |
 | 测试调整 | 增加S13/S14、F11/F12/F13、R11，覆盖模式分派、完整内容篡改、定向写权限、新旧回放与未知结果对账 |
 | Round 2处置 | 批准后固定版本与接收时点已写入设计§9.2；F14验证接收前拒绝、接收后快照不被源路径变更替换及现有工作区版本冲突 |
 | Round 3复核 | 独立 plan_reviewer 确认剩余 High 闭合；权威需求、设计§9.2与F14一致，无待确认项。仅计划评审通过，不代表本计划功能/语义测试通过 |
-| 文档检查 | 2026-09-08：三份文档的本地链接/路径引用、代码围栏、D1-D9 对应和 56 项用例编号检查通过；34 个现有引用可解析，2 个明确标为待实现的任务/合同资产未创建；git diff --check 通过。只证明文档完整性 |
+| R4-H1 | accepted-high；新增 S15/S16、B11/B13、R12，覆盖真实列表/词法搜索/属性投影、命令白名单、T0 身份对照及混合召回/Protocol 合同 |
+| R4-H2 | accepted-high；新增 S17/S18、B12、F15/F16、R13，fixture 明确经托管入口创建新目标，覆盖匹配/更新/删除/实际违例，不把底层引擎能力当成产品已实现 |
+| R4 设计探针 | 2026-09-08，uv run --no-sync python 的内存 RDF/pySHACL 探针：现有列表和搜索均仅返回有类 n1，无 domain 属性列表为空；handler 不接受新增字段；targetNode/targetSubjectsOf 错误 datatype 均 conforms=false，修正后 true。未连接平台存储、未 apply、未启动建模；不是本计划 S/B/F/R/Q 的执行结果 |
+| Round 5 专项复核 | 独立 plan_reviewer 确认 R4-H1/H2 直接路径与新增用例闭合，无剩余关键假设；没有扩展审计 context-query 旁路或完整 UI 实现。此 PASS 仅为设计复核 |
+| Round 3 文档检查 | 2026-09-08：三份文档的本地链接/路径引用、代码围栏、D1-D9 对应和 56 项用例编号检查通过；34 个现有引用可解析，2 个明确标为待实现的任务/合同资产未创建；git diff --check 通过。只证明当轮文档完整性 |
+| R4 文档检查 | 2026-09-08：三份文档的本地链接/路径、代码围栏、D1-D9 与 67 项用例编号检查通过；40 个现有引用可解析，2 个待实现资产仍未创建；git diff --check 通过。功能/语义用例仍未执行 |
 
 本计划所有测试状态当前为 `NOT_EXECUTED`；实现阶段若发现源码合同与本计划冲突，应先记录证据并回修设计，
 不能以降低测试范围代替解决需求冲突。
