@@ -90,7 +90,11 @@ MULTI_SLICE_PROFILE_IDS = frozenset({"r3-0-002-modeling-team"})
 MULTI_SLICE_TASK_PARAMETER = "multi_slice_workflow"
 # R3.0-008B segment 1: staged modeling decisions extend the same closed set.
 STAGED_MODELING_DECISIONS_PARAMETER = "staged_modeling_decisions"
-_TASK_PARAMETER_NAMES = frozenset({MULTI_SLICE_TASK_PARAMETER, STAGED_MODELING_DECISIONS_PARAMETER})
+# R3.0-009: the unified semantic graph is the third, opt-in member of the set.
+UNIFIED_GRAPH_TASK_PARAMETER = "unified_semantic_graph"
+_TASK_PARAMETER_NAMES = frozenset(
+    {MULTI_SLICE_TASK_PARAMETER, STAGED_MODELING_DECISIONS_PARAMETER, UNIFIED_GRAPH_TASK_PARAMETER}
+)
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
 _CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0
 # R2.3-009 timeout tiers: bounded nudge quota, cooperative-escalation repeat
@@ -711,6 +715,18 @@ def load_task(
             # workflow; the dependency is a specific, typed configuration
             # error rather than a generic parameter rejection.
             raise TeamConfigurationError("staged_modeling_decisions requires multi_slice_workflow")
+        if parameters.get(UNIFIED_GRAPH_TASK_PARAMETER) is True:
+            # R3.0-009: the unified semantic graph flow materializes through the
+            # staged decisions path, so it needs both underlying capabilities.
+            missing = [
+                name
+                for name in (MULTI_SLICE_TASK_PARAMETER, STAGED_MODELING_DECISIONS_PARAMETER)
+                if parameters.get(name) is not True
+            ]
+            if missing:
+                raise TeamConfigurationError(
+                    "unified_semantic_graph requires " + " and ".join(sorted(missing))
+                )
     raw_sources = data["role_sources"]
     tools = data["protocol_tools"]
     evidence = data["expected_terminal_evidence"]

@@ -32,12 +32,25 @@ type EntityListRow = {
   source_graph_iri: string;
   assertion_kind: string;
   evidence_status?: string;
-  /** Optional class IRI / label that the read-model service decorates onto
-   * each row. May be absent for entities whose class lives outside the
-   * current graph set. */
-  class_iri?: string;
+  /** R3.0-009 §6.2/§9.3: the full visible formal Class set, deduplicated and
+   * IRI-sorted. An empty array is the legal zero-class state, never a
+   * truncation. */
+  class_iris?: string[];
+  /** Formal Classes whose `/vocab/id` identity anchor is not visible. */
+  incomplete_class_identity_iris?: string[];
+  /** Legacy single-value projection (lexicographically first visible Class).
+   * Never multi-class truth; kept so older payloads still render. */
+  class_iri?: string | null;
   class_label?: string;
 };
+
+/** Full formal Class set of a row, with the legacy scalar fallback. */
+function entityClassIris(row: EntityListRow): string[] {
+  if (Array.isArray(row.class_iris)) {
+    return row.class_iris.filter((iri) => typeof iri === "string" && iri);
+  }
+  return typeof row.class_iri === "string" && row.class_iri ? [row.class_iri] : [];
+}
 
 type EntityListEnvelope = {
   graph_set_id: string;
@@ -90,6 +103,10 @@ type SemanticReadModelInclude =
   | "asserted-plus-reasoning"
   | "asserted-plus-rules"
   | "full-working-view";
+
+/** R3.0-009 §4.3: formal Class membership is the rdf:type relation, so the
+ * member add/remove path is identical for the UI and for the agent. */
+const RDF_TYPE_IRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type";
 
 const GRAPH_LAYER_OPTIONS: Array<{
   value: EntityGraphLayer;
@@ -150,9 +167,20 @@ type EntitiesPageProps = {
   ontologyId: string;
   readOnly: boolean;
   request: WorkbenchRequest;
+  /** App-level tab navigation; enables the R3.0-009 §7.1 cross-page links. */
+  navigateWorkspace?: (tab: string, params?: Record<string, string>) => void;
+  /** Entity IRI carried in the URL (`category`) when another page links here. */
+  focusIri?: string | null;
 };
 
-export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: EntitiesPageProps) {
+export function EntitiesPage({
+  graphSetId,
+  ontologyId,
+  readOnly,
+  request,
+  navigateWorkspace,
+  focusIri,
+}: EntitiesPageProps) {
   const t = useT();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -173,8 +201,15 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   const [relationSourceIri, setRelationSourceIri] = useState("");
   const [relationTypeIri, setRelationTypeIri] = useState("");
   const [relationTargetIri, setRelationTargetIri] = useState("");
-  const [newClassIri, setNewClassIri] = useState("");
+  // R3.0-009 §7.1: Class is optional and multi-valued in the create form.
+  const [newClassIris, setNewClassIris] = useState<string[]>([]);
+  const [newClassDraft, setNewClassDraft] = useState("");
   const [newLabel, setNewLabel] = useState("");
+  // R3.0-009 §4.3/D12: the edited formal Class set of the selected entity.
+  // Saving diffs it against the entity's current set and issues
+  // create_relation / delete_relation commands with the rdf:type predicate.
+  const [editClassIris, setEditClassIris] = useState<string[]>([]);
+  const [editClassDraft, setEditClassDraft] = useState("");
 
   const selectedLayerConfig = useMemo(
     () => GRAPH_LAYER_OPTIONS.find((option) => option.value === selectedLayer) ?? GRAPH_LAYER_OPTIONS[0],
@@ -226,12 +261,15 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
 
   const { graphNodes, graphEdges, classLabels, entityByIri, relationByEdgeId } = useMemo(() => {
     const entityMap = new Map<string, EntityListRow>();
-    const nodes: ForceGraphNode[] = (entities?.items ?? []).map((row) => ({
-      id: row.iri,
-      label: row.label ?? compactIri(row.iri),
-      group: row.class_label ?? (row.class_iri ? compactIri(row.class_iri) : t("Unclassified")),
-      kind: normalizeAssertionKind(row.assertion_kind),
-    }));
+    const nodes: ForceGraphNode[] = (entities?.items ?? []).map((row) => {
+      const classIris = entityClassIris(row);
+      return {
+        id: row.iri,
+        label: row.label ?? compactIri(row.iri),
+        group: row.class_label ?? (classIris[0] ? compactIri(classIris[0]) : t("Unclassified")),
+        kind: normalizeAssertionKind(row.assertion_kind),
+      };
+    });
     for (const row of entities?.items ?? []) entityMap.set(row.iri, row);
     const nodeIds = new Set(nodes.map((node) => node.id));
     const relationMap = new Map<string, EntityGraphRelationPayload>();
@@ -282,8 +320,16 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     setRelationSourceIri(selectedRelation?.source ?? "");
     setRelationTypeIri(selectedRelation?.relation ?? selectedRelation?.iri ?? "");
     setRelationTargetIri(selectedRelation?.target ?? "");
+    setEditClassIris(selectedEntity ? entityClassIris(selectedEntity) : []);
+    setEditClassDraft("");
     setEditing(false);
   }, [selectedEntity, selectedRelation]);
+
+  // R3.0-009 §7.2: a Class page can link straight to one of its members.
+  useEffect(() => {
+    if (!focusIri) return;
+    if (entityByIri.has(focusIri)) setSelectedIri(focusIri);
+  }, [focusIri, entityByIri]);
 
   useEffect(() => {
     if (!selectedEntity) {
@@ -320,15 +366,22 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
   }, [graphSetId, request, selectedEntity, selectedLayerConfig.include]);
 
   async function submitNewEntity() {
-    if (!newLabel.trim() || !newClassIri.trim()) return;
+    if (!newLabel.trim()) return;
     setSubmitting(true);
     setError("");
     try {
+      const classIris = Array.from(
+        new Set(newClassIris.map((iri) => iri.trim()).filter(Boolean)),
+      );
       await compileAndApplyProductCommand(request, {
         command_kind: "create_entity",
         payload: {
           ontology_id: ontologyId,
-          class_iri_or_legacy_id: newClassIri.trim(),
+          // R3.0-009 §4.1/§6.2: zero or more explicit formal Classes; the
+          // legacy scalar rides along only for the single-Class case so the
+          // old single-input submission stays compatible.
+          ...(classIris.length === 1 ? { class_iri_or_legacy_id: classIris[0] } : {}),
+          class_iris: classIris,
           label: newLabel.trim(),
           aliases: [],
           properties: {},
@@ -338,7 +391,8 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
         reason: "create via Stage 2 EntitiesPage MVP",
       });
       setNewLabel("");
-      setNewClassIri("");
+      setNewClassIris([]);
+      setNewClassDraft("");
       setCreating(false);
       await load();
     } catch (cause) {
@@ -348,12 +402,73 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
     }
   }
 
+  function addNewClass() {
+    const value = newClassDraft.trim();
+    if (!value) return;
+    setNewClassIris((current) => (current.includes(value) ? current : [...current, value]));
+    setNewClassDraft("");
+  }
+
+  function removeNewClass(value: string) {
+    setNewClassIris((current) => current.filter((iri) => iri !== value));
+  }
+
+  function addEditClass() {
+    const value = editClassDraft.trim();
+    if (!value) return;
+    setEditClassIris((current) => (current.includes(value) ? current : [...current, value]));
+    setEditClassDraft("");
+  }
+
+  function removeEditClass(value: string) {
+    setEditClassIris((current) => current.filter((iri) => iri !== value));
+  }
+
   async function applyDetailUpdate() {
     if (!selectedEntity && !selectedRelation) return;
     setSubmitting(true);
     setError("");
     try {
       if (selectedEntity) {
+        // R3.0-009 §4.3/D12: formal Class membership of an existing entity is
+        // written back as relation commands with the rdf:type predicate, so
+        // the read model, the digest, and the agent path stay identical.
+        const currentClasses = entityClassIris(selectedEntity);
+        const targetClasses = Array.from(
+          new Set(editClassIris.map((iri) => iri.trim()).filter(Boolean)),
+        );
+        for (const classIri of currentClasses) {
+          if (!targetClasses.includes(classIri)) {
+            await compileAndApplyProductCommand(request, {
+              command_kind: "delete_relation",
+              payload: {
+                ontology_id: ontologyId,
+                source_entity_iri: selectedEntity.iri,
+                relation_type_iri: RDF_TYPE_IRI,
+                target_entity_iri: classIri,
+              },
+              graph_set_id: graphSetId,
+              actor: "user:stage2-entities-page",
+              reason: "remove formal class membership from graph detail panel",
+            });
+          }
+        }
+        for (const classIri of targetClasses) {
+          if (!currentClasses.includes(classIri)) {
+            await compileAndApplyProductCommand(request, {
+              command_kind: "create_relation",
+              payload: {
+                ontology_id: ontologyId,
+                source_entity_iri: selectedEntity.iri,
+                relation_type_iri: RDF_TYPE_IRI,
+                target_entity_iri: classIri,
+              },
+              graph_set_id: graphSetId,
+              actor: "user:stage2-entities-page",
+              reason: "add formal class membership from graph detail panel",
+            });
+          }
+        }
         await compileAndApplyProductCommand(request, {
           command_kind: "update_entity",
           payload: {
@@ -596,10 +711,22 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
             relationSourceIri={relationSourceIri}
             relationTypeIri={relationTypeIri}
             relationTargetIri={relationTargetIri}
+            editClassIris={editClassIris}
+            editClassDraft={editClassDraft}
+            onChangeEditClassDraft={setEditClassDraft}
+            onAddEditClass={addEditClass}
+            onRemoveEditClass={removeEditClass}
             onChangeLabel={setDetailLabel}
             onChangeRelationSource={setRelationSourceIri}
             onChangeRelationType={setRelationTypeIri}
             onChangeRelationTarget={setRelationTargetIri}
+            onNavigateToClass={(classIri) =>
+              navigateWorkspace?.("classes", { category: classIri })
+            }
+            onSelectEntityIri={(entityIri) => {
+              setSelectedEdgeId(null);
+              setSelectedIri(entityIri);
+            }}
             onEdit={() => setEditing(true)}
             onCancelEdit={() => setEditing(false)}
             onSave={() => void applyDetailUpdate()}
@@ -614,26 +741,50 @@ export function EntitiesPage({ graphSetId, ontologyId, readOnly, request }: Enti
         open={creating}
         onCancel={() => {
           setCreating(false);
-          setNewClassIri("");
+          setNewClassIris([]);
+          setNewClassDraft("");
           setNewLabel("");
         }}
         onOk={() => void submitNewEntity()}
         confirmLoading={submitting}
         okText={t("Create entity")}
-        okButtonProps={{ disabled: !newLabel.trim() || !newClassIri.trim() }}
+        okButtonProps={{ disabled: !newLabel.trim() }}
       >
-        <Input
-          placeholder={t("Class identifier from class diagram")}
-          value={newClassIri}
-          onChange={(event) => setNewClassIri(event.target.value)}
-          autoFocus
-        />
         <Input
           placeholder={t("Entity label")}
           value={newLabel}
           onChange={(event) => setNewLabel(event.target.value)}
-          style={{ marginTop: 12 }}
+          autoFocus
         />
+        <div className="entityClassInput">
+          <span className="entityClassInputHint">
+            {t("Formal classes (optional, one or more)")}
+          </span>
+          <div className="entityClassInputRow">
+            <Input
+              placeholder={t("Class identifier from class diagram")}
+              value={newClassDraft}
+              onChange={(event) => setNewClassDraft(event.target.value)}
+              onPressEnter={addNewClass}
+            />
+            <Button onClick={addNewClass} disabled={!newClassDraft.trim()}>
+              {t("Add class")}
+            </Button>
+          </div>
+          {newClassIris.length === 0 ? (
+            <p className="entityClassInputEmpty">
+              {t("No formal class selected; the entity stays unclassified.")}
+            </p>
+          ) : (
+            <div className="entityClassTags">
+              {newClassIris.map((iri) => (
+                <Tag key={iri} closable onClose={() => removeNewClass(iri)}>
+                  {compactIri(iri)}
+                </Tag>
+              ))}
+            </div>
+          )}
+        </div>
       </Modal>
     </section>
   );
@@ -655,10 +806,20 @@ type EntityGraphDetailPanelProps = {
   relationSourceIri: string;
   relationTypeIri: string;
   relationTargetIri: string;
+  /** R3.0-009 §4.3/D12: editable formal Class set of the selected entity. */
+  editClassIris: string[];
+  editClassDraft: string;
+  onChangeEditClassDraft: (value: string) => void;
+  onAddEditClass: () => void;
+  onRemoveEditClass: (classIri: string) => void;
   onChangeLabel: (value: string) => void;
   onChangeRelationSource: (value: string) => void;
   onChangeRelationType: (value: string) => void;
   onChangeRelationTarget: (value: string) => void;
+  /** R3.0-009 §7.1: navigate from an entity to one of its formal Classes. */
+  onNavigateToClass: (classIri: string) => void;
+  /** R3.0-009 §7.1: follow a relation endpoint to the related node. */
+  onSelectEntityIri: (entityIri: string) => void;
   onEdit: () => void;
   onCancelEdit: () => void;
   onSave: () => void;
@@ -680,10 +841,17 @@ function EntityGraphDetailPanel({
   relationSourceIri,
   relationTypeIri,
   relationTargetIri,
+  editClassIris,
+  editClassDraft,
+  onChangeEditClassDraft,
+  onAddEditClass,
+  onRemoveEditClass,
   onChangeLabel,
   onChangeRelationSource,
   onChangeRelationType,
   onChangeRelationTarget,
+  onNavigateToClass,
+  onSelectEntityIri,
   onEdit,
   onCancelEdit,
   onSave,
@@ -716,10 +884,41 @@ function EntityGraphDetailPanel({
       {editing ? (
         <div className="semanticGraphDetailForm">
           {selectedEntity ? (
-            <label>
-              <span>{t("Label")}</span>
-              <Input value={detailLabel} onChange={(event) => onChangeLabel(event.target.value)} />
-            </label>
+            <>
+              <label>
+                <span>{t("Label")}</span>
+                <Input value={detailLabel} onChange={(event) => onChangeLabel(event.target.value)} />
+              </label>
+              <div className="entityClassInput">
+                <span className="entityClassInputHint">
+                  {t("Formal classes (optional, one or more)")}
+                </span>
+                <div className="entityClassInputRow">
+                  <Input
+                    placeholder={t("Class identifier from class diagram")}
+                    value={editClassDraft}
+                    onChange={(event) => onChangeEditClassDraft(event.target.value)}
+                    onPressEnter={onAddEditClass}
+                  />
+                  <Button onClick={onAddEditClass} disabled={!editClassDraft.trim()}>
+                    {t("Add class")}
+                  </Button>
+                </div>
+                {editClassIris.length === 0 ? (
+                  <p className="entityClassInputEmpty">
+                    {t("No formal class selected; the entity stays unclassified.")}
+                  </p>
+                ) : (
+                  <div className="entityClassTags">
+                    {editClassIris.map((classIri) => (
+                      <Tag key={classIri} closable onClose={() => onRemoveEditClass(classIri)}>
+                        {compactIri(classIri)}
+                      </Tag>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </>
           ) : (
             <>
               <label>
@@ -755,16 +954,75 @@ function EntityGraphDetailPanel({
             {selectedEntity && (
               <>
                 <div><dt>{t("IRI")}</dt><dd><code>{selectedEntity.iri}</code></dd></div>
-                <div><dt>{t("Class")}</dt><dd>{selectedEntity.class_label ?? compactIri(selectedEntity.class_iri ?? "")}</dd></div>
+                <div>
+                  <dt>{t("Classes")}</dt>
+                  <dd>
+                    {entityClassIris(selectedEntity).length === 0 ? (
+                      <span className="entityClassEmpty">
+                        {t("Unclassified · no formal class")}
+                      </span>
+                    ) : (
+                      <span className="entityClassLinks">
+                        {entityClassIris(selectedEntity).map((classIri, index) => (
+                          <button
+                            key={classIri}
+                            type="button"
+                            className="entityClassLink"
+                            title={classIri}
+                            onClick={() => onNavigateToClass(classIri)}
+                          >
+                            {index === 0 && selectedEntity.class_label
+                              ? selectedEntity.class_label
+                              : compactIri(classIri)}
+                          </button>
+                        ))}
+                      </span>
+                    )}
+                  </dd>
+                </div>
+                {(selectedEntity.incomplete_class_identity_iris?.length ?? 0) > 0 && (
+                  <div>
+                    <dt>{t("Incomplete class identity")}</dt>
+                    <dd>
+                      <span className="entityClassIncomplete">
+                        {selectedEntity.incomplete_class_identity_iris
+                          ?.map((iri) => compactIri(iri))
+                          .join(", ")}
+                      </span>
+                    </dd>
+                  </div>
+                )}
                 <div><dt>{t("Assertion")}</dt><dd>{assertionKindLabel(selectedEntity.assertion_kind, t)}</dd></div>
                 <div><dt>{t("Evidence")}</dt><dd>{selectedEntity.evidence_status ?? t("Not available")}</dd></div>
               </>
             )}
             {selectedRelation && (
               <>
-                <div><dt>{t("Source")}</dt><dd>{entityLabelByIri.get(selectedRelation.source ?? "") ?? compactIri(selectedRelation.source ?? "")}</dd></div>
+                <div>
+                  <dt>{t("Source")}</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      className="entityClassLink"
+                      onClick={() => onSelectEntityIri(selectedRelation.source ?? "")}
+                    >
+                      {entityLabelByIri.get(selectedRelation.source ?? "") ?? compactIri(selectedRelation.source ?? "")}
+                    </button>
+                  </dd>
+                </div>
                 <div><dt>{t("Relation type")}</dt><dd><code>{selectedRelation.relation ?? selectedRelation.iri}</code></dd></div>
-                <div><dt>{t("Target")}</dt><dd>{entityLabelByIri.get(selectedRelation.target ?? "") ?? compactIri(selectedRelation.target ?? "")}</dd></div>
+                <div>
+                  <dt>{t("Target")}</dt>
+                  <dd>
+                    <button
+                      type="button"
+                      className="entityClassLink"
+                      onClick={() => onSelectEntityIri(selectedRelation.target ?? "")}
+                    >
+                      {entityLabelByIri.get(selectedRelation.target ?? "") ?? compactIri(selectedRelation.target ?? "")}
+                    </button>
+                  </dd>
+                </div>
                 <div><dt>{t("Assertion")}</dt><dd>{assertionKindLabel(selectedRelation.assertion_kind, t)}</dd></div>
               </>
             )}

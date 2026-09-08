@@ -717,7 +717,8 @@ def test_entity_detail_compiles_with_graph_scoping_values():
     assert store.last_query is not None
     assert "{graph_iris}" not in store.last_query
     assert f"VALUES ?graph {{ <{R307_DATA_GRAPH}> }}" in store.last_query
-    assert "LIMIT 500" in store.last_query
+    # Default limit plus the R3.0-009 has_more probe row (D7).
+    assert "LIMIT 501" in store.last_query
     assert len(envelope["items"]) == 1
     assert envelope["items"][0]["iri"] == "https://r307.test/entity/T1"
 
@@ -759,23 +760,111 @@ def test_entity_detail_full_working_view_compiles_derived_graphs_into_values():
 def test_entity_detail_limit_semantics_bound_by_default_limit():
     """B4: the limit passed to the store and the compiled LIMIT reflect
     min(limit or default_limit, default_limit)."""
-    # Default: no explicit limit -> template default_limit of 500.
+    # Default: no explicit limit -> template default_limit of 500, plus one
+    # probe row so the envelope can report has_more (R3.0-009 §6.2 / D7).
     store = FakeStore({"entity-detail": []})
     _r307_entity_detail_service(store).read_model("gs-1", "entity-detail")
-    assert store.last_limit == 500
-    assert "LIMIT 500" in store.last_query
+    assert store.last_limit == 501
+    assert "LIMIT 501" in store.last_query
 
-    # Explicit smaller limit is honored.
+    # Explicit smaller limit is honored (plus the probe row).
     store = FakeStore({"entity-detail": []})
     _r307_entity_detail_service(store).read_model("gs-1", "entity-detail", limit=100)
-    assert store.last_limit == 100
-    assert "LIMIT 100" in store.last_query
+    assert store.last_limit == 101
+    assert "LIMIT 101" in store.last_query
 
-    # Oversized limit is capped at default_limit (500).
+    # Oversized limit is capped at default_limit (500) plus the probe row.
     store = FakeStore({"entity-detail": []})
     _r307_entity_detail_service(store).read_model("gs-1", "entity-detail", limit=9999)
-    assert store.last_limit == 500
-    assert "LIMIT 500" in store.last_query
+    assert store.last_limit == 501
+    assert "LIMIT 501" in store.last_query
+
+
+def test_envelope_reports_paging_state_relative_to_visible_set():
+    """D7 / R3.0-009 §6.2: every page carries machine-readable window state.
+
+    ``has_more`` is computed from the authorized visible set (limit+1 probe
+    row), ``truncated`` only when the fetch ceiling was reached, and
+    ``complete`` is the conjunction of neither happening.
+    """
+
+    def _rows(count):
+        return [
+            {
+                "entity": f"https://r307.test/entity/T{index}",
+                "label": f"row-{index}",
+                "graph": R307_DATA_GRAPH,
+            }
+            for index in range(count)
+        ]
+
+    # Under the limit: the page is complete, nothing more to fetch.
+    store = FakeStore({"entity-detail": _rows(3)})
+    envelope = _r307_entity_detail_service(store).read_model(
+        "gs-1", "entity-detail", limit=100
+    )
+    assert envelope["paging"] == {
+        "limit": 100,
+        "returned": 3,
+        "visible_count": 3,
+        "has_more": False,
+        "truncated": False,
+        "complete": True,
+    }
+
+    # The probe row beyond the limit reports has_more, and the fetch ceiling
+    # that made it visible is reported as truncation.
+    store = FakeStore({"entity-detail": _rows(101)})
+    envelope = _r307_entity_detail_service(store).read_model(
+        "gs-1", "entity-detail", limit=100
+    )
+    assert envelope["paging"] == {
+        "limit": 100,
+        "returned": 100,
+        "visible_count": 101,
+        "has_more": True,
+        "truncated": True,
+        "complete": False,
+    }
+    assert len(envelope["items"]) == 100
+
+
+def test_entity_list_paging_survives_post_processing_head_room():
+    """D7: entity-list fetches extra rows for aggregation, so the ceiling can
+    be hit while the aggregated page still fits — truncated must say so rather
+    than claiming a complete projection."""
+    data_iri = "https://example/graph/data/r23003"
+
+    def _row(entity_index, class_index):
+        return {
+            "entity": {"value": f"https://example/entity/e{entity_index}", "type": "uri"},
+            "semantic_id": {"value": f"e{entity_index}", "type": "literal"},
+            "class": {"value": f"https://example/class/C{class_index}", "type": "uri"},
+            "graph": {"value": data_iri, "type": "uri"},
+        }
+
+    # 8 class rows per entity x 50 entities plus 8 more for entity 0 = 408
+    # rows, which is exactly the expanded fetch ceiling for limit=50, yet the
+    # aggregation collapses to exactly 50 entities (one full page).
+    rows = [_row(index, class_index) for index in range(50) for class_index in range(8)]
+    rows.extend(_row(0, class_index) for class_index in range(100, 108))
+    store = FakeStore({"entity-list": rows})
+    service = SemanticReadModelService(
+        rdf_store=store,
+        scope_resolver=FakeScopeResolver(_resolution([data_iri])),
+    )
+    envelope = service.read_model("gs-1", "entity-list", limit=50)
+
+    assert envelope["paging"] == {
+        "limit": 50,
+        "returned": 50,
+        "visible_count": 50,
+        "has_more": False,
+        "truncated": True,
+        "complete": False,
+    }
+    assert len(envelope["items"]) == 50
+    assert envelope["warnings"][0]["code"] == "read_model_rows_truncated"
 
 
 def test_every_executable_template_binds_graph_iris():

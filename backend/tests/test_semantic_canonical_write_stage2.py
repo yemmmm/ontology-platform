@@ -446,6 +446,12 @@ def test_update_shape_apply_replaces_constraints(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
     graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    # D11: update_shape replaces an existing shape, so the target must exist.
+    store.set_graph(
+        _shapes_custom_graph_iri(),
+        "@prefix sh: <http://www.w3.org/ns/shacl#> .\n"
+        "<http://op.local/semantic/ns/shape/shape-1> a sh:NodeShape .\n",
+    )
 
     body = _apply(
         client,

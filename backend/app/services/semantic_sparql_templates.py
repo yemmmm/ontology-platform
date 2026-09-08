@@ -190,19 +190,26 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="property",
+        # R3.0-009: the declared domain is projected so the caller can apply an
+        # explicit class filter without treating "no domain" as "all classes".
+        detail_variables=("domain",),
         body="""# template: property-list
-        # Returns one row per property whose rdfs:domain is the given class.
-        # Caller post-filters by class IRI; the SPARQL stays generic so the
-        # template remains graph-set portable.
+        # R3.0-009: anchored on explicitly declared property types
+        # (owl:DatatypeProperty / owl:ObjectProperty) instead of a mandatory
+        # rdfs:domain join, so domain-less properties stay listable. One row
+        # per (property, declared domain) pair; domain-less properties project
+        # no domain. Callers post-filter by class IRI against the declared
+        # domain only.
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?property ?label ?range ?type ?graph WHERE {
+        SELECT DISTINCT ?property ?label ?range ?type ?domain ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
-            ?property rdfs:domain ?class .
+            ?property a ?type .
+            FILTER(?type IN (owl:DatatypeProperty, owl:ObjectProperty))
             OPTIONAL { ?property rdfs:label ?label . }
             OPTIONAL { ?property rdfs:range ?range . }
-            OPTIONAL { ?property a ?type . FILTER(?type IN (owl:DatatypeProperty, owl:ObjectProperty)) }
+            OPTIONAL { ?property rdfs:domain ?domain . }
           }
           BIND(?g AS ?graph)
         }
@@ -244,16 +251,33 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="shape",
+        # R3.0-009 §6.1: rows are one per (shape, target) pair across all three
+        # supported targets; target_kind/target_value are projected through
+        # detail_fields so a node/subjects-of target is never mislabelled as a
+        # class target.
+        detail_variables=("target_kind", "target_value"),
         body="""# template: class-shape-generated
         # Reads SHACL NodeShapes from the derived generated sub-graph. Each
-        # row is one (shape, targetClass) pair; PropertyShape rows are
+        # row is one (shape, target) pair; PropertyShape rows are
         # joined separately by the read-model service.
         PREFIX sh: <http://www.w3.org/ns/shacl#>
-        SELECT ?shape ?target_class ?graph WHERE {
+        SELECT ?shape ?target_class ?target_kind ?target_value ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
-            ?shape a sh:NodeShape ;
-                   sh:targetClass ?target_class .
+            ?shape a sh:NodeShape .
+            {
+              ?shape sh:targetClass ?target_class .
+              BIND("class" AS ?target_kind)
+              BIND(?target_class AS ?target_value)
+            } UNION {
+              ?shape sh:targetNode ?target_node .
+              BIND("node" AS ?target_kind)
+              BIND(?target_node AS ?target_value)
+            } UNION {
+              ?shape sh:targetSubjectsOf ?target_predicate .
+              BIND("subjects_of" AS ?target_kind)
+              BIND(?target_predicate AS ?target_value)
+            }
           }
           BIND(?g AS ?graph)
         }
@@ -269,14 +293,28 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="shape",
+        detail_variables=("target_kind", "target_value"),
         body="""# template: class-shape-custom
-        # Reads SHACL NodeShapes from the editable custom sub-graph.
+        # Reads SHACL NodeShapes from the editable custom sub-graph, one row
+        # per (shape, target) pair across the three supported targets.
         PREFIX sh: <http://www.w3.org/ns/shacl#>
-        SELECT ?shape ?target_class ?graph WHERE {
+        SELECT ?shape ?target_class ?target_kind ?target_value ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
-            ?shape a sh:NodeShape ;
-                   sh:targetClass ?target_class .
+            ?shape a sh:NodeShape .
+            {
+              ?shape sh:targetClass ?target_class .
+              BIND("class" AS ?target_kind)
+              BIND(?target_class AS ?target_value)
+            } UNION {
+              ?shape sh:targetNode ?target_node .
+              BIND("node" AS ?target_kind)
+              BIND(?target_node AS ?target_value)
+            } UNION {
+              ?shape sh:targetSubjectsOf ?target_predicate .
+              BIND("subjects_of" AS ?target_kind)
+              BIND(?target_predicate AS ?target_value)
+            }
           }
           BIND(?g AS ?graph)
         }
@@ -293,42 +331,50 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="asserted",
         primary_iri_variable="entity",
         body="""# template: entity-list
-        # Returns entities known in the asserted data graph, with class
-        # assertions optionally sourced from reasoning/rule result graphs.
-        # The asserted NamedIndividual triple is the stable identity anchor so
-        # derived graphs do not need to repeat labels or owl:NamedIndividual.
+        # R3.0-009 §9.3: the identity anchor is the asserted NamedIndividual
+        # marker plus the entity's own stable /vocab/id; a business Class is no
+        # longer an existence condition, so zero-class entities stay readable.
+        # Type edges and class identity metadata are independently optional and
+        # may come from a different authorized graph than the entity identity.
+        # Rows are one per (entity, visible formal class) pair; the read-model
+        # service aggregates them per entity IRI before pagination. Visible
+        # classes without their own /vocab/id keep the known type IRI and are
+        # reported as incomplete identity instead of dropping the node.
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         SELECT DISTINCT ?entity ?semantic_id ?label ?class ?class_semantic_id ?class_label ?graph WHERE {
           VALUES ?g { {graph_iris} }
           VALUES ?ig { {graph_iris} }
-          GRAPH ?g {
-            ?entity a ?class .
-            FILTER(!STRSTARTS(STR(?class), STR(owl:)))
-            FILTER(?class != owl:NamedIndividual)
-          }
           GRAPH ?ig { ?entity a owl:NamedIndividual . }
           GRAPH ?g {
             ?entity ?entity_id_pred ?semantic_id .
             FILTER(STRENDS(STR(?entity_id_pred), "/vocab/id"))
           }
-          # Class identity metadata is authored in the asserted ontology
-          # graph, while the entity/class assertion itself lives in the
-          # asserted data graph.  Keep the two graph bindings independent so
-          # malformed rows without explicit class IDs fail closed instead of
-          # reaching Protocol as an incomplete identity projection.
-          VALUES ?class_graph { {graph_iris} }
-          GRAPH ?class_graph {
-            ?class ?class_id_pred ?class_semantic_id .
-            FILTER(STRENDS(STR(?class_id_pred), "/vocab/id"))
+          OPTIONAL {
+            VALUES ?cg { {graph_iris} }
+            GRAPH ?cg {
+              ?entity a ?class .
+              FILTER(!STRSTARTS(STR(?class), STR(owl:)))
+              FILTER(?class != owl:NamedIndividual)
+            }
+            # Class identity metadata stays inside this OPTIONAL so an
+            # unbound ?class can never be filled by an unrelated /vocab/id
+            # subject (a malformed OPTIONAL would fabricate memberships).
+            OPTIONAL {
+              VALUES ?class_graph { {graph_iris} }
+              GRAPH ?class_graph {
+                ?class ?class_id_pred ?class_semantic_id .
+                FILTER(STRENDS(STR(?class_id_pred), "/vocab/id"))
+              }
+            }
+            OPTIONAL {
+              VALUES ?og { {graph_iris} }
+              GRAPH ?og { ?class rdfs:label ?class_label . }
+            }
           }
           OPTIONAL {
             VALUES ?lg { {graph_iris} }
             GRAPH ?lg { ?entity rdfs:label ?label . }
-          }
-          OPTIONAL {
-            VALUES ?og { {graph_iris} }
-            GRAPH ?og { ?class rdfs:label ?class_label . }
           }
           BIND(?g AS ?graph)
         }
@@ -604,23 +650,39 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="any",
         primary_iri_variable="entity",
         body="""# template: entity-search
-        # Stage 4 §4.1. The composer binds ?q (search substring) and ?class_iri
-        # (optional class equality filter) into the FILTER before handing the
-        # query to the store.
+        # Stage 4 §4.1, R3.0-009 §9.3. The composer binds ?q (search substring)
+        # and ?class_iri (optional class equality filter) into the FILTER
+        # before handing the query to the store. The lexical anchor is the same
+        # legal entity anchor as entity-list (asserted NamedIndividual marker),
+        # so zero-class entities are searchable; the class membership edges are
+        # optional. An explicit class filter keeps only entities that are
+        # formal members of that class (the {class_guard} token becomes
+        # BOUND(?class)), never zero-class entities.
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX rdf:  <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX owl:  <http://www.w3.org/2002/07/owl#>
         SELECT DISTINCT ?entity ?label ?comment ?class ?class_label WHERE {
           VALUES ?g { {graph_iris} }
-          GRAPH ?g {
-            ?entity a ?class .
-            FILTER(!STRSTARTS(STR(?class), STR(owl:)))
-            FILTER(?class != owl:NamedIndividual)
-            FILTER(!BOUND(?class_iri) || ?class = ?class_iri)
+          VALUES ?ig { {graph_iris} }
+          GRAPH ?ig { ?entity a owl:NamedIndividual . }
+          OPTIONAL {
+            VALUES ?cg { {graph_iris} }
+            GRAPH ?cg {
+              ?entity a ?class .
+              FILTER(!STRSTARTS(STR(?class), STR(owl:)))
+              FILTER(?class != owl:NamedIndividual)
+              FILTER(!BOUND(?class_iri) || ?class = ?class_iri)
+            }
+            # Nested so an unbound ?class can never be filled by an unrelated
+            # labelled resource.
+            OPTIONAL {
+              VALUES ?og { {graph_iris} }
+              GRAPH ?og { ?class rdfs:label ?class_label . }
+            }
           }
           OPTIONAL { VALUES ?lg { {graph_iris} } GRAPH ?lg { ?entity rdfs:label ?label . } }
           OPTIONAL { VALUES ?mg { {graph_iris} } GRAPH ?mg { ?entity rdfs:comment ?comment . } }
-          OPTIONAL { VALUES ?og { {graph_iris} } GRAPH ?og { ?class rdfs:label ?class_label . } }
+          FILTER({class_guard})
           FILTER(
             CONTAINS(LCASE(COALESCE(STR(?label), "")), LCASE(?q)) ||
             CONTAINS(LCASE(COALESCE(STR(?comment), "")), LCASE(?q)) ||

@@ -18,6 +18,7 @@ from typing import Any, Callable, ClassVar, Mapping
 
 from .contracts import (
     STAGED_MODELING_DECISIONS_PARAMETER,
+    UNIFIED_GRAPH_TASK_PARAMETER,
     TeamConfiguration,
     TeamConfigurationError,
     digest_file,
@@ -114,6 +115,7 @@ from .staged_decisions import (
     candidate_gate_open,
     load_analysis_conclusions,
     load_approvals,
+    load_materialization_plan_ref,
     load_materialization_unlock,
     mark_intent_status,
     next_intent_ordinal,
@@ -126,6 +128,10 @@ from .staged_decisions import (
     staged_decision_directories,
     staged_intent_receipt_issues,
     staged_stage3_issue,
+    UNIFIED_SUBMISSION_RECEIPT_SCHEMA,
+    unified_approval_issue,
+    unified_candidate_issue,
+    unified_plan_issue,
     validate_materialization_unlock,
     validate_staged_submission,
     write_submission_intent,
@@ -274,6 +280,8 @@ class TeamRunner:
         # R3.0-008B segment 1: staged modeling decision state.  Every flag stays
         # False for tasks without ``staged_modeling_decisions``.
         self._staged_decisions = False
+        # R3.0-009: unified semantic graph mode; False unless the task opts in.
+        self._unified_graph = False
         self._staged_gate_feedback_fingerprints: set[str] = set()
         self._staged_gate_killed = False
         self._candidate_receipt_wakeup_sent: set[tuple[str, str]] = set()
@@ -736,6 +744,10 @@ class TeamRunner:
                 },
             )
         staged_parameters = config.task.parameters or {}
+        # R3.0-009: the unified semantic graph flow is an opt-in extension of
+        # the staged decisions path (contracts.py already enforces that both
+        # underlying capabilities are declared).
+        unified_graph = staged_parameters.get(UNIFIED_GRAPH_TASK_PARAMETER) is True
         if multi_slice_workflow and not formal_acceptance and staged_parameters.get(
             STAGED_MODELING_DECISIONS_PARAMETER
         ) is True:
@@ -744,17 +756,19 @@ class TeamRunner:
             # artifact directories (mkdir); absent files ARE the gate
             # semantics, so no staged artifact is ever pre-created here.
             self._staged_decisions = True
+            self._unified_graph = unified_graph
             self._staged_gate_feedback_fingerprints = set()
             self._staged_gate_killed = False
-            for directory in staged_decision_directories(root):
+            for directory in staged_decision_directories(root, unified=unified_graph):
                 directory.mkdir(mode=0o700, parents=True, exist_ok=True)
             self._append_evidence(
                 "staged-decisions",
                 {
                     "event": "directories-registered",
+                    "unified_semantic_graph": unified_graph,
                     "artifact_directories": [
                         path.relative_to(root).as_posix()
-                        for path in staged_decision_directories(root)
+                        for path in staged_decision_directories(root, unified=unified_graph)
                     ],
                 },
             )
@@ -3731,7 +3745,7 @@ class TeamRunner:
         )
 
     def _load_staged_approvals(self, run_root: Path) -> dict[str, Any] | None:
-        paths = staged_decision_artifact_paths(run_root)
+        paths = staged_decision_artifact_paths(run_root, unified=self._unified_graph)
         if not paths["approvals"].exists():
             return None
         try:
@@ -3773,14 +3787,14 @@ class TeamRunner:
             return False
         # 2) Cross-artifact checks (conclusions state machine + archive chain,
         #    approvals anchoring, unlock consistency, ledger-vs-receipts).
-        for issue in staged_artifact_issues(run_root):
+        for issue in staged_artifact_issues(run_root, unified=self._unified_graph):
             if issue.reason_code == "staged_unreconciled_batch":
                 self._staged_gate_kill_switch(issue.reason_code, issue.detail)
                 return False
             self._deliver_staged_gate_feedback(issue.reason_code, issue.artifact)
         # 3) Stage 3 minimal slot prerequisite (approval cross-validated).
         approvals = self._load_staged_approvals(run_root)
-        slot_issue = staged_stage3_issue(run_root, approvals)
+        slot_issue = staged_stage3_issue(run_root, approvals, unified=self._unified_graph)
         if slot_issue is not None:
             # Prerequisite model: intervene without latch or gate close.
             self._deliver_staged_gate_feedback(slot_issue.reason_code, slot_issue.artifact)
@@ -3803,7 +3817,8 @@ class TeamRunner:
                 "staged_gate_closed", "staged decisions are not enabled for this run"
             )
         run_root = self.run.root
-        paths = staged_decision_artifact_paths(run_root)
+        unified = bool(getattr(self, "_unified_graph", False))
+        paths = staged_decision_artifact_paths(run_root, unified=unified)
         gate_open = candidate_gate_open(run_root)
         conclusions: Mapping[str, Any] | None = None
         if paths["conclusions"].exists():
@@ -3833,10 +3848,42 @@ class TeamRunner:
             unlock=unlock,
             unlock_issues=unlock_issues,
             receipts=receipts,
+            unified=unified,
         )
         if issues:
             raise StagedSubmissionRejection(issues[0].reason_code, issues[0].detail)
         batch = args["batch"]
+        plan_ref = args.get("plan_ref")
+        projection: Mapping[str, Any] | None = None
+        if unified:
+            # R3.0-009 §9.2: before anything is persisted or forwarded the plan
+            # is re-read, the approved projection is compared with the payloads
+            # actually being forwarded, and the bindings are closed against the
+            # current candidate revision and the current approvals.  Any
+            # mismatch is a typed, fixable rejection with no partial write.
+            plan, plan_issue = load_materialization_plan_ref(run_root, plan_ref)
+            if plan_issue is not None or plan is None:
+                raise StagedSubmissionRejection(
+                    plan_issue.reason_code if plan_issue else "missing_candidate_reference",
+                    plan_issue.detail if plan_issue else "materialization plan is missing",
+                )
+            projection = plan.get("projection") or {}
+            for issue in (
+                unified_plan_issue(
+                    plan=plan,
+                    batch=batch,
+                    task_id=self.run.configuration.task.task_id,
+                ),
+                unified_candidate_issue(run_root, projection),
+                unified_approval_issue(
+                    load_approvals(paths["approvals"])
+                    if paths["approvals"].is_file() and not paths["approvals"].is_symlink()
+                    else {},
+                    projection,
+                ),
+            ):
+                if issue is not None:
+                    raise StagedSubmissionRejection(issue.reason_code, issue.detail)
         try:
             intents = read_submission_intents(run_root)
         except StagedDecisionArtifactError as exc:
@@ -3887,6 +3934,11 @@ class TeamRunner:
             commands=list(batch["items"]),
             value_traces=stamped_traces,
             l3_nodes=list(args["l3_nodes"]),
+            plan_ref=plan_ref if unified else None,
+            projection=projection if unified else None,
+            decision_bindings=(
+                list((projection or {}).get("decision_bindings") or []) if unified else None
+            ),
         )
         write_submission_intent(run_root, intent)
         self._append_evidence(
@@ -3952,6 +4004,14 @@ class TeamRunner:
                 "receipt_ordinal": receipt["ordinal"],
                 "batch_id": batch_id,
                 "mode": batch["mode"],
+                **(
+                    {
+                        "plan_ref": receipt.get("plan_ref"),
+                        "projection_digest": receipt.get("projection_digest"),
+                    }
+                    if receipt.get("schema_version") == UNIFIED_SUBMISSION_RECEIPT_SCHEMA
+                    else {}
+                ),
             },
         )
         return {

@@ -49,15 +49,15 @@
     },
     "create_property": {
       "additional_properties": false,
-      "required": ["class_id", "name"],
-      "one_or_more_required": ["datatype", "object_class_id"],
+      "required": ["name"],
+      "at_most_one_required": ["datatype", "object_class_id"],
       "fields": {
         "property_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
-        "class_id": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type; Protocol MUST send a string"},
+        "class_id": {"type": "string", "required": false, "server_current_acceptance": "approved domain Class is optional (R3.0-009 §4.3); compiler does not prevalidate scalar type; Protocol MUST send a string"},
         "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
         "description": {"type": "string", "required": false},
-        "datatype": {"type": "string", "required": false, "branch": "DatatypeProperty when object_class_id is absent"},
-        "object_class_id": {"type": "string", "required": false, "branch": "ObjectProperty when present; if both fields are supplied, this branch wins and datatype is ignored"}
+        "datatype": {"type": "string", "required": false, "branch": "DatatypeProperty; a datatype property MUST carry its real datatype"},
+        "object_class_id": {"type": "string", "required": false, "branch": "ObjectProperty Class range; optional. datatype and object_class_id are mutually exclusive; when both are supplied the payload is rejected"}
       }
     },
     "create_relation_type": {
@@ -77,19 +77,22 @@
     },
     "create_shape": {
       "additional_properties": false,
-      "required": ["target_class_id"],
+      "exactly_one_required": ["target_class_id", "target_node_iri", "target_subjects_of_iri"],
       "fields": {
         "shape_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
-        "target_class_id": {"type": "string", "required": true},
+        "target_class_id": {"type": "string", "required": false, "branch": "Legacy class target; resolved to sh:targetClass."},
+        "target_node_iri": {"type": "string", "required": false, "format": "absolute-rdf-iri", "branch": "sh:targetNode; caller-supplied absolute IRI, the platform never guesses an IRI from a name."},
+        "target_subjects_of_iri": {"type": "string", "required": false, "format": "absolute-rdf-iri", "branch": "sh:targetSubjectsOf; caller-supplied absolute IRI."},
         "constraints": {"type": "array", "required": false, "default": [], "items": "shape_constraint"}
       }
     },
     "create_entity": {
       "additional_properties": false,
-      "required": ["class_iri_or_legacy_id", "label"],
+      "required": ["label"],
       "fields": {
         "entity_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
-        "class_iri_or_legacy_id": {"type": "string", "required": true},
+        "class_iri_or_legacy_id": {"type": "string", "required": false, "branch": "Legacy scalar Class; when class_iris is also supplied the expanded scalar MUST be a member of it, otherwise the payload is a class_membership_conflict."},
+        "class_iris": {"type": "array", "items": "string", "required": false, "description": "Full formal Class set (R3.0-009 §4.1/§6.2). Entries are class ids or absolute IRIs, deduplicated by the compiler. Omitted, null and [] are the same legal zero-member state; no placeholder Class is invented."},
         "label": {"type": "string", "required": true},
         "aliases": {"type": "array", "items": "string", "required": false, "default": []},
         "properties": {"type": "object", "required": false, "default": {}, "additional_properties": true, "description": "Property keys are non-empty strings; lists are rejected by the handler."}

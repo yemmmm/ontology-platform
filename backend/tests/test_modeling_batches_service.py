@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from hashlib import sha256
+from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import func, select
@@ -31,7 +32,7 @@ from app.repositories.models import (
     SemanticStatementOccurrenceModel,
     SemanticStatementOriginModel,
 )
-from app.repositories.rdf_store import GraphWriteResult
+from app.repositories.rdf_store import GraphWriteResult, RdfStoreUnavailable
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchError, ModelingBatchService
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
@@ -808,6 +809,311 @@ def test_new_shape_validates_entities_in_the_same_candidate_batch(modeling):
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
 
 
+def test_node_target_shape_passes_validation_when_data_satisfies_it(modeling):
+    """D2: a Shape command is validated with the shapes graph over the data
+    candidate, so a satisfied constraint on a real focus node is accepted
+    (Round 1 rejected every ``target_node_iri`` shape with ``min_count>=1``).
+    """
+    _service, db, _rdf, session_id, lease, version = modeling
+    rdf = PersistentFakeRdfStore()
+    service = ModelingBatchService(db, _settings(), rdf)  # type: ignore[arg-type]
+    schema = [
+        _item(
+            "customer-class",
+            command_kind="create_class",
+            payload={"class_id": "customer", "name": "Customer"},
+        ),
+        _item(
+            "customer-email",
+            command_kind="create_property",
+            depends_on=["customer-class"],
+            payload={
+                "class_id": "customer",
+                "datatype": "string",
+                "name": "email",
+                "property_id": "email",
+            },
+        ),
+        _item(
+            "customer-entity",
+            command_kind="create_entity",
+            depends_on=["customer-class", "customer-email"],
+            payload={
+                "class_iri_or_legacy_id": "customer",
+                "entity_id": "alice",
+                "label": "Alice",
+                "properties": {"email": "alice@example.com"},
+            },
+        ),
+    ]
+    applied = service.submit(
+        session_id,
+        _request(
+            version,
+            schema,
+            batch="d2-schema",
+            key="d2-schema-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+    assert applied["attempt_status"] == "applied", applied["findings"]
+    next_version = applied["workspace"]["after_version"]
+
+    shape = ModelingItemInput(
+        client_item_id="alice-shape",
+        command_kind="create_shape",
+        payload={
+            "shape_id": "alice-email-shape",
+            "target_node_iri": "https://r004.test/resource/entity/alice",
+            "constraints": [{"path_id": "email", "min_count": 1}],
+        },
+    )
+    result = service.submit(
+        session_id,
+        _request(
+            next_version,
+            [shape],
+            batch="d2-shape",
+            key="d2-shape-dry-run",
+        ),
+    )
+
+    assert result["attempt_status"] == "validated", result["findings"]
+    assert not [finding for finding in result["findings"] if finding["blocking"]]
+    # dry_run stays side-effect free beyond the schema apply above.
+    assert len(rdf.deltas) == 1
+
+
+def test_shape_target_conflicts_are_typed_and_locatable_findings(modeling):
+    """D5/D6: Shape target conflicts surface as machine-readable findings with
+    per-field paths instead of an escaping exception."""
+    service, _db, _rdf, session_id, _lease, version = modeling
+
+    combined = service.submit(
+        session_id,
+        _request(
+            version,
+            [
+                _item(
+                    "combined-target",
+                    command_kind="create_shape",
+                    payload={
+                        "shape_id": "combined",
+                        "target_class_id": "customer",
+                        "target_node_iri": "https://r004.test/resource/entity/alice",
+                        "constraints": [{"path_id": "email", "min_count": 1}],
+                    },
+                )
+            ],
+            batch="d6-combined",
+            key="d6-combined",
+        ),
+    )
+    finding = next(
+        finding
+        for finding in combined["findings"]
+        if finding["code"] == "shape_target_conflict"
+    )
+    assert finding["blocking"] is True
+    assert finding["scope"] == "item"
+    assert finding["client_item_ids"] == ["combined-target"]
+    assert finding["path"] == [
+        "items",
+        0,
+        "payload",
+        "target_class_id",
+        "target_node_iri",
+    ]
+
+    blank = service.submit(
+        session_id,
+        _request(
+            version,
+            [
+                _item(
+                    "blank-target",
+                    command_kind="create_shape",
+                    payload={"shape_id": "blank", "constraints": []},
+                )
+            ],
+            batch="d5-blank",
+            key="d5-blank",
+        ),
+    )
+    blank_finding = next(
+        finding
+        for finding in blank["findings"]
+        if finding["code"] == "shape_target_conflict"
+    )
+    assert blank_finding["client_item_ids"] == ["blank-target"]
+    assert blank_finding["path"] == [
+        "items",
+        0,
+        "payload",
+        "target_class_id",
+        "target_node_iri",
+        "target_subjects_of_iri",
+    ]
+
+
+def test_class_membership_conflict_is_a_typed_and_locatable_finding(modeling):
+    """D5: the legacy-scalar vs ``class_iris`` mismatch is a 4xx-grade typed
+    finding, never an escaping exception."""
+    service, _db, _rdf, session_id, _lease, version = modeling
+
+    result = service.submit(
+        session_id,
+        _request(
+            version,
+            [
+                _item(
+                    "mismatch",
+                    command_kind="create_entity",
+                    payload={
+                        "class_iri_or_legacy_id": "customer",
+                        "class_iris": ["vip"],
+                        "label": "Alice",
+                    },
+                )
+            ],
+            batch="d5-membership",
+            key="d5-membership",
+        ),
+    )
+
+    finding = next(
+        finding
+        for finding in result["findings"]
+        if finding["code"] == "class_membership_conflict"
+    )
+    assert finding["blocking"] is True
+    assert finding["client_item_ids"] == ["mismatch"]
+    assert finding["path"] == [
+        "items",
+        0,
+        "payload",
+        "class_iri_or_legacy_id",
+        "class_iris",
+    ]
+
+
+def test_update_shape_missing_shape_is_a_locatable_finding(modeling):
+    """D11: ``update_shape`` against an unknown shape id is a repairable
+    ``shape_not_found`` finding instead of a silent upsert."""
+    service, db, rdf, session_id, _lease, version = modeling
+    shape = ModelingItemInput(
+        client_item_id="typo-shape",
+        command_kind="update_shape",
+        payload={
+            "shape_id": "no-such-shape",
+            "target_class_id": "customer",
+            "constraints": [{"path_id": "email", "min_count": 1}],
+        },
+    )
+
+    result = service.submit(session_id, _request(version, [shape]))
+
+    assert result["attempt_status"] == "validation_failed"
+    finding = next(
+        finding
+        for finding in result["findings"]
+        if finding["code"] == "shape_not_found"
+    )
+    assert finding["blocking"] is True
+    assert finding["client_item_ids"] == ["typo-shape"]
+    assert finding["path"] == ["items", 0, "payload", "shape_id"]
+    assert rdf.deltas == []
+    assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
+
+
+def test_shacl_violation_finding_names_focus_node_and_result_path(modeling):
+    """D8: the ``shacl_violation`` finding carries the report projection
+    (focus node, result path, source shape) so the caller can repair it."""
+    _service, db, _rdf, session_id, lease, version = modeling
+    rdf = PersistentFakeRdfStore()
+    service = ModelingBatchService(db, _settings(), rdf)  # type: ignore[arg-type]
+    applied = service.submit(
+        session_id,
+        _request(
+            version,
+            [
+                _item(
+                    "workflow-class",
+                    command_kind="create_class",
+                    payload={"class_id": "workflow", "name": "Workflow"},
+                ),
+                _item(
+                    "workflow-key",
+                    command_kind="create_property",
+                    depends_on=["workflow-class"],
+                    payload={
+                        "class_id": "workflow",
+                        "datatype": "string",
+                        "name": "workflow key",
+                        "property_id": "workflowKey",
+                    },
+                ),
+                _item(
+                    "workflow-key-shape",
+                    command_kind="create_shape",
+                    depends_on=["workflow-class", "workflow-key"],
+                    payload={
+                        "shape_id": "workflow-key-shape",
+                        "target_class_id": "workflow",
+                        "constraints": [
+                            {"path_id": "workflowKey", "min_count": 2, "max_count": 2}
+                        ],
+                    },
+                ),
+            ],
+            batch="d8-schema",
+            key="d8-schema-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+    assert applied["attempt_status"] == "applied", applied["findings"]
+
+    violating = service.submit(
+        session_id,
+        _request(
+            applied["workspace"]["after_version"],
+            [
+                _item(
+                    "violating-entity",
+                    command_kind="create_entity",
+                    payload={
+                        "class_iri_or_legacy_id": "workflow",
+                        "entity_id": "broken",
+                        "label": "Broken",
+                        "properties": {"workflowKey": "only-one"},
+                    },
+                )
+            ],
+            batch="d8-violating",
+            key="d8-violating",
+        ),
+    )
+
+    finding = next(
+        finding
+        for finding in violating["findings"]
+        if finding["code"] == "shacl_violation"
+    )
+    assert finding["blocking"] is True
+    assert finding["client_item_ids"] == ["violating-entity"]
+    violations = finding["details"]["violations"]
+    assert violations, "expected the report projection on the finding"
+    first = violations[0]
+    assert first["focus_node"] == "https://r004.test/resource/entity/broken"
+    assert first["result_path"] == "https://r004.test/resource/property/workflowKey"
+    # The source shape is reported too; for a constraint-level violation it is
+    # the property shape (a blank node), so only its presence is contractual.
+    assert isinstance(first["source_shape"], str) and first["source_shape"]
+    assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
+
+
 def test_urn_schema_ids_and_bare_string_datatype_validate_in_one_principal_dry_run(modeling):
     service, _db, _rdf, session_id, _lease, version = modeling
     class_id = "urn:m4:Workflow"
@@ -900,8 +1206,9 @@ def test_shape_apply_targets_workspace_member_and_changes_version(modeling):
 
     assert result["attempt_status"] == "applied"
     assert result["workspace"]["after_version"] != version
+    # Custom shapes sub-graph: the graph the shape endpoint reads back (D1).
     assert rdf.deltas[0].affected_graph_iris() == [
-        f"{_settings().semantic_graph_iri_prefix.rstrip('/')}/shapes/{ONTOLOGY_ID}"
+        f"{_settings().semantic_graph_iri_prefix.rstrip('/')}/shapes/{ONTOLOGY_ID}/custom"
     ]
 
 
@@ -1424,3 +1731,379 @@ def test_first_version_handler_registry_covers_frozen_command_scope(kind, payloa
         payload=payload,
     )
     assert prepared.command_kind == kind
+
+
+
+
+
+# ---------------------------------------------------------------------------
+# R3.0-009 Round 2: D2 apply-path SHACL scope, D13 deterministic failure and
+# recovery exit, D15 same-batch shape refinement.
+# ---------------------------------------------------------------------------
+
+CUSTOM_SHAPES_GRAPH = "https://r004.test/graph/shapes/r004-ontology/custom"
+
+
+class OxigraphLikeRdfStore(PersistentFakeRdfStore):
+    """Behaves like the production repository on a never-materialized graph.
+
+    Oxigraph answers 404 for a named graph that was never written and the
+    repository turns that into ``RdfStoreUnavailable`` (D13): recovery code
+    must decide that a missing optional graph is empty instead of failing the
+    observation.
+    """
+
+    def __init__(self, *, persist_before_failure: bool) -> None:
+        super().__init__()
+        self.failures = 0
+        self.persist_before_failure = persist_before_failure
+
+    def get_graph(self, graph_iri, _format):
+        if not self.graphs.get(graph_iri):
+            raise RdfStoreUnavailable(f"graph {graph_iri} does not exists")
+        return self.graphs[graph_iri]
+
+    def apply_dataset_delta(self, delta):
+        self.failures += 1
+        if self.persist_before_failure:
+            super().apply_dataset_delta(delta)
+        raise RuntimeError("simulated uncertain RDF response")
+
+
+def _persistent_modeling(modeling):
+    """The fixture store drops every delta; apply-path tests need persistence."""
+    service, db, _rdf, session_id, lease, version = modeling
+    store = PersistentFakeRdfStore()
+    return (
+        ModelingBatchService(db, _settings(), store),  # type: ignore[arg-type]
+        db,
+        store,
+        session_id,
+        lease,
+        version,
+    )
+
+
+def _apply_customer_schema(service, session_id, lease, version, *, with_email=True):
+    """Apply class + email property + Alice so shapes bind to a real entity."""
+    properties = {"email": "alice@example.com"} if with_email else {}
+    items = [
+        _item(
+            "customer-class",
+            command_kind="create_class",
+            payload={"class_id": "customer", "name": "Customer"},
+        ),
+        _item(
+            "customer-email",
+            command_kind="create_property",
+            depends_on=["customer-class"],
+            payload={
+                "class_id": "customer",
+                "datatype": "string",
+                "name": "email",
+                "property_id": "email",
+            },
+        ),
+        _item(
+            "alice",
+            command_kind="create_entity",
+            depends_on=["customer-class", "customer-email"],
+            payload={
+                "class_iri_or_legacy_id": "customer",
+                "entity_id": "alice",
+                "label": "Alice",
+                "properties": properties,
+            },
+        ),
+    ]
+    applied = service.submit(
+        session_id,
+        _request(
+            version,
+            items,
+            batch="round2-schema",
+            key="round2-schema-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+    assert applied["attempt_status"] == "applied", applied["findings"]
+    return applied["workspace"]["after_version"]
+
+
+def _shape_item(
+    item_id,
+    shape_id,
+    *,
+    target_node_iri,
+    constraints,
+    command_kind="create_shape",
+    depends_on=None,
+):
+    data = {
+        "client_item_id": item_id,
+        "command_kind": command_kind,
+        "payload": {
+            "shape_id": shape_id,
+            "target_node_iri": target_node_iri,
+            "constraints": constraints,
+        },
+        "rationale": "Shape constrains a competency-question focus node",
+        "evidence": [
+            {"document_name": "domain.md", "excerpt": "Every customer carries an email."}
+        ],
+    }
+    if depends_on:
+        data["depends_on"] = depends_on
+    return ModelingItemInput(**data)
+
+
+def test_node_target_shape_applies_when_data_satisfies_it(modeling):
+    """D2 positive: the apply path reads the same data candidate as the
+    pre-check, so a satisfied ``sh:targetNode`` constraint is written."""
+    service, _db, store, session_id, lease, version = _persistent_modeling(modeling)
+    next_version = _apply_customer_schema(service, session_id, lease, version)
+
+    result = service.submit(
+        session_id,
+        _request(
+            next_version,
+            [
+                _shape_item(
+                    "alice-shape",
+                    "alice-email-shape",
+                    target_node_iri="https://r004.test/resource/entity/alice",
+                    constraints=[{"path_id": "email", "min_count": 1}],
+                )
+            ],
+            batch="round2-shape",
+            key="round2-shape-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert result["attempt_status"] == "applied", result["findings"]
+    assert "alice-email-shape" in store.graphs[CUSTOM_SHAPES_GRAPH]
+    assert "minCount" in store.graphs[CUSTOM_SHAPES_GRAPH]
+
+
+def test_apply_path_still_detects_a_real_target_node_violation(modeling):
+    """D2 negative: a violated constraint on the data scope blocks the apply
+    and leaves no shape behind."""
+    service, _db, store, session_id, lease, version = _persistent_modeling(modeling)
+    next_version = _apply_customer_schema(
+        service, session_id, lease, version, with_email=False
+    )
+
+    result = service.submit(
+        session_id,
+        _request(
+            next_version,
+            [
+                _shape_item(
+                    "alice-shape",
+                    "alice-email-shape",
+                    target_node_iri="https://r004.test/resource/entity/alice",
+                    constraints=[{"path_id": "email", "min_count": 1}],
+                )
+            ],
+            batch="round2-shape-bad",
+            key="round2-shape-bad-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert result["attempt_status"] == "validation_failed", result["findings"]
+    assert any(
+        finding["code"] == "shacl_violation" and finding["blocking"]
+        for finding in result["findings"]
+    )
+    assert CUSTOM_SHAPES_GRAPH not in store.graphs
+
+
+def test_recovery_observation_treats_a_missing_graph_as_empty(modeling):
+    """D13: a never-materialized workspace graph is an empty observation, not
+    ``rdf_observation_failed``."""
+    service, _db, _rdf, _session_id, _lease, _version = modeling
+    consulted: list[str] = []
+
+    class _RepositoryLikeStore(FakeRdfStore):
+        def graph_exists(self, graph_iri):
+            consulted.append(graph_iri)
+            return False
+
+        def get_graph(self, graph_iri, _format):
+            raise RdfStoreUnavailable(f"graph {graph_iri} does not exists")
+
+    service.rdf_store = _RepositoryLikeStore()  # type: ignore[assignment]
+    attempt = SimpleNamespace(
+        operation_plan={
+            "delta": {
+                "inserts": [["<s:alice>", "<sh:path>", '"email"', CUSTOM_SHAPES_GRAPH]],
+                "deletes": [],
+            }
+        },
+        target_snapshot={"graphs": []},
+    )
+
+    observed = service._observe_recovery_state(attempt)
+
+    assert observed["state"] == "not_applied", observed
+    assert observed.get("reason") != "rdf_observation_failed"
+    assert CUSTOM_SHAPES_GRAPH in consulted
+
+
+def test_apply_failure_recovers_releases_the_fence_and_is_retryable(modeling):
+    """D13 end to end: an uncertain apply enters recovery, the observation
+    stays readable, bounded reconciliation terminates without side effects and
+    releases the write fence so a corrected batch can be applied."""
+    service, db, store, session_id, lease, version = _persistent_modeling(modeling)
+    next_version = _apply_customer_schema(service, session_id, lease, version)
+    failing = OxigraphLikeRdfStore(persist_before_failure=False)
+    failing.graphs = dict(store.graphs)
+    service.rdf_store = failing  # type: ignore[assignment]
+    service.settings = Settings(
+        **{**_settings().model_dump(), "modeling_batch_recovery_max_steps": 1}
+    )
+
+    shape_items = [
+        _shape_item(
+            "alice-shape",
+            "alice-email-shape",
+            target_node_iri="https://r004.test/resource/entity/alice",
+            constraints=[{"path_id": "email", "min_count": 1}],
+        )
+    ]
+    first = service.submit(
+        session_id,
+        _request(
+            next_version,
+            shape_items,
+            batch="round2-uncertain",
+            key="round2-uncertain-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+    assert first["attempt_status"] == "recovering", first["findings"]
+    assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is not None
+
+    reconciled = service.submit(
+        session_id,
+        _request(
+            next_version,
+            shape_items,
+            batch="round2-uncertain",
+            key="round2-uncertain-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+    assert reconciled["attempt_status"] == "failed", reconciled["findings"]
+    assert reconciled["recovery"]["state"] == "failed_without_side_effects"
+    assert reconciled["recovery"]["safe_to_retry"] is True
+    assert "rdf_observation_failed" not in json.dumps(reconciled["recovery"], default=str)
+    assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
+
+    service.rdf_store = store  # type: ignore[assignment]
+    retry = service.submit(
+        session_id,
+        _request(
+            next_version,
+            shape_items,
+            batch="round2-retry",
+            key="round2-retry-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert retry["attempt_status"] == "applied", retry["findings"]
+    assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
+    assert "alice-email-shape" in store.graphs[CUSTOM_SHAPES_GRAPH]
+
+
+def test_same_batch_create_then_update_shape_is_a_declared_refinement(modeling):
+    """D15: creating and refining one Shape inside a batch is a declared
+    sequence, not two writers racing one target."""
+    service, _db, store, session_id, lease, version = _persistent_modeling(modeling)
+    next_version = _apply_customer_schema(service, session_id, lease, version)
+
+    result = service.submit(
+        session_id,
+        _request(
+            next_version,
+            [
+                _shape_item(
+                    "alice-shape",
+                    "alice-email-shape",
+                    target_node_iri="https://r004.test/resource/entity/alice",
+                    constraints=[{"path_id": "email", "min_count": 1}],
+                ),
+                _shape_item(
+                    "alice-shape-refined",
+                    "alice-email-shape",
+                    target_node_iri="https://r004.test/resource/entity/alice",
+                    constraints=[{"path_id": "email", "min_count": 1, "max_count": 2}],
+                    command_kind="update_shape",
+                    depends_on=["alice-shape"],
+                ),
+            ],
+            batch="round2-refine",
+            key="round2-refine-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert result["attempt_status"] == "applied", result["findings"]
+    assert not [
+        finding
+        for finding in result["findings"]
+        if finding["code"] == "conflicting_item_effects"
+    ]
+    assert "maxCount" in store.graphs[CUSTOM_SHAPES_GRAPH]
+
+
+def test_shape_refinement_without_declared_order_stays_a_conflict(modeling):
+    """D15 negative: the same pair without a declared order is still rejected."""
+    service, db, _store, session_id, lease, version = _persistent_modeling(modeling)
+    next_version = _apply_customer_schema(service, session_id, lease, version)
+
+    result = service.submit(
+        session_id,
+        _request(
+            next_version,
+            [
+                _shape_item(
+                    "alice-shape",
+                    "alice-email-shape",
+                    target_node_iri="https://r004.test/resource/entity/alice",
+                    constraints=[{"path_id": "email", "min_count": 1}],
+                ),
+                _shape_item(
+                    "alice-shape-refined",
+                    "alice-email-shape",
+                    target_node_iri="https://r004.test/resource/entity/alice",
+                    constraints=[{"path_id": "email", "min_count": 1, "max_count": 2}],
+                    command_kind="update_shape",
+                ),
+            ],
+            batch="round2-refine-unordered",
+            key="round2-refine-unordered-apply",
+            mode="apply_atomic",
+            token=lease["lease_token"],
+        ),
+    )
+
+    assert result["attempt_status"] == "validation_failed", result["findings"]
+    conflicts = [
+        finding
+        for finding in result["findings"]
+        if finding["code"] == "conflicting_item_effects"
+    ]
+    assert conflicts, result["findings"]
+    assert set(conflicts[0]["client_item_ids"]) == {"alice-shape", "alice-shape-refined"}
+    assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None

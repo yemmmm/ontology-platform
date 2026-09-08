@@ -58,12 +58,33 @@ type RelationTypeEnvelope = {
   items: RelationTypeRow[];
 };
 
+/** R3.0-009 §7.2: one member row of the entity-search read model, filtered to
+ * formal members of the selected class. */
+type ClassMemberRow = {
+  iri: string;
+  label: string | null;
+  source_graph_iri?: string;
+  class_iris?: string[];
+  class_iri?: string | null;
+  class_label?: string;
+};
+
+type ClassMemberEnvelope = {
+  graph_set_id: string;
+  warnings?: Array<{ code: string; message?: string }>;
+  items: ClassMemberRow[];
+};
+
 type ClassesPageProps = {
   graphSetId: string;
   projectId: string;
   ontologyId: string;
   readOnly: boolean;
   request: WorkbenchRequest;
+  /** App-level tab navigation; enables the R3.0-009 §7.2 member navigation. */
+  navigateWorkspace?: (tab: string, params?: Record<string, string>) => void;
+  /** Class IRI carried in the URL (`category`) when another page links here. */
+  focusClassIri?: string | null;
 };
 
 const CLASS_SEARCH_DEBOUNCE_MS = 200;
@@ -74,6 +95,8 @@ export function ClassesPage({
   ontologyId,
   readOnly,
   request,
+  navigateWorkspace,
+  focusClassIri,
 }: ClassesPageProps) {
   const t = useT();
   const [loading, setLoading] = useState(true);
@@ -96,6 +119,11 @@ export function ClassesPage({
   const [detailDescription, setDetailDescription] = useState("");
   const [newName, setNewName] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  // R3.0-009 §7.2: reverse navigation — the formal members of one class.
+  const [members, setMembers] = useState<ClassMemberRow[]>([]);
+  const [membersLoading, setMembersLoading] = useState(false);
+  const [membersError, setMembersError] = useState("");
+  const [membersTruncated, setMembersTruncated] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -212,6 +240,51 @@ export function ClassesPage({
   const selectedClass = selectedIri ? classByIri.get(selectedIri) ?? null : null;
   const selectedEdge = selectedEdgeId ? edgeById.get(selectedEdgeId) ?? null : null;
   const hasGraphSelection = Boolean(selectedClass || selectedEdge);
+
+  // R3.0-009 §7.2: an entity page link lands directly on the class it names.
+  useEffect(() => {
+    if (focusClassIri && classByIri.has(focusClassIri)) setSelectedIri(focusClassIri);
+  }, [focusClassIri, classByIri]);
+
+  useEffect(() => {
+    if (!selectedClass) {
+      setMembers([]);
+      setMembersError("");
+      setMembersLoading(false);
+      setMembersTruncated(false);
+      return;
+    }
+    let cancelled = false;
+    setMembersLoading(true);
+    setMembersError("");
+    void readModel<ClassMemberEnvelope>(request, graphSetId, "entity-search", {
+      // The class filter keeps only formal members; zero-class entities never
+      // satisfy it, and an empty query string makes the lexical filter a no-op.
+      classIri: selectedClass.iri,
+      limit: 50,
+    })
+      .then((envelope) => {
+        if (cancelled) return;
+        setMembers(envelope.items ?? []);
+        setMembersTruncated(
+          (envelope.warnings ?? []).some((warning) => warning.code === "read_model_rows_truncated"),
+        );
+      })
+      .catch((cause) => {
+        if (cancelled) {
+          return;
+        }
+        setMembers([]);
+        setMembersTruncated(false);
+        setMembersError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => {
+        if (!cancelled) setMembersLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [graphSetId, request, selectedClass]);
 
   useEffect(() => {
     const label =
@@ -447,8 +520,13 @@ export function ClassesPage({
             editing={editing}
             detailName={detailName}
             detailDescription={detailDescription}
+            members={members}
+            membersLoading={membersLoading}
+            membersError={membersError}
+            membersTruncated={membersTruncated}
             onChangeName={setDetailName}
             onChangeDescription={setDetailDescription}
+            onOpenMember={(memberIri) => navigateWorkspace?.("entities", { category: memberIri })}
             onEdit={() => setEditing(true)}
             onCancelEdit={() => setEditing(false)}
             onSave={() => void applyDetailUpdate()}
@@ -499,8 +577,14 @@ type ClassGraphDetailPanelProps = {
   editing: boolean;
   detailName: string;
   detailDescription: string;
+  members: ClassMemberRow[];
+  membersLoading: boolean;
+  membersError: string;
+  membersTruncated: boolean;
   onChangeName: (value: string) => void;
   onChangeDescription: (value: string) => void;
+  /** R3.0-009 §7.2: open a member entity in the Entities page. */
+  onOpenMember: (memberIri: string) => void;
   onEdit: () => void;
   onCancelEdit: () => void;
   onSave: () => void;
@@ -517,8 +601,13 @@ function ClassGraphDetailPanel({
   editing,
   detailName,
   detailDescription,
+  members,
+  membersLoading,
+  membersError,
+  membersTruncated,
   onChangeName,
   onChangeDescription,
+  onOpenMember,
   onEdit,
   onCancelEdit,
   onSave,
@@ -609,6 +698,46 @@ function ClassGraphDetailPanel({
               </>
             )}
           </dl>
+          {selectedClass && (
+            <section className="classMembers" aria-label={t("Members")}>
+              <header>
+                <strong>{t("Members")}</strong>
+                <Tag>
+                  {membersLoading
+                    ? t("Loading")
+                    : t("{count} shown", { count: members.length })}
+                </Tag>
+                {membersTruncated && <Tag>{t("Partial")}</Tag>}
+              </header>
+              {membersLoading ? (
+                <Skeleton active paragraph={{ rows: 2 }} title={false} />
+              ) : membersError ? (
+                <Alert type="warning" showIcon message={membersError} />
+              ) : members.length === 0 ? (
+                <p className="classMembersEmpty">{t("No formal members in the current graph set.")}</p>
+              ) : (
+                <ul className="classMemberList">
+                  {members.map((member) => (
+                    <li key={member.iri}>
+                      <button
+                        type="button"
+                        className="classMemberLink"
+                        title={member.iri}
+                        onClick={() => onOpenMember(member.iri)}
+                      >
+                        <span>{member.label ?? compactIri(member.iri)}</span>
+                        <small>
+                          {memberClassIris(member).length === 0
+                            ? t("Unclassified · no formal class")
+                            : memberClassIris(member).map((iri) => compactIri(iri)).join(" · ")}
+                        </small>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </section>
+          )}
           <div className="semanticGraphDetailActions">
             <Button
               icon={<Edit3 size={14} />}
@@ -638,4 +767,12 @@ function compactIri(value: string) {
   const slash = value.lastIndexOf("/");
   const idx = Math.max(hash, slash);
   return idx >= 0 ? value.slice(idx + 1) : value;
+}
+
+/** Full formal Class set of a member row, with the legacy scalar fallback. */
+function memberClassIris(row: ClassMemberRow): string[] {
+  if (Array.isArray(row.class_iris)) {
+    return row.class_iris.filter((iri) => typeof iri === "string" && iri);
+  }
+  return typeof row.class_iri === "string" && row.class_iri ? [row.class_iri] : [];
 }

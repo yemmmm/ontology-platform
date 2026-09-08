@@ -577,6 +577,65 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
   await expect(page.getByRole("button", { name: "New entity" })).toBeEnabled();
 });
 
+// R3.0-009 §4.3 / D12 — editing the formal Class set of an existing entity
+// must write back through create_relation / delete_relation with the rdf:type
+// predicate (the same path the agent uses), never through update_entity.
+test("EntitiesPage edits formal class membership via rdf:type relation commands", async ({ page }) => {
+  await mockCommon(page);
+  const membershipCommands: Array<Record<string, unknown>> = [];
+  await page.route("**/api/semantic/canonical-writes:compile-and-apply", async (route) => {
+    const body = route.request().postDataJSON() as Record<string, unknown>;
+    membershipCommands.push(body);
+    await route.fulfill({ json: { status: "applied", command_kind: body.command_kind } });
+  });
+  await page.goto(
+    `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=entities&graphSet=${GRAPH_SET_ID}`,
+  );
+  await expect(page.getByText(/Entity force graph · 2 nodes · 1 edges/)).toBeVisible();
+  await page.locator('button[aria-label="Select node Entity One"]').dispatchEvent("click");
+  const details = page.getByLabel("Graph item details");
+  await expect(details.getByRole("heading", { name: "Entity One" })).toBeVisible();
+  // Read-only view shows the full visible formal Class set (legacy scalar here).
+  await expect(details.getByText("Class 1", { exact: true })).toBeVisible();
+
+  await details.getByRole("button", { name: "Edit" }).click();
+  // The editor is pre-filled with the entity's current formal Classes
+  // (rendered as compact IRIs inside the removable chips).
+  await expect(details.getByText("Class1", { exact: true })).toBeVisible();
+  await details.getByPlaceholder("Class identifier from class diagram").fill("http://x/Class2");
+  await details.getByRole("button", { name: "Add class" }).click();
+  await expect(details.getByText("Class2", { exact: true })).toBeVisible();
+  await details.getByRole("button", { name: "Save" }).click();
+
+  await expect.poll(() => membershipCommands.map((command) => command.command_kind)).toEqual([
+    "create_relation",
+    "update_entity",
+  ]);
+  expect(membershipCommands[0].payload).toEqual(expect.objectContaining({
+    ontology_id: ontology.id,
+    source_entity_iri: "http://x/Entity1",
+    relation_type_iri: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+    target_entity_iri: "http://x/Class2",
+  }));
+  expect((membershipCommands[1].payload as Record<string, unknown>).class_iris).toBeUndefined();
+
+  // Removing the remaining chip issues the symmetric delete_relation command.
+  await details.getByRole("button", { name: "Edit" }).click();
+  await details.getByText("Class1", { exact: true }).getByRole("button", { name: "close" }).click();
+  await details.getByRole("button", { name: "Save" }).click();
+  await expect.poll(() => membershipCommands.map((command) => command.command_kind)).toEqual([
+    "create_relation",
+    "update_entity",
+    "delete_relation",
+    "update_entity",
+  ]);
+  expect(membershipCommands[2].payload).toEqual(expect.objectContaining({
+    source_entity_iri: "http://x/Entity1",
+    relation_type_iri: "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
+    target_entity_iri: "http://x/Class1",
+  }));
+});
+
 // CatalogMappingsStep graph-derived smoke — REMOVED in Phase F.
 // The catalog tab was deleted in Phase E (App.tsx rewrite). The Postgres
 // catalog data layer still exists, but the wizard UI that consumed it is

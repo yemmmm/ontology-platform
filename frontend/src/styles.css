@@ -5677,3 +5677,130 @@ textarea:focus {
 .auth-session button { border: 0; border-radius: 999px; padding: 0.65rem 1.1rem; color: white; background: #1c665b; cursor: pointer; }
 .auth-error { color: #a13737; }
 .auth-session { position: fixed; z-index: 1000; right: 1rem; bottom: 1rem; display: flex; align-items: center; gap: 0.7rem; padding: 0.55rem 0.65rem 0.55rem 0.9rem; border-radius: 999px; background: rgba(255,255,255,.94); box-shadow: 0 8px 28px rgba(0,0,0,.13); }
+
+/* R3.0-009 §7.1/§7.2 — zero/multi-class entities and class member navigation */
+
+.entityClassInput {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.entityClassInputHint {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.entityClassInputRow {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.entityClassInputRow > :first-child {
+  flex: 1;
+}
+
+.entityClassInputEmpty,
+.entityClassEmpty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.entityClassTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.entityClassLinks {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.entityClassLink,
+.classMemberLink {
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  padding: 2px 9px;
+  background: var(--panel-soft);
+  color: var(--ink);
+  font-size: 12px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.entityClassLink:hover,
+.classMemberLink:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.entityClassIncomplete {
+  color: #a13737;
+  font-size: 12px;
+}
+
+.classMembers {
+  display: grid;
+  gap: 10px;
+  border-top: 1px solid var(--line);
+  padding: 14px;
+}
+
+.classMembers header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.classMembers header strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.classMembersEmpty {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.classMemberList {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  max-height: 220px;
+  overflow: auto;
+}
+
+.classMemberLink {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  border-radius: 8px;
+  padding: 7px 10px;
+}
+
+.classMemberLink > span {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.classMemberLink > small {
+  color: var(--muted);
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

@@ -1787,6 +1787,331 @@ def validate_existing_entity_binding_receipt(
 validate_existing_binding_receipt = validate_existing_entity_binding_receipt
 
 
+# --- R3.0-009 unified read/receipt bind entry (legal zero class) -------------
+#
+# The R2.3 class-first contract above keeps its mandatory Class. The 009 read
+# model makes a formal Class optional, so this separate entry binds existing
+# entities whose visible formal Class set may be empty, while every visible
+# asserted type edge is still verified independently. A known Class IRI whose
+# own identity metadata is missing stays readable as an explicit
+# ``incomplete_class_identity`` state instead of being reported as "no class".
+
+_UNIFIED_BINDING_SCHEMA = "r3-0-009-existing-entity-binding/v1"
+_UNIFIED_CLASS_STATES = ("classified", "incomplete_class_identity", "unclassified")
+
+
+def _unified_ref(value: Any) -> dict[str, Any]:
+    """One existing-entity ref; ``expected_class`` may be None (zero class)."""
+
+    if not isinstance(value, Mapping) or set(value) != _EXISTING_REF_FIELDS:
+        raise ProtocolRetrievalFallbackError(
+            "existing_entity_ref must contain only semantic_id and expected_class"
+        )
+    semantic_id = value.get("semantic_id")
+    expected_class = value.get("expected_class")
+    if not _is_nonempty_string(semantic_id) or "://" in semantic_id:
+        raise ProtocolRetrievalFallbackError("existing_entity_ref identity is invalid")
+    if expected_class is not None:
+        if not _is_nonempty_string(expected_class) or "://" in expected_class:
+            raise ProtocolRetrievalFallbackError("existing_entity_ref Class is invalid")
+    return {"semantic_id": semantic_id, "expected_class": expected_class}
+
+
+def validate_unified_entity_projection(
+    value: Any,
+    *,
+    project_id: str,
+    ontology_id: str,
+    workspace_version: str,
+) -> dict[str, Any]:
+    """009 canonical entity projection: the Class is optional, identity is not.
+
+    ``semantic_id``/``entity_iri``/project/ontology/workspace stay mandatory.
+    The Class pair is checked as a state: both set (classified), only the IRI
+    set (incomplete class identity, the node stays readable), or both absent
+    (legal zero class). A ``class_semantic_id`` without a ``class_iri`` is
+    never accepted because no IRI could locate that identity.
+    """
+
+    required = {
+        "semantic_id",
+        "entity_iri",
+        "class_semantic_id",
+        "class_iri",
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+    }
+    if not isinstance(value, Mapping) or not required.issubset(value):
+        raise ValueError("canonical entity projection fields are incomplete")
+    result: dict[str, Any] = {field: value.get(field) for field in required}
+    semantic_id = result["semantic_id"]
+    if not isinstance(semantic_id, str) or not semantic_id.strip() or "://" in semantic_id:
+        raise ValueError("canonical entity semantic_id is invalid")
+    parsed = urlparse(result["entity_iri"]) if isinstance(result["entity_iri"], str) else None
+    if parsed is None or not parsed.scheme or not parsed.netloc:
+        raise ValueError("canonical entity entity_iri is invalid")
+    class_semantic_id = result["class_semantic_id"]
+    if class_semantic_id is not None and (
+        not isinstance(class_semantic_id, str) or not class_semantic_id.strip() or "://" in class_semantic_id
+    ):
+        raise ValueError("canonical entity class_semantic_id is invalid")
+    class_iri = result["class_iri"]
+    if class_iri is not None:
+        parsed_class = urlparse(class_iri) if isinstance(class_iri, str) else None
+        if parsed_class is None or not parsed_class.scheme or not parsed_class.netloc:
+            raise ValueError("canonical entity class_iri is invalid")
+    if class_semantic_id is not None and class_iri is None:
+        raise ValueError("canonical entity class identity has no IRI")
+    for field, expected in (
+        ("project_id", project_id),
+        ("ontology_id", ontology_id),
+        ("workspace_version", workspace_version),
+    ):
+        if not isinstance(result[field], str) or result[field] != expected:
+            raise ValueError(f"canonical entity {field} drifts")
+    return result
+
+
+def _unified_class_state(row: Mapping[str, Any]) -> str:
+    """Class state of one canonical 009 row; never guesses a Class."""
+
+    class_semantic_id = row.get("class_semantic_id")
+    class_iri = row.get("class_iri")
+    if class_iri in (None, "") and class_semantic_id in (None, ""):
+        return "unclassified"
+    if class_semantic_id in (None, ""):
+        return "incomplete_class_identity"
+    return "classified"
+
+
+def build_unified_entity_binding_receipt(
+    candidate: Any,
+    read_model: Any,
+    *,
+    project_id: str,
+    ontology_id: str,
+    workspace_version: str,
+) -> dict[str, Any]:
+    """Bind neutral existing refs to one ontology-scoped 009 read model.
+
+    Same mechanics as the R2.3-003 entry, with the 009 projection contract: a
+    ref may expect no Class, in which case the live row must be genuinely
+    unclassified — an incomplete class identity is reported, never silently
+    treated as "definitely no class".
+    """
+
+    normalized = _validate_translate_candidate(candidate)
+    refs: dict[str, dict[str, Any]] = {}
+    for value in _unified_refs(normalized):
+        prior = refs.get(value["semantic_id"])
+        if prior is not None and prior != value:
+            raise ProtocolRetrievalFallbackError("existing_entity_ref expected Class drifts")
+        refs[value["semantic_id"]] = value
+    if not refs:
+        raise ProtocolRetrievalFallbackError("candidate has no existing_entity_ref")
+    for field, value in (
+        ("project_id", project_id),
+        ("ontology_id", ontology_id),
+        ("workspace_version", workspace_version),
+    ):
+        if not _is_nonempty_string(value) or "://" in value:
+            raise ProtocolRetrievalFallbackError(f"existing binding {field} is invalid")
+    rows = _read_model_entities(read_model)
+    indexed: dict[str, Mapping[str, Any]] = {}
+    for row in rows:
+        try:
+            validate_unified_entity_projection(
+                row,
+                project_id=project_id,
+                ontology_id=ontology_id,
+                workspace_version=workspace_version,
+            )
+        except ValueError as exc:
+            raise ProtocolRetrievalFallbackError(str(exc)) from exc
+        semantic_id = _row_semantic_id(row)
+        if semantic_id is None:
+            continue
+        if semantic_id in indexed:
+            raise ProtocolRetrievalFallbackError("live read model contains duplicate semantic IDs")
+        indexed[semantic_id] = row
+    bindings: list[dict[str, Any]] = []
+    for semantic_id in sorted(refs):
+        ref = refs[semantic_id]
+        row = indexed.get(semantic_id)
+        if row is None:
+            raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} is missing")
+        canonical = validate_unified_entity_projection(
+            row,
+            project_id=project_id,
+            ontology_id=ontology_id,
+            workspace_version=workspace_version,
+        )
+        actual_class = _row_class(row) or canonical.get("class_semantic_id")
+        class_state = _unified_class_state(canonical)
+        if ref["expected_class"] is None:
+            # Every visible asserted type edge is verified: a row that still
+            # carries Class identity cannot satisfy a zero-class expectation.
+            if class_state != "unclassified":
+                raise ProtocolRetrievalFallbackError(
+                    f"existing entity {semantic_id} still carries Class identity"
+                )
+            expected_class: str | None = None
+        else:
+            if actual_class != ref["expected_class"]:
+                raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} Class mismatches")
+            expected_class = ref["expected_class"]
+        entity_iri = _row_iri(row)
+        if not isinstance(entity_iri, str) or "://" not in entity_iri:
+            raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} IRI is invalid")
+        evidence_value = _row_evidence(row)
+        if evidence_value in (None, "", [], {}):
+            raise ProtocolRetrievalFallbackError(f"existing entity {semantic_id} read evidence is missing")
+        binding = {
+            "semantic_id": semantic_id,
+            "expected_class": expected_class,
+            "actual_class": actual_class,
+            "class_state": class_state,
+            "entity_iri": entity_iri,
+            "read_evidence": evidence_value,
+            "class_semantic_id": canonical["class_semantic_id"],
+            "class_iri": canonical["class_iri"],
+            "project_id": canonical["project_id"],
+            "ontology_id": canonical["ontology_id"],
+            "workspace_version": canonical["workspace_version"],
+        }
+        bindings.append(binding)
+    receipt = {
+        "schema_version": _UNIFIED_BINDING_SCHEMA,
+        "requirement_id": "R3.0-009",
+        "candidate_digest": _canonical_digest(normalized),
+        "project_id": project_id,
+        "ontology_id": ontology_id,
+        "workspace_version": workspace_version,
+        "bindings": bindings,
+    }
+    receipt["receipt_digest"] = _canonical_digest(receipt)
+    return receipt
+
+
+def _unified_refs(value: Any) -> list[dict[str, Any]]:
+    """Same traversal as :func:`_existing_refs` with 009 ref rules."""
+
+    found: list[dict[str, Any]] = []
+    if isinstance(value, Mapping):
+        if "existing_entity_ref" in value:
+            ref_value = value["existing_entity_ref"]
+            if isinstance(ref_value, Mapping):
+                found.append(_unified_ref(ref_value))
+            else:
+                found.append(_unified_ref(value))
+        elif set(value) == _EXISTING_REF_FIELDS:
+            found.append(_unified_ref(value))
+        for child in value.values():
+            if child is value:
+                continue
+            found.extend(_unified_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(_unified_refs(child))
+    return found
+
+
+def validate_unified_entity_binding_receipt(
+    candidate: Any,
+    receipt: Any,
+    *,
+    project_id: str | None = None,
+    ontology_id: str | None = None,
+    workspace_version: str | None = None,
+) -> dict[str, Any]:
+    """Validate a frozen 009 binding receipt before it is used for identity."""
+
+    normalized = _validate_translate_candidate(candidate)
+    if not isinstance(receipt, Mapping):
+        raise ProtocolRetrievalFallbackError("existing binding receipt is invalid")
+    required = {
+        "schema_version",
+        "requirement_id",
+        "candidate_digest",
+        "project_id",
+        "ontology_id",
+        "workspace_version",
+        "bindings",
+        "receipt_digest",
+    }
+    if set(receipt) != required or receipt.get("schema_version") != _UNIFIED_BINDING_SCHEMA:
+        raise ProtocolRetrievalFallbackError("existing binding receipt fields drift")
+    if receipt.get("requirement_id") != "R3.0-009":
+        raise ProtocolRetrievalFallbackError("existing binding receipt requirement drifts")
+    if receipt.get("candidate_digest") != _canonical_digest(normalized):
+        raise ProtocolRetrievalFallbackError("existing binding receipt candidate drifted")
+    for field, expected in (
+        ("project_id", project_id),
+        ("ontology_id", ontology_id),
+        ("workspace_version", workspace_version),
+    ):
+        value = receipt.get(field)
+        if not _is_nonempty_string(value) or (expected is not None and value != expected):
+            raise ProtocolRetrievalFallbackError(f"existing binding receipt {field} drifts")
+    refs = {ref["semantic_id"]: ref for ref in _unified_refs(normalized)}
+    bindings = receipt.get("bindings")
+    if not isinstance(bindings, list) or not bindings:
+        raise ProtocolRetrievalFallbackError("existing binding receipt bindings are invalid")
+    seen: set[str] = set()
+    for item in bindings:
+        if not isinstance(item, Mapping) or set(item) != {
+            "semantic_id",
+            "expected_class",
+            "actual_class",
+            "class_state",
+            "entity_iri",
+            "read_evidence",
+            "class_semantic_id",
+            "class_iri",
+            "project_id",
+            "ontology_id",
+            "workspace_version",
+        }:
+            raise ProtocolRetrievalFallbackError("existing binding receipt item fields drift")
+        semantic_id = item.get("semantic_id")
+        if not _is_nonempty_string(semantic_id) or semantic_id in seen:
+            raise ProtocolRetrievalFallbackError("existing binding receipt has duplicate IDs")
+        ref = refs.get(semantic_id)
+        if ref is None or item.get("expected_class") != ref["expected_class"]:
+            raise ProtocolRetrievalFallbackError("existing binding receipt ref mismatch")
+        try:
+            canonical = validate_unified_entity_projection(
+                item,
+                project_id=str(receipt["project_id"]),
+                ontology_id=str(receipt["ontology_id"]),
+                workspace_version=str(receipt["workspace_version"]),
+            )
+        except ValueError as exc:
+            raise ProtocolRetrievalFallbackError(str(exc)) from exc
+        state = _unified_class_state(canonical)
+        if item.get("class_state") != state:
+            raise ProtocolRetrievalFallbackError("existing binding receipt class state drifts")
+        if ref["expected_class"] is None and state != "unclassified":
+            raise ProtocolRetrievalFallbackError("existing binding receipt zero-class state drifts")
+        if ref["expected_class"] is not None and item.get("actual_class") != ref["expected_class"]:
+            raise ProtocolRetrievalFallbackError("existing binding receipt Class mismatch")
+        if not _is_nonempty_string(item.get("entity_iri")) or "://" not in item["entity_iri"]:
+            raise ProtocolRetrievalFallbackError("existing binding receipt IRI is invalid")
+        if item.get("read_evidence") in (None, "", [], {}):
+            raise ProtocolRetrievalFallbackError("existing binding receipt evidence is missing")
+        seen.add(semantic_id)
+    if seen != set(refs):
+        raise ProtocolRetrievalFallbackError("existing binding receipt does not cover candidate refs")
+    if list(sorted(seen)) != [item["semantic_id"] for item in bindings]:
+        raise ProtocolRetrievalFallbackError("existing binding receipt ordering is not canonical")
+    body = dict(receipt)
+    supplied_digest = body.pop("receipt_digest")
+    if supplied_digest != _canonical_digest(body):
+        raise ProtocolRetrievalFallbackError("existing binding receipt digest is invalid")
+    return json.loads(json.dumps(dict(receipt), ensure_ascii=False))
+
+
 def translate_candidate_to_batches(
     candidate: Any,
     existing_binding_receipt: Any | None = None,

@@ -47,6 +47,38 @@ class InvalidCommandPayload(CommandCompilerError):
     pass
 
 
+class ClassMembershipConflict(CommandCompilerError):
+    """R3.0-009: legacy scalar class and ``class_iris`` disagree.
+
+    ``code`` is surfaced verbatim as the ModelingBatch finding code so the
+    caller can locate and repair the membership expression; ``fields`` names
+    the payload fields the finding points at (R3.0-009 §8).
+    """
+
+    code = "class_membership_conflict"
+    fields: tuple[str, ...] = ()
+
+    def __init__(self, message: str, fields: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.fields = fields
+
+
+class ShapeTargetConflict(CommandCompilerError):
+    """R3.0-009: zero or several Shape target selectors were supplied.
+
+    ``create_shape`` / ``update_shape`` accept exactly one non-empty target
+    field; compound targets must be modelled as separate shapes. ``fields``
+    names the payload fields the finding points at (R3.0-009 §8).
+    """
+
+    code = "shape_target_conflict"
+    fields: tuple[str, ...] = ()
+
+    def __init__(self, message: str, fields: tuple[str, ...] = ()) -> None:
+        super().__init__(message)
+        self.fields = fields
+
+
 @dataclass(frozen=True)
 class CompiledCommand:
     """Result of compiling a product command into a graph delta.
@@ -170,6 +202,75 @@ def _shapes_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
 
 def _shapes_custom_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
     return f"{_shapes_graph_iri(ns, ontology_id)}/custom"
+
+
+_NAMED_INDIVIDUAL_IRI = "http://www.w3.org/2002/07/owl#NamedIndividual"
+_RDF_TYPE_IRI = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+
+
+def _reject_named_individual_marker(
+    relation_type_iri: str, target_iri: str, command_kind: str
+) -> None:
+    """The ``owl:NamedIndividual`` marker belongs to entity lifecycle commands."""
+    if relation_type_iri == _RDF_TYPE_IRI and target_iri == _NAMED_INDIVIDUAL_IRI:
+        raise InvalidCommandPayload(
+            f"{command_kind} must not write or remove the owl:NamedIndividual marker; "
+            "use create_entity / delete_entity for the entity marker"
+        )
+
+
+def _expand_class_iri(value: Any, ns: SemanticNamespace, *, field: str) -> str:
+    """Expand one class reference to an absolute IRI (R3.0-009 §4.1)."""
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidCommandPayload(f"{field} must be a non-empty class id or absolute IRI")
+    candidate = value.strip()
+    if candidate == _NAMED_INDIVIDUAL_IRI or candidate == "owl:NamedIndividual":
+        raise InvalidCommandPayload(
+            f"{field} must name a business Class; owl:NamedIndividual is an entity marker"
+        )
+    if ":" in candidate:
+        try:
+            return canonical_iri(candidate)
+        except InvalidLineageStatement as exc:
+            raise InvalidCommandPayload(f"{field} must be an absolute RDF IRI") from exc
+    return str(ns.resource("class", candidate))
+
+
+def _normalized_class_iris(
+    payload: dict[str, Any], ns: SemanticNamespace
+) -> tuple[list[str], str | None]:
+    """Normalize legacy scalar + ``class_iris`` into one deduplicated set.
+
+    R3.0-009 §4.1/§6.2: both fields omitted, or an empty array alone, is the
+    legal zero-member state.  A legacy scalar becomes the single member.
+    When both are supplied the expanded scalar must be present in the array —
+    otherwise the payload is a ``class_membership_conflict``.
+    """
+    legacy = payload.get("class_iri_or_legacy_id")
+    array = payload.get("class_iris")
+    if array is not None and not isinstance(array, list):
+        raise InvalidCommandPayload("class_iris must be an array of class ids or absolute IRIs")
+    legacy_iri: str | None = None
+    if legacy is not None:
+        legacy_iri = _expand_class_iri(legacy, ns, field="class_iri_or_legacy_id")
+    members: list[str] = []
+    if array is not None:
+        for entry in array:
+            members.append(_expand_class_iri(entry, ns, field="class_iris"))
+    elif legacy_iri is not None:
+        # Legacy scalar-only payload: the scalar becomes the single member.
+        members.append(legacy_iri)
+    if legacy_iri is not None and array is not None:
+        # An empty array next to a non-empty scalar is the same conflict as a
+        # mismatched membership list (R3.0-009 §6.2).
+        if legacy_iri not in members:
+            raise ClassMembershipConflict(
+                "class_membership_conflict: class_iri_or_legacy_id "
+                f"{legacy_iri} is absent from class_iris",
+                fields=("class_iri_or_legacy_id", "class_iris"),
+            )
+    deduped = sorted(set(members))
+    return deduped, legacy_iri
 
 
 def _operation_error(exc: OperationValidationError) -> InvalidCommandPayload:
@@ -399,8 +500,10 @@ def compile_create_relation_type(
     ontology_id = _required(payload, "ontology_id")
     relation_type_id = payload.get("relation_type_id") or str(uuid.uuid4())
     name = _required(payload, "name")
-    source_class_id = _required(payload, "source_class_id")
-    target_class_id = _required(payload, "target_class_id")
+    # R3.0-009 §4.3: source/target Class are optional. Absent constraints are
+    # simply not written; supplied ones are still validated and projected.
+    source_class_id = payload.get("source_class_id")
+    target_class_id = payload.get("target_class_id")
     description = payload.get("description")
     symmetric = bool(payload.get("symmetric", False))
     transitive = bool(payload.get("transitive", False))
@@ -426,23 +529,47 @@ def compile_create_relation_type(
             _literal_term(name),
             graph_iri,
         ),
-        (
-            f"<{relation_iri}>",
-            "<http://www.w3.org/2000/01/rdf-schema#domain>",
-            f"<{ns.resource('class', source_class_id)}>",
-            graph_iri,
-        ),
-        (
-            f"<{relation_iri}>",
-            "<http://www.w3.org/2000/01/rdf-schema#range>",
-            f"<{ns.resource('class', target_class_id)}>",
-            graph_iri,
-        ),
-        (f"<{relation_iri}>", f"<{op}sourceClassId>", _literal_term(source_class_id), graph_iri),
-        (f"<{relation_iri}>", f"<{op}targetClassId>", _literal_term(target_class_id), graph_iri),
-        (f"<{relation_iri}>", f"<{op}scopePolicy>", _literal_term(scope_policy), graph_iri),
-        (f"<{relation_iri}>", f"<{op}status>", _literal_term(status), graph_iri),
     ]
+    if source_class_id is not None:
+        insert_quads.extend(
+            [
+                (
+                    f"<{relation_iri}>",
+                    "<http://www.w3.org/2000/01/rdf-schema#domain>",
+                    f"<{ns.resource('class', source_class_id)}>",
+                    graph_iri,
+                ),
+                (
+                    f"<{relation_iri}>",
+                    f"<{op}sourceClassId>",
+                    _literal_term(source_class_id),
+                    graph_iri,
+                ),
+            ]
+        )
+    if target_class_id is not None:
+        insert_quads.extend(
+            [
+                (
+                    f"<{relation_iri}>",
+                    "<http://www.w3.org/2000/01/rdf-schema#range>",
+                    f"<{ns.resource('class', target_class_id)}>",
+                    graph_iri,
+                ),
+                (
+                    f"<{relation_iri}>",
+                    f"<{op}targetClassId>",
+                    _literal_term(target_class_id),
+                    graph_iri,
+                ),
+            ]
+        )
+    insert_quads.extend(
+        [
+            (f"<{relation_iri}>", f"<{op}scopePolicy>", _literal_term(scope_policy), graph_iri),
+            (f"<{relation_iri}>", f"<{op}status>", _literal_term(status), graph_iri),
+        ]
+    )
     if description:
         insert_quads.append(
             (
@@ -560,24 +687,29 @@ def compile_create_property(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
     ontology_id = _required(payload, "ontology_id")
-    class_id = _required(payload, "class_id")
+    # R3.0-009 §4.3: the domain Class is optional. A property created without
+    # an approved domain stays discoverable and usable; when a domain is
+    # supplied it is still validated and written verbatim.
+    class_id = payload.get("class_id")
     property_id = payload.get("property_id") or str(uuid.uuid4())
     name = _required(payload, "name")
     description = payload.get("description")
     datatype = payload.get("datatype")
     object_class_id = payload.get("object_class_id")
-    if datatype is None and object_class_id is None:
+    if datatype is not None and object_class_id is not None:
         raise InvalidCommandPayload(
-            "create_property requires either datatype (for DatatypeProperty) "
-            "or object_class_id (for ObjectProperty)"
+            "create_property accepts either datatype (DatatypeProperty) or "
+            "object_class_id (ObjectProperty), not both"
         )
 
     property_iri = str(ns.resource("property", property_id))
-    class_iri = str(ns.resource("class", class_id))
     ontology_iri = str(ns.resource("ontology", ontology_id))
     graph_iri = _ontology_graph_iri(ns, ontology_id)
     op = str(ns.vocab)
-    is_object_property = object_class_id is not None
+    # A datatype value selects DatatypeProperty. Everything else — including
+    # the constraint-free property — is an ObjectProperty whose Class range is
+    # simply omitted (R3.0-009 §4.3).
+    is_object_property = datatype is None
 
     insert_quads: list[tuple[str, str, str, str]] = [
         (
@@ -596,13 +728,16 @@ def compile_create_property(
             _literal_term(name),
             graph_iri,
         ),
-        (
-            f"<{property_iri}>",
-            "<http://www.w3.org/2000/01/rdf-schema#domain>",
-            f"<{class_iri}>",
-            graph_iri,
-        ),
     ]
+    if class_id is not None:
+        insert_quads.append(
+            (
+                f"<{property_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#domain>",
+                f"<{ns.resource('class', class_id)}>",
+                graph_iri,
+            )
+        )
     if description:
         insert_quads.append(
             (
@@ -612,7 +747,7 @@ def compile_create_property(
                 graph_iri,
             )
         )
-    if is_object_property:
+    if object_class_id is not None:
         target_iri = str(ns.resource("class", object_class_id))
         insert_quads.append(
             (
@@ -622,7 +757,7 @@ def compile_create_property(
                 graph_iri,
             )
         )
-    else:
+    elif datatype is not None:
         insert_quads.append(
             (
                 f"<{property_iri}>",
@@ -842,15 +977,101 @@ def compile_update_relation_type(
     )
 
 
+_SHAPE_TARGET_FIELDS = (
+    "target_class_id",
+    "target_node_iri",
+    "target_subjects_of_iri",
+)
+
+
+def _shape_target_quads(
+    payload: dict[str, Any], ns: SemanticNamespace
+) -> list[tuple[str, str, str]]:
+    """Resolve the single R3.0-009 §6.1 Shape target selector.
+
+    ``target_class_id`` (legacy), ``target_node_iri`` and
+    ``target_subjects_of_iri`` are mutually exclusive and exactly one must be
+    non-empty.  Returns ``(predicate, object)`` pairs to attach to the
+    ``sh:NodeShape``.
+    """
+    target_class_id = payload.get("target_class_id")
+    target_node_iri = payload.get("target_node_iri")
+    target_subjects_of_iri = payload.get("target_subjects_of_iri")
+    supplied = [
+        (field, value)
+        for field, value in (
+            ("target_class_id", target_class_id),
+            ("target_node_iri", target_node_iri),
+            ("target_subjects_of_iri", target_subjects_of_iri),
+        )
+        if value is not None and value != ""
+    ]
+    if not supplied:
+        raise ShapeTargetConflict(
+            "shape_target_conflict: exactly one of target_class_id, "
+            "target_node_iri or target_subjects_of_iri is required",
+            fields=_SHAPE_TARGET_FIELDS,
+        )
+    if len(supplied) > 1:
+        raise ShapeTargetConflict(
+            "shape_target_conflict: combine "
+            + ", ".join(field for field, _value in supplied)
+            + " into separate shapes; one target per shape",
+            fields=tuple(field for field, _value in supplied),
+        )
+    field, value = supplied[0]
+    if field == "target_class_id":
+        if not isinstance(value, str) or not value.strip():
+            raise InvalidCommandPayload("target_class_id must be a non-empty class id")
+        return [
+            (
+                "<http://www.w3.org/ns/shacl#targetClass>",
+                f"<{ns.resource('class', value)}>",
+            )
+        ]
+    # Node and subjects-of targets must be caller-supplied absolute IRIs; the
+    # platform never guesses an IRI from a name (R3.0-009 §6.1).
+    if not isinstance(value, str):
+        raise InvalidCommandPayload(f"{field} must be an absolute RDF IRI")
+    try:
+        resolved = canonical_iri(value)
+    except InvalidLineageStatement as exc:
+        raise InvalidCommandPayload(f"{field} must be an absolute RDF IRI") from exc
+    predicate = (
+        "<http://www.w3.org/ns/shacl#targetNode>"
+        if field == "target_node_iri"
+        else "<http://www.w3.org/ns/shacl#targetSubjectsOf>"
+    )
+    return [(predicate, f"<{resolved}>")]
+
+
+def _shape_path_iri(path_id: str, ns: SemanticNamespace) -> str:
+    """Resolve a ``sh:path`` reference to the predicate it constrains.
+
+    An absolute IRI is used verbatim — it must never be re-prefixed or
+    percent-encoded (R3.0-009 §6.1); a bare local id resolves to the
+    platform property resource, matching ``_property_iri``.
+    """
+    if not isinstance(path_id, str) or not path_id.strip():
+        raise InvalidCommandPayload("constraints[].path_id must be a non-empty predicate id")
+    candidate = path_id.strip()
+    if ":" in candidate:
+        try:
+            return canonical_iri(candidate)
+        except InvalidLineageStatement as exc:
+            raise InvalidCommandPayload(
+                "constraints[].path_id must be an absolute RDF IRI or a property id"
+            ) from exc
+    return str(ns.resource("property", candidate))
+
+
 def _compile_shape_node(
     payload: dict[str, Any], ns: SemanticNamespace, ontology_id: str, shape_iri: str
 ) -> list[tuple[str, str, str, str]]:
     """Build insert quads for a sh:NodeShape with constraints. Target graph
     is the custom shapes sub-graph; caller is responsible for any deletes."""
-    target_class_id = _required(payload, "target_class_id")
     constraints = payload.get("constraints") or []
     graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
-    class_iri = str(ns.resource("class", target_class_id))
     shape_term = f"<{shape_iri}>"
     quads: list[tuple[str, str, str, str]] = [
         (
@@ -859,8 +1080,9 @@ def _compile_shape_node(
             "<http://www.w3.org/ns/shacl#NodeShape>",
             graph_iri,
         ),
-        (shape_term, "<http://www.w3.org/ns/shacl#targetClass>", f"<{class_iri}>", graph_iri),
     ]
+    for target_predicate, target_object in _shape_target_quads(payload, ns):
+        quads.append((shape_term, target_predicate, target_object, graph_iri))
     for index, constraint in enumerate(constraints):
         path_id = _required(constraint, "path_id")
         identity = json.dumps(
@@ -868,7 +1090,7 @@ def _compile_shape_node(
             sort_keys=True,
             separators=(",", ":"),
         )
-        property_term = f"_:shape_{hashlib.sha256(identity.encode('utf-8')).hexdigest()}"
+        property_term = f"<{shape_iri}#property-{_shape_node_digest(identity)}>"
         quads.append(
             (shape_term, "<http://www.w3.org/ns/shacl#property>", property_term, graph_iri)
         )
@@ -876,7 +1098,7 @@ def _compile_shape_node(
             (
                 property_term,
                 "<http://www.w3.org/ns/shacl#path>",
-                f"<{ns.resource('property', path_id)}>",
+                _iri_term(_shape_path_iri(path_id, ns)),
                 graph_iri,
             )
         )
@@ -928,7 +1150,7 @@ def _compile_shape_node(
         if "enum_values" in constraint:
             enum_values = constraint["enum_values"]
             list_nodes = [
-                f"_:list_{hashlib.sha256(f'{identity}:enum:{position}'.encode('utf-8')).hexdigest()}"
+                f"<{shape_iri}#property-{_shape_node_digest(identity)}/list-{position}>"
                 for position in range(len(enum_values))
             ]
             quads.append(
@@ -964,6 +1186,32 @@ def _compile_shape_node(
     return quads
 
 
+def _shape_node_digest(identity: str) -> str:
+    """Stable digest naming one shape-owned constraint node (R3.0-009 §9.1).
+
+    Constraint nodes are IRIs under the shape IRI rather than blank nodes so
+    ``update_shape``/``delete_shape`` can address them in the store's wildcard
+    deletes (D9) and guidance can reference the source shape.
+    """
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def _shape_target_metadata(payload: dict[str, Any], ns: SemanticNamespace) -> dict[str, Any]:
+    """Project the resolved shape target into command metadata for audit."""
+    for field, predicate in (
+        ("target_class_id", "targetClass"),
+        ("target_node_iri", "targetNode"),
+        ("target_subjects_of_iri", "targetSubjectsOf"),
+    ):
+        value = payload.get(field)
+        if value in (None, ""):
+            continue
+        if field == "target_class_id":
+            return {"target_kind": "class", "target_value": str(ns.resource("class", value))}
+        return {"target_kind": field[len("target_"):-4], "target_value": str(value)}
+    return {}
+
+
 def compile_create_shape(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
@@ -973,13 +1221,19 @@ def compile_create_shape(
     insert_quads = _compile_shape_node(payload, ns, ontology_id, shape_iri)
     graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
     delta = RdfGraphDelta(inserts=insert_quads)
+    metadata = {
+        "ontology_id": ontology_id,
+        "shape_id": shape_id,
+        "shape_iri": shape_iri,
+        **_shape_target_metadata(payload, ns),
+    }
     return CompiledCommand(
         command_kind="create_shape",
         delta=delta,
         object_kind="shape",
         source_ids=[shape_id],
         target_graph_iris=[graph_iri],
-        metadata={"ontology_id": ontology_id, "shape_id": shape_id, "shape_iri": shape_iri},
+        metadata=metadata,
     )
 
 
@@ -1007,7 +1261,14 @@ def compile_update_shape(
         object_kind="shape",
         source_ids=source_ids,
         target_graph_iris=[graph_iri],
-        metadata={"ontology_id": ontology_id, "shape_id": shape_id, "shape_iri": shape_iri},
+        metadata={
+            "ontology_id": ontology_id,
+            "shape_id": shape_id,
+            "shape_iri": shape_iri,
+            # Full-definition replacement: the previous target selector is
+            # deleted with the rest of the shape and never unioned (§6.1).
+            **_shape_target_metadata(payload, ns),
+        },
     )
 
 
@@ -1241,50 +1502,49 @@ def compile_update_class(
 def compile_create_entity(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
-    """Stage 2 §5.4 — write a NamedIndividual into graph/data/{ontology_id}.
+    """Stage 2 §5.4 / R3.0-009 §4.1 — write a NamedIndividual into the data graph.
 
-    Writes ``a owl:NamedIndividual``, ``a <class>``, ``rdfs:label``,
-    ``skos:altLabel`` per alias, one triple per property.
+    Writes ``a owl:NamedIndividual``, one ``a <class>`` triple per explicit
+    formal Class (zero members is legal), ``rdfs:label``, ``skos:altLabel``
+    per alias, one triple per property.  No placeholder Class is invented
+    when the caller omits the class entirely.
     """
     ontology_id = _required(payload, "ontology_id")
     entity_id = payload.get("entity_id") or str(uuid.uuid4())
-    class_iri_or_legacy_id = _required(payload, "class_iri_or_legacy_id")
     label = _required(payload, "label")
     aliases: list[str] = payload.get("aliases", []) or []
     properties: dict[str, Any] = payload.get("properties", {}) or {}
 
-    # Resolve class IRI: if the caller passes a bare id, expand via the
-    # namespace. If it already looks like an IRI (contains ":"), use verbatim.
-    if isinstance(class_iri_or_legacy_id, str) and ":" in class_iri_or_legacy_id:
-        class_iri = class_iri_or_legacy_id
-    else:
-        class_iri = str(ns.resource("class", class_iri_or_legacy_id))
+    class_iris, legacy_class_iri = _normalized_class_iris(payload, ns)
 
     entity_iri = str(ns.resource("entity", entity_id))
     graph_iri = _data_graph_iri(ns, ontology_id)
     op = str(ns.vocab)
+    rdf_type = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
 
     insert_quads: list[tuple[str, str, str, str]] = [
         (
             f"<{entity_iri}>",
-            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-            "<http://www.w3.org/2002/07/owl#NamedIndividual>",
-            graph_iri,
-        ),
-        (
-            f"<{entity_iri}>",
-            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-            f"<{class_iri}>",
-            graph_iri,
-        ),
-        (f"<{entity_iri}>", f"<{op}id>", _literal_term(entity_id), graph_iri),
-        (
-            f"<{entity_iri}>",
-            "<http://www.w3.org/2000/01/rdf-schema#label>",
-            _literal_term(label),
+            rdf_type,
+            f"<{_NAMED_INDIVIDUAL_IRI}>",
             graph_iri,
         ),
     ]
+    for class_iri in class_iris:
+        insert_quads.append(
+            (f"<{entity_iri}>", rdf_type, f"<{class_iri}>", graph_iri)
+        )
+    insert_quads.extend(
+        [
+            (f"<{entity_iri}>", f"<{op}id>", _literal_term(entity_id), graph_iri),
+            (
+                f"<{entity_iri}>",
+                "<http://www.w3.org/2000/01/rdf-schema#label>",
+                _literal_term(label),
+                graph_iri,
+            ),
+        ]
+    )
     for alias in aliases:
         insert_quads.append(
             (
@@ -1301,19 +1561,25 @@ def compile_create_entity(
         insert_quads.append((f"<{entity_iri}>", f"<{prop_iri}>", _literal_term(value), graph_iri))
 
     delta = RdfGraphDelta(inserts=insert_quads)
+    metadata: dict[str, Any] = {
+        "ontology_id": ontology_id,
+        "entity_id": entity_id,
+        "entity_iri": entity_iri,
+        "class_iris": class_iris,
+        "label": label,
+    }
+    # Legacy single-value projection: the first visible formal Class, or None
+    # when the entity has zero members (R3.0-009 §6.2).
+    metadata["class_iri"] = class_iris[0] if class_iris else None
+    if legacy_class_iri is not None:
+        metadata["class_iri_or_legacy_id"] = legacy_class_iri
     return CompiledCommand(
         command_kind="create_entity",
         delta=delta,
         object_kind="entity",
         source_ids=[entity_id],
         target_graph_iris=[graph_iri],
-        metadata={
-            "ontology_id": ontology_id,
-            "entity_id": entity_id,
-            "entity_iri": entity_iri,
-            "class_iri": class_iri,
-            "label": label,
-        },
+        metadata=metadata,
     )
 
 
@@ -1438,12 +1704,15 @@ def compile_create_relation(
     """Stage 2 §5.4 — write ``<source> <relation_type> <target>`` to the data graph.
 
     relation_type_iri is taken verbatim so callers can target arbitrary OWL
-    ObjectProperties (defined on the ontology graph).
+    ObjectProperties (defined on the ontology graph).  R3.0-009 §4.3 keeps
+    this as the formal membership path (``rdf:type``) but forbids the
+    relation command from forging the internal ``owl:NamedIndividual`` marker.
     """
     ontology_id = _required(payload, "ontology_id")
     source_iri = _required_absolute_iri(payload, "source_entity_iri")
     relation_type_iri = _required_absolute_iri(payload, "relation_type_iri")
     target_iri = _required_absolute_iri(payload, "target_entity_iri")
+    _reject_named_individual_marker(relation_type_iri, target_iri, "create_relation")
 
     graph_iri = _data_graph_iri(ns, ontology_id)
     insert_quads: list[tuple[str, str, str, str]] = [
@@ -1475,6 +1744,7 @@ def compile_delete_relation(
     source_iri = _required_absolute_iri(payload, "source_entity_iri")
     relation_type_iri = _required_absolute_iri(payload, "relation_type_iri")
     target_iri = _required_absolute_iri(payload, "target_entity_iri")
+    _reject_named_individual_marker(relation_type_iri, target_iri, "delete_relation")
 
     graph_iri = _data_graph_iri(ns, ontology_id)
     deletes = [

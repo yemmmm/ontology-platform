@@ -1140,6 +1140,9 @@ class SemanticReadModelEnvelope(BaseModel):
     derived_state: dict[str, Any]
     warnings: list[dict[str, str]] = Field(default_factory=list)
     recall: dict[str, Any] | None = None
+    # R3.0-009 §6.2: window state of the page relative to the authorized
+    # visible set, so a caller never mistakes one page for the full set.
+    paging: dict[str, Any] | None = None
     items: list[dict[str, Any]] = Field(default_factory=list)
 
 

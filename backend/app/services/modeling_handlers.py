@@ -11,6 +11,7 @@ from app.repositories.rdf_store import RdfGraphDelta
 from app.services.semantic_command_compiler import (
     CompiledCommand,
     InvalidCommandPayload,
+    ShapeTargetConflict,
     compile_command,
 )
 from app.services.semantic_export import namespace_from_settings
@@ -140,10 +141,30 @@ ALLOWED_FIELDS: dict[str, set[str]] = {
         "inverse_name",
     },
     "delete_relation_type": {"relation_type_id", "relation_type_iri"},
-    "create_shape": {"shape_id", "target_class_id", "constraints"},
-    "update_shape": {"shape_id", "shape_iri", "target_class_id", "constraints"},
+    "create_shape": {
+        "shape_id",
+        "target_class_id",
+        "target_node_iri",
+        "target_subjects_of_iri",
+        "constraints",
+    },
+    "update_shape": {
+        "shape_id",
+        "shape_iri",
+        "target_class_id",
+        "target_node_iri",
+        "target_subjects_of_iri",
+        "constraints",
+    },
     "delete_shape": {"shape_id", "shape_iri"},
-    "create_entity": {"entity_id", "class_iri_or_legacy_id", "label", "aliases", "properties"},
+    "create_entity": {
+        "entity_id",
+        "class_iri_or_legacy_id",
+        "class_iris",
+        "label",
+        "aliases",
+        "properties",
+    },
     "update_entity": {"entity_id", "entity_iri", "label", "aliases", "properties"},
     "delete_entity": {
         "entity_id",
@@ -446,24 +467,10 @@ class ModelingCommandHandlerRegistry:
             compiled = compile_command(
                 command_kind, {"ontology_id": ontology_id, **normalized}, self.settings
             )
-            if command_kind in {"create_shape", "update_shape", "delete_shape"}:
-                workspace_shape_graph = (
-                    f"{self.settings.semantic_graph_iri_prefix.rstrip('/')}/shapes/{ontology_id}"
-                )
-                delta = RdfGraphDelta(
-                    inserts=[(*quad[:3], workspace_shape_graph) for quad in compiled.delta.inserts],
-                    deletes=[(*quad[:3], workspace_shape_graph) for quad in compiled.delta.deletes],
-                    clear_graphs=[workspace_shape_graph for _graph in compiled.delta.clear_graphs],
-                    drop_graphs=[workspace_shape_graph for _graph in compiled.delta.drop_graphs],
-                )
-                compiled = CompiledCommand(
-                    command_kind=compiled.command_kind,
-                    delta=delta,
-                    object_kind=compiled.object_kind,
-                    source_ids=compiled.source_ids,
-                    target_graph_iris=[workspace_shape_graph],
-                    metadata={**compiled.metadata, "graph_iri": workspace_shape_graph},
-                )
+            # Shape commands keep the compiler's target graph: the custom
+            # shapes sub-graph is the single write/read location for
+            # caller-authored shapes (R3.0-009 §6.1), so the shape endpoint can
+            # project them without a second copy in the parent shapes graph.
             return PreparedModelingCommand(command_kind, normalized, outputs, compiled, "rdf")
         return PreparedModelingCommand(command_kind, normalized, outputs, None, "postgres")
 
@@ -484,6 +491,29 @@ class ModelingCommandHandlerRegistry:
                     f"{command_kind}.properties must be a JSON object mapping property IRI keys "
                     "to values; lists are invalid"
                 )
+        if command_kind == "create_entity" and "class_iris" in payload:
+            class_iris = payload["class_iris"]
+            if class_iris is not None and not isinstance(class_iris, list):
+                raise InvalidCommandPayload(
+                    "create_entity.class_iris must be an array of class ids or absolute IRIs"
+                )
+        if command_kind in {"create_shape", "update_shape"}:
+            targets = [
+                field
+                for field in ("target_class_id", "target_node_iri", "target_subjects_of_iri")
+                if payload.get(field) not in (None, "")
+            ]
+            if len(targets) > 1:
+                raise ShapeTargetConflict(
+                    "shape_target_conflict: combine "
+                    + ", ".join(targets)
+                    + " into separate shapes; one target per shape",
+                    fields=tuple(targets),
+                )
+            for field in ("target_node_iri", "target_subjects_of_iri"):
+                value = payload.get(field)
+                if value is not None and value != "" and not isinstance(value, str):
+                    raise InvalidCommandPayload(f"{command_kind}.{field} must be an absolute RDF IRI")
         if command_kind.endswith("mapping") and ({"source_id", "run_id"} & set(payload)):
             raise InvalidCommandPayload(
                 "unsupported_batch_variant: import-run Mapping commands are not accepted"

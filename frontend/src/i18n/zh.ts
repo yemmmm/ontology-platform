@@ -1105,4 +1105,13 @@ export const zh: TranslationMap = {
   "Run reasoning on the graph set to populate this section.": "请对图集运行推理以填充本区域。",
   "Consistency result is stale — run reasoning to refresh.": "一致性结果已过期 — 请运行推理以刷新。",
   "Create a graph set on the Graph Sets page to inspect OWL consistency.": "请在图集页面创建图集以查看 OWL 一致性。",
+  "Formal classes (optional, one or more)": "正式类（可选，可多选）",
+  "Add class": "添加类",
+  "No formal class selected; the entity stays unclassified.": "未选择正式类，该实体将保持未分类。",
+  "Unclassified · no formal class": "未分类 · 无正式类",
+  "Incomplete class identity": "类身份不完整",
+  "Entity label": "实体标签",
+  "{count} shown": "显示 {count} 条",
+  "Partial": "可能不完整",
+  "No formal members in the current graph set.": "当前图集中暂无正式成员。",
 };

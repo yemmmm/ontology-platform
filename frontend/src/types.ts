@@ -70,6 +70,12 @@ export type Entity = {
   project_id: string;
   ontology_id: string;
   ontology_version_id: string | null;
+  /** R3.0-009 §6.2: the full formal Class set. `class_id` stays the legacy
+   * single-value projection (lexicographically first visible Class, or empty
+   * for a zero-class entity) and is never multi-class truth. */
+  class_iris?: string[];
+  /** Formal Classes whose `/vocab/id` identity anchor is not visible. */
+  incomplete_class_identity_iris?: string[];
   class_id: string;
   class_label: string;
   name: string;

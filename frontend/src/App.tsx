@@ -906,6 +906,8 @@ function WorkspaceContent(props: {
         ontologyId={props.ontology.id}
         readOnly={readOnly}
         request={governedRequest}
+        navigateWorkspace={props.navigateWorkspace}
+        focusClassIri={queryValue("category") || null}
       />
     );
   }
@@ -920,6 +922,8 @@ function WorkspaceContent(props: {
         ontologyId={props.ontology.id}
         readOnly={readOnly}
         request={governedRequest}
+        navigateWorkspace={props.navigateWorkspace}
+        focusIri={queryValue("category") || null}
       />
     );
   }

@@ -36,6 +36,19 @@ SUBMISSION_INTENT_SCHEMA = "r3-0-008b-submission-intent/v1"
 SUBMISSION_RECEIPT_SCHEMA = "r3-0-008b-submission-receipt/v1"
 STAGED_GATE_FEEDBACK_SCHEMA = "r3-0-008b-staged-gate-feedback/v1"
 
+# R3.0-009 unified semantic graph (design §9.1): the same artifact paths carry
+# new versioned schemas. Readers and writers dispatch on the Task parameter
+# plus the recorded ``schema_version``; old runs keep validating their own
+# 008B schemas and are never migrated in place.
+UNIFIED_STAGE3_SLOT_SCHEMA = "r3-0-009-stage3-slot/v1"
+UNIFIED_GRAPH_CANDIDATE_SCHEMA = "r3-0-009-unified-graph/v1"
+UNIFIED_APPROVALS_SCHEMA = "r3-0-009-approvals/v1"
+UNIFIED_MATERIALIZATION_PLAN_SCHEMA = "r3-0-009-materialization-plan/v1"
+UNIFIED_SUBMISSION_INTENT_SCHEMA = "r3-0-009-submission-intent/v1"
+UNIFIED_SUBMISSION_RECEIPT_SCHEMA = "r3-0-009-submission-receipt/v1"
+UNIFIED_GRAPH_TASK_PARAMETER = "unified_semantic_graph"
+UNIFIED_GRAPH_CONTRACT_VERSION = UNIFIED_GRAPH_CANDIDATE_SCHEMA
+
 # --- Directory and filename constants ---------------------------------------
 
 VALUE_SEMANTICS_DIR = "value-semantics"
@@ -48,6 +61,9 @@ RECEIPTS_DIRNAME = "submission-receipts"
 INTENTS_DIRNAME = "submission-intents"
 STAGE3_NEUTRAL_GRAPH_DIR = "stage3-neutral-graph"
 JOINT_ACCEPTANCE_DIR = "joint-acceptance"
+# R3.0-009: the neutral-graph directory gains two role-scoped sub-directories.
+CANDIDATES_DIRNAME = "candidates"
+MATERIALIZATION_PLANS_DIRNAME = "materialization-plans"
 
 CONCLUSIONS_FILENAME = "analysis-conclusions.json"
 STAGE3_SLOT_FILENAME = "neutral-candidate.json"
@@ -80,6 +96,11 @@ CHECKLIST_ITEM_IDS = (
 BATCH_MODES = ("dry_run", "apply_atomic")
 ENUM_COMMAND_KINDS = ("create_enum_meaning", "update_enum_meaning")
 INTENT_STATUSES = ("submitted", "receipted", "unknown")
+
+# R3.0-009 closed value sets: commonality decisions and their translation.
+DECISION_KINDS = ("approved", "rejected", "deferred")
+DECISION_TARGET_KINDS = ("commonality_node", "member_relation", "commonality_relation")
+UNIFIED_CANDIDATE_ITEM_KINDS = ("entity", "relation", "property", "shape")
 
 # The legal cross-revision conclusion state transitions (design section 3.3).
 LEGAL_CONCLUSION_TRANSITIONS = frozenset(
@@ -142,6 +163,21 @@ ACCEPTANCE_CHECKLIST_REASON_CODES = (
     "acceptance_checklist_missing",
     "acceptance_checklist_unparsable",
     "acceptance_checklist_schema_mismatch",
+)
+# R3.0-009 typed results (design §8). These are the locatable, repairable
+# codes the unified-graph chain must return instead of an opaque run failure;
+# ``staged_unreconciled_batch`` keeps its existing kill-switch meaning.
+UNIFIED_REASON_CODES = (
+    "missing_candidate_reference",
+    "approval_missing",
+    "approval_stale",
+    "approval_content_mismatch",
+    "relation_scope_ambiguous",
+    "shape_conflict",
+    "forbidden",
+    "workspace_version_conflict",
+    "staged_unreconciled_batch",
+    "unified_schema_mismatch",
 )
 
 # --- Field sets (closed collections) ---------------------------------------
@@ -264,6 +300,125 @@ BATCH_ENVELOPE_OPTIONAL_FIELDS = ("lease_token",)
 VALUE_TRACE_FIELDS = frozenset({"command_index", "conclusion_id", "mapped_property"})
 L3_NODE_FIELDS = frozenset({"command_index", "entity_id", "semantic_value_iri"})
 
+# --- R3.0-009 closed field sets (design §9.1) -------------------------------
+
+UNIFIED_STAGE3_SLOT_FIELDS = frozenset(
+    {
+        "schema_version",
+        "scenario_id",
+        "produced_by",
+        "approved_by",
+        "candidate_artifacts",
+        "candidate_contract",
+        "slot_note",
+    }
+)
+UNIFIED_CANDIDATE_FIELDS = frozenset(
+    {
+        "schema_version",
+        "scenario_id",
+        "candidate_id",
+        "revision",
+        "items",
+        "explicit_unknowns",
+    }
+)
+# A candidate item keeps business meaning, value/relation endpoints, evidence,
+# slice/shared-scope provenance and its own unknowns — never a platform IRI.
+UNIFIED_CANDIDATE_ITEM_FIELDS = frozenset(
+    {
+        "item_id",
+        "item_kind",
+        "business_meaning",
+        "value",
+        "relation_endpoints",
+        "evidence_refs",
+        "slice_ids",
+        "shared_scope",
+        "unknowns",
+    }
+)
+UNIFIED_APPROVALS_FIELDS = frozenset(
+    {
+        "schema_version",
+        "scenario_id",
+        "maintained_by",
+        "entries",
+        "decisions",
+        "translation_approvals",
+    }
+)
+DECISION_FIELDS = frozenset(
+    {
+        "decision_id",
+        "target_kind",
+        "target_id",
+        "candidate_id",
+        "content_revision",
+        "content_digest",
+        "decision",
+        "reason",
+        "evidence_refs",
+        "slice_ids",
+        "shared_scope",
+        "scope",
+    }
+)
+TRANSLATION_APPROVAL_FIELDS = frozenset(
+    {"plan_ref", "projection_digest", "approved_by", "decision", "reason"}
+)
+UNIFIED_MATERIALIZATION_PLAN_FIELDS = frozenset(
+    {
+        "schema_version",
+        "plan_id",
+        "revision",
+        "projection",
+        "projection_digest",
+    }
+)
+APPROVAL_PROJECTION_FIELDS = frozenset(
+    {
+        "task_id",
+        "contract_version",
+        "scenario_id",
+        "session_id",
+        "client_batch_id",
+        "ontology_id",
+        "candidate_id",
+        "candidate_revision",
+        "candidate_digest",
+        "items",
+        "decision_bindings",
+        "identity_bindings",
+    }
+)
+DECISION_BINDING_FIELDS = frozenset(
+    {
+        "command_index",
+        "client_item_id",
+        "candidate_item_ids",
+        "candidate_revision",
+        "candidate_content_digests",
+        "decision_ids",
+    }
+)
+IDENTITY_BINDING_FIELDS = frozenset(
+    {"candidate_item_id", "resource_iri", "receipt_ref", "evidence_ref"}
+)
+# The 009 intent/receipt keep every 008B field and add the plan/projection
+# bindings; the receipt copies them from the saved intent (design §9.2).
+UNIFIED_INTENT_FIELDS = INTENT_FIELDS | {
+    "plan_ref",
+    "projection",
+    "projection_digest",
+    "decision_bindings",
+}
+UNIFIED_RECEIPT_FIELDS = RECEIPT_FIELDS | {
+    "plan_ref",
+    "projection_digest",
+    "decision_bindings",
+}
+
 _INTENT_FILENAME = re.compile(r"^intent-(\d+)\.json$")
 _RECEIPT_FILENAME = re.compile(r"^receipt-(\d+)\.json$")
 
@@ -307,12 +462,26 @@ class StagedBatchForwardUnknown(RuntimeError):
     """An indeterminate host-side write-forward result (timeout/unparseable)."""
 
 
-def staged_decision_artifact_paths(run_root: Path) -> dict[str, Path]:
-    """Canonical staged artifact paths inside one run workspace."""
+def unified_graph_mode(parameters: Mapping[str, Any] | None) -> bool:
+    """True only when the Task explicitly selected the 009 unified schema set.
+
+    Selecting 009 is opt-in per run; flipping the parameter on an existing run
+    to skip a gate is rejected upstream (contracts) and never migrates files.
+    """
+
+    return isinstance(parameters, Mapping) and parameters.get(UNIFIED_GRAPH_TASK_PARAMETER) is True
+
+
+def staged_decision_artifact_paths(run_root: Path, *, unified: bool = False) -> dict[str, Path]:
+    """Canonical staged artifact paths inside one run workspace.
+
+    ``unified=True`` adds the two R3.0-009 neutral-graph sub-directories; the
+    pre-existing 008B paths keep their exact previous locations and keys.
+    """
 
     root = Path(run_root)
     value_semantics = root / VALUE_SEMANTICS_DIR
-    return {
+    paths: dict[str, Path] = {
         "conclusions": value_semantics / CONCLUSIONS_DIRNAME / CONCLUSIONS_FILENAME,
         "unlock": value_semantics / UNLOCK_DIRNAME / UNLOCK_FILENAME,
         "approvals": value_semantics / APPROVALS_DIRNAME / APPROVALS_FILENAME,
@@ -324,14 +493,19 @@ def staged_decision_artifact_paths(run_root: Path) -> dict[str, Path]:
         "conclusions_dir": value_semantics / CONCLUSIONS_DIRNAME,
         "conclusions_archive_dir": value_semantics / CONCLUSIONS_ARCHIVE_DIRNAME,
     }
+    if unified:
+        neutral_graph = root / STAGE3_NEUTRAL_GRAPH_DIR
+        paths["candidates_dir"] = neutral_graph / CANDIDATES_DIRNAME
+        paths["materialization_plans_dir"] = neutral_graph / MATERIALIZATION_PLANS_DIRNAME
+    return paths
 
 
-def staged_decision_directories(run_root: Path) -> list[Path]:
+def staged_decision_directories(run_root: Path, *, unified: bool = False) -> list[Path]:
     """Every staged artifact directory the Runner prepares (mkdir only)."""
 
     root = Path(run_root)
     value_semantics = root / VALUE_SEMANTICS_DIR
-    return [
+    directories = [
         value_semantics / CONCLUSIONS_DIRNAME,
         value_semantics / CONCLUSIONS_ARCHIVE_DIRNAME,
         value_semantics / UNLOCK_DIRNAME,
@@ -342,6 +516,15 @@ def staged_decision_directories(run_root: Path) -> list[Path]:
         root / STAGE3_NEUTRAL_GRAPH_DIR,
         root / JOINT_ACCEPTANCE_DIR,
     ]
+    if unified:
+        neutral_graph = root / STAGE3_NEUTRAL_GRAPH_DIR
+        directories.extend(
+            [
+                neutral_graph / CANDIDATES_DIRNAME,
+                neutral_graph / MATERIALIZATION_PLANS_DIRNAME,
+            ]
+        )
+    return directories
 
 
 # --- Loaders ----------------------------------------------------------------
@@ -382,6 +565,18 @@ def load_joint_acceptance_checklist(path: Path) -> dict[str, Any]:
 
 def load_materialization_ledger(path: Path) -> dict[str, Any]:
     return _load_json_artifact(path, unparsable_code="staged_ledger_stale")
+
+
+def load_unified_candidate(path: Path) -> dict[str, Any]:
+    """Load one immutable ``candidates/<candidate_id>-r<revision>.json``."""
+
+    return _load_json_artifact(path, unparsable_code="missing_candidate_reference")
+
+
+def load_materialization_plan(path: Path) -> dict[str, Any]:
+    """Load one ``materialization-plans/<plan_id>-r<revision>.json``."""
+
+    return _load_json_artifact(path, unparsable_code="missing_candidate_reference")
 
 
 def _nonempty_strings(value: Any) -> bool:
@@ -585,17 +780,28 @@ def validate_analysis_conclusions(
 # --- Approvals artifact -----------------------------------------------------
 
 
-def validate_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
+def validate_approvals(value: Any, *, unified: bool = False) -> tuple[StagedDecisionIssue, ...]:
+    """Approvals artifact; ``unified`` selects the r3-0-009 structure.
+
+    In 009 mode the legacy ``entries`` keep their exact 008B field set and
+    meaning and the new ``decisions``/``translation_approvals`` collections are
+    validated separately, so neither object is pushed through the other's
+    closed-field validator. The default stays byte-identical to 008B.
+    """
+
     artifact = f"{VALUE_SEMANTICS_DIR}/{APPROVALS_DIRNAME}/{APPROVALS_FILENAME}"
-    if not isinstance(value, Mapping) or set(value) != APPROVALS_FIELDS:
-        return (StagedDecisionIssue("approvals_schema_mismatch", "fields drift", artifact),)
-    if value["schema_version"] != APPROVALS_SCHEMA:
-        return (StagedDecisionIssue("approvals_schema_mismatch", "schema_version", artifact),)
+    fields = UNIFIED_APPROVALS_FIELDS if unified else APPROVALS_FIELDS
+    schema = UNIFIED_APPROVALS_SCHEMA if unified else APPROVALS_SCHEMA
+    schema_code = "unified_schema_mismatch" if unified else "approvals_schema_mismatch"
+    if not isinstance(value, Mapping) or set(value) != set(fields):
+        return (StagedDecisionIssue(schema_code, "fields drift", artifact),)
+    if value["schema_version"] != schema:
+        return (StagedDecisionIssue(schema_code, "schema_version", artifact),)
     if not _nonempty(value["scenario_id"]) or not _nonempty(value["maintained_by"]):
-        return (StagedDecisionIssue("approvals_schema_mismatch", "identity", artifact),)
+        return (StagedDecisionIssue(schema_code, "identity", artifact),)
     entries = value["entries"]
     if not isinstance(entries, list):
-        return (StagedDecisionIssue("approvals_schema_mismatch", "entries", artifact),)
+        return (StagedDecisionIssue(schema_code, "entries", artifact),)
     issues: list[StagedDecisionIssue] = []
     for entry in entries:
         if not isinstance(entry, Mapping) or set(entry) - APPROVAL_ENTRY_FIELDS:
@@ -622,6 +828,8 @@ def validate_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
             )
         if entry.get("note") is not None and not _nonempty(entry.get("note")):
             issues.append(StagedDecisionIssue("approvals_schema_mismatch", "note", artifact))
+    if unified:
+        issues.extend(validate_unified_approvals(value))
     return tuple(issues)
 
 
@@ -685,21 +893,27 @@ def cross_validate_approvals(
 # --- Stage 3 minimal slot ---------------------------------------------------
 
 
-def validate_stage3_slot(value: Any) -> tuple[StagedDecisionIssue, ...]:
+def validate_stage3_slot(value: Any, *, unified: bool = False) -> tuple[StagedDecisionIssue, ...]:
+    """Stage 3 slot; ``unified`` requires ``candidate_contract`` (design §9.1)."""
+
     artifact = f"{STAGE3_NEUTRAL_GRAPH_DIR}/{STAGE3_SLOT_FILENAME}"
-    if not isinstance(value, Mapping) or set(value) - STAGE3_SLOT_FIELDS:
+    fields = UNIFIED_STAGE3_SLOT_FIELDS if unified else STAGE3_SLOT_FIELDS
+    schema = UNIFIED_STAGE3_SLOT_SCHEMA if unified else STAGE3_SLOT_SCHEMA
+    contract_field = "candidate_contract" if unified else "deferred_contract"
+    expected_contract = UNIFIED_GRAPH_CANDIDATE_SCHEMA if unified else STAGE3_DEFERRED_CONTRACT
+    if not isinstance(value, Mapping) or set(value) - set(fields):
         return (StagedDecisionIssue("stage3_schema_mismatch", "fields drift", artifact),)
-    missing = STAGE3_SLOT_FIELDS - set(value)
+    missing = set(fields) - set(value)
     if missing:
         return (StagedDecisionIssue("stage3_schema_mismatch", f"missing {sorted(missing)}", artifact),)
-    if value["schema_version"] != STAGE3_SLOT_SCHEMA:
+    if value["schema_version"] != schema:
         return (StagedDecisionIssue("stage3_schema_mismatch", "schema_version", artifact),)
     if not _nonempty(value["scenario_id"]) or not _nonempty(value["produced_by"]):
         return (StagedDecisionIssue("stage3_schema_mismatch", "identity", artifact),)
     if not _nonempty(value["approved_by"]):
         return (StagedDecisionIssue("stage3_missing_approval", "approved_by", artifact),)
-    if value.get("deferred_contract") != STAGE3_DEFERRED_CONTRACT:
-        return (StagedDecisionIssue("stage3_schema_mismatch", "deferred_contract", artifact),)
+    if value.get(contract_field) != expected_contract:
+        return (StagedDecisionIssue("stage3_schema_mismatch", contract_field, artifact),)
     if value.get("slot_note") is not None and not _nonempty(value["slot_note"]):
         return (StagedDecisionIssue("stage3_schema_mismatch", "slot_note", artifact),)
     candidates = value.get("candidate_artifacts")
@@ -919,7 +1133,24 @@ def validate_materialization_ledger(
 # --- Staged submission (capability checks 1-6) ------------------------------
 
 
-def _batch_envelope_issues(batch: Any) -> StagedDecisionIssue | None:
+# R3.0-009: the batch items are the full ModelingItemInput projection
+# (backend/app/api/schemas.py), whose defaults the platform fills in.  The 008B
+# envelope keeps its narrower two-field shape.
+UNIFIED_BATCH_ITEM_FIELDS = frozenset(
+    {
+        "client_item_id",
+        "command_kind",
+        "payload",
+        "depends_on",
+        "evidence_reference_ids",
+        "evidence",
+        "rationale",
+        "competency_question_ids",
+    }
+)
+
+
+def _batch_envelope_issues(batch: Any, *, unified: bool = False) -> StagedDecisionIssue | None:
     artifact = "capability:batch"
     if not isinstance(batch, Mapping):
         return StagedDecisionIssue("staged_submit_schema_mismatch", "batch is not an object", artifact)
@@ -938,6 +1169,33 @@ def _batch_envelope_issues(batch: Any) -> StagedDecisionIssue | None:
     if not isinstance(items, list) or not items:
         return StagedDecisionIssue("staged_submit_schema_mismatch", "items", artifact)
     for item in items:
+        if unified:
+            if (
+                not isinstance(item, Mapping)
+                or set(item) - UNIFIED_BATCH_ITEM_FIELDS
+                or not _nonempty(item.get("client_item_id"))
+                or not _nonempty(item.get("command_kind"))
+                or not isinstance(item.get("payload"), Mapping)
+            ):
+                return StagedDecisionIssue("staged_submit_schema_mismatch", "item shape", artifact)
+            for field in ("depends_on", "evidence_reference_ids", "competency_question_ids"):
+                value = item.get(field, [])
+                if not isinstance(value, list) or any(not _nonempty(entry) for entry in value):
+                    return StagedDecisionIssue(
+                        "staged_submit_schema_mismatch", field, artifact
+                    )
+            evidence = item.get("evidence", [])
+            if not isinstance(evidence, list) or any(
+                not isinstance(entry, Mapping)
+                or not _nonempty(entry.get("document_name"))
+                or not _nonempty(entry.get("excerpt"))
+                for entry in evidence
+            ):
+                return StagedDecisionIssue("staged_submit_schema_mismatch", "evidence", artifact)
+            rationale = item.get("rationale")
+            if rationale is not None and not isinstance(rationale, str):
+                return StagedDecisionIssue("staged_submit_schema_mismatch", "rationale", artifact)
+            continue
         if (
             not isinstance(item, Mapping)
             or set(item) != {"command_kind", "payload"}
@@ -1028,6 +1286,7 @@ def validate_staged_submission(
     unlock: Mapping[str, Any] | None,
     unlock_issues: tuple[StagedDecisionIssue, ...] = (),
     receipts: list[dict[str, Any]] | None = None,
+    unified: bool = False,
 ) -> tuple[StagedDecisionIssue, ...]:
     """Design section 3.6 mechanical checks 1-6 in fixed evaluation order."""
 
@@ -1039,7 +1298,7 @@ def validate_staged_submission(
     value_traces = payload.get("value_traces")
     l3_nodes = payload.get("l3_nodes")
     for issue in (
-        _batch_envelope_issues(batch),
+        _batch_envelope_issues(batch, unified=unified),
         _trace_issues(value_traces, kind="value_traces"),
         _trace_issues(l3_nodes, kind="l3_nodes"),
     ):
@@ -1262,8 +1521,20 @@ def build_submission_intent(
     commands: list[Mapping[str, Any]],
     value_traces: list[Mapping[str, Any]],
     l3_nodes: list[Mapping[str, Any]],
+    plan_ref: str | None = None,
+    projection: Mapping[str, Any] | None = None,
+    decision_bindings: list[Mapping[str, Any]] | None = None,
 ) -> dict[str, Any]:
-    return {
+    """Build the durable intent record.
+
+    With no 009 arguments this is byte-identical to the 008B intent. With a
+    ``plan_ref`` plus projection the record switches to
+    ``r3-0-009-submission-intent/v1`` and carries the approved projection and
+    its digest; ``projection_digest`` is always recomputed here so a caller
+    cannot store a projection under a foreign digest.
+    """
+
+    intent: dict[str, Any] = {
         "schema_version": SUBMISSION_INTENT_SCHEMA,
         "ordinal": ordinal,
         "idempotency_key": idempotency_key,
@@ -1275,6 +1546,21 @@ def build_submission_intent(
         "l3_nodes": [dict(node) for node in l3_nodes],
         "status": "submitted",
     }
+    if plan_ref is None and projection is None and decision_bindings is None:
+        return intent
+    if not _nonempty(plan_ref) or projection is None:
+        raise StagedDecisionArtifactError(
+            "missing_candidate_reference",
+            "a 009 intent needs plan_ref and the approved projection",
+        )
+    if not isinstance(projection, Mapping):
+        raise StagedDecisionArtifactError("unified_schema_mismatch", "projection must be a mapping")
+    intent["schema_version"] = UNIFIED_SUBMISSION_INTENT_SCHEMA
+    intent["plan_ref"] = plan_ref
+    intent["projection"] = dict(projection)
+    intent["projection_digest"] = projection_digest(projection)
+    intent["decision_bindings"] = [dict(binding) for binding in decision_bindings or []]
+    return intent
 
 
 def mark_intent_status(intent: Mapping[str, Any], status: str) -> dict[str, Any]:
@@ -1292,7 +1578,9 @@ def build_submission_receipt(
     batch_id: str,
     response_digest: str,
 ) -> dict[str, Any]:
-    return {
+    """Build the authoritative receipt; 009 bindings are copied, never rebuilt."""
+
+    receipt: dict[str, Any] = {
         "schema_version": SUBMISSION_RECEIPT_SCHEMA,
         "ordinal": ordinal,
         "intent_ordinal": intent["ordinal"],
@@ -1305,6 +1593,13 @@ def build_submission_receipt(
         "response_digest": response_digest,
         "submitted_via": SUBMITTED_VIA,
     }
+    if intent.get("schema_version") != UNIFIED_SUBMISSION_INTENT_SCHEMA:
+        return receipt
+    receipt["schema_version"] = UNIFIED_SUBMISSION_RECEIPT_SCHEMA
+    receipt["plan_ref"] = intent.get("plan_ref")
+    receipt["projection_digest"] = intent.get("projection_digest")
+    receipt["decision_bindings"] = [dict(binding) for binding in intent.get("decision_bindings") or []]
+    return receipt
 
 
 def write_submission_intent(run_root: Path, intent: Mapping[str, Any]) -> None:
@@ -1418,6 +1713,8 @@ def _try_load(loader, path) -> tuple[Mapping[str, Any] | None, StagedDecisionIss
 def staged_stage3_issue(
     run_root: Path,
     approvals: Mapping[str, Any] | None,
+    *,
+    unified: bool = False,
 ) -> StagedDecisionIssue | None:
     """The first deterministic stage 3 slot issue, or ``None`` when valid."""
 
@@ -1429,7 +1726,7 @@ def staged_stage3_issue(
     slot, issue = _try_load(load_stage3_slot, slot_path)
     if issue is not None or slot is None:
         return issue
-    issues = validate_stage3_slot(slot)
+    issues = validate_stage3_slot(slot, unified=unified)
     if issues:
         return issues[0]
     reachability = check_stage3_candidate_artifacts(run_root, slot)
@@ -1442,7 +1739,9 @@ def staged_stage3_issue(
     return None
 
 
-def staged_artifact_issues(run_root: Path) -> tuple[StagedDecisionIssue, ...]:
+def staged_artifact_issues(
+    run_root: Path, *, unified: bool = False
+) -> tuple[StagedDecisionIssue, ...]:
     """Monitor tick cross-checks over conclusions/approvals/unlock/ledger."""
 
     paths = staged_decision_artifact_paths(run_root)
@@ -1471,6 +1770,10 @@ def staged_artifact_issues(run_root: Path) -> tuple[StagedDecisionIssue, ...]:
         approvals, issue = _try_load(load_approvals, paths["approvals"])
         if issue is not None:
             issues.append(issue)
+        elif approvals is not None and unified:
+            # 009 only: the legacy tick never validated the approvals artifact
+            # here, so 008B behavior is preserved byte-for-byte.
+            issues.extend(validate_approvals(approvals, unified=True))
     if approvals is not None:
         slot = None
         if paths["stage3_slot"].exists():
@@ -1493,6 +1796,688 @@ def staged_artifact_issues(run_root: Path) -> tuple[StagedDecisionIssue, ...]:
     return tuple(issues)
 
 
+# --- R3.0-009 unified graph: canonical digest, projection and validation ----
+
+
+def canonical_json_digest(value: Any) -> str:
+    """SHA-256 over the standard canonical JSON form (design §9.2).
+
+    UTF-8, ``ensure_ascii=False``, ``sort_keys=True`` and ``(',', ':')``
+    separators; self-referential ``*_digest`` fields must be removed by the
+    caller before digesting.
+    """
+
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def normalize_class_iris(values: Any) -> list[str]:
+    """Deduplicate and sort expanded Class IRIs; order never changes a digest."""
+
+    if not isinstance(values, list):
+        return []
+    expanded = {str(value).strip() for value in values if _nonempty(value)}
+    return sorted(expanded)
+
+
+def build_decision_binding(
+    *,
+    command_index: int,
+    client_item_id: str,
+    candidate_item_ids: list[str],
+    candidate_revision: int,
+    candidate_content_digests: dict[str, str],
+    decision_ids: list[str],
+) -> dict[str, Any]:
+    """One fixed-shape candidate/approval binding for a forwarded item."""
+
+    return {
+        "command_index": command_index,
+        "client_item_id": client_item_id,
+        "candidate_item_ids": list(candidate_item_ids),
+        "candidate_revision": candidate_revision,
+        "candidate_content_digests": dict(candidate_content_digests),
+        "decision_ids": list(decision_ids),
+    }
+
+
+def build_identity_binding(
+    *,
+    candidate_item_id: str,
+    resource_iri: str | None = None,
+    receipt_ref: str | None = None,
+    evidence_ref: str | None = None,
+) -> dict[str, Any]:
+    """Bind one candidate item to an existing resource or a future receipt.
+
+    Exactly one of ``resource_iri`` (existing resource, backed by an approved
+    read ``evidence_ref``) and ``receipt_ref`` (identity created by a later
+    receipt) may be set; both is a contradiction, neither is unresolvable.
+    """
+
+    if bool(resource_iri) == bool(receipt_ref):
+        raise StagedDecisionArtifactError(
+            "missing_candidate_reference",
+            "identity binding needs exactly one of resource_iri or receipt_ref",
+        )
+    if resource_iri and not evidence_ref:
+        raise StagedDecisionArtifactError(
+            "missing_candidate_reference",
+            "an existing resource binding needs the approved read evidence_ref",
+        )
+    if resource_iri is None:
+        evidence_ref = None
+    return {
+        "candidate_item_id": candidate_item_id,
+        "resource_iri": resource_iri,
+        "receipt_ref": receipt_ref,
+        "evidence_ref": evidence_ref,
+    }
+
+
+def build_approval_projection(
+    *,
+    task_id: str,
+    scenario_id: str,
+    session_id: str,
+    client_batch_id: str,
+    ontology_id: str,
+    candidate_id: str,
+    candidate_revision: int,
+    candidate_digest: str,
+    items: list[Mapping[str, Any]],
+    decision_bindings: list[Mapping[str, Any]],
+    identity_bindings: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """The complete, forwardable projection an approval proves (design §9.2).
+
+    ``items`` are full ``ModelingItemInput`` projections; missing optional
+    fields are filled with the interface defaults so the digest covers exactly
+    what will be forwarded. Execution parameters (lease, mode, idempotency
+    key, expected workspace version) never enter the projection.
+    """
+
+    projection = {
+        "task_id": task_id,
+        "contract_version": UNIFIED_GRAPH_CONTRACT_VERSION,
+        "scenario_id": scenario_id,
+        "session_id": session_id,
+        "client_batch_id": client_batch_id,
+        "ontology_id": ontology_id,
+        "candidate_id": candidate_id,
+        "candidate_revision": candidate_revision,
+        "candidate_digest": candidate_digest,
+        "items": [_normalize_item_projection(item) for item in items],
+        "decision_bindings": [dict(binding) for binding in decision_bindings],
+        "identity_bindings": [dict(binding) for binding in identity_bindings],
+    }
+    unexpected = set(projection) - APPROVAL_PROJECTION_FIELDS
+    if unexpected:
+        raise StagedDecisionArtifactError(
+            "unified_schema_mismatch", f"projection has unexpected fields: {sorted(unexpected)}"
+        )
+    return projection
+
+
+def _normalize_item_projection(item: Mapping[str, Any]) -> dict[str, Any]:
+    """Fill the ModelingItemInput defaults so omitted and explicit agree."""
+
+    normalized = {
+        "client_item_id": item.get("client_item_id"),
+        "command_kind": item.get("command_kind"),
+        "payload": item.get("payload") or {},
+        "depends_on": list(item.get("depends_on") or []),
+        "evidence_reference_ids": list(item.get("evidence_reference_ids") or []),
+        "evidence": list(item.get("evidence") or []),
+        "rationale": item.get("rationale"),
+        "competency_question_ids": list(item.get("competency_question_ids") or []),
+    }
+    unexpected = set(item) - set(normalized)
+    if unexpected:
+        raise StagedDecisionArtifactError(
+            "unified_schema_mismatch", f"item projection has unexpected fields: {sorted(unexpected)}"
+        )
+    return normalized
+
+
+def projection_digest(projection: Mapping[str, Any]) -> str:
+    """Digest of an approval projection; the projection carries no digest field."""
+
+    return canonical_json_digest(projection)
+
+
+def validate_unified_stage3_slot(value: Any) -> tuple[StagedDecisionIssue, ...]:
+    """``r3-0-009-stage3-slot/v1``: candidate_contract replaces the deferral."""
+
+    if not isinstance(value, Mapping) or value.get("schema_version") != UNIFIED_STAGE3_SLOT_SCHEMA:
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "stage3 slot is not r3-0-009-stage3-slot/v1", ""
+            ),
+        )
+    if set(value) != set(UNIFIED_STAGE3_SLOT_FIELDS):
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch",
+                "stage3 slot fields drift from r3-0-009-stage3-slot/v1",
+                "",
+            ),
+        )
+    issues: list[StagedDecisionIssue] = []
+    if not _nonempty_strings(value.get("candidate_artifacts")):
+        issues.append(StagedDecisionIssue("missing_candidate_reference", "slot lists no candidates", ""))
+    contract = value.get("candidate_contract")
+    if not _nonempty(contract) or not str(contract).startswith("r3-0-009"):
+        issues.append(
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "candidate_contract must name the 009 contract", ""
+            )
+        )
+    return tuple(issues)
+
+
+def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
+    """``r3-0-009-unified-graph/v1`` candidate items are neutral and closed."""
+
+    if not isinstance(value, Mapping) or value.get("schema_version") != UNIFIED_GRAPH_CANDIDATE_SCHEMA:
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "candidate is not r3-0-009-unified-graph/v1", ""
+            ),
+        )
+    if set(value) != set(UNIFIED_CANDIDATE_FIELDS):
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "candidate fields drift from r3-0-009-unified-graph/v1", ""
+            ),
+        )
+    issues: list[StagedDecisionIssue] = []
+    for field in ("scenario_id", "candidate_id"):
+        if not _nonempty(value.get(field)) or "://" in str(value.get(field)):
+            issues.append(
+                StagedDecisionIssue(
+                    "missing_candidate_reference", f"candidate {field} is invalid", ""
+                )
+            )
+    revision = value.get("revision")
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        issues.append(StagedDecisionIssue("approval_stale", "candidate revision is invalid", ""))
+    items = value.get("items")
+    if not isinstance(items, list) or not items:
+        issues.append(StagedDecisionIssue("missing_candidate_reference", "candidate has no items", ""))
+        items = []
+    seen_items: set[str] = set()
+    for item in items:
+        if not isinstance(item, Mapping) or set(item) != set(UNIFIED_CANDIDATE_ITEM_FIELDS):
+            issues.append(
+                StagedDecisionIssue(
+                    "unified_schema_mismatch", "candidate item fields drift from the contract", ""
+                )
+            )
+            continue
+        item_id = item.get("item_id")
+        if not _nonempty(item_id):
+            issues.append(StagedDecisionIssue("missing_candidate_reference", "item_id is missing", ""))
+        elif item_id in seen_items:
+            issues.append(
+                StagedDecisionIssue("missing_candidate_reference", f"item_id {item_id} repeats", "")
+            )
+        else:
+            seen_items.add(item_id)
+        if item.get("item_kind") not in UNIFIED_CANDIDATE_ITEM_KINDS:
+            issues.append(
+                StagedDecisionIssue("unified_schema_mismatch", "candidate item_kind is invalid", "")
+            )
+    return tuple(issues)
+
+
+def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
+    """``r3-0-009-approvals/v1``: legacy entries plus decisions/translations.
+
+    ``entries`` keeps its 008B meaning and closed field set; the two new
+    collections are validated on their own so no object is ever pushed through
+    the wrong closed-field validator.
+    """
+
+    if not isinstance(value, Mapping) or value.get("schema_version") != UNIFIED_APPROVALS_SCHEMA:
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "approvals are not r3-0-009-approvals/v1", ""
+            ),
+        )
+    if set(value) != set(UNIFIED_APPROVALS_FIELDS):
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "approvals fields drift from r3-0-009-approvals/v1", ""
+            ),
+        )
+    issues: list[StagedDecisionIssue] = []
+    decisions = value.get("decisions") or []
+    if not isinstance(decisions, list):
+        return (StagedDecisionIssue("unified_schema_mismatch", "decisions is not a list", ""),)
+    by_id: dict[str, Mapping[str, Any]] = {}
+    for decision in decisions:
+        if not isinstance(decision, Mapping) or set(decision) != set(DECISION_FIELDS):
+            issues.append(
+                StagedDecisionIssue(
+                    "unified_schema_mismatch", "decision fields drift from r3-0-009-approvals/v1", ""
+                )
+            )
+            continue
+        decision_id = decision.get("decision_id")
+        if not _nonempty(decision_id):
+            issues.append(StagedDecisionIssue("approval_missing", "decision_id is missing", ""))
+            continue
+        if decision_id in by_id:
+            issues.append(
+                StagedDecisionIssue("approval_missing", f"decision_id {decision_id} repeats", "")
+            )
+        by_id[decision_id] = decision
+        if decision.get("decision") not in DECISION_KINDS:
+            issues.append(
+                StagedDecisionIssue("approval_missing", f"decision {decision_id} kind is invalid", "")
+            )
+        if decision.get("target_kind") not in DECISION_TARGET_KINDS:
+            issues.append(
+                StagedDecisionIssue(
+                    "approval_missing", f"decision {decision_id} target_kind is invalid", ""
+                )
+            )
+        if not _nonempty_strings(decision.get("evidence_refs")):
+            issues.append(
+                StagedDecisionIssue("approval_missing", f"decision {decision_id} has no evidence", "")
+            )
+        if not _nonempty(decision.get("content_digest")):
+            issues.append(
+                StagedDecisionIssue(
+                    "approval_content_mismatch", f"decision {decision_id} has no content digest", ""
+                )
+            )
+        # Scope is mandatory only for commonality relations; everywhere else it
+        # must stay null so a missing scope cannot silently widen a relation.
+        scope = decision.get("scope")
+        if decision.get("target_kind") == "commonality_relation":
+            if not isinstance(scope, Mapping) or not scope:
+                issues.append(
+                    StagedDecisionIssue(
+                        "relation_scope_ambiguous",
+                        f"decision {decision_id} needs a relation scope",
+                        "",
+                    )
+                )
+        elif scope is not None:
+            issues.append(
+                StagedDecisionIssue(
+                    "relation_scope_ambiguous",
+                    f"decision {decision_id} must keep scope null",
+                    "",
+                )
+            )
+
+    translations = value.get("translation_approvals") or []
+    if not isinstance(translations, list):
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "translation_approvals is not a list", ""
+            ),
+        )
+    for approval in translations:
+        if not isinstance(approval, Mapping) or set(approval) != set(TRANSLATION_APPROVAL_FIELDS):
+            issues.append(
+                StagedDecisionIssue(
+                    "unified_schema_mismatch",
+                    "translation approval fields drift from r3-0-009-approvals/v1",
+                    "",
+                )
+            )
+            continue
+        if approval.get("decision") != "approved":
+            issues.append(
+                StagedDecisionIssue(
+                    "approval_missing", "translation approval decision is not approved", ""
+                )
+            )
+        if not _nonempty(approval.get("projection_digest")):
+            issues.append(
+                StagedDecisionIssue(
+                    "approval_content_mismatch", "translation approval has no projection digest", ""
+                )
+            )
+    return tuple(issues)
+
+
+def validate_materialization_plan(value: Any) -> tuple[StagedDecisionIssue, ...]:
+    """``r3-0-009-materialization-plan/v1``: projection plus its digest."""
+
+    if (
+        not isinstance(value, Mapping)
+        or value.get("schema_version") != UNIFIED_MATERIALIZATION_PLAN_SCHEMA
+    ):
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch",
+                "materialization plan is not r3-0-009-materialization-plan/v1",
+                "",
+            ),
+        )
+    if set(value) != set(UNIFIED_MATERIALIZATION_PLAN_FIELDS):
+        return (
+            StagedDecisionIssue(
+                "unified_schema_mismatch",
+                "materialization plan fields drift from the contract",
+                "",
+            ),
+        )
+    issues: list[StagedDecisionIssue] = []
+    plan_projection = value.get("projection")
+    if not isinstance(plan_projection, Mapping):
+        issues.append(
+            StagedDecisionIssue("missing_candidate_reference", "plan projection is missing", "")
+        )
+    elif set(plan_projection) != set(APPROVAL_PROJECTION_FIELDS):
+        issues.append(
+            StagedDecisionIssue(
+                "unified_schema_mismatch", "plan projection fields drift from the contract", ""
+            )
+        )
+    digest = value.get("projection_digest")
+    if not _nonempty(digest) or not str(digest).startswith("sha256:"):
+        issues.append(
+            StagedDecisionIssue(
+                "approval_content_mismatch", "plan projection_digest is missing", ""
+            )
+        )
+    elif isinstance(plan_projection, Mapping):
+        expected = projection_digest(plan_projection)
+        if digest != expected:
+            issues.append(
+                StagedDecisionIssue(
+                    "approval_content_mismatch",
+                    "plan projection digest does not match its projection",
+                    "",
+                )
+            )
+    revision = value.get("revision")
+    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 1:
+        issues.append(StagedDecisionIssue("approval_stale", "plan revision is invalid", ""))
+    return tuple(issues)
+
+
+# --- R3.0-009 receipt-time comparison (design §9.2) --------------------------
+
+# Digest conventions published in the 009 contract: a candidate item digest is
+# the canonical JSON digest of the whole published item object, and a candidate
+# digest is the canonical JSON digest of the candidate's ordered ``items`` list.
+
+
+def candidate_item_digest(item: Mapping[str, Any]) -> str:
+    """Canonical digest of one published candidate item (all its fields)."""
+
+    return canonical_json_digest(item)
+
+
+def candidate_items_digest(items: list[Mapping[str, Any]]) -> str:
+    """Canonical digest of a candidate's ``items`` list, in published order."""
+
+    return canonical_json_digest([dict(item) for item in items])
+
+
+def build_batch_projection(
+    *,
+    task_id: str,
+    batch: Mapping[str, Any],
+    scenario_id: str,
+    candidate_id: str,
+    candidate_revision: int,
+    candidate_digest: str,
+    decision_bindings: list[Mapping[str, Any]],
+    identity_bindings: list[Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Rebuild the approved projection from the batch actually being forwarded.
+
+    The comparison is against real payloads, not against a self-reported
+    digest: items are re-normalized from ``batch["items"]`` and execution
+    parameters (lease, mode, idempotency key, expected workspace version)
+    never enter the projection.
+    """
+
+    return build_approval_projection(
+        task_id=task_id,
+        scenario_id=scenario_id,
+        session_id=batch.get("session_id") or "",
+        client_batch_id=batch.get("client_batch_id") or "",
+        ontology_id=batch.get("ontology_id") or "",
+        candidate_id=candidate_id,
+        candidate_revision=candidate_revision,
+        candidate_digest=candidate_digest,
+        items=[item for item in batch.get("items") or [] if isinstance(item, Mapping)],
+        decision_bindings=decision_bindings,
+        identity_bindings=identity_bindings,
+    )
+
+
+def load_materialization_plan_ref(
+    run_root: Path, plan_ref: Any
+) -> tuple[Mapping[str, Any] | None, StagedDecisionIssue | None]:
+    """Load the plan a submission binds to; only the published directory is legal."""
+
+    if not _safe_relative_artifact_path(plan_ref):
+        return None, StagedDecisionIssue(
+            "missing_candidate_reference", "plan_ref is not a run-relative path", ""
+        )
+    prefix = f"{STAGE3_NEUTRAL_GRAPH_DIR}/{MATERIALIZATION_PLANS_DIRNAME}/"
+    if not str(plan_ref).startswith(prefix):
+        return None, StagedDecisionIssue(
+            "missing_candidate_reference", f"plan_ref must live under {prefix}", ""
+        )
+    path = Path(run_root) / str(plan_ref)
+    if path.is_symlink() or not path.is_file():
+        return None, StagedDecisionIssue(
+            "missing_candidate_reference", f"materialization plan {plan_ref} is missing", ""
+        )
+    plan, issue = _try_load(load_materialization_plan, path)
+    if issue is not None or plan is None:
+        return None, issue
+    plan_issues = validate_materialization_plan(plan)
+    if plan_issues:
+        return None, plan_issues[0]
+    return plan, None
+
+
+def unified_plan_issue(
+    *,
+    plan: Mapping[str, Any],
+    batch: Mapping[str, Any],
+    task_id: str,
+) -> StagedDecisionIssue | None:
+    """Compare the projection being forwarded with the approved projection.
+
+    The approved projection is authoritative: items are rebuilt from the real
+    batch payloads and compared field by field, so a correct self-reported
+    digest never substitutes for matching content (design §9.2 step 1).
+    """
+
+    approved = plan.get("projection") or {}
+    rebuilt = build_batch_projection(
+        task_id=task_id,
+        batch=batch,
+        scenario_id=approved.get("scenario_id") or "",
+        candidate_id=approved.get("candidate_id") or "",
+        candidate_revision=approved.get("candidate_revision") or 0,
+        candidate_digest=approved.get("candidate_digest") or "",
+        decision_bindings=approved.get("decision_bindings") or [],
+        identity_bindings=approved.get("identity_bindings") or [],
+    )
+    if projection_digest(rebuilt) != plan.get("projection_digest") or rebuilt != approved:
+        return StagedDecisionIssue(
+            "approval_content_mismatch",
+            "forwarded items do not match the approved projection",
+            "",
+        )
+    return None
+
+
+def unified_candidate_issue(
+    run_root: Path, projection: Mapping[str, Any]
+) -> StagedDecisionIssue | None:
+    """Close the projection against the currently published candidate revision."""
+
+    candidate_id = projection.get("candidate_id")
+    revision = projection.get("candidate_revision")
+    if not _nonempty(candidate_id) or isinstance(revision, bool) or not isinstance(revision, int):
+        return StagedDecisionIssue("missing_candidate_reference", "projection names no candidate", "")
+    path = (
+        Path(run_root)
+        / STAGE3_NEUTRAL_GRAPH_DIR
+        / CANDIDATES_DIRNAME
+        / f"{candidate_id}-r{revision}.json"
+    )
+    if path.is_symlink() or not path.is_file():
+        return StagedDecisionIssue(
+            "approval_stale",
+            f"candidate {candidate_id}-r{revision} is not the published revision",
+            "",
+        )
+    candidate, issue = _try_load(load_unified_candidate, path)
+    if issue is not None or candidate is None:
+        return issue
+    candidate_issues = validate_unified_candidate(candidate)
+    if candidate_issues:
+        return candidate_issues[0]
+    items = candidate.get("items") or []
+    if candidate_items_digest(items) != projection.get("candidate_digest"):
+        return StagedDecisionIssue(
+            "approval_content_mismatch",
+            "candidate content does not match the approved candidate digest",
+            "",
+        )
+    published = {item.get("item_id"): item for item in items if isinstance(item, Mapping)}
+    for binding in projection.get("decision_bindings") or []:
+        for item_id, digest in (binding.get("candidate_content_digests") or {}).items():
+            item = published.get(item_id)
+            if item is None or candidate_item_digest(item) != digest:
+                return StagedDecisionIssue(
+                    "approval_content_mismatch",
+                    f"candidate item {item_id} does not match its approved digest",
+                    "",
+                )
+    return None
+
+
+def unified_approval_issue(
+    approvals: Mapping[str, Any], projection: Mapping[str, Any]
+) -> StagedDecisionIssue | None:
+    """Close every decision binding against an approved, current decision."""
+
+    issues = validate_unified_approvals(approvals)
+    if issues:
+        return issues[0]
+    decisions = {
+        decision.get("decision_id"): decision
+        for decision in approvals.get("decisions") or []
+        if isinstance(decision, Mapping)
+    }
+    for binding in projection.get("decision_bindings") or []:
+        for decision_id in binding.get("decision_ids") or []:
+            decision = decisions.get(decision_id)
+            if decision is None:
+                return StagedDecisionIssue(
+                    "approval_missing", f"decision {decision_id} is not in the approvals", ""
+                )
+            if decision.get("decision") != "approved":
+                return StagedDecisionIssue(
+                    "approval_missing", f"decision {decision_id} is not approved", ""
+                )
+            if decision.get("candidate_id") != projection.get("candidate_id"):
+                return StagedDecisionIssue(
+                    "approval_missing", f"decision {decision_id} names another candidate", ""
+                )
+            if decision.get("content_revision") != binding.get("candidate_revision"):
+                return StagedDecisionIssue(
+                    "approval_stale", f"decision {decision_id} approves another revision", ""
+                )
+            if decision.get("content_digest") not in (
+                binding.get("candidate_content_digests") or {}
+            ).values():
+                return StagedDecisionIssue(
+                    "approval_content_mismatch",
+                    f"decision {decision_id} approves other content",
+                    "",
+                )
+    return None
+
+
+def staged_intent_schema_issue(record: Mapping[str, Any]) -> StagedDecisionIssue | None:
+    """Dispatch one stored intent by its recorded schema (design §9.1)."""
+
+    schema = record.get("schema_version")
+    if schema == SUBMISSION_INTENT_SCHEMA:
+        if set(record) != set(INTENT_FIELDS):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch", "intent fields drift from r3-0-008b-submission-intent/v1", ""
+            )
+        return None
+    if schema == UNIFIED_SUBMISSION_INTENT_SCHEMA:
+        if set(record) != set(UNIFIED_INTENT_FIELDS):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch", "intent fields drift from r3-0-009-submission-intent/v1", ""
+            )
+        if not _nonempty(record.get("plan_ref")):
+            return StagedDecisionIssue("missing_candidate_reference", "intent has no plan_ref", "")
+        if record.get("projection_digest") != projection_digest(record.get("projection") or {}):
+            return StagedDecisionIssue(
+                "approval_content_mismatch", "intent projection digest does not match", ""
+            )
+        return _decision_binding_issue(record.get("decision_bindings"))
+    return StagedDecisionIssue(
+        "unified_schema_mismatch", f"intent schema {schema!r} is not supported", ""
+    )
+
+
+def staged_receipt_schema_issue(record: Mapping[str, Any]) -> StagedDecisionIssue | None:
+    """Dispatch one stored receipt by its recorded schema (design §9.1)."""
+
+    schema = record.get("schema_version")
+    if schema == SUBMISSION_RECEIPT_SCHEMA:
+        if set(record) != set(RECEIPT_FIELDS):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch",
+                "receipt fields drift from r3-0-008b-submission-receipt/v1",
+                "",
+            )
+        return None
+    if schema == UNIFIED_SUBMISSION_RECEIPT_SCHEMA:
+        if set(record) != set(UNIFIED_RECEIPT_FIELDS):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch",
+                "receipt fields drift from r3-0-009-submission-receipt/v1",
+                "",
+            )
+        if not _nonempty(record.get("plan_ref")):
+            return StagedDecisionIssue("missing_candidate_reference", "receipt has no plan_ref", "")
+        if not _nonempty(record.get("projection_digest")):
+            return StagedDecisionIssue(
+                "approval_content_mismatch", "receipt has no projection digest", ""
+            )
+        return _decision_binding_issue(record.get("decision_bindings"))
+    return StagedDecisionIssue(
+        "unified_schema_mismatch", f"receipt schema {schema!r} is not supported", ""
+    )
+
+
+def _decision_binding_issue(value: Any) -> StagedDecisionIssue | None:
+    if not isinstance(value, list) or not value:
+        return StagedDecisionIssue(
+            "missing_candidate_reference", "submission carries no decision bindings", ""
+        )
+    for binding in value:
+        if not isinstance(binding, Mapping) or set(binding) != set(DECISION_BINDING_FIELDS):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch", "decision binding fields drift from the contract", ""
+            )
+    return None
+
+
 def staged_intent_receipt_issues(run_root: Path) -> tuple[StagedDecisionIssue, ...]:
     """Intent/receipt cross-checks; every issue is a kill-switch trigger."""
 
@@ -1502,7 +2487,48 @@ def staged_intent_receipt_issues(run_root: Path) -> tuple[StagedDecisionIssue, .
         receipt.get("intent_ordinal") for receipt in receipts if isinstance(receipt, Mapping)
     }
     issues: list[StagedDecisionIssue] = []
+    intents_by_ordinal = {
+        intent.get("ordinal"): intent for intent in intents if isinstance(intent, Mapping)
+    }
+    for receipt in receipts:
+        receipt_issue = staged_receipt_schema_issue(receipt)
+        if receipt_issue is not None:
+            issues.append(receipt_issue)
+            continue
+        # A 009 receipt must stay bound to the projection its intent recorded;
+        # a drifting digest means the receipt no longer proves the approval.
+        intent = intents_by_ordinal.get(receipt.get("intent_ordinal"))
+        intent_is_unified = isinstance(intent, Mapping) and (
+            intent.get("schema_version") == UNIFIED_SUBMISSION_INTENT_SCHEMA
+        )
+        if receipt.get("schema_version") == UNIFIED_SUBMISSION_RECEIPT_SCHEMA:
+            if (
+                not intent_is_unified
+                or intent.get("projection_digest") != receipt.get("projection_digest")
+                or intent.get("plan_ref") != receipt.get("plan_ref")
+            ):
+                issues.append(
+                    StagedDecisionIssue(
+                        "approval_content_mismatch",
+                        f"receipt {receipt.get('ordinal')} does not match its intent projection",
+                        "capability",
+                    )
+                )
+        elif intent_is_unified:
+            # A 009 intent may only be closed by a 009 receipt; an old receipt
+            # proves the old contract and never unlocks a 009 write.
+            issues.append(
+                StagedDecisionIssue(
+                    "unified_schema_mismatch",
+                    f"receipt {receipt.get('ordinal')} does not carry the 009 contract",
+                    "capability",
+                )
+            )
     for intent in intents:
+        schema_issue = staged_intent_schema_issue(intent)
+        if schema_issue is not None:
+            issues.append(schema_issue)
+            continue
         if intent.get("status") == "unknown":
             issues.append(
                 StagedDecisionIssue(
@@ -1537,23 +2563,31 @@ def staged_checklist_issue(run_root: Path) -> StagedDecisionIssue | None:
 
 __all__ = [
     "ANALYSIS_CONCLUSIONS_SCHEMA",
+    "APPROVAL_PROJECTION_FIELDS",
     "APPROVALS_FIELDS",
     "APPROVALS_SCHEMA",
     "ACCEPTANCE_CHECKLIST_REASON_CODES",
     "BATCH_MODES",
+    "CANDIDATES_DIRNAME",
     "CHECKLIST_ITEM_IDS",
     "CHECKLIST_VERDICTS",
     "CONCLUSION_ENTRY_FIELDS",
     "CONCLUSIONS_FIELDS",
     "CONCLUSIONS_REASON_CODES",
     "CONCLUSION_STATUSES",
+    "DECISION_BINDING_FIELDS",
+    "DECISION_FIELDS",
+    "DECISION_KINDS",
+    "DECISION_TARGET_KINDS",
     "ENUM_COMMAND_KINDS",
+    "IDENTITY_BINDING_FIELDS",
     "INTENT_FIELDS",
     "INTENT_STATUSES",
     "JOINT_ACCEPTANCE_CHECKLIST_SCHEMA",
     "LEGAL_CONCLUSION_TRANSITIONS",
     "MAPPING_SOURCE_TYPES",
     "MATERIALIZATION_LEDGER_SCHEMA",
+    "MATERIALIZATION_PLANS_DIRNAME",
     "MATERIALIZATION_UNLOCK_SCHEMA",
     "RECEIPT_FIELDS",
     "STAGE3_REASON_CODES",
@@ -1564,6 +2598,23 @@ __all__ = [
     "SUBMITTED_VIA",
     "SUBMISSION_INTENT_SCHEMA",
     "SUBMISSION_RECEIPT_SCHEMA",
+    "TRANSLATION_APPROVAL_FIELDS",
+    "UNIFIED_APPROVALS_FIELDS",
+    "UNIFIED_APPROVALS_SCHEMA",
+    "UNIFIED_CANDIDATE_FIELDS",
+    "UNIFIED_CANDIDATE_ITEM_FIELDS",
+    "UNIFIED_CANDIDATE_ITEM_KINDS",
+    "UNIFIED_GRAPH_CANDIDATE_SCHEMA",
+    "UNIFIED_GRAPH_CONTRACT_VERSION",
+    "UNIFIED_GRAPH_TASK_PARAMETER",
+    "UNIFIED_INTENT_FIELDS",
+    "UNIFIED_MATERIALIZATION_PLAN_SCHEMA",
+    "UNIFIED_REASON_CODES",
+    "UNIFIED_RECEIPT_FIELDS",
+    "UNIFIED_STAGE3_SLOT_FIELDS",
+    "UNIFIED_STAGE3_SLOT_SCHEMA",
+    "UNIFIED_SUBMISSION_INTENT_SCHEMA",
+    "UNIFIED_SUBMISSION_RECEIPT_SCHEMA",
     "UNLOCK_MODES",
     "UNLOCK_REASON_CODES",
     "VALUE_LEVELS",
@@ -1573,10 +2624,15 @@ __all__ = [
     "StagedDecisionIssue",
     "StagedSubmissionRejection",
     "adjudicate_unknown_intent",
+    "build_approval_projection",
+    "build_batch_projection",
+    "build_decision_binding",
+    "build_identity_binding",
     "build_submission_intent",
     "build_submission_receipt",
-    "canonical_command_digest",
     "candidate_gate_open",
+    "candidate_item_digest",
+    "candidate_items_digest",
     "check_stage3_candidate_artifacts",
     "cross_validate_approvals",
     "effective_confirmed_level",
@@ -1585,11 +2641,16 @@ __all__ = [
     "load_conclusion_archive",
     "load_joint_acceptance_checklist",
     "load_materialization_ledger",
+    "load_materialization_plan",
+    "load_materialization_plan_ref",
     "load_materialization_unlock",
     "load_stage3_slot",
+    "load_unified_candidate",
     "mark_intent_status",
     "next_intent_ordinal",
     "next_receipt_ordinal",
+    "normalize_class_iris",
+    "projection_digest",
     "read_submission_intents",
     "read_submission_receipts",
     "receipted_enum_targets",
@@ -1600,14 +2661,24 @@ __all__ = [
     "staged_decision_artifact_paths",
     "staged_decision_directories",
     "staged_intent_receipt_issues",
+    "staged_intent_schema_issue",
+    "staged_receipt_schema_issue",
     "staged_stage3_issue",
+    "unified_approval_issue",
+    "unified_candidate_issue",
+    "unified_graph_mode",
+    "unified_plan_issue",
     "validate_analysis_conclusions",
     "validate_approvals",
     "validate_joint_acceptance_checklist",
     "validate_materialization_ledger",
+    "validate_materialization_plan",
     "validate_materialization_unlock",
     "validate_stage3_slot",
     "validate_staged_submission",
+    "validate_unified_approvals",
+    "validate_unified_candidate",
+    "validate_unified_stage3_slot",
     "write_submission_intent",
     "write_submission_receipt",
 ]

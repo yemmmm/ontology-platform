@@ -16,7 +16,7 @@ def _settings() -> Settings:
     )
 
 
-def test_shape_constraint_blank_nodes_are_valid_deterministic_and_distinct_for_urn_ids() -> None:
+def test_shape_constraint_nodes_are_deterministic_distinct_iris_for_urn_ids() -> None:
     payload = {
         "ontology_id": "ont-1",
         "target_class_id": "urn:m4:Workflow",
@@ -44,7 +44,12 @@ def test_shape_constraint_blank_nodes_are_valid_deterministic_and_distinct_for_u
         if quad[0] == shape_term and quad[1] == "<http://www.w3.org/ns/shacl#property>"
     ]
     assert len(property_terms) == len(set(property_terms)) == 2
-    assert all(re.fullmatch(r"_:[A-Za-z][A-Za-z0-9_]*", term) for term in property_terms)
+    # R3.0-009 D9: constraint nodes are IRIs under the shape IRI, so the store
+    # can address them in wildcard deletes.
+    assert all(
+        re.fullmatch(rf"<{re.escape(shape_iri)}#property-[0-9a-f]{{64}}>", term)
+        for term in property_terms
+    )
     assert (
         property_terms[0],
         "<http://www.w3.org/ns/shacl#datatype>",
@@ -85,7 +90,8 @@ def test_enum_values_compile_to_distinct_deterministic_rdf_lists() -> None:
     assert len(in_quads) == 2
     heads = [quad[2] for quad in in_quads]
     assert len(heads) == len(set(heads)) == 2
-    assert all(re.fullmatch(r"_:[A-Za-z][A-Za-z0-9_]*", head) for head in heads)
+    head_pattern = rf"<{re.escape(first.metadata['shape_iri'])}#property-[0-9a-f]{{64}}/list-\d+>"
+    assert all(re.fullmatch(head_pattern, head) for head in heads)
     list_nodes: set[str] = set()
     values_by_head: dict[str, list[str]] = {}
     for head in heads:

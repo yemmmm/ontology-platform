@@ -87,10 +87,10 @@ class R23002Tests(unittest.TestCase):
             set(ModelingBatchSubmit.model_fields) - {"actor"},
         )
         property_contract = reference["create_payloads"]["create_property"]
-        self.assertEqual(property_contract["required"], ["class_id", "name"])
-        self.assertEqual(property_contract["one_or_more_required"], ["datatype", "object_class_id"])
+        self.assertEqual(property_contract["required"], ["name"])
+        self.assertEqual(property_contract["at_most_one_required"], ["datatype", "object_class_id"])
         self.assertEqual(property_contract["fields"]["datatype"]["type"], "string")
-        self.assertIn("both fields", property_contract["fields"]["object_class_id"]["branch"])
+        self.assertIn("mutually exclusive", property_contract["fields"]["object_class_id"]["branch"])
         shape_contract = reference["create_payloads"]["create_shape"]
         self.assertEqual(shape_contract["fields"]["constraints"]["type"], "array")
         constraint = reference["shape_constraint"]
@@ -105,16 +105,29 @@ class R23002Tests(unittest.TestCase):
         ))
 
         registry = ModelingCommandHandlerRegistry(Settings())
-        with self.assertRaisesRegex(InvalidCommandPayload, "either datatype"):
-            registry.prepare(
-                batch_id="batch", ontology_id="ontology", client_item_id="property", command_kind="create_property",
-                payload={"class_id": "class", "name": "property"},
-            )
-        both_property_branches = registry.prepare(
-            batch_id="batch", ontology_id="ontology", client_item_id="property-both", command_kind="create_property",
-            payload={"class_id": "class", "name": "property", "datatype": "xsd:string", "object_class_id": "target"},
+        # R3.0-009 §4.3: the approved domain and the ObjectProperty range are
+        # optional; a datatype property still carries its real datatype.
+        constraint_free_property = registry.prepare(
+            batch_id="batch", ontology_id="ontology", client_item_id="property-free", command_kind="create_property",
+            payload={"name": "property"},
         )
-        self.assertTrue(both_property_branches.compiled.metadata["is_object_property"])
+        self.assertTrue(constraint_free_property.compiled.metadata["is_object_property"])
+        self.assertTrue(constraint_free_property.compiled)
+        with self.assertRaisesRegex(InvalidCommandPayload, "not both"):
+            registry.prepare(
+                batch_id="batch", ontology_id="ontology", client_item_id="property-both", command_kind="create_property",
+                payload={"name": "property", "datatype": "xsd:string", "object_class_id": "target"},
+            )
+        ranged_property = registry.prepare(
+            batch_id="batch", ontology_id="ontology", client_item_id="property-ranged", command_kind="create_property",
+            payload={"class_id": "class", "name": "property", "object_class_id": "target"},
+        )
+        self.assertTrue(ranged_property.compiled.metadata["is_object_property"])
+        typed_property = registry.prepare(
+            batch_id="batch", ontology_id="ontology", client_item_id="property-typed", command_kind="create_property",
+            payload={"name": "property", "datatype": "xsd:string"},
+        )
+        self.assertFalse(typed_property.compiled.metadata["is_object_property"])
         with self.assertRaisesRegex(InvalidCommandPayload, "absolute RDF IRI"):
             registry.prepare(
                 batch_id="batch", ontology_id="ontology", client_item_id="relation", command_kind="create_relation",

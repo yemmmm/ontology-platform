@@ -310,7 +310,18 @@ def test_statement_list_binds_exact_asserted_data_member_and_excludes_bounded_le
     assert f"VALUES ?graph {{ <{DATA_GRAPH}> }}" in store.last_query
     assert ONTOLOGY_GRAPH not in store.last_query
     assert FOREIGN_DATA_GRAPH not in store.last_query
-    assert "LIMIT 1" in store.last_query
+    # limit=1 plus the R3.0-009 has_more probe row (D7).
+    assert "LIMIT 2" in store.last_query
+    # D7/B03: the HTTP envelope exposes the window state, computed from the
+    # authorized visible set (one visible item, page not exhausted).
+    assert body["paging"] == {
+        "limit": 1,
+        "returned": 1,
+        "visible_count": 1,
+        "has_more": False,
+        "truncated": False,
+        "complete": True,
+    }
 
 
 def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None:
@@ -321,6 +332,7 @@ def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None
                 {
                     "property": f"{PREFIX}ns/property/email",
                     "label": "email",
+                    "domain": f"{PREFIX}ns/class/Student",
                     "graph": ONTOLOGY_GRAPH,
                 }
             ]
@@ -334,9 +346,42 @@ def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None
     item = body["items"][0]
     assert item["iri"] == f"{PREFIX}ns/property/email"
     assert item["label"] == "email"
+    assert item["detail_fields"] == {"domain": f"{PREFIX}ns/class/Student"}
     assert item["source_graph_iri"] == ONTOLOGY_GRAPH
     assert store.last_query is not None
     assert "property-list" in store.last_query
+
+
+def test_property_list_class_filter_requires_declared_domain(in_memory_session) -> None:
+    """R3.0-009 §9.3: a domain-less property never belongs to every class."""
+    _seed_graph_set(in_memory_session, [(ONTOLOGY_GRAPH, "asserted_ontology")])
+    store = FakeStore(
+        rows_by_marker={
+            "property-list": [
+                {
+                    "property": f"{PREFIX}ns/property/email",
+                    "label": "email",
+                    "domain": f"{PREFIX}ns/class/Student",
+                    "graph": ONTOLOGY_GRAPH,
+                },
+                {
+                    "property": f"{PREFIX}ns/property/notes",
+                    "label": "notes",
+                    "graph": ONTOLOGY_GRAPH,
+                },
+            ]
+        }
+    )
+    client = _client(store, in_memory_session)
+    filtered = _read_model(
+        client, "property-list", class_iri=f"{PREFIX}ns/class/Student"
+    )
+    assert [item["iri"] for item in filtered["items"]] == [f"{PREFIX}ns/property/email"]
+    unfiltered = _read_model(client, "property-list")
+    assert [item["iri"] for item in unfiltered["items"]] == [
+        f"{PREFIX}ns/property/email",
+        f"{PREFIX}ns/property/notes",
+    ]
 
 
 def test_relation_type_list_executes(in_memory_session) -> None:

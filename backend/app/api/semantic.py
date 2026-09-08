@@ -1624,6 +1624,7 @@ def read_class_shape_guidance(
         SemanticShapeEndpointService,
         ShapeEndpointError,
     )
+    from app.services.semantic_shape_merge import ShapeGuidanceConflict
 
     access_view = _access_view(
         session, principal, project_id_for_graph_set(session, graph_set_id)
@@ -1648,6 +1649,10 @@ def read_class_shape_guidance(
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except OntologyGraphMissing as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except ShapeGuidanceConflict as exc:
+        # R3.0-009 §6.1 / F08: conflicting still-effective shapes are a
+        # locatable client error, not a silent last-writer-wins projection.
+        raise HTTPException(status_code=409, detail=f"shape_conflict: {exc}") from exc
     except ShapeEndpointError as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
 

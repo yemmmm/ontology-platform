@@ -21,6 +21,7 @@ from app.services.semantic_read_scope import (
     ScopeResolution,
     SemanticReadScopeResolver,
 )
+from app.services.semantic_shape_merge import ShapeGuidanceConflict
 from app.services.semantic_sparql_templates import ReadModelTemplate, get_template
 from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
@@ -36,16 +37,30 @@ class ReadModelError(RuntimeError):
     status_code = 400
 
 
+class ShapeGuidanceReadError(ReadModelError):
+    """Entity-shape guidance merged from conflicting shapes (R3.0-009)."""
+
+    status_code = 409
+    code = "shape_conflict"
+
+
 # When row-level access filtering is active, templates over-fetch beyond the
 # caller's bounded limit so filtering happens before pagination; the caller's
 # limit is applied to the authorized subset afterwards.
 _FILTERED_FETCH_LIMIT = 10_000
+
+# R3.0-009: head room for read models that post-process rows before pagination
+# (entity-list class aggregation, property-list domain filtering).
+_ROW_POST_PROCESS_FETCH_MULTIPLIER = 8
+_ROW_POST_PROCESS_FETCH_FLOOR = 200
 
 
 class _ShapeEndpointProtocol(Protocol):
     """Minimal interface SemanticShapeEndpointService satisfies."""
 
     def read_merged_guidance(self, graph_set_id: str, class_iri: str) -> dict[str, Any]: ...
+
+    def read_entity_guidance(self, graph_set_id: str, entity_iri: str) -> dict[str, Any]: ...
 
 
 _READ_MODEL_FIELD_ALIASES = {
@@ -238,26 +253,70 @@ class SemanticReadModelService:
                     }
                 ],
             )
+        # R3.0-009: entity-list collapses one row per (entity, class) pair into
+        # one item per entity and property-list post-filters declared domains,
+        # so both need fetch head room before the caller-visible pagination.
+        post_processed = template.name == "entity-list" or (
+            template.name == "property-list" and bool(class_iri)
+        )
+        fetch_limit = (
+            self._expanded_fetch_limit(bounded_limit)
+            if post_processed
+            else self._fetch_limit(bounded_limit)
+        )
         query = self._compile_template_query(
             template,
             graph_iris,
-            self._fetch_limit(bounded_limit),
+            fetch_limit,
             entity_iri=entity_iri,
         )
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=graph_iris,
             timeout_seconds=self.timeout_seconds,
-            limit=self._fetch_limit(bounded_limit),
+            limit=fetch_limit,
         )
         items: list[dict[str, Any]] = []
         warnings = list(scope.warnings)
-        for row in self._rows(result):
+        rows = self._rows(result)
+        # R3.0-009 §6.2: the ceiling being reached means the authorized
+        # visible set itself may extend past what this projection saw.
+        ceiling_reached = len(rows) >= fetch_limit
+        if post_processed and ceiling_reached:
+            warnings.append(
+                {
+                    "code": "read_model_rows_truncated",
+                    "message": (
+                        f"Read model {template.name} reached its fetch limit "
+                        f"before aggregation/filtering; this page may be "
+                        f"incomplete."
+                    ),
+                }
+            )
+        for row in rows:
             decorated = self._decorate_row(row, scope, template)
             items.append(decorated)
+        if template.name == "entity-list":
+            # R3.0-009 §9.3: aggregate before pagination so a multi-class
+            # entity is never truncated into an incomplete single-class object.
+            items = self._aggregate_entity_class_rows(items, with_identity=True)
+        if template.name == "property-list" and class_iri:
+            # Only properties that declare this class as their domain match; a
+            # domain-less property never belongs to every class implicitly.
+            items = [
+                item
+                for item in items
+                if (item.get("detail_fields") or {}).get("domain") == class_iri
+            ]
         # R3.0-004: drop rows referencing unauthorized members BEFORE the
         # caller's limit is applied, so pagination never leaks hidden rows.
         items = self.access_view.filter_items(items)
+        paging = self._paging_state(
+            limit=bounded_limit,
+            returned=min(len(items), bounded_limit),
+            visible_count=len(items),
+            ceiling_reached=ceiling_reached,
+        )
         items = items[:bounded_limit]
         if q and template.name in {"ontology-schema-summary", "entity-list"}:
             items, retrieval = self._compose_public_list_search(
@@ -274,6 +333,7 @@ class SemanticReadModelService:
                 scope=scope,
                 items=items,
                 warnings=[*warnings, *retrieval.get("warnings", [])],
+                paging=paging,
             )
             envelope["recall"] = recall_summary(items, retrieval, search_mode)
             return envelope
@@ -282,6 +342,7 @@ class SemanticReadModelService:
             scope=scope,
             items=items,
             warnings=warnings,
+            paging=paging,
         )
 
     def _envelope(
@@ -291,8 +352,9 @@ class SemanticReadModelService:
         scope: ScopeResolution,
         items: list[dict[str, Any]],
         warnings: list[dict[str, str]],
+        paging: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        return {
+        envelope = {
             "graph_set_id": scope.graph_set_id,
             "source_signature": scope.source_signature,
             "projection_version": template.projection_version,
@@ -302,13 +364,120 @@ class SemanticReadModelService:
             "warnings": warnings,
             "items": items,
         }
+        if paging is not None:
+            envelope["paging"] = paging
+        return envelope
+
+    @staticmethod
+    def _paging_state(
+        *, limit: int, returned: int, visible_count: int, ceiling_reached: bool
+    ) -> dict[str, Any]:
+        """Window state of one page relative to the authorized visible set.
+
+        R3.0-009 §6.2: ``has_more``/``truncated``/``complete`` only describe
+        what the caller is authorized to see, so a hidden member can never be
+        inferred from them. ``visible_count`` counts authorized items seen
+        before the page was cut; it is a lower bound when ``truncated`` is
+        true because the fetch ceiling was reached.
+        """
+        has_more = visible_count > limit
+        return {
+            "limit": limit,
+            "returned": returned,
+            "visible_count": visible_count,
+            "has_more": has_more,
+            "truncated": bool(ceiling_reached),
+            "complete": not (has_more or ceiling_reached),
+        }
 
     def _fetch_limit(self, bounded_limit: int) -> int:
         """Elevate the fetch limit while access filtering so filtering happens
         before the caller-visible pagination."""
         if self.access_view.requires_filtering:
             return max(bounded_limit, _FILTERED_FETCH_LIMIT)
-        return bounded_limit
+        # One extra row is the cheapest reliable ``has_more`` signal.
+        return bounded_limit + 1
+
+    def _expanded_fetch_limit(self, bounded_limit: int) -> int:
+        """Fetch head room for models that post-process rows before pagination.
+
+        ``entity-list`` returns one row per (entity, class) pair and is
+        aggregated per entity, and ``property-list`` post-filters declared
+        domains; both need extra rows so one caller page is not cut short.
+        The cap stays bounded by the same filtered-fetch ceiling.
+        """
+        elevated = self._fetch_limit(bounded_limit)
+        expanded = max(
+            elevated * _ROW_POST_PROCESS_FETCH_MULTIPLIER,
+            bounded_limit + _ROW_POST_PROCESS_FETCH_FLOOR,
+        )
+        return min(expanded, _FILTERED_FETCH_LIMIT)
+
+    @staticmethod
+    def _aggregate_entity_class_rows(
+        items: list[dict[str, Any]], *, with_identity: bool
+    ) -> list[dict[str, Any]]:
+        """Collapse one row per (entity, visible formal class) pair into one
+        item per entity (R3.0-009 §6.2/§9.3).
+
+        ``class_iris`` carries the full visible formal class set (deduplicated
+        and sorted by expanded IRI, so order is stable); the legacy scalar
+        ``class_iri``/``class_label`` project the lexicographically first
+        visible class, or null when the entity has none — the scalar is never a
+        multi-class truth. Entities keep their first-appearance order so the
+        template ORDER BY stays authoritative. When ``with_identity`` is set, a
+        visible class without its own ``/vocab/id`` is reported through
+        ``incomplete_class_identity_iris`` instead of dropping the node; hidden
+        classes never appear because access filtering runs on the aggregate.
+        """
+        grouped: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        for item in items:
+            iri = str(item.get("iri") or "")
+            entry = grouped.get(iri)
+            if entry is None:
+                entry = {"item": {**item}, "classes": {}}
+                grouped[iri] = entry
+                order.append(iri)
+            class_iri = item.get("class_iri")
+            if not (isinstance(class_iri, str) and class_iri):
+                continue
+            record = entry["classes"].setdefault(
+                class_iri,
+                {
+                    "class_iri": class_iri,
+                    "class_semantic_id": item.get("class_semantic_id"),
+                    "class_label": item.get("class_label"),
+                },
+            )
+            if record.get("class_semantic_id") is None:
+                record["class_semantic_id"] = item.get("class_semantic_id")
+            if record.get("class_label") is None:
+                record["class_label"] = item.get("class_label")
+        aggregated: list[dict[str, Any]] = []
+        for iri in order:
+            entry = grouped[iri]
+            item = entry["item"]
+            classes = [entry["classes"][key] for key in sorted(entry["classes"])]
+            item["class_iris"] = [record["class_iri"] for record in classes]
+            item["class_iri"] = classes[0]["class_iri"] if classes else None
+            item["class_label"] = classes[0]["class_label"] if classes else None
+            if with_identity:
+                item["class_semantic_id"] = (
+                    classes[0]["class_semantic_id"] if classes else None
+                )
+                incomplete = [
+                    record["class_iri"]
+                    for record in classes
+                    if not (
+                        isinstance(record.get("class_semantic_id"), str)
+                        and record["class_semantic_id"]
+                    )
+                ]
+                if incomplete:
+                    item["incomplete_class_identity_iris"] = incomplete
+            aggregated.append(item)
+        return aggregated
 
     @staticmethod
     def _compile_template_query(
@@ -574,25 +743,53 @@ class SemanticReadModelService:
         entity_iri: str | None,
         class_iri: str | None,
     ) -> dict[str, Any]:
-        """Delegate to SemanticShapeEndpointService to fetch merged guidance
-        for the entity's class. Caller must pass either ``class_iri`` directly,
-        or ``entity_iri`` plus a resolver that we can lookup against (deferred
-        to the shape endpoint service via class IRI lookup at present).
+        """Delegate to SemanticShapeEndpointService for merged shape guidance.
+
+        With ``class_iri`` the legacy class-only entry is used unchanged. With
+        ``entity_iri`` (R3.0-009 §6.1) the guidance is collected from the
+        entity's full formal class set, its node targets and the subjects-of
+        shapes of the predicates it actually uses — zero-class entities are
+        supported and no class-target shape is invented.
         """
         if self.shape_endpoint is None:
             raise ReadModelError(
                 "entity-shape read model requires a shape endpoint service"
             )
-        target = class_iri
-        if target is None:
+        if class_iri is None:
             if entity_iri is None:
                 raise ReadModelError(
                     "entity-shape read model requires either class_iri or entity_iri"
                 )
-            raise ReadModelError(
-                "entity-shape read model cannot yet resolve class_iri from "
-                "entity_iri; supply class_iri explicitly"
-            )
+            if not self.access_view.is_member_visible(entity_iri):
+                # R3.0-004: a protected entity gets exactly the unknown-probe
+                # response (empty fields, echoed target) — never a hint that it
+                # exists or which shapes would apply.
+                merged = self.shape_endpoint.read_merged_guidance(
+                    graph_set_id=graph_set_id,
+                    class_iri="urn:ontology-platform:unknown-class-probe",
+                )
+                merged["entity_iri"] = entity_iri
+                return merged
+            try:
+                merged = self.shape_endpoint.read_entity_guidance(
+                    graph_set_id=graph_set_id,
+                    entity_iri=entity_iri,
+                )
+            except ShapeGuidanceConflict as exc:
+                raise ShapeGuidanceReadError(
+                    f"shape_conflict: {exc}"
+                ) from exc
+            if self.access_view.any_unauthorized(list(merged.values())):
+                # A matched shape or class references a protected member: hide
+                # the whole guidance instead of leaking which constraint hit.
+                empty = self.shape_endpoint.read_merged_guidance(
+                    graph_set_id=graph_set_id,
+                    class_iri="urn:ontology-platform:unknown-class-probe",
+                )
+                empty["entity_iri"] = entity_iri
+                return empty
+            return merged
+        target = class_iri
         if not self.access_view.is_member_visible(target):
             # R3.0-004: a protected class returns exactly the same response as
             # an unknown class (empty fields, echoed target_class).
@@ -602,10 +799,15 @@ class SemanticReadModelService:
             )
             merged["target_class"] = target
             return merged
-        return self.shape_endpoint.read_merged_guidance(
-            graph_set_id=graph_set_id,
-            class_iri=target,
-        )
+        try:
+            return self.shape_endpoint.read_merged_guidance(
+                graph_set_id=graph_set_id,
+                class_iri=target,
+            )
+        except ShapeGuidanceConflict as exc:
+            # F08: class-targeted shapes can conflict just like entity-targeted
+            # ones; the class branch must surface the same locatable 409.
+            raise ShapeGuidanceReadError(f"shape_conflict: {exc}") from exc
 
     # ------------------------------------------------------------------
     # graph-set-staleness composer
@@ -1560,7 +1762,9 @@ class SemanticReadModelService:
         extensions declared in spec §4.1."""
         graph_iris = list(scope.source_graph_iris) or []
         bounded_limit = min(limit or template.default_limit, template.default_limit)
-        fetch_limit = self._fetch_limit(bounded_limit)
+        # R3.0-009 §9.3: rows are one per (entity, class) pair and are
+        # aggregated per entity, so fetch extra head room before pagination.
+        fetch_limit = self._expanded_fetch_limit(bounded_limit)
         body = template.body
         body = body.replace("{graph_iris}", " ".join(f"<{i}>" for i in graph_iris))
         body = body.replace("{limit}", str(fetch_limit))
@@ -1573,19 +1777,31 @@ class SemanticReadModelService:
         body = body + f"\n# q_filter: \"{bound_q}\""
         # Bind the class filter in place. A VALUES preamble before PREFIX
         # declarations makes Oxigraph parse the query as malformed, so keep
-        # the query prologue intact and rewrite only the filter expression.
+        # the query prologue intact and rewrite only the filter expressions.
         class_filter_expr = "FILTER(!BOUND(?class_iri) || ?class = ?class_iri)"
         if class_iri is not None:
             body = body.replace(class_filter_expr, f"FILTER(?class = <{class_iri}>)")
+            # Only entities that are formal members of the requested class
+            # match; a zero-class entity never satisfies an explicit filter.
+            body = body.replace(
+                "FILTER({class_guard})",
+                "FILTER(BOUND(?class))",
+            )
             body = body + f"\n# class_iri_filter: <{class_iri}>"
+        else:
+            body = body.replace(
+                "FILTER({class_guard})",
+                "FILTER(!BOUND(?class_iri) || BOUND(?class))",
+            )
         result = self.rdf_store.query_read_model(
             query=body,
             graph_iris=graph_iris,
             timeout_seconds=self.timeout_seconds,
             limit=fetch_limit,
         )
+        rows = self._rows(result)
         items: list[dict[str, Any]] = []
-        for row in self._rows(result):
+        for row in rows:
             decorated = self._decorate_row(row, scope, template)
             # Stage 4 §4.1 additional fields not provided by the base decorator.
             decorated["comment"] = self._cell(row, "comment")
@@ -1593,6 +1809,7 @@ class SemanticReadModelService:
             decorated["class_label"] = self._cell(row, "class_label")
             decorated["graph_set_id"] = scope.graph_set_id
             items.append(decorated)
+        items = self._aggregate_entity_class_rows(items, with_identity=False)
         items = self.access_view.filter_items(items)
         retrieval: dict[str, Any] = {
             "candidates": [], "indexes": [], "warnings": [], "completeness": "complete"
@@ -1705,7 +1922,7 @@ class SemanticReadModelService:
             if isinstance(item, dict)
             and all(
                 isinstance(item.get(field), str) and item.get(field)
-                for field in ("semantic_id", "entity_iri", "class_semantic_id", "class_iri")
+                for field in ("semantic_id", "entity_iri")
             )
         }
         semantic_rows = []
@@ -1741,8 +1958,17 @@ class SemanticReadModelService:
         resource_kind: str,
         class_iri: str | None,
     ) -> dict[str, Any] | None:
-        if class_iri and resource_kind == "instance" and item.get("class_iri") != class_iri:
-            return None
+        if class_iri and resource_kind == "instance":
+            # R3.0-009 §9.3: the class filter matches the full visible
+            # class_iris set, never only the legacy scalar projection.
+            class_iris = item.get("class_iris")
+            members = (
+                class_iris
+                if isinstance(class_iris, list)
+                else ([item.get("class_iri")] if item.get("class_iri") else [])
+            )
+            if class_iri not in members:
+                return None
         normalized_query = normalize_retrieval_text(query)
         label = normalize_retrieval_text(str(item.get("label") or ""))
         iri = normalize_retrieval_text(str(item.get("iri") or ""))
@@ -1774,7 +2000,6 @@ class SemanticReadModelService:
         *,
         canonical: dict[str, Any] | None = None,
     ) -> dict[str, Any] | None:
-        rdf_types = list(candidate.get("data", {}).get("rdf_types", []))
         item = {
             **candidate,
             "source_graph_iri": scope.source_graph_iris[0] if scope.source_graph_iris else "",
@@ -1793,18 +2018,27 @@ class SemanticReadModelService:
             projection = canonical or candidate
             if not all(
                 isinstance(projection.get(field), str) and projection.get(field)
-                for field in ("semantic_id", "entity_iri", "class_semantic_id", "class_iri")
+                for field in ("semantic_id", "entity_iri")
             ):
                 # Retrieval rows are ranking hints, not an identity authority.
                 # Never return a Protocol-facing entity without the explicit
-                # backend projection that binds IDs and class identity.
+                # backend projection that binds its stable identity. Class
+                # membership is optional metadata (R3.0-009 §9.3), not identity.
                 return None
+            class_iris = projection.get("class_iris")
+            if not isinstance(class_iris, list):
+                scalar = projection.get("class_iri")
+                class_iris = [scalar] if isinstance(scalar, str) and scalar else []
+            visible_classes = sorted(
+                {value for value in class_iris if isinstance(value, str) and value}
+            )
             item.update(
                 {
                     "semantic_id": projection["semantic_id"],
                     "entity_iri": projection["entity_iri"],
-                    "class_semantic_id": projection["class_semantic_id"],
-                    "class_iri": projection["class_iri"],
+                    "class_iris": visible_classes,
+                    "class_iri": visible_classes[0] if visible_classes else None,
+                    "class_semantic_id": projection.get("class_semantic_id"),
                     "class_label": projection.get("class_label"),
                 }
             )

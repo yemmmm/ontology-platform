@@ -64,7 +64,11 @@ from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteService,
     CanonicalShaclViolation,
 )
-from app.services.semantic_command_compiler import CompiledCommand, InvalidCommandPayload
+from app.services.semantic_command_compiler import (
+    CommandCompilerError,
+    CompiledCommand,
+    InvalidCommandPayload,
+)
 from app.services.semantic_derived_state import SemanticDerivedStateService
 from app.services.semantic_export import namespace_from_settings
 from app.services.semantic_rule_definition import (
@@ -174,6 +178,21 @@ def _validate_delete_only_impact_receipt(value: Any) -> dict[str, Any]:
     if digest != _hash(body):
         raise InvalidCommandPayload("delete-only impact_receipt digest is invalid")
     return json.loads(json.dumps(value, ensure_ascii=False))
+
+
+def _payload_path(ordinal: int, exc: BaseException) -> list[str | int]:
+    """Locate a compiler rejection inside the item payload (R3.0-009 §8).
+
+    Typed conflicts name the offending payload fields; other compiler errors
+    stay at payload level. Plain ``KeyError``/``ValueError`` keep the legacy
+    ``["payload"]`` path.
+    """
+    fields = tuple(getattr(exc, "fields", ()) or ())
+    if fields:
+        return ["items", ordinal, "payload", *fields]
+    if isinstance(exc, CommandCompilerError):
+        return ["items", ordinal, "payload"]
+    return ["payload"]
 
 
 def _finding(
@@ -477,6 +496,7 @@ class ModelingBatchService:
             plan = {
                 "selected_client_item_ids": sorted(selected),
                 "delta": normalized_delta,
+                "before_graph_hashes": self._before_graph_hashes(delta),
                 "expected_graph_hashes": self._expected_graph_hashes(delta),
                 "commands": {
                     item_id: {
@@ -775,8 +795,10 @@ class ModelingBatchService:
                     command_kind=item.command_kind,
                     payload=item.payload,
                 )
-            except InvalidCommandPayload as exc:
-                code = (
+            except CommandCompilerError as exc:
+                # R3.0-009 §8: compiler rejections surface as typed findings
+                # carrying the machine-readable code, never as HTTP 500.
+                code = getattr(exc, "code", None) or (
                     "forbidden_target_override"
                     if "Forbidden target" in str(exc)
                     else "unsupported_command_kind"
@@ -791,7 +813,7 @@ class ModelingBatchService:
                         "error",
                         str(exc),
                         item_ids=[item.client_item_id],
-                        path=["items", item.ordinal, "payload"],
+                        path=_payload_path(item.ordinal, exc),
                     )
                 )
         known_ids = {item.client_item_id for item in batch.items}
@@ -839,7 +861,7 @@ class ModelingBatchService:
                         )
                 prepared[item.client_item_id] = command
                 item.resource_outputs = command.outputs
-            except (InvalidCommandPayload, KeyError, TypeError, ValueError) as exc:
+            except (CommandCompilerError, KeyError, TypeError, ValueError) as exc:
                 code = getattr(exc, "code", None) or (
                     str(exc).split(":", 1)[0]
                     if str(exc).startswith(
@@ -857,7 +879,7 @@ class ModelingBatchService:
                         "error",
                         str(exc),
                         item_ids=[item.client_item_id],
-                        path=["payload"],
+                        path=_payload_path(item.ordinal, exc),
                     )
                 )
                 continue
@@ -910,6 +932,10 @@ class ModelingBatchService:
                     or left.operation == "delete"
                     or right.operation == "delete"
                 ):
+                    if self._ordered_shape_refinement(left, right, prepared, dependency_map):
+                        # D15: defining and refining one Shape inside a batch is
+                        # a declared sequence, not two writers racing one target.
+                        continue
                     findings.append(
                         _finding(
                             "conflicting_item_effects",
@@ -919,6 +945,56 @@ class ModelingBatchService:
                         )
                     )
         return prepared, self._dedupe_findings(findings), groups, dependency_map
+
+    def _ordered_shape_refinement(
+        self, left, right, prepared: dict[str, PreparedModelingCommand], dependency_map
+    ) -> bool:
+        """True for a dependency-ordered ``create_shape`` → ``update_shape`` pair.
+
+        Both items address the same Shape IRI and the create is a (transitive)
+        dependency of the update, so the update's cascade delete plus its own
+        constraints describe the final state (R3.0-009 / D15). Without the
+        declared ordering the pair stays a conflict: an ``update_shape`` that
+        precedes its own ``create_shape`` is still rejected.
+        """
+        left_command = prepared.get(left.item_id)
+        right_command = prepared.get(right.item_id)
+        if left_command is None or right_command is None:
+            return False
+        kinds = {left_command.command_kind, right_command.command_kind}
+        if kinds != {"create_shape", "update_shape"}:
+            return False
+        create = (
+            left_command
+            if left_command.command_kind == "create_shape"
+            else right_command
+        )
+        update = right_command if create is left_command else left_command
+        if create.compiled is None or update.compiled is None:
+            return False
+        create_shape_iri = str(create.compiled.metadata.get("shape_iri") or "")
+        update_shape_iri = str(update.compiled.metadata.get("shape_iri") or "")
+        if not create_shape_iri or create_shape_iri != update_shape_iri:
+            return False
+        return self._depends_transitively(left.item_id, right.item_id, dependency_map) or (
+            self._depends_transitively(right.item_id, left.item_id, dependency_map)
+        )
+
+    @staticmethod
+    def _depends_transitively(
+        later: str, earlier: str, dependency_map: dict[str, set[str]]
+    ) -> bool:
+        stack = [*dependency_map.get(later, ())]
+        seen: set[str] = set()
+        while stack:
+            current = stack.pop()
+            if current == earlier:
+                return True
+            if current in seen:
+                continue
+            seen.add(current)
+            stack.extend(dependency_map.get(current, ()))
+        return False
 
     def _validate_candidate_delta(
         self,
@@ -997,6 +1073,18 @@ class ModelingBatchService:
                 compiled,
                 validate_shacl=True,
                 shape_graph_iris=self._shape_graphs(batch.ontology_id),
+                # Shape commands leave the data graph untouched, so the SHACL
+                # candidate is the workspace data scope (R3.0-009 §6.1).
+                candidate_graph_iris=self._data_graphs(batch.ontology_id),
+                # A merged candidate carries no per-item kind, so the batch
+                # reports the shapes its items create/update (D11): a sibling
+                # create makes the update legal, an unknown id fails loudly.
+                created_shape_iris=self._selected_shape_iris(
+                    batch, prepared, selected, "create_shape"
+                ),
+                updated_shape_iris=self._selected_shape_iris(
+                    batch, prepared, selected, "update_shape"
+                ),
             )
         except CanonicalShaclViolation as exc:
             report_text = str(exc.validation_result.get("report_text") or "")
@@ -1022,6 +1110,7 @@ class ModelingBatchService:
                     item_ids=item_ids,
                     scope="item" if item_ids else "batch",
                     report_summary=exc.validation_result.get("summary"),
+                    violations=exc.validation_result.get("violations") or [],
                 )
             ]
         except CanonicalSemanticWriteError as exc:
@@ -1037,6 +1126,15 @@ class ModelingBatchService:
                     if prepared.get(item_id)
                     and prepared[item_id].command_kind.endswith("_operation")
                 )
+            elif code == "shape_not_found":
+                item_ids = [
+                    item_id
+                    for item_id in sorted(selected)
+                    if prepared.get(item_id)
+                    and prepared[item_id].command_kind in {"update_shape", "delete_shape"}
+                    and str(prepared[item_id].compiled.metadata.get("shape_iri") or "")
+                    in str(exc)
+                ]
             return [
                 _finding(
                     code,
@@ -1044,9 +1142,24 @@ class ModelingBatchService:
                     str(exc),
                     item_ids=item_ids,
                     scope="item" if item_ids else "batch",
+                    path=self._error_path(batch, exc, item_ids),
                 )
             ]
         return []
+
+    @staticmethod
+    def _error_path(batch, exc: BaseException, item_ids: list[str]) -> list[str | int]:
+        """Qualify a canonical-write error path with the offending item (D5)."""
+        relative = list(getattr(exc, "path", ()) or ())
+        if not item_ids or not relative:
+            return relative
+        first = next(
+            (item for item in batch.items if item.client_item_id == item_ids[0]), None
+        )
+        if first is None:
+            return relative
+        fields = relative[1:] if relative[0] == "payload" else relative
+        return ["items", first.ordinal, "payload", *fields]
 
     def _validate_relational_mapping_commands(
         self,
@@ -1908,21 +2021,48 @@ class ModelingBatchService:
                         modeling_item_effects.setdefault(quad, []).append(item.id)
                 existing_audit = self.session.get(SemanticEditAuditModel, attempt.audit_id)
                 if not (rdf_already_applied and existing_audit is not None):
-                    result = CanonicalSemanticWriteService(
-                        self.session, self.rdf_store, self.settings
-                    ).apply_compiled_command(
-                        compiled,
-                        graph_set_id=attempt.graph_set_id,
-                        actor=auth.actor,
-                        reason=f"Modeling Batch {batch.id}",
-                        validate=True,
-                        shape_graph_iris=self._shape_graphs(batch.ontology_id),
-                        commit=False,
-                        audit_id=attempt.audit_id,
-                        fence_attempt_id=attempt.id,
-                        write_rdf=not rdf_already_applied,
-                        modeling_item_effects=modeling_item_effects,
-                    )
+                    try:
+                        result = CanonicalSemanticWriteService(
+                            self.session, self.rdf_store, self.settings
+                        ).apply_compiled_command(
+                            compiled,
+                            graph_set_id=attempt.graph_set_id,
+                            actor=auth.actor,
+                            reason=f"Modeling Batch {batch.id}",
+                            validate=True,
+                            shape_graph_iris=self._shape_graphs(batch.ontology_id),
+                            candidate_graph_iris=self._data_graphs(batch.ontology_id),
+                            created_shape_iris=self._batch_created_shape_iris(commands),
+                            commit=False,
+                            audit_id=attempt.audit_id,
+                            fence_attempt_id=attempt.id,
+                            write_rdf=not rdf_already_applied,
+                            modeling_item_effects=modeling_item_effects,
+                        )
+                    except (CanonicalShaclViolation, CanonicalSemanticWriteError) as exc:
+                        # Deterministic pre-write rejection (D13): the canonical
+                        # pipeline validates before it writes, so nothing reached
+                        # the store and reconciliation is trivial. It must fail
+                        # the attempt instead of entering recovery, where an
+                        # unfixed payload would only re-fail and a missing
+                        # optional graph could escalate to a write fence.
+                        self.session.rollback()
+                        current = self.session.scalar(
+                            select(ModelingBatchAttemptModel)
+                            .where(ModelingBatchAttemptModel.id == attempt.id)
+                            .with_for_update()
+                        )
+                        if current is None:
+                            raise
+                        self._fail_attempt_without_side_effects(
+                            current,
+                            code=getattr(exc, "code", "candidate_validation_failed"),
+                            message=str(exc)[:1000],
+                            violations=getattr(exc, "validation_result", {}).get("violations")
+                            or [],
+                        )
+                        self.session.commit()
+                        return self._attempt_response(current, created_batch, created_attempt)
                     attempt.audit_id = result["audit_id"]
             else:
                 self._ensure_rule_only_audit(attempt, auth.actor)
@@ -2020,7 +2160,8 @@ class ModelingBatchService:
         history = list((attempt.recovery_detail or {}).get("history", []))
         observation = self._observe_recovery_state(attempt)
         if len(history) >= self.settings.modeling_batch_recovery_max_steps:
-            if observation["state"] == "not_applied":
+            reconcilable = observation["state"] == "not_applied"
+            if reconcilable:
                 attempt.status = "failed"
                 attempt.batch.status = "failed"
                 attempt.completed_at = now
@@ -2033,9 +2174,16 @@ class ModelingBatchService:
                 attempt.recovery_state = "recovery_requires_intervention"
             attempt.recovery_detail = {
                 **(attempt.recovery_detail or {}),
-                "safe_to_retry": False,
+                # A reconcilable exit releases the write fence, so submitting a
+                # corrected batch is safe; only the drifted case stays fenced.
+                "safe_to_retry": reconcilable,
                 "message": "Automatic recovery step limit reached",
                 "observation": observation,
+                **(
+                    {"reason_code": observation["reason"]}
+                    if observation.get("reason")
+                    else {}
+                ),
             }
             self.session.commit()
             return self._attempt_response(attempt, False, False)
@@ -2168,12 +2316,7 @@ class ModelingBatchService:
                 }
             graphs: dict[str, Graph] = {}
             try:
-                for graph_iri in sorted(graph_iris):
-                    graph = Graph()
-                    content = self.rdf_store.get_graph(graph_iri, "turtle")
-                    if content:
-                        graph.parse(data=content, format="turtle")
-                    graphs[graph_iri] = graph
+                graphs = self._load_observed_graphs(sorted(graph_iris))
             except Exception as exc:
                 return {
                     "state": "partial_or_drifted",
@@ -2215,6 +2358,26 @@ class ModelingBatchService:
             state = "partial_or_drifted"
         return {"state": state, "delete_only": True, "entries": details}
 
+    def _load_observed_graphs(self, graph_iris: list[str]) -> dict[str, Graph]:
+        """Read the named graphs a recovery observation must compare.
+
+        A graph the store does not have is an empty graph, not an observation
+        failure (AGENTS.md T0 / D13): lazy materialization leaves workspace
+        graphs such as ``…/shapes/{ont}/custom`` un-created, and reading that
+        as a store error escalated a reconcilable failure into a permanent
+        ``ontology_write_fenced``. Real store failures still propagate.
+        """
+        graphs: dict[str, Graph] = {}
+        exists = getattr(self.rdf_store, "graph_exists", None)
+        for graph_iri in graph_iris:
+            graph = Graph()
+            if exists is None or exists(graph_iri):
+                content = self.rdf_store.get_graph(graph_iri, "turtle")
+                if content:
+                    graph.parse(data=content, format="turtle")
+            graphs[graph_iri] = graph
+        return graphs
+
     def _observe_recovery_state(self, attempt) -> dict[str, Any]:
         delete_only = self._observe_delete_only_recovery(attempt)
         if delete_only is not None:
@@ -2233,12 +2396,9 @@ class ModelingBatchService:
             return {"state": "unexpected", "reason": "rdf_observation_unavailable"}
         graphs: dict[str, Graph] = {}
         try:
-            for graph_iri in sorted({quad[3] for quad in [*inserts, *deletes]}):
-                graph = Graph()
-                content = self.rdf_store.get_graph(graph_iri, "turtle")
-                if content:
-                    graph.parse(data=content, format="turtle")
-                graphs[graph_iri] = graph
+            graphs = self._load_observed_graphs(
+                sorted({quad[3] for quad in [*inserts, *deletes]})
+            )
         except Exception as exc:
             return {"state": "unexpected", "reason": "rdf_observation_failed", "error": str(exc)}
 
@@ -2249,6 +2409,13 @@ class ModelingBatchService:
             graph["graph_iri"]: graph.get("content_hash_before")
             for graph in attempt.target_snapshot.get("graphs", [])
             if graph.get("graph_iri") in current_hashes
+        }
+        # Graphs the plan itself targets (for example the lazily created custom
+        # shapes sub-graph) are not workspace members, so the plan carries their
+        # pre-write state; persisted snapshot entries stay authoritative (D13).
+        before_hashes = {
+            **(attempt.operation_plan or {}).get("before_graph_hashes", {}),
+            **before_hashes,
         }
         expected_hashes = (attempt.operation_plan or {}).get("expected_graph_hashes", {})
         if expected_hashes and all(
@@ -2310,9 +2477,8 @@ class ModelingBatchService:
     def _rdf_term(value: str):
         return from_n3(value)
 
-    def _expected_graph_hashes(self, delta) -> dict[str, str]:
-        if delta.is_empty or self.rdf_store is None or not hasattr(self.rdf_store, "get_graph"):
-            return {}
+    def _affected_graph_states(self, delta) -> dict[str, Graph]:
+        """Read every graph the delta touches; a missing graph is empty (D13)."""
         graphs: dict[str, Graph] = {}
         for graph_iri in delta.affected_graph_iris():
             graph = Graph()
@@ -2323,6 +2489,31 @@ class ModelingBatchService:
             if content:
                 graph.parse(data=content, format="turtle")
             graphs[graph_iri] = graph
+        return graphs
+
+    def _before_graph_hashes(self, delta) -> dict[str, str]:
+        """Hash of each affected graph before the plan's writes (D13).
+
+        Workspace graphs such as ``…/shapes/{ont}/custom`` may not exist yet,
+        so their before state is the empty graph. Recovery compares against it
+        to prove "nothing was applied" instead of reporting a hash outside the
+        persisted plan.
+        """
+        if delta.is_empty or self.rdf_store is None or not hasattr(self.rdf_store, "get_graph"):
+            return {}
+        graphs = self._affected_graph_states(delta)
+        for subject, predicate, obj, graph_iri in delta.deletes:
+            pattern = tuple(
+                None if value.startswith("?") else self._rdf_term(value)
+                for value in (subject, predicate, obj)
+            )
+            graphs[graph_iri].remove(pattern)
+        return {graph_iri: self._hash_rdf_graph(graph) for graph_iri, graph in graphs.items()}
+
+    def _expected_graph_hashes(self, delta) -> dict[str, str]:
+        if delta.is_empty or self.rdf_store is None or not hasattr(self.rdf_store, "get_graph"):
+            return {}
+        graphs = self._affected_graph_states(delta)
         for graph_iri in (*delta.clear_graphs, *delta.drop_graphs):
             graphs[graph_iri] = Graph()
         for subject, predicate, obj, graph_iri in delta.deletes:
@@ -2611,6 +2802,36 @@ class ModelingBatchService:
             reason="workspace_rule_changed",
             commit=False,
         )
+
+    def _fail_attempt_without_side_effects(
+        self, attempt, *, code: str, message: str, violations: list[dict[str, Any]]
+    ) -> None:
+        """Terminate an attempt whose RDF write was rejected before it started.
+
+        The caller has rolled back, so the attempt is back at its persisted
+        state while the ontology still carries this attempt's write fence. The
+        fence must be released here: a deterministic rejection is reconcilable
+        (nothing was written) and must never turn into
+        ``recovery_requires_intervention`` / ``ontology_write_fenced`` (D13).
+        """
+        now = self._now()
+        attempt.status = "failed"
+        attempt.batch.status = "failed"
+        attempt.completed_at = now
+        attempt.batch.terminal_at = now
+        attempt.recovery_state = "failed_without_side_effects"
+        attempt.recovery_detail = {
+            **(attempt.recovery_detail or {}),
+            "safe_to_retry": True,
+            "reason_code": code,
+            "message": message,
+            "violations": violations,
+        }
+        fence = self.session.get(OntologyWriteFenceModel, attempt.batch.ontology_id)
+        if fence and fence.attempt_id == attempt.id:
+            self.session.delete(fence)
+        attempt.execution_claim_id = None
+        attempt.execution_claim_expires_at = None
 
     def _finalize_success(self, attempt):
         now = self._now()
@@ -2943,17 +3164,33 @@ class ModelingBatchService:
             "evidence_association_ids": result.evidence_association_ids,
         }
 
+    def _observed_graph_hash(self, graph_iri: str) -> str:
+        """Hash a workspace graph for the recovery snapshot (D13).
+
+        Workspace graphs are materialized lazily, so a graph the store does not
+        have is the empty state (AGENTS.md T0): recording the empty-graph hash
+        lets ``_observe_recovery_state`` recognize a still-unapplied attempt
+        whose target graph never came into existence instead of reporting a
+        hash outside the persisted plan. Store outages and unreadable content
+        raise and the caller keeps the workspace's own hash.
+        """
+        graph = Graph()
+        exists = getattr(self.rdf_store, "graph_exists", None)
+        if exists is None or exists(graph_iri):
+            content = self.rdf_store.get_graph(graph_iri, "turtle")
+            if content:
+                graph.parse(data=content, format="turtle")
+        return self._hash_rdf_graph(graph)
+
     def _target_snapshot(self, ontology_id):
         workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
         content_hashes: dict[str, str | None] = {}
         if self.rdf_store is not None and hasattr(self.rdf_store, "get_graph"):
             for member in workspace.get("members", []):
                 try:
-                    graph = Graph()
-                    content = self.rdf_store.get_graph(member["graph_iri"], "turtle")
-                    if content:
-                        graph.parse(data=content, format="turtle")
-                    content_hashes[member["graph_iri"]] = self._hash_rdf_graph(graph)
+                    content_hashes[member["graph_iri"]] = self._observed_graph_hash(
+                        member["graph_iri"]
+                    )
                 except Exception:
                     content_hashes[member["graph_iri"]] = member.get("content_hash")
         return {
@@ -2974,6 +3211,71 @@ class ModelingBatchService:
             ],
         }
 
+    def _shape_graphs(self, ontology_id):
+        """Shape graphs that govern candidate validation (R3.0-009 §6.1).
+
+        Both the workspace shapes role graph and the custom sub-graph written
+        by Modeling ``create_shape``/``update_shape`` commands constrain the
+        data graph, so both are passed to SHACL validation.
+        """
+        workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
+        prefix = self.settings.semantic_graph_iri_prefix.rstrip("/")
+        graphs: list[str] = []
+        for member in workspace["members"]:
+            if member["role"] != "shapes":
+                continue
+            graphs.append(member["graph_iri"])
+            custom = f"{prefix}/shapes/{ontology_id}/custom"
+            if member["graph_iri"] == f"{prefix}/shapes/{ontology_id}" and custom not in graphs:
+                graphs.append(custom)
+        return graphs
+
+    @staticmethod
+    def _batch_created_shape_iris(commands) -> list[str]:
+        """Shape IRIs this batch's own ``create_shape`` items define (D15).
+
+        The apply phase validates the merged delta in one shot, so an
+        ``update_shape`` addressing a shape a sibling item creates must be
+        treated exactly like the pre-check: the definition exists in the same
+        write and must not fail the ``shape_not_found`` existence guard.
+        """
+        iris: list[str] = []
+        for command in commands.values():
+            compiled = command.compiled
+            if compiled is None or compiled.command_kind != "create_shape":
+                continue
+            shape_iri = compiled.metadata.get("shape_iri")
+            if shape_iri:
+                iris.append(str(shape_iri))
+        return iris
+
+    def _data_graphs(self, ontology_id):
+        """Workspace graphs holding asserted instances (R3.0-009 §6.1)."""
+        workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
+        return [
+            member["graph_iri"]
+            for member in workspace["members"]
+            if member["role"] == "asserted_data"
+        ]
+
+    def _selected_shape_iris(self, batch, prepared, selected, command_kind):
+        """Shape IRIs the candidate's ``create_shape``/``update_shape`` items touch.
+
+        The merged candidate command has no per-item command kind, so the
+        existence guard for ``update_shape`` (D11) is driven from here.
+        """
+        iris: list[str] = []
+        for item in sorted(batch.items, key=lambda entry: entry.ordinal):
+            if item.client_item_id not in selected or item.client_item_id not in prepared:
+                continue
+            command = prepared[item.client_item_id]
+            if command.command_kind != command_kind or command.compiled is None:
+                continue
+            shape_iri = command.compiled.metadata.get("shape_iri")
+            if shape_iri:
+                iris.append(str(shape_iri))
+        return iris
+
     @staticmethod
     def _delta_dict(delta):
         return {
@@ -2982,12 +3284,6 @@ class ModelingBatchService:
             "clear_graphs": list(delta.clear_graphs),
             "drop_graphs": list(delta.drop_graphs),
         }
-
-    def _shape_graphs(self, ontology_id):
-        workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
-        return [
-            member["graph_iri"] for member in workspace["members"] if member["role"] == "shapes"
-        ]
 
     @staticmethod
     def _content(payload):
