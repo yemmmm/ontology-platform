@@ -20,6 +20,15 @@
 # protocol_tools deliberately OMITS submit_modeling_batch: every Modeling
 # Batch submission in this task goes through the Runner-private
 # protocol_staged_submit_modeling_batch capability only.
+#
+# R3.0-011: parameters.competency_question_acceptance selects the
+# competency-question stage for this task entry point.  It requires the
+# existing multi_slice_workflow and staged_modeling_decisions selectors and is
+# loaded only with modeling_team/profiles/r3-0-011-competency-question.yaml
+# (the three production roles plus exactly one competency-question Agent).
+# The competency-question role reads the same four approved business inputs as
+# Modeling plus the 011 contract; the production-role whitelists are unchanged,
+# and no tester-only or reference-truth file is added.
 schema_version: 2
 task_id: r3-0-008b-staged-real
 objective: >-
@@ -51,16 +60,16 @@ objective: >-
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source
-    roles: [coordinator, modeling]
+    roles: [coordinator, modeling, competency-question]
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/business-terms.md
     classification: business-source
-    roles: [coordinator, modeling]
+    roles: [coordinator, modeling, competency-question]
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/schema.sql
     classification: business-source
-    roles: [modeling]
+    roles: [modeling, competency-question]
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/sample-data.sql
     classification: business-source
-    roles: [modeling]
+    roles: [modeling, competency-question]
   - path: modeling_team/references/r3-0-002-scenario-map-contract.json
     classification: coordination
     roles: [coordinator, modeling, protocol]
@@ -73,6 +82,9 @@ role_sources:
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
     roles: [protocol]
+  - path: modeling_team/references/r3-0-011-competency-question-contract.json
+    classification: coordination
+    roles: [competency-question]
 protocol_tools:
   - check_platform_health
   - get_project_build_context
@@ -119,3 +131,4 @@ semantic_start_evidence:
 parameters:
   multi_slice_workflow: true
   staged_modeling_decisions: true
+  competency_question_acceptance: true

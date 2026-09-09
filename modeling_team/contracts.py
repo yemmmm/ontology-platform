@@ -28,6 +28,13 @@ PLATFORM_VALUES = {"none", "read", "write"}
 # ``FORMAL_ROLE_VALUES`` below and rejects it before scope or Agent startup.
 ROLE_VALUES = {"coordinator", "modeling", "protocol", "source-specialist", "acceptance"}
 FORMAL_ROLE_VALUES = {"coordinator", "modeling", "protocol", "acceptance"}
+# R3.0-011: the competency-question role is registered in its own closed set so
+# every pre-existing ``ROLE_VALUES`` contract (R2.3 formal loading, R3.0-002
+# multi-slice assertions) stays byte-identical.  ``ADMITTED_ROLE_VALUES`` is the
+# single loader-wide registration point used by the package loader.
+COMPETENCY_QUESTION_ROLE = "competency-question"
+COMPETENCY_QUESTION_ROLE_VALUES = frozenset({COMPETENCY_QUESTION_ROLE})
+ADMITTED_ROLE_VALUES = ROLE_VALUES | set(COMPETENCY_QUESTION_ROLE_VALUES)
 # R3.0-002 non-formal multi-slice roster: exactly the three modeling roles.
 # Acceptance stays out until the R3.0-006 real-run requirement adds it.
 MULTI_SLICE_ROLE_VALUES = {"coordinator", "modeling", "protocol"}
@@ -86,14 +93,24 @@ _FORMAL_PROFILE_IDS = frozenset(
 # Closed registry for the R3.0-002 non-formal multi-slice Profile kind, mirroring
 # the formal cross-wire guard pattern.
 MULTI_SLICE_PROFILE_IDS = frozenset({"r3-0-002-modeling-team"})
+# R3.0-011: the competency-question Profile is the second registered multi-slice
+# Profile (three production roles plus one competency-question Agent).
+COMPETENCY_QUESTION_PROFILE_IDS = frozenset({"r3-0-011-competency-question"})
 # R3.0-002 Task ``parameters`` is a closed, optional key set on the v2 Task.
 MULTI_SLICE_TASK_PARAMETER = "multi_slice_workflow"
 # R3.0-008B segment 1: staged modeling decisions extend the same closed set.
 STAGED_MODELING_DECISIONS_PARAMETER = "staged_modeling_decisions"
 # R3.0-009: the unified semantic graph is the third, opt-in member of the set.
 UNIFIED_GRAPH_TASK_PARAMETER = "unified_semantic_graph"
+# R3.0-011: competency-question batch acceptance is the fourth opt-in member.
+COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER = "competency_question_acceptance"
 _TASK_PARAMETER_NAMES = frozenset(
-    {MULTI_SLICE_TASK_PARAMETER, STAGED_MODELING_DECISIONS_PARAMETER, UNIFIED_GRAPH_TASK_PARAMETER}
+    {
+        MULTI_SLICE_TASK_PARAMETER,
+        STAGED_MODELING_DECISIONS_PARAMETER,
+        UNIFIED_GRAPH_TASK_PARAMETER,
+        COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER,
+    }
 )
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
 _CANDIDATE_PROGRESS_TIMEOUT_MAX = 600.0
@@ -315,7 +332,7 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
             f"Package {package_id} schema or identifier is invalid"
         )
     role = data.get("role")
-    if role not in ROLE_VALUES:
+    if role not in ADMITTED_ROLE_VALUES:
         raise TeamConfigurationError(f"Package {package_id} has unknown role")
     permissions = data.get("permissions")
     if (
@@ -727,6 +744,20 @@ def load_task(
                 raise TeamConfigurationError(
                     "unified_semantic_graph requires " + " and ".join(sorted(missing))
                 )
+        if parameters.get(COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER) is True:
+            # R3.0-011: competency-question acceptance rides on the staged
+            # multi-slice workflow (design §3.1).  The dependency is a typed,
+            # narrow selector error, not a generic parameter rejection.
+            missing = [
+                name
+                for name in (MULTI_SLICE_TASK_PARAMETER, STAGED_MODELING_DECISIONS_PARAMETER)
+                if parameters.get(name) is not True
+            ]
+            if missing:
+                raise TeamConfigurationError(
+                    "cq_selector_incompatible: competency_question_acceptance requires "
+                    + " and ".join(sorted(missing))
+                )
     raw_sources = data["role_sources"]
     tools = data["protocol_tools"]
     evidence = data["expected_terminal_evidence"]
@@ -734,7 +765,7 @@ def load_task(
     if not all(isinstance(value, list) for value in (raw_sources, tools, evidence, start_evidence)):
         raise TeamConfigurationError("v2 Task lists are invalid")
     seen_paths: set[Path] = set()
-    permitted_roles = allowed_roles or ROLE_VALUES
+    permitted_roles = allowed_roles or ADMITTED_ROLE_VALUES
     sources = tuple(
         _load_v2_source(root, value, seen_paths, permitted_roles) for value in raw_sources
     )
@@ -832,6 +863,27 @@ def task_declares_multi_slice_workflow(task_path: Path) -> bool:
     )
 
 
+def task_declares_competency_question_acceptance(task_path: Path) -> bool:
+    """Peek the frozen Task YAML for the R3.0-011 CQ acceptance parameter.
+
+    Same contract as :func:`task_declares_multi_slice_workflow`: a hint for the
+    Runner/CLI dispatch, never a validator.  An unreadable or malformed Task
+    peeks ``False`` and the chosen loader produces the authoritative error.
+    """
+
+    try:
+        data = _yaml(task_path)
+    except TeamConfigurationError:
+        return False
+    if not isinstance(data.get("schema_version"), int) or data.get("schema_version") != 2:
+        return False
+    parameters = data.get("parameters")
+    return (
+        isinstance(parameters, dict)
+        and parameters.get(COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER) is True
+    )
+
+
 def load_multi_slice_team_configuration(
     profile_path: Path, task_path: Path, *, root: Path | None = None
 ) -> TeamConfiguration:
@@ -852,6 +904,26 @@ def load_multi_slice_team_configuration(
     if task.parameters is None or task.parameters.get(MULTI_SLICE_TASK_PARAMETER) is not True:
         raise TeamConfigurationError(
             "multi-slice Profile requires a Task declaring multi_slice_workflow"
+        )
+    # R3.0-011: the competency-question selector and the CQ Agent must select
+    # each other.  A profile that carries the role without the selector, or a
+    # selector without exactly one CQ Agent, is a typed selector error; a
+    # three-role task/profile pair is unchanged and never requires CQ.
+    cq_agents = [
+        agent
+        for agent in profile.agents
+        if agent.package.role == COMPETENCY_QUESTION_ROLE
+    ]
+    cq_selected = task.parameters.get(COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER) is True
+    if cq_selected and len(cq_agents) != 1:
+        raise TeamConfigurationError(
+            "cq_selector_incompatible: competency_question_acceptance requires exactly one "
+            "competency-question Agent in the Profile"
+        )
+    if cq_agents and not cq_selected:
+        raise TeamConfigurationError(
+            "cq_selector_incompatible: a competency-question Agent requires "
+            "parameters.competency_question_acceptance"
         )
     if (
         profile.expected_matrix_binding is not None

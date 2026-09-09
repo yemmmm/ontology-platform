@@ -6,13 +6,18 @@ Lets the prompt be iterated quickly without running the full N=2 operation.
 from __future__ import annotations
 
 import argparse
+import json
 import sys
+from pathlib import Path
 
 sys.path.insert(0, "backend")
 
 from modeling_team.contracts import repository_root
 from modeling_team.acceptance_runtime import (
+    AcceptanceBatchPacket,
+    CQ_ACCEPTANCE_BRANCH_V3,
     ExaminerRunMetrics,
+    acceptance_branch_for,
     build_platform_examiner_packet,
     examiner_proxy_schemas,
 )
@@ -28,7 +33,40 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--question", default="Which output is consumed?")
     parser.add_argument("--timeout", type=float, default=180.0)
+    parser.add_argument(
+        "--v3-packet",
+        type=Path,
+        help=(
+            "R3.0-011: load a v3 hidden-batch packet JSON, verify the explicit v3 "
+            "dispatch and print its digest instead of running the legacy probe"
+        ),
+    )
     args = parser.parse_args()
+
+    if args.v3_packet is not None:
+        # R3.0-011 v3 branch: explicit dispatch on the packet schema version.  A
+        # legacy ExaminerRolePacket/v1 file is rejected here rather than being
+        # re-labelled, and no child is launched by this offline helper.
+        payload = json.loads(args.v3_packet.read_text(encoding="utf-8"))
+        role = str(payload.get("role", ""))
+        packet = AcceptanceBatchPacket.build(role, dict(payload.get("payload", {})))
+        branch = acceptance_branch_for(packet.schema_version)
+        if branch != CQ_ACCEPTANCE_BRANCH_V3:
+            print(f"v3 packet rejected: branch {branch}", file=sys.stderr)
+            return 2
+        print(
+            json.dumps(
+                {
+                    "schema_version": packet.schema_version,
+                    "role": packet.role,
+                    "batch_id": packet.batch_id,
+                    "freeze_digest": packet.freeze_digest,
+                    "canonical_digest": packet.canonical_digest,
+                    "branch": branch,
+                }
+            )
+        )
+        return 0
 
     root = repository_root()
     prepared = prepare_r23006_operation(root)

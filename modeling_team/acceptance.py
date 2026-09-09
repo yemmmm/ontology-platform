@@ -25,8 +25,10 @@ from typing import Any, Callable, Iterable, Mapping
 
 from .capability_mcp import (
     ACCEPTANCE_OPERATIONS,
+    COMPETENCY_QUESTION_ROLE,
     COORDINATOR_OPERATIONS,
     COORDINATOR_FORMAL_OPERATIONS,
+    CQ_OPERATIONS,
     MODELING_OPERATIONS,
     PROTOCOL_OPERATIONS,
     PROTOCOL_STAGE_OPERATIONS,
@@ -1454,6 +1456,7 @@ class RunnerAcceptanceCarrier:
         candidate_conflict_builder: Callable[[str, str, str, str], Mapping[str, Any]] | None = None,
         staged_submission_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         staged_protocol_capability: bool = False,
+        cq_draft_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ):
         self.root = root
         self.task_id = _safe_id(task_id, "task_id")
@@ -1502,6 +1505,10 @@ class RunnerAcceptanceCarrier:
         # staged runs, leaving every non-staged assembly byte-identical.
         self._staged_submission_handler = staged_submission_handler
         self._staged_protocol_capability = staged_protocol_capability
+        # R3.0-011: the competency-question role's single Runner-private
+        # capability.  ``None`` keeps every non-011 carrier byte-identical: no
+        # token, no socket, no advertised operation for the CQ role.
+        self._cq_draft_handler = cq_draft_handler
         # Prompt E state is Runner-private.  The nonce is surfaced to Protocol
         # as a non-secret binding in its task text, while exact delivery bytes
         # are recorded only as a digest by TeamRunner before Coordinator can
@@ -1583,6 +1590,10 @@ class RunnerAcceptanceCarrier:
         }
         if candidate_publisher is not None:
             self._capability_tokens["modeling"] = secrets.token_urlsafe(32)
+        if cq_draft_handler is not None:
+            # R3.0-011: only a run that selected the competency-question stage
+            # gets a CQ capability endpoint at all.
+            self._capability_tokens[COMPETENCY_QUESTION_ROLE] = secrets.token_urlsafe(32)
         self.capability_root = self.root / "capabilities"
         self.capability_root.mkdir(mode=0o700, exist_ok=True)
         capability_metadata = os.lstat(self.capability_root)
@@ -1620,6 +1631,9 @@ class RunnerAcceptanceCarrier:
                 # R3.0-008B staged runs: the protocol role additionally owns the
                 # Runner-private Modeling Batch submission operation.
                 operations = (*operations, STAGED_PROTOCOL_OPERATION)
+            elif role == COMPETENCY_QUESTION_ROLE:
+                # R3.0-011: exactly one Runner-private CQ operation.
+                operations = CQ_OPERATIONS
             self._capability_endpoints[role] = RunnerCapabilityEndpoint(
                 role=role,
                 socket_path=self.capability_socket_path(role),
@@ -2664,6 +2678,9 @@ class RunnerAcceptanceCarrier:
             "protocol": "protocol",
             "acceptance": self.acceptance_id,
         }.get(role)
+        if expected_id is None and role == COMPETENCY_QUESTION_ROLE:
+            # R3.0-011: the CQ role authenticates by its own Agent id.
+            expected_id = role
         if expected_id is None:
             _error("unknown Runner capability role")
         if actor_id != expected_id:
@@ -2707,6 +2724,14 @@ class RunnerAcceptanceCarrier:
                 "socket_mode": "0600",
                 "token_file_mode": "0400",
             }
+        if COMPETENCY_QUESTION_ROLE in self._capability_tokens:
+            # R3.0-011: advertised only for runs that selected the CQ stage.
+            descriptors[COMPETENCY_QUESTION_ROLE] = {
+                "token_digest": token_digest(self._capability_tokens[COMPETENCY_QUESTION_ROLE]),
+                "operations": list(CQ_OPERATIONS),
+                "socket_mode": "0600",
+                "token_file_mode": "0400",
+            }
         return descriptors
 
     def capability_socket_path(self, role: str) -> Path:
@@ -2737,6 +2762,23 @@ class RunnerAcceptanceCarrier:
             for endpoint in reversed(started):
                 endpoint.stop()
             raise
+
+    @property
+    def cq_capability_enabled(self) -> bool:
+        """Whether this carrier assembled the R3.0-011 competency-question endpoint."""
+
+        return self._cq_draft_handler is not None
+
+    def start_cq_endpoint(self) -> None:
+        """Start only the R3.0-011 competency-question capability endpoint.
+
+        CQ runs are non-formal multi-slice runs: the Coordinator/Protocol/
+        Acceptance endpoints stay stopped exactly as before, and the CQ role
+        gets its single Runner-private capability before the roster starts.
+        """
+
+        endpoint = self.capability_endpoint(COMPETENCY_QUESTION_ROLE)
+        endpoint.start()
 
     def stop_capability_endpoints(self) -> None:
         for endpoint in self._capability_endpoints.values():
@@ -3725,6 +3767,17 @@ class RunnerAcceptanceCarrier:
             _error("Runner capability operation is not available to this role")
         args = dict(arguments)
         capability = self.capability_token(role)
+        if role == COMPETENCY_QUESTION_ROLE and operation == CQ_OPERATION:
+            # R3.0-011: a rejected draft rejects only this call.  The handler
+            # raises ``CQContractError`` whose Mapping ``data`` is surfaced as a
+            # structured ``{ok: False, error: {...}}`` diagnostic, so the CQ
+            # session receives object/phase/reason code/retry guidance instead
+            # of the opaque ``-32001`` rejection.
+            self._check_capability(role, args.get("cq_id"), capability)
+            if self._cq_draft_handler is None:
+                _error("competency-question draft publication is unavailable")
+            return self._cq_draft_handler(args.get("draft"))
+
         if role == "modeling" and operation == "modeling_publish_staged_candidate":
             self._check_capability("modeling", args["modeling_id"], capability)
             if self._candidate_publisher is None:

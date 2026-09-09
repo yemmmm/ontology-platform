@@ -7,6 +7,7 @@ import hashlib
 import os
 import secrets
 import shutil
+import stat
 import threading
 import time
 from copy import deepcopy
@@ -136,6 +137,27 @@ from .staged_decisions import (
     validate_staged_submission,
     write_submission_intent,
     write_submission_receipt,
+)
+from .competency_questions import (
+    COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER,
+    COMPETENCY_QUESTION_ROLE,
+    CQ_ACCEPTANCE_MODE,
+    CQ_FREEZE_SCHEMA,
+    CQ_RUN_DIRECTORIES,
+    CQContractError,
+    CQWaitWindowTracker,
+    advisory_question_count_feedback,
+    canonical_json_bytes,
+    content_digest,
+    coverage_gaps_from_projection,
+    cross_slice_projection_issues,
+    freeze_question_pool,
+    public_projection,
+    read_exposure_evidence,
+    review_decision_digest,
+    validate_draft_document,
+    validate_review_decision,
+    write_public_projection,
 )
 from .protocol_mechanics import (
     ProtocolRetrievalFallbackError,
@@ -282,6 +304,28 @@ class TeamRunner:
         self._staged_decisions = False
         # R3.0-009: unified semantic graph mode; False unless the task opts in.
         self._unified_graph = False
+        # R3.0-011: competency-question acceptance state.  Every flag stays
+        # False/empty for tasks without ``competency_question_acceptance``.
+        self._competency_questions = False
+        self._cq_directories: dict[str, Path] = {}
+        self._cq_drafts: dict[str, dict[str, Any]] = {}
+        self._cq_draft_order: list[str] = []
+        self._cq_decisions: dict[str, list[dict[str, Any]]] = {}
+        # D2: a question that any production role has already seen is permanently
+        # public.  The Runner records the exposure itself at the exposure event
+        # (the public-projection write); ``freeze_question_pool`` then rejects any
+        # later attempt to land that question hidden (design §5).
+        self._cq_exposed: dict[str, list[str]] = {}
+        self._cq_freeze: dict[str, Any] | None = None
+        self._cq_handoff_complete = False
+        self._cq_terminal_reported = False
+        self._cq_review_sequence = 0
+        self._cq_interview_sequence = 0
+        self._cq_projection_written = False
+        self._cq_phase: str = "panorama-draft"
+        # Runner-owned CQ wait windows excluded from the T3 active clock
+        # (design §3.2 / Round 4 follow-up (a) and (b)).
+        self._cq_wait_windows = CQWaitWindowTracker()
         self._staged_gate_feedback_fingerprints: set[str] = set()
         self._staged_gate_killed = False
         self._candidate_receipt_wakeup_sent: set[tuple[str, str]] = set()
@@ -772,6 +816,46 @@ class TeamRunner:
                     ],
                 },
             )
+        cq_selected = staged_parameters.get(COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER) is True
+        if multi_slice_workflow and not formal_acceptance and cq_selected:
+            # R3.0-011: the competency-question stage.  Only the artifact
+            # directories are prepared here (design §3.4); draft/review/freeze
+            # files are written later by the Runner or the CQ capability, so an
+            # absent file stays the gate semantics.
+            self._competency_questions = True
+            self._cq_directories = {
+                name.split("/")[-1]: self._cq_directory(root, name)
+                for name in CQ_RUN_DIRECTORIES
+            }
+            self._append_evidence(
+                "competency-questions",
+                {
+                    "event": "directories-registered",
+                    "selector": COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER,
+                    "artifact_directories": list(CQ_RUN_DIRECTORIES),
+                },
+            )
+            # R3.0-011 §4.0: the run's configuration snapshot is what the
+            # read-only ``cq-acceptance`` command later checks.  A run root
+            # without this file is a legacy R2.3 run and can never be switched
+            # to the v3 acceptance contract by the command name alone.
+            self._atomic_json(
+                root / "acceptance-v3" / "run-contract.json",
+                {
+                    "schema_version": "r3-0-011-run-contract/v1",
+                    "run_id": run_id,
+                    "profile_id": config.profile.profile_id,
+                    "task_id": config.task.task_id,
+                    "parameters": {
+                        COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER: True,
+                        "multi_slice_workflow": True,
+                        "staged_modeling_decisions": staged_parameters.get(
+                            STAGED_MODELING_DECISIONS_PARAMETER
+                        )
+                        is True,
+                    },
+                },
+            )
         self._protocol_candidate_responses = {}
         self._protocol_candidate_receipt_digests = {}
         self._candidate_receipt_wakeup_sent = set()
@@ -821,6 +905,9 @@ class TeamRunner:
             ),
             staged_submission_handler=(
                 self._handle_staged_submit_modeling_batch if self._staged_decisions else None
+            ),
+            cq_draft_handler=(
+                self._publish_cq_question_draft if self._competency_questions else None
             ),
             staged_protocol_capability=self._staged_decisions,
         )
@@ -1556,6 +1643,16 @@ class TeamRunner:
                     return True
             except Exception:
                 return True
+        # R3.0-011: the competency-question role may only report terminal after
+        # the host-only ``cq_handoff_complete`` admission.  A premature report is
+        # rejected for this call only, with the current phase and the
+        # continuation action; nothing is latched and the run keeps running
+        # (design §3.2).  A ``blocked`` CQ report still passes: an unrepairable
+        # role keeps its existing exit instead of deadlocking into T3.
+        cq_reason = self._cq_terminal_block_reason(agent_id)
+        if cq_reason is not None and status != "blocked":
+            self._deliver_cq_terminal_rejection(agent_id, cq_reason)
+            return True
         if self._formal_coordination_enabled() and self.run is not None:
             role_ids = {
                 agent.package.role: agent.agent_id
@@ -1792,6 +1889,17 @@ class TeamRunner:
                 # Runner-private capability endpoints are live before any
                 # Coordinator/Acceptance process is launched.
                 self.acceptance.start_capability_endpoints()
+            if self._competency_questions and self.acceptance is not None:
+                # R3.0-011: only the CQ endpoint is live in a (non-formal) CQ
+                # run, and it is live before any roster process is launched.
+                self.acceptance.start_cq_endpoint()
+                self._append_evidence(
+                    "competency-questions",
+                    {
+                        "event": "cq-capability-endpoint-started",
+                        "operations": ["cq_publish_question_draft"],
+                    },
+                )
             if formal_coordination and self.coordinator_phase is not None:
                 self.coordinator_phase.start()
                 assignment = self.coordinator_phase.assign_slice(
@@ -4914,6 +5022,844 @@ class TeamRunner:
             )
             self._issue_pending_started = None
 
+    # --- R3.0-011: competency-question direct channel -------------------------
+
+    @staticmethod
+    def _cq_directory(root: Path, relative: str) -> Path:
+        directory = root / relative
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        return directory
+
+    def _cq_agent_id(self) -> str | None:
+        if not self.run or not self._competency_questions:
+            return None
+        return next(
+            (
+                agent.agent_id
+                for agent in self.run.configuration.profile.agents
+                if agent.package.role == COMPETENCY_QUESTION_ROLE
+            ),
+            None,
+        )
+
+    def _cq_selector_required(self) -> None:
+        if not self._competency_questions:
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "this run did not select competency_question_acceptance",
+                obj="competency_question_acceptance",
+                retry="restart the run with the R3.0-011 Task selector enabled",
+            )
+
+    def _cq_next_ordinal(self, directory: Path, prefix: str) -> int:
+        existing = [item.name for item in directory.glob(f"{prefix}-*.json")]
+        return len(existing) + 1
+
+    def _deliver_to_cq(self, kind: str, payload: dict[str, Any]) -> None:
+        """Wake the CQ role on the Runner-owned direct channel (no transport)."""
+
+        agent_id = self._cq_agent_id()
+        if agent_id is None:
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "no competency-question Agent is configured for this run",
+                obj="competency-question",
+                retry="load the R3.0-011 Profile",
+            )
+        receipt = self.adapter.send_message(
+            agent_id,
+            RuntimeDelivery(
+                sender_id="user/outer",
+                recipient_id=agent_id,
+                kind=kind,
+                text=canonical_json_bytes(payload).decode("utf-8"),
+            ),
+        )
+        self._append_evidence(
+            "competency-questions",
+            {
+                "event": "direct-delivery",
+                "kind": kind,
+                "recipient_id": agent_id,
+                "turn_id": getattr(receipt, "turn_id", None),
+            },
+        )
+
+    def _publish_cq_question_draft(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        """Runner-private ``cq_publish_question_draft`` capability handler.
+
+        The CQ role has no writable artifact mount for drafts: every draft is
+        saved here as an immutable, append-only version, a review snapshot is
+        published for Delivery, and a ``cq-review-request`` wait window opens.
+        A rejected draft rejects only this call (design §3.2).
+        """
+
+        self._cq_selector_required()
+        document = validate_draft_document(dict(arguments.get("draft")))
+        self._cq_assert_not_exposed_hidden(document["questions"])
+        private_dir = self._cq_directories["private"]
+        reviews_dir = self._cq_directories["reviews"]
+        ordinal = self._cq_next_ordinal(private_dir, "draft")
+        draft_path = private_dir / f"draft-{ordinal:04d}.json"
+        draft_path.write_bytes(canonical_json_bytes(document))
+        os.chmod(draft_path, 0o440)
+        self._cq_review_sequence += 1
+        review_id = f"cq-review-{self._cq_review_sequence:04d}"
+        snapshot = {
+            "schema_version": "r3-0-011-cq-review-snapshot/v1",
+            "review_id": review_id,
+            "phase": document["phase"],
+            "draft_ref": draft_path.relative_to(self.run.root).as_posix(),
+            "content_version": self._cq_review_sequence + 1,
+            "content_digest": document["content_digest"],
+            "question_ids": [question["question_id"] for question in document["questions"]],
+            "advisory_count_feedback": advisory_question_count_feedback(document["questions"]),
+        }
+        snapshot_path = reviews_dir / f"{review_id}.json"
+        snapshot_path.write_bytes(canonical_json_bytes(snapshot))
+        os.chmod(snapshot_path, 0o440)
+        live = dict(snapshot)
+        live["questions"] = document["questions"]
+        live["draft_path"] = str(draft_path)
+        self._cq_drafts[review_id] = live
+        self._cq_draft_order.append(review_id)
+        self._cq_phase = document["phase"]
+        now = self.monotonic_clock()
+        self._cq_wait_windows.open_window("cq-review-request", now)
+        self._cq_wait_windows.close_window("cq-interview-wait", now)
+        self._append_evidence(
+            "cq-review-request",
+            {
+                "review_id": review_id,
+                "phase": document["phase"],
+                "draft_ref": snapshot["draft_ref"],
+                "content_digest": document["content_digest"],
+                "question_ids": snapshot["question_ids"],
+            },
+        )
+        return {
+            "ok": True,
+            "review_id": review_id,
+            "phase": document["phase"],
+            "draft_ref": snapshot["draft_ref"],
+            "content_digest": document["content_digest"],
+            "status": "awaiting_review",
+        }
+
+    def _cq_review_snapshot(self, review_id: str) -> dict[str, Any]:
+        self._cq_selector_required()
+        snapshot = self._cq_drafts.get(review_id)
+        if snapshot is None:
+            raise CQContractError(
+                "cq_review_stale",
+                f"unknown review_id {review_id}",
+                obj="cq_review",
+                phase=getattr(self, "_cq_phase", None),
+                retry="read the current review snapshot path from the cq-review-request evidence",
+            )
+        return snapshot
+
+    def _handle_cq_interview(self, message: dict[str, Any]) -> None:
+        """One strict ``cq_interview`` outer input; never routed via transport."""
+
+        self._cq_selector_required()
+        allowed = {"action", "text", "wait_for_draft"}
+        if set(message) - allowed:
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "cq_interview envelope has invalid fields",
+                obj="cq_interview",
+                retry=f"send only {sorted(allowed)}",
+            )
+        text = message.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "cq_interview text must be a non-empty string",
+                obj="cq_interview",
+                retry="send the interview input as text",
+            )
+        self._cq_interview_sequence += 1
+        ordinal = self._cq_interview_sequence
+        private_dir = self._cq_directories["private"]
+        interview_path = private_dir / f"interview-{ordinal:04d}.json"
+        payload = {
+            "schema_version": "r3-0-011-cq-interview/v1",
+            "ordinal": ordinal,
+            "text": text,
+        }
+        interview_path.write_bytes(canonical_json_bytes(payload))
+        os.chmod(interview_path, 0o440)
+        now = self.monotonic_clock()
+        if message.get("wait_for_draft", True) is True:
+            self._cq_wait_windows.open_window("cq-interview-wait", now)
+        self._append_evidence(
+            "cq-interview",
+            {
+                "ordinal": ordinal,
+                "interview_ref": interview_path.relative_to(self.run.root).as_posix(),
+                "wait_window_open": self._cq_wait_windows.has_open_window,
+            },
+        )
+        self._deliver_to_cq(
+            "cq-interview",
+            {
+                "ordinal": ordinal,
+                "interview_ref": interview_path.relative_to(self.run.root).as_posix(),
+                "text": text,
+            },
+        )
+
+    def _handle_cq_review(self, message: dict[str, Any]) -> None:
+        """One strict ``cq_review`` outer decision, bound to a draft version."""
+
+        self._cq_selector_required()
+        review_id = message.get("review_id")
+        if not isinstance(review_id, str) or not review_id:
+            raise CQContractError(
+                "cq_review_stale",
+                "cq_review requires the review_id of the current snapshot",
+                obj="cq_review",
+                retry="send the review_id exactly as published",
+            )
+        snapshot = self._cq_review_snapshot(review_id)
+        # ``action`` belongs to the outer envelope, never to the review schema.
+        decision = validate_review_decision(
+            {key: value for key, value in message.items() if key != "action"},
+            draft=snapshot,
+        )
+        self._cq_decisions.setdefault(review_id, []).append(decision)
+        reviews_dir = self._cq_directories["reviews"]
+        ordinal = self._cq_next_ordinal(reviews_dir, "decision")
+        record = {
+            "schema_version": "r3-0-011-cq-review-decision/v1",
+            "review_id": review_id,
+            "decision": decision,
+            "decision_digest": content_digest(decision),
+        }
+        decision_path = reviews_dir / f"decision-{ordinal:04d}.json"
+        decision_path.write_bytes(canonical_json_bytes(record))
+        os.chmod(decision_path, 0o440)
+        now = self.monotonic_clock()
+        self._cq_wait_windows.close_window("cq-review-request", now)
+        if snapshot["phase"] == "panorama-review":
+            self._cq_phase = "awaiting-slices"
+            self._write_cq_public_projection(review_id)
+        elif snapshot["phase"] == "slice-review":
+            self._cq_phase = "slice-draft"
+        self._append_evidence(
+            "cq-review-decision",
+            {
+                "review_id": review_id,
+                "phase": snapshot["phase"],
+                "decision_ref": decision_path.relative_to(self.run.root).as_posix(),
+                "decision": decision["decision"],
+                "question_id": decision["question_id"],
+            },
+        )
+        self._deliver_to_cq(
+            "cq-review-decision",
+            {
+                "review_id": review_id,
+                "decision_ref": decision_path.relative_to(self.run.root).as_posix(),
+                "decision_digest": record["decision_digest"],
+                "decision": decision["decision"],
+                "question_id": decision["question_id"],
+            },
+        )
+
+    def _cq_effective_panorama_questions(self) -> list[dict[str, Any]]:
+        """Panorama questions after the recorded user decisions are applied.
+
+        ``modify``/``supplement`` replace or add the reviewed question content,
+        ``delete`` removes it; only panorama-review drafts participate, so slice
+        questions never reach the pre-slice projection.
+        """
+
+        questions: dict[str, dict[str, Any]] = {}
+        order: list[str] = []
+        for review_id in self._cq_draft_order:
+            draft = self._cq_drafts[review_id]
+            if draft.get("phase") != "panorama-review":
+                continue
+            for question in draft["questions"]:
+                if question["question_id"] not in questions:
+                    order.append(question["question_id"])
+                questions[question["question_id"]] = dict(question)
+            for decision in self._cq_decisions.get(review_id, []):
+                question_id = decision["question_id"]
+                if decision["decision"] == "delete":
+                    questions.pop(question_id, None)
+                    if question_id in order:
+                        order.remove(question_id)
+                elif decision["decision"] in {"modify", "supplement"}:
+                    replacement = decision.get("modified_question")
+                    if replacement is None:
+                        continue
+                    if question_id not in questions:
+                        order.append(question_id)
+                    questions[question_id] = dict(replacement)
+        return [questions[question_id] for question_id in order if question_id in questions]
+
+    def _write_cq_public_projection(self, review_id: str) -> dict[str, Any]:
+        """Project only the approved public questions into the public directory.
+
+        Called after the first panorama-review decision; the production roles
+        read the highest-ordinal projection file through their read-only bind.
+        """
+
+        public_dir = self._cq_directories["public"]
+        ordinal = self._cq_next_ordinal(public_dir, "public-projection")
+        questions = self._cq_effective_panorama_questions()
+        draft = self._cq_drafts.get(review_id, {})
+        decisions = self._cq_decisions.get(review_id, [])
+        last_decision = decisions[-1] if decisions else None
+        snapshot = freeze_question_pool(
+            {
+                "schema_version": CQ_FREEZE_SCHEMA,
+                "batch_id": f"panorama-{ordinal:04d}",
+                "material_digest": self.run.baseline_hash or "",
+                "panorama_question_ids": [
+                    question["question_id"] for question in questions
+                ],
+                "slice_question_ids": [],
+                "ordering": [question["question_id"] for question in questions],
+                "questions": questions,
+                "review_binding": {
+                    "review_id": review_id,
+                    "review_content_version": draft.get("content_version", 1),
+                    "decision_digest": review_decision_digest(last_decision or {"review_id": review_id}),
+                },
+            }
+        )
+        projection = public_projection(snapshot)
+        path = public_dir / f"public-projection-{ordinal:04d}.json"
+        write_public_projection(path, projection)
+        self._cq_projection_written = True
+        # D2: this write *is* the exposure event.  Every projected question is
+        # now readable by the production roles, so the Runner records the
+        # exposure here and it can never be undone by a later hidden proposal.
+        self._cq_record_exposure(
+            {question["question_id"] for question in projection["questions"]}
+        )
+        self._append_evidence(
+            "cq-public-projection",
+            {
+                "projection_ref": path.relative_to(self.run.root).as_posix(),
+                "projection_digest": projection["projection_digest"],
+                "public_question_ids": [
+                    question["question_id"] for question in projection["questions"]
+                ],
+            },
+        )
+        return projection
+
+    def _cq_production_roles(self) -> list[str]:
+        """Roles allowed to read the CQ public projection (design §3.2)."""
+
+        production_roles = {"coordinator", "modeling", "protocol"}
+        if self.run is None:
+            return sorted(production_roles)
+        return sorted(
+            {
+                agent.package.role
+                for agent in self.run.configuration.profile.agents
+                if agent.package.role in production_roles
+            }
+        )
+
+    def _cq_record_exposure(self, question_ids: set[str]) -> None:
+        """Record one exposure event permanently (D2 / design §5)."""
+
+        roles = self._cq_production_roles()
+        for question_id in sorted(question_ids):
+            known = set(self._cq_exposed.setdefault(question_id, []))
+            self._cq_exposed[question_id] = sorted(known | set(roles))
+        self._append_evidence(
+            "cq-exposure",
+            {
+                "event": "question-exposed-to-production",
+                "question_ids": sorted(question_ids),
+                "roles": roles,
+                "reason_code": "permanently_public",
+            },
+        )
+
+    def _cq_merge_exposure_evidence(self) -> None:
+        """Re-apply recorded exposure from run evidence (D2 / design §5).
+
+        ``self._cq_exposed`` is the Runner's pool-external provenance and is
+        never cleared by a freeze.  Reading the ``cq-exposure`` evidence file
+        back before the freeze keeps the permanently-public rule and the
+        non-blind labeling working across a recovered Runner process, without
+        adding any field to the frozen snapshot schema.
+        """
+
+        if self.run is None:
+            return
+        evidence_path = self.run.root / "evidence" / "cq-exposure.jsonl"
+        if not evidence_path.is_file():
+            return
+        try:
+            provenance = read_exposure_evidence(evidence_path)
+        except CQContractError:
+            return
+        for question_id, roles in provenance["exposure"].items():
+            known = set(self._cq_exposed.setdefault(question_id, []))
+            self._cq_exposed[question_id] = sorted(known | set(roles))
+
+    def _cq_assert_not_exposed_hidden(self, questions: list[dict[str, Any]]) -> None:
+        """Reject any hidden proposal for a question already shown (D2 / §5)."""
+
+        for question in questions:
+            if question.get("proposed_visibility") != "hidden":
+                continue
+            question_id = question.get("question_id")
+            if question_id in self._cq_exposed:
+                raise CQContractError(
+                    "cq_hidden_exposed",
+                    f"question {question_id} was already shown to a production role",
+                    obj="cq_publish_question_draft",
+                    phase=getattr(self, "_cq_phase", None),
+                    retry="keep the question public; a shown question is permanently public",
+                )
+
+    def _cq_public_projection(self) -> dict[str, Any]:
+        public_dir = self._cq_directories.get("public")
+        if public_dir is None:
+            raise CQContractError(
+                "cq_public_projection_missing",
+                "this run has no competency-question public directory",
+                obj="cq_public_projection",
+                retry="enable the R3.0-011 selector",
+            )
+        projections = sorted(public_dir.glob("public-projection-*.json"))
+        if not projections:
+            raise CQContractError(
+                "cq_public_projection_missing",
+                "no public projection has been published for the production roles",
+                obj="cq_public_projection",
+                phase=getattr(self, "_cq_phase", None),
+                retry="complete the panorama review first",
+            )
+        return json.loads(projections[-1].read_text(encoding="utf-8"))
+
+    def verify_cq_scenario_map_projection(self) -> list[dict[str, Any]]:
+        """Runner-side external consistency check (Round 4 follow-up (c)).
+
+        Compares the Coordinator-maintained ``cross_slice_competency_questions``
+        section against the published public projection.  The map entry shape is
+        untouched (three fields, no provenance); the check lives entirely
+        Runner-side and only records IDs, not question text.
+        """
+
+        map_path = self.run.root / "scenario-map" / "scenario-map.json"
+        if not map_path.is_file():
+            return [
+                {
+                    "reason_code": "cq_public_projection_missing",
+                    "object": "scenario-map.json",
+                    "note": "the scenario map has not been maintained yet",
+                }
+            ]
+        scenario_map = json.loads(map_path.read_text(encoding="utf-8"))
+        entries = (scenario_map or {}).get("cross_slice_competency_questions", [])
+        issues = cross_slice_projection_issues(entries, self._cq_public_projection())
+        if issues:
+            self._append_evidence(
+                "cq-projection-consistency",
+                {
+                    "event": "cross-slice-projection-mismatch",
+                    "issues": [
+                        {key: value for key, value in issue.items() if key != "question"}
+                        for issue in issues
+                    ],
+                },
+            )
+        else:
+            self._append_evidence(
+                "cq-projection-consistency",
+                {"event": "cross-slice-projection-consistent", "entry_count": len(entries)},
+            )
+        return issues
+
+    def freeze_cq_question_pool(self, payload: dict[str, Any]) -> dict[str, Any]:
+        """Append the immutable freeze snapshot under ``competency-questions/frozen``."""
+
+        self._cq_selector_required()
+        snapshot = freeze_question_pool(payload)
+        frozen_dir = self._cq_directories["frozen"]
+        ordinal = self._cq_next_ordinal(frozen_dir, "freeze")
+        path = frozen_dir / f"freeze-{ordinal:04d}.json"
+        path.write_bytes(canonical_json_bytes(snapshot))
+        os.chmod(path, 0o440)
+        self._cq_freeze = snapshot
+        self._cq_phase = "frozen"
+        self._append_evidence(
+            "cq-freeze",
+            {
+                "freeze_ref": path.relative_to(self.run.root).as_posix(),
+                "batch_id": snapshot["batch_id"],
+                "snapshot_digest": snapshot["snapshot_digest"],
+                "public_question_ids": [
+                    question["question_id"]
+                    for question in snapshot["questions"]
+                    if question["visibility"] == "public"
+                ],
+                "hidden_question_count": sum(
+                    1
+                    for question in snapshot["questions"]
+                    if question["visibility"] == "hidden"
+                ),
+            },
+        )
+        return snapshot
+
+    def _cq_pool_questions(self) -> tuple[list[dict[str, Any]], list[str]]:
+        """Effective pool (panorama then slice) with its draft order.
+
+        Panorama questions come from ``_cq_effective_panorama_questions``; slice
+        questions are the decided slice drafts in publication order.
+        """
+
+        panorama = [dict(question) for question in self._cq_effective_panorama_questions()]
+        panorama_ids = [question["question_id"] for question in panorama]
+        slice_questions: dict[str, dict[str, Any]] = {}
+        order = list(panorama_ids)
+        for review_id in self._cq_draft_order:
+            draft = self._cq_drafts[review_id]
+            if draft.get("phase") != "slice-review":
+                continue
+            for question in draft["questions"]:
+                if question["question_id"] in slice_questions:
+                    continue
+                if question["question_id"] not in order:
+                    order.append(question["question_id"])
+                slice_questions[question["question_id"]] = dict(question)
+            for decision in self._cq_decisions.get(review_id, []):
+                question_id = decision["question_id"]
+                if decision["decision"] == "delete":
+                    slice_questions.pop(question_id, None)
+                    if question_id in order:
+                        order.remove(question_id)
+                elif decision["decision"] in {"modify", "supplement"}:
+                    replacement = decision.get("modified_question")
+                    if replacement is None:
+                        continue
+                    if question_id not in slice_questions and question_id not in order:
+                        order.append(question_id)
+                    slice_questions[question_id] = dict(replacement)
+        return panorama + [slice_questions[key] for key in order if key in slice_questions], order
+
+    def _cq_undecided_question_ids(self, questions: list[dict[str, Any]]) -> list[str]:
+        """Question ids in ``questions`` that no recorded user decision covers."""
+
+        decided = {
+            decision["question_id"]
+            for decisions in self._cq_decisions.values()
+            for decision in decisions
+        }
+        return [
+            question["question_id"]
+            for question in questions
+            if question["question_id"] not in decided
+        ]
+
+    def handle_cq_freeze(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Host-only ``cq_freeze``: Delivery freezes the user-approved pool.
+
+        This is the production trigger for ``competency-questions/frozen``.  It
+        is deliberately a Delivery-host action on the same recoverable CQ
+        admission branch as ``cq_review`` (design §3.2 / Round 1 F2): the CQ and
+        every other Agent may propose and answer, but only the user's recorded
+        decisions plus this host action can close the pool, so D1 (no
+        self-approval by Agents) holds.  The freeze is append-only, digest
+        bound, and re-runs ``reload_frozen_pool`` style tamper checks on read.
+        """
+
+        self._cq_selector_required()
+        allowed = {"action"}
+        if set(message) - allowed:
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "cq_freeze envelope has invalid fields",
+                obj="cq_freeze",
+                phase=getattr(self, "_cq_phase", None),
+                retry=f"send only {sorted(allowed)}",
+            )
+        questions, order = self._cq_pool_questions()
+        if not questions:
+            raise CQContractError(
+                "cq_freeze_schema_mismatch",
+                "no reviewed competency question exists to freeze",
+                obj="cq_freeze",
+                phase=getattr(self, "_cq_phase", None),
+                retry="publish and review at least one question first",
+            )
+        undecided = self._cq_undecided_question_ids(questions)
+        if undecided:
+            raise CQContractError(
+                "cq_review_stale",
+                "the pool still contains questions without a recorded user decision",
+                obj="cq_freeze",
+                phase=getattr(self, "_cq_phase", None),
+                retry="record a cq_review decision for every published question first",
+            )
+        last_review_id = self._cq_draft_order[-1] if self._cq_draft_order else ""
+        decisions = self._cq_decisions.get(last_review_id, [])
+        last_decision = decisions[-1] if decisions else None
+        payload = {
+            "schema_version": CQ_FREEZE_SCHEMA,
+            "batch_id": f"cq-batch-{self._cq_next_ordinal(self._cq_directories['frozen'], 'freeze'):04d}",
+            "material_digest": self.run.baseline_hash or "",
+            "panorama_question_ids": [
+                question["question_id"]
+                for question in questions
+                if question["scope"]["kind"] == "panorama"
+            ],
+            "slice_question_ids": [
+                question["question_id"]
+                for question in questions
+                if question["scope"]["kind"] == "slice"
+            ],
+            "ordering": order,
+            "questions": questions,
+            "review_binding": {
+                "review_id": last_review_id,
+                "review_content_version": self._cq_review_sequence + 1,
+                "decision_digest": review_decision_digest(
+                    last_decision or {"review_id": last_review_id}
+                ),
+            },
+        }
+        # D2: the Runner stamps the exposure it recorded at projection time, so
+        # ``freeze_question_pool`` rejects any shown question proposed hidden
+        # with ``cq_hidden_exposed`` instead of silently regrouping it.  The
+        # in-memory ``_cq_exposed`` state is pool-external and survives the
+        # freeze on purpose: it is re-read from ``evidence/cq-exposure.jsonl``
+        # here so a recovered Runner keeps enforcing it, and so later batches
+        # still carry pool-level provenance for the non-blind label.  The frozen
+        # snapshot schema itself never grows an exposure field (Round 2 R4);
+        # ``freeze_question_pool`` pops the stamp it uses for this gate.
+        self._cq_merge_exposure_evidence()
+        for question in payload["questions"]:
+            exposed = self._cq_exposed.get(question["question_id"])
+            if exposed:
+                question["_exposed_to"] = list(exposed)
+        return self.freeze_cq_question_pool(payload)
+
+    def _cq_production_readiness(self) -> dict[str, Any]:
+        """Production handoff readiness: production roles only (design §3.2).
+
+        CQ settlement and any independent acceptance verdict are explicitly not
+        part of this readiness gate.
+        """
+
+        production_roles = {"coordinator", "modeling", "protocol"}
+        results = getattr(self.transport, "results", {}) if self.transport else {}
+        pending: list[str] = []
+        for agent in self.run.configuration.profile.agents:
+            if agent.package.role not in production_roles:
+                continue
+            result = results.get(agent.agent_id)
+            status = getattr(result, "status", None)
+            if status not in {"completed", "blocked"}:
+                pending.append(agent.agent_id)
+        return {
+            "ready": not pending,
+            "production_roles": sorted(production_roles),
+            "pending_agents": pending,
+            "checks": ["delivery", "quiescence"],
+        }
+
+    def _handle_cq_handoff_complete(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Host-only ``cq_handoff_complete``: release the CQ terminal report."""
+
+        self._cq_selector_required()
+        allowed = {"action", "freeze_id", "freeze_digest", "delivery_binding"}
+        if set(message) - allowed:
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "cq_handoff_complete envelope has invalid fields",
+                obj="cq_handoff_complete",
+                phase=getattr(self, "_cq_phase", None),
+                retry=f"send only {sorted(allowed)}",
+            )
+        now = self.monotonic_clock()
+        if self._cq_freeze is None:
+            raise CQContractError(
+                "cq_freeze_schema_mismatch",
+                "no frozen question pool exists for this run",
+                obj="cq_handoff_complete",
+                phase=getattr(self, "_cq_phase", None),
+                retry="freeze the question pool before the production handoff",
+            )
+        if message.get("freeze_id") != self._cq_freeze["batch_id"] or message.get(
+            "freeze_digest"
+        ) != self._cq_freeze["snapshot_digest"]:
+            raise CQContractError(
+                "cq_review_stale",
+                "cq_handoff_complete does not match the current freeze snapshot",
+                obj="cq_handoff_complete",
+                phase="frozen",
+                retry="send the current freeze id and snapshot digest",
+            )
+        readiness = self._cq_production_readiness()
+        if not readiness["ready"]:
+            self._cq_wait_windows.open_window("cq-handoff-request", now)
+            raise CQContractError(
+                "cq_batch_scope_unauthorized",
+                "production roles have not settled their deliveries",
+                obj="cq_handoff_complete",
+                phase="frozen",
+                retry="retry after the pending production agents report",
+            )
+        self._cq_handoff_complete = True
+        self._cq_wait_windows.close_window("cq-handoff-request", now)
+        self._append_evidence(
+            "cq-handoff-complete",
+            {
+                "freeze_id": self._cq_freeze["batch_id"],
+                "freeze_digest": self._cq_freeze["snapshot_digest"],
+                "delivery_binding": message.get("delivery_binding"),
+                "readiness": readiness,
+            },
+        )
+        return {"ok": True, "freeze_id": self._cq_freeze["batch_id"]}
+
+    def _deliver_cq_terminal_rejection(self, agent_id: str, reason: dict[str, Any]) -> None:
+        """Push the typed premature-terminal continuation to the CQ session.
+
+        The payload carries only protocol facts (object, phase, reason code,
+        retry guidance) -- never hidden question or answer text.
+        """
+
+        try:
+            self.adapter.send_message(
+                agent_id,
+                RuntimeDelivery(
+                    sender_id="runner/competency-questions",
+                    recipient_id=agent_id,
+                    kind="cq-terminal-rejected",
+                    text=canonical_json_bytes(reason).decode("utf-8"),
+                ),
+            )
+        except Exception:  # noqa: BLE001 - a failed wake must not mask the rejection
+            self._append_evidence(
+                "cq-terminal-report",
+                {"event": "rejection-delivery-failed", "reason_code": reason.get("reason_code")},
+            )
+            return
+
+    def handle_cq_outer_input(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Admit one ``cq_interview``/``cq_review``/``cq_freeze``/``cq_handoff_complete`` input.
+
+        This is the public entry the foreground CLI/FIFO path calls *before*
+        the existing fatal ``receive_outer`` boundary.  Expected input errors
+        raise :class:`CQContractError` (a ``ValueError`` that is not a
+        ``TeamConfigurationError``) carrying ``object``/``phase``/``reason
+        code``/``retry`` data; persistence or Runtime delivery failures keep
+        their existing fatal behavior.  Never carries hidden question or
+        answer text in the acknowledgement.
+        """
+
+        action = message.get("action")
+        if action == "cq_interview":
+            self._handle_cq_interview(message)
+            return {
+                "type": "cq-interview-accepted",
+                "action": action,
+                "ordinal": self._cq_interview_sequence,
+                "phase": self._cq_phase,
+                "wait_window_open": self._cq_wait_windows.has_open_window,
+            }
+        if action == "cq_review":
+            review_id = message.get("review_id")
+            if not isinstance(review_id, str) or not review_id:
+                raise CQContractError(
+                    "cq_review_stale",
+                    "cq_review requires the review_id of the current snapshot",
+                    obj="cq_review",
+                    retry="send the review_id exactly as published",
+                )
+            self._handle_cq_review(message)
+            decisions = self._cq_decisions.get(review_id, [])
+            decision = decisions[-1] if decisions else None
+            return {
+                "type": "cq-review-accepted",
+                "action": action,
+                "review_id": review_id,
+                "phase": self._cq_phase,
+                "decision": decision.get("decision") if decision else None,
+                "question_id": decision.get("question_id") if decision else None,
+                "pending_review": self._cq_wait_windows.has_open_window,
+            }
+        if action == "cq_freeze":
+            snapshot = self.handle_cq_freeze(message)
+            return {
+                "type": "cq-frozen",
+                "action": action,
+                "freeze_id": snapshot["batch_id"],
+                "snapshot_digest": snapshot["snapshot_digest"],
+                "public_question_ids": [
+                    question["question_id"]
+                    for question in snapshot["questions"]
+                    if question["visibility"] == "public"
+                ],
+                "hidden_question_count": sum(
+                    1
+                    for question in snapshot["questions"]
+                    if question["visibility"] == "hidden"
+                ),
+                "phase": self._cq_phase,
+            }
+        if action == "cq_handoff_complete":
+            result = self._handle_cq_handoff_complete(message)
+            return {"type": "cq-handoff-complete", "action": action, **result}
+        raise CQContractError(
+            "cq_selector_incompatible",
+            "unknown competency-question outer action",
+            obj="cq_outer_input",
+            phase=self._cq_phase,
+            retry="use cq_interview, cq_review, cq_freeze or cq_handoff_complete",
+        )
+
+    def _cq_terminal_block_reason(self, agent_id: str) -> dict[str, Any] | None:
+        """Typed continuation for a premature CQ terminal report.
+
+        Returns ``None`` when the report may proceed.  A premature report is
+        rejected for that call only: nothing is latched, the run is not killed,
+        and the same CQ session continues (design §3.2).
+        """
+
+        if self._cq_agent_id() != agent_id or not self._competency_questions:
+            return None
+        if self._cq_terminal_reported:
+            return None
+        if self._cq_handoff_complete:
+            self._cq_terminal_reported = True
+            self._append_evidence(
+                "cq-terminal-report",
+                {"event": "accepted", "phase": getattr(self, "_cq_phase", None)},
+            )
+            return None
+        phase = getattr(self, "_cq_phase", "panorama-draft")
+        if self._cq_freeze is None:
+            retry = "freeze the question pool before reporting a terminal result"
+        else:
+            retry = (
+                "wait for the Delivery host to send cq_handoff_complete; the production "
+                "handoff is not released yet"
+            )
+        reason = {
+            "object": "report_task_result",
+            "phase": phase,
+            "reason_code": "cq_batch_scope_unauthorized",
+            "retry": retry,
+        }
+        self._append_evidence("cq-terminal-report", {"event": "rejected", **reason})
+        return reason
+
     def _wake_acceptance_on_child_terminal(self) -> None:
         """R2.3-009 follow-up (start5 live evidence 2026-08-20).
 
@@ -4985,7 +5931,12 @@ class TeamRunner:
         pending_started = getattr(self, "_issue_pending_started", None)
         if pending_started is not None:
             excluded += max(0.0, now - pending_started)
-        active = max(0.0, now - started - excluded)
+        # R3.0-011 (design §3.2): explicit user-review / interview / handoff
+        # waits are recoverable waits, not stalled progress.  Overlapping CQ
+        # windows are unioned by the tracker, so a window that starts inside
+        # another one never extends the exclusion twice.
+        cq_excluded = self._cq_wait_windows.elapsed(now)
+        active = max(0.0, now - started - excluded - cq_excluded)
         timeout_seconds = getattr(self, "_run_fallback_timeout_seconds", 5400.0)
         if active < timeout_seconds:
             return
@@ -4994,6 +5945,8 @@ class TeamRunner:
             {
                 "active_seconds": active,
                 "timeout_seconds": timeout_seconds,
+                "cq_wait_excluded_seconds": cq_excluded,
+                "cq_wait_windows": self._cq_wait_windows.evidence(now),
                 "nudges_sent": getattr(self, "_nudges_sent", 0),
                 "issues_opened": getattr(self, "_issues_opened", 0),
                 "last_responsible_agent": getattr(self, "_last_responsible_agent", None),
@@ -6231,6 +7184,75 @@ class TeamRunner:
         self._append_evidence("coordinator-final", envelope)
         self._state("TERMINAL_REPORT_COMPLETE")
 
+    def _cleanup_cq_private(self) -> dict[str, Any] | None:
+        """Delete owner-provable CQ private temp, keep every durable artifact.
+
+        Design §5 (Round 1 F6): Delivery/Runner owns cleanup and may remove the
+        CQ private working set (draft versions, interview transcripts), but the
+        frozen snapshots, the review/decision history, the public projection,
+        the acceptance reports and the failure/recovery/cleanup evidence stay.
+        An entry whose owner cannot be proven (symlink, foreign uid, or a
+        non-regular directory entry) is retained and reported instead of being
+        blind-deleted.
+        """
+
+        if self.run is None:
+            return None
+        private_root = self.run.root / "competency-questions" / "private"
+        if not private_root.exists():
+            return None
+        removed: list[str] = []
+        retained: list[dict[str, Any]] = []
+        try:
+            entries = sorted(private_root.iterdir())
+        except OSError as exc:
+            self._append_evidence("cq-cleanup", {"event": "private-scan-failed", "error": type(exc).__name__})
+            return {"removed": [], "retained_unknown_owner": [], "error": type(exc).__name__}
+        for entry in entries:
+            try:
+                metadata = entry.lstat()
+            except OSError as exc:
+                retained.append({"entry": entry.name, "reason": type(exc).__name__})
+                continue
+            provable = (
+                not stat.S_ISLNK(metadata.st_mode)
+                and metadata.st_uid == os.getuid()
+                and (stat.S_ISREG(metadata.st_mode) or stat.S_ISDIR(metadata.st_mode))
+            )
+            if not provable:
+                retained.append({"entry": entry.name, "reason": "unknown-owner"})
+                continue
+            if stat.S_ISDIR(metadata.st_mode):
+                shutil.rmtree(entry, ignore_errors=False)
+            else:
+                entry.unlink()
+            removed.append(entry.name)
+        disposable = not retained
+        if disposable:
+            try:
+                private_root.rmdir()
+            except OSError:
+                disposable = False
+        evidence_record = {
+            "event": "cq-private-cleanup",
+            "removed": removed,
+            "retained_unknown_owner": retained,
+            "preserved": [
+                "competency-questions/frozen",
+                "competency-questions/reviews",
+                "competency-questions/public",
+                "acceptance-v3/reports",
+                "evidence",
+            ],
+            "directory_removed": disposable,
+        }
+        self._append_evidence("cq-cleanup", evidence_record)
+        return {
+            "removed_count": len(removed),
+            "retained_unknown_owner": retained,
+            "directory_removed": disposable,
+        }
+
     def cleanup(self) -> dict[str, Any]:
         if self._cleanup_evidence_cache is not None:
             return deepcopy(self._cleanup_evidence_cache)
@@ -6319,6 +7341,7 @@ class TeamRunner:
                 if secrets.exists():
                     shutil.rmtree(secrets)
                     evidence["secrets_destroyed"] = True
+                evidence["cq_private_cleanup"] = self._cleanup_cq_private()
                 self._record_runtime_core_hashes("after_cleanup")
                 self._state(
                     "CLEANED",

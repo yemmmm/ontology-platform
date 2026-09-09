@@ -1,0 +1,174 @@
+{
+  "schema_version": "r3-0-011-competency-question-contract/v1",
+  "purpose": "Agent-readable contract for the R3.0-011 competency-question lifecycle: explicit Task selector, question/draft/review/freeze schemas, the public projection, visibility rules, and the v3 hidden-batch acceptance hand-off. It describes schema, phase, status and visibility only and carries no business answers. It is only in force for a Team Task that declares parameters.competency_question_acceptance: true; tasks without the selector never load this contract and never get the competency-question capability.",
+  "task_parameter": {
+    "name": "competency_question_acceptance",
+    "requires": ["multi_slice_workflow", "staged_modeling_decisions"],
+    "rule": "Explicit boolean Task-level selector. A run keeps the schema it started with; turning the parameter on inside an existing run to skip a stage is forbidden. Without the selector the R3.0-002 and existing R2.3 paths do not load any competency-question contract, role, bind, or capability."
+  },
+  "lifecycle": {
+    "phases": [
+      "panorama-draft",
+      "panorama-review",
+      "awaiting-slices",
+      "slice-draft",
+      "slice-review",
+      "frozen"
+    ],
+    "rule": "A rejection, modification, deletion, supplement, or stale revision returns only the affected panorama/slice stage to draft/review. The same competency-question session continues across phases; frozen means the current pool is delivered, not that the session has ended. A turn that ends while waiting for the user is not a task terminal state."
+  },
+  "schemas": {
+    "draft": {
+      "schema_version": "r3-0-011-cq-draft/v1",
+      "fields": [
+        "schema_version",
+        "phase",
+        "draft_id",
+        "questions",
+        "superseded_draft_id",
+        "note"
+      ],
+      "transport": "Runner-private capability cq_publish_question_draft only; drafts are never written into a shared directory by the agent."
+    },
+    "question": {
+      "fields": [
+        "question_id",
+        "scope",
+        "question",
+        "answer_points",
+        "evidence_refs",
+        "unknown",
+        "proposed_visibility",
+        "content_version"
+      ],
+      "optional_runner_fields": {
+        "_exposed_to": "Runner-owned list of roles that ever saw this question or answer; non-empty forces permanent public visibility at freeze time."
+      },
+      "scope": {
+        "kind": ["panorama", "slice"],
+        "slice_ids": "non-empty for kind=slice, empty for kind=panorama"
+      }
+    },
+    "review": {
+      "schema_version": "r3-0-011-cq-review/v1",
+      "transport": "Outer FIFO/stdin action cq_review only; never Team Transport and never routed through Coordinator.",
+      "fields": [
+        "schema_version",
+        "review_id",
+        "question_id",
+        "decision",
+        "content_version",
+        "content_digest",
+        "revision",
+        "modified_question",
+        "note"
+      ],
+      "decisions": ["approve", "modify", "delete", "supplement"],
+      "binding": "review_id, content_version and content_digest must match the published review snapshot; a mismatch rejects only this input."
+    },
+    "review_snapshot": {
+      "schema_version": "r3-0-011-cq-review-snapshot/v1",
+      "fields": [
+        "schema_version",
+        "review_id",
+        "phase",
+        "draft_ref",
+        "content_version",
+        "content_digest",
+        "question_ids",
+        "advisory_count_feedback"
+      ]
+    },
+    "public_projection": {
+      "schema_version": "r3-0-011-cq-public-projection/v1",
+      "fields": ["schema_version", "batch_id", "snapshot_digest", "questions", "projection_digest"],
+      "question_fields": [
+        "question_id",
+        "scope",
+        "question",
+        "answer_points",
+        "unknown",
+        "review_content_version"
+      ],
+      "visibility": "Approved public questions and answer points only. No hidden id, hidden text, answer hints, competency-question private conversation, or unreviewed record may appear."
+    },
+    "freeze": {
+      "schema_version": "r3-0-011-cq-freeze/v1",
+      "fields": [
+        "schema_version",
+        "batch_id",
+        "material_digest",
+        "panorama_question_ids",
+        "slice_question_ids",
+        "ordering",
+        "questions",
+        "review_binding",
+        "snapshot_digest"
+      ],
+      "review_binding_fields": ["review_id", "review_content_version", "decision_digest"],
+      "immutability": "Frozen pools and reference answers are never rewritten in place. A user revision produces a new question version with a new review binding and records the affected questions and slices; previous versions, answers and verdicts stay readable and unchanged."
+    }
+  },
+  "visibility_rules": {
+    "shown_implies_public": "A question or answer shown to coordinator, modeling, protocol, or any other production role is permanently public and can never return to hidden.",
+    "production_visible_paths": [
+      "competency-questions/public/"
+    ],
+    "production_forbidden_paths": [
+      "competency-questions/private/",
+      "competency-questions/reviews/",
+      "competency-questions/frozen/",
+      "acceptance-v3/hidden-batch/",
+      "acceptance-v3/reports/"
+    ],
+    "shared_evidence": "Shared evidence may record IDs, digests, statuses and paths; it must never carry hidden question text, answer text, or competency-question private conversation."
+  },
+  "scenario_map_rule": "The existing r3-0-002 scenario-map cross_slice_competency_questions section keeps its three-field entry shape and may only reference questions present in the published public projection (matching question_id and question text), or be explicitly empty with the cross-slice coverage gap recorded. Production roles must not author new cross-slice question text from raw material. Consistency is checked Runner-side; the map entries carry no provenance fields.",
+  "question_count_guidance": {
+    "advisory_only": true,
+    "panorama": [5, 8],
+    "slice": [3, 6],
+    "hidden_total": [6, 10],
+    "rule": "Counts are coverage suggestions for the user. They are never a Runner validity gate and never a run failure condition; the approved list drives the batch."
+  },
+  "model_binding": {
+    "schema_version": "r3-0-011-cq-model-binding/v1",
+    "timing": "Bound at acceptance start, never at freeze time. The freeze snapshot is not bound to a model workspace.",
+    "checks": [
+      "every explicit Ontology in the batch is authorized for this run",
+      "each authorized Ontology carries an observable model state digest",
+      "model state is re-verified after the batch; drift marks the batch incomplete instead of reusing a previous PASS"
+    ]
+  },
+  "acceptance": {
+    "batch_packet_schema": "r3-0-011-acceptance-batch-packet/v1",
+    "batch_report_schema": "r3-0-011-acceptance-batch-report/v1",
+    "evidence_schema": "r3-0-011-acceptance-evidence/v1",
+    "examiner_statuses": ["completed", "unanswered", "runtime-incomplete"],
+    "verdict_states": [
+      "pass",
+      "model-recall-insufficient",
+      "question-answer-review",
+      "platform-runtime-incomplete"
+    ],
+    "failure_layers": [
+      "modeling-quality",
+      "platform-contract",
+      "collaboration/routing",
+      "runtime/infrastructure"
+    ],
+    "rule": "question-answer-review is a question state, not a fifth failure layer; a pure answer-review item may leave failure_layer empty and must not be counted as a model failure. Full PASS requires every question in the approved batch to carry a valid verdict with no pending review, no unexecuted item and no unsatisfied scope. An empty hidden set or a slice without a valid hidden question keeps an explicit acceptance coverage gap and can never produce a whole-batch or whole-scenario PASS.",
+    "read_only": "The cq-acceptance command and both v3 sessions are read-only for the platform: no StartLedger write, no fresh semantic start consumption, no production run start, continue, or repair."
+  },
+  "reason_codes": [
+    "cq_selector_incompatible",
+    "cq_review_stale",
+    "cq_public_projection_missing",
+    "cq_hidden_exposed",
+    "cq_freeze_schema_mismatch",
+    "cq_model_binding_missing",
+    "cq_batch_scope_unauthorized",
+    "cq_batch_context_lost"
+  ],
+  "recovery_rule": "Each reason code rejects only the current operation and returns the object, phase and retry guidance. The run keeps running; platform or runtime exhaustion produces platform-runtime-incomplete with the matching failure layer instead of a permanent run failure."
+}

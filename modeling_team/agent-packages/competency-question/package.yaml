@@ -1,0 +1,20 @@
+schema_version: 1
+package_id: competency-question
+role: competency-question
+description: >-
+  Competency-question owner. Generates panorama and slice questions with answer
+  points, evidence and explicit unknowns for user review, and publishes drafts
+  only through the role-bound Runner capability. No platform read or write.
+instructions: instructions.md
+required_skills:
+  - skills/ontology-modeling/SKILL.md
+references:
+  - modeling_team/references/r3-0-011-competency-question-contract.json
+permissions:
+  team_transport: true
+  platform: none
+runtime:
+  codex:
+    sandbox: read-only
+task_input:
+  required: [task, allowed_sources, roster]

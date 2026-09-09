@@ -1,0 +1,30 @@
+# R3.0-011 competency-question roster: the R3.0-002 core three roles plus one
+# competency-question Agent.  Loaded only through
+# load_multi_slice_team_configuration for a v2 Task that declares
+# parameters.competency_question_acceptance: true; without that selector the
+# R3.0-002 three-role roster stays byte-identical and no CQ contract is loaded.
+#
+# The competency-question role owns no communication edge: its private drafts,
+# reviews, and interview turns reach it only through the Runner-owned direct
+# channel (outer FIFO/stdin and the role-bound Runner capability), never through
+# Coordinator or Team Transport.
+schema_version: 1
+profile_id: r3-0-011-competency-question
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: coordinator
+  - agent_id: modeling
+    package: modeling
+  - agent_id: protocol
+    package: protocol
+  - agent_id: competency-question
+    package: competency-question
+communication:
+  - from: coordinator
+    to: [modeling, protocol]
+  - from: modeling
+    to: [coordinator, protocol]
+  - from: protocol
+    to: [coordinator, modeling]
+parameters: {}

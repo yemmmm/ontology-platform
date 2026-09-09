@@ -26,6 +26,13 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
+from .competency_questions import (
+    CQ_BATCH_PACKET_SCHEMA,
+    validate_evidence_bundle,
+    validate_examiner_report,
+    validate_model_binding,
+)
+
 
 class ChildRuntimeError(RuntimeError):
     """A private child/proxy contract failed closed."""
@@ -329,6 +336,261 @@ def build_platform_examiner_packet(**payload: Any) -> ExaminerRolePacket:
 
 def build_acceptance_examiner_packet(**payload: Any) -> ExaminerRolePacket:
     return ExaminerRolePacket.build("acceptance", payload)
+
+
+# --- R3.0-011 v3 hidden-batch acceptance packets ------------------------------
+#
+# The v3 contract is an explicit, separately versioned branch.  It never
+# rewrites ``ExaminerRolePacket/v1``: the legacy per-question
+# source/platform/acceptance fields above stay byte-identical, and the branch is
+# chosen by packet schema at the dispatch selector (``acceptance_branch_for``),
+# never by only changing a prompt or reusing ``validate_ticket``.
+
+CQ_ACCEPTANCE_BRANCH_V3 = "v3-batch"
+CQ_ACCEPTANCE_BRANCH_LEGACY = "legacy-r2.3-per-question"
+CQ_ACCEPTANCE_PLATFORM_ROLE = "platform-examiner"
+CQ_ACCEPTANCE_JUDGE_ROLE = "acceptance"
+
+# A Platform Examiner stays blind: no answer points, no evidence bundle, no
+# review binding and no conversation history may enter its batch packet.
+_V3_BLIND_FORBIDDEN_FIELDS = frozenset(
+    {"answer_points", "evidence_refs", "review_binding", "evidence_bundle", "answers", "history"}
+)
+
+
+def acceptance_branch_for(schema_version: Any) -> str:
+    """Return the explicit acceptance branch for a packet schema version."""
+
+    if schema_version == CQ_BATCH_PACKET_SCHEMA:
+        return CQ_ACCEPTANCE_BRANCH_V3
+    if schema_version == "ExaminerRolePacket/v1":
+        return CQ_ACCEPTANCE_BRANCH_LEGACY
+    raise ChildRuntimeError("acceptance packet schema_version is unknown")
+
+
+@dataclass(frozen=True)
+class AcceptanceBatchPacket:
+    """Immutable, digest-bound Host input for one v3 acceptance session.
+
+    ``role`` is ``platform-examiner`` for the single continuous hidden-batch
+    session, or ``acceptance`` for the independent read-only judge session.  A
+    Platform Examiner packet carries ordered questions, the bound model states,
+    the authorized Ontology scope and read-only tools, and never carries answer
+    points or reference evidence; the Acceptance judge packet carries the frozen
+    answers, the evidence bundle and the Examiner reports instead.
+    """
+
+    role: str
+    payload: Mapping[str, Any]
+    canonical_digest: str
+    batch_id: str
+    freeze_digest: str
+    field_inventory: tuple[str, ...]
+    schema_version: str = CQ_BATCH_PACKET_SCHEMA
+
+    @classmethod
+    def build(cls, role: str, payload: Mapping[str, Any]) -> "AcceptanceBatchPacket":
+        if role not in {CQ_ACCEPTANCE_PLATFORM_ROLE, CQ_ACCEPTANCE_JUDGE_ROLE}:
+            raise ChildRuntimeError("v3 acceptance packet role is invalid")
+        if not isinstance(payload, Mapping):
+            raise ChildRuntimeError("v3 acceptance packet payload is invalid")
+        normalized = dict(payload)
+        expected = {
+            CQ_ACCEPTANCE_PLATFORM_ROLE: {
+                "run_id",
+                "batch_id",
+                "freeze_digest",
+                "questions",
+                "authorized_scope",
+                "model_binding",
+                "authorized_read_tools",
+                "report_schema",
+                "session",
+            },
+            CQ_ACCEPTANCE_JUDGE_ROLE: {
+                "run_id",
+                "batch_id",
+                "freeze_digest",
+                "questions",
+                "model_binding_digest",
+                "evidence_bundle",
+                "examiner_reports",
+                "verdict_schema",
+            },
+        }[role]
+        if set(normalized) != expected:
+            raise ChildRuntimeError("v3 acceptance packet fields are invalid")
+        for field in ("run_id", "batch_id"):
+            if not isinstance(normalized[field], str) or not normalized[field]:
+                raise ChildRuntimeError(f"v3 acceptance packet {field} is invalid")
+        if not _v3_digest(normalized["freeze_digest"]):
+            raise ChildRuntimeError("v3 acceptance packet freeze_digest is invalid")
+        question_ids = _v3_batch_questions(normalized["questions"], role=role)
+        if role == CQ_ACCEPTANCE_PLATFORM_ROLE:
+            scope = normalized["authorized_scope"]
+            if not isinstance(scope, list) or not scope or any(
+                not isinstance(item, str) or not item for item in scope
+            ):
+                raise ChildRuntimeError("v3 acceptance packet authorized_scope is invalid")
+            if len(set(scope)) != len(scope):
+                raise ChildRuntimeError("v3 acceptance packet authorizes an Ontology twice")
+            try:
+                binding = validate_model_binding(
+                    normalized["model_binding"], authorized_ontology_ids=list(scope)
+                )
+            except ValueError as exc:
+                raise ChildRuntimeError(f"v3 acceptance model binding is invalid: {exc}") from exc
+            if binding.get("batch_id") != normalized["batch_id"] or binding.get(
+                "freeze_digest"
+            ) != normalized["freeze_digest"]:
+                # The packet seam must enforce the same batch/freeze identity the
+                # cq-acceptance CLI checks before it can build a packet
+                # (Round 1 F3).
+                raise ChildRuntimeError(
+                    "v3 acceptance model binding does not match this batch and freeze snapshot"
+                )
+            bound = sorted(
+                entry["ontology_id"] for entry in binding.get("ontologies", [])
+            )
+            if bound != sorted(scope):
+                raise ChildRuntimeError("v3 acceptance model binding does not close the scope")
+            tools = normalized["authorized_read_tools"]
+            if (
+                not isinstance(tools, list)
+                or not tools
+                or any(tool not in PLATFORM_PROXY_READ_TOOLS for tool in tools)
+                or len(set(tools)) != len(tools)
+            ):
+                raise ChildRuntimeError("v3 acceptance read tools are invalid")
+            if not isinstance(normalized["report_schema"], Mapping):
+                raise ChildRuntimeError("v3 acceptance report_schema is invalid")
+            session = normalized["session"]
+            if not isinstance(session, Mapping) or dict(session) != {
+                "mode": "single-continuous-batch",
+                "ordered": True,
+            }:
+                raise ChildRuntimeError("v3 acceptance session contract is invalid")
+        else:
+            if not _v3_digest(normalized["model_binding_digest"]):
+                raise ChildRuntimeError("v3 acceptance model_binding_digest is invalid")
+            if not isinstance(normalized["verdict_schema"], Mapping):
+                raise ChildRuntimeError("v3 acceptance verdict_schema is invalid")
+            try:
+                bundle = validate_evidence_bundle(normalized["evidence_bundle"])
+            except ValueError as exc:
+                raise ChildRuntimeError(f"v3 acceptance evidence bundle is invalid: {exc}") from exc
+            reports = normalized["examiner_reports"]
+            if not isinstance(reports, list):
+                raise ChildRuntimeError("v3 acceptance examiner_reports is invalid")
+            for report in reports:
+                try:
+                    validated = validate_examiner_report(report, question_ids=question_ids)
+                except ValueError as exc:
+                    raise ChildRuntimeError(f"v3 examiner report is invalid: {exc}") from exc
+                if validated.get("batch_id") != normalized["batch_id"]:
+                    raise ChildRuntimeError("v3 examiner report is bound to another batch")
+            normalized["evidence_bundle"] = bundle
+        frozen = _freeze_packet(normalized)
+        digest = _packet_digest(_unfreeze_packet(frozen))
+        return cls(
+            role,
+            frozen,
+            digest,
+            str(normalized["batch_id"]),
+            str(normalized["freeze_digest"]),
+            tuple(sorted(str(key) for key in normalized)),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "schema_version": self.schema_version,
+            "role": self.role,
+            "payload": _unfreeze_packet(self.payload),
+            "canonical_digest": self.canonical_digest,
+            "batch_id": self.batch_id,
+            "freeze_digest": self.freeze_digest,
+            "field_inventory": list(self.field_inventory),
+        }
+
+
+def _v3_digest(value: Any) -> bool:
+    """Accept a 64-hex digest or the competency-question ``sha256:<hex>`` form."""
+
+    if not isinstance(value, str):
+        return False
+    candidate = value[len("sha256:") :] if value.startswith("sha256:") else value
+    return re.fullmatch(r"[0-9a-f]{64}", candidate) is not None
+
+
+def _v3_batch_questions(questions: Any, *, role: str) -> list[str]:
+    """Validate the ordered batch question list and return its ids."""
+
+    if not isinstance(questions, list) or not questions:
+        raise ChildRuntimeError("v3 acceptance batch question list is empty")
+    expected = (
+        {"question_id", "content_version", "question", "scope"}
+        if role == CQ_ACCEPTANCE_PLATFORM_ROLE
+        else {
+            "question_id",
+            "content_version",
+            "question",
+            "answer_points",
+            "evidence_refs",
+            "unknown",
+            "scope",
+        }
+    )
+    ids: list[str] = []
+    for item in questions:
+        if not isinstance(item, Mapping) or set(item) != expected:
+            raise ChildRuntimeError(f"v3 acceptance batch question fields are invalid for {role}")
+        if any(field in item for field in _V3_BLIND_FORBIDDEN_FIELDS) and role == (
+            CQ_ACCEPTANCE_PLATFORM_ROLE
+        ):
+            raise ChildRuntimeError("v3 platform batch packet is not blind")
+        question_id = item["question_id"]
+        if not isinstance(question_id, str) or not question_id:
+            raise ChildRuntimeError("v3 acceptance batch question_id is invalid")
+        version = item["content_version"]
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ChildRuntimeError("v3 acceptance batch content_version is invalid")
+        if not isinstance(item["question"], str) or not item["question"]:
+            raise ChildRuntimeError("v3 acceptance batch question text is invalid")
+        scope = item["scope"]
+        if not isinstance(scope, Mapping) or scope.get("kind") not in {"panorama", "slice"}:
+            raise ChildRuntimeError("v3 acceptance batch question scope is invalid")
+        slice_ids = scope.get("slice_ids")
+        if scope.get("kind") == "slice" and (
+            not isinstance(slice_ids, list)
+            or not slice_ids
+            or any(not isinstance(value, str) or not value for value in slice_ids)
+        ):
+            raise ChildRuntimeError("v3 acceptance slice question needs slice_ids")
+        if scope.get("kind") == "panorama" and slice_ids != []:
+            raise ChildRuntimeError("v3 acceptance panorama question must not carry slice_ids")
+        if role == CQ_ACCEPTANCE_JUDGE_ROLE:
+            if not isinstance(item["answer_points"], list) or not item["answer_points"]:
+                raise ChildRuntimeError("v3 judge packet question needs answer points")
+            if not isinstance(item["evidence_refs"], list):
+                raise ChildRuntimeError("v3 judge packet evidence_refs is invalid")
+            if not isinstance(item["unknown"], list):
+                raise ChildRuntimeError("v3 judge packet unknown list is invalid")
+        ids.append(question_id)
+    if len(set(ids)) != len(ids):
+        raise ChildRuntimeError("v3 acceptance batch repeats a question_id")
+    return ids
+
+
+def build_platform_batch_packet(**payload: Any) -> AcceptanceBatchPacket:
+    """Build the v3 single-continuous-session Platform Examiner batch packet."""
+
+    return AcceptanceBatchPacket.build(CQ_ACCEPTANCE_PLATFORM_ROLE, payload)
+
+
+def build_acceptance_judge_packet(**payload: Any) -> AcceptanceBatchPacket:
+    """Build the v3 independent read-only Acceptance judge packet."""
+
+    return AcceptanceBatchPacket.build(CQ_ACCEPTANCE_JUDGE_ROLE, payload)
 
 
 @dataclass(frozen=True)
@@ -2611,6 +2873,14 @@ __all__ = [
     "build_source_examiner_packet",
     "build_platform_examiner_packet",
     "build_acceptance_examiner_packet",
+    "AcceptanceBatchPacket",
+    "acceptance_branch_for",
+    "build_platform_batch_packet",
+    "build_acceptance_judge_packet",
+    "CQ_ACCEPTANCE_BRANCH_V3",
+    "CQ_ACCEPTANCE_BRANCH_LEGACY",
+    "CQ_ACCEPTANCE_PLATFORM_ROLE",
+    "CQ_ACCEPTANCE_JUDGE_ROLE",
     "examiner_proxy_schemas",
     "validate_examiner_proxy_arguments",
     "PLATFORM_PROXY_READ_TOOLS",

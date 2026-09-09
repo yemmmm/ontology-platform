@@ -71,6 +71,15 @@ ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
     "acceptance": ACCEPTANCE_OPERATIONS,
 }
 
+# R3.0-011: the competency-question role owns exactly one Runner-private
+# capability.  It is registered here so the dispatcher can validate it, while
+# only a run that selected ``competency_question_acceptance`` assembles an
+# endpoint that advertises it (no production role ever sees this operation).
+COMPETENCY_QUESTION_ROLE = "competency-question"
+CQ_OPERATION = "cq_publish_question_draft"
+CQ_OPERATIONS: tuple[str, ...] = (CQ_OPERATION,)
+ROLE_OPERATIONS[COMPETENCY_QUESTION_ROLE] = CQ_OPERATIONS
+
 
 CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "modeling_publish_staged_candidate": {
@@ -443,6 +452,20 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "required": ["acceptance_id", "round_id", "verdict_digest"],
         "additionalProperties": False,
     },
+}
+
+# R3.0-011: the competency-question draft publication capability.  The draft
+# object's exact fields and its question records are validated mechanically by
+# the Runner (``modeling_team.competency_questions``), so the advertised schema
+# only fixes the envelope: one ``draft`` object, nothing else.
+CAPABILITY_TOOL_SCHEMAS[CQ_OPERATION] = {
+    "type": "object",
+    "properties": {
+        "cq_id": {"type": "string"},
+        "draft": {"type": "object"},
+    },
+    "required": ["cq_id", "draft"],
+    "additionalProperties": False,
 }
 
 
@@ -832,8 +855,11 @@ if __name__ == "__main__":
 __all__ = [
     "ACCEPTANCE_OPERATIONS",
     "CAPABILITY_TOOL_SCHEMAS",
+    "COMPETENCY_QUESTION_ROLE",
     "COORDINATOR_OPERATIONS",
     "COORDINATOR_FORMAL_OPERATIONS",
+    "CQ_OPERATION",
+    "CQ_OPERATIONS",
     "MODELING_OPERATIONS",
     "PROTOCOL_OPERATIONS",
     "ROLE_OPERATIONS",

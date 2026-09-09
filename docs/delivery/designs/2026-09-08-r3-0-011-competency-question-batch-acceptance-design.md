@@ -1,6 +1,6 @@
 # R3.0-011 能力问题驱动建模与批次级语义验收 — 交付设计
 
-- 状态：细化完成；独立计划评审 Round 1 两项 High 修订后，Round 2 专项复审 PASS（2026-09-08）；待实现和独立验收。
+- 状态：细化完成；Round 1 两项 High、Round 3 两项 High 修订后分别经专项复审（Round 2 PASS；Round 4 见 §8）；2026-09-09 实现完成，独立功能测试 Round 1–3 后机械/隔离 PASS（Round 1 六项、Round 2 F7+R4 标注偏差均修复复验；记录见共享测试计划），真实 L0/L1 批次验收待 R3.0-006 授权与 008B 双重门。
 - 适用需求：`docs/requirements/requirements-v3.0.md` 的 R3.0-011；关联 R3.0-002、R3.0-006、R3.0-008B、R3.0-009。
 - 本轮边界：只冻结功能合同和实现交接，不启动 semantic modeling start，不生产真实问题/答案，不宣称模型质量或运行通过。
 
@@ -85,6 +85,13 @@ Runner 在 CQ 正确终态前不允许整体 settle；其余角色正常交付�
 011 的 CQ task prompt 必须使用以上阶段提示，替换通用“完成整个建模目标并立即 report_task_result”
 文案；中间轮的 turn 结束或等待用户不是 task terminal。Runner 把显式等待用户审核记为可恢复等待，
 不得因用户审核耗时把 CQ 视为失败或清理会话；复用已有等待/继续机制，修订只影响当前题阶段。
+现有 run 级 T3 防御与该合同直接冲突，必须一并处理：`runner.py:5683` 每 tick 调用
+`_check_run_fallback_timeout`（`runner.py:4913` 起），`runner.py:1843` 起无条件启动 5400 秒默认
+累计 active 时钟，超时即 `collaboration/routing:run-fallback-timeout` terminal latch 并清理 run；
+其排除项只有 formal issue-pending，CQ 审核等待不在内。实现必须把“已发出 `cq-review-request`/
+handoff 请求、等待用户或 Delivery 回应”的窗口按同类记账纳入该超时排除，窗口自请求发出起至回应
+或 CQ 恢复为止；不删除、不放宽 T3 对真实停滞的保护，等待窗口不得被写成 `collaboration/routing`
+失败证据。
 最终 handoff 后新提出的修订另记后续交付，不对已 terminal 的 CQ 会话悄悄追加任务，也不自动新开
 semantic start。异常退出保留未完成阶段和证据，不伪造最终 terminal report。
 
@@ -97,6 +104,13 @@ semantic start。异常退出保留未完成阶段和证据，不伪造最终 te
 3. Coordinator/Modeling 依据公开投影完成获批逻辑切片；CQ 只为获批切片生成切片题并再次送用户审核。
 4. 最终分组时合并全景和切片题，冻结 public/hidden；任何曾展示给 Coordinator、Modeling、Protocol 或其他模型生产角色的题/答案永久转为 public，不能再计 hidden。
 5. 冻结后题池和参考答案不可原地改写。用户修订产生新题目版本并记录影响题/切片；旧版本、旧回答和旧裁决保留。修改前已用于生产的题只能用于标明的回归，不再是 blind evidence。
+
+既有 R3.0-002 scenario map 合同要求 Coordinator 维护含题干文本的 `cross_slice_competency_questions`
+节（`scenario_map.py:284` 逐项校验 `question` 非空），该合同属于 `r3-0-008b-staged-real.yaml` 生产
+角色 `role_sources` 和 `scenario-map-six-sections-maintained` 终态证据。011 模式下该节只能引用 CQ
+题池公开投影中的题（`question_id`/题干与公开投影一致），或显式置空并记录跨切片覆盖缺口；生产角色
+不得从原始材料自行撰写新跨切片题干，避免形成绕过“展示即永久公开”规则、与隐藏全景题平行的第二套
+已展示题集。该约束进入 011 的角色提示与机械校验；对应泄漏负例由测试计划覆盖。
 
 冻结快照（建议 schema `r3-0-011-cq-freeze/v1`）每题至少包含：
 
@@ -114,7 +128,7 @@ semantic start。异常退出保留未完成阶段和证据，不伪造最终 te
 }
 ```
 
-快照还保存 batch ID、材料 digest、全景/切片集合、排序和 snapshot digest。题量只用于建议覆盖范围（全景 5–8、每切片 3–6、hidden 总量通常 6–10），不得成为 Runner 合法性或 run 失败硬门。快照不绑定模型 workspace；D5 的 `model_binding` 在验收启动时追加到新 acceptance batch，不覆盖题池快照。
+快照还保存 batch ID、材料 digest、全景/切片集合、排序和 snapshot digest。题量只用于建议覆盖范围（全景 5–8、每切片 3–6、hidden 总量通常 6–10），不得成为 Runner 合法性或 run 失败硬门。快照不绑定模型 workspace；D5 的 `model_binding` 在验收启动时追加到新 acceptance batch，不覆盖题池快照。011 题池只保存在 run artifact，不登记为平台资源；`modeling-batch-item-contract.json` 的 `competency_question_ids` 保持可选并留空，不把题池 ID 同步进平台 modeling batch。
 
 ### 3.4 输入隔离和能力端点
 
@@ -128,6 +142,10 @@ semantic start。异常退出保留未完成阶段和证据，不伪造最终 te
 | capability endpoints | `cq_publish_question_draft`、审核状态查询（无 platform） | 既有角色能力；无 hidden packet | Platform read proxy + report sink；Acceptance 只读 verdict/报告输入 |
 
 Run root 下建议分目录：`competency-questions/private/`、`competency-questions/reviews/`、`competency-questions/public/`、`competency-questions/frozen/`、`acceptance-v3/hidden-batch/`、`acceptance-v3/reports/`。private、reviews 和 hidden packet 只由 host/对应角色定向 bind；生产角色只得到 public 目录的只读投影。共享 `evidence` 可记录 ID、digest、状态和路径，但不能写入 hidden 题干、答案或 CQ 私有对话文本。不要用通用 ACL/题库服务替代这些既有 sandbox、role source 和 Runner bind。
+
+public projection 的中段交付复用既有 per-role 只读目录 bind 模式（同 scenario-map 目录）：run 启动即
+把 `competency-questions/public/` 只读 bind 进生产角色命名空间，Runner 随批准把投影文件追加写入该
+目录，运行中命名空间可见；不通过 team-transport 消息或 Coordinator 转发投影内容。
 
 ## 4. v3 隐藏批次验收
 
@@ -219,7 +237,7 @@ R2.3 继续使用现有 `r2-3-005`/`r2-3-003` formal profiles、Source Examiner�
 
 ## 7. 验收边界
 
-平台/流程实现完成需有机械合同、isolated role evidence、旧 R2.3 回归、cleanup 和 L0 Runtime 证据；这不等于真实语义 PASS。真实 L1 至少证明：用户批准的全景/切片题池、public/hidden 隔离、一个 Platform Examiner 顺序完成 hidden batch、Acceptance 四态逐题判定、unknown 保留、multi-Ontology 授权 scope、至少一个语义代表问题；SQL 结果/RDF 无业务行由 006/008B 独立证据承担。L2 只能在 fresh batch/session 的重复性证据后判定，L3 产品化不作为本需求前置。
+平台/流程实现完成需有机械合同、isolated role evidence、旧 R2.3 回归、cleanup 和 L0 Runtime 证据；这不等于真实语义 PASS。真实验收的启动前置沿用 `r3-0-008b-staged-real.yaml` 双重门（含其所列 R3.0-009 stage-3 机械增量）及 006 用户授权。真实 L1 至少证明：用户批准的全景/切片题池、public/hidden 隔离、一个 Platform Examiner 顺序完成 hidden batch、Acceptance 四态逐题判定、unknown 保留、multi-Ontology 授权 scope、至少一个语义代表问题；SQL 结果/RDF 无业务行由 006/008B 独立证据承担。L2 只能在 fresh batch/session 的重复性证据后判定，L3 产品化不作为本需求前置。
 
 本设计不记录实现通过、真实建模通过、服务健康或用户审批事实；这些由共享测试计划和后续交付记录填写。
 
@@ -233,3 +251,23 @@ R2.3 继续使用现有 `r2-3-005`/`r2-3-003` formal profiles、Source Examiner�
   `runner.py:6075–6080` 全 roster settle 条件与 CQ 多阶段等待不闭合；已在 §3.2 定义 CQ 阶段、
   同会话继续、host 最终 handoff 和恰好一次 terminal report，且不等待 Acceptance 才终态。
 - Round 2 专项复审 PASS：H1/H2 已闭合，无剩余 Critical/High。实现、独立功能测试、L0/L1 均未执行。
+- Round 3 独立复审（2026-09-08，应用户要求按设计规范复审）：REVISE，两项均经主 Agent 源码核实为
+  `accepted-high`。H1：现有 run 级 T3 `run-fallback-timeout`（`runner.py:1843/4913/5683`，默认 5400
+  秒累计 active，排除项仅 formal issue-pending）会在 CQ 审核/handoff 等待累计超时后 terminal latch
+  并清理整个 run，与“等待审核是可恢复暂停”冲突；已在 §3.2 规定等待窗口纳入 T3 排除计时，不放宽
+  T3 本身。H2：既有 scenario map 强制节 `cross_slice_competency_questions`（`scenario_map.py:284`、
+  008B task `role_sources` 与 `scenario-map-six-sections-maintained` 终态证据）由生产 Coordinator
+  维护且必含题干，011 未定义取值来源会架空隐藏盲测；已在 §3.3 规定该节只引用公开投影题或显式置空
+  并记录覆盖缺口。随轮补齐：§3.4 public projection 目录 bind 机制、§3.3 题池不登记平台资源、
+  §7 前置含 R3.0-009，测试计划新增对应断言（M6/M12/R1/I3、L0 前置）与 DC 前缀改名。修订后送
+  Round 4 专项复审，仅复审本轮变更面。
+- Round 4 专项复审（2026-09-08）：PASS，无剩余 Critical/High。H1 闭合：T3 排除可用 Runner 自有
+  started/elapsed 对与 `_issue_pending_elapsed` 并联记账，两端均为 Runner 自有事件、可精确记账；
+  不新增 `_latch_formal_candidate_failure` 调用点，时钟启动/drain 调用/默认 5400 秒均保留，等待
+  窗口关闭后其他角色真实停滞只被延后计时而非抹掉。H2 闭合：`validate_scenario_map` 经真实执行
+  验证“置空”与“引用公开投影题”两种取值均通过现有 validator，无需改动既有合同；public projection
+  目录 bind 与 `runtimes/codex.py:4029-4060` 既有“预绑空目录、宿主后续写入可见”先例同构。
+  次要记录（不构成发现，留实现/测试落实）：重叠等待窗口按区间去重并在 R1 补混合用例；CQ 显式
+  等待访谈输入同样视为等待态；投影一致性外检放 Runner 侧比对（map 条目不得加溯源字段，
+  `scenario_map.py:285` 三字段精确匹配）；置空覆盖缺口落到 acceptance batch 报告字段；实现阶段
+  确认验收批次 LLM 调用在授权台账按“只读验收”口径留痕。实现、独立功能测试、L0/L1 均未执行。

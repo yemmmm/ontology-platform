@@ -38,11 +38,15 @@ from ..model_routing import (
 )
 from ..deepseek_provider_proxy import DEEPSEEK_API_KEY_ENV
 from ..acceptance_runtime import (
+    AcceptanceBatchPacket,
+    CQ_ACCEPTANCE_BRANCH_V3,
+    CQ_ACCEPTANCE_PLATFORM_ROLE,
     ExaminerRolePacket,
     ExaminerRunMetrics,
     ExaminerRuntimeBlocked,
     ReportSinkServer,
     ScopedReadProxy,
+    acceptance_branch_for,
     _make_report_validator,
     _source_report_evidence_ids,
     _validate_acceptance_evidence_ids,
@@ -55,7 +59,12 @@ from ..acceptance_runtime import (
     prepare_child_tree,
 )
 from ..modeling_readonly import MODELING_READ_TOOLS
-from ..capability_mcp import ROLE_OPERATIONS, STAGED_PROTOCOL_OPERATION
+from ..capability_mcp import (
+    COMPETENCY_QUESTION_ROLE,
+    CQ_OPERATION,
+    ROLE_OPERATIONS,
+    STAGED_PROTOCOL_OPERATION,
+)
 from ..candidate_platform_gate import (
     CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
     CANDIDATE_PLATFORM_GATE_MOUNT,
@@ -1687,6 +1696,106 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise
         return resource
 
+    def launch_v3_acceptance_child(
+        self,
+        packet: AcceptanceBatchPacket,
+        *,
+        role_instructions: str,
+        reports: list[Mapping[str, Any]],
+        read_key: str | None = None,
+        platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
+        timeout_seconds: float = 300.0,
+    ) -> Any:
+        """Launch the single v3 hidden-batch acceptance child (R3.0-011).
+
+        Explicit v3 dispatch: only an :class:`AcceptanceBatchPacket` whose schema
+        resolves to the v3 branch is accepted here; a legacy
+        ``ExaminerRolePacket/v1`` must go through ``launch_lean_examiner_child``.
+        The existing child factory is reused, one session per batch, with the
+        ordered batch packet bound into the first turn.
+        """
+
+        if not isinstance(packet, AcceptanceBatchPacket):
+            raise CodexRuntimeError("v3 acceptance child requires a v3 batch packet")
+        if acceptance_branch_for(packet.schema_version) != CQ_ACCEPTANCE_BRANCH_V3:
+            raise CodexRuntimeError("v3 acceptance child requires the v3 branch")
+        if not isinstance(role_instructions, str) or not role_instructions:
+            raise CodexRuntimeError("v3 acceptance role instructions are invalid")
+        if not isinstance(reports, list):
+            raise CodexRuntimeError("v3 acceptance report sink is invalid")
+        payload = _unfreeze_packet(packet.payload)
+        platform_role = packet.role == CQ_ACCEPTANCE_PLATFORM_ROLE
+        if platform_role and (
+            not isinstance(read_key, str)
+            or not read_key
+            or not callable(platform_forwarder)
+        ):
+            raise ExaminerRuntimeBlocked(
+                "acceptance-input",
+                role="platform",
+                evidence={"read_key": bool(read_key), "forwarder": callable(platform_forwarder)},
+            )
+        private_root = Path(tempfile.mkdtemp(prefix="r3011-acceptance-", dir="/tmp"))
+        os.chmod(private_root, 0o700)
+        private_input = private_root / "input.json"
+        self._write_child_private(private_input, _packet_canonical(payload), 0o400)
+        first_turn_text = (
+            "R3.0-011 v3 hidden-batch acceptance session. Use only this serialized packet "
+            "and submit per-question v3 reports through the report-only acceptance MCP "
+            "server. One continuous session per batch, questions in packet order, no "
+            "answer text, no source directory, no other context. PACKET_JSON="
+            + _packet_canonical(payload).decode("utf-8")
+            + " "
+            + role_instructions
+            + f" PACKET_DIGEST={packet.canonical_digest}"
+        )
+        binding = payload.get("model_binding") if isinstance(payload.get("model_binding"), Mapping) else {}
+        ontologies = binding.get("ontologies") if isinstance(binding.get("ontologies"), list) else []
+        state_digest = "0" * 64
+        if ontologies and isinstance(ontologies[0], Mapping):
+            workspace = ontologies[0].get("workspace_state")
+            if isinstance(workspace, Mapping) and isinstance(workspace.get("state_digest"), str):
+                state_digest = workspace["state_digest"]
+        scope = payload.get("authorized_scope") if isinstance(payload.get("authorized_scope"), list) else []
+        handle_digest = hashlib.sha256(
+            (packet.canonical_digest + packet.role).encode()
+        ).hexdigest()
+        spec: dict[str, Any] = {
+            "task_id": FORMAL_MODEL_TASK_ID,
+            "acceptance_round_id": f"r3011-{packet.batch_id}",
+            "kind": "platform" if platform_role else "acceptance",
+            "attempt": 0,
+            "session_id": f"r3011-{handle_digest[:16]}",
+            "child_handle_digest": handle_digest,
+            "ticket_digest": packet.freeze_digest,
+            "input_digest": packet.canonical_digest,
+            "private_root": str(private_root),
+            "private_input": str(private_input),
+            "platform_read_scope": {"ontology_ids": list(scope)},
+            "model_state_digest": state_digest,
+            "allowed_read_tools": (
+                list(payload.get("authorized_read_tools", ())) if platform_role else []
+            ),
+            "timeout_seconds": timeout_seconds,
+            "read_key_plaintext": read_key,
+            "formal_platform": platform_role,
+            "platform_forwarder": platform_forwarder,
+            "v3_batch": True,
+            "v3_role": packet.role,
+            "v3_packet": packet,
+            "lean_examiner": True,
+            "report_submit_payload": reports.append,
+            "_packet": packet,
+            "_submitted_reports": reports,
+            "first_turn_input": [{"type": "text", "text": first_turn_text}],
+        }
+        try:
+            resource = self.acceptance_child_factory(spec)
+        except Exception:
+            shutil.rmtree(private_root, ignore_errors=True)
+            raise
+        return resource
+
     def run_lean_examiner_child(
         self,
         packet: ExaminerRolePacket,
@@ -2805,6 +2914,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         parameters = getattr(task, "parameters", None)
         return isinstance(parameters, dict) and parameters.get("staged_modeling_decisions") is True
 
+    @staticmethod
+    def _is_competency_question_run(run: Any) -> bool:
+        """R3.0-011: a v2 Task declaring ``competency_question_acceptance: true``."""
+
+        task = getattr(getattr(run, "configuration", None), "task", None)
+        if getattr(task, "schema_version", 1) != 2:
+            return False
+        parameters = getattr(task, "parameters", None)
+        return (
+            isinstance(parameters, dict)
+            and parameters.get("competency_question_acceptance") is True
+        )
+
+    def _competency_questions_enabled_for_active_run(self, run: Any | None) -> bool:
+        """CQ stage flag with the active-run fallback for late callers."""
+
+        candidate = run if run is not None else getattr(self, "_active_run", None)
+        return self._is_competency_question_run(candidate)
+
     @classmethod
     def _candidate_platform_gate_enabled_for_run(cls, run: Any) -> bool:
         """One predicate for BOTH gate wiring points (design increment 7).
@@ -2866,6 +2994,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # Staged non-formal protocol: only the staged submission
                 # operation; the formal protocol set stays formal-only.
                 return (STAGED_PROTOCOL_OPERATION,)
+            if (
+                role == COMPETENCY_QUESTION_ROLE
+                and not formal_run
+                and self._competency_questions_enabled_for_active_run(run)
+            ):
+                # R3.0-011: the competency-question role owns exactly one
+                # Runner-private capability and no platform tool at all.
+                return (CQ_OPERATION,)
             return ()
         expected = ROLE_OPERATIONS.get(role, ())
         if not hasattr(self._acceptance, "capability_descriptors"):
@@ -3112,7 +3248,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             for path in (home, work, skills):
                 path.mkdir(parents=True, mode=0o700, exist_ok=False)
             tools = (
-                frozenset(run.configuration.task.protocol_tools)
+                frozenset()
+                # R3.0-011: the competency-question role has no platform tool at
+                # all; its only capability is the Runner-private draft channel.
+                if package.role == COMPETENCY_QUESTION_ROLE
+                else frozenset(run.configuration.task.protocol_tools)
                 if package.role == "protocol" and run.configuration.task.schema_version == 2
                 else frozenset(MODELING_READ_TOOLS)
                 if package.role == "modeling" and self._is_r23003_run(run)
@@ -4058,6 +4198,42 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             mounts.extend(["--bind", str(directory), f"/agent/work/{relative}"])
         return mounts
 
+    def _competency_question_binds(self, agent: _Agent) -> list[str]:
+        """R3.0-011 per-role read-only binds for the competency-question tree.
+
+        Production roles only ever see the ``public/`` projection directory
+        (the same per-role read-only directory bind pattern as the run-root
+        scenario-map mount); the competency-question role additionally sees its
+        own ``private/`` and ``reviews/`` records.  ``frozen/``,
+        ``acceptance-v3/hidden-batch/`` and ``acceptance-v3/reports/`` stay
+        host-only and are never bound into any Agent namespace (design §3.4).
+        Non-011 runs return an empty list (byte-identical command).
+        """
+
+        if not self._competency_questions_enabled_for_active_run(None):
+            return []
+        if self._run_root is None:
+            raise CodexRuntimeError("competency-question mounts are missing their run root")
+        role = agent.package.role
+        if role == COMPETENCY_QUESTION_ROLE:
+            relatives = (
+                "competency-questions/private",
+                "competency-questions/reviews",
+            )
+        elif role in {"coordinator", "modeling", "protocol"}:
+            relatives = ("competency-questions/public",)
+        else:
+            return []
+        mounts: list[str] = []
+        for relative in relatives:
+            directory = self._run_root / relative
+            if not directory.is_dir():
+                raise CodexRuntimeError(
+                    f"competency-question directory was not prepared: {relative}"
+                )
+            mounts.extend(["--ro-bind", str(directory), f"/agent/work/{relative}"])
+        return mounts
+
     def namespace_command(self, agent: _Agent) -> list[str]:
         binary = shutil.which(self.codex_binary) or self.codex_binary
         if not self.use_bwrap:
@@ -4101,6 +4277,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "/agent/work",
             *self._coordinator_scenario_map_bind(agent),
             *self._staged_decision_binds(agent),
+            *self._competency_question_binds(agent),
             "--ro-bind",
             str(agent.skills),
             "/skills",

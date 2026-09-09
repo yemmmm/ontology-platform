@@ -928,6 +928,7 @@ def test_f2_real_task_omits_direct_submit_and_declares_both_parameters():
     assert task["parameters"] == {
         "multi_slice_workflow": True,
         "staged_modeling_decisions": True,
+        "competency_question_acceptance": True,
     }
     tools = task["protocol_tools"]
     assert "submit_modeling_batch" not in tools

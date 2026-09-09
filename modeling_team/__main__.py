@@ -34,6 +34,21 @@ from .monitor_handoff import (
     read_phase,
     write_runner_phase,
 )
+from .acceptance_runtime import build_platform_batch_packet
+from .competency_questions import (
+    CQ_BATCH_REPORT_SCHEMA,
+    CQ_FREEZE_SCHEMA,
+    CQContractError,
+    acceptance_mode_evidence,
+    batch_report_is_full_pass,
+    blind_batch_label,
+    build_batch_report,
+    content_digest,
+    model_binding_drift,
+    read_exposure_evidence,
+    reload_frozen_pool,
+    validate_model_binding,
+)
 from .outer_input import OuterInputFifo, OuterInputFramingError
 from .platform_scope import PlatformScope
 from .preflight import normalize_scope_for_contract
@@ -111,7 +126,29 @@ _OUTER_INPUT_REJECTION = {
     "retryable": True,
 }
 _KNOWN_OUTER_ACTIONS = frozenset(
-    {"question", "issue_resolution", "user", "status", "pause", "resume", "stop"}
+    {
+        "question",
+        "issue_resolution",
+        "user",
+        "status",
+        "pause",
+        "resume",
+        "stop",
+        # R3.0-011: competency-question direct-channel inputs.  They are
+        # dispatched by the narrow CQ branch below and never reach
+        # ``receive_outer``.
+        "cq_interview",
+        "cq_review",
+        "cq_freeze",
+        "cq_handoff_complete",
+    }
+)
+
+# R3.0-011 competency-question direct-channel actions (dispatched before the
+# fatal ``receive_outer`` boundary, and only when the runner carries CQ input
+# support).  ``cq_freeze`` is the Delivery-host freeze trigger (Round 1 F2).
+_CQ_OUTER_ACTIONS = frozenset(
+    {"cq_interview", "cq_review", "cq_freeze", "cq_handoff_complete"}
 )
 
 
@@ -129,6 +166,37 @@ def _foreground_issue_resolution_is_ready(runner: object) -> bool:
     transport = getattr(runner, "transport", None)
     issue_ledger = getattr(transport, "issue_ledger", None)
     return getattr(issue_ledger, "state", None) in {"waiting_owner", "waiting_repair"}
+
+
+def _handle_cq_outer_message(runner, message, emit_and_observe) -> bool:
+    """R3.0-011 narrow competency-question dispatch (design §3.2).
+
+    Returns ``True`` when ``message`` was handled here, whether accepted or
+    rejected.  Expected input errors -- including a legacy run that never
+    selected ``competency_question_acceptance`` (typed
+    ``cq_selector_incompatible`` from the Runner selector, not a crash) --
+    surface as a typed rejection envelope (object, phase, reason code, retry
+    guidance) for this line only: no hidden question/answer text is echoed and
+    the CLI/FIFO loop keeps reading the next input.  The same rules apply to
+    stdin and FIFO lines because this helper sits on the shared foreground
+    admission path.  Only a runner object without CQ input support at all (an
+    embedded legacy ``Runner`` stub, not the foreground ``TeamRunner``) falls
+    through to the unchanged fatal ``receive_outer`` boundary (Round 1 F5).
+    """
+
+    handler = None
+    if message.get("action") in _CQ_OUTER_ACTIONS:
+        handler = getattr(runner, "handle_cq_outer_input", None)
+    if handler is None:
+        return False
+    try:
+        output = handler(message)
+    except CQContractError as exc:
+        emit_and_observe([{"type": "cq-input-rejected", **exc.data}])
+        return True
+    if output:
+        emit_and_observe([output])
+    return True
 
 
 def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_rejection):
@@ -160,6 +228,9 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
         and not _foreground_issue_resolution_is_ready(runner)
     ):
         emit_outer_input_rejection()
+        return
+    if _handle_cq_outer_message(runner, message, emit_and_observe):
+        # R3.0-011: CQ inputs are fully handled ahead of the fatal boundary.
         return
     # Once admitted, preserve the existing fatal boundary.  Do not catch
     # TeamConfigurationError raised by receive_outer's internal drain or by
@@ -374,6 +445,227 @@ def _resolve_model_profile_selection(
     return model_profile_id
 
 
+_CQ_RUN_CONTRACT_SCHEMA = "r3-0-011-run-contract/v1"
+
+
+def _read_json_object(path: Path) -> dict[str, object]:
+    """Read one JSON object file, raising ``TeamConfigurationError`` on any drift."""
+
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        raise TeamConfigurationError(f"{path} is not readable JSON") from exc
+    if not isinstance(value, dict):
+        raise TeamConfigurationError(f"{path} must contain a JSON object")
+    return value
+
+
+def _run_cq_acceptance(args: argparse.Namespace, root: Path) -> int:
+    """Read-only v3 hidden-batch acceptance entry (R3.0-011 design §4.0).
+
+    The command is Delivery-invoked and strictly read-only for the platform: it
+    writes no StartLedger record, consumes no fresh semantic start, and never
+    starts, continues, or repairs the production run.  A run root without the
+    Runner-written v3 configuration snapshot is a legacy R2.3 run and is
+    rejected instead of being switched to this contract by the command name.
+    """
+
+    run_root = args.run_root
+    if not run_root.is_dir():
+        print("cq-acceptance failed: --run-root is not a directory", file=sys.stderr)
+        return 2
+    contract_path = run_root / "acceptance-v3" / "run-contract.json"
+    if not contract_path.is_file():
+        print(
+            "cq-acceptance failed: cq_selector_incompatible: the run root has no "
+            "competency-question configuration snapshot",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        contract = _read_json_object(contract_path)
+        if contract.get("schema_version") != _CQ_RUN_CONTRACT_SCHEMA:
+            raise TeamConfigurationError("run configuration snapshot schema is invalid")
+        parameters = contract.get("parameters")
+        if not isinstance(parameters, dict) or parameters.get(
+            "competency_question_acceptance"
+        ) is not True:
+            raise TeamConfigurationError(
+                "cq_selector_incompatible: this run did not select "
+                "parameters.competency_question_acceptance"
+            )
+        freeze_path = run_root / "competency-questions" / "frozen" / f"{args.freeze_id}.json"
+        if not freeze_path.is_file():
+            raise TeamConfigurationError(f"cq_freeze_schema_mismatch: {args.freeze_id} is not frozen")
+        raw_freeze = _read_json_object(freeze_path)
+        # The Runner writes the normalized snapshot; reloading it also proves the
+        # file was never edited after the freeze.
+        freeze = reload_frozen_pool(raw_freeze)
+        if freeze["schema_version"] != CQ_FREEZE_SCHEMA:
+            raise TeamConfigurationError("cq_freeze_schema_mismatch: freeze snapshot is invalid")
+        batch_id = str(freeze["batch_id"])
+        report_dir = run_root / "acceptance-v3" / "reports" / batch_id
+        report_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        handoff = _read_json_object(args.model_handoff)
+        delivery = handoff.get("production_delivery")
+        if not isinstance(delivery, dict):
+            raise TeamConfigurationError(
+                "cq_batch_scope_unauthorized: model handoff carries no production delivery receipt"
+            )
+        if delivery.get("ready") is not True or delivery.get("pending_writes") is not False:
+            raise TeamConfigurationError(
+                "cq_batch_scope_unauthorized: production delivery is not ready for acceptance"
+            )
+        # The 008B joint checklist stays pending-safe: it is never required to
+        # have passed before this command runs (design §4.0).
+        authorized = handoff.get("authorized_ontology_ids")
+        if not isinstance(authorized, list) or not authorized or any(
+            not isinstance(item, str) or not item for item in authorized
+        ):
+            raise TeamConfigurationError(
+                "cq_batch_scope_unauthorized: model handoff lists no authorized Ontology"
+            )
+        binding = validate_model_binding(
+            handoff.get("model_binding"), authorized_ontology_ids=[str(item) for item in authorized]
+        )
+        if binding.get("batch_id") != batch_id:
+            raise TeamConfigurationError(
+                "cq_model_binding_missing: model binding batch does not match the frozen batch"
+            )
+        freeze_digest = str(freeze["snapshot_digest"])
+        if binding.get("freeze_digest") != freeze_digest:
+            raise TeamConfigurationError(
+                "cq_model_binding_missing: model binding is not bound to this freeze snapshot"
+            )
+        post_binding = handoff.get("post_batch_model_binding")
+        if not isinstance(post_binding, dict):
+            raise TeamConfigurationError(
+                "cq_model_binding_missing: model handoff carries no post-batch state recheck"
+            )
+        post = model_binding_drift(binding, post_binding)
+        # Design §5 (Round 2 R4): the exposure label is derived from the
+        # Runner-written cq-exposure evidence, not from the frozen snapshot
+        # (whose schema intentionally carries no exposure field).  The packet
+        # seam stays byte-compatible with the blind child input contract; the
+        # report is where the non-blind label is mandatory.
+        evidence = read_exposure_evidence(
+            run_root / "evidence" / "cq-exposure.jsonl"
+        )
+        blind_status = blind_batch_label(
+            question_ids=[str(item) for item in freeze["ordering"]], evidence=evidence
+        )
+        hidden = [
+            dict(question)
+            for question in freeze["questions"]
+            if question.get("visibility") == "hidden"
+        ]
+        ordered_ids = [str(item) for item in freeze["ordering"]]
+        hidden.sort(key=lambda question: ordered_ids.index(str(question["question_id"])))
+        slices = sorted(
+            {
+                slice_id
+                for question in freeze["questions"]
+                if question.get("scope", {}).get("kind") == "slice"
+                for slice_id in question.get("scope", {}).get("slice_ids", [])
+            }
+        )
+        packet = None
+        if hidden:
+            packet = build_platform_batch_packet(
+                run_id=str(contract["run_id"]),
+                batch_id=batch_id,
+                freeze_digest=freeze_digest,
+                questions=[
+                    {
+                        "question_id": question["question_id"],
+                        "content_version": question["content_version"],
+                        "question": question["question"],
+                        "scope": dict(question["scope"]),
+                    }
+                    for question in hidden
+                ],
+                authorized_scope=[str(item) for item in authorized],
+                model_binding=binding,
+                authorized_read_tools=[
+                    str(tool) for tool in binding["ontologies"][0]["authorized_read_tools"]
+                ],
+                report_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
+                session={"mode": "single-continuous-batch", "ordered": True},
+            )
+        report = build_batch_report(
+            run_id=str(contract["run_id"]),
+            batch_id=batch_id,
+            freeze_digest=freeze_digest,
+            model_binding_digest=content_digest(binding),
+            hidden_questions=hidden,
+            examiner_reports=[],
+            verdicts=[],
+            executed_question_ids=[],
+            unexecuted_question_ids=[
+                str(question["question_id"]) for question in hidden
+            ],
+            slices=slices,
+            model_state_drift=post,
+            blind_status=blind_status,
+        )
+        report["sessions"] = {
+            "platform_examiner": "not-started",
+            "acceptance_judge": "not-started",
+            "reason": (
+                "real L0/L1 acceptance sessions are blocked on user authorization;"
+                " every batch question is recorded as unexecuted"
+            ),
+        }
+        report["full_pass"] = batch_report_is_full_pass(report)
+        report_path = report_dir / "batch-report.json"
+        _write_host_only_json(report_path, report)
+        _write_host_only_json(
+            report_dir / "attribution.json",
+            {
+                **acceptance_mode_evidence(batch_id=batch_id, freeze_digest=freeze_digest),
+                "blind_status": blind_status["blind_status"],
+                "exposed_question_ids": blind_status["exposed_question_ids"],
+                "exposure_evidence_digest": blind_status["exposure_evidence_digest"],
+            },
+        )
+        if packet is not None:
+            _write_host_only_json(
+                report_dir / "batch-packet.json",
+                {"schema_version": packet.schema_version, "canonical_digest": packet.canonical_digest},
+            )
+        print(
+            json.dumps(
+                {
+                    "run_id": contract["run_id"],
+                    "batch_id": batch_id,
+                    "freeze_digest": freeze_digest,
+                    "report": report_path.as_posix(),
+                    "acceptance_mode": "read-only-acceptance",
+                    "blind_status": blind_status["blind_status"],
+                    "start_ledger_write": False,
+                    "consumes_semantic_start": False,
+                    "full_pass": report["full_pass"],
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+    except (TeamConfigurationError, CQContractError) as exc:
+        print(f"cq-acceptance failed: {exc}", file=sys.stderr)
+        return 2
+
+
+def _write_host_only_json(path: Path, value: dict[str, object]) -> None:
+    """Write a host-only report atomically with owner-only permissions."""
+
+    temporary = path.with_suffix(".tmp")
+    temporary.write_text(
+        json.dumps(value, ensure_ascii=False, sort_keys=True), encoding="utf-8"
+    )
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -443,7 +735,16 @@ def main() -> int:
     handoff.add_argument("--phase-a-verdict", required=True, type=Path)
     handoff.add_argument("--destination", required=True, type=Path)
     handoff.add_argument("--base-url", default="http://127.0.0.1:8001")
+    cq_acceptance = subparsers.add_parser("cq-acceptance")
+    cq_acceptance.add_argument("--run-root", required=True, type=Path)
+    cq_acceptance.add_argument("--freeze-id", required=True)
+    cq_acceptance.add_argument("--model-handoff", required=True, type=Path)
     args = parser.parse_args()
+    if args.command == "cq-acceptance":
+        # R3.0-011: the read-only v3 acceptance entry stays outside the run
+        # loader entirely; it never constructs a TeamRunner and never touches
+        # the StartLedger.
+        return _run_cq_acceptance(args, repository_root())
     runner = None
     cleaned = False
     root = repository_root()
