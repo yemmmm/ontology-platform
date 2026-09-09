@@ -686,6 +686,39 @@ class PlatformScopeOntologyPlanTests(unittest.TestCase):
     def _client(self):
         return _MultiOntologyClient()
 
+    def test_apply_ontology_plan_accepts_a_slice_shared_by_two_ontologies(self) -> None:
+        """T-G5-4: the relaxed plan still applies deterministically, unchanged.
+
+        ``PlatformScope.apply_ontology_plan`` never indexed slice→Ontology and
+        never rejected overlapping ``slice_ids``, so the shared-core-plus-domain
+        shape needs no platform change: the same slice may be served by the
+        core and the domain Ontology and the creation order stays plan order.
+        """
+
+        client = self._client()
+        scope = PlatformScope(
+            "http://example", "r30006-plan", lambda: ("admin", "admin-id"), lambda _: True, client
+        )
+        scope.prepare({"mode": "create"})
+        shared_plan = [
+            {"name": "shared-core", "slice_ids": ["S1", "S2"]},
+            {"name": "fault-domain", "slice_ids": ["S2", "S3"]},
+        ]
+        self.assertEqual(
+            scope.apply_ontology_plan(shared_plan), ["ontology-1", "ontology-2"]
+        )
+        self.assertEqual(client.created, [("fault-domain", "ontology-2")])
+        # Idempotent reuse is unchanged for the overlapping plan.
+        self.assertEqual(
+            scope.apply_ontology_plan(shared_plan), ["ontology-1", "ontology-2"]
+        )
+        self.assertEqual(client.created, [("fault-domain", "ontology-2")])
+        # Protocol still receives every planned Ontology identity.
+        self.assertEqual(
+            scope.read_protocol_context()["ontology_ids"],
+            "ontology-1,ontology-2",
+        )
+
     def test_apply_ontology_plan_creates_remaining_ontologies_idempotently(self) -> None:
         client = self._client()
         scope = PlatformScope(

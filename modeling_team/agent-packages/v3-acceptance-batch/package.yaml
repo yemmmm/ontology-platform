@@ -1,0 +1,28 @@
+schema_version: 1
+package_id: v3-acceptance-batch
+role: acceptance
+description: R3.0-011 v3 ordered hidden-batch acceptance prompt assets (Platform Examiner session and independent Acceptance judge session).
+instructions: platform-examiner.md
+required_skills: []
+references: []
+permissions:
+  team_transport: false
+  platform: read
+  source: none
+  spawn: false
+  write: false
+runtime:
+  codex:
+    sandbox: read-only
+    multi_agent: false
+    multi_agent_v2: false
+    spawn_agent: false
+task_input:
+  required: [batch_id, freeze_digest, questions, report_schema]
+notes: >
+  Role instructions are selected per session kind by
+  CodexRuntimeAdapter._child_package_assets(kind, root, v3_batch=True):
+  platform-examiner.md for the platform session, acceptance-judge.md for the
+  judge session.  The R2.3 single-question assets under
+  acceptance-examiner/ and skills/lean-acceptance-examiner/ are unchanged and
+  are never mounted into a v3 batch session.

@@ -433,3 +433,107 @@ def test_task_parameters_extension_is_closed_and_boolean(tmp_path, raw_parameter
     task.write_text(rendered, encoding="utf-8")
     with pytest.raises(TeamConfigurationError):
         load_task(task, root=REPO_ROOT)
+
+
+# --- R3.0-006 execution-gap closure: ontology_plan slice sharing (G5) --------
+
+
+def _shared_core_plan(slice_ids):
+    """Shared-core-plus-domain plan where one slice is served by both entries."""
+
+    return [
+        {"name": "shared-core", "slice_ids": ["S1", "S2"]},
+        {"name": "fault-domain", "slice_ids": ["S2", "S3"]},
+    ]
+
+
+def test_t_g5_1_shared_core_plan_allows_a_slice_in_two_ontologies():
+    slice_ids = {"S1", "S2", "S3"}
+    plan = _shared_core_plan(slice_ids)
+    # The previously rejected overlap is now the registered shared-core shape.
+    assert scenario_map._validate_ontology_plan(plan, slice_ids=slice_ids) == []
+    decision = json.loads(
+        json.dumps(FIXTURES["topology_decision"]["multi_ontology_plan_valid"])
+    )
+    decision["selected_option"] = "shared_core_plus_domain"
+    decision["ontology_plan"] = plan
+    assert scenario_map.validate_topology_decision(decision, slice_ids=slice_ids) == ()
+
+
+def test_t_g5_2_existing_rejections_are_preserved():
+    slice_ids = {"S1", "S2", "S3"}
+    # Dangling slice reference stays rejected.
+    issues = scenario_map._validate_ontology_plan(
+        [{"name": "a", "slice_ids": ["S1"]}, {"name": "b", "slice_ids": ["S9"]}],
+        slice_ids=slice_ids,
+    )
+    assert "topology_dangling_slice" in _issue_codes(issues)
+    # Missing coverage of a scenario-map slice stays rejected, with the revised
+    # "at least one" wording.
+    issues = scenario_map._validate_ontology_plan(
+        [{"name": "a", "slice_ids": ["S1"]}, {"name": "b", "slice_ids": ["S2"]}],
+        slice_ids=slice_ids,
+    )
+    assert _issue_codes(issues) == ("topology_invalid_ontology_plan",)
+    assert "at least one planned Ontology" in issues[0].detail
+    # Single entry, duplicate name, empty and duplicated slice_ids stay rejected.
+    assert _issue_codes(
+        scenario_map._validate_ontology_plan([{"name": "a", "slice_ids": ["S1"]}], slice_ids=None)
+    ) == ("topology_invalid_ontology_plan",)
+    assert "topology_invalid_ontology_plan" in _issue_codes(
+        scenario_map._validate_ontology_plan(
+            [
+                {"name": "a", "slice_ids": ["S1"]},
+                {"name": "a", "slice_ids": ["S2"]},
+            ],
+            slice_ids=None,
+        )
+    )
+    assert "topology_invalid_ontology_plan" in _issue_codes(
+        scenario_map._validate_ontology_plan(
+            [
+                {"name": "a", "slice_ids": []},
+                {"name": "b", "slice_ids": ["S1"]},
+            ],
+            slice_ids=None,
+        )
+    )
+    assert "topology_invalid_ontology_plan" in _issue_codes(
+        scenario_map._validate_ontology_plan(
+            [
+                {"name": "a", "slice_ids": ["S1", "S1"]},
+                {"name": "b", "slice_ids": ["S2"]},
+            ],
+            slice_ids=None,
+        )
+    )
+
+
+def test_t_g5_3_relaxation_is_pure_no_legacy_plan_regression():
+    slice_ids = {item["slice_id"] for item in FIXTURES["scenario_map"]["valid"]["slices"]}
+    valid = FIXTURES["topology_decision"]["multi_ontology_plan_valid"]
+    # The frozen "every slice exactly one Ontology" plan is still legal.
+    assert scenario_map._validate_ontology_plan(
+        valid["ontology_plan"], slice_ids=slice_ids
+    ) == []
+    assert scenario_map.validate_topology_decision(valid, slice_ids=slice_ids) == ()
+
+
+def test_t_g5_6_reference_contract_matches_the_relaxed_rule():
+    references = json.loads(
+        (
+            REPO_ROOT
+            / "modeling_team"
+            / "references"
+            / "r3-0-002-scenario-map-contract.json"
+        ).read_text(encoding="utf-8")
+    )
+    rules = references["topology_decision"]["optional_fields"]["ontology_plan"]["rules"]
+    joined = "\n".join(rules)
+    assert "at least one planned Ontology" in joined
+    assert "more than one planned Ontology" in joined
+    assert "exactly one planned Ontology" not in joined
+    # The rationale-free rule set is the only mounted wording, so no other
+    # topology_decision rule re-introduces the exact-one requirement.
+    for section in references["topology_decision"]["rules"]:
+        assert "exactly one planned Ontology" not in section

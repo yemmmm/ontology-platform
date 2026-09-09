@@ -28,6 +28,8 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from .competency_questions import (
     CQ_BATCH_PACKET_SCHEMA,
+    CQ_BATCH_REPORT_SCHEMA,
+    validate_acceptance_verdict,
     validate_evidence_bundle,
     validate_examiner_report,
     validate_model_binding,
@@ -36,6 +38,14 @@ from .competency_questions import (
 
 class ChildRuntimeError(RuntimeError):
     """A private child/proxy contract failed closed."""
+
+
+class _ProxyScopeDenied(Exception):
+    """Internal: one proxy call is refused before any forward (code-carrying)."""
+
+    def __init__(self, code: str) -> None:
+        super().__init__(code)
+        self.code = code
 
 
 class ExaminerRuntimeBlocked(ChildRuntimeError):
@@ -420,9 +430,9 @@ class AcceptanceBatchPacket:
         }[role]
         if set(normalized) != expected:
             raise ChildRuntimeError("v3 acceptance packet fields are invalid")
-        for field in ("run_id", "batch_id"):
-            if not isinstance(normalized[field], str) or not normalized[field]:
-                raise ChildRuntimeError(f"v3 acceptance packet {field} is invalid")
+        for key in ("run_id", "batch_id"):
+            if not isinstance(normalized[key], str) or not normalized[key]:
+                raise ChildRuntimeError(f"v3 acceptance packet {key} is invalid")
         if not _v3_digest(normalized["freeze_digest"]):
             raise ChildRuntimeError("v3 acceptance packet freeze_digest is invalid")
         question_ids = _v3_batch_questions(normalized["questions"], role=role)
@@ -591,6 +601,173 @@ def build_acceptance_judge_packet(**payload: Any) -> AcceptanceBatchPacket:
     """Build the v3 independent read-only Acceptance judge packet."""
 
     return AcceptanceBatchPacket.build(CQ_ACCEPTANCE_JUDGE_ROLE, payload)
+
+
+def v3_ticket_digest(value: Any) -> str:
+    """Normalize a v3 freeze digest to the 64-hex proxy ticket form.
+
+    The frozen snapshot digest is ``sha256:<hex>`` while every proxy binding
+    (``_EXAMINER_SCOPE_SCHEMA``/``_safe_digest``) is 64-hex.  The prefix is
+    transport presentation, never new identity: the hex body must be present,
+    well formed, and identical to the packet digest the batch is bound to.
+    """
+
+    if not _v3_digest(value):
+        raise ChildRuntimeError("v3 acceptance ticket digest is invalid")
+    text = str(value)
+    return text[len("sha256:") :] if text.startswith("sha256:") else text
+
+
+def v3_proxy_scope_entries(
+    packet: AcceptanceBatchPacket, graph_set_ids: Mapping[str, Any]
+) -> tuple[dict[str, str], ...]:
+    """Build the packet-verified proxy scope for one v3 platform session.
+
+    One entry per authorized Ontology, in packet order: project, Ontology, graph
+    set and both bound state digests.  Project and state identity are read from
+    the packet's own model binding, so a host entry can never widen or re-point
+    the authorized scope; ``graph_set_ids`` supplies the default graph set the
+    host observed for that Ontology with the same authorized read tools (the
+    packet carries the binding, not the platform's graph-set locator).  These
+    entries are the only scope a v3 Platform Examiner can read; anything outside
+    the list is refused before a forward.
+    """
+
+    if not isinstance(packet, AcceptanceBatchPacket) or packet.role != (
+        CQ_ACCEPTANCE_PLATFORM_ROLE
+    ):
+        raise ChildRuntimeError("v3 proxy scope requires a platform batch packet")
+    payload = _unfreeze_packet(packet.payload)
+    scope = payload.get("authorized_scope")
+    if not isinstance(scope, list) or not scope:
+        raise ChildRuntimeError("v3 proxy scope requires the packet authorization")
+    binding = payload.get("model_binding")
+    ontologies = binding.get("ontologies") if isinstance(binding, Mapping) else None
+    if not isinstance(ontologies, list) or not ontologies:
+        raise ChildRuntimeError("v3 proxy scope requires the packet model binding")
+    if not isinstance(graph_set_ids, Mapping):
+        raise ChildRuntimeError("v3 proxy scope graph sets are invalid")
+    entries: list[dict[str, str]] = []
+    for item in ontologies:
+        if not isinstance(item, Mapping):
+            raise ChildRuntimeError("v3 proxy scope entry is invalid")
+        ontology_id = item.get("ontology_id")
+        project_id = item.get("project_id")
+        workspace = item.get("workspace_state")
+        graph = item.get("graph_state")
+        state = workspace.get("state_digest") if isinstance(workspace, Mapping) else None
+        graph_state = graph.get("state_digest") if isinstance(graph, Mapping) else None
+        graph_set_id = graph_set_ids.get(ontology_id) if isinstance(ontology_id, str) else None
+        if not all(
+            isinstance(field, str) and field
+            for field in (ontology_id, project_id, state, graph_state, graph_set_id)
+        ):
+            raise ChildRuntimeError("v3 proxy scope entry is incomplete")
+        if ontology_id not in scope:
+            raise ChildRuntimeError("v3 proxy scope entry is outside the packet authorization")
+        entries.append(
+            {
+                "project_id": str(project_id),
+                "ontology_id": str(ontology_id),
+                "graph_set_id": str(graph_set_id),
+                "model_state_digest": str(state),
+                "graph_state_digest": str(graph_state),
+            }
+        )
+    return tuple(entries)
+
+
+class V3BatchReportContract:
+    """Sink-time batch binding for one v3 acceptance session (design §3.G4.2).
+
+    The contract is built from the session's own :class:`AcceptanceBatchPacket`,
+    so the sink can reject anything the packet never authorized: another batch,
+    another freeze, an unknown question, a duplicate submission, or a question
+    reported out of packet order.  Per-question field validation is delegated to
+    the canonical ``validate_examiner_report``/``validate_acceptance_verdict``
+    contracts — this class adds only the batch, order and completeness rules.
+    """
+
+    def __init__(self, *, role: str, packet: AcceptanceBatchPacket) -> None:
+        if role not in {CQ_ACCEPTANCE_PLATFORM_ROLE, CQ_ACCEPTANCE_JUDGE_ROLE}:
+            raise ChildRuntimeError("v3 report sink contract role is invalid")
+        if not isinstance(packet, AcceptanceBatchPacket) or packet.role != role:
+            raise ChildRuntimeError("v3 report sink contract packet is invalid")
+        if acceptance_branch_for(packet.schema_version) != CQ_ACCEPTANCE_BRANCH_V3:
+            raise ChildRuntimeError("v3 report sink contract requires the v3 branch")
+        self.role = role
+        self.packet = packet
+        payload = _unfreeze_packet(packet.payload)
+        self.batch_id = str(payload["batch_id"])
+        self.question_ids = list(_v3_batch_questions(payload["questions"], role=role))
+        self.content_versions = {
+            str(item["question_id"]): item["content_version"]
+            for item in payload["questions"]
+        }
+        self._reported: list[dict[str, Any]] = []
+
+    @property
+    def schema_version(self) -> str:
+        return CQ_BATCH_REPORT_SCHEMA
+
+    @property
+    def reports(self) -> list[dict[str, Any]]:
+        return list(self._reported)
+
+    @property
+    def pending_question_ids(self) -> list[str]:
+        reported = {str(report["question_id"]) for report in self._reported}
+        return [item for item in self.question_ids if item not in reported]
+
+    @property
+    def is_complete(self) -> bool:
+        return not self.pending_question_ids
+
+    def validate(self, report: Mapping[str, Any]) -> dict[str, Any]:
+        """Validate one per-question entry against this batch contract."""
+
+        if not isinstance(report, Mapping):
+            raise ChildRuntimeError("v3 acceptance batch report entry is invalid")
+        if report.get("schema_version") != CQ_BATCH_REPORT_SCHEMA:
+            raise ChildRuntimeError(
+                f"v3 acceptance batch report schema must be {CQ_BATCH_REPORT_SCHEMA}"
+            )
+        if report.get("batch_id") != self.batch_id:
+            raise ChildRuntimeError("v3 acceptance batch report is bound to another batch")
+        question_id = report.get("question_id")
+        if not isinstance(question_id, str) or not question_id:
+            raise ChildRuntimeError("v3 acceptance batch report question_id is invalid")
+        reported = {str(item["question_id"]) for item in self._reported}
+        if question_id in reported:
+            raise ChildRuntimeError(
+                f"v3 acceptance batch already carries a report for {question_id}"
+            )
+        expected = self.question_ids[len(self._reported)]
+        if question_id != expected:
+            raise ChildRuntimeError(
+                f"v3 acceptance batch expects the report for {expected} next; got {question_id}"
+            )
+        validator = validate_examiner_report if self.role == CQ_ACCEPTANCE_PLATFORM_ROLE else (
+            validate_acceptance_verdict
+        )
+        try:
+            validated = validator(report, question_ids=self.question_ids)
+        except ValueError as exc:
+            raise ChildRuntimeError(f"v3 acceptance batch report is invalid: {exc}") from exc
+        if self.role == CQ_ACCEPTANCE_PLATFORM_ROLE and validated.get(
+            "question_content_version"
+        ) != self.content_versions.get(question_id):
+            raise ChildRuntimeError(
+                f"v3 acceptance batch report for {question_id} cites another content version"
+            )
+        return validated
+
+    def record(self, report: Mapping[str, Any]) -> None:
+        """Latch one validated entry; completeness only after the last question."""
+
+        if self.is_complete:
+            raise ChildRuntimeError("v3 acceptance batch is already complete")
+        self._reported.append(dict(report))
 
 
 @dataclass(frozen=True)
@@ -1256,9 +1433,26 @@ _REPORT_PLATFORM_LOCATOR_FIELDS = frozenset(
 )
 
 
-def _validate_report_sink_payload(value: Any, *, kind: str) -> dict[str, Any]:
-    """Validate the kind-specific child payload before invoking the Host callback."""
+def _validate_report_sink_payload(
+    value: Any, *, kind: str, batch_contract: "V3BatchReportContract | None" = None
+) -> dict[str, Any]:
+    """Validate the kind-specific child payload before invoking the Host callback.
 
+    ``batch_contract`` selects the explicit v3 batch branch (dispatched by the
+    packet schema, never by kind alone): the per-question entry is validated
+    against the session's own batch binding.  Without it the legacy R2.3
+    per-question contracts below are applied unchanged.
+    """
+
+    if batch_contract is not None:
+        if kind not in {"platform", "acceptance"}:
+            raise ChildRuntimeError("report sink kind is invalid")
+        expected_role = CQ_ACCEPTANCE_PLATFORM_ROLE if kind == "platform" else (
+            CQ_ACCEPTANCE_JUDGE_ROLE
+        )
+        if batch_contract.role != expected_role:
+            raise ChildRuntimeError("v3 batch report contract does not match the sink kind")
+        return batch_contract.validate(value)
     if kind == "acceptance":
         expected = {"status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason"}
         if not isinstance(value, Mapping) or set(value) != expected:
@@ -1929,6 +2123,31 @@ def examiner_proxy_schemas(tools: Iterable[str] = PLATFORM_PROXY_READ_TOOLS) -> 
     return schemas
 
 
+# A v3 Platform Examiner reads a packet-authorized Ontology list, so the
+# per-Ontology scope fields stop being caller-required: the proxy resolves them
+# from the selected authorized entries.  ``project_id`` and ``ticket_digest``
+# stay caller-visible because one read is still exactly one project and one
+# frozen batch (design §3.G4.1).
+_V3_PER_ONTOLOGY_SCOPE_FIELDS = ("ontology_id", "graph_set_id", "model_state_digest")
+
+
+def v3_examiner_proxy_schemas(
+    tools: Iterable[str] = PLATFORM_PROXY_READ_TOOLS,
+) -> dict[str, dict[str, Any]]:
+    """Return detached exact schemas for a v3 multi-Ontology read scope."""
+
+    schemas = examiner_proxy_schemas(tools)
+    for schema in schemas.values():
+        schema["required"] = [
+            key for key in schema["required"] if key not in _V3_PER_ONTOLOGY_SCOPE_FIELDS
+        ]
+        # Bound state digests come from the platform rather than from child
+        # digest transcription, so the schema keeps only the string shape; the
+        # proxy itself rejects a value that contradicts the selected entry.
+        schema["properties"]["model_state_digest"] = {"type": "string", "minLength": 1}
+    return schemas
+
+
 def _schema_type_matches(value: Any, expected: str | Sequence[str]) -> bool:
     if isinstance(expected, (list, tuple)):
         return any(_schema_type_matches(value, item) for item in expected)
@@ -2067,6 +2286,23 @@ class ProxyCallReceipt:
     page: Mapping[str, Any] = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class V3ProxyCallReceipt(ProxyCallReceipt):
+    """v3-only receipt extension: the multi-Ontology scope actually selected.
+
+    The legacy receipt keeps its exact historical field set -- the Runner's
+    platform receipt validator checks that exact set and must keep accepting
+    old single-Ontology receipts.  This subclass is instantiated only by the
+    v3 branch of ``ScopedReadProxy.handle``, so the extra field never reaches a
+    legacy consumer.
+    """
+
+    # v3 multi-Ontology scope actually selected for this call (project, Ontology,
+    # graph set and both bound state digests per entry).  The legacy
+    # single-Ontology proxy receipt fields already carry that scope.
+    ontologies: tuple[Mapping[str, str], ...] = ()
+
+
 def _proxy_page_for_call(
     previous_page: Mapping[str, Any] | None,
     arguments: Mapping[str, Any],
@@ -2132,25 +2368,57 @@ class ScopedReadProxy:
         socket_path: Path,
         token: str,
         read_key: str,
-        project_id: str,
-        ontology_id: str,
-        graph_set_id: str,
+        project_id: str | None = None,
+        ontology_id: str | None = None,
+        graph_set_id: str | None = None,
         ticket_digest: str,
-        model_state_digest: str,
+        model_state_digest: str | None = None,
         allowed_tools: list[str] | tuple[str, ...],
         forward: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         acceptance_round_id: str | None = None,
         child_handle_digest: str | None = None,
         exact_schemas: Mapping[str, Mapping[str, Any]] | None = None,
+        authorized_ontologies: Sequence[Mapping[str, Any]] | None = None,
     ) -> None:
         self.socket_path = socket_path
         self.token = token
         self._read_key: str | None = read_key
-        self.project_id = _safe_id(project_id, "project_id")
-        self.ontology_id = _safe_id(ontology_id, "ontology_id")
-        self.graph_set_id = _safe_id(graph_set_id, "graph_set_id")
-        self.ticket_digest = _safe_digest(ticket_digest, "ticket_digest")
-        self.model_state_digest = _safe_digest(model_state_digest, "model_state_digest")
+        self.authorized_ontologies: tuple[dict[str, str], ...] = ()
+        if authorized_ontologies is not None:
+            # v3 multi-Ontology branch (design §3.G4.1): the packet-authorized
+            # Ontology list replaces the single frozen scope.  Per-entry state
+            # digests are platform bindings rather than child transcriptions, so
+            # they are non-empty strings instead of 64-hex, and the ticket keeps
+            # the frozen ``sha256:<hex>`` digest normalization.
+            entries: list[dict[str, str]] = []
+            for item in authorized_ontologies:
+                if not isinstance(item, Mapping):
+                    raise ChildRuntimeError("v3 proxy Ontology scope entry is invalid")
+                entry = {
+                    "project_id": _safe_id(item.get("project_id"), "project_id"),
+                    "ontology_id": _safe_id(item.get("ontology_id"), "ontology_id"),
+                    "graph_set_id": _safe_id(item.get("graph_set_id"), "graph_set_id"),
+                    "model_state_digest": str(item.get("model_state_digest") or ""),
+                    "graph_state_digest": str(item.get("graph_state_digest") or ""),
+                }
+                if not entry["model_state_digest"] or not entry["graph_state_digest"]:
+                    raise ChildRuntimeError("v3 proxy Ontology scope entry is incomplete")
+                entries.append(entry)
+            if not entries or len({entry["ontology_id"] for entry in entries}) != len(entries):
+                raise ChildRuntimeError("v3 proxy Ontology scope is invalid")
+            self.authorized_ontologies = tuple(entries)
+            primary = self.authorized_ontologies[0]
+            self.project_id = primary["project_id"]
+            self.ontology_id = primary["ontology_id"]
+            self.graph_set_id = primary["graph_set_id"]
+            self.model_state_digest = primary["model_state_digest"]
+            self.ticket_digest = v3_ticket_digest(ticket_digest)
+        else:
+            self.project_id = _safe_id(project_id, "project_id")
+            self.ontology_id = _safe_id(ontology_id, "ontology_id")
+            self.graph_set_id = _safe_id(graph_set_id, "graph_set_id")
+            self.ticket_digest = _safe_digest(ticket_digest, "ticket_digest")
+            self.model_state_digest = _safe_digest(model_state_digest, "model_state_digest")
         normalized = tuple(str(tool) for tool in allowed_tools)
         if (
             not normalized
@@ -2290,7 +2558,25 @@ class ScopedReadProxy:
                 return {"ok": False, "error": "proxy-token-invalid", "code": "proxy-token-invalid"}
             operation = request.get("operation")
             if operation == "tools/list":
-                return {"ok": True, "tools": list(self.allowed_tools)}
+                # Legacy consumers read the bare name list; the v3 read bridge
+                # forwards the exact per-tool schemas so the child sees the
+                # argument shape the proxy actually enforces instead of a
+                # generic object.
+                schemas = [
+                    {
+                        "name": tool,
+                        "description": "ticket-bound read-only platform query",
+                        "inputSchema": self.exact_schemas[tool],
+                    }
+                    for tool in self.allowed_tools
+                    if isinstance(self.exact_schemas, dict)
+                    and isinstance(self.exact_schemas.get(tool), dict)
+                ]
+                return {
+                    "ok": True,
+                    "tools": list(self.allowed_tools),
+                    "schemas": schemas or None,
+                }
             if operation != "tools/call":
                 return {"ok": False, "error": "proxy-operation-denied", "code": "proxy-operation-denied"}
             tool = request.get("tool")
@@ -2300,6 +2586,80 @@ class ScopedReadProxy:
             if not isinstance(arguments, Mapping):
                 self.schema_rejections += 1
                 return {"ok": False, "error": "read-arguments-invalid", "code": "read-arguments-invalid", "backend_calls": 0}
+            if self.authorized_ontologies:
+                # v3 multi-Ontology branch: scope resolution, injection and the
+                # exact-schema check all happen in one place; the legacy frozen
+                # single-Ontology block below is not applied at all.
+                try:
+                    arguments, selected = self._v3_scope_arguments(tool, arguments)
+                except _ProxyScopeDenied as denied:
+                    if denied.code == "read-arguments-schema":
+                        self.schema_rejections += 1
+                    return {
+                        "ok": False,
+                        "error": denied.code,
+                        "code": denied.code,
+                        "backend_calls": 0,
+                    }
+                request_digest = _digest({"tool": tool, "arguments": dict(arguments)})
+                self.requests.append(
+                    {
+                        "tool": tool,
+                        "request_digest": request_digest,
+                        "ontology_ids": [
+                            entry["ontology_id"]
+                            for entry in selected
+                        ],
+                    }
+                )
+                if self._forward is None:
+                    return {
+                        "ok": False,
+                        "error": "platform-forwarding-unconfigured",
+                        "code": "platform-forwarding-unconfigured",
+                    }
+                try:
+                    self.backend_calls += 1
+                    result = dict(self._forward(tool, arguments, self._read_key))
+                except Exception:
+                    return {
+                        "ok": False,
+                        "error": "platform-forward-failed",
+                        "code": "platform-forward-failed",
+                        "backend_calls": self.backend_calls,
+                    }
+                response_digest = _digest(result)
+                artifact_path = (
+                    f"acceptance/{self.acceptance_round_id}/platform-read/"
+                    f"{self.child_handle_digest}/{len(self._call_receipts)}.json"
+                )
+                previous_page = self._call_receipts[-1].page if self._call_receipts else None
+                page = _proxy_page_for_call(previous_page, arguments, result)
+                self._call_receipts.append(
+                    V3ProxyCallReceipt(
+                        ordinal=len(self._call_receipts),
+                        project_id=str(arguments["project_id"]),
+                        ontology_id=str(arguments.get("ontology_id", "")),
+                        graph_set_id=str(arguments.get("graph_set_id", "")),
+                        ticket_digest=self.ticket_digest,
+                        model_state_digest=str(arguments.get("model_state_digest", "")),
+                        tool=tool,
+                        request_digest=request_digest,
+                        response_digest=response_digest,
+                        artifact_path=artifact_path,
+                        page=page,
+                        ontologies=tuple(dict(entry) for entry in selected),
+                    )
+                )
+                return {
+                    "ok": True,
+                    "result": result,
+                    "request_digest": request_digest,
+                    "response_digest": response_digest,
+                    "artifact_path": artifact_path,
+                    "call_ordinal": len(self._call_receipts) - 1,
+                    "call_total": len(self._call_receipts),
+                }
             required = {
                 "project_id": self.project_id,
                 "ontology_id": self.ontology_id,
@@ -2404,6 +2764,86 @@ class ScopedReadProxy:
         with self._lock:
             self._read_key = None
             return {"status": "revoked", "post_revoke_denials": self.post_revoke_denials}
+
+    def _v3_scope_arguments(
+        self, tool: str, arguments: Mapping[str, Any]
+    ) -> tuple[dict[str, Any], tuple[dict[str, str], ...]]:
+        """Resolve one v3 call's authorized Ontology selection and inject its scope.
+
+        The selection is ``ontology_ids`` (query tools), else ``ontology_id``,
+        else the packet's first authorized Ontology.  Every selected Ontology
+        must be authorized and one call stays inside one project (the canonical
+        read tools take a single ``project_id`` plus an Ontology list).
+
+        The per-call scope values are Host-owned: they are resolved from the
+        selected authorized entry, not transcribed by the child.  A caller (or
+        the bridge's advisory env scope, which projects the first authorized
+        Ontology) can therefore never widen the selection — its value is
+        replaced by the selected entry's binding, and for a multi-Ontology
+        selection the per-Ontology hint fields are dropped instead of matched.
+        Only the frozen batch ticket is a strict caller check, because a wrong
+        ticket is a batch-identity error rather than a scope hint.
+        """
+
+        authorized = {entry["ontology_id"]: entry for entry in self.authorized_ontologies}
+        requested = arguments.get("ontology_ids")
+        if requested is None:
+            single = arguments.get("ontology_id")
+            requested = [single] if isinstance(single, str) and single else None
+        if requested is None or requested == []:
+            requested = [self.authorized_ontologies[0]["ontology_id"]]
+        if not isinstance(requested, list) or any(
+            not isinstance(item, str) or not item for item in requested
+        ):
+            raise _ProxyScopeDenied("read-arguments-invalid")
+        if len(set(requested)) != len(requested) or any(item not in authorized for item in requested):
+            raise _ProxyScopeDenied("read-scope-denied")
+        selected = tuple(dict(authorized[item]) for item in requested)
+        if len({entry["project_id"] for entry in selected}) != 1:
+            # One read is one project: a cross-project selection is refused
+            # instead of being silently narrowed to one project.
+            raise _ProxyScopeDenied("read-scope-denied")
+        schema = self.exact_schemas.get(tool) if self.exact_schemas is not None else None
+        selectable = schema is not None and "ontology_ids" in schema.get("properties", {})
+        if len(selected) > 1 and not selectable:
+            raise _ProxyScopeDenied("read-scope-denied")
+        primary = selected[0]
+        injected: dict[str, Any] = {
+            "project_id": primary["project_id"],
+            "ticket_digest": self.ticket_digest,
+        }
+        hints: dict[str, Any] = dict(arguments)
+        if len(selected) == 1:
+            injected.update(
+                {
+                    "ontology_id": primary["ontology_id"],
+                    "graph_set_id": primary["graph_set_id"],
+                    "model_state_digest": primary["model_state_digest"],
+                }
+            )
+        else:
+            # Per-Ontology bindings cannot be a single value for a multi-Ontology
+            # read.  A hint that projects one Ontology's values -- the legacy
+            # bridge's primary-entry env, for instance -- is irrelevant here
+            # rather than contradictory, so it is dropped: the forwarded read
+            # stays bound by the strictly authorized ``ontology_ids`` selection
+            # resolved above, and the receipt records each selected entry.
+            for key in ("ontology_id", "graph_set_id", "model_state_digest"):
+                hints.pop(key, None)
+        if "ticket_digest" in arguments and arguments["ticket_digest"] != self.ticket_digest:
+            raise _ProxyScopeDenied("read-scope-denied")
+        # Host-owned scope always wins over a caller hint (see docstring).
+        scoped = {**hints, **injected}
+        if tool in {"query_semantic_context", "semantic_sparql_query"}:
+            scoped["ontology_ids"] = list(requested)
+            if scoped.get("scope_mode") is None:
+                scoped["scope_mode"] = "ontologies"
+        if schema is not None:
+            try:
+                scoped = validate_examiner_proxy_arguments(tool, scoped, schema, scope=injected)
+            except ChildRuntimeError as exc:
+                raise _ProxyScopeDenied("read-arguments-schema") from exc
+        return scoped, selected
 
     def stop(self) -> None:
         self._stop.set()
@@ -2678,6 +3118,7 @@ class ReportSinkServer:
         kind: str | None = None,
         validator: Callable[[Mapping[str, Any]], None] | None = None,
         max_attempts: int = 3,
+        batch_contract: V3BatchReportContract | None = None,
     ):
         self.socket_path = socket_path
         self.token = token
@@ -2686,6 +3127,17 @@ class ReportSinkServer:
             raise ChildRuntimeError("report sink kind is invalid")
         self.kind = kind
         self.validator = validator
+        if batch_contract is not None:
+            # The v3 batch branch is selected by the packet schema, so it is only
+            # legal for the two v3 session kinds and only for the matching role.
+            if kind not in {"platform", "acceptance"}:
+                raise ChildRuntimeError("v3 batch report sink kind is invalid")
+            expected_role = CQ_ACCEPTANCE_PLATFORM_ROLE if kind == "platform" else (
+                CQ_ACCEPTANCE_JUDGE_ROLE
+            )
+            if batch_contract.role != expected_role:
+                raise ChildRuntimeError("v3 batch report contract does not match the sink kind")
+        self.batch_contract = batch_contract
         if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
             raise ChildRuntimeError("report sink attempt budget is invalid")
         self.max_attempts = max_attempts
@@ -2734,7 +3186,16 @@ class ReportSinkServer:
                         response = {"ok": False, "code": "report-token-invalid"}
                     elif self._submitted:
                         response = {"ok": False, "code": "report-already-submitted"}
-                    elif len(self._rejections) >= self.max_attempts:
+                    elif (
+                        len(self._rejections) >= self.max_attempts
+                        and self.batch_contract is None
+                    ):
+                        # Legacy single-report budget only: a rejected report ends
+                        # the round there.  The v3 batch branch stays recoverable
+                        # (AGENTS.md: format/parameter/incomplete artifacts must
+                        # never become a code-local irrecoverable gate) — its
+                        # correction feedback stays typed and the session
+                        # deadline is the only bound on total attempts.
                         response = {
                             "ok": False,
                             "code": "report-attempts-exceeded",
@@ -2750,7 +3211,18 @@ class ReportSinkServer:
                     else:
                         report = request["report"]
                         try:
-                            if self.kind is not None:
+                            if self.batch_contract is not None:
+                                # v3 branch: one per-question entry, validated and
+                                # latched against the session's batch contract.  The
+                                # entry is recorded only after the Host accepted it,
+                                # so a failed submit still leaves the question open
+                                # for a bounded resubmission.
+                                report = _validate_report_sink_payload(
+                                    report,
+                                    kind=self.kind,
+                                    batch_contract=self.batch_contract,
+                                )
+                            elif self.kind is not None:
                                 report = _validate_report_sink_payload(report, kind=self.kind)
                             if self.validator is not None:
                                 self.validator(report)
@@ -2805,8 +3277,24 @@ class ReportSinkServer:
                                     "attempts_remaining": attempts_remaining,
                                 }
                             else:
-                                self._submitted = True
-                                response = {"ok": True}
+                                if self.batch_contract is not None:
+                                    self.batch_contract.record(report)
+                                    complete = self.batch_contract.is_complete
+                                    # A batch session stays open until its last
+                                    # question is reported; only then is the sink
+                                    # latched and the child told it is done.
+                                    self._submitted = complete
+                                    response = {
+                                        "ok": True,
+                                        "question_id": str(report["question_id"]),
+                                        "reports_remaining": len(
+                                            self.batch_contract.pending_question_ids
+                                        ),
+                                        "batch_complete": complete,
+                                    }
+                                else:
+                                    self._submitted = True
+                                    response = {"ok": True}
                     conn.sendall(_canonical(response))
                 except Exception:
                     try:
@@ -2881,6 +3369,10 @@ __all__ = [
     "CQ_ACCEPTANCE_BRANCH_LEGACY",
     "CQ_ACCEPTANCE_PLATFORM_ROLE",
     "CQ_ACCEPTANCE_JUDGE_ROLE",
+    "V3BatchReportContract",
+    "v3_proxy_scope_entries",
+    "v3_ticket_digest",
+    "v3_examiner_proxy_schemas",
     "examiner_proxy_schemas",
     "validate_examiner_proxy_arguments",
     "PLATFORM_PROXY_READ_TOOLS",

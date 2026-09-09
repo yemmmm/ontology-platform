@@ -323,9 +323,13 @@ def _validate_ontology_plan(
 
     R3.0-006 M3 additive extension: a mechanical ``[{name, slice_ids}]`` list
     with at least two Ontologies, non-empty unique names, and every slice of
-    the scenario map assigned to exactly one planned Ontology.  Slice closure
-    mirrors the ``validate_protection_iri_suggestions`` precedent: it is only
-    checked when the caller passes the scenario map's slice list.
+    the scenario map assigned to at least one planned Ontology.  A logical
+    slice may be served by more than one planned Ontology (shared core plus
+    domain topology), so overlapping ``slice_ids`` sets are legal as long as
+    each entry still names at least one slice; the plan never invents an empty
+    Ontology.  Slice closure mirrors the
+    ``validate_protection_iri_suggestions`` precedent: it is only checked when
+    the caller passes the scenario map's slice list.
     """
 
     issues: list[ScenarioMapIssue] = []
@@ -364,15 +368,6 @@ def _validate_ontology_plan(
                 )
             )
             continue
-        overlap = assigned.intersection(entry_slices)
-        if overlap:
-            issues.append(
-                ScenarioMapIssue(
-                    "topology_invalid_ontology_plan",
-                    f"slice {sorted(overlap)[0]} belongs to more than one Ontology",
-                )
-            )
-            continue
         assigned.update(entry_slices)
         if slice_ids is not None:
             dangling = [slice_id for slice_id in entry_slices if slice_id not in slice_ids]
@@ -384,7 +379,7 @@ def _validate_ontology_plan(
         issues.append(
             ScenarioMapIssue(
                 "topology_invalid_ontology_plan",
-                "every scenario-map slice must belong to exactly one planned Ontology",
+                "every scenario-map slice must be covered by at least one planned Ontology",
             )
         )
     return issues

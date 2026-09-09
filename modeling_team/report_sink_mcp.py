@@ -35,6 +35,101 @@ PLATFORM_LOCATOR_FIELDS = [
 ]
 PAGE_FIELDS = ["ordinal", "input_cursor", "output_cursor", "has_more", "sequence_complete"]
 
+# v3 batch branch (R3.0-011): selected by report schema, never by a new kind.
+# The child-side check repeats only the per-question field shape so a model
+# cannot bypass it by writing to the socket directly; batch identity, question
+# order, and completeness stay Host-side (the sink's batch contract).
+CQ_BATCH_REPORT_SCHEMA = "r3-0-011-acceptance-batch-report/v1"
+CQ_EXAMINER_STATUSES = ("completed", "unanswered", "runtime-incomplete")
+# Exact projection of competency_questions.CQ_VERDICT_STATES: this bridge runs
+# standalone in the child namespace and cannot import the host package.  A
+# non-pass verdict names why the answer was insufficient; there is no bare
+# "fail" state in the canonical contract.
+CQ_VERDICT_STATES = (
+    "pass",
+    "model-recall-insufficient",
+    "question-answer-review",
+    "platform-runtime-incomplete",
+)
+CQ_FAILURE_LAYERS = (
+    "modeling-quality",
+    "platform-contract",
+    "collaboration/routing",
+    "runtime/infrastructure",
+)
+BATCH_EXAMINER_FIELDS = [
+    "schema_version",
+    "batch_id",
+    "question_id",
+    "question_content_version",
+    "answer",
+    "evidence_refs",
+    "explicit_unknown",
+    "status",
+    "failure_layer",
+    "reason",
+]
+BATCH_VERDICT_FIELDS = [
+    "schema_version",
+    "batch_id",
+    "question_id",
+    "verdict",
+    "failure_layer",
+    "conflicting_evidence",
+    "note",
+]
+
+
+def _validate_batch_payload(
+    value: Any, *, kind: str, batch_id: str, question_ids: list[str], role: str
+) -> dict[str, Any]:
+    """Validate one v3 per-question report entry (platform or judge spelling)."""
+
+    if kind not in {"platform", "acceptance"}:
+        raise ValueError("v3 batch report sink kind is invalid")
+    # ``role`` is the session role spelling; ``kind`` is the sink kind spelling.
+    expected_platform = role == "platform-examiner"
+    if (kind == "platform") is not expected_platform:
+        raise ValueError("v3 batch report role does not match the sink kind")
+    fields = BATCH_EXAMINER_FIELDS if expected_platform else BATCH_VERDICT_FIELDS
+    if not isinstance(value, Mapping) or set(value) != set(fields):
+        raise ValueError("v3 batch report fields drift")
+    if value["schema_version"] != CQ_BATCH_REPORT_SCHEMA:
+        raise ValueError("v3 batch report schema is invalid")
+    if not isinstance(value["batch_id"], str) or not value["batch_id"]:
+        raise ValueError("v3 batch report batch_id is invalid")
+    if value["batch_id"] != batch_id:
+        raise ValueError("v3 batch report is bound to another batch")
+    question_id = value["question_id"]
+    if not isinstance(question_id, str) or not question_id:
+        raise ValueError("v3 batch report question_id is invalid")
+    if question_ids and question_id not in question_ids:
+        raise ValueError("v3 batch report question is not in the frozen batch")
+    if expected_platform:
+        version = value["question_content_version"]
+        if isinstance(version, bool) or not isinstance(version, int) or version < 1:
+            raise ValueError("v3 batch report question_content_version is invalid")
+        if not isinstance(value["answer"], str) or not value["answer"]:
+            raise ValueError("v3 batch report answer is invalid")
+        refs = value["evidence_refs"]
+        if not isinstance(refs, list) or any(not isinstance(item, str) for item in refs):
+            raise ValueError("v3 batch report evidence_refs are invalid")
+        if not isinstance(value["explicit_unknown"], list):
+            raise ValueError("v3 batch report explicit_unknown is invalid")
+        if value["status"] not in CQ_EXAMINER_STATUSES:
+            raise ValueError("v3 batch report status is invalid")
+    else:
+        if value["verdict"] not in CQ_VERDICT_STATES:
+            raise ValueError("v3 batch report verdict is invalid")
+        if not isinstance(value["conflicting_evidence"], list):
+            raise ValueError("v3 batch report conflicting_evidence is invalid")
+        if not isinstance(value["note"], str) or not value["note"]:
+            raise ValueError("v3 batch report note is invalid")
+    layer = value["failure_layer"]
+    if layer is not None and layer not in CQ_FAILURE_LAYERS:
+        raise ValueError("v3 batch report failure_layer is invalid")
+    return dict(value)
+
 
 def report_schema(kind: str) -> dict[str, Any]:
     """Return the strict, non-secret input schema for one Examiner kind."""
@@ -204,6 +299,70 @@ def _validate_payload(value: Any, *, kind: str) -> dict[str, Any]:
     return dict(value)
 
 
+def _v3_batch_report_schema(*, platform: bool) -> dict[str, Any]:
+    """Advertised schema for the selected v3 batch branch (``--schema``).
+
+    ``tools/list`` must describe the branch the sink actually validates, so a
+    child that lists tools before submitting sees the same per-question field
+    set the Host enforces.  Batch identity, question order and completeness stay
+    Host-side and are therefore not part of the per-call schema.
+    """
+
+    def _text(name: str) -> dict[str, Any]:
+        return {"type": "string", "minLength": 1}
+
+    properties: dict[str, Any] = {
+        "schema_version": {"type": "string", "const": CQ_BATCH_REPORT_SCHEMA},
+        "batch_id": _text("batch_id"),
+        "question_id": _text("question_id"),
+        "failure_layer": {
+            "type": ["string", "null"],
+            "enum": [*CQ_FAILURE_LAYERS, None],
+        },
+    }
+    required = ["schema_version", "batch_id", "question_id", "failure_layer"]
+    if platform:
+        properties.update(
+            {
+                "question_content_version": {"type": "integer", "minimum": 1},
+                "answer": {"type": "string", "minLength": 1},
+                "evidence_refs": {"type": "array", "items": {"type": "string"}},
+                "explicit_unknown": {"type": "array", "items": {"type": "string"}},
+                "status": {"type": "string", "enum": list(CQ_EXAMINER_STATUSES)},
+                "reason": _text("reason"),
+            }
+        )
+        required += [
+            "question_content_version",
+            "answer",
+            "evidence_refs",
+            "explicit_unknown",
+            "status",
+            "reason",
+        ]
+    else:
+        properties.update(
+            {
+                "verdict": {"type": "string", "enum": list(CQ_VERDICT_STATES)},
+                "conflicting_evidence": {"type": "array", "items": {"type": "string"}},
+                "note": {"type": "string", "minLength": 1},
+            }
+        )
+        required += ["verdict", "conflicting_evidence", "note"]
+    return {
+        "type": "object",
+        "required": required,
+        "additionalProperties": False,
+        "properties": properties,
+        "description": (
+            "Strict R3.0-011 v3 per-question Platform Examiner batch report "
+            "(one call per question, packet order)."
+            if platform
+            else "Strict R3.0-011 v3 per-question Acceptance judge verdict (one call per question)."
+        ),
+    }
+
+
 def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
@@ -214,11 +373,28 @@ def main() -> int:
     parser.add_argument("--kind", choices=("source", "platform", "acceptance"), required=True)
     parser.add_argument("--socket", required=True)
     parser.add_argument("--token-file", required=True)
+    parser.add_argument(
+        "--schema",
+        choices=(CQ_BATCH_REPORT_SCHEMA,),
+        default=None,
+        help="select the v3 batch report branch (platform/acceptance only)",
+    )
+    parser.add_argument("--batch-id", default="")
+    parser.add_argument("--role", choices=("platform-examiner", "acceptance"), default=None)
+    parser.add_argument(
+        "--question-ids",
+        default="",
+        help="comma-separated frozen batch question order (advisory, Host-enforced)",
+    )
     args = parser.parse_args()
+    if args.schema is not None and args.role is None:
+        parser.error("--schema requires --role")
     try:
         token = open(args.token_file, encoding="utf-8").read().strip()
     except OSError:
         return 2
+    question_ids = [item for item in args.question_ids.split(",") if item]
+    v3_batch = args.schema is not None
     for line in sys.stdin:
         request: Any = None
         try:
@@ -232,12 +408,18 @@ def main() -> int:
                     "serverInfo": {"name": "examiner_report", "version": "1"},
                 }
             elif method == "tools/list":
+                if v3_batch:
+                    advertised = _v3_batch_report_schema(
+                        platform=args.role == "platform-examiner"
+                    )
+                else:
+                    advertised = report_schema(args.kind)
                 result = {
                     "tools": [
                         {
                             "name": "submit_examiner_report",
                             "description": f"submit one strict {args.kind} semantic report",
-                            "inputSchema": report_schema(args.kind),
+                            "inputSchema": advertised,
                         }
                     ]
                 }
@@ -245,7 +427,16 @@ def main() -> int:
                 params = request.get("params", {})
                 if not isinstance(params, Mapping) or params.get("name") != "submit_examiner_report":
                     raise RuntimeError("report-tool-denied")
-                arguments = _validate_payload(params.get("arguments"), kind=args.kind)
+                if args.schema is not None:
+                    arguments = _validate_batch_payload(
+                        params.get("arguments"),
+                        kind=args.kind,
+                        batch_id=args.batch_id,
+                        question_ids=question_ids,
+                        role=args.role,
+                    )
+                else:
+                    arguments = _validate_payload(params.get("arguments"), kind=args.kind)
                 with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
                     client.settimeout(5)
                     client.connect(args.socket)

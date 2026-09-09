@@ -15,6 +15,13 @@ import sys
 from typing import Any
 
 
+# R3.0-011 v3 acceptance mode (PLATFORM_PROXY_MODE): the packet-authorized
+# multi-Ontology scope is Host-owned, so the bridge forwards only the invariant
+# batch ticket and passes the proxy's exact tool schemas through.  Injecting the
+# legacy primary-entry singleton scope here is what made a subset read that
+# excluded the primary Ontology arrive at the proxy with contradictory values.
+_V3_ACCEPTANCE_MODE = "v3-acceptance"
+
 _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "get_modeling_context": {
         "name": "get_modeling_context",
@@ -169,6 +176,7 @@ def main() -> int:
     except OSError:
         return 2
     modeling_mode = os.environ.get("PLATFORM_PROXY_MODE") == "modeling"
+    v3_mode = os.environ.get("PLATFORM_PROXY_MODE") == _V3_ACCEPTANCE_MODE
     scope = {
         key: os.environ.get(key, "")
         for key in (
@@ -187,12 +195,16 @@ def main() -> int:
             if method == "initialize":
                 result = {"protocolVersion": "2025-03-26", "capabilities": {"tools": {}}, "serverInfo": {"name": "platform_read_proxy", "version": "1"}}
             elif method == "tools/list":
-                tools = _proxy_call(args.socket, {"token": token, "operation": "tools/list"}).get("tools", [])
-                result = {
-                    "tools": (
-                        [_modeling_tool_schema(name) for name in tools]
-                        if modeling_mode
-                        else [
+                listing = _proxy_call(args.socket, {"token": token, "operation": "tools/list"})
+                tools = listing.get("tools", [])
+                if v3_mode:
+                    # Pass the proxy's exact schemas through unchanged: the
+                    # proxy is the source of truth for what it will accept.
+                    exact = listing.get("schemas")
+                    exact = [item for item in (exact if isinstance(exact, list) else []) if isinstance(item, dict) and item.get("name") in set(tools)]
+                    result = {
+                        "tools": exact
+                        or [
                             {
                                 "name": name,
                                 "description": "ticket-bound read-only platform query",
@@ -200,14 +212,30 @@ def main() -> int:
                             }
                             for name in tools
                         ]
-                    )
-                }
+                    }
+                elif modeling_mode:
+                    result = {"tools": [_modeling_tool_schema(name) for name in tools]}
+                else:
+                    result = {
+                        "tools": [
+                            {
+                                "name": name,
+                                "description": "ticket-bound read-only platform query",
+                                "inputSchema": {"type": "object"},
+                            }
+                            for name in tools
+                        ]
+                    }
             elif method == "tools/call":
                 params = request.get("params", {}) if isinstance(request, dict) else {}
                 name = params.get("name")
                 arguments = dict(params.get("arguments") or {})
                 if modeling_mode:
                     arguments = _project_modeling_arguments(name, arguments, scope)
+                elif v3_mode:
+                    # Only the invariant batch ticket is bridged; the proxy owns
+                    # every per-Ontology scope value for the selected entries.
+                    arguments.setdefault("ticket_digest", scope["PLATFORM_PROXY_TICKET_DIGEST"])
                 else:
                     mapping = {
                         "project_id": "PLATFORM_PROXY_PROJECT_ID",

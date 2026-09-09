@@ -65,6 +65,7 @@ CQ_REASON_CODES: tuple[str, ...] = (
     "cq_public_projection_missing",
     "cq_hidden_exposed",
     "cq_freeze_schema_mismatch",
+    "cq_projection_scenario_map_mismatch",
     "cq_model_binding_missing",
     "cq_batch_scope_unauthorized",
     "cq_batch_context_lost",

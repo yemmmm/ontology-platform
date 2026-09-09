@@ -725,6 +725,8 @@ def test_f2_delivery_freeze_reaches_the_cq_acceptance_command(cq_runner, tmp_pat
             run_root=root,
             freeze_id="freeze-0001",
             model_handoff=tmp_path / "handoff.json",
+            # Historical carrier scope: this test never executes the batch.
+            unexecuted_report=True,
         ),
         REPO_ROOT,
     )
@@ -787,7 +789,11 @@ def test_f6_cleanup_deletes_private_temp_and_preserves_durable_artifacts(cq_runn
     _write_handoff(tmp_path / "handoff.json", ack["freeze_id"], ack["snapshot_digest"])
     assert _run_cq_acceptance(
         SimpleNamespace(
-            run_root=root, freeze_id="freeze-0001", model_handoff=tmp_path / "handoff.json"
+            run_root=root,
+            freeze_id="freeze-0001",
+            model_handoff=tmp_path / "handoff.json",
+            # Historical carrier scope: this test never executes the batch.
+            unexecuted_report=True,
         ),
         REPO_ROOT,
     ) == 0
@@ -973,7 +979,11 @@ def test_r4_non_blind_pool_labels_the_batch_report(cq_runner, tmp_path, capsys):
     _write_handoff(tmp_path / "handoff.json", ack["freeze_id"], ack["snapshot_digest"])
     assert _run_cq_acceptance(
         SimpleNamespace(
-            run_root=root, freeze_id="freeze-0001", model_handoff=tmp_path / "handoff.json"
+            run_root=root,
+            freeze_id="freeze-0001",
+            model_handoff=tmp_path / "handoff.json",
+            # Historical carrier scope: this test never executes the batch.
+            unexecuted_report=True,
         ),
         REPO_ROOT,
     ) == 0

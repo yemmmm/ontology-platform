@@ -793,6 +793,10 @@ class IssueEscalationTests(unittest.TestCase):
             )
             runner.adapter = adapter
             runner._candidate_progress = None
+            # ``object.__new__`` skips ``__init__``; this legacy fixture runs
+            # with competency questions disabled, which the constructor would
+            # otherwise have established.
+            runner._competency_questions = False
             runner._append_evidence = lambda *_args, **_kwargs: None
             states: list[tuple[str, dict[str, object]]] = []
             runner._state = lambda value, **extra: states.append((value, extra))

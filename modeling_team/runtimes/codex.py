@@ -46,7 +46,11 @@ from ..acceptance_runtime import (
     ExaminerRuntimeBlocked,
     ReportSinkServer,
     ScopedReadProxy,
+    V3BatchReportContract,
     acceptance_branch_for,
+    v3_examiner_proxy_schemas,
+    v3_proxy_scope_entries,
+    v3_ticket_digest,
     _make_report_validator,
     _source_report_evidence_ids,
     _validate_acceptance_evidence_ids,
@@ -386,6 +390,12 @@ _PROXY_ENV_KEYS = (
     "NO_PROXY",
 )
 
+# R3.0-011 v3 read-bridge mode: the child-local read_proxy_mcp bridge selects it
+# from PLATFORM_PROXY_MODE.  In this mode the bridge forwards only the invariant
+# batch ticket and passes the proxy's exact tool schemas through; every
+# per-Ontology scope value stays Host-owned (see ScopedReadProxy._v3_scope_arguments).
+_V3_PROXY_BRIDGE_MODE = "v3-acceptance"
+
 
 def _minimal_codex_process_env(home: Path, api_key: str | None = None) -> dict[str, str]:
     """Build the explicit environment allowed for a Codex app-server process."""
@@ -718,6 +728,66 @@ class _Agent:
     # overwrite the first sanitized infrastructure cause.
     runtime_failure: dict[str, Any] | None = None
     runtime_failure_termination_attempted: bool = False
+
+
+def _v3_child_teardown_evidence(
+    resource: Any,
+    *,
+    proxy: Any,
+    report_sink: Any,
+    private_root: str,
+    socket_root: str,
+    sink_thread: Any = None,
+) -> dict[str, Any]:
+    """Observe one v3 child's actual teardown outcome (R3.0-011).
+
+    Every value is read from post-``destroy`` state -- the stopped servers, the
+    removed private tree and socket root -- so the carrier records what really
+    happened to the resources it allocated instead of assuming success.  The
+    shared legacy ``destroy``/``stop`` pair is untouched: only this v3 boundary
+    observes it, and an unrelated concurrently running child can never appear
+    in this evidence.
+    """
+
+    def _stopped(target: Any) -> bool:
+        return target is None or not bool(getattr(target, "active", True))
+
+    def _sink_stopped(sink: Any) -> bool:
+        """Observe the real ``ReportSinkServer`` shutdown instead of guessing.
+
+        The sink defines no ``active`` property, so the generic probe above
+        reads every real sink as still running even after a successful
+        ``stop()``.  A sink is still live exactly while its serve loop runs,
+        its listening socket exists or its socket file does; the serve thread
+        handle is the pre-``destroy`` capture, because ``stop()`` clears
+        ``_thread`` and would make a post-hoc liveness check vacuous.  A sink
+        that never started owns none of those, so nothing of it is live.
+        """
+
+        if sink is None:
+            return True
+        if isinstance(sink_thread, threading.Thread) and sink_thread.is_alive():
+            return False
+        if getattr(sink, "_server", None) is not None:
+            return False
+        socket_path = getattr(sink, "socket_path", None)
+        if isinstance(socket_path, (str, Path)) and str(socket_path) and Path(socket_path).exists():
+            return False
+        return True
+
+    def _removed(path: str) -> bool:
+        # An empty path means this child never owned that resource; it is
+        # trivially gone and must not read as a teardown failure.
+        return not path or not Path(path).exists()
+
+    return {
+        "child_stopped": bool(getattr(resource, "stopped", False)),
+        "child_destroyed": bool(getattr(resource, "destroyed", False)),
+        "report_sink_stopped": _sink_stopped(report_sink),
+        "proxy_stopped": _stopped(proxy),
+        "private_root_removed": _removed(private_root),
+        "socket_root_removed": _removed(socket_root),
+    }
 
 
 class _CodexChildResource:
@@ -1202,6 +1272,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._coordination_enabled = False
         self._candidate_platform_gate_enabled = False
         self._staged_decisions_enabled = False
+        # R3.0-009 unified semantic graph mode; set per run next to the staged
+        # flag so the bind table and the Runner schema dispatch agree.
+        self._unified_graph = False
         self._formal_turn_binding_required = False
         self._team_model_profile: TeamModelProfile | None = None
         self._private_credentials_destroyed: dict[str, bool] = {}
@@ -1696,6 +1769,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise
         return resource
 
+    def bind_acceptance_model_profile(self, profile: TeamModelProfile) -> None:
+        """Bind the validated team model profile for a standalone acceptance run.
+
+        A TeamRunner run freezes its profile in ``start_roster``; the R3.0-011
+        ``cq-acceptance`` carrier starts no roster, so it binds the validated
+        profile itself before launching a formal child.  Coordination stays off:
+        this only satisfies the formal role-binding guard that every fresh
+        Examiner child already enforces.
+        """
+
+        if not isinstance(profile, TeamModelProfile):
+            raise CodexRuntimeError("acceptance runtime model profile is invalid")
+        self._team_model_profile = profile
+
     def launch_v3_acceptance_child(
         self,
         packet: AcceptanceBatchPacket,
@@ -1705,6 +1792,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         read_key: str | None = None,
         platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         timeout_seconds: float = 300.0,
+        graph_set_ids: Mapping[str, Any] | None = None,
     ) -> Any:
         """Launch the single v3 hidden-batch acceptance child (R3.0-011).
 
@@ -1735,15 +1823,56 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 role="platform",
                 evidence={"read_key": bool(read_key), "forwarder": callable(platform_forwarder)},
             )
+        scope = payload.get("authorized_scope") if isinstance(payload.get("authorized_scope"), list) else []
+        # The Host observes one default graph set per authorized Ontology with the
+        # same read-only tools before the child exists; the child scope is built
+        # from the packet binding plus these locators and nothing else.  Every
+        # required Host input is validated before the private tree is allocated
+        # so a rejected launch never leaves an allocated root behind.
+        v3_graph_set_ids: dict[str, Any] = {}
+        if platform_role:
+            if not isinstance(graph_set_ids, Mapping) or not graph_set_ids:
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-input",
+                    role="platform",
+                    evidence={"graph_set_ids": bool(graph_set_ids)},
+                )
+            v3_graph_set_ids = {
+                str(key): value
+                for key, value in graph_set_ids.items()
+                if isinstance(key, str) and key in set(scope)
+            }
+            if sorted(v3_graph_set_ids) != sorted(str(item) for item in scope) or any(
+                not isinstance(value, str) or not value for value in v3_graph_set_ids.values()
+            ):
+                raise ExaminerRuntimeBlocked(
+                    "acceptance-input",
+                    role="platform",
+                    evidence={"graph_set_ids": "incomplete"},
+                )
         private_root = Path(tempfile.mkdtemp(prefix="r3011-acceptance-", dir="/tmp"))
         os.chmod(private_root, 0o700)
         private_input = private_root / "input.json"
         self._write_child_private(private_input, _packet_canonical(payload), 0o400)
+        if platform_role:
+            # The Platform Examiner stays blind: no answer, no evidence bundle.
+            isolation = (
+                "One continuous session per batch, questions in packet order, no "
+                "answer text, no source directory, no evidence bundle, no other context."
+            )
+        else:
+            isolation = (
+                "One independent judging session per batch, questions in packet order; "
+                "this packet already carries the frozen answer points, the approved "
+                "evidence material and the Examiner reports, and no platform read is "
+                "available to you."
+            )
         first_turn_text = (
             "R3.0-011 v3 hidden-batch acceptance session. Use only this serialized packet "
             "and submit per-question v3 reports through the report-only acceptance MCP "
-            "server. One continuous session per batch, questions in packet order, no "
-            "answer text, no source directory, no other context. PACKET_JSON="
+            "server. "
+            + isolation
+            + " PACKET_JSON="
             + _packet_canonical(payload).decode("utf-8")
             + " "
             + role_instructions
@@ -1756,7 +1885,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             workspace = ontologies[0].get("workspace_state")
             if isinstance(workspace, Mapping) and isinstance(workspace.get("state_digest"), str):
                 state_digest = workspace["state_digest"]
-        scope = payload.get("authorized_scope") if isinstance(payload.get("authorized_scope"), list) else []
         handle_digest = hashlib.sha256(
             (packet.canonical_digest + packet.role).encode()
         ).hexdigest()
@@ -1772,6 +1900,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "private_root": str(private_root),
             "private_input": str(private_input),
             "platform_read_scope": {"ontology_ids": list(scope)},
+            "v3_graph_set_ids": v3_graph_set_ids,
             "model_state_digest": state_digest,
             "allowed_read_tools": (
                 list(payload.get("authorized_read_tools", ())) if platform_role else []
@@ -1795,6 +1924,136 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             shutil.rmtree(private_root, ignore_errors=True)
             raise
         return resource
+
+    def run_v3_acceptance_child(
+        self,
+        packet: AcceptanceBatchPacket,
+        *,
+        role_instructions: str,
+        reports: list[Mapping[str, Any]],
+        read_key: str | None = None,
+        platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
+        timeout_seconds: float = 300.0,
+        graph_set_ids: Mapping[str, Any] | None = None,
+        teardown: dict[str, Any] | None = None,
+    ) -> list[Mapping[str, Any]]:
+        """Run one v3 batch child to batch completion and return its reports.
+
+        Launch, wait and report ingestion in one call: the ordered per-question
+        reports are ingested from the same list the private sink appended to, so
+        the Host consumes exactly what passed the batch contract at submit time.
+        Completion is the sink's own batch-complete latch, never a timeout race
+        or a model statement; anything else (infrastructure failure, dead child,
+        deadline) raises :class:`ExaminerRuntimeBlocked` and the child is
+        destroyed, so a missing or partial batch can never look like a PASS.
+
+        Two v3-only observables are handed back to the carrier without touching
+        the shared legacy teardown: ``teardown`` (when given) receives the
+        child's actual post-``destroy`` teardown outcome, and the caller's
+        ``reports`` list keeps every report the sink already accepted -- legacy
+        cleanup clears that shared list, and a failed batch must still be able
+        to name the questions that did land.
+        """
+
+        resource = self.launch_v3_acceptance_child(
+            packet,
+            role_instructions=role_instructions,
+            reports=reports,
+            read_key=read_key,
+            platform_forwarder=platform_forwarder,
+            timeout_seconds=timeout_seconds,
+            graph_set_ids=graph_set_ids,
+        )
+        expected = 0
+        # Observed before destroy(): the legacy teardown pops the socket root
+        # from the spec and stops the servers, so this is the last point where
+        # the v3 boundary can capture what it owns.
+        proxy = getattr(resource, "proxy", None)
+        report_sink = getattr(resource, "report_sink", None)
+        private_root = str(resource.spec.get("private_root") or "")
+        socket_root = str(resource.spec.get("_runtime_socket_root") or "")
+        try:
+            sink = getattr(resource, "report_sink", None)
+            contract = getattr(sink, "batch_contract", None)
+            if not isinstance(contract, V3BatchReportContract):
+                raise ExaminerRuntimeBlocked(
+                    "runtime-infrastructure",
+                    role=packet.role,
+                    evidence={"reason_code": "batch-contract-unavailable"},
+                )
+            expected = len(contract.question_ids)
+            deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+            while time.monotonic() < deadline:
+                blocked = getattr(resource, "blocked", None)
+                if isinstance(blocked, ExaminerRuntimeBlocked):
+                    raise blocked
+                failure = getattr(resource, "failure_evidence", None)
+                failure = failure() if callable(failure) else None
+                if isinstance(failure, Mapping):
+                    raise ExaminerRuntimeBlocked(
+                        "runtime-infrastructure", role=packet.role, evidence=dict(failure)
+                    )
+                received = getattr(resource, "submitted_reports", None)
+                count = len(received) if isinstance(received, (list, tuple)) else 0
+                if count >= expected:
+                    process = getattr(resource, "process", None)
+                    poll = getattr(process, "poll", None)
+                    if callable(poll) and poll() is None:
+                        # Reports are in; let the App Server turn settle so the
+                        # child is destroyed from a quiet state, not mid-write.
+                        time.sleep(0.2)
+                    return list(received)
+                process = getattr(resource, "process", None)
+                poll = getattr(process, "poll", None)
+                if callable(poll) and poll() is not None:
+                    raise ExaminerRuntimeBlocked(
+                        "runtime-infrastructure",
+                        role=packet.role,
+                        evidence={"reason_code": "child-exited", "reports": count},
+                    )
+                time.sleep(0.05)
+            raise ExaminerRuntimeBlocked(
+                "runtime-infrastructure",
+                role=packet.role,
+                evidence={"reason_code": "batch-incomplete", "reports": len(reports)},
+            )
+        finally:
+            # Snapshot before destroy(): the shared list is this caller's own
+            # list and legacy cleanup clears it, so the accepted values must be
+            # put back afterwards or a partial batch is silently discarded.
+            accepted = list(reports)
+            destroy_error: str | None = None
+            # ``ReportSinkServer.stop()`` clears ``_thread``, so the serve
+            # thread handle must be captured before destroy for liveness to be
+            # a meaningful "is it still running" signal.
+            sink_thread = getattr(report_sink, "_thread", None)
+            try:
+                destroy = getattr(resource, "destroy", None)
+                if callable(destroy):
+                    destroy()
+            except Exception as exc:
+                # Legacy ``destroy`` stays unmodified; its failure is teardown
+                # evidence, never a reason to skip restoring the caller's
+                # accepted reports.
+                destroy_error = f"{type(exc).__name__}: {exc}"
+            finally:
+                # Inner finally: the restoration cannot be skipped by a
+                # destroy error above.
+                reports[:] = accepted
+            if isinstance(teardown, dict):
+                teardown.clear()
+                teardown.update(
+                    _v3_child_teardown_evidence(
+                        resource,
+                        proxy=proxy,
+                        report_sink=report_sink,
+                        private_root=private_root,
+                        socket_root=socket_root,
+                        sink_thread=sink_thread,
+                    )
+                )
+                if destroy_error is not None:
+                    teardown["destroy_error"] = destroy_error
 
     def run_lean_examiner_child(
         self,
@@ -2102,9 +2361,34 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 destroy()
 
     @staticmethod
-    def _child_package_assets(kind: str, root: Path) -> tuple[Path, Path, Path]:
+    def _child_package_assets(
+        kind: str, root: Path, *, v3_batch: bool = False
+    ) -> tuple[Path, Path, Path]:
         if kind not in {"source", "platform", "acceptance"}:
             raise CodexRuntimeError("Examiner child kind is invalid")
+        if v3_batch:
+            # R3.0-011: the ordered v3 batch mounts its own prompt assets.  The
+            # legacy package/skill bytes mandate one single-question payload,
+            # the old evidence shape, a Source Examiner and a 3-inference cap,
+            # which contradicts the packet contract the sink enforces -- and a
+            # first-turn note cannot reliably override mounted role
+            # instructions.  The legacy bytes stay byte-identical and remain
+            # the only assets for every non-v3 child.
+            if kind not in {"platform", "acceptance"}:
+                raise CodexRuntimeError("v3 acceptance child kind is invalid")
+            package = root / "modeling_team" / "agent-packages" / "v3-acceptance-batch"
+            instructions = package / (
+                "platform-examiner.md" if kind == "platform" else "acceptance-judge.md"
+            )
+            skill = package / "SKILL.md"
+            for path in (instructions, skill):
+                try:
+                    metadata = os.lstat(path)
+                except OSError as exc:
+                    raise CodexRuntimeError("v3 Examiner package asset is unavailable") from exc
+                if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+                    raise CodexRuntimeError("v3 Examiner package asset is invalid")
+            return package / "package.yaml", instructions, skill
         package = root / "modeling_team" / "agent-packages" / (
             f"{kind}-examiner" if kind != "acceptance" else "acceptance-examiner"
         )
@@ -2381,7 +2665,25 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             or root_metadata.st_uid != os.getuid()
         ):
             raise CodexRuntimeError("Examiner private root is not 0700")
-        _package_file, instructions, skill = self._child_package_assets(kind, self.root)
+        # R3.0-011 v3: an AcceptanceBatchPacket binds the ordered hidden batch at
+        # the sink itself, so a foreign batch, an unknown/duplicate/out-of-order
+        # question, or a drifted content version is rejected at submit time with
+        # an actionable reason.  Per-question entries still go through the
+        # canonical competency_questions validators; only batch identity, order
+        # and completeness are added here.  The attempt budget scales with the
+        # batch so a per-question repair sequence cannot exhaust it.  Resolved
+        # before the prompt assets are selected because the batch branch also
+        # decides which mounted instructions and skill the session sees.
+        batch_contract: V3BatchReportContract | None = None
+        v3_packet = spec.get("_packet")
+        if isinstance(v3_packet, AcceptanceBatchPacket):
+            batch_contract = V3BatchReportContract(
+                role=str(spec.get("v3_role") or v3_packet.role),
+                packet=v3_packet,
+            )
+        _package_file, instructions, skill = self._child_package_assets(
+            kind, self.root, v3_batch=batch_contract is not None
+        )
         instruction_bytes = instructions.read_bytes()
         skill_bytes = skill.read_bytes()
         # Formal Examiner children on external credential routes use the shared
@@ -2484,6 +2786,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         def sink_validator(report: Mapping[str, Any]) -> None:
             # Bind the child report against the live resource at submit time so a
             # rejected report returns an actionable reason and can be corrected.
+            if batch_contract is not None:
+                # The v3 batch contract runs inside the sink itself.
+                return
             packet = spec.get("_packet")
             if not isinstance(packet, ExaminerRolePacket):
                 return
@@ -2497,6 +2802,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             report_callback,
             kind=kind,
             validator=sink_validator,
+            max_attempts=(
+                max(3, 2 * len(batch_contract.question_ids))
+                if batch_contract is not None
+                else 3
+            ),
+            batch_contract=batch_contract,
         )
         spec["_runtime_report_sink"] = report_sink
         report_sink.start()
@@ -2506,6 +2817,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         proxy: ScopedReadProxy | None = None
         proxy_socket: Path | None = None
         proxy_token_path: Path | None = None
+        v3_entries: tuple[dict[str, str], ...] = ()
         if kind == "platform":
             read_key = spec.get("read_key_plaintext")
             scope = spec.get("platform_read_scope")
@@ -2539,21 +2851,48 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # while the platform proxy fails with AF_UNIX's path-length limit.
             proxy_socket = socket_root / "platform-proxy.sock"
             proxy_token_path = home / "platform-proxy.token"
-            proxy = ScopedReadProxy(
-                socket_path=proxy_socket,
-                token=proxy_token,
-                read_key=read_key,
-                project_id=str(scope.get("project_id")),
-                ontology_id=str(scope.get("ontology_id")),
-                graph_set_id=str(scope.get("graph_set_id")),
-                ticket_digest=str(spec["ticket_digest"]),
-                model_state_digest=str(spec["model_state_digest"]),
-                allowed_tools=list(spec.get("allowed_read_tools") or ()),
-                forward=forward if callable(forward) else None,
-                acceptance_round_id=str(spec["acceptance_round_id"]),
-                child_handle_digest=str(spec["child_handle_digest"]),
-                exact_schemas=examiner_proxy_schemas(spec.get("allowed_read_tools") or ()),
-            )
+            v3_batch = batch_contract is not None
+            if v3_batch:
+                # One read-only scope entry per packet-authorized Ontology: the
+                # packet binding supplies project/state identity, the Host's
+                # pre-read supplies the default graph set, and the child may
+                # select any subset per call.  Anything outside the list is
+                # refused by the proxy before a forward.
+                v3_entries = v3_proxy_scope_entries(
+                    v3_packet,
+                    spec.get("v3_graph_set_ids") or {},
+                )
+                proxy = ScopedReadProxy(
+                    socket_path=proxy_socket,
+                    token=proxy_token,
+                    read_key=read_key,
+                    authorized_ontologies=v3_entries,
+                    ticket_digest=v3_ticket_digest(spec["ticket_digest"]),
+                    model_state_digest=str(spec["model_state_digest"]),
+                    allowed_tools=list(spec.get("allowed_read_tools") or ()),
+                    forward=forward if callable(forward) else None,
+                    acceptance_round_id=str(spec["acceptance_round_id"]),
+                    child_handle_digest=str(spec["child_handle_digest"]),
+                    exact_schemas=v3_examiner_proxy_schemas(
+                        spec.get("allowed_read_tools") or ()
+                    ),
+                )
+            else:
+                proxy = ScopedReadProxy(
+                    socket_path=proxy_socket,
+                    token=proxy_token,
+                    read_key=read_key,
+                    project_id=str(scope.get("project_id")),
+                    ontology_id=str(scope.get("ontology_id")),
+                    graph_set_id=str(scope.get("graph_set_id")),
+                    ticket_digest=str(spec["ticket_digest"]),
+                    model_state_digest=str(spec["model_state_digest"]),
+                    allowed_tools=list(spec.get("allowed_read_tools") or ()),
+                    forward=forward if callable(forward) else None,
+                    acceptance_round_id=str(spec["acceptance_round_id"]),
+                    child_handle_digest=str(spec["child_handle_digest"]),
+                    exact_schemas=examiner_proxy_schemas(spec.get("allowed_read_tools") or ()),
+                )
             spec["_runtime_proxy"] = proxy
             proxy.start()
             # The proxy is the sole active holder of the temporary platform key.  Do not
@@ -2584,25 +2923,80 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "tool_suggest = false",
         ]
         if proxy is not None and proxy_socket is not None and proxy_token_path is not None:
-            config_lines.extend(
+            # Advisory env hints the child may show its model.  Legacy binds the
+            # single authorized Ontology; v3 projects nothing per-Ontology,
+            # because the packet-authorized scope is Host-owned and resolved per
+            # call from the child's selection -- projecting the first entry here
+            # is exactly the contradictory singleton that broke multi-Ontology
+            # reads through the real bridge.
+            if v3_entries:
+                config_lines.extend(
+                    [
+                        "[mcp_servers.platform_read_proxy]",
+                        'command = "/usr/bin/python3"',
+                        'args = ["/agent/home/read_proxy_mcp.py", "--stdio", "--socket", "/agent/home/platform-proxy.sock", "--token-file", "/agent/home/platform-proxy.token"]',
+                        "required = true",
+                        "[mcp_servers.platform_read_proxy.env]",
+                        f'PLATFORM_PROXY_MODE = {json.dumps(_V3_PROXY_BRIDGE_MODE)}',
+                        "PLATFORM_PROXY_TICKET_DIGEST = "
+                        + json.dumps(v3_ticket_digest(spec["ticket_digest"])),
+                    ]
+                )
+            else:
+                env_scope = {
+                    "project_id": str(spec["platform_read_scope"]["project_id"]),
+                    "ontology_id": str(spec["platform_read_scope"]["ontology_id"]),
+                    "graph_set_id": str(spec["platform_read_scope"]["graph_set_id"]),
+                    "ticket_digest": str(spec["ticket_digest"]),
+                    "model_state_digest": str(spec["model_state_digest"]),
+                }
+                config_lines.extend(
+                    [
+                        "[mcp_servers.platform_read_proxy]",
+                        'command = "/usr/bin/python3"',
+                        'args = ["/agent/home/read_proxy_mcp.py", "--stdio", "--socket", "/agent/home/platform-proxy.sock", "--token-file", "/agent/home/platform-proxy.token"]',
+                        "required = true",
+                        "[mcp_servers.platform_read_proxy.env]",
+                        f'PLATFORM_PROXY_PROJECT_ID = {json.dumps(env_scope["project_id"])}',
+                        f'PLATFORM_PROXY_ONTOLOGY_ID = {json.dumps(env_scope["ontology_id"])}',
+                        f'PLATFORM_PROXY_GRAPH_SET_ID = {json.dumps(env_scope["graph_set_id"])}',
+                        f'PLATFORM_PROXY_TICKET_DIGEST = {json.dumps(env_scope["ticket_digest"])}',
+                        f'PLATFORM_PROXY_MODEL_STATE_DIGEST = {json.dumps(env_scope["model_state_digest"])}',
+                    ]
+                )
+        report_sink_args = [
+            "/agent/home/report_sink_mcp.py",
+            "--stdio",
+            "--kind",
+            kind,
+            "--socket",
+            "/agent/home/report.sock",
+            "--token-file",
+            "/agent/home/report-sink.token",
+        ]
+        if batch_contract is not None:
+            # The child bridge repeats only the per-question field shape; batch
+            # identity, order and completeness stay Host-side in the sink, so
+            # the flags are convenience, never the enforcement boundary.
+            report_sink_args.extend(
                 [
-                    "[mcp_servers.platform_read_proxy]",
-                    'command = "/usr/bin/python3"',
-                    'args = ["/agent/home/read_proxy_mcp.py", "--stdio", "--socket", "/agent/home/platform-proxy.sock", "--token-file", "/agent/home/platform-proxy.token"]',
-                    "required = true",
-                    "[mcp_servers.platform_read_proxy.env]",
-                    f'PLATFORM_PROXY_PROJECT_ID = {json.dumps(str(spec["platform_read_scope"]["project_id"]))}',
-                    f'PLATFORM_PROXY_ONTOLOGY_ID = {json.dumps(str(spec["platform_read_scope"]["ontology_id"]))}',
-                    f'PLATFORM_PROXY_GRAPH_SET_ID = {json.dumps(str(spec["platform_read_scope"]["graph_set_id"]))}',
-                    f'PLATFORM_PROXY_TICKET_DIGEST = {json.dumps(str(spec["ticket_digest"]))}',
-                    f'PLATFORM_PROXY_MODEL_STATE_DIGEST = {json.dumps(str(spec["model_state_digest"]))}',
+                    "--schema",
+                    batch_contract.schema_version,
+                    "--batch-id",
+                    batch_contract.batch_id,
+                    "--role",
+                    batch_contract.role,
+                    "--question-ids",
+                    ",".join(batch_contract.question_ids),
                 ]
             )
         config_lines.extend(
             [
                 "[mcp_servers.examiner_report]",
                 'command = "/usr/bin/python3"',
-                f'args = ["/agent/home/report_sink_mcp.py", "--stdio", "--kind", "{kind}", "--socket", "/agent/home/report.sock", "--token-file", "/agent/home/report-sink.token"]',
+                "args = ["
+                + ", ".join(json.dumps(item) for item in report_sink_args)
+                + "]",
                 "required = true",
             ]
         )
@@ -2647,6 +3041,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             ) if kind == "platform" else None,
             "proxy": proxy.receipt.__dict__ if proxy is not None else None,
         }
+        if batch_contract is not None:
+            # v3 authorizes a list of Ontologies; record it explicitly so the
+            # manifest still describes the exact read scope granted to the child.
+            credential_manifest["authorized_ontology_ids"] = [
+                entry["ontology_id"] for entry in v3_entries
+            ]
+            credential_manifest["project_id"] = v3_entries[0]["project_id"] if v3_entries else None
+            credential_manifest["ontology_id"] = None
         _write_private(home / "child-credential-manifest.json", json.dumps(credential_manifest, sort_keys=True, ensure_ascii=False).encode("utf-8"), 0o400)
         descriptor_payload = {
             "kind": str(spec.get("descriptor", {}).get("kind", f"{kind}_examiner")),
@@ -2913,6 +3315,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             return False
         parameters = getattr(task, "parameters", None)
         return isinstance(parameters, dict) and parameters.get("staged_modeling_decisions") is True
+
+    @staticmethod
+    def _is_unified_graph_run(run: Any) -> bool:
+        """R3.0-009: a v2 Task declaring ``unified_semantic_graph: true``.
+
+        Same predicate shape and same Task-parameter source as the Runner's
+        ``TeamRunner._unified_graph`` flag, so the Adapter mount table and the
+        Runner artifact schema dispatch can never disagree about the mode.
+        """
+
+        task = getattr(getattr(run, "configuration", None), "task", None)
+        if getattr(task, "schema_version", 1) != 2:
+            return False
+        parameters = getattr(task, "parameters", None)
+        return isinstance(parameters, dict) and parameters.get("unified_semantic_graph") is True
 
     @staticmethod
     def _is_competency_question_run(run: Any) -> bool:
@@ -3224,6 +3641,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # the task parameter; every non-staged run keeps its exact previous
         # bind set and capability operations.
         self._staged_decisions_enabled = self._is_staged_decisions_run(run)
+        # R3.0-009: unified mode is an opt-in extension of the staged
+        # decisions path and only changes the stage3 mount split.
+        self._unified_graph = self._is_unified_graph_run(run)
         self._formal_turn_binding_required = self._coordination_enabled
         parameters = getattr(getattr(getattr(run, "configuration", None), "profile", None), "parameters", None)
         if isinstance(parameters, Mapping):
@@ -4160,6 +4580,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         exactly the directories it uniquely owns.  ``submission-receipts/``
         and ``submission-intents/`` are Runner-host-owned and never bound.
         Non-staged runs return an empty list (byte-identical command, F1).
+
+        R3.0-009 unified runs (2026-09-09 execution-gap closure G2) split the
+        ``stage3-neutral-graph`` tree so that the neutral candidate slot stays
+        published by Modeling while the materialization plans are published by
+        Protocol alone, using the same sequential-overlay mechanism as the
+        value-semantics tree: bwrap applies arguments in order, so a later
+        bind of a subdirectory overrides the enclosing bind.  Modeling keeps
+        the writable parent (slot root file and ``candidates/``) with a
+        read-only overlay on ``materialization-plans/``; Protocol gets the
+        read-only parent plus a writable overlay on ``materialization-plans/``;
+        the Coordinator sees the whole tree read-only; the competency-question
+        and every other role receive no stage3 mount at all.  Non-unified
+        staged runs keep the previous mount sequence byte-for-byte.
         """
 
         if not getattr(self, "_staged_decisions_enabled", False):
@@ -4171,6 +4604,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         value_semantics = self._run_root / "value-semantics"
         if not value_semantics.is_dir():
             raise CodexRuntimeError("staged value-semantics directory was not prepared")
+        unified = bool(getattr(self, "_unified_graph", False))
         writable_by_role: dict[str, tuple[str, ...]] = {
             "modeling": (
                 "value-semantics/conclusions",
@@ -4196,6 +4630,43 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # The later per-subdirectory --bind nests on top of the read-only
             # value-semantics bind (bwrap applies arguments sequentially).
             mounts.extend(["--bind", str(directory), f"/agent/work/{relative}"])
+        if not unified:
+            return mounts
+        neutral_graph = self._run_root / "stage3-neutral-graph"
+        plans = neutral_graph / "materialization-plans"
+        if not neutral_graph.is_dir() or not plans.is_dir():
+            raise CodexRuntimeError(
+                "unified staged stage3 directories were not prepared"
+            )
+        if role == "modeling":
+            # The writable parent above stays; the read-only overlay below it
+            # makes materialization-plans immutable in this namespace.
+            mounts.extend(
+                [
+                    "--ro-bind",
+                    str(plans),
+                    "/agent/work/stage3-neutral-graph/materialization-plans",
+                ]
+            )
+        elif role == "protocol":
+            mounts.extend(
+                [
+                    "--ro-bind",
+                    str(neutral_graph),
+                    "/agent/work/stage3-neutral-graph",
+                    "--bind",
+                    str(plans),
+                    "/agent/work/stage3-neutral-graph/materialization-plans",
+                ]
+            )
+        elif role == "coordinator":
+            mounts.extend(
+                [
+                    "--ro-bind",
+                    str(neutral_graph),
+                    "/agent/work/stage3-neutral-graph",
+                ]
+            )
         return mounts
 
     def _competency_question_binds(self, agent: _Agent) -> list[str]:

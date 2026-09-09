@@ -60,7 +60,7 @@
       "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
       "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
       "selected_option must be one of the listed options and rationale must be non-empty",
-      "R3.0-006 additive optional field ontology_plan: must be absent when selected_option is single_ontology, required for every other selection; value is a mechanical list [{name, slice_ids}] with at least two entries, non-empty unique names, and every scenario-map slice assigned to exactly one planned Ontology (slice references close against the scenario map's slice list)"
+      "R3.0-006 additive optional field ontology_plan: must be absent when selected_option is single_ontology, required for every other selection; value is a mechanical list [{name, slice_ids}] with at least two entries, non-empty unique names, and every scenario-map slice assigned to at least one planned Ontology, with a logical slice allowed to be served by more than one planned Ontology (shared core plus domain topology; slice references close against the scenario map's slice list)"
     ],
     "optional_fields": {
       "ontology_plan": {
@@ -69,7 +69,7 @@
           "at least two planned Ontologies",
           "name values are non-empty and unique",
           "slice_ids is a non-empty list of distinct slice_ids of the current scenario map",
-          "every scenario-map slice belongs to exactly one planned Ontology"
+          "every scenario-map slice belongs to at least one planned Ontology; a slice may be served by more than one planned Ontology"
         ]
       }
     },

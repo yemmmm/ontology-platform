@@ -54,6 +54,10 @@ def _proxy(*, forward) -> ScopedReadProxy:
     self.backend_calls = 0
     self.schema_rejections = 0
     self.post_revoke_denials = 0
+    # ``__new__`` skips ``__init__``, so the legacy single-Ontology state the
+    # constructor normally establishes must be set explicitly: this fixture is
+    # a legacy proxy, not a v3 multi-Ontology one.
+    self.authorized_ontologies = ()
     return self
 
 

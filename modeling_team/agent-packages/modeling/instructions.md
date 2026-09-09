@@ -315,4 +315,12 @@ business side confirms it. Revise a conclusion by archiving the current version 
 `value-semantics/conclusions-archive/` first and then incrementing its revision; the same revision
 is never rewritten in place. Record a genuine contradiction as `conflict` with a conflict note
 instead of silently overwriting an earlier hypothesis. You also produce the minimal stage 3 slot in
-`stage3-neutral-graph/neutral-candidate.json` with `deferred_contract: R3.0-009`.
+`stage3-neutral-graph/neutral-candidate.json`, and the slot contract field follows the mounted
+contract: with only the R3.0-008B staged contract mounted, write
+`deferred_contract: R3.0-009`; when the task also mounts
+`modeling_team/references/r3-0-009-unified-graph-contract.json` (task parameter
+`unified_semantic_graph: true`), write `candidate_contract: r3-0-009-unified-graph/v1` instead of
+`deferred_contract`, and publish every neutral candidate artifact listed in the slot's
+`candidate_artifacts` as a file under `stage3-neutral-graph/candidates/` using a path relative to
+the run root. Never rename, replace or delete anything under
+`stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.

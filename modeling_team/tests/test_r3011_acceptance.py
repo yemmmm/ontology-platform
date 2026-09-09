@@ -31,6 +31,7 @@ from modeling_team.competency_questions import (
     CQ_FAILURE_LAYERS,
     CQ_FREEZE_SCHEMA,
     CQ_REQUIRED_FAILURE_LAYERS,
+    CQ_VERDICT_STATES,
     acceptance_mode_evidence,
     batch_report_is_full_pass,
     blind_batch_label,
@@ -525,6 +526,10 @@ def _command(tmp_path: Path, run_root: Path) -> int:
             run_root=run_root,
             freeze_id="freeze-0001",
             model_handoff=tmp_path / "handoff.json",
+            model_profile=None,
+            session_timeout=300.0,
+            # These tests pin the pre-authorization evidence shape explicitly.
+            unexecuted_report=True,
         ),
         REPO_ROOT,
     )
@@ -617,6 +622,7 @@ def test_m12_cli_dispatch_reaches_the_command_without_a_runner(tmp_path, capsys,
             "freeze-0001",
             "--model-handoff",
             str(tmp_path / "handoff.json"),
+            "--unexecuted-report",
         ],
     )
     assert main() == 0
@@ -715,6 +721,7 @@ def test_m13_v3_child_seam_dispatches_one_session_per_batch(tmp_path):
         reports=reports,
         read_key="read-key",
         platform_forwarder=lambda tool, arguments, key: {},
+        graph_set_ids={"ontology-1": "graph-set-1"},
     )
     try:
         assert captured["v3_batch"] is True
@@ -722,6 +729,7 @@ def test_m13_v3_child_seam_dispatches_one_session_per_batch(tmp_path):
         assert captured["session_id"].startswith("r3011-")
         assert captured["kind"] == "platform"
         assert captured["allowed_read_tools"] == ["query_semantic_context"]
+        assert captured["v3_graph_set_ids"] == {"ontology-1": "graph-set-1"}
         assert captured["report_submit_payload"] == reports.append
         first_turn = captured["first_turn_input"][0]["text"]
         assert "One continuous session per batch" in first_turn
@@ -736,7 +744,30 @@ def test_m13_v3_child_seam_dispatches_one_session_per_batch(tmp_path):
                 packet,
                 role_instructions="submit one v3 report per question",
                 reports=reports,
+                graph_set_ids={"ontology-1": "graph-set-1"},
             )
+        # Missing or incomplete graph sets are rejected before any private root
+        # is allocated, so a rejected launch leaves nothing behind.
+        before = set(tmp_path.iterdir()) | set(Path("/tmp").glob("r3011-acceptance-*"))
+        with pytest.raises(Exception):
+            adapter.launch_v3_acceptance_child(
+                packet,
+                role_instructions="submit one v3 report per question",
+                reports=reports,
+                read_key="read-key",
+                platform_forwarder=lambda tool, arguments, key: {},
+            )
+        with pytest.raises(Exception):
+            adapter.launch_v3_acceptance_child(
+                packet,
+                role_instructions="submit one v3 report per question",
+                reports=reports,
+                read_key="read-key",
+                platform_forwarder=lambda tool, arguments, key: {},
+                graph_set_ids={"ontology-1": ""},
+            )
+        after = set(tmp_path.iterdir()) | set(Path("/tmp").glob("r3011-acceptance-*"))
+        assert before == after
     finally:
         for root in private_roots:
             shutil.rmtree(root, ignore_errors=True)
@@ -928,4 +959,52 @@ def test_i2_a_pass_verdict_must_keep_the_failure_layer_empty():
                     "note": "",
                 },
                 question_ids=["cq-1"],
+            )
+
+
+def _judge_verdict(verdict: str, failure_layer: str | None) -> dict:
+    return {
+        "schema_version": CQ_BATCH_REPORT_SCHEMA,
+        "batch_id": "batch-r3011",
+        "question_id": "cq-1",
+        "verdict": verdict,
+        "failure_layer": failure_layer,
+        "conflicting_evidence": [],
+        "note": "judged cq-1 against the frozen material",
+    }
+
+
+def test_the_v3_sink_repeats_only_the_canonical_verdict_states():
+    """The standalone bridge cannot import the host package, so its copy of the
+    verdict enum must stay an exact projection: a legal non-pass verdict is
+    accepted and the legacy bare ``fail`` is rejected (product finding P6)."""
+    from modeling_team import report_sink_mcp
+
+    assert report_sink_mcp.CQ_VERDICT_STATES == tuple(CQ_VERDICT_STATES)
+    advertised = report_sink_mcp._v3_batch_report_schema(platform=False)
+    assert advertised["properties"]["verdict"]["enum"] == list(CQ_VERDICT_STATES)
+    accepted = report_sink_mcp._validate_batch_payload(
+        _judge_verdict("model-recall-insufficient", "modeling-quality"),
+        kind="acceptance",
+        batch_id="batch-r3011",
+        question_ids=["cq-1"],
+        role="acceptance-judge",
+    )
+    assert accepted["verdict"] == "model-recall-insufficient"
+    accepted = report_sink_mcp._validate_batch_payload(
+        _judge_verdict("platform-runtime-incomplete", "runtime/infrastructure"),
+        kind="acceptance",
+        batch_id="batch-r3011",
+        question_ids=["cq-1"],
+        role="acceptance-judge",
+    )
+    assert accepted["verdict"] == "platform-runtime-incomplete"
+    for verdict in ("fail", "model-recall-insufficient-fail"):
+        with pytest.raises(ValueError, match="verdict is invalid"):
+            report_sink_mcp._validate_batch_payload(
+                _judge_verdict(verdict, "modeling-quality"),
+                kind="acceptance",
+                batch_id="batch-r3011",
+                question_ids=["cq-1"],
+                role="acceptance-judge",
             )

@@ -2911,6 +2911,21 @@ class TeamRunner:
                 + "`mcp__team_transport__report_task_result` exactly once before ending. "
                 + "Protocol may use only its configured ontology-platform MCP tools."
             )
+            # R3.0-011: the production roles' only legal competency-question
+            # input is the read-only public projection mount.  Runs without
+            # the 011 selector keep the previous text byte-identical.
+            if self._competency_questions and role in {"coordinator", "modeling", "protocol"}:
+                text += (
+                    "\nApproved competency questions and answer points reach you only through the "
+                    "read-only mount /agent/work/competency-questions/public/: read its "
+                    "highest-ordinal public-projection-*.json and treat that file as the sole legal "
+                    "source of the competency-question set. That file is the only place to take "
+                    "question or answer wording from: never copy question/answer text or projection "
+                    "dumps into the platform, a Team Transport message, or a candidate field, and "
+                    "never use hidden material. You may still model the approved answers' public "
+                    "business meaning as ordinary modeling input, citing the projection question_id "
+                    "as evidence provenance."
+                )
             if generation is not None:
                 text += (
                     f"\nCurrent coordination generation: {generation}. "
@@ -3296,6 +3311,16 @@ class TeamRunner:
                         "and the candidate must satisfy the frozen assertion matrix."
                     )
                 return modeling_text
+            if role == "competency-question" and self._competency_questions:
+                return text + (
+                    "\nYou learn the approved slice set only from the Runner's direct "
+                    "cq-slices-approved delivery; do not poll shared run paths and do not read "
+                    "production role artifacts. Publish every draft with the Runner-private "
+                    "cq_publish_question_draft capability and wait for the cq-review-decision "
+                    "delivery before any further draft. Keep hidden question text and answer "
+                    "points out of your terminal `mcp__team_transport__report_task_result` "
+                    "message; report a status summary only."
+                )
             return text
         return (
             self.run.configuration.task.objective
@@ -3923,6 +3948,18 @@ class TeamRunner:
         if not getattr(self, "_staged_decisions", False) or self.run is None:
             raise StagedSubmissionRejection(
                 "staged_gate_closed", "staged decisions are not enabled for this run"
+            )
+        # R3.0-011 freeze ordering is enforced at this, the only platform write
+        # channel: while the competency-question pool is unfrozen, Modeling
+        # cannot materialize anything, so the owning sequence (slice questions
+        # reviewed and frozen before neutral candidate modeling) holds without
+        # relying on a terminal re-check.  Runs without the 011 selector are
+        # unaffected.
+        if getattr(self, "_competency_questions", False) and getattr(self, "_cq_freeze", None) is None:
+            raise StagedSubmissionRejection(
+                "cq_freeze_pending",
+                "the competency-question pool is not frozen yet; batch materialization "
+                "waits for the frozen public projection",
             )
         run_root = self.run.root
         unified = bool(getattr(self, "_unified_graph", False))
@@ -5085,6 +5122,85 @@ class TeamRunner:
             },
         )
 
+    def _cq_check_scenario_map_slices(self) -> None:
+        """Map-only approved-slice handoff to the CQ role (design §3.G3.3).
+
+        Runs on every drain tick BEFORE any topology dependency: a validated
+        Coordinator scenario map is what makes a slice set approved, so the
+        CQ role learns the approved slices (with their existing public
+        business scope) and can start slice questions before the topology
+        decision, the neutral candidate stage, or the freeze exist.  The
+        topology gate and its write protection are untouched.  A failed
+        notification resets the fingerprint, so the next drain retries it even
+        after the topology gate has opened.  Non-011 runs return untouched.
+        """
+
+        if self.run is None or not self._competency_questions:
+            return
+        map_path = self.run.root / "scenario-map" / "scenario-map.json"
+        if not map_path.is_file() or map_path.is_symlink():
+            return
+        try:
+            scenario_map = load_scenario_map(map_path)
+            map_digest = digest_file(map_path)
+        except (ScenarioMapArtifactError, OSError):
+            return
+        if validate_scenario_map(scenario_map):
+            return
+        slices = [
+            {
+                "slice_id": item["slice_id"],
+                "name": item["name"],
+                "scope": item["scope"],
+                "owner": item["owner"],
+                "status": item["status"],
+            }
+            for item in scenario_map["slices"]
+            if isinstance(item, dict)
+        ]
+        fingerprint = content_digest({"map_digest": map_digest, "slices": slices})
+        if getattr(self, "_cq_approved_slices_fingerprint", None) == fingerprint:
+            return
+        self._cq_approved_slices_fingerprint = fingerprint
+        # A delivery failure resets the fingerprint and is recorded evidence,
+        # so the next drain tick retries (design §3.G3.3 / T0).
+        self._cq_deliver_approved_slices(slices, map_digest)
+
+    def _cq_deliver_approved_slices(self, slices: list[dict[str, Any]], map_digest: str) -> None:
+        """Deliver ``cq-slices-approved`` for one newly approved slice set.
+
+        The payload carries protocol facts plus the validated map's existing
+        per-slice business fields (``slice_id``/``name``/``scope``/``owner``/
+        ``status`` -- no new semantic schema) so the CQ role knows what each
+        approved slice covers.  It never carries question or answer text,
+        hidden material, or any production workspace content.
+        """
+
+        if self.run is None or not self._competency_questions:
+            return
+        try:
+            self._deliver_to_cq(
+                "cq-slices-approved",
+                {
+                    "slices": slices,
+                    "slice_ids": [item["slice_id"] for item in slices],
+                    "scenario_map_digest": map_digest,
+                    "run_id": self.run.run_id,
+                },
+            )
+        except Exception as exc:
+            # A failed notification is recorded evidence only: the map is
+            # already validated, and the next drain tick retries it (T0 -- no
+            # gate event, no run kill).
+            self._cq_approved_slices_fingerprint = None
+            self._append_evidence(
+                "competency-questions",
+                {
+                    "event": "cq-slices-approved-delivery-failed",
+                    "detail": str(exc),
+                },
+            )
+
     def _publish_cq_question_draft(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         """Runner-private ``cq_publish_question_draft`` capability handler.
 
@@ -5247,6 +5363,9 @@ class TeamRunner:
             self._write_cq_public_projection(review_id)
         elif snapshot["phase"] == "slice-review":
             self._cq_phase = "slice-draft"
+            # The decision is persisted above, so the appended projection is
+            # derived from the decided slice draft (design §3.G3.2).
+            self._write_cq_public_projection(review_id)
         self._append_evidence(
             "cq-review-decision",
             {
@@ -5304,13 +5423,28 @@ class TeamRunner:
     def _write_cq_public_projection(self, review_id: str) -> dict[str, Any]:
         """Project only the approved public questions into the public directory.
 
-        Called after the first panorama-review decision; the production roles
-        read the highest-ordinal projection file through their read-only bind.
+        Called after the first panorama-review decision and after every
+        slice-review decision; the production roles read the highest-ordinal
+        projection file through their read-only bind.  The pool is derived
+        from the single ``_cq_pool_questions`` replay (panorama then slice), so
+        this projection never re-implements a parallel decision replay: during
+        the panorama phase the pool has no slice drafts yet and the shape stays
+        exactly the pre-slice one (``slice_question_ids`` empty).
         """
 
         public_dir = self._cq_directories["public"]
         ordinal = self._cq_next_ordinal(public_dir, "public-projection")
-        questions = self._cq_effective_panorama_questions()
+        pool, order = self._cq_pool_questions()
+        panorama_ids = [
+            question["question_id"]
+            for question in pool
+            if question["scope"]["kind"] == "panorama"
+        ]
+        slice_ids = [
+            question["question_id"]
+            for question in pool
+            if question["scope"]["kind"] == "slice"
+        ]
         draft = self._cq_drafts.get(review_id, {})
         decisions = self._cq_decisions.get(review_id, [])
         last_decision = decisions[-1] if decisions else None
@@ -5319,12 +5453,10 @@ class TeamRunner:
                 "schema_version": CQ_FREEZE_SCHEMA,
                 "batch_id": f"panorama-{ordinal:04d}",
                 "material_digest": self.run.baseline_hash or "",
-                "panorama_question_ids": [
-                    question["question_id"] for question in questions
-                ],
-                "slice_question_ids": [],
-                "ordering": [question["question_id"] for question in questions],
-                "questions": questions,
+                "panorama_question_ids": panorama_ids,
+                "slice_question_ids": slice_ids,
+                "ordering": order,
+                "questions": pool,
                 "review_binding": {
                     "review_id": review_id,
                     "review_content_version": draft.get("content_version", 1),
@@ -5332,16 +5464,38 @@ class TeamRunner:
                 },
             }
         )
-        projection = public_projection(snapshot)
+        return self._cq_append_public_projection(
+            public_projection(snapshot), snapshot["review_binding"]
+        )
+
+    def _cq_append_public_projection(
+        self, projection: dict[str, Any], review_binding: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Write one append-only public projection and record its exposure.
+
+        Shared tail of the panorama/slice review write and the freeze write,
+        so the highest-ordinal projection is always the last pool event.  The
+        ordinal is computed here, immediately before the write, so the file
+        name and the evidence entry always agree.
+        """
+
+        public_dir = self._cq_directories["public"]
+        ordinal = self._cq_next_ordinal(public_dir, "public-projection")
         path = public_dir / f"public-projection-{ordinal:04d}.json"
         write_public_projection(path, projection)
         self._cq_projection_written = True
         # D2: this write *is* the exposure event.  Every projected question is
         # now readable by the production roles, so the Runner records the
         # exposure here and it can never be undone by a later hidden proposal.
-        self._cq_record_exposure(
-            {question["question_id"] for question in projection["questions"]}
-        )
+        # Exposure is monotone first-exposure provenance, so later writes that
+        # re-publish an already-shown public set record nothing new.
+        first_exposure = {
+            question["question_id"]
+            for question in projection["questions"]
+            if question["question_id"] not in self._cq_exposed
+        }
+        if first_exposure:
+            self._cq_record_exposure(first_exposure)
         self._append_evidence(
             "cq-public-projection",
             {
@@ -5352,7 +5506,67 @@ class TeamRunner:
                 ],
             },
         )
+        self._cq_projection_consistency_feedback()
         return projection
+
+    def _cq_projection_consistency_feedback(self) -> None:
+        """Recoverable projection/scenario-map consistency feedback (T0).
+
+        After a projection write, when the Coordinator scenario map already
+        exists, ``verify_cq_scenario_map_projection`` compares the map's
+        cross-slice section against the published projection.  A mismatch is
+        author-fixable: the Runner records the evidence (inside the verify
+        call) and sends Coordinator one typed continuation notice; the run is
+        never killed and either repair (map update or re-projection) continues.
+        """
+
+        if self.run is None:
+            return
+        map_path = self.run.root / "scenario-map" / "scenario-map.json"
+        if not map_path.is_file():
+            return
+        issues = self.verify_cq_scenario_map_projection()
+        if not issues:
+            return
+        coordinator = self._multi_slice_role_ids().get("coordinator")
+        if not isinstance(coordinator, str) or not coordinator:
+            return
+        notice = {
+            "schema_version": "r3-0-011-cq-projection-feedback/v1",
+            "run_id": self.run.run_id,
+            "reason_code": "cq_projection_scenario_map_mismatch",
+            "issues": [
+                {key: value for key, value in issue.items() if key != "question"}
+                for issue in issues
+            ],
+            "remediation": (
+                "The scenario-map cross_slice_competency_questions section does "
+                "not match the published public projection. Update the map to "
+                "reference approved public projection questions exactly, or "
+                "republish the projection; either repair lets the run continue."
+            ),
+        }
+        delivery = RuntimeDelivery(
+            sender_id="runner/competency-questions",
+            recipient_id=coordinator,
+            kind="cq-projection-feedback",
+            text=json.dumps(
+                notice, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+            ),
+            expects_reply=False,
+        )
+        try:
+            self.adapter.send_message(coordinator, delivery)
+        except Exception as exc:
+            # A dispatch failure of the feedback itself is recorded evidence
+            # only; it must never kill the run or block self-repair (T0).
+            self._append_evidence(
+                "competency-questions",
+                {
+                    "event": "cq-projection-feedback-dispatch-failed",
+                    "detail": str(exc),
+                },
+            )
 
     def _cq_production_roles(self) -> list[str]:
         """Roles allowed to read the CQ public projection (design §3.2)."""
@@ -5512,6 +5726,12 @@ class TeamRunner:
                     if question["visibility"] == "hidden"
                 ),
             },
+        )
+        # The last projection is written from the frozen snapshot itself, so
+        # the published public set always equals the frozen public set
+        # (design §3.G3.2); hidden questions never reach the public directory.
+        self._cq_append_public_projection(
+            public_projection(snapshot), snapshot["review_binding"]
         )
         return snapshot
 
@@ -5714,6 +5934,31 @@ class TeamRunner:
                 phase="frozen",
                 retry="retry after the pending production agents report",
             )
+        # Forced external consistency check at the handoff boundary (design
+        # §3.G3.5): a scenario map whose cross-slice section does not match the
+        # published projection must be repaired (map update or re-projection)
+        # before the production handoff is released.  Runs without a map (no
+        # multi-slice workflow) and explicitly-empty coverage gaps stay on the
+        # recorded-feedback path; the typed rejection is retryable, so a real
+        # mismatch stays author-fixable rather than terminal.
+        map_path = self.run.root / "scenario-map" / "scenario-map.json"
+        if map_path.is_file():
+            issues = [
+                issue
+                for issue in self.verify_cq_scenario_map_projection()
+                if not issue.get("coverage_gap")
+            ]
+            if issues:
+                raise CQContractError(
+                    "cq_projection_scenario_map_mismatch",
+                    "the scenario map and the published public projection disagree",
+                    obj="cq_handoff_complete",
+                    phase="frozen",
+                    retry=(
+                        "align scenario-map cross_slice_competency_questions with the "
+                        "published public projection (or republish the projection) and resend"
+                    ),
+                )
         self._cq_handoff_complete = True
         self._cq_wait_windows.close_window("cq-handoff-request", now)
         self._append_evidence(
@@ -6695,6 +6940,12 @@ class TeamRunner:
         self._track_issue_pending()
         self._check_run_fallback_timeout()
         self._check_formal_candidate_progress()
+        # R3.0-011: the approved-slice handoff is a map-only check and must
+        # not wait for the topology decision, the neutral candidate stage, or
+        # the freeze (requirements-v3.0.md:512-535 order).  It runs on every
+        # drain tick, so a failed notification retries on the next tick even
+        # after the topology gate has already opened.
+        self._cq_check_scenario_map_slices()
         # R3.0-008B: the staged checks run BEFORE the R3.0-002 topology gate
         # and gate its invocation (stage 3 slot is a topology prerequisite).
         # The call count of ``_check_multi_slice_topology_gate`` itself stays

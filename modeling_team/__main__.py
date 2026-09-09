@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import select
 import sys
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
+from typing import Mapping
 
 import yaml
 
@@ -34,9 +36,16 @@ from .monitor_handoff import (
     read_phase,
     write_runner_phase,
 )
-from .acceptance_runtime import build_platform_batch_packet
+from .acceptance_runtime import (
+    ChildRuntimeError,
+    ExaminerRuntimeBlocked,
+    McpReadForwarder,
+    build_acceptance_judge_packet,
+    build_platform_batch_packet,
+)
 from .competency_questions import (
     CQ_BATCH_REPORT_SCHEMA,
+    CQ_EVIDENCE_BUNDLE_SCHEMA,
     CQ_FREEZE_SCHEMA,
     CQContractError,
     acceptance_mode_evidence,
@@ -47,6 +56,7 @@ from .competency_questions import (
     model_binding_drift,
     read_exposure_evidence,
     reload_frozen_pool,
+    validate_evidence_bundle,
     validate_model_binding,
 )
 from .outer_input import OuterInputFifo, OuterInputFramingError
@@ -55,7 +65,7 @@ from .preflight import normalize_scope_for_contract
 from .runner import TeamRunner
 from .candidate_publication import validate_candidate_publication
 from .candidate_progress import FormalCandidateProgressTimeout
-from .runtimes.codex import CodexRuntimeAdapter
+from .runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError
 from .start_ledger import StartLedger
 from .task_overlay import load_task_input_overlay
 
@@ -446,6 +456,18 @@ def _resolve_model_profile_selection(
 
 
 _CQ_RUN_CONTRACT_SCHEMA = "r3-0-011-run-contract/v1"
+# The read-only acceptance carrier is delivered by the user running this
+# command; the read key never has a default and is never echoed or persisted.
+_CQ_PLATFORM_READ_KEY_ENV = "R3011_ACCEPTANCE_PLATFORM_READ_KEY"
+# Recent formal contracts (R2.3-008/009) default to the Codex builtin route,
+# which needs no extra Host credential plumbing; ``--model-profile`` overrides.
+_CQ_DEFAULT_MODEL_PROFILE_ID = "openai-luna-medium"
+# Platform reads go through the local canonical McpReadForwarder, which starts
+# the repository's own backend MCP server; there is no separate platform URL.
+# Interview evidence is read from the Runner-owned private interview records
+# published in the cq-interview evidence (runner.py `_handle_cq_interview`).
+_CQ_INTERVIEW_SCHEMA = "r3-0-011-cq-interview/v1"
+_CQ_INTERVIEW_EVIDENCE_PREFIX = "competency-questions/private/"
 
 
 def _read_json_object(path: Path) -> dict[str, object]:
@@ -460,7 +482,806 @@ def _read_json_object(path: Path) -> dict[str, object]:
     return value
 
 
-def _run_cq_acceptance(args: argparse.Namespace, root: Path) -> int:
+def _cq_observed_state_entry(
+    context: object, project_id: str, ontology_id: str, read_tools: list[str]
+) -> dict[str, object]:
+    """Summarize one actual read-only workspace observation as a binding entry.
+
+    The state digests are computed here from the real read with one explicit
+    recipe (workspace state/signature plus the default Graph Set identity and
+    its member revisions).  The handoff producer must use the same recipe for
+    ``model_binding``/``post_batch_model_binding`` so the drift comparison is
+    like-for-like; a drift result is therefore never silently swallowed.
+    """
+
+    if not isinstance(context, dict):
+        raise TeamConfigurationError(
+            f"cq_model_state_missing: workspace read for {ontology_id} returned no object"
+        )
+    state = context.get("state")
+    graph_set_id = context.get("default_graph_set_id")
+    members = context.get("members")
+    if state != "ready":
+        raise TeamConfigurationError(
+            f"cq_model_state_missing: ontology {ontology_id} workspace state is {state!r}"
+        )
+    if not isinstance(graph_set_id, str) or not graph_set_id:
+        raise TeamConfigurationError(
+            f"cq_model_state_missing: ontology {ontology_id} has no default Graph Set"
+        )
+    if not isinstance(members, list):
+        raise TeamConfigurationError(
+            f"cq_model_state_missing: ontology {ontology_id} workspace read has no graph members"
+        )
+    revisions = sorted(
+        (item.get("role"), item.get("revision"), item.get("content_hash"))
+        for item in members
+        if isinstance(item, dict)
+    )
+    return {
+        "project_id": project_id,
+        "ontology_id": ontology_id,
+        "workspace_state": {
+            "state_digest": content_digest(
+                {"state": state, "source_signature": context.get("source_signature")}
+            )
+        },
+        "graph_state": {
+            "state_digest": content_digest(
+                {
+                    "graph_set_id": graph_set_id,
+                    "status": context.get("graph_set_status"),
+                    "revisions": revisions,
+                }
+            )
+        },
+        "authorized_read_tools": list(read_tools),
+    }
+
+
+def _cq_observe_model_binding(
+    forward: object, read_key: str, binding: dict[str, object]
+) -> tuple[dict[str, object], dict[str, str]]:
+    """Re-read every bound Ontology's live state through the read-only forwarder."""
+
+    if not callable(forward):
+        raise TeamConfigurationError("cq_model_state_missing: platform read path is unavailable")
+    observed: list[dict[str, object]] = []
+    graph_set_ids: dict[str, str] = {}
+    for entry in binding["ontologies"]:
+        if not isinstance(entry, dict):
+            raise TeamConfigurationError("cq_model_binding_missing: model binding entry is invalid")
+        ontology_id = str(entry["ontology_id"])
+        context = forward("get_ontology_workspace_context", {"ontology_id": ontology_id}, read_key)
+        observed_entry = _cq_observed_state_entry(
+            context,
+            str(entry["project_id"]),
+            ontology_id,
+            [str(tool) for tool in entry["authorized_read_tools"]],
+        )
+        observed.append(observed_entry)
+        graph_set_ids[ontology_id] = str(
+            context["default_graph_set_id"] if isinstance(context, dict) else ""
+        )
+    return {
+        "schema_version": "r3-0-011-model-binding/v1",
+        "batch_id": binding["batch_id"],
+        "freeze_digest": binding["freeze_digest"],
+        "bound_at": binding["bound_at"],
+        "ontologies": observed,
+    }, graph_set_ids
+
+
+def _cq_resolve_manifest_entry(
+    manifest: list[object], source_name: str
+) -> dict[str, object] | None:
+    """Resolve one frozen evidence source to at most one staged source entry.
+
+    An exact manifest path wins; otherwise the reference must match exactly one
+    manifest entry by file name.  Any ambiguity is a typed failure instead of a
+    silent pick, so the judge is never handed a guessed source.
+    """
+
+    if not source_name:
+        return None
+    exact = [
+        item for item in manifest if isinstance(item, dict) and item.get("path") == source_name
+    ]
+    if len(exact) > 1:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: evidence source {source_name!r} matches several staged "
+            "run sources"
+        )
+    if len(exact) == 1:
+        return exact[0]
+    name = PurePosixPath(source_name).name
+    by_name = [
+        item
+        for item in manifest
+        if isinstance(item, dict) and PurePosixPath(str(item.get("path") or "")).name == name
+    ]
+    if len(by_name) > 1:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: evidence source {source_name!r} matches several staged "
+            "run sources"
+        )
+    return by_name[0] if by_name else None
+
+
+def _cq_resolve_interview_record(run_root: Path, source_name: str) -> Path | None:
+    """Resolve one frozen evidence source to the Runner's private interview bytes.
+
+    ``TeamRunner._handle_cq_interview`` publishes the run-root-relative
+    ``interview_ref`` of ``competency-questions/private/interview-NNNN.json``;
+    a frozen reference may carry that path or the bare record file name.
+    """
+
+    if not source_name:
+        return None
+    private_root = run_root / _CQ_INTERVIEW_EVIDENCE_PREFIX
+    if source_name.startswith(_CQ_INTERVIEW_EVIDENCE_PREFIX):
+        candidates = [run_root / source_name]
+    elif source_name.endswith(".json") and PurePosixPath(source_name).name.startswith(
+        "interview-"
+    ):
+        candidates = [private_root / PurePosixPath(source_name).name]
+    else:
+        return None
+    matches = [candidate for candidate in candidates if candidate.is_file()]
+    if len(matches) > 1:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: interview reference {source_name!r} matches several "
+            "recorded interview records"
+        )
+    if not matches:
+        return None
+    record = matches[0]
+    if private_root.resolve() not in record.resolve().parents:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: interview reference {source_name!r} escapes the "
+            "Runner's private interview directory"
+        )
+    return record
+
+
+def _cq_read_approved_source_copy(
+    run_root: Path, entry: dict[str, object], question_id: str
+) -> str:
+    """Return one manifest-named source as actual approved bytes.
+
+    The Runner stages one copy per authorized role, so the same source is
+    normally mounted more than once; every existing copy must hash to the
+    manifest digest and any one of them carries the approved bytes.  A copy
+    that differs from the manifest digest is modified material and is rejected
+    instead of being re-digested into the bundle.
+    """
+
+    relative = str(entry.get("path") or "")
+    expected = str(entry.get("sha256") or "")
+    if not expected:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: staged source {relative!r} has no manifest digest"
+        )
+    sources_root = run_root / "sources"
+    copies = [
+        role_dir / relative
+        for role_dir in sorted(sources_root.iterdir())
+        if role_dir.is_dir() and (role_dir / relative).is_file()
+    ]
+    if not copies:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: staged source {relative!r} for question {question_id} "
+            "is mounted for no role"
+        )
+    content = ""
+    for copy in copies:
+        try:
+            raw = copy.read_bytes()
+            text = raw.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            raise TeamConfigurationError(
+                "cq_evidence_unresolved: staged source "
+                f"{copy.relative_to(run_root).as_posix()!r} is unreadable"
+            ) from exc
+        if hashlib.sha256(raw).hexdigest() != expected:
+            raise TeamConfigurationError(
+                "cq_evidence_unresolved: staged source "
+                f"{copy.relative_to(run_root).as_posix()!r} for question {question_id} does "
+                "not match the manifest digest; the staged bytes were modified"
+            )
+        content = text
+    return content
+
+
+def _cq_read_interview_record(record: Path, question_id: str) -> str:
+    """Return one recorded interview's actual bytes, bound to its schema."""
+
+    try:
+        raw = record.read_bytes()
+        text = raw.decode("utf-8")
+    except (OSError, UnicodeDecodeError) as exc:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: interview record {record.name!r} for question "
+            f"{question_id} is unreadable"
+        ) from exc
+    try:
+        payload = json.loads(text)
+    except ValueError as exc:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: interview record {record.name!r} is not JSON"
+        ) from exc
+    if not isinstance(payload, dict) or payload.get("schema_version") != _CQ_INTERVIEW_SCHEMA:
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: interview record {record.name!r} is not an "
+            f"{_CQ_INTERVIEW_SCHEMA} record"
+        )
+    if not isinstance(payload.get("text"), str) or not payload["text"].strip():
+        raise TeamConfigurationError(
+            f"cq_evidence_unresolved: interview record {record.name!r} carries no text"
+        )
+    return text
+
+
+def _cq_build_judge_evidence_bundle(
+    run_root: Path, freeze: dict[str, object], hidden: list[dict[str, object]]
+) -> dict[str, object]:
+    """Assemble the judge evidence bundle from the run's approved bytes.
+
+    Every frozen ``evidence_refs`` entry is resolved to the Runner's staged
+    role-source copies (``<run-root>/sources/<role>/<relative_path>``, named by
+    ``source-manifest.json``) or to the Runner's private interview records, then
+    copied verbatim with its locator, a recomputed content digest and the
+    freeze review version.  A reference that resolves to nothing, to an
+    ambiguity, or to modified bytes is a typed failure: the judge is never
+    handed a bare path, a guess, or tampered material.
+    """
+
+    manifest_path = run_root / "source-manifest.json"
+    manifest: list[object] = []
+    if manifest_path.is_file():
+        staged = _read_json_object(manifest_path).get("sources")
+        if isinstance(staged, list):
+            manifest = list(staged)
+    review_binding = freeze.get("review_binding")
+    review_version = (
+        review_binding.get("review_content_version") if isinstance(review_binding, dict) else None
+    )
+    if isinstance(review_version, bool) or not isinstance(review_version, int) or review_version < 1:
+        raise TeamConfigurationError("cq_evidence_unresolved: freeze carries no review version")
+    entries: list[dict[str, object]] = []
+    for question in hidden:
+        question_id = str(question["question_id"])
+        refs = question.get("evidence_refs")
+        if not isinstance(refs, list) or not refs:
+            raise TeamConfigurationError(
+                f"cq_evidence_unresolved: question {question_id} lists no evidence reference"
+            )
+        for ref in refs:
+            if not isinstance(ref, dict):
+                raise TeamConfigurationError(
+                    f"cq_evidence_unresolved: question {question_id} has a malformed evidence "
+                    "reference"
+                )
+            source_name = str(ref.get("source") or "")
+            entry = _cq_resolve_manifest_entry(manifest, source_name)
+            record = _cq_resolve_interview_record(run_root, source_name)
+            if entry is not None and record is not None:
+                raise TeamConfigurationError(
+                    f"cq_evidence_unresolved: evidence source {source_name!r} for question "
+                    f"{question_id} resolves to both a staged source and an interview record"
+                )
+            if entry is not None:
+                content = _cq_read_approved_source_copy(run_root, entry, question_id)
+            elif record is not None:
+                content = _cq_read_interview_record(record, question_id)
+            else:
+                raise TeamConfigurationError(
+                    f"cq_evidence_unresolved: evidence source {source_name!r} for question "
+                    f"{question_id} matches no staged run source or recorded interview"
+                )
+            entries.append(
+                {
+                    "question_id": question_id,
+                    "source": source_name,
+                    "locator": str(ref.get("locator") or ""),
+                    "content": content,
+                    "content_digest": content_digest(content),
+                    "review_content_version": review_version,
+                }
+            )
+    bundle = {
+        "schema_version": CQ_EVIDENCE_BUNDLE_SCHEMA,
+        "batch_id": freeze["batch_id"],
+        "freeze_digest": freeze["snapshot_digest"],
+        "entries": entries,
+    }
+    try:
+        validate_evidence_bundle(bundle)
+    except ValueError as exc:
+        raise TeamConfigurationError(f"cq_evidence_unresolved: evidence bundle is invalid: {exc}") from exc
+    # The judge packet seam re-validates the bundle against the same strict
+    # exact-fields contract, so the packet must receive the raw schema bundle:
+    # ``validate_evidence_bundle``'s return value carries a derived
+    # ``bundle_digest`` field that would fail its own re-validation.
+    return bundle
+
+
+_CQ_PLATFORM_ROLE_INSTRUCTIONS = (
+    "Answer every hidden batch question in packet order. For each question use only "
+    "the authorized read-only platform reads you need, then call submit_examiner_report "
+    "exactly once for that question with schema_version, batch_id, question_id, "
+    "question_content_version, answer, evidence_refs, explicit_unknown, status, "
+    "failure_layer and reason. Never answer a question you did not read for. One "
+    "malformed or refused read is corrected through the typed feedback inside the "
+    "authorized scope; only a genuinely unavailable valid read becomes status "
+    "runtime-incomplete with the actual first failure_layer, never a guess."
+)
+_CQ_JUDGE_ROLE_INSTRUCTIONS = (
+    "Judge every frozen question independently against the attached answer points, "
+    "evidence bundle and Examiner reports. Judge the necessary business meaning of "
+    "each answer, not verbatim equality; a supported explicit_unknown passes. For each "
+    "question call submit_examiner_report exactly once with schema_version, batch_id, "
+    "question_id, verdict, failure_layer, conflicting_evidence and note. Do not re-derive "
+    "answers from anything outside the packet; use verdict question-answer-review when "
+    "the material is genuinely ambiguous or the question or its frozen reference answer "
+    "conflicts with the approved material or is unsupported by it."
+)
+
+
+def _cq_cleanup_acceptance_resources(
+    forwarder: object, child_teardowns: list[dict[str, object]]
+) -> dict[str, object]:
+    """Observe the real teardown outcome of the resources this batch owned.
+
+    The evidence describes only what this invocation allocated: the forwarder
+    instance it started and the v3 children whose teardown the runtime boundary
+    observed after ``destroy`` (stopped servers, removed private tree and socket
+    root).  Nothing is inferred from a global ``/tmp`` scan, so a concurrently
+    running batch can never be reported as this batch's cleanup failure.
+    """
+
+    stop_error: str | None = None
+    try:
+        stop = getattr(forwarder, "stop", None)
+        if callable(stop):
+            stop()
+    except Exception as exc:  # cleanup must record its own failure, not mask the batch outcome
+        stop_error = f"{type(exc).__name__}: {exc}"
+    still_active = bool(getattr(forwarder, "active", False))
+    children = [dict(item) for item in child_teardowns if isinstance(item, dict)]
+    return {
+        "forwarder_stopped": stop_error is None and not still_active,
+        "forwarder_stop_error": stop_error,
+        "forwarder_still_active": still_active,
+        "children": children,
+        "children_destroyed": all(
+            item.get("child_destroyed") is True
+            and item.get("report_sink_stopped") is True
+            and item.get("private_root_removed") is True
+            and item.get("socket_root_removed") is True
+            and item.get("destroy_error") is None
+            for item in children
+        ),
+    }
+
+
+def _cq_typed_failure(exc: BaseException) -> dict[str, object]:
+    """One typed, JSON-safe failure record for the v3 CLI report.
+
+    ``ExaminerRuntimeBlocked.as_dict`` carries the blocked layer, the role and
+    the sanitized evidence (including the runtime boundary's ``reason_code``
+    such as ``child-exited``/``batch-incomplete``); the legacy ``str()`` form
+    drops exactly those.  Errors without a typed form keep their message.
+    """
+
+    as_dict = getattr(exc, "as_dict", None)
+    typed = as_dict() if callable(as_dict) else None
+    if isinstance(typed, dict):
+        return typed
+    return {"status": "FAILED", "reason": str(exc) or type(exc).__name__}
+
+
+def _cq_failure_summary(typed: Mapping[str, object]) -> str:
+    """Compact scalar form of one typed failure that still names its codes."""
+
+    evidence = typed.get("evidence")
+    code = ""
+    if isinstance(evidence, Mapping):
+        code = str(evidence.get("reason_code") or "")
+    parts = [
+        part
+        for part in (
+            str(typed.get("status") or "FAILED"),
+            str(typed.get("blocked_reason") or typed.get("reason") or ""),
+            code,
+        )
+        if part
+    ]
+    return "/".join(parts) or "unknown-failure"
+
+
+def _cq_first_examiner_failure(
+    reports: list[dict[str, object]],
+    failure_reason: str | None,
+    typed: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    """Summarize the first retained batch failure with its typed layer/reason."""
+
+    for report in reports:
+        if report.get("status") == "runtime-incomplete":
+            return {
+                "question_id": str(report.get("question_id") or ""),
+                "failure_layer": str(report.get("failure_layer") or ""),
+                "reason": str(report.get("reason") or ""),
+            }
+    blocked_layer = str(typed.get("blocked_reason") or "") if typed else ""
+    return {
+        "failure_layer": blocked_layer or None,
+        "reason": failure_reason,
+    }
+
+
+def _cq_execute_batch(
+    args: argparse.Namespace,
+    root: Path,
+    run_root: Path,
+    *,
+    contract: dict[str, object],
+    freeze: dict[str, object],
+    batch_id: str,
+    freeze_digest: str,
+    binding: dict[str, object],
+    blind_status: dict[str, object],
+    hidden: list[dict[str, object]],
+    slices: list[str],
+    report_dir: Path,
+    forwarder_factory: object = McpReadForwarder,
+) -> int:
+    """Run the real v3 batch lifecycle end to end and write the executed report.
+
+    The batch binding is constructed from this command's actual pre-session
+    platform read and persisted in the report; the actual post-session read is
+    compared against that observed binding (D5).  Bounded carrier failures after
+    the batch started -- post-batch state read, judge evidence assembly, judge
+    session -- are recorded and never discard the per-question reports already
+    received: the report is always finalized.  The forwarder and both child
+    sessions are stopped/destroyed before the report is written and the real
+    teardown outcome is recorded, so a failed batch never leaves a live key,
+    socket or child behind and never looks like a PASS.
+    """
+
+    read_key = os.environ.get(_CQ_PLATFORM_READ_KEY_ENV)
+    if not read_key:
+        raise TeamConfigurationError(
+            f"cq_acceptance_credentials_missing: {_CQ_PLATFORM_READ_KEY_ENV} is not set; "
+            "run cq-acceptance only with an authorized platform read key"
+        )
+    profile_id = getattr(args, "model_profile", None) or _CQ_DEFAULT_MODEL_PROFILE_ID
+    profile = load_team_model_profile(root, profile_id)
+    read_tools = [str(tool) for tool in binding["ontologies"][0]["authorized_read_tools"]]
+    forwarder = forwarder_factory(
+        repository_root=root, read_key=read_key, expected_tools=tuple(read_tools)
+    )
+    sessions: dict[str, object] = {}
+    reports: list[dict[str, object]] = []
+    verdicts: list[dict[str, object]] = []
+    executed: list[str] = []
+    failure_reason: str | None = None
+    lifecycle_errors: list[dict[str, object]] = []
+    pre_binding: dict[str, object] | None = None
+    post_binding: dict[str, object] | None = None
+    # The Judge session only starts after the actual post-batch state read
+    # succeeded; a failed read is runtime evidence, never a silent skip.
+    post_read_ok = False
+    pre_drift: list[str] = []
+    post_drift: list[str] = []
+    # Each v3 child reports its own teardown outcome at the runtime boundary;
+    # the report below records exactly these, never a global scan.
+    child_teardowns: list[dict[str, object]] = []
+    try:
+        forwarder.start()
+        # D5: the handoff authorizes the project/Ontology/tool scope only -- it
+        # is written before the batch and cannot own live platform state, so
+        # its carried state digests are opaque markers and are never compared
+        # against the live read.  This command's own pre-session observation is
+        # the batch binding; drift is measured post-session against it.
+        pre_binding, graph_set_ids = _cq_observe_model_binding(forwarder.forward, read_key, binding)
+        # One binding identity for the whole batch (D5): the immutable Platform
+        # packet is built from the observed pre-session read, so the child, the
+        # proxy scope entries, the retained ``batch_model_binding`` and the
+        # Judge's binding digest all describe the same state.  The handoff still
+        # rules: its authorized project/Ontology/tool set bounds ``pre_binding``.
+        packet = None
+        if hidden:
+            packet = build_platform_batch_packet(
+                run_id=str(contract["run_id"]),
+                batch_id=batch_id,
+                freeze_digest=freeze_digest,
+                questions=[
+                    {
+                        "question_id": question["question_id"],
+                        "content_version": question["content_version"],
+                        "question": question["question"],
+                        "scope": dict(question["scope"]),
+                    }
+                    for question in hidden
+                ],
+                authorized_scope=[
+                    str(entry["ontology_id"]) for entry in binding["ontologies"]
+                ],
+                model_binding=pre_binding or binding,
+                authorized_read_tools=[
+                    str(tool) for tool in binding["ontologies"][0]["authorized_read_tools"]
+                ],
+                report_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
+                session={"mode": "single-continuous-batch", "ordered": True},
+            )
+        if packet is not None and hidden:
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter.bind_acceptance_model_profile(profile)
+            teardown_platform: dict[str, object] = {}
+            typed_failure: dict[str, object] | None = None
+            try:
+                reports = list(
+                    adapter.run_v3_acceptance_child(
+                        packet,
+                        role_instructions=_CQ_PLATFORM_ROLE_INSTRUCTIONS,
+                        reports=reports,
+                        read_key=read_key,
+                        platform_forwarder=forwarder.forward,
+                        timeout_seconds=float(
+                            getattr(args, "session_timeout", 300.0) or 300.0
+                        ),
+                        graph_set_ids=graph_set_ids,
+                        teardown=teardown_platform,
+                    )
+                )
+            except (ExaminerRuntimeBlocked, ChildRuntimeError, CodexRuntimeError) as exc:
+                typed_failure = _cq_typed_failure(exc)
+                failure_reason = _cq_failure_summary(typed_failure)
+                lifecycle_errors.append(
+                    {
+                        "stage": "platform-examiner-session",
+                        "reason": failure_reason,
+                        "failure": typed_failure,
+                    }
+                )
+            finally:
+                child_teardowns.append(teardown_platform)
+            reported_ids = {
+                str(report["question_id"])
+                for report in reports
+                if isinstance(report, dict) and report.get("question_id")
+            }
+            executed = [
+                str(report["question_id"])
+                for report in reports
+                if isinstance(report, dict)
+                and report.get("status") != "runtime-incomplete"
+            ]
+            sessions["platform_examiner"] = {
+                "mode": "single-continuous-batch",
+                "reports": len(reports),
+                "missing_question_ids": [
+                    str(question["question_id"])
+                    for question in hidden
+                    if str(question["question_id"]) not in reported_ids
+                ],
+                "failure_reason": failure_reason,
+                "failure": typed_failure,
+                "first_failure": _cq_first_examiner_failure(
+                    reports, failure_reason, typed_failure
+                ),
+            }
+        try:
+            post_binding, _ = _cq_observe_model_binding(forwarder.forward, read_key, binding)
+            post_read_ok = True
+            # Actual post-session state vs this command's actual pre-session
+            # binding -- never against the handoff's marker digests.
+            post_drift = model_binding_drift(pre_binding, post_binding)
+        except (
+            TeamConfigurationError,
+            ChildRuntimeError,
+            CodexRuntimeError,
+            ExaminerRuntimeBlocked,
+        ) as exc:
+            # A bounded post-read failure is a runtime/infrastructure failure:
+            # it blocks the Judge session and stays in the retained report.
+            # The canonical forwarder signals a failed read with
+            # ``ChildRuntimeError`` (MCP isError decoding), the same concrete
+            # runtime failure the platform child boundary already bounds.
+            post_failure = _cq_typed_failure(exc)
+            post_failure["failure_layer"] = "runtime/infrastructure"
+            lifecycle_errors.append(
+                {
+                    "stage": "post-batch-model-state-read",
+                    "reason": str(exc),
+                    "failure": post_failure,
+                }
+            )
+            sessions["post_batch_model_state_read"] = {
+                "failure_reason": str(exc),
+                "failure": post_failure,
+                "first_failure": {
+                    "failure_layer": "runtime/infrastructure",
+                    "reason": str(exc),
+                },
+            }
+        batch_complete = packet is not None and hidden and not failure_reason and (
+            len(reports) == len(hidden)
+        )
+        evidence_bundle: dict[str, object] | None = None
+        if batch_complete:
+            try:
+                evidence_bundle = _cq_build_judge_evidence_bundle(run_root, freeze, hidden)
+            except TeamConfigurationError as exc:
+                lifecycle_errors.append(
+                    {"stage": "judge-evidence-bundle", "reason": str(exc)}
+                )
+        if (
+            batch_complete
+            and evidence_bundle is not None
+            and post_read_ok
+            and not post_drift
+        ):
+            judge_questions = [
+                {
+                    "question_id": question["question_id"],
+                    "content_version": question["content_version"],
+                    "question": question["question"],
+                    "answer_points": list(question["answer_points"]),
+                    "evidence_refs": [dict(ref) for ref in question["evidence_refs"]],
+                    "unknown": list(question["unknown"]),
+                    "scope": dict(question["scope"]),
+                }
+                for question in hidden
+            ]
+            teardown_judge: dict[str, object] = {}
+            # Judge setup (packet build, adapter bind) is guarded by the same
+            # handler as the session itself: a setup failure is serialized into
+            # the retained report instead of discarding the examiner reports.
+            judge_stage = "acceptance-judge-setup"
+            try:
+                judge_packet = build_acceptance_judge_packet(
+                    run_id=str(contract["run_id"]),
+                    batch_id=batch_id,
+                    freeze_digest=freeze_digest,
+                    questions=judge_questions,
+                    model_binding_digest=content_digest(pre_binding or binding),
+                    evidence_bundle=evidence_bundle,
+                    examiner_reports=[dict(report) for report in reports],
+                    verdict_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
+                )
+                adapter = CodexRuntimeAdapter(repository_root=root)
+                adapter.bind_acceptance_model_profile(profile)
+                judge_stage = "acceptance-judge-session"
+                verdicts = list(
+                    adapter.run_v3_acceptance_child(
+                        judge_packet,
+                        role_instructions=_CQ_JUDGE_ROLE_INSTRUCTIONS,
+                        reports=verdicts,
+                        timeout_seconds=float(
+                            getattr(args, "session_timeout", 300.0) or 300.0
+                        ),
+                        teardown=teardown_judge,
+                    )
+                )
+                sessions["acceptance_judge"] = {"verdicts": len(verdicts)}
+            except (
+                ExaminerRuntimeBlocked,
+                ChildRuntimeError,
+                CodexRuntimeError,
+                TeamConfigurationError,
+            ) as exc:
+                judge_typed = _cq_typed_failure(exc)
+                judge_failure = _cq_failure_summary(judge_typed)
+                sessions["acceptance_judge"] = {
+                    "failure_reason": judge_failure,
+                    "failure": judge_typed,
+                }
+                lifecycle_errors.append(
+                    {
+                        "stage": judge_stage,
+                        "reason": judge_failure,
+                        "failure": judge_typed,
+                    }
+                )
+            finally:
+                child_teardowns.append(teardown_judge)
+        else:
+            sessions["acceptance_judge"] = {
+                "reason": (
+                    "judge session skipped: the examiner batch is incomplete, the judge "
+                    "evidence is unresolved, the post-batch state read failed or the "
+                    "platform state drifted"
+                )
+            }
+    finally:
+        # The forwarder is stopped even when a pre-batch gate raised, but the
+        # report below records the outcome of the owned-lifecycle teardown.
+        cleanup = _cq_cleanup_acceptance_resources(forwarder, child_teardowns)
+    cleanup_failed = not cleanup["forwarder_stopped"] or not cleanup["children_destroyed"]
+    report = build_batch_report(
+        run_id=str(contract["run_id"]),
+        batch_id=batch_id,
+        freeze_digest=freeze_digest,
+        # The observed pre-session binding is the batch identity; the handoff
+        # binding only names the authorization scope (D5).
+        model_binding_digest=content_digest(pre_binding or binding),
+        hidden_questions=hidden,
+        examiner_reports=[dict(report) for report in reports],
+        verdicts=[dict(verdict) for verdict in verdicts],
+        executed_question_ids=executed,
+        unexecuted_question_ids=[
+            str(question["question_id"])
+            for question in hidden
+            if str(question["question_id"])
+            not in {item for item in executed}
+        ],
+        slices=slices,
+        model_state_drift=post_drift,
+        blind_status=blind_status,
+    )
+    report["sessions"] = {
+        **sessions,
+        "model_profile": profile_id,
+        "batch_model_binding": pre_binding,
+        "post_batch_model_binding": post_binding,
+        "pre_batch_model_state_drift": pre_drift,
+        "post_batch_model_state_drift": post_drift,
+        "lifecycle_errors": lifecycle_errors,
+        "cleanup": cleanup,
+    }
+    report["full_pass"] = (
+        batch_report_is_full_pass(report) and not lifecycle_errors and not cleanup_failed
+    )
+    report_path = report_dir / "batch-report.json"
+    _write_host_only_json(report_path, report)
+    _write_host_only_json(
+        report_dir / "attribution.json",
+        {
+            **acceptance_mode_evidence(batch_id=batch_id, freeze_digest=freeze_digest),
+            "blind_status": blind_status["blind_status"],
+            "exposed_question_ids": blind_status["exposed_question_ids"],
+            "exposure_evidence_digest": blind_status["exposure_evidence_digest"],
+            "platform_read_path": "local-canonical-mcp-forwarder",
+        },
+    )
+    if packet is not None:
+        _write_host_only_json(
+            report_dir / "batch-packet.json",
+            {
+                "schema_version": packet.schema_version,
+                "canonical_digest": packet.canonical_digest,
+            },
+        )
+    print(
+        json.dumps(
+            {
+                "run_id": contract["run_id"],
+                "batch_id": batch_id,
+                "freeze_digest": freeze_digest,
+                "report": report_path.as_posix(),
+                "acceptance_mode": "read-only-acceptance",
+                "blind_status": blind_status["blind_status"],
+                "executed_question_ids": executed,
+                "unexecuted_question_ids": report["unexecuted_question_ids"],
+                "full_pass": report["full_pass"],
+                "start_ledger_write": False,
+                "consumes_semantic_start": False,
+            },
+            ensure_ascii=False,
+        )
+    )
+    return 0 if report["full_pass"] else 1
+
+
+def _run_cq_acceptance(
+    args: argparse.Namespace,
+    root: Path,
+    *,
+    forwarder_factory: object = McpReadForwarder,
+) -> int:
     """Read-only v3 hidden-batch acceptance entry (R3.0-011 design §4.0).
 
     The command is Delivery-invoked and strictly read-only for the platform: it
@@ -537,12 +1358,10 @@ def _run_cq_acceptance(args: argparse.Namespace, root: Path) -> int:
             raise TeamConfigurationError(
                 "cq_model_binding_missing: model binding is not bound to this freeze snapshot"
             )
-        post_binding = handoff.get("post_batch_model_binding")
-        if not isinstance(post_binding, dict):
-            raise TeamConfigurationError(
-                "cq_model_binding_missing: model handoff carries no post-batch state recheck"
-            )
-        post = model_binding_drift(binding, post_binding)
+        # The executed path constructs the batch binding from its own actual
+        # pre-session read and re-reads the post-session state itself (D5); the
+        # handoff post-batch binding stays an input only for the legacy
+        # ``--unexecuted-report`` evidence shape below.
         # Design §5 (Round 2 R4): the exposure label is derived from the
         # Runner-written cq-exposure evidence, not from the frozen snapshot
         # (whose schema intentionally carries no exposure field).  The packet
@@ -569,29 +1388,36 @@ def _run_cq_acceptance(args: argparse.Namespace, root: Path) -> int:
                 for slice_id in question.get("scope", {}).get("slice_ids", [])
             }
         )
-        packet = None
-        if hidden:
-            packet = build_platform_batch_packet(
-                run_id=str(contract["run_id"]),
+        if not getattr(args, "unexecuted_report", False):
+            # Default: the command owns the real batch lifecycle (platform
+            # Examiner session, independent judge, executed/unexecuted report).
+            # The immutable Platform packet is built inside the executed path
+            # from that path's own observed pre-session binding (D5), so the
+            # child, proxy, retained binding and Judge digest all share one
+            # binding identity.
+            return _cq_execute_batch(
+                args,
+                root,
+                run_root,
+                contract=contract,
+                freeze=freeze,
                 batch_id=batch_id,
                 freeze_digest=freeze_digest,
-                questions=[
-                    {
-                        "question_id": question["question_id"],
-                        "content_version": question["content_version"],
-                        "question": question["question"],
-                        "scope": dict(question["scope"]),
-                    }
-                    for question in hidden
-                ],
-                authorized_scope=[str(item) for item in authorized],
-                model_binding=binding,
-                authorized_read_tools=[
-                    str(tool) for tool in binding["ontologies"][0]["authorized_read_tools"]
-                ],
-                report_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
-                session={"mode": "single-continuous-batch", "ordered": True},
+                binding=binding,
+                blind_status=blind_status,
+                hidden=hidden,
+                slices=slices,
+                report_dir=report_dir,
+                forwarder_factory=forwarder_factory,
             )
+        # Explicit ``--unexecuted-report``: the pre-authorization evidence shape
+        # (every question recorded as unexecuted, no session is started).
+        post_binding = handoff.get("post_batch_model_binding")
+        if not isinstance(post_binding, dict):
+            raise TeamConfigurationError(
+                "cq_model_binding_missing: model handoff carries no post-batch state recheck"
+            )
+        post = model_binding_drift(binding, post_binding)
         report = build_batch_report(
             run_id=str(contract["run_id"]),
             batch_id=batch_id,
@@ -628,11 +1454,6 @@ def _run_cq_acceptance(args: argparse.Namespace, root: Path) -> int:
                 "exposure_evidence_digest": blind_status["exposure_evidence_digest"],
             },
         )
-        if packet is not None:
-            _write_host_only_json(
-                report_dir / "batch-packet.json",
-                {"schema_version": packet.schema_version, "canonical_digest": packet.canonical_digest},
-            )
         print(
             json.dumps(
                 {
@@ -739,6 +1560,13 @@ def main() -> int:
     cq_acceptance.add_argument("--run-root", required=True, type=Path)
     cq_acceptance.add_argument("--freeze-id", required=True)
     cq_acceptance.add_argument("--model-handoff", required=True, type=Path)
+    cq_acceptance.add_argument("--model-profile", default=None)
+    cq_acceptance.add_argument("--session-timeout", type=float, default=300.0)
+    cq_acceptance.add_argument(
+        "--unexecuted-report",
+        action="store_true",
+        help="write the all-unexecuted evidence report without starting any session",
+    )
     args = parser.parse_args()
     if args.command == "cq-acceptance":
         # R3.0-011: the read-only v3 acceptance entry stays outside the run
