@@ -23,6 +23,7 @@ build/
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/ontology-modeling
+!.agents/skills/modeling-dev-loop
 .playwright-mcp/
 workspaces/
 skills-lock.json
