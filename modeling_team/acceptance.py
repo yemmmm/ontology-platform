@@ -1612,6 +1612,9 @@ class RunnerAcceptanceCarrier:
             socket_root = Path("/tmp") / f"mt-cap-{hashlib.sha256(str(self.root).encode()).hexdigest()[:24]}"
         self.capability_socket_root = socket_root
         self._capability_endpoints: dict[str, RunnerCapabilityEndpoint] = {}
+        formal_protocol_capability = (
+            candidate_receipt_builder is not None and candidate_conflict_builder is not None
+        )
         for role, token in self._capability_tokens.items():
             _write_exclusive_token(self.capability_token_path(role), token)
             operations = (
@@ -1619,7 +1622,7 @@ class RunnerAcceptanceCarrier:
                 if role != "protocol"
                 else (
                     PROTOCOL_OPERATIONS
-                    if candidate_receipt_builder is not None and candidate_conflict_builder is not None
+                    if formal_protocol_capability
                     else PROTOCOL_STAGE_OPERATIONS
                 )
             )
@@ -1629,8 +1632,17 @@ class RunnerAcceptanceCarrier:
                 operations = COORDINATOR_FORMAL_OPERATIONS
             elif role == "protocol" and staged_protocol_capability:
                 # R3.0-008B staged runs: the protocol role additionally owns the
-                # Runner-private Modeling Batch submission operation.
-                operations = (*operations, STAGED_PROTOCOL_OPERATION)
+                # Runner-private Modeling Batch submission operation.  In a
+                # non-formal staged run that staged operation is the *only*
+                # declared protocol capability (``_role_capability_operations``
+                # advertises exactly one operation and the runtime asserts the
+                # private MCP surface by exact equality); a formal carrier
+                # keeps its full protocol surface plus the staged submission.
+                operations = (
+                    (*operations, STAGED_PROTOCOL_OPERATION)
+                    if formal_protocol_capability
+                    else (STAGED_PROTOCOL_OPERATION,)
+                )
             elif role == COMPETENCY_QUESTION_ROLE:
                 # R3.0-011: exactly one Runner-private CQ operation.
                 operations = CQ_OPERATIONS

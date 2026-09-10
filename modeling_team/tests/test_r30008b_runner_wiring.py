@@ -9,6 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import socket
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import rmtree
@@ -17,6 +20,10 @@ from types import SimpleNamespace
 import pytest
 
 from modeling_team.acceptance import RunnerAcceptanceCarrier
+from modeling_team.capability_mcp import (
+    COMPETENCY_QUESTION_ROLE,
+    STAGED_PROTOCOL_OPERATION,
+)
 from modeling_team.contracts import TeamConfigurationError, load_multi_slice_team_configuration, load_task
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
@@ -945,3 +952,213 @@ def test_r3_real_task_carries_the_double_start_gate_header():
     assert "R3.0-009" in header
     assert "user-authorized" in header
     assert "Segment 1 delivery must" in header
+
+
+# --- R3.0-008B endpoint liveness: the staged protocol capability is real --------
+#
+# A staged run is non-formal, so the formal branch that starts every private
+# endpoint never ran: the protocol role declared its staged submission
+# capability in the private config while no socket existed, and the runtime's
+# exact-equality MCP surface check then had nothing to talk to.  These tests
+# exercise the real ``RunnerCapabilityEndpoint`` over a real AF_UNIX socket at
+# the exact roster-start boundary, not a mocked call name.
+
+CQ_PROFILE = REPO_ROOT / "modeling_team" / "profiles" / "r3-0-011-competency-question.yaml"
+CQ_STAGED_TASK = REPO_ROOT / "modeling_team" / "tasks" / "r3-0-008b-staged-real.yaml"
+
+
+def _socket_request(socket_path: Path, token: str, method: str, **params) -> dict:
+    """Send one JSON-RPC request to a live Runner capability socket."""
+
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(5)
+        client.connect(str(socket_path))
+        client.sendall(
+            (
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "token": token,
+                        "method": method,
+                        "params": params,
+                    }
+                )
+                + "\n"
+            ).encode("utf-8")
+        )
+        line = client.makefile("r", encoding="utf-8").readline(1_048_577)
+    assert line
+    return json.loads(line)
+
+
+def _socket_tools(socket_path: Path, token: str) -> list[str]:
+    response = _socket_request(socket_path, token, "tools/list")
+    return [tool["name"] for tool in response["result"]["tools"]]
+
+
+class _RosterSocketProbe:
+    """Observe the private capability sockets at the roster-start boundary.
+
+    From inside ``start_roster`` the probe records, per role, whether the
+    socket path is a real Unix socket and which tools it really serves -- i.e.
+    before any roster process exists.  The Runner is attached afterwards so the
+    adapter is a working adapter from construction.
+    """
+
+    def __init__(self) -> None:
+        from modeling_team.tests.test_runner import CapturingAdapter
+
+        self.runner: TeamRunner | None = None
+        self.observations: list[dict[str, dict]] = []
+        outer = self
+
+        class _Adapter(CapturingAdapter):
+            def start_roster(self, run, agents):
+                assert outer.runner is not None
+                carrier = outer.runner.acceptance
+                observed: dict[str, dict] = {}
+                for role in (
+                    "protocol",
+                    COMPETENCY_QUESTION_ROLE,
+                    "coordinator",
+                    "acceptance",
+                ):
+                    path = carrier.capability_socket_path(role)
+                    live = path.exists()
+                    observed[role] = {
+                        "is_socket": bool(
+                            live and stat.S_ISSOCK(os.lstat(path).st_mode)
+                        ),
+                        "tools": (
+                            _socket_tools(path, carrier.capability_token(role))
+                            if live
+                            else []
+                        ),
+                    }
+                outer.observations.append(observed)
+                return super().start_roster(run, agents)
+
+        self.adapter = _Adapter()
+
+    def attach(self, runner: TeamRunner) -> None:
+        self.runner = runner
+        runner.adapter = self.adapter
+
+
+def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path):
+    probe = _RosterSocketProbe()
+    runner = TeamRunner(
+        repository_root=REPO_ROOT,
+        adapter=probe.adapter,
+        ledger_root=tmp_path / "ledger",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+        staged_batch_forwarder=_ForwarderRecorder(),
+    )
+    probe.attach(runner)
+    run_id = f"r30008b-endpoint-{hashlib.sha256(str(tmp_path).encode()).hexdigest()[:8]}"
+    run_root = REPO_ROOT / "workspaces" / "modeling-runs" / run_id
+    try:
+        runner.prepare(
+            run_id=run_id,
+            profile_path=CQ_PROFILE,
+            task_path=CQ_STAGED_TASK,
+            scope={"mode": "create"},
+        )
+        carrier = runner.acceptance
+        assert carrier is not None
+        # The role declares exactly one private protocol capability; the
+        # endpoint assembly must not widen it (the runtime asserts the live
+        # MCP surface by exact equality).
+        assert carrier.capability_endpoint("protocol").operations == (
+            STAGED_PROTOCOL_OPERATION,
+        )
+
+        runner.start()
+
+        assert len(probe.observations) == 1
+        before_roster = probe.observations[0]
+        assert before_roster["protocol"]["is_socket"] is True
+        assert before_roster["protocol"]["tools"] == [STAGED_PROTOCOL_OPERATION]
+        # CQ stays independently available, and no unselected role endpoint was
+        # started into existence.
+        assert before_roster[COMPETENCY_QUESTION_ROLE]["is_socket"] is True
+        assert before_roster[COMPETENCY_QUESTION_ROLE]["tools"] == [
+            "cq_publish_question_draft"
+        ]
+        assert before_roster["coordinator"]["is_socket"] is False
+        assert before_roster["acceptance"]["is_socket"] is False
+
+        protocol_socket = carrier.capability_socket_path("protocol")
+        cq_socket = carrier.capability_socket_path(COMPETENCY_QUESTION_ROLE)
+        # Both sockets stay live for the roster they were started for.
+        assert _socket_tools(
+            protocol_socket, carrier.capability_token("protocol")
+        ) == [STAGED_PROTOCOL_OPERATION]
+        assert _socket_tools(
+            cq_socket, carrier.capability_token(COMPETENCY_QUESTION_ROLE)
+        ) == ["cq_publish_question_draft"]
+        # An unrelated role cannot borrow the protocol socket's surface.
+        unrelated = _socket_request(
+            protocol_socket, carrier.capability_token("coordinator"), "tools/list"
+        )
+        assert unrelated["error"]["code"] == -32001
+
+        # The runtime's declared surface is what ``_require_mcp_surface``
+        # compares against the live socket by exact equality: it must match
+        # the socket's real ``tools/list``, not a superset.
+        runtime = CodexRuntimeAdapter(repository_root=REPO_ROOT, use_bwrap=False)
+        runtime._active_run = runner.run
+        runtime._acceptance = carrier
+        for role, declared in (
+            ("protocol", (STAGED_PROTOCOL_OPERATION,)),
+            (COMPETENCY_QUESTION_ROLE, ("cq_publish_question_draft",)),
+            ("coordinator", ()),
+            ("acceptance", ()),
+        ):
+            assert runtime._role_capability_operations(role, run=runner.run) == declared
+        assert runtime._role_capability_operations(
+            "protocol", run=runner.run
+        ) == tuple(_socket_tools(protocol_socket, carrier.capability_token("protocol")))
+
+        runner.cleanup()
+
+        assert not protocol_socket.exists()
+        assert not cq_socket.exists()
+    finally:
+        runner.cleanup()
+        rmtree(run_root, ignore_errors=True)
+
+
+def test_non_staged_non_formal_run_starts_no_capability_socket(tmp_path):
+    probe = _RosterSocketProbe()
+    runner = TeamRunner(
+        repository_root=REPO_ROOT,
+        adapter=probe.adapter,
+        ledger_root=tmp_path / "ledger",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+    )
+    probe.attach(runner)
+    run_id = f"r30008b-nostaged-{hashlib.sha256(str(tmp_path).encode()).hexdigest()[:8]}"
+    run_root = REPO_ROOT / "workspaces" / "modeling-runs" / run_id
+    try:
+        runner.prepare(
+            run_id=run_id,
+            profile_path=PROFILE,
+            task_path=MULTI_SLICE_SMOKE,
+            scope={"mode": "create"},
+        )
+        carrier = runner.acceptance
+        assert carrier is not None
+
+        runner.start()
+
+        assert len(probe.observations) == 1
+        observed = probe.observations[0]
+        for role, state in observed.items():
+            assert state["is_socket"] is False, role
+            assert state["tools"] == [], role
+        assert not carrier.capability_socket_path("protocol").exists()
+    finally:
+        runner.cleanup()
+        rmtree(run_root, ignore_errors=True)

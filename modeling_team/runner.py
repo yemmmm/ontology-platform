@@ -63,6 +63,7 @@ from .preflight import (
     run_prestart_preflight,
 )
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery
+from .capability_mcp import STAGED_PROTOCOL_OPERATION
 from .candidate_progress import (
     FormalCandidateError,
     FormalCandidatePlatformContractError,
@@ -1925,6 +1926,25 @@ class TeamRunner:
                 # Runner-private capability endpoints are live before any
                 # Coordinator/Acceptance process is launched.
                 self.acceptance.start_capability_endpoints()
+            if (
+                self.acceptance is not None
+                and not formal_coordination
+                and self._staged_decisions
+            ):
+                # R3.0-008B staged runs are non-formal, so the formal branch
+                # above never runs; the protocol role still declares the
+                # staged Modeling Batch submission operation in its private
+                # config, so exactly that endpoint must be live before any
+                # roster process is launched.  Nothing else starts here: a
+                # non-staged non-formal run keeps every endpoint stopped.
+                self.acceptance.capability_endpoint("protocol").start()
+                self._append_evidence(
+                    "staged-decisions",
+                    {
+                        "event": "protocol-capability-endpoint-started",
+                        "operations": [STAGED_PROTOCOL_OPERATION],
+                    },
+                )
             if self._competency_questions and self.acceptance is not None:
                 # R3.0-011: only the CQ endpoint is live in a (non-formal) CQ
                 # run, and it is live before any roster process is launched.

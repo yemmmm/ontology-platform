@@ -92,3 +92,43 @@ runtime 共享函数 HIGH，均在修改前告知用户。
 仅有测试定义，无生产调用。未修改 backend/frontend，不需要重启产品服务。
 截至代码交付，真实 semantic starts 仍 **0/3**；接线准备明显超时，主要有效时间消耗在共享
 runtime 兼容性排查、外部开发与必要回归，真实语义时间为 0。下一动作是冻结提交并直接启动。
+
+## auth-002 第一轮
+
+14:23 +08:00 在干净 checkout `eb7fd92` 启动 `r30006-20260910-auth002-start1`。
+Coordinator 和 Modeling 的 thread/started 都记录 deepseek-flash / deepseek-direct / max；
+Protocol 尚未生成 thread 时 app-server 关闭输出，run 随即 CLEANED，未发起业务推理。
+第一阻塞 runtime/infrastructure：新 checkout 缺少 backend/.venv，Protocol 的既有 bwrap
+挂载 `_protocol_interpreter_mounts` 需要该目录。主 Agent 准备工作漏同步运行依赖；最窄修复是
+在 checkout 执行 uv sync --project backend --extra dev，不改平台守卫或业务提示。
+已创建的线程不重新利用，按一轮失败计 1/3，剩余 2/3。scope 回执 deleted-empty、资源已删、
+密钥已撤销且无在途尝试。运行审计 private_credentials_destroyed=false 保留原值，不宣称
+完整 runtime 清理审计 PASS；平台范围删除与凭据撤销有单独回执。原证据保留在该 checkout 的
+workspaces/modeling-runs/r30006-20260910-auth002-start1。
+
+## auth-002 第二轮
+
+14:26 +08:00，`r30006-20260910-auth002-start2` 同提交、已补齐 .venv，Protocol 仍报
+app-server closed its output。原第一轮的 .venv 缺失是实际准备缺口，但不能据此宣称根因已闭环。
+更直接的代码证据：TeamRunner.start 非formal只启用CQ endpoint，未启用staged Protocol endpoint；
+CodexRuntimeAdapter.namespace_command 却对其 capability socket 做强制bind。
+用失败现场的临时副本与替身socket执行完整bwrap /bin/true，以及仅 initialize/skills-list 的
+实际 app-server 均成功，无thread/start、无模型请求、无业务写入；原现场未改。外部Claude负责
+在roster启动前补齐既有staged Protocol endpoint的启动及真实socket回归，不增加新harness。
+第二轮scope仍deleted-empty、Project/Ontology已删除、protocol/admin keys已撤销、无在途尝试。
+累计2/3，剩余1/3；不以机械诊断作真实建模PASS。
+
+## Protocol endpoint 窄修复交付
+
+Claude Code 按用户最新配置 `deepseek-flash --effort max` 完成两处局部修改：
+非formal staged run 在 roster 前启动既有 Protocol endpoint；该组合的实际工具面收窄为
+已声明的单项 `protocol_staged_submit_modeling_batch`，保留 formal 与非staged 行为。
+既有 cleanup 负责关闭 endpoint，不增加恢复或治理框架。GitNexus 对共享 start/carrier
+报 CRITICAL，已在编辑前告知用户；范围由真实启动失败和声明/实际工具面冲突约束。
+
+新增两项真实 AF_UNIX socket 测试：roster 启动前端点可连接、tools/list 与声明一致、CQ
+同时可用、其他未声明角色端点不启动、cleanup 后socket消失；非staged保持零端点。
+分别回退启动补丁/工具面补丁的负向对照均在对应断言失败，恢复后通过。
+最终全量：**1419 passed、1 skipped、321 subtests passed，86.43 秒**。
+这是机械 socket/接线验证；第三轮真实运行仍需验证原始 Protocol 启动步骤。
+完整开发交付位于本轮 workspace 的 `repair-protocol-endpoint-result.md`。
