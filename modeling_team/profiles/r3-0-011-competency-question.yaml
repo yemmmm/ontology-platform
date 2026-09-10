@@ -27,4 +27,12 @@ communication:
     to: [coordinator, protocol]
   - from: protocol
     to: [coordinator, modeling]
-parameters: {}
+# parameters: llm_inactivity_timeout_seconds raises the codex adapter's LLM
+# inactivity watchdog (default 300s) for external direct routes: glm-5.3-flash
+# at max reasoning effort over the full staged context can emit a single
+# reasoning item that stays silent well beyond 300s while the upstream stream
+# is alive.  1200s still fails fast on a genuinely hung endpoint.  The adapter
+# reads run.configuration.profile.parameters (codex.py), so this is the
+# authoritative profile-level knob; it applies to every role in the roster.
+parameters:
+  llm_inactivity_timeout_seconds: 1200.0
