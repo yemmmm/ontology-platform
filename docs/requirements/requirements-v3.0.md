@@ -360,6 +360,13 @@ R3.0-002～R3.0-005 实现并分别通过测试后，才可在用户授权的真
 要求所选 roster 的角色绑定完整，不回退默认模型。旧 formal 六角色要求与默认配置保持不变。
 本调整不改变业务审核、隐藏题隔离、写入完整性或真实语义验收标准。
 
+2026-09-10 用户授权缓存命中优化：复用既有 Team Runner/Provider 路径，将 v2 任务的固定
+角色说明放在目标文本之前，并明确同线程内已读来源的复用与必要重读规则。首次获准来源读取、
+实时状态校验、角色隔离、fresh-run 边界和语义验收保持不变；不新增缓存参数、预热机制或修改
+自动压缩阈值。改动及验证证据见
+[提示前缀优化记录](../delivery/designs/2026-09-10-modeling-team-prompt-cache-optimization.md)。
+机械回归与无建模 provider 对照不替代 R3.0-006 真实建模质量验收。
+
 2026-09-09 的执行资产与机械接线交付记录见
 [执行链缺口收口设计附录](../delivery/designs/2026-09-09-v3-execution-gap-closure-design.md)及
 [共享测试计划](../delivery/test-plans/2026-09-09-v3-execution-gap-closure-test-plan.md)。

@@ -2957,12 +2957,26 @@ class TeamRunner:
                 for source in task.role_sources
                 if role in source.roles
             )
+            # Prompt-cache contract (R3.0-002/006): the varying objective is one
+            # trailing section, so the static role/instruction prefix stays
+            # byte-identical whenever only the objective changes.  The reuse
+            # guidance below is guidance for the same thread; it never relaxes
+            # the mandatory initial complete read, live refreshes, or evidence
+            # obligations, and never widens a role's authorized sources.
+            objective_suffix = "\n\nTask objective:\n" + task.objective
             text = (
-                task.objective
-                + "\nBefore requesting any teammate work or reporting a terminal result, read every staged "
+                "Before requesting any teammate work or reporting a terminal result, read every staged "
                 + "role-private source in this canonical list:\n"
                 + "\n".join(f"- {path}" for path in staged_sources)
-                + "\nRead only these role-private sources. "
+                + "\nRead only these role-private sources. Complete that initial read of every staged source "
+                + "in full. In this same thread, reuse the already-read "
+                + "unchanged material and its exact locators instead of printing or re-reading a full file "
+                + "again on every teammate turn. Reuse only this role's authorized sources and authorized "
+                + "teammate handoffs; never access another role's private sources, inherit another run's "
+                + "conversation, or use hidden material. Reread the necessary source "
+                + "sections before relying on them whenever compaction lost them or the relevant content is "
+                + "missing, stale, changed, or truncated. This reuse never skips a task-required live "
+                + "workspace read, a refresh, a validation, or a full evidence obligation. "
                 + "Use the Team Transport tool names your Runtime advertises in its tool catalog for this "
                 + "run: a native dynamic-tool Runtime advertises them bare (for example "
                 + "`send_team_message` for direct Team Transport messages), while an MCP-bound Runtime "
@@ -3010,8 +3024,7 @@ class TeamRunner:
                     else "Acceptance remains live after every non-final cq-001 PASS, and "
                 )
                 return (
-                    task.objective
-                    + (
+                    (
                         f"\nCurrent coordination generation: {generation}. "
                         if generation is not None
                         else ""
@@ -3053,6 +3066,7 @@ class TeamRunner:
                     "with a concise summary "
                     "before ending. The ordinary acceptance_verdict_route delivery is not a terminal report "
                     "and cannot substitute for that completed Team Transport call."
+                    + objective_suffix
                     )
             if role == "protocol":
                 protocol_capability_operations: set[str] = set()
@@ -3212,8 +3226,11 @@ class TeamRunner:
                     )
                 context = self.run.protocol_context
                 if context:
-                    return text + "\nMechanical platform scope (no credential): " + json.dumps(
-                        context, ensure_ascii=False, sort_keys=True
+                    return (
+                        text
+                        + "\nMechanical platform scope (no credential): "
+                        + json.dumps(context, ensure_ascii=False, sort_keys=True)
+                        + objective_suffix
                     )
             if role == "coordinator":
                 typed_ticket_binding = False
@@ -3323,7 +3340,7 @@ class TeamRunner:
                     "\n`report_task_result` is recorded exactly once only after Modeling, Protocol, and Acceptance "
                     "have each reported completed or blocked. A dependency rejection is not recorded; wait for "
                     "their terminal handoffs and retry without reviewing their semantics. Coordinator reports last."
-                )
+                ) + objective_suffix
             if role == "modeling":
                 modeling_text = text + (
                     "\nEmit only ready_for_acceptance to coordinator through `send_coordination` with "
@@ -3371,7 +3388,7 @@ class TeamRunner:
                         "exact document_name, excerpt, source artifact/locator/hash, and owner_answer_id fields, "
                         "and the candidate must satisfy the frozen assertion matrix."
                     )
-                return modeling_text
+                return modeling_text + objective_suffix
             if role == "competency-question" and self._competency_questions:
                 return text + (
                     "\nYou learn the approved slice set only from the Runner's direct "
@@ -3381,8 +3398,8 @@ class TeamRunner:
                     "delivery before any further draft. Keep hidden question text and answer "
                     "points out of your terminal `report_task_result` "
                     "message; report a status summary only."
-                )
-            return text
+                ) + objective_suffix
+            return text + objective_suffix
         return (
             self.run.configuration.task.objective
             + "\nAllowed sources: "
