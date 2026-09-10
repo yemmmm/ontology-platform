@@ -66,6 +66,7 @@ from .runner import TeamRunner
 from .candidate_publication import validate_candidate_publication
 from .candidate_progress import FormalCandidateProgressTimeout
 from .runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError
+from .staged_batch_write_forwarder import forward_staged_modeling_batch
 from .start_ledger import StartLedger
 from .task_overlay import load_task_input_overlay
 
@@ -1798,6 +1799,19 @@ def main() -> int:
             os.environ.pop("ONTOLOGY_PLATFORM_ADMIN_API_KEY", None)
             if getattr(runner, "canonical_admin_key", None) is not None:
                 runner.canonical_admin_key = None
+        if getattr(runner, "_staged_decisions", False):
+            # The staged write path is fail-closed in TeamRunner until a host-side
+            # write forwarder is bound; prepare() has now selected it.  The run's
+            # own protocol key is only recorded once start() runs, so it is read
+            # per call, and every call owns and closes its own canonical MCP child.
+            def staged_batch_write_forwarder(batch):
+                return forward_staged_modeling_batch(
+                    batch,
+                    repository_root=root,
+                    protocol_key=runner.run.protocol_key,
+                )
+
+            runner.staged_batch_forwarder = staged_batch_write_forwarder
         # Host auth is no longer probed unconditionally here.  TeamRunner's
         # prepare already ran the profile-scoped credential preflights
         # (including the conditional Codex ChatGPT subscription check for

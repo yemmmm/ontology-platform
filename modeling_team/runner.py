@@ -1109,6 +1109,8 @@ class TeamRunner:
             "acceptance_contract": self.repository_root / "modeling_team/acceptance.py",
             "acceptance_runtime": self.repository_root / "modeling_team/acceptance_runtime.py",
             "capability_mcp": self.repository_root / "modeling_team/capability_mcp.py",
+            "staged_batch_write_forwarder": self.repository_root
+            / "modeling_team/staged_batch_write_forwarder.py",
             "task_overlay": self.repository_root / "modeling_team/task_overlay.py",
             "candidate_publication": self.repository_root / "modeling_team/candidate_publication.py",
             "read_proxy_mcp": self.repository_root / "modeling_team/read_proxy_mcp.py",

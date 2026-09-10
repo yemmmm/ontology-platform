@@ -408,3 +408,42 @@ Ruff 新测试和 staged_decisions 干净，runner 仅保留HEAD既有3项问题
 通过；仍143项。非法顶层scope移除，5项非空范围保留到合法shared_scope，前序r1保留。
 16:11UTC Coordinator delivery-28/29完成19项决策revision2及摘要重批，通知Protocol发布新计划。
 截至16:17UTC尚无模型批次写入回执，等待修正计划翻译批准与原run继续；不构成L0/L1 PASS。
+
+16:20:14.834459UTC修正计划真实进入staged submit，通过此前输入校验后，出现新的第一阻塞：
+staged_batch_forward_failed: no host-side write forwarder is configured for this run。
+CLI main构造TeamRunner未注入staged_batch_forwarder，生产路径始终None；本次写入接线缺口归
+platform-contract。已写本地intent-1（dry_run/status=submitted），尚未调用平台，无receipt。
+Host通知停止重复提交、禁止绕过staged边界；16:22前后pause确认。Claude Code只读确认无现成
+同run重新接线路径，pause/resume不能重载；不能借修复启动新run（本授权1/1已用尽）。
+宿主实际GET四Ontology modeling-batches均为空且next_cursor=null，Session也无batch，
+原始响应保留auth005-platform-precheck.json；临时查询admin立即撤销。
+16:25:33UTC停止并清理Team（首次semantic start→stop约62.5分钟；到首次实际提交约57分钟）。
+Runner标CLEANED但scope实际blocked=Build Session Ontology coverage drifted，此既有清理
+限制不能被CLEANED掩盖；平台protocol/admin keys已撤销。Host按实际零批次取消唯一session、
+核对lease全部released，然后删除本轮空project；project/4Ontology/session逐个GET404。
+独立收尾证据auth005-external-cleanup.json，原Runner失败记录未改。运行残留secret-audit仍记
+private_credentials_destroyed=false，不能宣称全部私有留证已无凭据；不删除原始运行留证。
+当前L0 Runtime=BLOCKED（无真实dry-run/apply），L1=PARTIAL（6片143候选、36冻结CQ，尚无
+落库验证/推理/受治理检索及独立语义验收），L2/L3未验收。不得由接线失败推导模型质量失败。
+
+缓存观察auth005-usage-paused.json：四角色累计input44,801,063，cached43,604,608，
+加权命中97.329%；Modeling97.945%、CQ97.787%、Protocol97.473%、Coordinator95.987%。
+期间contextCompaction：Coordinator2、Protocol2、Modeling1。该数是app-server累计usage，
+不是受控前后对照，也不证明整体时延或成本改善；流程耗时仍受反复合同核对与接线缺口影响。
+语义/源读取→首版六片候选约24分钟；之后约38分钟主要用于审批、输入修订、计划与平台阻塞。
+这些为阶段墙钟，不冒充精确角色有效工时；未证明语义有效时间过半，因此停止扩展harness，
+仅修复本次实际写转发缺口，随后交回授权边界。
+
+写转发缺口由Claude Code实现最小独立函数：每批次以本轮Protocol key创建/关闭一次canonical
+stdio MCP连接，固定调用submit_modeling_batch，批次参数原样转发，返回真实backend data。
+CLI在prepare后为staged任务绑定函数、调用时读取当前run key；基线登记新模块。不增加常驻
+队列/线程、恢复入口或旁路提交，不复用/扩大Acceptance只读转发器，无backend/frontend更改。
+宿主复核纠正两点：(1) _run_tool可在提交后把内部异常包装ok:false，因此只将已证实的前置
+拒绝作为definite，其余内部/依赖/无可识别结果保留unknown并使用现有不确定写入处置；
+(2)本地.env推理器路径已失效，host转发环境按现有Protocol合同映射到当前checkout真实脚本，
+不修改.env或服务部署。UNKNOWN不能因idempotency而声称无写入。
+验证：23项新增测试通过；真实AF_UNIX capability→stdio MCP fixture→Runner receipt链路成功，
+非真实业务写入；覆盖CLI staged绑定、参数/环境、前置拒绝、未知结果及子进程退出。
+另对真实backend MCP作缺字段零写入请求，确认实际工具参数及错误信封。完整modeling_team
+回归1485通过、1既有opt-in跳过、321 subtests通过（82.03秒）；新增模块/CLI/测试Ruff通过，
+runner保留原有3项告警。未追加semantic start，不将本次机械验证写成建模或受治理检索PASS。
