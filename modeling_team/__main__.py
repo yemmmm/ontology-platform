@@ -172,10 +172,16 @@ def _foreground_issue_resolution_is_ready(runner: object) -> bool:
     whole run.  The Coordinator pause is the boundary that makes the same
     resolution actionable; all other receive paths remain unchanged and
     retain their fatal-error behavior.
+
+    2026-09-11 auth006-start9: ``transport.issue_ledger`` is a bound method
+    on the Broker, so reading ``.state`` directly on it always returned None
+    and the FIFO gate rejected every outer resolution.  Call the accessor
+    first, then read the ledger state.
     """
 
     transport = getattr(runner, "transport", None)
-    issue_ledger = getattr(transport, "issue_ledger", None)
+    accessor = getattr(transport, "issue_ledger", None)
+    issue_ledger = accessor() if callable(accessor) else accessor
     return getattr(issue_ledger, "state", None) in {"waiting_owner", "waiting_repair"}
 
 

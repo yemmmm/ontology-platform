@@ -1061,100 +1061,53 @@ def mcp_response(
                         "name": "issue_control",
                         "description": (
                             "Coordinator-only cooperative pause/resume/abort control. "
-                            "The schema is action-specific: pause has four fields, abort has "
-                            "those four plus a required persisted-resolution reason, and resume "
-                            "uses one of its explicit resolution branches."
+                            "Flat fields: action=pause needs issue_id/reporter_id/control_epoch; "
+                            "action=abort additionally needs a persisted-resolution reason; "
+                            "action=resume additionally needs the persisted resolution fields "
+                            "(guidance: resolution_type=guidance + resolution_text; "
+                            "repair_completed: repair_component/before_digest/after_digest/"
+                            "verification_reference/mutation_reconciliation)."
                         ),
+                        # 2026-09-11 auth006-start9: the previous oneOf form made
+                        # the model emit empty tool-call arguments, so the pause
+                        # dispatch never reached transport and the cooperative
+                        # flow wedged at state `reported`.  The server-side
+                        # normalize/validate already enforces every
+                        # action-specific rule, so a flat schema keeps the same
+                        # mechanical contract without the serialization hazard.
                         "inputSchema": {
                             "type": "object",
-                            "oneOf": [
-                                {
-                                    "title": "pause",
-                                    "properties": {
-                                        **issue_control_common_properties,
-                                        "action": {"type": "string", "enum": ["pause"]},
-                                    },
-                                    "required": [
-                                        "issue_id",
-                                        "reporter_id",
-                                        "action",
-                                        "control_epoch",
-                                    ],
-                                    "additionalProperties": False,
+                            "properties": {
+                                **issue_control_common_properties,
+                                "action": {
+                                    "type": "string",
+                                    "enum": ["pause", "resume", "abort"],
                                 },
-                                {
-                                    "title": "abort",
-                                    "properties": {
-                                        **issue_control_common_properties,
-                                        "action": {"type": "string", "enum": ["abort"]},
-                                        "reason": {"type": "string", "minLength": 1},
-                                    },
-                                    "required": [
-                                        "issue_id",
-                                        "reporter_id",
-                                        "action",
-                                        "control_epoch",
-                                        "reason",
-                                    ],
-                                    "additionalProperties": False,
+                                "reason": {"type": "string", "minLength": 1},
+                                "resolution_type": {
+                                    "type": "string",
+                                    "enum": ["guidance", "repair_completed"],
                                 },
-                                {
-                                    "title": "resume-guidance",
-                                    "properties": {
-                                        **issue_control_common_properties,
-                                        "action": {"type": "string", "enum": ["resume"]},
-                                        "resolution_type": {
-                                            "type": "string",
-                                            "enum": ["guidance"],
-                                        },
-                                        "resolution_text": {"type": "string", "minLength": 1},
-                                    },
-                                    "required": [
-                                        "issue_id",
-                                        "reporter_id",
-                                        "action",
-                                        "control_epoch",
-                                        "resolution_type",
-                                        "resolution_text",
-                                    ],
-                                    "additionalProperties": False,
+                                "resolution_text": {"type": "string", "minLength": 1},
+                                "repair_component": {"type": "string", "minLength": 1},
+                                "before_digest": {"type": "string", "minLength": 1},
+                                "after_digest": {"type": "string", "minLength": 1},
+                                "verification_reference": {
+                                    "type": "string",
+                                    "minLength": 1,
                                 },
-                                {
-                                    "title": "resume-repair-completed",
-                                    "properties": {
-                                        **issue_control_common_properties,
-                                        "action": {"type": "string", "enum": ["resume"]},
-                                        "resolution_type": {
-                                            "type": "string",
-                                            "enum": ["repair_completed"],
-                                        },
-                                        "repair_component": {"type": "string", "minLength": 1},
-                                        "before_digest": {"type": "string", "minLength": 1},
-                                        "after_digest": {"type": "string", "minLength": 1},
-                                        "verification_reference": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                        },
-                                        "mutation_reconciliation": {
-                                            "type": "string",
-                                            "minLength": 1,
-                                        },
-                                    },
-                                    "required": [
-                                        "issue_id",
-                                        "reporter_id",
-                                        "action",
-                                        "control_epoch",
-                                        "resolution_type",
-                                        "repair_component",
-                                        "before_digest",
-                                        "after_digest",
-                                        "verification_reference",
-                                        "mutation_reconciliation",
-                                    ],
-                                    "additionalProperties": False,
+                                "mutation_reconciliation": {
+                                    "type": "string",
+                                    "minLength": 1,
                                 },
+                            },
+                            "required": [
+                                "issue_id",
+                                "reporter_id",
+                                "action",
+                                "control_epoch",
                             ],
+                            "additionalProperties": False,
                         },
                     }
                 )
