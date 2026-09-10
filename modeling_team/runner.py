@@ -377,7 +377,7 @@ class TeamRunner:
         self._run_fallback_started: float | None = None
         self._issue_pending_started: float | None = None
         self._issue_pending_elapsed = 0.0
-        self._run_fallback_timeout_seconds = 5400.0
+        self._run_fallback_timeout_seconds = 10800.0
         self._candidate_redrive_limit = 3
         self._feedback_escalation_repeat = 3
         # Cooperative idle inquiry (start10/12): no role activity + no work in
@@ -2024,7 +2024,7 @@ class TeamRunner:
                 parameters.get("feedback_escalation_repeat", 3)
             )
             self._run_fallback_timeout_seconds = float(
-                parameters.get("run_fallback_timeout_seconds", 5400.0)
+                parameters.get("run_fallback_timeout_seconds", 10800.0)
             )
             self._run_fallback_started = self.monotonic_clock()
             # R2.3-009 start10/12: the slice-assignment-to-first-candidate
@@ -6272,7 +6272,7 @@ class TeamRunner:
         # another one never extends the exclusion twice.
         cq_excluded = self._cq_wait_windows.elapsed(now)
         active = max(0.0, now - started - excluded - cq_excluded)
-        timeout_seconds = getattr(self, "_run_fallback_timeout_seconds", 5400.0)
+        timeout_seconds = getattr(self, "_run_fallback_timeout_seconds", 10800.0)
         if active < timeout_seconds:
             return
         self._append_evidence(

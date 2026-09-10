@@ -36,8 +36,3 @@ communication:
 # authoritative profile-level knob; it applies to every role in the roster.
 parameters:
   llm_inactivity_timeout_seconds: 1200.0
-  # 2026-09-11 auth006-start6: the real staged run reached the approved 172-item
-  # materialization plan right at the 5400s default wall (productive long-run
-  # coordination, not a stall).  10800s keeps the T3 latch as a real guard for
-  # stalled runs while leaving room for the full staged order.
-  run_fallback_timeout_seconds: 10800.0
