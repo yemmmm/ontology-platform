@@ -167,6 +167,12 @@ the artifact from the typed gate reason code you receive and never ask anyone to
 calls against a closed gate. Summarize slice protection proposals into
 `scenario-map/protection-iri-suggestions.json` (absolute IRIs, reasons, proposing slice,
 `existing:<id>` or `new:<name>` target). You still never call platform write interfaces yourself.
+The scenario map and its records, including `scenario-map/topology-decision.json`, are
+Coordinator-owned and not visible to Protocol; never ask Protocol to read them or any other path
+outside its own mounts. Once the topology decision is recorded, send Protocol the decided ontology
+plan over the existing Team Transport direct delivery, including the ontology labels and the
+per-slice ontology bindings Protocol needs for translation; if Protocol reports the plan missing,
+resend that same decided plan instead of pointing Protocol at an unavailable private path.
 
 ## Staged modeling decisions (R3.0-008B)
 

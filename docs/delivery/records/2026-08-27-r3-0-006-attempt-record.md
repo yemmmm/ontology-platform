@@ -331,3 +331,17 @@ Claude Code完成plan_ref入口修复：只在该操作properties加入可选str
 最终保留6切片142候选条目、41已确认值、28题冻结池（20公开/8隐藏）、已批准首批转换计划；
 0次模型apply、0次真实语义检索验收。下一轮真实启动须新授权，并继续跟踪已记录的交接提示与
 失败清理覆盖条件缺口，不将本次平台失败归因于模型质量。
+
+## 2026-09-10 auth-r3-0-006-005 — 缓存优化后单次真实建模
+
+用户于15:19:58UTC明确授权“一次真实建模执行”，本授权额度1，不按默认3扩张。
+15:20:36UTC取时，北京时间周四23:20非高峰：Team deepseek-flash/max，
+model-profile deepseek-flash-max；Claude Code provider现场为deepseek，修复同模型/max。
+沿用r3-0-006-real-full Task、r3-0-011-competency-question Profile、industrial-service-v3
+四份原始获准材料及BS-20260910-01..06授权补充；保留此前业务代答和CQ审核代理授权，
+不向生产角色注入旧隐藏题、旧模型候选或旧拓扑。目标仍为真实建模/检索证据；缓存指标只观察
+现有usage，不增加预热或探针。用户缓存优化提交b03a936已有全Team1459 passed/1 skipped
+记录，本轮复用；plan_ref入口修复71542b5也纳入新进程。主工作区用户未提交修改保留。
+启动前由Claude Code仅补齐Coordinator指令中的既有topology计划消息交接，消除auth004-start3
+Protocol寻找不可见scenario-map路径的已证实prompt-contract缺漏，不扩mount或选择业务拓扑。
+启动证据及宿主记录位于workspaces/skill-role-20260910/auth005-*。
