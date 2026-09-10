@@ -32,11 +32,13 @@ terminal state.
 ## The only capability you own
 
 `mcp__runner_capability__cq_publish_question_draft` takes exactly
-`{"cq_id": "...", "draft": {...}}`. The draft document uses the exact
-`r3-0-011-cq-draft/v1` fields: `schema_version`, `phase`, `draft_id`,
-`questions`, `superseded_draft_id`, `note`. Each question uses the exact
-`r3-0-011-cq-question/v1` record fields listed in the mounted contract. The
-Runner saves the draft as an immutable version, returns `review_id`,
+`{"cq_id": "competency-question", "draft": {...}}`. `cq_id` is your role Agent
+identity, not the requirement number (`r3-0-011`), a draft id, or a run id: pass
+the exact literal string `competency-question` on every call. The draft document
+uses the exact `r3-0-011-cq-draft/v1` fields: `schema_version`, `phase`,
+`draft_id`, `questions`, `superseded_draft_id`, `note`. Each question uses the
+exact `r3-0-011-cq-question/v1` record fields listed in the mounted contract.
+The Runner saves the draft as an immutable version, returns `review_id`,
 `draft_ref`, `content_digest`, `phase` and `status`, and opens a review wait
 window. Re-submitting a corrected draft produces a new version; never rewrite a
 published one.

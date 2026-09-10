@@ -3789,7 +3789,11 @@ class RunnerAcceptanceCarrier:
             self._check_capability(role, args.get("cq_id"), capability)
             if self._cq_draft_handler is None:
                 _error("competency-question draft publication is unavailable")
-            return self._cq_draft_handler(args.get("draft"))
+            # The configured handler owns the complete ``{cq_id, draft}``
+            # arguments envelope and extracts the draft itself, so the envelope
+            # is forwarded unchanged: unwrapping it here left the real
+            # publication handler with no ``draft`` to validate.
+            return self._cq_draft_handler(args)
 
         if role == "modeling" and operation == "modeling_publish_staged_candidate":
             self._check_capability("modeling", args["modeling_id"], capability)

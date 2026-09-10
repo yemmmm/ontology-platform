@@ -114,3 +114,53 @@ _minimal_codex_process_env，三个代理键均保留。只保存presence，没�
 修改现有adapter转发逻辑。下一轮从已验证宿主shell内cd启动并检查实际进程presence即可。
 这还不是代理缺失导致所有流错误的因果复测PASS。Claude Code把教训补入现有运行参考，
 不加每次启动硬门、配置开关或测试框架。修正后真实语义结果需要新的授权额度才能验证。
+
+
+## 当前授权（auth-004，2026-09-10 18:07:39 +08:00）
+
+用户明确再授权3次；clock实查10:07:39 UTC，Asia/Shanghai周四18:07:39，非高峰。
+本批Team deepseek-flash/max，外部Claude Code deepseek-flash/max；已用cc-switch从GLM
+切至deepseek。当前1/3，剩余2/3；使用既有Task/Profile、clean checkout341b1d0，启动工具workdir
+保持主仓库、shell内cd到runtime-checkout以保留代理。复用既有业务代答及BS-01至06授权。
+本批切换模型是授权时调度规则要求，不能据本批成功单独证明上一批Luna传输原因。
+
+
+### auth004-start1启动与首次进展
+
+18:08:27 +08:00，r30006-20260910-auth004-start1启动，距授权48秒；完整既有入口、
+deepseek-flash-max模型profile，工具workdir主仓库+shell内cd runtime-checkout。
+实际uv/runner/bwrap进程链3个代理键均present，证据auth004-start1-proxy-presence.json。
+已通过CQ私有访谈复用六项业务补充。18:09观察到大量真实reasoning/agentMessage/tool输出，
+Coordinator开始读取阶段合同与材料、分派工作；没有前轮“无首个业务输出”的表现。
+本批模型依授权时调度切至DeepSeek，因此不把本轮输出当作Luna代理因果复测PASS。
+当前1/3、剩2/3，运行持续观察。
+
+
+### auth004-start1第一阻塞与同轮恢复尝试
+
+CQ真实tools/call初始cq_id=r3-0-011，两次被AcceptanceContractError拒绝，提示未说明
+cq_id是角色身份。Host在同一CQ私有通道给出技术反馈（明确不是业务定义或审批），CQ随后
+改成competency-question，越过身份检查。Claude Code补齐权威instructions中的精确字面值，
+相关包加载/链接和现有单项回归通过；没有放开身份隔离。
+
+10:15:57UTC，正确身份的CQ提交触发TypeError 'NoneType' object is not iterable。
+已定位真实接线：carrier把args.get("draft")传callback，真实Runner handler却再次读取
+arguments.get("draft")。先前synthetic handler回归没有覆盖真正Runner，漏检此不一致。
+本次只修CQ分派传完整args，补真实socket->Runner->不可变draft/review持久化测试。
+GitNexus dispatcher无法解析UNKNOWN，人工确认endpoint唯一分派引用及CQcallback分支；
+Runner handler索引LOW但不捕捉动态回调，不据此虚报完整低风险。
+
+Host已stop保留证据，state CLEANED，scope deleted-empty、资源删除、admin/protocol keys
+撤销、no_in_flight_attempts=true；runtime private credentials审计false保留。stop次生stderr
+app-server closed its output/exit2不覆盖先前CQ payload合同错误。无CQ成功发布/候选/业务写入。
+本批仍1/3已用、2/3剩余，窄修复通过后继续下一次，不能安全热换现有Runner会话。
+
+
+### CQ信封修复验证
+
+Claude Code将CQ分支回调参数改为完整args，保持身份/operation/token和真实Runner原合同。
+旧代码通过真实AF_UNIX socket->carrier->TeamRunner发布handler复现TypeError；修复后
+不可变draft、review snapshot及review等待窗口均真实生成。合成fixture不含真实业务/隐藏题。
+CQ合同子集116 passed；Team全量1429 passed、1 skipped、321 subtests passed（最终81.67s）。
+测试fixture引用的一处F811 lint问题已修正，最终文件2 tests通过且lint通过，旧分派行再次
+使真实接线测试失败。未改backend/frontend，不重启产品服务。下一次真实CQ发布仍待验证。

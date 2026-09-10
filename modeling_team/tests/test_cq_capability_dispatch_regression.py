@@ -8,10 +8,22 @@ constant while ``modeling_team.acceptance`` imported only the plural
 ``CQ_OPERATIONS``.  The role/operation gate therefore passed and the first CQ
 dispatch crashed, so a configured draft handler was unreachable.
 
+Real run ``auth004-start1`` evidenced the second half of the same wiring once
+the dispatch ran: every ``cq_publish_question_draft`` call still failed with a
+generic ``-32001`` whose audit trail recorded ``error_type=TypeError`` /
+``'NoneType' object is not iterable``.  The configured handler's contract is the
+complete ``{cq_id, draft}`` arguments envelope -- ``TeamRunner``'s
+``_publish_cq_question_draft`` extracts and validates ``draft`` itself -- but the
+CQ dispatch unwrapped the envelope and passed the bare draft body, so
+``arguments.get("draft")`` was ``None`` inside the handler.
+
 This test drives the real carrier-created competency-question endpoint over a
-real AF_UNIX socket ``tools/call`` into a synthetic handler.  It does not mock
+real AF_UNIX socket ``tools/call`` into a synthetic handler: it does not mock
 ``_dispatch_capability``, does not stop at ``tools/list``, and uses no real
-business draft data.
+business draft data.  The end-to-end counterpart that runs the same call through
+the real ``TeamRunner._publish_cq_question_draft`` and its draft/review
+persistence is ``test_m5_cq_socket_tools_call_publishes_through_the_real_runner_handler``
+in ``test_r3011_runner_wiring.py``.
 """
 
 from __future__ import annotations
@@ -36,9 +48,11 @@ _DRAFT: dict[str, Any] = {"phase": "synthetic", "questions": []}
 def test_cq_socket_tools_call_reaches_the_configured_draft_handler() -> None:
     received: list[Any] = []
 
-    def handler(draft: Any) -> dict[str, Any]:
-        received.append(draft)
-        return {"ok": True, "received": draft}
+    def handler(arguments: Any) -> dict[str, Any]:
+        # The handler owns the complete arguments envelope: it is entered once
+        # with exactly what the CQ role submitted, and extracts ``draft`` itself.
+        received.append(arguments)
+        return {"ok": True, "received": arguments}
 
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory) / "modeling-runs" / "run-1" / "acceptance-carrier"
@@ -84,13 +98,14 @@ def test_cq_socket_tools_call_reaches_the_configured_draft_handler() -> None:
             if line.strip()
         ]
 
-    # The synthetic handler must have been entered with exactly the submitted
-    # draft, and the handler result must round-trip on the success path.
-    assert received == [_DRAFT], f"draft handler not reached: {response}"
+    # The synthetic handler must have been entered with the complete submitted
+    # envelope, and the handler result must round-trip on the success path.
+    envelope = {"cq_id": COMPETENCY_QUESTION_ROLE, "draft": _DRAFT}
+    assert received == [envelope], f"draft handler not reached: {response}"
     assert "error" not in response, response
     assert response["result"]["structuredContent"] == {
         "ok": True,
-        "data": {"ok": True, "received": _DRAFT},
+        "data": {"ok": True, "received": envelope},
     }
 
     records = audit_records

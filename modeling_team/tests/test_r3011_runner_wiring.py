@@ -18,6 +18,11 @@ from types import SimpleNamespace
 
 import pytest
 
+from modeling_team.capability_mcp import (
+    COMPETENCY_QUESTION_ROLE,
+    CQ_OPERATION,
+    _stdio_request,
+)
 from modeling_team.competency_questions import (
     CQ_DRAFT_SCHEMA,
     CQ_FREEZE_SCHEMA,
@@ -171,6 +176,75 @@ def test_m5_cq_draft_rejection_is_typed_and_local(cq_runner):
         cq_runner._publish_cq_question_draft({"cq_id": "competency-question", "draft": broken})
     assert error.value.data["reason_code"] == "cq_freeze_schema_mismatch"
     assert not (cq_runner.run.root / "competency-questions" / "private" / "draft-0001.json").exists()
+
+
+def test_m5_cq_socket_tools_call_publishes_through_the_real_runner_handler(cq_runner):
+    """A real ``tools/call`` reaches ``TeamRunner._publish_cq_question_draft``.
+
+    Real run ``auth004-start1`` evidenced the CQ dispatch handing this handler
+    the bare draft body while the handler reads the complete ``{cq_id, draft}``
+    arguments envelope: every publication died as ``error_type=TypeError`` /
+    ``'NoneType' object is not iterable`` in the Runner-private audit trail.
+    This drives the carrier's real AF_UNIX endpoint instead of calling the
+    handler directly, so the carrier -> Runner wiring itself is under test.
+    """
+
+    carrier = cq_runner.acceptance
+    assert carrier.cq_capability_enabled is True
+    endpoint = carrier.capability_endpoint(COMPETENCY_QUESTION_ROLE)
+    assert endpoint.operations == (CQ_OPERATION,)
+    document = _draft([_question("cq-1")])
+
+    carrier.start_cq_endpoint()
+    try:
+        response = _stdio_request(
+            str(endpoint.socket_path),
+            carrier.capability_token(COMPETENCY_QUESTION_ROLE),
+            {
+                "jsonrpc": "2.0",
+                "id": "cq-real-handler-1",
+                "method": "tools/call",
+                "params": {
+                    "name": CQ_OPERATION,
+                    "arguments": {"cq_id": COMPETENCY_QUESTION_ROLE, "draft": document},
+                },
+            },
+        )
+    finally:
+        endpoint.stop()
+
+    # Runner-private audit trail first: the pre-fix wiring recorded
+    # ``error_type=TypeError`` here while the CQ role still saw a bare -32001.
+    audit_records = _read_evidence(cq_runner, "capability-calls")
+    assert audit_records[-1]["operation"] == CQ_OPERATION
+    assert audit_records[-1]["ok"] is True, audit_records[-1]
+    assert "error_type" not in audit_records[-1]
+
+    assert "error" not in response, response
+    data = response["result"]["structuredContent"]["data"]
+    assert data["ok"] is True and data["status"] == "awaiting_review"
+    assert data["review_id"] == "cq-review-0001"
+    assert data["draft_ref"] == "competency-questions/private/draft-0001.json"
+    assert (cq_runner.run.root / data["draft_ref"]).is_file()
+
+    # The immutable version and its review snapshot are what the capability
+    # persists: the validated draft document, never the raw envelope.
+    published = json.loads(
+        (cq_runner.run.root / "competency-questions" / "private" / "draft-0001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert published["draft_id"] == document["draft_id"]
+    assert [question["question_id"] for question in published["questions"]] == ["cq-1"]
+    snapshot = json.loads(
+        (cq_runner.run.root / "competency-questions" / "reviews" / "cq-review-0001.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    assert snapshot["review_id"] == "cq-review-0001"
+    assert snapshot["content_digest"] == data["content_digest"]
+    # The publication opens the Delivery review window (design §3.2).
+    assert cq_runner._cq_wait_windows.has_open_window is True
 
 
 # --- M7: outer direct-channel inputs -----------------------------------------
