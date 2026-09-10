@@ -354,6 +354,13 @@ R3.0-002～R3.0-005 实现并分别通过测试后，才可在用户授权的真
 结果是否正确。任何一项通过都不能替代另外两项；直接连接数据库能读取样例列不构成语义授权失败，
 但也不能被解释为业务数据安全已经成立。
 
+2026-09-11 用户要求 Team 也可选用 GLM。新增 `glm-direct` provider 路由（智谱直连 Responses，
+与 `deepseek-direct` 同构）及 `glm-flash-max` Team Model Profile，六个角色统一绑定
+`glm-5.3-flash`/`max`；闭集 provider 目录、loopback 凭据会话、角色不接触密钥的边界均不变。
+高峰 Team 档位由 `gpt-5.6-luna`/xhigh 改为 `glm-5.3-flash`/max。默认 profile 与既有入口
+不变，GLM 只能经 `--model-profile glm-flash-max` 显式选用，不静默采纳。本调整不新增
+semantic start 授权，不改变业务审核、隐藏题隔离、写入完整性或真实语义验收标准。
+
 2026-09-10 用户授权的三次验证使用显式 `deepseek-flash-max` Team Model Profile：四个生产角色
 （含 CQ）与后续 Platform Examiner、Acceptance Judge 均绑定 `deepseek-flash`。v3 multi-slice
 复用现有模型配置与 provider 会话路径，模型绑定独立于 formal 协作开关；冻结所选模型配置，

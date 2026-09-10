@@ -14,6 +14,7 @@ import json
 import subprocess
 import threading
 import time
+import tomllib
 import uuid
 from contextlib import redirect_stderr, redirect_stdout
 from dataclasses import replace
@@ -27,6 +28,7 @@ import yaml
 
 import modeling_team.model_routing as model_routing_module
 import modeling_team.runner as runner_module
+import modeling_team.runtimes.codex as codex_module
 from modeling_team.contracts import (
     TeamConfigurationError,
     _load_package,
@@ -44,6 +46,7 @@ from modeling_team.model_routing import (
     CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
     DEFAULT_MODEL_PROFILE_ID,
     DEEPSEEK_DIRECT_ROUTE,
+    GLM_DIRECT_ROUTE,
     MODEL_PROFILE_PACKAGE_IDS,
     OPENAI_CODEX_ROUTE,
     PROVIDER_CATALOG,
@@ -223,11 +226,27 @@ def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert DEEPSEEK_DIRECT_ROUTE.effective_effort("none") is None
     for tier in REQUESTED_EFFORT_TIERS:
         assert OPENAI_CODEX_ROUTE.effective_effort(tier) == tier
-    assert set(PROVIDER_CATALOG) == {"deepseek-direct", "openai-codex"}
+    assert set(PROVIDER_CATALOG) == {"deepseek-direct", "glm-direct", "openai-codex"}
     assert PROVIDER_CATALOG["deepseek-direct"].upstream_url == (
         "https://api.deepseek.com/responses"
     )
     assert PROVIDER_CATALOG["deepseek-direct"].credential_env == "DEEPSEEK_API_KEY"
+    # ``glm-direct`` mirrors ``deepseek-direct``: both the upstream URL and the
+    # credential env var must be set.  ``uses_external_credential`` is an AND, so
+    # a route that set only one of them would silently project the Codex ChatGPT
+    # subscription instead of the loopback provider session.
+    assert GLM_DIRECT_ROUTE.upstream_url == "https://open.bigmodel.cn/api/v1/responses"
+    assert GLM_DIRECT_ROUTE.credential_env == "GLM_API_KEY"
+    assert GLM_DIRECT_ROUTE.wire_api == "responses"
+    assert GLM_DIRECT_ROUTE.models == frozenset({"glm-5.3-flash"})
+    assert GLM_DIRECT_ROUTE.uses_external_credential is True
+    # Effort resolves exactly as DeepSeek's does, including ``none`` unmapped.
+    assert GLM_DIRECT_ROUTE.effective_effort("low") == "high"
+    assert GLM_DIRECT_ROUTE.effective_effort("medium") == "high"
+    assert GLM_DIRECT_ROUTE.effective_effort("high") == "high"
+    assert GLM_DIRECT_ROUTE.effective_effort("xhigh") == "max"
+    assert GLM_DIRECT_ROUTE.effective_effort("max") == "max"
+    assert GLM_DIRECT_ROUTE.effective_effort("none") is None
     # The Codex route is the built-in OpenAI Responses route: no upstream URL,
     # no API-key credential assignment, no ambient environment variable.
     assert OPENAI_CODEX_ROUTE.upstream_url is None
@@ -1296,6 +1315,161 @@ def test_deepseek_default_credential_path_is_unchanged(
 
 
 # --------------------------------------------------------------------------
+# Group A4: glm-direct is a first-class external credential route
+# --------------------------------------------------------------------------
+
+
+_GLM_ONLY_ROLES = {
+    role: {
+        "model_provider": "glm-direct",
+        "model": "glm-5.3-flash",
+        "model_reasoning_effort": "max",
+    }
+    for role in MODEL_PROFILE_PACKAGE_IDS
+}
+
+
+def _glm_only_profile(root: Path) -> TeamModelProfile:
+    _write_profile(root, "glm-only-fixture", _GLM_ONLY_ROLES)
+    return load_team_model_profile(root, "glm-only-fixture")
+
+
+def test_external_catalog_routes_are_fully_registered() -> None:
+    """Every external route must carry a preflight, a reader, and both fields.
+
+    ``ProviderRoute.uses_external_credential`` is an AND over ``upstream_url`` and
+    ``credential_env``.  A route declaring only one of them is not an external
+    route at all: it is skipped by ``preflight_profile_credentials`` and every
+    role bound to it silently projects the Codex built-in ChatGPT subscription.
+    ``model_routing`` asserts this at import time; this test keeps the wiring
+    observable and pins ``glm-direct`` into the external set.
+    """
+
+    external = {
+        provider_id
+        for provider_id, route in PROVIDER_CATALOG.items()
+        if route.uses_external_credential
+    }
+    assert external == {"deepseek-direct", "glm-direct"}
+    assert external == set(model_routing_module._PROVIDER_CREDENTIAL_PREFLIGHTS)
+    assert external == set(model_routing_module._PROVIDER_CREDENTIAL_READERS)
+    for provider_id in external:
+        route = PROVIDER_CATALOG[provider_id]
+        assert route.upstream_url is not None
+        assert route.credential_env is not None
+
+
+def test_glm_only_profile_preflights_exactly_its_own_route(tmp_path: Path) -> None:
+    glm = _credential_file(tmp_path, "glm.env", "GLM_API_KEY=glm-route-sentinel\n")
+    profile = _glm_only_profile(tmp_path)
+
+    assert profile.provider_ids() == ("glm-direct",)
+    assert uses_external_credential_session("glm-direct") is True
+    # Nothing declares the built-in route, so nothing needs subscription auth.
+    assert profile_requires_codex_subscription_auth(profile) is False
+
+    bindings = preflight_profile_credentials(profile, glm_credential_path=glm)
+    # An empty mapping here would mean the roles had fallen through to the
+    # built-in provider rather than the loopback GLM session.
+    assert set(bindings) == {"glm-direct"}
+
+
+def test_glm_profile_never_borrows_the_deepseek_credential(tmp_path: Path) -> None:
+    """The DeepSeek override seam must not satisfy a GLM profile."""
+
+    deepseek = _credential_file(
+        tmp_path, "deepseek.env", "DEEPSEEK_API_KEY=deepseek-sentinel\n"
+    )
+    profile = _glm_only_profile(tmp_path)
+    # Point the GLM seam at a path that does not exist, so this asserts "the
+    # DeepSeek override leaves ``glm-direct`` uncovered" rather than depending on
+    # whether the host happens to have a real GLM credential at the default path.
+    absent_glm = tmp_path / "absent-glm.env"
+    with pytest.raises(ProviderCredentialUnavailableError) as excinfo:
+        preflight_profile_credentials(
+            profile,
+            deepseek_credential_path=deepseek,
+            glm_credential_path=absent_glm,
+        )
+    assert excinfo.value.reason_code == "provider-credential-unavailable"
+    assert excinfo.value.category == "runtime/infrastructure"
+    assert excinfo.value.args[0] == (
+        "provider credential preflight failed for glm-direct"
+    )
+
+
+def test_glm_route_builds_one_shared_provider_session(tmp_path: Path) -> None:
+    glm = _credential_file(tmp_path, "glm.env", "GLM_API_KEY=glm-session-sentinel\n")
+    profile = _glm_only_profile(tmp_path)
+    bindings = preflight_profile_credentials(profile, glm_credential_path=glm)
+    created: list[str] = []
+
+    def factory(key: bytes, *, provider_id: str, **_kwargs: object) -> _FakeSession:
+        assert key
+        created.append(provider_id)
+        return _FakeSession(key, provider_id)
+
+    manager = ProviderSessionManager(bindings, session_factory=factory)
+    manager.start()
+    try:
+        assert manager.provider_ids() == ("glm-direct",)
+        assert created == ["glm-direct"]
+        assert manager.base_url_for("glm-direct").startswith("http://127.0.0.1:")
+        assert manager.secret_values() == (b"glm-session-sentinel",)
+    finally:
+        manager.stop()
+
+
+def test_glm_route_projects_the_loopback_provider_config(tmp_path: Path) -> None:
+    """The per-role TOML selects the loopback session, never the built-in route."""
+
+    profile = _glm_only_profile(tmp_path)
+    binding = profile.bindings["modeling"]
+    lines = codex_module._formal_provider_config_lines(
+        binding, "http://127.0.0.1:49011"
+    )
+    parsed = tomllib.loads("\n".join(lines))
+
+    assert parsed["model"] == "glm-5.3-flash"
+    assert parsed["model_provider"] == "glm-direct"
+    assert parsed["model_reasoning_effort"] == "max"
+    # The loopback table carries no credential key: the Host session injects it.
+    assert set(parsed["model_providers"]["glm-direct"]) == {
+        "name",
+        "base_url",
+        "wire_api",
+    }
+    assert parsed["model_providers"]["glm-direct"]["wire_api"] == "responses"
+    # The role's shell must not inherit the GLM key, nor any other route's.
+    excluded = parsed["shell_environment_policy"]["exclude"]
+    assert "GLM_API_KEY" in excluded
+    assert "DEEPSEEK_API_KEY" in excluded
+    assert "OPENAI_API_KEY" in excluded
+    assert excluded == list(codex_module._CODEX_EXCLUDED_ENV_NAMES)
+
+
+def test_repository_glm_profile_binds_every_role_to_glm() -> None:
+    """The checked-in peak profile binds the whole roster to glm-direct."""
+
+    profile = load_team_model_profile(ROOT, "glm-flash-max")
+    assert profile.provider_ids() == ("glm-direct",)
+    assert profile_requires_codex_subscription_auth(profile) is False
+    assert set(profile.bindings) == {
+        "coordinator",
+        "modeling",
+        "protocol",
+        "competency-question",
+        "platform-examiner",
+        "acceptance",
+    }
+    for binding in profile.bindings.values():
+        assert binding.provider_id == "glm-direct"
+        assert binding.model == "glm-5.3-flash"
+        assert binding.requested_effort == "max"
+        assert binding.effective_effort == "max"
+
+
+# --------------------------------------------------------------------------
 # Group E: failure, no fallback, cleanup (manager-level doubles)
 # --------------------------------------------------------------------------
 
@@ -1563,6 +1737,7 @@ def test_persistent_role_projection_equals_frozen_mixed_bindings(
             assert agent.auth_barrier_pending is True
         assert parsed["shell_environment_policy"]["exclude"] == [
             "DEEPSEEK_API_KEY",
+            "GLM_API_KEY",
             "OPENAI_API_KEY",
             "LLM_API_KEY",
         ]

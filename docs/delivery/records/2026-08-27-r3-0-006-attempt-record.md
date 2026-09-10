@@ -45,6 +45,13 @@
 start授权复测，不以环境presence检查声称语义PASS。继续复用已获业务代答和资料补充授权；
 新授权到来时按Skill重新取时确定模型，旧冻结run不换模型。
 
+2026-09-11 平台侧新增 `glm-direct` 路由与 `glm-flash-max` Team Model Profile，Team 高峰档位
+由 `gpt-5.6-luna`/xhigh 改为 `glm-5.3-flash`/max；非高峰 `deepseek-flash`/max 不变。这是
+调度表与 provider 能力变更，不是新的授权：auth-003 仍 0/3 可用，本次未启动任何真实 run。
+下次新授权到来时按 Skill 取时判定高峰/非高峰，再选用对应 profile；已冻结 run 不换模型。
+实现、实测证据与 cc-switch 侧的 open-code 工具缺口见
+[角色技能与真实验证记录](2026-09-10-role-scoped-skills-and-real-validation.md)。
+
 ### auth-002 第三轮收口（15:20 +08:00）
 
 六项访谈经授权代答完成，原始outer-question/outer-user与BS-20260910-01至06保留。CQ草稿

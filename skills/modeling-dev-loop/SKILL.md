@@ -37,9 +37,10 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
   实际模型 `glm-5.3-flash`、effort `max`；非高峰且当前 provider 非 deepseek 时切回 deepseek，
   实际模型 `deepseek-flash`、effort `max`。目标 provider 已匹配时不做无意义切换，但仍
   核验 model/effort 与记录一致。主智能体自身是 Codex，不在 cc-switch 切换范围。
-- Team：模型绑定写在 Team 独立 model-profile，不经 cc-switch。高峰 `gpt-5.6-luna`、
-  effort `xhigh`；非高峰 `deepseek-flash`、effort `max`。validate、baseline、run 及角色
-  实际模型证据须与该选择一致。
+- Team：模型绑定写在 Team 独立 model-profile，不经 cc-switch。高峰 `glm-5.3-flash`、
+  effort `max`，选用 profile `glm-flash-max`（经 `glm-direct` 路由；凭据只由宿主的
+  loopback session 持有，角色不接触密钥）；非高峰 `deepseek-flash`、effort `max`，选用
+  profile `deepseek-flash-max`。validate、baseline、run 及角色实际模型证据须与该选择一致。
 - provider 用 `cc-switch -a claude provider list` 的当前标记现场发现（`provider current`
   原样输出带 API Key 片段，不直接原样输出或粘贴），不把机器特定 provider ID 写死；启动前
   清除会覆盖切换结果的旧 ambient `ANTHROPIC_MODEL`、`ANTHROPIC_BASE_URL` 等模型变量，只

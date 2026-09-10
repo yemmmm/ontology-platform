@@ -5,6 +5,10 @@ keeps the only copy in a mutable byte buffer owned by one short-lived loopback
 Responses session, and validates the external file again immediately before
 reading it.  The generic session is provider-neutral (R2.3-007); DeepSeek keeps a
 thin compatibility wrapper plus its fixed credential contract.
+
+The credential contract is provider-neutral too: a route supplies its own env var
+name, default path, and label, while every route shares one set of file-identity
+rules and one error type.
 """
 
 from __future__ import annotations
@@ -17,6 +21,7 @@ import ssl
 import stat
 import threading
 from dataclasses import dataclass
+from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
@@ -28,6 +33,9 @@ DEEPSEEK_CREDENTIAL_PATH = Path(
     "~/.config/ontology-platform/modeling-team-deepseek.env"
 ).expanduser()
 DEEPSEEK_UPSTREAM_URL = "https://api.deepseek.com/responses"
+GLM_API_KEY_ENV = "GLM_API_KEY"
+GLM_CREDENTIAL_PATH = Path("~/.config/ontology-platform/modeling-team-glm.env").expanduser()
+GLM_UPSTREAM_URL = "https://open.bigmodel.cn/api/v1/responses"
 DEEPSEEK_PROXY_MAX_BODY_BYTES = 32 * 1024 * 1024
 RESPONSES_SESSION_MAX_BODY_BYTES = DEEPSEEK_PROXY_MAX_BODY_BYTES
 RESPONSES_UPSTREAM_FAILURE = "provider-upstream-failed"
@@ -35,11 +43,15 @@ RESPONSES_CLEANUP_FAILURE = "provider-session-cleanup-failed"
 _LOCAL_FAILURE_STATUS = 502
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 _CREDENTIAL_MAX_BYTES = 4096
-_CREDENTIAL_RE = re.compile(r"DEEPSEEK_API_KEY=([^\s\"'\r\n=]+)\n?\Z")
 
 
-class DeepSeekCredentialError(RuntimeError):
+class ProviderCredentialError(RuntimeError):
     """Typed, provider-text-free credential validation failure."""
+
+
+# Compatibility alias: every route shares one credential error type, so callers
+# that catch the DeepSeek name keep catching provider-neutral failures.
+DeepSeekCredentialError = ProviderCredentialError
 
 
 class ProviderSessionError(RuntimeError):
@@ -51,9 +63,52 @@ DeepSeekProviderProxyError = ProviderSessionError
 
 
 @dataclass(frozen=True)
-class DeepSeekCredentialBinding:
+class ProviderCredentialContract:
+    """Provider-neutral external credential file contract.
+
+    The loopback session is provider-neutral (R2.3-007); each route brings its own
+    env var name, default path, and label.  The validation rules themselves stay
+    shared so adding a route cannot weaken them.
+    """
+
+    provider_id: str
+    label: str
+    env_var: str
+    default_path: Path
+
+    def error(self, detail: str) -> ProviderCredentialError:
+        # Message shape is "<Label> credential <detail>"; callers and tests match
+        # on the trailing detail, so keep those suffixes stable.
+        return ProviderCredentialError(f"{self.label} credential {detail}")
+
+
+DEEPSEEK_CREDENTIAL_CONTRACT = ProviderCredentialContract(
+    provider_id="deepseek-direct",
+    label="DeepSeek",
+    env_var=DEEPSEEK_API_KEY_ENV,
+    default_path=DEEPSEEK_CREDENTIAL_PATH,
+)
+GLM_CREDENTIAL_CONTRACT = ProviderCredentialContract(
+    provider_id="glm-direct",
+    label="GLM",
+    env_var=GLM_API_KEY_ENV,
+    default_path=GLM_CREDENTIAL_PATH,
+)
+
+
+@lru_cache(maxsize=None)
+def _credential_assignment_re(env_var: str) -> re.Pattern[str]:
+    # Assignment-only file: exactly `<ENV_VAR>=<value>` plus at most one trailing
+    # newline.  Derived from the env var name so a route can never accept a
+    # different provider's assignment.
+    return re.compile(rf"{re.escape(env_var)}=([^\s\"'\r\n=]+)\n?\Z")
+
+
+@dataclass(frozen=True)
+class ProviderCredentialBinding:
     """Non-secret file identity frozen during Runner.prepare."""
 
+    contract: ProviderCredentialContract
     path: Path
     st_dev: int
     st_ino: int
@@ -76,8 +131,14 @@ class DeepSeekCredentialBinding:
         )
 
 
-def _canonical_credential_path(path: Path | str | None) -> Path:
-    value = Path(path) if path is not None else DEEPSEEK_CREDENTIAL_PATH
+# Compatibility alias: the binding carries only non-secret file identity.
+DeepSeekCredentialBinding = ProviderCredentialBinding
+
+
+def _canonical_credential_path(
+    contract: ProviderCredentialContract, path: Path | str | None
+) -> Path:
+    value = Path(path) if path is not None else contract.default_path
     try:
         expanded = value.expanduser().absolute()
         # Inspect the caller-supplied final path before resolving it.  Resolving
@@ -88,53 +149,56 @@ def _canonical_credential_path(path: Path | str | None) -> Path:
         except FileNotFoundError:
             metadata = None
         if metadata is not None and stat.S_ISLNK(metadata.st_mode):
-            raise DeepSeekCredentialError("DeepSeek credential file is insecure")
+            raise contract.error("file is insecure")
         return expanded.resolve(strict=False)
-    except DeepSeekCredentialError:
+    except ProviderCredentialError:
         raise
     except (OSError, RuntimeError) as exc:
-        raise DeepSeekCredentialError("DeepSeek credential path is invalid") from exc
+        raise contract.error("path is invalid") from exc
 
 
-def _validate_credential_bytes(payload: bytes) -> bytes:
+def _validate_credential_bytes(contract: ProviderCredentialContract, payload: bytes) -> bytes:
     if not payload or len(payload) > _CREDENTIAL_MAX_BYTES:
-        raise DeepSeekCredentialError("DeepSeek credential file is malformed")
+        raise contract.error("file is malformed")
     try:
         text = payload.decode("utf-8")
     except UnicodeDecodeError as exc:
-        raise DeepSeekCredentialError("DeepSeek credential file is malformed") from exc
-    match = _CREDENTIAL_RE.fullmatch(text)
+        raise contract.error("file is malformed") from exc
+    match = _credential_assignment_re(contract.env_var).fullmatch(text)
     if match is None:
-        raise DeepSeekCredentialError("DeepSeek credential assignment is malformed")
+        raise contract.error("assignment is malformed")
     value = match.group(1)
     if not value or value.strip() != value:
-        raise DeepSeekCredentialError("DeepSeek credential assignment is malformed")
+        raise contract.error("assignment is malformed")
     return value.encode("utf-8")
 
 
-def preflight_deepseek_credential(path: Path | str | None = None) -> DeepSeekCredentialBinding:
-    """Validate the fixed external file and return only non-secret metadata."""
+def preflight_provider_credential(
+    contract: ProviderCredentialContract, path: Path | str | None = None
+) -> ProviderCredentialBinding:
+    """Validate the contract's external file and return only non-secret metadata."""
 
-    canonical = _canonical_credential_path(path)
+    canonical = _canonical_credential_path(contract, path)
     try:
         metadata = os.lstat(canonical)
     except OSError as exc:
-        raise DeepSeekCredentialError("DeepSeek credential file is unavailable") from exc
+        raise contract.error("file is unavailable") from exc
     if (
         stat.S_ISLNK(metadata.st_mode)
         or not stat.S_ISREG(metadata.st_mode)
         or metadata.st_uid != os.getuid()
         or stat.S_IMODE(metadata.st_mode) != 0o600
     ):
-        raise DeepSeekCredentialError("DeepSeek credential file is insecure")
+        raise contract.error("file is insecure")
     try:
         payload = canonical.read_bytes()
     except OSError as exc:
-        raise DeepSeekCredentialError("DeepSeek credential file is unreadable") from exc
+        raise contract.error("file is unreadable") from exc
     # Validate now but deliberately discard the value.  TeamRun/baseline/evidence
     # receives only this identity, never credential bytes or a digest.
-    _validate_credential_bytes(payload)
-    return DeepSeekCredentialBinding(
+    _validate_credential_bytes(contract, payload)
+    return ProviderCredentialBinding(
+        contract,
         canonical,
         metadata.st_dev,
         metadata.st_ino,
@@ -143,28 +207,59 @@ def preflight_deepseek_credential(path: Path | str | None = None) -> DeepSeekCre
     )
 
 
-def read_deepseek_credential(binding: DeepSeekCredentialBinding) -> bytes:
+def read_provider_credential(
+    contract: ProviderCredentialContract, binding: ProviderCredentialBinding
+) -> bytes:
     """Open with O_NOFOLLOW and revalidate the prepare-time identity."""
 
+    if binding.contract.env_var != contract.env_var:
+        # A binding made for one route must never be read under another's rules.
+        raise contract.error("binding changed")
     flags = os.O_RDONLY
     if hasattr(os, "O_NOFOLLOW"):
         flags |= os.O_NOFOLLOW
     try:
         descriptor = os.open(binding.path, flags)
     except OSError as exc:
-        raise DeepSeekCredentialError("DeepSeek credential open failed") from exc
+        raise contract.error("open failed") from exc
     try:
         metadata = os.fstat(descriptor)
         if not binding.metadata_matches(metadata):
-            raise DeepSeekCredentialError("DeepSeek credential binding changed")
+            raise contract.error("binding changed")
         payload = os.read(descriptor, _CREDENTIAL_MAX_BYTES + 1)
         if len(payload) > _CREDENTIAL_MAX_BYTES:
-            raise DeepSeekCredentialError("DeepSeek credential file is malformed")
+            raise contract.error("file is malformed")
     except OSError as exc:
-        raise DeepSeekCredentialError("DeepSeek credential read failed") from exc
+        raise contract.error("read failed") from exc
     finally:
         os.close(descriptor)
-    return _validate_credential_bytes(payload)
+    return _validate_credential_bytes(contract, payload)
+
+
+def preflight_deepseek_credential(
+    path: Path | str | None = None,
+) -> ProviderCredentialBinding:
+    """DeepSeek compatibility wrapper over the provider-neutral contract."""
+
+    return preflight_provider_credential(DEEPSEEK_CREDENTIAL_CONTRACT, path)
+
+
+def read_deepseek_credential(binding: ProviderCredentialBinding) -> bytes:
+    """DeepSeek compatibility wrapper over the provider-neutral contract."""
+
+    return read_provider_credential(DEEPSEEK_CREDENTIAL_CONTRACT, binding)
+
+
+def preflight_glm_credential(path: Path | str | None = None) -> ProviderCredentialBinding:
+    """GLM compatibility wrapper over the provider-neutral contract."""
+
+    return preflight_provider_credential(GLM_CREDENTIAL_CONTRACT, path)
+
+
+def read_glm_credential(binding: ProviderCredentialBinding) -> bytes:
+    """GLM compatibility wrapper over the provider-neutral contract."""
+
+    return read_provider_credential(GLM_CREDENTIAL_CONTRACT, binding)
 
 
 def _validate_upstream_url(upstream_url: str) -> None:
@@ -589,18 +684,30 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
 
 __all__ = [
     "DEEPSEEK_API_KEY_ENV",
+    "DEEPSEEK_CREDENTIAL_CONTRACT",
     "DEEPSEEK_CREDENTIAL_PATH",
     "DEEPSEEK_PROXY_MAX_BODY_BYTES",
     "DEEPSEEK_UPSTREAM_URL",
+    "GLM_API_KEY_ENV",
+    "GLM_CREDENTIAL_CONTRACT",
+    "GLM_CREDENTIAL_PATH",
+    "GLM_UPSTREAM_URL",
     "RESPONSES_SESSION_MAX_BODY_BYTES",
     "DeepSeekCredentialBinding",
     "DeepSeekCredentialError",
     "DeepSeekProviderProxy",
     "DeepSeekProviderProxyError",
+    "ProviderCredentialBinding",
+    "ProviderCredentialContract",
+    "ProviderCredentialError",
     "ProviderSessionError",
     "RESPONSES_UPSTREAM_FAILURE",
     "RESPONSES_CLEANUP_FAILURE",
     "ResponsesProviderSession",
     "preflight_deepseek_credential",
+    "preflight_glm_credential",
+    "preflight_provider_credential",
     "read_deepseek_credential",
+    "read_glm_credential",
+    "read_provider_credential",
 ]

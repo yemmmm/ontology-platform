@@ -41,9 +41,12 @@ ClaudeCode 侧（外部 Claude Code 开发/修复进程；主智能体自身是 
    变量；核验只读白名单字段（provider、model、effort、base URL 指向），不打印密钥或
    整份 settings。
 
-Team 侧不经 cc-switch：模型绑定写在 Team 独立 model-profile。高峰 `gpt-5.6-luna`、
-effort `xhigh`；非高峰 `deepseek-flash`、effort `max`（用户原文写作 `gtp5.6-luna`/`xgigh`，
-已向用户说明按规范名理解）。选用 model profile/overlay 时，validate、baseline、run
+Team 侧不经 cc-switch：模型绑定写在 Team 独立 model-profile。高峰 `glm-5.3-flash`、
+effort `max`，选用 profile `glm-flash-max`（经 `glm-direct` 路由，与 `deepseek-direct`
+同构：角色经宿主 loopback session 访问，密钥不进角色进程）；非高峰 `deepseek-flash`、
+effort `max`，选用 profile `deepseek-flash-max`。profile ID 不含模型版本号后缀是因为
+`SAFE_ID` 只允许 `[a-z0-9-]`（`openai-luna-xhigh` 对 `gpt-5.6-luna` 是同一惯例），精确
+模型串以各角色 `model:` 绑定为准。选用 model profile/overlay 时，validate、baseline、run
 使用同一选择，并保留角色实际模型证据与之对应；没有获准的选择则沿用配置，不擅自换模型。
 
 执行环境不支持所需模型/effort 时，把缺口原样反馈给用户，不悄悄替换为可用模型。调度在授权

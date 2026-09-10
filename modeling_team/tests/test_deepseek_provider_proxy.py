@@ -8,10 +8,15 @@ from pathlib import Path
 import pytest
 
 from modeling_team.deepseek_provider_proxy import (
+    GLM_CREDENTIAL_CONTRACT,
     DeepSeekCredentialError,
     DeepSeekProviderProxy,
+    ProviderCredentialError,
     preflight_deepseek_credential,
+    preflight_glm_credential,
+    preflight_provider_credential,
     read_deepseek_credential,
+    read_glm_credential,
 )
 
 
@@ -86,6 +91,84 @@ def test_credential_preflight_rejects_non_exact_assignments(tmp_path: Path, payl
     path.chmod(0o600)
     with pytest.raises(DeepSeekCredentialError):
         preflight_deepseek_credential(path)
+
+
+def test_glm_credential_contract_accepts_only_its_own_assignment(tmp_path: Path) -> None:
+    path = tmp_path / "glm.env"
+    path.write_text("GLM_API_KEY=glm-credential-sentinel\n", encoding="utf-8")
+    path.chmod(0o600)
+    binding = preflight_glm_credential(path)
+    assert "glm-credential-sentinel" not in repr(binding)
+    assert read_glm_credential(binding) == b"glm-credential-sentinel"
+    # Runtime revalidation still binds the frozen file identity.
+    path.write_text("GLM_API_KEY=changed\n", encoding="utf-8")
+    path.chmod(0o600)
+    with pytest.raises(ProviderCredentialError, match="binding changed"):
+        read_glm_credential(binding)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        # Another provider's assignment, including the DeepSeek one the generic
+        # validator used to hardcode.
+        b"DEEPSEEK_API_KEY=deepseek-sentinel\n",
+        b"LLM_API_KEY=legacy\n",
+        b"GLM_API_KEY=\n",
+        b"GLM_API_KEY='quoted'\n",
+        b"GLM_API_KEY=one\nGLM_API_KEY=two\n",
+        b"glm_api_key=lowercase\n",
+    ],
+)
+def test_glm_credential_contract_rejects_foreign_or_malformed_assignments(
+    tmp_path: Path, payload: bytes
+) -> None:
+    path = tmp_path / "glm.env"
+    path.write_bytes(payload)
+    path.chmod(0o600)
+    with pytest.raises(ProviderCredentialError):
+        preflight_glm_credential(path)
+
+
+def test_glm_credential_contract_enforces_the_same_file_identity(tmp_path: Path) -> None:
+    path = tmp_path / "glm.env"
+    path.write_text("GLM_API_KEY=sentinel\n", encoding="utf-8")
+    # Insecure mode: the generic rules are shared, not re-implemented per route.
+    path.chmod(0o644)
+    with pytest.raises(ProviderCredentialError, match="insecure"):
+        preflight_glm_credential(path)
+
+    # Final symlink is rejected before resolution.
+    target = tmp_path / "target"
+    target.write_text("GLM_API_KEY=sentinel\n", encoding="utf-8")
+    target.chmod(0o600)
+    link = tmp_path / "glm-link.env"
+    link.symlink_to(target)
+    with pytest.raises(ProviderCredentialError, match="insecure"):
+        preflight_glm_credential(link)
+
+
+def test_a_binding_never_crosses_between_credential_contracts(tmp_path: Path) -> None:
+    # A GLM binding must not be readable under the DeepSeek contract, or vice
+    # versa; the binding carries the contract it was made for.
+    path = tmp_path / "glm.env"
+    path.write_text("GLM_API_KEY=sentinel\n", encoding="utf-8")
+    path.chmod(0o600)
+    glm_binding = preflight_glm_credential(path)
+    assert glm_binding.contract is GLM_CREDENTIAL_CONTRACT
+    with pytest.raises(ProviderCredentialError, match="binding changed"):
+        read_deepseek_credential(glm_binding)
+
+    assert ProviderCredentialError is DeepSeekCredentialError
+    with pytest.raises(ProviderCredentialError):
+        preflight_provider_credential(
+            type(GLM_CREDENTIAL_CONTRACT)(
+                provider_id="glm-direct",
+                label="GLM",
+                env_var="GLM_API_KEY",
+                default_path=tmp_path / "missing.env",
+            )
+        )
 
 
 def test_provider_proxy_replaces_inbound_auth_and_streams_upstream(upstream) -> None:

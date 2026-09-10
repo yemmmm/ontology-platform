@@ -239,6 +239,7 @@ class TeamRunner:
         canonical_admin_key: str | None = None,
         monotonic_clock: Callable[[], float] | None = None,
         deepseek_credential_path: Path | None = None,
+        glm_credential_path: Path | None = None,
         staged_batch_forwarder: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
@@ -261,9 +262,11 @@ class TeamRunner:
         # ``staged_batch_forward_failed`` reason code.  It must NOT reuse the
         # read-only McpReadForwarder/PLATFORM_PROXY_READ_TOOLS surface.
         self.staged_batch_forwarder = staged_batch_forwarder
-        # This path is a constructor-only test seam.  Production callers leave it
-        # unset and therefore bind the fixed external credential location.
+        # These paths are constructor-only test seams.  Production callers leave
+        # them unset and therefore bind each route's fixed external credential
+        # location; a profile only ever reads the routes it actually names.
         self.deepseek_credential_path = deepseek_credential_path
+        self.glm_credential_path = glm_credential_path
         # Safe conclusion of the Host ChatGPT subscription preflight; only the
         # fixed label from model_routing is ever stored here (no token, account,
         # cache path/digest, or login-status output).
@@ -589,6 +592,7 @@ class TeamRunner:
             provider_credential_bindings = preflight_profile_credentials(
                 team_model_profile,
                 deepseek_credential_path=self.deepseek_credential_path,
+                glm_credential_path=self.glm_credential_path,
             )
         if config.task.schema_version == 2 and not self.freeze_started_at:
             raise TeamConfigurationError("v2 Task requires explicit freeze_started_at")
@@ -668,6 +672,7 @@ class TeamRunner:
             provider_credential_bindings = preflight_profile_credentials(
                 team_model_profile,
                 deepseek_credential_path=self.deepseek_credential_path,
+                glm_credential_path=self.glm_credential_path,
             )
         if formal_acceptance:
             if team_model_profile is not None:

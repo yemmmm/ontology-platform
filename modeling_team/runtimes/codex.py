@@ -181,6 +181,29 @@ _DEEPSEEK_BASE_URL = "https://api.deepseek.com/"
 _DEEPSEEK_MODEL = "deepseek-v4-flash"
 _DEEPSEEK_PROVIDER = "deepseek"
 
+# Environment variables a Codex role must never inherit: every external route's
+# credential, plus the ambient keys the built-in OpenAI route would otherwise
+# pick up.  Derived from the closed catalog so a newly added route cannot be
+# forgotten here and leak its key into a role's shell.
+_CODEX_EXCLUDED_ENV_NAMES = tuple(
+    dict.fromkeys(
+        [
+            *(
+                route.credential_env
+                for route in PROVIDER_CATALOG.values()
+                if route.credential_env is not None
+            ),
+            "OPENAI_API_KEY",
+            "LLM_API_KEY",
+        ]
+    )
+)
+_CODEX_EXCLUDED_ENV_LINE = (
+    "exclude = ["
+    + ", ".join(f'"{name}"' for name in _CODEX_EXCLUDED_ENV_NAMES)
+    + "]"
+)
+
 _SECRET_AUDIT_SUFFIXES = frozenset(
     {
         ".json",
@@ -345,8 +368,8 @@ def _formal_provider_config_lines(binding: RoleModelBinding, base_url: str) -> l
     provider table receives only that binding's loopback base URL plus
     ``wire_api = "responses"``, and the effort is the capability-resolved
     effective effort.  No endpoint, credential, or provider free text.  Only
-    external credential-backed routes (currently ``deepseek-direct``) use this
-    projection.
+    external credential-backed routes (``deepseek-direct`` and ``glm-direct``)
+    use this projection.
     """
 
     return [
@@ -359,7 +382,7 @@ def _formal_provider_config_lines(binding: RoleModelBinding, base_url: str) -> l
         'wire_api = "responses"',
         "[shell_environment_policy]",
         'inherit = "core"',
-        'exclude = ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY"]',
+        _CODEX_EXCLUDED_ENV_LINE,
     ]
 
 
@@ -379,7 +402,7 @@ def _formal_codex_builtin_config_lines(binding: RoleModelBinding) -> list[str]:
         f'model_reasoning_effort = "{binding.effective_effort}"',
         "[shell_environment_policy]",
         'inherit = "core"',
-        'exclude = ["DEEPSEEK_API_KEY", "OPENAI_API_KEY", "LLM_API_KEY"]',
+        _CODEX_EXCLUDED_ENV_LINE,
     ]
 
 

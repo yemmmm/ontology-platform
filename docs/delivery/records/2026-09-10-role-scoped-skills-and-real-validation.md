@@ -262,3 +262,59 @@ _minimal_codex_process_env，三个代理键均保留。只保存presence，没�
 修改现有adapter转发逻辑。下一轮从已验证宿主shell内cd启动并检查实际进程presence即可。
 这还不是代理缺失导致所有流错误的因果复测PASS。Claude Code把教训补入现有运行参考，
 不加每次启动硬门、配置开关或测试框架。修正后真实语义结果需要新的授权额度才能验证。
+
+## GLM 接入 Team 可选模型（2026-09-11）
+
+用户要求把 GLM 配为 Team 可切换模型，高峰 Team 档位改用 GLM。本轮只做平台 provider 能力
+与调度表，不消耗也未申请 semantic start 授权；没有真实建模 run，因此不含 L0/L1 结论。
+
+实现：闭集 `PROVIDER_CATALOG` 新增 `glm-direct`（`wire_api = "responses"`，上游
+`https://open.bigmodel.cn/api/v1/responses`，凭据环境变量 `GLM_API_KEY`，模型
+`glm-5.3-flash`），与 `deepseek-direct` 同构：`upstream_url` 与 `credential_env` 同时非空，
+角色经宿主 loopback session 访问，密钥不进角色进程，也不会回落到 Codex 内置订阅。
+effort 映射对齐现有 DeepSeek 路由（`low/medium/high→high`、`xhigh/max→max`，`none` 不映射，
+故请求 `none` 在加载期失败而非静默降级）。凭据契约泛化为 provider 中性
+（`ProviderCredentialError` 作为共享基类，`DeepSeekCredentialError` 保留为别名，避免上游
+`except` 语义失效），泛化只提取 env 名/默认路径/label，`lstat`+`O_NOFOLLOW`+属主+`0600`+
+dev/ino/size/mtime 复核逐字保留。新增导入期断言，强制 provider 目录与凭据预检/读取注册表
+三者一致，防止新增路由漏登记后静默改走内置订阅。角色 shell 排除变量由目录派生，
+现为 `DEEPSEEK_API_KEY`、`GLM_API_KEY`、`OPENAI_API_KEY`、`LLM_API_KEY`。
+
+新增 `glm-flash-max` profile（六角色 `glm-direct`/`glm-5.3-flash`/`max`）。profile ID 不含
+版本号后缀是因为 `SAFE_ID` 只允许 `[a-z0-9-]`，与 `openai-luna-xhigh` 对 `gpt-5.6-luna`
+的惯例一致，精确模型串以各角色 `model:` 绑定为准。默认 profile 与既有入口未改动，
+GLM 只能经 `--model-profile glm-flash-max` 显式选用，`r23006_acceptance_operation.py`
+等不传路径的调用方走默认凭据路径。
+
+实测证据：
+
+- `uv run --project backend python -m modeling_team validate --profile
+  modeling_team/profiles/r3-0-011-competency-question.yaml --task
+  modeling_team/tasks/r3-0-006-real-full.yaml --model-profile glm-flash-max` → exit 0，
+  六个角色均投影为 `glm-direct`/`glm-5.3-flash`，`requested_effort = effective_effort = max`。
+- 真实 loopback 链路探针（宿主自建 session → 智谱）：HTTP 200，SSE 含
+  `response.reasoning_text.delta`（effort max 真实生效）与 `response.function_call_arguments.*`；
+  入站 `Authorization` 被文件密钥替换、未转发，响应正文不含密钥，`stop()` 后密钥缓冲为空。
+- 全量回归 `uv run --project backend python -m pytest modeling_team -q`：
+  1493 passed、1 skipped；`test_deepseek_codex_runtime.py` 的 7 项失败经 `git stash`
+  前后对照确认与本次改动无关（改动前同样失败）。
+- 回归过程中发现并修正了本次新增用例的一处自洽性缺陷：
+  `test_glm_profile_never_borrows_the_deepseek_credential` 原先不传 `glm_credential_path`，
+  落到默认凭据路径，因此它的"预期报错"实际依赖宿主当时不存在真实 GLM 凭据文件——在创建
+  真实凭据后该用例转为失败。已改为显式传入不存在的路径，使其断言"DeepSeek 覆盖不能替
+  GLM 提供凭据"而不依赖宿主状态。这是本次改动引入的问题，不是既有缺陷。
+
+凭据按既有契约放在 owner 私有文件（`~/.config/ontology-platform/modeling-team-glm.env`，
+mode `0600`、regular file、非符号链接、内容精确为 `GLM_API_KEY=<值>` 加可选单个换行）。
+密钥未写入仓库、证据、日志或提交，此处只记录路径与契约。
+
+cc-switch 侧：按用户选择加到 `-a open-code` 档位，条目已在
+`cc-switch -a open-code provider list` 中列出（DB `app_type` 实为 `opencode`，与 CLI 参数
+拼写 `open-code` 不同）。**必须记录的工具缺口**：该版本 CLI 的 open-code 切换只把
+`settings_config`（`OpenCodeProviderConfig`，字段 `name`/`npm`/`options`/`models`，其余字段
+静默丢弃）合并进 `~/.config/opencode/opencode.json` 的 `provider[<条目ID>]`，从不写 `model`；
+且 `provider current` 直接报 `Error: Current provider '' not found`。因此**仅靠 cc-switch CLI
+无法把 opencode 切到 `glm-5.3-flash`**（`model` 选择器不在其写入范围）；条目可用于列出与
+GUI 后续绑定，实际生效仍需 `model` 指向该模型。排查期间的试探写入已回滚，用户的
+`~/.config/opencode/opencode.json` 已恢复为改动前内容，claude 档位四个 provider 及其
+当前选中项未受影响。

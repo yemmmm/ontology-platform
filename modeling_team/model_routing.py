@@ -27,10 +27,12 @@ import yaml
 
 from .contracts import SAFE_ID, TeamConfigurationError
 from .deepseek_provider_proxy import (
-    DeepSeekCredentialError,
+    ProviderCredentialError,
     ResponsesProviderSession,
     preflight_deepseek_credential,
+    preflight_glm_credential,
     read_deepseek_credential,
+    read_glm_credential,
 )
 
 
@@ -130,6 +132,20 @@ DEEPSEEK_DIRECT_ROUTE = ProviderRoute(
         {"low": "high", "medium": "high", "high": "high", "xhigh": "max", "max": "max"}
     ),
 )
+GLM_DIRECT_ROUTE = ProviderRoute(
+    provider_id="glm-direct",
+    wire_api="responses",
+    upstream_url="https://open.bigmodel.cn/api/v1/responses",
+    credential_env="GLM_API_KEY",
+    models=frozenset({"glm-5.3-flash"}),
+    # Aligned with ``deepseek-direct``: the low tiers collapse onto ``high`` and
+    # the top two onto ``max``.  ``none`` is deliberately unmapped, exactly as in
+    # the DeepSeek route, so a profile asking for it fails at load rather than
+    # silently running at some other effort.
+    effort_effective=MappingProxyType(
+        {"low": "high", "medium": "high", "high": "high", "xhigh": "max", "max": "max"}
+    ),
+)
 OPENAI_CODEX_ROUTE = ProviderRoute(
     provider_id=CODEX_PROVIDER_ID,
     wire_api="responses",
@@ -141,7 +157,10 @@ OPENAI_CODEX_ROUTE = ProviderRoute(
     ),
 )
 PROVIDER_CATALOG: Mapping[str, ProviderRoute] = MappingProxyType(
-    {route.provider_id: route for route in (DEEPSEEK_DIRECT_ROUTE, OPENAI_CODEX_ROUTE)}
+    {
+        route.provider_id: route
+        for route in (DEEPSEEK_DIRECT_ROUTE, GLM_DIRECT_ROUTE, OPENAI_CODEX_ROUTE)
+    }
 )
 
 
@@ -461,12 +480,28 @@ _PROVIDER_CREDENTIAL_PREFLIGHTS: Mapping[
 ] = MappingProxyType(
     {
         "deepseek-direct": preflight_deepseek_credential,
+        "glm-direct": preflight_glm_credential,
     }
 )
 _PROVIDER_CREDENTIAL_READERS: Mapping[str, Callable[[Any], bytes]] = MappingProxyType(
     {
         "deepseek-direct": read_deepseek_credential,
+        "glm-direct": read_glm_credential,
     }
+)
+# Every external-credential route needs all three wirings.  Asserting here turns
+# a forgotten registration into an import-time failure instead of a role silently
+# falling back to the Codex ChatGPT subscription at run time.
+_EXTERNAL_CREDENTIAL_PROVIDER_IDS = frozenset(
+    provider_id
+    for provider_id, route in PROVIDER_CATALOG.items()
+    if route.uses_external_credential
+)
+assert _EXTERNAL_CREDENTIAL_PROVIDER_IDS == frozenset(_PROVIDER_CREDENTIAL_PREFLIGHTS), (
+    "provider catalog and credential preflight registry disagree"
+)
+assert _EXTERNAL_CREDENTIAL_PROVIDER_IDS == frozenset(_PROVIDER_CREDENTIAL_READERS), (
+    "provider catalog and credential reader registry disagree"
 )
 
 
@@ -474,6 +509,7 @@ def preflight_profile_credentials(
     profile: TeamModelProfile,
     *,
     deepseek_credential_path: Path | str | None = None,
+    glm_credential_path: Path | str | None = None,
 ) -> dict[str, Any]:
     """Preflight every external credential route the profile references.
 
@@ -483,10 +519,15 @@ def preflight_profile_credentials(
     and never reads an OpenAI API key or credential file.  Any failure raises
     the typed ``runtime/infrastructure`` credential failure; no run root or
     fake evidence is created by this function.
+
+    Each path argument is an override seam for tests and callers; ``None`` means
+    the route's fixed default in its credential contract.  Only providers the
+    profile actually names are touched, so an unused route's file is never read.
     """
 
     paths: dict[str, Path | str | None] = {
         "deepseek-direct": deepseek_credential_path,
+        "glm-direct": glm_credential_path,
     }
     bindings: dict[str, Any] = {}
     for provider_id in profile.provider_ids():
@@ -499,7 +540,7 @@ def preflight_profile_credentials(
             )
         try:
             bindings[provider_id] = preflight(paths.get(provider_id))
-        except DeepSeekCredentialError as exc:
+        except ProviderCredentialError as exc:
             raise ProviderCredentialUnavailableError(
                 f"provider credential preflight failed for {provider_id}"
             ) from exc
@@ -671,6 +712,7 @@ __all__ = [
     "CODEX_TOML_PROVIDER_ID",
     "DEFAULT_MODEL_PROFILE_ID",
     "DEEPSEEK_DIRECT_ROUTE",
+    "GLM_DIRECT_ROUTE",
     "MODEL_PROFILE_DIRECTORY",
     "MODEL_PROFILE_PACKAGE_IDS",
     "MODEL_PROFILE_ROLE_UNIVERSE",
