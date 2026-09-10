@@ -1911,8 +1911,20 @@ class TeamRunner:
                 coordination_event_observer=(
                     self._coordination_transport_event_observer if formal_coordination else None
                 ),
-                issue_escalation_enabled=formal_coordination,
-                issue_event_callback=issue_event_callback if formal_coordination else None,
+                # 2026-09-11 auth006-start8: staged v3 runs are non-formal but
+                # long-lived; without the cooperative issue channel a temporary
+                # transport addressing failure left Protocol no recoverable
+                # exit except terminal `blocked`, which latched irreversibly
+                # and bricked the run.  Enable the typed issue escalation for
+                # staged runs too: the same Coordinator pause/resume flow
+                # applies, and terminal reports stay reserved for real
+                # unresolvable blockers.
+                issue_escalation_enabled=(formal_coordination or self._staged_decisions),
+                issue_event_callback=(
+                    issue_event_callback
+                    if (formal_coordination or self._staged_decisions)
+                    else None
+                ),
                 pre_send_validator=(
                     self._validate_modeling_transport_send
                     if self._is_r23003_modeling_run()
@@ -3428,7 +3440,12 @@ class TeamRunner:
                 raise TeamConfigurationError("schema-v2 outer questions are Runner-owned")
             self._record_outer_question(message)
         elif action == "issue_resolution":
-            if not self._formal_coordination_enabled() or self.transport is None:
+            # 2026-09-11 auth006-start8: staged v3 runs enable the cooperative
+            # issue channel, so outer resolutions must reach them too.
+            if (
+                not (self._formal_coordination_enabled() or self._staged_decisions)
+                or self.transport is None
+            ):
                 raise TeamConfigurationError("issue escalation capability is unavailable")
             resolution = self._outer_issue_resolution(message)
             try:
@@ -3458,7 +3475,10 @@ class TeamRunner:
             # candidate author's next action, so it is also delivered to the
             # Modeling role mechanically. Failures surface as evidence, not a
             # teardown of the already-persisted resolution.
-            if self._formal_coordination_enabled():
+            # 2026-09-11 auth006-start8: staged runs carry the same
+            # cooperative issue channel, so the mechanical Modeling relay
+            # applies to them identically.
+            if self._formal_coordination_enabled() or self._staged_decisions:
                 modeling_id = next(
                     (
                         agent.agent_id

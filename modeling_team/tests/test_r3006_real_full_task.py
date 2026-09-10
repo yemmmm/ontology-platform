@@ -74,6 +74,10 @@ def test_t_g1_1_full_real_task_loads_with_four_selectors() -> None:
         "platform-neutral-candidate-authoring.json",
         "modeling-batch-item-contract.json",
         "r3-0-011-competency-question-contract.json",
+        # Union-task completeness: the Protocol instructions' Prompt E names
+        # this staged reference (staged by r3-0-002 too); the protocol role
+        # blocked on its absence in auth006-start6 delivery-4.
+        "acceptance-stage-handoff-contract.json",
     }
     assert by_path["scenario-brief.md"].roles == frozenset(
         {"coordinator", "modeling", "competency-question"}
