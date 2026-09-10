@@ -47,6 +47,7 @@
       "domain_ontology_split",
       "shared_core_plus_domain"
     ],
+    "option_fields": ["option_id", "assessment"],
     "dimensions": [
       "concept_cohesion",
       "relation_density",
@@ -57,6 +58,7 @@
     ],
     "rules": [
       "at least three options and always the three required option_ids; custom options may be appended",
+      "each options entry has exactly the two option_fields: option_id is a non-empty string, and assessment is an object whose keys are exactly the six dimensions listed above, each with a non-empty value; the dimensions are assessment keys, never an option-level dimensions container (a wrong option shape is reported as topology_schema_mismatch)",
       "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
       "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
       "selected_option must be one of the listed options and rationale must be non-empty",

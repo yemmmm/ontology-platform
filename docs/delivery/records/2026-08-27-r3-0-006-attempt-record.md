@@ -263,3 +263,13 @@ Claude Code在同一授权模型deepseek-flash/max完成CQ阶段提示持久修�
 返修发布不可变后继版本。没有改运行逻辑/守卫或当前run冻结提示。diff --check、合同字段/
 挂载引用与角色包加载核对通过（详见repair-cq-review-phase-result.md）；纯说明不跑后端/
 前端套件、不重启。该prompt-contract项已关闭，当前真实模型工作继续。
+
+阶段3真实产物：6个候选文件、142条neutral items、候选汇总与41项analyzed值结论已落盘；
+Coordinator收到18项commonality决策建议，Modeling向Protocol交付6份候选与digest（delivery-17）。
+拓扑选择由Coordinator决定shared_core_plus_domain并记录ontology_plan，未由Host指定。
+重复topology_schema_mismatch后Host用既有纯校验器只读定位：approvals/slot/map当前结构均通过，
+topology options用了dimensions键，而实际要求{option_id,assessment}。Host通过现有question/user
+技术消息host-topology-schema-001告知，保留原业务判断并由Coordinator修正自己的文件。
+这是挂载合同没有option项精确字段的prompt-contract缺漏。Claude Code仅向权威r3-0-002合同
+增加option_fields及assessment形状规则2行，未改运行代码/守卫，JSON、diff --check与既有
+校验器形状对照通过。当前冻结sources不重写。未把结构检查称为语义验收。
