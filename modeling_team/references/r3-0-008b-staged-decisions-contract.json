@@ -168,6 +168,7 @@
     "rules": [
       "kind conclusion_confirmation: target_id is the conclusion_id, revision equals the current conclusion revision, and confirmed_enum_value equals the conclusion's confirmed_enum_value; every confirmed or materialized conclusion must be anchored by such an entry (conclusions_approval_missing otherwise)",
       "kind stage3_slot: target_id is the slot's scenario_id and approved_by matches the slot's approved_by; confirmed_enum_value must be absent (stage3_approval_record_missing otherwise)",
+      "revision is required on every entry, including kind stage3_slot, and is a positive integer >= 1; null and boolean values are invalid (approvals_schema_mismatch otherwise)",
       "the approvals artifact is the authoritative approval record; approval authority is anchored mechanically by the coordinator-exclusive writable directory bind"
     ],
     "failure_reason_codes": [

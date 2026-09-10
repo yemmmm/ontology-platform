@@ -345,3 +345,48 @@ model-profile deepseek-flash-max；Claude Code provider现场为deepseek，修�
 启动前由Claude Code仅补齐Coordinator指令中的既有topology计划消息交接，消除auth004-start3
 Protocol寻找不可见scenario-map路径的已证实prompt-contract缺漏，不扩mount或选择业务拓扑。
 启动证据及宿主记录位于workspaces/skill-role-20260910/auth005-*。
+
+本轮run r30006-20260910-auth005-start1于15:23:02.541278UTC实际semantic start，
+距授权约3分钟；隔离checkout 05f9bb5（含b03a936与71542b5），baseline hash
+1ec64a172b0dccdc77757182cc1925215742a0d8d04f9621b7af43ca2ee55651。
+四角色thread/turn均started，deepseek-flash/max；本授权已消耗1/1、剩0。
+入口session由宿主持续观察。BS六份补充已经CQ私有cq_interview通道接收，未含旧CQ题目。
+交接提示仅6行，Claude Code合同/挂载核对、diff check通过；GitNexus staged LOW、0流程，
+无backend/frontend更改或重启。当前处于初始源读取/全景CQ阶段，尚不构成L0/L1 PASS。
+
+15:27:25UTC首版8题全景CQ发布成功；unknown类型、evidence_refs形状两次输入错误由CQ根据
+类型化反馈同run自行修正。Host按已有代理审核授权核对材料，批准7题、修改CQ-PAN-08中
+旧BS-06的forbidden技术短语，明确只要求受保护语义不可见、不得绕过授权上下文；勘误
+经CQ私有interview-0002及Coordinator→Modeling/Protocol分别转交，业务受众与定义不变。
+CQ随后发布后继版，Host逐字段比对与已批准有效内容一致，8题再次绑定当前review审批；
+两版共16份决定、最高public-projection-0016，未向生产注入私有问题。
+15:35:01UTC场景图登记触发cq-slices-approved真实交付；6切片、11共享术语、7跨片依赖。
+Coordinator自行决定shared_core_plus_domain（4个Ontology标签），Host未选择拓扑；
+delivery-12真实转交标签/逐片绑定/依赖顺序到Protocol，验证05f9bb5提示修复生效。
+切片登记快照的四角色累计输入缓存比例96.889%至97.371%，暂无contextCompaction记录；
+保留auth005-usage-initial-slices.json，仅阶段性usage，不作整轮或受控前后提升结论。
+
+15:37:42UTC切片CQ一次提交成功：28题、6切片，22公开/6隐藏。Host逐题核对，25项批准、
+3项按已有业务来源澄清未知与可证明边界（具体私有修改留在Runner审核决定，不进入生产消息）。
+44份累计审核决定均接收，随后cq_freeze成功：cq-batch-0001，snapshot digest
+sha256:9ab95b861dd29d99f0e539a9c69df5cf44f0aacfdeb1ed36b504b722d852faa5。
+全池36题（8全景+28切片），30公开/6隐藏，最高public-projection-0045。Host通知生产仅消费
+公开投影并继续中立候选；向CQ说明已冻结、无需重复发布逐字段相同的已审核问题。
+Coordinator对场景图公开问题改写收到可恢复一致性反馈，正在以最新公开原文修正；没有新start。
+Host参与CQ私有审核，不能担任后续独立盲测裁判；最终语义验收仍须独立于生产/修复。
+
+15:42:32UTC Coordinator delivery-14正式交接阶段3；15:47:23UTC Modeling delivery-15
+交付6份中立候选与stage3槽位，实际读取计数143项（entity36/property47/relation45/shape15）。
+共性分析7节点、7成员关系、5共性关系，候选记录10项明确未知；尚未落库，不作为语义验收PASS。
+Coordinator开始候选审核与逐项摘要绑定，approvals.json已写；Protocol转换计划尚未发布。
+
+15:48:54UTC审批条目触发approvals_schema_mismatch；根因为stage3_slot entry缺revision。
+Coordinator先猜null仍不合法，Host用现有validate_approvals(unified=True)只读定位detail=revision，
+经host-approval-revision-001回传“正整数且保留009顶层schema”；Coordinator补revision:1恢复。
+Host最初进度误称confirmed_enum_value也必需，随即按实际校验纠正为该字段可省略/null。
+prompt-contract缺漏由Claude Code仅在008B reference approvals.rules新增1条现有类型说明；
+JSON与diff检查、实际校验器12项有界输入核对通过，无运行代码更改，不改当前冻结提示。
+Protocol已真实完成读取四个空Ontology、create session/checkpoint/lease，Session
+363bf4fe-df0c-4055-9027-1dce115b309c；发布b01-cov-sc-predicates-r1（6项）与
+b02-cov-ops-properties-r1（13项）两计划，delivery-18申请翻译批准。Modeling delivery-19
+提出mapped_property绝对IRI需真实来源，Host未猜平台标识，待Coordinator/Protocol衔接回执。
