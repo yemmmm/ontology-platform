@@ -273,3 +273,10 @@ topology options用了dimensions键，而实际要求{option_id,assessment}。Ho
 这是挂载合同没有option项精确字段的prompt-contract缺漏。Claude Code仅向权威r3-0-002合同
 增加option_fields及assessment形状规则2行，未改运行代码/守卫，JSON、diff --check与既有
 校验器形状对照通过。当前冻结sources不重写。未把结构检查称为语义验收。
+
+随后relation_scope_ambiguous由Host只读既有validator定位为scope数组/对象类型差异：6项共性
+关系决策scope必须非空Mapping，其他项null。Host通过host-scope-type-001仅说明类型，未替代
+业务范围决策；Coordinator自行改为非空对象、保留其范围，随后审批闭合推进。
+Claude Code仅补009合同既有scope规则一句类型说明，JSON/diff/实现类型核对通过，无运行代码
+修改。41项结论已confirmed，Coordinator发布materialize unlock并交Protocol计划生成；截至本
+记录尚无实际batch提交回执。完整模型与独立语义验收未完成。

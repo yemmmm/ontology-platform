@@ -77,7 +77,7 @@
     "translation_approval_fields": ["plan_ref", "projection_digest", "approved_by", "decision", "reason"],
     "rules": [
       "the Coordinator is the only writer; only an approved current decision releases a translation",
-      "scope is mandatory for commonality_relation decisions and must stay null everywhere else",
+      "scope is mandatory for commonality_relation decisions as a non-empty JSON object (a mapping of scope names to values, never an array or a plain string) and must stay null everywhere else",
       "every decision carries at least one evidence_ref and the content_digest of the exact candidate content it approves",
       "a translation approval proves one plan_ref/projection_digest pair, not a mutable file name"
     ]
