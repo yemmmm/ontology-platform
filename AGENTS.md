@@ -114,7 +114,7 @@ versioned requirements.
 ## 工作流与按需读取
 
 - 宿主推进建模使用 [modeling-dev-loop](skills/modeling-dev-loop/SKILL.md)；Team 内部技能集中在
-  [modeling_team/skills/](modeling_team/skills/README.md)，共享建模方法为其中的 `ontology-modeling`。
+  [modeling_team/skills/](modeling_team/skills/README.md)，Modeling 角色的方法为其中的 `ontology-modeling`。
   当前 Team 执行以选定的 `modeling_team/tasks/`、`profiles/` 和 `agent-packages/` 合同为准。
   Delivery Agent 负责版本与授权检查，隔离建模 Agent 只接收获准输入。不要把完整仓库、记忆
   或隐藏答案注入盲测。

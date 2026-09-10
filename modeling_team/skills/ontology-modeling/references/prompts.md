@@ -1,98 +1,47 @@
-# Prompt patterns
+# Modeling handoff patterns
 
-Use these patterns for standalone/fresh-scope work. For a Team Profile, use its supplied role
-instructions: Modeling authors semantics and Protocol executes platform calls. Do not paste a
-standalone direct-write prompt into an isolated Modeling role. Adapt identifiers and paths while
-preserving information boundaries and ownership.
+Adapt these patterns to the mounted candidate contract and declared communication route. They
+carry business semantics and evidence, not platform requests, host controls or hidden answers.
 
-## Fresh modeling Agent
+## Clarify a material gap
 
 ```text
-You own ontology semantics for this attempt under the supplied execution Profile.
-
-Visible inputs:
-- source root: <agent-visible-directory>
-- empty Project ID: <project-id>
-- empty Ontology ID: <ontology-id>
-- consumer questions: <path-or-list>
-- platform interface: <registered typed tools, or exact-request relay plus visible public API schema>
-
-Read only the declared input directory and platform results returned during this attempt. Do not
-read the repository, prior runs, requirements, test plans, hidden contracts, memories, or other
-agents' work. Use only supplied typed tool schemas or public API schemas; never guess an operation,
-path, or payload shape.
-
-Before creating the principal schema, assess whether the visible documents uniquely determine the
-terms, identities, lifecycle relationships, constraints, and consumer answers. Discover material
-semantic gaps yourself; no problem list, count, or category has been supplied.
-
-When a missing business decision changes the model or a consumer answer, ask one plain business
-question at a time. Cite the visible evidence and explain the affected conclusion. Do not ask the
-user to design Classes, Properties, Shapes, IRIs, or Batch payloads. Do not treat silence as a
-default; an unconfirmed answer must become a named, queryable model resource with
-kind=explicit_unknown, stable identifier, affected scope, unanswered question, evidence, and
-rationale, with no asserted answer value.
-
-Own every semantic payload; execute platform operations only if your Profile assigns that
-responsibility to you, otherwise pass the unchanged payload to Protocol. Use immutable Modeling Batch
-dry-run/apply, an executable Shape with a rejected negative example, valid instance application,
-validation, reasoning, a governed complete query, checkpoint, and completion. In relational
-scenarios, semantic resources may be instances; business rows remain in the source database.
-Correct recoverable findings in the same run using exact platform feedback. Do not treat a
-format error as semantic failure or invent a new attempt allowance.
+Observed evidence: <approved source and locator, or confirmed answer>
+Unresolved business meaning: <one precise ambiguity>
+Affected conclusion: <what changes in the model or public consumer answer>
+Question: <one plain business question>
 ```
 
-## Answering one clarification
+Do not ask the user to design ontology topology or platform payload fields. Once an answer arrives,
+record its source and effect, reassess other material gaps, and continue without repeating confirmed
+questions. An unavailable answer remains explicit; it is not permission to guess.
+
+## Hand off a semantic candidate
 
 ```text
-Host answer to your last business question:
-<verbatim answer or "unable to confirm">
-
-Treat this as business evidence, not as a model design. Record its effect in model rationale. If the
-answer is unavailable, preserve a scoped explicit_unknown. Continue by asking at most one next
-material business question, or state that clarification is complete and proceed.
+Candidate: <complete candidate or immutable artifact reference required by the Task>
+Revision and scope: <bindings from that contract>
+Source basis: <approved sources and confirmed-answer references>
+Semantic decisions: <material choices and their business reasons>
+Explicit unknowns: <affected meaning and unresolved question>
+Dependencies: <required semantic links and approved cross-slice ownership>
+Requested execution evidence: <Task-required translation/application/check results>
 ```
 
-## Exact-request relay
+Use the exact machine-readable schema where one is required; the headings above are explanatory,
+not an alternative candidate schema. Protocol performs deterministic translation and platform calls.
+
+## Respond to a returned conflict
 
 ```text
-The connected interface cannot mutate this fresh scope. The Host has supplied this current public
-request contract: <OpenAPI fragment or equivalent allowed-operation schemas>.
-
-Provide exactly one next public request:
-{"method":"<HTTP method>","path":"<API path>","body":<JSON body or null>}
-
-You own the path and body. The Host will only attach its base URL and credentials, forward this
-request unchanged, and return the exact status/result. Do not give alternatives or ask the Host to
-construct, repair, combine, or retry semantic content.
+Bound candidate/revision: <current reference>
+Observed conflict: <exact returned finding>
+Classification: <semantic defect, protocol contract, routing, or infrastructure>
+Semantic response: <source-supported correction or why no semantic change is justified>
+Replacement: <complete revised candidate/artifact, only when required>
+Remaining unknowns: <what the present evidence cannot establish>
 ```
 
-If the visible contract does not define the required operation or is inconsistent, report
-`missing_or_inconsistent_public_api_contract` with the exact missing operation/field. Wait for
-corrected input for that operation; resume the same run when safe. This is a platform-contract
-blocker, not evidence of modeling-quality failure or permission for a fresh start.
-
-The Host response must be limited to:
-
-```text
-Relayed unchanged:
-- method: <method>
-- path: <path>
-- request_hash: <canonical request hash>
-- status: <status>
-- result: <exact response body>
-```
-
-## Fresh blind consumer
-
-```text
-You are a fresh read-only consumer. You receive only public scope identifiers, the generic semantic
-query contract, and public platform results. Do not inspect source files, modeling prompts,
-clarifications, hidden expectations, Batch payloads, prior conversation, or other agents.
-
-Answer these consumer questions: <questions>
-
-For each answer, cite observed resource/predicate/value and provenance when present. Separate
-asserted from inferred facts, preserve warnings and explicit unknowns, and say when results are
-incomplete or truncated. Do not infer a business answer merely because it is plausible.
-```
+Never change a business conclusion just to bypass an execution restriction. Do not repair or
+resubmit another role's platform request. Report only your own completion through the selected
+Task's handoff; independent acceptance remains separate.

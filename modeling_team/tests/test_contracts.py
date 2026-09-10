@@ -6,6 +6,7 @@ from pathlib import Path
 
 from modeling_team.contracts import (
     TeamConfigurationError,
+    _load_package,
     load_team_configuration,
     repository_root,
 )
@@ -113,3 +114,50 @@ class ContractTests(unittest.TestCase):
         )
         self.assertIsNone(legacy.profile.expected_matrix_binding)
         self.assertIsNone(legacy.task.expected_matrix_binding)
+
+    def _write_package_fixture(self, root: Path, *, skills_line: str) -> None:
+        package_dir = root / "modeling_team/agent-packages/coordinator"
+        package_dir.mkdir(parents=True)
+        (package_dir / "instructions.md").write_text("instructions\n", encoding="utf-8")
+        text = "\n".join(
+            [
+                "schema_version: 1",
+                "package_id: coordinator",
+                "role: coordinator",
+                "description: minimal package contract fixture",
+                "instructions: instructions.md",
+                skills_line,
+                "references: []",
+                "permissions:",
+                "  team_transport: true",
+                "  platform: none",
+                "runtime:",
+                "  codex:",
+                "    sandbox: read-only",
+                "task_input:",
+                "  required: [task]",
+                "",
+            ]
+        )
+        (package_dir / "package.yaml").write_text(text, encoding="utf-8")
+
+    def test_package_loads_with_empty_required_skills(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._write_package_fixture(root, skills_line="required_skills: []")
+            package = _load_package(root, "coordinator")
+            self.assertEqual(package.required_skills, ())
+            self.assertEqual(package.role, "coordinator")
+
+    def test_package_still_requires_a_list_of_required_skills(self) -> None:
+        for skills_line in (
+            "",
+            "required_skills: ontology-modeling",
+            "required_skills: {name: ontology-modeling}",
+        ):
+            with self.subTest(skills_line=skills_line):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory)
+                    self._write_package_fixture(root, skills_line=skills_line)
+                    with self.assertRaises(TeamConfigurationError):
+                        _load_package(root, "coordinator")

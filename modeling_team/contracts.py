@@ -375,7 +375,7 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
             f"Package {package_id} instructions are unavailable"
         )
     skills = data.get("required_skills")
-    if not isinstance(skills, list) or not skills:
+    if not isinstance(skills, list):
         raise TeamConfigurationError(f"Package {package_id} must declare Skills")
     skill_paths = tuple(
         _repo_path(root, entry, field="required_skills") for entry in skills

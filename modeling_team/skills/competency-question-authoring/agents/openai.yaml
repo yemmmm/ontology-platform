@@ -1,0 +1,4 @@
+interface:
+  display_name: "Competency Question Authoring"
+  short_description: "Draft source-grounded questions and answer points"
+  default_prompt: "Use $competency-question-authoring to draft questions, supported answer points and evidence for the approved scenario or slice."

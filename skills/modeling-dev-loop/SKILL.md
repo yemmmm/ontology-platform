@@ -7,8 +7,8 @@ description: "Use when developing ontology-platform through real Modeling Team r
 
 执行此 Skill 的主智能体负责启动、观察、故障归因、开发协调、恢复和证据交接，持续推进用户的
 原始建模目标。语义判断与候选内容归建模 Team；平台调用遵循选定 Profile 的 Protocol 边界。
-Team 内部的 [ontology-modeling](../../modeling_team/skills/ontology-modeling/SKILL.md) 提供共享
-建模方法，各成员的技能对应关系见 [Team 技能目录](../../modeling_team/skills/README.md)。
+Team 内部的 [ontology-modeling](../../modeling_team/skills/ontology-modeling/SKILL.md) 提供 Modeling 角色的
+语义建模方法，各成员的技能对应关系见 [Team 技能目录](../../modeling_team/skills/README.md)。
 Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧工作流，不加入生产角色的挂载输入。
 
 ## 开始或接续任务

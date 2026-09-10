@@ -7,18 +7,21 @@
 | 成员 / 执行模式 | 使用的技能 | 角色合同 |
 | --- | --- | --- |
 | Modeling | [ontology-modeling](ontology-modeling/SKILL.md) | [modeling](../agent-packages/modeling/package.yaml) |
-| Coordinator | [ontology-modeling](ontology-modeling/SKILL.md) | [coordinator](../agent-packages/coordinator/package.yaml) |
-| Protocol | [ontology-modeling](ontology-modeling/SKILL.md) | [protocol](../agent-packages/protocol/package.yaml) |
-| Competency Question | [ontology-modeling](ontology-modeling/SKILL.md) | [competency-question](../agent-packages/competency-question/package.yaml) |
-| Source Specialist | [ontology-modeling](ontology-modeling/SKILL.md) | [source-specialist](../agent-packages/source-specialist/package.yaml) |
+| Coordinator | 仅角色提示与声明的参考合同 | [coordinator](../agent-packages/coordinator/package.yaml) |
+| Protocol | 仅角色提示与声明的参考合同 | [protocol](../agent-packages/protocol/package.yaml) |
+| Competency Question | [competency-question-authoring](competency-question-authoring/SKILL.md) | [competency-question](../agent-packages/competency-question/package.yaml) |
+| Source Specialist（互操作 smoke） | 仅角色提示 | [source-specialist](../agent-packages/source-specialist/package.yaml) |
 | Acceptance（生产 Team 中的角色） | [acceptance](acceptance/SKILL.md) | [acceptance](../agent-packages/acceptance/package.yaml) |
 | Source Examiner（单题验收） | [source-examiner](source-examiner/SKILL.md) | [source-examiner](../agent-packages/source-examiner/package.yaml) |
 | Platform Examiner（单题验收） | [platform-examiner](platform-examiner/SKILL.md) | [platform-examiner](../agent-packages/platform-examiner/package.yaml) |
-| Acceptance Examiner（单题验收） | [lean-acceptance-examiner](lean-acceptance-examiner/SKILL.md) | [acceptance-examiner](../agent-packages/acceptance-examiner/package.yaml) |
+| Acceptance Examiner（旧 R2.3 单题裁判） | [lean-acceptance-examiner](lean-acceptance-examiner/SKILL.md) | [acceptance-examiner](../agent-packages/acceptance-examiner/package.yaml) |
 | Platform Examiner / 独立 Acceptance Judge（R3.0-011 批量验收） | [v3-acceptance-batch](v3-acceptance-batch/SKILL.md) | [v3-acceptance-batch](../agent-packages/v3-acceptance-batch/package.yaml) |
 
-前五个成员共用建模方法，职责差异由 `agent-packages/` 中各自的角色提示定义；无需为每个成员
-复制一份技能。选择哪些成员、谁负责平台调用、采用单题还是批量验收，以本次 Task/Profile 为准。
+角色提示规定职责、权限、输入输出和协作，Skill 提供可复用的专业方法。Modeling 与 CQ 分别加载
+建模和出题方法；Coordinator、Protocol、smoke Source Specialist 的 `required_skills: []` 是
+合法配置，不为满足数量要求创建空壳技能。当前 v3 建模 roster 是 Coordinator、Modeling、Protocol
+和 CQ；独立批量验收另行启动 Platform Examiner 与 Acceptance Judge。选择哪些成员、谁负责
+平台调用、采用旧单题还是 v3 批量验收，以本次 Task/Profile 为准。
 
 普通角色通过 `package.yaml` 的 `required_skills` 引用本目录；隔离验收子会话由
 `CodexRuntimeAdapter._child_package_assets` 选取对应技能。Runtime 仍以原技能名挂载到成员自己的

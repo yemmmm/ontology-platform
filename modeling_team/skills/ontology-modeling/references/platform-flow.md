@@ -1,80 +1,50 @@
-# Platform flow and evidence
+# Semantic handoff and returned evidence
 
-Use the concrete registered tool schemas or public API contract exposed to the current modeling
-Agent. Do not invent an operation, payload, alternate storage, or orchestration layer.
-The table describes responsibilities and evidence, not a universal phase scheduler. The selected
-versioned task controls staged decisions, dependencies, and whether Protocol performs the calls.
+Use this reference to decide what Modeling supplies and what evidence it needs back. The selected
+Task controls stages, schemas and approvals. This table does not assign platform operations to
+Modeling or introduce a universal execution sequence.
 
-## Sequence
+| Work | Modeling supplies or decides | Protocol evidence to inspect |
+| --- | --- | --- |
+| Scope | Source-grounded meaning, proposed scope, gaps and questions | Actual authorized Project/Ontology bindings when needed |
+| Candidate | Complete neutral semantic content, evidence and dependencies | Translation receipt or a concrete conflict |
+| Constraints | Source-supported Shapes and an intentionally invalid example | Dry-run findings; the negative example remains unapplied |
+| Application | Approved semantic revision and answers to semantic conflicts | Applied Batch/Attempt bindings and readback for that revision |
+| Validation / reasoning | Interpretation and correction of semantic findings | Validation scope, conforms/findings, consistency/findings |
+| Retrieval | Public consumer questions and required semantic relationships | Scoped facts, relations, lineage and explicit completeness |
+| Handoff | Own artifacts, outstanding unknowns and semantic findings | Bound execution evidence required by the Task |
 
-| Phase | Modeling Agent owns | Required evidence |
-|---|---|---|
-| Scope | interpretation, gaps, questions | declared source list and consumer questions |
-| Session | Build Session creation and lease | Project, Ontology, Build Session IDs |
-| Schema | vocabulary, relations, Shapes, rationale | dry-run findings and applied immutable Batch ID |
-| Negative proof | intentionally invalid instance | rejected Batch ID and Shape violation |
-| Instances | semantic facts and provenance; no relational business-row copies | dry-run findings and applied immutable Batch ID |
-| Validation | response to deterministic findings | validation ID, `conforms`, findings |
-| Reasoning | interpretation of consistency evidence | reasoning ID, `consistent`, findings |
-| Retrieval | scoped query and completeness checks | request, public results, truncation/completeness |
-| Closure | checkpoint and completion request | revision/checkpoint and completed state |
-| Consumption | read-only interpretation | blind answer with evidence and unknowns |
+Build Session creation, leases, Batch envelopes, request schemas, idempotency and platform calls
+belong to Protocol. Do not reconstruct these from a high-level recipe or change business meaning
+in response to a purely mechanical translation failure.
 
-Apply schema before instances. A rejected negative Batch must remain unapplied. Never repair a failed
-payload in the Host relay; return the failure to the modeling Agent.
+## Explicit unknowns
 
-## Exact-request fallback
+Represent an unresolved business decision through the mounted semantic contract. Where the contract
+uses a model-local `kind=explicit_unknown` resource, preserve its stable identity, affected semantic
+scope, unanswered business question, source basis and rationale, with no asserted answer value.
+Connect it to the affected model meaning so a governed consumer can observe the uncertainty.
+Do not create source-row instances or a platform-domain feature to carry the unknown.
 
-Use the fallback only after confirming that the modeling Agent's connected interface cannot perform
-the needed mutation and after adding the current public OpenAPI fragments or equivalent
-allowed-operation request schemas to its declared visible inputs. Preserve:
+## Evidence completeness
 
-- the exact Agent-selected method, path, and body;
-- a canonical request hash before transport;
-- the exact response status and body;
-- `host_initiated_retries=0`;
-- proof that only authentication and base URL were added.
+Check that returned results refer to the expected candidate/revision and authorized scope. Preserve
+asserted versus inferred status, provenance, warnings, pagination and explicit completeness. A
+truncated page or missing lineage is not evidence that the complete model supports the answer.
 
-If the Host changes semantic content, the attempt is invalid.
+The platform returns facts, topology, provenance and state. The consumer interprets business
+answers; Modeling must not claim an independent acceptance result from its own successful query.
 
-## Explicit unknown representation
+## Respond to findings
 
-Define a model-local resource shape for unresolved business decisions. Each instance must be
-queryable and include:
+- Source contradiction or unresolved business meaning: ask the grounded question through the
+  declared channel, or preserve an explicit unknown.
+- Semantic candidate or Shape finding: correct only the evidenced semantic defect and hand off
+  the required complete revision.
+- Request-shape, lease, identity-binding or execution failure: return the exact conflict to
+  Protocol; do not invent platform mechanics or change the candidate to bypass it.
+- Incomplete retrieval: identify the missing scope/path/evidence and request the needed result.
+  Do not infer an answer from missing or inaccessible facts.
 
-- `kind=explicit_unknown`;
-- a stable identifier;
-- the affected subject or semantic scope;
-- the unanswered plain-business question;
-- source evidence and rationale;
-- no asserted answer value.
-
-Connect the resource to the affected model element, validate it with a Shape, and include it in the
-governed query projection. This is ontology data, not a new platform domain concept.
-
-## Attempt ledger
-
-Use the existing Delivery run ledger and the authorized budget described in SKILL.md; do not add
-a second ledger or platform counter. Keep it outside frozen Agent input. Write `modeling_started`
-before each launch and a terminal
-`modeling_completed` or `modeling_blocked` event afterward. Each event includes attempt number,
-timestamp, run and Project/Ontology/Build Session identifiers when available, Agent identifier, and
-evidence locator. Exclude credentials, hidden answers, prompts, and model content.
-
-## Retrieval checks
-
-Query an authorized ontology scope. Request the resource kinds, related expressions, fact/relation
-expansion, provenance, and fields needed by the consumer questions. Check pagination, truncation,
-warnings, and explicit completeness before judging semantic quality.
-
-The platform returns facts, topology, provenance, state, and warnings. The consumer interprets them;
-the platform must not manufacture a domain-specific answer.
-
-## Failure handling
-
-- Source contradiction: ask one business question.
-- Unavailable answer: model a scoped `explicit_unknown`.
-- Batch finding: correct only the evidenced defect and dry-run again.
-- Validation or reasoning finding: keep the session open and report the exact finding.
-- Incomplete query: correct query scope/projection/pagination; do not guess the missing answer.
-- Attempt limit reached: stop, preserve evidence, and report.
+Authorization, attempt accounting and run lifecycle belong to the Delivery host. Do not start a
+replacement modeling session or an acceptance consumer from this role.

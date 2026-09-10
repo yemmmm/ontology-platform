@@ -801,7 +801,10 @@ class CodexIsolationTests(unittest.TestCase):
             ["coordinator", "modeling", "protocol", "acceptance"],
         )
         for profile_agent in configuration.profile.agents:
-            self.assertEqual(len(profile_agent.package.required_skills), 1)
+            expected_count = 1 if profile_agent.package.role in {"modeling", "acceptance"} else 0
+            self.assertEqual(len(profile_agent.package.required_skills), expected_count)
+            if not profile_agent.package.required_skills:
+                continue
             skill_path = profile_agent.package.required_skills[0]
             self.assertEqual(skill_path.parent.parent, root / "modeling_team" / "skills")
             text = skill_path.read_text(encoding="utf-8")

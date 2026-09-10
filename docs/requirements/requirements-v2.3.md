@@ -182,6 +182,12 @@ Profile 只引用 Agent Package，不内嵌大段角色提示词。角色 instru
 Codex 和未来 Pi 可以使用不同的装载方式，但共享同一角色语义、Skill 方法和参考资料，避免维护
 含义不同的两套提示词。凭据、临时路径、tester-only 内容和历史答案不得写入 Agent Package。
 
+2026-09-10 用户批准角色技能职责收窄：允许直接修订现有 Package 的 Skill 组合并重新冻结、验证，
+不为本次方法拆分另增重复 Profile；已冻结运行不热更新，历史证据保持原样。`required_skills`
+字段必须显式为列表，但可为空；角色 instructions 已完整指导工作时，不以 Skill 数量作启动门。
+Modeling 保留语义建模方法，Coordinator、Protocol 和 smoke Source Specialist 依各自角色提示
+执行；v3 CQ 使用独立出题方法。工具权限、角色语义、来源和执行证据要求不因空列表而放宽。
+
 #### Runtime Adapter
 
 Runtime Adapter 把 Team Runner 的稳定操作映射到具体 Agent Runtime，至少覆盖：
