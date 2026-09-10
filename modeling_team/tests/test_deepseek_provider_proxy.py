@@ -12,6 +12,7 @@ from modeling_team.deepseek_provider_proxy import (
     DeepSeekCredentialError,
     DeepSeekProviderProxy,
     ProviderCredentialError,
+    ResponsesProviderSession,
     preflight_deepseek_credential,
     preflight_glm_credential,
     preflight_provider_credential,
@@ -241,3 +242,25 @@ def test_provider_proxy_rejects_malformed_body(upstream) -> None:
     finally:
         proxy.stop()
     assert _UpstreamHandler.seen == []
+
+
+def test_provider_session_read_timeout_default_is_calibrated_above_watchdog() -> None:
+    """The upstream read timeout must tolerate long max-effort silent blocks.
+
+    2026-09-11 calibration: glm-5.3-flash at max reasoning effort stayed silent
+    between streamed reasoning blocks for more than the previous 330.0s default,
+    and three real starts died with provider-upstream-failed while the upstream
+    was alive.  The default must sit above the codex adapter's 1200s LLM
+    inactivity watchdog so the watchdog stays the authoritative hang guard.
+    """
+
+    session = ResponsesProviderSession(b"file-only-sentinel")
+    try:
+        assert session.read_timeout == 1250.0
+    finally:
+        session.stop()
+    proxy = DeepSeekProviderProxy(b"file-only-sentinel")
+    try:
+        assert proxy.read_timeout == 1250.0
+    finally:
+        proxy.stop()

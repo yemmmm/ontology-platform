@@ -431,7 +431,13 @@ class ResponsesProviderSession:
         port: int = 0,
         max_body_bytes: int = RESPONSES_SESSION_MAX_BODY_BYTES,
         connect_timeout: float = 15.0,
-        read_timeout: float = 330.0,
+        # Per-read upstream socket timeout.  1250.0 is calibrated above the codex
+        # adapter's 1200s LLM inactivity watchdog: glm-5.3-flash at max reasoning
+        # effort can stay silent between streamed reasoning blocks for minutes
+        # while the upstream is alive (observed 2026-09-11: three real starts hit
+        # >300s silent blocks), and 330.0 killed the whole run with
+        # provider-upstream-failed.  A genuinely dead connection still times out.
+        read_timeout: float = 1250.0,
         on_failure: Callable[[str], None] | None = None,
     ) -> None:
         if not isinstance(credential, (bytes, bytearray)) or not credential:
@@ -666,7 +672,8 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
         port: int = 0,
         max_body_bytes: int = DEEPSEEK_PROXY_MAX_BODY_BYTES,
         connect_timeout: float = 15.0,
-        read_timeout: float = 330.0,
+        # Same calibration as ResponsesProviderSession (see its read_timeout).
+        read_timeout: float = 1250.0,
         on_failure: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(
