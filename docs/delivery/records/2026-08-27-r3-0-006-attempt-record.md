@@ -294,3 +294,40 @@ namespace验证。当前真实Protocol成功调用提供运行证据。冻结提
 另发现Protocol被要求读取仅挂载Coordinator的scenario-map路径。Host通过既有技术消息
 host-protocol-topology-handoff-001请Coordinator转交其已决定的ontology_plan，业务选择不变，
 无新增mount。该交接提示缺漏记录待闭合；当前优先继续真实转换，不扩展平台机制。
+
+### auth004-start3 首批提交的真实平台阻塞与收口
+
+Coordinator已通过delivery-26转交完整ontology_plan；Protocol停止寻找不可见scenario-map。
+Host随后要求优先首个依赖闭合计划，Coordinator选择service-network根批次（delivery-27）。
+Protocol发布plan-service-network-r1.json，Coordinator核对投影并记录translation approval，
+delivery-30允许提交。Protocol也向Modeling确认统一图候选无需旧v2 candidate receipt。
+13:59:39UTC，protocol_staged_submit_modeling_batch首次请求在CapabilityServer入口被
+schema_or_operation_rejected拒绝；原始参数带protocol_id=protocol、batch、value_traces、
+l3_nodes及009强制plan_ref，身份正确。权威009合同要求plan_ref，Runner内部也读取校验它，
+但capability_mcp.CAPABILITY_TOOL_SCHEMAS properties遗漏plan_ref且additionalProperties=false，
+所以正确请求无法抵达业务校验。未创建submission intent/receipt、无Modeling Batch写入。
+这是platform-contract实现缺口，不是modeling-quality结论；Host拒绝去掉plan_ref绕过审批。
+Host暂停后核对既有resume为no-op、不重载进程模块；未增加热补/恢复机制，未自行追加start。
+
+14:03UTC请求既有stop清理。Runner已停止、scope API keys及原admin已撤销，Session取消/Lease
+释放，但scope清理错误地要求失败会话覆盖全部三个计划Ontology，返回Build Session Ontology
+coverage drifted。Host只读核对准确run/project名字、三个owned Ontology、所有batch列表为空，
+唯一Session已cancelled且无batch、Lease released；随后通过既有HTTP DELETE删除该空Project。
+重读证实Project、三个Ontology、Session均404，project keys revoked、临时admin撤销，无在途
+Attempt。原Runner CLEANED/cleanup_blocker保留，不覆盖为全PASS；补充回执为
+workspaces/skill-role-20260910/auth004-start3-external-cleanup.json，预核对为同前缀cleanup-precheck.json。
+Runtime private_credentials_destroyed审计仍为false，不宣称凭据文件清理PASS。CQ cleanup按既有
+策略删除7个私有草稿/访谈文件，但frozen题池、公开投影、28份审核决定、原始运行事件、候选及
+首批计划保留；不可再引用已删private草案路径作为当前可读证据。
+本授权3/3已用、剩0；本轮语义状态PARTIAL，执行状态BLOCKED(platform-contract)。
+
+Claude Code完成plan_ref入口修复：只在该操作properties加入可选string字段（008B仍可省略，
+009必需性/路径/投影审批仍由既有Runner合同检查），additionalProperties=false保持。
+新增4个真实AF_UNIX capability入口测试并复用已有Runner fixtures/受控下游forwarder；原实现
+1 failed/3 passed，修复后4 passed，相关链路39 passed。全Team1433 passed、1 skipped、
+321 subtests passed（62.50s），ruff/diff check通过；这些是功能回归，不替代语义真实验收。
+仅modeling_team修改，无backend/frontend变更，不需服务重启。修复只在新Runner进程加载，
+现有受支持同run热重载/持久恢复入口不存在；未添加新恢复机制或偷偷追加启动。
+最终保留6切片142候选条目、41已确认值、28题冻结池（20公开/8隐藏）、已批准首批转换计划；
+0次模型apply、0次真实语义检索验收。下一轮真实启动须新授权，并继续跟踪已记录的交接提示与
+失败清理覆盖条件缺口，不将本次平台失败归因于模型质量。

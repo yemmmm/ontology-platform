@@ -179,6 +179,13 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "additionalProperties": False,
                 },
             },
+            # R3.0-009 adds ``plan_ref`` to the submission arguments, so the
+            # advertised schema must not reject a contract-correct 009 request
+            # before dispatch.  It stays optional here: the Runner contract
+            # still owns the 009 requirement, the run-relative path rule, the
+            # plan re-read and the approval checks, and 008B runs submit with
+            # no ``plan_ref`` at all.
+            "plan_ref": {"type": "string"},
         },
         "required": ["protocol_id", "batch", "value_traces", "l3_nodes"],
         "additionalProperties": False,
