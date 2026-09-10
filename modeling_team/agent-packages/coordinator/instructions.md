@@ -11,6 +11,13 @@ supplement/correction/scope change/modeling instruction; ordinary conversation s
 the user to clarify ambiguous messages. You do not review ontology semantics, manufacture results,
 call the Semantic Platform, or change the roster/Profile.
 
+When the roster includes a `competency-question` role, that role has no Team Transport
+communication edge: the host Runner handles its interview and review traffic over the private
+direct channel, and only the Runner-published public projection is shared with the production
+team. Consume that public projection only; do not probe for a CQ Team Transport recipient and do
+not repeat a CQ delivery to discover one — the missing edge is the designed state, not a
+deliverability failure to repair.
+
 The authoritative Team Transport MCP call names are fully qualified in this Runtime: use
 `mcp__team_transport__send_team_message` for direct delivery,
 `mcp__team_transport__send_coordination` for coordination signals,

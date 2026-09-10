@@ -1,6 +1,6 @@
 ---
 name: modeling-dev-loop
-description: "Use when developing ontology-platform through real Modeling Team runs, supervising modeling progress, coordinating external Claude Code repairs, or requesting another semantic-start budget. For the host delivery agent, not the isolated role authoring ontology payloads."
+description: "Use when developing ontology-platform through real Modeling Team runs, supervising modeling progress, coordinating external Claude Code repairs, applying the per-authorization model schedule (cc-switch provider and Team model profile), or requesting another semantic-start budget. For the host delivery agent, not the isolated role authoring ontology payloads."
 ---
 
 # 建模开发推进
@@ -20,8 +20,34 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
    接续时先读该记录、实际进程和事件，避免重复启动。用户中途补充要求不抹去原目标。
 3. 复用会话已有授权。没有真实建模授权时，完成可独立开展的工作并申请；安装或调用本 Skill
    本身不授予 semantic start。每次授权默认三次 fresh starts，用户指定数量时以用户为准。
-4. 按 [运行参考](references/team-runbook.md) 做安全启动所必需的最小检查。授权后通常须在
+4. 获得新的建模次数授权时，先按 [授权时的模型调度](#授权时的模型调度) 取真实时间、判定
+   高峰/非高峰并记录选定模型与 effort，再进入启动检查。
+5. 按 [运行参考](references/team-runbook.md) 做安全启动所必需的最小检查。授权后通常须在
    20 分钟内开始第一次真实建模；超时即报告耗时来源并缩短通路，不能继续扩展预检。
+
+## 授权时的模型调度
+
+高峰与非高峰对应不同的模型档位，这是用户在授权时给出的约定；宿主的职责是如实判定、记录
+并执行，不替用户重新定价，也不把该表说成已核实的官方价格。每次获得新的建模次数授权，先
+调用当前时间工具取得真实时间并转换为 Asia/Shanghai 北京时间：周一至周五 09:00<=t<12:00
+或 14:00<=t<18:00 为高峰；12:00、18:00 边界及周末为非高峰。把取时、时区、是否高峰、选定
+模型/effort 和授权 ID 写入本轮宿主记录，后续启动、修复与交接按该记录核对。
+
+- ClaudeCode（外部 Claude Code 开发/修复进程）：高峰经 cc-switch 把 provider 切至 glm，
+  实际模型 `glm-5.3-flash`、effort `max`；非高峰且当前 provider 非 deepseek 时切回 deepseek，
+  实际模型 `deepseek-flash`、effort `max`。目标 provider 已匹配时不做无意义切换，但仍
+  核验 model/effort 与记录一致。主智能体自身是 Codex，不在 cc-switch 切换范围。
+- Team：模型绑定写在 Team 独立 model-profile，不经 cc-switch。高峰 `gpt-5.6-luna`、
+  effort `xhigh`；非高峰 `deepseek-flash`、effort `max`。validate、baseline、run 及角色
+  实际模型证据须与该选择一致。
+- provider 用 `cc-switch -a claude provider list` 的当前标记现场发现（`provider current`
+  原样输出带 API Key 片段，不直接原样输出或粘贴），不把机器特定 provider ID 写死；启动前
+  清除会覆盖切换结果的旧 ambient `ANTHROPIC_MODEL`、`ANTHROPIC_BASE_URL` 等模型变量，只
+  核验白名单字段，不打印密钥或整份 settings。命令与核验步骤见
+  [运行参考](references/team-runbook.md)。
+- 当前环境不支持所需模型/effort 时，如实反馈能力缺口并请用户决定，不悄悄替换成可用模型。
+- 调度在授权时选定并适用整个 run：时间跨过时段边界不中断当前 run、不偷偷另开 start，
+  也不给已冻结 run 更换模型；只有新一轮授权才重新判定。
 
 ## 保持观察和推进
 
@@ -35,8 +61,11 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 按可见证据检查获批范围、阶段及输入/写入边界，发现业务语义疑点交给建模 Team 澄清，
 不要由宿主改写候选、指定本体拓扑或通过平台补造业务事实。
 
-- **等待用户**：转交具体业务问题或 CQ 审核，保留等待状态；复用已确认答案。只有本次任务明确
-  授权模拟业务方且指定资料时才能据此代答，资料外问题仍问用户；设计自治不代替业务/CQ 审批。
+- **等待用户**：转交具体业务问题或 CQ 审核，保留等待状态；复用已确认答案。本次任务的用户
+  授权明确允许依业务资料代答并补充资料时，按获准范围持续处理访谈与必要资料补充，不再反复
+  询问同一权限；新增资料须标识为“授权新增业务定义/场景补充”并保留来源与修订，不得冒称
+  原始证据、改写冻结源或据隐藏答案补料。超出获准范围的问题仍问用户；CQ 审批仍按本次具体
+  授权，不暗自扩张；隐藏题隔离、授权额度与独立验收边界不变。设计自治不代替业务/CQ 审批。
 - **仍有活动但较慢**：结合工具事件与阶段继续观察；几分钟无日志只能触发诊断，不能判死或重开。
 - **重复错误、相互等待或已退出**：保留第一异常和相关事件，检查具体阻塞与写状态，再进入归因。
 - **收到交付**：核对回执、阶段与产物，按当前验收阶段交给独立验收者；正常结束不是语义 PASS。
@@ -68,8 +97,9 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 不能仅凭“信心很高”绕过明确合同。会实质改变未经确认的业务含义/范围、破坏兼容性、削弱
 授权/源忠实度/写入完整性/隐藏题隔离/独立验收，或存在关键影响未知时，先完成可独立进行的
 分析，向用户提交可审阅的具体方案、证据、影响及对当前 run 的处置建议，等待相关决定。
-需要变更 AGENTS.md 或扩展启动/费用/操作授权时同样由用户决定。证据支持的常规变更无需重复
-请示；修复不得顺带加入无当前需求的治理、审计、编排框架或产品功能。
+需要变更 AGENTS.md 或扩展启动/费用/操作授权时同样由用户决定。用户在本次任务中明确授予的
+访谈代答与资料补充授权按其获准范围执行，不外推为后续任务的默认授权。证据支持的常规变更
+无需重复请示；修复不得顺带加入无当前需求的治理、审计、编排框架或产品功能。
 
 ## 委派修复并核验
 

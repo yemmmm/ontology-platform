@@ -10,6 +10,8 @@
 | auth-r3-0-006-001 | 2026-08-27 20:16 +08:00 | 3 次 fresh start | 用户会话显式授权（选项确认） |
 | auth-r3-0-006-002 | 2026-09-10 13:10 +08:00 | 技能职责调整后进行 3 次 fresh start 验证；全部 Team 模型初始指定 `deepseek-v4.1-flash`，13:35 +08:00 用户改为 `deepseek-flash` | 用户本会话明确授权；精确模型 ID 的服务端可用性与后续决定见本轮记录 |
 
+| auth-r3-0-006-003 | 2026-09-10 15:11:52 +08:00 | 新增3次fresh start；按高峰规则Team=gpt-5.6-luna/xhigh，ClaudeCode=glm-5.3-flash/max | 用户本会话明确授权；clock实查07:11:52 UTC，Asia/Shanghai周四15:11:52，高峰；cc-switch已选GLM |
+
 ## 消耗记录
 
 | # | run-id | 授权 | 开始（本地） | 终态 | 备注 |
@@ -22,7 +24,7 @@
 
 | 5 | r30006-20260910-auth002-start2 | auth-002 | 2026-09-10 14:26 +08:00 | CLEANED；runtime/infrastructure（platform-contract 接线遗漏） | commit `eb7fd92`；补齐 .venv 后 Protocol 仍 app-server closed its output；定位到非formal staged run 未启动 Protocol capability endpoint，但 namespace_command 必须挂载其 socket。完整副本 namespace/config/initialize 在替身 socket 下通过；无业务 turn，无模型质量结论。原证据与第一轮分开保留，scope deleted-empty、资源已删除、keys已撤销、无在途尝试。累计 2/3，剩余 1/3。 |
 
-| 6 | r30006-20260910-auth002-start3 | auth-002 | 2026-09-10 14:50 +08:00 | PAUSED（等待业务回答） | commit `ef0dfea`；四角色 thread/started 和 turn/started 全部真实出现，deepseek-flash/deepseek-direct/max。Protocol 原启动失败已越过；开始读材料与访谈/CQ准备。累计 3/3，余额 0；继续当前 run，不再 fresh start。 |
+| 6 | r30006-20260910-auth002-start3 | auth-002 | 2026-09-10 14:50 +08:00 | CLEANED；platform-contract | commit `ef0dfea`；四角色 thread/started 和 turn/started 全部真实出现，deepseek-flash/deepseek-direct/max。Protocol 原启动失败已越过；开始读材料与访谈/CQ准备。累计 3/3，余额 0；继续当前 run，不再 fresh start。 |
 
 ## 退款/异常
 
@@ -34,3 +36,18 @@
 明确支持名为 `deepseek-flash`、`deepseek-v4-pro`；用户于 13:35 +08:00 确认使用 `deepseek-flash`。
 模型可用性请求不是语义建模 start。本轮进度见
 [角色技能与真实验证记录](2026-09-10-role-scoped-skills-and-real-validation.md)。
+
+## 当前授权（auth-003）
+
+0/3已消耗，3/3可用；当前先安全继续auth-002第三轮，已获用户业务代答与必要新增资料授权，
+经原有访谈及CQ私有通道送入BS-20260910-01。现有冻结会话不换模型、不重复计数。
+新start按本授权时高峰选择gpt-5.6-luna/xhigh；不并行复制尚可继续的同一建模目标。
+
+### auth-002 第三轮收口（15:20 +08:00）
+
+六项访谈经授权代答完成，原始outer-question/outer-user与BS-20260910-01至06保留。CQ草稿
+提交第一阻塞为acceptance._dispatch_capability缺少CQ_OPERATION导入，capability-calls记录
+NameError，最早06:53:36 UTC；非模型质量失败，尚无候选/业务写入。停止后scope deleted-empty、
+Project/Ontology删除、keys撤销、no_in_flight_attempts=true。Runtime的private_credentials_destroyed=false
+照原审计保留，不宣称完整runtime清理PASS。stop后宿主stderr出现app-server closed its output、
+exit2，state仍为CLEANED；不以这一终止次生现象覆盖先前CQ NameError。auth-003仍0/3。

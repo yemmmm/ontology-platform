@@ -1,0 +1,37 @@
+# Team Model Profile for peak-schedule authorization auth-r3-0-006-003: the
+# same six roles this round actually selects -- the r3-0-011-competency-question
+# Profile roster (coordinator, modeling, protocol, competency-question) plus
+# the Platform Examiner production side (``platform-examiner``) and the Judge
+# (package ID ``acceptance``) -- mirroring deepseek-flash-max.  All roles bind
+# the openai-codex route to ``gpt-5.6-luna`` at ``xhigh`` effort, the peak slot
+# of the user-specified schedule (written as ``gtp5.6-luna``/``xgigh`` in the
+# user's original text; understood as these canonical names).  Other profiles
+# stay unchanged: validate, baseline, and run must select this profile
+# explicitly via ``--model-profile openai-luna-xhigh``.
+schema_version: 1
+model_profile_id: openai-luna-xhigh
+roles:
+  coordinator:
+    model_provider: openai-codex
+    model: gpt-5.6-luna
+    model_reasoning_effort: xhigh
+  modeling:
+    model_provider: openai-codex
+    model: gpt-5.6-luna
+    model_reasoning_effort: xhigh
+  protocol:
+    model_provider: openai-codex
+    model: gpt-5.6-luna
+    model_reasoning_effort: xhigh
+  competency-question:
+    model_provider: openai-codex
+    model: gpt-5.6-luna
+    model_reasoning_effort: xhigh
+  platform-examiner:
+    model_provider: openai-codex
+    model: gpt-5.6-luna
+    model_reasoning_effort: xhigh
+  acceptance:
+    model_provider: openai-codex
+    model: gpt-5.6-luna
+    model_reasoning_effort: xhigh

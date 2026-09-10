@@ -33,16 +33,23 @@ impact/detect_changes、测试和提交规则；不能因高权限跳过环境�
 
 ## 启动与观察
 
-先检查本机 `claude --version`、`claude --help`，复用配置的模型；不把模型别名写死。
+先检查本机 `claude --version`、`claude --help`。模型/effort 按本轮授权已记录的模型调度
+执行：高峰实际模型 `glm-5.3-flash`、effort `max`；非高峰实际模型 `deepseek-flash`、
+effort `max`。当前 provider 已匹配时不重复切换，但仍用 `--model`/`--effort` 显式对齐
+记录；provider 用 cc-switch 现场发现，不把机器特定 provider ID 或模型别名写死，判定与
+核验步骤见 [运行参考](team-runbook.md)。启动前清除会覆盖切换结果的旧 ambient
+`ANTHROPIC_MODEL`/`ANTHROPIC_BASE_URL` 变量，只核验白名单字段，不打印密钥或整份 settings。
+CLI 或环境不支持所需模型/effort 时如实反馈缺口，不悄悄替换为可用模型。
 当前 CLI 支持 `-p`、`--permission-mode bypassPermissions`、`--output-format stream-json`
 和 `--verbose`。此权限模式适用于用户已授权高权限本地开发的修复；若本次授权更窄，按其
 允许范围设置权限，不能为了避开限制另起更高权限进程。
 
-在任务指定 checkout 工作目录中，通过可返回控制权的进程工具执行；变量填已创建的本轮
-宿主文件路径，分别保存输出，不能覆盖旧任务证据：
+在任务指定 checkout 工作目录中，通过可返回控制权的进程工具执行；变量填本轮宿主记录中的
+调度模型和已创建的宿主文件路径，分别保存输出，不能覆盖旧任务证据：
 
 ```bash
 claude -p --permission-mode bypassPermissions --output-format stream-json --verbose \
+  --model "$repair_model" --effort max \
   < "$repair_task_file" > "$repair_events_file" 2> "$repair_stderr_file"
 ```
 

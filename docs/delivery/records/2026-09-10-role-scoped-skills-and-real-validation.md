@@ -157,3 +157,17 @@ start。Modeling 已读材料并列出六项待访谈业务未知，第一问为
 本轮时间主要消耗在模型路由与启动接线修复，语义分析占比不足一半；停止扩展平台/harness，
 最短后续路径为确认访谈回答、沿既有 CQ 私有通道审核，再继续同一 run。
 宿主会话结束不代表后台监控；下次交互须先读取 state、host log 和进程，再输入回答与恢复。
+
+## 15:20 继续与CQ提交缺陷
+
+用户明确授权依据现有资料代答并必要时新增资料。六项业务定义已通过原有访谈绑定送达
+Modeling，并独立通过CQ私有通道送达CQ；新增来源BS-20260910-01至06，原始资料未改。
+Coordinator停止CQ收件人探测，六项确认全部被Modeling接收。CQ草稿却一直被通用-32001拒绝；
+私有capability-calls审计定位到缺失CQ_OPERATION导入的NameError（最早06:53:36 UTC）。
+这属于platform-contract，当前没有模型质量结论。Claude Code负责最窄引用修复及真实CQ
+socket回归；不能靠只测tools/list声称草稿提交可用。当前运行已正常请求stop并保留原始证据，
+scope deleted-empty、资源删除、凭据撤销、无在途Attempt；runtime秘密残留审计false原样保留。
+
+15:11:52北京时间新授权auth-003三次，clock实查07:11:52 UTC；周四高峰，CC已cc-switch
+切GLM，开发glm-5.3-flash/max，新Team绑定gpt-5.6-luna/xhigh。尚未消耗新额度。
+Skill规则及新profile由另一Claude Code任务负责，主智能体不写具体开发/测试修复。

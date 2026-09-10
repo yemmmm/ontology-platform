@@ -17,11 +17,45 @@
 旧 002/008B/009 Task 保留各自范围，不能冒充完整 v3 入口。旧
 `modeling_team.foreground_monitor` 标为 `ARCHIVAL_ONLY`，不要启动。
 
+## 授权时的模型调度
+
+下列命令于 2026-09-10 对本机核实：`cc-switch --help`、`cc-switch -a claude provider list`、
+`cc-switch -a claude provider switch <ID>`；`claude --help` 支持 `--model` 与 `--effort max`。
+高峰/非高峰划分是用户指定调度表，不代表已核实官方价格。
+
+每次获得新的建模次数授权，先调用当前时间工具取得真实时间并转换为 Asia/Shanghai 北京时间：
+周一至周五 09:00<=t<12:00 或 14:00<=t<18:00 为高峰；12:00、18:00 边界及周末为非高峰。
+把取时、时区、是否高峰、选定模型/effort 和授权 ID 写入本轮宿主记录，之后按该记录核对，
+不逐个任务重新判定。
+
+ClaudeCode 侧（外部 Claude Code 开发/修复进程；主智能体自身是 Codex，不在切换范围）：
+
+1. 用 `cc-switch -a claude provider list` 的当前标记现场发现 provider，不把机器特定
+   provider ID 写进提示或脚本。`provider current` 原样输出带 API Key 片段，不直接原样
+   输出或粘贴；确需其字段时先在工具内部捕获，只保留并输出 provider/model/base URL 白名单。
+2. 高峰目标 provider 为 glm，实际模型 `glm-5.3-flash`、effort `max`；非高峰目标为
+   deepseek，实际模型 `deepseek-flash`、effort `max`。当前 provider 已等于目标时不重复
+   switch，但仍核验 model/effort 与记录一致；需要切换时用发现的 ID 执行 switch，并用
+   `provider list` 的当前标记复核。
+3. 启动前清除会覆盖切换结果的旧 ambient `ANTHROPIC_MODEL`、`ANTHROPIC_BASE_URL` 等模型
+   变量；核验只读白名单字段（provider、model、effort、base URL 指向），不打印密钥或
+   整份 settings。
+
+Team 侧不经 cc-switch：模型绑定写在 Team 独立 model-profile。高峰 `gpt-5.6-luna`、
+effort `xhigh`；非高峰 `deepseek-flash`、effort `max`（用户原文写作 `gtp5.6-luna`/`xgigh`，
+已向用户说明按规范名理解）。选用 model profile/overlay 时，validate、baseline、run
+使用同一选择，并保留角色实际模型证据与之对应；没有获准的选择则沿用配置，不擅自换模型。
+
+执行环境不支持所需模型/effort 时，把缺口原样反馈给用户，不悄悄替换为可用模型。调度在授权
+时选定并适用整个 run：时间跨过时段边界不中断当前 run、不偷偷另开 start，不给已冻结 run
+换模型；新一轮授权才重新判定。
+
 ## 最小准备与启动
 
 在仓库根执行。先核对用户授权和余额、任务允许的源文件/角色输入、依赖健康、已有写入及
-进程状态。按任务要求冻结代码/配置/源材料；要求 clean checkout 时使用明确提交或隔离
-checkout 保留用户改动，不能清空工作区来满足前置。复用已有健康与验收证据，不展开全面审计。
+进程状态，并完成上文 [授权时的模型调度](#授权时的模型调度) 的判定与记录。按任务要求冻结
+代码/配置/源材料；要求 clean checkout 时使用明确提交或隔离 checkout 保留用户改动，不能
+清空工作区来满足前置。复用已有健康与验收证据，不展开全面审计。
 
 配置检查不启动模型，也不写平台：
 
