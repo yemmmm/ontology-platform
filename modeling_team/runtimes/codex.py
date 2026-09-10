@@ -5694,7 +5694,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._require_mcp_surface(agent, expected)
             return
         expected = {"team_transport": {"send_team_message", "report_task_result"}}
-        if self._coordination_enabled:
+        # 2026-09-11 auth006-start9: staged v3 runs enable the cooperative
+        # issue channel on the transport (runner a06af84), so the frozen
+        # per-role surface must expect its tools there too.
+        if self._coordination_enabled or self._staged_decisions_enabled:
             expected["team_transport"].update({"send_coordination", "report_issue"})
             if agent.package.role == "coordinator":
                 expected["team_transport"].add("issue_control")
