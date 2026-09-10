@@ -280,3 +280,17 @@ topology options用了dimensions键，而实际要求{option_id,assessment}。Ho
 Claude Code仅补009合同既有scope规则一句类型说明，JSON/diff/实现类型核对通过，无运行代码
 修改。41项结论已confirmed，Coordinator发布materialize unlock并交Protocol计划生成；截至本
 记录尚无实际batch提交回执。完整模型与独立语义验收未完成。
+
+Protocol工具入口停顿进一步定位：Host之前仅摘取function_call.name，遗漏namespace，故“裸名
+成功”的结论不完整。实际Coordinator/Modeling成功调用为name=send_team_message同时带
+namespace=mcp__team_transport；Protocol两次失败均未带namespace（旧拼接名/裸名均失败）。
+四个MCP服务器ready。Host经Coordinator转交host-protocol-namespace-001精确身份技术反馈，
+Protocol自行修正后delivery-25成功确认，随后get_project_build_context及get_ontology_workspace_context
+真实调用成功。该协作阻塞已在同run恢复，原始失败保留；尚无batch提交。
+Claude Code修正四角色命名段落及CQ终态入口说明，保留目录兼容/权限边界，无运行逻辑变更。
+现有测试2项旧文字断言失败（19项通过）后，Root对两个函数impact均LOW0caller/0flows，CC仅
+更新对应测试的命名断言，21/21复验与ruff通过；未将处理器侧字符串归一化测试误称App Server
+namespace验证。当前真实Protocol成功调用提供运行证据。冻结提示仍不改写。
+另发现Protocol被要求读取仅挂载Coordinator的scenario-map路径。Host通过既有技术消息
+host-protocol-topology-handoff-001请Coordinator转交其已决定的ontology_plan，业务选择不变，
+无新增mount。该交接提示缺漏记录待闭合；当前优先继续真实转换，不扩展平台机制。

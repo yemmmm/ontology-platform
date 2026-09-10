@@ -8,18 +8,20 @@ when the loaded Task/Profile explicitly declares a capability smoke run. Never i
 from this shared package, from a health tool being available, from a candidate receipt, or from
 supplemental text.
 
-The authoritative Team Transport call names are the ones your Runtime advertises for this run in
-its tool catalog: a native dynamic-tool Runtime advertises them bare (`send_team_message` for
-direct delivery, `send_coordination` for coordination signals, `report_task_result` for the
-terminal result, `report_issue` for typed issue escalation), while an MCP-bound Runtime advertises
-the same tools qualified, for example `mcp__team_transport__send_team_message`. Use exactly the
-advertised name: a spelling the catalog does not advertise is rejected as an unsupported call
-before it reaches Team Transport. Do not call an unqualified Team Transport function name when
-your catalog advertises qualified names, and do not add an `mcp__team_transport__` prefix when it
-advertises bare names. If a call is rejected as unsupported, re-read the advertised catalog and
-retry with a name from it instead of inspecting Runtime code or binaries. The qualified spellings
-used elsewhere in this file denote these same Team Transport tools; resolve each to the name your
-current catalog advertises.
+The authoritative Team Transport call identities are the ones your Runtime advertises for this run
+in its tool catalog. A namespaced MCP surface advertises each tool as two parts - a namespace and a
+member name - and both are part of its identity: the Team Transport namespace is
+`mcp__team_transport`, and its member names are `send_team_message` (direct delivery),
+`send_coordination` (coordination signals), `report_task_result` (the terminal result), and
+`report_issue` (typed issue escalation). Keep both parts on every call and write the pair as
+`namespace::member`, for example `mcp__team_transport::send_team_message`: a call that drops the
+namespace, and a name the catalog never advertised, are rejected as unsupported calls before they
+reach Team Transport. Only a tool your catalog advertises with no namespace at all is called by its
+bare name, and a catalog that advertises a single joined spelling for a tool (for example
+`mcp__team_transport__send_team_message`) is followed exactly as advertised. If a call is rejected
+as unsupported, re-read the advertised catalog and retry with an identity from it instead of
+inspecting Runtime code or binaries. The qualified spellings used elsewhere in this file denote
+these same Team Transport tools; resolve each to the identity your current catalog advertises.
 
 For formal R2.3-005 (`task_id=r2-3-005-formal-acceptance`), the capability smoke shortcut is
 forbidden: a candidate receipt or a health/read-only result is intermediate evidence, never
@@ -290,10 +292,10 @@ Team Transport delivery containing the complete candidate, then build its receip
 any `ontology_platform` tool. This prohibition covers all health, read, write, validation,
 reasoning, and retrieval tools, including `check_platform_health`,
 `get_project_build_context`, `get_ontology_workspace_context`, and `get_modeling_context`.
-Use the fully-qualified Team Transport MCP names
-`mcp__team_transport__send_team_message`, `mcp__team_transport__send_coordination`,
-`mcp__team_transport__report_task_result`, and `mcp__team_transport__report_issue`; bare aliases
-are unsupported by the App Server. A `candidate_receipt_required` response means the barrier is
+Use the advertised Team Transport identity for every Team Transport call: the namespace
+`mcp__team_transport` together with the member names `send_team_message`, `send_coordination`,
+`report_task_result`, and `report_issue`, spelled as your current tool catalog advertises them and
+never with the namespace dropped. A `candidate_receipt_required` response means the barrier is
 closed: stop and wait for Modeling rather than retrying a platform health/read call.
 
 The Runner may advertise the typed formal operations

@@ -18,18 +18,21 @@ team. Consume that public projection only; do not probe for a CQ Team Transport 
 not repeat a CQ delivery to discover one — the missing edge is the designed state, not a
 deliverability failure to repair.
 
-The authoritative Team Transport call names are the ones your Runtime advertises for this run in
-its tool catalog: a native dynamic-tool Runtime advertises them bare (`send_team_message` for
-direct delivery, `send_coordination` for coordination signals, `report_task_result` for the
-terminal result, `report_issue` for typed issue escalation, `issue_control` for cooperative
-control), while an MCP-bound Runtime advertises the same tools qualified, for example
-`mcp__team_transport__send_team_message`. Use exactly the advertised name: a spelling the
-catalog does not advertise is rejected as an unsupported call before it reaches Team Transport.
-Do not call an unqualified Team Transport function name when your catalog advertises qualified
-names, and do not add an `mcp__team_transport__` prefix when it advertises bare names. If a call
-is rejected as unsupported, re-read the advertised catalog and retry with a name from it instead
-of inspecting Runtime code or binaries. The qualified spellings used elsewhere in this file
-denote these same Team Transport tools; resolve each to the name your current catalog advertises.
+The authoritative Team Transport call identities are the ones your Runtime advertises for this run
+in its tool catalog. A namespaced MCP surface advertises each tool as two parts - a namespace and a
+member name - and both are part of its identity: the Team Transport namespace is
+`mcp__team_transport`, and its member names are `send_team_message` (direct delivery),
+`send_coordination` (coordination signals), `report_task_result` (the terminal result),
+`report_issue` (typed issue escalation), and `issue_control` (cooperative control). Keep both parts
+on every call and write the pair as `namespace::member`, for example
+`mcp__team_transport::send_team_message`: a call that drops the namespace, and a name the catalog
+never advertised, are rejected as unsupported calls before they reach Team Transport. Only a tool
+your catalog advertises with no namespace at all is called by its bare name, and a catalog that
+advertises a single joined spelling for a tool (for example `mcp__team_transport__send_team_message`)
+is followed exactly as advertised. If a call is rejected as unsupported, re-read the advertised
+catalog and retry with an identity from it instead of inspecting Runtime code or binaries. The
+qualified spellings used elsewhere in this file denote these same Team Transport tools; resolve each
+to the identity your current catalog advertises.
 
 Every Runner-injected direct delivery is one JSON object with stable `sender_id`, `recipient_id`,
 `kind`, and `text` fields. `recipient_id` must be your own Agent ID. The Runner mechanically

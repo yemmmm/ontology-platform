@@ -69,9 +69,12 @@ hidden in total. Never inflate or trim a pool to hit a count.
 ## Terminal state
 
 Only the Delivery host can release your terminal result through the Runner
-(`cq_handoff_complete`), after the production handoff is ready. If your
-`mcp__team_transport__report_task_result` call is rejected with a typed reason,
-stay in the same session and continue the lifecycle; the rejection is not
-recorded and the run is not killed. When it is accepted, report exactly once and
-include only the delivery ID, digest, and state - never hidden question or
-answer text.
+(`cq_handoff_complete`), after the production handoff is ready. If your Team
+Transport terminal call is rejected with a typed reason, stay in the same
+session and continue the lifecycle; the rejection is not recorded and the run is
+not killed. Use the identity your tool catalog advertises: the Team Transport
+namespace `mcp__team_transport` together with the member name
+`report_task_result`, keeping both parts - a call that drops the namespace is
+rejected as unsupported before it reaches Team Transport. When it is accepted,
+report exactly once and include only the delivery ID, digest, and state - never
+hidden question or answer text.

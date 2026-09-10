@@ -442,16 +442,21 @@ def test_r23003_budget_extension_still_requires_consumed_cap_and_retryable_prede
 
 
 def test_r23003_team_transport_uses_advertised_fully_qualified_call(tmp_path: Path) -> None:
-    """Historical name: the prompt must point at the advertised catalog, not mandate one spelling.
+    """Historical name: the prompt must bind the full advertised identity, namespace included.
 
-    A native dynamic-tool Runtime advertises the Team Transport tools bare; an MCP-bound Runtime
-    advertises the same tools qualified.  Both spellings are legal, so the prompt surface must
-    resolve the name from the tool catalog, keep each role's own tool list and permission
-    statements, and no longer claim that bare aliases are unsupported by the App Server.
+    The Runtime advertises Team Transport as a namespaced MCP surface: the namespace
+    `mcp__team_transport` plus the member names, and both parts are the call identity.  A call
+    that drops the namespace, or a name the catalog never advertised, is rejected as unsupported
+    before it reaches Team Transport.  Each role prompt must therefore state the two-part
+    identity, keep each role's own tool list and permission statements, allow a bare name only
+    for a tool advertised with no namespace at all, and follow a single joined spelling only
+    where the catalog advertises one.  The superseded claim that bare aliases are unsupported by
+    the App Server must not come back.
     """
 
     packages = ROOT / "modeling_team" / "agent-packages"
-    mcp_bound_example = "mcp__team_transport__send_team_message"
+    joined_example = "mcp__team_transport__send_team_message"
+    identity_example = "mcp__team_transport::send_team_message"
     own_tools = {
         "modeling": ("send_team_message", "send_coordination", "report_task_result", "report_issue"),
         "protocol": ("send_team_message", "send_coordination", "report_task_result", "report_issue"),
@@ -477,17 +482,35 @@ def test_r23003_team_transport_uses_advertised_fully_qualified_call(tmp_path: Pa
             assert f"`{tool_name}`" in instructions
         # Check the naming paragraph itself; other historical references in the file are out of scope.
         start = instructions.index(
-            "The authoritative Team Transport call names are the ones your Runtime advertises"
+            "The authoritative Team Transport call identities are the ones your Runtime advertises"
         )
         paragraph = instructions[start:]
         anchor = "current catalog advertises."
         paragraph = paragraph[: paragraph.index(anchor) + len(anchor)]
-        assert "tool catalog" in paragraph
-        assert "advertises them bare" in paragraph
-        assert "the same tools qualified" in paragraph
-        assert mcp_bound_example in paragraph
-        assert "bare function aliases are unsupported" not in paragraph
-        assert "fully-qualified Team Transport" not in paragraph
+        flat = " ".join(paragraph.split())
+        assert "tool catalog" in flat
+        # The advertised identity is two parts - a namespace and a member name - both required.
+        assert "the Team Transport namespace is `mcp__team_transport`" in flat
+        assert (
+            "advertises each tool as two parts - a namespace and a member name" in flat
+        )
+        assert "Keep both parts on every call" in flat
+        assert identity_example in flat
+        assert "drops the namespace" in flat
+        assert "rejected as unsupported calls before they reach Team Transport" in flat
+        # A bare name is legal only for a tool advertised with no namespace at all.
+        assert "with no namespace at all is called by its bare name" in flat
+        # A single joined spelling is followed only where the catalog advertises it.
+        assert joined_example in flat
+        assert "is followed exactly as advertised" in flat
+        # The recovery and resolution sentences stay.
+        assert "re-read the advertised catalog and retry with an identity from it" in flat
+        assert "resolve each to the identity your current catalog advertises." in flat
+        # The superseded absolutes must not come back.
+        assert "bare function aliases are unsupported" not in flat
+        assert "fully-qualified Team Transport" not in flat
+        assert "advertises them bare" not in flat
+        assert "the same tools qualified" not in flat
         # No role may be told to call a fixed prefixed spelling unconditionally.
         assert re.search(r"[Uu]se\s+`mcp__team_transport__", paragraph) is None
 
@@ -495,6 +518,19 @@ def test_r23003_team_transport_uses_advertised_fully_qualified_call(tmp_path: Pa
     for package_id in ("modeling", "protocol", "acceptance"):
         instructions = (packages / package_id / "instructions.md").read_text(encoding="utf-8")
         assert "`issue_control`" not in instructions
+
+    # The competency-question terminal sentence states the same two-part identity.
+    cq_instructions = (packages / "competency-question" / "instructions.md").read_text(
+        encoding="utf-8"
+    )
+    terminal = " ".join(
+        cq_instructions[cq_instructions.index("## Terminal state") :].split()
+    )
+    assert "the Team Transport namespace `mcp__team_transport`" in terminal
+    assert "the member name `report_task_result`" in terminal
+    assert "keeping both parts" in terminal
+    assert "drops the namespace" in terminal
+    assert "`mcp__team_transport__report_task_result`" not in terminal
 
     broker = TeamTransportBroker(
         tmp_path / "transport",
@@ -513,8 +549,11 @@ def test_r23003_team_transport_uses_advertised_fully_qualified_call(tmp_path: Pa
         adapter._run_root = tmp_path
         (tmp_path / "transport-root").write_text(str(broker.root), encoding="utf-8")
         agent = SimpleNamespace(agent_id="modeling")
-        # The advertised bare name and the MCP-bound spelling of that same tool both dispatch.
-        for call_name in ("send_team_message", mcp_bound_example):
+        # Runtime-side dispatch normalization only: the handler strips to the member name, so the
+        # bare name and the joined spelling both dispatch here.  That is why dispatch alone cannot
+        # catch a dropped namespace - the app-server rejects that identity before this handler is
+        # reached - and why the prompt above must carry the namespace + member name pair.
+        for call_name in ("send_team_message", joined_example):
             result = adapter._dynamic_tool_result(
                 agent,
                 call_name,
@@ -524,7 +563,7 @@ def test_r23003_team_transport_uses_advertised_fully_qualified_call(tmp_path: Pa
         deliveries = broker.drain()
         assert [delivery.text for delivery in deliveries] == [
             "exact transport call via send_team_message",
-            f"exact transport call via {mcp_bound_example}",
+            f"exact transport call via {joined_example}",
         ]
     finally:
         broker.stop()
@@ -762,9 +801,20 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
             assert "do not enumerate every source field" in text
             assert "exec" in text
             assert "the filesystem" in text
-            assert "advertises them bare" in text
-            assert "the same tools qualified" in text
-            assert "bare function aliases are unsupported" not in text
+            # The naming paragraph binds the two-part advertised identity, namespace included.
+            start = text.index("The authoritative Team Transport call identities")
+            anchor = "your current catalog advertises."
+            paragraph = text[start:]
+            paragraph = " ".join(
+                paragraph[: paragraph.index(anchor) + len(anchor)].split()
+            )
+            assert "the Team Transport namespace is `mcp__team_transport`" in paragraph
+            assert "mcp__team_transport::send_team_message" in paragraph
+            assert "drops the namespace" in paragraph
+            assert "with no namespace at all" in paragraph
+            assert "mcp__team_transport__send_team_message" in paragraph
+            assert "is followed exactly as advertised" in paragraph
+            assert "bare function aliases are unsupported" not in paragraph
             assert "recipient_id=protocol" in text or 'recipient_id="protocol"' in text
             assert "expects_reply=true" in text
             assert "candidate JSON" in text
@@ -783,6 +833,9 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
                 or "object containing exactly `semantic_id`, `expected_class`, and `delete_mode=full_live_impact" in text
             )
             assert "do not use `entity_delete`" in text or "Do not use entity_delete" in text
+        # `generated` is the Runtime-side task text (runner._task_text), not the role package:
+        # it still carries its own advertised-catalog phrasing, and is deliberately not held to
+        # the namespace + member identity wording that the package above must satisfy.
         for text in (generated,):
             assert text.count("existing_entity_ref") == objective.count("existing_entity_ref")
             assert "12-24" not in text
