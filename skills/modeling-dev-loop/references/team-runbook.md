@@ -134,6 +134,16 @@ JSONL 行；主智能体保存各日志行号/字节偏移，避免每轮重新�
 退出后宿主卡在打开 FIFO。按返回 rejection 修正对应消息，不手工修改冻结 artifact。
 
 - 用户答案按已显示问题的 run/project/delivery 绑定经 `user` 输入；实际字段以当前合同为准。
+  非 formal v3 run（如 r3-0-006-real-full + r3-0-011 profile）不注册 Modeling→Coordinator
+  问题为可答 outer question：`user` 动作必须显式绑定一个已注册的 question delivery ID，
+  且该 ID 必须先经 `question` 动作注册（宿主自定义 ID，例如 `host-approved-business-001`）。
+  正确两步模式（2026-09-11 auth006-start2 终止教训，start2 因 text-only `user` 触发
+  `owner answer requires a question delivery ID` 的 fatal 边界而整 run 终止）：
+  1) `{"action":"question","delivery_id":"host-<来源>-001","text":"<宿主通知/业务来源说明>"}`；
+  2) `{"action":"user","question_delivery_id":"host-<来源>-001","text":"<完整答复文本>"}`。
+  `receive_outer` 内部错误是保留的 fatal 边界：任何字段缺失都会终止整个 run 并消耗额度，
+  发送前必须对照 runner 源码 `receive_outer`/`_record_outer_question`/`_release_owner_answer`
+  核实字段，禁止 text-only `user`。答完即消费（同 ID 不可重放）；失败发送会烧掉该 ID。
 - CQ 的 `cq_interview`、`cq_review`、`cq_freeze`、`cq_handoff_complete` 走直接通道，不能
   通过 Coordinator 转发私有问题或答案。审核使用当前 `review_id`、revision/digest，不能
   宿主代批或就地改写冻结题池。具体见 [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
