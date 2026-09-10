@@ -86,14 +86,23 @@ def test_profile_rejects_unknown_partial_or_unsupported_model_values(tmp_path: P
         load_team_model_profile(tmp_path, DEFAULT_MODEL_PROFILE_ID)
 
 
-def test_profile_rejects_missing_examiner_and_cross_package_mismatch(tmp_path: Path) -> None:
+def test_profile_subset_loads_but_dropped_role_fails_closed_on_resolution(
+    tmp_path: Path,
+) -> None:
+    # R3.0-006: the loader now accepts declared subsets of the closed role
+    # universe, so a dropped examiner no longer fails at load time.  Role
+    # completeness moved to the formal-contract gate in ``TeamRunner.prepare``
+    # (exact six) and to roster coverage (multi-slice); resolving a dropped
+    # role must still fail closed here.
     _copy_profile(tmp_path)
     path = tmp_path / "modeling_team" / "model-profiles" / f"{DEFAULT_MODEL_PROFILE_ID}.yaml"
     value = yaml.safe_load(path.read_text(encoding="utf-8"))
     value["roles"].pop("platform-examiner")
     path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    profile = load_team_model_profile(tmp_path, DEFAULT_MODEL_PROFILE_ID)
+    assert "platform-examiner" not in profile.bindings
     with pytest.raises(TeamConfigurationError):
-        load_team_model_profile(tmp_path, DEFAULT_MODEL_PROFILE_ID)
+        profile.binding_for("platform-examiner")
 
     _copy_profile(tmp_path)
     _edit_profile(

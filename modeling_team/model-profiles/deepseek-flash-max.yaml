@@ -1,0 +1,37 @@
+# Team Model Profile for the current v3 multi-slice run: every role this
+# round actually selects -- the r3-0-011-competency-question Profile roster
+# (coordinator, modeling, protocol, competency-question) plus the two CQ
+# acceptance children the carrier launches, the Platform Examiner production
+# side (``platform-examiner``, spec kind ``platform``) and the Judge (package
+# ID ``acceptance``).  Each is bound to the DeepSeek direct route with the
+# user-confirmed ``deepseek-flash`` model and max effort.  No OpenAI route is
+# declared, so no role can silently ride the Codex built-in provider; the
+# DeepSeek credential preflight covers the whole profile.  The formal six-role
+# profiles stay unchanged.
+schema_version: 1
+model_profile_id: deepseek-flash-max
+roles:
+  coordinator:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: max
+  modeling:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: max
+  protocol:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: max
+  competency-question:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: max
+  platform-examiner:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: max
+  acceptance:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: max

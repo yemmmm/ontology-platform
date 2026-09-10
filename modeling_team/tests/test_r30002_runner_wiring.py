@@ -374,15 +374,29 @@ def test_preview_baseline_accepts_multi_slice_profile_and_task():
     assert int(baseline_hash, 16) >= 0
 
 
-def test_preview_baseline_multi_slice_rejects_model_profile_selection():
-    with pytest.raises(TeamConfigurationError, match="model profile selection"):
-        TeamRunner.preview_baseline(
-            repository_root=REPO_ROOT,
-            run_id="r30002-preview-multi-slice-profile",
-            profile_path=PROFILE,
-            task_path=SMOKE_TASK,
-            model_profile_id="any-profile",
-        )
+def test_preview_baseline_multi_slice_accepts_model_profile_selection():
+    # R3.0-006 real validation: an explicit Team Model Profile is now a
+    # first-class selection for multi-slice runs and is frozen into the
+    # baseline manifest instead of being rejected as formal-only.
+    manifest, baseline_hash = TeamRunner.preview_baseline(
+        repository_root=REPO_ROOT,
+        run_id="r30002-preview-multi-slice-profile",
+        profile_path=PROFILE,
+        task_path=SMOKE_TASK,
+        model_profile_id="deepseek-flash-max",
+    )
+    projection = manifest["team_model_profile"]
+    assert projection["profile_id"] == "deepseek-flash-max"
+    assert set(projection["roles"]) == {
+        "coordinator",
+        "modeling",
+        "protocol",
+        "competency-question",
+        "platform-examiner",
+        "acceptance",
+    }
+    assert manifest["files"]["team_model_profile"] == projection["sha256"]
+    assert len(baseline_hash) == 64
 
 
 def test_preview_baseline_multi_slice_task_rejects_formal_profile():
@@ -417,7 +431,7 @@ def test_cli_baseline_accepts_multi_slice_profile_and_task(capsys):
     assert payload["manifest"]["run_id"] == "r30002-cli-baseline-multi-slice"
 
 
-def test_cli_baseline_multi_slice_rejects_model_profile_selection(capsys):
+def test_cli_baseline_multi_slice_accepts_model_profile_selection(capsys):
     argv = [
         "modeling-team",
         "baseline",
@@ -428,11 +442,81 @@ def test_cli_baseline_multi_slice_rejects_model_profile_selection(capsys):
         "--task",
         str(SMOKE_TASK),
         "--model-profile",
-        "any-profile",
+        "deepseek-flash-max",
     ]
     with patch.object(team_main.sys, "argv", argv):
-        assert team_main.main() == 2
-    assert "model profile selection" in capsys.readouterr().err
+        assert team_main.main() == 0
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["run_id"] == "r30002-cli-baseline-multi-slice-profile"
+    projection = payload["manifest"]["team_model_profile"]
+    assert projection["profile_id"] == "deepseek-flash-max"
+    assert set(projection["roles"]) == {
+        "coordinator",
+        "modeling",
+        "protocol",
+        "competency-question",
+        "platform-examiner",
+        "acceptance",
+    }
+
+
+def test_runner_multi_slice_model_profile_binds_run_and_requires_roster_coverage(
+    tmp_path,
+):
+    # The selected profile binds the non-formal multi-slice run, and a
+    # profile that omits any roster role fails closed before reservation.
+    run_id = f"r30002-profile-{hashlib.sha256(str(tmp_path).encode()).hexdigest()[:8]}"
+    run_root = REPO_ROOT / "workspaces" / "modeling-runs" / run_id
+    adapter = CapturingAdapter()
+    credential = tmp_path / "deepseek.env"
+    credential.write_text("DEEPSEEK_API_KEY=runner-wiring-test-sentinel\n", encoding="utf-8")
+    credential.chmod(0o600)
+    runner = TeamRunner(
+        repository_root=REPO_ROOT,
+        adapter=adapter,
+        ledger_root=tmp_path / "ledger",
+        deepseek_credential_path=credential,
+        freeze_started_at=datetime.now(UTC).isoformat(),
+    )
+    try:
+        runner.prepare(
+            run_id=run_id,
+            profile_path=REPO_ROOT
+            / "modeling_team" / "profiles" / "r3-0-011-competency-question.yaml",
+            task_path=REPO_ROOT
+            / "modeling_team" / "tasks" / "r3-0-006-real-full.yaml",
+            scope={"mode": "create"},
+            model_profile_id="deepseek-flash-max",
+        )
+        assert runner.run is not None
+        assert runner.run.team_model_profile is not None
+        assert runner.run.team_model_profile.profile_id == "deepseek-flash-max"
+        assert set(runner.run.provider_credential_bindings) == {"deepseek-direct"}
+
+        # The formal six-role default profile has no competency-question
+        # binding, so it cannot silently serve the v3 roster.
+        with pytest.raises(TeamConfigurationError, match="missing roster role bindings"):
+            TeamRunner(
+                repository_root=REPO_ROOT,
+                adapter=CapturingAdapter(),
+                ledger_root=tmp_path / "ledger-coverage",
+                freeze_started_at=datetime.now(UTC).isoformat(),
+            ).prepare(
+                run_id=f"{run_id}-coverage",
+                profile_path=REPO_ROOT
+                / "modeling_team" / "profiles" / "r3-0-011-competency-question.yaml",
+                task_path=REPO_ROOT
+                / "modeling_team" / "tasks" / "r3-0-006-real-full.yaml",
+                scope={"mode": "create"},
+                model_profile_id="deepseek-v4-flash-max",
+            )
+        assert not (
+            REPO_ROOT / "workspaces" / "modeling-runs" / f"{run_id}-coverage"
+        ).exists()
+    finally:
+        runner.cleanup()
+        if run_root.exists():
+            rmtree(run_root)
 
 
 # --- W4: R3.0-006 start3 narrow repair — Coordinator scenario-map write path ---

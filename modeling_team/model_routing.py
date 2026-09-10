@@ -45,6 +45,10 @@ MODEL_PROFILE_PACKAGE_IDS = (
     "source-examiner",
     "platform-examiner",
 )
+# The closed role universe a profile may declare.  The formal six remain the
+# formal-run requirement; ``competency-question`` lets a v3 multi-slice
+# profile bind the R3.0-011 roster role that is absent from formal rosters.
+MODEL_PROFILE_ROLE_UNIVERSE = MODEL_PROFILE_PACKAGE_IDS + ("competency-question",)
 REQUESTED_EFFORT_TIERS = ("none", "low", "medium", "high", "xhigh", "max")
 # ``openai-codex`` is the route identity used by profiles, baselines, and run
 # evidence.  Only the per-role Codex TOML projection maps it onto Codex's
@@ -121,7 +125,7 @@ DEEPSEEK_DIRECT_ROUTE = ProviderRoute(
     wire_api="responses",
     upstream_url="https://api.deepseek.com/responses",
     credential_env="DEEPSEEK_API_KEY",
-    models=frozenset({"deepseek-v4-flash"}),
+    models=frozenset({"deepseek-v4-flash", "deepseek-flash"}),
     effort_effective=MappingProxyType(
         {"low": "high", "medium": "high", "high": "high", "xhigh": "max", "max": "max"}
     ),
@@ -184,7 +188,7 @@ class RoleModelBinding:
 
 @dataclass(frozen=True)
 class TeamModelProfile:
-    """Immutable loaded profile: identity, source digest, six role bindings."""
+    """Immutable loaded profile: identity, source digest, declared role bindings."""
 
     profile_id: str
     relative_path: str
@@ -208,8 +212,8 @@ class TeamModelProfile:
             "path": self.relative_path,
             "sha256": self.digest,
             "roles": {
-                package_id: self.bindings[package_id].as_dict()
-                for package_id in MODEL_PROFILE_PACKAGE_IDS
+                package_id: binding.as_dict()
+                for package_id, binding in self.bindings.items()
             },
         }
 
@@ -281,11 +285,19 @@ def load_team_model_profile(root: Path, profile_id: str) -> TeamModelProfile:
     if value.get("model_profile_id") != profile_id:
         raise TeamModelProfileError("team model profile identifier drifts")
     roles = value.get("roles")
-    if not isinstance(roles, dict) or set(roles) != set(MODEL_PROFILE_PACKAGE_IDS):
+    if (
+        not isinstance(roles, dict)
+        or not roles
+        or set(roles) - set(MODEL_PROFILE_ROLE_UNIVERSE)
+    ):
         raise TeamModelProfileError("team model profile role bindings drift")
     bindings: dict[str, RoleModelBinding] = {}
-    for package_id in MODEL_PROFILE_PACKAGE_IDS:
-        declaration = roles.get(package_id)
+    for package_id in MODEL_PROFILE_ROLE_UNIVERSE:
+        # An explicit ``role: null`` is a malformed declaration, not an
+        # undeclared role: only an absent key skips validation.
+        if package_id not in roles:
+            continue
+        declaration = roles[package_id]
         if not isinstance(declaration, dict) or set(declaration) != {
             "model_provider",
             "model",
@@ -661,6 +673,7 @@ __all__ = [
     "DEEPSEEK_DIRECT_ROUTE",
     "MODEL_PROFILE_DIRECTORY",
     "MODEL_PROFILE_PACKAGE_IDS",
+    "MODEL_PROFILE_ROLE_UNIVERSE",
     "MODEL_PROFILE_SCHEMA_VERSION",
     "OPENAI_CODEX_ROUTE",
     "PROVIDER_CATALOG",

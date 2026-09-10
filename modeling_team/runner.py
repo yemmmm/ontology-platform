@@ -29,6 +29,7 @@ from .contracts import (
 )
 from .model_routing import (
     MODEL_PROFILE_DIRECTORY,
+    MODEL_PROFILE_PACKAGE_IDS,
     TeamModelProfile,
     load_team_model_profile,
     preflight_codex_subscription_auth,
@@ -540,6 +541,32 @@ class TeamRunner:
             team_model_profile = load_team_model_profile(
                 self.repository_root, selected_model_profile_id
             )
+            # The formal six-role requirement lives here, not in the shared
+            # loader: a formal contract may only ride a profile that binds the
+            # complete formal role set.
+            if set(team_model_profile.bindings) != set(MODEL_PROFILE_PACKAGE_IDS):
+                raise TeamConfigurationError("team model profile role bindings drift")
+        elif multi_slice_workflow and model_profile_id is not None:
+            # R3.0-006 real validation: an explicit Team Model Profile binds a
+            # non-formal multi-slice run's selected roles.  Every roster
+            # package must be bound — an unbound role must fail closed here
+            # rather than silently ride a package or OpenAI default.
+            selected_model_profile_id = model_profile_id
+            team_model_profile = load_team_model_profile(
+                self.repository_root, selected_model_profile_id
+            )
+            missing_roles = sorted(
+                {
+                    agent.package.package_id
+                    for agent in config.profile.agents
+                }
+                - set(team_model_profile.bindings)
+            )
+            if missing_roles:
+                raise TeamConfigurationError(
+                    "team model profile is missing roster role bindings: "
+                    + ", ".join(missing_roles)
+                )
         elif model_profile_id is not None:
             raise TeamConfigurationError(
                 "model profile selection requires a formal run contract"
@@ -550,7 +577,7 @@ class TeamRunner:
             and formal_contract.requirement_id == "R2.3-003"
             and formal_contract.is_existing
         )
-        if formal_acceptance and not defer_existing_credential_until_preflight:
+        if team_model_profile is not None and not defer_existing_credential_until_preflight:
             # The Host ChatGPT subscription preflight runs only when the frozen
             # profile references the Codex built-in route, and strictly before
             # any external credential read, ledger reservation, run-root
@@ -592,7 +619,7 @@ class TeamRunner:
             frozen_task_overlay=task_overlay,
             model_profile_id=selected_model_profile_id,
         )
-        if formal_acceptance:
+        if team_model_profile is not None:
             self._assert_team_model_profile(baseline, team_model_profile)
         baseline_hash = StartLedger.baseline_hash(baseline)
         preflight_evidence: dict[str, Any] | None = None
@@ -1169,16 +1196,18 @@ class TeamRunner:
                 files["p2a_pass_artifact"] = p2a
         formal_contract = formal_run_contract_for(configuration)
         formal_acceptance_contract = formal_contract is not None
-        if formal_acceptance_contract:
+        selected_profile_id = model_profile_id
+        if selected_profile_id is None and formal_acceptance_contract:
             assert formal_contract is not None
-            selected_profile_id = (
-                model_profile_id or formal_contract.default_model_profile_id
-            )
+            selected_profile_id = formal_contract.default_model_profile_id
+        if selected_profile_id is not None:
             files["team_model_profile"] = (
                 self.repository_root
                 / MODEL_PROFILE_DIRECTORY
                 / f"{selected_profile_id}.yaml"
             )
+        if formal_acceptance_contract:
+            assert formal_contract is not None
             if formal_contract.requirement_id == "R2.3-003":
                 files["modeling_readonly"] = self.repository_root / "modeling_team/modeling_readonly.py"
         digests = {name: digest_file(path) for name, path in sorted(files.items())}
@@ -1414,14 +1443,16 @@ class TeamRunner:
             },
             "expected_matrix_binding": configuration.task.expected_matrix_binding or configuration.profile.expected_matrix_binding,
         }
-        if formal_acceptance_contract:
+        if selected_profile_id is not None:
             profile = load_team_model_profile(self.repository_root, selected_profile_id)
             if profile.digest != digests["team_model_profile"]:
-                raise TeamConfigurationError("formal team model profile digest is inconsistent")
+                raise TeamConfigurationError("team model profile digest is inconsistent")
             # Safe projection only: identity, repo-relative path, source digest,
             # and per-role provider/model/effort.  No endpoint, credential
             # path/value/digest, or provider free text.
             baseline["team_model_profile"] = profile.as_dict()
+        if formal_acceptance_contract:
+            assert formal_contract is not None
             if formal_contract.requirement_id == "R2.3-003":
                 baseline["runtime_contract"]["modeling_read_proxy"] = {
                     "server": "modeling_read_proxy",
@@ -1453,7 +1484,8 @@ class TeamRunner:
         # R3.0-002 increment 6(b) completion: the prepare-time preview loads
         # through the same dispatch as ``prepare`` itself, so a non-formal
         # multi-slice Task no longer trips the strict four-role loader here.
-        if task_declares_multi_slice_workflow(task_path):
+        multi_slice_workflow = task_declares_multi_slice_workflow(task_path)
+        if multi_slice_workflow:
             configuration = load_multi_slice_team_configuration(
                 profile_path, task_path, root=repository_root
             )
@@ -1462,7 +1494,11 @@ class TeamRunner:
                 profile_path, task_path, root=repository_root
             )
         formal_contract = formal_run_contract_for(configuration)
-        if model_profile_id is not None and formal_contract is None:
+        if (
+            model_profile_id is not None
+            and formal_contract is None
+            and not multi_slice_workflow
+        ):
             raise TeamConfigurationError(
                 "model profile selection requires a formal run contract"
             )

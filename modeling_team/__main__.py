@@ -436,19 +436,23 @@ def _await_monitor_extraction(handoff_root: Path, run_root: Path) -> None:
 
 
 def _resolve_model_profile_selection(
-    model_profile_id: str | None, formal_contract: FormalRunContract | None
+    model_profile_id: str | None,
+    formal_contract: FormalRunContract | None,
+    *,
+    multi_slice_workflow: bool = False,
 ) -> str | None:
     """Resolve the shared ``--model-profile`` selection for all three commands.
 
     ``validate``/``baseline``/``run`` accept only a restricted profile ID, never a
     path, URL, or environment override.  Omitting the flag keeps the formal run
-    contract default; a non-formal fixture can never be promoted to a formal
-    provider route.
+    contract default; a non-formal fixture outside the multi-slice workflow can
+    never be promoted to a formal provider route.  A multi-slice Task may carry
+    an explicit Team Model Profile binding (R3.0-006 real validation).
     """
 
     if model_profile_id is None:
         return None if formal_contract is None else formal_contract.default_model_profile_id
-    if formal_contract is None:
+    if formal_contract is None and not multi_slice_workflow:
         raise TeamConfigurationError(
             "model profile selection requires a formal run contract"
         )
@@ -1635,13 +1639,17 @@ def main() -> int:
             # dispatch so a multi-slice Task previews its baseline without the
             # strict four-role loader rejecting the three-role Profile.
             if task_declares_multi_slice_workflow(args.task):
+                baseline_multi_slice = True
                 baseline_formal_contract = None
             else:
+                baseline_multi_slice = False
                 baseline_formal_contract = formal_run_contract_for(
                     load_formal_team_configuration(args.profile, args.task, root=root)
                 )
             _resolve_model_profile_selection(
-                args.model_profile, baseline_formal_contract
+                args.model_profile,
+                baseline_formal_contract,
+                multi_slice_workflow=baseline_multi_slice,
             )
             manifest, baseline_hash = TeamRunner.preview_baseline(
                 repository_root=root,
@@ -1711,7 +1719,7 @@ def main() -> int:
         # All three commands share this one loader; validate additionally prints
         # the safe per-role requested/effective projection.
         selected_model_profile_id = _resolve_model_profile_selection(
-            args.model_profile, formal_contract
+            args.model_profile, formal_contract, multi_slice_workflow=multi_slice
         )
         # ``run`` deliberately defers the profile load to TeamRunner.prepare,
         # whose formal model gate has zero side effects before platform

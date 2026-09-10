@@ -54,3 +54,41 @@ run contract）；已有 formal 模型绑定列表也不包含 CQ。模型名/�
 截至 13:20 +08:00：授权后约 10 分钟用于技能调整、已证实的加载限制修复、模型可用性核对与
 机械验证（Claude 工作并行）；真实语义建模有效时间 0，原因是精确模型 ID 被官方拒绝且替代
 选择待用户回复。准备工作已收口，不追加 harness/控制机制或消耗 start 来重复证明该错误。
+
+2026-09-10 13:35 +08:00 用户确认“用 deepseek-flash”，三次授权继续有效。按已定位接线缺口，
+交外部 Claude Code 复用 Team Model Profile / ProviderSessions 为显式选择的 v3 roster 绑定模型，
+不改变 formal coordination 语义或引入新 harness。原模型拒绝及等待已使首次启动超过 20 分钟；
+此时仍为 0/3，修复范围仅包含实际模型绑定与必要验证。
+
+13:38–13:41 +08:00 最小可用性复核：`deepseek-flash` `/responses` HTTP 200，完整返回
+`response.completed`，返回模型字段包含所选 ID；canonical-mode HTTP 200，`canonical_store=rdf`、
+`product_write_mode=rdf_primary`。临时只读检查管理员凭据已撤销。尚无 semantic start。
+接线修改前 GitNexus：`prepare` LOW（2 直接调用、1 入口组），`load_team_model_profile` MEDIUM
+（5 直接调用、1 入口组），`start_roster` HIGH（4 直接调用、3 入口组），HIGH 已告知用户。
+本轮运行将使用 `workspaces/skill-role-20260910/runtime-checkout` 干净 checkout，待修复提交后
+切至该提交；backend `.env` 仅使用现有忽略配置的本地链接，不进入冻结业务输入或提交。
+
+## 显式 v3 模型绑定交付
+
+新增 `modeling_team/model-profiles/deepseek-flash-max.yaml`，四个生产角色加 Platform Examiner、
+Acceptance Judge 共六个实际角色均为 `deepseek-direct / deepseek-flash / max`。Runner/CLI 接受
+v3 multi-slice 显式配置，将其绑定与基线冻结；runtime 将 provider 会话与 formal 协作分离，
+模型配置与 thread/start 参数一致，会话结束时按原有机制关闭。旧 formal 配置未改，六角色
+完整性要求由 formal prepare 继续执行；未选配置的历史路径不变。
+
+T0：formal-only 模型配置限制属于编排接线偏好，本身不保护业务或写入结果；允许显式绑定并
+检查所选 roster 覆盖即可保留模型选择完整性。未引入新治理或 harness。主 Agent 审查补齐了
+Platform Examiner 绑定，并要求显式 `role: null` 继续被拒。基线函数影响 CRITICAL、若干
+runtime 共享函数 HIGH，均在修改前告知用户。
+
+最终 Team 全量回归：**1417 passed、1 skipped、321 subtests passed，76.31 秒**。
+前一轮 1415 passed、1 failed、1 skipped：旧 loader 测试固定要求六角色，按新配置边界调整，
+同时新增 formal prepare 缺角色拒绝测试。CLI validate/baseline 及真实配置生成路径检查通过；
+后者使用替身进程/RPC与哨兵凭据，不属于真实建模或语义 E2E。Ruff 保留基线原有的三项问题，
+无新增告警。外部开发详情保存在本轮 workspace 的 repair-model-binding-result.md。
+
+主 Agent 交付复核另将新增 Runner 测试的本机凭据依赖改成 tmp_path 下的 0600 哨兵文件；
+仅测试改动，相关文件 17 tests 通过。该新测试符号尚未索引，impact 返回 UNKNOWN；文本引用
+仅有测试定义，无生产调用。未修改 backend/frontend，不需要重启产品服务。
+截至代码交付，真实 semantic starts 仍 **0/3**；接线准备明显超时，主要有效时间消耗在共享
+runtime 兼容性排查、外部开发与必要回归，真实语义时间为 0。下一动作是冻结提交并直接启动。

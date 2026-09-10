@@ -8,7 +8,7 @@
 | 授权 ID | 时间（本地） | 内容 | 来源 |
 | --- | --- | --- | --- |
 | auth-r3-0-006-001 | 2026-08-27 20:16 +08:00 | 3 次 fresh start | 用户会话显式授权（选项确认） |
-| auth-r3-0-006-002 | 2026-09-10 13:10 +08:00 | 技能职责调整后进行 3 次 fresh start 验证；全部 Team 模型指定 `deepseek-v4.1-flash` | 用户本会话明确授权；精确模型 ID 的服务端可用性与后续决定见本轮记录 |
+| auth-r3-0-006-002 | 2026-09-10 13:10 +08:00 | 技能职责调整后进行 3 次 fresh start 验证；全部 Team 模型初始指定 `deepseek-v4.1-flash`，13:35 +08:00 用户改为 `deepseek-flash` | 用户本会话明确授权；精确模型 ID 的服务端可用性与后续决定见本轮记录 |
 
 ## 消耗记录
 
@@ -25,6 +25,6 @@
 ## 当前授权准备（auth-002）
 
 已消耗 0/3。2026-09-10 最小模型检查发现官方 `/responses` 对 `deepseek-v4.1-flash` 返回 HTTP 400，
-明确支持名为 `deepseek-flash`、`deepseek-v4-pro`；已向用户请求精确模型选择，不自行替换。
+明确支持名为 `deepseek-flash`、`deepseek-v4-pro`；用户于 13:35 +08:00 确认使用 `deepseek-flash`。
 模型可用性请求不是语义建模 start。本轮进度见
 [角色技能与真实验证记录](2026-09-10-role-scoped-skills-and-real-validation.md)。

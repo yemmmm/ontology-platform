@@ -254,6 +254,77 @@ def test_mixed_profile_routes_each_role_with_capability_effort(tmp_path: Path) -
         assert binding.effective_effort == _MIXED_EFFECTIVE[package_id]
 
 
+def test_deepseek_flash_is_in_the_closed_model_catalog() -> None:
+    # R3.0-006 real validation: the official DeepSeek model list carries
+    # ``deepseek-flash`` (``deepseek-v4.1-flash`` was rejected upstream with
+    # HTTP 400), so the catalog must accept the user-confirmed exact model.
+    assert "deepseek-flash" in DEEPSEEK_DIRECT_ROUTE.models
+    assert "deepseek-v4-flash" in DEEPSEEK_DIRECT_ROUTE.models
+    assert "deepseek-v4.1-flash" not in DEEPSEEK_DIRECT_ROUTE.models
+    assert "deepseek-flash" not in OPENAI_CODEX_ROUTE.models
+
+
+def test_deepseek_flash_max_profile_binds_every_v3_role_to_deepseek() -> None:
+    # The v3 multi-slice run binds the roster plus both CQ acceptance
+    # children; every one of them must be pinned to the DeepSeek direct
+    # route with the user-confirmed model, with no Codex subscription
+    # route anywhere in the profile.
+    profile = load_team_model_profile(ROOT, "deepseek-flash-max")
+    assert set(profile.bindings) == {
+        "coordinator",
+        "modeling",
+        "protocol",
+        "competency-question",
+        "platform-examiner",
+        "acceptance",
+    }
+    for binding in profile.bindings.values():
+        assert binding.provider_id == "deepseek-direct"
+        assert binding.model == "deepseek-flash"
+        assert binding.requested_effort == "max"
+        assert binding.effective_effort == "max"
+    assert profile.provider_ids() == ("deepseek-direct",)
+    assert profile_requires_codex_subscription_auth(profile) is False
+    assert uses_external_credential_session("deepseek-direct") is True
+
+
+def test_profile_accepts_a_declared_subset_of_the_role_universe(
+    tmp_path: Path,
+) -> None:
+    # Profiles declare non-empty subsets of the closed universe; only the
+    # formal-contract and roster-coverage checks may demand specific roles.
+    roles = {
+        package_id: {
+            "model_provider": "deepseek-direct",
+            "model": "deepseek-flash",
+            "model_reasoning_effort": "max",
+        }
+        for package_id in ("modeling", "competency-question")
+    }
+    _write_profile(tmp_path, "subset-fixture", roles)
+    profile = load_team_model_profile(tmp_path, "subset-fixture")
+    assert set(profile.bindings) == {"modeling", "competency-question"}
+
+
+def test_profile_rejects_null_and_unknown_role_declarations(tmp_path: Path) -> None:
+    _write_profile(tmp_path, "null-role-fixture", dict(_MIXED_ROLES))
+    directory = tmp_path / "modeling_team" / "model-profiles"
+    path = directory / "null-role-fixture.yaml"
+    value = yaml.safe_load(path.read_text(encoding="utf-8"))
+    # An explicit ``role: null`` is a malformed declaration, not an
+    # undeclared role: it must fail validation like any other bad binding.
+    value["roles"]["coordinator"] = None
+    path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    with pytest.raises(TeamConfigurationError, match="declaration for coordinator"):
+        load_team_model_profile(tmp_path, "null-role-fixture")
+
+    value["roles"]["coordinator"] = dict(_MIXED_ROLES["coordinator"])
+    value["roles"]["unknown-role"] = dict(_MIXED_ROLES["coordinator"])
+    path.write_text(yaml.safe_dump(value, sort_keys=False), encoding="utf-8")
+    with pytest.raises(TeamConfigurationError, match="role bindings drift"):
+        load_team_model_profile(tmp_path, "null-role-fixture")
+
+
 @pytest.mark.parametrize(
     "profile_id",
     ["../escape", "/absolute/path.yaml", "https://provider.example/profile", ""],
@@ -375,6 +446,47 @@ def test_runner_freezes_profile_across_external_preflight(
             )
     assert runner.run is None
     assert not (ROOT / "workspaces" / "modeling-runs" / run_id).exists()
+
+
+def test_runner_formal_contract_requires_the_complete_six_role_profile(
+    tmp_path: Path,
+) -> None:
+    # The exact-six requirement lives in ``TeamRunner.prepare`` since the
+    # shared loader widened to declared subsets: a formal contract may only
+    # ride a profile that binds the complete formal role set.
+    config = SimpleNamespace(
+        profile=SimpleNamespace(profile_id="r2-3-005-modeling-team", agents=()),
+        task=SimpleNamespace(schema_version=2, task_id="r2-3-005-formal-acceptance"),
+    )
+    incomplete = SimpleNamespace(
+        profile_id=DEFAULT_MODEL_PROFILE_ID,
+        bindings={
+            package_id: object()
+            for package_id in MODEL_PROFILE_PACKAGE_IDS[:-1]
+        },
+    )
+    runner = TeamRunner(repository_root=tmp_path, adapter=SimpleNamespace())
+    with (
+        patch(
+            "modeling_team.runner.load_formal_team_configuration",
+            return_value=config,
+        ),
+        patch(
+            "modeling_team.runner.load_team_model_profile",
+            return_value=incomplete,
+        ),
+    ):
+        with pytest.raises(
+            TeamConfigurationError, match="team model profile role bindings drift"
+        ):
+            runner.prepare(
+                run_id="luna-six-role-gate",
+                profile_path=tmp_path / "profile.yaml",
+                task_path=tmp_path / "task.yaml",
+                scope={"mode": "create"},
+            )
+    assert runner.run is None
+    assert not (tmp_path / "workspaces").exists()
 
 
 # --------------------------------------------------------------------------

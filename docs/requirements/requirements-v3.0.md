@@ -354,6 +354,12 @@ R3.0-002～R3.0-005 实现并分别通过测试后，才可在用户授权的真
 结果是否正确。任何一项通过都不能替代另外两项；直接连接数据库能读取样例列不构成语义授权失败，
 但也不能被解释为业务数据安全已经成立。
 
+2026-09-10 用户授权的三次验证使用显式 `deepseek-flash-max` Team Model Profile：四个生产角色
+（含 CQ）与后续 Platform Examiner、Acceptance Judge 均绑定 `deepseek-flash`。v3 multi-slice
+复用现有模型配置与 provider 会话路径，模型绑定独立于 formal 协作开关；冻结所选模型配置，
+要求所选 roster 的角色绑定完整，不回退默认模型。旧 formal 六角色要求与默认配置保持不变。
+本调整不改变业务审核、隐藏题隔离、写入完整性或真实语义验收标准。
+
 2026-09-09 的执行资产与机械接线交付记录见
 [执行链缺口收口设计附录](../delivery/designs/2026-09-09-v3-execution-gap-closure-design.md)及
 [共享测试计划](../delivery/test-plans/2026-09-09-v3-execution-gap-closure-test-plan.md)。

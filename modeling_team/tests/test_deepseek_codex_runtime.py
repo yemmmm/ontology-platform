@@ -339,6 +339,181 @@ def test_formal_start_roster_ignores_ambient_deepseek_and_llm_sentinels(
     adapter.stop()
 
 
+def _multi_slice_run(root: Path) -> SimpleNamespace:
+    for role in ("coordinator", "modeling", "protocol", "competency-question"):
+        (root / "sources" / role).mkdir(parents=True)
+    return SimpleNamespace(
+        root=root,
+        run_id="deepseek-multi-slice-run",
+        protocol_key="platform-key",
+        configuration=SimpleNamespace(
+            task=SimpleNamespace(schema_version=2, task_id="r3-0-006-real-full")
+        ),
+        acceptance=None,
+    )
+
+
+_ROSTER_ROLES = ("coordinator", "modeling", "protocol", "competency-question")
+
+
+def test_multi_slice_profile_binding_covers_roster_and_cq_children(
+    tmp_path: Path,
+) -> None:
+    # R3.0-006 real validation: a non-formal multi-slice run with an explicit
+    # Team Model Profile resolves every roster role -- and both CQ acceptance
+    # children the carrier launches (Platform Examiner production side and
+    # the Judge) -- from the frozen profile, with no OpenAI fallback.
+    repo = repository_root()
+    adapter = CodexRuntimeAdapter(repository_root=repo)
+    assert adapter._coordination_enabled is False
+    adapter._team_model_profile = load_team_model_profile(repo, "deepseek-flash-max")
+    try:
+        for role in _ROSTER_ROLES:
+            agent = _agent(tmp_path / "roster", role)
+            binding = adapter._validated_model_override(agent.package, formal=False)
+            assert isinstance(binding, RoleModelBinding)
+            assert binding.package_id == role
+            assert binding.provider_id == "deepseek-direct"
+            assert binding.model == "deepseek-flash"
+            assert binding.effective_effort == "max"
+        for child in ("platform-examiner", "acceptance"):
+            package = SimpleNamespace(role="source-specialist", package_id=child)
+            binding = adapter._validated_model_override(package, formal=False)
+            assert binding.package_id == child
+            assert (binding.provider_id, binding.model) == ("deepseek-direct", "deepseek-flash")
+    finally:
+        adapter.stop()
+
+
+def test_multi_slice_profile_bound_config_and_env_cover_all_roster_roles(
+    monkeypatch, tmp_path: Path
+) -> None:
+    repo = repository_root()
+    run = _multi_slice_run(tmp_path / "run")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "process-secret")
+    host_auth = tmp_path / "auth.json"
+    host_auth.write_text("{}", encoding="utf-8")
+    calls: list[tuple[list[str], dict[str, object]]] = []
+
+    def process_factory(command: list[str], **kwargs: object) -> _Process:
+        calls.append((command, kwargs))
+        return _Process(command, kwargs)
+
+    adapter = CodexRuntimeAdapter(
+        repository_root=repo,
+        use_bwrap=False,
+        process_factory=process_factory,
+    )
+    # Deliberately NOT formal: provider binding must survive without
+    # formal-only coordination.
+    adapter._coordination_enabled = False
+    adapter._team_model_profile = load_team_model_profile(repo, "deepseek-flash-max")
+    adapter._provider_sessions = _SessionsDouble()
+    monkeypatch.setattr(adapter, "preflight_host_auth", lambda: host_auth)
+
+    try:
+        for role in _ROSTER_ROLES:
+            agent = _agent(tmp_path, role)
+            adapter._write_config(run, agent)
+            config = (agent.home / "config.toml").read_text(encoding="utf-8")
+            assert 'model = "deepseek-flash"' in config
+            assert 'model_provider = "deepseek-direct"' in config
+            assert 'model_reasoning_effort = "max"' in config
+            assert "base_url = \"http://127.0.0.1:" in config
+            assert 'env_key = "DEEPSEEK_API_KEY"' not in config
+            assert "process-secret" not in config
+            adapter._start_process(agent)
+            env = calls[-1][1]["env"]
+            assert "DEEPSEEK_API_KEY" not in env
+            assert not (agent.home / "auth.json").exists()
+            assert agent.auth_path is None
+            assert agent.credential_mode == "provider_proxy"
+        assert len(calls) == 4
+    finally:
+        adapter.stop()
+
+
+def test_multi_slice_thread_start_model_binding_follows_the_profile(
+    tmp_path: Path,
+) -> None:
+    adapter = CodexRuntimeAdapter(repository_root=repository_root())
+    adapter._coordination_enabled = False
+    adapter._team_model_profile = load_team_model_profile(
+        repository_root(), "deepseek-flash-max"
+    )
+    starts: dict[str, dict[str, object]] = {}
+
+    for role in _ROSTER_ROLES:
+        agent = _agent(tmp_path / "profile-bound", role)
+
+        def rpc(_agent: _Agent, method: str, params: dict[str, object]) -> dict[str, object]:
+            if method == "skills/list":
+                return {
+                    "data": [
+                        {
+                            "skills": [
+                                {
+                                    "name": path.parent.name,
+                                    "path": f"/skills/{path.parent.name}/SKILL.md",
+                                    "enabled": True,
+                                }
+                                for path in agent.package.required_skills
+                            ]
+                        }
+                    ]
+                }
+            if method == "thread/start":
+                starts[role] = dict(params)
+                return {"thread": {"id": f"thread-{role}"}}
+            return {}
+
+        adapter._rpc = rpc  # type: ignore[method-assign]
+        adapter._require_expected_mcp_servers = lambda _agent: None  # type: ignore[method-assign]
+        adapter._initialize(agent)
+
+    assert set(starts) == set(_ROSTER_ROLES)
+    assert {params["model"] for params in starts.values()} == {"deepseek-flash"}
+    adapter.stop()
+
+
+def test_multi_slice_start_roster_starts_and_stops_provider_sessions(
+    monkeypatch, tmp_path: Path
+) -> None:
+    credential = tmp_path / "multi-slice-deepseek.env"
+    credential.write_text("DEEPSEEK_API_KEY=file-only-sentinel\n", encoding="utf-8")
+    credential.chmod(0o600)
+    run = _multi_slice_run(tmp_path / "run")
+    run.team_model_profile = load_team_model_profile(
+        repository_root(), "deepseek-flash-max"
+    )
+    run.provider_credential_bindings = {
+        "deepseek-direct": preflight_deepseek_credential(credential)
+    }
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "ambient-deepseek-sentinel")
+    adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+    monkeypatch.setattr(
+        adapter,
+        "_resolve_deepseek_api_key",
+        lambda: (_ for _ in ()).throw(AssertionError("profile-bound runtime resolved ambient key")),
+    )
+    try:
+        assert adapter.start_roster(run, []) == []
+        assert adapter._coordination_enabled is False
+        assert adapter._provider_sessions is not None
+        assert adapter._provider_sessions.base_url_for("deepseek-direct").startswith(
+            "http://127.0.0.1:"
+        )
+        assert all(
+            sentinel.encode() not in adapter._secret_audit_values
+            for sentinel in ("ambient-deepseek-sentinel", "file-only-sentinel")
+        )
+    finally:
+        adapter.stop()
+    # The profile-bound non-formal lifecycle must stop and wipe its sessions
+    # exactly like the formal one; a live listener may never outlive stop().
+    assert adapter._provider_sessions is None
+
+
 @pytest.mark.parametrize("kind", ["source", "platform"])
 def test_formal_examiner_config_env_and_argv_are_secret_free(
     monkeypatch, tmp_path: Path, kind: str

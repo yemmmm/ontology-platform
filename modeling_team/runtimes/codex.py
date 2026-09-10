@@ -28,7 +28,7 @@ from ..model_manifest import FORMAL_MODEL_TASK_ID
 from ..model_routing import (
     CODEX_AUTH_MODE,
     CODEX_TOML_PROVIDER_ID,
-    MODEL_PROFILE_PACKAGE_IDS,
+    MODEL_PROFILE_ROLE_UNIVERSE,
     PROVIDER_CATALOG,
     REQUESTED_EFFORT_TIERS,
     ProviderSessionManager,
@@ -1306,14 +1306,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         *,
         formal: bool,
     ) -> tuple[str, str, str] | RoleModelBinding | None:
-        """Resolve a package model from the frozen formal profile when required."""
+        """Resolve a package model from the frozen role profile when one is bound.
 
-        if formal:
+        A formal run always carries its validated profile; a non-formal
+        multi-slice run carries one only when the caller selected an explicit
+        Team Model Profile.  Without a bound profile the legacy declarative
+        package override applies unchanged.
+        """
+
+        if formal or self._team_model_profile is not None:
             return self._validated_formal_role_binding(package.package_id)
         return _codex_package_model_override(package)
 
     def _validated_formal_role_binding(self, package_id: str) -> RoleModelBinding:
-        """Resolve one exact formal role binding from the frozen profile.
+        """Resolve one exact role binding from the frozen profile.
 
         ``TeamRunner.prepare`` validates the on-disk profile and freezes its digest
         before any Runtime starts.  Keep this second, Runtime-local guard because
@@ -1325,7 +1331,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         collide if ``AgentPackage.role`` were used here.
         """
 
-        if package_id not in MODEL_PROFILE_PACKAGE_IDS:
+        if package_id not in MODEL_PROFILE_ROLE_UNIVERSE:
             raise CodexRuntimeError("formal model profile package binding is invalid")
         profile = self._team_model_profile
         if profile is None:
@@ -3575,55 +3581,61 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 self._inactivity_failures.clear()
         self._acceptance = getattr(run, "acceptance", None)
         self._coordination_enabled = self._is_formal_acceptance_run(run)
-        self._team_model_profile = (
-            getattr(run, "team_model_profile", None)
-            if self._coordination_enabled
-            else None
-        )
+        # Provider/model binding is separate from formal-only coordination: a
+        # non-formal multi-slice run with an explicit Team Model Profile binds
+        # its roles and provider sessions here without flipping any
+        # coordination contract (turn binding, transport surface, protocol
+        # mechanics all stay keyed on ``_coordination_enabled``).
+        self._team_model_profile = getattr(run, "team_model_profile", None)
+        if self._team_model_profile is not None and not isinstance(
+            self._team_model_profile, TeamModelProfile
+        ):
+            raise CodexRuntimeError("runtime model profile is invalid")
         if self._coordination_enabled and not isinstance(
             self._team_model_profile, TeamModelProfile
         ):
             raise CodexRuntimeError("formal runtime model profile is unavailable")
-        if self._coordination_enabled:
+        external_provider_ids: tuple[str, ...] = ()
+        if self._team_model_profile is not None:
             external_provider_ids = tuple(
                 provider_id
                 for provider_id in self._team_model_profile.provider_ids()
                 if uses_external_credential_session(provider_id)
             )
-            if external_provider_ids:
-                # One loopback session per external credential-backed provider
-                # the profile actually references, shared by all roles on that
-                # provider.  Startup re-opens each credential with the
-                # no-follow/revalidation contract; failures are typed and leave
-                # no session behind.  An OpenAI-only profile creates no
-                # manager: ``openai-codex`` rides Codex's built-in route with
-                # the staged Host ChatGPT login instead.
-                credential_bindings = getattr(run, "provider_credential_bindings", None)
-                if not isinstance(credential_bindings, Mapping) or not credential_bindings:
-                    raise CodexRuntimeError(
-                        "formal provider credential bindings are unavailable"
-                    )
-                try:
-                    sessions = ProviderSessionManager(
-                        credential_bindings,
-                        on_failure=self._on_provider_session_failure,
-                    )
-                    sessions.start()
-                except Exception as exc:
-                    with self._runtime_failure_lock:
-                        self._runtime_failures.append(
-                            (
-                                "provider-sessions",
-                                {
-                                    "category": "runtime/infrastructure",
-                                    "reason_code": "provider-session-start-failed",
-                                },
-                            )
+        if external_provider_ids:
+            # One loopback session per external credential-backed provider
+            # the profile actually references, shared by all roles on that
+            # provider.  Startup re-opens each credential with the
+            # no-follow/revalidation contract; failures are typed and leave
+            # no session behind.  An OpenAI-only profile creates no
+            # manager: ``openai-codex`` rides Codex's built-in route with
+            # the staged Host ChatGPT login instead.
+            credential_bindings = getattr(run, "provider_credential_bindings", None)
+            if not isinstance(credential_bindings, Mapping) or not credential_bindings:
+                raise CodexRuntimeError(
+                    "provider credential bindings are unavailable"
+                )
+            try:
+                sessions = ProviderSessionManager(
+                    credential_bindings,
+                    on_failure=self._on_provider_session_failure,
+                )
+                sessions.start()
+            except Exception as exc:
+                with self._runtime_failure_lock:
+                    self._runtime_failures.append(
+                        (
+                            "provider-sessions",
+                            {
+                                "category": "runtime/infrastructure",
+                                "reason_code": "provider-session-start-failed",
+                            },
                         )
-                    raise CodexRuntimeError(
-                        "formal provider session startup failed"
-                    ) from exc
-                self._provider_sessions = sessions
+                    )
+                raise CodexRuntimeError(
+                    "provider session startup failed"
+                ) from exc
+            self._provider_sessions = sessions
         # R3.0-002: derive the sandbox bind-mount gate flag from the same
         # single predicate as the MCP env point in ``_write_config`` (formal
         # acceptance OR multi_slice_workflow, both v2-only).
@@ -4121,6 +4133,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             and getattr(self, "_deepseek_enabled", False)
         )
         model_override = self._validated_model_override(agent.package, formal=formal)
+        # A bound Team Model Profile (formal, or an explicit multi-slice
+        # selection) projects the same credential staging as a formal run.
+        profile_bound = isinstance(model_override, RoleModelBinding)
         capability_operations = self._role_capability_operations(agent.package.role, run=run)
         formal_capability = bool(capability_operations)
         formal_acceptance_auth = (
@@ -4136,14 +4151,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError(
                     "v2 Protocol mechanics MCP run ID drifts from the active runtime"
                 )
-        # Only the Protocol receives its platform key/config.  Formal roles on
-        # external credential routes use the shared loopback provider sessions
-        # and therefore never receive auth.json; formal ``openai-codex`` roles
-        # receive the Host ChatGPT login cache staged into their own isolated
-        # CODEX_HOME, unlinked by the first-turn auth barrier before any
-        # model-selected dispatch; historical/non-formal roles retain private
-        # auth staging.  auth.json is never projected to a deepseek-direct role.
-        if formal:
+        # Only the Protocol receives its platform key/config.  Roles bound to
+        # an external credential route (formal, or profile-bound multi-slice)
+        # use the shared loopback provider sessions and therefore never
+        # receive auth.json; ``openai-codex`` roles receive the Host ChatGPT
+        # login cache staged into their own isolated CODEX_HOME, unlinked by
+        # the first-turn auth barrier before any model-selected dispatch;
+        # historical/non-formal roles retain private auth staging.  auth.json
+        # is never projected to a deepseek-direct role.
+        if formal or profile_bound:
             binding_provider_id = (
                 model_override.provider_id
                 if isinstance(model_override, RoleModelBinding)
@@ -4314,7 +4330,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             )
         if isinstance(model_override, RoleModelBinding):
             binding = model_override
-            if formal and not uses_external_credential_session(binding.provider_id):
+            if not uses_external_credential_session(binding.provider_id):
                 # ``openai-codex`` projects onto Codex's built-in provider with
                 # no custom provider table and no base URL.  ``lines`` starts
                 # with the scalar sandbox/web_search settings and the
@@ -4333,18 +4349,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     f'model_reasoning_effort = "{binding.effective_effort}"',
                     *lines,
                 ]
-                if formal:
-                    sessions = self._provider_sessions
-                    if sessions is None:
-                        raise CodexRuntimeError("formal provider sessions are unavailable")
-                    provider_lines = _formal_provider_config_lines(
-                        binding, sessions.base_url_for(binding.provider_id)
-                    )
-                    # ``lines`` already carries the package model trio above.  Keep one
-                    # authoritative trio and append only the provider/shell tables;
-                    # repeating the scalar keys makes the real app-server reject the
-                    # config before initialize with a TOML duplicate-key error.
-                    lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
+                # An external-credential binding always rides the shared
+                # loopback provider sessions (formal or profile-bound alike).
+                sessions = self._provider_sessions
+                if sessions is None:
+                    raise CodexRuntimeError("formal provider sessions are unavailable")
+                provider_lines = _formal_provider_config_lines(
+                    binding, sessions.base_url_for(binding.provider_id)
+                )
+                # ``lines`` already carries the package model trio above.  Keep one
+                # authoritative trio and append only the provider/shell tables;
+                # repeating the scalar keys makes the real app-server reject the
+                # config before initialize with a TOML duplicate-key error.
+                lines = provider_lines[:3] + lines[3:] + provider_lines[3:]
         elif model_override is not None:
             model, provider, reasoning = model_override
             lines = [
@@ -5622,12 +5639,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             },
             "sandbox": self._thread_sandbox(agent),
         }
-        if self._coordination_enabled:
-            # Formal R2.3-005 binds the App Server's Thread to the same validated
-            # role binding that generated config.toml.  Non-formal and archived
-            # R2.3-002 starts intentionally keep the legacy request shape (no model).
+        if self._team_model_profile is not None:
+            # A bound profile (formal R2.3-005, or an explicit multi-slice
+            # selection) binds the App Server's Thread to the same validated
+            # role binding that generated config.toml.  Non-profiled and
+            # archived R2.3-002 starts intentionally keep the legacy request
+            # shape (no model).
             thread_start_params["model"] = self._validated_model_override(
-                agent.package, formal=True
+                agent.package, formal=self._coordination_enabled
             ).model
         result = self._rpc(agent, "thread/start", thread_start_params)
         thread_id = (
@@ -6799,7 +6818,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def receive_messages(self) -> list[RuntimeMessage]:
         sessions = self._provider_sessions
-        if self._coordination_enabled and sessions is not None:
+        # Sessions exist exactly while a profile binding owns them (formal or
+        # explicit multi-slice); a dead upstream is a typed runtime failure.
+        if sessions is not None:
             if not sessions.listening():
                 self._on_provider_session_failure("provider-upstream-failed")
         for agent in self.agents.values():
@@ -7106,6 +7127,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     and agent.agent_id not in self._secret_audit_failures
                     and agent.agent_id not in self._stderr_drain_failures
                 )
+        audit_secret_values: tuple[bytes, ...] = ()
         if formal:
             # Snapshot provider credentials while the sessions still own them;
             # the formal audit itself is intentionally deferred until after
@@ -7115,37 +7137,41 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             except Exception:
                 audit_secret_values = ()
                 self._record_cleanup_error("aggregate", "aggregate-audit-failed")
-            sessions_failed = False
-            sessions = self._provider_sessions
-            counters: dict[str, dict[str, Any]] = {}
-            try:
-                if sessions is not None:
-                    counters = {
-                        provider_id: dict(snapshot)
-                        for provider_id, snapshot in sorted(sessions.snapshot().items())
-                    }
-                    # Every referenced session is independently stopped and
-                    # wiped; one failure cannot skip the others.
-                    reports = sessions.stop()
-                    self._provider_stop_status = {
-                        provider_id: dict(report)
-                        for provider_id, report in reports.items()
-                        if isinstance(report, Mapping)
-                    }
-                    sessions_failed = any(
-                        bool(report.get("lifecycle_failure"))
-                        for report in self._provider_stop_status.values()
-                    )
-            except Exception:
-                sessions_failed = True
-            finally:
-                if sessions_failed:
-                    self._record_cleanup_error("provider-sessions", "provider-session-cleanup-failed")
-                    self._on_provider_session_failure("provider-session-cleanup-failed")
-                self._provider_sessions = None
-                # Each session owns its mutable key; this list owns only audit
-                # sentinels.  Both are released at the outer lifecycle edge.
-                self._secret_audit_values.clear()
+        # Provider sessions are stopped and wiped whenever they exist — the
+        # profile-bound multi-slice lifecycle shares the formal stop boundary
+        # so no loopback listener or key can outlive the run.
+        sessions_failed = False
+        sessions = self._provider_sessions
+        counters: dict[str, dict[str, Any]] = {}
+        try:
+            if sessions is not None:
+                counters = {
+                    provider_id: dict(snapshot)
+                    for provider_id, snapshot in sorted(sessions.snapshot().items())
+                }
+                # Every referenced session is independently stopped and
+                # wiped; one failure cannot skip the others.
+                reports = sessions.stop()
+                self._provider_stop_status = {
+                    provider_id: dict(report)
+                    for provider_id, report in reports.items()
+                    if isinstance(report, Mapping)
+                }
+                sessions_failed = any(
+                    bool(report.get("lifecycle_failure"))
+                    for report in self._provider_stop_status.values()
+                )
+        except Exception:
+            sessions_failed = True
+        finally:
+            if sessions_failed:
+                self._record_cleanup_error("provider-sessions", "provider-session-cleanup-failed")
+                self._on_provider_session_failure("provider-session-cleanup-failed")
+            self._provider_sessions = None
+            # Each session owns its mutable key; this list owns only audit
+            # sentinels.  Both are released at the outer lifecycle edge.
+            self._secret_audit_values.clear()
+        if formal:
             aggregate = self._build_formal_cleanup_aggregate(
                 roots,
                 process_surfaces,
@@ -7181,9 +7207,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 self._private_credentials_destroyed[agent.agent_id] = bool(
                     aggregate["private_credentials_destroyed"]
                 )
-        else:
-            self._provider_sessions = None
-            self._secret_audit_values.clear()
 
     def stop(self) -> None:
         with self._cleanup_lock:
@@ -7196,10 +7219,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             finally:
                 # The session/key boundary is outermost: even an unexpected
                 # child/role cleanup exception cannot leave a provider key in
-                # memory.  The normal formal path already stopped and detached
-                # the sessions; this is the fail-closed fallback for partial stop.
+                # memory.  The normal path already stopped and detached the
+                # sessions; this is the fail-closed fallback for partial stop,
+                # for formal and profile-bound multi-slice lifecycles alike.
                 sessions = self._provider_sessions
-                if self._coordination_enabled and sessions is not None:
+                if sessions is not None:
                     try:
                         reports = sessions.stop()
                         if isinstance(reports, Mapping):
