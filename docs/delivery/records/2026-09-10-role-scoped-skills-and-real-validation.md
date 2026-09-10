@@ -199,3 +199,37 @@ error字段的硬拒绝，仅保留安全投影；保留会话归属、核心类
 gpt-5.6-luna/xhigh、Reply OK探针观察到agentMessage/delta和turn/completed；无业务输入，
 不计semantic start。探针未保留completion status或有效turn digest，只是响应可用性线索，
 不替代真实Team匹配终态或语义验收。原run已清理，下一步使用剩余额度运行修复版本。
+
+## auth-003 第二轮实际结果
+
+15:48:21 +08:00，r30006-20260910-auth003-start2在clean checkout e62e056启动。四角色
+都出现真实thread/turn事件，模型绑定仍为gpt-5.6-luna/openai/xhigh。旧malformed误杀
+不再出现；provider-error安全日志持续记录responseStreamDisconnected/will_retry=true，
+运行中观察到16条，终态冻结文件复核为20条。300秒无输出后Coordinator触发llm-inactivity-timeout，第一失败层仍为
+runtime/infrastructure的提供方流问题，不归为建模质量问题或CQ内容问题。
+
+最终state为TERMINAL_REPORT_COMPLETE，host runtime-failure条目保留cleanup：空scope
+删除、Project/Ontology删除、admin/protocol keys撤销、无在途Attempt；exit0不是模型PASS。
+无业务/tool输出、CQ发布或候选写入。auth-003累计2/3，剩余1/3。Claude Code只读比较
+Team受控环境/auth生命周期与成功空工作区探针，定位后再决定最后一次start；不换模型绕过。
+
+
+## 16:18 有界诊断收口
+
+冻结provider-error.jsonl复核为20条，全部responseStreamDisconnected、will_retry=true；
+先前16条是运行中的中间计数。角色本地日志显示WebSocket传输重复约15秒超时后回退，
+但这只确定传输失败层，不证明大提示/xhigh导致超时。无401不能排除认证生命周期问题；
+host根路径TLS可达也不能排除namespace中的真实模型长连问题。
+
+宿主启动shell确认http_proxy/https_proxy存在，adapter已有六个代理环境变量转发，
+未重复添加代理代码。Codex 0.153.4把responses_websockets及v2标为removed；无模型请求的
+配置核查未取得能够强制SSE且保持内置OpenAI订阅认证的确证方案。该诊断在约9分钟收口，
+没有修改生产配置，没有调大超时或刷新重试空闲计时，没有创建新模型探针或semantic start。
+诊断会话已停止；保留gitignored诊断过程和原run证据，不存在继续监控承诺。
+
+本次阶段判定：技能/模型调度及两项窄修复完成并已验证；真实建模仍为PARTIAL，当前推进
+BLOCKED于runtime/infrastructure。L1 Modeling quality与独立语义验收均无可判定结果。
+有效时间主要在平台及运行排查，语义建模不足一半，按AGENTS.md停止继续扩展排查。
+auth-003仍消耗2/3、剩1/3；不因本次收口作废，不申请重复授权，也不盲目重开相同配置。
+下一步须先获得可验证的传输/环境修复，或用户明确变更本轮模型路线，再使用剩余额度。
+CQ审核/冻结尚未获授权且没有可审草稿，不能以业务代答授权替代。

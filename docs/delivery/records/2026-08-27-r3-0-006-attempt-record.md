@@ -32,16 +32,17 @@
 
 ## 当前授权准备（auth-002）
 
-已消耗 3/3，剩余 0/3；第三轮 PAUSED，保留同一线程等待业务回答。2026-09-10 最小模型检查发现官方 `/responses` 对 `deepseek-v4.1-flash` 返回 HTTP 400，
+已消耗 3/3，剩余 0/3；第三轮已完成六项授权访谈，因CQ_OPERATION缺失导入停止并清理。2026-09-10 最小模型检查发现官方 `/responses` 对 `deepseek-v4.1-flash` 返回 HTTP 400，
 明确支持名为 `deepseek-flash`、`deepseek-v4-pro`；用户于 13:35 +08:00 确认使用 `deepseek-flash`。
 模型可用性请求不是语义建模 start。本轮进度见
 [角色技能与真实验证记录](2026-09-10-role-scoped-skills-and-real-validation.md)。
 
 ## 当前授权（auth-003）
 
-0/3已消耗，3/3可用；当前先安全继续auth-002第三轮，已获用户业务代答与必要新增资料授权，
-经原有访谈及CQ私有通道送入BS-20260910-01。现有冻结会话不换模型、不重复计数。
-新start按本授权时高峰选择gpt-5.6-luna/xhigh；不并行复制尚可继续的同一建模目标。
+2/3已消耗，1/3可用；auth-003两轮均已结束并清理空scope。第一轮错误通知被旧parser误判；
+第二轮已正确保留响应流断开和原生重试，300秒无输出后终止。有界诊断确认WebSocket超时但底层原因未闭合，
+最后一次尚未启动。继续复用用户业务代答与必要资料补充授权及BS-20260910-01至06，
+新start按本授权时高峰选择gpt-5.6-luna/xhigh，不改历史冻结会话模型。
 
 ### auth-002 第三轮收口（15:20 +08:00）
 
@@ -65,3 +66,20 @@ auth-003累计1/3，余额2/3；状态与实际thread模型证据继续观察，
 前未落app-server-events，当前无法据此判定模型/网络原因；Claude Code负责核对当前协议
 与错误形状。scope deleted-empty、Project/Ontology已删除、keys撤销、无在途Attempt；
 无业务分析/CQ提交/候选写入。auth-003已消耗1/3、剩2/3，修复/定位前不再fresh start。
+
+### auth-003 第二轮启动
+
+`r30006-20260910-auth003-start2`，2026-09-10 15:48:21 +08:00，clean checkout e62e056，
+openai-luna-xhigh；累计2/3，剩1/3。原始错误解析和真实CQ发布是否恢复仍需本轮观察，
+不把探针或单元测试当作真实建模PASS。
+
+### auth-003 第二轮终态
+
+07:54:20 UTC，连续300秒无模型输出后llm-inactivity-timeout；第一原因保留为此前四角色
+responseStreamDisconnected/will_retry=true反复重试，旧malformed解析误杀已实际解除。
+未产生业务/tool/CQ发布；当前为runtime/infrastructure，不能评模型质量。有界只读诊断已结束，
+冻结错误记录为20条；尚无确证传输修复，剩1/3保留，不重开相同失败路径。
+
+第二轮cleanup回执位于host runtime-failure条目（最终state为TERMINAL_REPORT_COMPLETE，
+不再携带cleanup字段）：scope deleted-empty、Project/Ontology删除、admin/protocol keys
+撤销、no_in_flight_attempts=true；退出码0只表示终态报告已收口，不表示真实建模通过。
