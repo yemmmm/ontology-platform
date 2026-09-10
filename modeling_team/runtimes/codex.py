@@ -269,7 +269,9 @@ _PROVIDER_ERROR_VARIANTS = frozenset(
         "contextWindowExceeded",
         "sessionBudgetExceeded",
         "usageLimitExceeded",
+        "rateLimitExceeded",
         "serverOverloaded",
+        "misalignmentPolicyViolation",
         "cyberPolicy",
         "internalServerError",
         "unauthorized",
@@ -5153,8 +5155,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         error = params.get("error")
         if not isinstance(will_retry, bool) or not isinstance(error, dict):
             return False, malformed
-        if any(key not in {"message", "codexErrorInfo", "additionalDetails"} for key in error):
-            return False, malformed
+        # Unused provider-authored metadata (``additionalDetails``,
+        # ``misalignment``, anything newer) is neither interpreted nor retained:
+        # the safe projection below keeps only the classified fields.  Rejecting
+        # unknown error keys would kill runs on harmless protocol drift, as the
+        # codex-cli ``TurnError.misalignment`` field did.
         if not isinstance(error.get("message"), str):
             return False, malformed
         if "additionalDetails" in error and error.get("additionalDetails") is not None and not isinstance(error.get("additionalDetails"), str):

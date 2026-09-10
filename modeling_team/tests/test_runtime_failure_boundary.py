@@ -116,6 +116,143 @@ def test_malformed_provider_error_latches_without_provider_text(tmp_path: Path, 
     assert adapter.consume_runtime_failures()[0][1]["variant"] == "malformed"
 
 
+def _current_protocol_turn_error(
+    *, will_retry: bool = True, **error_overrides: object
+) -> dict[str, object]:
+    """TurnError exactly as codex-cli 0.153.4 serializes it.
+
+    Field set and nullability come from ``codex app-server generate-ts``
+    (``TurnError.ts``): ``misalignment`` has no ``skip_serializing_if``, so it is
+    present on every notification, null unless the provider blocked on
+    misalignment grounds.
+    """
+
+    error: dict[str, object] = {
+        "message": "provider text must never be retained",
+        "codexErrorInfo": {"responseStreamConnectionFailed": {"httpStatusCode": 503}},
+        "additionalDetails": None,
+        "misalignment": None,
+    }
+    error.update(error_overrides)
+    return {
+        "method": "error",
+        "params": {
+            "threadId": "thread-1",
+            "turnId": "turn-1",
+            "willRetry": will_retry,
+            "error": error,
+        },
+    }
+
+
+@pytest.mark.parametrize(
+    "error_overrides",
+    [
+        {},
+        # codex-cli serializes this on every notification; null unless the
+        # provider blocked on misalignment grounds.
+        {"misalignment": None},
+        # Unused provider-authored metadata: neither interpreted nor retained,
+        # so it must not kill a retryable notification.
+        {
+            "misalignment": {
+                "errorType": "canary-classification",
+                "detailedExplanation": "canary explanation text",
+                "steer": {"message": "canary steer text"},
+            },
+            "futureField": "canary future metadata",
+        },
+    ],
+)
+def test_current_protocol_error_notification_is_retryable_not_malformed(
+    tmp_path: Path, error_overrides: dict[str, object]
+) -> None:
+    """Legal nullable/unused ``TurnError`` metadata must not latch a run failure."""
+
+    adapter = CodexRuntimeAdapter(repository_root=tmp_path)
+    adapter._run_root = tmp_path
+    agent = _agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+    agent.last_output_monotonic = 123.0
+
+    adapter._notification(agent, _current_protocol_turn_error(**error_overrides))
+
+    assert agent.runtime_failure is None
+    assert adapter.consume_runtime_failures() == []
+    assert agent.last_output_monotonic == 123.0
+    evidence = (tmp_path / "evidence" / "provider-error.jsonl").read_text()
+    assert "provider text" not in evidence
+    for canary in ("canary-classification", "canary explanation text", "canary steer text", "canary future metadata"):
+        assert canary not in evidence
+    assert "responseStreamConnectionFailed" in evidence
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ["rateLimitExceeded", "misalignmentPolicyViolation"],
+)
+def test_current_protocol_error_info_variants_are_classified(tmp_path: Path, variant: str) -> None:
+    adapter = CodexRuntimeAdapter(repository_root=tmp_path)
+    adapter._run_root = tmp_path
+    agent = _agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+
+    adapter._notification(
+        agent,
+        _current_protocol_turn_error(codexErrorInfo=variant),
+    )
+
+    assert agent.runtime_failure is None
+    evidence = (tmp_path / "evidence" / "provider-error.jsonl").read_text()
+    assert f'"variant": "{variant}"' in evidence
+
+
+def test_current_protocol_terminal_error_still_latches(tmp_path: Path) -> None:
+    adapter = CodexRuntimeAdapter(repository_root=tmp_path)
+    adapter._run_root = tmp_path
+    agent = _agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+
+    adapter._notification(
+        agent,
+        _current_protocol_turn_error(
+            will_retry=False,
+            misalignment={"errorType": "canary-classification", "steer": {"message": "canary steer text"}},
+        ),
+    )
+
+    assert agent.state == "failed"
+    failures = adapter.consume_runtime_failures()
+    assert failures[0][1]["reason"] == "provider-error-terminal"
+    assert failures[0][1]["will_retry"] is False
+    evidence = (tmp_path / "evidence" / "runtime-failure.jsonl").read_text()
+    assert "canary" not in evidence
+    assert "provider text" not in evidence
+
+
+@pytest.mark.parametrize(
+    "params_override,variant",
+    [
+        ({"threadId": "thread-other"}, "thread-mismatch"),
+        ({"turnId": "turn-other"}, "turn-mismatch"),
+    ],
+)
+def test_ownership_mismatch_still_latches(
+    tmp_path: Path, params_override: dict[str, object], variant: str
+) -> None:
+    adapter = CodexRuntimeAdapter(repository_root=tmp_path)
+    adapter._run_root = tmp_path
+    agent = _agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+
+    notification = _current_protocol_turn_error(will_retry=False)
+    notification["params"].update(params_override)
+    adapter._notification(agent, notification)
+
+    assert agent.runtime_failure["reason"] == "provider-error-malformed"
+    assert adapter.consume_runtime_failures()[0][1]["variant"] == variant
+
+
 def test_progress_clock_uses_explicit_allowlist(tmp_path: Path) -> None:
     adapter = CodexRuntimeAdapter(repository_root=tmp_path)
     agent = _agent(tmp_path)

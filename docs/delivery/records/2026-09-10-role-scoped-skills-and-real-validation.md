@@ -180,3 +180,22 @@ NameError；修复后handler收到原draft、成功回传且审计ok。测试自
 在开发自测中纠正。全量Team最终1420 passed、1 skipped、321 subtests passed（77.55s）。
 GitNexus dispatcher影响曾报CRITICAL（索引消歧结果不稳定），已编辑前告知；最终实现只有
 一行import及独立回归测试。未改backend/frontend，不重启服务。真实CQ内容发布仍待新轮。
+
+## auth-003 首轮与提供方通知兼容修复
+
+15:30:08 +08:00，在授权后18分16秒启动r30006-20260910-auth003-start1，四角色
+thread/turn真实启动，运行配置gpt-5.6-luna/openai/xhigh。首个提供方响应阶段被
+provider-error-malformed清理；错误原文被旧解析路径丢弃，不能据此确定最初网络/模型原因。
+未进入业务分析/CQ发布/候选写入，scope deleted-empty、资源删除、keys撤销、无在途Attempt。
+累计auth-003 1/3，余额2/3。
+
+Claude Code核对本机codex-cli 0.153.4生成协议，识别TurnError新增misalignment字段及
+rateLimitExceeded/misalignmentPolicyViolation variants。协议fixture能复现旧parser把
+willRetry=true合法通知判为malformed，但不是找回原运行通知。T0复核后删除未使用附加
+error字段的硬拒绝，仅保留安全投影；保留会话归属、核心类型、重试标记和终态失败规则。
+未增加嵌套metadata validator、presence输出或平台重试机制。GitNexus影响LOW已编辑前说明。
+
+最终Team测试1428 passed、1 skipped、321 subtests passed（78.87秒）。一次空工作区
+gpt-5.6-luna/xhigh、Reply OK探针观察到agentMessage/delta和turn/completed；无业务输入，
+不计semantic start。探针未保留completion status或有效turn digest，只是响应可用性线索，
+不替代真实Team匹配终态或语义验收。原run已清理，下一步使用剩余额度运行修复版本。

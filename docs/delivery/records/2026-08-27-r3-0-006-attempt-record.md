@@ -51,3 +51,17 @@ NameError，最早06:53:36 UTC；非模型质量失败，尚无候选/业务写�
 Project/Ontology删除、keys撤销、no_in_flight_attempts=true。Runtime的private_credentials_destroyed=false
 照原审计保留，不宣称完整runtime清理PASS。stop后宿主stderr出现app-server closed its output、
 exit2，state仍为CLEANED；不以这一终止次生现象覆盖先前CQ NameError。auth-003仍0/3。
+
+### auth-003 第一轮启动
+
+`r30006-20260910-auth003-start1` 于2026-09-10 15:30:08 +08:00启动，冻结commit e038955，
+profile openai-luna-xhigh（gpt-5.6-luna/xhigh），与本授权取时相差18分16秒。
+auth-003累计1/3，余额2/3；状态与实际thread模型证据继续观察，尚未判定L0/L1。
+
+### auth-003 第一轮终态
+
+四角色thread/turn真实启动且各runtime config为gpt-5.6-luna/openai/xhigh；首次模型响应
+阶段coordinator/modeling被provider-error-malformed终止（07:31:19 UTC）。原始通知在解析
+前未落app-server-events，当前无法据此判定模型/网络原因；Claude Code负责核对当前协议
+与错误形状。scope deleted-empty、Project/Ontology已删除、keys撤销、无在途Attempt；
+无业务分析/CQ提交/候选写入。auth-003已消耗1/3、剩2/3，修复/定位前不再fresh start。
