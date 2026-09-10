@@ -171,3 +171,12 @@ scope deleted-empty、资源删除、凭据撤销、无在途Attempt；runtime�
 15:11:52北京时间新授权auth-003三次，clock实查07:11:52 UTC；周四高峰，CC已cc-switch
 切GLM，开发glm-5.3-flash/max，新Team绑定gpt-5.6-luna/xhigh。尚未消耗新额度。
 Skill规则及新profile由另一Claude Code任务负责，主智能体不写具体开发/测试修复。
+
+## CQ_OPERATION 窄修复验证
+
+Claude Code在acceptance.py只补单数CQ_OPERATION导入，不改dispatcher函数或角色授权逻辑。
+新增真实AF_UNIX tools/call测试，在未修代码上复现-32001且handler未到达，私有审计明确
+NameError；修复后handler收到原draft、成功回传且审计ok。测试自身临时目录读取位置错误
+在开发自测中纠正。全量Team最终1420 passed、1 skipped、321 subtests passed（77.55s）。
+GitNexus dispatcher影响曾报CRITICAL（索引消歧结果不稳定），已编辑前告知；最终实现只有
+一行import及独立回归测试。未改backend/frontend，不重启服务。真实CQ内容发布仍待新轮。
