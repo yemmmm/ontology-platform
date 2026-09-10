@@ -233,3 +233,33 @@ PAN-01至PAN-07拟公开，PAN-08拟隐藏，具体问题/答案仅保留CQ审�
 该题池的盲测验收者。当前仍未获得用户CQ批准，未发布公共投影、未冻结、未有语义模型写入。
 Host通过既有outer-input action=pause，已确认state=PAUSED，保留同run等待用户具体审核。
 本授权3/3已用，0次剩余；暂停不是语义质量失败，也不是验收PASS。后续优先恢复同run。
+
+### 用户委托Host审核后继续同run
+
+用户明确答复“可以由你自行决定”，授权Host完成CQ审核与后续推进。Host按既有业务材料、
+六份授权补充和各题证据/未知项审核8题。发现原draft phase=panorama-draft不会触发审核后
+公开投影，经CQ私有访谈反馈请求发布panorama-review后继版，保持问题内容不变；没有改
+保留证据或生产运行代码。该phase使用歧义记录为prompt-contract待持久修复项，后续fresh
+start前需闭合，当前允许同run自修复。
+CQ发布cq-review-0002、content_version=3，draft-0002与原8题逐项完全相同，phase已修正；
+digest sha256:b30e49a8c6b3a677081d6a269632d33a899ed5e2ae4d92fb455b083b624897fe。
+Host通过8次现有cq_review接口逐题approve，8份decision保存，公共投影0008仅含7道公开题。
+Coordinator真实读取最高序号投影并通知Modeling推进切片；未向生产角色透露隐藏内容。
+Modeling先后提出覆盖/SLA计时问题delivery-3/6，Host依BS-01/03回答，经Coordinator原文转交，
+最终在delivery-9/10提交6个逻辑切片与共享术语/跨切片依赖。当前仍同run，已resume到RUNNING，
+未新增start。下一步为场景图及切片CQ审核，尚未模型验收。
+
+切片CQ完成20题草案后，Host按材料/原业务定义复核，退回3项答案准确性修正；反馈只经CQ
+私有通道，不进入共享记录/生产角色。CQ发布正式slice-review后继版cq-review-0004，version5，
+digest sha256:c059c33f459fcc18f6a0ab3446e2758fa8832c139d043a90436a613dc42cbe60。
+变更3题递增content_version，其他17题完全相同；Host复核后逐题批准20题，累计28份决定。
+既有cq_freeze成功：cq-batch-0001，snapshot_digest
+sha256:79b4534521b932d87d1e6faee6fc6f23177544fabc75d00b9084a7860b1e856e，20公开/8隐藏；
+最高公开投影0029，仅公开20题。Host通过既有外部消息告知Coordinator冻结成功及公开投影路径，
+推进阶段3；不把隐藏题内容、答案或私有冻结文件交生产角色。模型质量尚待实际产物与独立验收。
+
+Claude Code在同一授权模型deepseek-flash/max完成CQ阶段提示持久修复，仅改该角色Lifecycle
+说明：准备阶段与正式提交审核phase分清，全景/切片分别用panorama-review/slice-review，
+返修发布不可变后继版本。没有改运行逻辑/守卫或当前run冻结提示。diff --check、合同字段/
+挂载引用与角色包加载核对通过（详见repair-cq-review-phase-result.md）；纯说明不跑后端/
+前端套件、不重启。该prompt-contract项已关闭，当前真实模型工作继续。

@@ -10,24 +10,35 @@ text to Coordinator, Modeling, or Protocol.
 `panorama-draft → panorama-review → awaiting-slices → slice-draft →
 slice-review → frozen`
 
-* `panorama-draft`: read the mounted approved business inputs and the mounted
-  `modeling_team/references/r3-0-011-competency-question-contract.json`, then
-  publish a panorama draft through
-  `mcp__runner_capability__cq_publish_question_draft`.
-* `panorama-review`: wait for the user's decisions delivered directly to you by
-  the Runner (`kind=cq-review-decision`). Do not guess a decision.
+* `panorama-draft`: preparation. Read the mounted approved business inputs and
+  the mounted
+  `modeling_team/references/r3-0-011-competency-question-contract.json`, and
+  work out the panorama questions. A document published with a `-draft` phase
+  is a preparation version; it is not the document the user reviews.
+* `panorama-review`: publish the panorama document you submit to the user for
+  review through `mcp__runner_capability__cq_publish_question_draft` with
+  `phase` exactly `panorama-review` - that phase is what the user reviews and
+  what the Runner projects. Then wait for the user's decisions delivered
+  directly to you by the Runner (`kind=cq-review-decision`). Do not guess a
+  decision.
 * `awaiting-slices`: wait for slice assignments; only the Runner-published
   public projection under `/agent/work/competency-questions/public/` is the
   shared question context for the production team.
-* `slice-draft` / `slice-review`: publish slice questions for the approved
-  slices only, and wait for review.
+* `slice-draft`: preparation of the slice questions for the approved slices
+  only, the same way `panorama-draft` prepares the panorama.
+* `slice-review`: publish the slice document you submit to the user for review
+  with `phase` exactly `slice-review`, then wait for the decision the same way
+  as in `panorama-review`.
 * `frozen`: the question pool is delivered. Stay silent and recoverable. Do not
   report a terminal result.
 
 A rejected draft, a stale review, a field error, or a supplement blocks only the
 current question stage. Fix the exact object named in the rejection and continue
-in the same session. A turn that ends while you wait for the user is not a task
-terminal state.
+in the same session: rework publishes the corrected document as an immutable
+successor review version with the same review phase (`panorama-review` or
+`slice-review`) and a new `review_id`, then waits for the decision on that new
+version - a decision bound to a superseded `review_id` stays stale. A turn that
+ends while you wait for the user is not a task terminal state.
 
 ## The only capability you own
 
