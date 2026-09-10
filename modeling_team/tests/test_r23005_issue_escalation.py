@@ -176,29 +176,28 @@ class IssueEscalationTests(unittest.TestCase):
             issue_tool = next(tool for tool in listed["tools"] if tool["name"] == "issue_control")
             schema = issue_tool["inputSchema"]
             self.assertEqual(schema["type"], "object")
-            branches = schema["oneOf"]
+            # 2026-09-11: the advertised schema is flat; the oneOf form made
+            # the model emit empty tool-call arguments, wedging the pause
+            # dispatch at state `reported` (auth006-start9).  The server-side
+            # normalize/validate keeps every action-specific rule.
+            self.assertNotIn("oneOf", schema)
             self.assertEqual(
-                {branch["title"] for branch in branches},
-                {"pause", "abort", "resume-guidance", "resume-repair-completed"},
-            )
-            pause_schema = next(branch for branch in branches if branch["title"] == "pause")
-            self.assertEqual(
-                pause_schema["required"],
+                schema["required"],
                 ["issue_id", "reporter_id", "action", "control_epoch"],
             )
-            self.assertNotIn("reason", pause_schema["properties"])
-            abort_schema = next(branch for branch in branches if branch["title"] == "abort")
-            self.assertEqual(
-                abort_schema["required"],
-                ["issue_id", "reporter_id", "action", "control_epoch", "reason"],
-            )
-            self.assertEqual(abort_schema["properties"]["reason"]["type"], "string")
-            self.assertNotIn("resolution_type", abort_schema["properties"])
-            resume_schema = [branch for branch in branches if branch["title"].startswith("resume-")]
-            self.assertEqual(
-                {branch["properties"]["resolution_type"]["enum"][0] for branch in resume_schema},
-                {"guidance", "repair_completed"},
-            )
+            properties = schema["properties"]
+            self.assertEqual(properties["action"]["enum"], ["pause", "resume", "abort"])
+            for field in (
+                "reason",
+                "resolution_type",
+                "resolution_text",
+                "repair_component",
+                "before_digest",
+                "after_digest",
+                "verification_reference",
+                "mutation_reconciliation",
+            ):
+                self.assertIn(field, properties)
             report = broker.report_issue(
                 "protocol",
                 category="protocol_guidance",
