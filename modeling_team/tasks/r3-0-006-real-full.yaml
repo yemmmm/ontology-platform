@@ -113,6 +113,14 @@ role_sources:
   - path: modeling_team/references/r3-0-011-competency-question-contract.json
     classification: coordination
     roles: [competency-question]
+  # Union-task completeness: the Protocol instructions' Prompt E names this
+  # staged reference; the r3-0-002 multi-slice entry stages it for the protocol
+  # role and the protocol role blocked on its absence (2026-09-11 auth006-start6
+  # delivery-4 required_source_unavailable).  Stage the same file here so the
+  # union entry carries every staged source its role instructions can require.
+  - path: modeling_team/references/acceptance-stage-handoff-contract.json
+    classification: protocol
+    roles: [protocol]
 protocol_tools:
   - check_platform_health
   - get_project_build_context
