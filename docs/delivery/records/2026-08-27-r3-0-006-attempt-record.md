@@ -390,3 +390,21 @@ Protocol已真实完成读取四个空Ontology、create session/checkpoint/lease
 363bf4fe-df0c-4055-9027-1dce115b309c；发布b01-cov-sc-predicates-r1（6项）与
 b02-cov-ops-properties-r1（13项）两计划，delivery-18申请翻译批准。Modeling delivery-19
 提出mapped_property绝对IRI需真实来源，Host未猜平台标识，待Coordinator/Protocol衔接回执。
+
+16:01:43UTC 首次 staged submit 返回原始 AttributeError（list 无 values），未生成 intent/receipt、
+未转发批次。只读定位：计划 candidate_content_digests 错为列表，候选有非法 scope 字段，
+且三项闭合校验以 eager tuple 执行，后续异常掩盖更早的类型化反馈。第一失败层为
+platform-contract，不据此判定建模质量失败。T0复核：绑定与完整性校验保护实际写入，必须保留；
+不可恢复异常并非必要防御，应降为可定位、可重试的输入反馈，无需新增恢复机制。
+Claude Code窄修复：计划入口复用已有 binding 校验，digest map 非对象返回类型化字段错误；
+闭合校验按原顺序短路，保留第一阻塞层；009权威合同补充同一对象形状说明。
+新增3项机械测试通过，其中1项经真实 AF_UNIX capability 证明错误输入零写入后，修正输入可在
+同一 runner/capability 成功；另2项覆盖短路顺序和存储 intent 边界。相关测试103通过；
+完整 modeling_team 套件1462通过、1既有真实Codex opt-in跳过、321 subtests通过。
+Ruff 新测试和 staged_decisions 干净，runner 仅保留HEAD既有3项问题，无新增。
+本修复未改 backend/frontend，无需服务重启；当前run仍使用冻结05f9bb5，不热替换运行代码。
+
+16:10:18UTC Modeling delivery-27发布六片r2，宿主复用实际 validate_unified_candidate 校验全部
+通过；仍143项。非法顶层scope移除，5项非空范围保留到合法shared_scope，前序r1保留。
+16:11UTC Coordinator delivery-28/29完成19项决策revision2及摘要重批，通知Protocol发布新计划。
+截至16:17UTC尚无模型批次写入回执，等待修正计划翻译批准与原run继续；不构成L0/L1 PASS。

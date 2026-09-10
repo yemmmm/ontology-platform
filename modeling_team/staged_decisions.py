@@ -2180,6 +2180,15 @@ def validate_materialization_plan(value: Any) -> tuple[StagedDecisionIssue, ...]
                 "unified_schema_mismatch", "plan projection fields drift from the contract", ""
             )
         )
+    if isinstance(plan_projection, Mapping):
+        # The plan is the only binding boundary the submission close checks
+        # read from, so it is validated with the same binding validator the
+        # intent/receipt schemas use: a malformed binding shape is a typed,
+        # fixable rejection at load time instead of a raw AttributeError in a
+        # later close check.
+        binding_issue = _decision_binding_issue(plan_projection.get("decision_bindings"))
+        if binding_issue is not None:
+            issues.append(binding_issue)
     digest = value.get("projection_digest")
     if not _nonempty(digest) or not str(digest).startswith("sha256:"):
         issues.append(
@@ -2474,6 +2483,16 @@ def _decision_binding_issue(value: Any) -> StagedDecisionIssue | None:
         if not isinstance(binding, Mapping) or set(binding) != set(DECISION_BINDING_FIELDS):
             return StagedDecisionIssue(
                 "unified_schema_mismatch", "decision binding fields drift from the contract", ""
+            )
+        # The field set alone is not the shape: every close check reads the
+        # digests as a map, so a non-object value (auth005: a bare ``[digest]``)
+        # must be a typed rejection here, before any ``.items()``/``.values()``.
+        if not isinstance(binding.get("candidate_content_digests"), Mapping):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch",
+                "decision binding candidate_content_digests must be a JSON object "
+                "mapping candidate item_id to its digest",
+                "",
             )
     return None
 

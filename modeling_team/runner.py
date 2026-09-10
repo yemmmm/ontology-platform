@@ -4091,22 +4091,27 @@ class TeamRunner:
                     plan_issue.detail if plan_issue else "materialization plan is missing",
                 )
             projection = plan.get("projection") or {}
-            for issue in (
-                unified_plan_issue(
-                    plan=plan,
-                    batch=batch,
-                    task_id=self.run.configuration.task.task_id,
-                ),
-                unified_candidate_issue(run_root, projection),
-                unified_approval_issue(
+            # The three close checks run in the fixed §9.2 order and stop at
+            # the first issue: a later validator must never be evaluated once
+            # an earlier one produced the typed rejection the Agent acts on
+            # (auth005: eagerly building the tuple let the approval validator
+            # crash before the plan issue was returned).
+            close_issue = unified_plan_issue(
+                plan=plan,
+                batch=batch,
+                task_id=self.run.configuration.task.task_id,
+            )
+            if close_issue is None:
+                close_issue = unified_candidate_issue(run_root, projection)
+            if close_issue is None:
+                close_issue = unified_approval_issue(
                     load_approvals(paths["approvals"])
                     if paths["approvals"].is_file() and not paths["approvals"].is_symlink()
                     else {},
                     projection,
-                ),
-            ):
-                if issue is not None:
-                    raise StagedSubmissionRejection(issue.reason_code, issue.detail)
+                )
+            if close_issue is not None:
+                raise StagedSubmissionRejection(close_issue.reason_code, close_issue.detail)
         try:
             intents = read_submission_intents(run_root)
         except StagedDecisionArtifactError as exc:
