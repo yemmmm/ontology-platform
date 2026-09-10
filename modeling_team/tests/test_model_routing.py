@@ -834,6 +834,8 @@ def test_non_2xx_upstream_body_is_dropped_with_fixed_local_failure(
         b"non-2xx-sentinel",
         upstream_url=f"http://127.0.0.1:{json_upstream.server_port}/responses",
         on_failure=failures.append,
+        # Historical fail-fast semantics: one non-2xx signals immediately.
+        upstream_failure_threshold=1,
     )
     session.start()
     try:
@@ -891,6 +893,8 @@ def test_partial_2xx_stream_keeps_sent_output_transparent_and_signals_failure() 
         b"partial-stream-sentinel",
         upstream_url=f"http://127.0.0.1:{server.server_port}/responses",
         on_failure=failures.append,
+        # Historical fail-fast semantics: one broken 2xx stream signals.
+        upstream_failure_threshold=1,
     )
     session.start()
     try:
@@ -2076,3 +2080,39 @@ def test_codex_role_evidence_records_provider_model_effort_and_safe_auth_mode(
         "requested_effort",
         "effective_effort",
     }
+
+def test_consecutive_upstream_failures_gate_the_provider_failure_signal() -> None:
+    """One transient upstream error must not signal; the threshold must.
+
+    2026-09-11 calibration: glm-5.3-flash rejected one request mid-burst while
+    the upstream stayed alive for other concurrent requests, and a single
+    provider-upstream-failed latch killed three real modeling starts.  The
+    consecutive-failure threshold keeps a single error recoverable through the
+    App Server's own request retry while a persistently dead upstream still
+    fails the run with the stable reason code.
+    """
+
+    failures: list[str] = []
+    session = ResponsesProviderSession(
+        b"threshold-sentinel",
+        on_failure=failures.append,
+        upstream_url="https://127.0.0.1:1/responses",
+    )
+    assert session.upstream_failure_threshold == 3
+    # Two consecutive failures stay below the default threshold.
+    session.note_upstream_failure()
+    session.note_upstream_failure()
+    assert failures == []
+    # A success resets the consecutive counter.
+    session.note_upstream_success()
+    session.note_upstream_failure()
+    session.note_upstream_failure()
+    assert failures == []
+    # The third consecutive failure crosses the threshold and signals once.
+    session.note_upstream_failure()
+    assert failures == [RESPONSES_UPSTREAM_FAILURE]
+    # The counter restarts after signaling; another signal needs another run.
+    session.note_upstream_failure()
+    session.note_upstream_failure()
+    assert failures == [RESPONSES_UPSTREAM_FAILURE]
+    session.stop()

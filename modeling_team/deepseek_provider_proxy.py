@@ -354,16 +354,17 @@ class _SessionHandler(BaseHTTPRequestHandler):
             status, headers, response = session.forward(body)
         except ProviderSessionError:
             session._count("upstream_errors")
-            session._signal_failure(RESPONSES_UPSTREAM_FAILURE)
+            session.note_upstream_failure()
             self._reject(_LOCAL_FAILURE_STATUS)
             return
         session._record_status(status)
         if not 200 <= status < 300:
             self._discard_upstream_body(response)
             session._count("upstream_errors")
-            session._signal_failure(RESPONSES_UPSTREAM_FAILURE)
+            session.note_upstream_failure()
             self._reject(_LOCAL_FAILURE_STATUS)
             return
+        session.note_upstream_success()
         self.send_response(status)
         self.send_header("Content-Type", headers.get("content-type", "application/json"))
         if "content-length" in headers:
@@ -380,10 +381,11 @@ class _SessionHandler(BaseHTTPRequestHandler):
                 except (OSError, http.client.HTTPException):
                     # A 2xx stream broke before a successful terminal state.
                     # Already-transmitted model output stays transparent; the
-                    # subsequent transport failure is recorded as the fixed
-                    # provider failure reason, never the exception string.
+                    # subsequent transport failure is counted and only signals
+                    # at the consecutive-failure threshold, never the exception
+                    # string.
                     session._count("upstream_errors")
-                    session._signal_failure(RESPONSES_UPSTREAM_FAILURE)
+                    session.note_upstream_failure()
                     break
                 if not chunk:
                     continue
@@ -438,6 +440,13 @@ class ResponsesProviderSession:
         # >300s silent blocks), and 330.0 killed the whole run with
         # provider-upstream-failed.  A genuinely dead connection still times out.
         read_timeout: float = 1250.0,
+        # Consecutive upstream failures without a 2xx response before the
+        # session signals provider-upstream-failed.  One transient upstream
+        # error must not kill a whole real modeling run: the codex App Server
+        # retries rejected/broken requests itself, and a later success resets
+        # the counter.  Threshold 1 restores the historical fail-fast behavior
+        # for focused tests.
+        upstream_failure_threshold: int = 3,
         on_failure: Callable[[str], None] | None = None,
     ) -> None:
         if not isinstance(credential, (bytes, bytearray)) or not credential:
@@ -453,6 +462,8 @@ class ResponsesProviderSession:
         self.max_body_bytes = max(1, int(max_body_bytes))
         self.connect_timeout = max(0.1, float(connect_timeout))
         self.read_timeout = max(0.1, float(read_timeout))
+        self.upstream_failure_threshold = max(1, int(upstream_failure_threshold))
+        self._consecutive_upstream_failures = 0
         self.on_failure = on_failure
         self._server: _SessionHTTPServer | None = None
         self._thread: threading.Thread | None = None
@@ -495,6 +506,26 @@ class ResponsesProviderSession:
                 callback(reason_code)
             except Exception:
                 pass
+
+    def note_upstream_failure(self) -> None:
+        """Count one consecutive upstream failure and signal at the threshold.
+
+        The consecutive counter only advances on failures; every successful 2xx
+        response (``note_upstream_success``) resets it.  The threshold keeps a
+        single transient upstream error recoverable while a persistently dead
+        upstream still fails the run with the stable reason code.
+        """
+
+        with self._lock:
+            self._consecutive_upstream_failures += 1
+            if self._consecutive_upstream_failures < self.upstream_failure_threshold:
+                return
+            self._consecutive_upstream_failures = 0
+        self._signal_failure(RESPONSES_UPSTREAM_FAILURE)
+
+    def note_upstream_success(self) -> None:
+        with self._lock:
+            self._consecutive_upstream_failures = 0
 
     def _record_status(self, status: int) -> None:
         category = "upstream_status_other"
@@ -674,6 +705,7 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
         connect_timeout: float = 15.0,
         # Same calibration as ResponsesProviderSession (see its read_timeout).
         read_timeout: float = 1250.0,
+        upstream_failure_threshold: int = 3,
         on_failure: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(
@@ -685,6 +717,7 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
             max_body_bytes=max_body_bytes,
             connect_timeout=connect_timeout,
             read_timeout=read_timeout,
+            upstream_failure_threshold=upstream_failure_threshold,
             on_failure=on_failure,
         )
 
