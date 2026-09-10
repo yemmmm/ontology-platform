@@ -44,12 +44,18 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   wait for the next immutable ticket or settlement instruction.
 - Keep the Acceptance session live after every non-final question PASS and after every FAIL or
   BLOCKED verdict; those outcomes must not call `report_task_result`.
-- The authoritative Team Transport MCP call names are fully qualified in this Runtime: use
-  `mcp__team_transport__send_team_message` for direct delivery,
-  `mcp__team_transport__send_coordination` for coordination signals,
-  `mcp__team_transport__report_task_result` for the terminal result, and
-  `mcp__team_transport__report_issue` for typed issue escalation. Do not call an unqualified
-  Team Transport function name; the bare function aliases are unsupported by the App Server.
+- The authoritative Team Transport call names are the ones your Runtime advertises for this run in
+  its tool catalog: a native dynamic-tool Runtime advertises them bare (`send_team_message` for
+  direct delivery, `send_coordination` for coordination signals, `report_task_result` for the
+  terminal result, `report_issue` for typed issue escalation), while an MCP-bound Runtime
+  advertises the same tools qualified, for example `mcp__team_transport__send_team_message`. Use
+  exactly the advertised name: a spelling the catalog does not advertise is rejected as an
+  unsupported call before it reaches Team Transport. Do not call an unqualified Team Transport
+  function name when your catalog advertises qualified names, and do not add an
+  `mcp__team_transport__` prefix when it advertises bare names. If a call is rejected as
+  unsupported, re-read the advertised catalog and retry with a name from it instead of inspecting
+  Runtime code or binaries. The qualified spellings used elsewhere in this file denote these same
+  Team Transport tools; resolve each to the name your current catalog advertises.
 - Only after the Runner-projected final question (`is_final_question=true`) has a usable PASS may you
   call Team Transport `mcp__team_transport__report_task_result` exactly once, using
   `mcp__team_transport__report_task_result(status=completed, ...)` with a concise summary, then end. The ordinary

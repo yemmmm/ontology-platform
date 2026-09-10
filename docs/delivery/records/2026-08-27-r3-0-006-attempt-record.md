@@ -164,3 +164,50 @@ Claude Code将CQ分支回调参数改为完整args，保持身份/operation/toke
 CQ合同子集116 passed；Team全量1429 passed、1 skipped、321 subtests passed（最终81.67s）。
 测试fixture引用的一处F811 lint问题已修正，最终文件2 tests通过且lint通过，旧分派行再次
 使真实接线测试失败。未改backend/frontend，不重启产品服务。下一次真实CQ发布仍待验证。
+
+
+### auth004-start2启动
+
+18:25:57 +08:00，r30006-20260910-auth004-start2在clean checkout9f9097a启动，
+修复后的CQ信封分派与身份提示已冻结；沿用deepseek-flash-max和宿主shell内cd启动。
+原获准六项业务补充已通过CQ私有访谈送达。本批累计2/3、剩1/3，优先验证真实草稿发布。
+
+
+### auth004-start2真实CQ发布与工具名阻塞
+
+10:29:51UTC，CQ在同一会话修正unknown类型与evidence_refs格式后，真实capability审计ok；
+成功保存draft-0001与cq-review-0001，8个panorama/public问题（CQ-P-01至08），含业务答案
+要点、来源与未知项。旧cq_id/NoneType接线错误均未再出现。已将具体审核请求交用户，尚未
+获得批准，未发布公开投影/冻结题池。Host仅按review snapshot读取关联草稿，不把问题输入
+生产角色或当业务写入。模型语义质量/最终验收仍未完成。
+
+Coordinator旧权威提示要求fully-qualified MCP工具名，而本run实际广告native动态工具。
+实际rollout function_call仍为mcp__team_transport__send_team_message并unsupported，前轮
+相同入口的send_team_message裸名曾成功。Host两次经现有nonformal question/user绑定发送
+技术反馈（host-runtime-tool-names-001/002，明确不是Modeling业务问题、CQ批准或用户定义），
+第二次包含pause/resume与同thread新turn；实际调用仍重复旧名，未出现成功分派。
+此为prompt-contract/collaboration-routing，不是语义质量失败。
+
+### 用户中断后的资源收口与同源提示闭合
+
+用户要求继续后，实际进程已不存在，工具会话ID失效；保存state仍RUNNING，是中断前快照。
+不重写该历史状态，不伪称恢复同一语义会话。Host以原run/project名字与metadata复核唯一
+owned Project及Ontology，使用现有PlatformScope.cleanup得到deleted-empty、无在途Attempt、
+Project/Ontology删除、Protocol key撤销；临时清理admin也撤销。原run admin通过唯一同名
+创建记录（比Project创建早30ms、启动时点一致）定位并撤销。原CQ/原始事件保留，回执在
+宿主auth004-start2-external-cleanup.json；metadata为auth004-start2-interruption-resource-metadata.json。
+没有新增semantic start，当前仍2/3、剩1/3。
+
+仅改Coordinator提示尚不足：Runner._task_text和其余生产角色同一命名段落还强制旧前缀。
+Claude Code继续最窄同源闭合，只改命名字符串/段落和过时测试，不增alias/运行机制。
+_task_text预编辑GitNexus CRITICAL（2直接caller、119关联符号/98宽泛间接流程），已告知；
+对应旧命名测试LOW0caller。完整修复验证后使用最后一次，不重复已知矛盾。
+
+
+### 工具名提示合同修复验证
+
+四个既有生产/验收角色的同一命名段落及Runner._task_text命名字符串统一按当前tool catalog
+解析（native裸名、MCP模式广告限定名），无运行/权限/业务逻辑改动。过时固定限定名测试
+改为验证两模式及现有角色边界，并覆盖实际生成的任务文本。相关21 tests通过，Team全量
+1429 passed、1 skipped、321 subtests passed（81.64s）。未修改backend/frontend，无服务重启。
+下一轮验证真实Coordinator分派；原8题草稿及待审核请求保留，不擅自审批。
