@@ -39,10 +39,11 @@
 
 ## 当前授权（auth-003）
 
-2/3已消耗，1/3可用；auth-003两轮均已结束并清理空scope。第一轮错误通知被旧parser误判；
-第二轮已正确保留响应流断开和原生重试，300秒无输出后终止。有界诊断确认WebSocket超时但底层原因未闭合，
-最后一次尚未启动。继续复用用户业务代答与必要资料补充授权及BS-20260910-01至06，
-新start按本授权时高峰选择gpt-5.6-luna/xhigh，不改历史冻结会话模型。
+3/3已消耗，0/3可用；三轮均结束并清理空scope。第一轮错误通知被旧parser误判；
+后两轮正确记录流断开并在300秒无输出后终止。第三轮取得实际Runner/child缺少代理的直接
+证据，已验证从宿主shell内cd到clean checkout可保留代理，运行参考已补齐。等待新的真实
+start授权复测，不以环境presence检查声称语义PASS。继续复用已获业务代答和资料补充授权；
+新授权到来时按Skill重新取时确定模型，旧冻结run不换模型。
 
 ### auth-002 第三轮收口（15:20 +08:00）
 
@@ -83,3 +84,33 @@ responseStreamDisconnected/will_retry=true反复重试，旧malformed解析误�
 第二轮cleanup回执位于host runtime-failure条目（最终state为TERMINAL_REPORT_COMPLETE，
 不再携带cleanup字段）：scope deleted-empty、Project/Ontology删除、admin/protocol keys
 撤销、no_in_flight_attempts=true；退出码0只表示终态报告已收口，不表示真实建模通过。
+
+
+### auth-003 第三轮继续（16:55 +08:00）
+
+用户指出有余额不应停止。宿主承认此前将确证传输修复当成fresh start前置、过度保守保留
+额度；这不是平台硬门，也不是用户授权限制。停止扩展排查应当缩短路径进入真实建模。
+16:55:02 +08:00启动r30006-20260910-auth003-start3，复用clean e62e056、相同Task/Profile、
+openai-luna-xhigh和原300秒无输出边界；四个thread/turn已实际启动。auth-003现3/3、余额0。
+已将获准BS-01至06经CQ私有访谈通道送达；业务问题继续按用户既有授权处理，CQ审批不代批。
+本轮并未证明底层传输已修复，实际结果持续观察，不能从启动事件推导运行或建模PASS。
+
+
+### auth003-start3终态与启动环境证据（17:00 +08:00）
+
+本轮自然到达llm-inactivity-timeout并退出0，保留20条responseStreamDisconnected/
+will_retry=true。无业务模型输出、CQ发布或候选写入；scope deleted-empty、资源删除、
+admin/protocol keys撤销、no_in_flight_attempts=true。runtime秘密残留审计false原样保留，
+不声明完整runtime清理PASS。auth-003已耗尽3/3；没有追加第四次start。
+
+这次在进程存活时取得此前缺失的直接证据：Runner python PID2726570、uv2726551和四个
+实际codex子进程的6个HTTP(S)/NO_PROXY变量均缺失，父bwrap argv绑定auth003-start3。
+同一工具的最小对照：主仓库workdir三小写代理键present；直接指定runtime-checkout
+workdir则全部absent。从主仓库shell内cd到该clean checkout，再运行uv python和现有
+_minimal_codex_process_env，三个代理键均保留。只保存presence，没有输出密钥或代理值。
+安全证据在宿主目录auth003-start3-proxy-presence.json、auth003-launch-env-correction.json。
+
+判定：已证实宿主启动环境交接缺口，不能再以主仓库shell有代理推断Runner有代理；无须
+修改现有adapter转发逻辑。下一轮从已验证宿主shell内cd启动并检查实际进程presence即可。
+这还不是代理缺失导致所有流错误的因果复测PASS。Claude Code把教训补入现有运行参考，
+不加每次启动硬门、配置开关或测试框架。修正后真实语义结果需要新的授权额度才能验证。

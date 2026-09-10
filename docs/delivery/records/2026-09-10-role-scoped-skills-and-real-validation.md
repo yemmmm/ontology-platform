@@ -233,3 +233,32 @@ BLOCKED于runtime/infrastructure。L1 Modeling quality与独立语义验收均�
 auth-003仍消耗2/3、剩1/3；不因本次收口作废，不申请重复授权，也不盲目重开相同配置。
 下一步须先获得可验证的传输/环境修复，或用户明确变更本轮模型路线，再使用剩余额度。
 CQ审核/冻结尚未获授权且没有可审草稿，不能以业务代答授权替代。
+
+
+## 16:55 纠正额度使用判断并继续
+
+用户质疑余额未用即停。此前“必须先有确证修复才可使用最后额度”是宿主过度保守的判断，
+不是本轮真实启动授权条件；不得继续以此自行阻断。保留16:18诊断及当时决策供追溯。
+本次约一分钟完成最小检查并实际启动auth003-start3，沿用已验证e62e056和gpt-5.6-luna/xhigh，
+没有新增平台修改、模型探针、超时调整。四角色thread/turn启动，余额3/3已用、0/3剩余。
+原BS-01至06业务补充通过既有CQ私有通道送达，实际语义进展待观察。
+
+
+### auth003-start3终态与启动环境证据（17:00 +08:00）
+
+本轮自然到达llm-inactivity-timeout并退出0，保留20条responseStreamDisconnected/
+will_retry=true。无业务模型输出、CQ发布或候选写入；scope deleted-empty、资源删除、
+admin/protocol keys撤销、no_in_flight_attempts=true。runtime秘密残留审计false原样保留，
+不声明完整runtime清理PASS。auth-003已耗尽3/3；没有追加第四次start。
+
+这次在进程存活时取得此前缺失的直接证据：Runner python PID2726570、uv2726551和四个
+实际codex子进程的6个HTTP(S)/NO_PROXY变量均缺失，父bwrap argv绑定auth003-start3。
+同一工具的最小对照：主仓库workdir三小写代理键present；直接指定runtime-checkout
+workdir则全部absent。从主仓库shell内cd到该clean checkout，再运行uv python和现有
+_minimal_codex_process_env，三个代理键均保留。只保存presence，没有输出密钥或代理值。
+安全证据在宿主目录auth003-start3-proxy-presence.json、auth003-launch-env-correction.json。
+
+判定：已证实宿主启动环境交接缺口，不能再以主仓库shell有代理推断Runner有代理；无须
+修改现有adapter转发逻辑。下一轮从已验证宿主shell内cd启动并检查实际进程presence即可。
+这还不是代理缺失导致所有流错误的因果复测PASS。Claude Code把教训补入现有运行参考，
+不加每次启动硬门、配置开关或测试框架。修正后真实语义结果需要新的授权额度才能验证。

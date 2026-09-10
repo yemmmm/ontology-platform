@@ -89,6 +89,18 @@ uv run --project backend python -m modeling_team run \
 控制权以读取增量。不要等待整轮退出才处理用户问题，也不要把一次不保活的临时工具调用
 误报为后台守护。CLI 从实际源码 checkout 运行，scope 指向的是平台资源，两者都要记录。
 
+环境交接教训（2026-09-10 auth003-start3 证实）：命令继承的环境由宿主工具自身的 workdir
+决定，shell 内 `cd` 不改变它。同一宿主在主仓库 workdir 下 shell 带
+`http_proxy`/`https_proxy`/`no_proxy`；直接把 workdir 换成 runtime-checkout 后代理键
+全部缺席，并沿 `uv`→runner `python`→`bwrap`→`codex` 子进程全部缺席（6 键全 false）；
+改为在已验证的宿主 workdir 启动 shell、shell 内 `cd` 到 clean checkout 再运行，三键仍为
+true（presence 证据 `workspaces/skill-role-20260910/auth003-start3-proxy-presence.json`、
+`auth003-launch-env-correction.json`）。因此工具直接更换 workdir 可能得到与已验环境不同
+的环境，已有代理必须实际传到 runner/child 才算交接成功；需要 clean checkout 时从已验证
+宿主 shell 启动并在 shell 内 `cd` 即可保留既有环境。核对只记录变量名与 presence，不输出
+值或密钥，不写死代理地址；现有 adapter 已正确转发这些键，无需改平台代码。该教训仅在
+真实传输失败时用于定位，不新增每次 start 的前置硬门、探针或检查框架。
+
 ## 从哪些证据观察
 
 当前 run 根为 `workspaces/modeling-runs/<run-id>/`。先查看实际存在的文件，再读新增完整
