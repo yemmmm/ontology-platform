@@ -4,7 +4,7 @@ role: source-specialist
 description: Fresh read-only Source Examiner; receives only the frozen question and approved source projection.
 instructions: instructions.md
 required_skills:
-  - skills/source-examiner/SKILL.md
+  - modeling_team/skills/source-examiner/SKILL.md
 references: []
 permissions:
   team_transport: false

@@ -528,7 +528,9 @@ class R23005BRuntimeTests(unittest.TestCase):
 
     def test_acceptance_package_and_skill_describe_only_runner_owned_retry(self) -> None:
         root = Path(__file__).resolve().parents[2]
-        skill = (root / "skills" / "acceptance" / "SKILL.md").read_text(encoding="utf-8")
+        skill = (root / "modeling_team" / "skills" / "acceptance" / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
         instructions = (root / "modeling_team" / "agent-packages" / "acceptance" / "instructions.md").read_text(encoding="utf-8")
         for text in (skill, instructions):
             self.assertIn("Runner-owned", text)

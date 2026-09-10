@@ -4,7 +4,7 @@ role: coordinator
 description: Persistent team control-plane and user conversation entrypoint.
 instructions: instructions.md
 required_skills:
-  - skills/ontology-modeling/SKILL.md
+  - modeling_team/skills/ontology-modeling/SKILL.md
 references: []
 permissions:
   team_transport: true

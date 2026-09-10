@@ -24,5 +24,5 @@ notes: >
   CodexRuntimeAdapter._child_package_assets(kind, root, v3_batch=True):
   platform-examiner.md for the platform session, acceptance-judge.md for the
   judge session.  The R2.3 single-question assets under
-  acceptance-examiner/ and skills/lean-acceptance-examiner/ are unchanged and
+  acceptance-examiner/ and modeling_team/skills/lean-acceptance-examiner/ retain their contracts and
   are never mounted into a v3 batch session.

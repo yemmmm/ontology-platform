@@ -3,7 +3,7 @@
 > [!CAUTION]
 > **DEPRECATED.** This entire Harness, including its Hook configuration, recorder, profiles,
 > adapters, shared-directory flow, and ClaudeCode integration, is historical only. Do not activate
-> it for new work. Use [`skills/ontology-modeling`](../skills/ontology-modeling/SKILL.md).
+> it for new work. Use [`modeling-dev-loop`](../skills/modeling-dev-loop/SKILL.md).
 
 This Harness records one legacy `ontology-builder` main Codex session for later process review and
 also provides the common recorder for the Claude dual-session experiment. It is local to this

@@ -4,7 +4,7 @@ role: source-specialist
 description: Fresh read-only Platform Examiner; receives only the frozen question and ticket-bound proxy.
 instructions: instructions.md
 required_skills:
-  - skills/platform-examiner/SKILL.md
+  - modeling_team/skills/platform-examiner/SKILL.md
 references: []
 permissions:
   team_transport: false

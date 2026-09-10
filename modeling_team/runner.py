@@ -1122,8 +1122,8 @@ class TeamRunner:
             "examiner_source_instructions": self.repository_root / "modeling_team/agent-packages/source-examiner/instructions.md",
             "examiner_platform_package": self.repository_root / "modeling_team/agent-packages/platform-examiner/package.yaml",
             "examiner_platform_instructions": self.repository_root / "modeling_team/agent-packages/platform-examiner/instructions.md",
-            "examiner_source_skill": self.repository_root / "skills/source-examiner/SKILL.md",
-            "examiner_platform_skill": self.repository_root / "skills/platform-examiner/SKILL.md",
+            "examiner_source_skill": self.repository_root / "modeling_team/skills/source-examiner/SKILL.md",
+            "examiner_platform_skill": self.repository_root / "modeling_team/skills/platform-examiner/SKILL.md",
         }
         task_overlay = frozen_task_overlay
         if task_overlay is None and task_overlay_path is not None:

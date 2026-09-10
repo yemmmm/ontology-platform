@@ -4,7 +4,7 @@ description: DEPRECATED historical Harness source-extraction role. Do not use fo
 tools: Read, Grep, Glob
 ---
 
-DEPRECATED. Do not invoke this Agent. Use the repository `ontology-modeling` skill directly.
+DEPRECATED. Do not invoke this Agent. Use the repository `modeling-dev-loop` skill for host delivery.
 
 Work in a fresh context from the explicit versioned sources or artifact locators supplied by the
 modeling lead. Extract business terms, rules, examples, provenance, gaps, and contradictions. Cite

@@ -803,6 +803,7 @@ class CodexIsolationTests(unittest.TestCase):
         for profile_agent in configuration.profile.agents:
             self.assertEqual(len(profile_agent.package.required_skills), 1)
             skill_path = profile_agent.package.required_skills[0]
+            self.assertEqual(skill_path.parent.parent, root / "modeling_team" / "skills")
             text = skill_path.read_text(encoding="utf-8")
             self.assertTrue(text.startswith("---\n"), skill_path)
             _, raw_frontmatter, _ = text.split("---", 2)

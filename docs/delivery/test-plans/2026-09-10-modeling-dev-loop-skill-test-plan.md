@@ -18,7 +18,7 @@
 - `.agents/skills/ontology-modeling` 是现有规范目录的相对符号链接。
 - 最近更新为 `8f62a11`（2026-09-08）；其 Team Profile 边界明确把平台调用交给 Protocol，
   没有另起旧 Harness。角色指令及版本化 Task 补充具体执行合同，不替代共享建模方法。
-- [废弃清单](../../../skills/ontology-modeling/references/deprecated-artifacts.md) 标记的是
+- [废弃清单](../../../modeling_team/skills/ontology-modeling/references/deprecated-artifacts.md) 标记的是
   `ontology-builder` 等更早资源；本次不扩大为清理这些历史证据。
 - `modeling_team/foreground_monitor.py` 的 `ARCHIVAL_ONLY = True`：新 Skill 不使用此旧 P2 启动器。
 
@@ -114,3 +114,10 @@ UI 元数据和发现链接通过；`git diff --check`/暂存差异检查通过�
 原有 AGENTS.md、CLAUDE.md 或 `.codex/agents/` 用户改动。无需 backend/frontend 套件或服务
 重启。没有真实 semantic start、Claude 修复调用、platform apply、SQL 或 L0/L1 验收证据；
 运行效果应在后续获准任务中验证，本次指令验证不替代这些证据。
+
+## 后续目录迁移（2026-09-10）
+
+用户随后要求区分宿主与 Team 内部技能。`ontology-modeling` 及其他 Team 技能已迁至
+[`modeling_team/skills/`](../../../modeling_team/skills/README.md)，原项目发现链接已移除。
+以上路径、命令和结果是本记录执行时的历史证据；当前布局和迁移验证见
+[迁移记录](../records/2026-09-10-modeling-team-skills-relocation.md)。

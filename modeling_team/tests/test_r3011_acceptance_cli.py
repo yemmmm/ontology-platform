@@ -853,7 +853,9 @@ def test_v3_prompt_assets_are_mounted_for_both_roles_and_legacy_paths_survive():
         )
         assert package_file.name == "package.yaml"
         assert instructions.parent.name == "v3-acceptance-batch"
-        assert skill.name == "SKILL.md"
+        assert skill == (
+            REPO_ROOT / "modeling_team" / "skills" / "v3-acceptance-batch" / "SKILL.md"
+        )
         text = instructions.read_text(encoding="utf-8")
         assert "packet order" in text
         # The v3 batch has no Source Examiner and no old single-question fields.
@@ -869,6 +871,11 @@ def test_v3_prompt_assets_are_mounted_for_both_roles_and_legacy_paths_survive():
     assert legacy_acceptance[1] == (
         REPO_ROOT / "modeling_team" / "agent-packages" / "acceptance-examiner" / "instructions.md"
     )
-    assert legacy_acceptance[2] == (
-        REPO_ROOT / "skills" / "lean-acceptance-examiner" / "SKILL.md"
-    )
+    for kind, skill_name in (
+        ("source", "source-examiner"),
+        ("platform", "platform-examiner"),
+        ("acceptance", "lean-acceptance-examiner"),
+    ):
+        assert CodexRuntimeAdapter._child_package_assets(kind, REPO_ROOT)[2] == (
+            REPO_ROOT / "modeling_team" / "skills" / skill_name / "SKILL.md"
+        )

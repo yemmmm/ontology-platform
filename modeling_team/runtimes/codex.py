@@ -2380,7 +2380,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             instructions = package / (
                 "platform-examiner.md" if kind == "platform" else "acceptance-judge.md"
             )
-            skill = package / "SKILL.md"
+            skill = root / "modeling_team" / "skills" / "v3-acceptance-batch" / "SKILL.md"
             for path in (instructions, skill):
                 try:
                     metadata = os.lstat(path)
@@ -2395,6 +2395,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         instructions = package / "instructions.md"
         skill = (
             root
+            / "modeling_team"
             / "skills"
             / (
                 "source-examiner"

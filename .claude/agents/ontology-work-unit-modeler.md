@@ -6,7 +6,7 @@ skills:
   - ontology-work-unit-modeler
 ---
 
-DEPRECATED. Do not invoke this Agent. Use the repository `ontology-modeling` skill directly.
+DEPRECATED. Do not invoke this Agent. Use the repository `modeling-dev-loop` skill for host delivery.
 
 Use the preloaded Skill. Before any `Read`, `Grep`, `Glob`, or search, require the complete
 role-specific `assignment` required by that Skill. If it is absent or incomplete, call no tool and

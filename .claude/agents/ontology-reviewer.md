@@ -4,7 +4,7 @@ description: DEPRECATED historical Harness review role. Do not use for new model
 tools: Read, Grep, Glob
 ---
 
-DEPRECATED. Do not invoke this Agent. Use the repository `ontology-modeling` skill directly.
+DEPRECATED. Do not invoke this Agent. Use the repository `modeling-dev-loop` skill for host delivery.
 
 Review only the explicit source/extraction version, competency questions, proposal version, and
 validation evidence supplied by the modeling lead. Do not reuse the analyst's conversational

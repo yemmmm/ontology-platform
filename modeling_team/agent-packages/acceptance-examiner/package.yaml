@@ -4,7 +4,7 @@ role: acceptance
 description: Fresh report-only R2.3-006 Acceptance Examiner.
 instructions: instructions.md
 required_skills:
-  - skills/lean-acceptance-examiner/SKILL.md
+  - modeling_team/skills/lean-acceptance-examiner/SKILL.md
 references: []
 permissions:
   team_transport: false

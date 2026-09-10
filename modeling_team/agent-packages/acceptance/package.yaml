@@ -4,7 +4,7 @@ role: acceptance
 description: Persistent read-only semantic Acceptance owner; uses only the Runner-scoped carrier.
 instructions: instructions.md
 required_skills:
-  - skills/acceptance/SKILL.md
+  - modeling_team/skills/acceptance/SKILL.md
 references:
   - modeling_team/references/r2-3-005-acceptance-standard.json
 permissions:
