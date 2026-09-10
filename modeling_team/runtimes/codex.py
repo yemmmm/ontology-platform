@@ -5698,7 +5698,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # issue channel on the transport (runner a06af84), so the frozen
         # per-role surface must expect its tools there too.
         if self._coordination_enabled or self._staged_decisions_enabled:
-            expected["team_transport"].update({"send_coordination", "report_issue"})
+            if self._coordination_enabled:
+                # Formal coordination also binds the coordination-phase tools.
+                expected["team_transport"].update({"send_coordination", "report_issue"})
+            else:
+                # Staged non-formal runs have no coordination-phase callback,
+                # so the transport never advertises send_coordination there.
+                expected["team_transport"].add("report_issue")
             if agent.package.role == "coordinator":
                 expected["team_transport"].add("issue_control")
         if agent.package.role == "protocol":
