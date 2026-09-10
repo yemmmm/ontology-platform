@@ -454,3 +454,20 @@ CLI在prepare后为staged任务绑定函数、调用时读取当前run key；基
 另对真实backend MCP作缺字段零写入请求，确认实际工具参数及错误信封。完整modeling_team
 回归1485通过、1既有opt-in跳过、321 subtests通过（82.03秒）；新增模块/CLI/测试Ruff通过，
 runner保留原有3项告警。未追加semantic start，不将本次机械验证写成建模或受治理检索PASS。
+
+## auth006（2026-09-10/11，glm-5.3-flash max ×9 次授权）
+
+用户授权9次fresh starts，Team模型glm-5.3-flash/max（profile glm-flash-max，glm-direct路由，
+用户指定优先于非高峰调度表），ClaudeCode保持默认provider。本轮共10次真实启动尝试，全部
+终态失败且平台建模批次写入始终为零；失败层仅runtime/infrastructure与collaboration/routing，
+无任何模型质量结论依据。完整台账、逐次第一异常、13个修复提交（6c78523..cd8d252：GLM长推
+理看门狗300→1200s、上游read_timeout 330→1250s、连续上游失败阈值、非formal两步owner
+answer权威合同、task补挂验收交接合同源、run_fallback_timeout 5400→10800、staged run协作
+issue通道及其表面/schema/gate缺陷修复）与两种额度口径的诚实核算见
+workspaces/skill-role-20260911/SESSION-HANDOFF-20260911-auth006.md（原始每轮证据保留于
+同目录各runtime-checkout，临时平台资源已删净并404核验，原Runner状态未改写）。
+L0 Runtime仍BLOCKED（最接近点：start6已到达已批准172项物质化计划，差一次staged submit）；
+L1仍PARTIAL（每轮合格候选/CQ，无落库验证/推理/受治理检索及独立语义验收）；L2/L3未验收。
+每步修复均经modeling_team全量回归（最终1502通过/1既有跳过/321 subtests）；无backend/
+frontend产品代码改动，无服务重启要求。额度口径歧义（保守10/9 vs 字面9/9）需用户裁决；
+新授权到达前不再启动。
