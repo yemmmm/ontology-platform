@@ -132,3 +132,28 @@ Claude Code 按用户最新配置 `deepseek-flash --effort max` 完成两处局�
 最终全量：**1419 passed、1 skipped、321 subtests passed，86.43 秒**。
 这是机械 socket/接线验证；第三轮真实运行仍需验证原始 Protocol 启动步骤。
 完整开发交付位于本轮 workspace 的 `repair-protocol-endpoint-result.md`。
+
+## auth-002 第三轮（进行中）
+
+`r30006-20260910-auth002-start3`，clean checkout `ef0dfea`。四角色 coordinator/modeling/protocol/
+competency-question 的 thread/started 及 turn/started 全部真实出现，model=deepseek-flash、
+provider=deepseek-direct、reasoningEffort=max；首个Coordinator输出开始读取staged材料。
+Protocol原启动失败步骤已越过，当前RUNNING。累计3/3，余额0，继续同一run，不追加fresh start。
+真实最终建模/检索质量仍待产物、写入与独立验收证据，不据此宣称整轮L0/L1通过。
+
+### 当前暂停与待办
+
+第三轮现为 `PAUSED`，通过既有 outer pause 中断活动 turn，保留进程与线程；恢复不是另开
+start。Modeling 已读材料并列出六项待访谈业务未知，第一问为合同状态、资产覆盖状态、
+覆盖日期、SUSPENDED 与空结束日期如何共同决定故障时有效覆盖。原文 delivery-1 已向
+用户展示并登记 outer-question；尚无业务回答，不代答、不审批 CQ。
+
+另有 `collaboration/routing` 的 prompt-contract 问题：Coordinator 重复尝试向 CQ 角色
+发 Team Transport 消息，收到拒绝后探索其他 recipient；Profile 明确 CQ 无通信边，私有
+访谈/审核由 Runner 直达。隔离拒绝本身正确，不应开放通信边。后续由 Claude Code 窄修
+权威提示，并通过既有合法反馈恢复当前会话，不能修改已冻结挂载或将隐藏 CQ 送入生产方。
+
+当前证据没有候选写入或语义验收结论，整体 PARTIAL；前两轮失败不是模型质量失败。
+本轮时间主要消耗在模型路由与启动接线修复，语义分析占比不足一半；停止扩展平台/harness，
+最短后续路径为确认访谈回答、沿既有 CQ 私有通道审核，再继续同一 run。
+宿主会话结束不代表后台监控；下次交互须先读取 state、host log 和进程，再输入回答与恢复。

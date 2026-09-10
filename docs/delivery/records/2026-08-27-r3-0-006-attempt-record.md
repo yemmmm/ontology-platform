@@ -22,13 +22,15 @@
 
 | 5 | r30006-20260910-auth002-start2 | auth-002 | 2026-09-10 14:26 +08:00 | CLEANED；runtime/infrastructure（platform-contract 接线遗漏） | commit `eb7fd92`；补齐 .venv 后 Protocol 仍 app-server closed its output；定位到非formal staged run 未启动 Protocol capability endpoint，但 namespace_command 必须挂载其 socket。完整副本 namespace/config/initialize 在替身 socket 下通过；无业务 turn，无模型质量结论。原证据与第一轮分开保留，scope deleted-empty、资源已删除、keys已撤销、无在途尝试。累计 2/3，剩余 1/3。 |
 
+| 6 | r30006-20260910-auth002-start3 | auth-002 | 2026-09-10 14:50 +08:00 | PAUSED（等待业务回答） | commit `ef0dfea`；四角色 thread/started 和 turn/started 全部真实出现，deepseek-flash/deepseek-direct/max。Protocol 原启动失败已越过；开始读材料与访谈/CQ准备。累计 3/3，余额 0；继续当前 run，不再 fresh start。 |
+
 ## 退款/异常
 
 （无）
 
 ## 当前授权准备（auth-002）
 
-已消耗 2/3，剩余 1/3。2026-09-10 最小模型检查发现官方 `/responses` 对 `deepseek-v4.1-flash` 返回 HTTP 400，
+已消耗 3/3，剩余 0/3；第三轮 PAUSED，保留同一线程等待业务回答。2026-09-10 最小模型检查发现官方 `/responses` 对 `deepseek-v4.1-flash` 返回 HTTP 400，
 明确支持名为 `deepseek-flash`、`deepseek-v4-pro`；用户于 13:35 +08:00 确认使用 `deepseek-flash`。
 模型可用性请求不是语义建模 start。本轮进度见
 [角色技能与真实验证记录](2026-09-10-role-scoped-skills-and-real-validation.md)。
