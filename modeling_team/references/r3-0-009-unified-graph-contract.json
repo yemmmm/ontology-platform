@@ -64,7 +64,8 @@
     "rules": [
       "items are neutral: no guessed platform IRI, semantic ID, or receipt reference",
       "candidate_id plus revision is immutable once published; a change publishes a new revision file and requires new approvals",
-      "shared_scope and scope are only meaningful for commonality relations; every other item keeps them empty/null"
+      "a candidate item carries exactly item_fields and nothing else; the set is closed and a submission validates it, so an item carrying any extra field such as scope is rejected as unified_schema_mismatch (candidate item fields drift from the contract)",
+      "shared_scope is the only item-level commonality carrier: a short non-empty string label on commonality relations, empty/null on every other item; scope is a Coordinator decision field (a non-empty JSON object mandatory on commonality_relation decisions, null on every other decision) and never appears on a candidate item - authoring the decision's scope mapping onto the item duplicates approved decision content and drifts the item from the closed field set"
     ]
   },
   "approvals": {
