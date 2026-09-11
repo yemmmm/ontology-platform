@@ -587,6 +587,22 @@ def _optional_nonempty_strings(value: Any) -> bool:
     return value is None or (isinstance(value, list) and all(_nonempty(item) for item in value))
 
 
+def _enum_code_set(value: Any) -> frozenset[str] | None:
+    """Enum codes carried by a conclusion/approval field.
+
+    A field holds either one non-empty string (single code) or a non-empty list
+    of non-empty strings (one code per materialized enum meaning, since the
+    backend compiles one ``create_enum_meaning`` command per code).  Returns
+    ``None`` for any other shape.
+    """
+
+    if isinstance(value, str):
+        return frozenset({value.strip()}) if value.strip() else None
+    if isinstance(value, list) and bool(value) and all(_nonempty(item) for item in value):
+        return frozenset(item.strip() for item in value)
+    return None
+
+
 def _safe_relative_artifact_path(value: Any) -> bool:
     """A non-empty run-workspace-relative path without escape or absolute form."""
 
@@ -679,11 +695,22 @@ def validate_analysis_conclusions(
             issues.append(
                 StagedDecisionIssue("conclusions_schema_mismatch", f"{conclusion_id}:mapped_property", artifact)
             )
-        if not _nonempty(entry.get("candidate_value")) or not _nonempty(
-            entry.get("business_meaning_hypothesis")
-        ):
+        text_field_problems = []
+        if _enum_code_set(entry.get("candidate_value")) is None:
+            text_field_problems.append(
+                "candidate_value expected one non-empty string or a non-empty list of non-empty strings, "
+                f"got {type(entry.get('candidate_value')).__name__}"
+            )
+        if not _nonempty(entry.get("business_meaning_hypothesis")):
+            text_field_problems.append(
+                "business_meaning_hypothesis expected a non-empty string, "
+                f"got {type(entry.get('business_meaning_hypothesis')).__name__}"
+            )
+        if text_field_problems:
             issues.append(
-                StagedDecisionIssue("conclusions_schema_mismatch", f"{conclusion_id}:text fields", artifact)
+                StagedDecisionIssue(
+                    "conclusions_schema_mismatch", f"{conclusion_id}:{'; '.join(text_field_problems)}", artifact
+                )
             )
         if not _nonempty_strings(entry.get("evidence_refs")):
             issues.append(
@@ -708,7 +735,7 @@ def validate_analysis_conclusions(
             )
             continue
         # Per-status required/forbidden fields (design section 3.3 table).
-        has_confirmed_value = _nonempty(entry.get("confirmed_enum_value"))
+        has_confirmed_value = _enum_code_set(entry.get("confirmed_enum_value")) is not None
         has_confirmed_by = _nonempty(entry.get("confirmed_by"))
         has_conflict_note = _nonempty(entry.get("conflict_note"))
         if status == "analyzed":
@@ -719,10 +746,21 @@ def validate_analysis_conclusions(
                     )
                 )
         elif status in {"confirmed", "materialized"}:
-            if not has_confirmed_value or not has_confirmed_by or has_conflict_note:
+            status_field_problems = []
+            if not has_confirmed_value:
+                status_field_problems.append(
+                    "confirmed_enum_value expected one non-empty string or a non-empty list of non-empty strings"
+                )
+            if not has_confirmed_by:
+                status_field_problems.append("confirmed_by expected a non-empty string")
+            if has_conflict_note:
+                status_field_problems.append("conflict_note must be absent")
+            if status_field_problems:
                 issues.append(
                     StagedDecisionIssue(
-                        "conclusions_invalid_status_fields", f"{conclusion_id}:{status}", artifact
+                        "conclusions_invalid_status_fields",
+                        f"{conclusion_id}:{status}:{'; '.join(status_field_problems)}",
+                        artifact,
                     )
                 )
         elif status == "conflict":
@@ -818,9 +856,14 @@ def validate_approvals(value: Any, *, unified: bool = False) -> tuple[StagedDeci
         if not isinstance(revision, int) or isinstance(revision, bool) or revision < 1:
             issues.append(StagedDecisionIssue("approvals_schema_mismatch", "revision", artifact))
             continue
-        if kind == "conclusion_confirmation" and not _nonempty(entry.get("confirmed_enum_value")):
+        if kind == "conclusion_confirmation" and _enum_code_set(entry.get("confirmed_enum_value")) is None:
             issues.append(
-                StagedDecisionIssue("approvals_schema_mismatch", "confirmed_enum_value", artifact)
+                StagedDecisionIssue(
+                    "approvals_schema_mismatch",
+                    "confirmed_enum_value expected one non-empty string or a non-empty list of non-empty strings, "
+                    f"got {type(entry.get('confirmed_enum_value')).__name__}",
+                    artifact,
+                )
             )
         if kind == "stage3_slot" and entry.get("confirmed_enum_value") is not None:
             issues.append(
@@ -1375,11 +1418,25 @@ def validate_staged_submission(
                     StagedDecisionIssue("staged_conclusion_already_materialized", f"command {index}", "capability")
                 )
                 continue
+            confirmed_codes = _enum_code_set(conclusion.get("confirmed_enum_value"))
+            payload_value = payload_map.get("enum_value")
             if (
                 conclusion.get("mapped_property") != payload_map.get("property_iri")
-                or conclusion.get("confirmed_enum_value") != payload_map.get("enum_value")
+                or confirmed_codes is None
+                or not _nonempty(payload_value)
+                or payload_value.strip() not in confirmed_codes
             ):
-                issues.append(StagedDecisionIssue("staged_trace_mismatch", f"command {index}", "capability"))
+                issues.append(
+                    StagedDecisionIssue(
+                        "staged_trace_mismatch",
+                        (
+                            f"command {index}: payload enum_value {payload_value!r} must equal one code of the "
+                            f"conclusion's confirmed_enum_value {sorted(confirmed_codes) if confirmed_codes else None} "
+                            f"on mapped_property {conclusion.get('mapped_property')!r}"
+                        ),
+                        "capability",
+                    )
+                )
                 continue
         elif kind == "update_enum_meaning":
             traces = traces_by_index.get(index, [])
@@ -1413,7 +1470,13 @@ def validate_staged_submission(
                 issues.append(StagedDecisionIssue("staged_trace_mismatch", f"command {index}", "capability"))
                 continue
             if payload_map.get("enum_value") is not None:
-                if payload_map.get("enum_value") != conclusion.get("confirmed_enum_value"):
+                confirmed_codes = _enum_code_set(conclusion.get("confirmed_enum_value"))
+                payload_value = payload_map.get("enum_value")
+                if (
+                    confirmed_codes is None
+                    or not _nonempty(payload_value)
+                    or payload_value.strip() not in confirmed_codes
+                ):
                     issues.append(StagedDecisionIssue("staged_trace_mismatch", f"command {index}", "capability"))
                     continue
             else:

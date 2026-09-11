@@ -1032,3 +1032,151 @@ def test_reference_contract_json_is_valid_and_self_consistent():
     assert "staged_unknown_enum_target" in capability["failure_reason_codes"]
     assert contract["kill_switch"]["reason_code"] == "staged_unreconciled_batch"
     assert len(contract["kill_switch"]["triggers"]) == 4
+
+
+# --- auth008-start1 forensics: enum code sets carried as string lists ---------
+
+
+def test_b1_multi_code_enum_lists_are_legal():
+    codes = ["placeholder-alpha", "placeholder-beta"]
+    conclusions = _conclusions(
+        [
+            _confirmed_entry(
+                candidate_value=list(codes),
+                confirmed_enum_value=list(codes),
+            )
+        ]
+    )
+    archive = {"ac-0001": [_conclusion_entry(status="analyzed", revision=1)]}
+    assert validate_analysis_conclusions(conclusions, archive=archive) == ()
+    approvals = _approvals([_approval_entry(confirmed_enum_value=list(codes))])
+    assert validate_approvals(approvals) == ()
+    assert cross_validate_approvals(approvals, conclusions, None) == ()
+    # The unlock mirrors the same list form and still matches the conclusion.
+    unlock = _materialize_unlock()
+    unlock["confirmed_codes"][0]["confirmed_enum_value"] = list(codes)
+    assert validate_materialization_unlock(unlock, conclusions=conclusions) == ()
+
+
+def test_b1_invalid_enum_list_shapes_are_typed():
+    assert _codes(validate_analysis_conclusions(_conclusions([_conclusion_entry(candidate_value=[])]))) == [
+        "conclusions_schema_mismatch"
+    ]
+    assert _codes(
+        validate_analysis_conclusions(_conclusions([_conclusion_entry(candidate_value=["placeholder-alpha", ""])]))
+    ) == ["conclusions_schema_mismatch"]
+    assert _codes(
+        validate_analysis_conclusions(_conclusions([_conclusion_entry(candidate_value=[1])]))
+    ) == ["conclusions_schema_mismatch"]
+    assert _codes(
+        validate_analysis_conclusions(_conclusions([_confirmed_entry(confirmed_enum_value=[], revision=1)]))
+    ) == ["conclusions_invalid_status_fields"]
+    # A plain non-empty string stays the canonical single-code form.
+    assert validate_analysis_conclusions(_conclusions([_confirmed_entry(revision=1)])) == ()
+    assert _codes(validate_approvals(_approvals([_approval_entry(confirmed_enum_value=[])]))) == [
+        "approvals_schema_mismatch"
+    ]
+
+
+def test_b4_each_confirmed_code_materializes_via_its_own_enum_command():
+    codes = ["placeholder-alpha", "placeholder-beta"]
+    conclusions = _conclusions(
+        [
+            _confirmed_entry(
+                candidate_value=list(codes),
+                confirmed_enum_value=list(codes),
+            )
+        ]
+    )
+    unlock = _materialize_unlock()
+    unlock["confirmed_codes"][0]["confirmed_enum_value"] = list(codes)
+
+    def check(enum_value):
+        command = _enum_command(
+            enum_meaning_id=f"placeholder-enum-{enum_value}",
+            enum_value=enum_value,
+            semantic_value=None,
+        )
+        payload = {
+            "protocol_id": "protocol",
+            "batch": _envelope([command]),
+            "value_traces": [_trace()],
+            "l3_nodes": [],
+        }
+        return validate_staged_submission(
+            payload, gate_open=True, conclusions=conclusions, unlock=unlock
+        )
+
+    # One create_enum_meaning per confirmed code: membership, not whole-set equality.
+    for code in codes:
+        assert check(code) == ()
+    assert _codes(check("placeholder-gamma")) == ["staged_trace_mismatch"]
+
+
+def test_b4_update_enum_value_accepts_any_confirmed_code():
+    codes = ["placeholder-alpha", "placeholder-beta"]
+    conclusions = _conclusions([_confirmed_entry(confirmed_enum_value=list(codes))])
+    receipt = _receipt()
+    update = {
+        "command_kind": "update_enum_meaning",
+        "payload": {
+            "enum_meaning_id": "placeholder-enum-1",
+            "enum_value": "placeholder-beta",
+        },
+    }
+    payload = {
+        "protocol_id": "protocol",
+        "batch": _envelope([update]),
+        "value_traces": [_trace()],
+        "l3_nodes": [],
+    }
+    assert (
+        validate_staged_submission(
+            payload,
+            gate_open=True,
+            conclusions=conclusions,
+            unlock=_materialize_unlock(),
+            receipts=[receipt],
+        )
+        == ()
+    )
+    outside = dict(update)
+    outside["payload"] = dict(update["payload"], enum_value="placeholder-gamma")
+    payload = {
+        "protocol_id": "protocol",
+        "batch": _envelope([outside]),
+        "value_traces": [_trace()],
+        "l3_nodes": [],
+    }
+    assert _codes(
+        validate_staged_submission(
+            payload, gate_open=True, conclusions=conclusions, unlock=_materialize_unlock()
+        )
+    ) == ["staged_trace_mismatch"]
+
+
+def test_issue_details_carry_expected_shapes():
+    # candidate_value failure names the field and the accepted shapes.
+    issues = validate_analysis_conclusions(_conclusions([_conclusion_entry(candidate_value=[])]))
+    assert "candidate_value" in issues[0].detail
+    assert "non-empty" in issues[0].detail
+    # A confirmed entry without a usable code set names confirmed_enum_value.
+    issues = validate_analysis_conclusions(
+        _conclusions([_confirmed_entry(confirmed_enum_value=[], revision=1)])
+    )
+    assert any("confirmed_enum_value" in issue.detail for issue in issues)
+    # Trace mismatch names the rejected payload code and the accepted codes.
+    codes = ["placeholder-alpha", "placeholder-beta"]
+    conclusions = _conclusions([_confirmed_entry(confirmed_enum_value=list(codes))])
+    payload = {
+        "protocol_id": "protocol",
+        "batch": _envelope([_enum_command(enum_value="placeholder-gamma", semantic_value=None)]),
+        "value_traces": [_trace()],
+        "l3_nodes": [],
+    }
+    issues = validate_staged_submission(
+        payload, gate_open=True, conclusions=conclusions, unlock=_materialize_unlock()
+    )
+    assert issues[0].reason_code == "staged_trace_mismatch"
+    assert "placeholder-gamma" in issues[0].detail
+    assert "placeholder-alpha" in issues[0].detail and "placeholder-beta" in issues[0].detail

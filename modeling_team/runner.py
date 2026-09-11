@@ -14,7 +14,7 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, ClassVar, Mapping
+from typing import Any, Callable, ClassVar, Mapping, Sequence
 
 
 from .contracts import (
@@ -4007,16 +4007,30 @@ class TeamRunner:
     # --- R3.0-008B segment 1: staged modeling decision gates -----------------
 
     def _deliver_staged_gate_feedback(
-        self, reason_code: str, artifact: str, recipient_role: str = "coordinator"
+        self,
+        reason_code: str,
+        artifact: str,
+        recipient_role: str = "coordinator",
+        details: Sequence[str] = (),
     ) -> None:
-        """Typed, deduplicated staged-gate feedback (T0: never a terminal kill)."""
+        """Typed, deduplicated staged-gate feedback (T0: never a terminal kill).
+
+        The fingerprint includes a digest of the issue details: identical
+        content stays deduplicated across ticks, while a changed issue on the
+        same artifact (different conclusion, different field) re-arms the
+        notice instead of being silently dropped (auth008-start1: a
+        content-blind fingerprint let a stalled artifact idle the run to its
+        fallback timeout after a single notice).
+        """
 
         if not self.run:
             return
         recipient = self._multi_slice_role_ids().get(recipient_role)
         if not isinstance(recipient, str) or not recipient:
             return
-        fingerprint = f"{recipient_role}:{reason_code}:{artifact}"
+        content = "\n".join(sorted(details))
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()[:16]
+        fingerprint = f"{recipient_role}:{reason_code}:{artifact}:{digest}"
         if fingerprint in self._staged_gate_feedback_fingerprints:
             return
         self._staged_gate_feedback_fingerprints.add(fingerprint)
@@ -4026,6 +4040,7 @@ class TeamRunner:
             "gate_state": "closed",
             "reason_code": reason_code,
             "artifact": artifact,
+            "details": sorted(details),
             "remediation": (
                 "Repair the staged artifact per "
                 "modeling_team/references/r3-0-008b-staged-decisions-contract.json; "
@@ -4148,13 +4163,15 @@ class TeamRunner:
             if issue.reason_code == "staged_unreconciled_batch":
                 self._staged_gate_kill_switch(issue.reason_code, issue.detail)
                 return False
-            self._deliver_staged_gate_feedback(issue.reason_code, issue.artifact)
+            self._deliver_staged_gate_feedback(issue.reason_code, issue.artifact, details=(issue.detail,))
         # 3) Stage 3 minimal slot prerequisite (approval cross-validated).
         approvals = self._load_staged_approvals(run_root)
         slot_issue = staged_stage3_issue(run_root, approvals, unified=self._unified_graph)
         if slot_issue is not None:
             # Prerequisite model: intervene without latch or gate close.
-            self._deliver_staged_gate_feedback(slot_issue.reason_code, slot_issue.artifact)
+            self._deliver_staged_gate_feedback(
+                slot_issue.reason_code, slot_issue.artifact, details=(slot_issue.detail,)
+            )
             return False
         return True
 
@@ -6460,7 +6477,12 @@ class TeamRunner:
         rate limit.
         """
 
-        if not self.run or not self._formal_coordination_enabled():
+        if not self.run:
+            return
+        # auth008-start1: staged v3 runs (e.g. r3-0-006-real-full with the CQ
+        # profile) are not formal coordination, but a Coordinator stall after
+        # staged gate feedback deserves the same bounded nudge.
+        if not (self._formal_coordination_enabled() or getattr(self, "_staged_decisions", False)):
             return
         idle_baseline = getattr(self, "_idle_inquiry_baseline", None)
         if idle_baseline is None:

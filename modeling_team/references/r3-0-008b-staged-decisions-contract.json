@@ -79,6 +79,7 @@
     ],
     "rules": [
       "mapped_property is an absolute IRI; evidence_refs is a non-empty list; proposed_level is one of L1, L2, L3; blocking_unknowns is an optional list",
+      "candidate_value and confirmed_enum_value each hold the conclusion's enum code set: either one non-empty string, or a non-empty list of non-empty strings when the conclusion resolves several codes (one create_enum_meaning command is submitted per code); an empty value, empty list, or a list holding empty or non-string items is invalid (conclusions_schema_mismatch for candidate_value, conclusions_invalid_status_fields for a confirmed/materialized confirmed_enum_value)",
       "status analyzed forbids confirmed_enum_value, confirmed_by, and conflict_note",
       "status confirmed and materialized require confirmed_enum_value and confirmed_by and forbid conflict_note",
       "status conflict requires conflict_note and forbids confirmed_by; confirmed_enum_value may record the disputed candidate",
@@ -166,7 +167,7 @@
     ],
     "kinds": ["conclusion_confirmation", "stage3_slot"],
     "rules": [
-      "kind conclusion_confirmation: target_id is the conclusion_id, revision equals the current conclusion revision, and confirmed_enum_value equals the conclusion's confirmed_enum_value; every confirmed or materialized conclusion must be anchored by such an entry (conclusions_approval_missing otherwise)",
+      "kind conclusion_confirmation: target_id is the conclusion_id, revision equals the current conclusion revision, and confirmed_enum_value equals the conclusion's confirmed_enum_value in the same form (one non-empty string, or a non-empty list of non-empty strings mirroring the conclusion's code set); every confirmed or materialized conclusion must be anchored by such an entry (conclusions_approval_missing otherwise)",
       "kind stage3_slot: target_id is the slot's scenario_id and approved_by matches the slot's approved_by; confirmed_enum_value must be absent (stage3_approval_record_missing otherwise)",
       "revision is required on every entry, including kind stage3_slot, and is a positive integer >= 1; null and boolean values are invalid (approvals_schema_mismatch otherwise)",
       "the approvals artifact is the authoritative approval record; approval authority is anchored mechanically by the coordinator-exclusive writable directory bind"
@@ -248,7 +249,7 @@
       "rules": [
         "every create_enum_meaning and update_enum_meaning command must carry at least one trace naming a known conclusion (staged_missing_trace / staged_trace_mismatch otherwise)",
         "the traced conclusion must be in confirmed status (staged_conclusion_not_confirmed, staged_conclusion_conflict, staged_conclusion_already_materialized otherwise)",
-        "create_enum_meaning payload must carry property_iri equal to the conclusion's mapped_property and enum_value equal to the conclusion's confirmed_enum_value",
+        "create_enum_meaning payload must carry property_iri equal to the conclusion's mapped_property and enum_value equal to one code of the conclusion's confirmed_enum_value; when the conclusion carries a list of codes, each code is materialized by its own create_enum_meaning command",
         "update_enum_meaning traces must carry mapped_property equal to the conclusion's mapped_property; update_enum_meaning payload must not carry property_iri",
         "an update_enum_meaning without enum_value must name its enum target (enum_meaning_id or enum_meaning_iri) already covered by an authoritative receipt traced to the same conclusion (staged_unknown_enum_target otherwise)"
       ]

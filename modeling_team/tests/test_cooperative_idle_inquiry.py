@@ -54,15 +54,25 @@ def _idle_runner(
     *,
     now: list[float],
     acceptance: RunnerAcceptanceCarrier | None = None,
+    staged: bool = False,
 ) -> TeamRunner:
     agents = [
         SimpleNamespace(agent_id=role, package=SimpleNamespace(role=role))
-        for role in ("modeling", "protocol", "coordinator", "acceptance")
+        for role in (
+            ("modeling", "protocol", "coordinator", "cq")
+            if staged
+            else ("modeling", "protocol", "coordinator", "acceptance")
+        )
     ]
     configuration = SimpleNamespace(
-        task=SimpleNamespace(schema_version=2, task_id="r2-3-009-formal-acceptance"),
+        task=SimpleNamespace(
+            schema_version=2,
+            task_id="r3-0-006-real-full" if staged else "r2-3-009-formal-acceptance",
+        ),
         profile=SimpleNamespace(
-            profile_id="r2-3-009-modeling-team",
+            profile_id=(
+                "r3-0-011-competency-question" if staged else "r2-3-009-modeling-team"
+            ),
             agents=agents,
             parameters={},
         ),
@@ -79,9 +89,10 @@ def _idle_runner(
         root=run_root,
         scope={"mode": "create"},
         configuration=configuration,
-        formal_contract=SimpleNamespace(requirement_id="R2.3-009"),
+        formal_contract=None if staged else SimpleNamespace(requirement_id="R2.3-009"),
     )
     runner.acceptance = acceptance
+    runner._staged_decisions = staged
     runner._idle_inquiry_seconds = 300.0
     runner._idle_inquiries_sent = 0
     runner._idle_inquiry_baseline = 1000.0
@@ -193,3 +204,37 @@ def test_carrier_has_live_children_tracks_child_lifecycle(tmp_path: Path) -> Non
     assert carrier.has_live_children is False
     carrier._rounds["round-1"]["children"]["platform"] = object()
     assert carrier.has_live_children is True
+
+
+def test_staged_nonformal_run_gets_idle_inquiry(tmp_path: Path) -> None:
+    # auth008-start1 (2026-09-11): the r3 staged v3 run (r3-0-006-real-full +
+    # r3-0-011-competency-question) is not formal coordination, so the idle
+    # gate returned early and a Coordinator stall after staged gate feedback
+    # idled to the run-fallback timeout with no inquiry at all.  Staged runs
+    # get the same bounded nudge.
+    now = [1300.0]
+    adapter = _IdleAdapter(last_output=1000.0)
+    runner = _idle_runner(tmp_path, adapter, now=now, staged=True)
+    runner._check_cooperative_idle()
+    assert len(adapter.sent) == 1
+    recipient, delivery = adapter.sent[0]
+    assert recipient == "coordinator"
+    assert delivery.kind == "idle-inquiry"
+    evidence = [
+        json.loads(line)
+        for line in (tmp_path / "run" / "evidence" / "idle-inquiry.jsonl")
+        .read_text()
+        .splitlines()
+    ]
+    assert evidence[0]["inquiry_count"] == 1
+
+
+def test_nonformal_nonstaged_run_stays_unwatched(tmp_path: Path) -> None:
+    # Guard against over-widening: a run that is neither formal nor staged
+    # keeps the old behavior (no idle inquiry).
+    now = [1300.0]
+    adapter = _IdleAdapter(last_output=1000.0)
+    runner = _idle_runner(tmp_path, adapter, now=now, staged=True)
+    runner._staged_decisions = False
+    runner._check_cooperative_idle()
+    assert adapter.sent == []
