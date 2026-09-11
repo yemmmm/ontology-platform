@@ -471,3 +471,87 @@ L1仍PARTIAL（每轮合格候选/CQ，无落库验证/推理/受治理检索及
 每步修复均经modeling_team全量回归（最终1502通过/1既有跳过/321 subtests）；无backend/
 frontend产品代码改动，无服务重启要求。额度口径歧义（保守10/9 vs 字面9/9）需用户裁决；
 新授权到达前不再启动。
+
+## auth007/auth008（2026-09-11，glm-5.3-flash max，两次授权各 ×3）
+
+auth-r3-0-006-007（07:52 +08:00 授权 3 次 fresh starts）start1 于 07:53 启动
+（runtime-checkout-auth007-1，runtime commit f62a782）；auth-r3-0-006-008（17:41 授权
+3 次）start1 于 17:42 启动（runtime-checkout-auth008-1，同一 commit，授权注记确认
+auth007 终态后无可恢复 live run，按 fresh start 使用）。两次 run 均无平台建模写入，
+终态均为 run fallback timeout 10800 active seconds → TERMINAL_FAILURE_CLEANED
+（auth007 11:17，auth008 20:52），资源清理完成、无残留进程、控制 FIFO 已清空；
+auth008 额度仅消耗 1/3，剩 2 次 fresh starts 未使用。
+
+auth007 进展：CQ 冻结与 staged 链路走通，gate 反馈共 4 次（07:53 stage3_missing_artifact、
+09:20 conclusions_schema_mismatch、09:37 conclusions_approval_missing、09:50
+unlock_code_mismatch，均只发一次），最后输出 09:52，此后约 85 分钟无任何活动直至超时。
+auth008 进展为本任务历次最远：issue-1 业务澄清 pause/resume 走通（f62a782 新恢复链路
+首次实战）、CQ 冻结、stage3 决策、候选 r2（175 项 + 7 显式）、24 条 conclusion 全部
+analyzed→confirmed r2（r1 逐条归档）、unlock/checklist 就绪、staged submit 端点已武装；
+gate 反馈 4 次（18:08:41 conclusions_schema_mismatch、18:17:03
+conclusions_invalid_status_fields + conclusions_approval_missing、18:17:47
+approvals_schema_mismatch），coordinator 18:19:34 修复 approvals（补 note 字段）后
+18:19:42 turn 正常完成，四角色线程全部 idle，此后 2 小时 33 分零活动直至超时。
+
+### 停滞根因（2026-09-11 深夜对保留工件的 forensic 复盘）
+
+用主仓 f62a782 校验器对 auth008 保留工件现场重跑，`staged_artifact_issues(unified=True)`
+返回 74 个 issue：26× conclusions_schema_mismatch（text fields）+ 24×
+conclusions_invalid_status_fields（:confirmed）+ 24× approvals_schema_mismatch
+（confirmed_enum_value）。逐字段核对确认全部同源：四个角色把 candidate_value 与
+confirmed_enum_value 写成 JSON 数组（与 CQ 枚举集合语义一致），而确定性校验器 `_nonempty`
+只接受非空字符串（runner 测试夹具即字符串形态；r3-0-008b-staged-decisions-contract.json
+声明了字段名与状态机规则但从未声明字段类型）。类型分歧自 r1 起就存在，因此这批 issue
+在整轮 run 中持续为真。
+
+停滞机制为四层叠加，缺一不会致死：
+
+1. gate 反馈按 `recipient:reason_code:artifact` 指纹永久去重且对内容不敏感
+  （runner.py `_deliver_staged_gate_feedback`）：每个 reason code 只投递一次，工件重写后
+   同码 issue 不再发声——18:17:47 之后每 0.1s tick 都重新验出同一批 issue 但全部被吞。
+2. 反馈 detail 只有字段名（无 expected/actual、无类型提示），coordinator 按提示把
+   approvals 误诊为缺 note 字段并"修复"，gate 实际抱怨的类型分歧从未被在轮内识别。
+3. 工件合法→沉默、非法→一次性反馈的门禁设计使"修复后谁来派发下一 turn"无人 owns：
+   coordinator 修复完等 Runner 复查，Runner 复查发现 issue 却被指纹去重静音，Broker 无
+   待投递、无 open reply slot，routing 无从派发。
+4. 本应兜底的 `_check_cooperative_idle`（300s 全 idle 询问机制）被
+   `_formal_coordination_enabled()` 的 r2-3-003/005 硬编码白名单挡住（r3-0-006 task 与
+   r3-0-011 profile 均不在列），整个窗口零询问、零 nudge，只剩 10800s fallback 单点。
+
+auth007 的 85 分钟死寂为同构停滞（最后一条 gate 反馈后被去重静音至超时；其工件已随
+清理删除，类型分歧无法直接复核，但 09:20 的 conclusions_schema_mismatch 与 auth008
+首码一致）。两次失败分类 collaboration/routing 均成立，仍无任何模型质量结论依据。
+
+### 下次启动前的候选修复（2026-09-11 深夜已按最窄层实施，auth008-start2 前生效）
+
+实施决策（全部 TDD，先测后码；GitNexus detect_changes 风险 LOW、受影响流程 0）：
+类型约定选"接受非空字符串或非空字符串数组"（后端
+`compile_create_enum_meaning` 每个 enum code 编译一条 create_enum_meaning，数组是
+自然结论形态）；失败层定位为 platform-contract（校验器/反馈实现未对齐合同），
+不动 `_formal_coordination_enabled` 白名单本身。
+
+1. 已实施：`_enum_code_set`（staged_decisions.py）——candidate_value/confirmed_enum_value
+   接受非空字符串或非空字符串列表；create/update_enum_meaning 的 trace 匹配由全等改为
+   逐码成员判断（每码一条 create_enum_meaning）；合同 JSON 同步声明该类型与逐码物化规则；
+2. 已实施：gate 反馈指纹加入 details 的 sha256 摘要——同内容仍去重，内容变化即重新武装；
+3. 已实施：notice 携带 `details` 数组；校验器 detail 串写明字段名、期望形态与
+   实际类型（trace mismatch 附 payload 码与合法码集合）；
+4. 已实施：`_check_cooperative_idle` 入口放宽为 formal 协调 **或** `_staged_decisions`，
+   staged r3 run 同样获得 300s 有界 idle 询问（白名单本身未改）。
+
+新增测试：`test_r30008b_staged_decisions.py`（多码合法/非法形态 typed/逐码成员/
+detail 内容断言）、`test_r30008b_gate_feedback_rearm.py`（同内容去重/变更重武装/
+notice 携带 details）、`test_cooperative_idle_inquiry.py`（staged run 获得询问 +
+非 formal 非 staged 不询问守护）。全量回归 1513 passed / 1 skipped / 328 subtests；
+`test_deepseek_codex_runtime.py` 7 个失败为 HEAD 既有环境相关失败（已用干净
+worktree 在 f62a782 复现），与本次修改无关。
+
+原候选清单：1. 在 r3-0-008b 合同中显式声明 candidate_value/confirmed_enum_value 的类型（沿用校验器
+   字符串约定，或校验器改为接受非空字符串数组，二选一并同步测试夹具与提示面）；
+2. gate 反馈去重指纹加入工件内容摘要（工件变更即重新武装）或加 TTL/升级通道；
+3. 反馈 detail 携带 expected-vs-actual（至少写明期望类型）；
+4. 将 `_check_cooperative_idle` 与 r2 白名单解耦，覆盖 staged r3 run。
+
+原始证据保留于 workspaces/skill-role-20260911/（auth006-start1..9、auth007、auth008
+各 checkout 的 evidence/ 与 staged 工件；auth008 保留 conclusions r1 归档链、approvals
+r2 与全部 gate 反馈账本）。本节为首次将 auth007/auth008 记入本台账。
