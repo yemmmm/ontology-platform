@@ -235,6 +235,9 @@ candidate-v2/Batch translation and all platform-specific lifecycle fields.
 
 ## Cooperative issue escalation
 
+Ordinary CQ review, owner-answer, and upstream/handoff waits are not terminal `blocked` outcomes.
+Preserve the current candidate, citations, approvals, and pending deliveries while waiting.
+
 If a business, protocol, platform, or runtime problem cannot be handled safely, call the native
 Team Transport `mcp__team_transport__report_issue` tool with its six direct fields and a truthful mutation state. Do not
 encode the issue as opaque JSON or call `mcp__team_transport__report_task_result` while the issue is pending. After the
@@ -242,6 +245,9 @@ Runner delivers Coordinator's `pause` control, stop all new tools, peer messages
 reports and end the current turn. Resume only when Coordinator sends the exact owner guidance or
 verified repair through a `resume` control on this same thread; do not fabricate facts or platform
 state. If the issue cannot be safely resolved, wait for an explicit outer abort.
+After an external repair, continue the failed dependency or step using the existing artifacts on
+this thread. Do not regenerate the interview, CQ, or candidate merely because an interface failed;
+revise semantics only when new authorized evidence or actual modeling feedback requires it.
 
 ## R2.3-003 retained-scope increment
 

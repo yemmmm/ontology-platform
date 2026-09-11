@@ -60,6 +60,7 @@ from .competency_questions import (
     validate_model_binding,
 )
 from .outer_input import OuterInputFifo, OuterInputFramingError
+from .interventions import RecoverableOuterInputError
 from .platform_scope import PlatformScope
 from .preflight import normalize_scope_for_contract
 from .runner import TeamRunner
@@ -223,9 +224,9 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
     ``receive_outer``, and the foreground emit/observe acknowledgement are
     identical for stdin and FIFO lines.  Only the framing (readline vs FIFO
     byte buffering) differs; this helper owns everything after a complete line
-    exists.  The fatal ``receive_outer`` boundary is preserved: a
-    ``TeamConfigurationError`` raised inside ``receive_outer`` (or its drain)
-    propagates and tears the run down, exactly as before.
+    exists.  Typed no-side-effect outer input rejections are emitted for this
+    line and the loop continues; persistence, Runtime delivery, and internal
+    ``TeamConfigurationError`` failures still propagate and tear the run down.
     """
     try:
         message = _decode_foreground_message(line)
@@ -249,10 +250,14 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
     if _handle_cq_outer_message(runner, message, emit_and_observe):
         # R3.0-011: CQ inputs are fully handled ahead of the fatal boundary.
         return
-    # Once admitted, preserve the existing fatal boundary.  Do not catch
-    # TeamConfigurationError raised by receive_outer's internal drain or by
-    # persistence/Runtime delivery failures.
-    output = runner.receive_outer(message)
+    # Only the dedicated no-side-effect outer rejection is recoverable here.
+    # Persistence, Runtime delivery, and internal invariant failures retain the
+    # existing fatal boundary and are deliberately not caught.
+    try:
+        output = runner.receive_outer(message)
+    except RecoverableOuterInputError as exc:
+        emit_outer_input_rejection(exc.as_dict())
+        return
     if output:
         emit_and_observe(output)
 
@@ -295,11 +300,14 @@ def _foreground_event_loop(
         if observer is not None:
             observer(output)
 
-    def emit_outer_input_rejection() -> None:
+    def emit_outer_input_rejection(detail: dict[str, object] | None = None) -> None:
         # This is a control-plane error, not a Runner delivery.  Do not route
         # it through ``observe_foreground_output``: formal display binding
         # must only inspect Runner-generated delivery envelopes.
-        emit([dict(_OUTER_INPUT_REJECTION)])
+        payload = dict(_OUTER_INPUT_REJECTION)
+        if detail is not None:
+            payload.update(detail)
+        emit([payload])
 
     stdin_active = True
     while True:

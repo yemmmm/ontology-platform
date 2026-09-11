@@ -647,7 +647,7 @@ class IssueEscalationTests(unittest.TestCase):
                     self, _agent_id: str, delivery: RuntimeDelivery
                 ) -> RuntimeDispatchReceipt:
                     self.sent.append(delivery)
-                    return RuntimeDispatchReceipt("steer", "turn-active")
+                    return RuntimeDispatchReceipt("start", "turn-new")
 
             adapter = Adapter()
             runner = object.__new__(TeamRunner)
@@ -661,6 +661,8 @@ class IssueEscalationTests(unittest.TestCase):
             )
             runner._candidate_progress = None
             runner._issue_abort_requested = False
+            runner._issue_event_queue = []
+            runner._issue_event_lock = threading.Lock()
             runner._append_evidence = lambda *_args, **_kwargs: None
             runner._state = lambda *_args, **_kwargs: None
             report = runner.transport.report_issue(
@@ -703,10 +705,19 @@ class IssueEscalationTests(unittest.TestCase):
                 control_epoch=1,
                 resolution=resolution,
             )
-            with self.assertRaisesRegex(TeamConfigurationError, "requires an idle reporter"):
-                runner._dispatch_issue_control(runner._issue_control_from_payload(resume), [])
+            output: list[dict[str, object]] = []
+            runner._dispatch_issue_control(runner._issue_control_from_payload(resume), output)
             self.assertEqual(adapter.sent, [])
-            self.assertEqual(runner.transport.issue_ledger.state, "rebind_required")
+            self.assertEqual(runner.transport.issue_ledger.state, "resume_sent")
+            self.assertEqual(output[0]["reason_code"], "resume_waiting_reporter")
+            self.assertEqual(len(runner._issue_event_queue), 1)
+
+            adapter.agents["modeling"].active_turn_id = None
+            resumed_output: list[dict[str, object]] = []
+            runner._handle_issue_events(resumed_output)
+            self.assertEqual(len(adapter.sent), 1)
+            self.assertEqual(runner.transport.issue_ledger.state, "resolved")
+            self.assertEqual(resumed_output[0]["type"], "issue-control")
 
     def test_cleanup_is_deferred_while_issue_is_pending(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

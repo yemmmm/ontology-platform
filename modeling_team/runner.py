@@ -62,7 +62,7 @@ from .preflight import (
     run_existing_scope_preflight,
     run_prestart_preflight,
 )
-from .runtimes.base import RuntimeAdapter, RuntimeDelivery
+from .runtimes.base import RuntimeAdapter, RuntimeDelivery, RuntimeDispatchReceipt
 from .capability_mcp import STAGED_PROTOCOL_OPERATION
 from .candidate_progress import (
     FormalCandidateError,
@@ -92,6 +92,8 @@ from .interventions import (
     IssueControl,
     IssueError,
     IssueResolution,
+    RecoverableOuterInputError,
+    REPAIR_COMPONENTS,
 )
 from .protocol_mcp_launch import (
     canonical_protocol_mcp_mode_contract,
@@ -3437,7 +3439,11 @@ class TeamRunner:
         action = message.get("action")
         if action == "question":
             if self._formal_coordination_enabled():
-                raise TeamConfigurationError("schema-v2 outer questions are Runner-owned")
+                raise RecoverableOuterInputError(
+                    "schema-v2 outer questions are Runner-owned",
+                    code="invalid_outer_question",
+                    run_id=self.run.run_id,
+                )
             self._record_outer_question(message)
         elif action == "issue_resolution":
             # 2026-09-11 auth006-start8: staged v3 runs enable the cooperative
@@ -3448,10 +3454,30 @@ class TeamRunner:
             ):
                 raise TeamConfigurationError("issue escalation capability is unavailable")
             resolution = self._outer_issue_resolution(message)
+            if resolution.resolution_type != "abort":
+                blocker = self._staged_resolution_blocker()
+                if blocker is not None:
+                    raise RecoverableOuterInputError(
+                        blocker,
+                        code="unknown_mutation_requires_reconciliation",
+                        run_id=resolution.run_id,
+                        issue_id=resolution.issue_id,
+                        reporter_id=resolution.reporter_id,
+                        control_epoch=resolution.control_epoch,
+                    )
             try:
                 self.transport.persist_issue_resolution(resolution)
             except RoutingError as exc:
-                raise TeamConfigurationError(str(exc)) from exc
+                if exc.code != "issue-resolution-rejected":
+                    raise
+                raise RecoverableOuterInputError(
+                    str(exc),
+                    code="issue_resolution_rejected",
+                    run_id=message.get("run_id") if isinstance(message.get("run_id"), str) else self.run.run_id,
+                    issue_id=message.get("issue_id") if isinstance(message.get("issue_id"), str) else None,
+                    reporter_id=message.get("reporter_id") if isinstance(message.get("reporter_id"), str) else None,
+                    control_epoch=message.get("control_epoch") if isinstance(message.get("control_epoch"), int) and not isinstance(message.get("control_epoch"), bool) else None,
+                ) from exc
             # Persist first; only then make the resolution visible to Coordinator.
             self._append_evidence("issue-resolution", resolution.as_dict())
             coordinator = self._issue_coordinator_id()
@@ -3506,15 +3532,23 @@ class TeamRunner:
                             {"event": "modeling_delivery_failed"},
                         )
         elif action == "user":
-            if self._formal_coordination_enabled() and set(message) - {
+            text = message.get("text")
+            if not isinstance(text, str) or not text.strip():
+                raise RecoverableOuterInputError(
+                    "outer user text must be a non-empty string",
+                    code="invalid_owner_answer",
+                    run_id=self.run.run_id,
+                )
+            if self.run.configuration.task.schema_version == 2 and set(message) - {
                 "action",
                 "text",
                 "question_delivery_id",
             }:
-                raise TeamConfigurationError("schema-v2 owner answer envelope has invalid fields")
-            text = message.get("text")
-            if not isinstance(text, str):
-                raise TeamConfigurationError("outer user text must be a string")
+                raise RecoverableOuterInputError(
+                    "schema-v2 owner answer envelope has invalid fields",
+                    code="invalid_owner_answer",
+                    run_id=self.run.run_id,
+                )
             coordinator = next(
                 agent.agent_id
                 for agent in self.run.configuration.profile.agents
@@ -3569,38 +3603,99 @@ class TeamRunner:
     def _outer_issue_resolution(self, message: dict[str, Any]) -> IssueResolution:
         """Parse one strict outer resolution envelope; no opaque JSON payloads."""
         base = {"action", "issue_id", "reporter_id", "control_epoch", "resolution_type"}
-        if set(message) - {
+        allowed = {
             *base,
+            "run_id",
             "resolution_text",
             "repair_component",
             "before_digest",
             "after_digest",
             "verification_reference",
             "mutation_reconciliation",
-        }:
-            raise TeamConfigurationError("issue resolution envelope has invalid fields")
+        }
+        context = {
+            "run_id": message.get("run_id") if isinstance(message.get("run_id"), str) else None,
+            "issue_id": message.get("issue_id") if isinstance(message.get("issue_id"), str) else None,
+            "reporter_id": message.get("reporter_id") if isinstance(message.get("reporter_id"), str) else None,
+            "control_epoch": message.get("control_epoch") if isinstance(message.get("control_epoch"), int) and not isinstance(message.get("control_epoch"), bool) else None,
+        }
+        if message.get("action") != "issue_resolution":
+            raise RecoverableOuterInputError(
+                "issue resolution action is invalid", **context
+            )
+        if set(message) - allowed:
+            raise RecoverableOuterInputError(
+                "issue resolution envelope has invalid fields", **context
+            )
         if not base.issubset(message):
-            raise TeamConfigurationError("issue resolution envelope is incomplete")
+            raise RecoverableOuterInputError(
+                "issue resolution envelope is incomplete", **context
+            )
+        has_run_id = "run_id" in message
+        supplied_run_id = message.get("run_id")
+        if has_run_id and (
+            not isinstance(supplied_run_id, str) or supplied_run_id != self.run.run_id
+        ):
+            raise RecoverableOuterInputError(
+                "issue resolution run binding is invalid",
+                code="issue_run_mismatch",
+                **context,
+            )
         resolution_type = message.get("resolution_type")
+        if not isinstance(resolution_type, str):
+            raise RecoverableOuterInputError(
+                "issue resolution type is invalid", **context
+            )
         if resolution_type in {"guidance", "abort"}:
             expected = base | {"resolution_text"}
-            if set(message) != expected:
-                raise TeamConfigurationError("issue resolution guidance fields are invalid")
+            if set(message) - (expected | {"run_id"}) or not expected.issubset(message):
+                raise RecoverableOuterInputError(
+                    "issue resolution guidance fields are invalid", **context
+                )
         elif resolution_type == "repair_completed":
-            expected = base | {
+            legacy_fields = {
                 "repair_component",
                 "before_digest",
                 "after_digest",
                 "verification_reference",
                 "mutation_reconciliation",
             }
-            if set(message) != expected:
-                raise TeamConfigurationError("issue resolution repair fields are invalid")
+            expected = base | {"repair_component"}
+            if set(message) - (expected | legacy_fields | {"run_id", "resolution_text"}):
+                raise RecoverableOuterInputError(
+                    "issue resolution repair fields are invalid", **context
+                )
+            if not expected.issubset(message):
+                raise RecoverableOuterInputError(
+                    "issue resolution repair fields are incomplete", **context
+                )
+            component = message.get("repair_component")
+            if not isinstance(component, str) or component not in REPAIR_COMPONENTS:
+                raise RecoverableOuterInputError(
+                    "repair component is unsupported",
+                    code="repair_rebind_required",
+                    **context,
+                )
+            # The historical five-field envelope may omit run_id because its
+            # FIFO/run binding was already established.  It is only legacy
+            # compatible when all five values are present and non-empty; a
+            # sparse/null envelope is the new short form and must carry the
+            # explicit run binding.
+            legacy_complete = legacy_fields.issubset(message) and all(
+                isinstance(message[field], str) and bool(message[field].strip())
+                for field in legacy_fields
+            )
+            if not legacy_complete and "run_id" not in message:
+                raise RecoverableOuterInputError(
+                    "short repair resolution requires run_id", **context
+                )
         else:
-            raise TeamConfigurationError("issue resolution type is invalid")
+            raise RecoverableOuterInputError(
+                "issue resolution type is invalid", **context
+            )
         try:
             return IssueResolution(
-                run_id=self.run.run_id if self.run else "",
+                run_id=supplied_run_id if isinstance(supplied_run_id, str) else self.run.run_id,
                 issue_id=message["issue_id"],
                 reporter_id=message["reporter_id"],
                 resolution_type=resolution_type,
@@ -3613,7 +3708,31 @@ class TeamRunner:
                 mutation_reconciliation=message.get("mutation_reconciliation"),
             )
         except (TypeError, IssueError) as exc:
-            raise TeamConfigurationError("issue resolution envelope is invalid") from exc
+            raise RecoverableOuterInputError(
+                "issue resolution envelope is invalid", **context
+            ) from exc
+
+    def _staged_resolution_blocker(self) -> str | None:
+        """Return durable staged-write evidence that keeps repair closed.
+
+        The Agent-reported mutation state is not authoritative.  A durable
+        unknown intent, receipt mismatch, or an already-latched staged gate
+        keeps the repair gate closed. This helper only reads the artifacts and
+        never adjudicates or reopens the gate.
+        """
+
+        if not getattr(self, "_staged_decisions", False) or self.run is None:
+            return None
+        if getattr(self, "_staged_gate_killed", False):
+            return "staged write gate is closed pending reconciliation"
+        try:
+            issues = staged_intent_receipt_issues(self.run.root)
+        except StagedDecisionArtifactError as exc:
+            return f"staged write evidence is unreadable: {exc.detail}"
+        if issues:
+            first = issues[0]
+            return f"staged write evidence requires reconciliation: {first.detail}"
+        return None
 
     def _observe_modeling_question(self, delivery: Any) -> None:
         """Register only a formal Modeling->Coordinator reply request internally."""
@@ -6576,7 +6695,7 @@ class TeamRunner:
         if control.action == "resume" and control.resolution is not None:
             if control.resolution.resolution_type == "repair_completed":
                 component = control.resolution.repair_component
-                if component not in {"shared_backend_service", "shared_backend_data"}:
+                if component not in REPAIR_COMPONENTS:
                     self.transport.fail_issue_rebind(
                         issue_id=control.issue_id,
                         reporter_id=control.reporter_id,
@@ -6611,12 +6730,34 @@ class TeamRunner:
             and control.reporter_id == control.coordinator_id
         )
         if control.action == "resume" and not self_resumed and before_turn is not None:
-            self.transport.fail_issue_rebind(
-                issue_id=control.issue_id,
-                reporter_id=control.reporter_id,
-                reason="reporter did not finish its paused turn",
+            # Broker persistence has already moved the ledger to
+            # ``resume_sent``.  Keep that exact control and its resolution
+            # pending until the reporter finishes this turn; converting a
+            # transient busy observation into ``rebind_required`` would burn
+            # the one live recovery path before any Runtime send occurred.
+            pending_event = {
+                "kind": "issue_control",
+                "control": control.as_dict(),
+            }
+            with self._issue_event_lock:
+                self._issue_event_queue.append(pending_event)
+            waiting = {
+                "type": "issue-control-waiting",
+                "reason_code": "resume_waiting_reporter",
+                **control.as_dict(),
+            }
+            output.append(waiting)
+            self._append_evidence(
+                "issue-control",
+                {
+                    "event": "resume_waiting_reporter",
+                    "issue_id": control.issue_id,
+                    "reporter_id": control.reporter_id,
+                    "control_epoch": control.control_epoch,
+                    "turn_id": before_turn,
+                },
             )
-            raise TeamConfigurationError("issue resume requires an idle reporter")
+            return
         receipt: RuntimeDispatchReceipt | None = None
         try:
             if not self_resumed:
@@ -6816,10 +6957,22 @@ class TeamRunner:
         eligible = [record for record in unresolved if record.get("displayed") is True]
         if len(eligible) == 0:
             if unresolved:
-                raise TeamConfigurationError("owner answer question has not been displayed")
-            raise TeamConfigurationError("owner answer has no unanswered displayed question")
+                raise RecoverableOuterInputError(
+                    "owner answer question has not been displayed",
+                    code="owner_answer_rejected",
+                    run_id=self.run.run_id,
+                )
+            raise RecoverableOuterInputError(
+                "owner answer has no unanswered displayed question",
+                code="owner_answer_rejected",
+                run_id=self.run.run_id,
+            )
         if len(eligible) > 1:
-            raise TeamConfigurationError("owner answer matches multiple unanswered questions")
+            raise RecoverableOuterInputError(
+                "owner answer matches multiple unanswered questions",
+                code="owner_answer_rejected",
+                run_id=self.run.run_id,
+            )
         question = eligible[0]
         if question.get("run_id") != self.run.run_id:
             raise TeamConfigurationError("owner answer run binding drifts")
@@ -6836,14 +6989,44 @@ class TeamRunner:
 
     def _record_outer_question(self, message: dict[str, Any]) -> None:
         assert self.run
-        delivery_id = message.get("delivery_id", message.get("question_delivery_id"))
+        allowed = {"action", "delivery_id", "question_delivery_id", "text"}
+        if set(message) - allowed or message.get("action") != "question":
+            raise RecoverableOuterInputError(
+                "outer question envelope is invalid",
+                code="invalid_outer_question",
+                run_id=self.run.run_id,
+            )
+        delivery_id = message.get("delivery_id")
+        question_delivery_id = message.get("question_delivery_id")
+        if delivery_id is not None and question_delivery_id is not None:
+            if delivery_id != question_delivery_id:
+                raise RecoverableOuterInputError(
+                    "outer question delivery IDs do not match",
+                    code="invalid_outer_question",
+                    run_id=self.run.run_id,
+                )
+        if delivery_id is None:
+            delivery_id = question_delivery_id
         text = message.get("text")
-        if not isinstance(delivery_id, str) or not delivery_id or not isinstance(text, str) or not text:
-            raise TeamConfigurationError("outer question delivery is invalid")
+        if (
+            not isinstance(delivery_id, str)
+            or not delivery_id.strip()
+            or not isinstance(text, str)
+            or not text.strip()
+        ):
+            raise RecoverableOuterInputError(
+                "outer question delivery is invalid",
+                code="invalid_outer_question",
+                run_id=self.run.run_id,
+            )
         existing = self._outer_questions.get(delivery_id)
         if existing is not None:
             if existing["text"] != text:
-                raise TeamConfigurationError("outer question delivery is immutable")
+                raise RecoverableOuterInputError(
+                    "outer question delivery is immutable",
+                    code="invalid_outer_question",
+                    run_id=self.run.run_id,
+                )
             return
         project_id = self._project_binding()
         if not isinstance(project_id, str) or not project_id:
@@ -6864,11 +7047,25 @@ class TeamRunner:
         question_delivery_id: object,
     ) -> None:
         assert self.run
+        if not isinstance(text, str) or not text.strip():
+            raise RecoverableOuterInputError(
+                "owner answer text is invalid",
+                code="invalid_owner_answer",
+                run_id=self.run.run_id,
+            )
         if not isinstance(question_delivery_id, str) or not question_delivery_id:
-            raise TeamConfigurationError("owner answer requires a question delivery ID")
+            raise RecoverableOuterInputError(
+                "owner answer requires a question delivery ID",
+                code="owner_answer_rejected",
+                run_id=self.run.run_id,
+            )
         question = self._outer_questions.get(question_delivery_id)
         if question is None:
-            raise TeamConfigurationError("owner answer question delivery is unknown")
+            raise RecoverableOuterInputError(
+                "owner answer question delivery is unknown",
+                code="owner_answer_rejected",
+                run_id=self.run.run_id,
+            )
         formal = self._formal_coordination_enabled()
         if question.get("project_id") != self._project_binding():
             raise TeamConfigurationError("owner answer project binding drifts")
@@ -6876,7 +7073,11 @@ class TeamRunner:
             if question.get("run_id") != self.run.run_id:
                 raise TeamConfigurationError("owner answer run binding drifts")
             if question.get("displayed") is not True:
-                raise TeamConfigurationError("owner answer question has not been displayed")
+                raise RecoverableOuterInputError(
+                    "owner answer question has not been displayed",
+                    code="owner_answer_rejected",
+                    run_id=self.run.run_id,
+                )
             modeling = next(
                 agent.agent_id
                 for agent in self.run.configuration.profile.agents
@@ -6894,7 +7095,16 @@ class TeamRunner:
             # and rejects every replay, including identical text.
             if existing is not None and not formal:
                 return
-            raise TeamConfigurationError("owner answer question delivery was already consumed")
+            if any(
+                failed_question_id == question_delivery_id
+                for failed_question_id, _failed_text in self._owner_answer_failures
+            ):
+                raise TeamConfigurationError("owner answer question delivery was already consumed")
+            raise RecoverableOuterInputError(
+                "owner answer question delivery was already consumed",
+                code="owner_answer_rejected",
+                run_id=self.run.run_id,
+            )
         if existing is not None:
             return
         project_id = self._project_binding()

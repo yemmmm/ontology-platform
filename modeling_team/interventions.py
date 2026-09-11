@@ -41,6 +41,13 @@ ISSUE_CONTROL_OPTIONAL_FIELDS = frozenset(
         "reason",
     }
 )
+REPAIR_COMPONENTS = frozenset(
+    {
+        "external_service",
+        "shared_backend_service",
+        "shared_backend_data",
+    }
+)
 ISSUE_STATES = frozenset(
     {
         "reported",
@@ -68,6 +75,44 @@ _FORBIDDEN_SECRET_PATTERN = re.compile(
 
 class IssueError(ValueError):
     """A malformed, out-of-order, or replayed issue operation."""
+
+
+class RecoverableOuterInputError(ValueError):
+    """A no-side-effect outer input rejection that may be corrected and retried."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        code: str = "invalid_issue_resolution",
+        run_id: str | None = None,
+        issue_id: str | None = None,
+        reporter_id: str | None = None,
+        control_epoch: int | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.run_id = run_id
+        self.issue_id = issue_id
+        self.reporter_id = reporter_id
+        self.control_epoch = control_epoch
+
+    def as_dict(self) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "type": "outer-input-rejected",
+            "code": self.code,
+            "retryable": True,
+            "detail": str(self),
+        }
+        for name, value in (
+            ("run_id", self.run_id),
+            ("issue_id", self.issue_id),
+            ("reporter_id", self.reporter_id),
+            ("control_epoch", self.control_epoch),
+        ):
+            if value is not None:
+                payload[name] = value
+        return payload
 
 
 def _required_id(value: Any, name: str) -> str:
@@ -119,7 +164,10 @@ def _canonical_mapping(value: Any, name: str) -> dict[str, Any] | None:
 
 def _requires_mutation_reconciliation(value: str) -> bool:
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-    return any(marker in normalized for marker in ("unknown", "uncertain", "indeterminate"))
+    return any(
+        marker in normalized
+        for marker in ("unknown", "uncertain", "indeterminate", "mismatch")
+    )
 
 
 @dataclass(frozen=True)
@@ -201,7 +249,7 @@ class IssueResolution:
         _required_id(self.run_id, "run_id")
         _required_id(self.issue_id, "issue_id")
         _required_id(self.reporter_id, "reporter_id")
-        if self.resolution_type not in ISSUE_RESOLUTION_TYPES:
+        if not isinstance(self.resolution_type, str) or self.resolution_type not in ISSUE_RESOLUTION_TYPES:
             raise IssueError("issue resolution type is invalid")
         if isinstance(self.control_epoch, bool) or not isinstance(self.control_epoch, int) or self.control_epoch <= 0:
             raise IssueError("issue resolution epoch is invalid")
@@ -210,16 +258,18 @@ class IssueResolution:
             if any(value is not None for value in (self.repair_component, self.before_digest, self.after_digest, self.verification_reference, self.mutation_reconciliation)):
                 raise IssueError("guidance resolution contains repair fields")
         elif self.resolution_type == "repair_completed":
+            component = _required_text(self.repair_component, "repair_component", allow_newlines=False)
+            if component not in REPAIR_COMPONENTS:
+                raise IssueError("repair component is unsupported")
             for name, value in (
-                ("repair_component", self.repair_component),
+                ("resolution_text", self.resolution_text),
                 ("before_digest", self.before_digest),
                 ("after_digest", self.after_digest),
                 ("verification_reference", self.verification_reference),
                 ("mutation_reconciliation", self.mutation_reconciliation),
             ):
-                _required_text(value, name, allow_newlines=False)
-            if self.resolution_text is not None:
-                raise IssueError("repair resolution contains guidance text")
+                if value is not None:
+                    _required_text(value, name, allow_newlines=False)
         else:
             _required_text(self.resolution_text, "resolution_text")
             if any(value is not None for value in (self.repair_component, self.before_digest, self.after_digest, self.verification_reference, self.mutation_reconciliation)):
@@ -465,15 +515,6 @@ class RecoverableIssueLedger:
         if (
             resolution.resolution_type != "abort"
             and _requires_mutation_reconciliation(active.report.mutation_state)
-            and (
-                resolution.resolution_type != "repair_completed"
-                or resolution.mutation_reconciliation
-                not in {
-                    "reconciled",
-                    "receipt_readback_reconciled",
-                    "confirmed_no_write",
-                }
-            )
         ):
             raise IssueError("unknown mutation state requires formal reconciliation")
         active.resolution = resolution
@@ -573,9 +614,11 @@ __all__ = [
     "ISSUE_CONTROL_REQUIRED_FIELDS",
     "ISSUE_CONTROL_ACTIONS",
     "ISSUE_RESOLUTION_TYPES",
+    "REPAIR_COMPONENTS",
     "ISSUE_STATES",
     "IssueControl",
     "IssueError",
+    "RecoverableOuterInputError",
     "IssueReport",
     "IssueResolution",
     "RecoverableIssueLedger",

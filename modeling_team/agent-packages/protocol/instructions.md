@@ -507,9 +507,14 @@ When a protocol or platform operation cannot be safely completed, call native Te
 fields. Never put credentials or arbitrary platform write commands in the report and never replace
 it with terminal `blocked`. After Coordinator's bound `pause` control arrives, stop new platform
 tools, peer messages, and terminal reports and end the current turn. Wait for the exact outer
-guidance or verified shared-service repair, then continue with a new turn on this same thread only
-after Coordinator sends `resume`; a changed/dead App Server or uncertain write requires rebind or
-abort rather than a fabricated continuation.
+guidance or external/shared-service repair, then continue with a new turn on this same thread only
+after Coordinator sends `resume`. Preserve the original candidate, request, plan, and idempotency
+key when rechecking the failed operation; an interface repair does not require rebuilding earlier
+CQ or modeling artifacts. Existing Session/lease and authorization contracts still apply.
+For an uncertain write or unresolved durable intent/receipt, preserve the issue and closed write
+gate for read-only diagnosis. Neither a repair notification nor a textual reconciliation claim
+permits replay or gate reopening. A changed/dead App Server cannot be rebound by this live-resume
+path; report the limitation and await the outer owner's lifecycle decision.
 
 ## Prompt E acceptance-stage handoff
 
@@ -570,7 +575,7 @@ An opaque `-32001` (no `error.reason`) means a Runner-side/token/schema failure 
 hidden; retry the handoff at most once, and if it persists, call `mcp__team_transport__report_issue`.
 
 In every case, after at most one correction the handoff still fails, do not retry a third time: call
-native Team Transport `mcp__team_transport__report_issue` with `category=platform-contract`,
+native Team Transport `mcp__team_transport__report_issue` with `category=platform_repair`,
 `failing_operation=protocol_build_acceptance_stage_handoff`, the failing `reason`/stage/detail in `error`,
 and `requested_action`, then end your current turn for the cooperative pause. Never replace that bounded
 escalation with a source-reading loop, repeated identical retries, or a terminal `blocked` report.

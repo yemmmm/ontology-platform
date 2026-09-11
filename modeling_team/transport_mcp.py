@@ -23,6 +23,7 @@ if __package__:
         IssueControl,
         IssueError,
         IssueResolution,
+        REPAIR_COMPONENTS,
         RecoverableIssueLedger,
         normalize_issue_control_arguments,
         validate_issue_report_arguments,
@@ -32,6 +33,7 @@ else:
         IssueControl,
         IssueError,
         IssueResolution,
+        REPAIR_COMPONENTS,
         RecoverableIssueLedger,
         normalize_issue_control_arguments,
         validate_issue_report_arguments,
@@ -327,7 +329,7 @@ class TeamTransportBroker:
             with self._issue_lock:
                 value = self._issues.persist_resolution(resolution)
         except IssueError as exc:
-            raise RoutingError(str(exc)) from None
+            raise RoutingError(str(exc), code="issue-resolution-rejected") from None
         return value.as_dict()
 
     def bind_issue_context(
@@ -1065,8 +1067,10 @@ def mcp_response(
                             "action=abort additionally needs a persisted-resolution reason; "
                             "action=resume additionally needs the persisted resolution fields "
                             "(guidance: resolution_type=guidance + resolution_text; "
-                            "repair_completed: repair_component/before_digest/after_digest/"
-                            "verification_reference/mutation_reconciliation)."
+                            "repair_completed: repair_component is required; resolution_text, "
+                            "digests, verification_reference and mutation_reconciliation are "
+                            "optional for confirmed no-write repairs and remain accepted in the "
+                            "legacy five-field form."
                         ),
                         # 2026-09-11 auth006-start9: the previous oneOf form made
                         # the model emit empty tool-call arguments, so the pause
@@ -1089,7 +1093,10 @@ def mcp_response(
                                     "enum": ["guidance", "repair_completed"],
                                 },
                                 "resolution_text": {"type": "string", "minLength": 1},
-                                "repair_component": {"type": "string", "minLength": 1},
+                                "repair_component": {
+                                    "type": "string",
+                                    "enum": sorted(REPAIR_COMPONENTS),
+                                },
                                 "before_digest": {"type": "string", "minLength": 1},
                                 "after_digest": {"type": "string", "minLength": 1},
                                 "verification_reference": {
@@ -1210,14 +1217,15 @@ def mcp_response(
                 if set(args) != required:
                     raise RoutingError("issue_control resolution fields are invalid")
             elif resolution_type == "repair_completed":
-                required = common | {
-                    "repair_component",
+                required = common | {"repair_component"}
+                allowed = required | {
+                    "resolution_text",
                     "before_digest",
                     "after_digest",
                     "verification_reference",
                     "mutation_reconciliation",
                 }
-                if set(args) != required:
+                if not required.issubset(args) or set(args) - allowed:
                     raise RoutingError("issue_control repair fields are invalid")
             else:
                 raise RoutingError("issue_control resolution type is invalid")
@@ -1236,7 +1244,12 @@ def mcp_response(
                     mutation_reconciliation=args.get("mutation_reconciliation"),
                 )
             except IssueError as exc:
-                raise RoutingError(str(exc)) from None
+                code = None
+                if resolution_type == "repair_completed":
+                    component = args.get("repair_component")
+                    if not isinstance(component, str) or component not in REPAIR_COMPONENTS:
+                        code = "repair_rebind_required"
+                raise RoutingError(str(exc), code=code) from None
         elif action == "pause":
             if set(args) != {"issue_id", "reporter_id", "action", "control_epoch"}:
                 raise RoutingError("issue_control pause fields are invalid")

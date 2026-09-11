@@ -115,6 +115,13 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 
 ## 恢复原目标
 
+外部接口故障可通过当前 Team 的 `report_issue → pause → issue_resolution → resume` 保留
+live Runner、原 Agent thread 和已完成产物。用户告知“接口已经修复完成，请继续”后，宿主
+读取当前 active issue 的 run/reporter/epoch 和写入状态，按
+[接口修复后继续同一 run](references/team-runbook.md#接口修复后继续同一-run) 发送绑定的
+修复通知；已有授权内的同 run 续跑不重复申请授权。仅在已确认无写入且修复对当前进程生效时
+复测原失败步骤；通知本身不是成功证据，也不能解除未知写入的关闭状态。
+
 1. 若存在不确定写入，先查询实际 Batch、Attempt、资源及回执；明确落库状态前不重放 apply、
    删除资源或以 fresh start 掩盖现场。保留失败证据及资源归属。
 2. 核实修复已进入实际运行环境：当前进程加载的代码、冻结 Task/Skill 和挂载不会随文件改动

@@ -15,10 +15,13 @@ import tempfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from modeling_team.contracts import TeamConfigurationError
+from modeling_team.interventions import RecoverableOuterInputError
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.base import RuntimeDelivery, RuntimeDispatchReceipt
-from modeling_team.transport_mcp import TeamTransportBroker
+from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
 
 
 class _CapturingAdapter:
@@ -167,3 +170,121 @@ def test_coordinator_delivery_failure_still_raises() -> None:
             assert "Coordinator delivery failed" in str(exc)
         else:
             raise AssertionError("coordinator delivery failure must raise")
+
+
+def test_short_external_service_repair_keeps_optional_legacy_fields_optional() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        runner, report = _runner_with_pending_issue(Path(directory), reporter="protocol")
+        runner.receive_outer(
+            {
+                "action": "issue_resolution",
+                "run_id": report["run_id"],
+                "issue_id": report["issue_id"],
+                "reporter_id": "protocol",
+                "control_epoch": 1,
+                "resolution_type": "repair_completed",
+                "repair_component": "external_service",
+                "resolution_text": "Temporary HTTP service is healthy again.",
+            }
+        )
+        resolution = runner.transport.issue_ledger.active.resolution
+        assert resolution is not None
+        assert resolution.repair_component == "external_service"
+        assert resolution.before_digest is None
+        assert resolution.after_digest is None
+        assert runner.transport.issue_ledger.state == "resolution_ready"
+
+
+def test_legacy_repair_envelope_requires_complete_values_without_run_id() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        runner, report = _runner_with_pending_issue(Path(directory), reporter="protocol")
+        base = {
+            "action": "issue_resolution",
+            "issue_id": report["issue_id"],
+            "reporter_id": "protocol",
+            "control_epoch": 1,
+            "resolution_type": "repair_completed",
+            "repair_component": "external_service",
+        }
+        for sparse in (
+            {
+                "before_digest": None,
+                "after_digest": None,
+                "verification_reference": None,
+                "mutation_reconciliation": None,
+            },
+            {
+                "before_digest": "",
+                "after_digest": "",
+                "verification_reference": "",
+                "mutation_reconciliation": "",
+            },
+        ):
+            with pytest.raises(RecoverableOuterInputError, match="requires run_id"):
+                runner._outer_issue_resolution({**base, **sparse})
+
+        runner.receive_outer(
+            {
+                **base,
+                "repair_component": "external_service",
+                "before_digest": "before-digest",
+                "after_digest": "after-digest",
+                "verification_reference": "verification-ref",
+                "mutation_reconciliation": "verified",
+            }
+        )
+        resolution = runner.transport.issue_ledger.active.resolution
+        assert resolution is not None
+        assert resolution.run_id == report["run_id"]
+        assert resolution.before_digest == "before-digest"
+        assert resolution.mutation_reconciliation == "verified"
+
+
+def test_outer_repair_rejections_are_typed_and_do_not_consume_issue() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        runner, report = _runner_with_pending_issue(Path(directory), reporter="protocol")
+        base = {
+            "action": "issue_resolution",
+            "issue_id": report["issue_id"],
+            "reporter_id": "protocol",
+            "control_epoch": 1,
+            "resolution_type": "repair_completed",
+            "repair_component": "external_service",
+        }
+        cases = (
+            ({"action": "user"}, "invalid_issue_resolution"),
+            ({"run_id": None}, "issue_run_mismatch"),
+            ({"resolution_type": []}, "invalid_issue_resolution"),
+            ({"resolution_type": {}}, "invalid_issue_resolution"),
+            ({"resolution_type": None}, "invalid_issue_resolution"),
+            ({"resolution_type": True}, "invalid_issue_resolution"),
+            ({"repair_component": "unsupported"}, "repair_rebind_required"),
+        )
+        for update, code in cases:
+            with pytest.raises(RecoverableOuterInputError) as raised:
+                runner._outer_issue_resolution({**base, **update})
+            assert raised.value.code == code
+        assert runner.transport.issue_ledger.state == "waiting_owner"
+        assert runner.transport.issue_ledger.active.resolution is None
+
+
+def test_internal_persistence_error_remains_fatal_after_outer_validation() -> None:
+    with tempfile.TemporaryDirectory() as directory:
+        runner, report = _runner_with_pending_issue(Path(directory), reporter="protocol")
+
+        def fail_persist(_resolution):
+            raise RoutingError("internal persistence failure")
+
+        runner.transport.persist_issue_resolution = fail_persist
+        with pytest.raises(RoutingError, match="internal persistence failure"):
+            runner.receive_outer(
+                {
+                    "action": "issue_resolution",
+                    "run_id": report["run_id"],
+                    "issue_id": report["issue_id"],
+                    "reporter_id": "protocol",
+                    "control_epoch": 1,
+                    "resolution_type": "repair_completed",
+                    "repair_component": "external_service",
+                }
+            )

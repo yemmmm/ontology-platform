@@ -15,6 +15,7 @@ from unittest.mock import patch
 from modeling_team import __main__ as team_main
 from modeling_team.__main__ import _decode_foreground_message, _foreground_event_loop
 from modeling_team.contracts import TeamConfigurationError, repository_root
+from modeling_team.interventions import RecoverableOuterInputError
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.base import RuntimeDelivery, RuntimeMessage
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
@@ -549,7 +550,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 runner.transport.report("modeling", "completed", "answered")
             )
 
-            with self.assertRaisesRegex(TeamConfigurationError, "no unanswered"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "no unanswered"):
                 runner.receive_outer({"action": "user", "text": "未知"})
 
     def test_formal_explicit_question_id_selects_one_of_multiple_questions(self) -> None:
@@ -574,7 +575,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
 
             # Text-only inference remains fail-closed when two questions are
             # currently eligible; the explicit ID is the only disambiguator.
-            with self.assertRaisesRegex(TeamConfigurationError, "matches multiple"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "matches multiple"):
                 runner.receive_outer({"action": "user", "text": "ambiguous"})
 
             selected_output = runner.receive_outer(
@@ -609,11 +610,11 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 "modeling", "coordinator", "candidate not displayed", expects_reply=True
             )
             output = runner.drain()
-            with self.assertRaisesRegex(TeamConfigurationError, "requires a question delivery ID"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "requires a question delivery ID"):
                 runner.receive_outer(
                     {"action": "user", "text": "null ID", "question_delivery_id": None}
                 )
-            with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "not been displayed"):
                 runner.receive_outer(
                     {
                         "action": "user",
@@ -623,7 +624,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 )
             runner.observe_foreground_output(output)
 
-            with self.assertRaisesRegex(TeamConfigurationError, "unknown"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "unknown"):
                 runner.receive_outer(
                     {"action": "user", "text": "forged answer", "question_delivery_id": "delivery-forged"}
                 )
@@ -635,7 +636,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                     "question_delivery_id": undisplayed.delivery_id,
                 }
             )
-            with self.assertRaisesRegex(TeamConfigurationError, "already consumed"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "already consumed"):
                 runner.receive_outer(
                     {
                         "action": "user",
@@ -795,7 +796,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 )
             self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
             self.assertFalse((runner.run.root / "evidence/outer-question.jsonl").exists())
-            with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "not been displayed"):
                 runner.receive_outer({"action": "user", "text": "未知"})
 
     def test_display_envelope_integrity_rejects_unknown_and_all_binding_drift(self) -> None:
@@ -875,7 +876,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             runner.observe_foreground_output(output)
             self.assertTrue(runner._outer_questions[first.delivery_id]["displayed"])
             self.assertTrue(runner._outer_questions[second.delivery_id]["displayed"])
-            with self.assertRaisesRegex(TeamConfigurationError, "multiple unanswered"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "multiple unanswered"):
                 runner.receive_outer({"action": "user", "text": "未知"})
 
     def test_mixed_valid_and_contradictory_display_batch_is_atomic(self) -> None:
@@ -1048,7 +1049,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 with failure, self.assertRaisesRegex(OSError, "outer evidence"):
                     runner.observe_foreground_output(output)
                 self.assertFalse(runner._outer_questions[question.delivery_id]["displayed"])
-                with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+                with self.assertRaisesRegex(RecoverableOuterInputError, "not been displayed"):
                     runner.receive_outer({"action": "user", "text": "未知"})
 
     def test_formal_missing_live_binding_fails_before_outer_question_or_owner_evidence(self) -> None:
@@ -1208,7 +1209,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
     def test_formal_owner_envelope_allows_question_id_and_rejects_unknown_fields(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner, _adapter = _formal_runner(Path(directory))
-            with self.assertRaisesRegex(TeamConfigurationError, "invalid fields"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "invalid fields"):
                 runner.receive_outer(
                     {"action": "user", "text": "answer", "unexpected": "x"}
                 )
@@ -1234,6 +1235,90 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 ],
                 question.delivery_id,
             )
+
+    def test_formal_outer_question_wrong_channel_is_recoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            with self.assertRaises(RecoverableOuterInputError) as raised:
+                runner.receive_outer(
+                    {
+                        "action": "question",
+                        "delivery_id": "outer-question-1",
+                        "text": "wrong channel",
+                    }
+                )
+            self.assertEqual(raised.exception.code, "invalid_outer_question")
+            self.assertEqual(runner._outer_questions, {})
+
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate after rejection", expects_reply=True
+            )
+            _drain_and_observe(runner)
+            output = runner.receive_outer(
+                {
+                    "action": "user",
+                    "text": "corrected answer",
+                    "question_delivery_id": question.delivery_id,
+                }
+            )
+            self.assertEqual(output[0]["reply_to_delivery_id"], question.delivery_id)
+
+    def test_nonformal_outer_input_shape_errors_are_recoverable_and_retryable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            runner, _adapter = _formal_runner(Path(directory))
+            runner.run.configuration.task.task_id = "r2-3-002-t"
+            runner.run.configuration.profile.profile_id = "r2-3-002-profile"
+            runner.run.scope = {"project_id": "legacy-project"}
+
+            malformed_questions = (
+                {"action": "question", "text": "missing ID"},
+                {"action": "question", "delivery_id": "q-1", "text": 7},
+                {
+                    "action": "question",
+                    "delivery_id": "q-1",
+                    "question_delivery_id": "q-2",
+                    "text": "mismatched IDs",
+                },
+                {
+                    "action": "question",
+                    "delivery_id": "q-1",
+                    "text": "question",
+                    "unexpected": True,
+                },
+            )
+            for message in malformed_questions:
+                with self.subTest(message=message), self.assertRaises(
+                    RecoverableOuterInputError
+                ) as raised:
+                    runner.receive_outer(message)
+                self.assertEqual(raised.exception.code, "invalid_outer_question")
+            self.assertEqual(runner._outer_questions, {})
+
+            runner.receive_outer(
+                {"action": "question", "delivery_id": "q-1", "text": "valid question"}
+            )
+            for message in (
+                {"action": "user", "text": "missing ID"},
+                {"action": "user", "text": 7, "question_delivery_id": "q-1"},
+                {
+                    "action": "user",
+                    "text": "unknown ID",
+                    "question_delivery_id": "unknown-question",
+                },
+            ):
+                with self.subTest(message=message), self.assertRaises(
+                    RecoverableOuterInputError
+                ):
+                    runner.receive_outer(message)
+            runner.receive_outer(
+                {
+                    "action": "user",
+                    "text": "valid answer",
+                    "question_delivery_id": "q-1",
+                }
+            )
+            self.assertIn(("q-1", "valid answer"), runner._owner_answers)
 
     def test_only_active_modeling_questions_can_be_observed_and_displayed(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1281,7 +1366,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 "modeling", "coordinator", "candidate hidden", expects_reply=True
             )
             runner.drain()
-            with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "not been displayed"):
                 runner.receive_outer({"action": "user", "text": "answer"})
             self.assertNotIn(question.delivery_id, runner._owner_answer_consumed)
 
@@ -1294,7 +1379,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                 "modeling", "coordinator", "candidate one", expects_reply=True
             )
             runner.drain()
-            with self.assertRaisesRegex(TeamConfigurationError, "not been displayed"):
+            with self.assertRaisesRegex(RecoverableOuterInputError, "not been displayed"):
                 runner.receive_outer({"action": "user", "text": "answer"})
             runner._observe_coordinator_message(RuntimeMessage("coordinator", "unrelated prompt"))
             self.assertFalse(runner._outer_questions[first.delivery_id]["displayed"])
@@ -1532,22 +1617,63 @@ class RunnerR23005FifoOuterInputTests(unittest.TestCase):
         self.assertEqual(adapter.sent[1][1].text, "captured")
         self.assertEqual(adapter.sent[2][1].kind, "owner-answer")
 
-    def test_formal_owner_answer_via_fifo_without_displayed_question_is_fatal(self) -> None:
-        # With no displayed question, the FIFO owner answer hits the same
-        # strict receive_outer boundary as stdin: the fatal
-        # TeamConfigurationError propagates and tears the run down rather than
-        # being swallowed into outer-input-rejected.
+    def test_formal_owner_answer_via_fifo_rejects_bad_binding_then_continues(self) -> None:
+        # A malformed FIFO answer is a recoverable control-plane input.  The
+        # same live run must display the question, emit a typed rejection, and
+        # accept the corrected explicit binding on the next line.
         with tempfile.TemporaryDirectory() as directory:
             runner, _adapter = _formal_runner(Path(directory))
-            fifo = _FakeOuterInput(['{"action":"user","text":"no question"}'])
-            with self.assertRaisesRegex(TeamConfigurationError, "no unanswered"):
+            assert runner.transport is not None
+            question = runner.transport.send(
+                "modeling", "coordinator", "candidate via malformed fifo", expects_reply=True
+            )
+            fifo = _FakeOuterInput(
+                [
+                    json.dumps(
+                        {
+                            "action": "user",
+                            "text": "wrong question",
+                            "question_delivery_id": "unknown-question",
+                        }
+                    ),
+                    json.dumps(
+                        {
+                            "action": "user",
+                            "text": "corrected answer",
+                            "question_delivery_id": question.delivery_id,
+                        }
+                    ),
+                ]
+            )
+            emitted: list[list[dict[str, object]]] = []
+            original_receive_outer = runner.receive_outer
+
+            def terminate_after_valid_answer(message):
+                output = original_receive_outer(message)
+                if message.get("question_delivery_id") == question.delivery_id:
+                    (runner.run.root / "state.json").write_text(
+                        json.dumps({"state": "TERMINAL_REPORT_COMPLETE"}),
+                        encoding="utf-8",
+                    )
+                return output
+
+            runner.receive_outer = terminate_after_valid_answer  # type: ignore[method-assign]
+            try:
                 _foreground_event_loop(
                     runner,
                     StringIO(""),
-                    lambda _output: None,
+                    emitted.append,
                     outer_input=fifo,
                     select_fn=lambda *_args: ([fifo], [], []),
                 )
+            finally:
+                runner.receive_outer = original_receive_outer  # type: ignore[method-assign]
+
+        self.assertEqual(emitted[0][0]["delivery_id"], question.delivery_id)
+        self.assertEqual(emitted[1][0]["type"], "outer-input-rejected")
+        self.assertEqual(emitted[1][0]["code"], "owner_answer_rejected")
+        self.assertEqual(emitted[2][0]["recipient_id"], "modeling")
+        self.assertEqual(emitted[2][0]["reply_to_delivery_id"], question.delivery_id)
 
 
 if __name__ == "__main__":

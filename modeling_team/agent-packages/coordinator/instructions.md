@@ -71,6 +71,9 @@ let either recipient's initial assignment substitute for the required supplement
 
 ## Cooperative issue escalation
 
+Ordinary CQ review, owner-answer, upstream-candidate, and handoff waits are not terminal failures.
+Keep their pending deliveries and wait for the required input; escalate only an actual defect.
+
 If a persistent role reports a typed issue, receive the exact structured issue delivery from the
 Runner and do not replace it with a terminal `blocked` report. Use only the native
 `issue_control` Team Transport tool. For `pause`, the argument object must contain exactly
@@ -86,6 +89,10 @@ termination. An `abort` argument object must contain exactly `action`, `issue_id
 Never include `resolution_type`, `resolution_text`, `null`, or any other field in an abort call.
 A paused teammate must be allowed to end its current turn; never ask it to continue tools or peer
 messages while the issue is pending.
+For a short `repair_completed` resolution, carry its exact `repair_component` and `resolution_text`
+and any supplied optional repair fields; do not invent omitted digests or verification evidence.
+`resume_waiting_reporter` means the Runner retained the accepted control until the reporter ends
+its pause turn. Wait for dispatch; do not send another resume or persist the resolution again.
 
 ## Prompt E acceptance ticket pipeline
 

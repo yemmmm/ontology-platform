@@ -141,20 +141,49 @@ JSONL 行；主智能体保存各日志行号/字节偏移，避免每轮重新�
   `owner answer requires a question delivery ID` 的 fatal 边界而整 run 终止）：
   1) `{"action":"question","delivery_id":"host-<来源>-001","text":"<宿主通知/业务来源说明>"}`；
   2) `{"action":"user","question_delivery_id":"host-<来源>-001","text":"<完整答复文本>"}`。
-  `receive_outer` 内部错误是保留的 fatal 边界：任何字段缺失都会终止整个 run 并消耗额度，
-  发送前必须对照 runner 源码 `receive_outer`/`_record_outer_question`/`_release_owner_answer`
-  核实字段，禁止 text-only `user`。答完即消费（同 ID 不可重放）；失败发送会烧掉该 ID。
+  上述 fatal 是历史行为。本次实现对无副作用的字段/问题绑定错误返回
+  `outer-input-rejected`（含 `code`、`retryable`、`issue_id`），修正消息后仍可输入，
+  不消耗问题或 issue。持久化/实际发送失败不属于这一保证；答完即消费，同 ID 不可重放。
 - CQ 的 `cq_interview`、`cq_review`、`cq_freeze`、`cq_handoff_complete` 走直接通道，不能
   通过 Coordinator 转发私有问题或答案。审核使用当前 `review_id`、revision/digest，不能
-  宿主代批或就地改写冻结题池。具体见 [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
+  未经本次明确委托由宿主代批，也不能就地改写冻结题池。具体见 [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
 - 已存在 `issue_resolution` 合同的 issue，读取该 issue 的绑定和允许 resolution 后再提交；
-  不把此 action 当成任意 run 的通用修复命令。
+  接口修复使用下节步骤，不把此 action 当成任意 run 的通用修复命令。
 - 顶层 CLI 没有 `status`/`resume` 子命令。外层 `{"action":"status"}` 只触发 drain，
   不是完整状态快照；直接读上述事件和状态即可。
 - 外层 `pause` 会 interrupt 当前 turn；当前 Codex adapter 的 `resume()` 不重建子进程也
   不重新加载代码/挂载。不能靠 `{"action":"resume"}` 或 `state=RUNNING` 证明继续成功。
   同 run 续跑必须由仍有效的输入/issue 通道触发实际工作并看到新的进展证据。
 - `stop` 会进入 cleanup，不能当作暂停。存在不确定写入时先查询实际结果，再决定生命周期操作。
+
+## 接口修复后继续同一 run
+
+收到“接口已经修复完成，请继续”时，由宿主读取当前 live run 的唯一 pending issue、
+`reporter_id`、`control_epoch`、mutation state 和修复对象，组装下列消息。占位值必须来自
+当前 issue，epoch 也使用当前值；不要重用旧 run 的 ID。此步骤由宿主理解用户意图，Runner
+只接收结构化输入，不解析自然语言关键词。
+
+```json
+{"action":"issue_resolution","run_id":"<当前 run>","issue_id":"<当前 issue>","reporter_id":"<当前 reporter>","control_epoch":1,"resolution_type":"repair_completed","repair_component":"external_service","resolution_text":"接口已经修复完成，请继续原失败步骤。"}
+```
+
+新简短修复格式必须显式包含 `run_id`，错投会在保存 resolution 前被拒绝。修复对象支持
+`external_service`、`shared_backend_service`、`shared_backend_data`；后两者必须确实是当前
+外部共享依赖，不能用来声称已热更新 Runner、Transport 或冻结提示。已确认无写入时不强制
+提供 digest 或额外健康探针，责任 Agent 续跑原失败操作验证修复。旧五字段修复格式及 guidance
+继续兼容；省略 run_id 的旧消息依赖目标 FIFO 绑定，不具备显式 run_id 的跨 run 防错投保护。
+
+Runner 保存通知并交给 Coordinator，通过绑定 `resume` 在原 thread 创建新 turn。
+`resume_waiting_reporter` 表示暂停 turn 尚未结束，Runner 保留原控制并在 reporter 空闲后
+派发一次；宿主和 Coordinator 不重复保存 resolution 或发送 resume。保持观察，直到原失败
+步骤出现新结果；保留原 CQ、审批、候选、请求、plan 和幂等键，不因接口修复重做前期建模。
+若 Session/lease 已过期，由责任角色按既有合同处理，保留线程不延长授权或凭据有效期。
+
+`mutation_state=unknown` 或 durable intent/receipt 未闭合时，所有非 abort resolution 均
+不能解锁写入；旧格式中的 `reconciled` 等文字也不是核对证据。保留 issue、关闭的写门和原始
+记录，按下方只读核查定位；本增量不提供 unknown-write gate reopen。不得改写 receipt 或
+清除关闭状态。进程已死、线程已丢失或修复需要替换冻结运行代码时，也不能用此通知重绑；
+按 Skill 的既有 fresh-start 额度与现场保留规则处理，不把 `stop` 当作暂停。
 
 ## 独立验收入口
 

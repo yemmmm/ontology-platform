@@ -7,17 +7,17 @@ started turn — expectations a self-reporting Coordinator can never satisfy —
 so the owner's resolution tore the whole run down with a fatal
 ``issue resume requires an idle reporter``.  The dispatch must instead skip
 the redundant reporter delivery (the Coordinator already holds the ruling it
-passed in) and resume the run, while a busy non-coordinator reporter still
-fails closed.
+passed in) and queue a busy non-coordinator reporter's resume until its current
+turn is idle.
 """
 
 from __future__ import annotations
 
 import tempfile
+import threading
 from pathlib import Path
 from types import SimpleNamespace
 
-from modeling_team.contracts import TeamConfigurationError
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.base import RuntimeDelivery, RuntimeDispatchReceipt
 from modeling_team.transport_mcp import IssueResolution, TeamTransportBroker
@@ -58,6 +58,8 @@ def _runner_with_paused_issue(root: Path, *, reporter: str) -> tuple[TeamRunner,
     runner.adapter = adapter
     runner._candidate_progress = None
     runner._issue_abort_requested = False
+    runner._issue_event_queue = []
+    runner._issue_event_lock = threading.Lock()
     runner._append_evidence = lambda *_args, **_kwargs: None
     runner._state = lambda *_args, **_kwargs: None
     runner.transport = TeamTransportBroker(
@@ -135,11 +137,16 @@ def test_busy_non_coordinator_reporter_still_fails_closed() -> None:
         runner.adapter.agents["modeling"] = SimpleNamespace(
             process=None, thread_id="thread-modeling", active_turn_id="turn-active"
         )
-        try:
-            runner._dispatch_issue_control(
-                runner._issue_control_from_payload(resume), []
-            )
-        except TeamConfigurationError as exc:
-            assert "requires an idle reporter" in str(exc)
-        else:
-            raise AssertionError("busy non-coordinator reporter must fail closed")
+        output: list[dict] = []
+        runner._dispatch_issue_control(runner._issue_control_from_payload(resume), output)
+        assert runner.adapter.sent == []
+        assert output[0]["reason_code"] == "resume_waiting_reporter"
+        assert runner.transport.issue_ledger.state == "resume_sent"
+        assert len(runner._issue_event_queue) == 1
+
+        runner.adapter.agents["modeling"].active_turn_id = None
+        resumed_output: list[dict] = []
+        runner._handle_issue_events(resumed_output)
+        assert len(runner.adapter.sent) == 1
+        assert resumed_output[0]["type"] == "issue-control"
+        assert runner.transport.issue_ledger.state == "resolved"
