@@ -22,6 +22,7 @@
     "identity_fields": ["scenario_id", "topology_decision_ref"],
     "slices_item_fields": ["slice_id", "name", "scope", "owner", "status"],
     "rules": [
+      "the artifact's top-level field set is closed and is exactly schema_version, the two identity_fields, and the six required_sections; `maintainer` (and every other key of this contract object, such as rules) is contract metadata describing who maintains the artifact, never an artifact field, and writing it into scenario-map.json is rejected as map_schema_mismatch top-level fields drift",
       "slices is non-empty; every field is a non-empty string; slice_id values are unique",
       "each shared_terms entry has term, used_by_slices, and exactly one owner_slice inside the slice list; notes is optional; a term registered more than once is rejected",
       "each cross_slice_dependencies entry has from_slice and to_slice inside the slice list, a non-empty direction, and a non-empty connection_points list",
@@ -96,6 +97,7 @@
     "fields": ["schema_version", "scenario_id", "entries", "summarized_by"],
     "entry_fields": ["iri", "reason", "proposing_slice", "target_protection_set"],
     "rules": [
+      "the artifact's field set is closed and is exactly the `fields` list; `maintainer` is contract metadata describing who maintains the artifact, never an artifact field",
       "iri is one non-empty absolute IRI; dangling IRIs for resources not yet created are allowed",
       "target_protection_set is existing:<id> or new:<name>",
       "proposing_slice must be a slice of the current scenario map",

@@ -74,6 +74,15 @@ let either recipient's initial assignment substitute for the required supplement
 Ordinary CQ review, owner-answer, upstream-candidate, and handoff waits are not terminal failures.
 Keep their pending deliveries and wait for the required input; escalate only an actual defect.
 
+The same binding applies when you are the reporter. After your own `report_issue` call returns,
+immediately call `issue_control` with `action: "pause"` in that same turn and then end the turn:
+the Runner surfaces the issue to the outer owner and admits the outer resolution only after your
+pause control is dispatched, so a report without its bound pause freezes the run with no exit.
+Never keep working the blocker after reporting it, never decide on your own that your issue is
+resolved (not even from artifacts you can now read, projections that appeared, or messages you
+queued), and never send a "blocker resolved" notice while the issue is pending; the issue closes
+only through the persisted outer resolution and your one bound `resume`.
+
 If a persistent role reports a typed issue, receive the exact structured issue delivery from the
 Runner and do not replace it with a terminal `blocked` report. Use only the native
 `issue_control` Team Transport tool. For `pause`, the argument object must contain exactly
