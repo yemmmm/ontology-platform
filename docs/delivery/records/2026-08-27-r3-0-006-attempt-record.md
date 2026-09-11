@@ -555,3 +555,59 @@ worktree 在 f62a782 复现），与本次修改无关。
 原始证据保留于 workspaces/skill-role-20260911/（auth006-start1..9、auth007、auth008
 各 checkout 的 evidence/ 与 staged 工件；auth008 保留 conclusions r1 归档链、approvals
 r2 与全部 gate 反馈账本）。本节为首次将 auth007/auth008 记入本台账。
+
+## auth008-start2（2026-09-11 夜—09-12 凌晨，HOST_STOPPED_INTERIM）
+
+用户 21:1x +08 指示"本次建模结束后暂停任务，完成中间结果归档，收回剩下的一次建模
+次数"（收回记录 fresh_starts_remaining=0）；随后指示"请先完成修复，然后继续建模流程，
+使用剩余的两次授权"。start2 于 21:59:48+08 启动（worktree
+runtime-checkout-auth008-2，runtime commit 27d337d，4 项修复在位，全角色 glm-flash-max）。
+运行约 2.5 小时后用户于 09-12 00:24+08 指示"停止本轮建模，完成临时收尾"，run 在
+WAITING_OWNER（issue-3）状态下被停止：FIFO stop 动作后 runner 卡在 poll 未清理
+（13 个 codex 子进程不变、无 SIGTERM 处理），最终对进程组 SIGTERM（exit 143）。
+授权关账：3 = start1 消耗 + start2 消耗（HOST_STOPPED_INTERIM）+ 1 次收回未用，无 start3。
+
+进展为本系列首次走通双轮 CQ 审查机制：全景 cq-review-0001（7 题，decision-0001..0007
++ public-projection-0001..0007）与分片 cq-review-0002（16 题，SCC/IWO/DEL/PRT 各 4，
+每片 2 公开 + 2 隐藏；decision-0008..0023 + projection-0008..0023），23 项决策全部
+按业务包 BS-20260910-01..08 逐题引用批准。staged 链路推进至 approvals：coordinator
+创作共享 scenario-map.json（bind 归属经 issue-2 澄清后由 coordinator 在专属 bind 内
+创作，与 start1 先例一致），13 条结论全部 analyzed 且 coordinator 全部批准写入
+approvals.json；unlock/ledger/stage3 candidates 为空，无枚举物化、无平台写入污染。
+
+issue 处置序列（evidence/issue-control.jsonl）：issue-1（protocol 报，等 public
+projection）pause 14:04:29 → guidance 决议 resume 14:33:30；issue-2（coordinator 报，
+scenario-map 共享不可见，实为 namespace 隔离设计）pause 14:38:27 → 澄清决议 resume
+14:57:01；issue-3（coordinator 报，15:07:40"等 >0007 public projection 出现"）pause
+15:07:45 —— host 以 16 项 CQ 批准 + question/user 便签回应，**未发 issue-3 的
+issue_resolution 信封**，此后 coordinator 进入固化等待循环（认为 issue 仍暂停、
+两次派发 transport 受理但未解锁），直至停止。
+
+### 关键发现（候选修复，需授权轮 + TDD）
+
+1. **host 决议不回送 coordinator 自报 issue**：`_apply_issue_control` 的
+   `self_resumed` 分支（runner.py ~6750）假定"报告者自己持有决议"而跳过向 reporter
+   派发 resolution delivery——对 coordinator 自报、host 决议的场景为假，是 start2
+   固化循环的直接根因。
+2. **host 操作教训**：对 coordinator 报告的 issue 必须用严格
+   issue_resolution 信封（issue_id/reporter_id/control_epoch）；question/user 便签只被
+   steer 进当前 turn，不解锁 WAITING_OWNER 语义。
+3. **idle 询问真实运行仍被抑制**：fix 4（staged 覆盖）单测通过，但 start1/start2
+   真实运行均未触发，疑似 `acceptance.has_live_children` 等真实形态条件在单测中缺席
+   （单测 acceptance=None）。需补真实形态用例。
+4. **scenario-map bind 归属**：`/agent/work/scenario-map` 为 coordinator 专属可写
+   bind（`runtimes/codex.py _coordinator_scenario_map_bind`）；modeling 写同名路径只落
+   私有沙箱 `runtime/<role>/work/`，应写入团队指引避免复发。
+5. **FIFO 陷阱**：outer FIFO 固定 `<run-root>/control/outer-input.fifo`
+   （`__main__.py:1848`）；shell 重定向到不存在路径会静默创建普通文件。
+6. **stop 语义**：FIFO `{"action":"stop"}` 在 runner 深入 poll 时可能不生效（无信号
+   处理），需 SIGTERM 兜底；deliveries.jsonl 存在证据缺口（16:05:30/16:19:03 coordinator
+   →modeling 派发 transport 受理 sequence 20 但未落账）。
+
+4 项修复实测：fix1（枚举数组形态）推进至 approvals 后 analyzed→confirmed 未执行即
+停止，未在真实链路走完（仅单测覆盖）；fix2/fix3（重武装 + details）未触发（本轮无
+gate feedback）；fix4 真实运行未触发（见发现 3）。
+
+start2 完整时间线与证据清单见
+`workspaces/skill-role-20260911/auth008-start2-interim-record.md`（run 现场整体保留于
+runtime-checkout-auth008-2 worktree，56M 证据 + staged 工件）。
