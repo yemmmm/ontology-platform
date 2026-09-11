@@ -20,7 +20,7 @@
       "client_item_id": {"type": "string", "required": true, "min_length": 1},
       "command_kind": {"type": "string", "required": true, "min_length": 1},
       "payload": {"type": "object", "required": true},
-      "depends_on": {"type": "array", "items": "string", "required": false, "default": []},
+      "depends_on": {"type": "array", "items": "string", "required": false, "default": [], "invariant": "Every entry must name a client_item_id in THIS SAME batch: the platform resolves dependencies against the current batch's items only, so naming an item from an earlier batch yields a blocking invalid_dependency finding. Cross-batch ordering is guaranteed by submitting batches sequentially in dependency order and is never expressed in the payload"},
       "evidence_reference_ids": {"type": "array", "items": "string", "required": false, "default": []},
       "evidence": {"type": "array", "items": "inline_evidence", "required": false, "default": []},
       "rationale": {"type": ["string", "null"], "required": false, "default": null},
