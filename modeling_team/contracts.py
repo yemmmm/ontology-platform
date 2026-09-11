@@ -96,6 +96,14 @@ MULTI_SLICE_PROFILE_IDS = frozenset({"r3-0-002-modeling-team"})
 # R3.0-011: the competency-question Profile is the second registered multi-slice
 # Profile (three production roles plus one competency-question Agent).
 COMPETENCY_QUESTION_PROFILE_IDS = frozenset({"r3-0-011-competency-question"})
+# R2.3-009 T3: ``run_fallback_timeout_seconds`` stays a governed knob, but the
+# competency-question Profile may carry it too.  Run r30006-20260912-glmb01-start1
+# consumed the entire 10800s default in genuine active work (0 nudges, 0 open
+# issues) and was latched run-fallback-timeout at the start of the
+# analyzed-conclusions phase; the profile needs the bounded magnitude knob, and
+# ``_validate_run_fallback_timeout`` still caps whatever it carries.  The other
+# tier parameters remain formal-Profile-only.
+_RUN_FALLBACK_TIMEOUT_PROFILE_IDS = _FORMAL_PROFILE_IDS | COMPETENCY_QUESTION_PROFILE_IDS
 # R3.0-002 Task ``parameters`` is a closed, optional key set on the v2 Task.
 MULTI_SLICE_TASK_PARAMETER = "multi_slice_workflow"
 # R3.0-008B segment 1: staged modeling decisions extend the same closed set.
@@ -550,7 +558,7 @@ def load_profile(
             data["parameters"][_FEEDBACK_ESCALATION_REPEAT_PARAMETER],
         )
     if _RUN_FALLBACK_TIMEOUT_PARAMETER in data["parameters"]:
-        if profile_id not in _FORMAL_PROFILE_IDS:
+        if profile_id not in _RUN_FALLBACK_TIMEOUT_PROFILE_IDS:
             raise TeamConfigurationError(
                 "run fallback timeout is restricted to the formal Profile"
             )

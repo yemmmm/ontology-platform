@@ -317,3 +317,26 @@ def test_tier_parameters_are_restricted_to_the_formal_profile(tmp_path: Path) ->
     )
     with pytest.raises(TeamConfigurationError, match="restricted to the formal Profile"):
         load_profile(path)
+
+
+def test_run_fallback_timeout_loads_from_the_cq_profile() -> None:
+    path = repository_root() / "modeling_team/profiles/r3-0-011-competency-question.yaml"
+    profile = load_profile(path, multi_slice=True)
+    assert profile.parameters["run_fallback_timeout_seconds"] == 14400.0
+
+
+def test_other_tier_parameters_stay_formal_only_for_the_cq_profile(
+    tmp_path: Path,
+) -> None:
+    source = repository_root() / "modeling_team/profiles/r3-0-011-competency-question.yaml"
+    for extra in ("  candidate_redrive_limit: 3\n", "  feedback_escalation_repeat: 2\n"):
+        path = tmp_path / "cq-profile.yaml"
+        path.write_text(
+            source.read_text(encoding="utf-8").replace(
+                "parameters:\n",
+                "parameters:\n" + extra,
+            ),
+            encoding="utf-8",
+        )
+        with pytest.raises(TeamConfigurationError, match="restricted to the formal Profile"):
+            load_profile(path, multi_slice=True)

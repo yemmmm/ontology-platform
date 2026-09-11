@@ -646,6 +646,14 @@ envelope (the same fields as `submit_modeling_batch`) plus `value_traces` naming
 conclusion behind each enum command and `l3_nodes` listing each L3 entity command — those trace
 attachments stay with the Runner and are never platform payload. A typed rejection reason code is
 a repair instruction, not a platform failure: fix the named artifact or envelope and call again.
+A Runner receipt only proves the capability call completed; it never proves semantic acceptance.
+The authoritative semantic state of every submission is the platform `modeling_batch_attempts`
+record, read back after each call: a `dry_run` may be followed by `apply_atomic` only after that
+attempt record reads `validated` with zero blocking findings, and an `apply_atomic` counts as
+materialized only when its own attempt record reads `applied` with zero blocking findings. A
+`validation_failed` attempt with findings means the batch did not pass, regardless of any
+receipt, and the findings name the repair. Never call `apply_atomic` on a batch whose dry-run
+attempt you have not read back clean.
 Maintain the materialization ledger in `value-semantics/ledger/materialization-ledger.json`,
 closing every entry against an authoritative Runner receipt. Closure timing is per receipt,
 not deferred: as soon as a plan's `apply_atomic` receipt is verified against the clean

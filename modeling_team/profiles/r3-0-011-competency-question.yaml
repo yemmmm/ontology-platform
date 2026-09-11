@@ -34,5 +34,16 @@ communication:
 # is alive.  1200s still fails fast on a genuinely hung endpoint.  The adapter
 # reads run.configuration.profile.parameters (codex.py), so this is the
 # authoritative profile-level knob; it applies to every role in the roster.
+#
+# run_fallback_timeout_seconds is the R2.3-009 T3 run-level active clock (the
+# knob is admitted to this profile by contracts.py after run
+# r30006-20260912-glmb01-start1 spent its whole 10800s default on genuine
+# active work — 0 nudges, 0 open issues — and was latched
+# collaboration/routing:run-fallback-timeout right at the start of the
+# analyzed-conclusions phase).  14400s keeps the same fail-closed semantics
+# with headroom for that phase, per-receipt ledger closure, and independent
+# acceptance; the validator still caps the value and a stalled run cannot
+# idle past it.
 parameters:
   llm_inactivity_timeout_seconds: 1200.0
+  run_fallback_timeout_seconds: 14400.0
