@@ -647,7 +647,10 @@ conclusion behind each enum command and `l3_nodes` listing each L3 entity comman
 attachments stay with the Runner and are never platform payload. A typed rejection reason code is
 a repair instruction, not a platform failure: fix the named artifact or envelope and call again.
 Maintain the materialization ledger in `value-semantics/ledger/materialization-ledger.json`,
-closing every entry against an authoritative Runner receipt. Translate only conclusions the
+closing every entry against an authoritative Runner receipt. Closure timing is per receipt,
+not deferred: as soon as a plan's `apply_atomic` receipt is verified against the clean
+platform attempt record, append that plan's ledger entry before reporting the plan complete
+to the Coordinator, so the ledger is never empty while verified receipts exist. Translate only conclusions the
 Coordinator has approved (confirmed status with a matching approvals entry); never translate an
 `analyzed` or `conflict` conclusion, and never bypass the capability with a direct platform write
 or a direct `submit_modeling_batch` call. If a submission result is reported as
