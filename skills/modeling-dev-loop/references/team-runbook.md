@@ -149,6 +149,23 @@ JSONL 行；主智能体保存各日志行号/字节偏移，避免每轮重新�
   未经本次明确委托由宿主代批，也不能就地改写冻结题池。具体见 [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
 - 已存在 `issue_resolution` 合同的 issue，读取该 issue 的绑定和允许 resolution 后再提交；
   接口修复使用下节步骤，不把此 action 当成任意 run 的通用修复命令。
+- **任何 issue（含 coordinator 自报）都只能由 `issue_resolution` 信封解除
+  `WAITING_OWNER`**（2026-09-12 auth008-start2 实证：host 对 coordinator 报告的 issue-3
+  只发了 `question`/`user` 便签，`evidence/issue-resolution.jsonl` 里始终没有 issue-3；
+  coordinator 随后发起的 `issue_control` resume 被 transport 以 "requires persisted
+  resolution" 拒绝（app-server-events.jsonl 15:30:59Z），run 停在 `WAITING_OWNER` 直到
+  停止。同轮 issue-1/issue-2 用信封提交后立即 `pause`→`resume` 恢复）。便签只被 steer
+  进当前 turn，不落 resolution、不改 issue 状态。
+- **不要用便签否定一个 issue 存在**：start2 的 host 便签曾断言 "issue-3 does not exist /
+  was never reported"，而 `evidence/issue-report.jsonl`（15:07:40Z）与
+  `evidence/issue-control.jsonl`（15:07:45Z pause）都记录了它。判断 issue 状态只读这两个
+  文件与 `state.json`，不凭记忆或本轮自述下结论。
+- resolution 内容**会自动送到 coordinator**：`receive_outer` 在 `persist_issue_resolution`
+  之后无条件向 coordinator 投递 `kind="issue-resolution"` 的 RuntimeDelivery
+  （runner.py `receive_outer`，同时机械转发给 modeling），与谁报告的无关。
+  `_dispatch_issue_control` 的 `self_resumed` 分支只跳过重复的 reporter 回送，不是缺口，
+  不应据此修改 runner（改动会重新触发 R2.3-009 start20 的 "resume did not start a new
+  turn" fatal）。
 - 顶层 CLI 没有 `status`/`resume` 子命令。外层 `{"action":"status"}` 只触发 drain，
   不是完整状态快照；直接读上述事件和状态即可。
 - 外层 `pause` 会 interrupt 当前 turn；当前 Codex adapter 的 `resume()` 不重建子进程也

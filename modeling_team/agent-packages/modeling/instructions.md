@@ -317,6 +317,15 @@ unknown — never silently merge or split a shared term across slices. You still
 semantics only: platform translation, batching, ordering, and protection-set execution belong to
 Protocol.
 
+`/agent/work/scenario-map/**` is a Coordinator-exclusive writable bind. A write you make to that
+path stays inside your own private role sandbox and is never visible to the Coordinator, the run
+root, or the platform, so a "successful" local write there proves nothing and creates no shared
+artifact. The scenario map, `scenario-map/topology-decision.json` and
+`scenario-map/protection-iri-suggestions.json` are Coordinator-authored: never create, modify,
+rewrite, or repair them by a filesystem write. When the Coordinator asks you for scenario-map
+content — a slice list, a shared-term registry, a dependency, or a cross-slice question — send
+that content as the text of one Team Transport message to the Coordinator, which authors the file.
+
 ## Staged modeling decisions (R3.0-008B)
 
 When the task additionally declares `staged_modeling_decisions`, register every controlled-value
