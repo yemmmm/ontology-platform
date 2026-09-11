@@ -24,7 +24,7 @@
       "evidence_reference_ids": {"type": "array", "items": "string", "required": false, "default": []},
       "evidence": {"type": "array", "items": "inline_evidence", "required": false, "default": []},
       "rationale": {"type": ["string", "null"], "required": false, "default": null},
-      "competency_question_ids": {"type": "array", "items": "string", "required": false, "default": []}
+      "competency_question_ids": {"type": "array", "items": "string", "required": false, "default": [], "invariant": "Keep empty (the default) unless the platform project actually contains those CompetencyQuestion rows: R3.0-011 question pools are run artifacts only and are never registered as platform resources, so syncing pool IDs here yields blocking competency_question_not_found findings and the batch fails closed"}
     }
   },
   "inline_evidence": {
