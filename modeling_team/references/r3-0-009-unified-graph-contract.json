@@ -90,6 +90,7 @@
     "decision_binding_fields": ["command_index", "client_item_id", "candidate_item_ids", "candidate_revision", "candidate_content_digests", "decision_ids"],
     "identity_binding_fields": ["candidate_item_id", "resource_iri", "receipt_ref", "evidence_ref"],
     "rules": [
+      "projection.task_id is a caller-supplied authoring identifier copied verbatim from the frozen Task snapshot's own task_id field; it is never expected from any platform read (get_project_build_context, get_build_session and related reads do not return it), and substituting a placeholder, an empty value or the run_id for it is a plan-authoring violation, not a missing authority value",
       "projection items are the full ModelingItemInput projection including omitted defaults, so the digest covers exactly what is forwarded",
       "every forwarded item is bound to candidate content through a decision binding, including items with no commonality decision",
       "candidate_content_digests is a JSON object mapping candidate item_id to that item's canonical digest, never an array of digests; a non-object shape is a typed unified_schema_mismatch naming the field, so the plan is rejected at load time instead of failing inside a close check",
