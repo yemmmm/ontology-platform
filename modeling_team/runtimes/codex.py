@@ -67,7 +67,7 @@ from ..capability_mcp import (
     COMPETENCY_QUESTION_ROLE,
     CQ_OPERATION,
     ROLE_OPERATIONS,
-    STAGED_PROTOCOL_OPERATION,
+    STAGED_PROTOCOL_RUN_OPERATIONS,
 )
 from ..candidate_platform_gate import (
     CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
@@ -3440,9 +3440,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 and not formal_run
                 and self._staged_decisions_enabled_for_active_run(run)
             ):
-                # Staged non-formal protocol: only the staged submission
-                # operation; the formal protocol set stays formal-only.
-                return (STAGED_PROTOCOL_OPERATION,)
+                # Staged non-formal protocol: only the staged run operations
+                # (batch submission and the #17 evidence repost); the formal
+                # protocol set stays formal-only.  This tuple must equal the
+                # live socket's ``tools/list`` exactly -- ``_require_mcp_surface``
+                # asserts that equality against the carrier's own assembly.
+                return STAGED_PROTOCOL_RUN_OPERATIONS
             if (
                 role == COMPETENCY_QUESTION_ROLE
                 and not formal_run
@@ -4405,12 +4408,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if formal_capability
             else (
                 # R3.0-008B conservation: the non-staged manifest keeps the
-                # pre-008B role registry view (the staged operation never
+                # pre-008B role registry view (no staged run operation ever
                 # appears in a non-staged capability manifest).
                 [
                     operation
                     for operation in ROLE_OPERATIONS.get(agent.package.role, ())
-                    if operation != STAGED_PROTOCOL_OPERATION
+                    if operation not in STAGED_PROTOCOL_RUN_OPERATIONS
                 ]
                 if agent.package.role != "modeling"
                 else []

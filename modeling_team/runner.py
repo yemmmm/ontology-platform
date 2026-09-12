@@ -63,7 +63,7 @@ from .preflight import (
     run_prestart_preflight,
 )
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery, RuntimeDispatchReceipt
-from .capability_mcp import STAGED_PROTOCOL_OPERATION
+from .capability_mcp import STAGED_PROTOCOL_OPERATION, STAGED_PROTOCOL_RUN_OPERATIONS
 from .candidate_progress import (
     FormalCandidateError,
     FormalCandidatePlatformContractError,
@@ -201,6 +201,55 @@ _OWNER_ANSWER_AUTHORIZATION = "r2-3-002-owner-answer-authorization"
 # roster; extra Profile roles carry no terminal dependency.
 RUNNER_CORE_ROLE_VALUES = frozenset({"coordinator", "modeling", "protocol"})
 
+#: The only target kind the staged evidence repost may address.  Evidence backs a
+#: Modeling Item's lineage; anything else (a resource IRI, a statement id) is not
+#: the staged write the Runner projects and must not be silently accepted.
+STAGED_EVIDENCE_TARGET_TYPE = "modeling_item"
+
+
+def _staged_evidence_issue(association: Any) -> str | None:
+    """The reason a staged evidence envelope may not be forwarded, else ``None``.
+
+    This is the mechanical half of the projection's contract: shape and target
+    legality only.  Whether the evidence itself is owner-authorized is the
+    Protocol role's discipline (stated in its instructions), not something the
+    Runner can verify, so the Runner never judges content -- it only guarantees
+    that a call which cannot be a real association never reaches the platform.
+    """
+
+    if not isinstance(association, Mapping):
+        return "the association envelope is not an object"
+    for key in ("project_id", "ontology_id", "target_type", "target_id"):
+        value = association.get(key)
+        if not isinstance(value, str) or not value.strip():
+            return f"association {key} is required"
+    if association["target_type"].strip() != STAGED_EVIDENCE_TARGET_TYPE:
+        return f"association target_type must be {STAGED_EVIDENCE_TARGET_TYPE}"
+    reference_ids = association.get("evidence_reference_ids")
+    if reference_ids is not None and (
+        not isinstance(reference_ids, (list, tuple))
+        or not all(isinstance(item, str) and item.strip() for item in reference_ids)
+    ):
+        return "association evidence_reference_ids must be a list of reference ids"
+    evidence = association.get("evidence")
+    if evidence is not None and (
+        not isinstance(evidence, (list, tuple))
+        or not all(
+            isinstance(item, Mapping)
+            and isinstance(item.get("document_name"), str)
+            and item["document_name"].strip()
+            and isinstance(item.get("excerpt"), str)
+            and item["excerpt"].strip()
+            for item in evidence
+        )
+    ):
+        return "association evidence entries must carry document_name and excerpt"
+    # Nothing was named to associate: the platform would answer with an empty
+    # association list, which reads as success while satisfying no retrieval gate.
+    if not reference_ids and not evidence:
+        return "association must name at least one evidence reference or excerpt"
+    return None
+
 
 @dataclass
 class TeamRun:
@@ -243,6 +292,7 @@ class TeamRunner:
         deepseek_credential_path: Path | None = None,
         glm_credential_path: Path | None = None,
         staged_batch_forwarder: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        staged_evidence_forwarder: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -264,6 +314,11 @@ class TeamRunner:
         # ``staged_batch_forward_failed`` reason code.  It must NOT reuse the
         # read-only McpReadForwarder/PLATFORM_PROXY_READ_TOOLS surface.
         self.staged_batch_forwarder = staged_batch_forwarder
+        # R3.0-008B/#17: the injected host-side forwarder for the staged evidence
+        # repost.  It reaches the canonical ``associate_evidence_reference`` and
+        # nothing else.  ``None`` keeps the capability fail-closed with the typed
+        # ``staged_evidence_forward_failed`` reason code.
+        self.staged_evidence_forwarder = staged_evidence_forwarder
         # These paths are constructor-only test seams.  Production callers leave
         # them unset and therefore bind each route's fixed external credential
         # location; a profile only ever reads the routes it actually names.
@@ -940,6 +995,9 @@ class TeamRunner:
             ),
             staged_submission_handler=(
                 self._handle_staged_submit_modeling_batch if self._staged_decisions else None
+            ),
+            staged_association_handler=(
+                self._handle_staged_associate_evidence if self._staged_decisions else None
             ),
             cq_draft_handler=(
                 self._publish_cq_question_draft if self._competency_questions else None
@@ -1954,16 +2012,16 @@ class TeamRunner:
             ):
                 # R3.0-008B staged runs are non-formal, so the formal branch
                 # above never runs; the protocol role still declares the
-                # staged Modeling Batch submission operation in its private
-                # config, so exactly that endpoint must be live before any
-                # roster process is launched.  Nothing else starts here: a
-                # non-staged non-formal run keeps every endpoint stopped.
+                # staged run operations (batch submission and the #17 evidence
+                # repost) in its private config, so exactly that endpoint must be
+                # live before any roster process is launched.  Nothing else starts
+                # here: a non-staged non-formal run keeps every endpoint stopped.
                 self.acceptance.capability_endpoint("protocol").start()
                 self._append_evidence(
                     "staged-decisions",
                     {
                         "event": "protocol-capability-endpoint-started",
-                        "operations": [STAGED_PROTOCOL_OPERATION],
+                        "operations": list(STAGED_PROTOCOL_RUN_OPERATIONS),
                     },
                 )
             if self._competency_questions and self.acceptance is not None:
@@ -4412,6 +4470,70 @@ class TeamRunner:
             "receipt_ordinal": receipt["ordinal"],
             "response_digest": response_digest,
         }
+
+    def _handle_staged_associate_evidence(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """The Runner-private staged evidence-repost capability (R3.0-008B/#17).
+
+        The staged batch channel materializes items the terminal retrieval gate
+        scores by lineage, and the owner-authorized evidence backing those items
+        is attached outside the batch.  This projection carries that one platform
+        call; without it the gate is unsatisfiable whenever the owner answers
+        after materialization (auth010 start4, item ``e80f85b1``).
+
+        Evidence is not materialization, so this path deliberately carries none
+        of the batch path's machinery: no durable intent, no receipt, no plan or
+        approval chain, and no competency-question freeze ordering (which exists
+        to sequence platform *writes* against the frozen question pool).  What it
+        does keep is the write-integrity latch: while an unreconciled platform
+        write awaits adjudication, no staged capability may add platform state.
+        """
+
+        if not getattr(self, "_staged_decisions", False) or self.run is None:
+            raise StagedSubmissionRejection(
+                "staged_gate_closed", "staged decisions are not enabled for this run"
+            )
+        if getattr(self, "_staged_gate_killed", False):
+            raise StagedSubmissionRejection(
+                "staged_gate_closed",
+                "staged write gate is closed pending reconciliation",
+            )
+        association = args.get("association")
+        issue = _staged_evidence_issue(association)
+        if issue is not None:
+            raise StagedSubmissionRejection("staged_submit_schema_mismatch", issue)
+        forwarder = getattr(self, "staged_evidence_forwarder", None)
+        if not callable(forwarder):
+            raise StagedSubmissionRejection(
+                "staged_evidence_forward_failed",
+                "no host-side evidence forwarder is configured for this run",
+            )
+        try:
+            result = forwarder(dict(association))
+        except StagedBatchForwardUnknown as exc:
+            # An association the platform may or may not have persisted: the
+            # (target, reference) uniqueness makes the identical call safe to
+            # replay, so this stays a repairable rejection with no latch.
+            raise StagedSubmissionRejection("staged_evidence_forward_unknown", str(exc)) from exc
+        except StagedBatchForwardError as exc:
+            raise StagedSubmissionRejection("staged_evidence_forward_failed", str(exc)) from exc
+        except Exception as exc:  # noqa: BLE001 - typed re-wrap, evidence below
+            raise StagedSubmissionRejection("staged_evidence_forward_failed", str(exc)) from exc
+        if not isinstance(result, Mapping) or not isinstance(result.get("items"), list):
+            raise StagedSubmissionRejection(
+                "staged_evidence_forward_failed",
+                "the evidence forwarder returned no association rows",
+            )
+        self._append_evidence(
+            "staged-decisions",
+            {
+                "event": "evidence-associated",
+                "ontology_id": association["ontology_id"],
+                "target_type": association["target_type"],
+                "target_id": association["target_id"],
+                "association_count": len(result["items"]),
+            },
+        )
+        return dict(result)
 
     def _check_multi_slice_topology_gate(self) -> None:
         """R3.0-002: open the independent platform MCP gate only after a

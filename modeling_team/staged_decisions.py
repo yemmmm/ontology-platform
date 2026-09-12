@@ -156,6 +156,11 @@ STAGED_REASON_CODES = (
     "staged_dangling_semantic_value",
     "staged_batch_forward_failed",
     "staged_batch_forward_unknown",
+    # #17: the evidence-repost projection's own forwarder outcomes.  The envelope
+    # shape reuses ``staged_submit_schema_mismatch`` and the write-integrity latch
+    # reuses ``staged_gate_closed``: both mean exactly what they already mean.
+    "staged_evidence_forward_failed",
+    "staged_evidence_forward_unknown",
     "staged_ledger_stale",
     "staged_unreconciled_batch",
 )

@@ -22,7 +22,7 @@ import pytest
 from modeling_team.acceptance import RunnerAcceptanceCarrier
 from modeling_team.capability_mcp import (
     COMPETENCY_QUESTION_ROLE,
-    STAGED_PROTOCOL_OPERATION,
+    STAGED_PROTOCOL_RUN_OPERATIONS,
 )
 from modeling_team.contracts import TeamConfigurationError, load_multi_slice_team_configuration, load_task
 from modeling_team.runner import TeamRunner
@@ -808,9 +808,9 @@ def test_s9_staged_protocol_gets_capability_socket_and_advertisement(tmp_path):
     socket.parent.mkdir(parents=True, exist_ok=True)
     adapter._acceptance = SimpleNamespace(capability_socket_path=lambda role: socket)
     try:
-        assert adapter._role_capability_operations("protocol") == (
-            "protocol_staged_submit_modeling_batch",
-        )
+        # A staged run advertises the staged run pair: the batch write and the
+        # evidence repost, in that order, and nothing else.
+        assert adapter._role_capability_operations("protocol") == STAGED_PROTOCOL_RUN_OPERATIONS
         command = adapter.namespace_command(_role_agent(base, "protocol"))
         assert [
             "--bind",
@@ -844,7 +844,9 @@ def test_f1_non_staged_capability_assembly_and_manifest_exclude_staged_operation
         manifest = json.loads(
             (agent.home / "runner-capabilities.json").read_text(encoding="utf-8")
         )
-        assert "protocol_staged_submit_modeling_batch" not in manifest["capabilities"]
+        # Neither staged run operation leaks into an ordinary run's manifest.
+        for staged_operation in STAGED_PROTOCOL_RUN_OPERATIONS:
+            assert staged_operation not in manifest["capabilities"]
 
         staged_run = SimpleNamespace(
             root=base,
@@ -868,7 +870,7 @@ def test_f1_non_staged_capability_assembly_and_manifest_exclude_staged_operation
         staged_manifest = json.loads(
             (staged_agent.home / "runner-capabilities.json").read_text(encoding="utf-8")
         )
-        assert staged_manifest["capabilities"] == ["protocol_staged_submit_modeling_batch"]
+        assert staged_manifest["capabilities"] == list(STAGED_PROTOCOL_RUN_OPERATIONS)
         config = (staged_agent.home / "config.toml").read_text(encoding="utf-8")
         assert "runner_capability" in config
     finally:
@@ -1067,11 +1069,11 @@ def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path)
         )
         carrier = runner.acceptance
         assert carrier is not None
-        # The role declares exactly one private protocol capability; the
-        # endpoint assembly must not widen it (the runtime asserts the live
-        # MCP surface by exact equality).
+        # The role declares exactly the staged run capabilities; the endpoint
+        # assembly must not widen them (the runtime asserts the live MCP surface
+        # by exact equality).
         assert carrier.capability_endpoint("protocol").operations == (
-            STAGED_PROTOCOL_OPERATION,
+            STAGED_PROTOCOL_RUN_OPERATIONS
         )
 
         runner.start()
@@ -1079,7 +1081,7 @@ def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path)
         assert len(probe.observations) == 1
         before_roster = probe.observations[0]
         assert before_roster["protocol"]["is_socket"] is True
-        assert before_roster["protocol"]["tools"] == [STAGED_PROTOCOL_OPERATION]
+        assert before_roster["protocol"]["tools"] == list(STAGED_PROTOCOL_RUN_OPERATIONS)
         # CQ stays independently available, and no unselected role endpoint was
         # started into existence.
         assert before_roster[COMPETENCY_QUESTION_ROLE]["is_socket"] is True
@@ -1094,7 +1096,7 @@ def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path)
         # Both sockets stay live for the roster they were started for.
         assert _socket_tools(
             protocol_socket, carrier.capability_token("protocol")
-        ) == [STAGED_PROTOCOL_OPERATION]
+        ) == list(STAGED_PROTOCOL_RUN_OPERATIONS)
         assert _socket_tools(
             cq_socket, carrier.capability_token(COMPETENCY_QUESTION_ROLE)
         ) == ["cq_publish_question_draft"]
@@ -1111,7 +1113,7 @@ def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path)
         runtime._active_run = runner.run
         runtime._acceptance = carrier
         for role, declared in (
-            ("protocol", (STAGED_PROTOCOL_OPERATION,)),
+            ("protocol", STAGED_PROTOCOL_RUN_OPERATIONS),
             (COMPETENCY_QUESTION_ROLE, ("cq_publish_question_draft",)),
             ("coordinator", ()),
             ("acceptance", ()),

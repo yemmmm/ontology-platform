@@ -668,3 +668,33 @@ Coordinator has approved (confirmed status with a matching approvals entry); nev
 or a direct `submit_modeling_batch` call. If a submission result is reported as
 `staged_batch_forward_unknown` or `staged_unreconciled_batch`, stop submitting and surface it:
 manual adjudication is required before anything else can be submitted.
+
+### Re-posting owner-authorized evidence (#17)
+
+Materialized items are scored on lineage, so a created item's structural assertions (an `rdf:type`
+or vocabulary/identifier triple, for example) carry no evidence unless you attach it. The second
+staged capability exists for exactly that: `protocol_staged_associate_evidence` on the same
+`runner_capability` MCP server, which forwards one call to the platform tool
+`associate_evidence_reference` per association, with an `association` envelope carrying that
+platform tool's own arguments — `project_id`, `ontology_id`, `target_type="modeling_item"`,
+`target_id`, and `evidence_reference_ids` or `evidence:[{document_name, excerpt}]` (optional
+`graph_set_id`, `client_item_id`, `edit_audit_id`). `target_id` is the platform Modeling Item id
+that the submission receipt or the attempt read-back names — never a resource IRI, never a
+statement id, and never an id you constructed yourself.
+
+Re-post only owner-authorized evidence: a verbatim excerpt of an owner answer the Host has already
+adjudicated, or of an approved business-package document, with `document_name` naming that source.
+Never author evidence yourself — the platform evidences the ontology with owner statements, not
+with self-authored justification — never paraphrase or extend the owner's words into a stronger
+claim, and never cite competency-question pool content as platform evidence: the pool is frozen
+question material, not a source document, and citing it corrupts the retrieval gate it is supposed
+to serve. If the owner has not answered, the honest state is a missing-evidence gap you surface; it
+is not something to close by writing your own justification.
+
+This capability is not a submission: it writes no materialization intent, needs no plan or approval
+entry, and is unaffected by the competency-question freeze. It is idempotent — repeating the same
+association changes nothing — so a rejection reason code is simply repaired and retried, while
+`staged_evidence_forward_unknown` means the platform may or may not hold the association and the
+same call may be replayed safely. When the write-integrity gate is closed
+(`staged_gate_closed`), no staged capability accepts anything: surface it and wait for
+adjudication.

@@ -123,6 +123,24 @@
     ],
     "isolation": "plan_ref, projection, projection_digest and decision_bindings are Runner-private sidecar fields. They are never added to the platform ModelingItemInput payload, which forbids extra fields, and never leave the Runner sandbox."
   },
+  "evidence_capability": {
+    "operation": "protocol_staged_associate_evidence",
+    "owner": "protocol (via the runner_capability MCP server)",
+    "platform_tool": "associate_evidence_reference",
+    "target_type": "modeling_item",
+    "arguments": ["protocol_id", "association"],
+    "rules": [
+      "the association targets the Modeling Item a receipt or read-back named (target_id), never a candidate revision id or an invented identifier",
+      "this capability is out of the plan/approval chain: it mints no intent, consults no projection, and cannot unlock or re-open a materialization",
+      "it is the read-side complement of submission_capability: it closes the lineage gate of an item the staged write created, and it is idempotent per (target, evidence reference)"
+    ],
+    "failure_reason_codes": [
+      "staged_gate_closed",
+      "staged_submit_schema_mismatch",
+      "staged_evidence_forward_failed",
+      "staged_evidence_forward_unknown"
+    ]
+  },
   "intent_receipt": {
     "intent_fields": ["schema_version", "ordinal", "idempotency_key", "client_batch_id", "session_id", "mode", "commands", "value_traces", "l3_nodes", "status", "plan_ref", "projection", "projection_digest", "decision_bindings"],
     "receipt_fields": ["schema_version", "ordinal", "intent_ordinal", "idempotency_key", "mode", "batch_id", "commands", "value_traces", "l3_nodes", "response_digest", "submitted_via", "plan_ref", "projection_digest", "decision_bindings"],

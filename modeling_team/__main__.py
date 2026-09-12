@@ -67,7 +67,10 @@ from .runner import TeamRunner
 from .candidate_publication import validate_candidate_publication
 from .candidate_progress import FormalCandidateProgressTimeout
 from .runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError
-from .staged_batch_write_forwarder import forward_staged_modeling_batch
+from .staged_batch_write_forwarder import (
+    forward_staged_associate_evidence,
+    forward_staged_modeling_batch,
+)
 from .start_ledger import StartLedger
 from .task_overlay import load_task_input_overlay
 
@@ -1826,6 +1829,18 @@ def main() -> int:
                 )
 
             runner.staged_batch_forwarder = staged_batch_write_forwarder
+
+            # #17: the same binding for the evidence-repost projection, which
+            # carries the owner-authorized evidence a materialized item's lineage
+            # needs.  It reaches ``associate_evidence_reference`` and nothing else.
+            def staged_evidence_association_forwarder(association):
+                return forward_staged_associate_evidence(
+                    association,
+                    repository_root=root,
+                    protocol_key=runner.run.protocol_key,
+                )
+
+            runner.staged_evidence_forwarder = staged_evidence_association_forwarder
         # Host auth is no longer probed unconditionally here.  TeamRunner's
         # prepare already ran the profile-scoped credential preflights
         # (including the conditional Codex ChatGPT subscription check for

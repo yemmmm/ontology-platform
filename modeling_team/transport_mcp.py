@@ -47,6 +47,23 @@ TERMINAL_REPORT_GUARD_ERROR = (
 COORDINATION_OBSERVER_ERROR = "coordination evidence observer failed"
 _MCP_TOOL_ERROR_CODE = -32000
 _MCP_TOOL_ERROR_MESSAGE = "Team Transport request rejected"
+# The broker socket is an internal transport whose ``{"error": ...}`` payload
+# is the string form of a ``RoutingError``: a fixed, non-secret sentence naming
+# the violated routing/argument rule (or the JSON-decode complaint, which
+# carries no payload bytes).  Relaying it keeps the role able to diagnose its
+# own call; a non-string payload or an implausibly long one still falls back to
+# the generic sentence so no structured broker state is reflected to the Agent.
+_BROKER_ERROR_MAX_CHARS = 200
+
+
+def _broker_error_message(value: object) -> str:
+    """Return the broker's own bounded rejection text, else the generic one."""
+
+    if isinstance(value, str):
+        text = value.strip()
+        if text and len(text) <= _BROKER_ERROR_MAX_CHARS:
+            return text
+    return _MCP_TOOL_ERROR_MESSAGE
 
 
 def _call_terminal_report_guard(
@@ -1319,12 +1336,14 @@ def main() -> int:
             # The broker socket is an internal transport and returns a compact
             # error object.  Do not place that object under JSON-RPC ``result``:
             # an MCP client expects either a CallToolResult or a JSON-RPC error.
+            # The broker's own fixed text is relayed (bounded, string-only) so
+            # the role can distinguish a rejected call from a transport fault.
             wire_response = {
                 "jsonrpc": "2.0",
                 "id": request.get("id"),
                 "error": {
                     "code": _MCP_TOOL_ERROR_CODE,
-                    "message": _MCP_TOOL_ERROR_MESSAGE,
+                    "message": _broker_error_message(broker_response.get("error")),
                 },
             }
         elif isinstance(broker_response, dict):

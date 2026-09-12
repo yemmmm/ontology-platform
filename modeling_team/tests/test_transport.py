@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import json
 import os
+import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 
@@ -282,7 +284,13 @@ class TransportTests(unittest.TestCase):
                 early_request["already_synchronized"] = True
                 early = rpc(2, early_request)
                 self.assertEqual(early["error"]["code"], -32000)
-                self.assertEqual(early["error"]["message"], "Team Transport request rejected")
+                # R2.3-009/#14: the stdio facade keeps the broker's fixed typed
+                # rejection text instead of collapsing every refusal into the
+                # generic sentence, so the role can diagnose its own call.
+                self.assertEqual(
+                    early["error"]["message"],
+                    "terminal result requires terminal handoffs: modeling",
+                )
                 self.assertNotIn("result", early)
                 broker.report("modeling", "completed", "modeling")
                 broker.ack_terminal_handoff("protocol", "modeling")
@@ -382,7 +390,10 @@ class TransportTests(unittest.TestCase):
                         "id": 2,
                         "error": {
                             "code": -32000,
-                            "message": "Team Transport request rejected",
+                            # The broker's own fixed text, not the generic
+                            # fallback: the caller learns which field was wrong
+                            # without the rejected argument value being echoed.
+                            "message": "issue_control arguments are invalid",
                         },
                     },
                 )
@@ -510,6 +521,89 @@ class TransportTests(unittest.TestCase):
             with self.assertRaisesRegex(RoutingError, "explicit revision response"):
                 blocked.report("modeling", "completed", "cannot silently complete after conflict")
             blocked.report("modeling", "blocked", "cannot revise")
+
+    def test_stdio_facade_bounds_broker_error_text_and_hides_non_string_payloads(self) -> None:
+        """The facade surfaces only the broker's own bounded fixed text.
+
+        The broker socket is an internal channel: what reaches the Agent must
+        stay a bounded string, so an over-long or non-string broker error keeps
+        the generic rejection sentence instead of widening the reflection
+        surface to structured broker payloads.
+        """
+
+        root = Path(__file__).parents[2]
+        cases = [
+            ("typed broker text", "recipient is not allowed by frozen Profile"),
+            ("over-long broker text", "x" * 201),
+            ("non-string broker payload", {"detail": "recipient is not allowed"}),
+        ]
+        for label, broker_error in cases:
+            with self.subTest(label=label), tempfile.TemporaryDirectory() as directory:
+                endpoint = Path(directory) / "stub-broker.sock"
+                server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                server.bind(str(endpoint))
+                server.listen(1)
+                expected = (
+                    broker_error
+                    if isinstance(broker_error, str) and 0 < len(broker_error) <= 200
+                    else "Team Transport request rejected"
+                )
+
+                def serve_once() -> None:
+                    connection, _ = server.accept()
+                    with connection:
+                        connection.makefile("r", encoding="utf-8").readline()
+                        connection.sendall(
+                            (json.dumps({"error": broker_error}) + "\n").encode("utf-8")
+                        )
+
+                thread = threading.Thread(target=serve_once, daemon=True)
+                thread.start()
+                environment = os.environ.copy()
+                environment["PYTHONPATH"] = os.pathsep.join(
+                    item for item in (str(root), environment.get("PYTHONPATH", "")) if item
+                )
+                environment["TEAM_TRANSPORT_SOCKET"] = str(endpoint)
+                process = subprocess.Popen(
+                    [sys.executable, "-m", "modeling_team.transport_mcp"],
+                    cwd=root,
+                    env=environment,
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
+                try:
+                    assert process.stdin is not None
+                    assert process.stdout is not None
+                    process.stdin.write(
+                        json.dumps(
+                            {
+                                "jsonrpc": "2.0",
+                                "id": 7,
+                                "method": "tools/call",
+                                "params": {"name": "send_team_message", "arguments": {}},
+                            }
+                        )
+                        + "\n"
+                    )
+                    process.stdin.flush()
+                    response = json.loads(process.stdout.readline())
+                finally:
+                    if process.stdin is not None:
+                        process.stdin.close()
+                    try:
+                        process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        process.kill()
+                        process.wait(timeout=5)
+                    server.close()
+                    thread.join(timeout=5)
+                self.assertEqual(response["error"]["code"], -32000)
+                self.assertEqual(response["error"]["message"], expected)
+                self.assertNotIn("result", response)
+                if not isinstance(broker_error, str):
+                    self.assertNotIn("detail", json.dumps(response))
 
     def test_mcp_rejects_forged_reply_fields_and_preserves_optional_schema(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
