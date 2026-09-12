@@ -1,0 +1,43 @@
+# Team Model Profile for the 2026-09-12 model-comparison round
+# (auth-r3-0-006-010, start1): the same role roster the peak/off-peak profiles
+# select -- the r3-0-011-competency-question Profile roster (coordinator,
+# modeling, protocol, competency-question) plus the Platform Examiner
+# production side (``platform-examiner``) and the Judge (package ID
+# ``acceptance``).  All roles bind the ``glm-direct`` route to the exact model
+# ``glm-5.3`` (the full model, not the flash variant) at ``max`` effort.
+#
+# The profile ID drops the model's version suffix because ``SAFE_ID`` allows
+# only ``[a-z0-9-]``; the precise model string lives in every ``model:``
+# binding.  ``glm-direct`` is the Zhipu direct Responses route: the role
+# reaches it through the Host-owned loopback session, so no role ever holds
+# the GLM API key.  No OpenAI route is declared, so no role can silently ride
+# the Codex built-in ChatGPT subscription.  Other profiles stay unchanged:
+# validate, baseline, and run must select this profile explicitly via
+# ``--model-profile glm-max``.
+schema_version: 1
+model_profile_id: glm-max
+roles:
+  coordinator:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: max
+  modeling:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: max
+  protocol:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: max
+  competency-question:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: max
+  platform-examiner:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: max
+  acceptance:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: max

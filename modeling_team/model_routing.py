@@ -137,7 +137,9 @@ GLM_DIRECT_ROUTE = ProviderRoute(
     wire_api="responses",
     upstream_url="https://open.bigmodel.cn/api/v1/responses",
     credential_env="GLM_API_KEY",
-    models=frozenset({"glm-5.3-flash"}),
+    # ``glm-5.3`` (full model) admitted 2026-09-12 for the user-authorized
+    # model-comparison round; it rides the same credential and loopback session.
+    models=frozenset({"glm-5.3", "glm-5.3-flash"}),
     # Aligned with ``deepseek-direct``: the low tiers collapse onto ``high`` and
     # the top two onto ``max``.  ``none`` is deliberately unmapped, exactly as in
     # the DeepSeek route, so a profile asking for it fails at load rather than

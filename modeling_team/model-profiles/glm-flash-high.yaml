@@ -1,0 +1,44 @@
+# Team Model Profile for the 2026-09-12 model-comparison round
+# (auth-r3-0-006-010, start3): the same role roster as ``glm-flash-max`` --
+# the r3-0-011-competency-question Profile roster (coordinator, modeling,
+# protocol, competency-question) plus the Platform Examiner production side
+# (``platform-examiner``) and the Judge (package ID ``acceptance``).  All roles
+# bind the ``glm-direct`` route to the exact model ``glm-5.3-flash`` at
+# ``high`` effort; paired with ``glm-flash-max`` it isolates the max-vs-high
+# effort axis on the flash model.
+#
+# The profile ID drops the model's version suffix because ``SAFE_ID`` allows
+# only ``[a-z0-9-]``; the precise model string lives in every ``model:``
+# binding.  ``glm-direct`` is the Zhipu direct Responses route: the role
+# reaches it through the Host-owned loopback session, so no role ever holds
+# the GLM API key.  No OpenAI route is declared, so no role can silently ride
+# the Codex built-in ChatGPT subscription.  Other profiles stay unchanged:
+# validate, baseline, and run must select this profile explicitly via
+# ``--model-profile glm-flash-high``.
+schema_version: 1
+model_profile_id: glm-flash-high
+roles:
+  coordinator:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high
+  modeling:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high
+  protocol:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high
+  competency-question:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high
+  platform-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high
+  acceptance:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high

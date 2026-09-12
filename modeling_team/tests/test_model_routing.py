@@ -238,7 +238,7 @@ def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert GLM_DIRECT_ROUTE.upstream_url == "https://open.bigmodel.cn/api/v1/responses"
     assert GLM_DIRECT_ROUTE.credential_env == "GLM_API_KEY"
     assert GLM_DIRECT_ROUTE.wire_api == "responses"
-    assert GLM_DIRECT_ROUTE.models == frozenset({"glm-5.3-flash"})
+    assert GLM_DIRECT_ROUTE.models == frozenset({"glm-5.3", "glm-5.3-flash"})
     assert GLM_DIRECT_ROUTE.uses_external_credential is True
     # Effort resolves exactly as DeepSeek's does, including ``none`` unmapped.
     assert GLM_DIRECT_ROUTE.effective_effort("low") == "high"
@@ -281,6 +281,18 @@ def test_deepseek_flash_is_in_the_closed_model_catalog() -> None:
     assert "deepseek-v4-flash" in DEEPSEEK_DIRECT_ROUTE.models
     assert "deepseek-v4.1-flash" not in DEEPSEEK_DIRECT_ROUTE.models
     assert "deepseek-flash" not in OPENAI_CODEX_ROUTE.models
+
+
+def test_glm_full_model_is_in_the_closed_model_catalog() -> None:
+    # 2026-09-12 model-comparison round (auth-r3-0-006-010): the user named
+    # ``glm-5.3`` (the full model, not the flash variant) as a candidate team
+    # model, so the glm-direct catalog must accept that exact string the same
+    # way ``deepseek-flash`` was admitted after its versioned sibling was
+    # rejected upstream.
+    assert "glm-5.3" in GLM_DIRECT_ROUTE.models
+    assert "glm-5.3-flash" in GLM_DIRECT_ROUTE.models
+    assert "glm-5.3" not in DEEPSEEK_DIRECT_ROUTE.models
+    assert "glm-5.3" not in OPENAI_CODEX_ROUTE.models
 
 
 def test_deepseek_flash_max_profile_binds_every_v3_role_to_deepseek() -> None:

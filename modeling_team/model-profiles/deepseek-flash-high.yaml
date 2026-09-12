@@ -1,0 +1,44 @@
+# Team Model Profile for the 2026-09-12 model-comparison round
+# (auth-r3-0-006-010, start4): the same role roster as ``deepseek-flash-max``
+# -- the r3-0-011-competency-question Profile roster (coordinator, modeling,
+# protocol, competency-question) plus the Platform Examiner production side
+# (``platform-examiner``) and the Judge (package ID ``acceptance``).  All
+# roles bind the ``deepseek-direct`` route to the user-confirmed
+# ``deepseek-flash`` model at ``high`` effort; paired with
+# ``deepseek-flash-max`` it isolates the max-vs-high effort axis on DeepSeek.
+#
+# The profile ID drops the model's version suffix because ``SAFE_ID`` allows
+# only ``[a-z0-9-]``; the precise model string lives in every ``model:``
+# binding.  ``deepseek-direct`` is the DeepSeek direct Responses route: the
+# role reaches it through the Host-owned loopback session, so no role ever
+# holds the DeepSeek API key.  No OpenAI route is declared, so no role can
+# silently ride the Codex built-in ChatGPT subscription.  Other profiles stay
+# unchanged: validate, baseline, and run must select this profile explicitly
+# via ``--model-profile deepseek-flash-high``.
+schema_version: 1
+model_profile_id: deepseek-flash-high
+roles:
+  coordinator:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: high
+  modeling:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: high
+  protocol:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: high
+  competency-question:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: high
+  platform-examiner:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: high
+  acceptance:
+    model_provider: deepseek-direct
+    model: deepseek-flash
+    model_reasoning_effort: high
