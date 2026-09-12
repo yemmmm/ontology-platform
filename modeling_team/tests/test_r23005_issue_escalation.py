@@ -12,7 +12,12 @@ import unittest
 
 from modeling_team.acceptance import CoordinatorPhaseController
 from modeling_team.candidate_progress import FormalCandidateProgress
-from modeling_team.interventions import IssueControl, IssueError, IssueResolution
+from modeling_team.interventions import (
+    IssueControl,
+    IssueError,
+    IssueResolution,
+    _requires_mutation_reconciliation,
+)
 from modeling_team.runner import TeamConfigurationError, TeamRunner
 from modeling_team.runtimes.base import RuntimeDispatchReceipt, RuntimeDelivery
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker, mcp_response
@@ -442,6 +447,8 @@ class IssueEscalationTests(unittest.TestCase):
         self.assertTrue(progress.check_deadline(now=1002))
 
     def test_unknown_write_cannot_resume_via_guidance(self) -> None:
+        # 2026-09-12 F18: the hardening triggers on the exact status token, so
+        # this report uses the literal word "uncertain" as its mutation state.
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(
                 Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker",
@@ -455,7 +462,7 @@ class IssueEscalationTests(unittest.TestCase):
                 summary="apply result is unknown",
                 failing_operation="apply_atomic",
                 error="receipt was not returned",
-                mutation_state="apply result uncertain",
+                mutation_state="uncertain",
                 requested_action="reconcile receipt and readback",
             )
             broker.issue_control(
@@ -476,6 +483,63 @@ class IssueEscalationTests(unittest.TestCase):
             with self.assertRaisesRegex(RoutingError, "requires formal reconciliation"):
                 broker.persist_issue_resolution(guidance)
             self.assertEqual(broker.issue_ledger.state, "waiting_repair")
+
+    def test_narrative_mutation_state_stays_resolvable_via_guidance(self) -> None:
+        # 2026-09-12 F18 (r30006-20260912-glmb01-start3 issue-7): a truthful
+        # narrative sentence that merely contains a marker word must not harden
+        # the issue abort-only.
+        with tempfile.TemporaryDirectory() as directory:
+            broker = TeamTransportBroker(
+                Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker",
+                {("modeling", "coordinator"), ("coordinator", "modeling")},
+                coordinator_agent_id="coordinator",
+                issue_escalation_enabled=True,
+            )
+            report = broker.report_issue(
+                "modeling",
+                category="platform_repair",
+                summary="one artifact write is still outstanding",
+                failing_operation="durable artifact write",
+                error="Python open for write returned OSError errno 30",
+                mutation_state=(
+                    "approvals written; the conclusions file remains unchanged; "
+                    "the unlock remains absent to avoid an unlock_code_mismatch."
+                ),
+                requested_action="apply the anchored transitions and continue",
+            )
+            broker.issue_control(
+                "coordinator",
+                issue_id=report["issue_id"],
+                reporter_id="modeling",
+                action="pause",
+                control_epoch=1,
+            )
+            guidance = IssueResolution(
+                run_id=report["run_id"],
+                issue_id=report["issue_id"],
+                reporter_id="modeling",
+                resolution_type="guidance",
+                control_epoch=1,
+                resolution_text="Apply the anchored transitions, then continue.",
+            )
+            persisted = broker.persist_issue_resolution(guidance)
+            self.assertEqual(persisted["resolution_type"], "guidance")
+            self.assertEqual(broker.issue_ledger.state, "resolution_ready")
+
+    def test_only_the_exact_status_tokens_harden(self) -> None:
+        # The marker set is matched by whole-token equality after the same
+        # normalization the predicate applies.
+        for token in ("unknown", "uncertain", "indeterminate", "mismatch"):
+            self.assertTrue(_requires_mutation_reconciliation(token))
+            self.assertTrue(_requires_mutation_reconciliation(f" {token.upper()} "))
+        for narrative in (
+            "to avoid an unlock_code_mismatch",
+            "no unknown results",
+            "uncertain vocabulary stays pending",
+            "not_started",
+            "zero-mutation",
+        ):
+            self.assertFalse(_requires_mutation_reconciliation(narrative))
 
     def test_outer_abort_cannot_be_recast_as_resume(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

@@ -78,6 +78,9 @@ The same binding applies when you are the reporter. After your own `report_issue
 immediately call `issue_control` with `action: "pause"` in that same turn and then end the turn:
 the Runner surfaces the issue to the outer owner and admits the outer resolution only after your
 pause control is dispatched, so a report without its bound pause freezes the run with no exit.
+`mutation_state` is one short literal status token, never a narrative sentence: the exact tokens
+`unknown`, `uncertain`, `indeterminate`, and `mismatch` close every resolution except an outer
+abort, so state any other outcome as a plain factual token (for example `zero-mutation`).
 Never keep working the blocker after reporting it, never decide on your own that your issue is
 resolved (not even from artifacts you can now read, projections that appeared, or messages you
 queued), and never send a "blocker resolved" notice while the issue is pending; the issue closes

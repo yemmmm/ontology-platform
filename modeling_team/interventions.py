@@ -162,12 +162,18 @@ def _canonical_mapping(value: Any, name: str) -> dict[str, Any] | None:
     return result
 
 
+# 2026-09-12 r30006-20260912-glmb01-start3 (F18): the reconciliation hardening is
+# exact-token equality, never a substring scan.  A truthful narrative sentence
+# that merely contains a marker word ("... remains absent to avoid an
+# unlock_code_mismatch") must not turn a resolvable issue abort-only.
+_UNKNOWN_MUTATION_STATES = frozenset(
+    {"unknown", "uncertain", "indeterminate", "mismatch"}
+)
+
+
 def _requires_mutation_reconciliation(value: str) -> bool:
     normalized = value.strip().lower().replace("-", "_").replace(" ", "_")
-    return any(
-        marker in normalized
-        for marker in ("unknown", "uncertain", "indeterminate", "mismatch")
-    )
+    return normalized in _UNKNOWN_MUTATION_STATES
 
 
 @dataclass(frozen=True)
