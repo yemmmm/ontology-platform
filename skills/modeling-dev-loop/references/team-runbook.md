@@ -207,6 +207,23 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
   同 run 续跑必须由仍有效的输入/issue 通道触发实际工作并看到新的进展证据。
 - `stop` 会进入 cleanup，不能当作暂停。存在不确定写入时先查询实际结果，再决定生命周期操作。
 
+## cq_handoff_complete 之后的独立验收收口（acceptance_pending）
+
+`cq_handoff_complete` 被接受并返回 `acceptance_phase=acceptance_pending` 后，live run 保持
+pending：coordinator 已 terminal 不代表完成，Runner 在等宿主完成独立验收（R3.0-012 §4.5；
+2026-09-13 auth014-start1 实证：宿主此时发送 `stop` 会触发 cleanup，Acceptance 以
+`runner-cleanup-before-settlement` abort，独立验收永久丢失）。宿主在该阶段的唯一正确动作：
+
+1. **不要发送 `stop`**（也不要因“run 看起来已完成”而收尾 CLI）；`stop` 仅在明确决定放弃
+   本次独立验收时使用。
+2. 用当前权威入口启动独立验收会话：
+   `uv run --project backend python -m modeling_team cq-acceptance --run-root ... --freeze-id ... --model-handoff ...`
+   （参数先读 `--help`；独立验收者不得参与生产或修复）。
+3. 验收进程退出后，把 digest-and-verdict 摘要经 FIFO 发送 `cq_acceptance_complete`
+   envelope（字段见 Runner 合同 `CQ_ACCEPTANCE_COMPLETE_FIELDS`）；Runner 自行复读
+   batch-report 并复核 digest/verdict 后才释放 terminal report。
+4. 全部/部分/失败报告都同样完成收口；验收不需要全绿才算 run 正常结束。
+
 ## 接口修复后继续同一 run
 
 收到“接口已经修复完成，请继续”时，由宿主读取当前 live run 的唯一 pending issue、

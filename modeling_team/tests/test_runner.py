@@ -430,6 +430,44 @@ class RunnerTests(unittest.TestCase):
         self.assertEqual(emitted, [[{"type": "settled"}]])
         self.assertGreaterEqual(runner.drains, 2)
 
+    def test_foreground_loop_returns_cleanly_after_host_stop(self) -> None:
+        # 2026-09-13 auth014-start1 live evidence: after the host's ``stop``
+        # action cleaned up the roster, the loop kept pumping and the next
+        # ``drain()`` read the destroyed App-Server children's closed stdout,
+        # so the CLI died with ``run failed: app-server closed its output``
+        # (exit 2) instead of acknowledging the requested stop.  The loop must
+        # return right after emitting the ``stopped`` output and never drain
+        # the cleaned-up Runner again.
+        class StoppedRunner:
+            def __init__(self, root):
+                self.run = SimpleNamespace(root=root)
+                self.drains = 0
+
+            def drain(self):
+                self.drains += 1
+                return []
+
+            def receive_outer(self, message):
+                assert message == {"action": "stop"}
+                return [{"type": "stopped"}]
+
+        with tempfile.TemporaryDirectory() as directory:
+            runner = StoppedRunner(Path(directory))
+            stream = StringIO('{"action": "stop"}\n')
+            emitted = []
+            _foreground_event_loop(
+                runner,
+                stream,
+                emitted.append,
+                select_fn=lambda *_args: ([stream], [], []),
+            )
+        self.assertEqual(emitted, [[{"type": "stopped"}]])
+        self.assertEqual(
+            runner.drains,
+            1,
+            "the loop must not drain again after the host-requested stop",
+        )
+
     def test_foreground_loop_keeps_pumping_after_immediate_stdin_eof(self) -> None:
         # A non-interactive host closes stdin before the first read, so the very
         # first readline() returns "".  The loop must not treat that EOF as

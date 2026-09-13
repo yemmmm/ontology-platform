@@ -250,7 +250,7 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
         message = _decode_foreground_message(line)
     except TeamConfigurationError:
         emit_outer_input_rejection()
-        return
+        return []
     action = message.get("action")
     if not isinstance(action, str) or action not in _KNOWN_OUTER_ACTIONS:
         # A missing/unknown action is a malformed outer control-plane message.
@@ -258,16 +258,16 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
         # live Runner; admitted actions retain the existing fatal receive_outer
         # boundary below.
         emit_outer_input_rejection()
-        return
+        return []
     if (
         action == "issue_resolution"
         and not _foreground_issue_resolution_is_ready(runner)
     ):
         emit_outer_input_rejection()
-        return
+        return []
     if _handle_cq_outer_message(runner, message, emit_and_observe):
         # R3.0-011: CQ inputs are fully handled ahead of the fatal boundary.
-        return
+        return []
     # Only the dedicated no-side-effect outer rejection is recoverable here.
     # Persistence, Runtime delivery, and internal invariant failures retain the
     # existing fatal boundary and are deliberately not caught.
@@ -275,9 +275,26 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
         output = runner.receive_outer(message)
     except RecoverableOuterInputError as exc:
         emit_outer_input_rejection(exc.as_dict())
-        return
+        return []
     if output:
         emit_and_observe(output)
+    return output
+
+
+def _loop_should_exit(output) -> bool:
+    """True when an admitted outer action ended the run from the host side.
+
+    2026-09-13 auth014-start1 live evidence: after the FIFO ``stop`` action ran
+    ``cleanup()`` and emitted ``[{"type": "stopped"}]``, the loop kept pumping,
+    the next ``drain()`` read the destroyed children's closed App-Server stdout
+    and the CLI died with ``run failed: app-server closed its output`` (exit 2)
+    instead of acknowledging the requested stop.  Only the host-requested stop
+    output exits here; every other output keeps the loop on its previous path.
+    """
+
+    return bool(output) and any(
+        isinstance(item, dict) and item.get("type") == "stopped" for item in output
+    )
 
 
 def _foreground_event_loop(
@@ -349,9 +366,12 @@ def _foreground_event_loop(
                 # until the terminal report completes.
                 stdin_active = False
                 continue
-            _handle_foreground_message(
-                runner, line, emit_and_observe, emit_outer_input_rejection
-            )
+            if _loop_should_exit(
+                _handle_foreground_message(
+                    runner, line, emit_and_observe, emit_outer_input_rejection
+                )
+            ):
+                return
             continue
         # FIFO path.  stdin takes priority; at most one outer message is
         # admitted per iteration so Runner pumping is never starved.
@@ -366,9 +386,12 @@ def _foreground_event_loop(
                 # stdin EOF retires only stdin; the FIFO stays active.
                 stdin_active = False
             else:
-                _handle_foreground_message(
-                    runner, line, emit_and_observe, emit_outer_input_rejection
-                )
+                if _loop_should_exit(
+                    _handle_foreground_message(
+                        runner, line, emit_and_observe, emit_outer_input_rejection
+                    )
+                ):
+                    return
             continue
         if outer_input in readable:
             try:
@@ -382,9 +405,12 @@ def _foreground_event_loop(
             emit_outer_input_rejection()
             continue
         if line is not None:
-            _handle_foreground_message(
-                runner, line, emit_and_observe, emit_outer_input_rejection
-            )
+            if _loop_should_exit(
+                _handle_foreground_message(
+                    runner, line, emit_and_observe, emit_outer_input_rejection
+                )
+            ):
+                return
         continue
 
 
