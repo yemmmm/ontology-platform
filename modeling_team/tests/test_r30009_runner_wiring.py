@@ -236,9 +236,18 @@ def _stage_unified(run_root: Path) -> tuple[dict, dict]:
     return candidate, plan
 
 
-def _unified_args(batch_items: list[dict], plan_ref: str | None) -> dict:
+def _unified_args(
+    batch_items: list[dict], plan_ref: str | None, *, mode: str = "dry_run"
+) -> dict:
+    # R3.0-014: the staged order starts with a real dry-run; apply_atomic is
+    # the gated second stage and must be requested explicitly by name.
     args = _capability_args()
     args["batch"]["items"] = batch_items
+    args["batch"]["mode"] = mode
+    if mode == "apply_atomic":
+        args["batch"]["lease_token"] = "placeholder-lease"
+    else:
+        args["batch"].pop("lease_token", None)
     if plan_ref is None:
         args.pop("plan_ref", None)
     else:

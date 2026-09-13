@@ -30,7 +30,9 @@ MODELING_INSTRUCTIONS = (
 # content digest so a source/shallow checkout needs no Git history.
 FROZEN_ASSET_SHA256 = {
     LEGACY_008B_TASK: "e6c86912cf229789c9f624bc702c37526d345d38c9e4871f7199581913688ae9",
-    LEGACY_009_TASK: "99a07715f622ed36c28c0f782b600f4cb6290c5616a962fb7836c5f5a05fdddb",
+    # Re-frozen once for R3.0-014 (dry-run-first staged order): the objective
+    # and terminal evidence now name the dry-run/translation/apply sequence.
+    LEGACY_009_TASK: "43226272b97c27f0f1fa6a5c41d2eec8d4707090f20ec423125ef0d7013a242b",
 }
 
 
@@ -57,6 +59,8 @@ def test_t_g1_1_full_real_task_loads_with_four_selectors() -> None:
         "staged_modeling_decisions": True,
         "unified_semantic_graph": True,
         "competency_question_acceptance": True,
+        # R3.0-012 (49b7e51): the CQ-centered staged acceptance scope.
+        "acceptance_target": "cq_semantic",
     }
     roles = {agent.agent_id for agent in configuration.profile.agents}
     assert roles == {"coordinator", "modeling", "protocol", "competency-question"}

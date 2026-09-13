@@ -135,9 +135,12 @@ from .staged_decisions import (
     staged_intent_receipt_issues,
     staged_stage3_issue,
     UNIFIED_SUBMISSION_RECEIPT_SCHEMA,
+    build_attempt_proof,
     unified_approval_issue,
     unified_candidate_issue,
+    unified_dry_run_proof_issue,
     unified_plan_issue,
+    unified_translation_issue,
     validate_materialization_unlock,
     validate_staged_submission,
     write_submission_intent,
@@ -4484,6 +4487,7 @@ class TeamRunner:
                     plan_issue.detail if plan_issue else "materialization plan is missing",
                 )
             projection = plan.get("projection") or {}
+            plan_digest = str(plan.get("projection_digest") or "")
             # The three close checks run in the fixed §9.2 order and stop at
             # the first issue: a later validator must never be evaluated once
             # an earlier one produced the typed rejection the Agent acts on
@@ -4496,13 +4500,39 @@ class TeamRunner:
             )
             if close_issue is None:
                 close_issue = unified_candidate_issue(run_root, projection)
+            approvals = (
+                load_approvals(paths["approvals"])
+                if paths["approvals"].is_file() and not paths["approvals"].is_symlink()
+                else {}
+            )
             if close_issue is None:
-                close_issue = unified_approval_issue(
-                    load_approvals(paths["approvals"])
-                    if paths["approvals"].is_file() and not paths["approvals"].is_symlink()
-                    else {},
-                    projection,
+                close_issue = unified_approval_issue(approvals, projection)
+            if close_issue is None and batch.get("mode") != "dry_run":
+                # R3.0-014 (design §3.3): a dry-run keeps its baseline
+                # behavior — stale or rejected translation history never
+                # blocks it.  An apply must additionally clear the
+                # current-plan translation approval recorded by this run's
+                # current Coordinator, and a Runner-owned validated dry-run
+                # proof of the exact same content at the submitted workspace
+                # timepoint.
+                close_issue = unified_translation_issue(
+                    approvals,
+                    plan_ref=str(plan_ref or ""),
+                    projection_digest=plan_digest,
+                    coordinator_id=self._multi_slice_role_ids().get("coordinator") or "",
                 )
+                if close_issue is None:
+                    try:
+                        close_issue = unified_dry_run_proof_issue(
+                            run_root,
+                            batch,
+                            plan_ref=str(plan_ref or ""),
+                            projection_digest=plan_digest,
+                        )
+                    except StagedDecisionArtifactError as exc:
+                        raise StagedSubmissionRejection(
+                            exc.reason_code, exc.detail
+                        ) from exc
             if close_issue is not None:
                 raise StagedSubmissionRejection(close_issue.reason_code, close_issue.detail)
         try:
@@ -4635,13 +4665,40 @@ class TeamRunner:
                 ),
             },
         )
-        return {
+        if unified:
+            # R3.0-014 (design §3.4): the Runner binds the platform Attempt —
+            # the only accepted proof source — to the plan and receipt in its
+            # own host evidence. A result without complete Attempt identity
+            # yields no proof; the apply gate then fails closed on the missing
+            # record instead of on a half-guessed one.
+            proof = build_attempt_proof(
+                intent_ordinal=ordinal,
+                receipt_ordinal=receipt["ordinal"],
+                plan_ref=str(plan_ref or ""),
+                projection_digest=plan_digest,
+                batch=batch,
+                result=result,
+                response_digest=response_digest,
+            )
+            if proof is not None:
+                self._append_evidence("staged-decisions", proof)
+        # ``ok`` states only that the capability wrote its receipt. The
+        # platform Attempt facts below are what stage transitions judge on
+        # (validated vs validation_failed vs applied); they are passed through
+        # verbatim when the forwarder could identify them.
+        response = {
             "ok": True,
             "batch_id": batch_id,
             "intent_ordinal": ordinal,
             "receipt_ordinal": receipt["ordinal"],
             "response_digest": response_digest,
         }
+        for field in ("mode", "attempt_id", "attempt_status", "content_hash"):
+            if result.get(field) is not None:
+                response[field] = result.get(field)
+        if isinstance(result.get("findings"), list):
+            response["findings"] = result["findings"]
+        return response
 
     def _handle_staged_associate_evidence(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """The Runner-private staged evidence-repost capability (R3.0-008B/#17).

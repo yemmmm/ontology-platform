@@ -80,7 +80,10 @@
       "the Coordinator is the only writer; only an approved current decision releases a translation",
       "scope is mandatory for commonality_relation decisions as a non-empty JSON object (a mapping of scope names to values, never an array or a plain string) and must stay null everywhere else",
       "every decision carries at least one evidence_ref and the content_digest of the exact candidate content it approves",
-      "a translation approval proves one plan_ref/projection_digest pair, not a mutable file name"
+      "a translation approval proves one plan_ref/projection_digest pair, not a mutable file name",
+      "R3.0-014: translation_approvals never gate a dry-run. Empty, old-plan, rejected or format-drifted entries are history: only the list shape itself is validated up front, and the exact-key match is evaluated at apply time only",
+      "R3.0-014: an apply additionally requires one current translation approval keyed exactly to the submitted (plan_ref, projection_digest) whose approved_by is the run's current Coordinator role ID. Equivalent repeats (same key, approver and decision) count as one decision; a genuine decision or approver conflict on the same key is approval_conflict",
+      "R3.0-014: approvals are a keyed read-modify-write surface — the Coordinator re-reads the current artifact and appends its (plan_ref, projection_digest)-keyed entry instead of rewriting history, so concurrent reviewers never erase each other's decisions"
     ]
   },
   "materialization_plan": {
@@ -119,7 +122,11 @@
       "before the request is accepted the current plan is re-read, the approved projection is rebuilt from the payloads actually being forwarded and compared field by field; a self-reported digest never substitutes for matching content",
       "the projection is then closed against the currently published candidate revision and against the current approved decisions; any drift returns approval_stale or approval_content_mismatch without a partial write",
       "once the comparison passes, the captured projection is frozen: durable intent and forwarder use that in-memory snapshot only and never re-read a role-writable path",
-      "the intent is written before forwarding; if saving fails, nothing is forwarded and a retry re-checks the current approval"
+      "the intent is written before forwarding; if saving fails, nothing is forwarded and a retry re-checks the current approval",
+      "R3.0-014: the staged order is dry-run first. A dry_run submission clears the three close checks above and is forwarded without consulting translation_approvals; technical findings come back on the attempt and are answered by fixing the plan and re-running the dry-run",
+      "R3.0-014: an apply_atomic submission is additionally gated, in order, on (a) the current-plan translation approval recorded by the run's current Coordinator (approval_missing/approval_conflict) and (b) a Runner-recorded validated dry-run Attempt proof of the same immutable content hash at the submitted workspace timepoint (dry_run_proof_missing/dry_run_proof_not_validated/dry_run_proof_content_mismatch/dry_run_proof_workspace_mismatch); reusing a dry-run idempotency key is idempotency_conflict",
+      "R3.0-014: the proof is Runner-owned host evidence (r3-0-014-attempt-proof/v1, event submission-attempt-proof-written). It is written only when the platform reply carries a complete read-back-verified Attempt identity (batch_id, attempt_id, mode, attempt_status, content_hash); a result without one yields no proof, so the apply gate fails closed on the missing record",
+      "R3.0-014: the capability response passes the Attempt facts through verbatim — mode, attempt_id, attempt_status, content_hash and findings — while ok states only that the receipt was written"
     ],
     "isolation": "plan_ref, projection, projection_digest and decision_bindings are Runner-private sidecar fields. They are never added to the platform ModelingItemInput payload, which forbids extra fields, and never leave the Runner sandbox."
   },

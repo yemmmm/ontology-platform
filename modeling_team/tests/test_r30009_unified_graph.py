@@ -407,9 +407,15 @@ def test_b_unified_artifact_schema_drift_is_typed(candidate, projection, plan, a
         "decision": "deferred",
         "projection_digest": "",
     }
+    # R3.0-014 (M28): rejected or format-drifted translation entries are
+    # history, not file-wide gate failures — only the list shape is checked
+    # here; the apply-time exact-key match lives in unified_translation_issue.
+    assert validate_unified_approvals(
+        {**approvals, "translation_approvals": [wrong_translation]}
+    ) == ()
     assert _codes(
-        validate_unified_approvals({**approvals, "translation_approvals": [wrong_translation]})
-    ) == ["approval_missing", "approval_content_mismatch"]
+        validate_unified_approvals({**approvals, "translation_approvals": "nope"})
+    ) == ["unified_schema_mismatch"]
 
     assert _codes(validate_materialization_plan({**plan, "projection_digest": "sha256:0"})) == [
         "approval_content_mismatch"

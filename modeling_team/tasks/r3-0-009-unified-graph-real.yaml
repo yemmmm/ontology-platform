@@ -15,6 +15,14 @@
 # Batch submission goes through the Runner-private
 # protocol_staged_submit_modeling_batch capability only, and in this task it
 # additionally requires plan_ref with the approved materialization plan.
+#
+# R3.0-014: the staged submission order is dry-run first. The plan's first
+# submission is a real platform dry_run; translation_approvals never gate it.
+# The Coordinator reviews the translation and records the approval for the
+# exact (plan_ref, projection_digest); only then does the same-content
+# apply_atomic clear the apply gates (current translation approval plus the
+# Runner-recorded validated dry-run Attempt proof). See the mounted 009
+# contract's acceptance_timing rules.
 schema_version: 2
 task_id: r3-0-009-unified-graph-real
 objective: >-
@@ -28,8 +36,13 @@ objective: >-
   r3-0-009-materialization-plan/v1 materialization plan with the complete
   approved projection, and the Runner binds the projection, its digest and the
   candidate/approval bindings into the r3-0-009-submission-intent/v1 and
-  r3-0-009-submission-receipt/v1 records. All staged artifacts follow the
-  mounted modeling_team/references/r3-0-009-unified-graph-contract.json and
+  r3-0-009-submission-receipt/v1 records. Per R3.0-014 the plan is first
+  submitted to the real platform as a dry_run, its technical findings are
+  answered by fixing and re-running the dry-run, the Coordinator records the
+  translation approval for the exact (plan_ref, projection_digest), and the
+  same-content apply_atomic is accepted only after that current approval and
+  the Runner-recorded validated dry-run Attempt proof. All staged artifacts
+  follow the mounted modeling_team/references/r3-0-009-unified-graph-contract.json and
   modeling_team/references/r3-0-008b-staged-decisions-contract.json. Existing
   entities may be bound with a legal zero Class state through the 009 read
   model; keep business rows in PostgreSQL and never create RDF individuals for
@@ -97,6 +110,7 @@ expected_terminal_evidence:
   - 009-candidates-published-with-evidence
   - 009-approvals-decisions-and-translation-approvals-recorded
   - 009-materialization-plan-with-approved-projection
+  - 014-dry-run-validated-before-apply
   - staged-submission-receipts-and-ledger-closed
   - joint-acceptance-checklist-seven-items
   - explicit-unknowns-resolved-or-retained

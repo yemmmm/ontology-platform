@@ -18,6 +18,7 @@ handler, not by the test.
 from __future__ import annotations
 
 import functools
+import hashlib
 import inspect
 import json
 import os
@@ -65,6 +66,7 @@ FIXTURE_KEY = "fixture-protocol-write-key-" + "0a" * 16
 FIXTURE_SERVER_SOURCE = '''
 """Controlled stand-in for the canonical backend MCP write server."""
 
+import hashlib
 import json
 import os
 import sys
@@ -77,6 +79,10 @@ MODE = sys.argv[2]
 ERROR_CODE = sys.argv[3] if len(sys.argv) > 3 else ""
 
 server = FastMCP("staged-write-fixture")
+
+# What the one accepted submit stored, so the read-back tool can answer from it
+# exactly the way the canonical ``get_modeling_batch`` would (R3.0-014 design §3.2).
+STORED = {}
 
 
 def _record(values):
@@ -118,7 +124,34 @@ def submit_modeling_batch(
         }
     )
     if MODE == "ok":
-        return {"ok": True, "data": {"batch_id": "fixture-batch-1", "status": "accepted"}}
+        STORED.update(
+            {
+                "batch_id": "fixture-batch-1",
+                "client_batch_id": client_batch_id,
+                "idempotency_key": idempotency_key,
+                "mode": mode,
+                "attempt_id": "fixture-attempt-1",
+                "attempt_status": "validated",
+                "content_hash": hashlib.sha256(json.dumps(items, sort_keys=True).encode()).hexdigest(),
+            }
+        )
+        return {
+            "ok": True,
+            "data": {
+                "batch_id": STORED["batch_id"],
+                "client_batch_id": client_batch_id,
+                "status": "accepted",
+                "attempt_id": STORED["attempt_id"],
+                "idempotency_key": idempotency_key,
+                "mode": mode,
+                "attempt_status": STORED["attempt_status"],
+                "workspace": {
+                    "expected_version": expected_workspace_version,
+                    "before_version": "fixture-v0",
+                    "after_version": "fixture-v1",
+                },
+            },
+        }
     if MODE == "reject":
         return {
             "ok": False,
@@ -131,6 +164,50 @@ def submit_modeling_batch(
         return {"ok": True, "data": "not-a-mapping"}
     if MODE == "no_identity":
         return {"ok": True, "data": {"accepted": True}}
+    if MODE == "no_attempt_identity":
+        return {"ok": True, "data": {"batch_id": "fixture-batch-1", "status": "accepted"}}
+    if MODE == "readback_loses_batch":
+        STORED.update(
+            {
+                "batch_id": "fixture-batch-1",
+                "client_batch_id": client_batch_id,
+                "idempotency_key": idempotency_key,
+                "mode": mode,
+                "attempt_id": "fixture-attempt-1",
+                "attempt_status": "validated",
+            }
+        )
+        return {
+            "ok": True,
+            "data": {
+                "batch_id": "fixture-batch-1",
+                "attempt_id": "fixture-attempt-1",
+                "idempotency_key": idempotency_key,
+                "mode": mode,
+                "attempt_status": "validated",
+            },
+        }
+    if MODE == "readback_drifts_attempt":
+        STORED.update(
+            {
+                "batch_id": "fixture-batch-1",
+                "client_batch_id": client_batch_id,
+                "idempotency_key": "a-different-key",
+                "mode": mode,
+                "attempt_id": "fixture-attempt-1",
+                "attempt_status": "validated",
+            }
+        )
+        return {
+            "ok": True,
+            "data": {
+                "batch_id": "fixture-batch-1",
+                "attempt_id": "fixture-attempt-1",
+                "idempotency_key": idempotency_key,
+                "mode": mode,
+                "attempt_status": "validated",
+            },
+        }
     if MODE == "raise":
         raise RuntimeError("fixture tool boundary failure")
     if MODE == "sleep":
@@ -141,6 +218,29 @@ def submit_modeling_batch(
         sys.stderr.flush()
         os._exit(9)
     raise SystemExit(f"unknown fixture mode: {MODE}")
+
+
+@server.tool()
+def get_modeling_batch(batch_id: str):
+    if not STORED or STORED.get("batch_id") != batch_id:
+        return {"ok": False, "error": "fixture read-back miss", "error_code": "not_found"}
+    attempt = {
+        "batch_id": STORED["batch_id"],
+        "attempt_id": STORED["attempt_id"],
+        "client_batch_id": STORED["client_batch_id"],
+        "idempotency_key": STORED["idempotency_key"],
+        "mode": STORED["mode"],
+        "attempt_status": STORED["attempt_status"],
+    }
+    return {
+        "ok": True,
+        "data": {
+            "batch_id": STORED["batch_id"],
+            "client_batch_id": STORED["client_batch_id"],
+            "content_hash": STORED.get("content_hash", ""),
+            "attempts": [attempt],
+        },
+    }
 
 
 if __name__ == "__main__":
@@ -261,8 +361,26 @@ def test_forwarder_reaches_the_real_tool_shape_with_the_verbatim_envelope(tmp_pa
     assert json.dumps(record["batch"], sort_keys=True) == json.dumps(batch, sort_keys=True)
     assert record["batch"]["mode"] == batch["mode"]
 
-    # The backend's own payload is returned whole, including the batch identity.
-    assert result == {"batch_id": "fixture-batch-1", "status": "accepted"}
+    # The backend's own payload is returned whole — batch identity plus the Attempt
+    # identity — and merged with the read-back ``content_hash`` (R3.0-014 design §3.2):
+    # the only addition the forwarder itself makes.
+    assert result == {
+        "batch_id": "fixture-batch-1",
+        "client_batch_id": "placeholder-batch-1",
+        "status": "accepted",
+        "attempt_id": "fixture-attempt-1",
+        "idempotency_key": "placeholder-key-1",
+        "mode": "apply_atomic",
+        "attempt_status": "validated",
+        "workspace": {
+            "expected_version": "1",
+            "before_version": "fixture-v0",
+            "after_version": "fixture-v1",
+        },
+        "content_hash": hashlib.sha256(
+            json.dumps(batch["items"], sort_keys=True).encode()
+        ).hexdigest(),
+    }
 
 
 def test_forwarder_child_environment_is_the_allowlisted_canonical_contract(tmp_path):
@@ -352,6 +470,33 @@ def test_post_commit_class_error_envelopes_stay_unknown(tmp_path, code):
 def test_unreadable_or_identityless_replies_stay_unknown(tmp_path, mode):
     with pytest.raises(StagedBatchForwardUnknown):
         _forward(tmp_path, mode, batch=_capability_args()["batch"])
+    assert _read_record(_record_path(tmp_path)) is not None
+
+
+def test_acknowledged_without_attempt_identity_stays_unknown(tmp_path):
+    # R3.0-014: a bare batch receipt is not a platform-verifiable Attempt result, so
+    # it may not pose as one downstream — the outcome stays unknown.
+    with pytest.raises(StagedBatchForwardUnknown) as failure:
+        _forward(tmp_path, "no_attempt_identity", batch=_capability_args()["batch"])
+    assert "attempt_id" in str(failure.value)
+    assert _read_record(_record_path(tmp_path)) is not None
+
+
+def test_readback_without_content_hash_stays_unknown(tmp_path):
+    # The write itself was accepted, so a read-back that cannot prove what was
+    # stored is never a definite failure and never a re-submission.
+    with pytest.raises(StagedBatchForwardUnknown) as failure:
+        _forward(tmp_path, "readback_loses_batch", batch=_capability_args()["batch"])
+    assert "content hash" in str(failure.value)
+    assert _read_record(_record_path(tmp_path)) is not None
+
+
+def test_readback_attempt_drift_stays_unknown(tmp_path):
+    # The stored Attempt disagrees with the submitted envelope: a platform-contract
+    # failure on a possibly committed write, classified unknown.
+    with pytest.raises(StagedBatchForwardUnknown) as failure:
+        _forward(tmp_path, "readback_drifts_attempt", batch=_capability_args()["batch"])
+    assert "idempotency_key" in str(failure.value)
     assert _read_record(_record_path(tmp_path)) is not None
 
 

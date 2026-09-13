@@ -183,6 +183,53 @@ UNIFIED_REASON_CODES = (
     "workspace_version_conflict",
     "staged_unreconciled_batch",
     "unified_schema_mismatch",
+    # R3.0-014 (design §3.3/§3.4): apply-only gates over the current-plan
+    # translation approval and the Runner-owned platform dry-run proof. A
+    # dry-run never fails with these codes.
+    "approval_conflict",
+    "dry_run_proof_missing",
+    "dry_run_proof_not_validated",
+    "dry_run_proof_content_mismatch",
+    "dry_run_proof_workspace_mismatch",
+    "idempotency_conflict",
+)
+
+# --- R3.0-014 attempt-proof contract -----------------------------------------
+
+# The Runner-owned platform Attempt binding appended to the staged-decisions
+# host evidence (design §3.4). Agents never write this file, so no plan or
+# message can self-report a proof.
+ATTEMPT_PROOF_SCHEMA = "r3-0-014-attempt-proof/v1"
+ATTEMPT_PROOF_EVENT = "submission-attempt-proof-written"
+# ``recorded_at`` is stamped by the host evidence writer, not by the builder.
+ATTEMPT_PROOF_FIELDS = frozenset(
+    {
+        "schema_version",
+        "event",
+        "intent_ordinal",
+        "receipt_ordinal",
+        "plan_ref",
+        "projection_digest",
+        "batch_id",
+        "attempt_id",
+        "client_batch_id",
+        "idempotency_key",
+        "mode",
+        "attempt_status",
+        "content_hash",
+        "workspace_before_version",
+        "response_digest",
+    }
+)
+# The fields a forwarder result must carry before the Runner records a proof:
+# without the full Attempt identity plus the read-back content hash the record
+# would guess at what the platform did, so no proof is written at all.
+ATTEMPT_PROOF_REQUIRED_RESULT_FIELDS = (
+    "batch_id",
+    "attempt_id",
+    "mode",
+    "attempt_status",
+    "content_hash",
 )
 
 # --- Field sets (closed collections) ---------------------------------------
@@ -2102,9 +2149,12 @@ def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
 def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
     """``r3-0-009-approvals/v1``: legacy entries plus decisions/translations.
 
-    ``entries`` keeps its 008B meaning and closed field set; the two new
-    collections are validated on their own so no object is ever pushed through
-    the wrong closed-field validator.
+    ``entries`` keeps its 008B meaning and closed field set; ``decisions`` is
+    validated entry by entry because every business decision gates both modes,
+    while ``translation_approvals`` is only checked to be a list — since
+    R3.0-014 the current-plan translation decision is matched per key at apply
+    time (``unified_translation_issue``), so stale or malformed history cannot
+    block a dry-run and cannot release an apply either.
     """
 
     if not isinstance(value, Mapping) or value.get("schema_version") != UNIFIED_APPROVALS_SCHEMA:
@@ -2189,28 +2239,11 @@ def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
                 "unified_schema_mismatch", "translation_approvals is not a list", ""
             ),
         )
-    for approval in translations:
-        if not isinstance(approval, Mapping) or set(approval) != set(TRANSLATION_APPROVAL_FIELDS):
-            issues.append(
-                StagedDecisionIssue(
-                    "unified_schema_mismatch",
-                    "translation approval fields drift from r3-0-009-approvals/v1",
-                    "",
-                )
-            )
-            continue
-        if approval.get("decision") != "approved":
-            issues.append(
-                StagedDecisionIssue(
-                    "approval_missing", "translation approval decision is not approved", ""
-                )
-            )
-        if not _nonempty(approval.get("projection_digest")):
-            issues.append(
-                StagedDecisionIssue(
-                    "approval_content_mismatch", "translation approval has no projection digest", ""
-                )
-            )
+    # R3.0-014 (design §3.3): per-entry translation shape is no longer a
+    # file-wide gate. Old-plan, rejected or format-drifted entries are
+    # history — they must not block a dry-run — and apply does its own
+    # exact ``(plan_ref, projection_digest)`` match in
+    # ``unified_translation_issue`` instead of trusting any well-formed entry.
     return tuple(issues)
 
 
@@ -2484,6 +2517,251 @@ def unified_approval_issue(
     return None
 
 
+def unified_translation_issue(
+    approvals: Mapping[str, Any],
+    *,
+    plan_ref: str,
+    projection_digest: str,
+    coordinator_id: str,
+) -> StagedDecisionIssue | None:
+    """R3.0-014: the apply-time current-plan translation approval gate.
+
+    Selects the entries of the current approvals artifact that carry exactly
+    the submitted plan's ``(plan_ref, projection_digest)`` key. Old-plan,
+    rejected or malformed entries are history: they neither gate nor release
+    an apply. Equivalent repeats — same key, approver and decision — count as
+    one decision; only a genuine decision or approver conflict on the same
+    key is a typed ``approval_conflict``. The single surviving decision must
+    be ``approved`` by the run's current Coordinator role ID.
+    """
+
+    if not isinstance(approvals, Mapping):
+        return StagedDecisionIssue(
+            "unified_schema_mismatch", "approvals are not r3-0-009-approvals/v1", ""
+        )
+    translations = approvals.get("translation_approvals")
+    if not isinstance(translations, list):
+        return StagedDecisionIssue(
+            "unified_schema_mismatch", "translation_approvals is not a list", ""
+        )
+    if not _nonempty(plan_ref) or not _nonempty(projection_digest):
+        return StagedDecisionIssue(
+            "missing_candidate_reference", "the submission names no plan identity", ""
+        )
+    if not _nonempty(coordinator_id):
+        return StagedDecisionIssue(
+            "missing_candidate_reference", "the run resolves no current Coordinator", ""
+        )
+    matched: list[tuple[Any, Any]] = []
+    for entry in translations:
+        if not isinstance(entry, Mapping) or set(entry) != set(TRANSLATION_APPROVAL_FIELDS):
+            continue
+        if entry.get("plan_ref") != plan_ref or entry.get("projection_digest") != projection_digest:
+            continue
+        matched.append((entry.get("decision"), entry.get("approved_by")))
+    if not matched:
+        return StagedDecisionIssue(
+            "approval_missing",
+            f"no translation approval matches plan {plan_ref} at the current projection digest",
+            "",
+        )
+    if len(set(matched)) > 1:
+        return StagedDecisionIssue(
+            "approval_conflict",
+            f"plan {plan_ref} carries conflicting translation decisions or approvers",
+            "",
+        )
+    decision, approved_by = matched[0]
+    if decision != "approved":
+        return StagedDecisionIssue(
+            "approval_missing",
+            f"the translation approval for plan {plan_ref} is {decision!r}, not approved",
+            "",
+        )
+    if approved_by != coordinator_id:
+        return StagedDecisionIssue(
+            "approval_missing",
+            f"the translation approval for plan {plan_ref} was recorded by "
+            f"{approved_by!r}, not this run's Coordinator {coordinator_id!r}",
+            "",
+        )
+    return None
+
+
+def platform_content_hash(batch: Mapping[str, Any]) -> str:
+    """The backend ``ModelingBatchService`` content hash, computed locally.
+
+    Replicates ``_hash(_content(payload))`` from
+    ``backend/app/services/modeling_batches.py``: the ontology id plus the
+    ModelingItemInput projections sorted by ``client_item_id`` with the three
+    set-valued lists sorted and deduplicated. Mode, lease, idempotency key and
+    workspace version never enter it, so a dry-run proof and an apply of the
+    same immutable content hash identically.
+    """
+
+    items: list[dict[str, Any]] = []
+    ordered = sorted(
+        (item for item in batch.get("items") or [] if isinstance(item, Mapping)),
+        key=lambda value: str(value.get("client_item_id") or ""),
+    )
+    for item in ordered:
+        data = _normalize_item_projection(item)
+        data["depends_on"] = sorted(set(data["depends_on"]))
+        data["evidence_reference_ids"] = sorted(set(data["evidence_reference_ids"]))
+        data["competency_question_ids"] = sorted(set(data["competency_question_ids"]))
+        items.append(data)
+    content = {"ontology_id": batch.get("ontology_id"), "items": items}
+    encoded = json.dumps(content, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+def build_attempt_proof(
+    *,
+    intent_ordinal: int,
+    receipt_ordinal: int,
+    plan_ref: str | None,
+    projection_digest: str | None,
+    batch: Mapping[str, Any],
+    result: Mapping[str, Any],
+    response_digest: str,
+) -> dict[str, Any] | None:
+    """Build the Runner-owned platform Attempt binding (design §3.2/§3.4).
+
+    Returns ``None`` — no proof, the apply gate then fails closed on the
+    missing record — when the forwarder result carries no complete Attempt
+    identity: a receipt without a read-back-verified Attempt is not proof,
+    and a half-guessed record would be worse than none.
+    """
+
+    for field in ATTEMPT_PROOF_REQUIRED_RESULT_FIELDS:
+        if not _nonempty(result.get(field)):
+            return None
+    if result.get("mode") not in BATCH_MODES or result.get("mode") != batch.get("mode"):
+        return None
+    workspace = result.get("workspace")
+    workspace_before = (
+        workspace.get("before_version") if isinstance(workspace, Mapping) else None
+    )
+    return {
+        "schema_version": ATTEMPT_PROOF_SCHEMA,
+        "event": ATTEMPT_PROOF_EVENT,
+        "intent_ordinal": intent_ordinal,
+        "receipt_ordinal": receipt_ordinal,
+        "plan_ref": plan_ref,
+        "projection_digest": projection_digest,
+        "batch_id": result.get("batch_id"),
+        "attempt_id": result.get("attempt_id"),
+        "client_batch_id": batch.get("client_batch_id"),
+        "idempotency_key": result.get("idempotency_key") or batch.get("idempotency_key"),
+        "mode": result.get("mode"),
+        "attempt_status": result.get("attempt_status"),
+        "content_hash": result.get("content_hash"),
+        "workspace_before_version": workspace_before,
+        "response_digest": response_digest,
+    }
+
+
+def read_attempt_proofs(run_root: Path) -> list[dict[str, Any]]:
+    """Read the Runner-written platform Attempt proofs from host evidence.
+
+    Only records this Runner appended to ``staged-decisions.jsonl`` carry the
+    fixed proof schema; agent-writable artifacts are never consulted. Records
+    whose fields drift from the proof contract are not trusted as proofs and
+    are skipped; an unreadable or unparsable evidence file is a typed
+    reconciliation failure instead of a silent empty list.
+    """
+
+    path = Path(run_root) / "evidence" / "staged-decisions.jsonl"
+    if not path.is_file():
+        return []
+    try:
+        lines = path.read_text(encoding="utf-8").splitlines()
+    except OSError as error:
+        raise StagedDecisionArtifactError(
+            "staged_unreconciled_batch", f"attempt-proof evidence is unreadable: {error}"
+        ) from error
+    proofs: list[dict[str, Any]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            record = json.loads(line)
+        except ValueError as error:
+            raise StagedDecisionArtifactError(
+                "staged_unreconciled_batch",
+                f"attempt-proof evidence is unparsable: {error}",
+            ) from error
+        if not isinstance(record, dict):
+            continue
+        if record.get("schema_version") != ATTEMPT_PROOF_SCHEMA:
+            continue
+        if set(record) != set(ATTEMPT_PROOF_FIELDS) | {"recorded_at"}:
+            continue
+        proofs.append(record)
+    return proofs
+
+
+def unified_dry_run_proof_issue(
+    run_root: Path,
+    batch: Mapping[str, Any],
+    *,
+    plan_ref: str,
+    projection_digest: str,
+) -> StagedDecisionIssue | None:
+    """R3.0-014: apply needs a real validated dry-run proof of this content.
+
+    Checks the Runner-written proofs by plan identity, client batch, key
+    non-reuse, the platform ``validated`` status, the immutable content hash
+    and the workspace timepoint the dry-run was taken at.
+    """
+
+    proofs = [
+        proof
+        for proof in read_attempt_proofs(run_root)
+        if proof.get("mode") == "dry_run"
+        and proof.get("plan_ref") == plan_ref
+        and proof.get("projection_digest") == projection_digest
+        and proof.get("client_batch_id") == batch.get("client_batch_id")
+    ]
+    if not proofs:
+        return StagedDecisionIssue(
+            "dry_run_proof_missing",
+            f"no Runner-recorded dry-run attempt proves plan {plan_ref}",
+            "",
+        )
+    if batch.get("idempotency_key") in {proof.get("idempotency_key") for proof in proofs}:
+        return StagedDecisionIssue(
+            "idempotency_conflict",
+            "the apply reuses a dry-run idempotency key",
+            "",
+        )
+    validated = [proof for proof in proofs if proof.get("attempt_status") == "validated"]
+    if not validated:
+        return StagedDecisionIssue(
+            "dry_run_proof_not_validated",
+            f"the recorded dry-run attempts for plan {plan_ref} are not validated",
+            "",
+        )
+    content = platform_content_hash(batch)
+    matching = [proof for proof in validated if proof.get("content_hash") == content]
+    if not matching:
+        return StagedDecisionIssue(
+            "dry_run_proof_content_mismatch",
+            "the dry-run proof covers different batch content",
+            "",
+        )
+    expected = batch.get("expected_workspace_version")
+    if expected is not None and all(
+        proof.get("workspace_before_version") not in (None, expected) for proof in matching
+    ):
+        return StagedDecisionIssue(
+            "dry_run_proof_workspace_mismatch",
+            "the validated dry-run proof was taken at another workspace version",
+            "",
+        )
+    return None
+
+
 def staged_intent_schema_issue(record: Mapping[str, Any]) -> StagedDecisionIssue | None:
     """Dispatch one stored intent by its recorded schema (design §9.1)."""
 
@@ -2654,6 +2932,10 @@ __all__ = [
     "APPROVALS_FIELDS",
     "APPROVALS_SCHEMA",
     "ACCEPTANCE_CHECKLIST_REASON_CODES",
+    "ATTEMPT_PROOF_EVENT",
+    "ATTEMPT_PROOF_FIELDS",
+    "ATTEMPT_PROOF_REQUIRED_RESULT_FIELDS",
+    "ATTEMPT_PROOF_SCHEMA",
     "BATCH_MODES",
     "CANDIDATES_DIRNAME",
     "CHECKLIST_ITEM_IDS",
@@ -2712,6 +2994,7 @@ __all__ = [
     "StagedSubmissionRejection",
     "adjudicate_unknown_intent",
     "build_approval_projection",
+    "build_attempt_proof",
     "build_batch_projection",
     "build_decision_binding",
     "build_identity_binding",
@@ -2737,7 +3020,9 @@ __all__ = [
     "next_intent_ordinal",
     "next_receipt_ordinal",
     "normalize_class_iris",
+    "platform_content_hash",
     "projection_digest",
+    "read_attempt_proofs",
     "read_submission_intents",
     "read_submission_receipts",
     "receipted_enum_targets",
@@ -2753,8 +3038,10 @@ __all__ = [
     "staged_stage3_issue",
     "unified_approval_issue",
     "unified_candidate_issue",
+    "unified_dry_run_proof_issue",
     "unified_graph_mode",
     "unified_plan_issue",
+    "unified_translation_issue",
     "validate_analysis_conclusions",
     "validate_approvals",
     "validate_joint_acceptance_checklist",
