@@ -1,7 +1,7 @@
 # R3.0-012 CQ 为核心的阶段验收 — 交付设计
 
 - 日期：2026-09-13
-- 状态：详细设计完成；独立计划评审 Round 1 REVISE 的两项 High 修订后，Round 2 专项复审 PASS。
+- 状态：权威正文与判定边界修订完成，独立计划评审 Round 4 专项复核 PASS；历史轮次保留。
   尚未实现，产品测试、真实运行和语义验收均为 NOT RUN。
 - 需求：[requirements-v3.0.md 的 R3.0-012](../../requirements/requirements-v3.0.md#r30-012-cq-为核心的阶段验收)
 - 关联需求：R3.0-006、R3.0-008B、R3.0-009、R3.0-011。
@@ -42,13 +42,13 @@ Platform Examiner/Acceptance 路径，但真实运行仍把 CQ 取证绑在生�
 Acceptance 判定和前后状态绑定。终态报告、完整联合 checklist、全量结构 lineage 或 SQL
 结果的缺口不能阻止 CQ 阶段开始，但其状态必须在报告中保留。
 
-### 2.2 `acceptance_scope` 是任务参数
+### 2.2 `acceptance_target` 是任务参数
 
 任务参数采用封闭枚举：
 
 ```yaml
 parameters:
-  acceptance_scope: full_joint  # 可选值：full_joint | cq_semantic
+  acceptance_target: full_joint  # 可选值：full_joint | cq_semantic
 ```
 
 - 省略时等价于 `full_joint`。v3 任务的 Runner 配置快照仍应写出归一化后的值，便于审计。
@@ -57,7 +57,11 @@ parameters:
 - Runner 在第一次真实 start 前把值写入 `acceptance-v3/run-contract.json`，并绑定 run ID、
   Task/Profile digest。start 之后、报错之后和 handoff 之后均禁止改变；历史 run 不追溯改口径。
 - `acceptance_mode` 继续表示既有 `read-only-acceptance` 执行模式，`blind_status` 独立记录
-  盲测/已暴露回归状态；二者都不被 `acceptance_scope` 替代。
+  盲测/已暴露回归状态；二者都不被 `acceptance_target` 替代。
+- 新选择器使用 `parameters.acceptance_target`，不再使用初版未实现的
+  `parameters.acceptance_scope`。`candidate_publication.py` 的旧 continuation carrier 顶层
+  `acceptance_scope` 仍是旧合同对象，不是此枚举；不迁移旧 carrier、加别名或展平合并。
+  两个字段原本处于不同 envelope，不能仅因同名断言运行时类型冲突；本次改名只消除新合同歧义。
 
 两种范围的关系如下：
 
@@ -113,12 +117,13 @@ terminal。
 
 `cq_semantic` 沿用 R3.0-011 的 `cq-acceptance` 入口、一个连续 Platform Examiner 会话、
 一个独立 Acceptance Judge、v3 batch packet、现有 `platform_read_proxy` 和 host-only 报告。
-入口消费 `--run-root`、`--freeze-id`、`--model-handoff`，并读取已冻结的 `acceptance_scope`。
+入口消费 `--run-root`、`--freeze-id`、`--model-handoff`，并读取已冻结的 `acceptance_target`。
 
 执行顺序为：
 
-1. reload freeze，确认 digest、排序、问题版本和 public/hidden 分组仍未被修改；空 hidden 集、
-   缺少切片覆盖或存在暴露题时，不得通过缩小分母绿灯。
+1. reload freeze，确认 digest、排序、问题版本、public/hidden 分组及获批覆盖决定仍未被修改。
+   按获批清单查漏题/承诺覆盖，不把“每切片必须有专属 hidden 题”写成硬门；批准排除与实际
+   漏题分列。空 hidden 集、遗漏获批题或暴露题不得靠缩分母绿灯。
 2. 使用宿主实际只读调用建立 pre-batch model binding。binding 必须闭合完整获准 Ontology
    集合、Project、workspace/graph 状态和授权 read tools；对于本批实际引用的语义资源，按
    §4.2 从只读 proxy response 中保存有界 evidence/lineage 语义投影，作为初始绑定。
@@ -158,18 +163,30 @@ Acceptance Judge 使用冻结参考答案、获批业务依据、实际查询响
   把缺失当确定或通过常识填空不能通过。
 - 参考答案与获批材料冲突、题面有关键歧义或材料不支持时，使用
   `question-answer-review`，不把题目问题归因给模型；旧版本和裁决保留。
+- 若冻结原题要求数据库实际数值，而本阶段不执行 SQL 结果证据链，使用既有
+  `question-answer-review`、`failure_layer=null`，在 `note` 标记
+  `sql-result-outside-cq-scope` 并说明缺少的数值验证。保留已有语义证据，不把只答指标口径
+  算作原题 PASS；原题仍在完整分母，其他题继续。不新增 verdict 枚举或在闭集 schema 外
+  偷加 reason 字段。拆成语义题/SQL 题须经用户在冻结前批准，旧 freeze 不就地改写；来源中
+  可直接证明的阈值/时限等业务数值仍按普通四态判断。
 - 有效查询但业务关系、规则、值语义或映射不足时，使用 `model-recall-insufficient`，归因
   `modeling-quality`。
 - 只读代理不可用、响应 artifact 缺失/篡改、digest 或 scope 不闭合、post-read 失败等，使用
   `platform-runtime-incomplete`，归因 `platform-contract` 或 `runtime/infrastructure`。
 
-完整 CQ PASS 必须同时满足：完整获批 hidden 题集均有有效裁决；无 unexecuted、待复核、模型
-召回不足或平台未完成题；无空 hidden 集、切片覆盖缺口、暴露题或模型状态漂移；所有必要业务
-主张的实际查询响应和可核对业务来源均闭合：实际平台返回的业务语义可以与冻结获批原文相互
-佐证；只有必要业务依据缺失时才阻断该题。报告仍可在 partial delivery 下产生逐题 PASS；若完整
-hidden 题集均有有效裁决且其他 CQ 硬门通过，`cq_semantic` 可以产生完整 CQ PASS，但 delivery
-仍明确为 partial，不能因此声称完整模型交付或 R3.0-006 full PASS。只有 partial batch（存在
-未执行/运行未完成题）才阻断完整 CQ PASS。
+获批批次的完整 CQ PASS 必须同时满足：非空完整获批 hidden 题集均为有效 `pass`；无
+unexecuted、待复核、模型召回不足或平台未完成题；无遗漏获批题/承诺覆盖、暴露题或模型状态
+漂移；所有必要业务主张的实际查询响应与获批来源闭合。任一非 PASS 裁决均阻止整批 PASS，
+不只未执行/运行未完成题会阻止。partial delivery 可以与 CQ 批次 PASS 并存，但交付仍为
+partial，不代表完整模型交付或 R3.0-006 full PASS。
+
+覆盖按冻结前用户批准的题集/覆盖决定，而非每切片题数判断。跨切片题可覆盖无专属隐藏题的
+切片；用户事先批准本批排除某切片时保留批准依据和排除项，非空获批题集全通过可发布该批
+CQ PASS，但 `全场景隐藏覆盖` 必须单独标为未覆盖/未通过。未获批排除、运行后漏题或删题仍
+阻止该批完整 PASS；获批空隐藏集可以保留并继续流程，但不能产生空集 CQ PASS。复用现有
+冻结审批引用与报告 coverage 信息表达这些区别，不建设新题库系统，也不修改旧 freeze schema。
+报告构建器在 CQ target 下从冻结时的获批审核记录核对排除项，将获批排除与实际
+`coverage_gaps` 分开汇总；没有可核对批准就不能推断“用户已接受缺题”。旧 full_joint 聚合不改。
 
 ### 3.4 有界排障和退出
 
@@ -265,7 +282,7 @@ packet 只带可判题的冻结依据、响应和报告，返回这些题的 ver
 数据流保持现有角色边界：
 
 ```text
-Task acceptance_scope
+Task acceptance_target
   -> run-contract snapshot
   -> Runner/Delivery verifies production handoff
   -> cq-acceptance reads verified handoff + freeze
@@ -328,6 +345,13 @@ CQ 可获得 handoff complete 通知并终态，但 Runner 在该次只读验收
   `TERMINAL_REPORT_COMPLETE`；前台循环继续轮询 FIFO，保留读权限但不调度生产任务，沿用
   外层等待的 T3 扣除口径，不能用无 LLM 输出触发 run-fallback。完整、partial 和 failure
   报告均可完成回交，然后走原有唯一 `cleanup_once`；正常收尾不要求 CQ 全绿。
+- 当前 `cq-handoff-request` 在交接成功时关闭，不能覆盖外部验收。交接成功进入 pending 的
+  同一状态转移中打开 `cq-acceptance-wait`，直至当前 attempt 结果验证接纳或 stop/失败退出
+  才关闭；同步扩展既有 `CQ_WAIT_WINDOW_KINDS` 闭集，落 wait tracker 与 state/events。
+  与其他 CQ/issue 等待按实际时间区间去重扣除，
+  关闭窗口后仍保留累计扣除，不重置生产 active 时长，也不在收尾时补算等待。T3 仍只检查
+  原有效时长及原配置阈值，不能调大 10800 秒默认值或全局禁用来遮蔽缺口。前台 FIFO 轮询
+  和 stop 不依赖 LLM 输出。此为需求功能合同第 8 项的实现接线，不是可选调优。
 - Delivery 启动并监看独立 `cq-acceptance` 进程；正常退出后发送上述完成消息。若子进程失败
   或退出而缺完整报告，Delivery 用已有报告构建器留存 runtime-incomplete/未执行题记录并
   回交，不伪造 Judge 裁决。进程仍运行而未回交时显示 pending，不自行扩大超时或重启。
@@ -336,7 +360,7 @@ CQ 可获得 handoff complete 通知并终态，但 Runner 在该次只读验收
 
 | 最窄改动面（后续实现） | 复用部分与必要增量 |
 | --- | --- |
-| `modeling_team/contracts.py`、Task/Profile 校验、`runner.py` 配置快照 | 验证并冻结一个 `acceptance_scope`；旧缺省继续 full_joint，不新增重复 CLI 选择器 |
+| `modeling_team/contracts.py`、Task/Profile 校验、`runner.py` 配置快照 | 验证并冻结 `parameters.acceptance_target`；旧缺省继续 full_joint，不新增重复 CLI 选择器或迁移旧 carrier |
 | `runner.py::_cq_production_readiness/_handle_cq_handoff_complete` 与 staged handlers | 共用本 run 的锁/condition、阶段及在途调用登记；原子关新写后排空旧写，验证结果并生成绑定 handoff |
 | `runner.py::_terminal_report_guard`、`runtimes/codex.py::terminal_report_blocked` | 仅 cq_semantic 分离通用质量门；保留 I/O 同步与写入安全；完整模式行为不变 |
 | `__main__.py::_run_cq_acceptance/_cq_execute_batch`、outer action 注册/FIFO/终态循环及 `cleanup_once` | 消费 Runner 登记的 attempt，执行证据回读/部分题判定；注册完成 envelope，pending 继续外层轮询，校验回交后唯一收尾 |
@@ -354,6 +378,11 @@ CQ 可获得 handoff complete 通知并终态，但 Runner 在该次只读验收
 | proxy response artifacts/receipts | 只读 proxy/runtime；CQ 分支新增响应留存 | host Judge packet builder | Runner 相对 locator，按 canonical result 校验 digest；child 结束后仍保留本 attempt 引用证据 |
 | Examiner reports | Platform Examiner/report sink | host 和 Judge | 每题保留，拒绝只重提同题，不跳过后续题 |
 | Judge verdicts | 独立 Acceptance | host batch report | 不持有平台写、Team transport 或生产 run 控制能力 |
+
+需求功能合同第 9 项约束这些保留产物：创建新 attempt 时原子占用唯一目录，已发布路径不得
+被 `_write_host_only_json` 的 `os.replace` 覆盖。每个最终报告只发布一次；中间结果与最终
+报告使用不同已登记名称，临时文件只用于首次完整发布。新尝试保留旧 handoff 副本、原始
+响应、失败报告与清理证据；冲突可恢复地申请新 attempt，不通过改全局 JSON writer 波及旧路径。
 
 ## 5. 高风险假设
 
@@ -375,13 +404,15 @@ CQ 可获得 handoff complete 通知并终态，但 Runner 在该次只读验收
   报错后不能切换。
 - checklist pending 时，若 verified production handoff 已满足，CQ 可以启动；未知写入、
   未决写或不一致回读不能启动。
-- CQ 使用完整获批 hidden 分母；空集、切片缺题、暴露题、待复核和未执行题不会被缩分母洗绿。
+- CQ 使用完整获批 hidden 分母；空集、遗漏获批题/承诺覆盖、暴露题、待复核和未执行题
+  不会被缩分母洗绿。获批某切片零专属隐藏题不构成题量硬门；批次 PASS 与全场景覆盖分开。
 - Platform Examiner 只使用真实授权只读查询；Judge 收到宿主校验后的真实响应内容，不能只
   依赖 Examiner 自报答案或 IRI。
 - 必要业务主张缺实际平台语义或获批来源支持时不能 PASS；不相关技术结构标记缺口可以作为 advisory。
 - 部分批次的有效题可得到逐题 Judge verdict；状态漂移、post-read 失败或响应 artifact 失效
   会取消完整 PASS，并保留已经产生的报告。
 - CQ 结果与 SQL、完整授权专项、全量 lineage、重复性、产品化和 R3.0-006 full PASS 分开报告。
+- 原题必须验证 SQL 实际数值而本阶段不执行时保持待复核，不能仅凭语义口径取得该题 PASS。
 - 用户 stop 后只清理本次验收持有的 child/proxy，保留已写资源和失败证据。
 
 ### 6.2 非目标
@@ -397,8 +428,8 @@ CQ 可获得 handoff complete 通知并终态，但 Runner 在该次只读验收
 
 ## 7. 交付状态
 
-本轮仅交付需求设计和共享测试计划，独立计划评审 Round 2 PASS。Round 1 的两项 High
-（跨线程原子准入、CQ 完成回交与生命周期）及修订/复核记录保留在共享测试计划 §6。
+本轮仅交付需求设计和共享测试计划；外部 Round 3 REVISE 后修订，Round 4 专项复核 PASS。
+Round 1/2/3/4 的问题、严重度处置和修订/复核记录保留在共享测试计划 §6。
 代码实现、独立产品测试、真实 modeling start、真实 Platform Examiner、Acceptance Judge、
 L0/L1/L2/L3 均为 NOT RUN。后续开发以本设计和共享测试计划为固定范围，分别记录机械测试、
 真实运行和语义质量证据；本轮结论不能替代这些验收。
