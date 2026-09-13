@@ -206,6 +206,14 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
   不重新加载代码/挂载。不能靠 `{"action":"resume"}` 或 `state=RUNNING` 证明继续成功。
   同 run 续跑必须由仍有效的输入/issue 通道触发实际工作并看到新的进展证据。
 - `stop` 会进入 cleanup，不能当作暂停。存在不确定写入时先查询实际结果，再决定生命周期操作。
+- **staged 写门 kill-switch 在本进程内不可恢复**（2026-09-14 auth015-start1 实证）：角色在计划改版
+  （revision 2）后复用 revision 1 的 `client_batch_id` 提交，平台返回 `batch_content_conflict`，
+  Runner 记 `staged_batch_forward_unknown` 并触发 `_staged_gate_kill_switch`（runner.py
+  `_staged_gate_killed` 只在 prepare 重置）。宿主先做只读核查（build-session batches 列表）确认
+  是否真实写入；即便核查结论是零写入（如 0f9ae6eb 仅 dry_run validation_failed），任何
+  `issue_resolution` 都会被 `unknown_mutation_requires_reconciliation` 拒绝——本增量没有 unknown-write
+  门重开路径，run 只能按终止处理（保留现场、归因、窄修复、按余额 fresh start）。预防规则已写入
+  protocol instructions：改版计划必须换 `client_batch_id`（`-rN` 后缀）。
 
 ## cq_handoff_complete 之后的独立验收收口（acceptance_pending）
 

@@ -65,7 +65,21 @@ and its `apply_atomic` with the plan's `apply_idempotency_key`; the platform bin
 request hash (content, mode, expected workspace version), so a key is burned once any of those
 changes. If a submission returns `idempotency_conflict` or the expected workspace version moved,
 retry the affected mode alone with the key's trailing `-vN` incremented (`v1` -> `v2`) and identical
-request content; never invent a different key shape. Treat the Modeling candidate and its dependencies as immutable
+request content; never invent a different key shape. The same burn rule governs `client_batch_id`:
+the platform binds one `client_batch_id` to one immutable batch content, so when you republish a
+plan at a new revision with changed content you MUST also use a distinct `client_batch_id` (apply
+the same suffix shape, e.g. `-r2`). Reusing a `client_batch_id` after its content changed
+returns `batch_content_conflict`, surfaces to the host as `staged_batch_forward_unknown`, and
+latches the staged-gate kill-switch — a write-integrity stop that no later submission in the same
+run can clear. (2026-09-14 auth015-start1: value-semantics p1 revised at revision 2 under the
+revision-1 `client_batch_id`; the run's staged gate closed unrecoverably.) The same burn rule governs `client_batch_id`:
+the platform binds one `client_batch_id` to one immutable batch content, so when you republish a
+plan at a new revision with changed content you MUST also use a distinct `client_batch_id` (apply
+the same `-rN` suffix shape, e.g. `-r2`). Reusing a `client_batch_id` after its content changed
+returns `batch_content_conflict`, surfaces to the host as `staged_batch_forward_unknown`, and
+latches the staged-gate kill-switch — a write-integrity stop that no later submission in the same
+run can clear. (2026-09-14 auth015-start1: value-semantics p1 revised at revision 2 under the
+revision-1 `client_batch_id`; the run's staged gate closed unrecoverably.) Treat the Modeling candidate and its dependencies as immutable
 semantic input: scheduling Batches must not mutate or reorder candidate meaning, and you must not
 delegate exact Batch Items back to Modeling. An active Shape immediately validates later Batches, so
 never apply Shape-first or use an unbound forward reference; apply a Shape only after its target
