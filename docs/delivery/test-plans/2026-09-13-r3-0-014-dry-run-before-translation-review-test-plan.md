@@ -1,7 +1,7 @@
 # R3.0-014 物化计划先 dry-run 后翻译审阅 — 共享测试计划
 
 - 日期：2026-09-13
-- 状态：设计评审 D1=REVISE、D2=PASS，三项 accepted-high 已闭合；产品测试、真实 L0/L1 和语义验收均为 NOT RUN。
+- 状态：D1=REVISE、D2=PASS 为历史；D3 外部意见已核验并修订，D4=PASS；产品测试、真实 L0/L1 和语义验收均为 NOT RUN。
 - 需求：[requirements-v3.0.md 的 R3.0-014](../../requirements/requirements-v3.0.md#r30-014-物化计划先-dry-run-后翻译审阅)
 - 设计：[R3.0-014 交付设计](../designs/2026-09-13-r3-0-014-dry-run-before-translation-review-design.md)
 - 历史统计：[近轮审阅与 dry-run 失败统计](../records/2026-09-13-modeling-review-failure-statistics.md)
@@ -26,6 +26,8 @@ version 和重试 key 的边界；验证 dry-run 的元数据持久化不被误�
 | D0 | planner 写稿和主代理文档核对 | 已执行，不是独立验收 | 需求、源码定位、链接和格式核对 |
 | D1 | 2026-09-13，独立 `plan_reviewer`，初稿工作树 | REVISE | 以下三项 accepted-high；主代理补充合同及 M8/M28/M29 后复审 |
 | D2 | 2026-09-13，独立 `plan_reviewer`，D1 修订稿 | PASS | 三项 High 均闭合；未发现仍阻断实施的 Critical/High。既有 Batch 读回、Runner host proof 与身份绑定可实施 |
+| D3 | 用户本轮转交的外部审阅，主代理对 `83ceaf4` 核验 | REVISE | 以下 H1 accepted-high；H2/M1/M2 采纳澄清或简化，不照搬全部严重度/描述 |
+| D4 | 独立 `plan_reviewer`，`83ceaf4` 以来三份文档修订的有界复审 | PASS | H1 无副作用恢复闭合；基线/增量、纯版本漂移、按键更新和历史证据明确；未发现阻断安全实现的 Critical/High，符合 KISS/T0 |
 
 D1 问题处置（保留原失败轮）：
 
@@ -39,6 +41,31 @@ D1 问题处置（保留原失败轮）：
 
 非 High 的接口选择建议已收敛：固定既有 get_modeling_batch 读回，Runner 在现有 host evidence
 追加 proof；operation-plan hash 仅作诊断，不要求扩展 backend response 或旧 receipt schema。
+
+### D3 外部意见处置与开发原则
+
+转交意见标题称 2 High/3 Medium，实际只有 H1/H2/M1/M2 四项正文；未猜测缺失项。
+
+- **H1 accepted-high（恢复合同遗漏）**：后端 :359-400 表明同 key 只重放原终态、新 key 也不能
+  apply failed Batch；:2159-2189/:2805-2833 可证明无副作用并释放 fence。M4/M26 之前没有
+  明确此恢复分支，现补设计 §3.4 和 M30。不同意“整个 run 不可恢复”及“没有四类归因落点”的
+  扩大表述：后端 :1957-2024 的既有测试已有同内容新 Batch 正例；apply 是阶段，根因仍可归
+  platform-contract/runtime 等已有四类。复用已有安全通路，不借本次改变全平台终态语义。
+- **H2 downgraded-low（采纳基线澄清，不作为第二个 High）**：空 translation 列表确实已经
+  放行，M1 只能是回归；但 D2 设计 §2 已明确“apply 必须新增门”，M2/M7/M28 也已经要求增量
+  行为，故不是缺失整项安全门。已消除混淆措辞。外部意见说旧条目都拒绝也不准确：
+  :2185-2210 的格式合法旧 approved 不会因“旧”被拒；rejected/格式问题才触发全局误阻断。
+- **M1 downgraded-low（采纳确定性规则）**：原规则留下了复用决定方的歧义，已固定 Protocol
+  不改 plan 身份、Runner 校验新 proof 后复用批准，扩展 M16。请求必须省略 lease_token
+  不证明运行全程没有租约，也没有证据证明漂移已是“常态”；不因此增加跨 LLM 长租约或锁框架。
+- **M2 downgraded-low（采纳载体与幂等细化，并删除多余拒绝）**：approvals 是当前态文件，
+  具体历史写入 `evidence/deliveries.jsonl`，原生事件在 `evidence/app-server-events.jsonl`。
+  Coordinator 按键读—改—写，既有回复包含 previous/current 五字段；M31 验证覆盖与留痕。
+  同计划、同审批人、同裁决的等效重复只归一为一个决定（reason 措辞不同也不挡 apply）；
+  真正冲突才返回可恢复反馈。
+  这符合 KISS/T0，避免为过程偏好增加硬门，不引入新事件表、审批服务或历史版本协议。
+
+本轮只读源码和已有测试断言，**没有执行这些测试**；它们是设计依据，不是本轮运行 PASS。
 
 独立评审必须检查：无 translation approval 的 dry-run 路径、真实 Attempt proof、Batch 不可变/重试、
 workspace 漂移、dry-run 元数据与正式写入边界、旧 schema/hidden 隔离。评审未完成前不得把设计标记
@@ -59,7 +86,7 @@ workspace 漂移、dry-run 元数据与正式写入边界、旧 schema/hidden �
 
 | ID | 场景 | 预期 |
 | --- | --- | --- |
-| M1 | 合法 009 batch，无 translation approval，具备 candidate/decision/plan/value unlock，调用 `dry_run` | 得到真实平台 Attempt 和 findings；允许 `validated` 或 `validation_failed`，不要求翻译 approval；不写正式 Modeling 资源 |
+| M1 | 基线回归：合法 009 batch，translation 列表为空，其余候选/决定/value unlock 完整，调用 `dry_run` | 保留现有允许行为，得到平台 Attempt/findings 且无正式写入；不能单独作为 R3.0-014 新增行为证据 |
 | M2 | 同一条件直接 `apply_atomic` | 类型化拒绝；无新的正式模型写入或 apply Attempt |
 | M3 | dry-run 返回 `attempt_status=validated`，但 staged capability 只返回 `ok=true`/receipt | 不得进入翻译审阅或 apply；缺平台 proof 必须失败闭合 |
 | M4 | dry-run 返回 `validation_failed`，包含可定位技术 finding | Protocol 能在同一 run 修正并以新 idempotency key 重跑；失败 Attempt/Batch 元数据保留 |
@@ -74,7 +101,7 @@ workspace 漂移、dry-run 元数据与正式写入边界、旧 schema/hidden �
 | M13 | 仅改变 mode、lease、idempotency key 或 expected workspace version | content hash 不变；execution parameters 不进 plan projection digest；apply 仍需新的 key和当前租约 |
 | M14 | Batch items 输入顺序变化但规范化内容相同 | 后端 content hash 稳定；projection 按合同比较；不产生虚假漂移 |
 | M15 | plan_ref、projection 或 candidate 文件在 dry-run 后被改写/替换/软链逃逸 | plan/candidate close 返回 typed mismatch/stale；旧 approval/proof 不放行 |
-| M16 | workspace 在 dry-run 成功后、translation approval 后发生漂移 | apply 拒绝；同一内容需新的 dry-run Attempt；不能以旧 proof继续 |
+| M16 | workspace 在 dry-run/翻译批准后漂移；对照纯版本变化和引用/命令需修改两种情况 | 先拒绝旧 proof apply；纯版本变化保留 plan_ref/revision/projection/client_batch_id，新版本+dry key 且省略 lease 重校验；validated 后 Runner 复用现有批准，以新 apply key/当前 lease 成功执行且无新审阅请求；需改内容/决定或批准失效时转修正重审 |
 | M17 | dry-run 后读取 Batch/Attempt 明确“无正式资源”，但 DB 有 Batch/Attempt/findings/operation plan | 报告为 validated/failed dry-run metadata，不报告 applied/materialized；正式资源和 Evidence association均为空 |
 | M18 | dry-run findings 含 evidence candidates 或 safe operation-plan evidence | 可保留/读取必要校验信息；不创建 EvidenceReference/Association，不把候选证据当正式 lineage |
 | M19 | 值语义命令缺 unlock、unlock mode=skip、结论/trace 不匹配 | dry-run 和 apply 均在平台转发前拒绝；顺序调整不绕过 value semantic gate |
@@ -84,10 +111,12 @@ workspace 漂移、dry-run 元数据与正式写入边界、旧 schema/hidden �
 | M23 | successful dry-run response 的 `attempt_status` 被伪造、遗漏或与 `mode` 不一致 | forwarder/Runner 拒绝为 proof；`ok=true` 不足以放行 |
 | M24 | response 的 batch_id、attempt_id、idempotency_key、content_hash 彼此不一致 | 记录 platform-contract failure；不写翻译批准、不 apply；原始响应保留 |
 | M25 | apply 前或 apply 后发生 forwarder timeout/异常，无法知道平台是否提交 | 进入现有 unknown reconciliation；保留 intent/receipt/Attempt listing；禁止 retry 直到闭合 |
-| M26 | 旧失败 Attempt 后新 Attempt 成功 | 旧 findings/response/receipt 保留；只把新 Attempt 作为当前 proof，不以最终成功覆盖失败事实 |
+| M26 | 旧失败 Attempt 后新 Attempt 成功 | dry-run 失败且 Batch 非终态、内容未变时可同 Batch 新 key；内容变更按 M8；apply 终态 failed 按 M30 新 Batch；三条路径均保留旧 findings/response/receipt，不以最终成功覆盖历史 |
 | M27 | 同一 plan 发生并发 dry-run/apply 或 write admission quiescing | 现有 admission/lease/fence 保持原子性；无双写、无跨 key receipt 混用；可恢复反馈可继续 |
-| M28 | dry-run/apply × translation 为空/旧版/rejected/格式问题/当前 approved × 业务决定完整/缺失 | dry-run 不受 translation 状态影响但缺业务决定拒绝；apply 只接受当前唯一有效 approved，不接受冲突/重复；旧历史保留、不以全量 translation 校验阻塞技术修正 |
+| M28 | dry-run/apply × translation 为空/旧版/rejected/格式问题/当前 approved × 业务决定完整/缺失 | dry-run 不受 translation 状态影响但缺业务决定拒绝；apply 只接受当前有效 approved，同计划/审批人/裁决的等效重复视为一个，冲突须修正；明确比较基线与新增行为，不以全量 translation 校验阻塞修正 |
 | M29 | 匹配 plan/hash 的 approval，但 approved_by 是错误角色、旧 Coordinator、外 run；对照当前 Coordinator-owned 决定 | 前三者 apply 拒绝，当前本 run Coordinator 及内容/proof 全部匹配才放行；不引入额外角色审批门 |
+| M30 | apply 确定性无副作用失败，以及 recovering 经对账后终态无副作用失败；对照仍 recovering/部分写入/仅 safe_to_retry=true | 确认 failed+failed_without_side_effects+safe_to_retry 与 fence/unknown 闭合后，同 run 新 Batch/plan/key 重做 dry-run、新计划翻译批准、apply 成功；不重审未变业务，保留关联。原 Batch 同 key 只重放终态，新 key apply 得 batch_failed；负例禁止靠换 ID 重试 |
+| M31 | 同 plan/digest 再次批准、误追加同审批人 approved（含 reason 不同）、approved/rejected 冲突、覆盖旧决定后回告失败 | Coordinator 同值 no-op、变化按键替换且其他键不丢；等效重复不阻断，真正裁决/身份冲突可修复且 dry-run 不受影响；deliveries.jsonl 中 previous/current 五字段与当前文件一致，app-server-events.jsonl 可交叉定位；回告失败补发同一决定、不再次追加；缺失历史不声称完整 |
 
 ## 5. 独立测试和真实验收用例（实现稳定后执行）
 
@@ -124,6 +153,7 @@ workspace 漂移、dry-run 元数据与正式写入边界、旧 schema/hidden �
 - translation approval 退回；
 - Runner schema/permission/admission 拒绝；
 - forwarder/平台 unknown；
+- apply 失败但已证明无副作用（阶段单列，按真实根因归入已有四类）；
 - apply 后真实资源/回读缺陷。
 
 报告至少记录 run、代码基线、Task/Profile、mode、Batch/Attempt、intent/receipt、plan/candidate
@@ -160,8 +190,8 @@ revision、projection/content/response digest、workspace 前后版本、failure
 
 | 阶段 | 完成条件 | 当前状态 |
 | --- | --- | --- |
-| 设计 | 权威需求、设计、共享计划一致；独立评审无未处置 Critical/High | PASS（D2，仅设计） |
-| 机械实现验收 | M1-M29 中适用项通过，旧模式和 hidden 隔离回归通过 | NOT RUN |
+| 设计 | 权威需求、设计、共享计划一致；独立评审无未处置 Critical/High | PASS（D4，仅设计） |
+| 机械实现验收 | M1-M31 中适用项通过，旧模式和 hidden 隔离回归通过 | NOT RUN |
 | L0 Runtime | 真实平台 dry-run/proof/apply/unknown/cleanup 闭合 | NOT RUN |
 | L1 Modeling quality | 独立语义翻译和模型质量证据通过；失败不被平台状态洗绿 | NOT RUN |
 | 完成 | 以上门槛、需求状态同步、独立 PASS 和安全清理均完成 | NOT RUN |
@@ -177,3 +207,10 @@ revision、projection/content/response digest、workspace 前后版本、failure
 - 历史统计复查：112 completed staged submit = 112 唯一调用；12 唯一失败 Attempt，
   六轮分别 2/3/0/3/0/4；阶段未到达不作为零失败样本进入均值。
 - 不运行后端/前端测试、不重启服务、不启动 semantic start：此次为文档设计交付，非代码实现。
+
+### 7.5 D3/D4 文档修订检查
+
+- 修订范围为权威需求、设计、本共享计划三文件；不改历史统计及其原始证据。
+- 相对 Markdown 链接及代码围栏检查：3 文件、0 问题；`git diff --cached --check` PASS。
+- GitNexus `detect_changes(scope=staged)`：3 文件、LOW、0 受影响执行流程，只涉及预期文档。
+- 未运行产品测试、未重启服务、未使用建模授权；D4 PASS 仅代表设计复审。

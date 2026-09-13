@@ -1152,9 +1152,9 @@ Modeling 角色的语义工作，不向 Coordinator、Protocol 或 CQ 注入整�
 
 ### R3.0-014 物化计划先 dry-run 后翻译审阅
 
-状态：设计完成，独立设计评审 D1=REVISE、D2=PASS（2026-09-13）；三项 accepted-high
-已修订并复审闭合。用户授权的需求登记、设计和历史审阅失败统计已完成；尚未实现，
-未执行产品/真实验收，未授权本需求实现或新的 semantic start。
+状态：D1=REVISE、D2=PASS 为历史设计评审（2026-09-13）；用户本轮授权核验外部审阅并调整
+设计，D3 意见已处置、D4 有界复审 PASS。历史统计不变；尚未实现、未执行产品/真实验收，
+未授权本需求实现或新的 semantic start。
 
 **目标**：减少平台可确定发现的技术错误导致的重复 Agent 审批。将物化阶段调整为
 “业务候选语义批准 → Protocol 生成计划 → 平台 dry-run 与可恢复修正 → Agent 翻译审阅
@@ -1169,8 +1169,9 @@ workspace version 及原子写入。R3.0-013 保持独立登记，本需求不�
 
 1. Coordinator 仍负责业务语义候选、拓扑、共性节点及关系和值表达选择的批准。
    Protocol 负责把获准候选转换为计划；本需求不移动业务语义审批和用户业务确认的时点。
-2. dry-run 可在缺少该计划的 translation approval 时执行，先返回平台真实校验 findings。
-   保留身份/范围授权、候选与决定绑定、值语义确认与解锁等必要边界；放开的只是最终翻译审批。
+2. 保留空 translation approval 列表可 dry-run 的现有基线；本次解除 rejected/无关翻译记录
+   对 dry-run 的误阻断，并在 apply 新增当前计划翻译批准门，不是删除已有的 apply 翻译门。
+   保留身份/范围授权、候选与决定绑定、值语义确认与解锁等必要边界；平台先返回真实 findings。
    dry-run 不应用正式模型资源，可以保留 Batch/Attempt 及运行证据；失败可在同 run 修正。
 3. Protocol 对技术错误自行修正计划并重新 dry-run；涉及业务含义、已批准候选、拓扑或值表达
    变化时交回责任 Agent 确认，只重审受影响决定，不把技术修正扩成全流程重做。
@@ -1182,20 +1183,29 @@ workspace version 及原子写入。R3.0-013 保持独立登记，本需求不�
    翻译批准须属于本 run 当前 Coordinator；dry-run 不以旧/拒绝的翻译决定为门，apply 只接受
    当前计划的唯一有效批准，不以跳过业务决定检查实现换序。
    dry-run 的成功是其校验时点的结果，apply 仍检查当前权限、workspace version、租约和完整性。
+   纯 workspace version 漂移保持 plan_ref/projection/client_batch_id 不变，以新版本和 key
+   重新 dry-run；内容/决定/审批人未变且新校验成功时确定性复用翻译批准，不重复语义审阅。
+   审批文件按计划键读—改—写，同计划、同审批人、同裁决的等效重复按同一决定处理；冲突可修正，旧/新决定
+   留在既有 deliveries/app-server 证据中，不新增审计框架。
 6. Agent 退回或 dry-run 后命令发生变化，发布新计划版本并重新 dry-run、审阅受影响内容；
    无语义内容变化的执行状态更新不要求重做业务审批。Batch 不可变内容、重试键和版本变化
    的处理在设计中按现有实现明确，不用相同 key 掩盖不同内容。
    Batch 内容变化须使用新的 client_batch_id 和新计划投影，保留旧 Batch/Attempt/回执与修订关联。
+   apply 已将 Batch 置为 failed、且平台证明无副作用并完成对账时，即使内容未变也使用新的
+   Batch/plan/key，重新 dry-run 和绑定新计划的翻译批准；保持同 run，不重做未变的业务审批。
+   unknown、部分写入或仅 safe_to_retry 布尔值不能作为换 Batch 绕过写门的依据。
 7. 失败精确归因并保持可恢复：业务审阅退回、翻译审阅退回、平台 dry-run 失败、Runner
-   合同拒绝和基础设施失败分别记录。未知写入继续沿现有对账通路处理，不借本需求解除写门。
+   合同拒绝、apply 失败和基础设施失败分别记录阶段；根因仍归已有四类，不新增第五种归因。
+   未知写入继续沿现有对账通路处理，不借本需求解除写门。
    统计不得把全部候选 rejected、修订号或 receipt 数直接当成失败轮数。
 8. 保留旧运行和冻结证据；增量进入实际新运行前同步 Task/Profile/角色提示和实际提交入口。
    普通产品用户、未启用该 Team 合同的路径及旧 R2.3 行为不扩大为新的审批前置。
 
 #### 验收与交付边界
 
-- 证明无 translation approval 的合法 dry-run 可得到真实平台 findings，且正式模型未应用；
-  同条件 apply 必须拒绝。不能通过宽泛移除候选批准、授权或值物化边界实现。
+- 将无 translation approval 的合法 dry-run 作为基线回归；增量证明 rejected/无关翻译记录
+  不阻断 dry-run，且缺少当前批准的 apply 被新增门拒绝。不能以只通过基线证明本次改动，
+  也不能通过宽泛移除候选批准、授权或值物化边界实现。
 - 覆盖技术错误修正后只审最终计划、技术合法但业务翻译错误被 Agent 退回、内容漂移/过期
   批准、failed dry-run receipt 不能冒充成功、workspace 漂移及 Batch 幂等/不可变合同。
 - 覆盖字段修正可继续、dry-run 与 apply 的不确定结果边界、旧模式兼容和隐藏题隔离。
