@@ -240,8 +240,10 @@ def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert GLM_DIRECT_ROUTE.wire_api == "responses"
     assert GLM_DIRECT_ROUTE.models == frozenset({"glm-5.3", "glm-5.3-flash"})
     assert GLM_DIRECT_ROUTE.uses_external_credential is True
-    # Effort resolves exactly as DeepSeek's does, including ``none`` unmapped.
-    assert GLM_DIRECT_ROUTE.effective_effort("low") == "high"
+    # ``low`` passes through verbatim (upstream-verified 2026-09-13; the
+    # auth-r3-0-012 batch runs the Platform Examiner at low effort), while the
+    # middle/top tiers resolve as DeepSeek's do, including ``none`` unmapped.
+    assert GLM_DIRECT_ROUTE.effective_effort("low") == "low"
     assert GLM_DIRECT_ROUTE.effective_effort("medium") == "high"
     assert GLM_DIRECT_ROUTE.effective_effort("high") == "high"
     assert GLM_DIRECT_ROUTE.effective_effort("xhigh") == "max"

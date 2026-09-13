@@ -1,0 +1,45 @@
+# Team Model Profile for the 2026-09-13 auth-r3-0-012 batch (R3.0-012 first
+# real cq_semantic acceptance): identical to ``glm-high`` except one knob --
+# the Platform Examiner runs the same ``glm-5.3`` model at ``low`` reasoning
+# effort, per the user's explicit authorization ("Platform Examiner 单独选用
+# low 思考等级").  Every other role (coordinator, modeling, protocol,
+# competency-question, and the independent Acceptance Judge under the
+# ``acceptance`` key) stays at ``high``.  Paired with ``glm-high`` this
+# isolates the examiner-effort axis on the same model and route.
+#
+# The Examiner session only executes read-only platform queries with a
+# response-retention callback (R3.0-012 design §4.1/§4.2), so the low effort
+# exercises exactly that bounded retrieval duty; semantic judging remains with
+# the ``high``-effort Judge.  All roles bind the ``glm-direct`` route to the
+# exact model ``glm-5.3``; roles reach it through the Host-owned loopback
+# session, so no role ever holds the GLM API key.  No OpenAI route is
+# declared, so no role can silently ride the Codex built-in ChatGPT
+# subscription.  validate, baseline, and run must select this profile
+# explicitly via ``--model-profile glm-high-examiner-low``.
+schema_version: 1
+model_profile_id: glm-high-examiner-low
+roles:
+  coordinator:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: high
+  modeling:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: high
+  protocol:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: high
+  competency-question:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: high
+  platform-examiner:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: low
+  acceptance:
+    model_provider: glm-direct
+    model: glm-5.3
+    model_reasoning_effort: high

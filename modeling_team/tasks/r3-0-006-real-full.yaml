@@ -174,3 +174,9 @@ parameters:
   staged_modeling_decisions: true
   unified_semantic_graph: true
   competency_question_acceptance: true
+  # R3.0-012 selection (auth-r3-0-012 batch, user-authorized 2026-09-13):
+  # the run's acceptance scope is the CQ-centered staged acceptance (hidden
+  # CQ pool + real read-only Platform Examiner + independent Judge) instead
+  # of the default full_joint.  Requires competency_question_acceptance
+  # above; omitting the parameter keeps full_joint for other v3 Tasks.
+  acceptance_target: cq_semantic

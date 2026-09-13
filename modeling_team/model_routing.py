@@ -140,12 +140,17 @@ GLM_DIRECT_ROUTE = ProviderRoute(
     # ``glm-5.3`` (full model) admitted 2026-09-12 for the user-authorized
     # model-comparison round; it rides the same credential and loopback session.
     models=frozenset({"glm-5.3", "glm-5.3-flash"}),
-    # Aligned with ``deepseek-direct``: the low tiers collapse onto ``high`` and
-    # the top two onto ``max``.  ``none`` is deliberately unmapped, exactly as in
-    # the DeepSeek route, so a profile asking for it fails at load rather than
-    # silently running at some other effort.
+    # The upstream Responses endpoint accepts ``low`` verbatim for both models
+    # (verified 2026-09-13 with a one-shot probe: effort=low completed with
+    # reasoning_tokens=0), so unlike the DeepSeek route ``low`` passes through
+    # instead of collapsing onto ``high`` -- the auth-r3-0-012 user
+    # authorization runs the Platform Examiner at low effort.  ``medium``
+    # still collapses onto ``high`` and the top two onto ``max``.  ``none``
+    # is deliberately unmapped, exactly as in the DeepSeek route, so a profile
+    # asking for it fails at load rather than silently running at some other
+    # effort.
     effort_effective=MappingProxyType(
-        {"low": "high", "medium": "high", "high": "high", "xhigh": "max", "max": "max"}
+        {"low": "low", "medium": "high", "high": "high", "xhigh": "max", "max": "max"}
     ),
 )
 OPENAI_CODEX_ROUTE = ProviderRoute(

@@ -22,7 +22,7 @@ import stat
 import threading
 import time
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from types import MappingProxyType
 from typing import Any, Callable, Iterable, Mapping, Sequence
 
@@ -367,6 +367,13 @@ _V3_BLIND_FORBIDDEN_FIELDS = frozenset(
     {"answer_points", "evidence_refs", "review_binding", "evidence_bundle", "answers", "history"}
 )
 
+# R3.0-012 design §4.1: one retained per-call document written at read time
+# under the receipt's relative locator.  It carries the canonical (scoped)
+# request and the raw forwarded ``result`` -- never a key, token, socket path
+# or host filesystem location -- so the host can hand the Judge the real
+# platform responses instead of rebuilding them from digests.
+PLATFORM_READ_ARTIFACT_SCHEMA = "r3-0-012-platform-read-artifact/v1"
+
 
 def acceptance_branch_for(schema_version: Any) -> str:
     """Return the explicit acceptance branch for a packet schema version."""
@@ -428,7 +435,13 @@ class AcceptanceBatchPacket:
                 "verdict_schema",
             },
         }[role]
-        if set(normalized) != expected:
+        # R3.0-012 design §4.1: the judge packet's one additive field is the
+        # per-question validated platform response projection.  It stays
+        # optional so an unretained batch keeps the exact 011 packet shape.
+        optional: set[str] = set()
+        if role == CQ_ACCEPTANCE_JUDGE_ROLE:
+            optional = {"platform_read_responses"}
+        if set(normalized) != expected and set(normalized) != expected | optional:
             raise ChildRuntimeError("v3 acceptance packet fields are invalid")
         for key in ("run_id", "batch_id"):
             if not isinstance(normalized[key], str) or not normalized[key]:
@@ -499,6 +512,10 @@ class AcceptanceBatchPacket:
                     raise ChildRuntimeError(f"v3 examiner report is invalid: {exc}") from exc
                 if validated.get("batch_id") != normalized["batch_id"]:
                     raise ChildRuntimeError("v3 examiner report is bound to another batch")
+            if "platform_read_responses" in normalized:
+                normalized["platform_read_responses"] = _validated_platform_read_responses(
+                    normalized["platform_read_responses"], question_ids=question_ids
+                )
             normalized["evidence_bundle"] = bundle
         frozen = _freeze_packet(normalized)
         digest = _packet_digest(_unfreeze_packet(frozen))
@@ -589,6 +606,81 @@ def _v3_batch_questions(questions: Any, *, role: str) -> list[str]:
     if len(set(ids)) != len(ids):
         raise ChildRuntimeError("v3 acceptance batch repeats a question_id")
     return ids
+
+
+def _validated_platform_read_responses(
+    value: Any, *, question_ids: list[str]
+) -> dict[str, list[dict[str, Any]]]:
+    """Validate the judge packet's per-question retained-response projection.
+
+    Every entry must be a host-validated receipt projection: the authorized
+    read tool, both canonical digests, the Runner-relative retained locator,
+    the deterministic page tuple and the raw retained ``result``.  The packet
+    carries no key, token, socket or filesystem absolute path, so the judge
+    gains read evidence without gaining any platform access (design §4.1).
+    """
+
+    if not isinstance(value, Mapping):
+        raise ChildRuntimeError("v3 judge packet platform_read_responses is invalid")
+    known = set(question_ids)
+    normalized: dict[str, list[dict[str, Any]]] = {}
+    for question_id, entries in value.items():
+        if question_id not in known:
+            raise ChildRuntimeError(
+                "v3 judge packet platform_read_responses is bound to another question"
+            )
+        if not isinstance(entries, list) or not entries:
+            raise ChildRuntimeError(
+                "v3 judge packet platform_read_responses entries are invalid"
+            )
+        retained: list[dict[str, Any]] = []
+        for entry in entries:
+            if not isinstance(entry, Mapping) or set(entry) != {
+                "tool",
+                "request_digest",
+                "response_digest",
+                "artifact_path",
+                "page",
+                "result",
+            }:
+                raise ChildRuntimeError(
+                    "v3 judge packet platform response projection fields are invalid"
+                )
+            if entry["tool"] not in PLATFORM_PROXY_READ_TOOLS:
+                raise ChildRuntimeError(
+                    "v3 judge packet platform response tool is not read-only"
+                )
+            for field in ("request_digest", "response_digest"):
+                if not _v3_digest(entry[field]):
+                    raise ChildRuntimeError(
+                        f"v3 judge packet platform response {field} is invalid"
+                    )
+            path = entry["artifact_path"]
+            if (
+                not isinstance(path, str)
+                or not path
+                or PurePosixPath(path).is_absolute()
+                or ".." in PurePosixPath(path).parts
+            ):
+                raise ChildRuntimeError(
+                    "v3 judge packet platform response locator is invalid"
+                )
+            if not isinstance(entry["page"], Mapping) or not isinstance(entry["result"], Mapping):
+                raise ChildRuntimeError(
+                    "v3 judge packet platform response page/result is invalid"
+                )
+            retained.append(
+                {
+                    "tool": str(entry["tool"]),
+                    "request_digest": str(entry["request_digest"]),
+                    "response_digest": str(entry["response_digest"]),
+                    "artifact_path": str(path),
+                    "page": dict(entry["page"]),
+                    "result": dict(entry["result"]),
+                }
+            )
+        normalized[str(question_id)] = retained
+    return normalized
 
 
 def build_platform_batch_packet(**payload: Any) -> AcceptanceBatchPacket:
@@ -1403,6 +1495,17 @@ def _canonical(value: Any) -> bytes:
 
 def _digest(value: Any) -> str:
     return hashlib.sha256(_canonical(value)).hexdigest()
+
+
+def canonical_read_digest(value: Any) -> str:
+    """The canonical JSON digest read receipts and retained artifacts share.
+
+    R3.0-012 design §4.1: the host recomputes ``request_digest``/``response_digest``
+    from the parsed canonical request/result with exactly this algorithm --
+    never a hash over the whole artifact file bytes or the outer envelope.
+    """
+
+    return _digest(value)
 
 
 def _safe_digest(value: Any, field: str) -> str:
@@ -2360,6 +2463,14 @@ class ScopedReadProxy:
     the child home, environment, config, receipt, or proxy response.  The optional
     ``forward`` callback is the only place an integration may attach a real platform
     read; leaving it unset gives deterministic tests a safe offline proxy.
+
+    R3.0-012 design §4.1: the optional ``persist_response`` callback (v3 CQ scope
+    only) receives the receipt-relative locator plus the canonical
+    ``{schema_version, tool, request, result}`` document at read time, so the
+    host retains the real response bytes when the read happens -- never rebuilt
+    from digests after child teardown.  A retention failure is observable
+    (``persistence_failures`` plus the typed proxy error) and the failed call
+    appends no receipt, so it can never become judging evidence.
     """
 
     def __init__(
@@ -2379,6 +2490,7 @@ class ScopedReadProxy:
         child_handle_digest: str | None = None,
         exact_schemas: Mapping[str, Mapping[str, Any]] | None = None,
         authorized_ontologies: Sequence[Mapping[str, Any]] | None = None,
+        persist_response: Callable[[str, Mapping[str, Any]], None] | None = None,
     ) -> None:
         self.socket_path = socket_path
         self.token = token
@@ -2435,6 +2547,7 @@ class ScopedReadProxy:
         if self.exact_schemas is not None and set(self.exact_schemas) != set(self.allowed_tools):
             raise ChildRuntimeError("Examiner proxy exact schema inventory is incomplete")
         self._forward = forward
+        self._persist_response = persist_response
         self.acceptance_round_id = (
             _safe_id(acceptance_round_id, "acceptance_round_id")
             if acceptance_round_id is not None
@@ -2454,6 +2567,7 @@ class ScopedReadProxy:
         self.post_revoke_denials = 0
         self.backend_calls = 0
         self.schema_rejections = 0
+        self.persistence_failures = 0
 
     @property
     def active(self) -> bool:
@@ -2635,6 +2749,29 @@ class ScopedReadProxy:
                 )
                 previous_page = self._call_receipts[-1].page if self._call_receipts else None
                 page = _proxy_page_for_call(previous_page, arguments, result)
+                if self._persist_response is not None:
+                    # R3.0-012 design §4.1: retain the canonical request and raw
+                    # result at the receipt's relative locator while the read is
+                    # happening.  A retention failure is observable and leaves no
+                    # receipt, so the call cannot provide valid judging evidence.
+                    try:
+                        self._persist_response(
+                            artifact_path,
+                            {
+                                "schema_version": PLATFORM_READ_ARTIFACT_SCHEMA,
+                                "tool": tool,
+                                "request": dict(arguments),
+                                "result": result,
+                            },
+                        )
+                    except Exception:
+                        self.persistence_failures += 1
+                        return {
+                            "ok": False,
+                            "error": "platform-response-retention-failed",
+                            "code": "platform-response-retention-failed",
+                            "backend_calls": self.backend_calls,
+                        }
                 self._call_receipts.append(
                     V3ProxyCallReceipt(
                         ordinal=len(self._call_receipts),
@@ -3376,6 +3513,8 @@ __all__ = [
     "examiner_proxy_schemas",
     "validate_examiner_proxy_arguments",
     "PLATFORM_PROXY_READ_TOOLS",
+    "PLATFORM_READ_ARTIFACT_SCHEMA",
+    "canonical_read_digest",
     "ProxyReceipt",
     "ScopedReadProxy",
     "McpReadForwarder",

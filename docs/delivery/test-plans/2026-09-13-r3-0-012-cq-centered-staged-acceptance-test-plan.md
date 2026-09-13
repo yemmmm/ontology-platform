@@ -1,10 +1,10 @@
 # R3.0-012 CQ 为核心的阶段验收 — 共享测试计划
 
 - 日期：2026-09-13
-- 状态：产品测试 **NOT RUN**；外部 Round 3 REVISE 后完成修订，独立计划评审 Round 4
-  专项复核 PASS，文档检查 PASS，历史记录保留。
-  本轮只完成需求和设计文档；未改代码、未启动服务、未启动建模、未执行
-  `cq-acceptance` 或真实只读模型验收。
+- 状态：独立机械测试轮 Round 2 **PASS（机械层）**（2026-09-13，D1/D2 均关闭，见 §6）；隔离测试、
+  真实 L0/L1、SQL、授权、清理复核仍 **NOT RUN**。历史：独立 Round 1 FAIL（D1/D2）、开发侧缺陷
+  修复 Round 1、外部 Round 3 REVISE 后修订、独立计划评审 Round 4 专项复核 PASS、文档检查 PASS，
+  记录均保留于 §6；开发侧任务 A–E 机械轮记录亦见 §6。
 - 需求：[requirements-v3.0.md 的 R3.0-012](../../requirements/requirements-v3.0.md#r30-012-cq-为核心的阶段验收)
 - 设计：[R3.0-012 交付设计](../designs/2026-09-13-r3-0-012-cq-centered-staged-acceptance-design.md)
 - 相关测试基线：[R3.0-011 共享计划](2026-09-08-r3-0-011-competency-question-batch-acceptance-test-plan.md)、
@@ -36,7 +36,7 @@ auth011 的授权或资源。真实 run 仍需新的用户授权；本文件中�
 | 层级 | 目标 | 本轮状态 | 通过含义 |
 | --- | --- | --- | --- |
 | 文档/合同 | 需求、设计、计划链接和字段口径一致 | 文档检查 PASS；独立计划评审见 §6 | 文档检查通过，不代表代码或运行通过 |
-| T0 机械 | 参数、交接、绑定、packet、报告、错误和旧路径回归 | NOT RUN | 单元/合同/fixture 证据通过 |
+| T0 机械 | 参数、交接、绑定、packet、报告、错误和旧路径回归 | 独立机械轮 Round 2：四个套件通过（72/222/1636+预先存在 7 失败/1007+36），D1/D2 关闭（见 §6） | 单元/合同/fixture 证据通过 |
 | I 隔离 | hidden、参考答案、tester-only、平台写能力和只读 scope 隔离 | NOT RUN | 正向和逃逸负例均通过 |
 | L0 Runtime | 真实生产交接、只读 proxy、Examiner、Judge、前后状态和清理 | NOT RUN | 所选 scope 的运行链证据完整 |
 | L1 CQ quality | 真实隐藏题回答与冻结依据逐题比较 | NOT RUN | 全部应验收题有效裁决且 CQ hard gate 通过 |
@@ -187,7 +187,13 @@ failure layer 只使用 `modeling-quality`、`platform-contract`、`collaboratio
 ## 5. 本轮结果和后续记录规则
 
 - 设计和本计划：修订完成，独立计划评审 Round 4 PASS，历史与处置见 §6。
-- 代码实现、机械测试、回归测试、隔离测试、真实 L0、真实 L1、SQL、授权、清理复核：NOT RUN。
+- 代码实现：任务 A–E 已在工作区完成（基线 `c18e8e1`，未提交；范围见 §6 实现轮记录）。
+- 机械测试与回归：开发侧机械轮已完成（见 §6）；结果仅证明机械合同，不构成语义 PASS。
+- 独立测试轮：机械轮 Round 1 完成（2026-09-13，独立 `requirement_tester`）：四个机械套件全部
+  复现开发轮结果，抽查的判定边界在产品代码真实编码；但 T3-18 并发占用条款被证伪（D1，
+  Medium），另有 T0-5 覆盖声明不实（D2，Low），本轮总体 **FAIL**，详见 §6。
+- 缺陷处置：D1、D2 均经独立机械轮 Round 2 复测关闭（FIXED，见 §6）；Round 1 失败记录保留。
+- 隔离测试、真实 L0、真实 L1、SQL、授权、清理复核：NOT RUN。
 - 后续每一轮测试追加日期、代码基线、命令、结果、失败用例、证据路径、缺陷处置和重测结果；
   不删除失败轮次，不把文档 PASS、代码测试 PASS 或宿主自评写成语义 PASS。
 - 计划评审、开发和独立测试由主代理分别交接；本文件不预先填写不存在的测试证据。
@@ -273,3 +279,183 @@ failure layer 只使用 `modeling-quality`、`platform-contract`、`collaboratio
   关键词检查只辅助核漏，合同正确性由本轮逐项核对与独立专项评审证明。
 - `git diff --cached --check` PASS；GitNexus 暂存变更检查仅三个文档、0 受影响执行流程、low 风险。
 - 无产品测试、服务重启、真实运行或授权消耗；其他未提交文件不纳入本次提交。
+
+### 开发侧实现与机械回归 Round 1（2026-09-13）
+
+- 代码基线 `c18e8e1` 加未提交工作区；实现范围（任务 A–E）：`modeling_team/contracts.py`
+  （acceptance_target 参数合同）、`modeling_team/runner.py`（最小生产交接、共享写准入/排空、
+  verified handoff 发布、完成回交通路与等待窗口）、`modeling_team/acceptance_runtime.py` 与
+  `modeling_team/runtimes/codex.py`（读时响应留存 seam 与 observables）、
+  `modeling_team/__main__.py`（v012 handoff 消费、§4.3 逐题判定、attempt 唯一报告目录、
+  evidence_recheck 投影、SQL 范围外裁决说明）、`modeling_team/competency_questions.py`
+  （full-pass 判定覆盖门）。
+- 新增 5 个机械测试文件：`test_r3012_contracts.py`（T0-1..T0-5、T0-9）、
+  `test_r3012_handoff.py`（T1 准入/quiesce/handoff 子集）、
+  `test_r3012_platform_responses.py`（设计 §4.1/§4.2 留存、receipt 校验、recheck、投影）、
+  `test_r3012_completion.py`（T1-12..T1-17 完成回交子集）、
+  `test_r3012_partial_judging.py`（T3-2/T3-4/T3-11/T3-12/T3-13/T3-16/T3-18）；
+  另更新 3 个 011 测试文件的期望（tuple 返回、逐题 skip、隐藏序 executed、tg47 judge 运行）。
+- 命令与结果（仓库根）：
+  - `uv run --project backend python -m pytest -q modeling_team/tests/test_r3012_*.py`
+    → 68 passed。
+  - `uv run --project backend python -m pytest -q modeling_team/tests/ -k "r3012 or r3011"`
+    → 218 passed。
+  - `uv run --project backend python -m pytest -q modeling_team` → 1632 passed / 1 skipped /
+    331 subtests passed；7 failed 全部位于 `test_deepseek_codex_runtime.py`（fallback 文件
+    权限/畸形用例，已在干净 HEAD 上复现确认预先存在，与本需求无关）。
+  - `cd backend && uv run pytest -q` → 1007 passed / 36 skipped。
+- GitNexus `detect_changes(scope=compare, base=main)`：12 文件、117 符号、5 条受影响执行流程
+  （均在 `main`→`_run_cq_acceptance` 派发链内），medium 风险，无 HIGH/CRITICAL。
+- 本轮边界：仅开发侧机械测试；未运行隔离测试、真实 L0/L1、SQL、授权或清理复核，未重启服务
+  （未触及 backend 运行时代码），未创建/恢复/修改任何真实 run，read key/凭据不落任何输出面。
+  本轮 PASS 只代表机械合同通过，不写成语义 PASS；独立测试轮仍待执行并单独追加记录。
+
+### 独立测试 Round 1 — 机械（2026-09-13）
+
+- 测试者：独立 `requirement_tester`；仅 T0–T4 机械项。隔离、真实 L0/L1、SQL、授权、清理复核
+  本轮仍 NOT RUN（真实 run 需新用户授权，未使用任何历史 auth010/auth011 授权或资源）。
+- 代码基线：`c18e8e1` + 未提交工作区（任务 A–E 实现与 5 个新测试文件，与开发轮记录的
+  `git status` 一致）。本轮未提交、未回退、未修改任何产品代码或既有测试。
+- 套件复跑（仓库根，四项全部复现开发轮结果）：
+  - 5 个 r3012 机械文件 → 68 passed。
+  - `modeling_team/tests/ -k "r3012 or r3011"` → 218 passed。
+  - `modeling_team` 全量 → 1632 passed / 1 skipped / 331 subtests passed；7 failed 全部位于
+    `test_deepseek_codex_runtime.py`（fallback 文件权限/畸形用例，失败集合与开发轮记录逐例一致；
+    按主代理交接不调查不修复，测试者未另行在干净 HEAD 独立复现，采信为预先存在）。
+  - `cd backend && uv run pytest -q` → 1007 passed / 36 skipped。
+- 超出绿灯的合同抽查（对照本计划用例行核对断言与产品代码锚点）：
+  - T3-2/T3-11/T3-13：`test_r3012_partial_judging.py:161`（judgeable 只含已执行且带 host 校验
+    响应的题：questions/examiner_reports/platform_read_responses 三处一致，:179-186）、
+    :198-201（executed 含 `runtime-incomplete` 的已执行服务失败，unexecuted 仅无报告题）、
+    :218/:248-249（unanswered 带成功查询证据与合法空查询均可判，语义缺失不并入未执行）；
+    产品锚点 `modeling_team/__main__.py:1617-1622`（executed/unexecuted 语义）、
+    `:1703-1742`（四类 skip 原因的 judgeable 划分）、`:1780-1795`（Judge packet 仅带
+    judgeable 题的响应投影）。
+  - T3-4/T3-16：`test_r3012_partial_judging.py:256-287`（全部题已执行且无生命周期错误，单个
+    `question-answer-review` 仍阻断整批 PASS，`failure_layer=null`、note=
+    `sql-result-outside-cq-scope`，Judge 角色说明含该标记）；产品锚点
+    `modeling_team/competency_questions.py:1597-1665`（full-pass 分母=executed+unexecuted、
+    任一非 pass 裁决阻断、pass 裁决需 host 校验响应、drift/不可回读阻断、空 hidden 集阻断）。
+  - T3-12/T3-18（顺序部分）与 handoff 绑定：`test_r3012_partial_judging.py:373-395`（attempt
+    唯一目录、attempt 保留 handoff 副本、无 batch 级报告）、:398-438（同 attempt 重跑为类型化
+    `cq_handoff_immutable` 冲突，旧报告/handoff 副本逐字节不变，新 attempt 可恢复）、
+    :441-486（提交 handoff 必须等于 Runner 发布记录；未落定/未知写/目录不匹配均类型化拒绝且
+    不产生任何报告目录）；产品锚点 `modeling_team/__main__.py:1363-1368`、`:1413-1420`。
+  - T2-5/T2-14：`test_r3012_platform_responses.py:132-172`（真实 `ScopedReadProxy` 读时留存
+    规范化请求/result，canonical digest 重算，0600/0700，无 key/token/socket 落盘）、
+    :217-234（teardown 后重排格式仍按解析内容校验 digest，非整文件 hash）、
+    :175-203（留存失败可观察、不追加 receipt，故不能成为证据）、:207-214（locator 逃逸拒绝）。
+  - T2-6/T2-7/T2-8：`test_r3012_platform_responses.py:318-352`（同 receipt 跨题复用合法、
+    分页/截断标记原样保留）、:355-397（绝对路径、`..`、伪造 locator、不匹配 digest、越权
+    tool、形状漂移全部类型化拒绝）、:399-423（缺 artifact 与篡改 result 均无证据价值）、
+    :543-563（无 host 校验响应时 pass 裁决失效；drift/不可回读阻断整批）、:606-631（Judge
+    packet 投影六字段闭集，无 request 字节/绝对路径，写工具与畸形输入抛 `ChildRuntimeError`）、
+    端到端 :847-898（Judge 收到的投影与报告投影一致）。T2-7 的 `model-recall-insufficient`
+    语义判定侧属 L1，本轮机械面仅覆盖缺证 fail-closed 与 artifact/runtime 失败侧。
+  - 相邻回归：3 个 011 测试文件的期望更新经 diff 核对为设计 §4.3 的逐题化重定位（judge
+    evidence 失败从整批 lifecycle error 改为逐题 skip、tg47 已落盘报告可判且清理计数 1→2、
+    闭集 action 增加 `cq_acceptance_complete`），未削弱既有判定边界，`full_pass` 失败断言保留。
+- 缺陷（本轮发现，未修改产品代码，修复归开发侧）：
+  - **D1（Medium，T3-18 并发占用条款证伪）**：两个写入方并发占用同一 attempt 时，后完成者经
+    `os.replace` 静默覆盖先发布者的 `batch-report.json`，违反功能合同 9 与设计 §4.5「已发布
+    路径不得被 `_write_host_only_json` 的 `os.replace` 覆盖」。产品锚点：
+    `modeling_team/__main__.py:1413-1419`（仅准入时 `exists()` 检查 + `mkdir(exist_ok=True)`）
+    → `:1910` 最终写经 `_write_host_only_json`（`:2178-2186`，`os.replace` 无条件替换目标，
+    临时文件名 `batch-report.tmp` 亦为共享路径）；legacy 路径 `:2014-2024` → `:2146` 同类。
+    检查与写入之间隔着整个批次运行窗口（准入 → examiner/judge → 发布）。复现（机械、仅在
+    /tmp、脚本已清理）：用 012 测试夹具驱动真实 `_run_cq_acceptance`，在 examiner 会话期间向
+    attempt 目录写入第三方已发布报告字节（模拟另一进程在双方均通过准入检查后完成发布），
+    CLI 结束时无 `cq_handoff_immutable` 冲突，第三方字节被替换（观察输出：
+    `process-B published bytes survived: False`，退出码 1）。既有测试只覆盖顺序重跑（正确
+    拒绝）。建议：最终报告首次发布改为排他创建（如 `O_CREAT|O_EXCL` 的占位/最终文件）并在
+    发布时复查，补并发交错的机械用例。
+  - **D2（Low，T0-5 覆盖声明不实）**：`test_r3012_contracts.py` 文件 docstring 与开发轮 §6
+    记录均声称覆盖「T0-1..T0-5、T0-9」，但该文件及全部 011/012 测试中没有任何
+    `acceptance_mode=read-only-acceptance`、`blind_status` 与 `acceptance_target` 三字段共现
+    的校验/记录测试（grep 证实；`acceptance_mode` 在产品代码中为报告常量
+    `modeling_team/competency_questions.py:42/1539`，与 Task 参数结构上正交，当前无相互覆盖
+    路径，但 T0-5 回归锁缺失）。建议补共现机械断言并更正两处覆盖声明。
+- 本轮边界：未重启服务（未触及 backend 运行时代码）、未创建/继续/修复任何生产 run、未修改
+  保留 evidence 或历史冻结/verdict、未消费建模额度、未提交任何变更。
+- 本轮结论：四个机械套件全部复现通过；抽查的判定边界（executed/unexecuted、review 阻断、
+  顺序不可覆盖、handoff 等于 Runner 发布记录、留存响应与 Judge 投影校验）除 D1 所涉并发条款
+  外均在产品代码真实编码。因 D1 证伪 T3-18 并发占用条款，本轮总体记 **FAIL**（机械层；非语义
+  结论，机械通过亦不写成语义 PASS）。建议主代理安排开发侧修复 D1、处理 D2 后进行第二轮独立
+  复测（优先 D1 修复验证与受影响回归）。
+
+### 开发侧缺陷修复 Round 1（2026-09-13，独立测试 Round 1 D1/D2 处置）
+
+- D1 修复（T3-18 并发条款）：`_write_host_only_json` 增加 `immutable=True` 排他发布——内容写
+  入每进程唯一临时名后经原子硬链接（`os.link`）发布；目标已存在（另一进程在本命令准入检查后
+  抢先发布）时抛类型化 `cq_handoff_immutable`，不替换任何字节。临时名从共享的
+  `batch-report.tmp` 改为每进程唯一，并发双方的暂存字节亦不再互踩。两处报告首次发布（执行路径
+  `_cq_execute_batch` 与 `--unexecuted-report` 路径）均改走排他发布；attribution/batch-packet/
+  handoff 副本保持既有 replace 语义（报告是不可变锚点，竞争失败方在报告写入即抛错，不会再写
+  伴随件）。准入时 `exists()` 检查保留为快失败前置，不再承担并发正确性。
+- D1 回归用例：`test_r3012_partial_judging.py::test_a_mid_run_publication_of_the_same_attempt_is_a_typed_conflict`
+  ——examiner 会话期间由第三方写入同 attempt 的已发布报告字节（复现双方均通过准入检查的交错），
+  断言退出码 2、stderr 含 `cq_handoff_immutable`、第三方字节逐字节存活、无 `.tmp` 残留。修复前
+  该用例失败（退出 0、`full_pass:true`、字节被替换），即独立轮复现的 D1。
+- D2 处置（T0-5 覆盖声明）：补三处共现回归锁——contracts 文件两个 loader/snapshot 用例
+  （`acceptance_mode`/`blind_status` 作为 Task 参数被闭集拒绝；cq_semantic 快照只记录 selector
+  对，不含报告名字段）、partial_judging 一个执行面用例（一次 cq_semantic run 中 stdout 的
+  `acceptance_mode`+`blind_status`、attribution 双字段、report `blind_status`、run-contract
+  `acceptance_target` 与 attempt 保留 handoff 副本 `acceptance_target` 各归其位、互不覆盖）。
+  `test_r3012_contracts.py` docstring 的「T0-1..T0-5、T0-9」声明至此为实；开发轮 §6 同一声明当时
+  不实，以本轮记录为准更正（历史轮次不删改）。
+- 影响面：GitNexus `impact(_write_host_only_json, upstream)` = LOW（直接调用者仅
+  `_cq_execute_batch`/`_run_cq_acceptance`，均在 cq-acceptance 派发链内）；`detect_changes
+  (unstaged)` 13 文件/121 符号/5 受影响流程，medium，无 HIGH/CRITICAL，与开发轮范围一致
+  （新增本测试计划文档与 4 个新用例）。
+- 回归（仓库根）：`test_r3012_*.py` 5 文件 → 72 passed（contracts 13、partial_judging 13）；
+  `-k "r3012 or r3011"` → 222 passed；`modeling_team` 全量 → 1636 passed / 1 skipped /
+  331 subtests passed，7 failed 仍全部为预先存在的 `test_deepseek_codex_runtime.py` 用例；
+  `cd backend && uv run pytest -q` → 1007 passed / 36 skipped。未重启服务（未触及 backend
+  运行时代码），未创建/恢复/修改任何真实 run，未提交任何变更。
+- 本轮为开发侧修复记录，不改变独立 Round 1 的 FAIL 结论；D1/D2 处置待第二轮独立复测验证
+  （优先 D1 并发交错复测与顺序回归）。
+
+### 独立测试 Round 2 — 机械（2026-09-13）
+
+- 测试者：独立 `requirement_tester`；复测范围：D1/D2 修复验证 + 必要回归。仍仅 T0–T4 机械项；
+  隔离、真实 L0/L1、SQL、授权、清理复核 NOT RUN（未使用历史 auth010/auth011 授权或资源）。
+- 代码基线：`c18e8e1` + 未提交工作区（开发侧缺陷修复 Round 1 后状态）。本轮未提交、未回退、
+  未修改任何产品代码或测试。
+- **D1 复测（FIXED）**：
+  - 独立复现路径重放：以 Round 1 相同交错（用 012 测试夹具驱动真实 `_run_cq_acceptance`，
+    examiner 会话期间向同 attempt 目录写入第三方已发布报告字节，脚本仅在 /tmp、已清理）重放，
+    观察结果：退出码 2、stderr 含类型化 `cq_handoff_immutable: this attempt's batch report was
+    published by another acceptance process...`、第三方字节逐字节存活、无 `.tmp` 残留 —— Round 1
+    的静默覆盖（`process-B published bytes survived: False`）不再出现。
+  - 开发者新用例审查：`test_r3012_partial_judging.py:498` 起的
+    `test_a_mid_run_publication_of_the_same_attempt_is_a_typed_conflict`（断言退出 2、
+    `cq_handoff_immutable`、第三方字节逐字节存活、无暂存残留）与上述独立交错一致；其
+    「修复前失败」声明与独立 Round 1 复现结果吻合。
+  - 顺序回归不回退：`test_r3012_partial_judging.py:410-450`（同 attempt 重跑类型化冲突、旧报告/
+    handoff 副本字节不变、attempt-0002 不存在、新 attempt 可恢复）与 :582 起 legacy 路径用例的
+    断言与 Round 1 版本逐行一致，未削弱。
+  - 实现审查：`modeling_team/__main__.py:2180-2209`——`immutable=True` 以每进程唯一临时名
+    （`<name>.<pid>.tmp`）+ `os.link` 原子硬链接排他发布，目标已存在（含符号链接）抛
+    `FileExistsError` 转类型化 `cq_handoff_immutable`，`finally` 清理临时名（发布后数据经目标
+    链接存活）；两处报告首次发布（`:1912` 执行路径、`:2148` `--unexecuted-report` 路径）均排他，
+    且先于 attribution/batch-packet 伴随件写入，竞争失败方不会写伴随件；准入 `exists()` 保留为
+    快失败前置（`:1413-1419`）。未发现新引入边界（`os.link` 语义、临时清理、非 immutable 伴随件
+    的 replace 语义在报告锚点排他之后，均闭合）。
+- **D2 复测（FIXED）**：三处新用例真实编码 T0-5「三字段分别校验和记录、不相互覆盖或混用」——
+  `test_r3012_contracts.py:171`（`acceptance_mode`/`blind_status` 冒充 Task 参数被闭集类型化拒绝，
+  不能遮蔽或别名 `acceptance_target`）、:187（cq_semantic 快照只记录 selector 对，报告名字段
+  不进入）、`test_r3012_partial_judging.py:453`（一次 cq_semantic run 中 stdout 的 mode+blind、
+  attribution 双字段、report `blind_status`、run-contract 与 handoff 副本中 `acceptance_target`
+  各归其位且 run-contract 不被改写）。docstring「T0-1..T0-5、T0-9」声明至此为实；开发轮 §6 当时
+  的不实声明已由开发侧修复轮记录更正，历史不删改。
+- 套件复跑（仓库根，四项全部符合预期）：
+  - 5 个 r3012 机械文件 → 72 passed（较 Round 1 新增 4 用例）。
+  - `-k "r3012 or r3011"` → 222 passed。
+  - `modeling_team` 全量 → 1636 passed / 1 skipped / 331 subtests passed；7 failed 仍全部为
+    `test_deepseek_codex_runtime.py` 预先存在用例（失败集合与 Round 1 逐例一致，按交接不调查）。
+  - `cd backend && uv run pytest -q` → 1007 passed / 36 skipped。
+- 本轮边界：未重启服务（未触及 backend 运行时代码）、未创建/继续/修复任何生产 run、未修改保留
+  evidence 或历史冻结/verdict、未消费建模额度、未提交任何变更；临时复现脚本已删除。
+- 本轮结论：D1 FIXED、D2 FIXED，四个套件无回归，机械层总体 **PASS（机械层，非语义结论）**。
+  R3.0-012 的机械验收至此通过；隔离测试、真实 L0/L1、SQL、授权、清理复核仍 NOT RUN，须按计划
+  另行取证后方可声明对应层级通过。

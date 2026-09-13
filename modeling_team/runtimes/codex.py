@@ -1824,6 +1824,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         timeout_seconds: float = 300.0,
         graph_set_ids: Mapping[str, Any] | None = None,
+        response_persistence: Callable[[str, Mapping[str, Any]], None] | None = None,
     ) -> Any:
         """Launch the single v3 hidden-batch acceptance child (R3.0-011).
 
@@ -1832,6 +1833,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ``ExaminerRolePacket/v1`` must go through ``launch_lean_examiner_child``.
         The existing child factory is reused, one session per batch, with the
         ordered batch packet bound into the first turn.
+
+        R3.0-012 design §4.1: ``response_persistence`` (platform role only) is
+        the host's attempt-scoped retention callback handed to the read proxy,
+        which invokes it per successful read with the receipt-relative locator
+        and the canonical request/result document.
         """
 
         if not isinstance(packet, AcceptanceBatchPacket):
@@ -1940,6 +1946,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "read_key_plaintext": read_key,
             "formal_platform": platform_role,
             "platform_forwarder": platform_forwarder,
+            "response_persistence": response_persistence if platform_role else None,
             "v3_batch": True,
             "v3_role": packet.role,
             "v3_packet": packet,
@@ -1967,6 +1974,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         timeout_seconds: float = 300.0,
         graph_set_ids: Mapping[str, Any] | None = None,
         teardown: dict[str, Any] | None = None,
+        response_persistence: Callable[[str, Mapping[str, Any]], None] | None = None,
+        examiner_observables: dict[str, Any] | None = None,
     ) -> list[Mapping[str, Any]]:
         """Run one v3 batch child to batch completion and return its reports.
 
@@ -1994,6 +2003,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             platform_forwarder=platform_forwarder,
             timeout_seconds=timeout_seconds,
             graph_set_ids=graph_set_ids,
+            response_persistence=response_persistence,
         )
         expected = 0
         # Observed before destroy(): the legacy teardown pops the socket root
@@ -2053,6 +2063,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # list and legacy cleanup clears it, so the accepted values must be
             # put back afterwards or a partial batch is silently discarded.
             accepted = list(reports)
+            if examiner_observables is not None:
+                # R3.0-012 design §4.1: the sanitized call receipts (no key,
+                # token or socket) and the retention-failure counter are the
+                # host's own observables of the examiner session; captured
+                # pre-destroy so a partial batch still yields its receipts.
+                snapshot = getattr(proxy, "receipt_snapshot", ()) if proxy is not None else ()
+                if callable(snapshot):
+                    snapshot = snapshot()
+                examiner_observables["receipts"] = (
+                    list(snapshot) if isinstance(snapshot, (list, tuple)) else []
+                )
+                examiner_observables["persistence_failures"] = int(
+                    getattr(proxy, "persistence_failures", 0) or 0
+                )
             destroy_error: str | None = None
             # ``ReportSinkServer.stop()`` clears ``_thread``, so the serve
             # thread handle must be captured before destroy for liveness to be
@@ -2908,6 +2932,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     exact_schemas=v3_examiner_proxy_schemas(
                         spec.get("allowed_read_tools") or ()
                     ),
+                    persist_response=spec.get("response_persistence"),
                 )
             else:
                 proxy = ScopedReadProxy(

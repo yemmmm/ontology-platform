@@ -25,6 +25,7 @@ from .contracts import (
     digest_file,
     load_formal_team_configuration,
     load_multi_slice_team_configuration,
+    normalize_acceptance_target,
     task_declares_multi_slice_workflow,
 )
 from .model_routing import (
@@ -145,12 +146,15 @@ from .staged_decisions import (
 from .competency_questions import (
     COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER,
     COMPETENCY_QUESTION_ROLE,
+    CQ_ACCEPTANCE_COMPLETE_FIELDS,
     CQ_ACCEPTANCE_MODE,
+    CQ_ACCEPTANCE_VERDICTS,
     CQ_FREEZE_SCHEMA,
     CQ_RUN_DIRECTORIES,
     CQContractError,
     CQWaitWindowTracker,
     advisory_question_count_feedback,
+    batch_report_acceptance_verdict,
     canonical_json_bytes,
     content_digest,
     coverage_gaps_from_projection,
@@ -249,6 +253,108 @@ def _staged_evidence_issue(association: Any) -> str | None:
     if not reference_ids and not evidence:
         return "association must name at least one evidence reference or excerpt"
     return None
+
+
+# R3.0-012 (design §4.4): bounded drain wait for in-flight staged writes at
+# the production-handoff boundary.  The wait itself holds no lock, so the
+# foreground loop stays responsive and Delivery can retry or stop.
+_CQ_WRITE_DRAIN_TIMEOUT_SECONDS = 60.0
+
+
+class CQWriteAdmission:
+    """Run-local atomic admission for the two staged platform write entry points.
+
+    R3.0-012 design §4.4: the outer-input handoff and the CapabilityBroker
+    staged writes arrive from different threads, so the run shares one local
+    mutex/condition, one handoff phase, and one in-flight mutation registry
+    between ``_handle_staged_submit_modeling_batch`` and
+    ``_handle_staged_associate_evidence``.  A mutation is admitted only while
+    the phase is ``open``; the remote forwarder call always runs *outside* the
+    lock; every admitted ticket reports its outcome so a drain can observe
+    zero.  This is deliberately not a general coordination framework: one
+    instance per run, no cross-run or cross-process scope, and no lock is ever
+    held across a network wait.
+
+    Phases move ``open -> quiescing -> read-only`` and never reopen: a failed
+    handoff verification keeps the scene quiesced (recoverable rejection), and
+    resuming production is a separate Delivery request, not something the
+    acceptance side may lift.
+    """
+
+    def __init__(self) -> None:
+        self._condition = threading.Condition()
+        self._phase = "open"
+        self._in_flight: dict[int, dict[str, Any]] = {}
+        self._records: list[dict[str, Any]] = []
+        self._next_ticket = 0
+
+    @property
+    def phase(self) -> str:
+        with self._condition:
+            return self._phase
+
+    def admit(self, kind: str) -> int | None:
+        """Register one staged mutation; ``None`` rejects it as recoverable."""
+
+        with self._condition:
+            if self._phase != "open":
+                return None
+            self._next_ticket += 1
+            self._in_flight[self._next_ticket] = {
+                "ticket": self._next_ticket,
+                "kind": kind,
+            }
+            return self._next_ticket
+
+    def complete(self, ticket: int, outcome: str) -> None:
+        """Record the determined outcome of one admitted mutation."""
+
+        with self._condition:
+            record = self._in_flight.pop(ticket, None)
+            if record is not None:
+                record["outcome"] = outcome
+                self._records.append(record)
+            self._condition.notify_all()
+
+    def begin_quiescing(self) -> bool:
+        """Stop admitting new writes; ``False`` when already past ``open``."""
+
+        with self._condition:
+            if self._phase != "open":
+                return False
+            self._phase = "quiescing"
+            self._condition.notify_all()
+            return True
+
+    def enter_read_only(self) -> None:
+        """Publish the handoff: writes stay rejected until the run ends."""
+
+        with self._condition:
+            if self._phase != "open":
+                self._phase = "read-only"
+                self._condition.notify_all()
+
+    def wait_until_drained(self, timeout: float) -> bool:
+        """Wait (lock released) for every admitted mutation to complete."""
+
+        deadline = time.monotonic() + timeout
+        with self._condition:
+            while self._in_flight:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0 or not self._condition.wait(remaining):
+                    if self._in_flight:
+                        return False
+            return True
+
+    def snapshot(self) -> dict[str, Any]:
+        """The host-verified write-state view consumed by readiness."""
+
+        with self._condition:
+            return {
+                "phase": self._phase,
+                "in_flight": [dict(item) for item in self._in_flight.values()],
+                "records": [dict(item) for item in self._records],
+            }
 
 
 @dataclass
@@ -385,6 +491,27 @@ class TeamRunner:
         self._cq_interview_sequence = 0
         self._cq_projection_written = False
         self._cq_phase: str = "panorama-draft"
+        # R3.0-012: the frozen acceptance-target scope (design §2.2).  The
+        # default keeps every pre-existing run on ``full_joint``; only a Task
+        # that declared ``parameters.acceptance_target: cq_semantic`` (and,
+        # per contracts.py, also selected the 011 CQ flow) ever flips it.
+        self._acceptance_target = "full_joint"
+        # R3.0-012 (design §4.4): the run-local write admission shared by the
+        # two staged write entry points and the production handoff, plus the
+        # acceptance attempt the handoff allocated (report directory and
+        # handoff digest) for the completion channel to verify against.
+        self._cq_write_admission = CQWriteAdmission()
+        self._cq_acceptance_attempt: dict[str, Any] | None = None
+        # R3.0-012 (design §4.5): the read-only acceptance lifecycle.  ``None``
+        # until a handoff quiesces the run; ``quiescing`` -> ``acceptance_
+        # pending`` when the handoff publishes (cq_semantic scope only) ->
+        # ``acceptance_complete`` once the completion channel accepts the
+        # current attempt's retained report.  The pending phase holds the
+        # terminal report but never dispatches or kills production roles.
+        self._cq_acceptance_phase: str | None = None
+        # The accepted completion summary retained for idempotent duplicate
+        # confirmations (report digest + recomputed aggregate verdict).
+        self._cq_acceptance_result: dict[str, Any] | None = None
         # Runner-owned CQ wait windows excluded from the T3 active clock
         # (design §3.2 / Round 4 follow-up (a) and (b)).
         self._cq_wait_windows = CQWaitWindowTracker()
@@ -925,10 +1052,15 @@ class TeamRunner:
                     "artifact_directories": list(CQ_RUN_DIRECTORIES),
                 },
             )
+            self._acceptance_target = normalize_acceptance_target(staged_parameters)
             # R3.0-011 §4.0: the run's configuration snapshot is what the
             # read-only ``cq-acceptance`` command later checks.  A run root
             # without this file is a legacy R2.3 run and can never be switched
             # to the v3 acceptance contract by the command name alone.
+            # R3.0-012 (design §2.2): the normalized ``acceptance_target`` is
+            # frozen here, before the first real start; the file is rewritten
+            # nowhere else, so a later scope change is a digest mismatch, not
+            # a silent reinterpretation of the same run.
             self._atomic_json(
                 root / "acceptance-v3" / "run-contract.json",
                 {
@@ -943,6 +1075,9 @@ class TeamRunner:
                             STAGED_MODELING_DECISIONS_PARAMETER
                         )
                         is True,
+                        "acceptance_target": normalize_acceptance_target(
+                            staged_parameters
+                        ),
                     },
                 },
             )
@@ -4242,12 +4377,49 @@ class TeamRunner:
         opaque transport error.  ``value_traces``/``l3_nodes`` never leave the
         Runner: only the verbatim ``batch`` envelope reaches the injected
         host-side write forwarder.
+
+        R3.0-012 (design §4.4): this is one of the two staged write entry
+        points sharing the run-local :class:`CQWriteAdmission`.  The mutation
+        is admitted before its durable intent exists, the forwarder runs
+        outside the admission lock, and the outcome (``receipted`` /
+        ``unknown`` / ``rejected``) is registered when it is determined, so the
+        production handoff can atomically stop new writes and drain this one.
         """
 
         if not getattr(self, "_staged_decisions", False) or self.run is None:
             raise StagedSubmissionRejection(
                 "staged_gate_closed", "staged decisions are not enabled for this run"
             )
+        ticket = self._cq_write_admission.admit("staged_submit_modeling_batch")
+        if ticket is None:
+            raise StagedSubmissionRejection(
+                "staged_write_quiescing",
+                "the run is in its read-only acceptance handoff period; new staged "
+                "writes are recoverably rejected until production resumes by a new "
+                "Delivery request",
+            )
+        try:
+            result = self._handle_staged_submit_modeling_batch_open(args)
+        except StagedSubmissionRejection as rejection:
+            outcome = (
+                "unknown"
+                if rejection.data.get("reason_code") == "staged_batch_forward_unknown"
+                else "rejected"
+            )
+            self._cq_write_admission.complete(ticket, outcome)
+            raise
+        except BaseException:  # noqa: BLE001 - the ticket must never leak in-flight
+            self._cq_write_admission.complete(ticket, "rejected")
+            raise
+        self._cq_write_admission.complete(ticket, "receipted")
+        return result
+
+    def _handle_staged_submit_modeling_batch_open(
+        self, args: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """The admitted submission body; runs with a live admission ticket."""
+
+        # R3.0-011 freeze ordering is enforced at this, the only platform write
         # R3.0-011 freeze ordering is enforced at this, the only platform write
         # channel: while the competency-question pool is unfrozen, Modeling
         # cannot materialize anything, so the owning sequence (slice questions
@@ -4486,12 +4658,46 @@ class TeamRunner:
         to sequence platform *writes* against the frozen question pool).  What it
         does keep is the write-integrity latch: while an unreconciled platform
         write awaits adjudication, no staged capability may add platform state.
+
+        R3.0-012 (design §4.4): the second staged write entry point on the same
+        run-local :class:`CQWriteAdmission`.  An unknown association outcome is
+        recoverable by replay, but it still registers as an undetermined write:
+        the handoff cannot publish over it.
         """
 
         if not getattr(self, "_staged_decisions", False) or self.run is None:
             raise StagedSubmissionRejection(
                 "staged_gate_closed", "staged decisions are not enabled for this run"
             )
+        ticket = self._cq_write_admission.admit("staged_associate_evidence")
+        if ticket is None:
+            raise StagedSubmissionRejection(
+                "staged_write_quiescing",
+                "the run is in its read-only acceptance handoff period; new staged "
+                "writes are recoverably rejected until production resumes by a new "
+                "Delivery request",
+            )
+        try:
+            result = self._handle_staged_associate_evidence_open(args)
+        except StagedSubmissionRejection as rejection:
+            outcome = (
+                "unknown"
+                if rejection.data.get("reason_code") == "staged_evidence_forward_unknown"
+                else "rejected"
+            )
+            self._cq_write_admission.complete(ticket, outcome)
+            raise
+        except BaseException:  # noqa: BLE001 - the ticket must never leak in-flight
+            self._cq_write_admission.complete(ticket, "rejected")
+            raise
+        self._cq_write_admission.complete(ticket, "associated")
+        return result
+
+    def _handle_staged_associate_evidence_open(
+        self, args: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """The admitted evidence-association body; runs with a live ticket."""
+
         if getattr(self, "_staged_gate_killed", False):
             raise StagedSubmissionRejection(
                 "staged_gate_closed",
@@ -6237,27 +6443,97 @@ class TeamRunner:
         return self.freeze_cq_question_pool(payload)
 
     def _cq_production_readiness(self) -> dict[str, Any]:
-        """Production handoff readiness: production roles only (design §3.2).
+        """Host-verified production handoff readiness (R3.0-012 design §3.1).
 
-        CQ settlement and any independent acceptance verdict are explicitly not
-        part of this readiness gate.
+        Role transport statuses are *recorded inputs*, never the gate itself:
+        ``ready`` and ``pending_writes`` are derived from what the host can
+        verify on its own -- every declared apply closed by a durable receipt,
+        no unknown-result intent, no unreconciled write latch, and no mutation
+        still inside the run-local write admission.  A ``blocked`` production
+        role is admitted only insofar as its write state is determined here;
+        an idle-but-valid lease or a terminal advisory issue is invisible to
+        this gate and never blocks on its own.  CQ settlement and any
+        independent acceptance verdict are explicitly not part of readiness.
         """
 
         production_roles = {"coordinator", "modeling", "protocol"}
         results = getattr(self.transport, "results", {}) if self.transport else {}
         pending: list[str] = []
+        blocked: list[str] = []
+        role_states: dict[str, str] = {}
         for agent in self.run.configuration.profile.agents:
             if agent.package.role not in production_roles:
                 continue
-            result = results.get(agent.agent_id)
-            status = getattr(result, "status", None)
-            if status not in {"completed", "blocked"}:
+            status = getattr(results.get(agent.agent_id), "status", None)
+            role_states[agent.agent_id] = status if isinstance(status, str) else "active"
+            if status == "blocked":
+                blocked.append(agent.agent_id)
+            elif status != "completed":
                 pending.append(agent.agent_id)
+        admission = self._cq_write_admission.snapshot()
+        unknown_writes: list[dict[str, Any]] = []
+        try:
+            intents = read_submission_intents(self.run.root)
+            receipts = read_submission_receipts(self.run.root)
+        except StagedDecisionArtifactError as exc:
+            unknown_writes.append({"source": "staged-artifacts", "detail": exc.detail})
+            intents = []
+            receipts = []
+        unknown_writes.extend(
+            {
+                "source": "intent",
+                "intent_ordinal": intent.get("ordinal"),
+                "idempotency_key": intent.get("idempotency_key"),
+            }
+            for intent in intents
+            if intent.get("status") == "unknown"
+        )
+        if getattr(self, "_staged_gate_killed", False):
+            unknown_writes.append(
+                {
+                    "source": "reconciliation-latch",
+                    "detail": "the staged write gate is closed pending adjudication",
+                }
+            )
+        unknown_writes.extend(
+            {"source": "admission", "kind": record.get("kind"), "ticket": record.get("ticket")}
+            for record in admission["records"]
+            if record.get("outcome") == "unknown"
+        )
+        pending_writes = bool(admission["in_flight"]) or bool(unknown_writes)
         return {
-            "ready": not pending,
+            "ready": not pending and not pending_writes,
+            # Derived pair only (design §3.1): the evidence fields above are
+            # what a handoff consumer must re-verify, never these booleans.
+            "pending_writes": pending_writes,
             "production_roles": sorted(production_roles),
             "pending_agents": pending,
-            "checks": ["delivery", "quiescence"],
+            "blocked_agents": blocked,
+            "role_states": role_states,
+            "write_phase": admission["phase"],
+            "in_flight_writes": admission["in_flight"],
+            "unknown_writes": unknown_writes,
+            "applied_batches": [
+                {
+                    "intent_ordinal": receipt.get("intent_ordinal"),
+                    "batch_id": receipt.get("batch_id"),
+                    "mode": receipt.get("mode"),
+                    "response_digest": receipt.get("response_digest"),
+                }
+                for receipt in receipts
+            ],
+            "not_applied": [
+                {"source": "admission", "kind": record.get("kind"), "ticket": record.get("ticket")}
+                for record in admission["records"]
+                if record.get("outcome") == "rejected"
+            ],
+            "checks": [
+                "delivery",
+                "quiescence",
+                "write-determinism",
+                "apply-closure",
+                "scope-binding",
+            ],
         }
 
     def _handle_cq_handoff_complete(self, message: dict[str, Any]) -> dict[str, Any]:
@@ -6292,8 +6568,20 @@ class TeamRunner:
                 phase="frozen",
                 retry="send the current freeze id and snapshot digest",
             )
+        if self._cq_handoff_complete:
+            # T1-10/T1-14 analog: an already-released handoff only acknowledges
+            # a duplicate complete.  The immutable handoff file and its events
+            # are never rewritten, and the acknowledgment carries no new state.
+            return {
+                "ok": True,
+                "freeze_id": self._cq_freeze["batch_id"],
+                "idempotent": True,
+            }
         readiness = self._cq_production_readiness()
-        if not readiness["ready"]:
+        if readiness["pending_agents"]:
+            # Production has not settled.  No phase change happens here, so
+            # production keeps working and Delivery can retry this request --
+            # quiescing over unsettled roles would wedge their final writes.
             self._cq_wait_windows.open_window("cq-handoff-request", now)
             raise CQContractError(
                 "cq_batch_scope_unauthorized",
@@ -6301,6 +6589,25 @@ class TeamRunner:
                 obj="cq_handoff_complete",
                 phase="frozen",
                 retry="retry after the pending production agents report",
+            )
+        # R3.0-012 design §4.4 atomic admission: stop admitting new staged
+        # writes first, then drain the already-admitted ones *outside* the
+        # admission lock (no lock is held across a network wait).  The scene
+        # stays quiesced when a write is undetermined -- preserving it is the
+        # point, and the rejection is recoverable by adjudication and a retry.
+        self._cq_write_admission.begin_quiescing()
+        self._cq_acceptance_phase = "quiescing"
+        self._cq_write_admission.wait_until_drained(_CQ_WRITE_DRAIN_TIMEOUT_SECONDS)
+        now = self.monotonic_clock()
+        readiness = self._cq_production_readiness()
+        if not readiness["ready"]:
+            self._cq_wait_windows.open_window("cq-handoff-request", now)
+            raise CQContractError(
+                "cq_unknown_write_pending",
+                "staged platform writes are in flight or their results are unknown",
+                obj="cq_handoff_complete",
+                phase="frozen",
+                retry="adjudicate or replay the unknown staged writes, then resend",
             )
         # Forced external consistency check at the handoff boundary (design
         # §3.G3.5): a scenario map whose cross-slice section does not match the
@@ -6327,8 +6634,24 @@ class TeamRunner:
                         "published public projection (or republish the projection) and resend"
                     ),
                 )
+        self._cq_write_admission.enter_read_only()
+        # The published record reflects the read-only state at publication
+        # time, not the quiescing snapshot the gate above checked against.
+        readiness = self._cq_production_readiness()
+        handoff = self._cq_publish_production_handoff(readiness, message)
         self._cq_handoff_complete = True
         self._cq_wait_windows.close_window("cq-handoff-request", now)
+        if self._acceptance_target == "cq_semantic":
+            # R3.0-012 (design §4.5): the same transition that closes the
+            # handoff request opens the acceptance wait.  Only the cq_semantic
+            # scope holds the terminal report for the completion channel; a
+            # full_joint run keeps the R3.0-011 in-run terminal path unchanged.
+            self._cq_acceptance_phase = "acceptance_pending"
+            self._cq_wait_windows.open_window("cq-acceptance-wait", now)
+        else:
+            # full_joint: the read-only period ends with the publish and the
+            # acceptance lifecycle (with its wait window) never applies.
+            self._cq_acceptance_phase = None
         self._append_evidence(
             "cq-handoff-complete",
             {
@@ -6336,9 +6659,321 @@ class TeamRunner:
                 "freeze_digest": self._cq_freeze["snapshot_digest"],
                 "delivery_binding": message.get("delivery_binding"),
                 "readiness": readiness,
+                "handoff_digest": handoff["handoff_digest"],
+                "acceptance_attempt_id": handoff["acceptance_attempt_id"],
+                "report_directory": handoff["report_directory"],
+                "write_phase": "read-only",
+                "acceptance_phase": self._cq_acceptance_phase,
             },
         )
-        return {"ok": True, "freeze_id": self._cq_freeze["batch_id"]}
+        return {
+            "ok": True,
+            "freeze_id": self._cq_freeze["batch_id"],
+            "handoff_digest": handoff["handoff_digest"],
+            "acceptance_attempt_id": handoff["acceptance_attempt_id"],
+            "report_directory": handoff["report_directory"],
+            "acceptance_phase": self._cq_acceptance_phase,
+        }
+
+    def _cq_scope_binding(self) -> dict[str, Any]:
+        """Project identity plus the authorized Ontology set (design §3.1).
+
+        The scope object exists only after ``start``; prepared-but-not-started
+        runs fall back to the frozen ``run.scope`` mapping.  The handoff records
+        what the host can see -- checking this set against the model binding and
+        the actual delivery for equality is the ``cq-acceptance`` consumer's
+        job, never a boolean here.
+        """
+
+        scope_object = getattr(self, "scope", None)
+        ontology_ids = getattr(scope_object, "ontology_ids", None)
+        project_id = getattr(scope_object, "project_id", None)
+        if not isinstance(ontology_ids, list):
+            ontology_ids = None
+        run_scope = getattr(self.run, "scope", None)
+        if isinstance(run_scope, Mapping):
+            if not ontology_ids and isinstance(run_scope.get("ontology_ids"), list):
+                ontology_ids = list(run_scope["ontology_ids"])
+            if not project_id:
+                project_id = run_scope.get("project_id")
+        return {
+            "project_id": project_id if isinstance(project_id, str) else "",
+            "ontology_ids": [item for item in (ontology_ids or []) if isinstance(item, str)],
+        }
+
+    def _cq_next_acceptance_attempt(self, batch_id: str) -> dict[str, str]:
+        """Allocate the unique report-attempt directory for this handoff.
+
+        R3.0-012 design §4.5: report roots stay ``acceptance-v3/reports/
+        <batch_id>/`` and every handoff allocates the next free
+        ``attempt-NNNN`` subdirectory, so a re-acceptance of the same batch can
+        never reuse -- let alone overwrite -- a published attempt.
+        """
+
+        reports = self._cq_directories["reports"] / batch_id
+        prefix = "attempt-"
+        existing: set[str] = set()
+        if reports.is_dir():
+            for entry in reports.iterdir():
+                suffix = entry.name[len(prefix) :]
+                if (
+                    entry.is_dir()
+                    and entry.name.startswith(prefix)
+                    and suffix.isdigit()
+                    and len(entry.name) == len(prefix) + 4
+                ):
+                    existing.add(entry.name)
+        ordinal = 1
+        while f"{prefix}{ordinal:04d}" in existing:
+            ordinal += 1
+        return {
+            "acceptance_attempt_id": f"{prefix}{ordinal:04d}",
+            "report_directory": f"acceptance-v3/reports/{batch_id}/{prefix}{ordinal:04d}",
+        }
+
+    def _cq_publish_production_handoff(
+        self, readiness: dict[str, Any], message: Mapping[str, Any]
+    ) -> dict[str, Any]:
+        """Write the immutable, host-verified production handoff (§3.1/§4.4).
+
+        ``ready``/``pending_writes`` are printed from the verified evidence
+        fields, so this file can never be a booleans-only handoff, and the
+        ``O_EXCL`` first write makes a replacement attempt a typed conflict
+        instead of an overwrite.  The digest covers the exact written bytes and
+        is recorded in the event and the allocated attempt, never self-embedded.
+        """
+
+        batch_id = self._cq_freeze["batch_id"]
+        attempt = self._cq_next_acceptance_attempt(batch_id)
+        contract_path = self.run.root / "acceptance-v3" / "run-contract.json"
+        contract_digest = (
+            hashlib.sha256(contract_path.read_bytes()).hexdigest()
+            if contract_path.is_file() and not contract_path.is_symlink()
+            else ""
+        )
+        payload = {
+            "schema_version": "r3-0-012-production-handoff/v1",
+            "run_id": self.run.run_id,
+            "task_id": self.run.configuration.task.task_id,
+            "profile_id": self.run.configuration.profile.profile_id,
+            "run_contract_digest": contract_digest,
+            "freeze_id": batch_id,
+            "freeze_digest": self._cq_freeze["snapshot_digest"],
+            "delivery_binding": message.get("delivery_binding"),
+            "acceptance_target": self._acceptance_target,
+            "scope_binding": self._cq_scope_binding(),
+            "role_states": readiness["role_states"],
+            "applied_batches": readiness["applied_batches"],
+            "not_applied": readiness["not_applied"],
+            "unknown_writes": readiness["unknown_writes"],
+            "write_phase": readiness["write_phase"],
+            "joint_checklist": {
+                "state": "pending",
+                "note": "the 008B joint checklist is not a cq_semantic "
+                "precondition; its state stays recorded for the full_joint path",
+            },
+            # Derived pair only: re-verify the evidence fields above, never
+            # these booleans (design §3.1 rejection contract).
+            "ready": readiness["ready"],
+            "pending_writes": readiness["pending_writes"],
+            "acceptance_attempt_id": attempt["acceptance_attempt_id"],
+            "batch_id": batch_id,
+            "report_directory": attempt["report_directory"],
+        }
+        encoded = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode()
+        path = self.run.root / "acceptance-v3" / "production-handoff.json"
+        try:
+            descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o444)
+        except FileExistsError as exc:
+            raise CQContractError(
+                "cq_handoff_immutable",
+                "a production handoff is already published for this run",
+                obj="production-handoff",
+                phase="frozen",
+                retry="a re-acceptance must allocate a new attempt via a new handoff request",
+            ) from exc
+        with os.fdopen(descriptor, "wb") as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        handoff_digest = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+        self._cq_acceptance_attempt = {
+            **attempt,
+            "batch_id": batch_id,
+            "freeze_digest": self._cq_freeze["snapshot_digest"],
+            "handoff_digest": handoff_digest,
+        }
+        return {**attempt, "handoff_digest": handoff_digest}
+
+    def _handle_cq_acceptance_complete(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Host-only ``cq_acceptance_complete``: end the acceptance wait (§4.5).
+
+        Delivery sends the digest-and-verdict summary after the independent
+        ``cq-acceptance`` process exits.  The Runner re-reads the registered
+        attempt's retained ``batch-report.json``, re-verifies the digest and
+        recomputes the aggregate verdict itself -- the envelope is never
+        trusted for any of them -- and only then releases the terminal report.
+        Full, partial, and failure reports all complete the handoff the same
+        way; a normal wrap-up never requires CQ to be all green.
+        """
+
+        self._cq_selector_required()
+        if set(message) != CQ_ACCEPTANCE_COMPLETE_FIELDS:
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "cq_acceptance_complete envelope has invalid fields",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry=f"send exactly the fields {sorted(CQ_ACCEPTANCE_COMPLETE_FIELDS)}",
+            )
+        if self._acceptance_target != "cq_semantic":
+            # The completion channel exists for the cq_semantic scope; a
+            # full_joint run keeps the R3.0-011 in-run terminal path.
+            raise CQContractError(
+                "cq_selector_incompatible",
+                "cq_acceptance_complete applies only to a cq_semantic run",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="this run closes acceptance through the in-run terminal path",
+            )
+        if self._cq_freeze is None:
+            raise CQContractError(
+                "cq_freeze_schema_mismatch",
+                "no frozen question pool exists for this run",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="freeze the question pool before the acceptance handoff",
+            )
+        if message.get("run_id") != self.run.run_id or message.get(
+            "freeze_id"
+        ) != self._cq_freeze["batch_id"] or message.get("freeze_digest") != self._cq_freeze[
+            "snapshot_digest"
+        ]:
+            raise CQContractError(
+                "cq_review_stale",
+                "cq_acceptance_complete does not match this run's current freeze",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="send the current run id, freeze id and snapshot digest",
+            )
+        attempt = self._cq_acceptance_attempt
+        if attempt is None or message.get("batch_id") != attempt["batch_id"] or message.get(
+            "acceptance_attempt_id"
+        ) != attempt["acceptance_attempt_id"]:
+            # No pending attempt (a handoff that never published) or a stale
+            # one: a re-acceptance must be requested as a new handoff, never
+            # replayed against the directory of an old attempt.
+            raise CQContractError(
+                "cq_review_stale",
+                "cq_acceptance_complete does not match the current acceptance attempt",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="request a new production handoff to allocate the current attempt",
+            )
+        if self._cq_acceptance_phase == "acceptance_complete":
+            # T1-14: an exactly identical duplicate only confirms; a divergent
+            # copy is a mismatch against the retained result, never a second
+            # completion or a rewrite of the accepted one.
+            result = self._cq_acceptance_result or {}
+            if message.get("report_digest") == result.get("report_digest"):
+                return {
+                    "ok": True,
+                    "freeze_id": self._cq_freeze["batch_id"],
+                    "acceptance_attempt_id": attempt["acceptance_attempt_id"],
+                    "cq_verdict": result.get("cq_verdict"),
+                    "report_digest": result.get("report_digest"),
+                    "idempotent": True,
+                }
+            raise CQContractError(
+                "cq_acceptance_report_mismatch",
+                "a duplicate completion disagrees with the accepted report",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="resend the digest of the accepted attempt report",
+            )
+        report_path = (
+            self.run.root / attempt["report_directory"] / "batch-report.json"
+        )
+        if not report_path.is_file() or report_path.is_symlink():
+            raise CQContractError(
+                "cq_acceptance_report_mismatch",
+                "the registered attempt report is missing",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="let the cq-acceptance process write the attempt report, then resend",
+            )
+        report_bytes = report_path.read_bytes()
+        report_digest = f"sha256:{hashlib.sha256(report_bytes).hexdigest()}"
+        if message.get("report_digest") != report_digest:
+            raise CQContractError(
+                "cq_acceptance_report_mismatch",
+                "cq_acceptance_complete report_digest does not match the retained report",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="recompute the digest from the attempt's batch-report.json",
+            )
+        try:
+            report = json.loads(report_bytes.decode("utf-8"))
+        except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+            raise CQContractError(
+                "cq_acceptance_report_mismatch",
+                "the retained attempt report is not readable JSON",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="let the cq-acceptance process rewrite the attempt report",
+            ) from exc
+        if not isinstance(report, dict) or (
+            report.get("run_id") != self.run.run_id
+            or report.get("batch_id") != attempt["batch_id"]
+            or report.get("freeze_digest") != attempt["freeze_digest"]
+        ):
+            raise CQContractError(
+                "cq_acceptance_report_mismatch",
+                "the retained report is not bound to this run's current attempt",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry="the attempt report must bind this run, batch and freeze",
+            )
+        cq_verdict = batch_report_acceptance_verdict(report)
+        if message.get("cq_verdict") != cq_verdict or cq_verdict not in CQ_ACCEPTANCE_VERDICTS:
+            # The aggregate verdict is recomputed from the verified report;
+            # the envelope's copy is a consistency check, never the source.
+            raise CQContractError(
+                "cq_acceptance_report_mismatch",
+                "cq_acceptance_complete cq_verdict disagrees with the retained report",
+                obj="cq_acceptance_complete",
+                phase=self._cq_acceptance_phase,
+                retry=f"send the recomputed aggregate verdict ({cq_verdict})",
+            )
+        now = self.monotonic_clock()
+        self._cq_acceptance_phase = "acceptance_complete"
+        self._cq_acceptance_result = {
+            "acceptance_attempt_id": attempt["acceptance_attempt_id"],
+            "report_directory": attempt["report_directory"],
+            "report_digest": report_digest,
+            "cq_verdict": cq_verdict,
+        }
+        self._cq_wait_windows.close_window("cq-acceptance-wait", now)
+        self._append_evidence(
+            "cq-acceptance-complete",
+            {
+                "freeze_id": self._cq_freeze["batch_id"],
+                "freeze_digest": self._cq_freeze["snapshot_digest"],
+                "batch_id": attempt["batch_id"],
+                "acceptance_attempt_id": attempt["acceptance_attempt_id"],
+                "report_directory": attempt["report_directory"],
+                "report_digest": report_digest,
+                "cq_verdict": cq_verdict,
+                "acceptance_phase": self._cq_acceptance_phase,
+            },
+        )
+        return {
+            "ok": True,
+            "freeze_id": self._cq_freeze["batch_id"],
+            "acceptance_attempt_id": attempt["acceptance_attempt_id"],
+            "cq_verdict": cq_verdict,
+            "report_digest": report_digest,
+        }
 
     def _deliver_cq_terminal_rejection(self, agent_id: str, reason: dict[str, Any]) -> None:
         """Push the typed premature-terminal continuation to the CQ session.
@@ -6429,12 +7064,35 @@ class TeamRunner:
         if action == "cq_handoff_complete":
             result = self._handle_cq_handoff_complete(message)
             return {"type": "cq-handoff-complete", "action": action, **result}
+        if action == "cq_acceptance_complete":
+            result = self._handle_cq_acceptance_complete(message)
+            return {"type": "cq-acceptance-complete", "action": action, **result}
         raise CQContractError(
             "cq_selector_incompatible",
             "unknown competency-question outer action",
             obj="cq_outer_input",
             phase=self._cq_phase,
-            retry="use cq_interview, cq_review, cq_freeze or cq_handoff_complete",
+            retry=(
+                "use cq_interview, cq_review, cq_freeze, cq_handoff_complete "
+                "or cq_acceptance_complete"
+            ),
+        )
+
+    def _cq_acceptance_hold_pending(self) -> bool:
+        """True while a cq_semantic run awaits its acceptance completion.
+
+        R3.0-012 (design §4.5, functional contract item 8): during the
+        ``acceptance_pending`` phase the run keeps its retained read
+        credentials, scope and production pause, and must not enter
+        ``TERMINAL_REPORT_COMPLETE`` just because the roster went terminal.
+        The conjunction keeps every other run (full_joint, non-CQ) on its
+        exact previous settlement behavior.
+        """
+
+        return bool(
+            self._competency_questions
+            and self._acceptance_target == "cq_semantic"
+            and self._cq_acceptance_phase == "acceptance_pending"
         )
 
     def _cq_terminal_block_reason(self, agent_id: str) -> dict[str, Any] | None:
@@ -7800,7 +8458,7 @@ class TeamRunner:
                 )
             )
         )
-        if formal_settlement_ready and not self._terminal_emitted and len(self.transport.results) == len(
+        if formal_settlement_ready and not self._terminal_emitted and not self._cq_acceptance_hold_pending() and len(self.transport.results) == len(
             self.run.configuration.profile.agents
         ) and self.adapter.wait_settled(
             [agent.agent_id for agent in self.run.configuration.profile.agents], 1
@@ -8057,6 +8715,25 @@ class TeamRunner:
                     shutil.rmtree(secrets)
                     evidence["secrets_destroyed"] = True
                 evidence["cq_private_cleanup"] = self._cleanup_cq_private()
+                # R3.0-012 (design §4.5): stop/failure exit closes every CQ
+                # wait window while preserving the accumulated exclusion
+                # evidence, so an exit leaves no window that still reads as
+                # open and no exclusion interval is silently dropped.
+                now = (getattr(self, "monotonic_clock", None) or time.monotonic)()
+                closed_windows: list[str] = []
+                if self._cq_wait_windows.has_open_window:
+                    closed_windows = self._cq_wait_windows.open_kinds()
+                    self._cq_wait_windows.close_all(now)
+                evidence["cq_wait_windows"] = self._cq_wait_windows.evidence(now)
+                if closed_windows:
+                    self._append_evidence(
+                        "cq-wait-windows",
+                        {
+                            "event": "closed-on-exit",
+                            "closed_windows": closed_windows,
+                            **evidence["cq_wait_windows"],
+                        },
+                    )
                 self._record_runtime_core_hashes("after_cleanup")
                 self._state(
                     "CLEANED",

@@ -1006,11 +1006,14 @@ def test_f7_foreground_gate_rejects_unknown_cq_actions(cq_runner):
     assert emitted == [] and rejected == [True]
     # The known-action gate, not the CQ branch, is what rejected the line.
     assert "cq_freeze" in _KNOWN_OUTER_ACTIONS
+    # R3.0-012 extends the closed CQ action set with the host-only
+    # acceptance-completion channel (design §4.5).
     assert set(_CQ_OUTER_ACTIONS) == set(_KNOWN_OUTER_ACTIONS) & {
         "cq_interview",
         "cq_review",
         "cq_freeze",
         "cq_handoff_complete",
+        "cq_acceptance_complete",
     }
 
 

@@ -112,12 +112,25 @@ STAGED_MODELING_DECISIONS_PARAMETER = "staged_modeling_decisions"
 UNIFIED_GRAPH_TASK_PARAMETER = "unified_semantic_graph"
 # R3.0-011: competency-question batch acceptance is the fourth opt-in member.
 COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER = "competency_question_acceptance"
+# R3.0-012: the acceptance-target selector is the fifth opt-in member and the
+# first non-boolean one -- a closed two-value enum naming which acceptance
+# scope the run freezes.  Omission is equivalent to ``full_joint``; the
+# normalized value is what the Runner writes into its configuration snapshot,
+# never a re-derivation after start.  The draft name ``parameters.acceptance_scope``
+# was never implemented and is deliberately not an alias (design §2.2).
+ACCEPTANCE_TARGET_PARAMETER = "acceptance_target"
+ACCEPTANCE_TARGET_FULL_JOINT = "full_joint"
+ACCEPTANCE_TARGET_CQ_SEMANTIC = "cq_semantic"
+ACCEPTANCE_TARGET_VALUES = frozenset(
+    {ACCEPTANCE_TARGET_FULL_JOINT, ACCEPTANCE_TARGET_CQ_SEMANTIC}
+)
 _TASK_PARAMETER_NAMES = frozenset(
     {
         MULTI_SLICE_TASK_PARAMETER,
         STAGED_MODELING_DECISIONS_PARAMETER,
         UNIFIED_GRAPH_TASK_PARAMETER,
         COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER,
+        ACCEPTANCE_TARGET_PARAMETER,
     }
 )
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
@@ -730,9 +743,29 @@ def load_task(
         ):
             raise TeamConfigurationError("v2 Task parameters are invalid")
         for parameter_name in sorted(_TASK_PARAMETER_NAMES & set(raw_parameters)):
+            if parameter_name == ACCEPTANCE_TARGET_PARAMETER:
+                # The only non-boolean member of the closed set; validated as
+                # a string enum below so the boolean check never fires for it.
+                continue
             if not isinstance(raw_parameters[parameter_name], bool):
                 raise TeamConfigurationError("v2 Task parameters are invalid")
         parameters = dict(raw_parameters)
+        if ACCEPTANCE_TARGET_PARAMETER in parameters and (
+            not isinstance(parameters[ACCEPTANCE_TARGET_PARAMETER], str)
+            or parameters[ACCEPTANCE_TARGET_PARAMETER] not in ACCEPTANCE_TARGET_VALUES
+        ):
+            raise TeamConfigurationError("v2 Task acceptance_target is invalid")
+        if (
+            parameters.get(ACCEPTANCE_TARGET_PARAMETER) == ACCEPTANCE_TARGET_CQ_SEMANTIC
+            and parameters.get(COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER) is not True
+        ):
+            # R3.0-012 (design §2.2): ``cq_semantic`` only applies to a Task that
+            # already selected the R3.0-011 competency-question flow; it cannot
+            # retrofit an unrelated v3 Task onto the CQ acceptance contract.
+            raise TeamConfigurationError(
+                "cq_selector_incompatible: acceptance_target cq_semantic requires "
+                "competency_question_acceptance"
+            )
         if parameters.get(STAGED_MODELING_DECISIONS_PARAMETER) is True and parameters.get(
             MULTI_SLICE_TASK_PARAMETER
         ) is not True:
@@ -889,6 +922,43 @@ def task_declares_competency_question_acceptance(task_path: Path) -> bool:
     return (
         isinstance(parameters, dict)
         and parameters.get(COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER) is True
+    )
+
+
+def normalize_acceptance_target(parameters: dict[str, Any] | None) -> str:
+    """Frozen normalization for the run-contract snapshot (R3.0-012 §2.2).
+
+    Omission is ``full_joint``.  A present-but-invalid value is the same typed
+    configuration error ``load_task`` raises, so the snapshot writer can never
+    silently re-derive a different scope than the loaded Task declared.
+    """
+
+    value = (parameters or {}).get(ACCEPTANCE_TARGET_PARAMETER)
+    if value is None:
+        return ACCEPTANCE_TARGET_FULL_JOINT
+    if not isinstance(value, str) or value not in ACCEPTANCE_TARGET_VALUES:
+        raise TeamConfigurationError("v2 Task acceptance_target is invalid")
+    return value
+
+
+def task_declares_cq_semantic_target(task_path: Path) -> bool:
+    """Peek the frozen Task YAML for the R3.0-012 ``cq_semantic`` target.
+
+    Same contract as :func:`task_declares_multi_slice_workflow`: a dispatch
+    hint, never a validator.  An unreadable or malformed Task peeks ``False``
+    and the chosen loader produces the authoritative typed error.
+    """
+
+    try:
+        data = _yaml(task_path)
+    except TeamConfigurationError:
+        return False
+    if not isinstance(data.get("schema_version"), int) or data.get("schema_version") != 2:
+        return False
+    parameters = data.get("parameters")
+    return (
+        isinstance(parameters, dict)
+        and parameters.get(ACCEPTANCE_TARGET_PARAMETER) == ACCEPTANCE_TARGET_CQ_SEMANTIC
     )
 
 

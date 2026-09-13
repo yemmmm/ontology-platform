@@ -125,6 +125,31 @@ JSONL 行；主智能体保存各日志行号/字节偏移，避免每轮重新�
 默认 30～60 秒观察一次；若长期推理仍有活动则继续等待，若重复失败则检查同一失败的内容和
 依赖是否改变。不要为制造心跳向建模角色反复发送催促消息。
 
+### 角色会话 compaction 后可能永久丧失原生 tool call（2026-09-12 auth009-start1 实证）
+
+长时间 run 的角色会话会自动 compaction。**modeling 型角色可能安然通过，coordinator 可能不
+能**：auth009-start1 的 coordinator 在第二次 compaction（17:38:02Z）之后，每个 turn 仍正常
+`task_started`/`task_complete`、仍能推理和输出文本，但**再没有发出任何一个原生 tool call**，
+而是把 `send_team_message` 序列化成最终消息里的文本标记（先 `<tool_call>{...}</tool_call>`
+JSON 方言，宿主提示后改成 `<function_calls><invoke>…` XML 方言，两者都不被执行）。角色自述的
+归因是错的——它以为是自己“调用身份被拒绝（unsupported call）”，实际证据里没有任何 rejection，
+因为那次调用根本没被尝试。宿主无法补救：外层 action 全集只有
+`question | issue_resolution | user | status | pause | resume | stop`，**没有任何重置角色线程
+的动作**；`turn_context` 记录在 compaction 前后逐字节相同，说明工具目录没丢，是模型侧行为。
+
+识别特征（长 run 应持续监控，命中即按致命处理，不要继续等）：
+
+- `deliveries.jsonl` 行数在角色 turn 持续 `task_complete` 的情况下**不再增长**；
+- 角色会话 JSONL 在某个时间点之后**零 `function_call` item**，但 assistant 消息文本里出现
+  `<tool_call>` / `<function_calls>` / `<invoke` 标记；
+- 该角色在断点前不久有 `compacted` 事件。
+
+auth009-start1 因此损失约 30 分钟：coordinator 三次 re-dispatch 都没发出任何 delivery，
+idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主发一条明确的诊断便签（“你的调用被
+写成了文本、从未执行，请用原生 tool call 重发”）**不足以恢复**。正确处置是判定
+`TERMINAL_BLOCKED_RUNTIME_DEFECT` 并 `stop` 收尾，不要让它继续空转；`stop` 后 `state=CLEANED`、
+`zero_residue=true`，run 根证据完整保留（见 auth009-start1-terminal-record.md）。
+
 ## 外层输入与恢复边界
 
 `run --enable-outer-input-fifo` 创建 `<run-root>/control/outer-input.fifo`。用当前
@@ -166,6 +191,15 @@ JSONL 行；主智能体保存各日志行号/字节偏移，避免每轮重新�
   `_dispatch_issue_control` 的 `self_resumed` 分支只跳过重复的 reporter 回送，不是缺口，
   不应据此修改 runner（改动会重新触发 R2.3-009 start20 的 "resume did not start a new
   turn" fatal）。
+- **`projection.task_id` 是调用方提供的作者标识，不是平台读取值**（2026-09-12 auth009-start1
+  实证）。Protocol 曾因 `get_project_build_context` 等三次权威读取都未返回 `task_id` 而
+  deadlock，把 issue 升级给宿主。判定：该要求不是真不变量。`build_approval_projection(
+  task_id: str, ...)`（`modeling_team/staged_decisions.py`）只是普通入参，无任何校验器交叉核对
+  平台值；`APPROVAL_PROJECTION_FIELDS` 仅列出该字段名。真实先例携带的也都是调用方提供的值：
+  `r30006-20260911-auth007-start1`、`r30006-20260911-auth006-start6`、`industrial-service-v3`、
+  `r3-0-006-real-full`。裁定取值应取本 run 冻结任务定义 `task.snapshot.yaml` 自己声明的
+  `task_id`（auth009-start1 为 `r3-0-006-real-full`，第 36 行），逐字使用，不得用占位符/空值/
+  run_id 或其它派生值替代。同类“把作者字段当权威来源”的 prompt 合同缺陷值得在后续轮次修掉。
 - 顶层 CLI 没有 `status`/`resume` 子命令。外层 `{"action":"status"}` 只触发 drain，
   不是完整状态快照；直接读上述事件和状态即可。
 - 外层 `pause` 会 interrupt 当前 turn；当前 Codex adapter 的 `resume()` 不重建子进程也

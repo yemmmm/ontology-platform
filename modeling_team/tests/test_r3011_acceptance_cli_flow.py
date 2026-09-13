@@ -687,13 +687,17 @@ def test_tg47_mid_batch_child_exit_retains_executed_report(tmp_path) -> None:
         failure_reason
     )
     assert sessions["platform_examiner"]["first_failure"]
-    assert "verdicts" not in sessions["acceptance_judge"]
+    # R3.0-012 §4.3 (T3-2): the landed report is judgeable even though the
+    # examiner child died mid-batch -- the judge runs for that question, the
+    # unreported one stays unexecuted, and the whole batch still cannot pass.
+    assert sessions["acceptance_judge"]["verdicts"] == 1
+    assert sessions["acceptance_judge"]["judged_question_ids"] == ["cq-9"]
     stages = [entry["stage"] for entry in sessions["lifecycle_errors"]]
     assert "platform-examiner-session" in stages
     # Real teardown of this batch's own resources, observed after the CLI exited;
-    # the judge was skipped, so only the examiner child was ever started.
+    # the examiner and judge children were both started and both cleaned up.
     assert result["new_private_roots"] == []
-    _assert_batch_cleanup(report, expected_children=1)
+    _assert_batch_cleanup(report, expected_children=2)
     _assert_no_key_leak(result)
 
 

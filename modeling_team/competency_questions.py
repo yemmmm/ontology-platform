@@ -69,6 +69,21 @@ CQ_REASON_CODES: tuple[str, ...] = (
     "cq_model_binding_missing",
     "cq_batch_scope_unauthorized",
     "cq_batch_context_lost",
+    # R3.0-012 (design §4.4): the production handoff cannot publish while a
+    # staged platform write is in flight, returned an unknown result, or left
+    # the reconciliation latch closed.  Recoverable by adjudication, never by
+    # editing handoff booleans.
+    "cq_unknown_write_pending",
+    # R3.0-012 (design §3.4/§4.5): published handoff/report evidence is
+    # first-write immutable; a replacement attempt is a typed conflict that
+    # must allocate a new attempt, never an overwrite.
+    "cq_handoff_immutable",
+    # R3.0-012 (design §4.5): the completion-channel summary does not match the
+    # registered attempt's retained report -- a missing file, a digest
+    # conflict, run/freeze/batch binding drift, or a forged aggregate verdict.
+    # A recoverable rejection: it never completes the acceptance lifecycle and
+    # never pollutes the current attempt's retained result.
+    "cq_acceptance_report_mismatch",
 )
 
 CQ_VERDICT_STATES: tuple[str, ...] = (
@@ -115,7 +130,44 @@ CQ_WAIT_WINDOW_KINDS: tuple[str, ...] = (
     "cq-review-request",
     "cq-interview-wait",
     "cq-handoff-request",
+    # R3.0-012 (design §4.5): the read-only acceptance interval opened by the
+    # same handoff transition that closes ``cq-handoff-request``, and closed
+    # when the current attempt's report is verified (or the run stops).  A
+    # pending run keeps polling the outer FIFO with no LLM output, so T3 must
+    # exclude this interval like every other explicit CQ wait.
+    "cq-acceptance-wait",
 )
+
+# R3.0-012 (design §4.5): the read-only acceptance lifecycle recorded in the
+# Runner state and events.  ``quiescing`` covers the drain window inside
+# ``cq_handoff_complete``; ``acceptance_pending`` opens the acceptance wait
+# window for the ``cq_semantic`` scope only; ``acceptance_complete`` ends the
+# handoff period and releases the terminal report.
+CQ_ACCEPTANCE_PHASES: tuple[str, ...] = (
+    "quiescing",
+    "acceptance_pending",
+    "acceptance_complete",
+)
+# The host-only ``cq_acceptance_complete`` envelope is exactly these fields;
+# it never carries question text, answers, query results, or a host-chosen
+# path (design §4.5).
+CQ_ACCEPTANCE_COMPLETE_FIELDS = frozenset(
+    {
+        "action",
+        "run_id",
+        "freeze_id",
+        "freeze_digest",
+        "batch_id",
+        "acceptance_attempt_id",
+        "report_digest",
+        "cq_verdict",
+    }
+)
+# The aggregate verdict the Runner recomputes from the digest-verified batch
+# report (never taken from the envelope): full, partial, and failure reports
+# all complete the handoff, so the value summarizes the report instead of
+# gating the wrap-up.
+CQ_ACCEPTANCE_VERDICTS: tuple[str, ...] = ("pass", "partial", "fail")
 
 # Run-root artifact directories (design §3.4).
 CQ_RUN_DIRECTORIES: tuple[str, ...] = (
@@ -1439,6 +1491,8 @@ def build_batch_report(
     model_state_drift: list[str] | None = None,
     acceptance_mode: str = CQ_ACCEPTANCE_MODE,
     blind_status: dict[str, Any] | None = None,
+    platform_read_responses: dict[str, list[dict[str, Any]]] | None = None,
+    evidence_recheck: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Assemble the host-only v3 acceptance batch report.
 
@@ -1523,6 +1577,17 @@ def build_batch_report(
         },
         "report_digest": "",
     }
+    # R3.0-012 design §4.1/§4.2: the retained-response projection and the
+    # recheck record land on the report only when this attempt actually
+    # produced them; a report without the fields keeps the exact 011 shape
+    # and the 011 full-pass boundary.
+    if platform_read_responses is not None:
+        report["platform_read_responses"] = {
+            str(question_id): [dict(entry) for entry in entries]
+            for question_id, entries in platform_read_responses.items()
+        }
+    if evidence_recheck is not None:
+        report["evidence_recheck"] = dict(evidence_recheck)
     report["report_digest"] = content_digest(
         {key: value for key, value in report.items() if key != "report_digest"}
     )
@@ -1535,6 +1600,21 @@ def batch_report_is_full_pass(report: dict[str, Any]) -> bool:
     Full PASS requires a valid verdict for every batch question, no pending
     review, no insufficient recall, no unexecuted question, and no coverage
     gap.  An empty hidden set can therefore never pass.
+
+    R3.0-012 design §4.1/§4.2 (tolerant-absent gates): on a report that carries
+    the retained-response projection, a PASS verdict is only valid for a
+    question with at least one host-validated platform response; on a report
+    that carries the evidence recheck, every rechecked question must be
+    ``stable`` -- drift or an unavailable re-read never publishes a valid
+    per-question or whole-batch PASS.  Reports without the fields (all 011
+    reports) keep the exact historical boundary.
+
+    R3.0-012 design §4.3 (verdict coverage): the denominator is every hidden
+    question (``executed`` plus ``unexecuted`` -- an executed service failure
+    with a ``runtime-incomplete`` report stays in the executed set), and full
+    PASS requires a verdict for each of them.  A partially judged batch can
+    therefore never publish a whole-batch PASS even when every produced
+    verdict says pass.
     """
 
     if report.get("schema_version") != CQ_BATCH_REPORT_SCHEMA:
@@ -1551,7 +1631,58 @@ def batch_report_is_full_pass(report: dict[str, Any]) -> bool:
     verdicts = report.get("verdicts", [])
     if not verdicts:
         return False
+    denominator = {
+        str(item)
+        for item in (
+            report.get("executed_question_ids", []) + report.get("unexecuted_question_ids", [])
+        )
+        if isinstance(item, str)
+    }
+    judged = {
+        str(verdict.get("question_id")) for verdict in verdicts if isinstance(verdict, dict)
+    }
+    if not denominator <= judged:
+        # A hidden question without a verdict is not fully accepted, whether it
+        # was never executed or its executed report was not judgeable.
+        return False
+    responses = report.get("platform_read_responses")
+    if responses is not None:
+        if not isinstance(responses, dict):
+            return False
+        for verdict in verdicts:
+            if verdict.get("verdict") != "pass":
+                continue
+            entries = responses.get(str(verdict.get("question_id")))
+            if not isinstance(entries, list) or not entries:
+                return False
+    recheck = report.get("evidence_recheck")
+    if recheck is not None:
+        if not isinstance(recheck, dict):
+            return False
+        statuses = recheck.get("question_status")
+        if not isinstance(statuses, dict):
+            return False
+        if any(status != "stable" for status in statuses.values()):
+            return False
     return all(verdict.get("verdict") == "pass" for verdict in verdicts)
+
+
+def batch_report_acceptance_verdict(report: dict[str, Any]) -> str:
+    """Recompute the completion-envelope aggregate verdict from the report.
+
+    The Runner recomputes this from the digest-verified ``batch-report.json``
+    and never trusts the envelope's copy (design §4.5): ``pass`` is exactly
+    the :func:`batch_report_is_full_pass` boundary, ``fail`` means nothing was
+    judged (an attempt that produced no verdict records), and every other
+    judged-but-not-full report is ``partial``.  All three values complete the
+    acceptance lifecycle the same way -- a normal wrap-up never requires CQ to
+    be all green.
+    """
+
+    verdicts = report.get("verdicts")
+    if not isinstance(verdicts, list) or not verdicts:
+        return "fail"
+    return "pass" if batch_report_is_full_pass(report) else "partial"
 
 
 def acceptance_mode_evidence(*, batch_id: str, freeze_digest: str) -> dict[str, Any]:

@@ -418,10 +418,14 @@ def test_a_failed_post_batch_state_read_is_bounded_and_keeps_the_reports(
     assert [item["question_id"] for item in report["examiner_reports"]] == ["cq-1"]
     assert report["executed_question_ids"] == ["cq-1"]
     stages = [item["stage"] for item in report["sessions"]["lifecycle_errors"]]
-    # Both follow-up lifecycle steps are bounded here: the post-batch state
-    # read failed, and with the run root carrying no approved evidence the
-    # judge bundle fails too.  Neither discards the landed report.
-    assert stages == ["post-batch-model-state-read", "judge-evidence-bundle"]
+    # The post-batch state read failed and is bounded.  The judge evidence no
+    # longer fails as a whole-batch lifecycle error (R3.0-012 §4.3): the
+    # unresolved frozen basis is recorded per question instead, and neither
+    # path discards the landed report.
+    assert stages == ["post-batch-model-state-read"]
+    skips = report["sessions"]["question_judging"]["skipped"]
+    assert list(skips) == ["cq-1"]
+    assert skips["cq-1"].startswith("evidence-unresolved:")
     # The judge is skipped on post-state failure; the batch can never pass.
     assert "skipped" in report["sessions"]["acceptance_judge"]["reason"]
     assert report["full_pass"] is False
@@ -785,9 +789,10 @@ def test_source_and_interview_bundles_reach_the_actual_judge_packet(tmp_path):
     private = run_root / "competency-questions" / "private"
     private.mkdir(parents=True)
     (private / "interview-0001.json").write_text(json.dumps(record), encoding="utf-8")
-    bundle = _cq_build_judge_evidence_bundle(
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
         run_root, frozen, [dict(item) for item in frozen["questions"]]
     )
+    assert unresolved == {}
     # The raw schema bundle is handed over: no derived digest field, so the
     # packet seam's own strict re-validation passes.
     assert sorted(bundle) == ["batch_id", "entries", "freeze_digest", "schema_version"]
@@ -814,9 +819,10 @@ def test_source_and_interview_bundles_reach_the_actual_judge_packet(tmp_path):
 def test_identical_multi_role_copies_are_approved_bytes(tmp_path):
     run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
     _stage_sources(run_root, ("scenario-brief",), "approved scenario bytes\n")
-    bundle = _cq_build_judge_evidence_bundle(
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
         run_root, frozen, [dict(item) for item in frozen["questions"]]
     )
+    assert unresolved == {}
     assert bundle["entries"] == [
         {
             "question_id": "cq-1",
@@ -834,13 +840,17 @@ def test_a_tampered_role_copy_is_never_repackaged_as_approved(tmp_path):
     _stage_sources(run_root, ("scenario-brief",), "approved scenario bytes\n")
     tampered = run_root / "sources" / "modeling" / "scenario-brief"
     tampered.write_text("modified scenario bytes\n", encoding="utf-8")
-    with pytest.raises(Exception) as rejected:
-        _cq_build_judge_evidence_bundle(
-            run_root, frozen, [dict(item) for item in frozen["questions"]]
-        )
-    assert "does not match the manifest digest" in str(rejected.value)
+    # R3.0-012 §4.3: the tampered question alone lacks a valid verdict -- the
+    # failure is recorded per question instead of raising, and the approved
+    # bytes are never re-digested into a bundle entry.
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
+        run_root, frozen, [dict(item) for item in frozen["questions"]]
+    )
+    assert bundle["entries"] == []
+    assert list(unresolved) == ["cq-1"]
+    assert "does not match the manifest digest" in unresolved["cq-1"]
     # The manifest digest still names the approved bytes, not the tampered ones.
-    assert "modified scenario bytes" not in str(rejected.value)
+    assert "modified scenario bytes" not in unresolved["cq-1"]
 
 
 # --- the v3 prompt surface is dispatched, legacy assets stay untouched --------
