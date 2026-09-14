@@ -13,6 +13,18 @@
 - 最新接线说明：[v3 execution gap closure](../../../docs/delivery/designs/2026-09-09-v3-execution-gap-closure-design.md)。
 - 授权与轮次：[R3.0-006 attempt record](../../../docs/delivery/records/2026-08-27-r3-0-006-attempt-record.md)。
 
+需要 R3.0-015 检查点时，启动前同时核对开关与验收范围：
+
+| Task | `modeling_checkpoints` | `acceptance_target` |
+| --- | --- | --- |
+| `r3-0-006-real-full.yaml` | 未启用 | `cq_semantic` |
+| [r3-0-015-checkpoint-recovery.yaml](../../../modeling_team/tasks/r3-0-015-checkpoint-recovery.yaml) | `true` | 默认 `full_joint` |
+
+按本轮授权选择 Task；若获准目标仍为 `cq_semantic` 且需要检查点，在本轮 Task 配置中
+显式保留 `acceptance_target: cq_semantic` 并启用 `modeling_checkpoints: true`，沿用
+已获准的资料、角色和其他参数。不能仅换成 015 Task 就把验收范围扩大为 `full_joint`。
+validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得就地修改 Task。
+
 其他业务或验收阶段选择对应 Task/Profile，不把这一 v3 配置固化为所有建模的合法条件。
 旧 002/008B/009 Task 保留各自范围，不能冒充完整 v3 入口。旧
 `modeling_team.foreground_monitor` 标为 `ARCHIVAL_ONLY`，不要启动。
@@ -60,19 +72,21 @@ effort `max`，选用 profile `deepseek-flash-max`。profile ID 不含模型版�
 代码/配置/源材料；要求 clean checkout 时使用明确提交或隔离 checkout 保留用户改动，不能
 清空工作区来满足前置。复用已有健康与验收证据，不展开全面审计。
 
+先按“选择入口”设置 `modeling_task_file` 为本轮已选 Task 路径；沿用
+`modeling_team/tasks/r3-0-006-real-full.yaml` 不会自动开启检查点。
 配置检查不启动模型，也不写平台：
 
 ```bash
 uv run --project backend python -m modeling_team validate \
   --profile modeling_team/profiles/r3-0-011-competency-question.yaml \
-  --task modeling_team/tasks/r3-0-006-real-full.yaml
+  --task "${modeling_task_file:?请先设置本轮 Task 路径}"
 ```
 
 根据本次授权填好 `modeling_run_id`、`modeling_scope_file` 和 `modeling_freeze_started_at`；
 scope 复用获准的 create/existing 配置；新建范围可复用
 [new-scope-create.yaml](../../../modeling_team/scopes/new-scope-create.yaml)。
 时间取本轮真实冻结开始时点，不能编造为满足时间门。
-按任务要求使用 `baseline --run-id ... --profile ... --task ...` 保存基线；该命令预览基线，
+按任务要求使用 `baseline --run-id ... --profile ... --task "$modeling_task_file"` 保存基线；该命令预览基线，
 不创建 semantic start。显式 model profile/overlay 被选用时，validate、baseline 和 run
 必须使用同一选择；没有该选择则沿用配置，不擅自换模型。
 
@@ -81,7 +95,7 @@ scope 复用获准的 create/existing 配置；新建范围可复用
 ```bash
 uv run --project backend python -m modeling_team run \
   --profile modeling_team/profiles/r3-0-011-competency-question.yaml \
-  --task modeling_team/tasks/r3-0-006-real-full.yaml \
+  --task "${modeling_task_file:?请先设置本轮 Task 路径}" \
   --run-id "$modeling_run_id" \
   --scope "$modeling_scope_file" \
   --freeze-started-at "$modeling_freeze_started_at" \
@@ -218,12 +232,16 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
 ## cq_handoff_complete 之后的独立验收收口（acceptance_pending）
 
 `cq_handoff_complete` 被接受并返回 `acceptance_phase=acceptance_pending` 后，live run 保持
-pending：coordinator 已 terminal 不代表完成，Runner 在等宿主完成独立验收（R3.0-012 §4.5；
-2026-09-13 auth014-start1 实证：宿主此时发送 `stop` 会触发 cleanup，Acceptance 以
-`runner-cleanup-before-settlement` abort，独立验收永久丢失）。宿主在该阶段的唯一正确动作：
+pending：coordinator 已 terminal 不代表完成，Runner 在等宿主完成独立验收（R3.0-012 §4.5）。
+历史 auth014-start1 中，宿主发送 `stop` 触发 cleanup，当前 Acceptance 以
+`runner-cleanup-before-settlement` abort。R3.0-015 S4 已支持原生产进程退出后从有效
+`production_handoff` 检查点另起独立验收尝试；旧尝试的 abort 记录仍保留。
+原 run 存活且继续当前验收时，按以下步骤收口：
 
-1. **不要发送 `stop`**（也不要因“run 看起来已完成”而收尾 CLI）；`stop` 仅在明确决定放弃
-   本次独立验收时使用。
+1. 保持 live run，避免因“生产已完成”而提前发送 `stop`。若按授权决定结束原进程后再验收，
+   先确认有效 `production_handoff` 检查点已发布、所需资源可保留，再受控停止并走
+   [S4 验收续跑](#验收续跑r30-015-s4)。原进程已经退出时先检查保留成果，不能假定有
+   检查点，也不能从历史目录补造检查点。
 2. 用当前权威入口启动独立验收会话：
    `uv run --project backend python -m modeling_team cq-acceptance --run-root ... --freeze-id ... --model-handoff ...`
    （参数先读 `--help`；独立验收者不得参与生产或修复）。
@@ -235,7 +253,7 @@ pending：coordinator 已 terminal 不代表完成，Runner 在等宿主完成�
 ## 建模检查点保存与检查（R3.0-015 S1）
 
 R3.0-015 交付段 S1 覆盖阶段成果的**保存与检查**；跨进程生产续跑（S2）见下一节
-[生产续跑](#生产续跑r3-0-015-s2)。启用需
+[生产续跑](#生产续跑r30-015-s2)。启用需
 选择声明 `parameters.modeling_checkpoints: true` 的 v3 Task
 （[r3-0-015-checkpoint-recovery.yaml](../../../modeling_team/tasks/r3-0-015-checkpoint-recovery.yaml)；
 该参数依赖 multi_slice_workflow、staged_modeling_decisions 与 unified_semantic_graph，
@@ -296,7 +314,7 @@ uv run --project backend python -m modeling_team checkpoint resume \
 ```
 
 `--mode acceptance` 不走生产续跑路径，见下节
-[验收续跑](#验收续跑r3-0-015-s4)：非 `production_handoff` 检查点得到
+[验收续跑](#验收续跑r30-015-s4)：非 `production_handoff` 检查点得到
 `checkpoint_kind_mode_mismatch` 类型化拒绝（exit 2），不会静默落到生产续跑。
 
 恢复时**重新核对全部状态**，不信任保存时的任何布尔结论：
@@ -312,7 +330,7 @@ uv run --project backend python -m modeling_team checkpoint resume \
 - 业务审批只复用本检查点打包且来源通道校验通过的条目：`approved_by` 必须解析为
   源 run 自己 profile 的 coordinator agent，保存后被撤销/换版的决定保持撤销。
 
-任何一类未闭合都是带 `reason_code` 的类型化拒绝（至少 `checkpoint_incomplete`、
+任何一类未闭合都是带 `code` 的类型化拒绝（至少 `checkpoint_incomplete`、
 `artifact_changed`、`source_active`、`contract_incompatible`、`scope_missing`、
 `scope_drift`、`write_unreconciled`、`approval_binding_changed`），字段为
 `code/object_ref/phase/retryable/reason/next_action`，不含密钥或隐藏内容；按
@@ -356,7 +374,7 @@ uv run --project backend python -m modeling_team checkpoint resume \
 未回执写入即拒绝）、原写者必须已停（`source_active` 可重试，经原 run stop channel
 处理，单次等待 ≤60s）、冻结池按快照摘要对源 run 里实际存储的 `freeze-NNNN.json`
 重校验（handoff 的 freeze_id 是批次 id，不是文件名）、打包 handoff 必须仍等于源 run
-已发布 handoff、平台侧对绑定本体无不可归属写入。任何漂移都是带 `reason_code` 的
+已发布 handoff、平台侧对绑定本体无不可归属写入。任何漂移都是带 `code` 的
 类型化拒绝（`acceptance_binding_changed`、`source_active`、`write_unreconciled`、
 `scope_drift`、`checkpoint_kind_mode_mismatch` 等，字段
 `code/object_ref/phase/retryable/reason/next_action`，不含隐藏题面或密钥），

@@ -73,6 +73,11 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 
 ## 阶段成果检查点（R3.0-015 S1+S2+S4）
 
+启动前明确检查点开关与验收目标：默认 `r3-0-006-real-full` Task 未开启检查点，
+验收目标为 `cq_semantic`；`r3-0-015-checkpoint-recovery` 开启检查点，但默认目标为
+`full_joint`。按本轮获准范围选择或配置 Task，validate、baseline、run 使用同一文件；
+不能为启用检查点而悄悄改变验收范围。具体见运行参考的“选择入口”。
+
 启用 `modeling_checkpoints` 的 run 会在 CQ 冻结、每个 staged 回执和 production
 handoff 后自动保存阶段检查点；需要保存更早阶段（场景映射、已批准语义决定）时由宿主
 经 FIFO `action=checkpoint` 请求。Runner 只认磁盘上的实际已发布产物，角色自述“阶段
@@ -81,13 +86,13 @@ handoff 后自动保存阶段检查点；需要保存更早阶段（场景映射
 
 S2 起宿主可用 `checkpoint resume --mode production` 从一个已发布检查点跨进程续跑：
 显式 checkpoint id 与全新 run id 必填，恢复时重新核对全部状态（全链写尾含检查点之后的
-写入、平台 cursor 分页回读、业务审批来源通道）；对账未闭合得到的是带 `reason_code`
+写入、平台 cursor 分页回读、业务审批来源通道）；对账未闭合得到的是带 `code`
 的类型化拒绝（`source_active`、`write_unreconciled`、`scope_drift`、
 `approval_binding_changed` 等），不会静默降级。续跑是一次新的语义开始（记账
 `semantic_starts: 1`，平台侧无硬计数门），原 run 与其检查点只读不动；悬挂原写者按
 stop channel 处理、单次等待 ≤60s；同一 root run 同机同时只允许一个续跑。手工清理
 active 恢复前先核对 `recovery/` 引用。命令与消息格式见
-[运行参考](references/team-runbook.md#建模检查点保存与检查r3-0-015-s1)。
+[运行参考](references/team-runbook.md#生产续跑r30-015-s2)。
 
 S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 `production_handoff` 检查点做验收-only 续跑（S3 按设计延后，S4 不依赖 S3）：
@@ -99,7 +104,7 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 通过）时只做核验与收尾（0 次模型会话）；否则经既有 cq-acceptance 执行/独立 Judge
 路径重新执行，冻结的验收目标、题目分母与非盲状态不变，旧的 partial/fail 报告原样
 保留、绝不拼接到新 PASS。记账 `semantic_starts: 0`。命令与边界见
-[运行参考](references/team-runbook.md#验收续跑r3-0-015-s4)。
+[运行参考](references/team-runbook.md#验收续跑r30-015-s4)。
 
 ## 分清失败层与修改对象
 
@@ -157,7 +162,9 @@ live Runner、原 Agent thread 和已完成产物。用户告知“接口已经�
 2. 核实修复已进入实际运行环境：当前进程加载的代码、冻结 Task/Skill 和挂载不会随文件改动
    自动更新。`RUNNING` 状态或开发测试通过均不能证明原阻塞已解除。
 3. 没有不确定写入、运行可接收反馈且修复已生效时，优先通过既有可恢复通道继续同一 start，
-   观察原失败步骤的新结果。不能由宿主篡改冻结产物；CLI `resume` 也不是跨进程恢复功能。
+   观察原失败步骤的新结果。不能由宿主篡改冻结产物；外层 `action=resume` 只继续存活线程。
+   原进程已退出且有有效检查点时，按上节 `checkpoint resume` 选择生产或验收接续；
+   生产接续使用新 run/线程并消耗一次 fresh start，验收接续不消耗建模 start。
    仅有相同 run ID 不足以免计数：没有经当前合同证实、保留同一语义会话上下文的恢复机制时，
    重启建模 child 或另起建模 Agent 重做目标属于 fresh start。不能另起 Claude 会话替换
    Team 的 Modeling 角色后声称仍是原轮；外部 Claude 修复进程与建模子进程是不同职责。
