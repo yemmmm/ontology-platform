@@ -106,6 +106,16 @@ and any supplied optional repair fields; do not invent omitted digests or verifi
 `resume_waiting_reporter` means the Runner retained the accepted control until the reporter ends
 its pause turn. Wait for dispatch; do not send another resume or persist the resolution again.
 
+A `runtime_recovery` issue delivery means the reporting role's model provider is externally
+blocked (rate limit, quota/balance, concurrency, or outage) and the role is parked alive on its
+original thread. Handle it with the same `pause`/`resume` contract: the `pause` needs no action
+from the parked role itself, and after the outer owner confirms the external condition is lifted
+(quota reset, recharge, provider recovered), send exactly one bound `resume` carrying the exact
+persisted resolution; the Runner then starts the role's next turn on the same live thread. A
+`provider_recovery_retry` or `provider_recovery_backoff` notice means the provider was still not
+usable: wait for the notice's retry window before sending the next `resume`; never claim recovery
+you cannot dispatch, and never ask the parked role to run tools while it waits.
+
 ## Prompt E acceptance ticket pipeline
 
 For a formal task, Protocol's direct Team Transport handoff is the only input to ticket creation.

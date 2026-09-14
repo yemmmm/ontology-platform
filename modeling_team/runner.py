@@ -208,6 +208,11 @@ _OWNER_ANSWER_AUTHORIZATION = "r2-3-002-owner-answer-authorization"
 # roster; extra Profile roles carry no terminal dependency.
 RUNNER_CORE_ROLE_VALUES = frozenset({"coordinator", "modeling", "protocol"})
 
+#: 2026-09-14 provider-recovery: spacing between retries of one failed provider
+#: recovery dispatch.  A fixed window (not an attempt counter) so an externally
+#: fixable provider condition is never permanently killed by retry exhaustion.
+_PROVIDER_RECOVERY_RETRY_SECONDS = 60.0
+
 #: The only target kind the staged evidence repost may address.  Evidence backs a
 #: Modeling Item's lineage; anything else (a resource IRI, a statement id) is not
 #: the staged write the Runner projects and must not be silently accepted.
@@ -1996,6 +2001,33 @@ class TeamRunner:
             return list(failures) if isinstance(failures, (list, tuple)) else []
         return []
 
+    def _coordinator_failure_deferrable(
+        self, agent_id: str, detail: dict[str, Any]
+    ) -> bool:
+        """A fatally failed Coordinator defers run teardown while waits survive.
+
+        Identity/protocol hard failures keep their latch on the Coordinator
+        process itself; only the whole-run cleanup is deferred while at least
+        one other role is parked in an externally recoverable provider wait.
+        """
+
+        if not self.run:
+            return False
+        try:
+            agents = self.run.configuration.profile.agents
+        except AttributeError:
+            return False
+        coordinator_ids = {
+            agent.agent_id
+            for agent in self.run.configuration.profile.agents
+            if agent.package.role == "coordinator"
+        }
+        if agent_id not in coordinator_ids and detail.get("role") != "coordinator":
+            return False
+        return any(
+            wait_agent != agent_id for wait_agent in self._live_provider_wait_agents()
+        )
+
     def _finalize_runtime_failure(
         self, failures: list[tuple[str, dict[str, Any]]]
     ) -> list[dict[str, Any]]:
@@ -2003,9 +2035,44 @@ class TeamRunner:
 
         if self._runtime_failure_finalized or not failures:
             return []
-        self._runtime_failure_finalized = True
         agent_id, detail = failures[0]
         safe_detail = dict(detail) if isinstance(detail, dict) else {}
+        if self._coordinator_failure_deferrable(agent_id, safe_detail):
+            # 2026-09-14 provider-recovery host takeover: a fatally latched
+            # Coordinator must not erase surviving roles that are parked in
+            # externally recoverable provider waits.  The Coordinator stays
+            # dead (its latch is never cleared); the run stays observable so
+            # the outer owner can recover the waiting roles, and the same
+            # failure finalizes once the last wait is gone.
+            self._deferred_runtime_failures = failures
+            waits = self._live_provider_wait_agents()
+            self._append_evidence(
+                "runtime-failure",
+                {
+                    "event": "coordinator-takeover-deferred",
+                    "agent_id": agent_id,
+                    **safe_detail,
+                    "provider_waits": waits,
+                },
+            )
+            self._state("WAITING_OWNER", coordinator_failure_deferred=True)
+            return [
+                {
+                    "type": "coordinator-unavailable",
+                    "agent_id": agent_id,
+                    "role": safe_detail.get("role") or "coordinator",
+                    "reason": safe_detail.get("reason"),
+                    "provider_waits": waits,
+                    "host_action": "recover_provider",
+                    "note": (
+                        "Coordinator stays unavailable (no rebuild); the host "
+                        "owns ongoing orchestration of surviving roles — this "
+                        "is not a complete-team recovery. End the run with an "
+                        "explicit stop."
+                    ),
+                }
+            ]
+        self._runtime_failure_finalized = True
         self._append_evidence(
             "runtime-failure",
             {"agent_id": agent_id, **safe_detail},
@@ -3688,6 +3755,27 @@ class TeamRunner:
                     ),
                 )
             except Exception as exc:
+                if self._provider_rejection_pending(coordinator):
+                    # The resolution is already persisted; a Coordinator parked
+                    # in a provider wait cannot receive it yet.  Surface the
+                    # bounded, actionable deferral instead of tearing the run.
+                    self._append_evidence(
+                        "issue-resolution",
+                        {
+                            "event": "coordinator-delivery-deferred",
+                            "issue_id": resolution.issue_id,
+                            "detail": str(exc)[:200],
+                        },
+                    )
+                    raise RecoverableOuterInputError(
+                        "Coordinator is parked in a provider wait; recover it "
+                        "(recover_provider) so it can act on the persisted resolution",
+                        code="coordinator_waiting_provider",
+                        run_id=self.run.run_id,
+                        issue_id=resolution.issue_id,
+                        reporter_id=resolution.reporter_id,
+                        control_epoch=resolution.control_epoch,
+                    ) from exc
                 raise TeamConfigurationError("issue resolution Coordinator delivery failed") from exc
             # R2.3-009 start15/start20: the Coordinator's discretionary relay of
             # the ruling to Modeling proved unreliable twice — Modeling kept a
@@ -3770,31 +3858,244 @@ class TeamRunner:
                     question_delivery_id,
                 )
             else:
-                self.adapter.send_message(
-                    coordinator,
-                    RuntimeDelivery(
-                        sender_id="user/outer",
-                        recipient_id=coordinator,
-                        kind="outer-user",
-                        text=text,
-                    ),
-                )
+                try:
+                    self.adapter.send_message(
+                        coordinator,
+                        RuntimeDelivery(
+                            sender_id="user/outer",
+                            recipient_id=coordinator,
+                            kind="outer-user",
+                            text=text,
+                        ),
+                    )
+                except Exception as exc:
+                    if self._provider_rejection_pending(coordinator):
+                        raise RecoverableOuterInputError(
+                            "Coordinator is parked in a provider wait; recover it "
+                            "(recover_provider) before delivering user input",
+                            code="coordinator_waiting_provider",
+                            run_id=self.run.run_id,
+                        ) from exc
+                    raise
                 self._outer_user_texts.add(text)
                 self._append_evidence("outer-user", {"text": text})
         elif action == "status":
-            pass
+            waits = self._provider_wait_status_records()
+            if waits:
+                return [
+                    {"type": "provider-wait-status", "waits": waits}
+                ] + self.drain()
         elif action == "pause":
             self.adapter.pause()
             self._state("PAUSED")
         elif action == "resume":
             self.adapter.resume()
             self._state("RUNNING")
+        elif action == "recover_provider":
+            # 2026-09-14 provider-recovery: host takeover after the user reports
+            # the external condition lifted (quota reset, recharge, provider
+            # recovered).  Never depends on a blocked Coordinator: the action
+            # binds the user's message to the role's current pending wait and
+            # starts a new turn on the original live thread.
+            record = self._recover_provider_outer(message)
+            return self.drain() + [record]
         elif action == "stop":
+            # Explicit stop overrides the provider-wait cleanup deferral.
+            self._provider_wait_stop_requested = True
+            deferred = getattr(self, "_deferred_runtime_failures", None)
+            if deferred:
+                # Settle the retained Coordinator-takeover failure record so
+                # the terminal state names it; the takeover itself never ends
+                # the run while a recovered role is alive.
+                self._deferred_runtime_failures = None
+                self._runtime_failure_finalized = True
+                agent_id, detail = deferred[0]
+                self._append_evidence(
+                    "runtime-failure",
+                    {
+                        "event": "coordinator-takeover-stopped",
+                        "agent_id": agent_id,
+                        **(detail if isinstance(detail, dict) else {}),
+                    },
+                )
+                self.record_terminal_failure("runtime/infrastructure", False)
             self.cleanup()
             return [{"type": "stopped"}]
         else:
             raise TeamConfigurationError("unknown outer Runner action")
         return self.drain()
+
+    def _recover_provider_outer(self, message: dict[str, Any]) -> dict[str, Any]:
+        """Bind one explicit host recovery to a pending provider wait.
+
+        Schema: ``{"action": "recover_provider", "text": ..., "agent_id"|"role":
+        ..., "wait_id": optional}``.  The wait must currently be pending on the
+        Runtime; the message starts a new turn on the original live thread.  If
+        a runtime_recovery cooperative issue is open for the same role, it is
+        settled through the same ledger state machine so no dependent pause is
+        leaked.  Never touches the staged write gate: reconciling an unknown
+        write keeps its existing path.
+        """
+
+        if not self.run:
+            raise TeamConfigurationError("Runner is not prepared")
+        allowed = {"action", "text", "agent_id", "role", "wait_id", "run_id"}
+        if set(message) - allowed:
+            raise RecoverableOuterInputError(
+                "recover_provider envelope has invalid fields",
+                code="invalid_provider_recovery",
+                run_id=self.run.run_id,
+            )
+        if "run_id" in message and message.get("run_id") != self.run.run_id:
+            raise RecoverableOuterInputError(
+                "provider recovery run binding is invalid",
+                code="invalid_provider_recovery",
+                run_id=self.run.run_id,
+            )
+        text = message.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise RecoverableOuterInputError(
+                "provider recovery text must be a non-empty string",
+                code="invalid_provider_recovery",
+                run_id=self.run.run_id,
+            )
+        agent_id = message.get("agent_id") if isinstance(message.get("agent_id"), str) else None
+        role = message.get("role") if isinstance(message.get("role"), str) else None
+        wait_id = message.get("wait_id") if isinstance(message.get("wait_id"), str) else None
+        if wait_id is not None and not wait_id.strip():
+            raise RecoverableOuterInputError(
+                "provider recovery wait_id must be a non-empty string",
+                code="invalid_provider_recovery",
+                run_id=self.run.run_id,
+            )
+        if (agent_id is None) == (role is None):
+            raise RecoverableOuterInputError(
+                "provider recovery requires exactly one of agent_id or role",
+                code="invalid_provider_recovery",
+                run_id=self.run.run_id,
+            )
+        if role is not None:
+            agent_id = next(
+                (
+                    agent.agent_id
+                    for agent in self.run.configuration.profile.agents
+                    if agent.package.role == role
+                ),
+                None,
+            )
+            if agent_id is None:
+                raise RecoverableOuterInputError(
+                    f"provider recovery role {role} is not in this run",
+                    code="invalid_provider_recovery",
+                    run_id=self.run.run_id,
+                )
+        status_reader = getattr(self.adapter, "provider_wait_status", None)
+        pending = status_reader(agent_id) if callable(status_reader) else None
+        if pending is None:
+            raise RecoverableOuterInputError(
+                "target role has no pending provider wait",
+                code="provider_wait_not_pending",
+                run_id=self.run.run_id,
+            )
+        try:
+            receipt = self.adapter.recover_provider_wait(
+                agent_id,
+                text,
+                wait_id=wait_id,
+            )
+        except Exception as exc:
+            # Expected, externally-remediable recovery failures (stale epoch
+            # binding, still-exhausted provider re-entering its wait, refused
+            # dispatch, unavailable App Server) surface as one typed nonfatal
+            # rejection.  The foreground admission catches only
+            # RecoverableOuterInputError, so anything else here would tear the
+            # run down on a remediable retry.  Adapter errors carry our own
+            # sanitized messages only, never provider text.
+            raise RecoverableOuterInputError(
+                f"provider recovery failed: {str(exc)[:200]}",
+                code="provider_recovery_failed",
+                run_id=self.run.run_id,
+            ) from exc
+        self._append_evidence(
+            "provider-wait",
+            {
+                "event": "host-recovery",
+                "agent_id": agent_id,
+                "wait_id": pending.get("wait_id"),
+                "dispatch_mode": receipt.mode,
+            },
+        )
+        self._settle_provider_wait_issue(agent_id, text)
+        self._state("RUNNING", provider_recovered_agent=agent_id)
+        return {
+            "type": "provider-recovery",
+            "agent_id": agent_id,
+            "role": pending.get("role"),
+            "wait_id": pending.get("wait_id"),
+            "dispatch_mode": receipt.mode,
+        }
+
+    def _settle_provider_wait_issue(self, agent_id: str, text: str) -> None:
+        """Settle an open runtime_recovery issue after a successful recovery."""
+
+        ledger = self._issue_ledger()
+        if ledger is None or not ledger.pending:
+            return
+        active = ledger.active_issue
+        if (
+            active is None
+            or active.reporter_id != agent_id
+            or active.category != "runtime_recovery"
+        ):
+            return
+        # Runner-owned settlement through the same ledger transitions a
+        # Coordinator control would use; every step is evidence-recorded.
+        coordinator = self._issue_coordinator_id()
+        resolution = IssueResolution(
+            run_id=ledger.run_id,
+            issue_id=active.issue_id,
+            reporter_id=agent_id,
+            control_epoch=active.control_epoch,
+            resolution_type="repair_completed",
+            resolution_text=text[:200],
+            repair_component="external_service",
+        )
+        try:
+            # Drive the run-local ledger directly: the transport wrappers
+            # enqueue dispatch events for the main loop, which would duplicate
+            # the recovery turn that has already started.
+            if ledger.state == "reported":
+                ledger.control(
+                    issue_id=active.issue_id,
+                    coordinator_id=coordinator,
+                    reporter_id=agent_id,
+                    action="pause",
+                    control_epoch=active.control_epoch,
+                )
+            if ledger.state in {"waiting_owner", "waiting_repair"}:
+                ledger.persist_resolution(resolution)
+            if ledger.state == "resolution_ready":
+                control = ledger.control(
+                    issue_id=active.issue_id,
+                    coordinator_id=coordinator,
+                    reporter_id=agent_id,
+                    action="resume",
+                    control_epoch=active.control_epoch,
+                    resolution=resolution,
+                )
+                ledger.mark_dispatch(control)
+        except IssueError as exc:
+            # The recovery turn already started; the ledger stays as-is and
+            # remains observable instead of failing the recovery.
+            self._append_evidence(
+                "provider-wait",
+                {
+                    "event": "issue-settlement-skipped",
+                    "agent_id": agent_id,
+                    "issue_id": active.issue_id,
+                    "reason": str(exc)[:200],
+                },
+            )
 
     def _outer_issue_resolution(self, message: dict[str, Any]) -> IssueResolution:
         """Parse one strict outer resolution envelope; no opaque JSON payloads."""
@@ -5552,7 +5853,22 @@ class TeamRunner:
             expects_reply=attribution.expects_reply,
             reply_to_delivery_id=attribution.reply_to_delivery_id,
         )
-        receipt = self.adapter.send_message(protocol, delivery)
+        try:
+            receipt = self.adapter.send_message(protocol, delivery)
+        except Exception as exc:
+            if self._provider_rejection_pending(protocol):
+                # The Protocol role is parked in a provider wait; this redrive
+                # tick defers (evidence only) and retries after recovery.
+                self._append_evidence(
+                    "formal-candidate-progress",
+                    {
+                        "event": "redrive-deferred",
+                        "recipient_id": protocol,
+                        "detail": str(exc)[:200],
+                    },
+                )
+                return
+            raise
         self._candidate_progress.mark_redrive_dispatch(
             receipt, now=self.monotonic_clock()
         )
@@ -5690,6 +6006,230 @@ class TeamRunner:
             )
             self._issue_pending_started = None
 
+    # --- 2026-09-14 provider-recovery: observable provider waits ---------------
+
+    def _consume_provider_waits(self) -> list[tuple[str, dict[str, Any]]]:
+        """Drain newly observed provider waits from the Runtime, when supported."""
+
+        reader = getattr(self.adapter, "consume_provider_waits", None)
+        if not callable(reader):
+            return []
+        values = reader()
+        return list(values) if isinstance(values, (list, tuple)) else []
+
+    def _provider_wait_active(self, agent_id: str) -> bool:
+        """Ask the Runtime whether the role is currently parked in a provider wait."""
+
+        reader = getattr(self.adapter, "provider_wait_status", None)
+        if callable(reader):
+            return reader(agent_id) is not None
+        agent = getattr(self.adapter, "agents", {}).get(agent_id)
+        return getattr(agent, "provider_wait", None) is not None
+
+    def _provider_wait_registry(self) -> dict[str, dict[str, Any]]:
+        registry = getattr(self, "_provider_waits", None)
+        if registry is None:
+            registry = {}
+            self._provider_waits = registry
+        return registry
+
+    def _provider_rejection_pending(self, agent_id: str) -> bool:
+        """Whether a send failure to this role is explained by a pending wait.
+
+        Used to distinguish the Runtime's bounded provider-wait rejection from
+        real dispatch failures: a role parked in a wait must defer the delivery
+        (typed, actionable) instead of tearing the whole run down.
+        """
+
+        return self._provider_wait_active(agent_id)
+
+    def _live_provider_wait_agents(self) -> list[str]:
+        """Profile roles currently parked in a provider wait, live from the Runtime."""
+
+        if not self.run:
+            return []
+        try:
+            agents = self.run.configuration.profile.agents
+        except AttributeError:
+            return []
+        return [
+            agent.agent_id
+            for agent in agents
+            if self._provider_wait_active(agent.agent_id)
+        ]
+
+    def _provider_wait_status_records(self) -> list[dict[str, Any]]:
+        """One sanitized, actionable record per pending provider wait."""
+
+        if not self.run:
+            return []
+        try:
+            agents = self.run.configuration.profile.agents
+        except AttributeError:
+            return []
+        coordinator = next(
+            (
+                agent.agent_id
+                for agent in agents
+                if agent.package.role == "coordinator"
+            ),
+            None,
+        )
+        host_route = coordinator is None or self._provider_wait_active(
+            coordinator
+        ) or self._coordinator_latched()
+        records: list[dict[str, Any]] = []
+        for agent in agents:
+            reader = getattr(self.adapter, "provider_wait_status", None)
+            wait = reader(agent.agent_id) if callable(reader) else None
+            if not isinstance(wait, dict):
+                continue
+            records.append(
+                {
+                    "agent_id": agent.agent_id,
+                    "role": agent.package.role,
+                    "wait_id": wait.get("wait_id"),
+                    "epoch": wait.get("epoch"),
+                    "variant": wait.get("variant"),
+                    "http_status": wait.get("http_status"),
+                    "state": wait.get("state"),
+                    "notifications": wait.get("notifications"),
+                    "recovery_failures": wait.get("recovery_failures"),
+                    "recovery_route": "host" if host_route or agent.agent_id == coordinator else "coordinator",
+                    "action": (
+                        "recover_provider"
+                        if host_route or agent.agent_id == coordinator
+                        else "issue_resolution then coordinator resume"
+                    ),
+                }
+            )
+        return records
+
+    def _track_provider_wait(self) -> None:
+        """Exclude provider-wait time from the run fallback clock.
+
+        Overlap with a pending cooperative issue is not double counted: while
+        the issue ledger is pending, the issue-pending exclusion already covers
+        the same wall-clock window.
+        """
+
+        waits_active = bool(self._provider_wait_registry())
+        ledger = self._issue_ledger()
+        issue_pending = bool(ledger is not None and ledger.pending)
+        clock = getattr(self, "monotonic_clock", None) or time.monotonic
+        started = getattr(self, "_provider_wait_started", None)
+        if waits_active and not issue_pending and started is None:
+            self._provider_wait_started = clock()
+        elif (not waits_active or issue_pending) and started is not None:
+            self._provider_wait_elapsed = (
+                getattr(self, "_provider_wait_elapsed", 0.0) + max(0.0, clock() - started)
+            )
+            self._provider_wait_started = None
+
+    def _check_provider_waits(self, output: list[dict[str, Any]]) -> None:
+        """Observe provider waits and route the first one to a healthy Coordinator."""
+
+        if not self.run:
+            return
+        registry = self._provider_wait_registry()
+        for agent_id, record in self._consume_provider_waits():
+            if not isinstance(record, dict) or record.get("state") != "waiting":
+                continue
+            registry[agent_id] = dict(record)
+            self._append_evidence("provider-wait", {"event": "observed", **record})
+            output.append(
+                {
+                    "type": "provider-wait",
+                    "agent_id": agent_id,
+                    "role": record.get("role"),
+                    "variant": record.get("variant"),
+                    "wait_id": record.get("wait_id"),
+                }
+            )
+        for agent_id in list(registry):
+            if not self._provider_wait_active(agent_id):
+                record = registry.pop(agent_id)
+                self._append_evidence(
+                    "provider-wait",
+                    {"event": "cleared", "agent_id": agent_id, "wait_id": record.get("wait_id")},
+                )
+        if not registry:
+            return
+        ledger = self._issue_ledger()
+        if ledger is None or ledger.pending:
+            # Either the escalation capability is off (host recovery remains
+            # available) or the pending issue already pauses the run clock.
+            return
+        for agent_id in sorted(registry):
+            if self._report_provider_wait_issue(agent_id, registry[agent_id]):
+                break
+
+    def _report_provider_wait_issue(self, agent_id: str, record: dict[str, Any]) -> bool:
+        """Report one runtime_recovery issue for a parked role; soft-fail safely."""
+
+        assert self.run and self.transport
+        coordinator = self._issue_coordinator_id()
+        if agent_id == coordinator:
+            # The Coordinator itself is blocked; only the host can recover it.
+            return False
+        if self._provider_wait_active(coordinator) or self._coordinator_latched():
+            return False
+        agent = getattr(self.adapter, "agents", {}).get(agent_id)
+        thread_id = getattr(agent, "thread_id", None) if agent is not None else None
+        mutation_state = (
+            "unknown"
+            if self._staged_resolution_blocker() is not None
+            else "confirmed_no_write"
+        )
+        try:
+            issue = self.transport.report_issue(
+                agent_id,
+                category="runtime_recovery",
+                summary=(
+                    f"model provider wait: role {record.get('role')} is parked on "
+                    f"{record.get('variant')}; external quota/balance/outage recovery needed"
+                ),
+                failing_operation="model-provider turn",
+                error=(
+                    f"provider error variant {record.get('variant')}"
+                    + (
+                        f" http {record.get('http_status')}"
+                        if record.get("http_status") is not None
+                        else ""
+                    )
+                ),
+                mutation_state=mutation_state,
+                requested_action="pause",
+                thread_id=thread_id,
+            )
+        except RoutingError:
+            # Registry + evidence keep the wait observable and host-recoverable.
+            self._append_evidence(
+                "provider-wait",
+                {"event": "issue-report-unavailable", "agent_id": agent_id},
+            )
+            return False
+        self._append_evidence(
+            "provider-wait",
+            {"event": "issue-reported", "agent_id": agent_id, "issue_id": issue.get("issue_id")},
+        )
+        return True
+
+    def _coordinator_latched(self) -> bool:
+        if not self.run:
+            return False
+        try:
+            coordinator = self._issue_coordinator_id()
+        except TeamConfigurationError:
+            return True
+        agent = getattr(self.adapter, "agents", {}).get(coordinator)
+        if agent is None:
+            return True
+        return (
+            getattr(agent, "runtime_failure", None) is not None
+            or getattr(agent, "state", None) == "failed"
+        )
+
     # --- R3.0-011: competency-question direct channel -------------------------
 
     @staticmethod
@@ -5734,15 +6274,27 @@ class TeamRunner:
                 obj="competency-question",
                 retry="load the R3.0-011 Profile",
             )
-        receipt = self.adapter.send_message(
-            agent_id,
-            RuntimeDelivery(
-                sender_id="user/outer",
-                recipient_id=agent_id,
-                kind=kind,
-                text=canonical_json_bytes(payload).decode("utf-8"),
-            ),
-        )
+        try:
+            receipt = self.adapter.send_message(
+                agent_id,
+                RuntimeDelivery(
+                    sender_id="user/outer",
+                    recipient_id=agent_id,
+                    kind=kind,
+                    text=canonical_json_bytes(payload).decode("utf-8"),
+                ),
+            )
+        except Exception as exc:
+            if self._provider_rejection_pending(agent_id):
+                # Typed, nonfatal: the foreground CQ branch turns this into a
+                # cq-input-rejected envelope and keeps reading the next line.
+                raise CQContractError(
+                    "cq_waiting_provider",
+                    "the competency-question role is parked in a provider wait",
+                    obj="competency-question",
+                    retry="send recover_provider for that role, then resend this input",
+                ) from exc
+            raise
         self._append_evidence(
             "competency-questions",
             {
@@ -7259,6 +7811,12 @@ class TeamRunner:
         pending_started = getattr(self, "_issue_pending_started", None)
         if pending_started is not None:
             excluded += max(0.0, now - pending_started)
+        # 2026-09-14 provider-recovery: externally blocked waiting time (quota,
+        # balance, concurrency, provider outage) is not run inactivity.
+        provider_started = getattr(self, "_provider_wait_started", None)
+        if provider_started is not None:
+            excluded += max(0.0, now - provider_started)
+        excluded += getattr(self, "_provider_wait_elapsed", 0.0)
         # R3.0-011 (design §3.2): explicit user-review / interview / handoff
         # waits are recoverable waits, not stalled progress.  Overlapping CQ
         # windows are unioned by the tracker, so a window that starts inside
@@ -7488,6 +8046,23 @@ class TeamRunner:
                         ),
                     )
                 except Exception as exc:
+                    if issue.get("category") == "runtime_recovery":
+                        # 2026-09-14 provider-recovery: the Coordinator became
+                        # unavailable between the health check and this delivery.
+                        # The provider wait stays observable in evidence and the
+                        # host recovery action remains usable; no rebind.
+                        self._append_evidence(
+                            "provider-wait",
+                            {
+                                "event": "coordinator-delivery-failed",
+                                "issue_id": issue.get("issue_id"),
+                                "reporter_id": issue.get("reporter_id"),
+                            },
+                        )
+                        if self._candidate_progress is not None:
+                            self._candidate_progress.pause(now=self.monotonic_clock())
+                        self._state("WAITING_OWNER", issue_id=issue.get("issue_id"))
+                        continue
                     issue_id = issue.get("issue_id")
                     reporter_id = issue.get("reporter_id")
                     if isinstance(issue_id, str) and isinstance(reporter_id, str):
@@ -7531,6 +8106,29 @@ class TeamRunner:
         active_issue = self._issue_ledger().active_issue if self._issue_ledger() is not None else None
         if active_issue is None or active_issue.issue_id != control.issue_id:
             raise TeamConfigurationError("issue control issue binding is invalid")
+        # 2026-09-14 provider-recovery: a failed provider recovery is requeued,
+        # but never retried in a tight loop — each retry is spaced by a fixed
+        # backoff window (no paid polling, no fixed attempt-count death).
+        retry_gate = getattr(self, "_provider_recovery_retry_not_before", None)
+        if (
+            retry_gate is not None
+            and control.action == "resume"
+            and self._provider_wait_active(control.reporter_id)
+        ):
+            clock = getattr(self, "monotonic_clock", None) or time.monotonic
+            if clock() < retry_gate:
+                with self._issue_event_lock:
+                    self._issue_event_queue.append(
+                        {"kind": "issue_control", "control": control.as_dict()}
+                    )
+                output.append(
+                    {
+                        "type": "issue-control-waiting",
+                        "reason_code": "provider_recovery_backoff",
+                        **control.as_dict(),
+                    }
+                )
+                return
         if control.action == "abort":
             self._issue_abort_requested = True
             self._append_evidence("issue-abort", control.as_dict())
@@ -7618,18 +8216,86 @@ class TeamRunner:
             )
             return
         receipt: RuntimeDispatchReceipt | None = None
+        # 2026-09-14 provider-recovery: a reporter parked in a provider wait can
+        # neither receive an ordinary control turn nor be rebound — its process
+        # and thread are alive, only the provider is exhausted.
+        provider_waiting = self._provider_wait_active(control.reporter_id)
+        recovery_wait_id = None
+        if provider_waiting:
+            record = self._provider_wait_registry().get(control.reporter_id)
+            if record is None:
+                status_reader = getattr(self.adapter, "provider_wait_status", None)
+                record = status_reader(control.reporter_id) if callable(status_reader) else None
+            recovery_wait_id = record.get("wait_id") if isinstance(record, dict) else None
         try:
             if not self_resumed:
-                receipt = self.adapter.send_message(
-                    control.reporter_id,
-                    RuntimeDelivery(
+                if provider_waiting and control.action == "resume":
+                    recovery_text = (
+                        control.resolution.resolution_text
+                        if control.resolution is not None and control.resolution.resolution_text
+                        else json.dumps(control.as_dict(), ensure_ascii=False, sort_keys=True)
+                    )
+                    receipt = self.adapter.recover_provider_wait(
+                        control.reporter_id,
+                        recovery_text,
+                        wait_id=recovery_wait_id,
                         sender_id="runner/issue-control",
-                        recipient_id=control.reporter_id,
-                        kind="issue-control",
-                        text=json.dumps(control.as_dict(), ensure_ascii=False, sort_keys=True),
-                    ),
-                )
+                    )
+                    if getattr(receipt, "mode", None) != "start":
+                        raise RuntimeError("provider recovery did not start a new turn")
+                elif provider_waiting:
+                    # A pause for a parked role needs no Runtime turn: the wait
+                    # itself already freezes the role.  Record and proceed to
+                    # the dispatch/state transition below.
+                    self._append_evidence(
+                        "issue-control",
+                        {
+                            "event": "provider-wait-pause-noop",
+                            "issue_id": control.issue_id,
+                            "reporter_id": control.reporter_id,
+                            "control_epoch": control.control_epoch,
+                            "wait_id": recovery_wait_id,
+                        },
+                    )
+                else:
+                    receipt = self.adapter.send_message(
+                        control.reporter_id,
+                        RuntimeDelivery(
+                            sender_id="runner/issue-control",
+                            recipient_id=control.reporter_id,
+                            kind="issue-control",
+                            text=json.dumps(control.as_dict(), ensure_ascii=False, sort_keys=True),
+                        ),
+                    )
         except Exception as exc:
+            if provider_waiting and control.action == "resume":
+                # Recovery returned to the observable wait; the persisted
+                # resolution and this control stay retryable instead of burning
+                # the live thread with a rebind.
+                with self._issue_event_lock:
+                    self._issue_event_queue.append(
+                        {"kind": "issue_control", "control": control.as_dict()}
+                    )
+                clock = getattr(self, "monotonic_clock", None) or time.monotonic
+                self._provider_recovery_retry_not_before = clock() + _PROVIDER_RECOVERY_RETRY_SECONDS
+                self._append_evidence(
+                    "issue-control",
+                    {
+                        "event": "provider-wait-recovery-failed",
+                        "issue_id": control.issue_id,
+                        "reporter_id": control.reporter_id,
+                        "control_epoch": control.control_epoch,
+                        "wait_id": recovery_wait_id,
+                    },
+                )
+                output.append(
+                    {
+                        "type": "issue-control-waiting",
+                        "reason_code": "provider_recovery_retry",
+                        **control.as_dict(),
+                    }
+                )
+                return
             self.transport.fail_issue_rebind(
                 issue_id=control.issue_id,
                 reporter_id=control.reporter_id,
@@ -8116,7 +8782,17 @@ class TeamRunner:
         failures = self._consume_runtime_failures()
         if failures:
             return self._finalize_runtime_failure(failures)
+        # 2026-09-14 final review: once host takeover is selected, the deferred
+        # Coordinator failure never auto-finalizes on its own — a successful
+        # host recovery of the last waiting role must not be punished by an
+        # immediate teardown of that just-recovered role.  Only an explicit
+        # stop (or an unrelated role's own fatal failure) ends the run.
+        # Provider waits are reconciled before the fallback clock check so a
+        # wait observed on this very tick already excludes its waiting time.
+        output: list[dict[str, Any]] = []
+        self._check_provider_waits(output)
         self._track_issue_pending()
+        self._track_provider_wait()
         self._check_run_fallback_timeout()
         self._check_formal_candidate_progress()
         # R3.0-011: the approved-slice handoff is a map-only check and must
@@ -8133,7 +8809,6 @@ class TeamRunner:
             self._check_multi_slice_topology_gate()
         self._check_cooperative_idle()
         self._wake_acceptance_on_child_terminal()
-        output: list[dict[str, Any]] = []
         self._handle_issue_events(output)
         if self._issue_abort_requested:
             cleanup = self.cleanup()
@@ -8700,6 +9375,40 @@ class TeamRunner:
                 if issue_ledger.state == "waiting_repair"
                 else "WAITING_OWNER",
                 issue_id=paused["issue_id"],
+            )
+            return paused
+        # 2026-09-14 provider-recovery: a pending provider wait is an observable
+        # externally-recoverable state, not run death.  Cleanup is deferred so
+        # the live processes, threads, candidates, and evidence survive until
+        # recovery or an explicit stop (which sets the stop flag first).
+        live_provider_waits = {}
+        for agent_id in self._live_provider_wait_agents():
+            record = self._provider_wait_registry().get(agent_id)
+            if record is None:
+                status_reader = getattr(self.adapter, "provider_wait_status", None)
+                record = status_reader(agent_id) if callable(status_reader) else None
+            if isinstance(record, dict):
+                live_provider_waits[agent_id] = record
+            else:
+                live_provider_waits[agent_id] = {"agent_id": agent_id}
+        if (
+            live_provider_waits
+            and not getattr(self, "_provider_wait_stop_requested", False)
+            and not getattr(self, "_issue_abort_requested", False)
+        ):
+            paused = {
+                "status": "paused",
+                "provider_waits": sorted(
+                    {
+                        str(record.get("wait_id"))
+                        for record in live_provider_waits.values()
+                    }
+                ),
+                "cleanup_deferred": True,
+            }
+            self._state(
+                "WAITING_OWNER",
+                provider_waits=paused["provider_waits"],
             )
             return paused
         evidence: dict[str, Any] = {}

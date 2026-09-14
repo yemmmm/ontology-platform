@@ -317,6 +317,26 @@ _PROVIDER_HTTP_VARIANTS = frozenset(
         "responseTooManyFailedAttempts",
     }
 )
+# 2026-09-14 provider-recovery increment (requirements-v3.0.md R3.0-006): provider
+# conditions an external actor (quota reset, recharge, provider recovery) can lift
+# while the App Server process and its thread stay alive.  On an exhausted SDK
+# retry (``willRetry=false``) these variants enter an observable per-role wait
+# instead of the terminal runtime-failure latch.  Identity/protocol damage
+# (malformed notifications, ownership mismatches) and non-external variants
+# (context window, session budget, policy, sandbox, bad request) stay fatal.
+_PROVIDER_WAIT_VARIANTS = frozenset(
+    {
+        "rateLimitExceeded",
+        "usageLimitExceeded",
+        "serverOverloaded",
+        "internalServerError",
+        "unauthorized",
+        "httpConnectionFailed",
+        "responseStreamConnectionFailed",
+        "responseStreamDisconnected",
+        "responseTooManyFailedAttempts",
+    }
+)
 _SAFE_TURN_ID_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,255}")
 
 
@@ -753,6 +773,16 @@ class _Agent:
     # overwrite the first sanitized infrastructure cause.
     runtime_failure: dict[str, Any] | None = None
     runtime_failure_termination_attempted: bool = False
+    # 2026-09-14 provider-recovery: externally recoverable provider exhaustion
+    # parks the role here instead of the fatal latch.  ``provider_wait`` holds the
+    # sanitized pending record (variant, wait_id, epoch); the process and thread
+    # stay alive so an explicit recovery action can start a new turn later.
+    provider_wait: dict[str, Any] | None = None
+    provider_wait_epoch: int = 0
+    # Turns the SDK abandoned into a provider wait.  A late ``turn/completed``
+    # for one of these is consumed safely instead of latching a terminal
+    # mismatch that would kill a thread recovered onto a newer turn.
+    abandoned_turn_ids: list[str] = field(default_factory=list)
 
 
 def _v3_child_teardown_evidence(
@@ -1311,6 +1341,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._inactivity_lock = threading.Lock()
         self._runtime_failures: list[tuple[str, dict[str, Any]]] = []
         self._runtime_failure_lock = threading.Lock()
+        self._provider_waits: list[tuple[str, dict[str, Any]]] = []
+        self._provider_wait_lock = threading.Lock()
         self._provider_sessions: ProviderSessionManager | None = None
         self._stderr_drain_failures: dict[str, dict[str, Any]] = {}
         self._stderr_drain_reports: dict[str, dict[str, int | bool]] = {}
@@ -3831,7 +3863,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     state = agent.state
                     last = agent.last_output_monotonic
                     already_failed = getattr(agent, "runtime_failure", None) is not None
-                if already_failed or state != "running" or last <= 0.0:
+                    waiting_provider = getattr(agent, "provider_wait", None) is not None
+                if already_failed or waiting_provider or state != "running" or last <= 0.0:
                     continue
                 if time.monotonic() - last >= timeout:
                     self._on_inactivity_timeout(agent, timeout)
@@ -3931,6 +3964,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if compatibility_inactivity:
                     agent.inactivity_failure = dict(safe)
                 agent.state = "failed"
+                pending_wait = getattr(agent, "provider_wait", None)
+                if pending_wait is not None:
+                    # A genuine fatal latch supersedes any pending provider wait;
+                    # the runner must not keep waiting on a dead role.
+                    pending_wait["state"] = "superseded_by_fatal"
+                    agent.provider_wait = None
         self._terminate_runtime_process_once(agent)
         self._append_runtime_evidence(evidence_type, safe)
         with self._runtime_failure_lock:
@@ -3941,7 +3980,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Latch one inactivity failure, kill the role process, and queue for drain."""
 
         with agent.state_lock:
-            if agent.runtime_failure is not None or agent.inactivity_watchdog_stop.is_set():
+            # Re-check at the latch decision, under the same lock the provider
+            # wait uses: the watchdog's precheck can race a concurrent wait
+            # entry between its unlocked read and this latch.  A parked role
+            # produces no output by design, so inactivity is not a failure.
+            if (
+                agent.runtime_failure is not None
+                or agent.provider_wait is not None
+                or agent.inactivity_watchdog_stop.is_set()
+            ):
                 return
             now = time.monotonic()
             idle_seconds = (
@@ -5239,7 +5286,217 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # refresh the inactivity clock; only allowlisted work notifications do.
         self._append_runtime_evidence("provider-error", detail)
         if detail.get("will_retry") is False:
+            if detail.get("variant") in _PROVIDER_WAIT_VARIANTS:
+                # 2026-09-14 provider-recovery: SDK retry exhaustion on an
+                # externally fixable condition (rate limit, quota/balance,
+                # concurrency, outage) is not run irrecoverability.  Park the
+                # role in an observable wait on its live thread; an explicit
+                # recovery action starts the next turn.  Identity damage and
+                # non-external variants keep the fatal latch below.
+                self._enter_provider_wait(agent, detail)
+                return
             self._latch_runtime_failure(agent, detail)
+
+    def _enter_provider_wait(self, agent: _Agent, detail: Mapping[str, Any]) -> dict[str, Any] | None:
+        """Park one role in an observable provider wait; never kill the process."""
+
+        wait: dict[str, Any] | None
+        with agent.state_lock:
+            if getattr(agent, "runtime_failure", None) is not None:
+                # A genuine fatal latch always wins; never mask it with a wait.
+                return None
+            existing = agent.provider_wait
+            if existing is not None:
+                # Repeated exhausted notifications for the same blocked role are
+                # deduplicated: one pending wait, one epoch, no duplicate queues.
+                existing["notifications"] = int(existing.get("notifications", 1)) + 1
+                wait = existing
+                fresh = False
+            else:
+                agent.provider_wait_epoch += 1
+                epoch = agent.provider_wait_epoch
+                wait = {
+                    "agent_id": agent.agent_id,
+                    "role": agent.package.role,
+                    "wait_id": f"{agent.agent_id}:{epoch}",
+                    "epoch": epoch,
+                    "variant": detail.get("variant"),
+                    "http_status": detail.get("http_status"),
+                    "turn_digest": detail.get("turn_digest"),
+                    "thread_digest": (
+                        hashlib.sha256(agent.thread_id.encode("utf-8")).hexdigest()
+                        if agent.thread_id
+                        else None
+                    ),
+                    "state": "waiting",
+                    "notifications": 1,
+                    "recovery_failures": 0,
+                }
+                agent.provider_wait = wait
+                # The SDK abandoned the turn; the thread stays live for a new
+                # turn after external recovery.  Remember the abandoned turn so
+                # its late terminal notification is consumed, not treated as
+                # identity damage against a later recovered turn.
+                agent.active_turn_id = None
+                abandoned = agent.last_started_turn_id
+                if abandoned and abandoned not in agent.abandoned_turn_ids:
+                    agent.abandoned_turn_ids.append(abandoned)
+                    del agent.abandoned_turn_ids[:-8]
+                agent.state = "waiting_provider"
+                fresh = True
+        if not fresh:
+            self._append_runtime_evidence("provider-wait", dict(wait))
+            return wait
+        self._append_runtime_evidence("provider-wait", dict(wait))
+        with self._provider_wait_lock:
+            self._provider_waits.append((agent.agent_id, dict(wait)))
+        return wait
+
+    def consume_provider_waits(self) -> list[tuple[str, dict[str, Any]]]:
+        """Return and clear newly observed provider waits exactly once."""
+
+        with self._provider_wait_lock:
+            waits = self._provider_waits
+            self._provider_waits = []
+        return waits
+
+    def provider_wait_status(self, agent_id: str) -> dict[str, Any] | None:
+        """Return a sanitized copy of the role's current provider wait, if any."""
+
+        agent = self.agents.get(agent_id)
+        if agent is None:
+            return None
+        with agent.state_lock:
+            return dict(agent.provider_wait) if agent.provider_wait is not None else None
+
+    def recover_provider_wait(
+        self,
+        agent_id: str,
+        message: str,
+        *,
+        wait_id: str | None = None,
+        sender_id: str = "user/outer",
+    ) -> RuntimeDispatchReceipt:
+        """Bind one explicit recovery to the pending wait and start a new turn.
+
+        Idempotency and binding are enforced by the wait record itself: the
+        action requires a currently pending wait (``wait_id`` optionally pins
+        the exact epoch).  A failed dispatch restores the same observable wait
+        so recovery can be retried; it never escalates to the fatal latch.
+        """
+
+        if not isinstance(message, str) or not message.strip():
+            raise CodexRuntimeError("provider recovery message must be a non-empty string")
+        if len(message) > 4000:
+            raise CodexRuntimeError("provider recovery message exceeds the bounded length")
+        agent = self.agents.get(agent_id)
+        if agent is None:
+            raise CodexRuntimeError("provider recovery target agent is unknown")
+        process = agent.process
+        if (
+            process is None
+            or getattr(process, "stdin", None) is None
+            or getattr(process, "stdout", None) is None
+        ):
+            # A closed App Server can never accept a new turn: mark the wait
+            # visibly unavailable instead of claiming it is recoverable forever.
+            with agent.state_lock:
+                unavailable_wait_id = (
+                    agent.provider_wait.get("wait_id") if agent.provider_wait is not None else None
+                )
+                if agent.provider_wait is not None:
+                    agent.provider_wait["state"] = "unavailable"
+            self._append_runtime_evidence(
+                "provider-wait-recovery-failed",
+                {
+                    "agent_id": agent_id,
+                    "wait_id": unavailable_wait_id,
+                    "reason": "app-server-unavailable",
+                },
+            )
+            raise CodexRuntimeError(
+                "app-server is unavailable; provider recovery requires the live process"
+            )
+        with agent.state_lock:
+            if agent.runtime_failure is not None:
+                raise CodexRuntimeError("runtime failure is latched")
+            wait = agent.provider_wait
+            if wait is None:
+                raise CodexRuntimeError("agent is not waiting for provider recovery")
+            if wait_id is not None and wait_id != wait.get("wait_id"):
+                raise CodexRuntimeError("provider recovery wait binding is stale")
+            # Clear first so ``send_message`` accepts the recovery turn.
+            agent.provider_wait = None
+            agent.state = "idle"
+        delivery = RuntimeDelivery(
+            sender_id=sender_id,
+            recipient_id=agent_id,
+            kind="provider-recovery",
+            text=message,
+        )
+        try:
+            receipt = self.send_message(agent_id, delivery)
+            # Pump once more so an exhausted error the server emitted
+            # synchronously with the new turn is observed before the recovery
+            # outcome is recorded.
+            self.receive_messages()
+        except Exception:
+            # Recovery failure returns to an observable wait; the live
+            # process/thread is preserved for the next attempt.  A wait the
+            # notification stream entered while the dispatch was failing (a
+            # fresh epoch from a new exhausted error) always wins over
+            # restoring the older epoch, and a turn that actually started is
+            # never discarded by forcing the parked state.
+            restored = False
+            with agent.state_lock:
+                if agent.runtime_failure is None:
+                    current = agent.provider_wait
+                    if current is None and agent.active_turn_id is None:
+                        wait["recovery_failures"] = int(wait.get("recovery_failures", 0)) + 1
+                        agent.provider_wait = wait
+                        agent.state = "waiting_provider"
+                        restored = True
+                    elif current is not None:
+                        current["recovery_failures"] = int(current.get("recovery_failures", 0)) + 1
+            self._append_runtime_evidence(
+                "provider-wait-recovery-failed",
+                {
+                    "agent_id": agent_id,
+                    "wait_id": wait.get("wait_id"),
+                    "recovery_failures": wait.get("recovery_failures", 0),
+                    "wait_restored": restored,
+                },
+            )
+            raise
+        with agent.state_lock:
+            # A synchronous exhausted error for the recovery turn may already
+            # have re-entered waiting; never claim a clean recovery then.
+            reentered = agent.provider_wait is not None
+        if reentered:
+            self._append_runtime_evidence(
+                "provider-wait-recovery-reentered",
+                {
+                    "agent_id": agent_id,
+                    "wait_id": wait.get("wait_id"),
+                    "dispatch_mode": receipt.mode,
+                    "message_digest": hashlib.sha256(message.encode("utf-8")).hexdigest(),
+                },
+            )
+            raise CodexRuntimeError(
+                "provider is still exhausted after the recovery dispatch; the role "
+                "re-entered its provider wait"
+            )
+        self._append_runtime_evidence(
+            "provider-wait-recovered",
+            {
+                "agent_id": agent_id,
+                "wait_id": wait.get("wait_id"),
+                "variant": wait.get("variant"),
+                "dispatch_mode": receipt.mode,
+                "message_digest": hashlib.sha256(message.encode("utf-8")).hexdigest(),
+            },
+        )
+        return receipt
 
     @staticmethod
     def _classify_steer_message(message: object) -> tuple[str, str | None]:
@@ -6003,6 +6260,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         agent = self.agents[agent_id]
         if getattr(agent, "runtime_failure", None) is not None:
             raise CodexRuntimeError("runtime failure is latched")
+        if getattr(agent, "provider_wait", None) is not None:
+            # 2026-09-14 provider-recovery: ordinary routing must not silently
+            # burn a turn against a provider known to be exhausted.  Recovery
+            # goes through ``recover_provider_wait`` only.
+            raise CodexRuntimeError("provider wait is active; use an explicit provider recovery")
         if agent.active_turn_id:
             try:
                 result = self._rpc(
@@ -6121,6 +6383,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # Retain the legacy no-payload terminal projection when no turn
                 # is active. A first-turn response always freezes an active ID,
                 # so a replayed terminal there remains strictly bound.
+                if agent.provider_wait is not None and agent.active_turn_id is None:
+                    # A parked role has no active turn by design; the provider
+                    # wait owns the state and must survive stray terminals
+                    # (including legacy no-payload projections).
+                    return
                 if completed_turn_id is None and agent.active_turn_id is None:
                     agent.active_turn_id, agent.state = None, "idle"
                     return
@@ -6129,6 +6396,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         agent,
                         {"source": "notification", "reason": "turn-terminal-invalid", "terminal_method": method},
                     )
+                    return
+                if (
+                    completed_turn_id != agent.active_turn_id
+                    and completed_turn_id in agent.abandoned_turn_ids
+                ):
+                    # A late terminal for a turn the SDK already abandoned into
+                    # a provider wait: consume it safely.  Latching a mismatch
+                    # here would kill the live thread after recovery started a
+                    # newer turn on it.
+                    agent.abandoned_turn_ids.remove(completed_turn_id)
+                    agent.last_completed_turn_id = completed_turn_id
                     return
                 if agent.active_turn_id is not None and completed_turn_id != agent.active_turn_id:
                     self._latch_runtime_failure(
@@ -6140,7 +6418,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     agent.last_completed_turn_id = completed_turn_id
                 agent.active_turn_id, agent.state = None, "idle"
             if method in {"turn/failed", "thread/error"}:
-                agent.state = "failed"
+                # The failed turn is already captured by the pending provider
+                # wait; keep the observable waiting state for that wait.
+                if agent.provider_wait is None:
+                    agent.state = "failed"
 
     def _record_protocol_platform_artifact(
         self, agent: _Agent, params: Mapping[str, Any]

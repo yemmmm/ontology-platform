@@ -29,7 +29,12 @@ def _agent(tmp_path: Path, *, active: str = "turn-1") -> _Agent:
     )
 
 
-def _error_notification(*, will_retry: bool, turn_id: str = "turn-1") -> dict[str, object]:
+def _error_notification(
+    *,
+    will_retry: bool,
+    turn_id: str = "turn-1",
+    info: dict[str, object] | None = None,
+) -> dict[str, object]:
     return {
         "method": "error",
         "params": {
@@ -38,9 +43,9 @@ def _error_notification(*, will_retry: bool, turn_id: str = "turn-1") -> dict[st
             "willRetry": will_retry,
             "error": {
                 "message": "provider text must never be retained",
-                "codexErrorInfo": {
-                    "responseStreamConnectionFailed": {"httpStatusCode": 503}
-                },
+                "codexErrorInfo": info
+                if info is not None
+                else {"responseStreamConnectionFailed": {"httpStatusCode": 503}},
                 "additionalDetails": "provider details must never be retained",
             },
         },
@@ -77,7 +82,15 @@ def test_terminal_provider_error_latches_once_and_secondary_eof_is_ignored(tmp_p
     agent.process = process
     adapter.agents[agent.agent_id] = agent
     try:
-        adapter._notification(agent, _error_notification(will_retry=False))
+        # misalignmentPolicyViolation is not externally recoverable, so an
+        # exhausted SDK retry keeps the fatal latch.
+        adapter._notification(
+            agent,
+            _error_notification(
+                will_retry=False,
+                info="misalignmentPolicyViolation",
+            ),
+        )
         assert agent.state == "failed"
         failures = adapter.consume_runtime_failures()
         assert len(failures) == 1
@@ -217,6 +230,7 @@ def test_current_protocol_terminal_error_still_latches(tmp_path: Path) -> None:
         agent,
         _current_protocol_turn_error(
             will_retry=False,
+            codexErrorInfo="misalignmentPolicyViolation",
             misalignment={"errorType": "canary-classification", "steer": {"message": "canary steer text"}},
         ),
     )

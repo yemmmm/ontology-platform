@@ -152,6 +152,10 @@ _KNOWN_OUTER_ACTIONS = frozenset(
         "pause",
         "resume",
         "stop",
+        # 2026-09-14 provider-recovery: host-takeover recovery after the outer
+        # owner confirms the external condition lifted.  Bound input errors are
+        # typed, no-side-effect rejections; the loop keeps reading.
+        "recover_provider",
         # R3.0-011: competency-question direct-channel inputs.  They are
         # dispatched by the narrow CQ branch below and never reach
         # ``receive_outer``.
