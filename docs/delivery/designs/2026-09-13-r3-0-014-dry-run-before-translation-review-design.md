@@ -1,7 +1,7 @@
 # R3.0-014 物化计划先 dry-run 后翻译审阅 — 交付设计
 
 - 日期：2026-09-13
-- 状态：D1=REVISE、D2=PASS 为保留历史；用户转交的 D3 外部意见已核验并修订，D4 有界复审 PASS。详细处置见共享测试计划；未实现、未运行产品测试、未启动真实建模。
+- 状态（2026-09-14 同步）：`b849fcf` 已实现；D1/D2/D3/D4 设计历史保留，D4 PASS。独立机械结果尚未登记；auth014 有部分真实 L0 宿主记录，未独立复核，完整 L0/L1 未通过。详见 §8。
 - 需求：[requirements-v3.0.md 的 R3.0-014](../../requirements/requirements-v3.0.md#r30-014-物化计划先-dry-run-后翻译审阅)
 - 关联需求：R3.0-008B、R3.0-009、R3.0-011、R3.0-012；R3.0-013 仍独立登记。
 - 共享测试计划：[R3.0-014 共享测试计划](../test-plans/2026-09-13-r3-0-014-dry-run-before-translation-review-test-plan.md)
@@ -32,7 +32,10 @@ Coordinator 审阅最终翻译计划
 Agent、平台业务 API、数据库表、文件化批次 API、动态审批框架或上下文压缩机制。首次翻译审阅仍由
 Coordinator 承担，业务语义审批职责不移动。
 
-## 2. 当前入口与关键差距
+## 2. 实现前入口与关键差距
+
+本节及 §7 引用保留设计时点的代码事实和行号；当前已实现状态见 §8，不能将下列旧缺口
+重新当作当前未实现证据。
 
 当前代码已证明 Protocol 通过 Runner 私有能力转发到真实后端，但不能把现有 `ok=true` 当作
 平台校验成功：
@@ -294,3 +297,13 @@ Batch/Attempt 和对账能力。
   idempotency、workspace 和 lease 规则。
 - `modeling_team/references/r3-0-009-unified-graph-contract.json`：009 的候选/决定/plan、
   translation approval、projection digest、唯一写者和旧 schema 隔离合同。
+
+## 8. 2026-09-14 交付状态同步
+
+`b849fcf` 已包含 Runner、staged forwarder、计划/审批/proof 合同与测试代码。当前共享计划
+尚未登记独立机械执行轮；存在测试文件不能证明已执行或独立通过。原设计 D4 PASS 保留。
+
+auth014 宿主账本记录 L0-1/2/3/4/6 的真实路径取证，L0-5 unknown 未触发、L1 未完成。
+本轮没有逐项复核原事件，故仅记录部分真实 L0 的宿主报告，不宣布完整 L0 或语义质量 PASS。
+[状态核对依据](../records/2026-09-14-r3-0-015-review-evidence.md#4-012014-状态核对依据)
+保留来源与限制。本次仅同步文档，不运行测试、重启服务或追加 semantic start。

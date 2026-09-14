@@ -1,7 +1,7 @@
 # R3.0-014 物化计划先 dry-run 后翻译审阅 — 共享测试计划
 
 - 日期：2026-09-13
-- 状态：D1=REVISE、D2=PASS 为历史；D3 外部意见已核验并修订，D4=PASS；产品测试、真实 L0/L1 和语义验收均为 NOT RUN。
+- 状态（2026-09-14 同步）：`b849fcf` 已实现；D1/D2/D3/D4 设计历史保留，D4 PASS。独立机械执行结果尚未登记；auth014 有部分真实 L0 宿主记录，未独立复核，完整 L0/L1 未通过；见 §7.6。
 - 需求：[requirements-v3.0.md 的 R3.0-014](../../requirements/requirements-v3.0.md#r30-014-物化计划先-dry-run-后翻译审阅)
 - 设计：[R3.0-014 交付设计](../designs/2026-09-13-r3-0-014-dry-run-before-translation-review-design.md)
 - 历史统计：[近轮审阅与 dry-run 失败统计](../records/2026-09-13-modeling-review-failure-statistics.md)
@@ -191,12 +191,13 @@ revision、projection/content/response digest、workspace 前后版本、failure
 | 阶段 | 完成条件 | 当前状态 |
 | --- | --- | --- |
 | 设计 | 权威需求、设计、共享计划一致；独立评审无未处置 Critical/High | PASS（D4，仅设计） |
-| 机械实现验收 | M1-M31 中适用项通过，旧模式和 hidden 隔离回归通过 | NOT RUN |
-| L0 Runtime | 真实平台 dry-run/proof/apply/unknown/cleanup 闭合 | NOT RUN |
-| L1 Modeling quality | 独立语义翻译和模型质量证据通过；失败不被平台状态洗绿 | NOT RUN |
-| 完成 | 以上门槛、需求状态同步、独立 PASS 和安全清理均完成 | NOT RUN |
+| 机械实现验收 | M1-M31 中适用项通过，旧模式和 hidden 隔离回归通过 | 实现已存在，独立机械结果未登记 |
+| L0 Runtime | 真实平台 dry-run/proof/apply/unknown/cleanup 闭合 | 部分宿主记录，L0-5 未执行，本次未独立复核 |
+| L1 Modeling quality | 独立语义翻译和模型质量证据通过；失败不被平台状态洗绿 | 未完成 |
+| 完成 | 以上门槛、需求状态同步、独立 PASS 和安全清理均完成 | 未完成 |
 
-本轮仅交付需求、设计、测试计划和统计文档；没有执行上述任何产品或真实运行用例。
+初次设计轮仅交付需求、设计、测试计划和统计文档；当时没有执行上述产品或真实用例。
+后续实现与宿主运行记录见 §7.6，不追溯改变初次设计轮结论。
 
 ### 7.4 本轮文档交付检查
 
@@ -214,3 +215,11 @@ revision、projection/content/response digest、workspace 前后版本、failure
 - 相对 Markdown 链接及代码围栏检查：3 文件、0 问题；`git diff --cached --check` PASS。
 - GitNexus `detect_changes(scope=staged)`：3 文件、LOW、0 受影响执行流程，只涉及预期文档。
 - 未运行产品测试、未重启服务、未使用建模授权；D4 PASS 仅代表设计复审。
+
+### 7.6 2026-09-14 状态核对（仅文档）
+
+- 源码提交 `b849fcf` 包含实现与用例；本计划未见独立机械执行结果，不能补写机械 PASS。
+- [账本核验依据](../records/2026-09-14-r3-0-015-review-evidence.md#4-012014-状态核对依据)
+  记录 auth014 的宿主 L0-1/2/3/4/6 取证陈述；L0-5 unknown 未触发，L1 未完成。本轮未
+  独立复核原事件/模型，因此不升级为全部 L0 或 L1 PASS。
+- 本轮只同步需求/设计/共享计划的当前状态，保留所有历史轮；无新测试、服务重启或建模授权消耗。
