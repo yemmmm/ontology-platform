@@ -18,6 +18,7 @@ from typing import Any, Callable, ClassVar, Mapping, Sequence
 
 
 from .contracts import (
+    MODELING_CHECKPOINTS_PARAMETER,
     STAGED_MODELING_DECISIONS_PARAMETER,
     UNIFIED_GRAPH_TASK_PARAMETER,
     TeamConfiguration,
@@ -165,10 +166,40 @@ from .competency_questions import (
     freeze_question_pool,
     public_projection,
     read_exposure_evidence,
+    reload_frozen_pool,
     review_decision_digest,
     validate_draft_document,
     validate_review_decision,
     write_public_projection,
+)
+from .checkpoints import (
+    CHECKPOINT_DIRECTORY,
+    CHECKPOINT_EVIDENCE_NAME,
+    CHECKPOINT_KIND_CQ_FROZEN,
+    CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
+    CHECKPOINT_KIND_PRODUCTION_HANDOFF,
+    CHECKPOINT_KIND_SCENARIO_MAPPED,
+    CHECKPOINT_KIND_SEMANTIC_APPROVED,
+    CHECKPOINT_KINDS,
+    PRODUCTION_ROLES,
+    WRITE_CLAIMING_KINDS,
+    CheckpointArtifactSpec,
+    CheckpointError,
+    StagePackage,
+    file_digest as checkpoint_file_digest,
+    inspect_checkpoints,
+    save_checkpoint,
+    scope_retention_reference,
+)
+from .checkpoint_recovery import (
+    PlatformReadback,
+    RecoveryPlan,
+    check_resume_submission,
+    http_readback,
+    merge_exposure_union,
+    prepare_recovery_plan,
+    restore_checkpoint_artifacts,
+    write_recovery_files,
 )
 from .protocol_mechanics import (
     ProtocolRetrievalFallbackError,
@@ -287,11 +318,19 @@ class CQWriteAdmission:
     handoff verification keeps the scene quiesced (recoverable rejection), and
     resuming production is a separate Delivery request, not something the
     acceptance side may lift.
+
+    R3.0-015 S1 (design §3.3.2 / D1 review note 2): the one-way phase ladder
+    above must NOT be reused for the brief write-position capture a checkpoint
+    save needs, so a separate reversible ``capturing`` flag blocks new
+    admissions for the capture window only; ``end_capture`` restores admission
+    while the phase is still ``open``.  The barrier is never held across a
+    cross-LLM review or a network wait.
     """
 
     def __init__(self) -> None:
         self._condition = threading.Condition()
         self._phase = "open"
+        self._capturing = False
         self._in_flight: dict[int, dict[str, Any]] = {}
         self._records: list[dict[str, Any]] = []
         self._next_ticket = 0
@@ -301,11 +340,16 @@ class CQWriteAdmission:
         with self._condition:
             return self._phase
 
+    @property
+    def capturing(self) -> bool:
+        with self._condition:
+            return self._capturing
+
     def admit(self, kind: str) -> int | None:
         """Register one staged mutation; ``None`` rejects it as recoverable."""
 
         with self._condition:
-            if self._phase != "open":
+            if self._phase != "open" or self._capturing:
                 return None
             self._next_ticket += 1
             self._in_flight[self._next_ticket] = {
@@ -313,6 +357,28 @@ class CQWriteAdmission:
                 "kind": kind,
             }
             return self._next_ticket
+
+    def begin_capture(self) -> bool:
+        """Briefly stop admitting new writes for a checkpoint capture.
+
+        Returns ``False`` when the phase is already past ``open`` — writes are
+        then blocked anyway, so the caller may capture without the barrier.
+        Unlike :meth:`begin_quiescing` this is reversible via
+        :meth:`end_capture` and never advances the phase ladder.
+        """
+
+        with self._condition:
+            if self._phase != "open":
+                return False
+            self._capturing = True
+            return True
+
+    def end_capture(self) -> None:
+        """Reopen admission after a checkpoint capture (idempotent)."""
+
+        with self._condition:
+            self._capturing = False
+            self._condition.notify_all()
 
     def complete(self, ticket: int, outcome: str) -> None:
         """Record the determined outcome of one admitted mutation."""
@@ -360,6 +426,7 @@ class CQWriteAdmission:
         with self._condition:
             return {
                 "phase": self._phase,
+                "capturing": self._capturing,
                 "in_flight": [dict(item) for item in self._in_flight.values()],
                 "records": [dict(item) for item in self._records],
             }
@@ -480,6 +547,10 @@ class TeamRunner:
         self._staged_decisions = False
         # R3.0-009: unified semantic graph mode; False unless the task opts in.
         self._unified_graph = False
+        # R3.0-015 S1: persistent modeling-stage checkpoints.  False for every
+        # task without ``modeling_checkpoints``; the flag enables checkpoint
+        # saves/inspection only, never a resume capability.
+        self._modeling_checkpoints = False
         # R3.0-011: competency-question acceptance state.  Every flag stays
         # False/empty for tasks without ``competency_question_acceptance``.
         self._competency_questions = False
@@ -525,6 +596,11 @@ class TeamRunner:
         self._cq_wait_windows = CQWaitWindowTracker()
         self._staged_gate_feedback_fingerprints: set[str] = set()
         self._staged_gate_killed = False
+        # R3.0-015 S2: the imported completion index of a resumed run.  None
+        # on every normal (non-resume) run, so the submit path below behaves
+        # byte-identically for runs that never resumed.
+        self._resume_imports: dict[str, Any] | None = None
+        self._resume_plan: RecoveryPlan | None = None
         self._candidate_receipt_wakeup_sent: set[tuple[str, str]] = set()
         # One typed Protocol response is allowed for each active original
         # Modeling delivery.  The set is Runner-owned so a capability retry
@@ -1039,6 +1115,26 @@ class TeamRunner:
                         path.relative_to(root).as_posix()
                         for path in staged_decision_directories(root, unified=unified_graph)
                     ],
+                },
+            )
+        # R3.0-015 S1: the checkpoint selector rides on the staged path
+        # (contracts.py enforces the multi_slice+staged+unified dependencies).
+        # Enabling it only registers the checkpoint directory and the
+        # save/inspect entry points; it never grants a resume capability.
+        if (
+            multi_slice_workflow
+            and not formal_acceptance
+            and self._staged_decisions
+            and staged_parameters.get(MODELING_CHECKPOINTS_PARAMETER) is True
+        ):
+            self._modeling_checkpoints = True
+            (root / CHECKPOINT_DIRECTORY).mkdir(mode=0o700, parents=True, exist_ok=True)
+            self._append_evidence(
+                CHECKPOINT_EVIDENCE_NAME,
+                {
+                    "event": "selector-enabled",
+                    "selector": MODELING_CHECKPOINTS_PARAMETER,
+                    "segments": "s1-save-inspect-only",
                 },
             )
         cq_selected = staged_parameters.get(COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER) is True
@@ -3899,6 +3995,14 @@ class TeamRunner:
             # starts a new turn on the original live thread.
             record = self._recover_provider_outer(message)
             return self.drain() + [record]
+        elif action == "checkpoint":
+            # R3.0-015 S1: host/Coordinator-originated checkpoint save or
+            # inspect.  The action grants no new agent write permission: a
+            # save only copies already-published run artifacts the Runner can
+            # verify on disk, and a "phase complete" text claim without
+            # artifacts is a typed missing-artifact rejection.
+            record = self._handle_checkpoint_outer(message)
+            return self.drain() + [record]
         elif action == "stop":
             # Explicit stop overrides the provider-wait cleanup deferral.
             self._provider_wait_stop_requested = True
@@ -4712,6 +4816,14 @@ class TeamRunner:
             )
         ticket = self._cq_write_admission.admit("staged_submit_modeling_batch")
         if ticket is None:
+            if self._cq_write_admission.capturing:
+                # R3.0-015 §3.3.2: the brief checkpoint capture barrier; the
+                # write is recoverably deferred, not lost.
+                raise StagedSubmissionRejection(
+                    "staged_write_checkpoint_capture",
+                    "a checkpoint save is capturing the run's write positions; "
+                    "retry this staged write once the save finishes",
+                )
             raise StagedSubmissionRejection(
                 "staged_write_quiescing",
                 "the run is in its read-only acceptance handoff period; new staged "
@@ -4732,6 +4844,12 @@ class TeamRunner:
             self._cq_write_admission.complete(ticket, "rejected")
             raise
         self._cq_write_admission.complete(ticket, "receipted")
+        # R3.0-015 S1: every confirmed staged batch (a durable receipt exists)
+        # is a materialization_progress save point (design §3.1).  A save
+        # failure never terminates the run; it lands in checkpoint evidence.
+        self._save_checkpoint_after_trigger(
+            CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="staged-receipt"
+        )
         return result
 
     def _handle_staged_submit_modeling_batch_open(
@@ -4790,6 +4908,18 @@ class TeamRunner:
             raise StagedSubmissionRejection(issues[0].reason_code, issues[0].detail)
         batch = args["batch"]
         plan_ref = args.get("plan_ref")
+        if self._resume_imports is not None:
+            # R3.0-015 S2 (design §5.2): the backend scopes idempotency keys
+            # per Build Session, so an operation the origin chain already
+            # completed would become a brand-new write in this session.  The
+            # imported completion index refuses it here, before any intent is
+            # persisted or forwarded (test plan M16).
+            try:
+                check_resume_submission(
+                    self._resume_imports, batch, plan_ref=str(plan_ref or "")
+                )
+            except CheckpointError as exc:
+                raise StagedSubmissionRejection(exc.reason_code, exc.detail) from exc
         projection: Mapping[str, Any] | None = None
         if unified:
             # R3.0-009 §9.2: before anything is persisted or forwarded the plan
@@ -5045,6 +5175,13 @@ class TeamRunner:
             )
         ticket = self._cq_write_admission.admit("staged_associate_evidence")
         if ticket is None:
+            if self._cq_write_admission.capturing:
+                # R3.0-015 §3.3.2: same brief, reversible capture barrier.
+                raise StagedSubmissionRejection(
+                    "staged_write_checkpoint_capture",
+                    "a checkpoint save is capturing the run's write positions; "
+                    "retry this evidence association once the save finishes",
+                )
             raise StagedSubmissionRejection(
                 "staged_write_quiescing",
                 "the run is in its read-only acceptance handoff period; new staged "
@@ -6932,6 +7069,13 @@ class TeamRunner:
         self._cq_append_public_projection(
             public_projection(snapshot), snapshot["review_binding"]
         )
+        # R3.0-015 S1: a published freeze is the automatic cq_frozen save
+        # point (design §3.1); a save failure never kills the run.
+        self._save_checkpoint_after_trigger(
+            CHECKPOINT_KIND_CQ_FROZEN,
+            trigger="cq-freeze",
+            scope_refs={"freeze_id": snapshot["batch_id"]},
+        )
         return snapshot
 
     def _cq_pool_questions(self) -> tuple[list[dict[str, Any]], list[str]]:
@@ -7428,6 +7572,17 @@ class TeamRunner:
             "freeze_digest": self._cq_freeze["snapshot_digest"],
             "handoff_digest": handoff_digest,
         }
+        # R3.0-015 S1: a published handoff is the automatic production_handoff
+        # save point (design §3.1).  The admission phase is read-only here, so
+        # the capture barrier is a no-op and the write state is settled.
+        self._save_checkpoint_after_trigger(
+            CHECKPOINT_KIND_PRODUCTION_HANDOFF,
+            trigger="production-handoff",
+            scope_refs={
+                "freeze_id": batch_id,
+                "acceptance_attempt_id": attempt["acceptance_attempt_id"],
+            },
+        )
         return {**attempt, "handoff_digest": handoff_digest}
 
     def _handle_cq_acceptance_complete(self, message: dict[str, Any]) -> dict[str, Any]:
@@ -9470,7 +9625,28 @@ class TeamRunner:
             if self.scope:
                 if self.run and self.run.terminal_results:
                     self.scope.terminal_results = self.run.terminal_results
+                # R3.0-015 S1 (design §3.3.5): an otherwise-empty owned scope is
+                # retained only when at least one fully published, digest-
+                # verifying checkpoint package references the run.  A selector
+                # flag alone, a failed save or a temp directory never counts.
+                checkpoint_retention: dict[str, Any] | None = None
+                if self.run is not None:
+                    try:
+                        checkpoint_retention = scope_retention_reference(self.run.root)
+                    except Exception:  # noqa: BLE001 - retention is advisory-only here
+                        checkpoint_retention = None
+                if checkpoint_retention is not None:
+                    self.scope.checkpoint_retention = checkpoint_retention
                 evidence["scope"] = self.scope.cleanup()
+                if checkpoint_retention is not None:
+                    self._append_evidence(
+                        CHECKPOINT_EVIDENCE_NAME,
+                        {
+                            "event": "scope-retention-reference",
+                            **checkpoint_retention,
+                            "scope_disposition": evidence["scope"].get("scope_disposition"),
+                        },
+                    )
                 if self.run and evidence["scope"].get("scope_disposition") == "retained-pending-acceptance":
                     self._write_retained_handoff_evidence(evidence["scope"])
             if self.transport:
@@ -9709,6 +9885,910 @@ class TeamRunner:
                 "retained scope requires every Profile Agent status completed"
             )
         return {role: "completed" for role in sorted(roles)}
+
+    # --- R3.0-015 S1: checkpoint save/inspect ---------------------------------
+    #
+    # Save/inspect helpers implement segment S1 (design §3); segment S2
+    # (cross-process production resume, design §4-§6) lives in the section
+    # above through ``prepare_from_checkpoint``, and segment S4 (acceptance
+    # continuation of a production_handoff, design §7) is delivered by
+    # ``checkpoint_recovery`` / the CLI without touching this Runner.
+    # ``checkpoints.CHECKPOINT_DELIVERY_SEGMENTS`` records that boundary for
+    # every inspection result.
+
+    def _checkpoint_spec(
+        self,
+        source: str,
+        owner: str,
+        *,
+        host_private: bool = False,
+        host_only: bool = False,
+    ) -> CheckpointArtifactSpec:
+        visible_to: tuple[str, ...]
+        if host_only:
+            visible_to = ("host",)
+        elif host_private:
+            visible_to = ("host", COMPETENCY_QUESTION_ROLE)
+        else:
+            # Production-visible entries keep the per-role projection open to
+            # the CQ authoring role as well; only ownership is recorded here.
+            visible_to = (*PRODUCTION_ROLES, COMPETENCY_QUESTION_ROLE)
+        return CheckpointArtifactSpec(
+            source=source, owner=owner, visible_to=visible_to, host_private=host_private
+        )
+
+    def _checkpoint_directory_sources(self, directory: Path, pattern: str) -> list[str]:
+        """Run-relative posix sources for existing regular files (sorted)."""
+
+        if not directory.is_dir():
+            return []
+        return sorted(
+            path.relative_to(self.run.root).as_posix()
+            for path in directory.glob(pattern)
+            if path.is_file() and not path.is_symlink()
+        )
+
+    def _checkpoint_configuration(self) -> dict[str, Any]:
+        """The manifest 配置 group: identity, parameters and frozen contracts."""
+
+        config = self.run.configuration
+        configuration: dict[str, Any] = {
+            "task_id": config.task.task_id,
+            "profile_id": config.profile.profile_id,
+            "task_parameters": dict(config.task.parameters or {}),
+            "unified_semantic_graph": bool(self._unified_graph),
+            "acceptance_target": self._acceptance_target,
+            "model_profile_id": (
+                self.run.team_model_profile.profile_id
+                if self.run.team_model_profile is not None
+                else None
+            ),
+            "configuration_files": [],
+        }
+        for name in (
+            "profile.snapshot.yaml",
+            "task.snapshot.yaml",
+            "task-overlay.snapshot.yaml",
+        ):
+            path = self.run.root / name
+            if path.is_file() and not path.is_symlink():
+                configuration["configuration_files"].append(
+                    {"path": name, "digest": checkpoint_file_digest(path)}
+                )
+        return configuration
+
+    def _checkpoint_write_positions(
+        self, admission_snapshot: Mapping[str, Any] | None
+    ) -> dict[str, Any]:
+        """The manifest 写入位置 group: a point-in-time intents/receipts join.
+
+        Deliberately timestamp-free: the dedup signature covers write
+        positions, so a wall clock here would mint a new package per save
+        (design §3.4).  The record states what was observable at save time and
+        never claims anything about future writes.
+        """
+
+        positions: list[dict[str, Any]] = []
+        if self._staged_decisions:
+            try:
+                intents = read_submission_intents(self.run.root)
+                receipts = read_submission_receipts(self.run.root)
+            except StagedDecisionArtifactError:
+                intents, receipts = [], []
+            receipt_by_key = {
+                receipt.get("idempotency_key"): receipt
+                for receipt in receipts
+                if receipt.get("idempotency_key")
+            }
+            for intent in intents:
+                key = intent.get("idempotency_key")
+                receipt = receipt_by_key.get(key)
+                if intent.get("status") == "unknown":
+                    state = "unknown"
+                elif receipt is not None or intent.get("status") == "receipted":
+                    # dry-run validated is NOT applied (requirement §阶段 4).
+                    state = (
+                        "applied" if intent.get("mode") == "apply" else "validated_not_applied"
+                    )
+                else:
+                    state = "pending"
+                positions.append(
+                    {
+                        "ordinal": intent.get("ordinal"),
+                        "idempotency_key": key,
+                        "client_batch_id": intent.get("client_batch_id"),
+                        "session_id": intent.get("session_id"),
+                        "mode": intent.get("mode"),
+                        "state": state,
+                        "receipt_ordinal": receipt.get("ordinal") if receipt else None,
+                        "batch_id": receipt.get("batch_id") if receipt else None,
+                    }
+                )
+        snapshot = admission_snapshot or {}
+        return {
+            "positions": positions,
+            "in_flight": [dict(item) for item in snapshot.get("in_flight") or []],
+            "unknown": [
+                {"ticket": record.get("ticket"), "kind": record.get("kind")}
+                for record in snapshot.get("records") or []
+                if record.get("outcome") == "unknown"
+            ],
+            "note": "point-in-time snapshot of durable intents/receipts; dry-run "
+            "validated is not applied and nothing is claimed about future writes",
+        }
+
+    def _checkpoint_count_marker(self, value: Any, marker: str) -> int:
+        """Count string values equal to ``marker`` anywhere in a parsed artifact."""
+
+        if isinstance(value, str):
+            return 1 if value == marker else 0
+        if isinstance(value, Mapping):
+            return sum(self._checkpoint_count_marker(item, marker) for item in value.values())
+        if isinstance(value, (list, tuple)):
+            return sum(self._checkpoint_count_marker(item, marker) for item in value)
+        return 0
+
+    def _checkpoint_load_json(self, source: str) -> Any:
+        try:
+            return json.loads((self.run.root / source).read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            return None
+
+    def _collect_checkpoint_stage(
+        self, kind: str, scope_refs: Mapping[str, Any]
+    ) -> StagePackage:
+        """Build one per-kind stage package from the run's actual disk state.
+
+        Only explicitly listed published artifacts are ever packaged; each kind
+        declares the minimum evidence it needs, and a missing minimum raises
+        the typed ``checkpoint_missing_artifact`` rejection so a bare "phase
+        complete" claim can never produce a package (design §3.1).
+        """
+
+        root = self.run.root
+        specs: list[CheckpointArtifactSpec] = []
+        bindings: list[dict[str, str]] = []
+        pending: list[str] = []
+
+        def add(source: str, owner: str, **flags: Any) -> None:
+            specs.append(self._checkpoint_spec(source, owner, **flags))
+
+        def bind(source: str) -> None:
+            bindings.append(
+                {
+                    "artifact": source,
+                    "digest": checkpoint_file_digest(root / source),
+                }
+            )
+
+        def require(present: bool, what: str) -> None:
+            raise CheckpointError(
+                "checkpoint_missing_artifact",
+                f"cannot save {kind}: no published {what} exists in this run; a "
+                "stage-complete claim without artifacts is not a saveable stage "
+                "result",
+                obj=what,
+                phase="checkpoint-save",
+                retryable=True,
+                retry=f"publish the {what} artifact first, then retry this save",
+            )
+
+        # --- shared published material (packaged only when present) ---
+        scenario_sources = [
+            f"scenario-map/{name}"
+            for name in (
+                "scenario-map.json",
+                "topology-decision.json",
+                "protection-iri-suggestions.json",
+            )
+            if (root / "scenario-map" / name).is_file()
+            and not (root / "scenario-map" / name).is_symlink()
+        ]
+        topology_present = "scenario-map/topology-decision.json" in scenario_sources
+        interviews = self._checkpoint_directory_sources(
+            root / "competency-questions" / "private", "interview-*.json"
+        )
+        drafts = self._checkpoint_directory_sources(
+            root / "competency-questions" / "private", "draft-*.json"
+        )
+        review_snapshots = self._checkpoint_directory_sources(
+            root / "competency-questions" / "reviews", "cq-review-*.json"
+        )
+        review_decisions = self._checkpoint_directory_sources(
+            root / "competency-questions" / "reviews", "decision-*.json"
+        )
+        projections = self._checkpoint_directory_sources(
+            root / "competency-questions" / "public", "public-projection-*.json"
+        )
+        freezes = self._checkpoint_directory_sources(
+            root / "competency-questions" / "frozen", "freeze-*.json"
+        )
+        staged_paths = staged_decision_artifact_paths(root, unified=bool(self._unified_graph))
+
+        def staged_source(key: str) -> str | None:
+            path = staged_paths.get(key)
+            if path is not None and path.is_file() and not path.is_symlink():
+                return path.relative_to(root).as_posix()
+            return None
+
+        conclusions = staged_source("conclusions")
+        unlock = staged_source("unlock")
+        approvals = staged_source("approvals")
+        ledger = staged_source("ledger")
+        checklist = staged_source("checklist")
+        stage3_slot = staged_source("stage3_slot")
+        candidates = self._checkpoint_directory_sources(
+            root / "stage3-neutral-graph" / "candidates", "*.json"
+        )
+        plans = self._checkpoint_directory_sources(
+            root / "stage3-neutral-graph" / "materialization-plans", "*.json"
+        )
+        intents = self._checkpoint_directory_sources(
+            staged_paths["intents_dir"], "intent-*.json"
+        )
+        receipts = self._checkpoint_directory_sources(
+            staged_paths["receipts_dir"], "receipt-*.json"
+        )
+
+        def add_cq_material() -> None:
+            for source in freezes:
+                add(source, "host", host_private=True)
+            for source in interviews + drafts + review_snapshots + review_decisions:
+                add(source, "competency-question", host_private=True)
+            for source in projections:
+                add(source, "competency-question")
+
+        def add_scenario_material() -> None:
+            for source in scenario_sources:
+                add(source, "coordinator")
+
+        def add_staged_material(*, include_intents: bool) -> None:
+            for source in candidates + plans:
+                add(source, "modeling")
+            for source in (conclusions, unlock, approvals, ledger, checklist, stage3_slot):
+                if source is not None:
+                    add(source, "coordinator")
+            if include_intents:
+                for source in intents + receipts:
+                    add(source, "protocol")
+
+        if kind == CHECKPOINT_KIND_SCENARIO_MAPPED:
+            # The kind needs one published pre-CQ stage result: an accepted
+            # scenario/slice decision or a confirmed interview.  CQ drafts and
+            # reviews ride along with their real review state; unreviewed
+            # drafts are never packaged as approved anything (requirement §1).
+            add_scenario_material()
+            add_cq_material()
+            if not scenario_sources and not interviews:
+                require(bool(scenario_sources or interviews), "scenario/interview decision")
+            if "scenario-map/scenario-map.json" in scenario_sources:
+                bind("scenario-map/scenario-map.json")
+            if self._competency_questions and not freezes:
+                pending.append("cq_freeze")
+            if not topology_present:
+                pending.append("topology_decision")
+            pending.append("semantic_modeling")
+            stage_facts: dict[str, Any] = {
+                "stage": kind,
+                "cq_phase": self._cq_phase,
+                "cq_frozen": bool(freezes),
+                "topology_decided": topology_present,
+                "bindings": bindings,
+                "pending": pending,
+                "next_step": "continue the not-yet-completed CQ review, slice "
+                "analysis or topology decision without redoing the confirmed "
+                "interviews and published decisions",
+            }
+            default_scope: dict[str, Any] = {}
+        elif kind == CHECKPOINT_KIND_CQ_FROZEN:
+            if not freezes:
+                require(bool(freezes), "frozen CQ pool")
+            if not projections:
+                require(bool(projections), "public CQ projection")
+            add_scenario_material()
+            add_cq_material()
+            freeze_source = freezes[-1]
+            bind(freeze_source)
+            freeze_payload = self._checkpoint_load_json(freeze_source)
+            if not topology_present:
+                pending.append("topology_decision")
+            pending.append("semantic_modeling")
+            stage_facts = {
+                "stage": kind,
+                "freeze_ref": freeze_source,
+                "freeze_id": (
+                    freeze_payload.get("batch_id")
+                    if isinstance(freeze_payload, Mapping)
+                    else None
+                ),
+                "cq_phase": self._cq_phase,
+                "topology_decided": topology_present,
+                "bindings": bindings,
+                "pending": pending,
+                "next_step": "continue topology decision and semantic modeling "
+                "without regenerating or re-reviewing the frozen pool",
+            }
+            default_scope = {
+                "freeze_id": (
+                    freeze_payload.get("batch_id")
+                    if isinstance(freeze_payload, Mapping)
+                    else freeze_source
+                )
+            }
+        elif kind == CHECKPOINT_KIND_SEMANTIC_APPROVED:
+            if approvals is None:
+                require(approvals is not None, "staged value-semantics approvals")
+            if conclusions is None and not candidates:
+                require(
+                    bool(conclusions or candidates),
+                    "analysis conclusions or unified candidates",
+                )
+            add_scenario_material()
+            add_cq_material()
+            add_staged_material(include_intents=False)
+            if approvals is not None:
+                bind(approvals)
+            if conclusions is not None:
+                bind(conclusions)
+            analyzed = 0
+            if conclusions is not None:
+                analyzed = self._checkpoint_count_marker(
+                    self._checkpoint_load_json(conclusions), "analyzed_not_materialized"
+                )
+            if analyzed and unlock is None:
+                pending.append("value_materialization")
+            pending.append("remaining_semantics")
+            stage_facts = {
+                "stage": kind,
+                "approvals_present": True,
+                "candidate_count": len(candidates),
+                "analyzed_not_materialized": analyzed,
+                "bindings": bindings,
+                "pending": pending,
+                "next_step": "continue remaining semantics, value confirmation "
+                "or translation; undecided content stays pending",
+            }
+            default_scope = {}
+        elif kind == CHECKPOINT_KIND_MATERIALIZATION_PROGRESS:
+            if not receipts:
+                require(bool(receipts), "confirmed staged batch receipt")
+            if not intents:
+                require(bool(intents), "staged submission intent")
+            add_scenario_material()
+            add_cq_material()
+            add_staged_material(include_intents=True)
+            latest_receipt = receipts[-1]
+            bind(latest_receipt)
+            receipt_payload = self._checkpoint_load_json(latest_receipt)
+            stage_facts = {
+                "stage": kind,
+                "receipt_count": len(receipts),
+                "intent_count": len(intents),
+                "plan_count": len(plans),
+                "latest_receipt": latest_receipt,
+                "latest_batch_id": (
+                    receipt_payload.get("batch_id")
+                    if isinstance(receipt_payload, Mapping)
+                    else None
+                ),
+                "bindings": bindings,
+                "pending": pending,
+                "next_step": "continue the remaining dry-run correction, "
+                "translation review or apply operations",
+            }
+            default_scope = {
+                "batch_id": (
+                    receipt_payload.get("batch_id")
+                    if isinstance(receipt_payload, Mapping)
+                    else None
+                )
+            }
+        elif kind == CHECKPOINT_KIND_PRODUCTION_HANDOFF:
+            handoff_source = "acceptance-v3/production-handoff.json"
+            contract_source = "acceptance-v3/run-contract.json"
+            handoff_path = root / handoff_source
+            if not handoff_path.is_file() or handoff_path.is_symlink():
+                require(handoff_path.is_file(), "production handoff")
+            if not (root / contract_source).is_file():
+                require((root / contract_source).is_file(), "run contract")
+            handoff_payload = self._checkpoint_load_json(handoff_source)
+            # M04: the handoff is saved because of its evidence fields, never
+            # because a ``ready`` boolean is true.
+            for field in (
+                "freeze_id",
+                "freeze_digest",
+                "scope_binding",
+                "applied_batches",
+                "unknown_writes",
+                "write_phase",
+            ):
+                if not isinstance(handoff_payload, Mapping) or field not in handoff_payload:
+                    raise CheckpointError(
+                        "checkpoint_missing_artifact",
+                        f"cannot save {kind}: the production handoff lacks the "
+                        f"evidence field {field!r}",
+                        obj="production-handoff",
+                        phase="checkpoint-save",
+                        retryable=True,
+                        retry="republish a complete production handoff first",
+                    )
+            if handoff_payload.get("unknown_writes"):
+                raise CheckpointError(
+                    "checkpoint_write_unreconciled",
+                    "cannot save {kind}: the production handoff itself records "
+                    "unknown writes".format(kind=kind),
+                    obj="production-handoff",
+                    phase="checkpoint-save",
+                    retryable=True,
+                    retry="reconcile the unknown writes through the existing "
+                    "reconciliation path, then retry this save",
+                )
+            add(handoff_source, "host", host_private=True, host_only=True)
+            add(contract_source, "host", host_private=True, host_only=True)
+            add_scenario_material()
+            add_cq_material()
+            add_staged_material(include_intents=True)
+            bind(handoff_source)
+            stage_facts = {
+                "stage": kind,
+                "freeze_id": handoff_payload.get("freeze_id"),
+                "freeze_digest": handoff_payload.get("freeze_digest"),
+                "acceptance_target": handoff_payload.get("acceptance_target"),
+                "applied_batch_count": len(handoff_payload.get("applied_batches") or []),
+                "not_applied_count": len(handoff_payload.get("not_applied") or []),
+                "bindings": bindings,
+                "pending": [],
+                "next_step": "continue independent acceptance from the handoff "
+                "with ``checkpoint resume --mode acceptance`` (segment S4); a "
+                "live run may also use the cq-acceptance entry directly",
+            }
+            default_scope = {
+                "freeze_id": handoff_payload.get("freeze_id"),
+                "acceptance_attempt_id": handoff_payload.get("acceptance_attempt_id"),
+            }
+        else:  # pragma: no cover - guarded by the caller's CHECKPOINT_KINDS gate
+            raise CheckpointError(
+                "checkpoint_invalid_kind",
+                f"unknown checkpoint kind {kind!r}",
+                obj="kind",
+                retryable=False,
+            )
+        for name in (
+            "profile.snapshot.yaml",
+            "task.snapshot.yaml",
+            "task-overlay.snapshot.yaml",
+        ):
+            if (root / name).is_file() and not (root / name).is_symlink():
+                add(name, "host", host_private=True)
+        return StagePackage(
+            kind=kind,
+            scope_refs=dict(scope_refs) if scope_refs else default_scope,
+            artifacts=specs,
+            stage_facts=stage_facts,
+            platform_bindings=self._checkpoint_platform_bindings(),
+            write_positions={},
+        )
+
+    def _checkpoint_platform_bindings(self) -> dict[str, Any]:
+        """The manifest 平台绑定 group: scope identity and build session refs."""
+
+        bindings: dict[str, Any] = {"run_scope": dict(self.run.scope or {})}
+        scope_obj = getattr(self.scope, "scope", None)
+        for attr in ("project_id", "ontology_ids", "graph_set_ids", "build_session_id"):
+            value = getattr(scope_obj, attr, None)
+            if value:
+                bindings[attr] = list(value) if isinstance(value, (list, tuple, set)) else value
+        if self.run.team_model_profile is not None:
+            bindings["model_profile_digest"] = self.run.team_model_profile.digest
+        return bindings
+
+    def _save_run_checkpoint(
+        self,
+        kind: str,
+        *,
+        scope_refs: Mapping[str, Any] | None = None,
+        trigger: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Save one checkpoint, enforcing the M07 write-claim gate (§3.3.2–3.3.3)."""
+
+        if not self._modeling_checkpoints or self.run is None:
+            raise CheckpointError(
+                "checkpoint_selector_required",
+                "this run did not enable modeling_checkpoints",
+                obj="modeling_checkpoints",
+                phase="checkpoint-save",
+                retryable=False,
+                retry="start a run from a v3 Task declaring "
+                "parameters.modeling_checkpoints: true",
+            )
+        if kind not in CHECKPOINT_KINDS:
+            raise CheckpointError(
+                "checkpoint_invalid_kind",
+                f"checkpoint kind must be one of {list(CHECKPOINT_KINDS)}",
+                obj="kind",
+                retryable=False,
+            )
+        package = self._collect_checkpoint_stage(kind, scope_refs or {})
+        write_positions: dict[str, Any]
+        if kind in WRITE_CLAIMING_KINDS:
+            # §3.3.2: the reversible capture barrier briefly blocks new
+            # admissions while the write positions are read; §3.3.3: with
+            # in-flight or unknown writes no recoverable-write claim package
+            # is published — the specific wait reason is returned instead.
+            captured = self._cq_write_admission.begin_capture()
+            try:
+                if not self._cq_write_admission.wait_until_drained(
+                    _CQ_WRITE_DRAIN_TIMEOUT_SECONDS
+                ):
+                    raise CheckpointError(
+                        "checkpoint_write_unreconciled",
+                        "in-flight staged writes did not settle within the "
+                        "bounded drain wait; refusing to capture a recoverable "
+                        "write state",
+                        obj="write_positions",
+                        phase="checkpoint-save",
+                        retryable=True,
+                        retry="wait for the in-flight staged writes to settle, "
+                        "then retry this save",
+                    )
+                admission_snapshot = self._cq_write_admission.snapshot()
+                write_positions = self._checkpoint_write_positions(admission_snapshot)
+            finally:
+                if captured:
+                    self._cq_write_admission.end_capture()
+            unsettled = [
+                item
+                for item in write_positions.get("positions") or []
+                if item.get("state") in {"pending", "unknown", "in_flight"}
+            ]
+            if (
+                write_positions.get("in_flight")
+                or write_positions.get("unknown")
+                or unsettled
+            ):
+                raise CheckpointError(
+                    "checkpoint_write_unreconciled",
+                    f"staged writes are still in flight or unknown "
+                    f"({len(write_positions.get('in_flight') or [])} in flight, "
+                    f"{len(write_positions.get('unknown') or [])} unknown, "
+                    f"{len(unsettled)} unsettled intents); refusing to publish a "
+                    "recoverable-write claim",
+                    obj="write_positions",
+                    phase="checkpoint-save",
+                    retryable=True,
+                    retry="let the staged writes settle through the existing "
+                    "reconciliation path, then retry this save",
+                )
+        else:
+            # Non-write-claiming kinds still record the honestly observed
+            # write state without gating the save on it.
+            write_positions = self._checkpoint_write_positions(
+                self._cq_write_admission.snapshot()
+            )
+        package.write_positions = write_positions
+        result = save_checkpoint(
+            self.run.root,
+            package,
+            source_run_id=self.run.run_id,
+            configuration=self._checkpoint_configuration(),
+            request_id=request_id,
+        )
+        self._append_evidence(
+            CHECKPOINT_EVIDENCE_NAME,
+            {
+                "event": f"checkpoint-{result['status']}",
+                "kind": kind,
+                "trigger": trigger,
+                **({"request_id": request_id} if request_id else {}),
+                "checkpoint_id": result["checkpoint_id"],
+                "manifest_digest": result["manifest_digest"],
+                "artifact_count": result["artifact_count"],
+                "scope_refs": dict(package.scope_refs),
+            },
+        )
+        return result
+
+    def _save_checkpoint_after_trigger(
+        self, kind: str, *, trigger: str, scope_refs: Mapping[str, Any] | None = None
+    ) -> None:
+        """Best-effort automatic save at an existing publication point (§3.1).
+
+        A failed save never terminates the run and never rolls back the stage
+        event itself: the typed reason lands in checkpoint evidence and the
+        previously published checkpoint stays readable (design §3.3.4).
+        """
+
+        if not self._modeling_checkpoints or self.run is None:
+            return
+        try:
+            self._save_run_checkpoint(kind, scope_refs=scope_refs, trigger=trigger)
+        except CheckpointError as error:
+            self._append_evidence(
+                CHECKPOINT_EVIDENCE_NAME,
+                {
+                    "event": "checkpoint-save-failed",
+                    "kind": kind,
+                    "trigger": trigger,
+                    **error.data(),
+                },
+            )
+        except OSError as error:
+            self._append_evidence(
+                CHECKPOINT_EVIDENCE_NAME,
+                {
+                    "event": "checkpoint-save-failed",
+                    "kind": kind,
+                    "trigger": trigger,
+                    # Same §8 key shape as the CheckpointError branch above
+                    # (design §8); an I/O failure carries the save-side phase
+                    # literal and only the exception class name, never a path.
+                    "code": "checkpoint_write_failed",
+                    "object_ref": "checkpoints",
+                    "phase": "checkpoint-save",
+                    "retryable": True,
+                    "reason": type(error).__name__,
+                    "next_action": "retry the save once the transient I/O "
+                    "failure clears; the previously published checkpoint "
+                    "stays readable",
+                },
+            )
+
+    # --- R3.0-015 S2: cross-process production resume ---------------------------
+
+    def prepare_from_checkpoint(
+        self,
+        *,
+        source_run_root: Path,
+        checkpoint_id: str,
+        new_run_id: str,
+        readback: PlatformReadback | None = None,
+        authorization_reference: str | None = None,
+    ) -> TeamRun:
+        """Resume production from a published checkpoint (design §4.2).
+
+        Read-only reconciliation first (the same entry the host can call
+        before any credential bootstrap), then the normal ``prepare`` creates
+        the NEW run root — never over an existing directory — and the
+        recovery materialization restores artifacts, writes the recovery
+        records, recomputes validators and loads the imported completion
+        index.  Transport/terminal/deadline stay fresh: nothing replays the
+        old delivery queue or imports old completed reports as new terminal
+        reports.
+        """
+
+        if self.run is not None or not self._safe_run_id(new_run_id):
+            raise TeamConfigurationError("unsafe or already attached run ID")
+        if readback is None:
+            if not self.canonical_admin_key or not self.canonical_base_url:
+                raise TeamConfigurationError(
+                    "resume needs the host platform credential channel "
+                    "(canonical base URL and admin key)"
+                )
+            readback = http_readback(self.canonical_base_url, self.canonical_admin_key)
+        plan = prepare_recovery_plan(
+            source_run_root=source_run_root,
+            checkpoint_id=checkpoint_id,
+            new_run_id=new_run_id,
+            repository_root=self.repository_root,
+            readback=readback,
+            authorization_reference=authorization_reference,
+        )
+        configuration = plan.manifest.get("configuration") or {}
+        run = self.prepare(
+            run_id=plan.new_run_id,
+            profile_path=plan.profile_path,
+            task_path=plan.task_path,
+            scope=plan.scope,
+            model_profile_id=configuration.get("model_profile_id"),
+        )
+        self._materialize_checkpoint_recovery(plan)
+        return run
+
+    def _materialize_checkpoint_recovery(self, plan: RecoveryPlan) -> None:
+        """Project the reconciled checkpoint into the new run (design §4.2 table).
+
+        Artifacts land at their original run-relative paths (digest-verified),
+        the recovery records are host-owned, staged validators are RECOMPUTED
+        from the restored files — never a restored boolean gate-open — and the
+        CQ frozen pool is re-validated and adopted rather than trusted.  The
+        exposure union across the recovery chain is written before any role
+        could start, so a once-exposed question can never become hidden again.
+        """
+
+        if self.run is None:
+            raise TeamConfigurationError("Runner is not prepared")
+        root = self.run.root
+        restored = restore_checkpoint_artifacts(plan.manifest, plan.source_run_root, root)
+        artifacts = [
+            artifact
+            for artifact in plan.manifest.get("artifacts") or []
+            if isinstance(artifact, Mapping)
+        ]
+
+        exposure: dict[str, Any] | None = None
+        cq_material = any(
+            str(artifact.get("source") or "").startswith("competency-questions/")
+            for artifact in artifacts
+        )
+        if cq_material:
+            exposure = merge_exposure_union(plan.chain_roots, root)
+            self._cq_merge_exposure_evidence()
+
+        freeze_restored = False
+        if (
+            plan.manifest.get("kind") == CHECKPOINT_KIND_CQ_FROZEN
+            and self._competency_questions
+        ):
+            freeze_sources = [
+                str(artifact.get("source"))
+                for artifact in artifacts
+                if str(artifact.get("source") or "").startswith(
+                    "competency-questions/frozen/freeze-"
+                )
+            ]
+            if not freeze_sources:
+                raise CheckpointError(
+                    "checkpoint_incomplete",
+                    "a cq_frozen checkpoint packages no frozen pool",
+                    obj="competency-questions/frozen",
+                    phase="checkpoint-resume",
+                )
+            payload_path = root.joinpath(*freeze_sources[-1].split("/"))
+            try:
+                payload = json.loads(payload_path.read_text(encoding="utf-8"))
+                # A stored freeze record is not its own freeze input: it carries
+                # ``snapshot_digest`` and Runner-owned ``visibility`` stamps.
+                # ``reload_frozen_pool`` rebuilds the freeze from the file,
+                # recomputes the digest and rejects any post-freeze edit.
+                snapshot = reload_frozen_pool(payload)
+            except (OSError, json.JSONDecodeError, CQContractError) as exc:
+                raise CheckpointError(
+                    "artifact_changed",
+                    f"the packaged frozen pool failed re-validation ({exc})",
+                    obj=freeze_sources[-1],
+                    phase="checkpoint-resume",
+                    retryable=True,
+                    retry="re-save the checkpoint from a stable frozen pool",
+                ) from exc
+            self._cq_freeze = snapshot
+            self._cq_phase = "frozen"
+            freeze_restored = True
+        elif plan.manifest.get("kind") == CHECKPOINT_KIND_SCENARIO_MAPPED:
+            # §4.2: scenario_mapped restores the ACTUAL draft/review phase; the
+            # freeze state deliberately stays empty so no fabricated review or
+            # re-interview can ride the resume.
+            self._cq_freeze = None
+            recorded_phase = (plan.manifest.get("stage_facts") or {}).get("cq_phase")
+            if isinstance(recorded_phase, str) and recorded_phase:
+                self._cq_phase = recorded_phase
+
+        # Validators are recomputed from the restored files; a boolean
+        # gate-open state from the source run is never restored.
+        validators = {
+            "candidate_gate_open_after_restore": candidate_gate_open(root),
+            "approvals_artifact_restored": (
+                root / "value-semantics" / "approvals" / "approvals.json"
+            ).is_file(),
+            "gate_open_restored_from_source": False,
+        }
+        if validators["candidate_gate_open_after_restore"]:
+            raise CheckpointError(
+                "checkpoint_incomplete",
+                "the restored candidate gate reads open before any new decision; "
+                "restored boolean gates are not usable resume state",
+                obj="candidate-gate/state.json",
+                phase="checkpoint-resume",
+            )
+
+        self._resume_imports = {
+            "completed_client_batches": dict(
+                plan.imports.get("completed_client_batches") or {}
+            ),
+            "plan_mappings": list(plan.imports.get("plan_mappings") or []),
+        }
+        self._resume_plan = plan
+        write_recovery_files(
+            root,
+            inspection=plan.inspection,
+            origin=plan.origin,
+            imports=plan.imports,
+            role_packets=plan.role_packets,
+        )
+        self._append_evidence(
+            CHECKPOINT_EVIDENCE_NAME,
+            {
+                "event": "resume-prepared",
+                "source_run_id": plan.origin.get("source_run_id"),
+                "checkpoint_id": plan.checkpoint_id,
+                "checkpoint_kind": plan.manifest.get("kind"),
+                "manifest_digest": plan.manifest_digest,
+                "chain_runs": [str(path.name) for path in plan.chain_roots],
+                "restored_artifact_count": len(restored["restored_artifacts"]),
+                "completed_operations": len(plan.reconciliation["completed"]),
+                "pending_new_dry_run": plan.reconciliation["pending_new_dry_run"],
+                "recoverable_new_batch": plan.reconciliation["recoverable_new_batch"],
+                "cq_freeze_restored": freeze_restored,
+                "exposure_union": exposure,
+                "validators_recomputed": validators,
+                "accounting": plan.inspection["accounting"],
+                "prep_timing": plan.inspection["prep_timing"],
+            },
+        )
+
+    def _handle_checkpoint_outer(self, message: Mapping[str, Any]) -> dict[str, Any]:
+        """Outer ``action=checkpoint`` dispatch: save or read-only inspect (§4.1)."""
+
+        if not self.run:
+            raise TeamConfigurationError("Runner is not prepared")
+        command = message.get("command")
+        if command == "inspect":
+            checkpoint_id = message.get("checkpoint_id")
+            if checkpoint_id is not None and not isinstance(checkpoint_id, str):
+                raise RecoverableOuterInputError(
+                    "checkpoint_id must be a string",
+                    code="checkpoint_invalid_id",
+                    run_id=self.run.run_id,
+                )
+            try:
+                result = inspect_checkpoints(self.run.root, checkpoint_id)
+            except CheckpointError as error:
+                raise RecoverableOuterInputError(
+                    error.detail,
+                    code=error.reason_code,
+                    run_id=self.run.run_id,
+                ) from error
+            return {"type": "checkpoint-inspect", **result}
+        if command != "save":
+            raise RecoverableOuterInputError(
+                "outer checkpoint command must be 'save' or 'inspect'",
+                code="invalid_checkpoint_command",
+                run_id=self.run.run_id,
+            )
+        kind = message.get("kind")
+        if kind not in CHECKPOINT_KINDS:
+            raise RecoverableOuterInputError(
+                f"checkpoint kind must be one of {list(CHECKPOINT_KINDS)}",
+                code="checkpoint_invalid_kind",
+                run_id=self.run.run_id,
+            )
+        scope_refs = message.get("scope_refs")
+        if scope_refs is not None and not isinstance(scope_refs, dict):
+            raise RecoverableOuterInputError(
+                "checkpoint scope_refs must be a JSON object",
+                code="invalid_checkpoint_scope",
+                run_id=self.run.run_id,
+            )
+        request_id = message.get("request_id")
+        if request_id is not None and not isinstance(request_id, str):
+            raise RecoverableOuterInputError(
+                "checkpoint request_id must be a string",
+                code="invalid_checkpoint_request",
+                run_id=self.run.run_id,
+            )
+        try:
+            result = self._save_run_checkpoint(
+                str(kind),
+                scope_refs=scope_refs or {},
+                trigger="outer-request",
+                request_id=request_id,
+            )
+        except CheckpointError as error:
+            self._append_evidence(
+                CHECKPOINT_EVIDENCE_NAME,
+                {
+                    "event": "checkpoint-save-failed",
+                    "kind": str(kind),
+                    "trigger": "outer-request",
+                    **error.data(),
+                },
+            )
+            raise RecoverableOuterInputError(
+                error.detail,
+                code=error.reason_code,
+                run_id=self.run.run_id,
+            ) from error
+        return {"type": "checkpoint-save", "kind": kind, **result}
 
     def _append_evidence(self, name: str, value: dict[str, Any]) -> None:
         if not self.run:

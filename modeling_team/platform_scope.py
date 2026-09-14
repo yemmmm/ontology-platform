@@ -13,6 +13,14 @@ class PlatformScopeError(RuntimeError):
     pass
 
 
+class PlatformScopeMissingError(PlatformScopeError):
+    """R3.0-015 S2: a recovery-binding resource is absent (scope_missing).
+
+    Recovery never creates a blank replacement scope and pretends it resumed;
+    the typed reason travels up to the resume entry unchanged.
+    """
+
+
 def _http(
     base_url: str, method: str, path: str, body: dict[str, Any] | None, key: str
 ) -> tuple[int, Any]:
@@ -63,6 +71,11 @@ class PlatformScope:
     # ``ontology_plan`` has been applied (empty for the single-Ontology path).
     ontology_ids: list[str] = field(default_factory=list)
     completed_session_ids: dict[str, str] = field(default_factory=dict)
+    # R3.0-015 S1 (design §3.3.5): set by the Runner cleanup path when at
+    # least one fully published, digest-verifying checkpoint package references
+    # the run.  An otherwise-empty owned scope is then retained (keys still
+    # revoked) instead of taking the first-stage delete path.
+    checkpoint_retention: dict[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.request is None:
@@ -72,13 +85,15 @@ class PlatformScope:
 
     def prepare(self, scope: dict[str, str]) -> None:
         mode = scope.get("mode")
-        if mode not in {"create", "existing"}:
-            raise PlatformScopeError("scope.mode must be create or existing")
+        if mode not in {"create", "existing", "checkpoint"}:
+            raise PlatformScopeError("scope.mode must be create, existing or checkpoint")
         self.mode = mode
         self.admin_key, self.admin_key_id = self.bootstrap_admin()
         try:
             if mode == "create":
                 self._create()
+            elif mode == "checkpoint":
+                self._checkpoint_binding(scope)
             else:
                 self._existing(scope)
             self._create_protocol_key()
@@ -152,6 +167,46 @@ class PlatformScope:
         self.project_id, self.ontology_id, self.owned = project, ontology, False
         self.existing_strict = isinstance(scope.get("handoff_path"), str)
         self.existing_context_before = self._existing_context(strict=self.existing_strict)
+
+    def _checkpoint_binding(self, scope: dict[str, str]) -> None:
+        """R3.0-015 S2 (design §5.2): rebind the exact recorded resources.
+
+        The explicit checkpoint-binding entry loads the verified
+        ``ontology_ids`` into the existing multi-Ontology path.  Every ID is
+        bound by exact identity — the name-based ``apply_ontology_plan``
+        creation path is never used by recovery.  A missing resource raises
+        :class:`PlatformScopeMissingError` (``scope_missing``); no blank scope
+        is created and faked as a resume.
+        """
+
+        project, ontology_ids = scope.get("project_id"), scope.get("ontology_ids")
+        if not isinstance(project, str) or not project:
+            raise PlatformScopeError("checkpoint scope requires a Project ID")
+        if (
+            not isinstance(ontology_ids, list)
+            or not ontology_ids
+            or not all(isinstance(item, str) and item for item in ontology_ids)
+        ):
+            raise PlatformScopeError(
+                "checkpoint scope requires the verified ontology_ids list"
+            )
+        listed = self._ok("GET", f"/api/projects/{project}/ontologies")
+        if not isinstance(listed, list):
+            raise PlatformScopeError("Project Ontology listing is invalid")
+        available = {
+            item.get("id") for item in listed if isinstance(item, dict)
+        }
+        missing = [ontology_id for ontology_id in ontology_ids if ontology_id not in available]
+        if missing:
+            raise PlatformScopeMissingError(
+                "checkpoint scope resources are missing: " + ", ".join(missing)
+            )
+        self.project_id, self.ontology_ids = project, list(ontology_ids)
+        self.ontology_id, self.owned = ontology_ids[0], False
+        self.existing_context_before = {
+            ontology_id: self._single_ontology_context(ontology_id)
+            for ontology_id in self.ontology_ids
+        }
 
     def apply_ontology_plan(self, plan: Any) -> list[str]:
         """R3.0-006 M3: create every planned Ontology (idempotent, single writer).
@@ -246,15 +301,15 @@ class PlatformScope:
             "recent_session_count": len(active) + len(recent),
         }
 
-    def _existing_context(self, *, strict: bool | None = None) -> dict[str, Any]:
-        """Read a retained scope while allowing completed history."""
+    def _single_ontology_context(self, ontology_id: str) -> dict[str, Any]:
+        """Read one bound Ontology's clearance state (shared existing/S2 path)."""
 
-        if not self.ontology_id or not self.project_id:
-            raise PlatformScopeError("existing scope identity is unavailable")
-        context = self._ok("GET", f"/api/ontologies/{self.ontology_id}/workspace-context")
+        if not self.project_id:
+            raise PlatformScopeError("scope identity is unavailable")
+        context = self._ok("GET", f"/api/ontologies/{ontology_id}/workspace-context")
         if not isinstance(context, dict) or context.get("state") != "ready":
             raise PlatformScopeError("ontology workspace is not ready")
-        batches = self._ok("GET", f"/api/ontologies/{self.ontology_id}/modeling-batches")
+        batches = self._ok("GET", f"/api/ontologies/{ontology_id}/modeling-batches")
         items = batches.get("items", batches.get("batches", [])) if isinstance(batches, dict) else batches
         if not isinstance(items, list):
             raise PlatformScopeError("Modeling Batch history is invalid")
@@ -311,21 +366,16 @@ class PlatformScope:
             platform_state = build.get("platform_state")
             ontologies = platform_state.get("ontologies", []) if isinstance(platform_state, dict) else []
             for ontology in ontologies if isinstance(ontologies, list) else []:
-                if not isinstance(ontology, dict) or ontology.get("id") != self.ontology_id:
+                if not isinstance(ontology, dict) or ontology.get("id") != ontology_id:
                     continue
                 ontology_workspace = ontology.get("workspace")
                 if isinstance(ontology_workspace, dict):
                     version = ontology_workspace.get("workspace_version")
                 break
-        strict = self.existing_strict if strict is None else strict
-        if strict and (not isinstance(version, str) or not version):
-            raise PlatformScopeError("workspace context has no version")
         graph_set = context.get("default_graph_set", context.get("graph_set"))
         graph_set_id = context.get("default_graph_set_id")
         if graph_set_id is None and isinstance(graph_set, dict):
             graph_set_id = graph_set.get("id")
-        if strict and graph_set_id is None:
-            raise PlatformScopeError("workspace context has no default Graph Set")
         return {
             "workspace_state": context["state"],
             **({"workspace_version": version} if isinstance(version, str) and version else {}),
@@ -336,6 +386,19 @@ class PlatformScope:
             "active_lease_count": len(leases),
             "in_flight_attempt_count": len(attempts),
         }
+
+    def _existing_context(self, *, strict: bool | None = None) -> dict[str, Any]:
+        """Read a retained scope while allowing completed history."""
+
+        if not self.ontology_id or not self.project_id:
+            raise PlatformScopeError("existing scope identity is unavailable")
+        result = self._single_ontology_context(self.ontology_id)
+        strict = self.existing_strict if strict is None else strict
+        if strict and not result.get("workspace_version"):
+            raise PlatformScopeError("workspace context has no version")
+        if strict and result.get("graph_set_id") is None:
+            raise PlatformScopeError("workspace context has no default Graph Set")
+        return result
 
     def _create_protocol_key(self) -> None:
         created = self._ok(
@@ -364,6 +427,19 @@ class PlatformScope:
             "ontology_id": self.ontology_id,
             "owned": self.owned,
         }
+        if self.mode == "checkpoint":
+            # R3.0-015 S2 (design §5.2): a recovery run owns only this round's
+            # threads, credentials and Session/Lease.  The inherited scope —
+            # empty or not — is never deleted by the recovery cleanup, and no
+            # fence is force-cleared; only the newly issued keys are revoked.
+            self.scope_disposition = "inherited-retained"
+            evidence["scope_disposition"] = self.scope_disposition
+            evidence["ontology_ids"] = list(self.ontology_ids)
+            evidence["existing_context_before"] = self.existing_context_before
+            if self.protocol_key_id and self.admin_key:
+                evidence["protocol_key_revoked"] = self._revoke_project_key(evidence)
+            self._revoke_keys(evidence)
+            return evidence
         try:
             nonempty = self._has_writes() if self.owned and self.admin_key else False
             success_intent = nonempty and self._producer_completed() and self._retain_nonempty()
@@ -438,6 +514,15 @@ class PlatformScope:
                     evidence["scope_disposition"] = self.scope_disposition
                     evidence["owned_project_preserved"] = "non-empty scope is not Runner-deletable"
                 else:
+                    if self.checkpoint_retention:
+                        # R3.0-015 S1: this empty owned scope is referenced by
+                        # published valid checkpoint packages, so it stays for
+                        # recovery; every credential is still revoked.
+                        self.scope_disposition = "retained-checkpoint-reference"
+                        evidence["scope_disposition"] = self.scope_disposition
+                        evidence["checkpoint_retention"] = dict(self.checkpoint_retention)
+                        self._revoke_keys(evidence)
+                        return evidence
                     first_stage = self._first_stage_delete_evidence(evidence, terminal)
                     evidence["first_stage"] = first_stage
                     if not first_stage.get("ready_for_delete"):

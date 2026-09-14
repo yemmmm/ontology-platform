@@ -1,7 +1,11 @@
 # R3.0-015 建模阶段检查点与恢复 — 交付设计
 
 - 日期：2026-09-14
-- 状态：需求/设计外部审阅 E1 已核验修订；独立 D1 专项复核待执行。未实现、未执行本需求产品测试或真实建模。
+- 状态：需求/设计外部审阅 E1 已核验修订；独立 D1 专项复核 PASS（2026-09-14，S1+S2+S4 范围，
+  见测试计划 D1 轮）。同日按用户确认范围实现 S1+S2+S4（新 `modeling_team/checkpoints.py`、
+  `modeling_team/checkpoint_recovery.py` 及 Runner/CLI/scope/skill 接线），独立功能测试
+  I Round 1/Round 2 PASS（3 项错误通道缺陷修复后复测通过，含 §8 键形对齐）。S3 按设计
+  延后，S2 回退 014 正常翻译审阅。本需求真实 L0/L1 未执行。
 - 需求：[R3.0-015](../../requirements/requirements-v3.0.md#r30-015-建模阶段检查点与恢复)
 - 测试：[共享测试计划](../test-plans/2026-09-14-r3-0-015-modeling-checkpoint-recovery-test-plan.md)
 - 基线：初稿代码 `ee8f531`，E1 核验 checkout `375eec6`（代码未变）；关联 R3.0-006、008B、009、011、012、014，以及

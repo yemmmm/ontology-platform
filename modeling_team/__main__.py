@@ -7,6 +7,7 @@ import os
 import select
 import sys
 import time
+from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Mapping
 
@@ -64,7 +65,19 @@ from .competency_questions import (
 )
 from .outer_input import OuterInputFifo, OuterInputFramingError
 from .interventions import RecoverableOuterInputError
-from .platform_scope import PlatformScope
+from .checkpoints import CheckpointError, inspect_checkpoints
+from .checkpoint_recovery import (
+    ACCEPTANCE_CONTINUATION_SCHEMA,
+    acquire_root_run_lock,
+    checkpoint_root_run_id,
+    http_readback,
+    prepare_acceptance_continuation,
+    safe_new_run_id,
+    scope_missing_rejection,
+    write_acceptance_continuation_record,
+    write_acceptance_origin,
+)
+from .platform_scope import PlatformScope, PlatformScopeMissingError
 from .preflight import normalize_scope_for_contract
 from .runner import TeamRunner
 from .candidate_publication import validate_candidate_publication
@@ -166,6 +179,10 @@ _KNOWN_OUTER_ACTIONS = frozenset(
         # R3.0-012: the host-only acceptance completion summary Delivery
         # sends after the independent cq-acceptance process exits.
         "cq_acceptance_complete",
+        # R3.0-015 S1: host/Coordinator-originated checkpoint save/inspect
+        # requests.  The Runner dispatch verifies actual published artifacts
+        # on disk; agents gain no new write permission through this action.
+        "checkpoint",
     }
 )
 
@@ -1359,6 +1376,8 @@ def _cq_consume_production_handoff(
     contract: dict[str, object],
     batch_id: str,
     freeze_digest: str,
+    continuation_output: Path | None = None,
+    continuation_attempt: str | None = None,
 ) -> tuple[Path, dict[str, object]]:
     """Consume the Runner's verified v012 production handoff (design §4.5).
 
@@ -1373,6 +1392,13 @@ def _cq_consume_production_handoff(
     (project/Ontology authorization plus the CQ read-only tool inventory)
     because the v012 handoff deliberately carries no live model state; D5
     keeps state binding on this command's own pre/post reads.
+
+    R3.0-015 S4 continuation inputs (``continuation_output`` +
+    ``continuation_attempt``) split the evidence root from the report root
+    (design §7): everything is still verified against the SOURCE run's
+    published handoff, but the new attempt's report directory and retained
+    handoff copy land under the fresh output run root; whatever the terminated
+    process published at the handoff's own attempt directory stays untouched.
     """
 
     published_path = run_root / "acceptance-v3" / "production-handoff.json"
@@ -1438,7 +1464,29 @@ def _cq_consume_production_handoff(
             "cq_model_binding_missing: production handoff report directory does "
             "not match its batch and attempt"
         )
-    report_dir = run_root.joinpath(*PurePosixPath(expected_directory).parts)
+    if continuation_output is not None or continuation_attempt is not None:
+        # S4: the new attempt lives under the NEW output root; the source
+        # run's own attempt directory keeps whatever the terminated process
+        # published there (M34), and nothing is appended to the old run.
+        if continuation_output is None or continuation_attempt is None:
+            raise TeamConfigurationError(
+                "cq_model_binding_missing: continuation requires both the "
+                "output root and the new attempt id"
+            )
+        if (
+            not continuation_attempt.startswith("attempt-")
+            or len(continuation_attempt) != len("attempt-0000")
+            or not continuation_attempt[len("attempt-") :].isdigit()
+        ):
+            raise TeamConfigurationError(
+                "cq_model_binding_missing: continuation carries an invalid "
+                "acceptance attempt id"
+            )
+        report_dir = continuation_output.joinpath(
+            *PurePosixPath(f"acceptance-v3/reports/{batch_id}/{continuation_attempt}").parts
+        )
+    else:
+        report_dir = run_root.joinpath(*PurePosixPath(expected_directory).parts)
     report_path = report_dir / "batch-report.json"
     if report_path.exists() or report_path.is_symlink():
         raise TeamConfigurationError(
@@ -1520,6 +1568,8 @@ def _cq_execute_batch(
     slices: list[str],
     report_dir: Path,
     forwarder_factory: object = McpReadForwarder,
+    artifact_root: Path | None = None,
+    continuation: Mapping[str, object] | None = None,
 ) -> int:
     """Run the real v3 batch lifecycle end to end and write the executed report.
 
@@ -1532,8 +1582,14 @@ def _cq_execute_batch(
     sessions are stopped/destroyed before the report is written and the real
     teardown outcome is recorded, so a failed batch never leaves a live key,
     socket or child behind and never looks like a PASS.
+
+    R3.0-015 S4: ``run_root`` stays the READ-ONLY evidence root (contract,
+    freeze, judge evidence bundle -- design §7) while ``artifact_root``
+    redirects this attempt's platform-read artifacts to the continuation's
+    output root; both default to the original single-root behavior.
     """
 
+    artifacts = run_root if artifact_root is None else Path(artifact_root)
     read_key = os.environ.get(_CQ_PLATFORM_READ_KEY_ENV)
     if not read_key:
         raise TeamConfigurationError(
@@ -1618,7 +1674,7 @@ def _cq_execute_batch(
                         reports=reports,
                         read_key=read_key,
                         platform_forwarder=forwarder.forward,
-                        response_persistence=_cq_platform_read_persistence(run_root),
+                        response_persistence=_cq_platform_read_persistence(artifacts),
                         examiner_observables=examiner_observables,
                         timeout_seconds=float(
                             getattr(args, "session_timeout", 300.0) or 300.0
@@ -1716,7 +1772,7 @@ def _cq_execute_batch(
             platform_read_responses, rejected_refs = _cq_collect_platform_read_responses(
                 reports,
                 examiner_observables.get("receipts") or [],
-                run_root,
+                artifacts,
                 read_tools,
             )
             response_projection = {
@@ -1972,6 +2028,11 @@ def _cq_execute_batch(
                 "full_pass": report["full_pass"],
                 "start_ledger_write": False,
                 "consumes_semantic_start": False,
+                **(
+                    {"acceptance_continuation": dict(continuation)}
+                    if continuation is not None
+                    else {}
+                ),
             },
             ensure_ascii=False,
         )
@@ -1984,6 +2045,7 @@ def _run_cq_acceptance(
     root: Path,
     *,
     forwarder_factory: object = McpReadForwarder,
+    continuation: Mapping[str, object] | None = None,
 ) -> int:
     """Read-only v3 hidden-batch acceptance entry (R3.0-011 design §4.0).
 
@@ -1992,6 +2054,11 @@ def _run_cq_acceptance(
     starts, continues, or repairs the production run.  A run root without the
     Runner-written v3 configuration snapshot is a legacy R2.3 run and is
     rejected instead of being switched to this contract by the command name.
+
+    R3.0-015 S4: with ``continuation`` set, ``args.run_root`` is the ORIGINAL
+    run whose frozen inputs are re-used untouched, while the new attempt's
+    report directory and platform-read artifacts land under the continuation's
+    fresh output root (design §7 input/output separation).
     """
 
     run_root = args.run_root
@@ -2040,6 +2107,14 @@ def _run_cq_acceptance(
                 contract=contract,
                 batch_id=batch_id,
                 freeze_digest=freeze_digest,
+                **(
+                    {
+                        "continuation_output": Path(continuation["output_root"]),
+                        "continuation_attempt": continuation["attempt_id"],
+                    }
+                    if continuation is not None
+                    else {}
+                ),
             )
         else:
             report_dir = run_root / "acceptance-v3" / "reports" / batch_id
@@ -2140,6 +2215,14 @@ def _run_cq_acceptance(
                 slices=slices,
                 report_dir=report_dir,
                 forwarder_factory=forwarder_factory,
+                **(
+                    {
+                        "artifact_root": continuation["output_root"],
+                        "continuation": continuation,
+                    }
+                    if continuation is not None
+                    else {}
+                ),
             )
         # Explicit ``--unexecuted-report``: the pre-authorization evidence shape
         # (every question recorded as unexecuted, no session is started).
@@ -2239,6 +2322,264 @@ def _write_host_only_json(path: Path, value: dict[str, object], *, immutable: bo
         temporary.unlink(missing_ok=True)
 
 
+def _run_checkpoint_inspect(args: argparse.Namespace, root: Path) -> int:
+    """R3.0-015 S1 host-only ``checkpoint inspect`` (design §4.1, test plan M08).
+
+    Strictly read-only against the run tree: published package count, sizes,
+    retention state and -- with ``--checkpoint-id`` -- the one package's
+    reusable artifacts, remaining work, write reconciliation, compatibility
+    and estimated authorization consumption.  A malformed run id, a bad or
+    nonexistent checkpoint id, and a path-escape attempt are typed rejections
+    (stderr, exit 2); the command never silently substitutes another
+    checkpoint and never writes the run, an Agent, or the platform.
+    """
+
+    run_id = args.run_id
+    if (
+        not isinstance(run_id, str)
+        or not run_id.strip()
+        or run_id.startswith(".")
+        or "/" in run_id
+        or "\\" in run_id
+        or ".." in run_id
+    ):
+        print(
+            "checkpoint failed: --run-id must be a single run-directory name, "
+            "not a path",
+            file=sys.stderr,
+        )
+        return 2
+    run_root = root / "workspaces" / "modeling-runs" / run_id
+    if not run_root.is_dir():
+        print(
+            f"checkpoint failed: run root for {run_id!r} does not exist under "
+            "workspaces/modeling-runs",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        result = inspect_checkpoints(run_root, args.checkpoint_id)
+    except CheckpointError as exc:
+        # The typed reason code/object/retry tuple goes to the host verbatim;
+        # it never includes hidden CQ material or secrets.
+        print(
+            "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 2
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
+def _run_checkpoint_resume_acceptance(
+    args: argparse.Namespace, root: Path, *, forwarder_factory: object = McpReadForwarder
+) -> int:
+    """R3.0-015 S4: acceptance-only continuation of a handoff (design §7).
+
+    Re-executes the production handoff's frozen acceptance batch independently
+    of the terminated producer (M33): the read-only re-verification and the
+    evidence inputs stay on the ORIGINAL run -- its old handoff, freezes and
+    prior partial/fail reports are never rewritten -- while every new attempt,
+    report and the host closing record land under the fresh output run root.
+    No TeamRunner, Agent, Build Session or write session is ever constructed,
+    and nothing is posted to the dead FIFO (M33/M35).  A complete usable PASS
+    report means verification and host closing only, never a model re-call
+    (M34); the continuation consumes zero semantic starts (M37).
+    """
+
+    runs_root = root / "workspaces" / "modeling-runs"
+    source_root = runs_root / args.run_id
+    if not source_root.is_dir():
+        print(
+            f"checkpoint failed: run root for {args.run_id!r} does not exist "
+            "under workspaces/modeling-runs",
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        safe_new_run_id(args.new_run_id)
+        root_run_id = checkpoint_root_run_id(source_root, args.checkpoint_id)
+    except CheckpointError as exc:
+        print(
+            "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 2
+    # The same root-run lock as a production resume: one active recovery
+    # process per root run on this machine, kernel-released on death.  The
+    # conflict is itself a typed §8 rejection (source_active), so it must
+    # reach the host as one in this mode too -- never an uncaught traceback.
+    try:
+        resume_lock = acquire_root_run_lock(root_run_id, runs_root)
+    except CheckpointError as exc:
+        print(
+            "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 2
+    try:
+        readback = http_readback(
+            args.base_url, os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY", "")
+        )
+        try:
+            plan = prepare_acceptance_continuation(
+                source_run_root=source_root,
+                checkpoint_id=args.checkpoint_id,
+                new_run_id=args.new_run_id,
+                readback=readback,
+                authorization_reference=args.authorization_reference,
+            )
+        except CheckpointError as exc:
+            # Typed rejection, host-verbatim; the source run stays untouched.
+            print(
+                "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+                file=sys.stderr,
+            )
+            return 2
+        output_root = runs_root / plan.new_run_id
+        # The origin lands before any execution, so a continuation that dies
+        # mid-flight still leaves the machine-checkable reference to its
+        # source run and checkpoint (§7; also what later continuations and
+        # manual cleanup check).
+        write_acceptance_origin(plan, output_root)
+        source_run_id = str(plan.origin.get("source_run_id"))
+        record = {
+            "schema_version": ACCEPTANCE_CONTINUATION_SCHEMA,
+            "source_run_id": source_run_id,
+            "checkpoint_id": plan.checkpoint_id,
+            "new_run_id": plan.new_run_id,
+            "batch_id": plan.batch_id,
+            "freeze_digest": plan.freeze_digest,
+            "attempt_id": plan.attempt_id,
+            "prior_attempts": plan.prior_attempts,
+            "output_root": str(output_root),
+            "authorization_reference": args.authorization_reference,
+            "accounting": {
+                "semantic_starts": 0,
+                "consumes_semantic_start": False,
+                "kind": "acceptance_continuation",
+                "platform_hard_gate": False,
+            },
+            "prep_seconds": plan.inspection["prep_timing"]["prep_seconds"],
+        }
+        if plan.complete_report is not None:
+            # M34: a complete usable PASS report exists -> verify and close
+            # only.  No Examiner session, no Judge session, no model call.
+            write_acceptance_continuation_record(
+                output_root,
+                {
+                    **record,
+                    "mode": "verification-only-closing",
+                    "verified_report": plan.inspection["complete_report"],
+                    "model_sessions_started": 0,
+                    "outcome": {"status": "closed", "full_pass": True},
+                    "finished_at": datetime.now(UTC).isoformat(),
+                },
+            )
+            print(
+                json.dumps(
+                    {
+                        "source_run_id": source_run_id,
+                        "new_run_id": plan.new_run_id,
+                        "batch_id": plan.batch_id,
+                        "attempt_id": plan.attempt_id,
+                        "mode": "verification-only-closing",
+                        "full_pass": True,
+                        "verified_report": (
+                            plan.complete_report_path.as_posix()
+                            if plan.complete_report_path is not None
+                            else None
+                        ),
+                        "model_sessions_started": 0,
+                        "semantic_starts": 0,
+                        "consumes_semantic_start": False,
+                    },
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        # M33/M34: re-execute the frozen batch's independent acceptance
+        # through the existing cq-acceptance execution and Judge path.  The
+        # frozen acceptance_target, question denominator and non-blind status
+        # are unchanged; a prior partial/fail keeps its own attempt on the
+        # source run and this attempt starts from the full denominator.
+        cq_args = argparse.Namespace(
+            run_root=source_root,
+            # The digest-verified snapshot file (the Runner names it
+            # freeze-NNNN; the handoff's freeze_id is the batch id).
+            freeze_id=plan.freeze_file.stem,
+            model_handoff=source_root / "acceptance-v3" / "production-handoff.json",
+            model_profile=None,
+            session_timeout=getattr(args, "session_timeout", None) or 300.0,
+            unexecuted_report=False,
+        )
+        continuation = {
+            "source_run_id": source_run_id,
+            "checkpoint_id": plan.checkpoint_id,
+            "attempt_id": plan.attempt_id,
+            # JSON-safe by design: this mapping is echoed into the executed
+            # report's stdout summary; the consumption sites re-wrap with
+            # ``Path``.
+            "output_root": output_root.as_posix(),
+        }
+        started = time.monotonic()
+        status = 2
+        try:
+            status = _run_cq_acceptance(
+                cq_args,
+                root,
+                forwarder_factory=forwarder_factory,
+                continuation=continuation,
+            )
+        finally:
+            # The host closing record captures the continuation's final state
+            # (pass, fail, or a typed refusal after start): the original
+            # Delivery/Runner process is gone, so nothing is posted to its
+            # dead FIFO and the source run's own failure classification stays
+            # exactly as it was.
+            report_path = (
+                output_root
+                / "acceptance-v3"
+                / "reports"
+                / plan.batch_id
+                / plan.attempt_id
+                / "batch-report.json"
+            )
+            published = None
+            if report_path.is_file():
+                try:
+                    published = json.loads(report_path.read_text(encoding="utf-8"))
+                except (OSError, ValueError):
+                    published = None
+            full_pass = bool(
+                isinstance(published, dict) and published.get("full_pass") is True
+            )
+            write_acceptance_continuation_record(
+                output_root,
+                {
+                    **record,
+                    "mode": "re-executed",
+                    "exit_status": status,
+                    "report_published": published is not None,
+                    "full_pass": full_pass,
+                    "report": report_path.as_posix(),
+                    "acceptance_seconds": round(time.monotonic() - started, 3),
+                    "outcome": (
+                        {"status": "pass"}
+                        if full_pass
+                        else {
+                            "status": "failed" if published is not None else "no-report",
+                            "exit_status": status,
+                        }
+                    ),
+                    "finished_at": datetime.now(UTC).isoformat(),
+                },
+            )
+        return status
+    finally:
+        resume_lock.release()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -2319,12 +2660,102 @@ def main() -> int:
         action="store_true",
         help="write the all-unexecuted evidence report without starting any session",
     )
+    checkpoint = subparsers.add_parser("checkpoint")
+    checkpoint_subparsers = checkpoint.add_subparsers(dest="checkpoint_command", required=True)
+    checkpoint_inspect = checkpoint_subparsers.add_parser(
+        "inspect",
+        help=(
+            "read-only inspection of persistent modeling checkpoints "
+            "(R3.0-015 S1: save/inspect only, never a resume)"
+        ),
+    )
+    checkpoint_inspect.add_argument("--run-id", required=True)
+    checkpoint_inspect.add_argument(
+        "--checkpoint-id",
+        default=None,
+        help="inspect one published checkpoint; omit to list every package",
+    )
+    checkpoint_resume = checkpoint_subparsers.add_parser(
+        "resume",
+        help=(
+            "R3.0-015 S2/S4: cross-process resume from one published "
+            "checkpoint (production resume or acceptance-only continuation)"
+        ),
+    )
+    checkpoint_resume.add_argument("--run-id", required=True)
+    checkpoint_resume.add_argument(
+        "--checkpoint-id",
+        required=True,
+        help="the exact published checkpoint to resume (never auto-selected)",
+    )
+    checkpoint_resume.add_argument(
+        "--new-run-id",
+        required=True,
+        help="the fresh run identity for the resumed production threads",
+    )
+    checkpoint_resume.add_argument(
+        "--mode",
+        required=True,
+        choices=["production", "acceptance"],
+        help=(
+            "production resume (S2) or acceptance-only continuation of a "
+            "production_handoff checkpoint (S4)"
+        ),
+    )
+    checkpoint_resume.add_argument(
+        "--session-timeout",
+        type=float,
+        default=300.0,
+        help="acceptance-mode continuation: per-child session timeout seconds",
+    )
+    checkpoint_resume.add_argument(
+        "--authorization-reference",
+        default=None,
+        help="host-recorded authorization reference for the ledger record; "
+        "it never becomes an in-code start-count hard gate",
+    )
+    checkpoint_resume.add_argument("--base-url", default="http://127.0.0.1:8001")
+    checkpoint_resume.add_argument(
+        "--freeze-started-at",
+        help="fresh CQ freeze timepoint for the new run; the old run's "
+        "deadline is never inherited (design §4.2)",
+    )
+    checkpoint_resume.add_argument("--enable-outer-input-fifo", action="store_true")
     args = parser.parse_args()
+    resume_requested = args.command == "checkpoint" and args.checkpoint_command == "resume"
     if args.command == "cq-acceptance":
         # R3.0-011: the read-only v3 acceptance entry stays outside the run
         # loader entirely; it never constructs a TeamRunner and never touches
         # the StartLedger.
         return _run_cq_acceptance(args, repository_root())
+    if args.command == "checkpoint":
+        # R3.0-015 S1+S2 (design §4.1): the host-only checkpoint entry.  It
+        # shares ``run``'s host credential channel
+        # (``ONTOLOGY_PLATFORM_ADMIN_API_KEY``); missing host credentials fail
+        # closed with an accurate error instead of acting outside a host
+        # environment.
+        if not os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY"):
+            print(
+                "checkpoint failed: host platform credential is missing; set "
+                "ONTOLOGY_PLATFORM_ADMIN_API_KEY (the same host credential "
+                "channel the run command uses)",
+                file=sys.stderr,
+            )
+            return 2
+        if args.checkpoint_command == "inspect":
+            # Read-only inspection stays outside the run loader like
+            # cq-acceptance: no TeamRunner, no Agent, nothing written (M08).
+            return _run_checkpoint_inspect(args, repository_root())
+        if args.mode == "acceptance":
+            # R3.0-015 S4 (design §7): acceptance-only continuation of a
+            # production_handoff checkpoint.  It stays outside the run loader
+            # entirely -- no TeamRunner, no Agent, no Build Session or write
+            # session -- only the read-only re-verification and the
+            # independent cq-acceptance execution under a fresh output root.
+            return _run_checkpoint_resume_acceptance(args, repository_root())
+        # Production resume falls through into the shared run flow below with
+        # ``resume_requested`` set; the one-process root-run lock is acquired
+        # before reconciliation and released when the process exits.
     runner = None
     cleaned = False
     root = repository_root()
@@ -2429,52 +2860,63 @@ def main() -> int:
             return 2
         return 0
     try:
-        # R3.0-002 increment 6(b): multi-slice tasks load through the
-        # non-formal three-role branch; every other task keeps the strict
-        # formal loader (and its cross-wire guard) unchanged.
-        multi_slice = task_declares_multi_slice_workflow(args.task)
-        if multi_slice:
-            configuration = load_multi_slice_team_configuration(
-                args.profile, args.task, root=root
-            )
+        if resume_requested:
+            # R3.0-015 S2: the contract comes from the checkpoint manifest;
+            # prepare_from_checkpoint re-runs the real loader inside prepare,
+            # so no CLI-side profile/task/scope argument exists to load here.
+            configuration = None
             formal_contract = None
+            task_overlay = None
+            multi_slice = True
+            selected_model_profile_id = None
+            team_model_profile = None
         else:
-            configuration = load_formal_team_configuration(args.profile, args.task, root=root)
-            formal_contract = formal_run_contract_for(configuration)
-        if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
-            configuration, formal_contract = load_formal_run_configuration(
-                args.profile, args.task, root=root
+            # R3.0-002 increment 6(b): multi-slice tasks load through the
+            # non-formal three-role branch; every other task keeps the strict
+            # formal loader (and its cross-wire guard) unchanged.
+            multi_slice = task_declares_multi_slice_workflow(args.task)
+            if multi_slice:
+                configuration = load_multi_slice_team_configuration(
+                    args.profile, args.task, root=root
+                )
+                formal_contract = None
+            else:
+                configuration = load_formal_team_configuration(args.profile, args.task, root=root)
+                formal_contract = formal_run_contract_for(configuration)
+            if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
+                configuration, formal_contract = load_formal_run_configuration(
+                    args.profile, args.task, root=root
+                )
+            elif formal_contract is None and not multi_slice and (
+                getattr(getattr(configuration, "profile", None), "profile_id", None)
+                in FORMAL_PROFILE_IDS
+                or getattr(getattr(configuration, "task", None), "task_id", None)
+                in FORMAL_TASK_IDS
+            ):
+                raise TeamConfigurationError("unknown or cross-wired formal run contract")
+            task_overlay = (
+                load_task_input_overlay(
+                    args.task_overlay,
+                    root=root,
+                    task_path=args.task,
+                    task=configuration.task,
+                )
+                if args.task_overlay is not None
+                else None
             )
-        elif formal_contract is None and not multi_slice and (
-            getattr(getattr(configuration, "profile", None), "profile_id", None)
-            in FORMAL_PROFILE_IDS
-            or getattr(getattr(configuration, "task", None), "task_id", None)
-            in FORMAL_TASK_IDS
-        ):
-            raise TeamConfigurationError("unknown or cross-wired formal run contract")
-        task_overlay = (
-            load_task_input_overlay(
-                args.task_overlay,
-                root=root,
-                task_path=args.task,
-                task=configuration.task,
+            if task_overlay is not None:
+                validate_candidate_publication(task_overlay)
+            # All three commands share this one loader; validate additionally prints
+            # the safe per-role requested/effective projection.
+            selected_model_profile_id = _resolve_model_profile_selection(
+                args.model_profile, formal_contract, multi_slice_workflow=multi_slice
             )
-            if args.task_overlay is not None
-            else None
-        )
-        if task_overlay is not None:
-            validate_candidate_publication(task_overlay)
-        # All three commands share this one loader; validate additionally prints
-        # the safe per-role requested/effective projection.
-        selected_model_profile_id = _resolve_model_profile_selection(
-            args.model_profile, formal_contract, multi_slice_workflow=multi_slice
-        )
-        # ``run`` deliberately defers the profile load to TeamRunner.prepare,
-        # whose formal model gate has zero side effects before platform
-        # preflight; only ``validate`` prints the projection eagerly here.
-        team_model_profile = None
-        if args.command == "validate" and selected_model_profile_id is not None:
-            team_model_profile = load_team_model_profile(root, selected_model_profile_id)
+            # ``run`` deliberately defers the profile load to TeamRunner.prepare,
+            # whose formal model gate has zero side effects before platform
+            # preflight; only ``validate`` prints the projection eagerly here.
+            team_model_profile = None
+            if args.command == "validate" and selected_model_profile_id is not None:
+                team_model_profile = load_team_model_profile(root, selected_model_profile_id)
     except TeamConfigurationError as exc:
         print(f"validation failed: {exc}", file=sys.stderr)
         return 2
@@ -2504,39 +2946,97 @@ def main() -> int:
             cleaned = True
 
     outer_input = None
+    resume_lock = None
     try:
         adapter = CodexRuntimeAdapter(repository_root=root)
-        scope = yaml.safe_load(args.scope.read_text(encoding="utf-8"))
-        if not isinstance(scope, dict):
-            raise TeamConfigurationError("scope must be a YAML object")
         formal_acceptance = formal_contract is not None
-        if formal_contract is not None:
-            # Reject existing identifiers before constructing the scope owner or
-            # touching the bootstrap credential path.  TeamRunner repeats this
-            # check so non-CLI callers cannot bypass the boundary.
-            scope = normalize_scope_for_contract(scope, formal_contract.scope_mode)
-            scope_factory = None
-        else:
+        if resume_requested:
+            # R3.0-015 S2 production resume (design §4.2): the same-machine
+            # one-process lock keyed by root_run_id plus the platform
+            # Session/Lease/Attempt checks inside the reconciliation prevent a
+            # second active production writer; the lock is kernel-released if
+            # this process dies.
+            runs_root = root / "workspaces" / "modeling-runs"
+            source_root = runs_root / args.run_id
+            if not source_root.is_dir():
+                print(
+                    f"checkpoint failed: run root for {args.run_id!r} does not "
+                    "exist under workspaces/modeling-runs",
+                    file=sys.stderr,
+                )
+                return 2
+            try:
+                root_run_id = checkpoint_root_run_id(source_root, args.checkpoint_id)
+                resume_lock = acquire_root_run_lock(root_run_id, runs_root)
+            except CheckpointError as exc:
+                # The lock conflict (source_active) and the checkpoint lookup
+                # are typed rejections here too -- they must never degrade to
+                # a generic "run failed" line in the production channel.
+                print(
+                    "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+                    file=sys.stderr,
+                )
+                return 2
             create, revoke = _bootstrap_helpers(root)
 
-            def scope_factory(item):
+            def resume_scope_factory(item):
                 return PlatformScope(args.base_url, item.run_id, create, revoke)
-        runner = TeamRunner(
-            repository_root=root,
-            adapter=adapter,
-            scope_factory=scope_factory,
-            freeze_started_at=args.freeze_started_at,
-            canonical_base_url=args.base_url,
-            canonical_admin_key=os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY"),
-        )
-        runner.prepare(
-            run_id=args.run_id,
-            profile_path=args.profile,
-            task_path=args.task,
-            scope=scope,
-            task_overlay_path=args.task_overlay,
-            model_profile_id=args.model_profile,
-        )
+
+            runner = TeamRunner(
+                repository_root=root,
+                adapter=adapter,
+                scope_factory=resume_scope_factory,
+                freeze_started_at=args.freeze_started_at,
+                canonical_base_url=args.base_url,
+                canonical_admin_key=os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY"),
+            )
+            try:
+                runner.prepare_from_checkpoint(
+                    source_run_root=source_root,
+                    checkpoint_id=args.checkpoint_id,
+                    new_run_id=args.new_run_id,
+                    authorization_reference=args.authorization_reference,
+                )
+            except CheckpointError as exc:
+                # The typed reason tuple reaches the host verbatim (no hidden
+                # CQ material, no secrets); the source run stays untouched.
+                cleanup_once()
+                print(
+                    "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+                    file=sys.stderr,
+                )
+                return 2
+        else:
+            scope = yaml.safe_load(args.scope.read_text(encoding="utf-8"))
+            if not isinstance(scope, dict):
+                raise TeamConfigurationError("scope must be a YAML object")
+            if formal_contract is not None:
+                # Reject existing identifiers before constructing the scope owner or
+                # touching the bootstrap credential path.  TeamRunner repeats this
+                # check so non-CLI callers cannot bypass the boundary.
+                scope = normalize_scope_for_contract(scope, formal_contract.scope_mode)
+                scope_factory = None
+            else:
+                create, revoke = _bootstrap_helpers(root)
+
+                def scope_factory(item):
+                    return PlatformScope(args.base_url, item.run_id, create, revoke)
+            runner = TeamRunner(
+                repository_root=root,
+                adapter=adapter,
+                scope_factory=scope_factory,
+                freeze_started_at=args.freeze_started_at,
+                canonical_base_url=args.base_url,
+                canonical_admin_key=os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY"),
+            )
+            runner.prepare(
+                run_id=args.run_id,
+                profile_path=args.profile,
+                task_path=args.task,
+                scope=scope,
+                task_overlay_path=args.task_overlay,
+                model_profile_id=args.model_profile,
+            )
         if formal_acceptance:
             # The Delivery-only key is needed by the no-start canonical gate,
             # but must not remain available to any later adapter/bootstrap or
@@ -2655,6 +3155,23 @@ def main() -> int:
             return 2
         print(f"run failed: {exc}", file=sys.stderr)
         return 2
+    except PlatformScopeMissingError as exc:
+        if not resume_requested:
+            # Non-resume callers keep the raw platform exception semantics.
+            raise
+        # R3.0-015 design §5.2/§8: a checkpoint-bound scope resource that no
+        # longer exists is the advertised ``scope_missing`` typed rejection --
+        # never a generic failure line, and never a blank scope faked as a
+        # resume.
+        _write_runner_handoff_failed(handoff_root, _runner_root(runner))
+        cleanup_once()
+        _settle_ledger_after_fatal_host_failure(runner)
+        print(
+            "checkpoint failed: "
+            + json.dumps(scope_missing_rejection(str(exc)).data(), ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 2
     except (OSError, ValueError, RuntimeError, TeamConfigurationError) as exc:
         _write_runner_handoff_failed(handoff_root, _runner_root(runner))
         cleanup_once()
@@ -2669,6 +3186,10 @@ def main() -> int:
         # ``None`` when the flag was off or before the FIFO was assigned.
         if outer_input is not None:
             outer_input.close()
+        if resume_lock is not None:
+            # R3.0-015 S2: release the root-run resume lock exactly once; the
+            # kernel already released it if this process died mid-run.
+            resume_lock.release()
     return 0
 
 

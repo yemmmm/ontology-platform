@@ -71,6 +71,36 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 - **重复错误、相互等待或已退出**：保留第一异常和相关事件，检查具体阻塞与写状态，再进入归因。
 - **收到交付**：核对回执、阶段与产物，按当前验收阶段交给独立验收者；正常结束不是语义 PASS。
 
+## 阶段成果检查点（R3.0-015 S1+S2+S4）
+
+启用 `modeling_checkpoints` 的 run 会在 CQ 冻结、每个 staged 回执和 production
+handoff 后自动保存阶段检查点；需要保存更早阶段（场景映射、已批准语义决定）时由宿主
+经 FIFO `action=checkpoint` 请求。Runner 只认磁盘上的实际已发布产物，角色自述“阶段
+完成”而产物缺失得到的是可重试的类型化拒绝。判定以 `evidence/checkpoints.jsonl` 与
+实际包为准。保存与检查不消耗 semantic start。
+
+S2 起宿主可用 `checkpoint resume --mode production` 从一个已发布检查点跨进程续跑：
+显式 checkpoint id 与全新 run id 必填，恢复时重新核对全部状态（全链写尾含检查点之后的
+写入、平台 cursor 分页回读、业务审批来源通道）；对账未闭合得到的是带 `reason_code`
+的类型化拒绝（`source_active`、`write_unreconciled`、`scope_drift`、
+`approval_binding_changed` 等），不会静默降级。续跑是一次新的语义开始（记账
+`semantic_starts: 1`，平台侧无硬计数门），原 run 与其检查点只读不动；悬挂原写者按
+stop channel 处理、单次等待 ≤60s；同一 root run 同机同时只允许一个续跑。手工清理
+active 恢复前先核对 `recovery/` 引用。命令与消息格式见
+[运行参考](references/team-runbook.md#建模检查点保存与检查r3-0-015-s1)。
+
+S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
+`production_handoff` 检查点做验收-only 续跑（S3 按设计延后，S4 不依赖 S3）：
+入口先做只读复核（沿用 S2 的 cursor 回读纪律：全链写尾闭合、原写者已停、冻结池按
+快照摘要重校验、打包与已发布 handoff 一致），漂移得到类型化拒绝
+（`acceptance_binding_changed` 等），绝不改模型或源 run。输入/输出分离：证据根
+永远是原 run（旧 run_id、handoff 尝试字段与旧报告一字不动），新尝试、新报告与宿主
+收尾记录只落新输出 run。已存在完整可用 PASS 报告（同批次同冻结摘要、全分母重算
+通过）时只做核验与收尾（0 次模型会话）；否则经既有 cq-acceptance 执行/独立 Judge
+路径重新执行，冻结的验收目标、题目分母与非盲状态不变，旧的 partial/fail 报告原样
+保留、绝不拼接到新 PASS。记账 `semantic_starts: 0`。命令与边界见
+[运行参考](references/team-runbook.md#验收续跑r3-0-015-s4)。
+
 ## 分清失败层与修改对象
 
 | 失败层 | 证据特征 | 下一动作 |

@@ -232,6 +232,155 @@ pending：coordinator 已 terminal 不代表完成，Runner 在等宿主完成�
    batch-report 并复核 digest/verdict 后才释放 terminal report。
 4. 全部/部分/失败报告都同样完成收口；验收不需要全绿才算 run 正常结束。
 
+## 建模检查点保存与检查（R3.0-015 S1）
+
+R3.0-015 交付段 S1 覆盖阶段成果的**保存与检查**；跨进程生产续跑（S2）见下一节
+[生产续跑](#生产续跑r3-0-015-s2)。启用需
+选择声明 `parameters.modeling_checkpoints: true` 的 v3 Task
+（[r3-0-015-checkpoint-recovery.yaml](../../../modeling_team/tasks/r3-0-015-checkpoint-recovery.yaml)；
+该参数依赖 multi_slice_workflow、staged_modeling_decisions 与 unified_semantic_graph，
+由 `modeling_team/contracts.py` 强制，validate 阶段即报错）。
+
+保存都由 Runner 核实磁盘上的实际已发布产物；只有"阶段完成"文字而没有产物时返回
+`checkpoint_missing_artifact` 可重试拒绝，该 action 不给 Agent 新增任何写权限：
+
+- 自动触发（run 期间无需宿主操作）：CQ 冻结后存 `cq_frozen`；每个 staged 批次回执
+  完成存 `materialization_progress`；production handoff 发布后存
+  `production_handoff`。自动保存失败只记 `checkpoint-save-failed` 证据，不终止正常
+  建模，也不回滚阶段事件本身。
+- 宿主/Coordinator 请求（经 FIFO，每条一行 JSON）：
+  `{"action":"checkpoint","command":"save","kind":"...","scope_refs":{...},"request_id":"..."}`，
+  kind 取五类之一：`scenario_mapped`、`cq_frozen`、`semantic_approved`、
+  `materialization_progress`、`production_handoff`（其中 `scenario_mapped` 与
+  `semantic_approved` 无自动触发点，靠请求保存）。
+  `{"action":"checkpoint","command":"inspect"}` 为只读查看。写声明类
+  （materialization/handoff）在 staged 写在途或存在 unknown 时返回
+  `checkpoint_write_unreconciled` 具体等待原因，不把在途状态包装成可恢复写入快照。
+
+包落在 `<run-root>/checkpoints/<checkpoint-id>/`（manifest.json 最后原子发布，没有
+manifest 的半包不会被列出；`checkpoints/` 不在角色挂载内，host-private 侧的冻结
+题池/隐藏依据永不进入生产投影），事件在 `evidence/checkpoints.jsonl`
+（`selector-enabled`、`checkpoint-saved`、`checkpoint-reused`、
+`checkpoint-save-failed`、`scope-retention-reference`）。同一成果换新 request id
+重复请求按内容去重复用，不产生新包，也不覆盖旧包。
+
+宿主只读检查命令（需与 `run` 相同的宿主凭据通道 `ONTOLOGY_PLATFORM_ADMIN_API_KEY`，
+缺失时准确报错；不写 run、Agent 或平台）：
+
+```bash
+uv run --project backend python -m modeling_team checkpoint inspect --run-id "$modeling_run_id"
+# 追加 --checkpoint-id <id> 查看单包：可复用产物 / 待办 / 写对账 / 兼容性 /
+# 预计授权消耗，状态 ready | needs_reconciliation | incompatible
+```
+
+记账与保留：保存与检查均不消耗 semantic start（inspect 输出含
+`consumes_semantic_start: false` 与各交付段状态）。已发布且 digest 校验通过的包会让
+空的 owned scope 在 cleanup 时改为 `retained-checkpoint-reference`（全部凭据仍吊销）；
+仅 selector 标志、失败保存或临时目录不算保留依据。手工清理按设计 §3.4 顺序：先
+`checkpoint inspect` 列出具体包及引用，核对无活跃写者、无 unknown 后按用户既有清理
+授权移动具体 checkpoint 目录并保留失败/操作证据；本仓库不提供一键清空或自动 GC。
+
+## 生产续跑（R3.0-015 S2）
+
+宿主用 `checkpoint resume` 从一个已发布检查点跨进程续跑生产（design §4–§8）。
+仅宿主凭据通道（`ONTOLOGY_PLATFORM_ADMIN_API_KEY`，与 `run` 相同），显式
+checkpoint id 与全新 run id 必填（绝不自动选择、绝不覆盖已存在目录）：
+
+```bash
+uv run --project backend python -m modeling_team checkpoint resume \
+  --run-id "$source_run_id" --checkpoint-id "$checkpoint_id" \
+  --new-run-id "$new_run_id" --mode production \
+  --authorization-reference "<用户授权引用（记入台账）>" \
+  # 可选：--base-url（默认 http://127.0.0.1:8001）、--freeze-started-at（全新冻结时点，
+  # 旧 run 的 deadline 不继承）、--enable-outer-input-fifo
+```
+
+`--mode acceptance` 不走生产续跑路径，见下节
+[验收续跑](#验收续跑r3-0-015-s4)：非 `production_handoff` 检查点得到
+`checkpoint_kind_mode_mismatch` 类型化拒绝（exit 2），不会静默落到生产续跑。
+
+恢复时**重新核对全部状态**，不信任保存时的任何布尔结论：
+
+- 恢复链（`recovery/origin.json` 多跳回溯）全链写尾，含检查点之后发生的写入；
+- 平台侧逐 Build Session 的 Modeling Batches 回读，只走 cursor 分页端点
+  （`GET /api/build-sessions/{id}/modeling-batches`、`GET /api/ontologies/{id}/modeling-batches`
+  limit≤100 + next_cursor、`GET /api/modeling-batches/{batch_id}`）；截断视图
+  （`platform_state.modeling_batches` 20 条、session 详情内嵌 50 条）**不是**对账来源；
+- 已完成操作进入完成索引（按 origin_run/session/batch/attempt/client_item 键），
+  预提交屏障拒绝把同一操作换新 Session 重放（后端幂等键按 Session 作用域，不跨
+  Session 去重）；多跳链的操作归属原始 run；
+- 业务审批只复用本检查点打包且来源通道校验通过的条目：`approved_by` 必须解析为
+  源 run 自己 profile 的 coordinator agent，保存后被撤销/换版的决定保持撤销。
+
+任何一类未闭合都是带 `reason_code` 的类型化拒绝（至少 `checkpoint_incomplete`、
+`artifact_changed`、`source_active`、`contract_incompatible`、`scope_missing`、
+`scope_drift`、`write_unreconciled`、`approval_binding_changed`），字段为
+`code/object_ref/phase/retryable/reason/next_action`，不含密钥或隐藏内容；按
+`next_action` 处理后重试，不擅自改写源 run。
+
+悬挂原写者（`source_active`）：读 inspection 的 `source_writer` 报告（state.json、
+control FIFO、目录属主、平台 Session/Lease 与 `expires_at`、最早复查时间），经原 run
+自己的 stop channel 停止，单次等待 ≤60s；`adjudicate_unknown_intent` 一类提示**不能**
+替代平台精确回读释放写门。新 run 只为未完成操作新建 Build Session/Lease；恢复清理
+只回收本轮线程/凭据/Session/Lease，继承的 scope 不删除（`inherited-retained`）。
+
+新 run 落盘 `<new-run>/recovery/{inspection,origin,imports}.json` 与
+`recovery/roles/<role>.json`（0600）：角色启动包含 resume_kind、可读产物、已完成
+范围、待办、禁止重放清单与下一步；翻译类计划按新 plan/client_batch_id/key 走新
+Session 并由当前 Coordinator 按既有 014 路径审核（S3 自动迁移按设计不交付）。
+staged 校验器一律重算，布尔 gate-open 状态永不还原；CQ 冻结池重新校验后采纳。
+
+记账：续跑记 1 次 fresh semantic start（host 记录 `authorization_reference`），
+平台侧没有硬计数门（`platform_hard_gate: false`）；准备（含对账）时间计入自用户
+授权起的 20 分钟预算，超时只报告阻塞并请求更长准备窗口，不放宽任何门。
+
+同机同一 root run 同时只允许一个续跑进程（root-run 文件锁，进程死亡由内核释放）。
+手工清理源 run/检查点前先确认没有 active 恢复引用（新 run 的 `recovery/origin.json`
+指向源 run 与具体检查点）；有 active 恢复时按用户既有清理授权先处理新 run 再动源。
+
+## 验收续跑（R3.0-015 S4）
+
+宿主对一个 COMPLETE `production_handoff` 检查点做验收-only 续跑（design §7）；
+S3（翻译类计划自动迁移）按设计延后，S4 不依赖它。入口与 S2 相同的宿主凭据通道
+（`ONTOLOGY_PLATFORM_ADMIN_API_KEY`），显式 checkpoint id 与全新 run id 必填：
+
+```bash
+uv run --project backend python -m modeling_team checkpoint resume \
+  --run-id "$source_run_id" --checkpoint-id "$checkpoint_id" \
+  --new-run-id "$new_run_id" --mode acceptance \
+  --authorization-reference "<用户授权引用（记入台账）>" \
+  # 可选：--session-timeout（重执行路径的子会话超时，默认 300s）、--base-url
+```
+
+入口先做**只读复核**，复用 S2 的 cursor 回读纪律：全链写尾必须闭合干净（unknown/
+未回执写入即拒绝）、原写者必须已停（`source_active` 可重试，经原 run stop channel
+处理，单次等待 ≤60s）、冻结池按快照摘要对源 run 里实际存储的 `freeze-NNNN.json`
+重校验（handoff 的 freeze_id 是批次 id，不是文件名）、打包 handoff 必须仍等于源 run
+已发布 handoff、平台侧对绑定本体无不可归属写入。任何漂移都是带 `reason_code` 的
+类型化拒绝（`acceptance_binding_changed`、`source_active`、`write_unreconciled`、
+`scope_drift`、`checkpoint_kind_mode_mismatch` 等，字段
+`code/object_ref/phase/retryable/reason/next_action`，不含隐藏题面或密钥），
+源 run 一字不动，也绝不代改模型。
+
+**输入/输出分离**：证据根（run-contract、冻结池、判定证据束）永远是原 run；旧
+run_id、handoff 尝试字段、旧 partial/fail 报告与失败分类永不改写，也绝不向已死的
+原 FIFO 投递任何消息。新尝试、新报告、平台读留存与宿主收尾记录只落新输出 run：
+`recovery/origin.json` 在任何执行前先落（0600），终态记
+`recovery/acceptance-continuation.json`。原 cq-acceptance CLI 的单根默认行为不变。
+
+续跑语义：先按批次 id + 冻结摘要在全链（源 run 与既有续跑输出根）查找**完整可用
+PASS 报告**（`full_pass` 且全分母判定重算通过）——存在则只做核验与收尾
+（`mode: verification-only-closing`，0 次模型会话、0 次语义开始）；否则经既有
+cq-acceptance 执行与独立 Judge 路径重新执行整个冻结批次（`mode: re-executed`），
+冻结的 `acceptance_target`、题目分母与非盲状态不变，绝不把旧 partial 结果拼进新
+PASS；attempt id 在全链上分配，永不复用已发布尝试目录。重执行路径与 cq-acceptance
+一样需要 `R3011_ACCEPTANCE_PLATFORM_READ_KEY`（核验收尾路径不需要）。
+
+记账：`semantic_starts: 0`（`consumes_semantic_start: false`）——验收续跑是挂靠
+源 run 的独立尝试，不消耗建模开始；准备（复核）时间计入自用户授权起的 20 分钟
+预算，执行时间在收尾记录单列。同机同一 root run 的生产续跑与验收续跑共用一把
+root-run 锁，互斥不并发。手工清理时同样先核对 `recovery/origin.json` 链。
+
 ## 接口修复后继续同一 run
 
 收到“接口已经修复完成，请继续”时，由宿主读取当前 live run 的唯一 pending issue、

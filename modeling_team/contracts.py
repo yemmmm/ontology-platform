@@ -124,6 +124,10 @@ ACCEPTANCE_TARGET_CQ_SEMANTIC = "cq_semantic"
 ACCEPTANCE_TARGET_VALUES = frozenset(
     {ACCEPTANCE_TARGET_FULL_JOINT, ACCEPTANCE_TARGET_CQ_SEMANTIC}
 )
+# R3.0-015 S1: the modeling-checkpoint selector is the sixth opt-in member.
+# It enables persistent stage-result save/inspect only (never a resume
+# capability) and requires the staged unified path it saves from.
+MODELING_CHECKPOINTS_PARAMETER = "modeling_checkpoints"
 _TASK_PARAMETER_NAMES = frozenset(
     {
         MULTI_SLICE_TASK_PARAMETER,
@@ -131,6 +135,7 @@ _TASK_PARAMETER_NAMES = frozenset(
         UNIFIED_GRAPH_TASK_PARAMETER,
         COMPETENCY_QUESTION_ACCEPTANCE_PARAMETER,
         ACCEPTANCE_TARGET_PARAMETER,
+        MODELING_CHECKPOINTS_PARAMETER,
     }
 )
 _CANDIDATE_PROGRESS_TIMEOUT_PARAMETER = "candidate_progress_timeout_seconds"
@@ -798,6 +803,22 @@ def load_task(
                 raise TeamConfigurationError(
                     "cq_selector_incompatible: competency_question_acceptance requires "
                     + " and ".join(sorted(missing))
+                )
+        if parameters.get(MODELING_CHECKPOINTS_PARAMETER) is True:
+            # R3.0-015 S1 (design §9): checkpoints save from the staged
+            # unified v3 path; the three underlying selectors must all be on.
+            missing = [
+                name
+                for name in (
+                    MULTI_SLICE_TASK_PARAMETER,
+                    STAGED_MODELING_DECISIONS_PARAMETER,
+                    UNIFIED_GRAPH_TASK_PARAMETER,
+                )
+                if parameters.get(name) is not True
+            ]
+            if missing:
+                raise TeamConfigurationError(
+                    "modeling_checkpoints requires " + " and ".join(sorted(missing))
                 )
     raw_sources = data["role_sources"]
     tools = data["protocol_tools"]
