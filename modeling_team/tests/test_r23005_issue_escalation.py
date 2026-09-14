@@ -446,9 +446,13 @@ class IssueEscalationTests(unittest.TestCase):
         self.assertFalse(progress.check_deadline(now=1001))
         self.assertTrue(progress.check_deadline(now=1002))
 
-    def test_unknown_write_cannot_resume_via_guidance(self) -> None:
-        # 2026-09-12 F18: the hardening triggers on the exact status token, so
-        # this report uses the literal word "uncertain" as its mutation state.
+    def test_unknown_write_report_stays_closable_via_outer_guidance(self) -> None:
+        # 2026-09-14 (r30006-20260914-auth016-start1 issue-1): the reporter's
+        # advisory mutation_state token is not write evidence. The old F18
+        # token veto made a mislabeled read blocker ("unknown") abort-only and
+        # killed the run; the durable staged-evidence guard in the Runner is
+        # now the sole write authority, so an unknown-token report stays
+        # closable by ordinary outer guidance at the ledger layer.
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(
                 Path(directory) / "modeling-runs" / "run-1" / "transport" / "broker",
@@ -480,9 +484,9 @@ class IssueEscalationTests(unittest.TestCase):
                 control_epoch=1,
                 resolution_text="Continue with the same candidate.",
             )
-            with self.assertRaisesRegex(RoutingError, "requires formal reconciliation"):
-                broker.persist_issue_resolution(guidance)
-            self.assertEqual(broker.issue_ledger.state, "waiting_repair")
+            persisted = broker.persist_issue_resolution(guidance)
+            self.assertEqual(persisted["resolution_type"], "guidance")
+            self.assertEqual(broker.issue_ledger.state, "resolution_ready")
 
     def test_narrative_mutation_state_stays_resolvable_via_guidance(self) -> None:
         # 2026-09-12 F18 (r30006-20260912-glmb01-start3 issue-7): a truthful

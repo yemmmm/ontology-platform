@@ -78,9 +78,13 @@ The same binding applies when you are the reporter. After your own `report_issue
 immediately call `issue_control` with `action: "pause"` in that same turn and then end the turn:
 the Runner surfaces the issue to the outer owner and admits the outer resolution only after your
 pause control is dispatched, so a report without its bound pause freezes the run with no exit.
-`mutation_state` is one short literal status token, never a narrative sentence: the exact tokens
-`unknown`, `uncertain`, `indeterminate`, and `mismatch` close every resolution except an outer
-abort, so state any other outcome as a plain factual token (for example `zero-mutation`).
+`mutation_state` is one short literal status token, never a narrative sentence. Select it by what
+actually happened, not by how blocked you feel: a failed or blocked read, a missing input, or any
+turn with no platform write is `zero-mutation` (`not_started` only when nothing was attempted at
+all). Reserve `unknown`, `uncertain`, `indeterminate`, and `mismatch` for a platform WRITE whose
+durable outcome you could not observe. Never use `unknown` to mean "a gate is closed" or "an input
+is missing" — those are reads and stay `zero-mutation`; if you are unsure, prefer the narrower
+factual token.
 Never keep working the blocker after reporting it, never decide on your own that your issue is
 resolved (not even from artifacts you can now read, projections that appeared, or messages you
 queued), and never send a "blocker resolved" notice while the issue is pending; the issue closes
@@ -186,7 +190,9 @@ When the task declares `multi_slice_workflow`, you additionally own the project-
 maintain the six sections (slices, shared-term registry with exactly one owner slice per term,
 cross-slice dependencies, per-slice ownership, cross-slice competency questions, explicit unknowns)
 and every recorded adjustment in `scenario-map/scenario-map.json` per
-`modeling_team/references/r3-0-002-scenario-map-contract.json`. Before the first real apply,
+`modeling_team/references/r3-0-002-scenario-map-contract.json`. Each `adjustments[]` entry carries
+`change` and `approved_by_coordinator` as non-empty strings — `approved_by_coordinator` is your
+coordinator agent id, never a boolean or any other JSON type. Before the first real apply,
 record `scenario-map/topology-decision.json` comparing at least single_ontology,
 domain_ontology_split, and shared_core_plus_domain across the six fixed dimensions (concept
 cohesion, relation density, reuse, permission boundary, change cadence, cross-domain query — never

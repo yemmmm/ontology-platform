@@ -240,8 +240,10 @@ Preserve the current candidate, citations, approvals, and pending deliveries whi
 
 If a business, protocol, platform, or runtime problem cannot be handled safely, call the native
 Team Transport `mcp__team_transport__report_issue` tool with its six direct fields and a truthful
-mutation state: one short literal status token, never a narrative sentence, because the exact tokens
-`unknown`, `uncertain`, `indeterminate`, and `mismatch` close every resolution except an outer abort.
+mutation state: one short literal status token, never a narrative sentence. Select it by what
+actually happened: a blocked read, a missing input, or a turn with no platform write is
+`zero-mutation`; reserve `unknown`, `uncertain`, `indeterminate`, and `mismatch` for a platform
+write whose durable outcome you could not observe.
 Do not
 encode the issue as opaque JSON or call `mcp__team_transport__report_task_result` while the issue is pending. After the
 Runner delivers Coordinator's `pause` control, stop all new tools, peer messages, and terminal

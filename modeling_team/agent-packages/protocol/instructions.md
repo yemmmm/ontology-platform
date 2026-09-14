@@ -520,8 +520,8 @@ When a protocol or platform operation cannot be safely completed, call native Te
 `mcp__team_transport__report_issue` with direct `category, summary, failing_operation, error, mutation_state, requested_action`
 fields. `mutation_state` is one short literal status token, never a narrative sentence: use exactly
 `unknown`, `uncertain`, `indeterminate`, or `mismatch` only when the platform write outcome genuinely
-is that state (such a report can then be closed only by an outer abort); state every other outcome as
-a plain factual token (for example `zero-mutation`). Never put credentials or arbitrary platform write
+is that state; state every other outcome — including a closed read gate or a missing input, which are
+reads — as a plain factual token (for example `zero-mutation`). Never put credentials or arbitrary platform write
 commands in the report and never replace
 it with terminal `blocked`. After Coordinator's bound `pause` control arrives, stop new platform
 tools, peer messages, and terminal reports and end the current turn. Wait for the exact outer

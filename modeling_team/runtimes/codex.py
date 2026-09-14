@@ -7127,7 +7127,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "issue resolution replay conflicts",
             "issue resolution was already persisted",
             "issue resolution is not valid in current state",
-            "unknown mutation state requires formal reconciliation",
         }
         if value in fixed:
             return value

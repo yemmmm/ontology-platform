@@ -518,11 +518,11 @@ class RecoverableIssueLedger:
             if active.resolution != resolution:
                 raise IssueError("issue resolution replay conflicts")
             raise IssueError("issue resolution was already persisted")
-        if (
-            resolution.resolution_type != "abort"
-            and _requires_mutation_reconciliation(active.report.mutation_state)
-        ):
-            raise IssueError("unknown mutation state requires formal reconciliation")
+        # A reporter's self-declared mutation_state is advisory context for the
+        # owner, never a write gate: the durable staged-evidence guard in the
+        # Runner (see runner._staged_resolution_blocker) is the sole authority
+        # on unreconciled writes, so an advisory token must not force an issue
+        # abort-only.
         active.resolution = resolution
         active.state = "resolution_ready"
         self._record("resolution_ready", issue_id=resolution.issue_id, resolution_type=resolution.resolution_type)

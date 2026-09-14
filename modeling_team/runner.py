@@ -4048,6 +4048,22 @@ class TeamRunner:
             or active.category != "runtime_recovery"
         ):
             return
+        # The durable staged-evidence guard is the sole write authority: while
+        # it reports an unreconciled write, host recovery may start the next
+        # turn but must never settle the gated issue (a reporter's advisory
+        # mutation_state token is not evidence).
+        blocker = self._staged_resolution_blocker()
+        if blocker is not None:
+            self._append_evidence(
+                "provider-wait",
+                {
+                    "event": "issue-settlement-skipped",
+                    "agent_id": agent_id,
+                    "issue_id": active.issue_id,
+                    "reason": f"staged gate closed: {blocker}"[:200],
+                },
+            )
+            return
         # Runner-owned settlement through the same ledger transitions a
         # Coordinator control would use; every step is evidence-recorded.
         coordinator = self._issue_coordinator_id()
