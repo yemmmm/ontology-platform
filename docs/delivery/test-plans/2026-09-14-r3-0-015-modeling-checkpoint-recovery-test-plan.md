@@ -634,8 +634,10 @@ Session `b9d6527f-2209-4a07-b58b-f5be8a326add` 已 completed、0 Lease，新 Bat
 公开/freeze artifact 且冻结 Profile 拒绝共享证据路由而报告 `blocked`；Acceptance carrier
 cleanup 为 `aborted/runner-cleanup-before-settlement`。原 run6 issue-1/issue-2 的消息路由
 拒绝与正式 issue_resolution、随后三位 Agent 的 accepted terminal result 均保留。
-三次获准 fresh semantic starts 已用尽；这轮不能再启动复测。后续仅针对 CQ 挂载和终态
-提示合同修复，并在新授权下真实复核 CQ/Acceptance settlement；不得把本轮机械 dry-run
+三次获准 fresh semantic starts 已用尽；这轮不能再启动复测。CQ 公开投影挂载、宿主专属
+冻结文件的恢复 packet 可读清单，以及终态绑定回复提示已由 `be027b0` 局部修复；
+代码回归为 1784 passed、23 项已复现的旧 fixture 失败、15 skipped，未宣称全套 PASS。
+新授权下仍需真实复核 CQ/Acceptance settlement；不得把本轮机械 dry-run
 或检查点恢复计为 L1 语义质量、受治理检索或最终模型接受。
 
 证据保留在 `/home/yangxiang/ontology-platform-checkpoint-l0-20260915/workspaces/modeling-runs/r30015-l0-20260915-dryrun-resume6/` 的 `recovery/`、`checkpoints/`、`evidence/`、`state.json` 与 `acceptance-carrier/evidence/cleanup.json`；Host 授权、资源读回和密钥撤销账本为同 worktree 下 `workspaces/checkpoint-l0-20260915/host-ledger.json`。该轮中为修复源 run 生命周期而延迟首次 semantic start，已按 AGENTS.md 报告，不把补修时间计入语义建模时间。
