@@ -283,6 +283,14 @@ def test_s13_unified_protocol_prompt_uses_009_candidate_gate(tmp_path):
         assert "Do not call the R2.3 native build_candidate_receipt" in prompt
         assert "candidate receipt is successfully built" not in prompt
         assert "R3.0-014 translation review" in prompt
+        # R3.0-015 issue-4: this branch is the one the source run's Protocol
+        # actually received, and it must state the reply duty.  Without it the
+        # route has no answer obligation at all, and Modeling's terminal report
+        # deadlocks behind a reply slot Protocol was never told to close.
+        assert "Reply obligation on this route" in prompt
+        assert "reply_to_delivery_id" in prompt
+        assert "translation review is not that answer" in prompt
+        assert "report_task_result(status=blocked" in prompt
     finally:
         staged.cleanup()
 

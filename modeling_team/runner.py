@@ -3535,7 +3535,16 @@ class TeamRunner:
                         "and wait for the current Coordinator's R3.0-014 translation review before a "
                         "deterministic dry_run. Keep apply_atomic closed until its separate approval and "
                         "report exact typed blockers rather than adapting the business candidate to a "
-                        "receipt schema. Use only authorized role mounts and scoped Team handoffs."
+                        "receipt schema. Use only authorized role mounts and scoped Team handoffs. "
+                        "\nReply obligation on this route: each direct Modeling candidate or revision that "
+                        "expects a reply must be answered through `send_team_message` with "
+                        "`reply_to_delivery_id` set to that candidate's `delivery_id`, as soon as your "
+                        "translation decision for it is complete. The Coordinator's R3.0-014 translation "
+                        "review is not that answer, and waiting for it never closes the slot. If the "
+                        "current candidate cannot be answered on this route, send the typed conflict as "
+                        "that reply, or call `report_task_result(status=blocked, ...)`. A completed "
+                        "terminal report while one of your replies is still undelivered is refused by "
+                        "Team Transport, so never leave a reply slot open and wait."
                     )
                 else:
                     text += legacy_protocol_text
@@ -4035,6 +4044,14 @@ class TeamRunner:
         elif action == "stop":
             # Explicit stop overrides the provider-wait cleanup deferral.
             self._provider_wait_stop_requested = True
+            # R3.0-015 issue-4: the explicit host stop is also the last owner
+            # answer for a still-open cooperative issue.  Without this the
+            # cleanup deferral below keeps the process exiting 0 behind a
+            # WAITING_OWNER state.json that no writer backs, and the documented
+            # recovery retry ("stop the original run through its existing stop
+            # channel, then retry") can never be performed by the host that just
+            # performed the stop.
+            self._settle_issue_for_outer_stop()
             deferred = getattr(self, "_deferred_runtime_failures", None)
             if deferred:
                 # Settle the retained Coordinator-takeover failure record so
@@ -4243,6 +4260,58 @@ class TeamRunner:
                     "agent_id": agent_id,
                     "issue_id": active.issue_id,
                     "reason": str(exc)[:200],
+                },
+            )
+
+    def _settle_issue_for_outer_stop(self) -> None:
+        """Settle one open cooperative issue behind an explicit host stop.
+
+        The host stop is not an owner resolution, so this never claims one: it
+        releases the ledger through the existing "no owner can answer"
+        transition (``rebind_required``) rather than the ``abort`` resolution a
+        Coordinator control must persist first, and it never fabricates the
+        R2.3-003 zero-mutation abort reconciliation. It only removes the
+        cleanup deferral: the same abort request a sanctioned Coordinator abort
+        sets makes ``cleanup`` run to a truthful terminal state. The issue
+        record, its reporter and its state at stop time stay in the run
+        evidence, so the stopped run remains auditable and a later recovery
+        decision does not have to guess.
+        """
+
+        ledger = self._issue_ledger()
+        if ledger is None or not ledger.pending:
+            return
+        active = ledger.active_issue
+        if active is None:
+            return
+        self._issue_abort_requested = True
+        self._append_evidence(
+            "issue-abort",
+            {
+                "source": "outer-stop",
+                "issue_id": active.issue_id,
+                "reporter_id": active.reporter_id,
+                "category": active.category,
+                "issue_state": ledger.state,
+                "reason": "host stop before any owner resolution",
+            },
+        )
+        try:
+            ledger.fail_rebind(
+                issue_id=active.issue_id,
+                reporter_id=active.reporter_id,
+                reason="host stop: the run ended before the issue was resolved",
+            )
+        except IssueError as exc:
+            # Observable, never fatal: the stop still tears the run down and
+            # the ledger keeps its state instead of failing the stop.
+            self._append_evidence(
+                "issue-abort",
+                {
+                    "source": "outer-stop",
+                    "issue_id": active.issue_id,
+                    "issue_state": ledger.state,
+                    "settlement_skipped": str(exc)[:200],
                 },
             )
 
@@ -10669,24 +10738,18 @@ class TeamRunner:
             self._cq_merge_exposure_evidence()
 
         freeze_restored = False
-        if (
-            plan.manifest.get("kind") == CHECKPOINT_KIND_CQ_FROZEN
-            and self._competency_questions
-        ):
-            freeze_sources = [
-                str(artifact.get("source"))
-                for artifact in artifacts
-                if str(artifact.get("source") or "").startswith(
-                    "competency-questions/frozen/freeze-"
-                )
-            ]
-            if not freeze_sources:
-                raise CheckpointError(
-                    "checkpoint_incomplete",
-                    "a cq_frozen checkpoint packages no frozen pool",
-                    obj="competency-questions/frozen",
-                    phase="checkpoint-resume",
-                )
+        # Every stage kind packages the frozen pool once a freeze exists
+        # (``add_cq_material``), so the restore is keyed on the packaged,
+        # digest-verified frozen file, never on the kind label: a later-stage
+        # resume (semantic_approved, materialization_progress,
+        # production_handoff) must adopt the same freeze state, or the staged
+        # write channel would reject the very freeze it exists to require.
+        freeze_sources = [
+            str(artifact.get("source"))
+            for artifact in artifacts
+            if str(artifact.get("source") or "").startswith("competency-questions/frozen/freeze-")
+        ]
+        if self._competency_questions and freeze_sources:
             payload_path = root.joinpath(*freeze_sources[-1].split("/"))
             try:
                 payload = json.loads(payload_path.read_text(encoding="utf-8"))
@@ -10707,10 +10770,18 @@ class TeamRunner:
             self._cq_freeze = snapshot
             self._cq_phase = "frozen"
             freeze_restored = True
+        elif plan.manifest.get("kind") == CHECKPOINT_KIND_CQ_FROZEN and self._competency_questions:
+            raise CheckpointError(
+                "checkpoint_incomplete",
+                "a cq_frozen checkpoint packages no frozen pool",
+                obj="competency-questions/frozen",
+                phase="checkpoint-resume",
+            )
         elif plan.manifest.get("kind") == CHECKPOINT_KIND_SCENARIO_MAPPED:
             # §4.2: scenario_mapped restores the ACTUAL draft/review phase; the
-            # freeze state deliberately stays empty so no fabricated review or
-            # re-interview can ride the resume.
+            # freeze state deliberately stays empty — unless the package
+            # carried a re-validated frozen pool (the branch above), which is
+            # real reviewed state, not a fabricated review or re-interview.
             self._cq_freeze = None
             recorded_phase = (plan.manifest.get("stage_facts") or {}).get("cq_phase")
             if isinstance(recorded_phase, str) and recorded_phase:

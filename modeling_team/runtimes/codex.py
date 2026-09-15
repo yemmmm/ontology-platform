@@ -77,7 +77,12 @@ from ..candidate_platform_gate import (
 from ..protocol_mcp_launch import protocol_mcp_launch_spec
 from ..protocol_mechanics import protocol_mechanics_contract_bytes
 from ..protocol_retrieval_gate import ORDINARY_RETRIEVAL_RECEIPT_SCHEMA
-from ..transport_mcp import TERMINAL_REPORT_GUARD_ERROR
+from ..transport_mcp import (
+    TERMINAL_REPLY_BINDING_PATTERNS,
+    TERMINAL_REPORT_GUARD_ERROR,
+    report_rejection_category,
+    terminal_reply_binding_error,
+)
 from .base import (
     AgentRuntimeIdentity,
     AgentState,
@@ -7055,12 +7060,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     )
                 return self._dynamic_tool_error("Team Transport rejected the request")
             if tool == "report_task_result":
-                category = (
-                    "missing_modeling_handoff"
-                    if error.startswith("terminal result requires terminal handoffs: ")
-                    and "modeling" in error.rsplit(": ", 1)[-1].split(", ")
-                    else "broker_rejection"
-                )
+                # One refusal is one category: the runtime records the same
+                # vocabulary the Broker observer uses, so the run evidence names
+                # the actual gate instead of a generic broker rejection.
+                category = report_rejection_category(error)
                 self._append_runtime_evidence(
                     "team-transport-events",
                     {
@@ -7130,6 +7133,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         }
         if value in fixed:
             return value
+        # R3.0-015 issue-4: the locatable reply-binding refusals carry one
+        # broker-generated delivery id and one profile-owned peer id.  They are
+        # re-rendered from the matched tokens (never reflected as received), so
+        # the Agent sees why its terminal result was refused without widening
+        # the anti-reflection surface.
+        for gate, pattern in TERMINAL_REPLY_BINDING_PATTERNS:
+            match = pattern.fullmatch(value)
+            if match is not None:
+                return terminal_reply_binding_error(
+                    gate, match.group("delivery_id"), match.group("peer")
+                )
         prefix = "terminal result requires terminal handoffs: "
         if not value.startswith(prefix):
             return None

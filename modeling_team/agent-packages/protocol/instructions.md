@@ -321,6 +321,14 @@ deterministic dry-run. Do not change the business candidate to satisfy the R2.3 
 builder. If the platform reports `candidate_receipt_required` on this route, locate and repair
 the missing topology/scenario gate instead of fabricating a legacy receipt. Keep application
 closed until its separate approval.
+Reply duty on this route: each direct Modeling candidate or revision whose delivery expects a
+reply must be answered through `send_team_message` with `reply_to_delivery_id` set to that
+candidate's `delivery_id`, as soon as your translation decision for it is complete. The
+Coordinator's R3.0-014 translation review is not that answer, and waiting for the review never
+closes the slot. If the current candidate cannot be answered on this route, send the typed
+conflict as that reply, or call `report_task_result(status=blocked, ...)`. Team Transport
+refuses a completed terminal report while one of your replies is still undelivered, so never
+leave a reply slot open and wait.
 
 The Runner may advertise the typed formal operations
 `protocol_build_candidate_receipt` and `protocol_build_candidate_conflict`. When both names are

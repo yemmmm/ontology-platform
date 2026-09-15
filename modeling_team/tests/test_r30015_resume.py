@@ -56,6 +56,7 @@ from modeling_team.checkpoint_recovery import (
 from modeling_team.checkpoints import (
     CHECKPOINT_ARTIFACTS_DIRECTORY,
     CHECKPOINT_KIND_CQ_FROZEN,
+    CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
     CHECKPOINT_KIND_PRODUCTION_HANDOFF,
     CHECKPOINT_KIND_SCENARIO_MAPPED,
     CheckpointArtifactSpec,
@@ -68,6 +69,7 @@ from modeling_team.checkpoints import (
 from modeling_team.platform_scope import PlatformScope, PlatformScopeMissingError
 from modeling_team.runner import TeamRunner
 from modeling_team.staged_decisions import (
+    StagedSubmissionRejection,
     build_submission_intent,
     build_submission_receipt,
     mark_intent_status,
@@ -77,10 +79,16 @@ from modeling_team.staged_decisions import (
 from modeling_team.tests.test_platform_scope import ScopeClient
 from modeling_team.tests.test_r30015_checkpoints import (
     CONFIGURATION,
+    PROFILE,
     REPO_ROOT,
     RUNS_ROOT,
+    _CheckpointRunner,
     _checkpoint_events,
+    _freeze,
+    _outer_save,
+    _read_manifest,
     _run_cli,
+    _settled_apply_intent,
     _tree_state,
     _write_json,
 )
@@ -869,6 +877,216 @@ def test_m22_m45_writer_report_lists_channels_and_caps_each_wait_at_60s():
         assert report["verdict"] == "no_live_writer_evidence"
     finally:
         rmtree(run_root, ignore_errors=True)
+
+
+# --- stale WAITING_OWNER settlement (R3.0-015 issue-4) ---------------------------
+
+
+def _dead_pid() -> int:
+    """A pid that provably belonged to a real process, now exited and reaped."""
+
+    finished = subprocess.run(
+        [sys.executable, "-c", "import os; print(os.getpid())"],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert finished.returncode == 0, finished.stderr
+    return int(finished.stdout.strip())
+
+
+def _seed_chain_source(
+    *, state: str, chain_root: str, with_origin: bool = True
+) -> tuple[Path, dict]:
+    """A resume-chain source run whose writer has exited (incident fixture).
+
+    Mirrors ``r30015-l0-20260915-cq-start4`` and its real artifacts: the
+    checkpoint manifest records the *producing* run as its ``root_run_id``
+    (``materialization_progress-0001`` in ``cq-start4``), while
+    ``recovery/origin.json`` records the chain root the resume command took the
+    kernel lock under (``…-start3``, the only holder record left behind when
+    that writer exits).  ``runner.py`` refuses to re-enter an existing run
+    directory, so a stale state.json cannot belong to a live writer.
+    """
+
+    run_id = f"r3015src-{os.urandom(4).hex()}"
+    run_root = RUNS_ROOT / run_id
+    _write_json(run_root / "evidence" / "stage.json", {"stage": "resume-fixture"})
+    _write_json(run_root / "state.json", {"state": state})
+    saved = save_checkpoint(
+        run_root,
+        _bound_package(),
+        source_run_id=run_id,
+        root_run_id=run_id,
+        configuration=dict(CONFIGURATION),
+    )
+    if with_origin:
+        _write_json(
+            run_root / RECOVERY_DIRECTORY / "origin.json",
+            {
+                "schema_version": RECOVERY_SCHEMA,
+                "source_run_id": chain_root,
+                "root_run_id": chain_root,
+                "checkpoint_id": "cq_frozen-0000",
+                "new_run_id": run_id,
+                "created_at": "2026-09-15T09:24:09.679344+00:00",
+            },
+        )
+    return run_root, saved
+
+
+def _chain_lock_path(chain_root: str) -> Path:
+    return RUNS_ROOT / ".recovery-locks" / f"{chain_root}.lock"
+
+
+def _seed_dead_chain_writer(chain_root: str, pid: int) -> Path:
+    """The on-disk record a chain writer leaves when its process exits."""
+
+    path = _chain_lock_path(chain_root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "root_run_id": chain_root,
+                "pid": pid,
+                "acquired_at": "2026-09-15T09:24:09.489429+00:00",
+            }
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    return path
+
+
+def test_m45_stale_waiting_owner_settles_on_the_chain_writer_lock_evidence():
+    """Issue-4: a stale WAITING_OWNER must not deadlock the recovery entry.
+
+    The documented ``source_active`` retry ("stop the original run through its
+    existing stop channel") is unperformable once the process has exited, and
+    the state.json claim alone keeps refusing every retry forever.  The chain
+    writer lock is the auditable settlement channel: it is keyed by the chain
+    root the source run's own ``origin.json`` records, the kernel releases it on
+    process death, and a new resume records the holder it superseded first.
+    """
+
+    chain_root = f"r3015root-{os.urandom(4).hex()}"
+    run_root, saved = _seed_chain_source(state="WAITING_OWNER", chain_root=chain_root)
+    dead = _dead_pid()
+    _seed_dead_chain_writer(chain_root, dead)
+    try:
+        # (1) Auditing the file as it stands (the incident's own state: a dead
+        #     holder record, no supersede yet) settles the plan.
+        plan = _plan(run_root, saved["checkpoint_id"])
+        writer = plan.inspection["source_writer"]
+        assert writer["state_json_status"] == "WAITING_OWNER"
+        # The stale claim stays visible in the evidence instead of vanishing.
+        assert writer["state_json_may_be_live_writer"] is True
+        assert writer["verdict"] == "writer_process_exited"
+        chain = writer["chain_writer_lock"]
+        assert chain["checked"] is True
+        assert chain["bound_by"] == "recovery_origin"
+        assert chain["chain_root_run_id"] == chain_root
+        # Like the real ``materialization_progress-0001``: the manifest names
+        # the producing run, the origin names the chain the writer locked.
+        assert chain["manifest_root_run_id"] == run_root.name
+        assert chain["holder_pid"] == dead
+        assert chain["holder_alive"] is False
+        assert chain["holder_is_superseded"] is False
+        assert plan.origin["source_writer"]["chain_writer_lock"] == chain
+
+        # (2) The CLI path takes the chain lock first, which supersedes the dead
+        #     holder's record; the same evidence must still settle the resume.
+        lock = acquire_root_run_lock(chain_root, RUNS_ROOT)
+        try:
+            plan = _plan(run_root, saved["checkpoint_id"])
+            chain = plan.inspection["source_writer"]["chain_writer_lock"]
+            assert plan.inspection["source_writer"]["verdict"] == "writer_process_exited"
+            assert chain["holder_is_superseded"] is True
+            assert chain["holder_pid"] == dead
+            assert chain["holder_alive"] is False
+        finally:
+            lock.release()
+    finally:
+        rmtree(run_root, ignore_errors=True)
+        _chain_lock_path(chain_root).unlink(missing_ok=True)
+
+
+def test_m12_m45_a_live_chain_writer_still_hard_rejects_the_resume():
+    """M12/M22/M45: a genuinely live writer keeps the hard gate closed.
+
+    The lock is held by a real OS process (a real ``flock``, not a stub): a
+    stale ``state.json`` must never be settled on behalf of a live chain writer,
+    and the rejection must stay typed, retryable, and locatable.
+    """
+
+    chain_root = f"r3015root-{os.urandom(4).hex()}"
+    run_root, saved = _seed_chain_source(state="WAITING_OWNER", chain_root=chain_root)
+    script = (
+        "import sys, time\n"
+        "from pathlib import Path\n"
+        "from modeling_team.checkpoint_recovery import acquire_root_run_lock\n"
+        "acquire_root_run_lock(sys.argv[1], Path(sys.argv[2]))\n"
+        "print('locked', flush=True)\n"
+        "time.sleep(120)\n"
+    )
+    child = subprocess.Popen(
+        [sys.executable, "-c", script, chain_root, str(RUNS_ROOT)],
+        env={**os.environ, "PYTHONPATH": str(REPO_ROOT)},
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert child.stdout is not None
+        assert child.stdout.readline().strip() == "locked"
+        with pytest.raises(CheckpointError) as active:
+            _plan(run_root, saved["checkpoint_id"])
+        assert active.value.reason_code == REASON_SOURCE_ACTIVE
+        assert active.value.retryable is True
+        assert f"root_run_id:{chain_root}" == active.value.object
+        assert "state.json" in active.value.detail
+        assert "60s" in active.value.retry
+    finally:
+        child.kill()
+        child.wait(timeout=60)
+        rmtree(run_root, ignore_errors=True)
+        _chain_lock_path(chain_root).unlink(missing_ok=True)
+
+
+def test_m45_unsettled_writer_evidence_keeps_the_gate_closed():
+    """No audit-able ownership record means no settlement: fail closed.
+
+    A lock-less possibly-live ``state.json`` (the source run never held this
+    chain's lock, e.g. a hard-killed fresh run) and a source run outside this
+    recovery chain both stay typed ``source_active`` refusals -- the §5.2 host
+    procedure, not the recovery entry, is their path.
+    """
+
+    # (a) Chain source with no lock record at all.
+    chain_root = f"r3015root-{os.urandom(4).hex()}"
+    run_root, saved = _seed_chain_source(state="WAITING_OWNER", chain_root=chain_root)
+    try:
+        with pytest.raises(CheckpointError) as unproven:
+            _plan(run_root, saved["checkpoint_id"])
+        assert unproven.value.reason_code == REASON_SOURCE_ACTIVE
+        assert "60s" in unproven.value.retry
+    finally:
+        rmtree(run_root, ignore_errors=True)
+        _chain_lock_path(chain_root).unlink(missing_ok=True)
+
+    # (b) A dead holder record that is not bound to a recovery chain (no
+    #     origin.json): the writer never took the chain lock.
+    chain_root = f"r3015root-{os.urandom(4).hex()}"
+    run_root, saved = _seed_chain_source(
+        state="WAITING_OWNER", chain_root=chain_root, with_origin=False
+    )
+    _seed_dead_chain_writer(chain_root, _dead_pid())
+    try:
+        with pytest.raises(CheckpointError) as fresh:
+            _plan(run_root, saved["checkpoint_id"])
+        assert fresh.value.reason_code == REASON_SOURCE_ACTIVE
+    finally:
+        rmtree(run_root, ignore_errors=True)
+        _chain_lock_path(chain_root).unlink(missing_ok=True)
 
 
 # --- business approvals (M27/M30) -------------------------------------------------
@@ -1747,6 +1965,242 @@ def test_s2_real_process_boundary_resume_from_a_terminated_runner():
         rmtree(RUNS_ROOT / f"{new_run_id}-ledger", ignore_errors=True)
         rmtree(source_root, ignore_errors=True)
         rmtree(RUNS_ROOT / f"{child['run_id']}-ledger", ignore_errors=True)
+
+
+# --- later-stage packages carry the frozen pool forward (M11/M10) ------------------
+
+
+class _BoundResumeHarness(_CheckpointRunner):
+    """A prepared 011 run bound to a real Project/Ontology (resumable identity)."""
+
+    def prepare(self) -> TeamRunner:
+        self.runner.prepare(
+            run_id=self.run_id,
+            profile_path=PROFILE,
+            task_path=self._task_path,
+            scope={
+                "mode": "create",
+                "project_id": "r3015-late-project",
+                "ontology_ids": ["r3015-late-ontology"],
+            },
+        )
+        return self.runner
+
+
+def _resume_later_stage(source_root: Path, checkpoint_id: str) -> tuple[TeamRunner, str]:
+    """Resume into a fresh run from a bound later-stage package.
+
+    A refused resume still prepared (and therefore created) the new run root,
+    so the helper removes its own leftovers before re-raising.
+    """
+
+    new_run_id = f"r3015late-{os.urandom(4).hex()}"
+    runner = TeamRunner(
+        repository_root=REPO_ROOT,
+        adapter=CapturingAdapter(),
+        ledger_root=RUNS_ROOT / f"{new_run_id}-ledger",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+    )
+    try:
+        runner.prepare_from_checkpoint(
+            source_run_root=source_root,
+            checkpoint_id=checkpoint_id,
+            new_run_id=new_run_id,
+            readback=_readback(FakeCursorPlatform()),
+            authorization_reference="user-2026-09-15-r3015-later-stage-freeze",
+        )
+    except BaseException:
+        if runner.run is not None:
+            runner.cleanup()
+        _drop_new_run(None, new_run_id)
+        raise
+    return runner, new_run_id
+
+
+def _drop_new_run(runner: TeamRunner | None, new_run_id: str | None) -> None:
+    if runner is not None:
+        runner.cleanup()
+    if new_run_id is not None:
+        rmtree(RUNS_ROOT / new_run_id, ignore_errors=True)
+        rmtree(RUNS_ROOT / f"{new_run_id}-ledger", ignore_errors=True)
+
+
+def _staged_write_outcome(runner: TeamRunner) -> str | None:
+    """The reason code the real staged write channel reports, if it rejects."""
+
+    try:
+        runner._handle_staged_submit_modeling_batch({})
+    except StagedSubmissionRejection as rejection:
+        return rejection.data["reason_code"]
+    return None
+
+
+def test_m11_later_stage_checkpoint_resume_adopts_the_verified_freeze():
+    """R3.0-015 L0 resume5 regression: every later kind carries the frozen pool.
+
+    The write-channel gate exists to require a reviewed, frozen pool, so a
+    resume must restore that state from the packaged, digest-verified freeze
+    instead of keying the restore on the ``cq_frozen`` label alone.  Before the
+    fix, ``_cq_freeze`` stayed empty after a real recovery and the first staged
+    dry-run was hard-rejected with ``cq_freeze_pending`` while the new run root
+    already held the verified pool.
+    """
+
+    harness = _BoundResumeHarness()
+    new_run_id = None
+    parent = None
+    try:
+        runner = harness.prepare()
+        frozen = _freeze(runner)
+        _settled_apply_intent(runner, ordinal=1, mode="dry_run")
+        saved = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
+        assert saved["status"] == "saved"
+        manifest = _read_manifest(harness.run_root, saved["checkpoint_id"])
+        packaged = next(
+            artifact
+            for artifact in manifest["artifacts"]
+            if artifact["source"].startswith("competency-questions/frozen/freeze-")
+        )
+        # Premise of the regression: the later-stage package carries the pool.
+        assert packaged["host_private"] is True
+        # The old writer exits; the package is all the resume has.
+        runner.cleanup()
+
+        parent, new_run_id = _resume_later_stage(harness.run_root, saved["checkpoint_id"])
+        assert parent._cq_freeze is not None
+        assert parent._cq_freeze["snapshot_digest"] == frozen["snapshot_digest"]
+        assert parent._cq_phase == "frozen"
+        prepared = next(
+            event for event in _checkpoint_events(parent) if event["event"] == "resume-prepared"
+        )
+        assert prepared["cq_freeze_restored"] is True
+        # The same write channel that refused the live run must now reach its
+        # ordinary staged validation instead of ``cq_freeze_pending``.
+        assert _staged_write_outcome(parent) != "cq_freeze_pending"
+    finally:
+        _drop_new_run(parent, new_run_id)
+        harness.remove()
+
+
+def test_m11_later_stage_tampered_frozen_pool_is_still_refused():
+    """A packaged freeze is never the permission by itself: it is re-validated."""
+
+    harness = _BoundResumeHarness()
+    new_run_id = None
+    try:
+        runner = harness.prepare()
+        frozen = _freeze(runner)
+        freeze_path = harness.run_root / "competency-questions" / "frozen" / "freeze-0001.json"
+        tampered = json.loads(freeze_path.read_text(encoding="utf-8"))
+        # A post-freeze edit that keeps the old snapshot_digest: the package
+        # digest still matches the file, so only re-validation can catch it.
+        tampered["questions"][0]["question"] = "rewritten after the freeze"
+        assert tampered["snapshot_digest"] == frozen["snapshot_digest"]
+        freeze_path.chmod(0o644)  # the frozen file is written read-only
+        _write_json(freeze_path, tampered)
+        saved = save_checkpoint(
+            harness.run_root,
+            StagePackage(
+                kind=CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
+                scope_refs={},
+                artifacts=[
+                    CheckpointArtifactSpec(
+                        source="competency-questions/frozen/freeze-0001.json",
+                        owner="host",
+                        visible_to=("host", "competency-question"),
+                        host_private=True,
+                    )
+                ],
+                stage_facts={},
+                platform_bindings={
+                    "project_id": "r3015-late-project",
+                    "ontology_ids": ["r3015-late-ontology"],
+                },
+                write_positions={},
+            ),
+            source_run_id=harness.run_id,
+            configuration=dict(CONFIGURATION),
+        )
+        runner.cleanup()
+        with pytest.raises(CheckpointError) as refused:
+            _resume_later_stage(harness.run_root, saved["checkpoint_id"])
+        assert refused.value.reason_code == "artifact_changed"
+        assert "failed re-validation" in refused.value.detail
+    finally:
+        _drop_new_run(None, new_run_id)
+        harness.remove()
+
+
+def test_m11_scenario_mapped_resume_without_a_frozen_pool_keeps_the_gate_closed():
+    """The counterpart: no packaged freeze means no fabricated freeze state."""
+
+    harness = _BoundResumeHarness()
+    new_run_id = None
+    parent = None
+    try:
+        runner = harness.prepare()
+        _write_json(
+            harness.run_root / "competency-questions" / "private" / "interview-0001.json",
+            {"question_id": "cq-1", "answer": "confirmed"},
+        )
+        saved = _outer_save(runner, CHECKPOINT_KIND_SCENARIO_MAPPED)
+        assert saved["status"] == "saved"
+        manifest = _read_manifest(harness.run_root, saved["checkpoint_id"])
+        assert manifest["stage_facts"]["cq_frozen"] is False
+        assert not any(
+            artifact["source"].startswith("competency-questions/frozen/")
+            for artifact in manifest["artifacts"]
+        )
+        runner.cleanup()
+
+        parent, new_run_id = _resume_later_stage(harness.run_root, saved["checkpoint_id"])
+        assert parent._cq_freeze is None
+        prepared = next(
+            event for event in _checkpoint_events(parent) if event["event"] == "resume-prepared"
+        )
+        assert prepared["cq_freeze_restored"] is False
+        assert _staged_write_outcome(parent) == "cq_freeze_pending"
+    finally:
+        _drop_new_run(parent, new_run_id)
+        harness.remove()
+
+
+def test_m11_cq_frozen_checkpoint_without_a_packaged_freeze_is_refused():
+    """The completeness hard gate on the cq_frozen kind survives the fix."""
+
+    source_root = RUNS_ROOT / f"r3015nofreeze-{os.urandom(4).hex()}"
+    new_run_id = None
+    try:
+        _write_json(source_root / "evidence" / "stage.json", {"stage": "no-freeze"})
+        saved = save_checkpoint(
+            source_root,
+            StagePackage(
+                kind=CHECKPOINT_KIND_CQ_FROZEN,
+                scope_refs={},
+                artifacts=[
+                    CheckpointArtifactSpec(
+                        source="evidence/stage.json",
+                        owner="coordinator",
+                        visible_to=("coordinator", "modeling", "protocol"),
+                    )
+                ],
+                stage_facts={},
+                platform_bindings={
+                    "project_id": "r3015-late-project",
+                    "ontology_ids": ["r3015-late-ontology"],
+                },
+                write_positions={},
+            ),
+            source_run_id=source_root.name,
+            configuration=dict(CONFIGURATION),
+        )
+        with pytest.raises(CheckpointError) as refused:
+            _resume_later_stage(source_root, saved["checkpoint_id"])
+        assert refused.value.reason_code == "checkpoint_incomplete"
+        assert "packages no frozen pool" in refused.value.detail
+    finally:
+        _drop_new_run(None, new_run_id)
+        rmtree(source_root, ignore_errors=True)
 
 
 # --- delivery boundary summary stays accurate (M44 S2 side) ------------------------

@@ -819,6 +819,69 @@ class IssueEscalationTests(unittest.TestCase):
                 },
             )
 
+    def test_outer_stop_settles_a_pending_issue_with_a_truthful_terminal_state(self) -> None:
+        """R3.0-015 issue-4: the host stop must not leave a stale WAITING_OWNER.
+
+        The incident: the host stopped the run whose issue-4 was pending
+        ("MCP -32000: terminal result requires delivered reply").  Cleanup
+        deferred on the pending issue, the Runner process exited 0, and
+        ``state.json`` stayed WAITING_OWNER -- a possibly-live claim no writer
+        backs, because ``runner.py`` never re-enters an existing run directory.
+        The recovery entry then refused every retry with "stop the original run
+        through its existing stop channel", which a dead process cannot answer.
+        An explicit host stop is the run's last owner: it closes the issue
+        through the ledger's existing "no owner can answer" transition and
+        cleans up, so the terminal state tells the truth.
+        """
+
+        from modeling_team.tests.test_r3011_runner_wiring import _read_evidence
+        from modeling_team.tests.test_r3012_completion import _CompletionRunner
+
+        harness = _CompletionRunner()
+        try:
+            runner = harness.runner
+            # ``start()`` launches the real Runtime and creates this broker; the
+            # test wires the same broker directly so the pending issue is real
+            # without any Agent process (no LLM, no provider).
+            runner.transport = TeamTransportBroker(
+                runner.run.root / "transport" / "broker",
+                set(runner.run.configuration.profile.communication),
+                coordinator_agent_id="coordinator",
+                modeling_agent_id="modeling",
+                issue_escalation_enabled=True,
+            )
+            report = runner.transport.report_issue(
+                "modeling",
+                category="runtime_recovery",
+                summary="terminal reply is never delivered",
+                failing_operation="mcp__team_transport__report_task_result",
+                error="MCP -32000: terminal result requires delivered reply",
+                mutation_state="indeterminate",
+                requested_action="settle the pending delivery or stop the run",
+            )
+
+            def state_value() -> object:
+                return json.loads(
+                    (runner.run.root / "state.json").read_text(encoding="utf-8")
+                )["state"]
+
+            # The incident's deferral: a pending issue pauses cleanup, so the
+            # process can exit behind a possibly-live state.json.
+            assert runner.cleanup()["cleanup_deferred"] is True
+            assert state_value() == "WAITING_OWNER"
+            assert runner.transport.issue_ledger.pending is True
+
+            # The host stop owns the outcome now: it must settle, not defer.
+            assert runner.receive_outer({"action": "stop"}) == [{"type": "stopped"}]
+            assert runner.transport.issue_ledger.pending is False
+            assert runner.transport.issue_ledger.state == "rebind_required"
+            assert state_value() == "CLEANED"
+            aborts = [entry for entry in _read_evidence(runner, "issue-abort")]
+            assert aborts and aborts[-1]["issue_id"] == report["issue_id"]
+            assert aborts[-1]["source"] == "outer-stop"
+        finally:
+            harness.cleanup()
+
     def test_acceptance_issue_binds_numeric_runtime_thread_and_pauses_without_exit(self) -> None:
         """Acceptance may report before its ticket; Runner must keep the run recoverable."""
         with tempfile.TemporaryDirectory() as directory:

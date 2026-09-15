@@ -113,6 +113,9 @@ POSSIBLY_LIVE_STATES = frozenset(
 # Every apply-family mode is a materializing write for reconciliation.
 APPLY_MODES = frozenset({"apply", "apply_atomic", "apply_partial"})
 _RECOVERY_LOCK_DIRECTORY = ".recovery-locks"
+# The only lock-record fields a supersede keeps; an unknown nested supersede
+# chain or a foreign extra field is never carried into the new record.
+LOCK_RECORD_KEYS = ("root_run_id", "pid", "acquired_at")
 _APPROVALS_SOURCE = "value-semantics/approvals/approvals.json"
 _RUN_ID_PATTERN = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
@@ -225,18 +228,26 @@ class RootRunLock:
                 retry="let the active resume finish or stop it through its own "
                 "stop channel, then retry; never run two resumes of one root run",
             ) from exc
+        # R3.0-015 M45: the kernel lock is the settlement evidence for a later
+        # recovery, so the holder this acquire supersedes is preserved (one
+        # level) instead of being silently truncated away.  A recovery that
+        # finds its own process as the holder still reads the record of the
+        # writer it superseded.
+        previous = read_lock_record_handle(handle)
         os.ftruncate(handle, 0)
-        os.write(
-            handle,
-            json.dumps(
-                {
-                    "root_run_id": self.root_run_id,
-                    "pid": os.getpid(),
-                    "acquired_at": datetime.now(UTC).isoformat(),
-                }
-            ).encode()
-            + b"\n",
-        )
+        # The read above left the offset at EOF; without this seek the new
+        # record would be written past a sparse hole instead of at offset 0.
+        os.lseek(handle, 0, os.SEEK_SET)
+        record: dict[str, Any] = {
+            "root_run_id": self.root_run_id,
+            "pid": os.getpid(),
+            "acquired_at": datetime.now(UTC).isoformat(),
+        }
+        if previous is not None:
+            record["previous"] = {
+                key: previous[key] for key in LOCK_RECORD_KEYS if key in previous
+            }
+        os.write(handle, json.dumps(record).encode() + b"\n")
         self._handle = handle
 
     def release(self) -> None:
@@ -261,6 +272,199 @@ def acquire_root_run_lock(root_run_id: str, runs_root: Path) -> RootRunLock:
     lock = RootRunLock(path, root_run_id)
     lock.acquire()
     return lock
+
+
+def lock_record_path(runs_root: Path, root_run_id: str) -> Path:
+    return Path(runs_root) / _RECOVERY_LOCK_DIRECTORY / f"{root_run_id}.lock"
+
+
+def read_lock_record_handle(handle: int) -> dict[str, Any] | None:
+    """Read the current lock record from an already-open handle.
+
+    Used by :meth:`RootRunLock.acquire` before it rewrites the file; a missing,
+    empty or unreadable record is ``None`` (there is then nothing to supersede).
+    """
+
+    try:
+        os.lseek(handle, 0, os.SEEK_SET)
+        raw = os.read(handle, 4096)
+    except OSError:
+        return None
+    if not raw:
+        return None
+    try:
+        value = json.loads(raw.decode("utf-8", "replace").strip() or "null")
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    return dict(value) if isinstance(value, Mapping) else None
+
+
+def read_root_run_lock_record(runs_root: Path, root_run_id: str) -> dict[str, Any] | None:
+    """Read one chain lock record without acquiring or mutating it."""
+
+    try:
+        raw = lock_record_path(runs_root, root_run_id).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        value = json.loads(raw.strip() or "null")
+    except json.JSONDecodeError:
+        return None
+    return dict(value) if isinstance(value, Mapping) else None
+
+
+def pid_is_alive(pid: Any) -> bool | None:
+    """Process existence for one lock holder; ``None`` means unverifiable.
+
+    ``None`` is never treated as "exited": the caller keeps its hard gate
+    closed.  A zombie still owns its pid until reaped and reports alive; the
+    kernel ``flock`` (not this probe) is what proves the current holder.
+    """
+
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return None
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return None
+    return True
+
+
+def lock_holder_record(record: Mapping[str, Any]) -> tuple[dict[str, Any], bool]:
+    """Pick the holder this evidence is about, preferring the superseded one.
+
+    A recovery process that already took the chain lock writes its own record,
+    so its ``previous`` entry is the only remaining evidence of the writer the
+    recovery must settle.  Only the immediate predecessor is trusted: a nested
+    supersede chain is not followed.
+    """
+
+    if record.get("pid") == os.getpid():
+        previous = record.get("previous")
+        if isinstance(previous, Mapping):
+            return dict(previous), True
+    return dict(record), False
+
+
+def chain_writer_lock_report(
+    source_run_root: Path, manifest: Mapping[str, Any], runs_root: Path
+) -> dict[str, Any]:
+    """Audit the chain's kernel-backed lock as writer-liveness evidence (M45).
+
+    A run that was started by a production resume holds its own lock for its
+    whole lifetime, keyed by the ``root_run_id`` of the checkpoint it resumed
+    from -- the same value its ``recovery/origin.json`` records (verified
+    against the 2026-09-15 ``start1 -> start2 -> start3 -> cq-start4`` chain:
+    each step's origin names the previous step, and that step's lock is the one
+    its writer held).  The kernel releases ``flock`` on process death and
+    :meth:`RootRunLock.acquire` preserves the record it superseded, so a dead
+    holder pid is positive evidence that the writer exited.
+    Only a run bound to that evidence by its own origin record is settled here;
+    a fresh run never takes this lock, so nothing about it is claimed.  Every
+    unverifiable field keeps the hard gate closed.
+    """
+
+    run_root = Path(source_run_root)
+    origin = load_origin_record(run_root)
+    origin_root = origin.get("root_run_id") if isinstance(origin, Mapping) else None
+    origin_new_run_id = origin.get("new_run_id") if isinstance(origin, Mapping) else None
+    bound = bool(
+        isinstance(origin_root, str)
+        and origin_root
+        and isinstance(origin_new_run_id, str)
+        and origin_new_run_id == run_root.name
+    )
+    report: dict[str, Any] = {
+        "checked": bound,
+        "bound_by": "recovery_origin" if bound else None,
+        "chain_root_run_id": origin_root if bound else None,
+        "manifest_root_run_id": manifest.get("root_run_id") or manifest.get("source_run_id"),
+        "lock_present": False,
+        "holder_pid": None,
+        "holder_acquired_at": None,
+        "holder_is_superseded": False,
+        "holder_alive": None,
+        "missing": None,
+        "verdict": "no_live_writer_evidence",
+    }
+    if not bound:
+        report["missing"] = "chain_origin_binding"
+        return report
+    record = read_root_run_lock_record(runs_root, str(origin_root))
+    if record is None:
+        report["missing"] = "lock_record"
+        return report
+    report["lock_present"] = True
+    holder, superseded = lock_holder_record(record)
+    holder_pid = holder.get("pid")
+    alive = pid_is_alive(holder_pid)
+    report["holder_pid"] = (
+        holder_pid if isinstance(holder_pid, int) and not isinstance(holder_pid, bool) else None
+    )
+    report["holder_acquired_at"] = (
+        holder.get("acquired_at")
+        if isinstance(holder.get("acquired_at"), str)
+        else None
+    )
+    report["holder_is_superseded"] = superseded
+    report["holder_alive"] = alive
+    holder_root = holder.get("root_run_id")
+    if not isinstance(holder_root, str) or holder_root != origin_root:
+        report["missing"] = "lock_holder_binding"
+        return report
+    if report["holder_pid"] is None:
+        report["missing"] = "holder_pid"
+        return report
+    if alive is None:
+        report["missing"] = "holder_liveness_unverifiable"
+        return report
+    if alive is False:
+        report["verdict"] = "writer_process_exited"
+    else:
+        report["verdict"] = "writer_may_be_active"
+    return report
+
+
+def source_writer_settles_recovery(report: Mapping[str, Any]) -> bool:
+    """Fail-closed settlement predicate for the two §5.2 source-writer gates.
+
+    A ``state.json`` that claims a possibly-live writer is settled by positive,
+    auditable evidence that the chain writer process exited.  Everything else
+    -- a live holder, a missing or unreadable record, an unbound chain, an
+    unverifiable pid -- keeps the original hard refusal: the §5.2 host
+    procedure, not the recovery entry, is the path for those runs.
+    """
+
+    if not report.get("state_json_may_be_live_writer"):
+        return True
+    chain = report.get("chain_writer_lock")
+    return isinstance(chain, Mapping) and chain.get("verdict") == "writer_process_exited"
+
+
+def source_active_evidence(
+    report: Mapping[str, Any], source_run_root: Path
+) -> tuple[str, str]:
+    """Locatable object plus the unchanged 60s host procedure for a refusal."""
+
+    chain = report.get("chain_writer_lock")
+    if isinstance(chain, Mapping) and chain.get("lock_present"):
+        holder = chain.get("holder_pid")
+        return (
+            f"root_run_id:{chain.get('chain_root_run_id')}",
+            "stop the original run through its existing stop channel (each wait "
+            "at most 60s) and confirm its writer process exited; the lock record "
+            f"under .recovery-locks/{chain.get('chain_root_run_id')}.lock and its "
+            f"holder pid {holder!r} are the settlement evidence for the retry",
+        )
+    return (
+        f"state.json:{Path(source_run_root).name}",
+        "stop the original run through its existing stop channel (each wait at "
+        "most 60s), verify the platform writer state, then retry",
+    )
 
 
 def checkpoint_root_run_id(source_run_root: Path, checkpoint_id: str) -> str:
@@ -1664,15 +1868,23 @@ def prepare_recovery_plan(
                 session_ids.add(session_id)
 
     writer = source_writer_report(source_run_root, readback, sorted(session_ids))
-    if writer["state_json_may_be_live_writer"]:
+    writer["chain_writer_lock"] = chain_writer_lock_report(
+        source_run_root, manifest, runs_root
+    )
+    if writer["chain_writer_lock"]["verdict"] == "writer_process_exited":
+        # Audit-only verdict: the stale state.json claim stays visible in
+        # ``state_json_may_be_live_writer``, and the settlement rests on the
+        # chain lock record it names.
+        writer["verdict"] = "writer_process_exited"
+    if not source_writer_settles_recovery(writer):
+        obj, retry = source_active_evidence(writer, source_run_root)
         raise _reject(
             REASON_SOURCE_ACTIVE,
             "the source run's own state.json still reports a possibly-live "
             "writer; resume does not run alongside the original writer",
-            obj=f"state.json:{source_run_root.name}",
+            obj=obj,
             retryable=True,
-            retry="stop the original run through its existing stop channel (each "
-            "wait at most 60s), verify the platform writer state, then retry",
+            retry=retry,
         )
 
     bindings = production_resume_bindings(manifest)
@@ -1815,6 +2027,9 @@ def prepare_recovery_plan(
         },
         "source_writer": {
             "state_json_status": writer["state_json_status"],
+            "state_json_may_be_live_writer": writer["state_json_may_be_live_writer"],
+            "verdict": writer["verdict"],
+            "chain_writer_lock": writer["chain_writer_lock"],
             "platform_sessions": writer["platform_sessions"],
         },
     }
@@ -2162,17 +2377,21 @@ def prepare_acceptance_continuation(
             if isinstance(session_id, str) and session_id:
                 session_ids.add(session_id)
     writer = source_writer_report(source_run_root, readback, sorted(session_ids))
-    if writer["state_json_may_be_live_writer"]:
+    writer["chain_writer_lock"] = chain_writer_lock_report(
+        source_run_root, manifest, runs_root
+    )
+    if writer["chain_writer_lock"]["verdict"] == "writer_process_exited":
+        writer["verdict"] = "writer_process_exited"
+    if not source_writer_settles_recovery(writer):
+        obj, retry = source_active_evidence(writer, source_run_root)
         raise _acceptance_reject(
             REASON_SOURCE_ACTIVE,
             "the source run's own state.json still reports a possibly-live "
             "writer; acceptance continuation does not run alongside the "
             "production writer",
-            obj=f"state.json:{source_run_root.name}",
+            obj=obj,
             retryable=True,
-            retry="stop the original run through its existing stop channel "
-            "(each wait at most 60s), verify the platform writer state, "
-            "then retry",
+            retry=retry,
         )
 
     # The packaged handoff must still equal the run's published handoff: the

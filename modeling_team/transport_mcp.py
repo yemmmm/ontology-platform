@@ -834,14 +834,35 @@ class TeamTransportBroker:
                     if self._delivery_by_id[delivery_id].sender_id == agent_id
                 ]
                 if pending and status == "completed":
-                    raise RoutingError("terminal result requires delivered reply")
+                    open_request = self._delivery_by_id[
+                        min(pending, key=lambda item: self._delivery_by_id[item].sequence)
+                    ]
+                    raise RoutingError(
+                        terminal_reply_binding_error(
+                            TERMINAL_REPLY_UNDELIVERED,
+                            open_request.delivery_id,
+                            open_request.recipient_id,
+                        )
+                    )
                 inbound_revision_requests = [
                     delivery_id
                     for delivery_id in self._pending_replies
                     if self._delivery_by_id[delivery_id].recipient_id == agent_id
                 ]
                 if status == "completed" and inbound_revision_requests:
-                    raise RoutingError("completed terminal result requires an explicit revision response")
+                    revision = self._delivery_by_id[
+                        min(
+                            inbound_revision_requests,
+                            key=lambda item: self._delivery_by_id[item].sequence,
+                        )
+                    ]
+                    raise RoutingError(
+                        terminal_reply_binding_error(
+                            TERMINAL_REVISION_PENDING,
+                            revision.delivery_id,
+                            revision.sender_id,
+                        )
+                    )
                 requested = any(
                     delivery.sender_id == agent_id and delivery.expects_reply
                     for delivery in self._delivery_by_id.values()
@@ -932,14 +953,86 @@ def _delivery_payload(delivery: Delivery) -> dict[str, object]:
     return payload
 
 
-def _report_rejection_category(error: RoutingError) -> str:
-    """Map a Broker rejection to the small, non-sensitive event vocabulary."""
-    message = str(error)
+def report_rejection_category(message: str) -> str:
+    """Map one sanitized rejection message to the event vocabulary.
+
+    Shared by the Broker's own observer and by a Runtime that records the same
+    refusal, so one refusal is one category in every evidence stream.
+    """
+
     if message.startswith("terminal result requires terminal handoffs: "):
         missing = message.rsplit(": ", 1)[-1].split(", ")
         if "modeling" in missing:
             return "missing_modeling_handoff"
+    if message.startswith("terminal result requires delivered reply"):
+        return TERMINAL_REPLY_UNDELIVERED
+    if message.startswith("completed terminal result requires an explicit revision response"):
+        return TERMINAL_REVISION_PENDING
+    if message.startswith("completed terminal result requires an established reply request"):
+        return TERMINAL_REPLY_REQUEST_MISSING
     return "broker_rejection"
+
+
+def _report_rejection_category(error: RoutingError) -> str:
+    """Map a Broker rejection to the small, non-sensitive event vocabulary."""
+    return report_rejection_category(str(error))
+
+
+# --- locatable terminal reply-binding refusals (R3.0-015 issue-4) --------------
+#
+# The incident's first failure was the bare ``terminal result requires
+# delivered reply``: no request identity, no peer, no legal exit, so neither the
+# reporter nor the host could tell which delivery was outstanding or that
+# ``blocked`` was still available.  The guard is unchanged; only its refusal is
+# now typed, locatable and re-renderable from validated tokens (a Runtime that
+# reflects broker errors to an Agent never returns broker-controlled text).
+
+TERMINAL_REPLY_UNDELIVERED = "terminal_reply_undelivered"
+TERMINAL_REVISION_PENDING = "terminal_revision_pending"
+TERMINAL_REPLY_REQUEST_MISSING = "terminal_reply_request_missing"
+
+_REPLY_PEER_FRAGMENT = r"(?P<peer>[A-Za-z0-9][A-Za-z0-9._:-]{0,127})"
+_DELIVERY_ID_FRAGMENT = r"(?P<delivery_id>delivery-[0-9]{1,9})"
+TERMINAL_REPLY_BINDING_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    (
+        TERMINAL_REPLY_UNDELIVERED,
+        re.compile(
+            "^terminal result requires delivered reply: the reply to "
+            + _REPLY_PEER_FRAGMENT
+            + " for delivery_id="
+            + _DELIVERY_ID_FRAGMENT
+            + " is still undelivered; obtain it, or report blocked$"
+        ),
+    ),
+    (
+        TERMINAL_REVISION_PENDING,
+        re.compile(
+            "^completed terminal result requires an explicit revision response: the reply to "
+            + _REPLY_PEER_FRAGMENT
+            + " for delivery_id="
+            + _DELIVERY_ID_FRAGMENT
+            + " is still owed; answer it, or report blocked$"
+        ),
+    ),
+)
+
+
+def terminal_reply_binding_error(gate: str, delivery_id: str, peer_id: str) -> str:
+    """Render one locatable reply-binding refusal from validated tokens."""
+
+    if gate == TERMINAL_REPLY_UNDELIVERED:
+        return (
+            "terminal result requires delivered reply: the reply to "
+            f"{peer_id} for delivery_id={delivery_id} is still undelivered; "
+            "obtain it, or report blocked"
+        )
+    if gate == TERMINAL_REVISION_PENDING:
+        return (
+            "completed terminal result requires an explicit revision response: the reply to "
+            f"{peer_id} for delivery_id={delivery_id} is still owed; "
+            "answer it, or report blocked"
+        )
+    raise RoutingError("unsupported terminal reply binding gate")
 
 
 def _observe_report_event(

@@ -426,6 +426,89 @@ class TransportTests(unittest.TestCase):
             broker.ack_delivery(queued_reply.delivery_id)
             broker.report("modeling", "completed", "reply delivered")
 
+    def test_terminal_reply_rejection_names_the_delivery_and_the_legal_exits(self) -> None:
+        """R3.0-015 issue-4: the terminal-reply refusal must be locatable.
+
+        The incident's first failure was ``MCP -32000: terminal result requires
+        delivered reply``: no delivery id, no peer, and no legal exit, so the
+        host could not tell whether to wait, to have Protocol answer, or to
+        settle the issue, and Modeling could not see that ``blocked`` was still
+        open to it.  The guard itself stays -- a completed report still needs
+        its delivered reply -- but the refusal now names both.
+        """
+
+        with tempfile.TemporaryDirectory() as directory:
+            events: list[dict[str, object]] = []
+            broker = TeamTransportBroker(
+                Path(directory),
+                {("modeling", "protocol"), ("protocol", "modeling")},
+                modeling_agent_id="modeling",
+                transport_event_observer=events.append,
+            )
+            candidate = broker.send("modeling", "protocol", "candidate", expects_reply=True)
+            with self.assertRaises(RoutingError) as rejection:
+                mcp_response(
+                    self._report_request("completed", "candidate is final"),
+                    broker=broker,
+                    agent_id="modeling",
+                )
+            message = str(rejection.exception)
+            self.assertIn(f"delivery_id={candidate.delivery_id}", message)
+            self.assertIn("to protocol", message)
+            self.assertIn("report blocked", message)
+            self.assertEqual(
+                [(event["status"], event["category"]) for event in events],
+                [("rejected", "terminal_reply_undelivered")],
+            )
+            # The sanitized event shape is unchanged: only the category differs.
+            self.assertEqual(
+                set(events[0]),
+                {"agent", "tool", "status", "category", "ack", "recorded_at_ns"},
+            )
+            # ``blocked`` stays the legal escape while the reply is outstanding.
+            broker.report("modeling", "blocked", "the reply can never arrive")
+            self.assertEqual(broker.results["modeling"].status, "blocked")
+
+    def test_terminal_reply_gate_categories_are_distinct_and_name_their_exit(self) -> None:
+        """Each reply-binding refusal is observable as its own category (issue-4)."""
+
+        with tempfile.TemporaryDirectory() as directory:
+            events: list[dict[str, object]] = []
+            broker = TeamTransportBroker(
+                Path(directory),
+                {("modeling", "protocol"), ("protocol", "modeling")},
+                modeling_agent_id="modeling",
+                transport_event_observer=events.append,
+            )
+            with self.assertRaisesRegex(RoutingError, "established reply request"):
+                mcp_response(
+                    self._report_request("completed", "no request"),
+                    broker=broker,
+                    agent_id="modeling",
+                )
+            request = broker.send("modeling", "protocol", "candidate", expects_reply=True)
+            conflict = broker.send(
+                "protocol",
+                "modeling",
+                "conflict",
+                expects_reply=True,
+                reply_to_delivery_id=request.delivery_id,
+            )
+            broker.ack_delivery(conflict.delivery_id)
+            with self.assertRaises(RoutingError) as revision:
+                mcp_response(
+                    self._report_request("completed", "conflict unanswered"),
+                    broker=broker,
+                    agent_id="modeling",
+                )
+            self.assertIn(f"delivery_id={conflict.delivery_id}", str(revision.exception))
+            self.assertIn("to protocol", str(revision.exception))
+            self.assertIn("report blocked", str(revision.exception))
+            self.assertEqual(
+                [event["category"] for event in events],
+                ["terminal_reply_request_missing", "terminal_revision_pending"],
+            )
+
     def test_reply_correlation_rejects_forged_wrong_direction_and_duplicate_replies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(
