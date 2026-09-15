@@ -6653,6 +6653,12 @@ class TeamRunner:
                 "wait_window_open": self._cq_wait_windows.has_open_window,
             },
         )
+        # R3.0-015 S1: the published interview is an early saveable stage
+        # result; a checkpoint failure does not block CQ delivery.
+        self._save_checkpoint_after_trigger(
+            CHECKPOINT_KIND_SCENARIO_MAPPED,
+            trigger="cq-interview",
+        )
         self._deliver_to_cq(
             "cq-interview",
             {

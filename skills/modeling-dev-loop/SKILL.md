@@ -78,8 +78,8 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 `full_joint`。按本轮获准范围选择或配置 Task，validate、baseline、run 使用同一文件；
 不能为启用检查点而悄悄改变验收范围。具体见运行参考的“选择入口”。
 
-启用 `modeling_checkpoints` 的 run 会在 CQ 冻结、每个 staged 回执和 production
-handoff 后自动保存阶段检查点；需要保存更早阶段（场景映射、已批准语义决定）时由宿主
+启用 `modeling_checkpoints` 的 run 会在访谈成果落盘、CQ 冻结、每个 staged 回执和
+production handoff 后自动保存阶段检查点；需要保存场景决定或已批准语义决定时由宿主
 经 FIFO `action=checkpoint` 请求。Runner 只认磁盘上的实际已发布产物，角色自述“阶段
 完成”而产物缺失得到的是可重试的类型化拒绝。判定以 `evidence/checkpoints.jsonl` 与
 实际包为准。保存与检查不消耗 semantic start。

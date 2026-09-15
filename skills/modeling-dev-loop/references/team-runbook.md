@@ -262,15 +262,15 @@ R3.0-015 交付段 S1 覆盖阶段成果的**保存与检查**；跨进程生产
 保存都由 Runner 核实磁盘上的实际已发布产物；只有"阶段完成"文字而没有产物时返回
 `checkpoint_missing_artifact` 可重试拒绝，该 action 不给 Agent 新增任何写权限：
 
-- 自动触发（run 期间无需宿主操作）：CQ 冻结后存 `cq_frozen`；每个 staged 批次回执
-  完成存 `materialization_progress`；production handoff 发布后存
+- 自动触发（run 期间无需宿主操作）：访谈成果落盘后存 `scenario_mapped`；CQ 冻结后存
+  `cq_frozen`；每个 staged 批次回执完成存 `materialization_progress`；production handoff 发布后存
   `production_handoff`。自动保存失败只记 `checkpoint-save-failed` 证据，不终止正常
   建模，也不回滚阶段事件本身。
 - 宿主/Coordinator 请求（经 FIFO，每条一行 JSON）：
   `{"action":"checkpoint","command":"save","kind":"...","scope_refs":{...},"request_id":"..."}`，
   kind 取五类之一：`scenario_mapped`、`cq_frozen`、`semantic_approved`、
-  `materialization_progress`、`production_handoff`（其中 `scenario_mapped` 与
-  `semantic_approved` 无自动触发点，靠请求保存）。
+  `materialization_progress`、`production_handoff`（场景决定或 `semantic_approved`
+  仍可按实际发布成果请求保存）。
   `{"action":"checkpoint","command":"inspect"}` 为只读查看。写声明类
   （materialization/handoff）在 staged 写在途或存在 unknown 时返回
   `checkpoint_write_unreconciled` 具体等待原因，不把在途状态包装成可恢复写入快照。

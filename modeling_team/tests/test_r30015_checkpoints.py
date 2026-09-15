@@ -975,6 +975,34 @@ def test_m01_cq_freeze_automatically_saves_cq_frozen_with_topology_pending():
         harness.cleanup()
 
 
+def test_confirmed_interview_saves_early_checkpoint_before_cq_freeze():
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        ack = runner.handle_cq_outer_input(
+            {"action": "cq_interview", "text": "confirmed service terminology"}
+        )
+        assert ack["type"] == "cq-interview-accepted"
+        assert [item["checkpoint_id"] for item in list_checkpoints(runner.run.root)] == [
+            "scenario_mapped-0001"
+        ]
+        early = _read_manifest(runner.run.root, "scenario_mapped-0001")
+        assert early["stage_facts"]["cq_frozen"] is False
+        interview = next(
+            item for item in early["artifacts"] if item["source"].endswith("interview-0001.json")
+        )
+        assert interview["host_private"] is True
+        assert _checkpoint_events(runner)[-1]["trigger"] == "cq-interview"
+
+        _freeze(runner)
+        assert {item["kind"] for item in list_checkpoints(runner.run.root)} == {
+            CHECKPOINT_KIND_SCENARIO_MAPPED,
+            CHECKPOINT_KIND_CQ_FROZEN,
+        }
+    finally:
+        harness.cleanup()
+
+
 def test_outer_inspect_returns_the_read_only_view():
     harness = _CheckpointRunner()
     try:
