@@ -17,7 +17,11 @@ objective: Real bounded L0 check of R3.0-015 checkpoint publication and cross-pr
   artifact refs and request IDs to the Host, and must not infer a missing checkpoint from their role-local
   visibility. A resumed run uses its checkpoint role handoff to skip already confirmed interview/scenario
   decisions. CQ public review/freeze must precede final candidate business approval and any Modeling Batch
-  submission; an unapproved draft remains pending.
+  submission; an unapproved draft remains pending. For each fresh standalone Team Transport delivery,
+  omit reply_to_delivery_id entirely; never pass the literal string null. Set reply_to_delivery_id only
+  to an actual active request delivery ID whose expects_reply flag is true. Modeling sends its complete
+  candidate to Protocol as a new expects_reply=true request, and sends Coordinator only scoped status
+  without raw source or hidden CQ text.
 role_sources:
 - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
   classification: business-source
