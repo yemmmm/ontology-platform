@@ -2,8 +2,8 @@
 
 - 日期：2026-09-14
 - 状态：E1 已核验修订；D0/D1 已完成；M Rounds 1–5 与 I Round 1/Round 2 已记录——I 层对
-  S1+S2+S4 范围 PASS（3 项错误通道缺陷修复后复测通过）。S3 按设计延后；本需求真实 L0/L1
-  仍 NOT RUN。
+  S1+S2+S4 范围 PASS（3 项错误通道缺陷修复后复测通过）。S3 按设计延后；真实 L0
+  Round 1 为 PARTIAL（2026-09-15），L1 仍 NOT RUN。
 - 需求：[R3.0-015](../../requirements/requirements-v3.0.md#r30-015-建模阶段检查点与恢复)
 - 设计：[交付设计](../designs/2026-09-14-r3-0-015-modeling-checkpoint-recovery-design.md)
 
@@ -19,7 +19,7 @@
 | D1 | 独立专项复核，按下列用例索引核对权威内容身份、阶段接续、尾部写入与 CQ 隔离 | PASS（2026-09-14，S1+S2+S4 范围，见 §6 D1 轮） |
 | M | 实现者功能自测和所需回归 | Rounds 1–5 完成（S1/S2/S4/缺陷修复轮），见 §6 |
 | I | 独立测试方从文件/进程/真实平台合同核实保存与恢复，不依赖实现者自报 | Round 1 PASS（3 项 Medium/Low 缺陷）→ 修复（M Round 4/5）→ Round 2 PASS；见 §6 |
-| L0 Runtime | 获准真实模型线程接续、复用前期成果、推进后续工作、零重复写入 | NOT RUN |
+| L0 Runtime | 获准真实模型线程接续、复用前期成果、推进后续工作、零重复写入 | Round 1 PARTIAL（2026-09-15；S1/S2 与未 apply 通过，CQ/Acceptance 终态缺口；见下文） |
 | L1 Modeling quality | 独立验收方判断源忠实度、语义/检索及所选验收范围 | NOT RUN |
 | L2/L3 | 重复性、产品化 | 不作为本轮前置 |
 
@@ -613,6 +613,32 @@ S1 执行保存/inspect/保留/隔离相关用例及 M41/M42 中的序列化读�
   ruff（100 列）：test_r30015_checkpoints.py 通过；runner.py 仅保留与 `ae70547`
   相同的 4 个既有发现（F401×3、F841×1，符号未变），未扩大。M 层自评不代表
   I/D1/L0 状态。
+
+### L0 Runtime Round 1（2026-09-15，独立复核：PARTIAL）
+
+真实 run `r30015-l0-20260915-cq-start4` 在冻结 CQ 后保存了
+`materialization_progress-0001`，旧 Batch 仅有已验证、未 apply 的 dry-run。Claude Code
+修复源 run 停止后的状态结算和后续阶段恢复冻结池后，新进程 run
+`r30015-l0-20260915-dryrun-resume6` 从该包恢复 51 个 artifact、保留冻结池，使用新 Session、
+revision-2 plan、Batch 与 idempotency key；新 Attempt
+`b7d70709-2b0e-4404-a13c-49ca916231c9` 为 `dry_run/validated`，仅四条非阻断
+`missing_evidence` warning。旧 Batch 未重交，未执行 `apply_atomic` 或
+`production_handoff`。Runner 新包 `materialization_progress-0001` 含 54 个 artifact；平台
+Session 的 client checkpoint `materialization_progress-0002` 是另一命名空间，UUID 为
+`67a5b8fa-8eba-4269-861d-ebc78a4ae04b`。Runner 终态 `CLEANED`；Host 读回平台
+Session `b9d6527f-2209-4a07-b58b-f5be8a326add` 已 completed、0 Lease，新 Batch
+`6649c60c-05f0-4a68-96e6-00de3003c779` 仍 open，但只含该 validated dry-run。
+
+独立验收核对源包与新包摘要、恢复 origin/imports、实际 Batch/Attempt 和终态后判 S1/S2
+及未 apply 的有界结果通过，L0 总体 PARTIAL：CQ Agent 因恢复轮角色工作目录缺少清单中的
+公开/freeze artifact 且冻结 Profile 拒绝共享证据路由而报告 `blocked`；Acceptance carrier
+cleanup 为 `aborted/runner-cleanup-before-settlement`。原 run6 issue-1/issue-2 的消息路由
+拒绝与正式 issue_resolution、随后三位 Agent 的 accepted terminal result 均保留。
+三次获准 fresh semantic starts 已用尽；这轮不能再启动复测。后续仅针对 CQ 挂载和终态
+提示合同修复，并在新授权下真实复核 CQ/Acceptance settlement；不得把本轮机械 dry-run
+或检查点恢复计为 L1 语义质量、受治理检索或最终模型接受。
+
+证据保留在 `/home/yangxiang/ontology-platform-checkpoint-l0-20260915/workspaces/modeling-runs/r30015-l0-20260915-dryrun-resume6/` 的 `recovery/`、`checkpoints/`、`evidence/`、`state.json` 与 `acceptance-carrier/evidence/cleanup.json`；Host 授权、资源读回和密钥撤销账本为同 worktree 下 `workspaces/checkpoint-l0-20260915/host-ledger.json`。该轮中为修复源 run 生命周期而延迟首次 semantic start，已按 AGENTS.md 报告，不把补修时间计入语义建模时间。
 
 ### 后续功能与真实运行
 
