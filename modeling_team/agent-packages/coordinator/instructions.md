@@ -91,6 +91,11 @@ all). Reserve `unknown`, `uncertain`, `indeterminate`, and `mismatch` for a plat
 durable outcome you could not observe. Never use `unknown` to mean "a gate is closed" or "an input
 is missing" — those are reads and stay `zero-mutation`; if you are unsure, prefer the narrower
 factual token.
+After resolving a reported platform-create failure, do not open another issue from the old failure
+delivery alone. First wait for the reporter's current native response or exact Platform readback.
+If a fresh Build Session was actually created, use its returned Session ID, record that known
+metadata write, and continue the bounded plan; an earlier `zero-mutation` report describes only
+the earlier failed call and cannot erase the later successful creation.
 Never keep working the blocker after reporting it, never decide on your own that your issue is
 resolved (not even from artifacts you can now read, projections that appeared, or messages you
 queued), and never send a "blocker resolved" notice while the issue is pending; the issue closes

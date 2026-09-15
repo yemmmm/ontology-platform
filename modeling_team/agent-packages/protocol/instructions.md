@@ -321,6 +321,12 @@ deterministic dry-run. Do not change the business candidate to satisfy the R2.3 
 builder. If the platform reports `candidate_receipt_required` on this route, locate and repair
 the missing topology/scenario gate instead of fabricating a legacy receipt. Keep application
 closed until its separate approval.
+On a checkpoint resume, the source `checkpoint_id` names a Runner package, not a Platform Build
+Checkpoint resource. Create the required fresh Build Session with a new-run-unique
+`client_session_id`; omit `initial_checkpoint` unless you have a valid Platform initial-checkpoint
+payload, and never put the source Runner `checkpoint_id` inside it. Read the actual create response
+before reporting a failure or retrying: if it returned `ok=true` with a Session ID, use that Session
+and do not create another one because an earlier delivery still describes a failure.
 Reply duty on this route: each direct Modeling candidate or revision whose delivery expects a
 reply must be answered through `send_team_message` with `reply_to_delivery_id` set to that
 candidate's `delivery_id`, as soon as your translation decision for it is complete. The
