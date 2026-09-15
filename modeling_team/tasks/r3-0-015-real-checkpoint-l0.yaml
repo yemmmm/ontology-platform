@@ -12,7 +12,12 @@ objective: Real bounded L0 check of R3.0-015 checkpoint publication and cross-pr
   to the complete 21-table scenario or seek an L1 model-quality verdict in this run. Keep the real source,
   CQ review, candidate approval, staged translation review, deterministic dry-run and application guards
   in force. If any stage cannot be completed honestly, save the last valid checkpoint, report the exact
-  blocker and exit without fabricating completion.
+  blocker and exit without fabricating completion. The Host owns checkpoint save/inspect through the outer
+  FIFO; role workspaces do not mount checkpoint packages. Coordinator and Modeling report actual published
+  artifact refs and request IDs to the Host, and must not infer a missing checkpoint from their role-local
+  visibility. A resumed run uses its checkpoint role handoff to skip already confirmed interview/scenario
+  decisions. CQ public review/freeze must precede final candidate business approval and any Modeling Batch
+  submission; an unapproved draft remains pending.
 role_sources:
 - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
   classification: business-source
