@@ -509,6 +509,32 @@ class TransportTests(unittest.TestCase):
                 ["terminal_reply_request_missing", "terminal_revision_pending"],
             )
 
+    def test_prompt_contract_names_standalone_delivery_and_resume_completion_request(self) -> None:
+        """run6 issue-1/issue-2: the authoritative role prompts must state the
+        reply-binding contract the terminal gate mechanically enforces.
+
+        A standalone delivery that answers no delivered request never carries
+        ``reply_to_delivery_id``; in a resumed or continued session with no open
+        candidate request, Modeling establishes its reply request through one
+        bounded completion-confirmation request and Coordinator answers it with
+        a bound reply -- never a standalone ``expects_reply=false`` message and
+        never an instruction to report terminal instead.
+        """
+
+        root = Path(__file__).resolve().parents[2]
+        modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("never carries `reply_to_delivery_id`", modeling)
+        self.assertIn("bounded completion-confirmation request", modeling)
+        self.assertIn("only then report `completed`", modeling)
+        coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("completion-confirmation request", coordinator)
+        self.assertIn("standalone `expects_reply=false` message", coordinator)
+        self.assertIn("never tell Modeling to report terminal `completed`", coordinator)
+
     def test_reply_correlation_rejects_forged_wrong_direction_and_duplicate_replies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(

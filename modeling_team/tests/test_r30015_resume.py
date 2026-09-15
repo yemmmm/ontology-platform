@@ -1351,6 +1351,84 @@ def test_m31_role_startup_packets_carry_resume_kind_and_boundaries(tmp_path):
     assert "private_material_note" in cq
 
 
+def test_m31_cq_packet_excludes_host_only_frozen_and_keeps_own_projection(tmp_path):
+    """R3.0-011 host-only contract on the S2 resume path (run6 defect).
+
+    The frozen pool is packaged for the host only (R3.0-011 design §3.4), so
+    the CQ packet lists the role's own private/review records plus the restored
+    public projection -- never a ``competency-questions/frozen/`` path.  The
+    Runner-verified freeze state reaches the CQ role only as a summary without
+    hidden content.
+    """
+
+    run_root = tmp_path / "cq-src"
+    frozen = "competency-questions/frozen/freeze-0001.json"
+    private = "competency-questions/private/draft-0001.json"
+    reviews = "competency-questions/reviews/review-0001.json"
+    public = "competency-questions/public/public-projection-0001.json"
+    for source in (frozen, private, reviews, public):
+        _write_json(run_root / source, {"source": source})
+    package = StagePackage(
+        kind=CHECKPOINT_KIND_CQ_FROZEN,
+        scope_refs={"freeze_id": "f-resume"},
+        artifacts=[
+            CheckpointArtifactSpec(
+                source=frozen, owner="host", visible_to=("host",), host_private=True
+            ),
+            CheckpointArtifactSpec(
+                source=private,
+                owner="competency-question",
+                visible_to=("competency-question",),
+                host_private=True,
+            ),
+            CheckpointArtifactSpec(
+                source=reviews,
+                owner="competency-question",
+                visible_to=("competency-question",),
+                host_private=True,
+            ),
+            CheckpointArtifactSpec(
+                source=public,
+                owner="competency-question",
+                visible_to=("coordinator", "modeling", "protocol"),
+                host_private=False,
+            ),
+        ],
+        stage_facts={},
+        platform_bindings={"project_id": "proj-r3015", "ontology_ids": ["onto-r3015"]},
+        write_positions={},
+    )
+    saved = save_checkpoint(
+        run_root, package, source_run_id="r3015-cqp", configuration=dict(CONFIGURATION)
+    )
+    manifest = _manifest_of(run_root, saved["checkpoint_id"])
+    reconciliation = {
+        "completed": [],
+        "completed_client_batches": {},
+        "pending_new_dry_run": [],
+        "recoverable_new_batch": [],
+    }
+    packets = build_role_packets(
+        manifest,
+        reconciliation,
+        [],
+        {"present": False, "valid": [], "invalidated": []},
+        dict(CONFIGURATION),
+    )
+    cq = packets["competency-question"]
+    readable = set(cq["readable_artifacts"])
+    # The CQ role keeps its own private material and the restored public
+    # projection it can actually read through its role mounts.
+    assert {private, reviews, public} <= readable
+    # The host-only frozen pool is never offered to the CQ role as readable.
+    assert frozen not in readable
+    assert not any("competency-questions/frozen/" in source for source in readable)
+    # The host packet still carries everything, including the frozen pool.
+    assert frozen in set(packets["host"]["readable_artifacts"])
+    # A Runner-verified freeze summary guides the CQ role without hidden text.
+    assert cq["frozen_pool"]["restored"] is True
+
+
 # --- exposure union (M32) ----------------------------------------------------------
 
 
@@ -1939,7 +2017,12 @@ def test_s2_real_process_boundary_resume_from_a_terminated_runner():
         assert '"checkpoint_id": "cq_frozen-0001"' in modeling_task
         assert '"resume_kind": "cq_frozen"' in modeling_task
         assert "competency-questions/frozen/freeze-" not in modeling_task
-        assert "competency-questions/frozen/freeze-" in cq_task
+        # R3.0-011 host-only contract: the frozen pool is never a CQ readable
+        # artifact; the role learns the verified freeze state only through the
+        # Runner's restored summary, without any frozen path or hidden content.
+        assert "competency-questions/frozen/freeze-" not in cq_task
+        assert '"frozen_pool"' in cq_task
+        assert '"restored": true' in cq_task
 
         # Exposure provenance is the union across the chain: cq-1 stays
         # exposed even though this new process never exposed it itself, and

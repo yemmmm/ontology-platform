@@ -162,6 +162,13 @@ returned `delivery_id`. Wait for Protocol's delivered receipt or conflict with
 that revision opens its own reply request while closing the prior candidate request. If you cannot
 revise, do not send another candidate and report `blocked`. Without an
 established reply request, you may report only `blocked`, never `completed`.
+A standalone delivery that answers no delivered request never carries `reply_to_delivery_id`;
+that field exists only to bind your reply to the request it answers. In a
+resumed or continued session your previous `delivery_id`s are not reply credentials: when no
+candidate or revision request of yours is open in this session and your remaining work is
+complete, first send one bounded completion-confirmation request (`expects_reply=true`, no
+`reply_to_delivery_id`) to the role that must acknowledge the delivery, wait for its bound reply
+to exactly that request, and only then report `completed`.
 
 Every Runner-injected direct delivery is one JSON object with stable `sender_id`, `recipient_id`,
 `kind`, and `text` fields. `recipient_id` must be your own Agent ID. The Runner mechanically

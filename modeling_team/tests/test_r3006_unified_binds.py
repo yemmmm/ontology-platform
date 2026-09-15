@@ -159,6 +159,31 @@ def test_t_g2_2_unified_mount_sequences_match_the_design(tmp_path):
         adapter.stop()
 
 
+def test_t_g2_cq_role_reads_the_restored_public_projection_and_never_frozen(tmp_path):
+    """R3.0-011 isolation contract for the CQ role's own namespace.
+
+    The competency-question role keeps its ``private/`` and ``reviews/`` binds
+    and additionally reads the restored ``public/`` projection read-only (the
+    same legal input the production roles get); the host-only ``frozen/`` tree
+    is never bound into any Agent namespace.
+    """
+
+    root = _run_root(tmp_path)
+    adapter = _adapter(root, unified=True)
+    try:
+        command = adapter.namespace_command(_role_agent(root / "agents", "competency-question"))
+        triples = _binds(command)
+        for relative in ("public", "private", "reviews"):
+            assert (
+                "--ro-bind",
+                str(root / "competency-questions" / relative),
+                f"/agent/work/competency-questions/{relative}",
+            ) in triples
+        assert not any("competency-questions/frozen" in target for _, _, target in triples)
+    finally:
+        adapter.stop()
+
+
 def test_t_g2_3_non_unified_staged_sequence_is_byte_identical(tmp_path):
     root = _run_root(tmp_path)
     adapter = _adapter(root, unified=False)

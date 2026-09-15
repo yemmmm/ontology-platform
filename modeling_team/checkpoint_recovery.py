@@ -53,6 +53,7 @@ from modeling_team.checkpoints import (
     safe_checkpoint_id,
 )
 from modeling_team.competency_questions import (
+    CQ_FREEZE_DIRECTORY,
     CQContractError,
     batch_report_is_full_pass,
     reload_frozen_pool,
@@ -1534,13 +1535,36 @@ def build_role_packets(
                 "is deferred by design)",
             },
         }
+    # R3.0-011 host-only contract: the frozen pool rides in the host packet
+    # only.  The competency-question packet lists the role's own private/
+    # review records (which its role mounts expose) plus the restored public
+    # projection; the frozen files themselves stay host-only and unmounted,
+    # with the Runner-verified freeze state reduced to a summary without any
+    # hidden content.
+    frozen_pool_refs = [
+        str(artifact.get("source"))
+        for artifact in manifest.get("artifacts") or []
+        if isinstance(artifact, Mapping)
+        and str(artifact.get("source") or "").startswith(f"{CQ_FREEZE_DIRECTORY}/")
+    ]
     packets["competency-question"] = {
         **base,
         "role": "competency-question",
         "readable_artifacts": public_artifacts
-        + [source for source in private_artifacts if "competency-questions/" in source],
+        + [
+            source
+            for source in private_artifacts
+            if source.startswith(("competency-questions/private/", "competency-questions/reviews/"))
+        ],
         "private_material_note": "own private drafts/reviews/interviews ride only "
         "in this packet and the host's; production roles never see them",
+        "frozen_pool": {
+            "restored": bool(frozen_pool_refs),
+            "note": "the Runner re-validated the restored frozen pool; the pool "
+            "itself stays host-only and is never mounted to any Agent; read the "
+            "restored public projection mount and continue without re-interviewing "
+            "or re-reviewing",
+        },
     }
     packets["host"] = {
         **base,

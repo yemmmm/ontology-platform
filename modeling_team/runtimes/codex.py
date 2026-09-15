@@ -4798,9 +4798,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         Production roles only ever see the ``public/`` projection directory
         (the same per-role read-only directory bind pattern as the run-root
         scenario-map mount); the competency-question role additionally sees its
-        own ``private/`` and ``reviews/`` records.  ``frozen/``,
-        ``acceptance-v3/hidden-batch/`` and ``acceptance-v3/reports/`` stay
-        host-only and are never bound into any Agent namespace (design §3.4).
+        own ``private/`` and ``reviews/`` records plus the same read-only
+        ``public/`` projection -- including its restored projection on a
+        checkpoint resume -- so the approved question set stays the role's one
+        legal CQ input.  ``frozen/``, ``acceptance-v3/hidden-batch/`` and
+        ``acceptance-v3/reports/`` stay host-only and are never bound into any
+        Agent namespace (design §3.4).
         Non-011 runs return an empty list (byte-identical command).
         """
 
@@ -4813,6 +4816,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             relatives = (
                 "competency-questions/private",
                 "competency-questions/reviews",
+                "competency-questions/public",
             )
         elif role in {"coordinator", "modeling", "protocol"}:
             relatives = ("competency-questions/public",)
