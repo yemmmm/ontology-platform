@@ -274,6 +274,19 @@ def test_s13_unified_task_selects_the_009_contract(tmp_path):
         staged.cleanup()
 
 
+def test_s13_unified_protocol_prompt_uses_009_candidate_gate(tmp_path):
+    staged = _UnifiedRunner(tmp_path)
+    try:
+        staged.prepare()
+        prompt = staged.runner._task_text("protocol")
+        assert "R3.0-009 unified-graph candidate" in prompt
+        assert "Do not call the R2.3 native build_candidate_receipt" in prompt
+        assert "candidate receipt is successfully built" not in prompt
+        assert "R3.0-014 translation review" in prompt
+    finally:
+        staged.cleanup()
+
+
 def test_s13_008b_task_keeps_the_unified_flow_disabled(tmp_path):
     staged = _UnifiedRunner(tmp_path)
     try:

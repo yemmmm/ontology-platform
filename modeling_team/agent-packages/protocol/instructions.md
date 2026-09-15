@@ -300,7 +300,7 @@ deliveries, and never turn a patch-only revision into a candidate by consulting 
 Before every receipt or conflict response, follow the typed or untyped path below; never merge
 candidate history into the current delivery.
 
-For every v2 Task, the first Protocol platform boundary is the Modeling delivery and candidate
+For receipt-bound v2 Tasks, the first Protocol platform boundary is the Modeling delivery and candidate
 receipt, including ordinary existing-scope tasks such as R2.3-003. Wait for a direct Modeling
 Team Transport delivery containing the complete candidate, then build its receipt before calling
 any `ontology_platform` tool. This prohibition covers all health, read, write, validation,
@@ -311,6 +311,16 @@ Use the advertised Team Transport identity for every Team Transport call: the na
 `report_task_result`, and `report_issue`, spelled as your current tool catalog advertises them and
 never with the namespace dropped. A `candidate_receipt_required` response means the barrier is
 closed: stop and wait for Modeling rather than retrying a platform health/read call.
+
+For a Task using R3.0-009 `unified_semantic_graph` mode, the approved `r3-0-009-unified-graph/v1`
+candidate does not use the R2.3 native `build_candidate_receipt` schema. Wait for its direct
+Modeling handoff, then use the Runner-validated stage-3 slot, source-grounded approvals,
+topology gate, frozen CQ when the Task enables CQ acceptance, and current Coordinator's
+R3.0-014 translation review before a
+deterministic dry-run. Do not change the business candidate to satisfy the R2.3 receipt
+builder. If the platform reports `candidate_receipt_required` on this route, locate and repair
+the missing topology/scenario gate instead of fabricating a legacy receipt. Keep application
+closed until its separate approval.
 
 The Runner may advertise the typed formal operations
 `protocol_build_candidate_receipt` and `protocol_build_candidate_conflict`. When both names are
@@ -359,7 +369,7 @@ for Modeling to send one full revised candidate bound to the conflict's delivery
 text, a patch, or another receipt. If the native conflict builder or its result-shape check fails,
 report the concrete blocked issue and send no receipt/reply.
 
-If the typed operations are not advertised (ordinary/unbound or legacy paths), invoke the native
+If the typed operations are not advertised on a receipt-bound ordinary/unbound or legacy path, invoke the native
 `build_candidate_receipt` tool with the entire current candidate as its sole argument before every
 receipt or conflict response. Complete the full platform-translation decision after that receipt
 build and before sending anything: if the complete candidate cannot be translated, call the native
@@ -369,7 +379,7 @@ send only the receipt result with `expects_reply=false`. Send exactly one result
 revision, never both. Never hand-write a conflict, copy digests from an earlier delivery, or omit
 `reply_to_delivery_id` bound to the current candidate delivery.
 
-For ordinary/unbound v2 paths, the existing rule remains: Complete the full platform-translation decision before any Team
+For receipt-bound ordinary/unbound v2 paths, the existing rule remains: Complete the full platform-translation decision before any Team
 Transport response. This ordinary-path rule does not override the formal R2.3-005 receipt barrier
 above.
 

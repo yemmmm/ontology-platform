@@ -3473,7 +3473,7 @@ class TeamRunner:
                     "protocol_build_candidate_receipt",
                     "protocol_build_candidate_conflict",
                 }.issubset(protocol_capability_operations)
-                text += (
+                legacy_protocol_text = (
                     "\nProtocol startup barrier: wait for a direct Modeling Team Transport delivery containing the "
                     "complete candidate before making any ontology_platform MCP call. Do not call any "
                     "ontology_platform health, read, write, validation, reasoning, or retrieval tool before that "
@@ -3522,6 +3522,23 @@ class TeamRunner:
                     "host artifact gate validates each frozen cursor chain and registers the typed receipt. Emit only silent_for_acceptance to coordinator through "
                     "`send_coordination` with the current generation after the ordered protocol work is quiet."
                 )
+                if self._unified_graph and formal_contract is None:
+                    text += (
+                        "\nR3.0-009 unified-graph candidate continuation: wait for the direct Modeling "
+                        "candidate and use the Runner-validated stage-3 slot, source-grounded approvals, "
+                        "topology candidate gate, and frozen CQ when the Task enables CQ acceptance as the "
+                        "current boundaries. Do not call the "
+                        "R2.3 native build_candidate_receipt on an r3-0-009-unified-graph/v1 candidate; "
+                        "that legacy builder requires a different candidate schema and its failure does "
+                        "not invalidate the 009 candidate. Read the staged 009 and modeling-batch item "
+                        "contracts, obtain the current workspace context, publish a fresh plan/client_batch_id/key, "
+                        "and wait for the current Coordinator's R3.0-014 translation review before a "
+                        "deterministic dry_run. Keep apply_atomic closed until its separate approval and "
+                        "report exact typed blockers rather than adapting the business candidate to a "
+                        "receipt schema. Use only authorized role mounts and scoped Team handoffs."
+                    )
+                else:
+                    text += legacy_protocol_text
                 if is_r23003:
                     text += (
                         " Before invoking any Session, Lease, batch, validation, reasoning, or other stateful "
