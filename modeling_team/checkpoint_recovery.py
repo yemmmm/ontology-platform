@@ -49,6 +49,7 @@ from modeling_team.checkpoints import (
     file_digest,
     manifest_digest,
     manifest_path,
+    production_resume_bindings,
     safe_checkpoint_id,
 )
 from modeling_team.competency_questions import (
@@ -1674,17 +1675,11 @@ def prepare_recovery_plan(
             "wait at most 60s), verify the platform writer state, then retry",
         )
 
-    bindings = manifest.get("platform_bindings") or {}
-    ontology_ids = [str(item) for item in bindings.get("ontology_ids") or []]
-    project_id = bindings.get("project_id")
-    if not isinstance(project_id, str) or not project_id:
-        # Fall back to the run scope recorded at save time.
-        run_scope = bindings.get("run_scope") or {}
-        project_id = run_scope.get("project_id")
-        ontology_ids = [str(item) for item in run_scope.get("ontology_ids") or []]
-        if not ontology_ids and isinstance(run_scope.get("ontology_id"), str):
-            ontology_ids = [run_scope["ontology_id"]]
-    if not isinstance(project_id, str) or not project_id or not ontology_ids:
+    bindings = production_resume_bindings(manifest)
+    if bindings is None:
+        # Shared with inspect's availability judgment: the hard gate itself
+        # stays — a manifest without a reattachable Project/Ontology identity
+        # never starts a production resume.
         raise _reject(
             "checkpoint_incomplete",
             "the checkpoint records no Project/Ontology platform bindings to "
@@ -1693,6 +1688,8 @@ def prepare_recovery_plan(
             retryable=False,
             retry="re-save the checkpoint from a run that had bound its scope",
         )
+    project_id = bindings["project_id"]
+    ontology_ids = bindings["ontology_ids"]
 
     reconciliation = reconcile_write_tail(
         chain_roots, tail, readback, ontology_ids=ontology_ids

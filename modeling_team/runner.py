@@ -10370,14 +10370,32 @@ class TeamRunner:
         )
 
     def _checkpoint_platform_bindings(self) -> dict[str, Any]:
-        """The manifest 平台绑定 group: scope identity and build session refs."""
+        """The manifest 平台绑定 group: the real scope identity (design §3.2).
+
+        Reads the actual PlatformScope fields — the same identity the recovery
+        entry re-attaches — never a detached stand-in.  A run whose scope is
+        not bound records no identity: nothing is fabricated from resource
+        names or request text.
+        """
 
         bindings: dict[str, Any] = {"run_scope": dict(self.run.scope or {})}
-        scope_obj = getattr(self.scope, "scope", None)
-        for attr in ("project_id", "ontology_ids", "graph_set_ids", "build_session_id"):
-            value = getattr(scope_obj, attr, None)
-            if value:
-                bindings[attr] = list(value) if isinstance(value, (list, tuple, set)) else value
+        scope = self.scope
+        project_id = getattr(scope, "project_id", None)
+        ontology_id = getattr(scope, "ontology_id", None)
+        ontology_ids = [
+            item for item in getattr(scope, "ontology_ids", None) or [] if item
+        ]
+        if not ontology_ids and isinstance(ontology_id, str) and ontology_id:
+            # Single-Ontology scope (R2.3 create/existing paths): the bound
+            # Ontology is the full verified set the recovery entry reloads
+            # (design §5.2 loads ``ontology_ids`` into the existing path).
+            ontology_ids = [ontology_id]
+        if isinstance(project_id, str) and project_id:
+            bindings["project_id"] = project_id
+        if ontology_ids:
+            bindings["ontology_ids"] = ontology_ids
+        if isinstance(ontology_id, str) and ontology_id:
+            bindings["ontology_id"] = ontology_id
         if self.run.team_model_profile is not None:
             bindings["model_profile_digest"] = self.run.team_model_profile.digest
         return bindings

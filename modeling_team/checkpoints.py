@@ -358,6 +358,32 @@ def verify_checkpoint(run_root: Path, checkpoint_id: str) -> tuple[dict[str, Any
     return _verify_package(Path(run_root), checkpoint_id)
 
 
+def production_resume_bindings(manifest: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The exact Project/Ontology identity a production resume would rebind.
+
+    ``inspect`` availability and the resume hard gate share this one decision
+    (design §3.2 平台绑定 / §5.2): direct ``platform_bindings`` first, then the
+    ``run_scope`` recorded at save time, and ``None`` when the manifest records
+    no Project/Ontology identity to reattach — never a name-based rebuild.
+    """
+
+    bindings = manifest.get("platform_bindings")
+    if not isinstance(bindings, Mapping):
+        bindings = {}
+    project_id = bindings.get("project_id")
+    ontology_ids = [str(item) for item in bindings.get("ontology_ids") or []]
+    if not isinstance(project_id, str) or not project_id:
+        # Fall back to the run scope recorded at save time.
+        run_scope = bindings.get("run_scope") or {}
+        project_id = run_scope.get("project_id")
+        ontology_ids = [str(item) for item in run_scope.get("ontology_ids") or []]
+        if not ontology_ids and isinstance(run_scope.get("ontology_id"), str):
+            ontology_ids = [run_scope["ontology_id"]]
+    if not isinstance(project_id, str) or not project_id or not ontology_ids:
+        return None
+    return {"project_id": project_id, "ontology_ids": ontology_ids}
+
+
 # --- Save ---------------------------------------------------------------------
 
 
@@ -609,13 +635,43 @@ def _checkpoint_inspection(run_root: Path, checkpoint_id: str) -> dict[str, Any]
         if not isinstance(configuration.get(name), str) or not configuration.get(name)
     ]
     issues.extend(configuration_issues)
+    kind = manifest.get("kind")
+    resume_bindings = production_resume_bindings(manifest)
+    handoff_kind = kind == CHECKPOINT_KIND_PRODUCTION_HANDOFF
+    if not handoff_kind and resume_bindings is None:
+        # Same criterion as the resume hard gate (§5.2): a package without a
+        # reattachable Project/Ontology identity is never reported as ready
+        # for a production resume it cannot deliver.
+        issues.append(
+            "platform_bindings record no Project/Ontology identity for a "
+            "production resume"
+        )
     if issues:
         status = "incompatible"
     elif unreconciled or stage_facts.get("pending"):
         status = "needs_reconciliation"
     else:
         status = "ready"
-    kind = manifest.get("kind")
+    production_resume: dict[str, Any]
+    if handoff_kind:
+        production_resume = {
+            "available": False,
+            "reason": "a production_handoff checkpoint continues through "
+            "independent acceptance continuation (--mode acceptance), not a "
+            "production resume",
+        }
+    elif resume_bindings is not None:
+        production_resume = {
+            "available": True,
+            "project_id": resume_bindings["project_id"],
+            "ontology_ids": resume_bindings["ontology_ids"],
+        }
+    else:
+        production_resume = {
+            "available": False,
+            "reason": "the manifest records no Project/Ontology platform bindings "
+            "to reattach",
+        }
     estimated = (
         {
             "acceptance_only_semantic_starts": 0,
@@ -637,6 +693,7 @@ def _checkpoint_inspection(run_root: Path, checkpoint_id: str) -> dict[str, Any]
         "scope_refs": manifest.get("scope_refs") or {},
         "status": status,
         "issues": issues,
+        "production_resume": production_resume,
         "reusable_artifacts": [
             {
                 "source": artifact.get("source"),

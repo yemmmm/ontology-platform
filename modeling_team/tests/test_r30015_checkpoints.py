@@ -43,6 +43,7 @@ from modeling_team.checkpoints import (
     inspect_checkpoints,
     list_checkpoints,
     manifest_digest,
+    production_resume_bindings,
     public_role_projection,
     safe_checkpoint_id,
     save_checkpoint,
@@ -87,6 +88,11 @@ def _write_json(path: Path, payload) -> Path:
     return path
 
 
+#: The platform identity a package saved by a scope-bound run carries since
+#: the R3.0-015 binding fix; missing-bindings cases pass ``{}`` explicitly.
+_BOUND_BINDINGS = {"project_id": "project-1", "ontology_ids": ["ontology-1"]}
+
+
 def _package(
     kind: str = CHECKPOINT_KIND_CQ_FROZEN,
     *,
@@ -95,6 +101,7 @@ def _package(
     scope_refs: dict | None = None,
     write_positions: dict | None = None,
     host_private: set[str] | None = None,
+    platform_bindings: dict | None = None,
 ) -> StagePackage:
     private = host_private or set()
     artifacts = [
@@ -115,7 +122,7 @@ def _package(
         scope_refs=scope_refs or {"freeze_id": "f1"},
         artifacts=artifacts,
         stage_facts=stage_facts or {},
-        platform_bindings={},
+        platform_bindings=_BOUND_BINDINGS if platform_bindings is None else platform_bindings,
         write_positions=write_positions or {},
     )
 
@@ -453,6 +460,70 @@ def test_m08_missing_configuration_identity_is_incompatible(tmp_path):
     inspection = inspect_checkpoints(run_root, saved["checkpoint_id"])
     assert inspection["checkpoint"]["status"] == "incompatible"
     assert any("profile_id" in issue for issue in inspection["checkpoint"]["issues"])
+
+
+def test_m08_missing_platform_bindings_is_not_production_resumable(tmp_path):
+    """The auth017 failure: inspect must not call a bindingless package ready."""
+
+    run_root = _seed_run(tmp_path)
+    saved = _save_ok(run_root, _package(platform_bindings={}))
+    inspection = inspect_checkpoints(run_root, saved["checkpoint_id"])["checkpoint"]
+    assert inspection["production_resume"] == {
+        "available": False,
+        "reason": "the manifest records no Project/Ontology platform bindings "
+        "to reattach",
+    }
+    assert inspection["status"] == "incompatible"
+    assert any(
+        "platform_bindings" in issue and "production resume" in issue
+        for issue in inspection["issues"]
+    )
+
+
+def test_m08_inspection_reports_the_resume_identity_for_a_bound_checkpoint(tmp_path):
+    run_root = _seed_run(tmp_path)
+    saved = _save_ok(
+        run_root,
+        _package(
+            platform_bindings={
+                "project_id": "proj-x",
+                "ontology_ids": ["onto-x", "onto-y"],
+            }
+        ),
+    )
+    inspection = inspect_checkpoints(run_root, saved["checkpoint_id"])["checkpoint"]
+    assert inspection["production_resume"] == {
+        "available": True,
+        "project_id": "proj-x",
+        "ontology_ids": ["onto-x", "onto-y"],
+    }
+    assert inspection["status"] == "ready"
+
+
+def test_m08_production_handoff_inspection_points_at_acceptance_continuation(tmp_path):
+    run_root = _seed_run(tmp_path)
+    saved = _save_ok(
+        run_root,
+        _package(
+            kind=CHECKPOINT_KIND_PRODUCTION_HANDOFF,
+            platform_bindings={"project_id": "proj-x", "ontology_ids": ["onto-x"]},
+        ),
+    )
+    inspection = inspect_checkpoints(run_root, saved["checkpoint_id"])["checkpoint"]
+    assert inspection["production_resume"]["available"] is False
+    assert "--mode acceptance" in inspection["production_resume"]["reason"]
+
+
+def test_legacy_bindingless_manifest_resolves_to_no_reattachable_identity():
+    """The exact auth017 manifest shape: run_scope mode only, no identity."""
+
+    manifest = {
+        "platform_bindings": {
+            "run_scope": {"mode": "create"},
+            "model_profile_digest": "sha256:" + "0" * 64,
+        }
+    }
+    assert production_resume_bindings(manifest) is None
 
 
 # --- module tier: M09 source boundaries and host-private projection -------------
@@ -927,6 +998,105 @@ def test_outer_inspect_returns_the_read_only_view():
         harness.cleanup()
 
 
+# --- runner tier: real platform bindings on save (R3.0-015 regression) ----------
+
+
+class _PlanOntologyClient(ScopeClient):
+    """ScopeClient that mints a distinct id for each planned Ontology create."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.ontology_creates = 0
+
+    def __call__(self, method, path, body, key):
+        if method == "POST" and path.endswith("/ontologies"):
+            self.calls.append((method, path))
+            self.ontology_creates += 1
+            return 201, {"id": f"ontology-{self.ontology_creates}"}
+        return super().__call__(method, path, body, key)
+
+
+def _bound_runner_scope(client: ScopeClient | None = None) -> PlatformScope:
+    """A real PlatformScope prepared in create mode (project-1/ontology-1)."""
+
+    scope = PlatformScope(
+        "http://example",
+        "unit-run-123",
+        lambda: ("admin", "admin-id"),
+        lambda _: True,
+        client or ScopeClient(),
+    )
+    scope.prepare({"mode": "create"})
+    return scope
+
+
+def _saved_cq_frozen_manifest(runner: TeamRunner) -> dict:
+    ids = [item["checkpoint_id"] for item in list_checkpoints(runner.run.root)]
+    assert ids == ["cq_frozen-0001"]
+    return _read_manifest(runner.run.root, "cq_frozen-0001")
+
+
+def test_checkpoint_save_records_the_real_single_ontology_scope_identity():
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        runner.scope = _bound_runner_scope()
+        _freeze(runner)
+        manifest = _saved_cq_frozen_manifest(runner)
+        bindings = manifest["platform_bindings"]
+        assert bindings["project_id"] == "project-1"
+        # Single-Ontology create path: the bound Ontology is the full verified set.
+        assert bindings["ontology_ids"] == ["ontology-1"]
+        assert bindings["ontology_id"] == "ontology-1"
+        # The saved manifest satisfies exactly the resume gate's resolution.
+        assert production_resume_bindings(manifest) == {
+            "project_id": "project-1",
+            "ontology_ids": ["ontology-1"],
+        }
+    finally:
+        harness.runner.scope = None
+        harness.remove()
+
+
+def test_checkpoint_save_records_the_full_multi_ontology_set():
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        scope = _bound_runner_scope(_PlanOntologyClient())
+        scope.apply_ontology_plan(
+            [
+                {"name": "ontology-1", "slice_ids": ["slice-a"]},
+                {"name": "slice-b-ontology", "slice_ids": ["slice-b"]},
+            ]
+        )
+        assert scope.ontology_ids == ["ontology-1", "ontology-2"]
+        runner.scope = scope
+        _freeze(runner)
+        bindings = _saved_cq_frozen_manifest(runner)["platform_bindings"]
+        assert bindings["ontology_ids"] == ["ontology-1", "ontology-2"]
+    finally:
+        harness.runner.scope = None
+        harness.remove()
+
+
+def test_checkpoint_save_without_bound_scope_records_no_fabricated_bindings():
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        assert runner.scope is None
+        _freeze(runner)
+        bindings = _saved_cq_frozen_manifest(runner)["platform_bindings"]
+        assert bindings["run_scope"] == {"mode": "create"}
+        assert "project_id" not in bindings
+        assert "ontology_ids" not in bindings
+        assert "ontology_id" not in bindings
+        assert (
+            production_resume_bindings(_saved_cq_frozen_manifest(runner)) is None
+        )
+    finally:
+        harness.cleanup()
+
+
 def test_m41_scenario_mapped_saves_confirmed_interviews_with_pending_topology():
     harness = _CheckpointRunner()
     try:
@@ -1125,6 +1295,8 @@ def test_m07_settled_writes_save_with_positions_and_do_not_block_forever():
     harness = _CheckpointRunner()
     try:
         runner = harness.prepare()
+        # A materialization-progress save happens on a scope-bound run.
+        runner.scope = _bound_runner_scope()
         ticket = runner._cq_write_admission.admit("staged_submit_modeling_batch")
         runner._cq_write_admission.complete(ticket, "receipted")
         _settled_apply_intent(runner)
