@@ -3344,6 +3344,18 @@ class TeamRunner:
             # the mandatory initial complete read, live refreshes, or evidence
             # obligations, and never widens a role's authorized sources.
             objective_suffix = "\n\nTask objective:\n" + task.objective
+            if self._resume_plan is not None and role in self._resume_plan.role_packets:
+                objective_suffix += (
+                    "\n\nCheckpoint continuation for this role (Runner-verified):\n"
+                    + json.dumps(
+                        self._resume_plan.role_packets[role],
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    )
+                    + "\nUse only artifacts mounted for your role. If a referenced public "
+                    "artifact is not mounted, request its approved facts from the owning "
+                    "role through Team Transport; do not infer it is missing from the run."
+                )
             text = (
                 "Before requesting any teammate work or reporting a terminal result, read every staged "
                 + "role-private source in this canonical list:\n"

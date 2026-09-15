@@ -1713,6 +1713,16 @@ def test_s2_real_process_boundary_resume_from_a_terminated_runner():
         assert parent._cq_freeze["snapshot_digest"] == child["freeze_digest"]
         assert parent._cq_phase == "frozen"
 
+        # New role threads must receive their scoped recovery packet as task
+        # input; host-only files alone cannot inform an isolated role.
+        modeling_task = parent._task_text("modeling")
+        cq_task = parent._task_text("competency-question")
+        assert "Checkpoint continuation for this role" in modeling_task
+        assert '"checkpoint_id": "cq_frozen-0001"' in modeling_task
+        assert '"resume_kind": "cq_frozen"' in modeling_task
+        assert "competency-questions/frozen/freeze-" not in modeling_task
+        assert "competency-questions/frozen/freeze-" in cq_task
+
         # Exposure provenance is the union across the chain: cq-1 stays
         # exposed even though this new process never exposed it itself, and
         # the recovered Runner actually carries it in its exposure state.
