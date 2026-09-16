@@ -968,6 +968,14 @@ def reconcile_write_tail(
     ``write_unreconciled`` unless the precise platform readback proves the
     operation's terminal outcome, and even then the missing-receipt fact is
     preserved rather than rewritten into the old run.
+
+    One operation can be a NON-write and still share its Batch with the apply
+    operation that followed it (the real runner submits ``stage-dry-vN`` and
+    ``stage-apply-vN`` as two operations over one ``client_batch_id``).  Such a
+    dry-run is settled history once that Batch reads back ``applied``: it never
+    materialized anything, so it neither blocks the gate nor schedules another
+    dry-run, while the apply operation remains the only source of the
+    completion index.
     """
 
     # Read back every session referenced by the chain's intents.
@@ -985,6 +993,7 @@ def reconcile_write_tail(
     completed: list[CompletedOperation] = []
     completed_client_batches: dict[str, str] = {}
     pending_new_dry_run: list[dict[str, Any]] = []
+    settled_non_write: list[dict[str, Any]] = []
     recoverable_new_batch: list[dict[str, Any]] = []
     blocked: list[dict[str, Any]] = []
     drift: list[dict[str, Any]] = []
@@ -1004,6 +1013,16 @@ def reconcile_write_tail(
             key = intent.get("idempotency_key")
             if isinstance(key, str):
                 chain_keys.add((run_id, key))
+
+    # The Batch identities a chain apply-family operation claims.  Only such an
+    # operation can have materialized a Batch, so an applied Batch that no
+    # apply intent names is an unattributable write and never settles anything.
+    chain_apply_client_batches = {
+        str(intent.get("client_batch_id"))
+        for run in tail.values()
+        for intent in run.get("intents") or []
+        if str(intent.get("mode") or "") in APPLY_MODES and intent.get("client_batch_id")
+    }
 
     seen_operations: set[tuple[str, str]] = set()
     for run_root, (run_id, run) in zip(chain_roots, tail.items()):
@@ -1136,6 +1155,35 @@ def reconcile_write_tail(
                     str(intent.get("client_batch_id"))
                 ] = str(batch.get("batch_id"))
                 continue
+            if applied and intent_mode == "dry_run":
+                # A settled historical NON-write.  The dry-run materialized
+                # nothing, and the Batch it names was applied afterwards by its
+                # own apply operation (same client_batch_id; that intent's row
+                # above built the completion index).  It is not an unknown write
+                # and it is never queued as a new dry-run over a Batch that is
+                # already materialized.
+                if str(intent.get("client_batch_id")) in chain_apply_client_batches:
+                    settled_non_write.append(
+                        {
+                            **base,
+                            "batch_id": batch.get("batch_id"),
+                            "detail": "historical non-write: the dry-run is "
+                            "superseded by the applied Batch its own apply "
+                            "operation registered; nothing to resubmit",
+                        }
+                    )
+                else:
+                    blocked.append(
+                        {
+                            **base,
+                            "batch_id": batch.get("batch_id"),
+                            "reason": REASON_WRITE_UNRECONCILED,
+                            "detail": "the Batch reads back applied but no chain "
+                            "apply operation claims it; the write stays "
+                            "unattributable",
+                        }
+                    )
+                continue
             if intent_mode == "dry_run" or (not intent_is_apply and not applied):
                 validated = [
                     attempt
@@ -1214,6 +1262,7 @@ def reconcile_write_tail(
         "completed": completed,
         "completed_client_batches": completed_client_batches,
         "pending_new_dry_run": pending_new_dry_run,
+        "settled_non_write": settled_non_write,
         "recoverable_new_batch": recoverable_new_batch,
         "blocked": blocked,
         "scope_drift": drift,

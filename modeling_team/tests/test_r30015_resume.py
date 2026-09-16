@@ -507,6 +507,110 @@ def test_m19_classification_table_end_to_end():
         rmtree(run_root, ignore_errors=True)
 
 
+def test_m19_settled_historical_dry_run_is_not_an_unknown_write():
+    """Field regression: the 2026-09-16 start1 -> resume2 S4 blocker.
+
+    A real production run submits each stage as TWO chain operations with two
+    idempotency keys over ONE Batch: the dry-run that never materializes, and
+    the apply that follows it.  Reading that Batch back ``applied`` therefore
+    SATISFIES the dry-run operation itself: it is settled history that wrote
+    nothing, so it must neither keep the gate closed nor be queued as a new
+    dry-run -- while the completion index keeps being built by the apply
+    operation that actually did the writing.  An applied Batch that no chain
+    apply operation claims, an applying Batch and a partially applied Batch all
+    keep their existing refusals.
+    """
+
+    run_root = RUNS_ROOT / f"r3015settled-{os.urandom(4).hex()}"
+    try:
+        # The real shape: dry-run v2 and apply v1 are separate operations over
+        # one client_batch_id / one platform Batch.
+        _seed_chain_intent(
+            run_root, 1, key="stage1-dry-v2", client_batch_id="cb-stage1",
+            session_id="session-1", mode="dry_run", batch_id="batch-stage1",
+        )
+        _seed_chain_intent(
+            run_root, 2, key="stage1-apply-v1", client_batch_id="cb-stage1",
+            session_id="session-1", batch_id="batch-stage1",
+        )
+        # An applied Batch no chain apply operation claims: the write itself is
+        # unattributable, so the dry-run is NOT settled history.
+        _seed_chain_intent(
+            run_root, 3, key="dry-unclaimed-batch", client_batch_id="cb-unclaimed",
+            session_id="session-1", mode="dry_run", batch_id="batch-unclaimed",
+        )
+        # Still applying -> never settled.
+        _seed_chain_intent(
+            run_root, 4, key="dry-inflight-batch", client_batch_id="cb-inflight",
+            session_id="session-1", mode="dry_run", batch_id="batch-inflight",
+        )
+        # An applied attempt next to a partially applied one is not a settled
+        # Batch either: the partial write keeps the gate closed.
+        _seed_chain_intent(
+            run_root, 5, key="dry-partial-batch", client_batch_id="cb-partial",
+            session_id="session-1", mode="dry_run", batch_id="batch-partial",
+        )
+        platform = FakeCursorPlatform(
+            session_batches={
+                "session-1": [
+                    _batch(
+                        "batch-stage1",
+                        client_batch_id="cb-stage1",
+                        attempts=[
+                            _attempt("attempt-dry-1", mode="dry_run", status="validated"),
+                            _attempt(
+                                "attempt-apply-1", mode="apply_atomic", status="applied"
+                            ),
+                        ],
+                    ),
+                    _batch("batch-unclaimed", client_batch_id="cb-unclaimed"),
+                    _batch(
+                        "batch-inflight",
+                        client_batch_id="cb-inflight",
+                        batch_status="applying",
+                        attempts=[_attempt("attempt-applying", status="applying")],
+                    ),
+                    _batch(
+                        "batch-partial",
+                        client_batch_id="cb-partial",
+                        batch_status="partially_applied",
+                        attempts=[
+                            _attempt("attempt-applied", status="applied"),
+                            _attempt("attempt-partial", status="partially_applied"),
+                        ],
+                    ),
+                ]
+            }
+        )
+        result = reconcile_write_tail(
+            [run_root], read_write_tail([run_root]), _readback(platform),
+            ontology_ids=["onto-r3015"],
+        )
+
+        blocked = {entry["idempotency_key"] for entry in result["blocked"]}
+        assert blocked == {"dry-unclaimed-batch", "dry-inflight-batch", "dry-partial-batch"}
+        assert all(
+            entry["reason"] == REASON_WRITE_UNRECONCILED for entry in result["blocked"]
+        )
+
+        # The dry-run is acknowledged as settled non-writing history; it is
+        # never replayed as a new dry-run over an already materialized Batch.
+        assert {entry["idempotency_key"] for entry in result["settled_non_write"]} == {
+            "stage1-dry-v2"
+        }
+        assert result["pending_new_dry_run"] == []
+
+        # The completion index still comes from the apply operation itself, and
+        # it still guards that client_batch_id against resubmission.
+        assert {entry.idempotency_key for entry in result["completed"]} == {
+            "stage1-apply-v1"
+        }
+        assert result["completed_client_batches"] == {"cb-stage1": "batch-stage1"}
+        assert result["scope_drift"] == []
+    finally:
+        rmtree(run_root, ignore_errors=True)
+
+
 def test_m21_m26_unattributable_write_is_scope_drift_but_chain_writes_are_not():
     run_root = RUNS_ROOT / f"r3015drift-{os.urandom(4).hex()}"
     try:
