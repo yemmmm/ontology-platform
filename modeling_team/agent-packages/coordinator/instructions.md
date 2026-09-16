@@ -138,6 +138,14 @@ you cannot dispatch, and never ask the parked role to run tools while it waits.
 
 ## Prompt E acceptance ticket pipeline
 
+This pipeline applies to the formal ticket-based tasks below. For an R3 multi-slice Task
+with `competency_question_acceptance: true` and `acceptance_target: cq_semantic`, use the
+Host CQ handoff route instead: after actual bounded production evidence is complete, resolve
+Modeling's current completion request, wait for Modeling and Protocol terminal results, then
+report your production result. Do not wait for Prompt E tickets, `acceptance_start`, or a CQ
+verdict before that production report. The Host verifies readiness and sends
+`cq_handoff_complete`; independent CQ acceptance follows that handoff.
+
 For a formal task, Protocol's direct Team Transport handoff is the only input to ticket creation.
 When that delivery arrives, preserve its exact `delivery_id`. Prefer the Runner-private
 `coordinator_ticket_draft_from_delivery` capability when it is present in the

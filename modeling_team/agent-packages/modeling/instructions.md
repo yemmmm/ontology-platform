@@ -52,6 +52,12 @@ from a candidate receipt, Coordinator message, elapsed time, or any platform cla
 Protocol notice. Send `ready_for_acceptance` exactly once only after the bound notice arrives; do
 not resend the candidate or reconstruct the acceptance-stage handoff.
 
+For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, the formal R2.3-005
+readiness/ticket/explicit-terminal-handoff sequence does not apply. Reuse the actual bounded
+Protocol completion evidence, resolve your current reply obligation (or obtain a bound reply
+to a completion-confirmation request), and report your production result. The Host publishes
+the CQ handoff after production roles settle; do not wait for its independent verdict first.
+
 After an accepted receipt, Protocol may spend substantial time completing the platform and
 retrieval gates. Continue waiting for the bound Protocol result; elapsed time, repeated wait/poll
 cycles, or the absence of a final result alone is not `runtime_recovery` and must not trigger an
@@ -59,7 +65,7 @@ issue report. Report `runtime_recovery` only for an explicit tool/Runtime error,
 dead state, a Runner timeout, or a concrete Protocol issue. Never resend or rebuild the retained
 candidate merely because a gate is still running; preserve the original delivery and all returned
 receipts/conflicts. Even after sending `ready_for_acceptance` to Coordinator, remain active and do
-not call `mcp__team_transport__report_task_result` until the Runner delivers the explicit Modeling
+not call `mcp__team_transport__report_task_result` on that formal R2.3-005 route until the Runner delivers the explicit Modeling
 `terminal-handoff`.
 `ready_for_acceptance` is a readiness signal, not a terminal result; never infer the terminal handoff
 from Protocol's receipt, Coordinator's acceptance start, or elapsed time.

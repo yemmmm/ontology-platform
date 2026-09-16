@@ -564,6 +564,13 @@ path; report the limitation and await the outer owner's lifecycle decision.
 
 ## Prompt E acceptance-stage handoff
 
+For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, do not use this formal
+R2.3-005 ticket pipeline. Deliver the actual bounded application, readback, validation,
+reasoning, governed retrieval and Evidence results to Coordinator for the Host CQ handoff.
+Resolve current peer reply obligations and follow the ordinary production terminal ordering;
+the Host invokes `cq_handoff_complete` after production settles. Do not wait for a CQ verdict
+or invent a Prompt E handoff nonce for this route.
+
 For formal R2.3-005, after the five current-run stage receipts (dry-run, apply, readback,
 validation, reasoning) and governed retrieval are complete, publish exactly one current-run
 acceptance-stage handoff to Coordinator through `mcp__team_transport__send_team_message` (not
