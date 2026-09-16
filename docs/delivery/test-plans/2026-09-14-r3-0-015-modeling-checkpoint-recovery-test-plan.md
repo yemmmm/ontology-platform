@@ -3,8 +3,8 @@
 - 日期：2026-09-14
 - 状态：E1 已核验修订；D0/D1 已完成；M Rounds 1–5 与 I Round 1/Round 2 已记录——I 层对
   S1+S2+S4 范围 PASS（3 项错误通道缺陷修复后复测通过）。S3 按设计延后；真实 L0
-  Round 1 为 PARTIAL（2026-09-15）；2026-09-16 最小场景已真实 apply、handoff 和 S4 启动，
-  最终 Judge 连续两次超时，整体仍 PARTIAL；L1 未取得通过结论。
+  Round 1 为 PARTIAL（2026-09-15）；2026-09-16 最小场景已真实 apply、handoff；Judge 授权遗漏修复后，
+  acceptance9 独立裁决通过，最小流程 L0 已走通；完整 L1 未取得通过结论。
 - 需求：[R3.0-015](../../requirements/requirements-v3.0.md#r30-015-建模阶段检查点与恢复)
 - 设计：[交付设计](../designs/2026-09-14-r3-0-015-modeling-checkpoint-recovery-design.md)
 
@@ -20,8 +20,8 @@
 | D1 | 独立专项复核，按下列用例索引核对权威内容身份、阶段接续、尾部写入与 CQ 隔离 | PASS（2026-09-14，S1+S2+S4 范围，见 §6 D1 轮） |
 | M | 实现者功能自测和所需回归 | Rounds 1–5 完成（S1/S2/S4/缺陷修复轮），见 §6 |
 | I | 独立测试方从文件/进程/真实平台合同核实保存与恢复，不依赖实现者自报 | Round 1 PASS（3 项 Medium/Low 缺陷）→ 修复（M Round 4/5）→ Round 2 PASS；见 §6 |
-| L0 Runtime | 获准真实模型线程接续、复用前期成果、推进后续工作、零重复写入 | Round 1 PARTIAL；2026-09-16 最小场景 S1/S2、真实 apply/handoff 与 S4 启动已验证，Judge 超时，整体 PARTIAL |
-| L1 Modeling quality | 独立验收方判断源忠实度、语义/检索及所选验收范围 | 最小 CQ Examiner 已执行，Judge 超时无裁决；完整 L1 未验收通过 |
+| L0 Runtime | 获准真实模型线程接续、复用前期成果、推进后续工作、零重复写入 | Round 1 PARTIAL 保留；2026-09-16 最小场景保存、materialization 恢复、真实 apply/handoff 和 S4 独立裁决通过 |
+| L1 Modeling quality | 独立验收方判断源忠实度、语义/检索及所选验收范围 | 最小场景独立 Judge 1/1 通过；non-blind-regression，完整 L1 未验收通过 |
 | L2/L3 | 重复性、产品化 | 不作为本轮前置 |
 
 ## 2. 测试数据与隔离
@@ -752,6 +752,39 @@ cleanup 为 `aborted/runner-cleanup-before-settlement`。原 run6 issue-1/issue-
   与 `evidence/child-sessions/`；已在取得重复拒绝证据后正常发出 SIGINT 结束诊断，凭据撤销。
   本次仅定位，未改运行代码或将现有 PARTIAL 改成 PASS；修复应只允许独立 Acceptance
   使用它自己的报告工具，并补 standalone 证据目录绑定，不扩大其它工具权限。
+
+#### Judge 窄修复与真实复测（2026-09-16）
+
+- 用户授权可快速修复则直接实施。外部 Claude Code（deepseek-flash / max）仅修复
+  `acceptance → examiner_report` elicitation 许可，以及 `_cq_execute_batch` 两个独立 adapter
+  的现有证据根绑定；S4 日志写新 output_root，保留源 run 不写。ReportSink 校验与其它
+  角色/工具行为保持不变。修复提交：隔离 checkout `a844097`，主库 `b58e67f`。
+- T0：报告工具的宿主许可遗漏没有保护真实不变量，合法 Judge 必须能提交给 ReportSink；
+  保留后者对身份/冻结池/字段的校验。未延长超时、降低通过标准或增加编排机制。
+- 新增 3 项测试先失败后通过；针对性回归 163 passed、56 subtests passed；Ruff 通过。
+  完整 `env -u DEEPSEEK_API_KEY .../backend/.venv/bin/python -m pytest modeling_team/tests -q`：
+  1808 passed、23 failed、15 skipped、325 subtests passed；23 项均为既有 R23006
+  `acceptance-ticket.json` 缺失，未新增失败，不能称完整套件 PASS。GitNexus 共享函数 upstream
+  HIGH 已在编辑前告知并做调用点复核；diff 检查为 low，但索引陈旧，未声称完整图覆盖。
+- 正常 CLI（无诊断 monkeypatch）从 `resume2/production_handoff-0001` 接续到
+  `r30015-minimal-20260916-acceptance9`，`attempt-0009`。复测加载已验证修复 diff，随后
+  原样提交为 `a844097`。Runner exit 0，acceptance_seconds=120.096，报告 full_pass=true。
+  原冻结池 digest 不变；7 份读取回执、3 份绑定响应复读 stable，无漂移、拒绝引用或缺题。
+  独立 Judge 实际提交 1 份裁决，panorama pass=1；elicitation 明确记录
+  `acceptance-examiner-9999d639 → examiner_report → accept`。
+- 报告：上述新 run 的 `acceptance-v3/reports/cq-batch-0001/attempt-0009/batch-report.json`；
+  `recovery/acceptance-continuation.json` 记录 semantic_starts=0、report_published=true。
+  两个 children、proxy、sink、socket、forwarder 已清理；临时 admin/read keys 已撤销。
+  原模型保留，pre/post model binding 无漂移。旧失败、诊断与旧报告全部保留。
+- 通过范围是人工最小场景的完整流程以及本次 1 道独立验收题；公开曝光标记仍为
+  non-blind-regression。不推广为完整业务 L1、所有保存点均已分别恢复或 S3 已验收。
+  新增此次 S4 不消耗建模额度，总 fresh semantic starts 仍 2/3。
+- 修复报告及原始 Claude 事件：`workspaces/checkpoint-minimal-20260916/repair-judge-permission-result.md`
+  与同目录 `repair-judge-permission-events.jsonl`。
+- 独立只读复核 `/root/minimal_l0_review`：有界最小 S4/L0 流程 PASS。核验了 1 条裁决、
+  3 条稳定读回、Judge report 许可 accept、清理，以及 origin/checkpoint/freeze/handoff
+  digest 与 resume2 一致；源 run CLEANED，无 pending/unknown writes。未参与运行修复，
+  未读取隐藏题/答案正文。保留 non-blind-regression 和完整需求/L1 尚未通过的边界。
 
 实现后先执行改变模块的针对性测试和完整 Team 回归：
 
