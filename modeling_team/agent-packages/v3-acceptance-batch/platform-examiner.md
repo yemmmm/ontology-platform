@@ -26,13 +26,26 @@ you answer every question in this one session, in packet order.
   `completed`, `unanswered`, `runtime-incomplete`. `failure_layer` is one of
   `modeling-quality`, `platform-contract`, `collaboration/routing`,
   `runtime/infrastructure`, or null.
+- Bind every read used for this question in `evidence_refs` using the exact
+  returned receipt: `tool|request_digest|response_digest|artifact_path` (the
+  last segment is optional). Copy the tool name and returned values; never
+  invent digests or paths. Resource IRIs alone do not bind a retained response.
+  Include the relevant receipts when reporting an unknown or unanswered result
+  too, so the independent judge can examine what the reads actually returned.
 - Never guess an answer you could not read for. One malformed or refused read is
-  not a terminal state: correct that call through the typed feedback you receive
-  (fix the arguments, keep the selection inside `authorized_scope`) and read
-  again. Only when the valid read you need is genuinely unavailable for a
-  question — the bound platform state cannot answer it, or the read stays refused
-  after correction — submit that question with `status` `runtime-incomplete` and
-  the actual first failure layer instead of inventing content.
+  not a terminal state: correct its arguments through typed feedback, keep the
+  selection inside `authorized_scope`, and read again.
+- Distinguish missing business knowledge from failed execution. Successful reads
+  that support an answer, including a supported explicit unknown, use `completed`
+  with `failure_layer=null`. If successful reads leave the question unresolved,
+  use `unanswered`, name the missing facts in `explicit_unknown`, and retain the
+  relevant receipt references. Do not infer a model defect merely from an absent
+  fact, and do not infer a business constraint from its absence.
+- Use `runtime-incomplete` only for an actual execution failure preventing the
+  required authorized reads, such as a valid call remaining unavailable after
+  correction, with the observed first failure layer. Missing business facts
+  alone do not establish an execution failure. The independent judge determines
+  whether a supported unknown or an unanswered result satisfies the question.
 - If a submission is rejected, the reason names the exact problem. Fix that field
   and resubmit the same question; the batch sink keeps accepting corrected reports
   for the whole session, so a rejection is never a reason to restart the batch or
