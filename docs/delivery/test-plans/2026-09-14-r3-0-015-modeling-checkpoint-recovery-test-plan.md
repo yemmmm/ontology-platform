@@ -731,6 +731,28 @@ cleanup 为 `aborted/runner-cleanup-before-settlement`。原 run6 issue-1/issue-
   本次授权 3 次 fresh semantic starts，实际使用 2 次；旧 run6 额度与失败证据单独保留。
   已验证保存不等于每一种检查点都已单独恢复；本轮实际生产恢复点是 materialization_progress。
 
+
+#### Judge 超时根因诊断（2026-09-16，已复现，未修复）
+
+- 用户要求排查两次 300 秒未提交。旧 S4 standalone adapter 的 `_run_root=None`，因此既有
+  `_append_runtime_evidence` / `_retain_child_session` 未落盘；旧报告只有超时摘要，不能
+  据此断言模型未回答。此为取证缺口，不是本次超时根因。
+- 新诊断 `r30015-minimal-20260916-judge-diag1` 复用原 production_handoff、冻结池、模型
+  profile 与 300 秒期限，只通过宿主诊断入口给 adapter 绑定新输出目录，启用现有事件/会话
+  保留。没有修改运行代码、源模型、题池、旧报告，也未消耗 semantic start。
+- 真实事件确认 Judge 三次调用 `submit_examiner_report`；每次 `mcpServer/elicitation/request`
+  都被 Host 回答 `action=decline`，随后 MCP 调用 failed，错误为
+  `user rejected MCP tool call`。这是宿主自动拒绝，并非用户手工拒绝。
+- 根因在 `modeling_team/runtimes/codex.py` 的 `_notification` elicitation 分支：允许
+  `source-examiner → examiner_report` 和 `platform-examiner → examiner_report`，却遗漏
+  同一运行器创建的 `package_id=acceptance`。Judge 报告请求在进入 ReportSink 前就被拒绝，
+  因而 `report_sink_rejections=0` 完全符合现场；没有有效提交，watchdog 最后报 child-timeout。
+  第一失败层应归 `platform-contract`（宿主工具授权交接），runtime timeout 是后续症状。
+- 诊断证据在该新 run 的 `evidence/mcp-elicitations.jsonl`、`evidence/app-server-events.jsonl`
+  与 `evidence/child-sessions/`；已在取得重复拒绝证据后正常发出 SIGINT 结束诊断，凭据撤销。
+  本次仅定位，未改运行代码或将现有 PARTIAL 改成 PASS；修复应只允许独立 Acceptance
+  使用它自己的报告工具，并补 standalone 证据目录绑定，不扩大其它工具权限。
+
 实现后先执行改变模块的针对性测试和完整 Team 回归：
 
 ```bash
