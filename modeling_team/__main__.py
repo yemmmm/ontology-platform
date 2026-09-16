@@ -566,10 +566,43 @@ def _read_json_object(path: Path) -> dict[str, object]:
     return value
 
 
+def _cq_workspace_payload(response: object, ontology_id: str) -> dict[str, object]:
+    """Unwrap one canonical workspace read to the live state it carries.
+
+    The canonical backend MCP server answers every tool through one shared
+    runtime wrapper -- ``{"ok": true, "data": ...}`` on success,
+    ``{"ok": false, "error": ..., "error_code": ...}`` on a refused call -- and
+    the local ``McpReadForwarder`` returns that structured content verbatim.
+    Only an explicit success carries live state, so a refused, missing or
+    non-canonical response stays a typed failure instead of reading as an
+    absent ``None`` workspace.
+    """
+
+    if not isinstance(response, Mapping):
+        raise TeamConfigurationError(
+            f"cq_model_state_missing: workspace read for {ontology_id} returned no object"
+        )
+    if response.get("ok") is not True:
+        reason = response.get("error_code") or response.get("error") or "no ok/data envelope"
+        raise TeamConfigurationError(
+            f"cq_model_state_missing: ontology {ontology_id} workspace read was not successful "
+            f"({reason})"
+        )
+    data = response.get("data")
+    if not isinstance(data, Mapping):
+        raise TeamConfigurationError(
+            f"cq_model_state_missing: ontology {ontology_id} workspace read carried no state object"
+        )
+    return dict(data)
+
+
 def _cq_observed_state_entry(
     context: object, project_id: str, ontology_id: str, read_tools: list[str]
 ) -> dict[str, object]:
     """Summarize one actual read-only workspace observation as a binding entry.
+
+    ``context`` is the unwrapped ``data`` of one successful canonical read
+    (``_cq_workspace_payload``), never the raw response envelope.
 
     The state digests are computed here from the real read with one explicit
     recipe (workspace state/signature plus the default Graph Set identity and
@@ -636,7 +669,8 @@ def _cq_observe_model_binding(
         if not isinstance(entry, dict):
             raise TeamConfigurationError("cq_model_binding_missing: model binding entry is invalid")
         ontology_id = str(entry["ontology_id"])
-        context = forward("get_ontology_workspace_context", {"ontology_id": ontology_id}, read_key)
+        response = forward("get_ontology_workspace_context", {"ontology_id": ontology_id}, read_key)
+        context = _cq_workspace_payload(response, ontology_id)
         observed_entry = _cq_observed_state_entry(
             context,
             str(entry["project_id"]),
@@ -644,9 +678,7 @@ def _cq_observe_model_binding(
             [str(tool) for tool in entry["authorized_read_tools"]],
         )
         observed.append(observed_entry)
-        graph_set_ids[ontology_id] = str(
-            context["default_graph_set_id"] if isinstance(context, dict) else ""
-        )
+        graph_set_ids[ontology_id] = str(context["default_graph_set_id"])
     return {
         "schema_version": "r3-0-011-model-binding/v1",
         "batch_id": binding["batch_id"],

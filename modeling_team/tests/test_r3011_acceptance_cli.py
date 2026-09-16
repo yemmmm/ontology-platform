@@ -24,6 +24,7 @@ from modeling_team.__main__ import (
     _CQ_INTERVIEW_SCHEMA,
     _CQ_PLATFORM_READ_KEY_ENV,
     _cq_build_judge_evidence_bundle,
+    _cq_observe_model_binding,
     _run_cq_acceptance,
     main,
 )
@@ -63,6 +64,19 @@ def _platform_context(
         "graph_set_status": status,
         "members": [{"role": "asserted", "revision": "r1", "content_hash": "h1"}],
     }
+
+
+def _workspace_envelope(payload: dict) -> dict:
+    """One canonical read-tool response exactly as the real forwarder returns it.
+
+    The canonical backend MCP server answers every tool through one shared
+    runtime wrapper -- ``{"ok": true, "data": ...}`` on success,
+    ``{"ok": false, "error": ..., "error_code": ...}`` on a refused call -- and
+    the local ``McpReadForwarder`` returns that structured content verbatim.
+    The served state therefore always lives one level below the envelope.
+    """
+
+    return {"ok": True, "data": payload}
 
 
 def _observed_binding(
@@ -133,7 +147,12 @@ def _handoff_binding(*, batch_id: str, freeze_digest: str, ontology_id: str = "o
 
 
 class _ScriptedForwarder:
-    """Controlled read forwarder: records every read, serves scripted state."""
+    """Controlled read forwarder: records every read, serves scripted state.
+
+    Every scripted payload is served inside the canonical success envelope
+    because this stands in for ``McpReadForwarder.forward``, which returns the
+    backend's structured content -- ``{"ok": true, "data": ...}`` -- verbatim.
+    """
 
     def __init__(
         self,
@@ -165,7 +184,7 @@ class _ScriptedForwarder:
             if self._failure is not None:
                 raise self._failure
             raise TeamConfigurationError("cq_model_state_missing: post-batch read failed")
-        return self._contexts[min(len(self.calls) - 1, len(self._contexts) - 1)]
+        return _workspace_envelope(self._contexts[min(len(self.calls) - 1, len(self._contexts) - 1)])
 
 
 class _RecordingFactory:
@@ -328,6 +347,63 @@ def test_post_session_drift_is_measured_against_the_actual_pre_binding(
     # Actual post vs actual pre: the mid-batch state change is named.
     assert sessions["post_batch_model_state_drift"] == ["ontology-1"]
     assert sessions["pre_batch_model_state_drift"] == []
+
+
+def _observe(response: object):
+    """Observe one served read response through the real binding reader."""
+
+    binding = _handoff_binding(batch_id="batch-1", freeze_digest="freeze-1")
+    return _cq_observe_model_binding(
+        lambda tool, arguments, read_key: response, "read-key", binding
+    )
+
+
+def test_the_live_ok_data_envelope_is_unwrapped_into_the_observed_binding():
+    """The host's live read answers ``{"ok": true, "data": {"state": "ready"}}``.
+
+    ``McpReadForwarder.forward`` returns the canonical structured content
+    verbatim, so the success envelope must be unwrapped before the workspace
+    state gate: reading ``state`` off the envelope sees ``None`` and aborts a
+    healthy run as ``cq_model_state_missing`` before any model starts.
+    """
+
+    payload = _platform_context()
+    observed, graph_set_ids = _observe(_workspace_envelope(payload))
+    assert graph_set_ids == {"ontology-1": payload["default_graph_set_id"]}
+    assert observed == _observed_binding(
+        payload, batch_id="batch-1", freeze_digest="freeze-1"
+    )
+
+
+@pytest.mark.parametrize(
+    ("response", "reason"),
+    [
+        # A refused read carries the platform's own code, never a silent None state.
+        ({"ok": False, "error": "forbidden", "error_code": "forbidden"}, "forbidden"),
+        ({"ok": False, "error": "ontology not found", "error_code": "not_found"}, "not_found"),
+        ({"ok": False, "error": "boom"}, "boom"),
+        ({"ok": False}, "no ok/data envelope"),
+        # A successful envelope whose workspace is not this Ontology's live state.
+        ({"ok": True, "data": {"state": "building"}}, "state is 'building'"),
+        ({"ok": True, "data": {"state": "ready"}}, "has no default Graph Set"),
+        (
+            {"ok": True, "data": {"state": "ready", "default_graph_set_id": "gs-1"}},
+            "no graph members",
+        ),
+        ({"ok": True}, "carried no state object"),
+        ({"ok": True, "data": []}, "carried no state object"),
+        # A flat payload is not the canonical boundary contract: reject it
+        # instead of growing a second tolerated shape.
+        (_platform_context(), "not successful"),
+        ("not-an-object", "returned no object"),
+    ],
+)
+def test_a_refused_or_incomplete_workspace_read_still_rejects(response, reason):
+    with pytest.raises(TeamConfigurationError) as excinfo:
+        _observe(response)
+    message = str(excinfo.value)
+    assert message.startswith("cq_model_state_missing:")
+    assert "ontology-1" in message and reason in message
 
 
 def test_the_unexecuted_report_branch_still_requires_the_post_batch_binding(

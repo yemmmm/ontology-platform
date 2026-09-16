@@ -81,6 +81,15 @@ class FixtureState:
         return current
 
     def workspace_context(self, ontology_id: str, *, drift_after: int, fail_after: int) -> dict[str, Any]:
+        """One canonical workspace read's structured content.
+
+        The real runtime wrapper answers every tool with the typed
+        ``{"ok": true, "data": ...}`` envelope (``app/mcp/runtime.py``
+        ``_run_tool``), and ``McpReadForwarder`` returns that structured content
+        verbatim, so the live state travels inside the envelope -- never as the
+        response object itself.
+        """
+
         entry = self.ontologies.get(ontology_id)
         if entry is None:
             raise RuntimeError(f"fixture: unknown ontology {ontology_id}")
@@ -107,7 +116,7 @@ class FixtureState:
         }
         if fail_after and index >= fail_after:
             raise RuntimeError("fixture: canonical workspace read unavailable")
-        return context
+        return {"ok": True, "data": context}
 
     def query(self, ontology_ids: list[str]) -> dict[str, Any]:
         return {

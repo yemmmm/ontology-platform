@@ -64,6 +64,12 @@ _RUN_CONTRACT = {
 
 
 def _platform_context() -> dict:
+    """The live workspace state the scripted forwarder serves.
+
+    This is the ``data`` payload of the canonical success envelope, exactly the
+    value ``McpReadForwarder.forward`` nests one level down.
+    """
+
     return {
         "state": "ready",
         "source_signature": "sig-1",
@@ -659,7 +665,10 @@ class _DualForwarder:
             if self._replay_results:
                 self._last_query_result = self._replay_results.pop(0)
             return self._last_query_result or {"ok": True, "matches": []}
-        return self._context
+        # The workspace read stands in for ``McpReadForwarder.forward``, which
+        # returns the canonical structured content verbatim: the live state is
+        # the payload inside the runtime wrapper's success envelope.
+        return {"ok": True, "data": self._context}
 
 
 class _Factory:
