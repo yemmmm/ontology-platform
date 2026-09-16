@@ -644,6 +644,23 @@ cleanup 为 `aborted/runner-cleanup-before-settlement`。原 run6 issue-1/issue-
 
 ### 后续功能与真实运行
 
+#### 最小人工场景真实 L0（2026-09-16，进行中）
+
+- 用户要求构建最小场景以走通流程；使用独立的
+  [两概念安装位置场景](../../evaluation-scenarios/checkpoint-minimal/README.md)，
+  不复用工业售后 21 表范围。业务源是明确标识的人工定义，未改写旧 run 的冻结源。
+- Task `r3-0-015-minimal-flow`，CQ profile，`deepseek-flash-max`；代码基线
+  `9fcc2e0`。Task 配置校验、文档链接检查及 `git diff --check` 通过。
+- `r30015-minimal-20260916-start1` 在 `2026-09-16T00:13:42.681227Z` 记录真实
+  semantic start。已保存 `scenario_mapped-0001`（7 artifacts），发布候选
+  `service-site-installation-r1` 和 `cq-review-0001` 审核快照；新源的 CQ 代审委托待用户答复。
+- 宿主记录：`workspaces/checkpoint-minimal-20260916/host-ledger.json`；运行证据位于隔离
+  checkout `/home/yangxiang/ontology-platform-checkpoint-minimal-20260916/workspaces/modeling-runs/`。
+  本轮授权账本为 3 次，已确认使用 1 次；旧 run6 恢复授权与失败证据单独保留。
+- 计划在首次 dry-run 检查点后安全退出，再 production resume→apply/readback→真实
+  production_handoff→原生产进程退出后的 acceptance-only 续跑。当前尚未验证此链，
+  不计 apply、生产交接或独立验收 PASS。
+
 实现后先执行改变模块的针对性测试和完整 Team 回归：
 
 ```bash
