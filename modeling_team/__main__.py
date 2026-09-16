@@ -688,28 +688,56 @@ def _cq_observe_model_binding(
     }, graph_set_ids
 
 
+def _cq_decorated_manifest_path(source_name: str) -> str | None:
+    """Return the exact path a ``label (path)`` reference carries in parentheses.
+
+    A frozen reference may decorate the approved source's own manifest path with
+    a human-readable label in front of it.  Only the text inside the parentheses
+    is ever a candidate; the label is never searched, guessed, or matched by
+    file name.
+    """
+
+    text = source_name.strip()
+    if not text.endswith(")"):
+        return None
+    opening = text.rfind("(")
+    if opening < 0:
+        return None
+    inner = text[opening + 1 : -1].strip()
+    return inner or None
+
+
 def _cq_resolve_manifest_entry(
     manifest: list[object], source_name: str
 ) -> dict[str, object] | None:
     """Resolve one frozen evidence source to at most one staged source entry.
 
-    An exact manifest path wins; otherwise the reference must match exactly one
-    manifest entry by file name.  Any ambiguity is a typed failure instead of a
-    silent pick, so the judge is never handed a guessed source.
+    The reference is an exact manifest path -- optionally written as
+    ``label (path)``, in which case the exact path inside the parentheses is
+    what resolves -- or, without that decoration, a bare file name matching
+    exactly one manifest entry.  A decorated reference never falls back to file
+    names.  Any ambiguity is a typed failure instead of a silent pick, so the
+    judge is never handed a guessed source.
     """
 
     if not source_name:
         return None
-    exact = [
-        item for item in manifest if isinstance(item, dict) and item.get("path") == source_name
-    ]
-    if len(exact) > 1:
-        raise TeamConfigurationError(
-            f"cq_evidence_unresolved: evidence source {source_name!r} matches several staged "
-            "run sources"
-        )
-    if len(exact) == 1:
-        return exact[0]
+    decorated = _cq_decorated_manifest_path(source_name)
+    for candidate in (source_name, decorated):
+        if candidate is None:
+            continue
+        exact = [
+            item for item in manifest if isinstance(item, dict) and item.get("path") == candidate
+        ]
+        if len(exact) > 1:
+            raise TeamConfigurationError(
+                f"cq_evidence_unresolved: evidence source {source_name!r} matches several staged "
+                "run sources"
+            )
+        if len(exact) == 1:
+            return exact[0]
+    if decorated is not None:
+        return None
     name = PurePosixPath(source_name).name
     by_name = [
         item

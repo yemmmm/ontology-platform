@@ -929,6 +929,136 @@ def test_a_tampered_role_copy_is_never_repackaged_as_approved(tmp_path):
     assert "modified scenario bytes" not in unresolved["cq-1"]
 
 
+# --- label-decorated references resolve by exact manifest path only ----------
+
+_DECORATED_PATH = "docs/evaluation-scenarios/checkpoint-minimal/modeling-input/scenario.md"
+
+
+def test_a_label_decorated_source_resolves_by_its_exact_manifest_path(tmp_path):
+    # R3.0-015 resume2: the frozen question cited the approved business source as
+    # "<label> (<exact manifest path>)".  The exact path inside the parentheses
+    # names one staged entry, so the question keeps its verdict; the frozen
+    # reference string and its locator travel to the judge unchanged.
+    run_root, frozen = _write_run_root(
+        tmp_path,
+        [
+            dict(
+                _question("cq-src"),
+                evidence_refs=[
+                    {
+                        "source": f"checkpoint-minimal-source-v1 ({_DECORATED_PATH})",
+                        "locator": "business scenario",
+                    }
+                ],
+            )
+        ],
+    )
+    _stage_sources(run_root, (_DECORATED_PATH,), "approved scenario bytes\n")
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
+        run_root, frozen, [dict(item) for item in frozen["questions"]]
+    )
+    assert unresolved == {}
+    assert bundle["entries"] == [
+        {
+            "question_id": "cq-src",
+            "source": f"checkpoint-minimal-source-v1 ({_DECORATED_PATH})",
+            "locator": "business scenario",
+            "content": "approved scenario bytes\n",
+            "content_digest": content_digest("approved scenario bytes\n"),
+            "review_content_version": frozen["review_binding"]["review_content_version"],
+        }
+    ]
+
+
+def test_a_decorated_source_is_never_matched_by_file_name(tmp_path):
+    run_root, frozen = _write_run_root(
+        tmp_path,
+        [
+            dict(
+                _question("cq-src"),
+                evidence_refs=[{"source": "scenario label (scenario.md)", "locator": "x"}],
+            )
+        ],
+    )
+    _stage_sources(run_root, (_DECORATED_PATH,), "approved scenario bytes\n")
+    # The decorated form is strict: the parentheses must carry the exact manifest
+    # path.  A bare file name inside them is not a locator, so no basename guess
+    # is made and the question is recorded as unresolved.
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
+        run_root, frozen, [dict(item) for item in frozen["questions"]]
+    )
+    assert bundle["entries"] == []
+    assert "matches no staged run source or recorded interview" in unresolved["cq-src"]
+
+
+def test_a_decorated_source_cannot_escape_the_manifest(tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("outside bytes\n", encoding="utf-8")
+    run_root, frozen = _write_run_root(
+        tmp_path,
+        [
+            dict(
+                _question("cq-src"),
+                evidence_refs=[{"source": "escape label (../outside.md)", "locator": "x"}],
+            )
+        ],
+    )
+    _stage_sources(run_root, (_DECORATED_PATH,), "approved scenario bytes\n")
+    # Only an exact manifest path resolves; a relative walk out of the staged
+    # tree matches nothing and its bytes never enter a bundle entry.
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
+        run_root, frozen, [dict(item) for item in frozen["questions"]]
+    )
+    assert bundle["entries"] == []
+    assert list(unresolved) == ["cq-src"]
+    assert "outside bytes" not in unresolved["cq-src"]
+
+
+def test_a_decorated_source_matching_several_staged_entries_is_rejected(tmp_path):
+    run_root, frozen = _write_run_root(
+        tmp_path,
+        [
+            dict(
+                _question("cq-src"),
+                evidence_refs=[
+                    {"source": f"ambiguous label ({_DECORATED_PATH})", "locator": "x"}
+                ],
+            )
+        ],
+    )
+    digest = _stage_sources(run_root, (_DECORATED_PATH,), "approved scenario bytes\n")
+    manifest_path = run_root / "source-manifest.json"
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    manifest["sources"].append(dict(manifest["sources"][0]))
+    manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+    assert digest
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
+        run_root, frozen, [dict(item) for item in frozen["questions"]]
+    )
+    assert bundle["entries"] == []
+    assert "matches several staged run sources" in unresolved["cq-src"]
+
+
+def test_a_bare_file_name_still_resolves_one_staged_entry(tmp_path):
+    run_root, frozen = _write_run_root(
+        tmp_path,
+        [
+            dict(
+                _question("cq-src"),
+                evidence_refs=[{"source": "scenario.md", "locator": "x"}],
+            )
+        ],
+    )
+    _stage_sources(run_root, (_DECORATED_PATH,), "approved scenario bytes\n")
+    # The undecorated reference keeps its documented file-name fallback.
+    bundle, unresolved = _cq_build_judge_evidence_bundle(
+        run_root, frozen, [dict(item) for item in frozen["questions"]]
+    )
+    assert unresolved == {}
+    assert bundle["entries"][0]["source"] == "scenario.md"
+    assert bundle["entries"][0]["content"] == "approved scenario bytes\n"
+
+
 # --- the v3 prompt surface is dispatched, legacy assets stay untouched --------
 
 

@@ -54,6 +54,15 @@ The Runner saves the draft as an immutable version, returns `review_id`,
 window. Re-submitting a corrected draft produces a new version; never rewrite a
 published one.
 
+Every `evidence_refs` entry is `{source, locator}`, and `source` must be a
+locator the platform can resolve mechanically: the exact relative path of one
+approved source as it is staged below your mounted `sources/` directory (the
+same relative path the run's `source-manifest.json` records), or the exact
+`interview_ref` of one recorded interview. `source` carries no display name, no
+paraphrase and no path with commentary - a reference the platform cannot
+resolve leaves that question without a verdict. Write the human-readable name,
+section, line or field you mean in `locator`.
+
 Question count guidance is advisory only: panorama 5-8, 3-6 per slice, 6-10
 hidden in total. Never inflate or trim a pool to hit a count.
 
