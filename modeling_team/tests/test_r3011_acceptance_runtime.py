@@ -1093,6 +1093,116 @@ def test_v3_bridge_forwards_subset_selections_and_exact_schemas(tmp_path):
         proxy.stop()
 
 
+def test_v3_bridge_binds_the_host_ticket_and_keeps_it_optional(tmp_path):
+    """R3.0-015 S4: the child never transcribes the Host-owned batch ticket.
+
+    The real acceptance3/4 examiner sent its own ``ticket_digest`` on all six
+    reads; the value arrived at the proxy as a contradicting caller claim and
+    every otherwise-authorized scope was refused with ``read-scope-denied``.
+    The frozen ticket is Host scope like the per-Ontology bindings, so the child
+    schema stops requiring it and the bridge binds the value it was launched
+    with, whatever a caller sends or omits.
+    """
+
+    forwarded: list[tuple[str, dict, str]] = []
+
+    def forward(tool: str, arguments: dict, key: str) -> dict:
+        forwarded.append((tool, dict(arguments), key))
+        return {"ok": True, "data": {"state": "ready"}}
+
+    proxy, packet = _multi_proxy(tmp_path, forward=forward)
+    ticket = v3_ticket_digest(packet.freeze_digest)
+    process, request = _drive_bridge(
+        tmp_path,
+        proxy,
+        env={**os.environ, "PLATFORM_PROXY_MODE": "v3-acceptance", "PLATFORM_PROXY_TICKET_DIGEST": ticket},
+    )
+    try:
+        schema = request(1, "tools/list")["result"]["tools"][0]["inputSchema"]
+        assert "ticket_digest" not in schema["required"]
+        # The property stays advertised as an optional, Host-owned sanity field;
+        # only the requirement and the caller's influence are removed.
+        assert "ticket_digest" in schema["properties"]
+        assert "ontology_ids" in schema["properties"]
+        selection = {
+            "project_id": "project-1",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["ontology-2"],
+            "query": "coverage",
+        }
+        for request_id, fabricated in enumerate(("sha256:" + "9" * 64, "9" * 64), start=2):
+            called = request(
+                request_id,
+                "tools/call",
+                {
+                    "name": "query_semantic_context",
+                    "arguments": {**selection, "ticket_digest": fabricated},
+                },
+            )
+            assert called["result"]["isError"] is False
+            assert forwarded[-1][1]["ticket_digest"] == ticket
+            assert forwarded[-1][1]["ontology_ids"] == ["ontology-2"]
+        omitted = request(
+            4,
+            "tools/call",
+            {"name": "query_semantic_context", "arguments": dict(selection)},
+        )
+        assert omitted["result"]["isError"] is False
+        assert forwarded[-1][1]["ticket_digest"] == ticket
+        assert len(forwarded) == 3
+    finally:
+        _close_bridge(process)
+        proxy.stop()
+
+
+@pytest.mark.parametrize("host_ticket", ["f" * 64, ""])
+def test_v3_bridge_still_refuses_a_host_binding_outside_the_frozen_batch(tmp_path, host_ticket):
+    """A stale or unset Host batch binding still fails closed before any forward.
+
+    The bridge now supplies the Host value instead of the child's transcription,
+    so the proxy's batch-identity check is what authorizes a read: a well-formed
+    ticket for another batch -- or an unconfigured empty one -- is refused
+    exactly as before, and the child's own correct-looking value cannot rescue it.
+    """
+
+    forwarded: list[tuple[str, dict, str]] = []
+
+    def forward(tool: str, arguments: dict, key: str) -> dict:
+        forwarded.append((tool, dict(arguments), key))
+        return {"ok": True, "data": {"state": "ready"}}
+
+    proxy, _packet = _multi_proxy(tmp_path, forward=forward)
+    process, request = _drive_bridge(
+        tmp_path,
+        proxy,
+        env={
+            **os.environ,
+            "PLATFORM_PROXY_MODE": "v3-acceptance",
+            "PLATFORM_PROXY_TICKET_DIGEST": host_ticket,
+        },
+    )
+    try:
+        denied = request(
+            1,
+            "tools/call",
+            {
+                "name": "query_semantic_context",
+                "arguments": {
+                    "project_id": "project-1",
+                    "scope_mode": "ontologies",
+                    "ontology_ids": ["ontology-2"],
+                    "query": "coverage",
+                },
+            },
+        )
+        assert "result" not in denied
+        assert "read-scope-denied" in json.dumps(denied)
+        assert forwarded == []
+    finally:
+        _close_bridge(process)
+        proxy.stop()
+
+
 def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
     """Without PLATFORM_PROXY_MODE the bridge keeps its legacy projection."""
 

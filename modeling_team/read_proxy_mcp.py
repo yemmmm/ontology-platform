@@ -22,6 +22,44 @@ from typing import Any
 # excluded the primary Ontology arrive at the proxy with contradictory values.
 _V3_ACCEPTANCE_MODE = "v3-acceptance"
 
+# R3.0-015 S4: the frozen batch ticket is Host-owned scope, like the per-Ontology
+# bindings the proxy resolves from the selected entry.  Requiring the child to
+# transcribe it made every authorized read fail closed: the digest is only ever
+# in the bridge's own environment, so the child's self-authored value arrived as
+# a contradicting caller claim and the proxy refused it.  The field stays
+# advertised as an optional sanity field, but the child schema no longer requires
+# it and ``tools/call`` binds the Host value.  Same shape as the existing
+# accepted-but-ignored ``ticket_digest``/``attempt`` on acceptance_child_start.
+_V3_HOST_BOUND_FIELDS: tuple[str, ...] = ("ticket_digest",)
+_V3_HOST_BOUND_NOTE = (
+    "Host-owned frozen batch ticket; optional and caller-ignored. The bridge "
+    "binds the exact value it was launched with, so there is nothing to transcribe."
+)
+
+
+def _v3_child_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
+    """Project one proxy read schema for the v3 child.
+
+    Only the Host-bound mechanical fields change: they stop being required and
+    are annotated as Host-owned.  Every business-selection field and every other
+    constraint is passed through unchanged, because the proxy stays the source of
+    truth for what it accepts.
+    """
+
+    projected = json.loads(json.dumps(schema))
+    input_schema = projected.get("inputSchema")
+    if not isinstance(input_schema, dict):
+        return projected
+    properties = input_schema.get("properties")
+    required = input_schema.get("required")
+    for field in _V3_HOST_BOUND_FIELDS:
+        if isinstance(properties, dict) and isinstance(properties.get(field), dict):
+            properties[field] = {**properties[field], "description": _V3_HOST_BOUND_NOTE}
+        if isinstance(required, list):
+            input_schema["required"] = [key for key in required if key != field]
+    return projected
+
+
 _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "get_modeling_context": {
         "name": "get_modeling_context",
@@ -198,10 +236,16 @@ def main() -> int:
                 listing = _proxy_call(args.socket, {"token": token, "operation": "tools/list"})
                 tools = listing.get("tools", [])
                 if v3_mode:
-                    # Pass the proxy's exact schemas through unchanged: the
-                    # proxy is the source of truth for what it will accept.
+                    # Pass the proxy's exact schemas through, projected for the
+                    # child: the Host-bound mechanical fields are no longer
+                    # required (see _v3_child_tool_schema).  The proxy remains the
+                    # source of truth for what it will accept.
                     exact = listing.get("schemas")
-                    exact = [item for item in (exact if isinstance(exact, list) else []) if isinstance(item, dict) and item.get("name") in set(tools)]
+                    exact = [
+                        _v3_child_tool_schema(item)
+                        for item in (exact if isinstance(exact, list) else [])
+                        if isinstance(item, dict) and item.get("name") in set(tools)
+                    ]
                     result = {
                         "tools": exact
                         or [
@@ -235,7 +279,12 @@ def main() -> int:
                 elif v3_mode:
                     # Only the invariant batch ticket is bridged; the proxy owns
                     # every per-Ontology scope value for the selected entries.
-                    arguments.setdefault("ticket_digest", scope["PLATFORM_PROXY_TICKET_DIGEST"])
+                    # The ticket is Host scope too: the bridge binds the value it
+                    # was launched with instead of forwarding a child-authored
+                    # digest, which the proxy could only read as a contradicting
+                    # caller claim (R3.0-015 S4).  A mismatched or missing Host
+                    # binding still fails closed at the proxy.
+                    arguments["ticket_digest"] = scope["PLATFORM_PROXY_TICKET_DIGEST"]
                 else:
                     mapping = {
                         "project_id": "PLATFORM_PROXY_PROJECT_ID",
