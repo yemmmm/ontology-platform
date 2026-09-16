@@ -1122,7 +1122,7 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
                     {"action": "question", "delivery_id": "legacy-question", "text": "legacy"}
                 )
 
-    def test_formal_owner_answer_publication_keeps_modeling_terminal_blocked_until_ack(self) -> None:
+    def test_formal_owner_answer_publication_closes_reply_slot_only_after_ack(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             runner, _adapter = _formal_runner(Path(directory))
             assert runner.transport is not None
@@ -1131,9 +1131,9 @@ class RunnerR23005OwnerAnswerTests(unittest.TestCase):
             )
             _drain_and_observe(runner)
             runner._release_owner_answer("coordinator", "release", question.delivery_id)
-            with self.assertRaisesRegex(RoutingError, "delivered reply"):
-                runner.transport.report("modeling", "completed", "too early")
+            self.assertIn(question.delivery_id, runner.transport._pending_replies)
             runner.drain()
+            self.assertNotIn(question.delivery_id, runner.transport._pending_replies)
             runner.transport.report("modeling", "completed", "answered")
 
     def test_persistence_failures_consume_question_and_reject_same_or_different_replay(self) -> None:

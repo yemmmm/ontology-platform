@@ -2275,18 +2275,16 @@ def _settled_handoff_evidence(handoff: Mapping[str, Any]) -> None:
     """The v012 settled read-only evidence fields (same rule as acceptance)."""
 
     unknown_writes = handoff.get("unknown_writes")
-    not_applied = handoff.get("not_applied")
     if (
         handoff.get("write_phase") != "read-only"
         or (isinstance(unknown_writes, list) and unknown_writes)
-        or (isinstance(not_applied, list) and not_applied)
         or handoff.get("ready") is not True
         or handoff.get("pending_writes") is not False
     ):
         raise _acceptance_reject(
             REASON_WRITE_UNRECONCILED,
             "the production handoff is not a settled read-only handoff "
-            "(unknown or unapplied writes, or a non read-only phase)",
+            "(unknown writes or a non read-only phase)",
             obj=_PUBLISHED_HANDOFF_SOURCE,
             retryable=True,
             retry="settle or reconcile the outstanding writes through the "

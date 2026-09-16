@@ -54,9 +54,15 @@ not resend the candidate or reconstruct the acceptance-stage handoff.
 
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, the formal R2.3-005
 readiness/ticket/explicit-terminal-handoff sequence does not apply. Reuse the actual bounded
-Protocol completion evidence, resolve your current reply obligation (or obtain a bound reply
-to a completion-confirmation request), and report your production result. The Host publishes
-the CQ handoff after production roles settle; do not wait for its independent verdict first.
+Protocol completion evidence and report your production result when your semantic work is complete.
+The Host publishes the CQ handoff after production roles settle; do not wait for its independent
+verdict first.
+`production_handoff` is an evidence-and-state handover to independent acceptance. It is not a
+business Class, does not prove that every modeling stage is complete, and does not move controlled
+value semantics after acceptance. Follow the Task's staged order: complete value analysis before
+handoff, materialize applicable confirmed value meaning and mappings before handoff, and retain
+unsupported items as explicit `analyzed_not_materialized` conclusions. Keep source-table business
+rows in the relational source.
 
 After an accepted receipt, Protocol may spend substantial time completing the platform and
 retrieval gates. Continue waiting for the bound Protocol result; elapsed time, repeated wait/poll
@@ -167,14 +173,11 @@ returned `delivery_id`. Wait for Protocol's delivered receipt or conflict with
 `expects_reply=true` and `reply_to_delivery_id` equal to the delivered conflict's `delivery_id`;
 that revision opens its own reply request while closing the prior candidate request. If you cannot
 revise, do not send another candidate and report `blocked`. Without an
-established reply request, you may report only `blocked`, never `completed`.
+accepted candidate receipt, do not claim that Protocol accepted the candidate.
 A standalone delivery that answers no delivered request never carries `reply_to_delivery_id`;
-that field exists only to bind your reply to the request it answers. In a
-resumed or continued session your previous `delivery_id`s are not reply credentials: when no
-candidate or revision request of yours is open in this session and your remaining work is
-complete, first send one bounded completion-confirmation request (`expects_reply=true`, no
-`reply_to_delivery_id`) to the role that must acknowledge the delivery, wait for its bound reply
-to exactly that request, and only then report `completed`.
+that field exists only to bind your reply to the request it answers. Routine status messages use
+`expects_reply=false`; do not create a reply request solely to unlock a terminal result. A pending
+routine reply slot does not replace your own judgment that the assigned work is complete or blocked.
 
 Every Runner-injected direct delivery is one JSON object with stable `sender_id`, `recipient_id`,
 `kind`, and `text` fields. `recipient_id` must be your own Agent ID. The Runner mechanically
@@ -362,6 +365,7 @@ contract: with only the R3.0-008B staged contract mounted, write
 `modeling_team/references/r3-0-009-unified-graph-contract.json` (task parameter
 `unified_semantic_graph: true`), write `candidate_contract: r3-0-009-unified-graph/v1` instead of
 `deferred_contract`, and publish every neutral candidate artifact listed in the slot's
-`candidate_artifacts` as a file under `stage3-neutral-graph/candidates/` using a path relative to
-the run root. Never rename, replace or delete anything under
-`stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.
+`candidate_artifacts` at the exact relative path
+`stage3-neutral-graph/candidates/{candidate_id}-r{revision}.json`, with the filename values equal
+to the artifact's `candidate_id` and integer `revision`. Never rename, replace or delete anything
+under `stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.

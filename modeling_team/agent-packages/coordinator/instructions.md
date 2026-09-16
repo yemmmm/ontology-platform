@@ -49,12 +49,6 @@ When an outer answer resolves a current grounded Modeling question, send that ex
 with `reply_to_delivery_id` set to that Modeling question's delivery ID. Do not duplicate an outer
 answer or leave it without this binding.
 
-The same binding applies when Modeling sends you a completion-confirmation request
-(`expects_reply=true`): answer it with one reply whose `reply_to_delivery_id` is that request's
-delivery ID. Never answer such a request with a standalone `expects_reply=false` message, and
-never tell Modeling to report terminal `completed` in place of that bound reply; the terminal
-report stays Modeling's own, after its established reply request is answered.
-
 Submit your own `mcp__team_transport__report_task_result` only after both Modeling and Protocol have each reported a
 terminal `completed` or `blocked` result. If Team Transport rejects an early Coordinator report for
 missing terminal roles, that rejection is not recorded: remain active, wait for those mechanical

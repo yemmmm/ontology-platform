@@ -32,6 +32,12 @@ you answer every question in this one session, in packet order.
   invent digests or paths. Resource IRIs alone do not bind a retained response.
   Include the relevant receipts when reporting an unknown or unanswered result
   too, so the independent judge can examine what the reads actually returned.
+- Treat each question as a separate evidence scope. Before moving to the next
+  question, clear the prior question's query plan and evidence list. Cite a
+  receipt only when its returned content is relevant to the current question;
+  shared vocabulary alone is not relevance. If a successful read returns an
+  unrelated slice or relation, refine the query or report the current question
+  unresolved with only the relevant attempted reads.
 - Never guess an answer you could not read for. One malformed or refused read is
   not a terminal state: correct its arguments through typed feedback, keep the
   selection inside `authorized_scope`, and read again.

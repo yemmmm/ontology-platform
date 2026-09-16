@@ -13,8 +13,10 @@ slice-review → frozen`
 * `panorama-draft`: preparation. Read the mounted approved business inputs and
   the mounted
   `modeling_team/references/r3-0-011-competency-question-contract.json`, and
-  work out the panorama questions. A document published with a `-draft` phase
-  is a preparation version; it is not the document the user reviews.
+  incorporate any direct `cq-interview` input already delivered by the Runner before publishing
+  the first review. Preserve an explicitly proposed `public` or `hidden` visibility; do not make a
+  draft question public merely because it is ready for review. A document published with a
+  `-draft` phase is a preparation version; it is not the document the user reviews.
 * `panorama-review`: publish the panorama document you submit to the user for
   review through `mcp__runner_capability__cq_publish_question_draft` with
   `phase` exactly `panorama-review` - that phase is what the user reviews and

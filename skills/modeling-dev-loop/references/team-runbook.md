@@ -72,6 +72,12 @@ effort `max`，选用 profile `deepseek-flash-max`。profile ID 不含模型版�
 代码/配置/源材料；要求 clean checkout 时使用明确提交或隔离 checkout 保留用户改动，不能
 清空工作区来满足前置。复用已有健康与验收证据，不展开全面审计。
 
+隔离 checkout 启动前确认其 `backend/.venv` 可用；优先复用与冻结提交兼容的现有环境，确需
+安装时执行 `uv sync --frozen`。这是避免已发生的启动失败的准备动作，不增加平台门禁。
+若本轮授权宿主扮演业务方回答者，在 CQ 首次 review 发布前，把同一项目中有来源、仍适用于
+当前范围的既有确认通过 `cq_interview` 一次性交给 CQ 角色，并保留来源；不要携带隐藏题答案，
+也不要把未获资料支持的内容补成确认。这样可以在第一次公开投影前确定题目可见性。
+
 先按“选择入口”设置 `modeling_task_file` 为本轮已选 Task 路径；沿用
 `modeling_team/tasks/r3-0-006-real-full.yaml` 不会自动开启检查点。
 配置检查不启动模型，也不写平台：

@@ -450,6 +450,39 @@ def test_a_published_attempt_report_is_never_overwritten(tmp_path, capsys, monke
     assert second_report["full_pass"] is True
 
 
+def test_known_not_applied_work_does_not_block_read_only_acceptance(
+    tmp_path, monkeypatch
+):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = _production_handoff(frozen)
+    handoff["not_applied"] = [{"batch_id": "rejected-before-write"}]
+    _publish_handoff(run_root, handoff)
+    forwarder = _DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT])
+    adapter_class, _state = _batch_adapter()
+
+    code = _run_cli(
+        tmp_path,
+        run_root,
+        _handoff_file(tmp_path, handoff),
+        forwarder,
+        adapter_class,
+        monkeypatch,
+    )
+
+    assert code == 0
+    retained = json.loads(
+        (
+            run_root
+            / "acceptance-v3"
+            / "reports"
+            / frozen["batch_id"]
+            / "attempt-0001"
+            / "production-handoff.json"
+        ).read_text(encoding="utf-8")
+    )
+    assert retained["not_applied"] == [{"batch_id": "rejected-before-write"}]
+
+
 def test_t0_5_the_three_acceptance_names_are_recorded_on_separate_surfaces(
     tmp_path, capsys, monkeypatch
 ):

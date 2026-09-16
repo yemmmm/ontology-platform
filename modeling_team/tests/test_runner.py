@@ -760,7 +760,7 @@ class RunnerTests(unittest.TestCase):
             if run_root.exists():
                 rmtree(run_root)
 
-    def test_runner_acknowledges_reply_only_after_delivery_then_allows_modeling_terminal(self) -> None:
+    def test_runner_acknowledges_reply_only_after_delivery(self) -> None:
         root = repository_root()
         adapter = CapturingAdapter()
         run_id = "unit-run-reply-ack"
@@ -781,8 +781,7 @@ class RunnerTests(unittest.TestCase):
             receipt = runner.transport.send(
                 "protocol", "modeling", "receipt", reply_to_delivery_id=candidate.delivery_id
             )
-            with self.assertRaisesRegex(RoutingError, "delivered reply"):
-                runner.transport.report("modeling", "completed", "queued receipt")
+            self.assertIn(candidate.delivery_id, runner.transport._pending_replies)
             runner.drain()
             delivered = next(
                 item[1] for item in adapter.messages if item[0] == "modeling" and item[1].text == "receipt"
@@ -791,6 +790,7 @@ class RunnerTests(unittest.TestCase):
                 (delivered.delivery_id, delivered.expects_reply, delivered.reply_to_delivery_id),
                 (receipt.delivery_id, False, candidate.delivery_id),
             )
+            self.assertNotIn(candidate.delivery_id, runner.transport._pending_replies)
             runner.transport.report("modeling", "completed", "delivered receipt")
         finally:
             runner.cleanup()
@@ -824,8 +824,10 @@ class RunnerTests(unittest.TestCase):
             runner.transport.send("protocol", "modeling", "receipt", reply_to_delivery_id=candidate.delivery_id)
             with self.assertRaisesRegex(RuntimeError, "runtime delivery failed"):
                 runner.drain()
-            with self.assertRaisesRegex(RoutingError, "delivered reply"):
-                runner.transport.report("modeling", "completed", "must remain pending")
+            self.assertIn(candidate.delivery_id, runner.transport._pending_replies)
+            runner.transport.report(
+                "modeling", "completed", "delivery failure is recorded separately"
+            )
         finally:
             runner.cleanup()
             if run_root.exists():

@@ -38,6 +38,11 @@ and no way to re-derive answers from a live system.
   by it. Never classify that frozen-material defect as
   `model-recall-insufficient` — the examiner is only wrong when a correct
   per-material reading of the question would have produced a different answer.
+- A successful but irrelevant or cross-question platform response is an
+  evidence-routing failure, not a platform outage. Use
+  `model-recall-insufficient` with `failure_layer=collaboration/routing` and
+  name the evidence mismatch in `note`. Reserve `platform-runtime-incomplete`
+  for a tool or runtime failure that prevented the required authorized read.
 - If a submission is rejected, the reason names the exact problem. Fix that field
   and resubmit the same question; the batch sink keeps accepting corrected
   verdicts for the whole session. The session deadline is the only budget.

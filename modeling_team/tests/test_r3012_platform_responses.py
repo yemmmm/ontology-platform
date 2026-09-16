@@ -402,6 +402,37 @@ def test_forged_escaping_and_unmatched_references_are_rejected(tmp_path):
         assert set(item) == {"question_id", "ref", "reason"}
 
 
+def test_mcp_decorated_tool_name_binds_to_the_bare_receipt(tmp_path):
+    artifact_root = tmp_path / "run"
+    artifact_root.mkdir()
+    receipt = _retained_receipt(artifact_root)
+    decorated = (
+        f"mcp__platform_read_proxy__{receipt.tool}"
+        f"|{receipt.request_digest}|{receipt.response_digest}"
+    )
+    responses, rejected = _cq_collect_platform_read_responses(
+        [_report("cq-1", [decorated])],
+        [receipt],
+        artifact_root,
+        _AUTHORIZED_TOOLS,
+    )
+    assert rejected == []
+    assert responses["cq-1"][0]["tool"] == receipt.tool
+
+    outside = (
+        f"mcp__platform_read_proxy__semantic_sparql_query"
+        f"|{receipt.request_digest}|{receipt.response_digest}"
+    )
+    responses, rejected = _cq_collect_platform_read_responses(
+        [_report("cq-2", [outside])],
+        [receipt],
+        artifact_root,
+        _AUTHORIZED_TOOLS,
+    )
+    assert responses == {}
+    assert [item["reason"] for item in rejected] == ["tool-unauthorized"]
+
+
 def test_a_missing_or_tampered_artifact_provides_no_evidence(tmp_path):
     artifact_root = tmp_path / "run"
     artifact_root.mkdir()

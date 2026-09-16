@@ -3767,8 +3767,8 @@ class TeamRunner:
                     "\nSend each platform-neutral candidate or revision with expects_reply=true and retain the "
                     "returned delivery_id. Wait for Protocol's delivered receipt or conflict whose "
                     "reply_to_delivery_id matches it. On conflict, send a revision as a new expects_reply request; "
-                    "if you cannot revise, send no further candidate and report blocked. Without an established "
-                    "reply request, Modeling may report only blocked, never completed. Every candidate item must "
+                    "if you cannot revise, send no further candidate and report blocked. Do not create a reply "
+                    "request solely to unlock a terminal result. Every candidate item must "
                     "preserve source-grounded evidence_citations when available; do not put platform IDs, Batch IDs, "
                     "or receipt labels into the platform-neutral candidate."
                 )

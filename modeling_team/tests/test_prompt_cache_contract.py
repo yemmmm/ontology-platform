@@ -185,7 +185,7 @@ def test_coordinator_and_modeling_role_instructions_precede_the_objective() -> N
     for phrase in (
         "Emit only ready_for_acceptance",
         "expects_reply=true",
-        "only blocked, never completed",
+        "Do not create a reply request solely to unlock a terminal result",
     ):
         assert phrase in modeling, phrase
 

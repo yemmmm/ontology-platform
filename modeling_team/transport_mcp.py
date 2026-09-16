@@ -827,48 +827,6 @@ class TeamTransportBroker:
                 raise RoutingError("terminal result is blocked by an active issue")
             if agent_id in self._results:
                 raise RoutingError("Agent already reported a terminal result")
-            if agent_id == self.modeling_agent_id:
-                pending = [
-                    delivery_id
-                    for delivery_id in self._pending_replies
-                    if self._delivery_by_id[delivery_id].sender_id == agent_id
-                ]
-                if pending and status == "completed":
-                    open_request = self._delivery_by_id[
-                        min(pending, key=lambda item: self._delivery_by_id[item].sequence)
-                    ]
-                    raise RoutingError(
-                        terminal_reply_binding_error(
-                            TERMINAL_REPLY_UNDELIVERED,
-                            open_request.delivery_id,
-                            open_request.recipient_id,
-                        )
-                    )
-                inbound_revision_requests = [
-                    delivery_id
-                    for delivery_id in self._pending_replies
-                    if self._delivery_by_id[delivery_id].recipient_id == agent_id
-                ]
-                if status == "completed" and inbound_revision_requests:
-                    revision = self._delivery_by_id[
-                        min(
-                            inbound_revision_requests,
-                            key=lambda item: self._delivery_by_id[item].sequence,
-                        )
-                    ]
-                    raise RoutingError(
-                        terminal_reply_binding_error(
-                            TERMINAL_REVISION_PENDING,
-                            revision.delivery_id,
-                            revision.sender_id,
-                        )
-                    )
-                requested = any(
-                    delivery.sender_id == agent_id and delivery.expects_reply
-                    for delivery in self._delivery_by_id.values()
-                )
-                if status == "completed" and not requested:
-                    raise RoutingError("completed terminal result requires an established reply request")
             missing = sorted(
                 dependency
                 for dependency in self.terminal_dependencies.get(agent_id, frozenset())

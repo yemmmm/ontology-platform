@@ -968,6 +968,9 @@ def _cq_collect_platform_read_responses(
     Each report's ``tool|request_digest|response_digest`` (optionally
     ``|artifact_path``) string selects current-session receipts; the artifact
     is then loaded from the receipt-registered locator and digest-verified.
+    The tool segment may carry the MCP-decorated proxy name
+    (``mcp__platform_read_proxy__<tool>``) shown to the child; it is reduced to
+    the bare tool name before authorization and receipt lookup.
     A ref that matches no current receipt (wrong digest, cross-session or
     unauthorized tool), carries an absolute/escaping/forged locator, or fails
     artifact verification is recorded as rejected and provides no judging
@@ -1006,8 +1009,12 @@ def _cq_collect_platform_read_responses(
                 continue
             tool, request_digest, response_digest = segments[:3]
             if tool not in tools:
-                rejected.append({"question_id": question_id, "ref": summary, "reason": "tool-unauthorized"})
-                continue
+                tool = tool.rsplit("__", 1)[-1]
+                if tool not in tools:
+                    rejected.append(
+                        {"question_id": question_id, "ref": summary, "reason": "tool-unauthorized"}
+                    )
+                    continue
             matches = index.get((tool, request_digest, response_digest), [])
             if not matches:
                 # No current-session receipt carries this digest triple: a
@@ -1444,7 +1451,7 @@ def _cq_consume_production_handoff(
     The submitted handoff must equal the Runner's immutable published record
     (``acceptance-v3/production-handoff.json``) -- an arbitrary user file is
     never trusted -- must carry the settled read-only write phase with no
-    unknown or unapplied staged writes, and must name the attempt-unique report
+    unknown staged writes, and must name the attempt-unique report
     directory this CLI writes into; the CLI never allocates an attempt id the
     Runner does not know.  A published batch report at that directory is a
     typed immutable conflict: recovery is a new handoff/attempt, never an
@@ -1496,11 +1503,9 @@ def _cq_consume_production_handoff(
     # Evidence fields first (design §3.1): the derived ready pair is re-checked
     # alongside them, never trusted alone.
     unknown_writes = handoff.get("unknown_writes")
-    not_applied = handoff.get("not_applied")
     if (
         handoff.get("write_phase") != "read-only"
         or (isinstance(unknown_writes, list) and unknown_writes)
-        or (isinstance(not_applied, list) and not_applied)
         or handoff.get("ready") is not True
         or handoff.get("pending_writes") is not False
     ):

@@ -421,71 +421,30 @@ class TransportTests(unittest.TestCase):
             queued_reply = broker.send(
                 "protocol", "modeling", "receipt", reply_to_delivery_id=candidate.delivery_id
             )
-            with self.assertRaisesRegex(RoutingError, "delivered reply"):
-                broker.report("modeling", "completed", "too early")
+            self.assertIn(candidate.delivery_id, broker._pending_replies)
             broker.ack_delivery(queued_reply.delivery_id)
+            self.assertNotIn(candidate.delivery_id, broker._pending_replies)
             broker.report("modeling", "completed", "reply delivered")
 
-    def test_terminal_reply_rejection_names_the_delivery_and_the_legal_exits(self) -> None:
-        """R3.0-015 issue-4: the terminal-reply refusal must be locatable.
-
-        The incident's first failure was ``MCP -32000: terminal result requires
-        delivered reply``: no delivery id, no peer, and no legal exit, so the
-        host could not tell whether to wait, to have Protocol answer, or to
-        settle the issue, and Modeling could not see that ``blocked`` was still
-        open to it.  The guard itself stays -- a completed report still needs
-        its delivered reply -- but the refusal now names both.
-        """
-
+    def test_pending_reply_does_not_block_modeling_terminal_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            events: list[dict[str, object]] = []
             broker = TeamTransportBroker(
                 Path(directory),
                 {("modeling", "protocol"), ("protocol", "modeling")},
                 modeling_agent_id="modeling",
-                transport_event_observer=events.append,
             )
             candidate = broker.send("modeling", "protocol", "candidate", expects_reply=True)
-            with self.assertRaises(RoutingError) as rejection:
-                mcp_response(
-                    self._report_request("completed", "candidate is final"),
-                    broker=broker,
-                    agent_id="modeling",
-                )
-            message = str(rejection.exception)
-            self.assertIn(f"delivery_id={candidate.delivery_id}", message)
-            self.assertIn("to protocol", message)
-            self.assertIn("report blocked", message)
-            self.assertEqual(
-                [(event["status"], event["category"]) for event in events],
-                [("rejected", "terminal_reply_undelivered")],
-            )
-            # The sanitized event shape is unchanged: only the category differs.
-            self.assertEqual(
-                set(events[0]),
-                {"agent", "tool", "status", "category", "ack", "recorded_at_ns"},
-            )
-            # ``blocked`` stays the legal escape while the reply is outstanding.
-            broker.report("modeling", "blocked", "the reply can never arrive")
-            self.assertEqual(broker.results["modeling"].status, "blocked")
+            broker.report("modeling", "completed", "candidate work is complete")
+            self.assertEqual(broker.results["modeling"].status, "completed")
+            self.assertIn(candidate.delivery_id, broker._pending_replies)
 
-    def test_terminal_reply_gate_categories_are_distinct_and_name_their_exit(self) -> None:
-        """Each reply-binding refusal is observable as its own category (issue-4)."""
-
+    def test_inbound_revision_request_does_not_create_a_terminal_hard_gate(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            events: list[dict[str, object]] = []
             broker = TeamTransportBroker(
                 Path(directory),
                 {("modeling", "protocol"), ("protocol", "modeling")},
                 modeling_agent_id="modeling",
-                transport_event_observer=events.append,
             )
-            with self.assertRaisesRegex(RoutingError, "established reply request"):
-                mcp_response(
-                    self._report_request("completed", "no request"),
-                    broker=broker,
-                    agent_id="modeling",
-                )
             request = broker.send("modeling", "protocol", "candidate", expects_reply=True)
             conflict = broker.send(
                 "protocol",
@@ -495,45 +454,17 @@ class TransportTests(unittest.TestCase):
                 reply_to_delivery_id=request.delivery_id,
             )
             broker.ack_delivery(conflict.delivery_id)
-            with self.assertRaises(RoutingError) as revision:
-                mcp_response(
-                    self._report_request("completed", "conflict unanswered"),
-                    broker=broker,
-                    agent_id="modeling",
-                )
-            self.assertIn(f"delivery_id={conflict.delivery_id}", str(revision.exception))
-            self.assertIn("to protocol", str(revision.exception))
-            self.assertIn("report blocked", str(revision.exception))
-            self.assertEqual(
-                [event["category"] for event in events],
-                ["terminal_reply_request_missing", "terminal_revision_pending"],
-            )
+            broker.report("modeling", "completed", "no more semantic work remains")
+            self.assertEqual(broker.results["modeling"].status, "completed")
 
-    def test_prompt_contract_names_standalone_delivery_and_resume_completion_request(self) -> None:
-        """run6 issue-1/issue-2: the authoritative role prompts must state the
-        reply-binding contract the terminal gate mechanically enforces.
-
-        A standalone delivery that answers no delivered request never carries
-        ``reply_to_delivery_id``; in a resumed or continued session with no open
-        candidate request, Modeling establishes its reply request through one
-        bounded completion-confirmation request and Coordinator answers it with
-        a bound reply -- never a standalone ``expects_reply=false`` message and
-        never an instruction to report terminal instead.
-        """
-
+    def test_prompt_contract_does_not_require_synthetic_completion_request(self) -> None:
         root = Path(__file__).resolve().parents[2]
         modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text(
             encoding="utf-8"
         )
         self.assertIn("never carries `reply_to_delivery_id`", modeling)
-        self.assertIn("bounded completion-confirmation request", modeling)
-        self.assertIn("only then report `completed`", modeling)
-        coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
-            encoding="utf-8"
-        )
-        self.assertIn("completion-confirmation request", coordinator)
-        self.assertIn("standalone `expects_reply=false` message", coordinator)
-        self.assertIn("never tell Modeling to report terminal `completed`", coordinator)
+        self.assertNotIn("completion-confirmation request", modeling)
+        self.assertIn("do not create a reply request solely to unlock a terminal result", modeling)
 
     def test_reply_correlation_rejects_forged_wrong_direction_and_duplicate_replies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -560,7 +491,7 @@ class TransportTests(unittest.TestCase):
             with self.assertRaisesRegex(RoutingError, "invalid"):
                 broker.ack_delivery(reply.delivery_id)
 
-    def test_modeling_completed_needs_a_reply_request_but_blocked_and_ordinary_protocol_are_ungated(self) -> None:
+    def test_modeling_completed_does_not_need_a_reply_request(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(
                 Path(directory),
@@ -569,9 +500,7 @@ class TransportTests(unittest.TestCase):
             )
             broker.send("protocol", "modeling", "ordinary")
             broker.report("protocol", "completed", "ordinary outbound is not gated")
-            with self.assertRaisesRegex(RoutingError, "established reply request"):
-                broker.report("modeling", "completed", "no request")
-            broker.report("modeling", "blocked", "unrevisable")
+            broker.report("modeling", "completed", "no synthetic request")
 
     def test_revision_reply_loop_allows_completed_or_unrevisable_blocked_terminal_result(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -589,8 +518,7 @@ class TransportTests(unittest.TestCase):
                 reply_to_delivery_id=first.delivery_id,
             )
             broker.ack_delivery(conflict.delivery_id)
-            with self.assertRaisesRegex(RoutingError, "explicit revision response"):
-                broker.report("modeling", "completed", "conflict needs a revision or blocked result")
+            self.assertIn(conflict.delivery_id, broker._pending_replies)
             with self.assertRaisesRegex(RoutingError, "active reversed"):
                 broker.send(
                     "modeling",
@@ -607,8 +535,6 @@ class TransportTests(unittest.TestCase):
                 reply_to_delivery_id=conflict.delivery_id,
             )
             broker.ack_delivery(revision.delivery_id)
-            with self.assertRaisesRegex(RoutingError, "delivered reply"):
-                broker.report("modeling", "completed", "revision is still pending")
             receipt = broker.send("protocol", "modeling", "receipt", reply_to_delivery_id=revision.delivery_id)
             broker.ack_delivery(receipt.delivery_id)
             broker.report("modeling", "completed", "receipt delivered")
@@ -627,8 +553,6 @@ class TransportTests(unittest.TestCase):
                 reply_to_delivery_id=request.delivery_id,
             )
             blocked.ack_delivery(conflict.delivery_id)
-            with self.assertRaisesRegex(RoutingError, "explicit revision response"):
-                blocked.report("modeling", "completed", "cannot silently complete after conflict")
             blocked.report("modeling", "blocked", "cannot revise")
 
     def test_stdio_facade_bounds_broker_error_text_and_hides_non_string_payloads(self) -> None:

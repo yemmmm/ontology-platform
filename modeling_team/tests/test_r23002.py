@@ -359,7 +359,9 @@ class R23002Tests(unittest.TestCase):
         self.assertIn("expects_reply=true", modeling_task)
         self.assertIn("returned delivery_id", modeling_task)
         self.assertIn("if you cannot revise", modeling_task)
-        self.assertIn("only blocked, never completed", modeling_task)
+        self.assertIn(
+            "Do not create a reply request solely to unlock a terminal result", modeling_task
+        )
         protocol_instructions = (
             root / "modeling_team/agent-packages/protocol/instructions.md"
         ).read_text(encoding="utf-8")
@@ -378,7 +380,10 @@ class R23002Tests(unittest.TestCase):
         self.assertIn("Protocol mechanically translates", modeling_instructions)
         self.assertIn("expects_reply=true", modeling_instructions)
         self.assertIn("delivered conflict's `delivery_id`", modeling_instructions)
-        self.assertIn("only `blocked`, never `completed`", modeling_instructions)
+        self.assertIn(
+            "do not create a reply request solely to unlock a terminal result",
+            modeling_instructions,
+        )
         task_objective = configuration.task.objective
         self.assertIn("grounded Tool-binding question", task_objective)
         self.assertIn("outer answer", task_objective)

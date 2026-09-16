@@ -1326,12 +1326,7 @@ class CodexIsolationTests(unittest.TestCase):
             finally:
                 broker.stop()
 
-    def test_dynamic_transport_names_the_open_reply_slot_and_its_legal_exits(self) -> None:
-        # R3.0-015 issue-4: Modeling's terminal report was refused with a bare
-        # "terminal result requires delivered reply", so the Agent could neither
-        # locate the undelivered reply nor learn the way out, escalated, and left
-        # the run in WAITING_OWNER behind a dead writer.  The refusal must name
-        # the delivery and the peer, and must name the legal exits.
+    def test_dynamic_transport_does_not_make_open_reply_slot_a_terminal_gate(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -1357,28 +1352,13 @@ class CodexIsolationTests(unittest.TestCase):
                 }
                 adapter.agents = agents
                 candidate = broker.send("modeling", "protocol", "candidate", expects_reply=True)
-                refused = adapter._dynamic_tool_result(
+                result = adapter._dynamic_tool_result(
                     agents["modeling"],
                     "mcp__team_transport__report_task_result",
-                    {"status": "completed", "summary": "premature"},
+                    {"status": "completed", "summary": "semantic work complete"},
                 )
-                self.assertFalse(refused["success"])
-                self.assertEqual(
-                    refused["contentItems"][0]["text"],
-                    "Team Transport rejected the request: "
-                    f"terminal result requires delivered reply: the reply to protocol for "
-                    f"delivery_id={candidate.delivery_id} is still undelivered; "
-                    "obtain it, or report blocked",
-                )
-                # The legal escape hatch stays open, and the refusal is one
-                # distinct, sanitized category in the run evidence.
-                self.assertTrue(
-                    adapter._dynamic_tool_result(
-                        agents["modeling"],
-                        "mcp__team_transport__report_task_result",
-                        {"status": "blocked", "summary": "still waiting"},
-                    )["success"]
-                )
+                self.assertTrue(result["success"])
+                self.assertIn(candidate.delivery_id, broker._pending_replies)
                 records = [
                     json.loads(line)
                     for line in (base / "evidence" / "team-transport-events.jsonl")
@@ -1388,10 +1368,7 @@ class CodexIsolationTests(unittest.TestCase):
                 ]
                 self.assertEqual(
                     [(record["status"], record["category"]) for record in records],
-                    [
-                        ("rejected", "terminal_reply_undelivered"),
-                        ("accepted", "terminal_report_accepted"),
-                    ],
+                    [("accepted", "terminal_report_accepted")],
                 )
                 for record in records:
                     self.assertEqual(

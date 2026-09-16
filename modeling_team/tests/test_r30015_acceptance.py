@@ -433,19 +433,18 @@ def test_m35_binding_drift_and_open_gates_are_typed_refusals():
     finally:
         _cleanup_run(run_root)
 
-    # (d) An unsettled handoff (unapplied staged writes) is refused.
+    # (d) Known not-applied work is evidence of a settled non-write and does not
+    # block read-only acceptance continuation.
     run_root, _frozen, checkpoint_id = _acceptance_source_run(
         with_sources=False, handoff_overrides={"not_applied": [{"batch_id": "b3"}]}
     )
+    output_run_id = f"r3015out-{os.urandom(4).hex()}"
     try:
-        with pytest.raises(CheckpointError) as unsettled:
-            _prepare(run_root, checkpoint_id)
-        payload = _assert_public_rejection(unsettled.value)
-        assert payload["code"] == REASON_WRITE_UNRECONCILED
-        assert payload["retryable"] is True
-        assert "settle or reconcile" in payload["next_action"]
+        continuation = _prepare(run_root, checkpoint_id, new_run_id=output_run_id)
+        assert continuation.handoff["not_applied"] == [{"batch_id": "b3"}]
     finally:
         _cleanup_run(run_root)
+        rmtree(RUNS_ROOT / output_run_id, ignore_errors=True)
 
     # (e) An unknown chain write keeps the write gate closed.
     run_root, _frozen, checkpoint_id = _acceptance_source_run(with_sources=False)
