@@ -1723,6 +1723,10 @@ def _cq_execute_batch(
             )
         if packet is not None and hidden:
             adapter = CodexRuntimeAdapter(repository_root=root)
+            # R3.0-015 S4: the attempt's runtime evidence (elicitation decisions,
+            # retained child sessions) belongs beside this attempt's artifacts;
+            # ``run_root`` is the read-only source evidence root.
+            adapter._run_root = artifacts
             adapter.bind_acceptance_model_profile(profile)
             teardown_platform: dict[str, object] = {}
             typed_failure: dict[str, object] | None = None
@@ -1938,6 +1942,7 @@ def _cq_execute_batch(
                     verdict_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
                 )
                 adapter = CodexRuntimeAdapter(repository_root=root)
+                adapter._run_root = artifacts
                 adapter.bind_acceptance_model_profile(profile)
                 judge_stage = "acceptance-judge-session"
                 verdicts = list(

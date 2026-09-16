@@ -56,6 +56,7 @@ from modeling_team.competency_questions import (
     batch_report_is_full_pass,
     build_batch_report,
 )
+from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.tests.test_r30015_checkpoints import (
     CONFIGURATION,
     REPO_ROOT,
@@ -75,6 +76,8 @@ from modeling_team.tests.test_r3012_platform_responses import (
     _DualForwarder,
     _Factory,
     _platform_context,
+    _write_handoff,
+    _write_run_root,
 )
 
 _AUTHORIZATION = "user-2026-09-14-r3015-acceptance-1"
@@ -751,6 +754,97 @@ def test_m34_prior_partial_report_is_preserved_and_never_spliced(monkeypatch):
     finally:
         _cleanup_run(run_root)
         rmtree(output_root, ignore_errors=True)
+
+
+def _evidence_root_adapter(adapter_class):
+    """Wrap an Examiner/Judge developer double so each session records its evidence root.
+
+    Both production adapter constructions in ``_cq_execute_batch`` must bind the
+    existing ``_run_root`` to this attempt's artifact root before the session
+    starts, or the real ``_append_runtime_evidence``/``_retain_child_session``
+    sinks stay dead.  The double proves the binding by calling the real
+    ``CodexRuntimeAdapter._append_runtime_evidence`` at session time and
+    recording the root it observed.
+    """
+
+    state: dict = {"evidence_roots": []}
+
+    class _EvidenceRootAdapter(adapter_class):
+        def run_v3_acceptance_child(self, packet, **kwargs):
+            run_root = getattr(self, "_run_root", None)
+            state["evidence_roots"].append(run_root)
+            if isinstance(run_root, Path):
+                CodexRuntimeAdapter._append_runtime_evidence(
+                    self, "runtime-evidence", {"session": "developer-double"}
+                )
+            return super().run_v3_acceptance_child(packet, **kwargs)
+
+    return _EvidenceRootAdapter, state
+
+
+# --- M44: runtime evidence is bound to this attempt's artifact root -----------------
+
+
+def test_m44_continuation_sessions_bind_runtime_evidence_to_their_output_root(monkeypatch):
+    run_root, frozen, checkpoint_id = _acceptance_source_run()
+    new_run_id = f"r3015out-{os.urandom(4).hex()}"
+    output_root = RUNS_ROOT / new_run_id
+    try:
+        before = _tree_state(run_root)
+        monkeypatch.setattr(
+            main_module, "http_readback", lambda base_url, key: _readback(FakeCursorPlatform())
+        )
+        adapter_class, state = _batch_adapter()
+        evidence_adapter, evidence_state = _evidence_root_adapter(adapter_class)
+        monkeypatch.setattr(main_module, "CodexRuntimeAdapter", evidence_adapter)
+        monkeypatch.setenv(main_module._CQ_PLATFORM_READ_KEY_ENV, "read-key")
+        code = main_module._run_checkpoint_resume_acceptance(
+            _cli_args(run_root.name, checkpoint_id, new_run_id),
+            REPO_ROOT,
+            forwarder_factory=_Factory(
+                _DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT] * 2)
+            ),
+        )
+        assert code == 0
+        # Both sessions of the re-executed attempt (platform Examiner, then
+        # independent judge) write their runtime evidence under the
+        # continuation's output root, never the read-only source run.
+        assert evidence_state["evidence_roots"] == [output_root, output_root]
+        assert (output_root / "evidence" / "runtime-evidence.jsonl").is_file()
+        assert not (run_root / "evidence").exists()
+        assert _tree_state(run_root) == before
+    finally:
+        _cleanup_run(run_root)
+        rmtree(output_root, ignore_errors=True)
+
+
+def test_m44_plain_acceptance_sessions_bind_runtime_evidence_to_the_run_root(
+    monkeypatch, tmp_path
+):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1"), _question("cq-2")])
+    handoff = _write_handoff(tmp_path, frozen)
+    adapter_class, _state = _batch_adapter()
+    evidence_adapter, evidence_state = _evidence_root_adapter(adapter_class)
+    monkeypatch.setattr(main_module, "CodexRuntimeAdapter", evidence_adapter)
+    monkeypatch.setenv(main_module._CQ_PLATFORM_READ_KEY_ENV, "read-key")
+    code = main_module._run_cq_acceptance(
+        Namespace(
+            run_root=run_root,
+            freeze_id="freeze-0001",
+            model_handoff=handoff,
+            model_profile=None,
+            session_timeout=5.0,
+            unexecuted_report=False,
+        ),
+        REPO_ROOT,
+        forwarder_factory=_Factory(
+            _DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT] * 2)
+        ),
+    )
+    assert code == 0
+    # Without a continuation the run root IS the attempt's artifact root.
+    assert evidence_state["evidence_roots"] == [run_root, run_root]
+    assert (run_root / "evidence" / "runtime-evidence.jsonl").is_file()
 
 
 # --- M33: REAL process boundary -- a terminated producer, the CLI continues ----------

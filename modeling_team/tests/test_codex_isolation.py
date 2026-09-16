@@ -2212,6 +2212,61 @@ class CodexIsolationTests(unittest.TestCase):
                     self.assertNotIn(secret_message, json.dumps(event))
                     self.assertNotIn(secret_schema, json.dumps(event))
 
+    def test_acceptance_judge_elicitation_admits_only_examiner_report(self) -> None:
+        root = repository_root()
+        # R3.0-015 S4: ``_launch_acceptance_child_impl`` gives the judge child the
+        # ``acceptance`` package (role ``acceptance``), whose only mounted MCP
+        # server is the report-only sink, so its report elicitation must be
+        # admitted -- three unadmitted requests are what killed the reproduced
+        # judge session.  Every other server stays declined for that package, and
+        # a package that merely claims the acceptance role never gains the report
+        # permission (the branch keys on package identity, as the Examiner rows
+        # above already do).
+        cases = (
+            ("acceptance", "acceptance", "examiner_report", "accept"),
+            ("acceptance-platform-read", "acceptance", "platform_read_proxy", "decline"),
+            ("acceptance-unknown", "acceptance", "unknown", "decline"),
+            ("role-only-other-package", "other-specialist", "examiner_report", "decline"),
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            evidence_path = base / "evidence" / "mcp-elicitations.jsonl"
+            for request_id, (case, package_id, server_name, action) in enumerate(cases, start=1):
+                with self.subTest(case=case):
+                    package = SimpleNamespace(package_id=package_id, role="acceptance")
+                    agent = _Agent(
+                        case,
+                        package,
+                        base / case / "home",
+                        base / case / "work",
+                        base / case / "skills",
+                    )
+                    agent.process = SimpleNamespace(stdin=StringIO())
+                    adapter = CodexRuntimeAdapter(repository_root=root)
+                    adapter._run_root = base
+                    secret_message = f"acceptance-message-secret-{case}"
+                    adapter._notification(
+                        agent,
+                        {
+                            "id": request_id,
+                            "method": "mcpServer/elicitation/request",
+                            "params": {
+                                "serverName": server_name,
+                                "mode": "form",
+                                "message": secret_message,
+                                "requestedSchema": {"type": "object", "properties": {}},
+                            },
+                        },
+                    )
+                    self.assertEqual(
+                        json.loads(agent.process.stdin.getvalue())["result"],
+                        {"action": action, "content": {}},
+                    )
+                    event = json.loads(evidence_path.read_text(encoding="utf-8").splitlines()[-1])
+                    self.assertEqual(event["server_name"], server_name)
+                    self.assertEqual(event["action"], action)
+                    self.assertNotIn(secret_message, json.dumps(event))
+
     def test_start_roster_derives_retrieval_gate_eligibility_only_for_v2_protocol_create(self) -> None:
         root = repository_root()
         cases = (

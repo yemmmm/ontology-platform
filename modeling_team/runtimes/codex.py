@@ -5820,6 +5820,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             ) or (
                 agent.package.package_id == "platform-examiner"
                 and server_name in {"examiner_report", "platform_read_proxy"}
+            ) or (
+                # R3.0-015 S4: the independent judge child carries the
+                # ``acceptance`` package and its only mounted MCP server is the
+                # report-only sink, so its report elicitation is the session's
+                # one legitimate tool call; every other server stays declined.
+                agent.package.package_id == "acceptance"
+                and server_name == "examiner_report"
             )
             action = "accept" if expected else "decline"
             self._append_runtime_evidence(
