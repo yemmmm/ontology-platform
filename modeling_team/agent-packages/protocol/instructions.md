@@ -321,6 +321,10 @@ deterministic dry-run. Do not change the business candidate to satisfy the R2.3 
 builder. If the platform reports `candidate_receipt_required` on this route, locate and repair
 the missing topology/scenario gate instead of fabricating a legacy receipt. Keep application
 closed until its separate approval.
+The projection `task_id` is the author-provided Task identifier, not a Platform resource ID.
+Use the exact value supplied by the current Task/Host. If it is absent from your role-visible
+inputs, request it through Coordinator; do not search Platform responses or an unmounted Host
+task snapshot, and do not substitute the run ID or scenario ID.
 On a checkpoint resume, the source `checkpoint_id` names a Runner package, not a Platform Build
 Checkpoint resource. Create the required fresh Build Session with a new-run-unique
 `client_session_id`; omit `initial_checkpoint` unless you have a valid Platform initial-checkpoint

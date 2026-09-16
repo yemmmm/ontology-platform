@@ -80,6 +80,11 @@ let either recipient's initial assignment substitute for the required supplement
 Ordinary CQ review, owner-answer, upstream-candidate, and handoff waits are not terminal failures.
 Keep their pending deliveries and wait for the required input; escalate only an actual defect.
 
+When Protocol needs the projection `task_id`, relay the exact author-provided Task/Host value.
+If it is not in your visible inputs, ask the Host for that configuration value through the
+existing owner channel; the Host task snapshot is not a role mount, and Platform reads cannot
+discover this author identifier. Keep it distinct from scenario ID and run ID.
+
 The same binding applies when you are the reporter. After your own `report_issue` call returns,
 immediately call `issue_control` with `action: "pause"` in that same turn and then end the turn:
 the Runner surfaces the issue to the outer owner and admits the outer resolution only after your
