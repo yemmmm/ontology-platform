@@ -3,7 +3,8 @@
 - 日期：2026-09-14
 - 状态：E1 已核验修订；D0/D1 已完成；M Rounds 1–5 与 I Round 1/Round 2 已记录——I 层对
   S1+S2+S4 范围 PASS（3 项错误通道缺陷修复后复测通过）。S3 按设计延后；真实 L0
-  Round 1 为 PARTIAL（2026-09-15），L1 仍 NOT RUN。
+  Round 1 为 PARTIAL（2026-09-15）；2026-09-16 最小场景已真实 apply、handoff 和 S4 启动，
+  最终 Judge 连续两次超时，整体仍 PARTIAL；L1 未取得通过结论。
 - 需求：[R3.0-015](../../requirements/requirements-v3.0.md#r30-015-建模阶段检查点与恢复)
 - 设计：[交付设计](../designs/2026-09-14-r3-0-015-modeling-checkpoint-recovery-design.md)
 
@@ -19,8 +20,8 @@
 | D1 | 独立专项复核，按下列用例索引核对权威内容身份、阶段接续、尾部写入与 CQ 隔离 | PASS（2026-09-14，S1+S2+S4 范围，见 §6 D1 轮） |
 | M | 实现者功能自测和所需回归 | Rounds 1–5 完成（S1/S2/S4/缺陷修复轮），见 §6 |
 | I | 独立测试方从文件/进程/真实平台合同核实保存与恢复，不依赖实现者自报 | Round 1 PASS（3 项 Medium/Low 缺陷）→ 修复（M Round 4/5）→ Round 2 PASS；见 §6 |
-| L0 Runtime | 获准真实模型线程接续、复用前期成果、推进后续工作、零重复写入 | Round 1 PARTIAL（2026-09-15；S1/S2 与未 apply 通过，CQ/Acceptance 终态缺口；见下文） |
-| L1 Modeling quality | 独立验收方判断源忠实度、语义/检索及所选验收范围 | NOT RUN |
+| L0 Runtime | 获准真实模型线程接续、复用前期成果、推进后续工作、零重复写入 | Round 1 PARTIAL；2026-09-16 最小场景 S1/S2、真实 apply/handoff 与 S4 启动已验证，Judge 超时，整体 PARTIAL |
+| L1 Modeling quality | 独立验收方判断源忠实度、语义/检索及所选验收范围 | 最小 CQ Examiner 已执行，Judge 超时无裁决；完整 L1 未验收通过 |
 | L2/L3 | 重复性、产品化 | 不作为本轮前置 |
 
 ## 2. 测试数据与隔离
@@ -644,22 +645,91 @@ cleanup 为 `aborted/runner-cleanup-before-settlement`。原 run6 issue-1/issue-
 
 ### 后续功能与真实运行
 
-#### 最小人工场景真实 L0（2026-09-16，进行中）
+#### 最小人工场景真实 L0（2026-09-16，PARTIAL：Judge 超时）
 
-- 用户要求构建最小场景以走通流程；使用独立的
-  [两概念安装位置场景](../../evaluation-scenarios/checkpoint-minimal/README.md)，
-  不复用工业售后 21 表范围。业务源是明确标识的人工定义，未改写旧 run 的冻结源。
-- Task `r3-0-015-minimal-flow`，CQ profile，`deepseek-flash-max`；代码基线
-  `9fcc2e0`。Task 配置校验、文档链接检查及 `git diff --check` 通过。
-- `r30015-minimal-20260916-start1` 在 `2026-09-16T00:13:42.681227Z` 记录真实
-  semantic start。已保存 `scenario_mapped-0001`（7 artifacts），发布候选
-  `service-site-installation-r1` 和 `cq-review-0001` 审核快照；新源的 CQ 代审委托待用户答复。
-- 宿主记录：`workspaces/checkpoint-minimal-20260916/host-ledger.json`；运行证据位于隔离
-  checkout `/home/yangxiang/ontology-platform-checkpoint-minimal-20260916/workspaces/modeling-runs/`。
-  本轮授权账本为 3 次，已确认使用 1 次；旧 run6 恢复授权与失败证据单独保留。
-- 计划在首次 dry-run 检查点后安全退出，再 production resume→apply/readback→真实
-  production_handoff→原生产进程退出后的 acceptance-only 续跑。当前尚未验证此链，
-  不计 apply、生产交接或独立验收 PASS。
+- 用户授权仅按[两概念安装位置人工资料](../../evaluation-scenarios/checkpoint-minimal/README.md)
+  代答访谈并审核、冻结 CQ；不复用工业售后 21 表范围，不修改旧 run 冻结源。
+  Task `r3-0-015-minimal-flow`，CQ profile，生产模型 `deepseek-flash-max`。
+- 首轮 `r30015-minimal-20260916-start1` 在 `2026-09-16T00:13:42.681227Z`
+  开始真实建模（授权后约 5 分钟），依次保存 `scenario_mapped-0001`（7 artifacts）、
+  `cq_frozen-0001`（25）、`semantic_approved-0001`（31）和
+  `materialization_progress-0001`（33）。首个 dry-run validated 后按计划退出；未 apply。
+- 第二轮 `r30015-minimal-20260916-resume2` 在 `00:31:49.513551Z` 从上述
+  materialization 检查点启动，导入 33 artifacts 与原 CQ 冻结。新 Session
+  `26573f81-d4b1-4c47-8719-c53e6ab3c142` 完成三个新 Batch 的 dry-run/apply，
+  分别应用关系属性、两个实体概念和关系表达；未重放原 dry-run 的 Batch。
+  4 个 Modeling Items 关联 8 条 Evidence，读回 complete/supported，无 stale；
+  validation conforms=true，reasoning consistent=true。
+- hybrid 检索曾返回 semantic_recall_degraded，生产角色改用 lexical 后读回 complete、
+  truncated=false、supported。本轮检索证据限定为这一有界 lexical 路径；不据此声称
+  hybrid 全面通过。无规则产生的 derived_result_missing 和关系双重表示的 ambiguous_match
+  保留在原证据中。
+- 四个生产角色均正式 completed；Host `cq_handoff_complete` 生成真实
+  `production_handoff-0001`（52 artifacts，manifest digest
+  `sha256:a547f2fba962128b7945d3d2d456a5ed372e9d6ce9182da72476abace3de92c8`）。
+  第二轮生产进程随后按计划退出并 CLEANED，保留模型资源，撤销运行凭据。
+- 真实运行暴露并已持久修正两项 prompt-contract 缺口：Host task ID 未挂载时的问询
+  （`69db222`），以及 CQ production 被旧 R2.3-005 terminal/ticket 顺序阻塞
+  （`cd2fa0a`）。同轮正式 owner 指导解锁；未来冷启动提示效果尚未单独重复验证。
+- 首次 S4 `r30015-minimal-20260916-acceptance1` 在模型启动前被
+  `write_unreconciled` 拒绝。真实平台读回显示三个 Batch 均 applied，各自历史 dry-run
+  均 validated；根因是对账漏掉“同一 Batch 先 dry-run 后 apply”的正常组合。
+  Claude Code 修复分类遗漏，主库提交 `42fc1eb`；保留未知/在途/部分写入门。
+  R3.0-015 104 项通过，全 Team 1785 passed / 23 旧 fixture 失败 / 15 skipped。
+  去掉修复单跑旧失败模块仍 23 failed，基线归因已核实，不报告全套 PASS。
+- `acceptance2` 已通过写入对账，但在模型启动前误报 workspace state=None；Host 真实
+  MCP 读回实际是 `ok=true,data.state=ready`。消费端未解包，Claude Code 修复并同步
+  真实 MCP 格式的测试替身，主库提交 `89b886c`；针对性 CLI 27 项、真实 MCP fixture
+  链 7 项通过，完整 Team 1797 passed / 同 23 项基线失败 / 15 skipped。
+- `acceptance3`（`attempt-0002`）实际启动独立 Examiner（`openai-luna-medium`），
+  冻结隐藏题分母为 1，已执行 1；`full_pass=false`。授权读取被 read-scope-denied 拒绝，
+  无有效平台响应，Judge 合理跳过。生产模型/源没有漂移，子进程、代理、socket 已清理。
+  这是 platform-contract/runtime-incomplete，不是建模质量失败。
+- `acceptance4`（`attempt-0003`）保留同一问题；Host 仅观察授权字段的诊断记录显示
+  6 次读取均选择授权本体，但调用 ticket_digest 与 Host 绑定不一致。诊断未改变守卫、
+  业务输入或结论。Claude Code 仅修 v3 工具桥，Host 绑定批次摘要、保留真实 scope
+  校验；主库 `decfcba`。完整 Team 1800 passed / 同 23 项基线失败 / 15 skipped。
+- `acceptance5`（`attempt-0004`）已有 5 条真实平台读取，但旧 Examiner 提示将“业务事实
+  未知”归为 runtime-incomplete，且未说明 receipt 引用格式，Judge 无可用输入。
+  Host 按 R3.0-011 D6 / R3.0-012 纠正通用提示（`996dfc1`）：区分业务未知和运行失败，
+  引用真实 `tool|request_digest|response_digest|artifact_path`，未知结论由独立 Judge 判断。
+  两项 v3/legacy 挂载合同测试通过；未写入本题事实或参考答案。
+- `acceptance6`（`attempt-0005`）Examiner completed、failure_layer=null，保留 8 条
+  receipt，3 条题目引用响应复读 stable、无 drift。Judge 被冻结的“来源标签（精确路径）”
+  引用解析阻塞。源文件已在批准 manifest 中，内容 hash 一致；Claude Code 仅增加
+  decorated path 的 exact manifest 匹配（不 basename 猜测、不读任意新路径），并补 CQ
+  引用定位符提示；主库 `1dbbb3b`。针对性 32 项通过，完整 Team 1805 passed / 同 23 项
+  基线失败 / 15 skipped。冻结源、题目、答案、分母及旧报告均未修改。
+- `acceptance7`（`attempt-0006`）已完成 Examiner 与来源解析，4 条响应复读 stable、
+  judgeable=1、skipped 空，真实独立 Judge 已启动；但 Judge 在 300 秒内无裁决，
+  `BLOCKED/runtime-infrastructure/child-timeout`，report_sink_rejections=0，full_pass=false。
+  两个子进程均已清理，无 model drift。另有一条 Examiner receipt 引用未匹配，保留原记录，
+  未妨碍其余四条合法响应进入 Judge，不以重写报告掩盖。
+- `acceptance8`（`attempt-0007`）在无代码、模型、题池变更下重试，Judge 再次在
+  300 秒内无裁决，report_sink_rejections=0；1 条合法绑定响应复读 stable，judgeable=1，
+  skipped 空，另 1 条 locator-forged 引用被拒并保留。full_pass=false，两个 children、
+  proxy、sink、socket 和 forwarder 均清理；临时 admin/read keys 均撤销，模型范围保留。
+  已停止继续自动重试；首阻塞为 runtime/infrastructure 的 Judge child-timeout。
+  现有报告不能进一步证明是模型服务无返回、子线程未发起工具调用还是通知路由问题。
+- 本轮共 2 次 fresh semantic starts；8 次 acceptance CLI 调用中前 2 次在独立模型启动前失败，
+  后 6 次执行 Examiner，其中最后 2 次实际启动 Judge。S4 accounting 均 semantic_starts=0，
+  未占用第三次建模额度。检查点保存、生产恢复、真实 apply 与 handoff、独立验收进程接续
+  已有证据；Judge 无裁决，所以最小全流程仍 PARTIAL，不判 CQ/full_joint/L1 PASS。
+- 时间说明：首轮准备约 5 分钟；两段生产角色运行窗口合计约 48 分钟，验收 CLI 活跃时间
+  另见各 `recovery/acceptance-continuation.json` 的 `acceptance_seconds`。随后大量时间用于
+  四处真实平台合同缺陷与提示修复、回归和两次 Judge 超时；这些不是语义质量证据。
+  未扩展平台或 harness，采用同一 handoff 的最短只读接续，最后停止重复消耗。
+- 独立只读复核 `/root/minimal_l0_review`：检查点保存、materialization 恢复、新会话的
+  apply/readback、production handoff 均有通过证据；S4 已进入独立 Judge，但两次超时且
+  无裁决，整体 L0 为 PARTIAL，阻塞层 runtime/infrastructure。公开 artifact digest、
+  原源/hash/freeze/handoff 身份和清理状态已复核；未读取隐藏题目答案或修改保留证据。
+  计数按 Host ledger：production resume 消耗新 start；S4 continuations 不消耗 start。
+- 最终报告：`r30015-minimal-20260916-acceptance8/acceptance-v3/reports/cq-batch-0001/attempt-0007/batch-report.json`，
+  相对于上述隔离 checkout 的 `workspaces/modeling-runs/`。全部旧失败和原始产物保留。
+- 宿主账本与失败日志：`workspaces/checkpoint-minimal-20260916/`；原始运行证据：
+  `/home/yangxiang/ontology-platform-checkpoint-minimal-20260916/workspaces/modeling-runs/`。
+  本次授权 3 次 fresh semantic starts，实际使用 2 次；旧 run6 额度与失败证据单独保留。
+  已验证保存不等于每一种检查点都已单独恢复；本轮实际生产恢复点是 materialization_progress。
 
 实现后先执行改变模块的针对性测试和完整 Team 回归：
 
