@@ -768,3 +768,172 @@ def test_formal_process_factory_does_not_resolve_deepseek_key(tmp_path: Path, mo
     assert process is not None
     assert calls == [True]
     assert "DEEPSEEK_API_KEY" not in process.kwargs["env"]
+
+
+# --- R3.0-011 standalone acceptance carrier provider sessions ------------------
+#
+# ``cq-acceptance`` starts no roster, so nothing opened the loopback provider
+# sessions a formal v3 child bound to an external credential route needs at
+# launch: the child start failed with "formal provider sessions are unavailable"
+# although the bound profile's credential was valid.  These checks use the real
+# ``glm-max`` profile fixture and the adapter's existing child-factory seam.
+
+
+class _CarrierSessionsDouble(_SessionsDouble):
+    """The session double above, counting the lifecycle the carrier owns."""
+
+    def __init__(self, bindings: dict[str, object], *, on_failure: object = None) -> None:
+        super().__init__({"glm-direct": "http://127.0.0.1:49152"})
+        self.started = 0
+        self.stopped = 0
+
+    def start(self) -> None:
+        self.started += 1
+
+    def stop(self) -> dict[str, dict[str, bool | int]]:
+        self.stopped += 1
+        return {}
+
+
+def _install_carrier_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> list[_CarrierSessionsDouble]:
+    """Replace the session manager and the external-route credential preflight."""
+
+    created: list[_CarrierSessionsDouble] = []
+
+    def fake_manager(
+        bindings: dict[str, object],
+        *,
+        on_failure: object = None,
+        session_factory: object = None,
+    ) -> _CarrierSessionsDouble:
+        assert "glm-direct" in bindings, "the profile's external route must be preflighted"
+        manager = _CarrierSessionsDouble(bindings, on_failure=on_failure)
+        created.append(manager)
+        return manager
+
+    monkeypatch.setattr("modeling_team.runtimes.codex.ProviderSessionManager", fake_manager)
+    monkeypatch.setattr(
+        "modeling_team.runtimes.codex.preflight_profile_credentials",
+        lambda profile, **_overrides: {"glm-direct": {"sentinel": True}},
+    )
+    return created
+
+
+def _standalone_adapter(factory: object = None) -> CodexRuntimeAdapter:
+    """A ``cq-acceptance`` carrier bound to the external-route ``glm-max`` profile."""
+
+    adapter = CodexRuntimeAdapter(
+        repository_root=repository_root(),
+        use_bwrap=False,
+        acceptance_child_factory=factory,
+    )
+    adapter.bind_acceptance_model_profile(load_team_model_profile(repository_root(), "glm-max"))
+    return adapter
+
+
+def test_standalone_acceptance_starts_and_stops_its_own_provider_sessions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The child sees live sessions at launch, and normal completion stops them."""
+
+    from modeling_team.runtimes.codex import _CodexChildResource
+    from modeling_team.tests.test_r3011_acceptance_runtime import (
+        _FakeSink,
+        _IdleProcess,
+        _batch_contract,
+        _batch_packet,
+        _verdict_entry,
+    )
+
+    created = _install_carrier_sessions(monkeypatch)
+    packet = _batch_packet(role="acceptance")
+    contract = _batch_contract("acceptance", packet)
+    live_at_launch: list[object] = []
+    adapter: CodexRuntimeAdapter | None = None
+
+    def factory(spec: dict) -> object:
+        # The formal launch guard reads the adapter's sessions, so reaching the
+        # child factory with them started is exactly what the defect broke.
+        live_at_launch.append(adapter._provider_sessions)
+        resource = _CodexChildResource(spec, None, report_sink=_FakeSink(contract))
+        resource.submitted_reports = spec["_submitted_reports"]
+        resource.submitted_reports.extend(
+            [_verdict_entry(packet.batch_id, "cq-1"), _verdict_entry(packet.batch_id, "cq-2")]
+        )
+        resource.process = _IdleProcess()
+        return resource
+
+    adapter = _standalone_adapter(factory)
+    returned = adapter.run_v3_acceptance_child(
+        packet,
+        role_instructions="judge the batch in order",
+        reports=[],
+        timeout_seconds=5.0,
+    )
+    assert [report["question_id"] for report in returned] == ["cq-1", "cq-2"]
+    assert live_at_launch == [created[0]]
+    assert (created[0].started, created[0].stopped) == (1, 1)
+    assert adapter._provider_sessions is None
+    assert adapter._standalone_provider_sessions is None
+
+
+def test_standalone_acceptance_stops_its_sessions_after_a_launch_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A child that never started must not leak the carrier's sessions."""
+
+    from modeling_team.tests.test_r3011_acceptance_runtime import _batch_packet
+
+    created = _install_carrier_sessions(monkeypatch)
+
+    def failing_factory(spec: dict) -> object:
+        raise RuntimeError("probe: child start failed")
+
+    adapter = _standalone_adapter(failing_factory)
+    with pytest.raises(RuntimeError, match="probe: child start failed"):
+        adapter.run_v3_acceptance_child(
+            _batch_packet(role="acceptance"),
+            role_instructions="judge the batch in order",
+            reports=[],
+            timeout_seconds=5.0,
+        )
+    assert (created[0].started, created[0].stopped) == (1, 1)
+    assert adapter._provider_sessions is None
+    assert adapter._standalone_provider_sessions is None
+
+
+def test_standalone_acceptance_leaves_a_roster_owned_manager_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A manager another lifecycle owns is neither duplicated nor stopped."""
+
+    created = _install_carrier_sessions(monkeypatch)
+    adapter = _standalone_adapter()
+    roster_owned = _SessionsDouble()
+    adapter._provider_sessions = roster_owned
+
+    adapter._ensure_standalone_provider_sessions()
+    adapter._stop_standalone_provider_sessions()
+    assert created == []
+    assert adapter._provider_sessions is roster_owned
+
+
+@pytest.mark.parametrize("profile_id", [None, "openai-luna-medium"])
+def test_standalone_acceptance_is_a_no_op_without_an_external_route(
+    monkeypatch: pytest.MonkeyPatch, profile_id: str | None
+) -> None:
+    """An unbound or OpenAI-only profile opens and stops nothing."""
+
+    created = _install_carrier_sessions(monkeypatch)
+    adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+    if profile_id is not None:
+        adapter.bind_acceptance_model_profile(
+            load_team_model_profile(repository_root(), profile_id)
+        )
+
+    adapter._ensure_standalone_provider_sessions()
+    adapter._stop_standalone_provider_sessions()
+    assert created == []
+    assert adapter._provider_sessions is None

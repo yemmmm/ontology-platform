@@ -34,6 +34,7 @@ from ..model_routing import (
     ProviderSessionManager,
     RoleModelBinding,
     TeamModelProfile,
+    preflight_profile_credentials,
     uses_external_credential_session,
 )
 from ..deepseek_provider_proxy import DEEPSEEK_API_KEY_ENV
@@ -1349,6 +1350,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._provider_waits: list[tuple[str, dict[str, Any]]] = []
         self._provider_wait_lock = threading.Lock()
         self._provider_sessions: ProviderSessionManager | None = None
+        # The manager this adapter started for its own v3 acceptance child, if
+        # any: a roster-owned manager is never stored here and never stopped by
+        # this carrier.
+        self._standalone_provider_sessions: ProviderSessionManager | None = None
         self._stderr_drain_failures: dict[str, dict[str, Any]] = {}
         self._stderr_drain_reports: dict[str, dict[str, int | bool]] = {}
         self._provider_session_failure_latched = False
@@ -1851,6 +1856,42 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("acceptance runtime model profile is invalid")
         self._team_model_profile = profile
 
+    def _ensure_standalone_provider_sessions(self) -> None:
+        """Open the sessions a standalone acceptance child needs, if any.
+
+        ``start_roster`` opens them for a TeamRunner run; the R3.0-011
+        ``cq-acceptance`` carrier starts no roster, yet its child reads
+        ``self._provider_sessions`` at launch whenever the bound profile rides
+        an external credential route (``glm-direct``/``deepseek-direct``).  A
+        roster-owned manager and an OpenAI-only profile are left untouched.
+        """
+
+        if self._provider_sessions is not None:
+            return
+        profile = self._team_model_profile
+        if profile is None or not any(
+            uses_external_credential_session(provider_id)
+            for provider_id in profile.provider_ids()
+        ):
+            return
+        sessions = ProviderSessionManager(
+            preflight_profile_credentials(profile),
+            on_failure=self._on_provider_session_failure,
+        )
+        sessions.start()
+        self._provider_sessions = sessions
+        self._standalone_provider_sessions = sessions
+
+    def _stop_standalone_provider_sessions(self) -> None:
+        """Stop the sessions this carrier started; a roster-owned one is untouched."""
+
+        sessions = self._standalone_provider_sessions
+        self._standalone_provider_sessions = None
+        if sessions is None:
+            return
+        self._provider_sessions = None
+        sessions.stop()
+
     def launch_v3_acceptance_child(
         self,
         packet: AcceptanceBatchPacket,
@@ -1994,9 +2035,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "first_turn_input": [{"type": "text", "text": first_turn_text}],
         }
         try:
+            # The child reads ``_provider_sessions`` at launch, so a standalone
+            # carrier opens its own sessions here and the failed-start path
+            # below stops them again.
+            self._ensure_standalone_provider_sessions()
             resource = self.acceptance_child_factory(spec)
         except Exception:
             shutil.rmtree(private_root, ignore_errors=True)
+            self._stop_standalone_provider_sessions()
             raise
         return resource
 
@@ -2146,6 +2192,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
                 if destroy_error is not None:
                     teardown["destroy_error"] = destroy_error
+            # Last teardown step: the batch is over, so the standalone carrier
+            # stops the sessions it opened for this one child.
+            self._stop_standalone_provider_sessions()
 
     def run_lean_examiner_child(
         self,
