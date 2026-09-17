@@ -1084,6 +1084,113 @@ def test_issue_resolution_delivery_defers_when_coordinator_waits(tmp_path: Path)
         staged.cleanup()
 
 
+def test_ordinary_delivery_to_parked_role_defers_then_dispatches_once(
+    tmp_path: Path,
+) -> None:
+    staged, adapter, sink = _runner_with_adapter(tmp_path)
+    runner = staged.runner
+    try:
+        adapter.inject_wait("coordinator")
+        _pump(runner, sink)
+        assert runner.transport.issue_ledger.active_issue is None
+        delivery = runner.transport.send("protocol", "coordinator", "parked peer note")
+
+        # The parked Coordinator rejects the dispatch: the drain defers (no
+        # exception, no ack, no fabricated envelope) and the run stays alive.
+        _pump(runner, sink)
+        assert adapter.stopped is False
+        assert staged.run_root.is_dir()
+        assert [
+            entry
+            for entry in sink.outputs
+            if entry.get("type") == "delivery"
+            and entry.get("delivery_id") == delivery.delivery_id
+        ] == []
+        evidence = (staged.run_root / "evidence" / "deliveries.jsonl").read_text()
+        assert '"event": "delivery-deferred"' in evidence
+        assert delivery.delivery_id in evidence
+
+        # Host recovery revives the role; the recovery turn's own drain
+        # dispatches the still-pending delivery exactly once.
+        rejected = _admit_line(
+            runner,
+            sink,
+            json.dumps(
+                {
+                    "action": "recover_provider",
+                    "agent_id": "coordinator",
+                    "text": RECOVERY_TEXT,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert rejected is None
+        assert any(entry["type"] == "provider-recovery" for entry in sink.outputs)
+        envelopes = [
+            entry
+            for entry in sink.outputs
+            if entry.get("type") == "delivery"
+            and entry.get("delivery_id") == delivery.delivery_id
+        ]
+        assert len(envelopes) == 1
+    finally:
+        staged.cleanup()
+
+
+def test_terminal_handoff_to_parked_role_defers_then_notifies_once(
+    tmp_path: Path,
+) -> None:
+    staged, adapter, sink = _runner_with_adapter(tmp_path)
+    runner = staged.runner
+    try:
+        adapter.inject_wait("coordinator")
+        _pump(runner, sink)
+        runner.transport.report("modeling", "completed", "modeling finished")
+
+        # The healthy Protocol receives its handoff now; the parked
+        # Coordinator's handoff defers with no ack and no notified pair.
+        _pump(runner, sink)
+        assert adapter.stopped is False
+        recipients = [
+            entry["recipient_id"]
+            for entry in sink.outputs
+            if entry.get("type") == "terminal-result-handoff"
+        ]
+        assert recipients == ["protocol"]
+        ack_path = staged.run_root / "evidence" / "terminal-handoff-ack.jsonl"
+        acks = [
+            json.loads(line)
+            for line in ack_path.read_text().splitlines()
+            if line.strip()
+        ]
+        assert [ack["agent"] for ack in acks] == ["protocol"]
+
+        rejected = _admit_line(
+            runner,
+            sink,
+            json.dumps(
+                {
+                    "action": "recover_provider",
+                    "agent_id": "coordinator",
+                    "text": RECOVERY_TEXT,
+                },
+                ensure_ascii=False,
+            ),
+        )
+        assert rejected is None
+        assert any(entry["type"] == "provider-recovery" for entry in sink.outputs)
+        # The recovery turn's own drain delivers the deferred handoff exactly
+        # once; Protocol's earlier notification is never repeated.
+        recipients = [
+            entry["recipient_id"]
+            for entry in sink.outputs
+            if entry.get("type") == "terminal-result-handoff"
+        ]
+        assert recipients == ["protocol", "coordinator"]
+    finally:
+        staged.cleanup()
+
+
 # --- Foreground CLI/FIFO surface -------------------------------------------------
 
 

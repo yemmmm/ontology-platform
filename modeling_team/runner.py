@@ -9315,7 +9315,24 @@ class TeamRunner:
                     "platform-contract", "internal-invariant:turn-binding-missing"
                 )
                 raise
-            except Exception:
+            except Exception as exc:
+                if self._provider_rejection_pending(delivery.recipient_id):
+                    # r30006-20260917-auth018-start3: a delivery bound for a
+                    # role parked in a provider wait defers instead of killing
+                    # the foreground run.  Requeue (no ack) keeps the same
+                    # delivery pending; recover_provider + the next drain
+                    # dispatch it exactly once.
+                    self._append_evidence(
+                        "deliveries",
+                        {
+                            "event": "delivery-deferred",
+                            "delivery_id": delivery.delivery_id,
+                            "recipient_id": delivery.recipient_id,
+                            "detail": str(exc)[:200],
+                        },
+                    )
+                    self.transport.requeue([delivery])
+                    continue
                 if owner_answer:
                     self._mark_owner_answer_failure(delivery, "Runtime Adapter delivery failed")
                 raise
@@ -9396,15 +9413,33 @@ class TeamRunner:
                     "instruction": instruction,
                 }
                 text = json.dumps(handoff, ensure_ascii=False, sort_keys=True)
-                self.adapter.send_message(
-                    recipient_id,
-                    RuntimeDelivery(
-                        sender_id="runner/terminal-result",
-                        recipient_id=recipient_id,
-                        kind="terminal-handoff",
-                        text=text,
-                    ),
-                )
+                try:
+                    self.adapter.send_message(
+                        recipient_id,
+                        RuntimeDelivery(
+                            sender_id="runner/terminal-result",
+                            recipient_id=recipient_id,
+                            kind="terminal-handoff",
+                            text=text,
+                        ),
+                    )
+                except Exception as exc:
+                    if self._provider_rejection_pending(recipient_id):
+                        # Same provider-wait deferral as ordinary deliveries: no
+                        # ack, no notified pair, no fabricated completion.  The
+                        # pair is retried exactly once by a later drain after
+                        # recover_provider revived the role.
+                        self._append_evidence(
+                            "terminal-result-handoff",
+                            {
+                                "event": "terminal-handoff-deferred",
+                                "recipient_id": recipient_id,
+                                "source_id": source_id,
+                                "detail": str(exc)[:200],
+                            },
+                        )
+                        continue
+                    raise
                 self._terminal_handoff_sequence += 1
                 handoff_id = f"terminal-handoff-{self._terminal_handoff_sequence}"
                 delivered = {
