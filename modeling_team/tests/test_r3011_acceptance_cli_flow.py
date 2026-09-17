@@ -403,6 +403,11 @@ def _assert_mounted_v3_prompts(markers: dict[str, str], *, platform: bool) -> No
     assert "submit_examiner_report" in markers["prompt_markers"], markers
     if platform:
         assert "question_content_version" in markers["prompt_markers"], markers
+    # The Examiner-facing prompt binds evidence by the host-issued handle and
+    # no longer asks the child to transcribe digest/path strings.
+    if platform:
+        assert markers["prompt_handle_markers"] == "evidence_handle", markers
+        assert markers["prompt_transcription_markers"] == "", markers
     # The mounted v3 read surface was really advertised to the child.
     if platform:
         assert markers["schemas"] == (
@@ -517,6 +522,10 @@ def test_tg41_two_v3_sessions_complete_the_batch_through_real_sockets(happy_run:
         assert markers["role"] == "platform"
         assert markers["packet_blind"] == "1"
         assert markers["reads"].startswith("multi:")
+        # The bridge hands the child the opaque handle only: no digest/path
+        # transcription surface and never a handle-less successful read.
+        assert "digest-leak" not in markers["reads"], markers
+        assert "no-handle" not in markers["reads"], markers
         assert markers["spawned"] == "examiner_report+platform_read_proxy"
         _assert_mounted_v3_prompts(markers, platform=True)
     assert ONTOLOGY_A in platform_a["reads"] and ONTOLOGY_B in platform_a["reads"]
@@ -534,14 +543,14 @@ def test_tg41_two_v3_sessions_complete_the_batch_through_real_sockets(happy_run:
     assert judge_b["basis"] == "cccccccc0002", judge_b
     assert SOURCE_NAME in judge_a["evidence"] and INTERVIEW_REF.split("/")[-1] in judge_b["evidence"]
 
-    # Evidence refs are the real ScopedReadProxy receipt digests, forwarded by
-    # the real staged read bridge (request/response digests are 64 hex chars).
+    # Evidence refs are the real ScopedReadProxy evidence handles, forwarded by
+    # the real staged read bridge: one opaque p<ordinal> value per read, with no
+    # digest/path transcription left for the child to slip on.
     for entry in report["examiner_reports"]:
         assert entry["status"] == "completed", entry
         assert entry["evidence_refs"], entry
-        tool, request_digest, response_digest = entry["evidence_refs"][0].split("|")
-        assert tool == "query_semantic_context"
-        assert len(request_digest) == 64 and len(response_digest) == 64
+        handle = entry["evidence_refs"][0]
+        assert handle.startswith("p") and handle[1:].isdigit(), entry
 
     # Actual cleanup of this batch: no owned private root or socket survived.
     assert scenario["new_private_roots"] == []

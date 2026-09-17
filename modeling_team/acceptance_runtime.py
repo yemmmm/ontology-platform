@@ -2788,9 +2788,16 @@ class ScopedReadProxy:
                         ontologies=tuple(dict(entry) for entry in selected),
                     )
                 )
+                # auth018 attempt-0003: the child had to transcribe
+                # ``tool|request_digest|response_digest|artifact_path`` and one
+                # slip cost the question its judging evidence.  The host now
+                # issues one opaque handle per successful read (the ``p<ordinal>``
+                # convention the bounded continuation prompt already names);
+                # digest and locator values never travel through the child.
                 return {
                     "ok": True,
                     "result": result,
+                    "evidence_handle": f"p{len(self._call_receipts) - 1}",
                     "request_digest": request_digest,
                     "response_digest": response_digest,
                     "artifact_path": artifact_path,

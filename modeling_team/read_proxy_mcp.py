@@ -302,12 +302,21 @@ def main() -> int:
                     # stop blind-retrying parameter names.
                     err_fields = {k: response[k] for k in ("code", "error", "message", "detail") if response.get(k) is not None}
                     raise RuntimeError(_json(err_fields) if err_fields else "proxy-call-denied")
-                # Preserve the digest locators ScopedReadProxy returns at the top level
-                # (request_digest/response_digest/artifact_path). They sit next to, not
-                # inside, ``result``; forwarding only ``result`` dropped them, which left
-                # the Examiner unable to fill evidence_refs and got its report rejected.
+                # Preserve the evidence locators ScopedReadProxy returns at the top
+                # level; they sit next to, not inside, ``result``.  v3 batch reads
+                # carry exactly one opaque host-issued handle (``p<ordinal>``): the
+                # child copies it into evidence_refs and is never asked to
+                # transcribe digest or path strings (auth018 attempt-0003 lost five
+                # of eight reports to one-character transcription slips).  Legacy
+                # modes keep forwarding the digest locators their report contracts
+                # still bind on.
                 result_data = response.get("result", {})
-                digest_locators = {k: response[k] for k in ("request_digest", "response_digest", "artifact_path") if response.get(k)}
+                locator_keys = (
+                    ("evidence_handle",)
+                    if v3_mode
+                    else ("request_digest", "response_digest", "artifact_path")
+                )
+                digest_locators = {k: response[k] for k in locator_keys if response.get(k)}
                 if digest_locators:
                     payload = {**result_data, **digest_locators} if isinstance(result_data, dict) else {"result": result_data, **digest_locators}
                 else:

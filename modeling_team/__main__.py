@@ -4,6 +4,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import select
 import sys
 import time
@@ -965,28 +966,28 @@ def _cq_collect_platform_read_responses(
 ) -> tuple[dict[str, list[dict[str, object]]], list[dict[str, object]]]:
     """Bind every Examiner evidence ref to a retained response (design §4.1).
 
-    Each report's ``tool|request_digest|response_digest`` (optionally
-    ``|artifact_path``) string selects current-session receipts; the artifact
-    is then loaded from the receipt-registered locator and digest-verified.
-    The tool segment may carry the MCP-decorated proxy name
-    (``mcp__platform_read_proxy__<tool>``) shown to the child; it is reduced to
-    the bare tool name before authorization and receipt lookup.
-    A ref that matches no current receipt (wrong digest, cross-session or
-    unauthorized tool), carries an absolute/escaping/forged locator, or fails
-    artifact verification is recorded as rejected and provides no judging
-    evidence.  The same receipt may support several questions and repeated
-    references are not an error.
+    Each report's ``evidence_refs`` entry is the short host-issued handle
+    (``p<call_ordinal>``, e.g. ``p0``) the read proxy returned to the child for
+    one successful read.  A handle resolves by exact ordinal against the
+    current child/session receipt snapshot only; the artifact is then loaded
+    from the receipt-registered locator and digest-verified, and the tool
+    authorization check reads the receipt's own host-recorded tool.  The child
+    supplies -- or repairs -- no digest, tool or path value (auth018
+    attempt-0003: five of eight reports lost judging evidence to one-character
+    transcription slips).  A malformed handle, an ordinal no current receipt
+    carries (unknown, out-of-range or cross-session), an unauthorized tool, or
+    a failed artifact verification is recorded as rejected and provides no
+    judging evidence.  The same receipt may support several questions and
+    repeated references are not an error.
     """
 
-    index: dict[tuple[str, str, str], list[object]] = {}
+    receipts_by_ordinal: dict[int, object] = {}
     for receipt in receipts if isinstance(receipts, (list, tuple)) else ():
-        key = (
-            str(getattr(receipt, "tool", "")),
-            str(getattr(receipt, "request_digest", "")),
-            str(getattr(receipt, "response_digest", "")),
-        )
-        index.setdefault(key, []).append(receipt)
+        receipts_by_ordinal[int(getattr(receipt, "ordinal", -1))] = receipt
     tools = set(authorized_tools)
+    # Exactly the handle spelling the host issues: ``p`` plus the canonical
+    # decimal ordinal, no leading zeros, no extra segments.
+    handle_pattern = re.compile(r"^p(0|[1-9][0-9]*)$")
     responses: dict[str, list[dict[str, object]]] = {}
     rejected: list[dict[str, object]] = []
     for report in reports:
@@ -1000,65 +1001,48 @@ def _cq_collect_platform_read_responses(
         seen: set[str] = set()
         for ref in refs:
             summary = str(ref)[:200]
-            if not isinstance(ref, str):
+            match = handle_pattern.fullmatch(ref) if isinstance(ref, str) else None
+            if match is None:
                 rejected.append({"question_id": question_id, "ref": summary, "reason": "ref-shape"})
                 continue
-            segments = ref.split("|")
-            if len(segments) not in (3, 4) or any(not part for part in segments):
-                rejected.append({"question_id": question_id, "ref": summary, "reason": "ref-shape"})
-                continue
-            tool, request_digest, response_digest = segments[:3]
-            if tool not in tools:
-                tool = tool.rsplit("__", 1)[-1]
-                if tool not in tools:
-                    rejected.append(
-                        {"question_id": question_id, "ref": summary, "reason": "tool-unauthorized"}
-                    )
-                    continue
-            matches = index.get((tool, request_digest, response_digest), [])
-            if not matches:
-                # No current-session receipt carries this digest triple: a
-                # digest mismatch, a cross-session receipt or an invented ref.
+            receipt = receipts_by_ordinal.get(int(match.group(1)))
+            if receipt is None:
+                # No current-session receipt carries this ordinal: an unknown,
+                # out-of-range or cross-session handle, or an invented ref.
                 rejected.append({"question_id": question_id, "ref": summary, "reason": "receipt-unmatched"})
                 continue
-            if len(segments) == 4:
-                submitted = PurePosixPath(segments[3])
-                if submitted.is_absolute() or ".." in submitted.parts:
-                    rejected.append({"question_id": question_id, "ref": summary, "reason": "locator-invalid"})
-                    continue
-                if str(submitted) not in {
-                    str(getattr(item, "artifact_path", "")) for item in matches
-                }:
-                    rejected.append({"question_id": question_id, "ref": summary, "reason": "locator-forged"})
-                    continue
-            for receipt in matches:
-                artifact_path = str(getattr(receipt, "artifact_path", ""))
-                if artifact_path in seen:
-                    continue
-                try:
-                    loaded = _cq_load_platform_read_artifact(artifact_root, receipt)
-                except TeamConfigurationError as exc:
-                    rejected.append(
-                        {"question_id": question_id, "ref": summary, "reason": str(exc)[:200]}
-                    )
-                    continue
-                seen.add(artifact_path)
-                page = getattr(receipt, "page", None)
-                entries.append(
-                    {
-                        "tool": loaded["tool"],
-                        "request_digest": request_digest,
-                        "response_digest": response_digest,
-                        "artifact_path": artifact_path,
-                        "page": dict(page) if isinstance(page, Mapping) else {},
-                        "result": loaded["result"],
-                        # Internal-only: the exact scoped request, so the §4.2
-                        # recheck replays the same authorized read.  It is
-                        # stripped before the judge packet/report projection,
-                        # which keeps the receipt projection's exact fields.
-                        "request": dict(loaded["request"]),
-                    }
+            if str(getattr(receipt, "tool", "")) not in tools:
+                rejected.append(
+                    {"question_id": question_id, "ref": summary, "reason": "tool-unauthorized"}
                 )
+                continue
+            artifact_path = str(getattr(receipt, "artifact_path", ""))
+            if artifact_path in seen:
+                continue
+            try:
+                loaded = _cq_load_platform_read_artifact(artifact_root, receipt)
+            except TeamConfigurationError as exc:
+                rejected.append(
+                    {"question_id": question_id, "ref": summary, "reason": str(exc)[:200]}
+                )
+                continue
+            seen.add(artifact_path)
+            page = getattr(receipt, "page", None)
+            entries.append(
+                {
+                    "tool": loaded["tool"],
+                    "request_digest": str(getattr(receipt, "request_digest", "")),
+                    "response_digest": str(getattr(receipt, "response_digest", "")),
+                    "artifact_path": artifact_path,
+                    "page": dict(page) if isinstance(page, Mapping) else {},
+                    "result": loaded["result"],
+                    # Internal-only: the exact scoped request, so the §4.2
+                    # recheck replays the same authorized read.  It is
+                    # stripped before the judge packet/report projection,
+                    # which keeps the receipt projection's exact fields.
+                    "request": dict(loaded["request"]),
+                }
+            )
         if entries:
             responses[question_id] = entries
     return responses, rejected
@@ -2053,9 +2037,9 @@ def _cq_execute_batch(
                 examiner_observables.get("persistence_failures") or 0
             ),
             # Bounded host-side record of which child refs provided no judging
-            # evidence (unmatched digest triple, unauthorized tool, forged
-            # locator, failed artifact verification); repeated references to a
-            # valid receipt are never recorded here.
+            # evidence (malformed handle, ordinal no current receipt carries,
+            # unauthorized tool, failed artifact verification); repeated
+            # references to a valid receipt are never recorded here.
             "rejected_refs": rejected_refs[:20],
         },
     }

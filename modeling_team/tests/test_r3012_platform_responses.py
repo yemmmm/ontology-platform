@@ -298,9 +298,10 @@ def _retained_receipt(
     )
 
 
-def _ref(receipt: V3ProxyCallReceipt, *, locator: str | None = None) -> str:
-    parts = [receipt.tool, receipt.request_digest, receipt.response_digest]
-    return "|".join(parts + [locator]) if locator is not None else "|".join(parts)
+def _ref(receipt: V3ProxyCallReceipt) -> str:
+    """The short host-issued handle the proxy returned for this receipt."""
+
+    return f"p{receipt.ordinal}"
 
 
 def _report(question_id: str, refs: list) -> dict:
@@ -321,15 +322,32 @@ def _report(question_id: str, refs: list) -> dict:
 _AUTHORIZED_TOOLS = ["query_semantic_context"]
 
 
+def test_each_successful_v3_read_returns_the_short_host_issued_handle(tmp_path):
+    artifact_root = tmp_path / "run"
+    artifact_root.mkdir()
+    proxy = _retaining_proxy(
+        tmp_path,
+        artifact_root,
+        forward=lambda tool, arguments, key: {"ok": True, "read": arguments["ontology_id"]},
+    )
+    first = _read_once(proxy)
+    second = _read_once(proxy)
+    # One opaque p<ordinal> value per successful read, ready to copy verbatim
+    # into evidence_refs -- no digest or path reconstruction left to the child.
+    assert first["ok"] is True and first["evidence_handle"] == "p0"
+    assert second["ok"] is True and second["evidence_handle"] == "p1"
+    assert [receipt.ordinal for receipt in proxy.receipt_snapshot] == [0, 1]
+
+
 def test_one_receipt_supports_several_questions_and_keeps_its_page(tmp_path):
     artifact_root = tmp_path / "run"
     artifact_root.mkdir()
     receipt = _retained_receipt(artifact_root, page=_TRUNCATED_PAGE)
-    # cq-1 uses the bare digest triple and repeats the reference; cq-2 adds the
-    # receipt-registered locator.  Reuse and repetition are both legal.
+    # cq-1 repeats the same handle; cq-2 reuses it.  Reuse and repetition are
+    # both legal, and the entry still carries the receipt's canonical values.
     reports = [
         _report("cq-1", [_ref(receipt), _ref(receipt)]),
-        _report("cq-2", [_ref(receipt, locator=receipt.artifact_path)]),
+        _report("cq-2", [_ref(receipt)]),
     ]
     responses, rejected = _cq_collect_platform_read_responses(
         reports, [receipt], artifact_root, _AUTHORIZED_TOOLS
@@ -358,34 +376,29 @@ def test_one_receipt_supports_several_questions_and_keeps_its_page(tmp_path):
         assert entry["request"] == _QUERY_REQUEST
 
 
-def test_forged_escaping_and_unmatched_references_are_rejected(tmp_path):
+def test_malformed_unknown_and_out_of_range_handles_are_rejected(tmp_path):
     artifact_root = tmp_path / "run"
     artifact_root.mkdir()
     receipt = _retained_receipt(artifact_root)
-    good = _ref(receipt)
-    wrong_digest = "f" * 64
     cases = [
-        # An absolute or ``..`` locator segment is refused before any lookup.
-        (_ref(receipt, locator="/etc/passwd"), "locator-invalid"),
-        (_ref(receipt, locator="../../etc/passwd"), "locator-invalid"),
-        # A well-formed locator that no matching receipt registered is forged.
-        (
-            _ref(
-                receipt,
-                locator=f"acceptance/r3012-batch/platform-read/{'b' * 64}/0.json",
-            ),
-            "locator-forged",
-        ),
-        # No current-session receipt carries this triple: wrong digest,
-        # cross-session receipt or invented reference.
-        (f"query_semantic_context|{wrong_digest}|{receipt.response_digest}", "receipt-unmatched"),
-        (f"query_semantic_context|{receipt.request_digest}|{wrong_digest}", "receipt-unmatched"),
-        # The tool is outside this batch's authorized read set.
-        (f"semantic_sparql_query|{receipt.request_digest}|{receipt.response_digest}", "tool-unauthorized"),
-        # Shape drift: a non-string ref and a wrong segment count.
+        # Shape drift: a non-string, a non-handle string, extra segments, or a
+        # non-canonical ordinal spelling.
         (12345, "ref-shape"),
         ("query_semantic_context", "ref-shape"),
         ("", "ref-shape"),
+        ("p", "ref-shape"),
+        ("p-1", "ref-shape"),
+        ("p0|x", "ref-shape"),
+        ("p00", "ref-shape"),
+        # The old long-string transcription is no longer a resolvable ref.
+        (
+            f"{receipt.tool}|{receipt.request_digest}|{receipt.response_digest}",
+            "ref-shape",
+        ),
+        # No current-session receipt carries this ordinal: an out-of-range,
+        # cross-session or invented handle.
+        ("p1", "receipt-unmatched"),
+        ("p9", "receipt-unmatched"),
     ]
     reports = [
         _report(f"cq-{index}", [ref]) for index, (ref, _reason) in enumerate(cases, start=1)
@@ -402,32 +415,14 @@ def test_forged_escaping_and_unmatched_references_are_rejected(tmp_path):
         assert set(item) == {"question_id", "ref", "reason"}
 
 
-def test_mcp_decorated_tool_name_binds_to_the_bare_receipt(tmp_path):
+def test_a_receipt_outside_the_authorized_tools_provides_no_evidence(tmp_path):
     artifact_root = tmp_path / "run"
     artifact_root.mkdir()
-    receipt = _retained_receipt(artifact_root)
-    decorated = (
-        f"mcp__platform_read_proxy__{receipt.tool}"
-        f"|{receipt.request_digest}|{receipt.response_digest}"
-    )
+    # The host-side tool authorization survives the handle switch: it reads the
+    # receipt's own host-recorded tool, never a child-transcribed label.
+    receipt = _retained_receipt(artifact_root, tool="semantic_sparql_query")
     responses, rejected = _cq_collect_platform_read_responses(
-        [_report("cq-1", [decorated])],
-        [receipt],
-        artifact_root,
-        _AUTHORIZED_TOOLS,
-    )
-    assert rejected == []
-    assert responses["cq-1"][0]["tool"] == receipt.tool
-
-    outside = (
-        f"mcp__platform_read_proxy__semantic_sparql_query"
-        f"|{receipt.request_digest}|{receipt.response_digest}"
-    )
-    responses, rejected = _cq_collect_platform_read_responses(
-        [_report("cq-2", [outside])],
-        [receipt],
-        artifact_root,
-        _AUTHORIZED_TOOLS,
+        [_report("cq-1", [_ref(receipt)])], [receipt], artifact_root, _AUTHORIZED_TOOLS
     )
     assert responses == {}
     assert [item["reason"] for item in rejected] == ["tool-unauthorized"]
@@ -552,7 +547,7 @@ def _full_pass_report(**extra) -> dict:
         freeze_digest="sha256:" + "0" * 64,
         model_binding_digest="sha256:" + "1" * 64,
         hidden_questions=[_question("cq-1")],
-        examiner_reports=[_report("cq-1", ["query_semantic_context|a|b"])],
+        examiner_reports=[_report("cq-1", ["p0"])],
         verdicts=[_passing_verdict("cq-1")],
         executed_question_ids=["cq-1"],
         unexecuted_question_ids=[],
@@ -633,7 +628,7 @@ def _judge_packet_payload(platform_read_responses) -> dict:
         ],
         model_binding_digest="sha256:" + "1" * 64,
         evidence_bundle=bundle,
-        examiner_reports=[_report("cq-1", ["query_semantic_context|a|b"])],
+        examiner_reports=[_report("cq-1", ["p0"])],
         platform_read_responses=platform_read_responses,
         verdict_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
     )
@@ -757,7 +752,6 @@ def _write_handoff(tmp_path: Path, frozen: dict) -> Path:
 def _retaining_adapter(
     *,
     result: dict,
-    refs_with_locator: bool = False,
     examiner_run=None,
 ):
     """Build a ``CodexRuntimeAdapter`` developer double CLASS plus shared state.
@@ -842,11 +836,9 @@ def _retaining_adapter(
                 str(question["question_id"])
                 for question in packet.to_dict()["payload"]["questions"]
             ]
-            for index, question_id in enumerate(hidden_ids):
-                # The same receipt supports both questions; the second reference
-                # also carries the receipt-registered locator.
-                locator = receipt.artifact_path if index == 1 and refs_with_locator else None
-                reports.append(_report(question_id, [_ref(receipt, locator=locator)]))
+            for question_id in hidden_ids:
+                # The same receipt (one handle) supports both questions.
+                reports.append(_report(question_id, [_ref(receipt)]))
             return [dict(report) for report in reports]
 
     return _RetainingStubAdapter, state
@@ -893,9 +885,7 @@ def test_the_executed_batch_collects_rechecks_and_projects_responses(
     forwarder = _DualForwarder(
         _platform_context(), [_RETAINED_QUERY_RESULT, _RETAINED_QUERY_RESULT]
     )
-    adapter_class, state = _retaining_adapter(
-        result=_RETAINED_QUERY_RESULT, refs_with_locator=True
-    )
+    adapter_class, state = _retaining_adapter(result=_RETAINED_QUERY_RESULT)
     code = _run_cli(tmp_path, run_root, handoff, forwarder, adapter_class, monkeypatch)
     assert code == 0
     payload = json.loads(capsys.readouterr().out)
@@ -981,14 +971,10 @@ def test_unmatched_refs_and_persistence_failures_surface_and_fail_closed(
         observables = kwargs["examiner_observables"]
         observables["receipts"] = []
         observables["persistence_failures"] = 1
-        for question in packet.to_dict()["payload"]["questions"]:
-            # The reference matches nothing the host retained this session.
-            reports.append(
-                _report(
-                    str(question["question_id"]),
-                    ["query_semantic_context|" + "f" * 64 + "|" + "e" * 64],
-                )
-            )
+        for index, question in enumerate(packet.to_dict()["payload"]["questions"]):
+            # The handle names an ordinal nothing the host retained this
+            # session ever carried.
+            reports.append(_report(str(question["question_id"]), [f"p{index}"]))
 
     adapter_class, _state = _retaining_adapter(
         result=_RETAINED_QUERY_RESULT, examiner_run=unretained_examiner

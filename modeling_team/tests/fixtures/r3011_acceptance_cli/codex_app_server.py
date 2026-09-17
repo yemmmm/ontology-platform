@@ -35,6 +35,10 @@ V3_REPORT_SCHEMA = "r3-0-011-acceptance-batch-report/v1"
 V3_FAILURE_LAYER_RUNTIME = "runtime/infrastructure"
 PROMPT_V3_MARKERS = ("batch_id", "question_content_version", "submit_examiner_report")
 PROMPT_LEGACY_MARKERS = ("answerability", "evidence_ref_ids", "one bounded terminal report")
+# The platform instructions must bind evidence by the host-issued handle and
+# never ask the child to transcribe digest/path strings.
+PROMPT_HANDLE_MARKERS = ("evidence_handle",)
+PROMPT_TRANSCRIPTION_MARKERS = ("request_digest", "response_digest", "artifact_path")
 
 # Proof that no real model/platform generation can happen from this process.
 import socket as _socket  # noqa: E402
@@ -73,14 +77,25 @@ def _mounted_prompts() -> dict[str, Any]:
         for skill in sorted(skills_root.glob("*/SKILL.md")):
             skills[skill.parent.name] = skill.read_bytes()
     skill_text = b"\n".join(sorted(skills.values()))
+    instructions_text = instructions.decode("utf-8", "replace")
+    skill_decoded = skill_text.decode("utf-8", "replace")
+
+    def _joined(markers: tuple[str, ...], *texts: str) -> str:
+        return ",".join(
+            marker for marker in markers if any(marker in text for text in texts)
+        )
+
     return {
         "instructions_sha16": _sha16(instructions),
         "instructions_bytes": len(instructions),
         "skill_names": ",".join(sorted(skills)),
         "skill_sha16": _sha16(skill_text),
-        "prompt_markers": _markers(instructions.decode("utf-8", "replace")),
-        "prompt_legacy_markers": _legacy_markers(instructions.decode("utf-8", "replace"))
-        + _legacy_markers(skill_text.decode("utf-8", "replace")),
+        "prompt_markers": _markers(instructions_text),
+        "prompt_legacy_markers": _legacy_markers(instructions_text) + _legacy_markers(skill_decoded),
+        "prompt_handle_markers": _joined(PROMPT_HANDLE_MARKERS, instructions_text, skill_decoded),
+        "prompt_transcription_markers": _joined(
+            PROMPT_TRANSCRIPTION_MARKERS, instructions_text, skill_decoded
+        ),
     }
 
 
@@ -180,15 +195,13 @@ def _mcp_call(name: str, tool: str, arguments: dict[str, Any], *, typed: bool = 
         if not typed:
             return {"ok": True, "payload": {}}
         return {"ok": False, "error": "fixture: bridge returned no typed payload"}
-    # The read bridge forwards ScopedReadProxy digest locators merged into the
-    # payload it serializes (not as MCP result envelope fields), so they are
+    # The read bridge forwards the ScopedReadProxy evidence handle merged into
+    # the payload it serializes (not as MCP result envelope fields), so it is
     # read back from the decoded payload.
     return {
         "ok": True,
         "payload": payload,
-        "request_digest": payload.get("request_digest") or result.get("request_digest") or "",
-        "response_digest": payload.get("response_digest") or result.get("response_digest") or "",
-        "artifact_path": payload.get("artifact_path") or result.get("artifact_path") or "",
+        "evidence_handle": payload.get("evidence_handle") or "",
     }
 
 
@@ -257,8 +270,11 @@ def _platform_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dic
                 "ontology_ids": "+".join(ontology_ids),
                 "ok": int(bool(outcome["ok"])),
                 "error": "" if outcome["ok"] else str(outcome.get("error"))[:120].replace(";", ","),
-                "request_digest": outcome.get("request_digest") or "",
-                "response_digest": outcome.get("response_digest") or "",
+                "evidence_handle": outcome.get("evidence_handle") or "",
+                # The child must never see digest/path strings to transcribe.
+                "digest_leak": int(any(
+                    key in outcome["payload"] for key in ("request_digest", "response_digest", "artifact_path")
+                )),
                 "tool": "query_semantic_context",
             }
         )
@@ -269,16 +285,16 @@ def _platform_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dic
         needed = _needs(str(question["question"])) or scope[0]
         fact = facts.get(needed)
         read = next((item for item in reads if needed in item["ontology_ids"].split("+") and item["ok"]), None)
-        evidence = (
-            [f"{read['tool']}|{read['request_digest']}|{read['response_digest']}"]
-            if read
-            else []
-        )
+        evidence = [read["evidence_handle"]] if read else []
         read_marks = []
         for item in reads:
             mark = f"{item['label']}:{item['ontology_ids']}:{item['ok']}"
             if item["error"]:
                 mark += "!" + item["error"]
+            if item["digest_leak"]:
+                mark += "!digest-leak"
+            if not item["evidence_handle"]:
+                mark += "!no-handle"
             read_marks.append(mark)
         marker = (
             f"fixture:appserver=controlled-codex;role=platform;"
@@ -286,6 +302,8 @@ def _platform_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dic
             f"skill_names={mounted['skill_names']};"
             f"prompt_markers={','.join(mounted['prompt_markers'])};"
             f"prompt_legacy_markers={','.join(mounted['prompt_legacy_markers'])};"
+            f"prompt_handle_markers={mounted['prompt_handle_markers']};"
+            f"prompt_transcription_markers={mounted['prompt_transcription_markers']};"
             f"schemas={schema_flags};"
             f"reads={','.join(read_marks)};"
             f"packet_blind={int('answer_points' not in payload and 'evidence_bundle' not in payload)};"

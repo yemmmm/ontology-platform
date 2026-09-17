@@ -26,12 +26,14 @@ you answer every question in this one session, in packet order.
   `completed`, `unanswered`, `runtime-incomplete`. `failure_layer` is one of
   `modeling-quality`, `platform-contract`, `collaboration/routing`,
   `runtime/infrastructure`, or null.
-- Bind every read used for this question in `evidence_refs` using the exact
-  returned receipt: `tool|request_digest|response_digest|artifact_path` (the
-  last segment is optional). Copy the tool name and returned values; never
-  invent digests or paths. Resource IRIs alone do not bind a retained response.
-  Include the relevant receipts when reporting an unknown or unanswered result
-  too, so the independent judge can examine what the reads actually returned.
+- Bind every read used for this question in `evidence_refs` by its short
+  host-issued evidence handle: each successful read returns an
+  `evidence_handle` such as `p0`. Copy that one value exactly as the tool
+  returned it; never invent, merge or reconstruct handles, and never
+  substitute a digest, path or resource IRI. Resource IRIs alone do not bind a
+  retained response. Include the relevant handles when reporting an unknown or
+  unanswered result too, so the independent judge can examine what the reads
+  actually returned.
 - Treat each question as a separate evidence scope. Before moving to the next
   question, clear the prior question's query plan and evidence list. Cite a
   receipt only when its returned content is relevant to the current question;
