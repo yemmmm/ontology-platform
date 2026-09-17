@@ -1,7 +1,11 @@
 # R3.0-016 建模 Team 宿主交互接口 S1 — 共享测试计划
 
 - 日期：2026-09-18
-- 状态：设计与计划成稿；未实现、未测试。覆盖 S1 验收标准 A01–A07、A11（A08–A10 属 S2）。
+- 状态：**已实现（ceb4d4f）并交付**：I Round 1–3 缺陷循环修复后 **I Round 4 PASS**
+  （2026-09-18）；真实 L0 经授权批 auth-r3-0-021 执行 start1——**L0-1 达成（12 工具中
+  11 个真实走通）**，L0-2 未达（run 死于 runtime 基础设施缺陷 #32，非 S1 接口缺陷），
+  L0-3 保留未用；剩余 2 次 start 授权留待用户决策（见 §7 L0 轮）。覆盖 S1 验收标准
+  A01–A07、A11（A08–A10 属 S2）。
 - 需求：[R3.0-016](../../requirements/requirements-v3.0.md#r30-016-建模-team-宿主交互接口)
 - 设计：[交付设计](../designs/2026-09-18-r3-0-016-s1-host-interaction-interface-design.md)
 
@@ -13,9 +17,9 @@
 | 层级 | 验证目标 | 当前状态 |
 | --- | --- | --- |
 | D0 | 主代理核对需求/设计/源码依据、链接与格式 | 已完成（2026-09-18，见 §7） |
-| M | 实现者功能自测 + Team 回归（基线对比规则见 §2） | 未开始 |
-| I | 独立功能测试：从文件/进程/FIFO/工具面核实字段、路由、错误、隔离与消息效果，不依赖实现者自报 | 未开始（Round 1 待追加） |
-| 真实 L0 | 在用户获准的真实建模运行中证明 S1 接口闭环与后续工作；复用同一获准 run 的证据 | 未开始；授权条件见 §5 |
+| M | 实现者功能自测 + Team 回归（基线对比规则见 §2） | 已完成（2026-09-18，见 §7 I Round 1 记录） |
+| I | 独立功能测试：从文件/进程/FIFO/工具面核实字段、路由、错误、隔离与消息效果，不依赖实现者自报 | 已完成：Round 1–3 缺陷循环（I1-D1/I2-D1/I3-D1 修复历史保留），**Round 4 PASS**（2026-09-18） |
+| 真实 L0 | 在用户获准的真实建模运行中证明 S1 接口闭环与后续工作；复用同一获准 run 的证据 | auth-r3-0-021 start1 执行（2026-09-18）：L0-1 达成、L0-2 未达（#32 阻断）、L0-3 未用；剩 2 次 start 待用户决策 |
 | L1+ | 语义/检索质量 | 由 006/011/012 独立验收承担，本计划不覆盖 |
 
 ## 2. 测试数据与隔离
@@ -460,3 +464,54 @@
 - **结论**：**PASS**。I3-D1 确认 FIXED（六不变量实现 + 三形态/无饥饿/性质探针全过）；设计 §6
   与 runbook 回写与实现一致；回归基线干净；§3 已执行用例全部 PASS（含历轮处置）。S1 功能
   验收（I 层）达到 §4.1 门。真实 L0（§5）未启动，待主代理决定。
+
+### 真实 L0 轮 — 2026-09-18（主代理主持，授权批 auth-r3-0-021 start1）
+
+- **授权与代码**：用户授权 3 次 fresh starts（模型 glm-5.3-flash @ high，profile
+  `glm-flash-high`）。start1 = run `r30006-20260918-auth021-start1`，freeze
+  2026-09-18T03:22:03+08:00（I Round 4 PASS 03:12 → start 10 分钟，20 分钟规则内），
+  checkout auth018-2 分支 `auth021-l0` = d287689 + 83a7a1f（auth020 修复①–⑤）+
+  ceb4d4f（S1 十文件）。**余额 3→2。** 台账权威记录：
+  `workspaces/modeling-run-ledger.md` auth-r3-0-021 节。
+- **观察方式（偏差披露）**：宿主会话无法热挂载 MCP 服务器，以 stdio JSON-RPC
+  一次性客户端驱动 `backend/.venv/bin/python -m modeling_team.host_ops_mcp`
+  （initialize/tools/call 协议等价；全部 run 操作经结构化工具调用，零手写 Python
+  操作 run、零 FIFO 路径读写、零手拼信封）。
+- **L0-1 判定：达成。** 12 工具中 11 个真实走通：get_run_status / get_run_events
+  （增量续读+cursor）/ get_pending_actions（issue 权威绑定派生）/ answer_question
+  （cq_interview 中文多行 + user 通道两用）/ register_question / submit_cq_review
+  （approve×8 + cq_review_stale fail-closed 拒绝路径）/ freeze_cq（5 公+3 隐池）/
+  resolve_issue（R1–R8 共 8 次恢复 + 代执行）/ get_request_result（回执状态核对）。
+  recover_provider 无实战机会（见 #32）。三重守卫的真实拒绝路径均实证：cq_review_stale
+  （content_version 绑定）、request_id 幂等冲突、issue resume 逐字相等（含末尾换行
+  字节级一案）。S1 解封通道（register_question 两步代偿独立解封工具）实战承载全部
+  纠偏便签投递。
+- **L0-2 判定：未达。** run 于 2026-09-17T23:22:03Z 被 `llm-inactivity-timeout` 终局
+  （活跃钟 14400s 恰耗尽）：protocol 开放 turn 遭 glm 上游 responseStreamDisconnected
+  ×2 后流挂死（事件静默 21 min），runner 判 runtime_failure → TERMINAL_REPORT_COMPLETE
+  + 清理（acceptance aborted/runner-cleanup-before-settlement）。死亡时点：5 切片中
+  core/coverage/incident 三片 classes+attributes 已应用（9 计划/32 staged 提交/~11
+  回执，含 5+ 次 associate_evidence），parts/performance 未启动——**未及 settlement，
+  complete_cq_handoff / complete_cq_acceptance 无执行面**。归因 runtime/基础设施，
+  非 S1 接口缺陷。
+- **L0-3：保留未用**（S1 接口未发生阻断 L0-1 的缺陷；终局根因 #32 的窄修复属 runner
+  侧，若执行不消耗本批 semantic start 语义——沿用 auth019/auth020 先例，修复后复测
+  需新 start 时另行授权）。
+- **新记缺陷（编号沿台账；均不在本轮改代码）**：**#31** outer issue_resolution 路径
+  只持久化+投递、从不停靠 resume 控制，ledger.pending 永久短路 cooperative idle 兜底
+  → issue 解除后协调者未自发 resume 即静默停摆无自愈；S1 面另缺独立解封工具（本轮以
+  register_question 两步通道代偿）。**#32** 流挂死路径无 park：auth019 park 修复只覆盖
+  provider-session 3×非 2xx 路径，"流断连后静默挂死"由 llm-inactivity-timeout 直接
+  杀 run（且恰在 4h 活跃墙）而非 park 待 recover_provider——S1 的 recover_provider
+  工具因此全程无实战机会。**#20 族两面**：issue_control resume 无字段级报错/无 digest
+  提示（协调者侧不可能自诊逐字相等失败）；send_team_message 类型门文案
+  "recipient is not allowed by frozen Profile" 同时覆盖 recipient_id 整个缺失（误导
+  协调者误报 platform_repair）。
+- **清理与凭据收口**：宿主 admin key 45b62771（auth021-host-admin）已于
+  2026-09-17T23:26:50Z 吊销，明文 shred 销毁；宿主目录临时脚本（mcp-call/mcp-drain/
+  mint-admin-key/便签中间件）测后删除；保留 authorization 级证据（host stdout/stderr
+  log、cq-interview args、task 变体、auth020 修复 patch）。run scope 保留为证据
+  （project 71478285 + ontology 2831ab51 及全部落库内容，scope blocker 保留）。
+- **剩余授权处置建议**：L0-2 需一次健康 run 走到 settlement（≥4h），建议下轮启用
+  checkpoints Task 变体 + `run_fallback_timeout_seconds: 28800` 治理旋钮（auth017
+  start3 先例）以避开活跃墙；是否消耗剩余 2 次 start 留待用户决策。
