@@ -348,6 +348,19 @@ control FIFO、目录属主、平台 Session/Lease 与 `expires_at`、最早复�
 替代平台精确回读释放写门。新 run 只为未完成操作新建 Build Session/Lease；恢复清理
 只回收本轮线程/凭据/Session/Lease，继承的 scope 不删除（`inherited-retained`）。
 
+宿主已受控停止原写者、fresh 源 run 的 `state.json` 仍停在 possibly-live 且 stop 通道已
+消失时，先显式登记 settlement 再重试（命令只写 runs root 的
+`.recovery-settlements/<run_id>.json`，不创建/恢复 run、Session 或 start，不改源 run）：
+
+```bash
+uv run --project backend python -m modeling_team checkpoint settle-source \
+  --run-id "$source_run_id" --stop-reference "<停止事实引用>"
+```
+
+恢复入口在 gate 处实时复核该记录（run/state 匹配、FIFO 消失、已知 Session 均为
+completed/cancelled 且无 active lease）；"无 FIFO、无 session" 本身不推断进程死亡，
+带恢复来源的 run 仍只认 chain writer lock。
+
 新 run 落盘 `<new-run>/recovery/{inspection,origin,imports}.json` 与
 `recovery/roles/<role>.json`（0600）：角色启动包含 resume_kind、可读产物、已完成
 范围、待办、禁止重放清单与下一步；翻译类计划按新 plan/client_batch_id/key 走新

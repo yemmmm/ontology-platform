@@ -1342,6 +1342,12 @@ S1+S2+S4。权威正文、交付设计与共享测试计划已形成；外部审
   不跳过对账、不空建线程记作 semantic start，也不为满足时限新增只读生产线程启动模式。
 - 原运行挂死时，宿主展示控制响应、运行归属、实际 Lease expires_at、在途 Attempt/fence 与
   下一次核对时点；按已有权限受控停止和收尾。Lease 到期不代表写入已对账，不承诺固定恢复时长。
+- 宿主已受控停止原写者后，若 fresh 源 run 的 state.json 仍停留在 possibly-live 状态且其
+  stop 通道已消失，宿主用显式 settlement（`checkpoint settle-source`，仅记录停止事实，不
+  创建/恢复 run 或 start）登记；恢复入口只在 run/state 匹配且实时复核 FIFO 消失、已知
+  Session 均为终态且无 active lease 时接受。缺该记录时行为不变："无 FIFO、无 session"不能
+  自动推断进程死亡（未启用 FIFO、尚未建 session 的活跃 fresh run 外观相同）；带恢复来源的
+  run 仍只认恢复链 chain writer lock 证据。
 - 独立功能验收覆盖保存中断、跨进程重建、成果和审批复用、部分场景已应用、检查点之后已写入、
   unknown、资源缺失、隐藏题隔离和重复恢复。真实 L0 另证明真实模型线程接续及未重复写入；
   真实 L1 仍由独立验收方判断源忠实度、语义/检索和所选范围，不能由快照或恢复成功代替。

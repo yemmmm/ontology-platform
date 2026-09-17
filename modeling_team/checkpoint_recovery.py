@@ -21,7 +21,10 @@ spliced partial answer promoted into a new PASS.
 
 Nothing in this module mutates the source run: every read is read-only and
 every typed rejection leaves the source tree, its evidence and its failure
-classification untouched.
+classification untouched.  The one fresh-run exception is ``settle_source_run``
+(the ``checkpoint settle-source`` CLI): a host-owned record of an
+already-performed controlled stop, never a resume, which the two §5.2 gates
+re-verify live.
 """
 
 from __future__ import annotations
@@ -69,6 +72,12 @@ RECOVERY_SCHEMA = "r3-0-015-recovery/v1"
 RECOVERY_ROLES_DIRECTORY = "roles"
 ACCEPTANCE_CONTINUATION_RECORD = "acceptance-continuation.json"
 ACCEPTANCE_CONTINUATION_SCHEMA = "r3-0-015-acceptance-continuation/v1"
+# Design §5.2 stale-state path: the host's explicit settlement record for a
+# host-stopped FRESH source run (never inside the source run itself).
+RECOVERY_SETTLEMENTS_DIRECTORY = ".recovery-settlements"
+SOURCE_SETTLEMENT_SCHEMA = "r3-0-015-source-settlement/v1"
+# The backend Build Session lifecycle (build_sessions.py) terminal set.
+SESSION_TERMINAL_STATUSES = frozenset({"completed", "cancelled"})
 
 # Design §4.3: the reconciliation itself counts into the 20-minute budget that
 # starts at user authorization; the report separates prep time from semantic
@@ -94,6 +103,8 @@ REASON_APPROVAL_BINDING_CHANGED = "approval_binding_changed"
 REASON_COMPLETED_OPERATION_BLOCKED = "completed_operation_resubmission"
 REASON_KIND_MODE_MISMATCH = "checkpoint_kind_mode_mismatch"
 REASON_ACCEPTANCE_BINDING_CHANGED = "acceptance_binding_changed"
+# settle-source command refusals (fresh-run stale-state path, design §5.2).
+REASON_SETTLEMENT_REFUSED = "source_settlement_refused"
 
 # state.json values that mean the original process may still be a live writer
 # (every value TeamRunner._state writes before a terminal FAILED/CLEANED).
@@ -434,16 +445,23 @@ def source_writer_settles_recovery(report: Mapping[str, Any]) -> bool:
     """Fail-closed settlement predicate for the two §5.2 source-writer gates.
 
     A ``state.json`` that claims a possibly-live writer is settled by positive,
-    auditable evidence that the chain writer process exited.  Everything else
-    -- a live holder, a missing or unreadable record, an unbound chain, an
-    unverifiable pid -- keeps the original hard refusal: the §5.2 host
-    procedure, not the recovery entry, is the path for those runs.
+    auditable evidence that the writer process exited: the chain writer lock
+    for a recovery-chain run, or an explicit host settlement record for a
+    fresh run.  Everything else -- a live holder, a missing or unreadable
+    record, an unbound chain, an unverifiable pid, no settlement -- keeps the
+    original hard refusal: the §5.2 host procedure, not the recovery entry,
+    is the path for those runs.
     """
 
     if not report.get("state_json_may_be_live_writer"):
         return True
     chain = report.get("chain_writer_lock")
-    return isinstance(chain, Mapping) and chain.get("verdict") == "writer_process_exited"
+    if isinstance(chain, Mapping) and chain.get("verdict") == "writer_process_exited":
+        return True
+    settlement = report.get("source_settlement")
+    return isinstance(settlement, Mapping) and settlement.get("verdict") == (
+        "writer_process_exited"
+    )
 
 
 def source_active_evidence(
@@ -464,7 +482,11 @@ def source_active_evidence(
     return (
         f"state.json:{Path(source_run_root).name}",
         "stop the original run through its existing stop channel (each wait at "
-        "most 60s), verify the platform writer state, then retry",
+        "most 60s) and verify the platform writer state; if the host already "
+        "controlled-stopped that writer of a fresh run and its stop channel is "
+        "gone, record the explicit host settlement with "
+        "`python -m modeling_team checkpoint settle-source --run-id <run-id> "
+        "--stop-reference <reference>` and retry",
     )
 
 
@@ -480,6 +502,225 @@ def checkpoint_root_run_id(source_run_root: Path, checkpoint_id: str) -> str:
             obj="manifest.json",
         )
     return root_run_id
+
+
+# --- explicit host settlement for a stale fresh source run (design §5.2) --------
+
+
+def settlement_record_path(runs_root: Path, run_id: str) -> Path:
+    return Path(runs_root) / RECOVERY_SETTLEMENTS_DIRECTORY / f"{run_id}.json"
+
+
+def read_source_settlement(runs_root: Path, run_id: str) -> dict[str, Any] | None:
+    """Read one host settlement record; absent/unreadable is ``None``."""
+
+    try:
+        raw = settlement_record_path(runs_root, run_id).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    try:
+        value = json.loads(raw.strip() or "null")
+    except json.JSONDecodeError:
+        return None
+    return dict(value) if isinstance(value, Mapping) else None
+
+
+def _settlement_obstacles(
+    source_run_root: Path, readback: PlatformReadback, session_ids: list[str]
+) -> list[dict[str, Any]]:
+    """Live channels contradicting a settlement right now: the control FIFO
+    must be gone and every known Build Session reachable, terminal and
+    lease-free.  ``no FIFO + no session`` alone never proves anything (an
+    active fresh run without them yet looks the same), so this only runs
+    behind an explicit host record."""
+
+    obstacles: list[dict[str, Any]] = []
+    if (Path(source_run_root) / "control" / "outer-input.fifo").exists():
+        obstacles.append(
+            {
+                "channel": "control_fifo",
+                "session_id": None,
+                "detail": "the run's control FIFO still exists",
+            }
+        )
+    sessions = session_lease_report(readback, session_ids)
+    for session_id in sorted(set(session_ids)):
+        detail = sessions["sessions"].get(session_id) or {}
+        if not detail.get("reachable"):
+            obstacles.append(
+                {
+                    "channel": "session_unreachable",
+                    "session_id": session_id,
+                    "detail": f"Build Session {session_id} cannot be read back",
+                }
+            )
+        elif detail.get("status") not in SESSION_TERMINAL_STATUSES:
+            obstacles.append(
+                {
+                    "channel": "session_not_terminal",
+                    "session_id": session_id,
+                    "detail": f"Build Session {session_id} is not completed/cancelled",
+                }
+            )
+    for session_id in sessions["active_lease_session_ids"]:
+        obstacles.append(
+            {
+                "channel": "session_lease_active",
+                "session_id": session_id,
+                "detail": f"Build Session {session_id} still holds an active lease",
+            }
+        )
+    return obstacles
+
+
+def source_settlement_report(
+    source_run_root: Path,
+    runs_root: Path,
+    readback: PlatformReadback,
+    session_ids: list[str],
+) -> dict[str, Any]:
+    """The explicit host settlement as writer-liveness evidence (fresh runs).
+
+    Only a record whose ``run_id`` and ``observed_state`` match the CURRENT
+    ``state.json`` counts, and only for a fresh run (chain runs settle through
+    their chain writer lock); the FIFO and known sessions are re-checked live,
+    and write-tail safety stays with the reconciliation gate downstream.
+    """
+
+    root = Path(source_run_root)
+    record = read_source_settlement(runs_root, root.name)
+    report: dict[str, Any] = {
+        "observed_state": None,
+        "stop_reference": None,
+        "created_at": None,
+        "missing": None,
+        "verdict": "no_settlement",
+    }
+    if record is None:
+        return report
+    for field_name in ("observed_state", "stop_reference", "created_at"):
+        report[field_name] = record.get(field_name)
+    if (
+        record.get("schema_version") != SOURCE_SETTLEMENT_SCHEMA
+        or record.get("run_id") != root.name
+        or load_origin_record(root) is not None
+    ):
+        report["missing"] = "settlement_binding"
+        report["verdict"] = "settlement_not_applicable"
+        return report
+    state = read_run_state(root)
+    status = state.get("state") if isinstance(state, dict) else None
+    if status not in POSSIBLY_LIVE_STATES or record.get("observed_state") != status:
+        report["missing"] = "observed_state_mismatch"
+        report["verdict"] = "settlement_not_applicable"
+        return report
+    obstacles = _settlement_obstacles(root, readback, session_ids)
+    if obstacles:
+        report["missing"] = obstacles[0].get("channel")
+        report["obstacles"] = obstacles
+        report["verdict"] = "settlement_contradicted"
+        return report
+    report["verdict"] = "writer_process_exited"
+    return report
+
+
+def settle_source_run(
+    *,
+    run_root: Path,
+    stop_reference: str,
+    readback: PlatformReadback,
+) -> dict[str, Any]:
+    """The host-only ``checkpoint settle-source`` settlement record.
+
+    Called only AFTER the host controlled-stopped the original writer of a
+    FRESH source run whose ``state.json`` still claims a possibly-live state.
+    Creates no run, Build Session, Agent or start, writes nothing inside the
+    source run; every unmet precondition is a typed refusal leaving no record.
+    """
+
+    run_root = Path(run_root)
+    runs_root = run_root.parent
+    if not isinstance(stop_reference, str) or not stop_reference.strip():
+        raise _reject(
+            REASON_SETTLEMENT_REFUSED,
+            "--stop-reference must name how/when the original writer was stopped",
+            obj="stop_reference",
+        )
+    if load_origin_record(run_root) is not None:
+        raise _reject(
+            REASON_SETTLEMENT_REFUSED,
+            "this run carries a recovery origin; a recovery-chain run settles "
+            "only through its chain writer lock evidence, never settle-source",
+            obj=f"run_id:{run_root.name}",
+        )
+    state = read_run_state(run_root)
+    status = state.get("state") if isinstance(state, dict) else None
+    if status not in POSSIBLY_LIVE_STATES:
+        raise _reject(
+            REASON_SETTLEMENT_REFUSED,
+            f"state.json reports {status!r}, not a possibly-live writer state; "
+            "there is no stale live-writer claim to settle",
+            obj=f"state.json:{run_root.name}",
+        )
+    if read_source_settlement(runs_root, run_root.name) is not None:
+        raise _reject(
+            REASON_SETTLEMENT_REFUSED,
+            f"a settlement record already exists under "
+            f"{RECOVERY_SETTLEMENTS_DIRECTORY}/{run_root.name}.json",
+            obj=f"run_id:{run_root.name}",
+        )
+    tail = read_write_tail([run_root])
+    session_ids = sorted(
+        {
+            intent.get("session_id")
+            for intent in (tail.get(run_root.name) or {}).get("intents") or []
+            if isinstance(intent, Mapping)
+            and isinstance(intent.get("session_id"), str)
+            and intent.get("session_id")
+        }
+    )
+    obstacles = _settlement_obstacles(run_root, readback, session_ids)
+    if obstacles:
+        first = obstacles[0]
+        raise _reject(
+            REASON_SETTLEMENT_REFUSED,
+            f"a live channel contradicts the settlement ({first.get('detail')}); "
+            "the record is not written",
+            obj=str(first.get("session_id") or first.get("channel")),
+            retryable=True,
+            retry="close the channel through its own lifecycle (stop channel, "
+            "session complete/cancel, lease release/expire) or wait for the "
+            "writer to actually stop, then re-run settle-source",
+        )
+    reconciliation = reconcile_write_tail([run_root], tail, readback, ontology_ids=[])
+    if reconciliation["blocked"]:
+        first = reconciliation["blocked"][0]
+        raise _reject(
+            REASON_WRITE_UNRECONCILED,
+            f"{len(reconciliation['blocked'])} operation(s) are unknown or still "
+            f"in flight (first: {first.get('idempotency_key')}); settle-source "
+            "does not settle over an unclosed write tail",
+            obj=str(first.get("idempotency_key")),
+            retryable=True,
+            retry="resolve the unknown writes with the existing platform "
+            "recovery/diagnosis channels, then re-run settle-source",
+        )
+    record: dict[str, Any] = {
+        "schema_version": SOURCE_SETTLEMENT_SCHEMA,
+        "run_id": run_root.name,
+        "observed_state": status,
+        "stop_reference": stop_reference,
+        "created_at": datetime.now(UTC).isoformat(),
+    }
+    path = settlement_record_path(runs_root, run_root.name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    path.write_text(
+        json.dumps(record, ensure_ascii=False, sort_keys=True, indent=2) + "\n",
+        encoding="utf-8",
+    )
+    os.chmod(path, 0o600)
+    return record
 
 
 # --- run-tree reads ------------------------------------------------------------
@@ -1949,6 +2190,11 @@ def prepare_recovery_plan(
         # ``state_json_may_be_live_writer``, and the settlement rests on the
         # chain lock record it names.
         writer["verdict"] = "writer_process_exited"
+    writer["source_settlement"] = source_settlement_report(
+        source_run_root, runs_root, readback, sorted(session_ids)
+    )
+    if writer["source_settlement"]["verdict"] == "writer_process_exited":
+        writer["verdict"] = "writer_process_exited"
     if not source_writer_settles_recovery(writer):
         obj, retry = source_active_evidence(writer, source_run_root)
         raise _reject(
@@ -2103,6 +2349,7 @@ def prepare_recovery_plan(
             "state_json_may_be_live_writer": writer["state_json_may_be_live_writer"],
             "verdict": writer["verdict"],
             "chain_writer_lock": writer["chain_writer_lock"],
+            "source_settlement": writer["source_settlement"],
             "platform_sessions": writer["platform_sessions"],
         },
     }
@@ -2453,6 +2700,11 @@ def prepare_acceptance_continuation(
     )
     if writer["chain_writer_lock"]["verdict"] == "writer_process_exited":
         writer["verdict"] = "writer_process_exited"
+    writer["source_settlement"] = source_settlement_report(
+        source_run_root, runs_root, readback, sorted(session_ids)
+    )
+    if writer["source_settlement"]["verdict"] == "writer_process_exited":
+        writer["verdict"] = "writer_process_exited"
     if not source_writer_settles_recovery(writer):
         obj, retry = source_active_evidence(writer, source_run_root)
         raise _acceptance_reject(
@@ -2750,6 +3002,7 @@ __all__ = [
     "REASON_SCOPE_DRIFT",
     "REASON_SCOPE_MISSING",
     "scope_missing_rejection",
+    "REASON_SETTLEMENT_REFUSED",
     "REASON_SOURCE_ACTIVE",
     "REASON_WRITE_UNRECONCILED",
     "RECOVERY_DIRECTORY",
@@ -2757,6 +3010,7 @@ __all__ = [
     "RECOVERY_SCHEMA",
     "RecoveryPlan",
     "RootRunLock",
+    "SOURCE_SETTLEMENT_SCHEMA",
     "WAIT_SECONDS_MAX",
     "acquire_root_run_lock",
     "attempt_directories",
@@ -2777,6 +3031,8 @@ __all__ = [
     "restore_checkpoint_artifacts",
     "safe_new_run_id",
     "session_lease_report",
+    "settle_source_run",
+    "settlement_record_path",
     "source_writer_report",
     "validate_business_approvals",
     "write_acceptance_continuation_record",

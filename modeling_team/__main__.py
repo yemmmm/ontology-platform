@@ -75,6 +75,7 @@ from .checkpoint_recovery import (
     prepare_acceptance_continuation,
     safe_new_run_id,
     scope_missing_rejection,
+    settle_source_run,
     write_acceptance_continuation_record,
     write_acceptance_origin,
 )
@@ -2425,6 +2426,55 @@ def _run_checkpoint_inspect(args: argparse.Namespace, root: Path) -> int:
     return 0
 
 
+def _run_checkpoint_settle_source(args: argparse.Namespace, root: Path) -> int:
+    """R3.0-015 host-only ``checkpoint settle-source`` (design §5.2 stale state).
+
+    Called only AFTER the host controlled-stopped the original writer of a
+    FRESH source run.  Creates no run, Session, Agent/thread or start; the
+    only artifact is the host-owned settlement record under the runs root.
+    Unmet preconditions are typed rejections (stderr, exit 2, no record).
+    """
+
+    run_id = args.run_id
+    if (
+        not isinstance(run_id, str)
+        or not run_id.strip()
+        or run_id.startswith(".")
+        or "/" in run_id
+        or "\\" in run_id
+        or ".." in run_id
+    ):
+        print(
+            "checkpoint failed: --run-id must be a single run-directory name, "
+            "not a path",
+            file=sys.stderr,
+        )
+        return 2
+    run_root = root / "workspaces" / "modeling-runs" / run_id
+    if not run_root.is_dir():
+        print(
+            f"checkpoint failed: run root for {run_id!r} does not exist under "
+            "workspaces/modeling-runs",
+            file=sys.stderr,
+        )
+        return 2
+    readback = http_readback(args.base_url, os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY", ""))
+    try:
+        record = settle_source_run(
+            run_root=run_root,
+            stop_reference=args.stop_reference,
+            readback=readback,
+        )
+    except CheckpointError as exc:
+        print(
+            "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 2
+    print(json.dumps(record, ensure_ascii=False, sort_keys=True))
+    return 0
+
+
 def _run_checkpoint_resume_acceptance(
     args: argparse.Namespace, root: Path, *, forwarder_factory: object = McpReadForwarder
 ) -> int:
@@ -2729,6 +2779,21 @@ def main() -> int:
         default=None,
         help="inspect one published checkpoint; omit to list every package",
     )
+    checkpoint_settle = checkpoint_subparsers.add_parser(
+        "settle-source",
+        help=(
+            "R3.0-015: record the explicit host settlement of a host-stopped "
+            "fresh source run whose stale state.json still claims a "
+            "possibly-live writer; never starts or resumes anything"
+        ),
+    )
+    checkpoint_settle.add_argument("--run-id", required=True)
+    checkpoint_settle.add_argument(
+        "--stop-reference",
+        required=True,
+        help="the host's reference for how/when the original writer was stopped",
+    )
+    checkpoint_settle.add_argument("--base-url", default="http://127.0.0.1:8001")
     checkpoint_resume = checkpoint_subparsers.add_parser(
         "resume",
         help=(
@@ -2800,6 +2865,9 @@ def main() -> int:
             # Read-only inspection stays outside the run loader like
             # cq-acceptance: no TeamRunner, no Agent, nothing written (M08).
             return _run_checkpoint_inspect(args, repository_root())
+        if args.checkpoint_command == "settle-source":
+            # Outside the run loader: it only writes the host-owned record.
+            return _run_checkpoint_settle_source(args, repository_root())
         if args.mode == "acceptance":
             # R3.0-015 S4 (design §7): acceptance-only continuation of a
             # production_handoff checkpoint.  It stays outside the run loader

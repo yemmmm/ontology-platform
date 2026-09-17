@@ -1193,6 +1193,217 @@ def test_m45_unsettled_writer_evidence_keeps_the_gate_closed():
         _chain_lock_path(chain_root).unlink(missing_ok=True)
 
 
+# --- explicit host settlement for a stale fresh source run (R3.0-015) ------------
+
+
+def _settled_session(leases: list | None = None) -> dict:
+    return {"session": {"status": "completed"}, "leases": leases or []}
+
+
+def _settled_platform(sessions: dict | None = None) -> FakeCursorPlatform:
+    """The stand-in surface of a host-stopped run: closed tail, terminal session."""
+
+    return FakeCursorPlatform(
+        session_batches={"session-1": [_batch("platform-batch-1", client_batch_id="cb-1")]},
+        ontology_batches={
+            "onto-r3015": [{"batch_id": "platform-batch-1", "build_session_id": "session-1"}]
+        },
+        sessions={"session-1": _settled_session()} if sessions is None else sessions,
+    )
+
+
+def _fresh_run(*, unknown: bool = False, with_origin: bool = False) -> tuple[Path, dict]:
+    """A fresh stale source run (WAITING_OWNER, no FIFO) with one write intent."""
+
+    run_root, saved = _seed_chain_source(
+        state="WAITING_OWNER", chain_root="fresh", with_origin=with_origin
+    )
+    _seed_chain_intent(
+        run_root,
+        1,
+        key="key-unknown" if unknown else "key-1",
+        client_batch_id="cb-unknown" if unknown else "cb-1",
+        session_id="session-1",
+        status="unknown" if unknown else "receipted",
+        with_receipt=not unknown,
+    )
+    return run_root, saved
+
+
+def _write_settlement(run_root: Path, *, observed_state: str) -> Path:
+    path = cr.settlement_record_path(RUNS_ROOT, run_root.name)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": cr.SOURCE_SETTLEMENT_SCHEMA,
+                "run_id": run_root.name,
+                "observed_state": observed_state,
+                "stop_reference": "host-stop-2026-09-17",
+                "created_at": "2026-09-17T00:00:00+00:00",
+            }
+        ),
+        encoding="utf-8",
+    )
+    return path
+
+
+def _settle_cli(monkeypatch, platform: FakeCursorPlatform, run_root: Path) -> int:
+    import modeling_team.__main__ as main_module
+
+    monkeypatch.setattr(
+        main_module, "http_readback", lambda base_url, key: _readback(platform)
+    )
+    return _run_cli(
+        monkeypatch,
+        [
+            "checkpoint",
+            "settle-source",
+            "--run-id",
+            run_root.name,
+            "--stop-reference",
+            "host-stop-2026-09-17-1",
+        ],
+    )
+
+
+def test_settlement_absence_keeps_the_fresh_stale_refusal_pointing_at_settle_source():
+    """No record -> "no FIFO, no session" never infers a dead writer."""
+
+    run_root, saved = _fresh_run()
+    try:
+        with pytest.raises(CheckpointError) as refused:
+            _plan(run_root, saved["checkpoint_id"])
+        assert refused.value.reason_code == REASON_SOURCE_ACTIVE
+        assert "settle-source" in refused.value.retry
+        assert not cr.settlement_record_path(RUNS_ROOT, run_root.name).exists()
+    finally:
+        rmtree(run_root, ignore_errors=True)
+
+
+def test_settle_source_records_and_opens_the_gate_without_creating_anything(
+    monkeypatch, capsys
+):
+    run_root, saved = _fresh_run()
+    platform = _settled_platform()
+    before = {entry.name for entry in RUNS_ROOT.iterdir()}
+    try:
+        assert _settle_cli(monkeypatch, platform, run_root) == 0
+        record_path = cr.settlement_record_path(RUNS_ROOT, run_root.name)
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        assert record == json.loads(capsys.readouterr().out)
+        assert set(record) == {
+            "schema_version",
+            "run_id",
+            "observed_state",
+            "stop_reference",
+            "created_at",
+        }
+        assert record["observed_state"] == "WAITING_OWNER"
+        assert stat.S_IMODE(record_path.stat().st_mode) == 0o600
+        # The command creates no run or ledger: only the host-owned settlement
+        # directory may appear, and the source state.json stays as it was.
+        assert {entry.name for entry in RUNS_ROOT.iterdir()} - before <= {
+            ".recovery-settlements"
+        }
+        assert (
+            json.loads((run_root / "state.json").read_text(encoding="utf-8"))["state"]
+            == "WAITING_OWNER"
+        )
+        plan = _plan(run_root, saved["checkpoint_id"], readback=_readback(platform))
+        writer = plan.inspection["source_writer"]
+        assert writer["verdict"] == "writer_process_exited"
+        assert writer["source_settlement"]["verdict"] == "writer_process_exited"
+        assert (
+            plan.origin["source_writer"]["source_settlement"]["stop_reference"]
+            == "host-stop-2026-09-17-1"
+        )
+    finally:
+        rmtree(run_root, ignore_errors=True)
+        cr.settlement_record_path(RUNS_ROOT, run_root.name).unlink(missing_ok=True)
+
+
+def test_settle_source_refuses_live_channels_and_writes_no_record(monkeypatch, capsys):
+    granted = [{"state": "granted", "expires_at": "2026-09-17T12:00:00+00:00"}]
+    cases = (
+        (_settled_platform(), True),  # the control FIFO still exists
+        (_settled_platform({"session-1": _settled_session(granted)}), False),  # live lease
+        (_settled_platform({}), False),  # known session unreadable
+    )
+    for platform, with_fifo in cases:
+        run_root, _saved = _fresh_run()
+        if with_fifo:
+            fifo = run_root / "control" / "outer-input.fifo"
+            fifo.parent.mkdir(parents=True, exist_ok=True)
+            fifo.write_text("", encoding="utf-8")
+        assert _settle_cli(monkeypatch, platform, run_root) == 2
+        payload = json.loads(capsys.readouterr().err.split("checkpoint failed: ", 1)[1])
+        assert payload["code"] == cr.REASON_SETTLEMENT_REFUSED
+        assert not cr.settlement_record_path(RUNS_ROOT, run_root.name).exists()
+        rmtree(run_root, ignore_errors=True)
+
+
+def test_settlement_binding_mismatches_and_recovery_origin_runs_stay_refused():
+    # (a) a record whose observed_state no longer matches the current state.json.
+    run_root, saved = _fresh_run()
+    path = _write_settlement(run_root, observed_state="RUNNING")
+    try:
+        with pytest.raises(CheckpointError) as mismatch:
+            _plan(run_root, saved["checkpoint_id"])
+        assert mismatch.value.reason_code == REASON_SOURCE_ACTIVE
+    finally:
+        rmtree(run_root, ignore_errors=True)
+        path.unlink(missing_ok=True)
+
+    # (b) an origin-carrying run: the command refuses, and even a hand-placed
+    #     matching settlement never settles it (the chain lock is its channel).
+    run_root, saved = _fresh_run(with_origin=True)
+    path = _write_settlement(run_root, observed_state="WAITING_OWNER")
+    try:
+        with pytest.raises(CheckpointError) as command:
+            cr.settle_source_run(
+                run_root=run_root,
+                stop_reference="host-stop-2026-09-17",
+                readback=_readback(_settled_platform()),
+            )
+        assert command.value.reason_code == cr.REASON_SETTLEMENT_REFUSED
+        with pytest.raises(CheckpointError) as gate:
+            _plan(run_root, saved["checkpoint_id"])
+        assert gate.value.reason_code == REASON_SOURCE_ACTIVE
+    finally:
+        rmtree(run_root, ignore_errors=True)
+        path.unlink(missing_ok=True)
+
+
+def test_settlement_never_bypasses_the_write_tail_gate():
+    # (a) the command itself refuses over an unknown write (and writes no record).
+    platform = _settled_platform()
+    run_root, _saved = _fresh_run(unknown=True)
+    try:
+        with pytest.raises(CheckpointError) as unknown:
+            cr.settle_source_run(
+                run_root=run_root,
+                stop_reference="host-stop-2026-09-17",
+                readback=_readback(platform),
+            )
+        assert unknown.value.reason_code == REASON_WRITE_UNRECONCILED
+        assert not cr.settlement_record_path(RUNS_ROOT, run_root.name).exists()
+    finally:
+        rmtree(run_root, ignore_errors=True)
+
+    # (b) even a hand-placed matching settlement keeps the plan refused:
+    #     write-tail safety stays with the reconciliation gate downstream.
+    run_root, saved = _fresh_run(unknown=True)
+    path = _write_settlement(run_root, observed_state="WAITING_OWNER")
+    try:
+        with pytest.raises(CheckpointError) as refused:
+            _plan(run_root, saved["checkpoint_id"], readback=_readback(platform))
+        assert refused.value.reason_code == REASON_WRITE_UNRECONCILED
+    finally:
+        rmtree(run_root, ignore_errors=True)
+        path.unlink(missing_ok=True)
+
+
 # --- business approvals (M27/M30) -------------------------------------------------
 
 

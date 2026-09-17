@@ -498,6 +498,30 @@ def test_m35_binding_drift_and_open_gates_are_typed_refusals():
         _cleanup_run(run_root)
 
 
+def test_s4_settlement_opens_the_stale_state_gate_for_a_fresh_source_run():
+    """A host settlement of a fresh stale source run opens the S4 gate too."""
+
+    run_root, _frozen, checkpoint_id = _acceptance_source_run(
+        with_sources=False, state={"state": "WAITING_OWNER"}
+    )
+    try:
+        with pytest.raises(CheckpointError) as stale:
+            _prepare(run_root, checkpoint_id)
+        payload = _assert_public_rejection(stale.value)
+        assert payload["code"] == REASON_SOURCE_ACTIVE
+        assert "settle-source" in payload["next_action"]
+        cr.settle_source_run(
+            run_root=run_root,
+            stop_reference="host-stop-2026-09-17",
+            readback=_readback(FakeCursorPlatform()),
+        )
+        plan = _prepare(run_root, checkpoint_id)
+        assert plan.inspection["source_writer"]["verdict"] == "writer_process_exited"
+    finally:
+        _cleanup_run(run_root)
+        cr.settlement_record_path(RUNS_ROOT, run_root.name).unlink(missing_ok=True)
+
+
 # --- M36: frozen scope stays frozen; private material never leaks --------------------
 
 

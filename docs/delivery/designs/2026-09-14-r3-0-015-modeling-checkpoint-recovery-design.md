@@ -265,6 +265,19 @@ scope/cleanup 证据，并读回相关平台 Session、每个 Batch 的全部必
 的现有 stop 通道。无响应不等于已经停止；宿主按现有停止授权对已确认归属的进程受控收尾，
 不按模型进程名批量终止。每次等待至多 60 秒，并报告是否仍有原写者。
 
+宿主已受控停止原写者后，fresh 源 run 的 `state.json` 可能永久停留在 possibly-live 状态，
+而其 stop 通道（control FIFO）已不存在，"经 stop 通道停止"的指引不可执行。此时且仅此时，
+宿主用 `checkpoint settle-source --run-id ... --stop-reference ...` 在 runs root 的
+`.recovery-settlements/<run_id>.json` 写入显式 settlement（schema_version、run_id、
+observed_state、stop_reference、created_at；命令不创建/恢复 run、Session、Agent 或
+start，不改源 run 的 state/evidence）。写入前命令校验：run 无恢复来源、state 仍为
+possibly-live、FIFO 不存在、已知 Session（按 write intent 收集）均可读回且为
+completed/cancelled 终态、无 active lease、写尾无 unknown/in-flight。恢复入口只接受与
+当前 run/state 匹配的 settlement，并在恢复时实时复核 FIFO 与已知 Session 状态；写尾安全
+仍由后续对账门负责。没有 settlement 时行为完全不变："无 FIFO、无 session"不能自动推断
+进程死亡（未启用 FIFO、尚未建 session 的活跃 fresh run 外观相同）；恢复链 run 仍只认
+chain writer lock。
+
 随后读实际 Session/Lease 状态及 `expires_at`，展示最早租约重查时点，不写死 TTL 或保证
 “到点即可恢复”。已有合法 token 且无 fence 时可用正常 release；无 token 时沿有权限的
 Session cancel/平台到期合同处理，不能从 checkpoint 还原 token。过期后再次读
