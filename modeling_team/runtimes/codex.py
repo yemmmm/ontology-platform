@@ -789,6 +789,10 @@ class _Agent:
     # for one of these is consumed safely instead of latching a terminal
     # mismatch that would kill a thread recovered onto a newer turn.
     abandoned_turn_ids: list[str] = field(default_factory=list)
+    # External provider route this role rides (loopback provider session), when
+    # any.  ``None`` means the built-in ``openai-codex`` route or no binding: a
+    # provider-session failure cannot affect such a role.
+    provider_id: str | None = None
 
 
 def _v3_child_teardown_evidence(
@@ -1357,6 +1361,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._stderr_drain_failures: dict[str, dict[str, Any]] = {}
         self._stderr_drain_reports: dict[str, dict[str, int | bool]] = {}
         self._provider_session_failure_latched = False
+        # One park per provider-session failure episode: the wait record dedupes
+        # per role, and this flag keeps a continuously dead listener from
+        # appending wait evidence on every receive tick.  Cleared by a
+        # successful recovery so a later failure can park again.
+        self._provider_session_failure_parked = False
         # Cleanup is a lifecycle boundary, not a best-effort recomputation.  The
         # lock serializes stop/cleanup callers and the snapshot makes repeated
         # evidence reads immutable even if a caller mutates a returned dict or a
@@ -1450,9 +1459,31 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _on_provider_session_failure(self, reason_code: str) -> None:
         # The session callback carries only a fixed local reason code; provider
-        # status/text never enters the Runtime failure queue.  The latch keeps
-        # the first provider failure authoritative: a later cleanup failure
-        # cannot overwrite it.
+        # status/text never enters the Runtime failure queue.
+        code = (
+            reason_code
+            if isinstance(reason_code, str)
+            and reason_code
+            in {
+                "provider-upstream-failed",
+                "provider-session-cleanup-failed",
+            }
+            else "provider-upstream-failed"
+        )
+        if code == "provider-upstream-failed":
+            # 2026-09-17 abort-park fix: a latched upstream failure no longer
+            # kills the run through the terminal runtime-failure queue.  The
+            # roles riding the failed loopback session park in observable
+            # provider waits on their live threads; an explicit host recovery
+            # rebuilds a dead session and starts the next turn.  The latch
+            # resets on a successful recovery so a later, independent failure
+            # can park again.
+            self._park_provider_session_failure()
+            return
+
+        # A cleanup failure happens at the lifecycle boundary the run is
+        # already settling through; the latch keeps that first cause
+        # authoritative against later cleanup failures.
         if self._provider_session_failure_latched:
             return
         self._provider_session_failure_latched = True
@@ -1462,17 +1493,34 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "provider-sessions",
                     {
                         "category": "runtime/infrastructure",
-                        "reason_code": reason_code
-                        if isinstance(reason_code, str)
-                        and reason_code
-                        in {
-                            "provider-upstream-failed",
-                            "provider-session-cleanup-failed",
-                        }
-                        else "provider-upstream-failed",
+                        "reason_code": code,
                     },
                 )
             )
+
+    def _park_provider_session_failure(self) -> None:
+        """Park every role riding a failed provider session; never kill a process."""
+
+        if self._provider_session_failure_parked:
+            return
+        detail: dict[str, Any] = {
+            "source": "provider-session",
+            "reason": "provider-upstream-failed",
+            "variant": "provider-upstream-failed",
+            "http_status": None,
+        }
+        parked_any = False
+        for agent in list(self.agents.values()):
+            if getattr(agent, "provider_id", None) is None:
+                # A role on the built-in route shares no loopback session and
+                # stays untouched.
+                continue
+            if self._enter_provider_wait(agent, detail) is not None:
+                parked_any = True
+        # An episode with nothing to park (no session roles registered yet,
+        # every role already fatally latched) leaves the flag clear so a later
+        # failure with live roles still parks them.
+        self._provider_session_failure_parked = parked_any
 
     def _start_stderr_drain(self, agent: _Agent) -> None:
         process = agent.process
@@ -3713,6 +3761,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._stderr_drain_failures.clear()
             self._stderr_drain_reports.clear()
             self._provider_session_failure_latched = False
+            self._provider_session_failure_parked = False
             self._child_auth_barriers.clear()
             with self._runtime_failure_lock:
                 self._runtime_failures.clear()
@@ -4325,6 +4374,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 agent.auth_path = None
                 agent.credential_mode = "provider_proxy"
                 agent.auth_barrier_pending = True
+                agent.provider_id = binding_provider_id
             else:
                 host_auth = self.preflight_host_auth()
                 self._remember_secret(self._read_secret_bytes(host_auth))
@@ -5379,6 +5429,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "wait_id": f"{agent.agent_id}:{epoch}",
                     "epoch": epoch,
                     "variant": detail.get("variant"),
+                    "reason_code": detail.get("reason") or detail.get("variant"),
                     "http_status": detail.get("http_status"),
                     "turn_digest": detail.get("turn_digest"),
                     "thread_digest": (
@@ -5450,6 +5501,37 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         agent = self.agents.get(agent_id)
         if agent is None:
             raise CodexRuntimeError("provider recovery target agent is unknown")
+        # 2026-09-17 abort-park fix: recovery never assumes the loopback session
+        # is still alive.  Every dead listener is rebuilt (same port first)
+        # before a recovery turn is dispatched; an irrebuildable session keeps
+        # the wait pending and surfaces as the typed, retryable rejection below.
+        sessions = self._provider_sessions
+        if sessions is not None and sessions.started():
+            rebuilt = sessions.restart_dead_sessions()
+            if rebuilt:
+                self._provider_session_failure_parked = False
+                self._append_runtime_evidence(
+                    "provider-session-rebuilt",
+                    {
+                        "agent_id": agent_id,
+                        "rebuilt": sorted(
+                            provider_id
+                            for provider_id, outcome in rebuilt.items()
+                            if outcome
+                        ),
+                    },
+                )
+            if not sessions.listening():
+                self._append_runtime_evidence(
+                    "provider-wait-recovery-failed",
+                    {
+                        "agent_id": agent_id,
+                        "reason": "provider-session-unrebuildable",
+                    },
+                )
+                raise CodexRuntimeError(
+                    "provider session rebuild failed; recovery requires a live loopback session"
+                )
         process = agent.process
         if (
             process is None
@@ -5554,6 +5636,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 "message_digest": hashlib.sha256(message.encode("utf-8")).hexdigest(),
             },
         )
+        # The recovered role (and its peers on the same session) can observe a
+        # fresh failure again: re-arm the session-failure park.
+        self._provider_session_failure_parked = False
         return receipt
 
     @staticmethod

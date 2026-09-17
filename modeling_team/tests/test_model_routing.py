@@ -849,7 +849,11 @@ def test_non_2xx_upstream_body_is_dropped_with_fixed_local_failure(
         upstream_url=f"http://127.0.0.1:{json_upstream.server_port}/responses",
         on_failure=failures.append,
         # Historical fail-fast semantics: one non-2xx signals immediately.
+        # 2026-09-17 abort-park fix: the default fuse now retries transient
+        # statuses inside one request, so this boundary pins the single-attempt
+        # opt-out instead of the default budget.
         upstream_failure_threshold=1,
+        max_upstream_attempts=1,
     )
     session.start()
     try:
@@ -1595,13 +1599,20 @@ def test_manager_stop_reports_independent_session_outcome(tmp_path: Path) -> Non
     assert manager.cleanup_failed(reports) is True
 
 
-def test_runtime_latches_first_provider_failure_and_cannot_be_overwritten(
+def test_session_upstream_failure_parks_and_only_cleanup_failure_latches(
     tmp_path: Path,
 ) -> None:
+    # 2026-09-17 abort-park fix: an upstream session failure is no longer a
+    # terminal runtime failure.  Only the lifecycle-boundary cleanup failure
+    # keeps the latch, and it can never be overwritten afterwards.
     adapter = CodexRuntimeAdapter(repository_root=ROOT, use_bwrap=False)
     adapter._coordination_enabled = True
     adapter._provider_sessions = _SessionsDouble()
     adapter._on_provider_session_failure("provider-upstream-failed")
+    with adapter._runtime_failure_lock:
+        assert adapter._runtime_failures == []
+    assert adapter._provider_session_failure_latched is False
+
     adapter._on_provider_session_failure("provider-session-cleanup-failed")
     with adapter._runtime_failure_lock:
         failures = list(adapter._runtime_failures)
@@ -1610,7 +1621,7 @@ def test_runtime_latches_first_provider_failure_and_cannot_be_overwritten(
             "provider-sessions",
             {
                 "category": "runtime/infrastructure",
-                "reason_code": "provider-upstream-failed",
+                "reason_code": "provider-session-cleanup-failed",
             },
         )
     ]
@@ -1621,15 +1632,7 @@ def test_runtime_latches_first_provider_failure_and_cannot_be_overwritten(
     adapter2._provider_sessions = _NotListeningSessions()
     adapter2.receive_messages()
     with adapter2._runtime_failure_lock:
-        assert adapter2._runtime_failures == [
-            (
-                "provider-sessions",
-                {
-                    "category": "runtime/infrastructure",
-                    "reason_code": "provider-upstream-failed",
-                },
-            )
-        ]
+        assert adapter2._runtime_failures == []
     # The other provider's session mapping is untouched: no role is re-routed.
     assert adapter2._provider_sessions.base_url_for("deepseek-direct").startswith(
         "http://127.0.0.1:"

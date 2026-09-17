@@ -6371,6 +6371,7 @@ class TeamRunner:
                     "wait_id": wait.get("wait_id"),
                     "epoch": wait.get("epoch"),
                     "variant": wait.get("variant"),
+                    "reason_code": wait.get("reason_code"),
                     "http_status": wait.get("http_status"),
                     "state": wait.get("state"),
                     "notifications": wait.get("notifications"),
@@ -6423,7 +6424,9 @@ class TeamRunner:
                     "agent_id": agent_id,
                     "role": record.get("role"),
                     "variant": record.get("variant"),
+                    "reason_code": record.get("reason_code"),
                     "wait_id": record.get("wait_id"),
+                    "recoverable": True,
                 }
             )
         for agent_id in list(registry):
@@ -6439,10 +6442,27 @@ class TeamRunner:
         if ledger is None or ledger.pending:
             # Either the escalation capability is off (host recovery remains
             # available) or the pending issue already pauses the run clock.
+            # 2026-09-17 abort-park fix: a parked run with no working issue
+            # channel is still an owner-visible wait, not a silently RUNNING
+            # run — the host is the recovery route.
+            self._state(
+                "WAITING_OWNER",
+                provider_waits=self._provider_wait_status_records(),
+                host_action="recover_provider",
+            )
             return
         for agent_id in sorted(registry):
             if self._report_provider_wait_issue(agent_id, registry[agent_id]):
+                # The issue pause itself flips the state to WAITING_OWNER.
                 break
+        else:
+            # No issue could be raised (the Coordinator is itself parked or
+            # latched): the run parks here and only the host can recover it.
+            self._state(
+                "WAITING_OWNER",
+                provider_waits=self._provider_wait_status_records(),
+                host_action="recover_provider",
+            )
 
     def _report_provider_wait_issue(self, agent_id: str, record: dict[str, Any]) -> bool:
         """Report one runtime_recovery issue for a parked role; soft-fail safely."""

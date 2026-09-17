@@ -17,14 +17,17 @@ import http.client
 import json
 import os
 import re
+import select
+import socket
 import ssl
 import stat
 import threading
+import time
 from dataclasses import dataclass
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 from urllib.parse import urlsplit
 
 
@@ -40,9 +43,29 @@ DEEPSEEK_PROXY_MAX_BODY_BYTES = 32 * 1024 * 1024
 RESPONSES_SESSION_MAX_BODY_BYTES = DEEPSEEK_PROXY_MAX_BODY_BYTES
 RESPONSES_UPSTREAM_FAILURE = "provider-upstream-failed"
 RESPONSES_CLEANUP_FAILURE = "provider-session-cleanup-failed"
+# 2026-09-17 abort-park fix: the upstream fuse is a bounded in-request retry, not
+# a run kill.  Transient upstream rejections (429/5xx/transport drop) are retried
+# inside the same client request with exponential backoff; only exhausting that
+# budget advances the consecutive-failure counter by exactly one.
+RESPONSES_UPSTREAM_MAX_ATTEMPTS = 3
+RESPONSES_UPSTREAM_RETRY_BACKOFF_SECONDS = (2.0, 4.0, 8.0)
+RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS = 60.0
 _LOCAL_FAILURE_STATUS = 502
 _LOOPBACK_HOSTS = frozenset({"127.0.0.1", "::1", "localhost"})
 _CREDENTIAL_MAX_BYTES = 4096
+# Upstream response headers the session may read.  ``retry-after`` is a numeric
+# delay, never provider free text, and is not forwarded to the local client.
+_SAFE_UPSTREAM_HEADERS = frozenset({"content-type", "content-length", "retry-after"})
+
+
+def _is_retryable_upstream_status(status: int) -> bool:
+    """Whether one upstream HTTP status is a transient, backoff-retryable rejection.
+
+    Only the fuse statuses (429 and the 5xx range) are retried; a 4xx other than
+    a rate limit is a structural rejection the provider would repeat verbatim.
+    """
+
+    return status == 429 or 500 <= status <= 599
 
 
 class ProviderCredentialError(RuntimeError):
@@ -55,7 +78,16 @@ DeepSeekCredentialError = ProviderCredentialError
 
 
 class ProviderSessionError(RuntimeError):
-    """Typed loopback Responses session startup/transport failure."""
+    """Typed loopback Responses session startup/transport failure.
+
+    ``transient`` marks a transport failure that is safe to retry inside the
+    same client request; structural failures (credential unavailable, invalid
+    upstream) are never retried.
+    """
+
+    def __init__(self, message: str, *, transient: bool = False) -> None:
+        super().__init__(message)
+        self.transient = transient
 
 
 # Compatibility alias: the DeepSeek proxy error type is the session error type.
@@ -316,6 +348,30 @@ class _SessionHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
 
+    def _client_disconnected(self) -> bool:
+        """Best-effort probe so a backoff retry never waits on a gone client.
+
+        Only a confirmed close/reset suppresses the retry; every probe error
+        keeps the retry (the bounded budget is the real backstop).
+        """
+
+        connection = getattr(self, "connection", None)
+        if connection is None:
+            return False
+        try:
+            readable, _, _ = select.select([connection], [], [], 0)
+        except Exception:
+            return False
+        if not readable:
+            return False
+        try:
+            return connection.recv(1, socket.MSG_PEEK) == b""
+        except (BlockingIOError, InterruptedError):
+            # Nothing buffered to read: the client is still waiting for us.
+            return False
+        except Exception:
+            return True
+
     def do_POST(self) -> None:  # noqa: N802 - stdlib handler hook
         session = self.session
         if self.path != "/responses":
@@ -350,16 +406,34 @@ class _SessionHandler(BaseHTTPRequestHandler):
             session._count("rejected")
             self._reject(400)
             return
-        try:
-            status, headers, response = session.forward(body)
-        except ProviderSessionError:
-            session._count("upstream_errors")
-            session.note_upstream_failure()
-            self._reject(_LOCAL_FAILURE_STATUS)
-            return
-        session._record_status(status)
-        if not 200 <= status < 300:
+        attempt = 1
+        while True:
+            try:
+                status, headers, response = session.forward(body)
+            except ProviderSessionError as exc:
+                if self._retry_transport_failure(session, attempt, exc):
+                    attempt += 1
+                    continue
+                session._count("upstream_errors")
+                session.note_upstream_failure()
+                self._reject(_LOCAL_FAILURE_STATUS)
+                return
+            session._record_status(status)
+            if 200 <= status < 300:
+                break
+            retry_after = headers.get("retry-after") if isinstance(headers, dict) else None
             self._discard_upstream_body(response)
+            if (
+                _is_retryable_upstream_status(status)
+                and attempt < session.max_upstream_attempts
+                and not self._client_disconnected()
+            ):
+                # One client request stays one consecutive-failure decision:
+                # the bounded backoff absorbs the transient rejection here.
+                session._count("upstream_retries")
+                time.sleep(session.upstream_retry_delay(attempt, retry_after))
+                attempt += 1
+                continue
             session._count("upstream_errors")
             session.note_upstream_failure()
             self._reject(_LOCAL_FAILURE_STATUS)
@@ -380,10 +454,10 @@ class _SessionHandler(BaseHTTPRequestHandler):
                     break
                 except (OSError, http.client.HTTPException):
                     # A 2xx stream broke before a successful terminal state.
-                    # Already-transmitted model output stays transparent; the
-                    # subsequent transport failure is counted and only signals
-                    # at the consecutive-failure threshold, never the exception
-                    # string.
+                    # Already-transmitted model output stays transparent, so
+                    # this failure is never retried; it is counted and only
+                    # signals at the consecutive-failure threshold, never the
+                    # exception string.
                     session._count("upstream_errors")
                     session.note_upstream_failure()
                     break
@@ -403,6 +477,19 @@ class _SessionHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             session._count("requests")
+
+    def _retry_transport_failure(
+        self, session: "ResponsesProviderSession", attempt: int, exc: ProviderSessionError
+    ) -> bool:
+        """Retry one transient upstream transport failure inside this request."""
+
+        if not getattr(exc, "transient", False):
+            return False
+        if attempt >= session.max_upstream_attempts or self._client_disconnected():
+            return False
+        session._count("upstream_retries")
+        time.sleep(session.upstream_retry_delay(attempt, None))
+        return True
 
 
 class _SessionHTTPServer(ThreadingHTTPServer):
@@ -447,6 +534,9 @@ class ResponsesProviderSession:
         # the counter.  Threshold 1 restores the historical fail-fast behavior
         # for focused tests.
         upstream_failure_threshold: int = 3,
+        max_upstream_attempts: int = RESPONSES_UPSTREAM_MAX_ATTEMPTS,
+        retry_backoff_seconds: Sequence[float] = RESPONSES_UPSTREAM_RETRY_BACKOFF_SECONDS,
+        retry_after_ceiling_seconds: float = RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS,
         on_failure: Callable[[str], None] | None = None,
     ) -> None:
         if not isinstance(credential, (bytes, bytearray)) or not credential:
@@ -463,6 +553,12 @@ class ResponsesProviderSession:
         self.connect_timeout = max(0.1, float(connect_timeout))
         self.read_timeout = max(0.1, float(read_timeout))
         self.upstream_failure_threshold = max(1, int(upstream_failure_threshold))
+        self.max_upstream_attempts = max(1, int(max_upstream_attempts))
+        self.retry_backoff_seconds = tuple(
+            max(0.0, float(delay)) for delay in retry_backoff_seconds
+        ) or (0.0,)
+        self.retry_after_ceiling_seconds = max(0.0, float(retry_after_ceiling_seconds))
+        self.bound_port: int | None = None
         self._consecutive_upstream_failures = 0
         self.on_failure = on_failure
         self._server: _SessionHTTPServer | None = None
@@ -472,6 +568,7 @@ class ResponsesProviderSession:
             "requests": 0,
             "rejected": 0,
             "upstream_errors": 0,
+            "upstream_retries": 0,
             "client_disconnects": 0,
         }
         self._last_stop_report: dict[str, bool | int] = {
@@ -527,6 +624,29 @@ class ResponsesProviderSession:
         with self._lock:
             self._consecutive_upstream_failures = 0
 
+    def upstream_retry_delay(self, attempt: int, retry_after: str | None) -> float:
+        """One bounded backoff delay, in seconds, for the next in-request attempt.
+
+        A numeric ``Retry-After`` from the upstream wins but is clamped to the
+        session ceiling (and never negative); without one, the exponential
+        backoff ladder applies.  The ladder value is out-of-range safe so a
+        misconfigured attempt index can never raise inside a request thread.
+        """
+
+        if retry_after is not None:
+            try:
+                return min(
+                    self.retry_after_ceiling_seconds,
+                    max(0.0, float(retry_after.strip())),
+                )
+            except ValueError:
+                pass
+        ladder = self.retry_backoff_seconds
+        index = max(0, int(attempt) - 1)
+        if not ladder:
+            return 0.0
+        return ladder[index] if index < len(ladder) else ladder[-1]
+
     def _record_status(self, status: int) -> None:
         category = "upstream_status_other"
         if 200 <= status < 300:
@@ -567,6 +687,10 @@ class ResponsesProviderSession:
                 server = _SessionHTTPServer((self.host, self.port), self)
             except OSError as exc:
                 raise ProviderSessionError("provider session bind failed") from exc
+            # Remember the last bound port so a dead session can be rebuilt on
+            # the same loopback address the running app-servers already point
+            # at, before falling back to an ephemeral port.
+            self.bound_port = int(server.server_address[1])
             self._server = server
             thread = threading.Thread(
                 target=server.serve_forever,
@@ -620,10 +744,21 @@ class ResponsesProviderSession:
             safe_headers = {
                 name.casefold(): value
                 for name, value in response.getheaders()
-                if name.casefold() in {"content-type", "content-length"}
+                if name.casefold() in _SAFE_UPSTREAM_HEADERS
             }
             return response.status, safe_headers, response
-        except (OSError, UnicodeError, ValueError) as exc:
+        except (OSError, http.client.HTTPException) as exc:
+            # Transport-level failures (connect/reset/timeout/protocol) are the
+            # transient class the in-request backoff may retry; a malformed key
+            # (UnicodeError) or URL (ValueError) is structural and is not.
+            try:
+                connection.close()
+            except Exception:
+                pass
+            raise ProviderSessionError(
+                "provider upstream request failed", transient=True
+            ) from exc
+        except (UnicodeError, ValueError) as exc:
             try:
                 connection.close()
             except Exception:
@@ -706,6 +841,9 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
         # Same calibration as ResponsesProviderSession (see its read_timeout).
         read_timeout: float = 1250.0,
         upstream_failure_threshold: int = 3,
+        max_upstream_attempts: int = RESPONSES_UPSTREAM_MAX_ATTEMPTS,
+        retry_backoff_seconds: Sequence[float] = RESPONSES_UPSTREAM_RETRY_BACKOFF_SECONDS,
+        retry_after_ceiling_seconds: float = RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS,
         on_failure: Callable[[str], None] | None = None,
     ) -> None:
         super().__init__(
@@ -718,6 +856,9 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
             connect_timeout=connect_timeout,
             read_timeout=read_timeout,
             upstream_failure_threshold=upstream_failure_threshold,
+            max_upstream_attempts=max_upstream_attempts,
+            retry_backoff_seconds=retry_backoff_seconds,
+            retry_after_ceiling_seconds=retry_after_ceiling_seconds,
             on_failure=on_failure,
         )
 
@@ -742,6 +883,9 @@ __all__ = [
     "ProviderCredentialError",
     "ProviderSessionError",
     "RESPONSES_UPSTREAM_FAILURE",
+    "RESPONSES_UPSTREAM_MAX_ATTEMPTS",
+    "RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS",
+    "RESPONSES_UPSTREAM_RETRY_BACKOFF_SECONDS",
     "RESPONSES_CLEANUP_FAILURE",
     "ResponsesProviderSession",
     "preflight_deepseek_credential",

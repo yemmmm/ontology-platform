@@ -708,6 +708,64 @@ class ProviderSessionManager:
                 reports = self._stop_reports
         return any(bool(report.get("lifecycle_failure")) for report in reports.values())
 
+    def restart_dead_sessions(self) -> dict[str, bool]:
+        """Rebuild every session whose listener died; report per-provider outcome.
+
+        2026-09-17 abort-park fix: an external host recovery must not assume the
+        loopback session is still alive.  Each dead listener is stopped (its key
+        buffer wiped) and started again, preferring the port the running
+        app-servers already point at; a port that cannot be rebound falls back
+        to an ephemeral one and the outcome stays visible to the caller.  A
+        provider that cannot be rebuilt reports ``False`` and never raises.
+        """
+
+        with self._lock:
+            targets = {
+                provider_id: session
+                for provider_id, session in sorted(self._sessions.items())
+                if not session.snapshot().get("listening")
+            }
+        results: dict[str, bool] = {}
+        for provider_id, session in targets.items():
+            route = self._routes[provider_id]
+            previous_port = getattr(session, "bound_port", None)
+            try:
+                session.stop()
+            except Exception:
+                pass
+            rebuilt = False
+            for port in ([previous_port, 0] if previous_port else [0]):
+                # The manager holds no key copy: restart re-opens the credential
+                # through the same no-follow read contract and zeroes the
+                # intermediate buffer exactly like ``start`` does.
+                key_buffer = bytearray(
+                    _PROVIDER_CREDENTIAL_READERS[provider_id](self._bindings[provider_id])
+                )
+                try:
+                    candidate = self._session_factory(
+                        key_buffer,
+                        provider_id=provider_id,
+                        upstream_url=route.upstream_url,
+                        port=port,
+                        on_failure=self._on_failure,
+                    )
+                    candidate.start()
+                except Exception:
+                    rebuilt = False
+                    continue
+                finally:
+                    for index in range(len(key_buffer)):
+                        key_buffer[index] = 0
+                rebuilt = True
+                break
+            with self._lock:
+                if rebuilt:
+                    self._sessions[provider_id] = candidate
+                else:
+                    self._sessions.pop(provider_id, None)
+            results[provider_id] = rebuilt
+        return results
+
 
 __all__ = [
     "CODEX_AUTH_CACHE_NAME",
