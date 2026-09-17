@@ -1292,6 +1292,25 @@ def reconcile_write_tail(
             intent_mode = str(intent.get("mode") or "")
             intent_is_apply = intent_mode in APPLY_MODES
             if intent.get("status") == "unknown" and batch is None:
+                if intent_mode == "dry_run":
+                    # A dry run is a non-write, and ``batch is None`` here means
+                    # the session listing itself was reachable (an unreachable
+                    # listing raises before this loop).  That reachable empty
+                    # listing is the same provable platform fact
+                    # ``adjudicate_unknown_intent``'s retry branch uses: the
+                    # request never materialized anything, so the gate releases
+                    # into a NEW dry-run instead of blocking forever on a batch
+                    # row that cannot exist.  Apply-mode unknowns stay blocked.
+                    pending_new_dry_run.append(
+                        {
+                            **base,
+                            "detail": "unknown-result dry-run with no platform "
+                            "batch: the reachable session listing proves the "
+                            "request never materialized anything; enter a NEW "
+                            "dry-run in the new session",
+                        }
+                    )
+                    continue
                 # Design §5.1: only the Agent's own safe_to_retry claim, no
                 # provable platform fact -> keep reconciling, never bypass.
                 blocked.append(
@@ -1639,7 +1658,16 @@ def validate_business_approvals(
             "revision": entry.get("revision"),
             "approved_by": entry.get("approved_by"),
         }
-        if entry.get("approved_by") != approver:
+        # Coordinator-identity binding is the in-process contract for decision
+        # approvals (``conclusion_confirmation``).  A ``stage3_slot`` entry is
+        # a slot marker whose ``approved_by`` only needs to be nonempty in the
+        # frozen approvals schema, and whose own note disclaims submission
+        # authority -- demanding the coordinator identity here would be
+        # stricter than the contract that produced the packaged evidence.
+        if (
+            str(entry.get("kind")) == "conclusion_confirmation"
+            and entry.get("approved_by") != approver
+        ):
             invalidated.append(
                 {
                     **record,
@@ -1761,6 +1789,56 @@ def build_plan_mappings(
     return mappings
 
 
+def unfinished_items(reconciliation: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Public unfinished-work rows from the reconciliation (design §5.1).
+
+    ``pending_new_dry_run`` and ``recoverable_new_batch`` are the classifier's
+    own "provably unfinished" outputs; they belong in every role packet, not
+    only in the host inspection — a resumed team that cannot see them will
+    conclude the run while the authorized work is still outstanding.
+    """
+
+    rows: list[dict[str, Any]] = []
+    for source in ("pending_new_dry_run", "recoverable_new_batch"):
+        for item in reconciliation.get(source) or []:
+            if not isinstance(item, Mapping):
+                continue
+            rows.append(
+                {
+                    "kind": source,
+                    "origin_run_id": item.get("origin_run_id"),
+                    "ordinal": item.get("ordinal"),
+                    "client_batch_id": item.get("client_batch_id"),
+                    "idempotency_key": item.get("idempotency_key"),
+                    "mode": item.get("mode"),
+                    "detail": item.get("detail"),
+                }
+            )
+    return rows
+
+
+def next_step_with_pending(
+    base_next_step: Any, reconciliation: Mapping[str, Any]
+) -> Any:
+    """Name the unfinished items in the next step when reconciliation found any."""
+
+    pending = unfinished_items(reconciliation)
+    if not pending:
+        return base_next_step
+    named = ", ".join(
+        str(item.get("client_batch_id") or item.get("idempotency_key"))
+        for item in pending
+    )
+    return (
+        "execute pending_items first ("
+        + named
+        + "): rebind each plan/client_batch_id/idempotency key to the fresh "
+        "session, enter a NEW dry-run, then apply on a clean dry run, before "
+        "any production conclusion"
+        + (f"; then {base_next_step}" if isinstance(base_next_step, str) else "")
+    )
+
+
 def build_role_packets(
     manifest: Mapping[str, Any],
     reconciliation: Mapping[str, Any],
@@ -1800,9 +1878,9 @@ def build_role_packets(
             "completed_operations": len(reconciliation.get("completed") or []),
             "completed_client_batch_ids": forbidden,
         },
-        "pending_items": list(stage_facts.get("pending") or []),
+        "pending_items": list(stage_facts.get("pending") or []) + unfinished_items(reconciliation),
         "forbidden_resubmissions": forbidden,
-        "next_step": stage_facts.get("next_step"),
+        "next_step": next_step_with_pending(stage_facts.get("next_step"), reconciliation),
         "instructions": [
             "do not rerun the default full-flow opening; continue from the "
             "completed results referenced above",

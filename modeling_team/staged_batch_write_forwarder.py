@@ -90,6 +90,8 @@ DEFINITE_REJECTION_CODES = frozenset(
         # request shape
         "request_too_large",
         "batch_limit_exceeded",
+        "inline_evidence_limit_exceeded",
+        "evidence_excerpt_too_large",
         "operation_secret_forbidden",
         "invalid_lease_token",
         # build session

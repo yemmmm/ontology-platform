@@ -3329,7 +3329,15 @@ class ModelingBatchService:
         if len(evidence) > self.settings.modeling_batch_max_inline_evidence:
             raise ModelingBatchError(
                 "inline_evidence_limit_exceeded",
-                "Too many inline Evidence excerpts",
+                "Too many inline Evidence excerpts: this request was refused at "
+                "intake and nothing was persisted; resubmit with at most "
+                "{limit} inline excerpts (this request carried {actual}) by "
+                "moving per-item evidence into Evidence References "
+                "(evidence_reference_ids) or the evidence-association channel "
+                "instead of inline excerpts".format(
+                    actual=len(evidence),
+                    limit=self.settings.modeling_batch_max_inline_evidence,
+                ),
                 status_code=413,
                 actual=len(evidence),
                 limit=self.settings.modeling_batch_max_inline_evidence,
