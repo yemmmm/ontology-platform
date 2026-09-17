@@ -493,3 +493,64 @@ Batch 详情含 `batch_status`、`attempts[]`；每个 Attempt 有 `mode`、`att
 安全交接需要当前受影响写请求已停止新增、相关 Attempt 不再在途、回执与实际资源相符且
 归属明确。确认这些事实后，才由宿主按任务合同协调续跑/重启/保留或清理；不能把一次状态快照
 当成持续无写入的保证。仍不确定则明确记录第一缺口与下一项只读核查，不增加硬拒绝或恢复框架。
+
+## R3.0-016 S1 宿主 MCP 工具（modeling-team-host）
+
+宿主与存活建模 run 的交互闭环（查询待办 → 提交答复/修复通知/审核冻结/交接收口 →
+核对处理结果）走本节工具面；自然语言理解、业务判断与授权决定留在宿主。
+需求：[R3.0-016](../../../docs/requirements/requirements-v3.0.md)；
+设计与合同：[交付设计](../../../docs/delivery/designs/2026-09-18-r3-0-016-s1-host-interaction-interface-design.md)。
+
+### 手工接入（不自动改任何全局配置）
+
+- 服务器：`backend/.venv/bin/python -m modeling_team.host_ops_mcp`（stdio，仓库根为 cwd）；
+  配置片段：`.claude/modeling-team-host-mcp.json`（仿 `.claude/ontology-mcp.json`）。
+- Claude Code：把片段内容并入项目/用户级 `mcpServers` 配置后重启会话；
+  Codex：写入对应宿主配置的 mcp servers 段。两种宿主都只做手工合并，本仓库不提供
+  任何自动注册脚本。
+- 冷启动自检：`tools/list` 应返回且仅返回下表 12 个工具；出现 `start_run`/`pause`/
+  `checkpoint_*` 等名称即为错误安装（S2 动作，S1 不存在）。
+
+### 固定 12 工具最小用法
+
+| 工具 | 何时用 | 关键点 |
+| --- | --- | --- |
+| `get_run_status(run_id)` | 任何操作前的快照 | 记录状态/阶段/最后活动/第一阻塞/待办摘要/终态结论/存活观察；`run_id` ≠ 平台 session_id；RUNNING 不算语义进展 |
+| `get_run_events(run_id, cursor?, limit?)` | 增量读证据事件 | cursor 逐字节偏移、**无遗漏**：完整行（含坏行/超长行占位）至少投递一次；停驻窗口内 at-least-once（同一行可能重复投递），宿主一律以 `(source, byte_offset)` 作事件唯一标识去重；每页为各停驻源的首行保留保底交付槽位，分页必收敛且 `has_more=true` 的下一页必非空；每条事件带 `source`/`line_no`/`byte_offset`：`line_no` 是本次扫描内的序号（续读从 1 重新计数，不是源内绝对行号），定位以 `byte_offset`（行首字节偏移）为准；页内输出按 recorded_at-近似排序；只读不 drain |
+| `get_pending_actions(run_id)` | 发现待办与绑定 | 每项带可用动作与必填绑定；绑定原样进对应提交工具，不手拼信封 |
+| `answer_question(run_id, channel, text, ...)` | 答复待答问题 | `channel=user` 需 `question_delivery_id`；`channel=cq_interview` 走 CQ 访谈；两通道不互通；text 原样传递（中文多行可以） |
+| `register_question(run_id, delivery_id, text)` | 两步注册模式 | 仅当既有通道要求宿主注册；不用来顶替答复失败 |
+| `submit_cq_review(run_id, <待办绑定>)` | CQ 审核决定 | 绑定全部取自 `cq_review` 待办；schema_version 工具自填 |
+| `freeze_cq(run_id)` | 审核完成后冻结 | 审核与冻结是不同动作；未决问题仍拒绝 |
+| `complete_cq_handoff(run_id, freeze_id, freeze_digest)` | 交付生产交接 | 成功 → `acceptance_pending` + attempt/report_directory；不等于整轮完成 |
+| `complete_cq_acceptance(run_id, acceptance_attempt_id?)` | CLI cq-acceptance 报告落盘后 | 工具自算 report_digest/cq_verdict；收口成功 ≠ 验收 PASS |
+| `resolve_issue(run_id, <issue 绑定>, resolution_type, ...)` | issue 等待的正式修复通知 | 唯一 resolution 通道；便签/答复不冒充修复 |
+| `recover_provider(run_id, agent_id|role, text, wait_id?)` | provider 等待宿主接管 | 不自动换模型/重建线程/开新 run |
+| `get_request_result(run_id, request_id)` | 核对处理结果 | accepted/rejected/submitted/unknown；接受 ≠ 建模推进 |
+
+变更类工具都接受可选 `request_id`（每次提交内容唯一，≤128 字符）：写入 FIFO 前操作层
+登记 `control/host-requests.jsonl`，Runner 准入后落 `evidence/outer-input-receipts.jsonl`。
+同 `request_id` 同内容重复提交直接复用原结果（不二次写 FIFO）；同 id 不同内容明确拒绝。
+无 `request_id` 的旧消息行为不变、不可关联查询。错误统一 `{ok:false, error:{code, reason,
+retryable, next_action}}`，Runner 原拒绝码原样透传；`unknown` 只在 `get_request_result` 出现，
+不得自动重发或换新 id 绕过。
+
+### 存活登记约定（可选）
+
+fresh run 无恢复来源时进程观察为 unknown。宿主可写
+`<run-root>/control/host-supervisor.json`（宿主写、Runner 不写）：
+`{"schema": "modeling-team-host-supervisor/v1", "pid": <宿主侧启动的 Runner 进程号>,
+"started_at": "<ISO8601>", "session_ref": "<可选宿主会话引用>"}`；
+存在即以 `/proc/<pid>` 报 `pid_alive`。续跑 run 自动用 `chain_writer_lock_report` 证据观察。
+
+### 保留 CLI 清单（S1 不封装，合同不变）
+
+| CLI | 适用合同与调用时机 |
+| --- | --- |
+| `classify-failure` | 归因与四类失败分层登记；在决定修复/放弃前调用 |
+| `authorize-repair` / `authorize-budget` / `authorize-initial` | 授权台账登记（repair/budget/initial 三类）；授权记录是后续 run 的凭据，不经 MCP 工具代签 |
+| `publish-handoff` | 离线交接发布（`≠ cq_handoff_complete`：后者是 run 内 CQ 生产交接收口） |
+| `cq-acceptance` | 独立验收执行器，产生 `acceptance-v3/reports/<batch>/attempt-NNNN/batch-report.json`；报告保留后由 `complete_cq_acceptance` 引用 |
+
+启动、pause/resume/stop、检查点动作属 S2，本轮不封装也不留桩；现有 outer 原通道
+（`pause`/`resume`/`stop`/`checkpoint`）行为不变，只是不经本工具面暴露。

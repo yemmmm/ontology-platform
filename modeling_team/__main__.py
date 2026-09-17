@@ -227,7 +227,67 @@ def _foreground_issue_resolution_is_ready(runner: object) -> bool:
     return getattr(issue_ledger, "state", None) in {"waiting_owner", "waiting_repair"}
 
 
-def _handle_cq_outer_message(runner, message, emit_and_observe) -> bool:
+def _outer_input_receipt_recorder(runner, message):
+    """R3.0-016 S1: pop ``request_id`` and build the receipt recorder.
+
+    ``request_id`` is the single new top-level NDJSON key.  It is removed
+    immediately after decode, before any validation or dispatch, so every
+    existing strict envelope validator (schema-v2 ``user`` extra-field
+    rejection, the exact ``cq_acceptance_complete`` field set, ...) sees the
+    envelope it sees today; lines without ``request_id`` behave byte-identically
+    and leave no receipt.
+
+    Returns a ``record(outcome, code=None, ack_type=None)`` callable when a
+    usable correlation id was popped and the runner supports evidence appends;
+    ``None`` otherwise.  The digest is computed over the envelope *after* the
+    pop, matching the host-side submission ledger.  A ``request_id`` that is
+    not a non-empty string of at most 128 characters is still popped (it must
+    never reach an action validator) but correlates nothing.
+    """
+
+    if "request_id" not in message:
+        return None
+    request_id = message.pop("request_id")
+    if (
+        not isinstance(request_id, str)
+        or not request_id
+        or len(request_id) > 128
+    ):
+        return None
+    action = message.get("action")
+    action_name = action if isinstance(action, str) else None
+    digest = content_digest(message)
+    append_evidence = getattr(runner, "_append_evidence", None)
+    if not callable(append_evidence):
+        return None
+
+    def record(outcome, code=None, ack_type=None):
+        receipt = {
+            "request_id": request_id,
+            "action": action_name,
+            "outcome": outcome,
+            "content_digest": digest,
+        }
+        if code is not None:
+            receipt["code"] = code
+        if ack_type is not None:
+            receipt["ack_type"] = ack_type
+        append_evidence("outer-input-receipts", receipt)
+
+    return record
+
+
+def _ack_type_of(output) -> str | None:
+    """The ack type of one admission output (first dict's ``type``)."""
+
+    items = output if isinstance(output, list) else [output]
+    for item in items:
+        if isinstance(item, dict) and isinstance(item.get("type"), str):
+            return item["type"]
+    return None
+
+
+def _handle_cq_outer_message(runner, message, emit_and_observe, receipt=None) -> bool:
     """R3.0-011 narrow competency-question dispatch (design §3.2).
 
     Returns ``True`` when ``message`` was handled here, whether accepted or
@@ -241,6 +301,11 @@ def _handle_cq_outer_message(runner, message, emit_and_observe) -> bool:
     admission path.  Only a runner object without CQ input support at all (an
     embedded legacy ``Runner`` stub, not the foreground ``TeamRunner``) falls
     through to the unchanged fatal ``receive_outer`` boundary (Round 1 F5).
+
+    R3.0-016 S1: ``receipt`` (from ``_outer_input_receipt_recorder``) records
+    the admission outcome for the popped ``request_id``; rejected and accepted
+    lines both leave a receipt, and the acceptance receipt is written before
+    the emit so an emit failure cannot lose the admission fact.
     """
 
     handler = None
@@ -251,8 +316,12 @@ def _handle_cq_outer_message(runner, message, emit_and_observe) -> bool:
     try:
         output = handler(message)
     except CQContractError as exc:
+        if receipt is not None:
+            receipt("rejected", code=exc.data["reason_code"])
         emit_and_observe([{"type": "cq-input-rejected", **exc.data}])
         return True
+    if receipt is not None:
+        receipt("accepted", ack_type=_ack_type_of(output))
     if output:
         emit_and_observe([output])
     return True
@@ -268,27 +337,39 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
     exists.  Typed no-side-effect outer input rejections are emitted for this
     line and the loop continues; persistence, Runtime delivery, and internal
     ``TeamConfigurationError`` failures still propagate and tear the run down.
+
+    R3.0-016 S1: a top-level ``request_id`` is popped right after decode,
+    before any validation or dispatch, and every typed admission outcome
+    (accepted or rejected) appends a line to
+    ``evidence/outer-input-receipts.jsonl``.  Lines without ``request_id``
+    behave byte-identically to today; bad-JSON lines have no extractable id
+    and leave no receipt; fatal boundaries stay fatal with no receipt.
     """
     try:
         message = _decode_foreground_message(line)
     except TeamConfigurationError:
         emit_outer_input_rejection()
         return []
+    receipt = _outer_input_receipt_recorder(runner, message)
     action = message.get("action")
     if not isinstance(action, str) or action not in _KNOWN_OUTER_ACTIONS:
         # A missing/unknown action is a malformed outer control-plane message.
         # Reject only this line so a later valid command can still drive the
         # live Runner; admitted actions retain the existing fatal receive_outer
         # boundary below.
+        if receipt is not None:
+            receipt("rejected", code="invalid_outer_input")
         emit_outer_input_rejection()
         return []
     if (
         action == "issue_resolution"
         and not _foreground_issue_resolution_is_ready(runner)
     ):
+        if receipt is not None:
+            receipt("rejected", code="invalid_outer_input")
         emit_outer_input_rejection()
         return []
-    if _handle_cq_outer_message(runner, message, emit_and_observe):
+    if _handle_cq_outer_message(runner, message, emit_and_observe, receipt=receipt):
         # R3.0-011: CQ inputs are fully handled ahead of the fatal boundary.
         return []
     # Only the dedicated no-side-effect outer rejection is recoverable here.
@@ -297,8 +378,12 @@ def _handle_foreground_message(runner, line, emit_and_observe, emit_outer_input_
     try:
         output = runner.receive_outer(message)
     except RecoverableOuterInputError as exc:
+        if receipt is not None:
+            receipt("rejected", code=exc.as_dict().get("code"))
         emit_outer_input_rejection(exc.as_dict())
         return []
+    if receipt is not None:
+        receipt("accepted", ack_type=_ack_type_of(output))
     if output:
         emit_and_observe(output)
     return output

@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "modeling-team-host": {
+      "command": "/home/yangxiang/ontology-platform/backend/.venv/bin/python",
+      "args": ["-m", "modeling_team.host_ops_mcp"],
+      "cwd": "/home/yangxiang/ontology-platform"
+    }
+  }
+}
