@@ -321,6 +321,25 @@ class R23005SequentialCQTests(unittest.TestCase):
         for role in ("modeling", "acceptance"):
             self.assertNotIn("Formal R2.3-005 sequential acceptance is mandatory", runner._task_text(role))
 
+    def test_formal_prompt_keeps_the_formal_only_acceptance_text(self) -> None:
+        root = repository_root()
+        configuration = load_formal_team_configuration(
+            root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
+            root / "modeling_team/tasks/r2-3-005-formal-acceptance.yaml",
+            root=root,
+        )
+        runner = TeamRunner(repository_root=root, adapter=SimpleNamespace())
+        runner.run = SimpleNamespace(configuration=configuration, protocol_context=None)
+
+        coordinator = runner._task_text("coordinator")
+        for phrase in (
+            "coordinator_ticket_draft",
+            "acceptance_start",
+            "Modeling, Protocol, and Acceptance have each reported completed or blocked",
+        ):
+            self.assertIn(phrase, coordinator)
+        self.assertIn("ready_for_acceptance", runner._task_text("modeling"))
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -291,6 +291,11 @@ def test_s13_unified_protocol_prompt_uses_009_candidate_gate(tmp_path):
         assert "reply_to_delivery_id" in prompt
         assert "translation review is not that answer" in prompt
         assert "report_task_result(status=blocked" in prompt
+        # The broker accepts a completed terminal report while a reply slot is
+        # open, so the prompt states the real duty and never claims the report
+        # itself is refused.
+        assert "A completed terminal report does not answer that candidate" in prompt
+        assert "still undelivered" not in prompt
     finally:
         staged.cleanup()
 

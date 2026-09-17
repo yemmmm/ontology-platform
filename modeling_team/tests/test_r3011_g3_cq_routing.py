@@ -506,6 +506,19 @@ def test_t_g3_9_task_text_is_role_conditional_on_011_runs(cq_g3_runner):
         assert "hidden material" in text
         assert "exactly once before ending" in text
 
+    # Formal-only R2.3-005 acceptance text must not reach this non-formal staged
+    # run; the CQ duties asserted above are what stays.
+    for role in ("coordinator", "modeling", "protocol"):
+        text = runner._task_text(role)
+        for phrase in ("acceptance_start", "coordinator_ticket_draft", "Acceptance have each reported"):
+            assert phrase not in text, (role, phrase)
+    assert "ready_for_acceptance" not in runner._task_text("modeling")
+    assert "Modeling, Protocol, and Acceptance" not in runner._task_text("coordinator")
+    assert (
+        "Modeling and Protocol have each reported completed or blocked"
+        in runner._task_text("coordinator")
+    )
+
 
 # --- T-G3-10: the consistency verify runs inside the real flow ------------------
 

@@ -466,6 +466,14 @@ class TransportTests(unittest.TestCase):
         self.assertNotIn("completion-confirmation request", modeling)
         self.assertIn("do not create a reply request solely to unlock a terminal result", modeling)
 
+    def test_protocol_prompt_does_not_claim_a_completed_report_is_refused(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("A completed terminal report does not answer that candidate", protocol)
+        self.assertNotIn("refuses a completed terminal report", protocol)
+
     def test_reply_correlation_rejects_forged_wrong_direction_and_duplicate_replies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(

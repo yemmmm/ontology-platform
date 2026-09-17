@@ -3318,9 +3318,10 @@ class TeamRunner:
                 getattr(self.run, "gate_binding", None) is not None
                 or self._expected_matrix_binding(self.run.configuration) is not None
             )
+            formal_coordination = self._formal_coordination_enabled()
             generation = (
                 self.coordinator_phase.generation
-                if self._formal_coordination_enabled() and self.coordinator_phase
+                if formal_coordination and self.coordinator_phase
                 else None
             )
             formal_contract = formal_run_contract_for(self.run.configuration)
@@ -3328,7 +3329,7 @@ class TeamRunner:
             formal_requirement_label = "R2.3-003" if is_r23003 else "R2.3-005"
             standard_policy = (
                 self._acceptance_ticket_policy(self.run.configuration)
-                if self._formal_coordination_enabled()
+                if formal_coordination
                 else {}
             )
             question_count = int(standard_policy.get("question_count", 0) or 0)
@@ -3543,8 +3544,8 @@ class TeamRunner:
                         "review is not that answer, and waiting for it never closes the slot. If the "
                         "current candidate cannot be answered on this route, send the typed conflict as "
                         "that reply, or call `report_task_result(status=blocked, ...)`. A completed "
-                        "terminal report while one of your replies is still undelivered is refused by "
-                        "Team Transport, so never leave a reply slot open and wait."
+                        "terminal report does not answer that candidate, so never leave its reply slot "
+                        "open and wait."
                     )
                 else:
                     text += legacy_protocol_text
@@ -3652,7 +3653,7 @@ class TeamRunner:
                     )
             if role == "coordinator":
                 typed_ticket_binding = False
-                if self._formal_coordination_enabled() and self.acceptance is not None:
+                if formal_coordination and self.acceptance is not None:
                     coordinator_descriptor = self.acceptance.capability_descriptors.get(
                         "coordinator", {}
                     )
@@ -3680,13 +3681,30 @@ class TeamRunner:
                             "`cq-1`, derive an ID from Protocol, or ask Protocol to provide the IDs. If the task does "
                             "not expose exactly these two IDs, do not call the draft capability."
                         )
-                draft_revision_instruction = (
-                    " The Runner projects ordinal/count/previous/next/is_final metadata for each ordered "
-                    "standard question; use that metadata and never infer finality or order from an ID."
-                    if is_r23003
-                    else " Both frozen questions may use revision 1; do not treat the second question as a duplicate."
-                )
-                if typed_ticket_binding:
+                # Formal-only coordination text.  A non-formal staged v3 run has
+                # no Acceptance role, never advertises ``send_coordination``, and
+                # owns no acceptance ticket, so none of the fixed-ticket,
+                # acceptance_start, or sequential-CQ instructions below may reach
+                # its Coordinator (auth018 prompt leakage).
+                coordination_instruction = ""
+                ticket_instruction = ""
+                sequential_instruction = ""
+                if formal_coordination:
+                    coordination_instruction = (
+                        "\nCoordinator receives no raw business or consumer-source bytes. Use only the "
+                        "Runner-private capability MCP to publish the fixed requirement-owned ticket and "
+                        "read the Acceptance verdict; do not redefine CQs, approved-source paths, or the "
+                        "quality standard. After Modeling-ready and Protocol-silent, emit only "
+                        "acceptance_start to acceptance through `send_coordination` with the current "
+                        "generation and acceptance_round_id as text. "
+                    )
+                    draft_revision_instruction = (
+                        " The Runner projects ordinal/count/previous/next/is_final metadata for each ordered "
+                        "standard question; use that metadata and never infer finality or order from an ID."
+                        if is_r23003
+                        else " Both frozen questions may use revision 1; do not treat the second question as a duplicate."
+                    )
+                if formal_coordination and typed_ticket_binding:
                     ticket_instruction = (
                         " When Protocol sends the structured acceptance-stage handoff, retain only the "
                         "original delivery_id from the direct Team Transport envelope and call the "
@@ -3703,7 +3721,7 @@ class TeamRunner:
                         "exactly once through coordinator_publish_acceptance_ticket."
                         + frozen_question_instruction
                     )
-                else:
+                elif formal_coordination:
                     ticket_instruction = (
                         " When Protocol sends the structured acceptance-stage handoff, parse its exact JSON and "
                         "call the Runner-private coordinator_ticket_draft once per question, "
@@ -3717,8 +3735,12 @@ class TeamRunner:
                         "is rejected."
                         + frozen_question_instruction
                     )
-                sequential_instruction = ""
-                if self._formal_coordination_enabled():
+                if formal_coordination:
+                    ticket_instruction += (
+                        " Only after unchanged publication succeeds send acceptance_start with the returned "
+                        "acceptance_round_id. Coordinator never reads staged business sources or receipt "
+                        "payload bytes."
+                    )
                     if is_r23003:
                         sequential_instruction = (
                             "\nFormal ordered N-CQ acceptance is mandatory: after each current question receives a usable PASS, "
@@ -3738,32 +3760,39 @@ class TeamRunner:
                             "to the existing Modeling repair/revision path; BLOCKED waits for recovery or revision; "
                             "neither non-PASS verdict advances to the next CQ, and never overlap two rounds."
                         )
+                # Same formal predicate as the coordination text above: only the
+                # formal four-role run owes the Acceptance handoff, and a
+                # non-formal staged run's dependencies are Modeling and Protocol
+                # (the authoritative role prompt names the same two roles).
+                terminal_dependency_text = (
+                    "Modeling, Protocol, and Acceptance"
+                    if formal_coordination
+                    else "Modeling and Protocol"
+                )
                 return text + (
-                    "\nCoordinator receives no raw business or consumer-source bytes. Use only the "
-                    "Runner-private capability MCP to publish the fixed requirement-owned ticket and "
-                    "read the Acceptance verdict; do not redefine CQs, approved-source paths, or the "
-                    "quality standard. After Modeling-ready and Protocol-silent, emit only "
-                    "acceptance_start to acceptance through `send_coordination` with the current "
-                    "generation and acceptance_round_id as text. Use only the Project/Ontology created for this "
-                    "run; never reuse or bind a prior/caller-supplied scope and never initiate a second semantic "
-                    "start."
+                    coordination_instruction
+                    + "Use only the Project/Ontology created for this run; never reuse or bind a "
+                    "prior/caller-supplied scope and never initiate a second semantic start."
                     + ticket_instruction
-                    + " Only after unchanged publication succeeds "
-                    "send acceptance_start with the returned acceptance_round_id. Coordinator never reads staged "
-                    "business sources or receipt payload bytes."
                     + sequential_instruction
                     + "\nWhen forwarding an outer answer to a grounded Modeling question, send that exact answer "
                     "once with reply_to_delivery_id set to the current Modeling question delivery_id. Do not "
                     "duplicate it or leave it unbound."
-                    "\n`report_task_result` is recorded exactly once only after Modeling, Protocol, and Acceptance "
-                    "have each reported completed or blocked. A dependency rejection is not recorded; wait for "
-                    "their terminal handoffs and retry without reviewing their semantics. Coordinator reports last."
+                    "\n`report_task_result` is recorded exactly once only after "
+                    + terminal_dependency_text
+                    + " have each reported completed or blocked. A dependency rejection is not recorded; wait "
+                    "for their terminal handoffs and retry without reviewing their semantics. Coordinator "
+                    "reports last."
                 ) + objective_suffix
             if role == "modeling":
-                modeling_text = text + (
-                    "\nEmit only ready_for_acceptance to coordinator through `send_coordination` with "
-                    "the current generation once the semantic slice is ready; never emit "
-                    "silent_for_acceptance or acceptance_start."
+                modeling_text = text
+                if formal_coordination:
+                    modeling_text += (
+                        "\nEmit only ready_for_acceptance to coordinator through `send_coordination` with "
+                        "the current generation once the semantic slice is ready; never emit "
+                        "silent_for_acceptance or acceptance_start."
+                    )
+                modeling_text += (
                     "\nSend each platform-neutral candidate or revision with expects_reply=true and retain the "
                     "returned delivery_id. Wait for Protocol's delivered receipt or conflict whose "
                     "reply_to_delivery_id matches it. On conflict, send a revision as a new expects_reply request; "

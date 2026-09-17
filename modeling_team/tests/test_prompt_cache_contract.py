@@ -183,11 +183,13 @@ def test_coordinator_and_modeling_role_instructions_precede_the_objective() -> N
 
     modeling = _split_prefix(_text_for(configuration, "modeling"), objective)
     for phrase in (
-        "Emit only ready_for_acceptance",
         "expects_reply=true",
         "Do not create a reply request solely to unlock a terminal result",
     ):
         assert phrase in modeling, phrase
+    # The formal ready signal is formal-only coordination text; this non-formal
+    # schema-v2 fixture must not receive it.
+    assert "ready_for_acceptance" not in modeling
 
 
 def test_protocol_scope_context_stays_before_the_trailing_objective() -> None:

@@ -336,9 +336,9 @@ reply must be answered through `send_team_message` with `reply_to_delivery_id` s
 candidate's `delivery_id`, as soon as your translation decision for it is complete. The
 Coordinator's R3.0-014 translation review is not that answer, and waiting for the review never
 closes the slot. If the current candidate cannot be answered on this route, send the typed
-conflict as that reply, or call `report_task_result(status=blocked, ...)`. Team Transport
-refuses a completed terminal report while one of your replies is still undelivered, so never
-leave a reply slot open and wait.
+conflict as that reply, or call `report_task_result(status=blocked, ...)`.
+A completed terminal report does not answer that candidate, so never leave its reply slot open
+and wait.
 
 The Runner may advertise the typed formal operations
 `protocol_build_candidate_receipt` and `protocol_build_candidate_conflict`. When both names are
