@@ -249,3 +249,150 @@ def test_end_to_end_digest_consistency_with_the_op_layer(cq_harness):
         assert result["consumption_evidence"] == "evidence/cq-interview.jsonl"
     finally:
         fifo.close()
+
+
+# --- R3.0-016 S2: the §3.4 request_id re-injection is limited to the checkpoint branch
+
+
+class _CheckpointSpy:
+    """Captures the envelope each dispatch stage actually received."""
+
+    def __init__(self, runner) -> None:
+        self.checkpoint_messages: list[dict] = []
+        self.outer_messages: list[dict] = []
+        original = runner.receive_outer
+
+        def receive_outer(message):
+            self.outer_messages.append(dict(message))
+            return original(message)
+
+        runner.receive_outer = receive_outer
+        runner._handle_checkpoint_outer = self.checkpoint
+
+    def checkpoint(self, message: dict) -> dict:
+        """A stand-in ``_handle_checkpoint_outer`` that only records."""
+
+        self.checkpoint_messages.append(dict(message))
+        return {"type": "checkpoint-spy"}
+
+
+def test_checkpoint_request_id_is_reinjected_after_the_digest(cq_harness):
+    """S2-CKPT-002: one request_id, two faces, and one unchanged digest."""
+
+    runner = cq_harness
+    spy = _CheckpointSpy(runner)
+    envelope = {
+        "action": "checkpoint",
+        "command": "save",
+        "kind": "materialization_progress",
+        "request_id": "req-ck-1",
+    }
+    output, emitted, rejected = _foreground(runner, envelope)
+    assert rejected == []
+    assert [item["type"] for item in output] == ["checkpoint-spy"]
+    assert [item["type"] for item in emitted] == ["checkpoint-spy"]
+    (seen,) = spy.checkpoint_messages
+    # §3.4: the id is back on the envelope for the 015 manifest provenance.
+    assert seen["request_id"] == "req-ck-1"
+    assert seen["kind"] == "materialization_progress"
+
+    # The receipt digest was taken BEFORE the re-injection, so both sides of
+    # the FIFO compute it over the same envelope shape.
+    (receipt,) = _receipts(runner)
+    assert receipt["request_id"] == "req-ck-1"
+    assert receipt["action"] == "checkpoint"
+    assert receipt["outcome"] == "accepted"
+    assert receipt["ack_type"] == "checkpoint-spy"
+    without_id = {key: value for key, value in envelope.items() if key != "request_id"}
+    assert receipt["content_digest"] == content_digest(without_id)
+
+    # The op layer's submission of the same envelope reconciles with the receipt.
+    fifo = OuterInputFifo(runner.run.root / "control" / "outer-input.fifo")
+    fifo.open()
+    try:
+        submitted = host_ops.save_checkpoint(
+            runner.run.run_id,
+            kind="materialization_progress",
+            request_id="req-ck-2",
+            repository_root=REPO_ROOT,
+        )
+        assert submitted["status"] == "submitted"
+        ledger = json.loads(
+            (runner.run.root / "control" / "host-requests.jsonl").read_text("utf-8")
+        )
+        assert ledger["request_id"] == "req-ck-2"
+        assert ledger["content_digest"] == content_digest(
+            {"action": "checkpoint", "command": "save", "kind": "materialization_progress"}
+        )
+        fifo.read_ready()
+        line = json.loads(fifo.pop_line())
+        # The same single id travels on the wire: receipt, ledger and manifest.
+        assert line["request_id"] == "req-ck-2"
+        assert line["command"] == "save"
+    finally:
+        fifo.close()
+
+
+def test_reinjection_never_touches_any_other_action(cq_harness):
+    """S2-CKPT-002b: only ``action == "checkpoint"`` sees the key again."""
+
+    runner = cq_harness
+    spy = _CheckpointSpy(runner)
+    output, _emitted, rejected = _foreground(
+        runner, {"action": "status", "request_id": "req-status-1"}
+    )
+    assert rejected == []
+    (seen,) = spy.outer_messages
+    assert "request_id" not in seen  # byte-identical envelope, as in S1
+    assert spy.checkpoint_messages == []
+    (receipt,) = _receipts(runner)
+    assert receipt["action"] == "status"
+    assert receipt["outcome"] == "accepted"
+    assert receipt["content_digest"] == content_digest({"action": "status"})
+
+    # A checkpoint line without a request_id is unchanged too: nothing is
+    # injected and no receipt exists for it.
+    output, _emitted, rejected = _foreground(
+        runner, {"action": "checkpoint", "command": "save", "kind": "cq_frozen"}
+    )
+    assert rejected == []
+    assert [item["type"] for item in output] == ["checkpoint-spy"]
+    assert "request_id" not in spy.checkpoint_messages[-1]
+    assert len(_receipts(runner)) == 1  # still only the status receipt
+
+
+def test_checkpoint_rejection_receipt_keeps_the_runner_code_and_digest(cq_harness):
+    """A real Runner rejection: the original code passes through and the
+    receipt digest matches the submission ledger for the same request_id."""
+
+    runner = cq_harness
+    fifo = OuterInputFifo(runner.run.root / "control" / "outer-input.fifo")
+    fifo.open()
+    try:
+        submitted = host_ops.save_checkpoint(
+            runner.run.run_id,
+            kind="not-a-kind",
+            request_id="req-ck-bad",
+            repository_root=REPO_ROOT,
+        )
+        assert submitted["status"] == "submitted"
+        fifo.read_ready()
+        line = fifo.pop_line()
+        assert line is not None
+        output, _emitted, rejected = _foreground(runner, json.loads(line))
+        assert output == []
+        assert rejected and rejected[0]["code"] == "checkpoint_invalid_kind"
+        (receipt,) = _receipts(runner)
+        assert receipt["request_id"] == "req-ck-bad"
+        assert receipt["outcome"] == "rejected"
+        assert receipt["code"] == "checkpoint_invalid_kind"
+        envelope = json.loads(line)
+        envelope.pop("request_id")
+        assert receipt["content_digest"] == content_digest(envelope)
+        result = host_ops.get_request_result(
+            runner.run.run_id, request_id="req-ck-bad", repository_root=REPO_ROOT
+        )
+        assert result["outcome"] == "rejected"
+        assert result["code"] == "checkpoint_invalid_kind"
+    finally:
+        fifo.close()

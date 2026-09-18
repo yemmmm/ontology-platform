@@ -494,12 +494,14 @@ Batch 详情含 `batch_status`、`attempts[]`；每个 Attempt 有 `mode`、`att
 归属明确。确认这些事实后，才由宿主按任务合同协调续跑/重启/保留或清理；不能把一次状态快照
 当成持续无写入的保证。仍不确定则明确记录第一缺口与下一项只读核查，不增加硬拒绝或恢复框架。
 
-## R3.0-016 S1 宿主 MCP 工具（modeling-team-host）
+## R3.0-016 S1+S2 宿主 MCP 工具（modeling-team-host）
 
-宿主与存活建模 run 的交互闭环（查询待办 → 提交答复/修复通知/审核冻结/交接收口 →
-核对处理结果）走本节工具面；自然语言理解、业务判断与授权决定留在宿主。
+宿主与建模 run 的交互闭环（启动 run → 查询待办 → 提交答复/修复通知/审核冻结/交接收口 →
+pause/resume/stop → 检查点保存/接续/结算 → 核对处理结果）走本节工具面；自然语言理解、
+业务判断与授权决定留在宿主。
 需求：[R3.0-016](../../../docs/requirements/requirements-v3.0.md)；
-设计与合同：[交付设计](../../../docs/delivery/designs/2026-09-18-r3-0-016-s1-host-interaction-interface-design.md)。
+设计与合同：[交付设计](../../../docs/delivery/designs/2026-09-18-r3-0-016-s1-host-interaction-interface-design.md)、
+[S2 交付设计](../../../docs/delivery/designs/2026-09-18-r3-0-016-s2-start-lifecycle-checkpoint-design.md)。
 
 ### 手工接入（不自动改任何全局配置）
 
@@ -508,10 +510,12 @@ Batch 详情含 `batch_status`、`attempts[]`；每个 Attempt 有 `mode`、`att
 - Claude Code：把片段内容并入项目/用户级 `mcpServers` 配置后重启会话；
   Codex：写入对应宿主配置的 mcp servers 段。两种宿主都只做手工合并，本仓库不提供
   任何自动注册脚本。
-- 冷启动自检：`tools/list` 应返回且仅返回下表 12 个工具；出现 `start_run`/`pause`/
-  `checkpoint_*` 等名称即为错误安装（S2 动作，S1 不存在）。
+- 冷启动自检：`tools/list` 应返回且仅返回下表 20 个工具（12 个 S1 查询/提交 +
+  8 个 S2 启动/生命周期/检查点）；出现 `resume_run`/`abort_run`/`create_run`/
+  `checkpoint_run` 等表外名称即为错误安装，生产 `backend/app/mcp/tools` 与
+  角色 agent-package 能力面也不得出现任何 S2 工具名。
 
-### 固定 12 工具最小用法
+### 固定 20 工具最小用法
 
 | 工具 | 何时用 | 关键点 |
 | --- | --- | --- |
@@ -527,6 +531,14 @@ Batch 详情含 `batch_status`、`attempts[]`；每个 Attempt 有 `mode`、`att
 | `resolve_issue(run_id, <issue 绑定>, resolution_type, ...)` | issue 等待的正式修复通知 | 唯一 resolution 通道；便签/答复不冒充修复 |
 | `recover_provider(run_id, agent_id|role, text, wait_id?)` | provider 等待宿主接管 | 不自动换模型/重建线程/开新 run |
 | `get_request_result(run_id, request_id)` | 核对处理结果 | accepted/rejected/submitted/unknown；接受 ≠ 建模推进 |
+| `start_run(run_id, task, profile, model_profile, scope, freeze_started_at, task_overlay?, base_url?, request_id?)` | 受管发起新 run | 见下方 S2 节：argv 恰为 `run` 子命令实有参数，`freeze_started_at` 只做形状校验、绝不补值；`launch accepted ≠ semantic start happened` |
+| `pause_run(run_id, request_id?)` | 暂停存活 run | pause ≠ stop；消费证据 `state.json` |
+| `resume_live_run(run_id, request_id?)` | 继续同一存活线程 | 不重建线程；已退出/终态 run 明确报限制，不静默转 015 接续 |
+| `stop_run(run_id, reason?, request_id?)` | 停止 run | 携带既有收尾与未知写入对账边界 |
+| `inspect_checkpoints(run_id, checkpoint_id?)` | 只读查看已发布检查点 | 透传 015 结果，不改冻结产物、不触发恢复 |
+| `save_checkpoint(run_id, kind, scope_refs?, command?, request_id?)` | 请存活 run 发布检查点 | 单一 `request_id` 双面落账；kind/selector 校验留在 Runner |
+| `resume_from_checkpoint(source_run_id, checkpoint_id, new_run_id, mode, authorization_reference, freeze_started_at?, session_timeout?, request_id?)` | 从显式检查点接续 | `--run-id` 即源 run，绝不自动选最新包；`production` 必填新 run 真实冻结时点；拒绝原码透传 |
+| `settle_source_run(source_run_id, stop_reference, base_url?, request_id?)` | 登记既有受控停止的结算 | 进程内调用既有 015 结算；**不凭"找不到进程"宣告停止** |
 
 变更类工具都接受可选 `request_id`（每次提交内容唯一，≤128 字符）：写入 FIFO 前操作层
 登记 `control/host-requests.jsonl`，Runner 准入后落 `evidence/outer-input-receipts.jsonl`。
@@ -534,14 +546,6 @@ Batch 详情含 `batch_status`、`attempts[]`；每个 Attempt 有 `mode`、`att
 无 `request_id` 的旧消息行为不变、不可关联查询。错误统一 `{ok:false, error:{code, reason,
 retryable, next_action}}`，Runner 原拒绝码原样透传；`unknown` 只在 `get_request_result` 出现，
 不得自动重发或换新 id 绕过。
-
-### 存活登记约定（可选）
-
-fresh run 无恢复来源时进程观察为 unknown。宿主可写
-`<run-root>/control/host-supervisor.json`（宿主写、Runner 不写）：
-`{"schema": "modeling-team-host-supervisor/v1", "pid": <宿主侧启动的 Runner 进程号>,
-"started_at": "<ISO8601>", "session_ref": "<可选宿主会话引用>"}`；
-存在即以 `/proc/<pid>` 报 `pid_alive`。续跑 run 自动用 `chain_writer_lock_report` 证据观察。
 
 ### 保留 CLI 清单（S1 不封装，合同不变）
 
@@ -552,5 +556,73 @@ fresh run 无恢复来源时进程观察为 unknown。宿主可写
 | `publish-handoff` | 离线交接发布（`≠ cq_handoff_complete`：后者是 run 内 CQ 生产交接收口） |
 | `cq-acceptance` | 独立验收执行器，产生 `acceptance-v3/reports/<batch>/attempt-NNNN/batch-report.json`；报告保留后由 `complete_cq_acceptance` 引用 |
 
-启动、pause/resume/stop、检查点动作属 S2，本轮不封装也不留桩；现有 outer 原通道
-（`pause`/`resume`/`stop`/`checkpoint`）行为不变，只是不经本工具面暴露。
+## R3.0-016 S2 启动 / 生命周期 / 检查点工具
+
+S2 把"启动一个受管建模 run、pause/resume/stop、检查点保存/只读检查/接续/源 run 结算"
+封装进同一宿主工具面。每个启动动作都是一次**受管启动**：`subprocess.Popen`（`start_new_session=true`，
+继承宿主环境，stdout/stderr 落宿主自有日志），启动前先登记
+`workspaces/modeling-runs/.host-launches/<run_id>.json`（schema
+`modeling-team-host-launch/v1`：argv 摘要、pid、started_at、host_session_ref、log_paths、
+status），同目录另有 `<run_id>.out.log` / `<run_id>.err.log`；子进程退出由 per-launch
+reaper 守护线程翻转 `status: exited` 并记 `exit_code`（该字段的唯一观察者）。
+
+### 存活登记约定（S2 受管启动自动写入）
+
+fresh run 无恢复来源时进程观察为 unknown。S2 启动类工具在 run 根出现后的 ≤10s 有界窗口内
+自动写 `<run-root>/control/host-supervisor.json`（宿主写、Runner 不写）：
+`{"schema": "modeling-team-host-supervisor/v1", "pid": <启动的 Runner 进程号>,
+"started_at": "<ISO8601>", "session_ref": "<可选宿主会话引用>"}`；
+存在即以 `/proc/<pid>` 报 `pid_alive`，写入遵守"存在即不改写"（pid 一致跳过，不一致不覆盖、
+改报 `run_launch_in_progress` 供人工裁决）。续跑 run 自动用 `chain_writer_lock_report`
+证据观察。宿主也可按既有惯例手工写入同一文件，格式不变。
+
+| 工具 | 何时用 | 关键点 |
+| --- | --- | --- |
+| `start_run(run_id, task, profile, model_profile, scope, freeze_started_at, task_overlay?, base_url?, request_id?)` | 发起新 run | argv 恰为 `run` 子命令实有参数；`freeze_started_at` 只做形状校验（tz-aware ISO-8601），**绝不补当前时间**，编造/旧时点的拒用是宿主纪律；run 目录已存在 / 登记进程活 / 登记进程死 分别报 `run_id_already_exists`/`run_launch_in_progress`/`run_launch_failed`；返回 `launched:true`+`baseline_evidence`+`query`，`note: launch accepted ≠ semantic start happened`（真实语义开始只看 `evidence/semantic-start.jsonl`） |
+| `pause_run(run_id, request_id?)` | 暂停存活 run | pause ≠ stop；走 FIFO `pause` 信封，`consumption_evidence: state.json` |
+| `resume_live_run(run_id, request_id?)` | 继续同一存活线程 | 不重建线程、不热加载；对已退出/终态 run 明确报限制，**不静默转为 015 接续**（接续只能走 `resume_from_checkpoint`） |
+| `stop_run(run_id, reason?, request_id?)` | 停止 run | 携带既有收尾与未知写入对账边界；`reason` 只进宿主提交台账与 digest，Runner 不读取 |
+| `inspect_checkpoints(run_id, checkpoint_id?)` | 只读查看已发布检查点 | 透传 015 结果（含 `production_resume_bindings`、verify、`semantic_starts` 计数）；不改冻结产物、不触发恢复 |
+| `save_checkpoint(run_id, kind, scope_refs?, command?, request_id?)` | 请存活 run 发布检查点 | 单一 `request_id` 双面落账（回执 + 015 manifest 溯源）；kind/selector 校验留在 Runner，原码透传；同 id 重放不产生第二次 save |
+| `resume_from_checkpoint(source_run_id, checkpoint_id, new_run_id, mode, authorization_reference, freeze_started_at?, session_timeout?, request_id?)` | 从显式检查点接续 | argv 恰为 `checkpoint resume` 实有参数且 `--run-id` 即**源 run**，绝不自动选最新包；`production` 必填**新 run 真实冻结时点**（不复用源 run 旧时点），`acceptance` 不接受该参数、可带 `--session-timeout`；默认带 `--enable-outer-input-fifo`；被 015 拒绝时原码透传，不换包/换 ID/重试 |
+| `settle_source_run(source_run_id, stop_reference, base_url?, request_id?)` | 登记既有受控停止的结算 | 进程内调用既有 015 结算，与 CLI 共用 `.recovery-settlements/<run_id>.json`；拒绝原码透传；**不凭"找不到进程"宣告停止**、不清未知写入 |
+
+### 凭据通道与启动顺序
+
+- `resume_from_checkpoint` / `settle_source_run` 需要平台凭据，只经宿主进程环境注入
+  `ONTOLOGY_PLATFORM_ADMIN_API_KEY`；缺失即报 `host_credential_missing` 且不启动子进程、
+  不做任何写入。凭据不得出现在配置文件、登记记录、日志或错误文本（argv 摘要天然无凭据）。
+- 建议顺序：`inspect_checkpoints`（只读核对包/bindings/verify）→ 完成全部预检与门核查
+  **之后**记录新 run 的真实冻结时点 → `resume_from_checkpoint` 或 `start_run` →
+  每步以 `get_run_status`/`get_run_events`/`get_request_result` 核验 → 同一存活 run 上按需
+  `pause_run` → `resume_live_run` → `save_checkpoint` → `inspect_checkpoints` → `stop_run` →
+  需要时 `settle_source_run`。启动不等待首个 semantic start，也不自动重试/换新 ID。
+
+### 证据位置
+
+| 证据 | 位置 |
+| --- | --- |
+| 启动登记与退出观察 | `workspaces/modeling-runs/.host-launches/<run_id>.json`（`status: launched\|exited`、`exit_code`） |
+| 启动日志 | `workspaces/modeling-runs/.host-launches/<run_id>.out.log` / `.err.log`（ledger/冻结时点等原码拒绝可在此定位） |
+| 进程观察 | `<run-root>/control/host-supervisor.json`（被 `get_run_status` 原样消费） |
+| 基线与语义开始 | `<run-root>/baseline-manifest.json`、`<run-root>/evidence/start-ledger.jsonl`（仅预约/结算，不代表语义开始）、`<run-root>/evidence/semantic-start.jsonl` |
+| 提交与回执 | `control/host-requests.jsonl` + `evidence/outer-input-receipts.jsonl`（`get_request_result` 查询） |
+| 检查点 | `<run-root>` 检查点目录 + `evidence/checkpoints.jsonl`；结算记录 `workspaces/modeling-runs/.recovery-settlements/<run_id>.json` |
+
+### 陈旧 `.host-launches` 记录的手工清理
+
+`.host-launches/<run_id>.json` 是宿主自有证据，工具**从不**隐式删除或改写它。当一条登记
+的进程已死且 run 根不存在（`start_run` 报 `run_launch_failed`，附原记录与日志引用）需要
+复用该 run id 时，由宿主按以下步骤显式清理：
+
+1. 读该记录的 `argv`/`log_paths`，翻看 `.out.log`/`.err.log` 确认失败原因与是否留有
+   部分建模产物；确认无 `.host-launches` 之外的清理义务（例如未收尾的
+   `.recovery-locks/<root>.lock`）。
+2. 核对 `get_run_status(run_id)` 确无 run 根、`.recovery-settlements/` 无该 run 结算记录，
+   避免清掉仍被引用的登记。
+3. 手工删除 `workspaces/modeling-runs/.host-launches/<run_id>.json` 及同名 `.out.log`/
+   `.err.log`（可在台账中留一行删除记录），然后才可用同一 run id 重新 `start_run`。
+   run 根仍存在时走 `run_id_already_exists` 分支，禁止用删记录的方式绕过。
+
+现有 outer 原通道（`pause`/`resume`/`stop`/`checkpoint`）行为不变，只是由本工具面封装；
+`start_run`/`resume_from_checkpoint` 封装的 CLI 子命令合同不变，CLI 仍是保留入口。

@@ -20,22 +20,20 @@ from shutil import rmtree
 
 from mcp.shared.memory import create_connected_server_and_client_session
 
-from modeling_team import host_ops_mcp
+from modeling_team import host_ops, host_ops_mcp
 from modeling_team.contracts import repository_root
 from modeling_team.outer_input import OuterInputFifo
 
 REPO_ROOT = repository_root()
 RUNS_ROOT = REPO_ROOT / "workspaces" / "modeling-runs"
 
-# S2 lifecycle/checkpoint tool names that must NOT appear on the S1 surface.
-S2_DENY_NAMES = {
-    "pause_run",
+# Names that must never appear on the host surface: phantom or renamed tools.
+FORBIDDEN_TOOL_NAMES = {
     "resume_run",
     "abort_run",
     "checkpoint_run",
     "rollback_run",
     "create_run",
-    "start_run",
     "cleanup_run",
     "set_budget",
     "authorize",
@@ -88,15 +86,215 @@ def _session(calls):
     return asyncio.run(scenario())
 
 
-def test_cold_start_exposes_exactly_the_12_fixed_s1_tools():
+def test_cold_start_exposes_exactly_the_20_s1_plus_s2_tools():
     async def list_names(client):
         listing = await client.list_tools()
         return [tool.name for tool in listing.tools]
 
     names = _session([list_names])[0]
     assert sorted(names) == sorted(host_ops_mcp.TOOL_NAMES)
-    assert len(names) == 12
-    assert not set(names) & S2_DENY_NAMES
+    assert len(names) == 20
+    assert set(names) == set(host_ops_mcp.S1_TOOL_NAMES) | set(host_ops_mcp.S2_TOOL_NAMES)
+    assert len(host_ops_mcp.S1_TOOL_NAMES) == 12
+    assert len(host_ops_mcp.S2_TOOL_NAMES) == 8
+    assert not set(names) & FORBIDDEN_TOOL_NAMES
+    # Every registered tool carries a schema, so a host cannot guess names.
+    async def schemas(client):
+        listing = await client.list_tools()
+        return {tool.name: tool.inputSchema for tool in listing.tools}
+
+    schemas_by_name = _session([schemas])[0]
+    for name in host_ops_mcp.S2_TOOL_NAMES:
+        assert schemas_by_name[name]["type"] == "object"
+        assert schemas_by_name[name].get("required"), name
+
+
+def test_production_and_role_surfaces_expose_no_s2_tool_name():
+    """S2-ISO-001 (A07): the S2 names stay host-only.
+
+    The production ``backend/app/mcp/tools`` registry, the role capability
+    operation registry and every role agent package are scanned for the S2
+    tool names; none of them may advertise one.
+    """
+
+    import ast
+
+    tools_directory = REPO_ROOT / "backend" / "app" / "mcp" / "tools"
+    production_names: set[str] = set()
+    for path in sorted(tools_directory.glob("*.py")):
+        tree = ast.parse(path.read_text("utf-8"))
+        for node in ast.walk(tree):
+            targets = []
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                targets = list(node.decorator_list)
+            for decorator in targets:
+                called = decorator.func if isinstance(decorator, ast.Call) else decorator
+                if isinstance(called, ast.Attribute) and called.attr == "tool":
+                    production_names.add(node.name)
+    assert production_names, "the production tool registry moved; update this test"
+    assert not production_names & set(host_ops_mcp.S2_TOOL_NAMES)
+
+    from modeling_team import capability_mcp
+
+    role_operations = {
+        operation
+        for operations in capability_mcp.ROLE_OPERATIONS.values()
+        for operation in operations
+    }
+    assert not role_operations & set(host_ops_mcp.S2_TOOL_NAMES)
+
+    packages = REPO_ROOT / "modeling_team" / "agent-packages"
+    package_blob = "\n".join(
+        path.read_text("utf-8", errors="replace")
+        for path in sorted(packages.rglob("*"))
+        if path.is_file()
+    )
+    assert not set(host_ops_mcp.S2_TOOL_NAMES) & {
+        name for name in host_ops_mcp.S2_TOOL_NAMES if f"'{name}'" in package_blob
+    }
+    for name in host_ops_mcp.S2_TOOL_NAMES:
+        assert name not in package_blob
+
+
+def test_host_server_configuration_has_no_env_block_or_credential():
+    """S2-ISO-004: the config only gains tool registrations, never secrets."""
+
+    config_path = REPO_ROOT / ".claude" / "modeling-team-host-mcp.json"
+    raw = config_path.read_text("utf-8")
+    assert "env" not in json.loads(raw)
+    for marker in ("API_KEY", "api_key", "ADMIN_KEY", "secret"):
+        assert marker not in raw
+    assert "start_run" not in raw  # tool registration lives in the server module
+
+
+def test_s2_tools_surface_the_design9_error_envelope():
+    async def bad_run_id(client):
+        return _payload(
+            await client.call_tool(
+                "start_run",
+                {
+                    "run_id": "../escape",
+                    "task": "modeling_team/tasks/r3-0-002-multi-slice-smoke.yaml",
+                    "profile": "modeling_team/profiles/r3-0-002-modeling-team.yaml",
+                    "model_profile": "glm-flash-high",
+                    "scope": "modeling_team/scopes/create-scope.yaml",
+                    "freeze_started_at": "2026-09-18T08:00:00+00:00",
+                },
+            )
+        )
+
+    async def bad_freeze(client):
+        return _payload(
+            await client.call_tool(
+                "start_run",
+                {
+                    "run_id": "s2mcpfreeze",
+                    "task": "modeling_team/tasks/r3-0-002-multi-slice-smoke.yaml",
+                    "profile": "modeling_team/profiles/r3-0-002-modeling-team.yaml",
+                    "model_profile": "glm-flash-high",
+                    "scope": "modeling_team/scopes/create-scope.yaml",
+                    "freeze_started_at": "2026-09-18 08:00",
+                },
+            )
+        )
+
+    async def resume_without_credential(client):
+        return _payload(
+            await client.call_tool(
+                "resume_from_checkpoint",
+                {
+                    "source_run_id": "s2mcpmissing",
+                    "checkpoint_id": "materialization_progress-0001",
+                    "new_run_id": "s2mcpresume",
+                    "mode": "acceptance",
+                    "authorization_reference": "auth-x/resume (user-approved t)",
+                },
+            )
+        )
+
+    async def settle_without_credential(client):
+        return _payload(
+            await client.call_tool(
+                "settle_source_run",
+                {"source_run_id": "s2mcpmissing", "stop_reference": "stop-1"},
+            )
+        )
+
+    bad_run_id_out, bad_freeze_out, resume_out, settle_out = _session(
+        [bad_run_id, bad_freeze, resume_without_credential, settle_without_credential]
+    )
+    assert bad_run_id_out["ok"] is False
+    assert bad_run_id_out["error"]["code"] == "run_id_invalid"
+    assert bad_freeze_out["ok"] is False
+    assert bad_freeze_out["error"]["code"] == "freeze_started_at_invalid"
+    assert resume_out["ok"] is False
+    assert resume_out["error"]["code"] == "host_credential_missing"
+    assert settle_out["ok"] is False
+    assert settle_out["error"]["code"] == "host_credential_missing"
+
+
+def test_start_run_reaches_the_managed_launch_through_the_mcp_surface(tmp_path, monkeypatch):
+    """The tool maps its parameters onto the op layer, which owns isolation."""
+
+    import functools
+
+    calls: list[dict] = []
+
+    def fake_launch(argv, *, cwd, env, stdout, stderr):
+        calls.append({"argv": argv, "cwd": cwd})
+        run_id = argv[argv.index("--run-id") + 1]
+        root = Path(cwd) / "workspaces" / "modeling-runs" / run_id
+        (root / "control").mkdir(parents=True, exist_ok=True)
+        (root / "state.json").write_text(
+            json.dumps({"state": "PREPARING", "run_id": run_id}), encoding="utf-8"
+        )
+
+        class _Process:
+            pid = 987654
+
+            @staticmethod
+            def wait(timeout=None):
+                return 0
+
+        return _Process()
+
+    monkeypatch.setattr(
+        host_ops_mcp,
+        "start_run",
+        functools.partial(
+            host_ops.start_run,
+            repository_root=tmp_path,
+            launcher=fake_launch,
+            run_root_wait_seconds=2.0,
+        ),
+    )
+
+    async def launch(client):
+        return _payload(
+            await client.call_tool(
+                "start_run",
+                {
+                    "run_id": "s2mcplaunch",
+                    "task": "modeling_team/tasks/r3-0-002-multi-slice-smoke.yaml",
+                    "profile": "modeling_team/profiles/r3-0-002-modeling-team.yaml",
+                    "model_profile": "glm-flash-high",
+                    "scope": "modeling_team/scopes/create-scope.yaml",
+                    "freeze_started_at": "2026-09-18T08:00:00+00:00",
+                    "request_id": "mcp-start-1",
+                },
+            )
+        )
+
+    result = _session([launch])[0]
+    assert result["ok"] is True
+    data = result["data"]
+    assert data["run_id"] == "s2mcplaunch"
+    assert data["pid"] == 987654
+    assert data["supervisor_ref"] == "control/host-supervisor.json"
+    assert data["launch_record"]["request_id"] == "mcp-start-1"
+    assert "--enable-outer-input-fifo" in data["launch_record"]["argv"]
+    (call,) = calls
+    assert call["cwd"] == str(tmp_path.resolve())
 
 
 def test_read_tools_return_ok_data_envelopes():

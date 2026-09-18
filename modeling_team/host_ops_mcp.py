@@ -1,11 +1,18 @@
-"""R3.0-016 S1 host-only MCP tool surface (交付设计 §3/§4).
+"""R3.0-016 S1+S2 host-only MCP tool surface (交付设计 §3/§4/§5).
 
 A stdio MCP server named ``modeling-team-host`` exposing exactly the fixed
-12 S1 tools over the local operation layer :mod:`modeling_team.host_ops`.
-Every tool is a thin typed wrapper: parameters map to the op-layer function,
-``HostOpError`` becomes the design §9 ``{ok: False, error}`` envelope, and
-success returns ``{ok: True, data}``.  No business semantics, natural-language
-interpretation, auto-approval or S2 lifecycle action lives here.
+20 tools over the local operation layer :mod:`modeling_team.host_ops`: the
+12 read/submission tools of S1 plus the 8 S2 start/lifecycle/checkpoint
+tools (``start_run``, ``pause_run``, ``resume_live_run``, ``stop_run``,
+``inspect_checkpoints``, ``save_checkpoint``, ``resume_from_checkpoint``,
+``settle_source_run``).  Every tool is a thin typed wrapper: parameters map
+to the op-layer function, ``HostOpError`` becomes the design §9
+``{ok: False, error}`` envelope, and success returns ``{ok: True, data}``.
+No business semantics, natural-language interpretation or auto-approval
+lives here: the launch pre-checks, the process registration and the
+credential gate are all in the op layer, and the platform credential is
+injected through the host process environment only (never a server config
+``env`` block, never a tool argument).
 
 Run via ``backend/.venv/bin/python -m modeling_team.host_ops_mcp`` from the
 repository root (see ``.claude/modeling-team-host-mcp.json``).  The server is
@@ -29,9 +36,17 @@ from .host_ops import (
     get_request_result,
     get_run_events,
     get_run_status,
+    inspect_checkpoints,
+    pause_run,
     recover_provider,
     register_question,
     resolve_issue,
+    resume_from_checkpoint,
+    resume_live_run,
+    save_checkpoint,
+    settle_source_run,
+    start_run,
+    stop_run,
     submit_cq_review,
 )
 
@@ -318,9 +333,195 @@ def tool_get_request_result(
     return _call(get_request_result, run_id, request_id=request_id)
 
 
-# The 12 fixed S1 tool names exposed on the wire (each ``@mcp.tool(name=...)``
-# above registers exactly one; S2 lifecycle/checkpoint names are absent).
-TOOL_NAMES = (
+@mcp.tool(name="start_run")
+def tool_start_run(
+    run_id: str,
+    task: str,
+    profile: str,
+    model_profile: str,
+    scope: str,
+    freeze_started_at: str,
+    task_overlay: str | None = None,
+    base_url: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Start exactly one managed modeling Team run (design §5.1).
+
+    Encapsulates ``python -m modeling_team run`` with the CLI's real
+    parameters, detached in its own session, registered under
+    ``workspaces/modeling-runs/.host-launches/<run_id>.json`` before the
+    process exists.  ``freeze_started_at`` must be the real freeze-start
+    record of this round and is only shape-checked (timezone-aware
+    ISO-8601); the tool never fills in the current time.  A run id that
+    already exists, a live registration or a dead one is reported instead of
+    silently reusing it, and no old run is ever stopped implicitly.  Launch
+    accepted is not a semantic start: read ``get_run_status``.
+    """
+    return _call(
+        start_run,
+        run_id=run_id,
+        task=task,
+        profile=profile,
+        model_profile=model_profile,
+        scope=scope,
+        freeze_started_at=freeze_started_at,
+        task_overlay=task_overlay,
+        base_url=base_url,
+        request_id=request_id,
+    )
+
+
+@mcp.tool(name="pause_run")
+def tool_pause_run(run_id: str, request_id: str | None = None) -> dict[str, Any]:
+    """Pause one live run through its outer-input FIFO (design §5.2).
+
+    A pause is not a stop: the run keeps its processes, threads and evidence
+    and is continued with ``resume_live_run``.  Submitted lines are recorded
+    in the host submission ledger and answered by the Runner receipt; poll
+    ``get_request_result``.
+    """
+    return _call(pause_run, run_id, request_id=request_id)
+
+
+@mcp.tool(name="resume_live_run")
+def tool_resume_live_run(
+    run_id: str, request_id: str | None = None
+) -> dict[str, Any]:
+    """Continue the same live thread of a paused run (design §5.2).
+
+    Only continues the existing thread: never rebuilds one, never hot-loads
+    code or frozen inputs, and never silently becomes a 015 checkpoint
+    continuation — a stopped or already ended run continues exclusively
+    through ``resume_from_checkpoint``.
+    """
+    return _call(resume_live_run, run_id, request_id=request_id)
+
+
+@mcp.tool(name="stop_run")
+def tool_stop_run(
+    run_id: str,
+    reason: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Stop one run through its existing stop channel (design §5.2).
+
+    Stop is not pause: it carries the existing cleanup and keeps unknown
+    writes behind their own reconciliation boundary.  ``reason`` is only
+    recorded in the host submission ledger and its digest — the Runner's
+    stop branch does not read it.  After the stop, follow-up work goes
+    through the retained CLI records or ``settle_source_run``.
+    """
+    return _call(stop_run, run_id, reason=reason, request_id=request_id)
+
+
+@mcp.tool(name="inspect_checkpoints")
+def tool_inspect_checkpoints(
+    run_id: str, checkpoint_id: str | None = None
+) -> dict[str, Any]:
+    """Read-only inspection of a run's published checkpoint packages (§5.3).
+
+    Passes through the existing 015 inspection: the package list, or the
+    detail of one explicit ``checkpoint_id`` (production resume bindings,
+    verify results, semantic-start accounting).  Nothing is modified, no
+    recovery is triggered, and no platform write or model call happens.
+    """
+    return _call(
+        inspect_checkpoints, run_id, checkpoint_id=checkpoint_id
+    )
+
+
+@mcp.tool(name="save_checkpoint")
+def tool_save_checkpoint(
+    run_id: str,
+    kind: str,
+    scope_refs: dict[str, Any] | None = None,
+    command: str = "save",
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Ask a live run to publish one checkpoint package (design §5.4).
+
+    Submits the outer ``action=checkpoint`` envelope with the single
+    top-level ``request_id`` that also lands in the 015 manifest provenance;
+    kind and selector validation stays with the Runner, so its original
+    codes (``checkpoint_invalid_kind``, ``checkpoint_write_unreconciled``,
+    ...) come back unchanged.  Frozen results are never edited and no
+    historical checkpoint is back-filled.
+    """
+    return _call(
+        save_checkpoint,
+        run_id,
+        kind=kind,
+        scope_refs=scope_refs,
+        command=command,
+        request_id=request_id,
+    )
+
+
+@mcp.tool(name="resume_from_checkpoint")
+def tool_resume_from_checkpoint(
+    source_run_id: str,
+    checkpoint_id: str,
+    new_run_id: str,
+    mode: str,
+    authorization_reference: str,
+    freeze_started_at: str | None = None,
+    session_timeout: float | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Resume one explicit published checkpoint as a fresh managed run (§5.5).
+
+    ``--run-id`` is the SOURCE run id and ``new_run_id`` the fresh one; the
+    checkpoint id is never auto-selected.  ``mode='production'`` requires
+    the NEW run's real ``freeze_started_at`` (never the source run's old
+    timepoint); ``mode='acceptance'`` rejects it and may pass
+    ``session_timeout``.  The platform credential must be present in the
+    host environment (``ONTOLOGY_PLATFORM_ADMIN_API_KEY``) or the tool
+    refuses before starting anything.  The source run is never overwritten.
+    """
+    return _call(
+        resume_from_checkpoint,
+        source_run_id=source_run_id,
+        checkpoint_id=checkpoint_id,
+        new_run_id=new_run_id,
+        mode=mode,
+        authorization_reference=authorization_reference,
+        freeze_started_at=freeze_started_at,
+        session_timeout=session_timeout,
+        request_id=request_id,
+    )
+
+
+@mcp.tool(name="settle_source_run")
+def tool_settle_source_run(
+    source_run_id: str,
+    stop_reference: str,
+    base_url: str | None = None,
+    request_id: str | None = None,
+) -> dict[str, Any]:
+    """Record the settlement of an existing controlled stop (design §5.6).
+
+    Calls the same in-process 015 settlement the CLI uses, with the same
+    readback construction and the same
+    ``workspaces/modeling-runs/.recovery-settlements/<run_id>.json`` record
+    path.  A refusal keeps its original typed code: an unfound process is
+    never treated as proof that the writer stopped, unknown writes are not
+    cleared, and no authorization judgement is made.  Requires the host
+    platform credential in the environment.
+    """
+    return _call(
+        settle_source_run,
+        source_run_id,
+        stop_reference=stop_reference,
+        **({"base_url": base_url} if base_url is not None else {}),
+        request_id=request_id,
+    )
+
+
+# The fixed tool names exposed on the wire (each ``@mcp.tool(name=...)`` above
+# registers exactly one): the 12 S1 read/submission tools plus the 8 S2
+# start/lifecycle/checkpoint tools.  Nothing outside these 20 may appear on
+# this server, and none of them may appear on a production or role surface.
+S1_TOOL_NAMES = (
     "get_run_status",
     "get_run_events",
     "get_pending_actions",
@@ -334,6 +535,17 @@ TOOL_NAMES = (
     "recover_provider",
     "get_request_result",
 )
+S2_TOOL_NAMES = (
+    "start_run",
+    "pause_run",
+    "resume_live_run",
+    "stop_run",
+    "inspect_checkpoints",
+    "save_checkpoint",
+    "resume_from_checkpoint",
+    "settle_source_run",
+)
+TOOL_NAMES = S1_TOOL_NAMES + S2_TOOL_NAMES
 
 
 def main() -> None:

@@ -257,6 +257,13 @@ def _outer_input_receipt_recorder(runner, message):
     action = message.get("action")
     action_name = action if isinstance(action, str) else None
     digest = content_digest(message)
+    if action_name == "checkpoint":
+        # R3.0-016 S2 (design §3.4): the 015 manifest provenance reads the
+        # correlation id back off the envelope, so it is re-injected *after*
+        # the digest was taken.  The digest above therefore stays identical on
+        # both sides of the FIFO, every other action keeps the envelope it has
+        # always had, and this is the only branch that sees the key again.
+        message["request_id"] = request_id
     append_evidence = getattr(runner, "_append_evidence", None)
     if not callable(append_evidence):
         return None

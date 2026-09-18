@@ -36,18 +36,28 @@ import json
 import os
 import select
 import stat
+import subprocess
+import sys
+import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, NamedTuple
+from typing import Any, Callable, NamedTuple
+from urllib.parse import urlsplit
 
 import yaml
 
 from .checkpoint_recovery import (
     chain_writer_lock_report,
+    http_readback,
     load_origin_record,
     pid_is_alive,
 )
+from .checkpoint_recovery import (
+    settle_source_run as settle_source_run_record,
+)
+from .checkpoints import CheckpointError
+from .checkpoints import inspect_checkpoints as inspect_checkpoints_readonly
 from .competency_questions import (
     CQ_ACCEPTANCE_COMPLETE_FIELDS,
     CQ_REVIEW_SCHEMA,
@@ -114,6 +124,68 @@ RECEIPTS_EVIDENCE = "evidence/outer-input-receipts.jsonl"
 HOST_REQUESTS_LEDGER = "control/host-requests.jsonl"
 HOST_SUPERVISOR_RECORD = "control/host-supervisor.json"
 OUTER_INPUT_FIFO = "control/outer-input.fifo"
+
+# --- R3.0-016 S2 (design §5/§6/§9): managed launch + lifecycle/checkpoint ops ---
+
+# Runs-root dot directory holding the host-owned launch registrations and the
+# per-launch stdout/stderr logs.  It follows the `.recovery-locks/` /
+# `.recovery-settlements/` runs-root dot-directory precedent (design §6.2).
+HOST_LAUNCHES_DIRECTORY = ".host-launches"
+HOST_LAUNCH_RECORD_SCHEMA = "modeling-team-host-launch/v1"
+# S1 §7.1 supervisor record schema: the Runner never writes it; the S2 launch
+# operation writes it for the process it just started.
+HOST_SUPERVISOR_SCHEMA = "modeling-team-host-supervisor/v1"
+
+HOST_LAUNCH_KINDS = ("run", "checkpoint_resume", "checkpoint_settle")
+HOST_LAUNCH_STATUS_LAUNCHED = "launched"
+HOST_LAUNCH_STATUS_EXITED = "exited"
+
+# Design §6.2: the launch operation polls for the run root for at most this
+# long (0.5s interval) and then returns without blocking on the modeling work.
+LAUNCH_RUN_ROOT_WAIT_SECONDS = 10.0
+LAUNCH_RUN_ROOT_POLL_SECONDS = 0.5
+# Design §5/§9: bounded local writes for the launch registration surfaces.
+HOST_RECORD_WRITE_BOUND_SECONDS = 3.0
+
+HOST_CREDENTIAL_ENV = "ONTOLOGY_PLATFORM_ADMIN_API_KEY"
+DEFAULT_PLATFORM_BASE_URL = "http://127.0.0.1:8001"
+
+# The exact flags of the encapsulated CLI entry points (design §5.1/§5.5 and
+# the frozen argv contract): the op layer passes inputs through under their
+# original CLI names and never invents a flag the subcommand does not have.
+RUN_SUBCOMMAND_FLAGS = (
+    "--profile",
+    "--task",
+    "--task-overlay",
+    "--model-profile",
+    "--run-id",
+    "--scope",
+    "--base-url",
+    "--freeze-started-at",
+    "--enable-outer-input-fifo",
+)
+CHECKPOINT_RESUME_FLAGS = (
+    "--run-id",
+    "--checkpoint-id",
+    "--new-run-id",
+    "--mode",
+    "--session-timeout",
+    "--authorization-reference",
+    "--base-url",
+    "--freeze-started-at",
+    "--enable-outer-input-fifo",
+)
+
+# Where the Runner records the consumption of a lifecycle/checkpoint action
+# (design §5.2/§5.4 return contract).  ``pause``/``resume``/``stop`` surface
+# through ``state.json`` (no per-action evidence file exists), a checkpoint
+# save appends to the checkpoint evidence stream.
+LIFECYCLE_CONSUMPTION_EVIDENCE = {
+    "pause": "state.json",
+    "resume": "state.json",
+    "stop": "state.json",
+    "checkpoint": "evidence/checkpoints.jsonl",
+}
 
 
 class HostOpError(Exception):
@@ -190,16 +262,14 @@ def default_repository_root() -> Path:
 # --- run-root resolution (design §8) --------------------------------------------
 
 
-def resolve_run_root(
+def _validated_run_root(
     run_id: str, *, repository_root: Path | None = None
 ) -> tuple[Path, Path]:
-    """Resolve ``run_id`` to ``(run_root, runs_root)`` under the workspace.
+    """Shape + containment check for ``run_id`` without an existence gate.
 
-    ``run_id`` must be a non-empty string without path separators, ``.`` or
-    ``..`` components and at most 128 characters; the resolved directory must
-    stay inside ``<repository_root>/workspaces/modeling-runs``.  Anything else
-    is a typed ``run_id_invalid`` / ``run_not_found`` rejection -- never an
-    arbitrary path read primitive.
+    S2 launch operations must be able to name a run root that does not exist
+    yet (design §5.1/§5.5 pre-checks).  The rules are exactly the S1 ones; only
+    the ``run_not_found`` existence gate is left to the caller.
     """
 
     if (
@@ -234,6 +304,22 @@ def resolve_run_root(
             retryable=False,
             next_action="pass the modeling Team run id exactly as recorded",
         ) from exc
+    return resolved, runs_root
+
+
+def resolve_run_root(
+    run_id: str, *, repository_root: Path | None = None
+) -> tuple[Path, Path]:
+    """Resolve ``run_id`` to ``(run_root, runs_root)`` under the workspace.
+
+    ``run_id`` must be a non-empty string without path separators, ``.`` or
+    ``..`` components and at most 128 characters; the resolved directory must
+    stay inside ``<repository_root>/workspaces/modeling-runs``.  Anything else
+    is a typed ``run_id_invalid`` / ``run_not_found`` rejection -- never an
+    arbitrary path read primitive.
+    """
+
+    resolved, runs_root = _validated_run_root(run_id, repository_root=repository_root)
     if not resolved.is_dir():
         raise HostOpError(
             "run_not_found",
@@ -2218,6 +2304,1018 @@ def get_request_result(
     }
 
 
+# --- R3.0-016 S2: launch / lifecycle / checkpoint operation layer (design §5/§6) --
+
+
+def resolve_repo_path(
+    value: Any, *, field: str, repository_root: Path | None = None
+) -> Path:
+    """Design §8 path containment for a repo-relative input reference.
+
+    ``task``/``profile``/``task_overlay``/``scope`` are passed through to the
+    encapsulated CLI under their original names; this helper only proves the
+    value resolves inside the repository root (symlinks resolved, then
+    re-checked) before anything is executed or read.  Nothing else is checked:
+    existence and contract validity stay with the CLI/Runner.
+    """
+
+    root = (
+        Path(repository_root).resolve()
+        if repository_root is not None
+        else default_repository_root()
+    )
+    if not isinstance(value, str) or not value.strip():
+        raise HostOpError(
+            "input_path_invalid",
+            f"{field} must be a non-empty repository-relative or in-repository "
+            "absolute path string",
+            obj=field,
+            retryable=False,
+            next_action=f"pass the {field} reference as recorded inside this "
+            "repository checkout",
+        )
+    candidate = Path(value).expanduser()
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    try:
+        resolved = candidate.resolve()
+        resolved.relative_to(root)
+    except (OSError, ValueError) as exc:
+        raise HostOpError(
+            "input_path_invalid",
+            f"{field} {value!r} does not resolve inside the repository root "
+            f"{root}",
+            obj=field,
+            retryable=False,
+            next_action=f"pass a {field} reference inside this repository "
+            "checkout; nothing was executed or read",
+        ) from exc
+    return resolved
+
+
+def validate_freeze_started_at(value: Any, *, field: str = "freeze_started_at") -> str:
+    """Design §5.1 shape gate: tz-aware ISO-8601, passed through verbatim.
+
+    The op layer never substitutes, fills or rewrites a timepoint and never
+    judges its truth: for multi-slice budget-exempt runs the platform has no
+    freeze-time gate at all, so the real-timepoint discipline is the host's
+    (design §3.1/§5.5).  A value that is missing, not a string, not an
+    ISO-8601 timestamp or timezone-naive is rejected without any side effect.
+    """
+
+    def _invalid(reason: str) -> HostOpError:
+        return HostOpError(
+            "freeze_started_at_invalid",
+            reason,
+            obj=field,
+            retryable=True,
+            next_action="provide the real freeze-start record of this round; "
+            "the tool never fills in the current time or rewrites the value",
+            passthrough={},
+        )
+
+    if not isinstance(value, str) or not value.strip():
+        raise _invalid(
+            f"{field} is required and must be a timezone-aware ISO-8601 "
+            "timepoint; the tool never substitutes the current time"
+        )
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as exc:
+        raise _invalid(f"{field} {value!r} is not an ISO-8601 timepoint: {exc}") from exc
+    if parsed.tzinfo is None or parsed.utcoffset() is None:
+        raise _invalid(
+            f"{field} {value!r} carries no UTC offset; a timezone-naive "
+            "timepoint is not accepted"
+        )
+    return value
+
+
+def _validate_base_url(value: Any, *, field: str = "base_url") -> str:
+    if not isinstance(value, str) or not value.strip():
+        raise HostOpError(
+            "launch_arguments_invalid",
+            f"{field} must be a non-empty http(s) URL",
+            obj=field,
+            retryable=True,
+            next_action=f"pass the platform base URL as an http:// or https:// "
+            f"address (default {DEFAULT_PLATFORM_BASE_URL})",
+        )
+    parts = urlsplit(value)
+    if parts.scheme not in {"http", "https"} or not parts.netloc:
+        raise HostOpError(
+            "launch_arguments_invalid",
+            f"{field} {value!r} is not an http(s) URL",
+            obj=field,
+            retryable=True,
+            next_action="pass an http:// or https:// platform base URL",
+        )
+    return value
+
+
+def _require_host_credential() -> str:
+    """Design §5.5/§5.6: the shared host credential channel, fail closed.
+
+    The credential value is only ever read into the process environment
+    hand-off; it is never recorded, logged or echoed (appendix A.3).
+    """
+
+    value = os.environ.get(HOST_CREDENTIAL_ENV)
+    if not value:
+        raise HostOpError(
+            "host_credential_missing",
+            f"the host environment does not set {HOST_CREDENTIAL_ENV}; the "
+            "checkpoint resume/settle entries share the run command's host "
+            "credential channel and fail closed without it",
+            retryable=True,
+            next_action="inject the host platform credential into the host "
+            "process environment; repository configuration files are never "
+            "modified",
+        )
+    return value
+
+
+def _atomic_write_json(path: Path, payload: dict[str, Any], *, what: str) -> None:
+    """Bounded atomic registration write (design §6.2): tmp file + rename.
+
+    A torn read of `.host-launches/<run_id>.json` would corrupt the very
+    evidence the reaper and the pre-checks rely on, so every write lands in a
+    uniquely named temporary file and is moved into place with ``os.replace``.
+    """
+
+    deadline = time.monotonic() + HOST_RECORD_WRITE_BOUND_SECONDS
+    temporary = path.with_name(f".{path.name}.{os.getpid()}.{time.monotonic_ns()}.tmp")
+    encoded = (
+        json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2) + "\n"
+    ).encode("utf-8")
+    try:
+        descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(descriptor, encoded)
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
+        os.replace(temporary, path)
+    except OSError as exc:
+        try:
+            temporary.unlink()
+        except OSError:
+            pass
+        raise HostOpError(
+            "run_launch_failed",
+            f"{what} could not be written: {exc.strerror or exc}",
+            obj=str(path.name),
+            retryable=False,
+            next_action="check the runs-root permissions; no run was started "
+            "and no existing record was overwritten",
+        ) from exc
+    if time.monotonic() > deadline:
+        raise HostOpError(
+            "run_launch_failed",
+            f"{what} took longer than {HOST_RECORD_WRITE_BOUND_SECONDS:.0f}s; "
+            "the launch was not started",
+            obj=str(path.name),
+            retryable=False,
+            next_action="check the host machine's I/O health and retry with "
+            "the same explicit run id",
+        )
+
+
+def _host_launches_root(runs_root: Path) -> Path:
+    return runs_root / HOST_LAUNCHES_DIRECTORY
+
+
+def launch_record_path(
+    run_id: str, *, repository_root: Path | None = None
+) -> tuple[Path, Path]:
+    """The contained `.host-launches/<run_id>.json` path and its runs root."""
+
+    _run_root, runs_root = _validated_run_root(run_id, repository_root=repository_root)
+    return _host_launches_root(runs_root) / f"{run_id}.json", runs_root
+
+
+def read_launch_record(
+    run_id: str, *, repository_root: Path | None = None
+) -> dict[str, Any] | None:
+    """The host-owned launch registration for ``run_id`` (design §6.2), or None."""
+
+    path, _runs_root = launch_record_path(run_id, repository_root=repository_root)
+    payload, _limitation = _read_json_file(path)
+    return payload if isinstance(payload, dict) else None
+
+
+def _launch_log_paths(run_id: str, runs_root: Path) -> dict[str, str]:
+    directory = _host_launches_root(runs_root)
+    return {
+        "stdout": f"{HOST_LAUNCHES_DIRECTORY}/{run_id}.out.log",
+        "stderr": f"{HOST_LAUNCHES_DIRECTORY}/{run_id}.err.log",
+        "directory": str(directory),
+    }
+
+
+def _record_launch_observation(
+    run_id: str, record: dict[str, Any], observed: bool, supervisor_written: bool
+) -> dict[str, Any]:
+    limitation = None
+    if not observed:
+        limitation = (
+            "the run root did not appear within "
+            f"{LAUNCH_RUN_ROOT_WAIT_SECONDS:.0f}s, so no supervisor record was "
+            "written and the process observation stays unknown; the process "
+            "keeps starting and get_run_status becomes queryable once prepare "
+            "creates the run root"
+        )
+    return {
+        "run_id": run_id,
+        "launched": True,
+        "pid": record.get("pid"),
+        **({"supervisor_ref": HOST_SUPERVISOR_RECORD} if supervisor_written else {}),
+        "launch_record": record,
+        "observation_limitation": limitation,
+    }
+
+
+def _managed_launch(
+    argv: list[str], *, cwd: str, env: dict[str, str], stdout: int, stderr: int
+) -> subprocess.Popen:
+    """The default launcher: one detached session, no shell, no handle held.
+
+    ``start_new_session=True`` keeps the modeling run alive when the host MCP
+    server exits (design §6.1); the host never joins the modeling work.
+    """
+
+    return subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdout=stdout,
+        stderr=stderr,
+        stdin=subprocess.DEVNULL,
+        start_new_session=True,
+    )
+
+
+def _spawn_exit_reaper(process: Any, record_path: Path, run_id: str) -> None:
+    """Design §6.1: the only observer that flips ``status`` to ``exited``.
+
+    The per-launch daemon thread calls ``wait()`` without a timeout, so a long
+    modeling run never accumulates as a zombie inside the host process and no
+    tool call ever joins it.  Best effort by design: if the record cannot be
+    read or written the registration stays ``launched`` -- the same documented
+    limitation as a host that exited before the child did.
+    """
+
+    def _reap() -> None:
+        try:
+            exit_code = process.wait()
+        except Exception:  # noqa: BLE001 - a daemon thread must never crash the host
+            return
+        try:
+            record, _limitation = _read_json_file(record_path)
+            if not isinstance(record, dict) or record.get("run_id") != run_id:
+                return
+            if record.get("status") != HOST_LAUNCH_STATUS_LAUNCHED:
+                return
+            _atomic_write_json(
+                record_path,
+                {
+                    **record,
+                    "status": HOST_LAUNCH_STATUS_EXITED,
+                    "exit_code": exit_code,
+                    "exited_at": _utc_now(),
+                    "recorded_at": _utc_now(),
+                },
+                what=f"the exit record for run id {run_id!r}",
+            )
+        except (HostOpError, OSError):
+            return
+
+    threading.Thread(
+        target=_reap, name=f"modeling-team-launch-reaper-{run_id}", daemon=True
+    ).start()
+
+
+def _await_run_root(run_root: Path, window_seconds: float) -> bool:
+    """Bounded non-blocking poll for the run root (design §6.2, ≤10s total)."""
+
+    deadline = time.monotonic() + max(window_seconds, 0.0)
+    while True:
+        if run_root.is_dir():
+            return True
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            return False
+        time.sleep(min(LAUNCH_RUN_ROOT_POLL_SECONDS, remaining))
+
+
+def _write_supervisor_record(
+    run_root: Path,
+    *,
+    pid: int,
+    started_at: str,
+    session_ref: str | None,
+) -> bool:
+    """Idempotent ``control/host-supervisor.json`` write (design §6.2).
+
+    "存在即不改写": an existing record for the same pid is left untouched, and
+    a record naming a *different* pid is never overwritten -- the conflict is
+    reported as ``run_launch_in_progress`` for manual adjudication instead
+    (appendix A.6).
+    """
+
+    control = run_root / "control"
+    control.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path = run_root / HOST_SUPERVISOR_RECORD
+    payload, _limitation = _read_json_file(path)
+    if isinstance(payload, dict) and payload.get("pid") is not None:
+        if payload.get("pid") == pid:
+            return False
+        raise HostOpError(
+            "run_launch_in_progress",
+            f"control/host-supervisor.json already registers writer pid "
+            f"{payload.get('pid')!r} for this run root; the launched process "
+            f"pid {pid} was not recorded over it",
+            obj="run_id",
+            retryable=False,
+            next_action="adjudicate the two writers manually; neither record "
+            "was modified and no process was stopped",
+            passthrough={
+                "existing_supervisor_pid": payload.get("pid"),
+                "launched_pid": pid,
+            },
+        )
+    record: dict[str, Any] = {
+        "schema": HOST_SUPERVISOR_SCHEMA,
+        "pid": pid,
+        "started_at": started_at,
+    }
+    if session_ref:
+        record["session_ref"] = session_ref
+    _atomic_write_json(path, record, what="the supervisor record")
+    return True
+
+
+def _assert_launch_target_free(
+    run_id: str, run_root: Path, runs_root: Path
+) -> None:
+    """Design §5.1/§6.2 occupancy pre-check: three branches, no implicit fix.
+
+    Any branch refuses to start a second run for the same id; none of them
+    stops an old process, deletes a record or invents a new run id.
+    """
+
+    if run_root.exists():
+        state, _state_limitation = _read_state(run_root)
+        raise HostOpError(
+            "run_id_already_exists",
+            f"a run directory already exists for run id {run_id!r}; no new run "
+            "was started",
+            obj="run_id",
+            retryable=False,
+            next_action="inspect the existing run through get_run_status, or "
+            "choose a new explicit run id; never stop the old run implicitly",
+            passthrough={
+                "existing_run_root": f"workspaces/modeling-runs/{run_id}",
+                "recorded_state": (
+                    state.get("state") if isinstance(state, dict) else None
+                ),
+                "query": {"status": "get_run_status", "events": "get_run_events"},
+            },
+        )
+    record, _record_limitation = _read_json_file(
+        _host_launches_root(runs_root) / f"{run_id}.json"
+    )
+    if record is None:
+        return
+    pid = record.get("pid")
+    alive = pid_is_alive(pid)
+    if alive:
+        raise HostOpError(
+            "run_launch_in_progress",
+            f"run id {run_id!r} has a registered managed launch whose process "
+            f"pid {pid!r} is observed alive",
+            obj="run_id",
+            retryable=False,
+            next_action="re-check the run later through get_run_status",
+            passthrough={
+                "launch_record": record,
+                "observed_pid": pid,
+                "query": {"status": "get_run_status", "events": "get_run_events"},
+            },
+        )
+    raise HostOpError(
+        "run_launch_failed",
+        f"run id {run_id!r} has a registered managed launch whose process is "
+        "not alive and no run root exists; the stale registration is kept as "
+        "evidence",
+        obj="run_id",
+        retryable=False,
+        next_action="read the registered launch logs, then remove the stale "
+        f"{HOST_LAUNCHES_DIRECTORY}/{run_id}.json record manually (runbook) "
+        "before reusing this run id; the tool never deletes it",
+        passthrough={
+            "launch_record": record,
+            "log_paths": record.get("log_paths"),
+            "observed_pid": pid,
+        },
+    )
+
+
+def _launch_managed_run(
+    *,
+    run_id: str,
+    kind: str,
+    argv: list[str],
+    repository_root: Path | None = None,
+    launcher: Callable[..., Any] | None = None,
+    host_session_ref: str | None = None,
+    request_id: str | None = None,
+    run_root_wait_seconds: float = LAUNCH_RUN_ROOT_WAIT_SECONDS,
+) -> dict[str, Any]:
+    """Design §6: one managed launch, registered before anything else.
+
+    The registration (`.host-launches/<run_id>.json` plus the two log files) is
+    written *before* the subprocess is created so a crash before ``prepare``
+    still leaves the host a place to read; the pid is written back once the
+    process exists and the reaper thread is the only writer of ``exited``.
+    """
+
+    if kind not in HOST_LAUNCH_KINDS:
+        raise HostOpError(
+            "launch_arguments_invalid",
+            f"launch kind must be one of {list(HOST_LAUNCH_KINDS)}",
+            obj="kind",
+            retryable=False,
+            next_action="report this as an implementation defect",
+        )
+    run_root, runs_root = _validated_run_root(run_id, repository_root=repository_root)
+    repository = (
+        Path(repository_root).resolve()
+        if repository_root is not None
+        else default_repository_root()
+    )
+    launches = _host_launches_root(runs_root)
+    try:
+        launches.mkdir(parents=True, exist_ok=True, mode=0o700)
+    except OSError as exc:
+        raise HostOpError(
+            "run_launch_failed",
+            f"the launch registration directory could not be created: "
+            f"{exc.strerror or exc}",
+            obj=HOST_LAUNCHES_DIRECTORY,
+            retryable=False,
+            next_action="check the runs-root permissions; nothing was started",
+        ) from exc
+    started_at = _utc_now()
+    log_paths = _launch_log_paths(run_id, runs_root)
+    record: dict[str, Any] = {
+        "schema": HOST_LAUNCH_RECORD_SCHEMA,
+        "run_id": run_id,
+        "kind": kind,
+        "argv": list(argv),
+        "argv_note": "credential-free by construction: the platform credential "
+        "travels only in the process environment, never in argv or this record",
+        "pid": None,
+        "started_at": started_at,
+        "host_session_ref": host_session_ref,
+        "request_id": request_id,
+        "log_paths": {
+            "stdout": log_paths["stdout"],
+            "stderr": log_paths["stderr"],
+        },
+        "status": HOST_LAUNCH_STATUS_LAUNCHED,
+        "recorded_at": started_at,
+    }
+    record_path = launches / f"{run_id}.json"
+    _atomic_write_json(record_path, record, what=f"the launch record for run id {run_id!r}")
+    launch = _managed_launch if launcher is None else launcher
+    out_path = launches / f"{run_id}.out.log"
+    err_path = launches / f"{run_id}.err.log"
+    try:
+        with out_path.open("ab") as out_handle, err_path.open("ab") as err_handle:
+            process = launch(
+                list(argv),
+                cwd=str(repository),
+                env=dict(os.environ),
+                stdout=out_handle.fileno(),
+                stderr=err_handle.fileno(),
+            )
+    except OSError as exc:
+        raise HostOpError(
+            "run_launch_failed",
+            f"the managed launch for run id {run_id!r} could not create the "
+            f"subprocess: {exc.strerror or exc}",
+            obj="run_id",
+            retryable=False,
+            next_action="read the registered launch logs; the registration and "
+            "the logs are kept as evidence and are never deleted implicitly",
+            passthrough={"launch_record": record, "log_paths": record["log_paths"]},
+        ) from exc
+    record = {**record, "pid": process.pid, "recorded_at": _utc_now()}
+    _atomic_write_json(record_path, record, what=f"the launch record for run id {run_id!r}")
+    _spawn_exit_reaper(process, record_path, run_id)
+    supervisor_written = False
+    observed = _await_run_root(run_root, run_root_wait_seconds)
+    if observed:
+        supervisor_written = _write_supervisor_record(
+            run_root,
+            pid=process.pid,
+            started_at=started_at,
+            session_ref=host_session_ref,
+        )
+    return _record_launch_observation(run_id, record, observed, supervisor_written)
+
+
+def _lifecycle_result(result: dict[str, Any], action: str) -> dict[str, Any]:
+    """Design §5.2/§5.4 return shape for one FIFO-backed S2 action.
+
+    The S1 submission result is passed through untouched and only annotated:
+    ``consumption_evidence`` points at the S2 evidence file, and a still
+    pending submission names the polling tool.  An already recorded receipt
+    keeps its ``accepted``/``rejected`` outcome fields verbatim (a replayed
+    request_id never triggers a second save).
+    """
+
+    payload: dict[str, Any] = {
+        **result,
+        "action": result.get("action", action),
+        "consumption_evidence": LIFECYCLE_CONSUMPTION_EVIDENCE.get(action),
+    }
+    if "status" not in payload:
+        payload["status"] = payload.get("outcome")
+    if payload.get("status") == "submitted":
+        payload["next_action"] = "get_request_result"
+    return payload
+
+
+def _submit_lifecycle_action(
+    run_id: str,
+    action: str,
+    envelope: dict[str, Any],
+    *,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    try:
+        result = submit_fifo_action(
+            run_id,
+            action,
+            envelope,
+            request_id=request_id,
+            repository_root=repository_root,
+        )
+    except HostOpError as exc:
+        if exc.code == "outer_input_channel_unavailable" and action == "resume":
+            # Design §5.2: resume_live_run states its limit instead of silently
+            # turning into a 015 checkpoint continuation.
+            raise HostOpError(
+                exc.code,
+                exc.reason,
+                obj=exc.obj,
+                retryable=exc.retryable,
+                next_action="resume_live_run continues a live thread only; a "
+                "stopped or ended run continues exclusively through "
+                "resume_from_checkpoint",
+                passthrough={**exc.passthrough, "requested_action": action},
+            ) from exc
+        raise
+    return _lifecycle_result(result, action)
+
+
+def start_run(
+    *,
+    run_id: str,
+    task: str,
+    profile: str,
+    model_profile: str,
+    scope: str,
+    freeze_started_at: str,
+    task_overlay: str | None = None,
+    base_url: str | None = None,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+    launcher: Callable[..., Any] | None = None,
+    host_session_ref: str | None = None,
+    run_root_wait_seconds: float = LAUNCH_RUN_ROOT_WAIT_SECONDS,
+) -> dict[str, Any]:
+    """Design §5.1: one managed ``python -m modeling_team run`` launch.
+
+    The pre-checks are side-effect free and short-circuit in order (run id
+    shape/containment, input reference containment, freeze-timepoint shape,
+    base URL protocol, then the run-id occupancy branches).  ``freeze_started_at``
+    is only shape-checked here and passed through verbatim: the tool never
+    fills or rewrites a timepoint, and for a multi-slice budget-exempt task the
+    platform has no freeze-time gate, so the real-timepoint discipline is the
+    host's.  Accepting the launch never means a semantic start happened.
+    """
+
+    _validate_request_id(request_id)
+    run_root, runs_root = _validated_run_root(run_id, repository_root=repository_root)
+    resolved_profile = resolve_repo_path(
+        profile, field="profile", repository_root=repository_root
+    )
+    resolved_task = resolve_repo_path(task, field="task", repository_root=repository_root)
+    resolved_scope = resolve_repo_path(scope, field="scope", repository_root=repository_root)
+    resolved_overlay = (
+        resolve_repo_path(
+            task_overlay, field="task_overlay", repository_root=repository_root
+        )
+        if task_overlay is not None
+        else None
+    )
+    validated_freeze = validate_freeze_started_at(freeze_started_at)
+    if base_url is not None:
+        _validate_base_url(base_url)
+    _assert_launch_target_free(run_id, run_root, runs_root)
+    argv = [
+        sys.executable,
+        "-m",
+        "modeling_team",
+        "run",
+        "--profile",
+        str(resolved_profile),
+        "--task",
+        str(resolved_task),
+    ]
+    if resolved_overlay is not None:
+        argv.extend(["--task-overlay", str(resolved_overlay)])
+    argv.extend(
+        [
+            "--model-profile",
+            str(model_profile),
+            "--run-id",
+            run_id,
+            "--scope",
+            str(resolved_scope),
+        ]
+    )
+    if base_url is not None:
+        argv.extend(["--base-url", base_url])
+    argv.extend(["--freeze-started-at", validated_freeze, "--enable-outer-input-fifo"])
+    launched = _launch_managed_run(
+        run_id=run_id,
+        kind="run",
+        argv=argv,
+        repository_root=repository_root,
+        launcher=launcher,
+        host_session_ref=host_session_ref,
+        request_id=request_id,
+        run_root_wait_seconds=run_root_wait_seconds,
+    )
+    relative_root = f"workspaces/modeling-runs/{run_id}"
+    return {
+        **launched,
+        "baseline_evidence": {
+            "manifest": f"{relative_root}/baseline-manifest.json (locatable once "
+            "the run root appears)",
+            "hash_ref": "evidence/start-ledger.jsonl reservation record field "
+            "baseline_hash",
+        },
+        "query": {"status": "get_run_status", "events": "get_run_events"},
+        "note": "launch accepted ≠ semantic start happened",
+        "semantic_start_evidence": (
+            "evidence/semantic-start.jsonl (appears asynchronously once a real "
+            "semantic start happened; evidence/start-ledger.jsonl records only "
+            "reservation/presemantic_release/terminal_settlement events and "
+            "never proves a semantic start)"
+        ),
+    }
+
+
+def pause_run(
+    run_id: str,
+    *,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Design §5.2: the outer ``pause`` envelope -- a pause is not a stop."""
+
+    return _submit_lifecycle_action(
+        run_id, "pause", {"action": "pause"},
+        request_id=request_id, repository_root=repository_root,
+    )
+
+
+def resume_live_run(
+    run_id: str,
+    *,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Design §5.2: continue the same live thread, never rebuild or hot-load."""
+
+    return _submit_lifecycle_action(
+        run_id, "resume", {"action": "resume"},
+        request_id=request_id, repository_root=repository_root,
+    )
+
+
+def stop_run(
+    run_id: str,
+    *,
+    reason: str | None = None,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Design §5.2: the outer ``stop`` envelope with its existing cleanup.
+
+    ``reason`` only travels in the envelope (and therefore in the host
+    submission digest): the Runner's stop branch does not read it, and this
+    tool never claims otherwise.
+    """
+
+    envelope: dict[str, Any] = {"action": "stop"}
+    if reason is not None:
+        if not isinstance(reason, str) or not reason.strip():
+            raise HostOpError(
+                "launch_arguments_invalid",
+                "reason must be a non-empty string when provided",
+                obj="reason",
+                retryable=True,
+                next_action="pass the host ledger reason for this stop or omit it",
+            )
+        envelope["reason"] = reason
+    return _submit_lifecycle_action(
+        run_id, "stop", envelope,
+        request_id=request_id, repository_root=repository_root,
+    )
+
+
+def inspect_checkpoints(
+    run_id: str,
+    *,
+    checkpoint_id: str | None = None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Design §5.3: the existing read-only 015 inspection, passed through."""
+
+    run_root, _runs_root = resolve_run_root(run_id, repository_root=repository_root)
+    if checkpoint_id is not None and (
+        not isinstance(checkpoint_id, str) or not checkpoint_id
+    ):
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "checkpoint_id must be a non-empty string when provided",
+            obj="checkpoint_id",
+            retryable=False,
+            next_action="inspect without checkpoint_id to list every package",
+        )
+    try:
+        result = inspect_checkpoints_readonly(run_root, checkpoint_id)
+    except CheckpointError as exc:
+        raise HostOpError(
+            exc.reason_code,
+            exc.detail,
+            obj=exc.object,
+            retryable=exc.retryable,
+            next_action=exc.retry,
+        ) from exc
+    return {"run_id": run_id, "read_only": True, "observed_at": _utc_now(), **result}
+
+
+def save_checkpoint(
+    run_id: str,
+    *,
+    kind: str | None,
+    request_id: str | None = None,
+    scope_refs: dict[str, Any] | None = None,
+    command: str = "save",
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Design §5.4/§7.3: one top-level ``request_id``, two recorded faces.
+
+    The same id is written to the host submission ledger plus the Runner
+    receipt (through :func:`submit_fifo_action`) and re-injected by the shared
+    admission wrapper for the 015 manifest provenance.  Kind and selector
+    validation stays with the Runner, so its original codes come back
+    unchanged; frozen results are never edited and no historical checkpoint is
+    back-filled here.
+    """
+
+    if command != "save":
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "save_checkpoint only submits the 'save' command; read-only "
+            "inspection goes through inspect_checkpoints",
+            obj="command",
+            retryable=False,
+            next_action="call inspect_checkpoints for a read-only listing",
+        )
+    envelope: dict[str, Any] = {"action": "checkpoint", "command": "save", "kind": kind}
+    if scope_refs is not None:
+        if not isinstance(scope_refs, dict):
+            raise HostOpError(
+                "launch_arguments_invalid",
+                "scope_refs must be a JSON object when provided",
+                obj="scope_refs",
+                retryable=False,
+                next_action="pass the 015 selector contract as an object",
+            )
+        envelope["scope_refs"] = scope_refs
+    return _submit_lifecycle_action(
+        run_id, "checkpoint", envelope,
+        request_id=request_id, repository_root=repository_root,
+    )
+
+
+def resume_from_checkpoint(
+    *,
+    source_run_id: str,
+    checkpoint_id: str,
+    new_run_id: str,
+    mode: str,
+    authorization_reference: str,
+    freeze_started_at: str | None = None,
+    session_timeout: float | int | None = None,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+    launcher: Callable[..., Any] | None = None,
+    host_session_ref: str | None = None,
+    run_root_wait_seconds: float = LAUNCH_RUN_ROOT_WAIT_SECONDS,
+) -> dict[str, Any]:
+    """Design §5.5: one managed ``checkpoint resume`` of an explicit package.
+
+    ``--run-id`` is the SOURCE run id and ``--new-run-id`` the fresh one; the
+    checkpoint id is never auto-selected and ``--enable-outer-input-fifo`` is
+    always passed so the continuation run stays host-interactive.  The
+    credential pre-check runs before anything else, so a missing host
+    credential never spawns a subprocess.
+    """
+
+    _require_host_credential()
+    _validate_request_id(request_id)
+    if not isinstance(checkpoint_id, str) or not checkpoint_id.strip():
+        raise HostOpError(
+            "checkpoint_id_required",
+            "an explicit checkpoint id is required; the tool never auto-selects "
+            "the latest package",
+            obj="checkpoint_id",
+            retryable=True,
+            next_action="list the packages with inspect_checkpoints and pass "
+            "one explicit checkpoint_id",
+        )
+    _new_root, new_runs_root = _validated_run_root(
+        new_run_id, repository_root=repository_root
+    )
+    _validated_run_root(source_run_id, repository_root=repository_root)
+    _assert_launch_target_free(new_run_id, _new_root, new_runs_root)
+    if mode not in {"production", "acceptance"}:
+        raise HostOpError(
+            "launch_arguments_invalid",
+            f"mode must be 'production' or 'acceptance', not {mode!r}",
+            obj="mode",
+            retryable=True,
+            next_action="pass the 015 continuation mode explicitly",
+        )
+    if mode == "production" and freeze_started_at is None:
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "mode 'production' requires freeze_started_at: the schema-v2 Task "
+            "contract demands an explicit fresh freeze timepoint on the resume "
+            "path",
+            obj="freeze_started_at",
+            retryable=True,
+            next_action="record the real freeze window of the NEW run and pass "
+            "it; never reuse the source run's old timepoint",
+        )
+    if mode == "acceptance" and freeze_started_at is not None:
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "mode 'acceptance' does not take freeze_started_at",
+            obj="freeze_started_at",
+            retryable=True,
+            next_action="drop freeze_started_at for an acceptance-only "
+            "continuation",
+        )
+    validated_freeze = (
+        validate_freeze_started_at(freeze_started_at) if mode == "production" else None
+    )
+    if not isinstance(authorization_reference, str) or not authorization_reference.strip():
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "authorization_reference is required: the host-ledger reference for "
+            "this continuation is recorded verbatim by the resume entry",
+            obj="authorization_reference",
+            retryable=True,
+            next_action="pass the host-recorded authorization reference (for "
+            "example auth-<batch>/<action> (user-approved <time>))",
+        )
+    if session_timeout is not None and (
+        not isinstance(session_timeout, (int, float))
+        or isinstance(session_timeout, bool)
+        or session_timeout <= 0
+    ):
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "session_timeout must be a positive number of seconds",
+            obj="session_timeout",
+            retryable=True,
+            next_action="pass the acceptance-mode per-child session timeout in "
+            "seconds",
+        )
+    argv = [
+        sys.executable,
+        "-m",
+        "modeling_team",
+        "checkpoint",
+        "resume",
+        "--run-id",
+        source_run_id,
+        "--checkpoint-id",
+        checkpoint_id,
+        "--new-run-id",
+        new_run_id,
+        "--mode",
+        mode,
+        "--authorization-reference",
+        authorization_reference,
+    ]
+    if validated_freeze is not None:
+        argv.extend(["--freeze-started-at", validated_freeze])
+    if session_timeout is not None:
+        argv.extend(["--session-timeout", str(session_timeout)])
+    argv.append("--enable-outer-input-fifo")
+    launched = _launch_managed_run(
+        run_id=new_run_id,
+        kind="checkpoint_resume",
+        argv=argv,
+        repository_root=repository_root,
+        launcher=launcher,
+        host_session_ref=host_session_ref,
+        request_id=request_id,
+        run_root_wait_seconds=run_root_wait_seconds,
+    )
+    return {
+        **launched,
+        "run_id": new_run_id,
+        "source_run_id": source_run_id,
+        "checkpoint_id": checkpoint_id,
+        "mode": mode,
+        "semantic_starts_note": (
+            "production resume consumes 1 semantic start and an acceptance-only "
+            "continuation consumes 0; the 015 inspection result is authoritative"
+        ),
+        "query": {"status": "get_run_status", "events": "get_run_events"},
+    }
+
+
+def settle_source_run(
+    source_run_id: str,
+    *,
+    stop_reference: str,
+    base_url: str = DEFAULT_PLATFORM_BASE_URL,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Design §5.6: in-process settlement of an existing controlled stop.
+
+    The CLI's exact call semantics are reused: the same module-level function,
+    the same ``http_readback`` construction and the same
+    ``.recovery-settlements/<run_id>.json`` record path.  A refusal keeps its
+    original typed code, and "the process could not be found" is never treated
+    as proof that the writer stopped.
+    """
+
+    _require_host_credential()
+    _validate_request_id(request_id)
+    run_root, runs_root = resolve_run_root(source_run_id, repository_root=repository_root)
+    _validate_base_url(base_url)
+    readback = http_readback(base_url, os.environ[HOST_CREDENTIAL_ENV])
+    try:
+        record = settle_source_run_record(
+            run_root=run_root,
+            stop_reference=stop_reference,
+            readback=readback,
+        )
+    except CheckpointError as exc:
+        raise HostOpError(
+            exc.reason_code,
+            exc.detail,
+            obj=exc.object,
+            retryable=exc.retryable,
+            next_action=exc.retry,
+        ) from exc
+    settlement_path = runs_root / ".recovery-settlements" / f"{source_run_id}.json"
+    try:
+        relative = settlement_path.resolve().relative_to(
+            Path(repository_root).resolve()
+            if repository_root is not None
+            else default_repository_root()
+        )
+        settlement_ref = relative.as_posix()
+    except (OSError, ValueError):
+        settlement_ref = settlement_path.as_posix()
+    return {
+        "source_run_id": source_run_id,
+        "settled": True,
+        "settlement_record": record,
+        "settlement_record_ref": settlement_ref,
+        "request_id": request_id,
+        "note": "this records the existing controlled-stop evidence only; an "
+        "unknown write stays behind its own reconciliation boundary",
+    }
+
+
 __all__ = [
     "ACTION_EVIDENCE",
     "EVENTS_DEFAULT_LIMIT",
@@ -2234,10 +3332,22 @@ __all__ = [
     "get_request_result",
     "get_run_events",
     "get_run_status",
+    "inspect_checkpoints",
+    "launch_record_path",
+    "pause_run",
     "pending_items",
+    "read_launch_record",
     "recover_provider",
     "register_question",
     "resolve_issue",
+    "resolve_repo_path",
+    "resume_from_checkpoint",
+    "resume_live_run",
+    "save_checkpoint",
+    "settle_source_run",
+    "start_run",
+    "stop_run",
     "submit_cq_review",
     "submit_fifo_action",
+    "validate_freeze_started_at",
 ]
