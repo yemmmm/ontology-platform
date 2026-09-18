@@ -136,6 +136,8 @@ uv run python ../scripts/sync-interface-docs.py --write
 | build sessions | `POST` | `/api/build-sessions/{session_id}:complete` | Complete Build Session |
 | build sessions | `POST` | `/api/build-sessions/{session_id}:resume` | Resume Build Session |
 | build sessions | `POST` | `/api/projects/{project_id}/build-sessions` | Create Build Session |
+| checkpoint-data | `POST` | `/api/checkpoint-data/capture` | Capture Data |
+| checkpoint-data | `POST` | `/api/checkpoint-data/fork` | Fork Data |
 | evidence | `GET` | `/api/chunks/{chunk_id}` | Get Evidence Chunk |
 | evidence | `GET` | `/api/evidence-artifacts/{artifact_id}` | Get Evidence Artifact |
 | evidence | `GET` | `/api/evidence-artifacts/{artifact_id}/chunks` | List Evidence Artifact Chunks |

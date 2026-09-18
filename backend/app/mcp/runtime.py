@@ -385,6 +385,17 @@ def _authorize_tool(session: Session, tool_name: str, fn: Callable) -> AuthPrinc
             raise PermissionError("MCP resource is outside the authorized Project")
         if policy.ownership is McpOwnership.PROJECT_RESOURCE and not resolved:
             raise PermissionError("MCP operation requires a Project-owned resource")
+    if policy.mutates_state:
+        from app.services.checkpoint_archive import project_is_checkpoint_archived
+
+        resources = []
+        _collect_resource_ids(_closure_payload(fn), resources)
+        project_ids = {_project_for_resource(session, kind, value) for kind, value in resources}
+        if any(
+            project_is_checkpoint_archived(session, project_id)
+            for project_id in project_ids if project_id
+        ):
+            raise PermissionError("checkpoint_source_archived: source Project is read-only")
     return principal
 
 

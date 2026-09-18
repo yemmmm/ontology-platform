@@ -1064,7 +1064,18 @@ def _saved_cq_frozen_manifest(runner: TeamRunner) -> dict:
     return _read_manifest(runner.run.root, "cq_frozen-0001")
 
 
-def test_checkpoint_save_records_the_real_single_ontology_scope_identity():
+@pytest.fixture
+def checkpoint_data_standin(monkeypatch):
+    from modeling_team import checkpoint_data
+
+    def capture(_base, _key, action, payload):
+        assert action == "capture"
+        return {"digest": "standin-data", **payload, "completed_operations": []}
+
+    monkeypatch.setattr(checkpoint_data, "platform_data_request", capture)
+
+
+def test_checkpoint_save_records_the_real_single_ontology_scope_identity(checkpoint_data_standin):
     harness = _CheckpointRunner()
     try:
         runner = harness.prepare()
@@ -1086,7 +1097,7 @@ def test_checkpoint_save_records_the_real_single_ontology_scope_identity():
         harness.remove()
 
 
-def test_checkpoint_save_records_the_full_multi_ontology_set():
+def test_checkpoint_save_records_the_full_multi_ontology_set(checkpoint_data_standin):
     harness = _CheckpointRunner()
     try:
         runner = harness.prepare()
@@ -1319,7 +1330,7 @@ def test_m07_write_claiming_save_waits_for_in_flight_and_unknown_writes(monkeypa
         harness.cleanup()
 
 
-def test_m07_settled_writes_save_with_positions_and_do_not_block_forever():
+def test_m07_settled_writes_save_with_positions_and_do_not_block_forever(checkpoint_data_standin):
     harness = _CheckpointRunner()
     try:
         runner = harness.prepare()

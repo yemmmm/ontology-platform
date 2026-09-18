@@ -362,13 +362,20 @@ class CanonicalSemanticWriteService:
         return None
 
     def _lock_ontology(self, compiled: CompiledCommand) -> None:
+        from app.services.checkpoint_archive import ARCHIVE_KEY, lock_graph_owners
+
+        owners = lock_graph_owners(self.session, compiled.delta.affected_graph_iris())
+        if any((owner.external_mappings or {}).get(ARCHIVE_KEY) for owner in owners):
+            raise CanonicalWriteBlocked("checkpoint_source_archived: source Project is read-only")
         ontology_id = compiled.metadata.get("ontology_id")
         if ontology_id:
-            self.session.scalar(
-                select(OntologyModel.id)
+            ontology = self.session.scalar(
+                select(OntologyModel)
                 .where(OntologyModel.id == str(ontology_id))
                 .with_for_update()
             )
+            if ontology and (ontology.external_mappings or {}).get("checkpoint_fork_archive"):
+                raise CanonicalWriteBlocked("checkpoint_source_archived: source Ontology is read-only")
 
     def compile_only(
         self,

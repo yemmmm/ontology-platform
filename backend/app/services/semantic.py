@@ -119,6 +119,15 @@ class SemanticService:
         self, content: str, format: str, base_iri: str | None = None
     ) -> DatasetLoadResult:
         _parse_rdf(content, format, base_iri=base_iri or self.settings.semantic_base_iri)
+        if format in {RdfFormat.TRIG.value, RdfFormat.N_QUADS.value, RdfFormat.JSON_LD.value}:
+            from app.services.checkpoint_archive import ARCHIVE_KEY, lock_graph_owners
+
+            dataset = _parse_dataset(content, format, base_iri or self.settings.semantic_base_iri)
+            graph_iris = [str(graph.identifier) for graph in dataset.graphs()
+                          if isinstance(graph.identifier, URIRef)]
+            owners = lock_graph_owners(self.session, graph_iris)
+            if any((owner.external_mappings or {}).get(ARCHIVE_KEY) for owner in owners):
+                raise LockedSemanticGraph("checkpoint_source_archived: source Project is read-only")
         return self.rdf_store.load_dataset(content, format)
 
     def query_sparql(
@@ -170,6 +179,11 @@ class SemanticService:
         warning_state: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         affected_graphs, update, delta = self._prepare_edit(format, content, target_graph_iri)
+        from app.services.checkpoint_archive import ARCHIVE_KEY, lock_graph_owners
+
+        owners = lock_graph_owners(self.session, affected_graphs)
+        if any((owner.external_mappings or {}).get(ARCHIVE_KEY) for owner in owners):
+            raise LockedSemanticGraph("checkpoint_source_archived: source Project is read-only")
         for graph_iri in affected_graphs:
             self._require_managed_graph(graph_iri)
             self._require_editable_graph(graph_iri)

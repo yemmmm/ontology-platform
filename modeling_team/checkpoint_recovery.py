@@ -922,6 +922,10 @@ def origin_chain_roots(source_run_root: Path, runs_root: Path) -> list[Path]:
         origin = load_origin_record(current)
         if origin is None:
             break
+        if origin.get("schema_version") == "r3-0-017-fork/v1":
+            # A fork's imported snapshot starts a new write chain. Historical
+            # exposure was already unioned into this run before it started.
+            break
         source_id = origin.get("source_run_id")
         if not isinstance(source_id, str) or not source_id:
             break

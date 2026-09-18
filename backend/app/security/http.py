@@ -83,6 +83,7 @@ OWNER_RESOURCE_KEYS = frozenset(
 HTTP_ROUTE_POLICIES: dict[tuple[str, str], str] = {}
 
 _ADMIN_PATHS = (
+    "/api/checkpoint-data",
     "/api/api-keys",
     "/api/semantic/migrations",
     "/api/semantic/derived-results:gc",
@@ -466,6 +467,7 @@ async def authorize_api_request(request: Request) -> None:
                     )
 
     if principal.project_id is None:
+        await _check_checkpoint_archive(request, scope)
         return
     if request.url.path == "/api/projects" and request.method == "POST":
         raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
@@ -569,6 +571,32 @@ async def authorize_api_request(request: Request) -> None:
                 if explicit_project:
                     raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
                 raise HTTPException(status_code=404, detail="Resource not found")
+    await _check_checkpoint_archive(request, scope)
+
+
+async def _check_checkpoint_archive(request: Request, scope: str) -> None:
+    # Ownership is checked first so archive state is not disclosed across Projects.
+    if request.method not in UNSAFE_METHODS or scope == "read" or request.url.path.startswith(
+        "/api/checkpoint-data/"
+    ):
+        return
+    from app.services.checkpoint_archive import project_is_checkpoint_archived
+
+    resources = [
+        (key, value) for key, value in request.path_params.items() if key in OWNER_RESOURCE_KEYS
+    ]
+    if "application/json" in request.headers.get("content-type", ""):
+        try:
+            _collect_resource_ids(await request.json(), resources)
+        except ValueError:
+            pass
+    with request.app.state.session_factory() as session:
+        project_ids = {_project_for_resource(session, kind, value) for kind, value in resources}
+        if any(
+            project_is_checkpoint_archived(session, project_id)
+            for project_id in project_ids if project_id
+        ):
+            raise HTTPException(status_code=409, detail={"code": "checkpoint_source_archived"})
 
 
 def principal_dependency(request: Request) -> AuthPrincipal:

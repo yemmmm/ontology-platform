@@ -2932,6 +2932,9 @@ def main() -> int:
         "deadline is never inherited (design §4.2)",
     )
     checkpoint_resume.add_argument("--enable-outer-input-fifo", action="store_true")
+    checkpoint_resume.add_argument(
+        "--fork-reason", help="Explicitly restore saved data into a new Project; record why",
+    )
     args = parser.parse_args()
     resume_requested = args.command == "checkpoint" and args.checkpoint_command == "resume"
     if args.command == "cq-acceptance":
@@ -2961,6 +2964,9 @@ def main() -> int:
             # Outside the run loader: it only writes the host-owned record.
             return _run_checkpoint_settle_source(args, repository_root())
         if args.mode == "acceptance":
+            if args.fork_reason is not None:
+                print("checkpoint failed: fork requires production mode", file=sys.stderr)
+                return 2
             # R3.0-015 S4 (design §7): acceptance-only continuation of a
             # production_handoff checkpoint.  It stays outside the run loader
             # entirely -- no TeamRunner, no Agent, no Build Session or write
@@ -3210,7 +3216,11 @@ def main() -> int:
                     checkpoint_id=args.checkpoint_id,
                     new_run_id=args.new_run_id,
                     authorization_reference=args.authorization_reference,
+                    **({"fork_reason": args.fork_reason} if args.fork_reason is not None else {}),
                 )
+                if args.fork_reason is not None:
+                    resume_lock.release()
+                    resume_lock = acquire_root_run_lock(args.new_run_id, runs_root)
             except CheckpointError as exc:
                 # The typed reason tuple reaches the host verbatim (no hidden
                 # CQ material, no secrets); the source run stays untouched.

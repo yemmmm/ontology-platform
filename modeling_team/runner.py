@@ -10638,6 +10638,24 @@ class TeamRunner:
         trigger: str,
         request_id: str | None = None,
     ) -> dict[str, Any]:
+        # Keep data capture and receipt positions inside one admission window.
+        captured = self._cq_write_admission.begin_capture()
+        try:
+            return self._save_run_checkpoint_captured(
+                kind, scope_refs=scope_refs, trigger=trigger, request_id=request_id
+            )
+        finally:
+            if captured:
+                self._cq_write_admission.end_capture()
+
+    def _save_run_checkpoint_captured(
+        self,
+        kind: str,
+        *,
+        scope_refs: Mapping[str, Any] | None = None,
+        trigger: str,
+        request_id: str | None = None,
+    ) -> dict[str, Any]:
         """Save one checkpoint, enforcing the M07 write-claim gate (§3.3.2–3.3.3)."""
 
         if not self._modeling_checkpoints or self.run is None:
@@ -10647,8 +10665,7 @@ class TeamRunner:
                 obj="modeling_checkpoints",
                 phase="checkpoint-save",
                 retryable=False,
-                retry="start a run from a v3 Task declaring "
-                "parameters.modeling_checkpoints: true",
+                retry="start a run from a v3 Task declaring parameters.modeling_checkpoints: true",
             )
         if kind not in CHECKPOINT_KINDS:
             raise CheckpointError(
@@ -10664,37 +10681,25 @@ class TeamRunner:
             # admissions while the write positions are read; §3.3.3: with
             # in-flight or unknown writes no recoverable-write claim package
             # is published — the specific wait reason is returned instead.
-            captured = self._cq_write_admission.begin_capture()
-            try:
-                if not self._cq_write_admission.wait_until_drained(
-                    _CQ_WRITE_DRAIN_TIMEOUT_SECONDS
-                ):
-                    raise CheckpointError(
-                        "checkpoint_write_unreconciled",
-                        "in-flight staged writes did not settle within the "
-                        "bounded drain wait; refusing to capture a recoverable "
-                        "write state",
-                        obj="write_positions",
-                        phase="checkpoint-save",
-                        retryable=True,
-                        retry="wait for the in-flight staged writes to settle, "
-                        "then retry this save",
-                    )
-                admission_snapshot = self._cq_write_admission.snapshot()
-                write_positions = self._checkpoint_write_positions(admission_snapshot)
-            finally:
-                if captured:
-                    self._cq_write_admission.end_capture()
+            if not self._cq_write_admission.wait_until_drained(_CQ_WRITE_DRAIN_TIMEOUT_SECONDS):
+                raise CheckpointError(
+                    "checkpoint_write_unreconciled",
+                    "in-flight staged writes did not settle within the "
+                    "bounded drain wait; refusing to capture a recoverable "
+                    "write state",
+                    obj="write_positions",
+                    phase="checkpoint-save",
+                    retryable=True,
+                    retry="wait for the in-flight staged writes to settle, then retry this save",
+                )
+            admission_snapshot = self._cq_write_admission.snapshot()
+            write_positions = self._checkpoint_write_positions(admission_snapshot)
             unsettled = [
                 item
                 for item in write_positions.get("positions") or []
                 if item.get("state") in {"pending", "unknown", "in_flight"}
             ]
-            if (
-                write_positions.get("in_flight")
-                or write_positions.get("unknown")
-                or unsettled
-            ):
+            if write_positions.get("in_flight") or write_positions.get("unknown") or unsettled:
                 raise CheckpointError(
                     "checkpoint_write_unreconciled",
                     f"staged writes are still in flight or unknown "
@@ -10711,10 +10716,40 @@ class TeamRunner:
         else:
             # Non-write-claiming kinds still record the honestly observed
             # write state without gating the save on it.
-            write_positions = self._checkpoint_write_positions(
+            write_positions = self._checkpoint_write_positions(self._cq_write_admission.snapshot())
+        package.write_positions = write_positions
+        if package.platform_bindings.get("project_id"):
+            from .checkpoint_data import platform_data_request
+
+            data_key = self.canonical_admin_key or getattr(self.scope, "admin_key", None)
+            if not data_key:
+                raise CheckpointError(
+                    "checkpoint_data_credentials_missing",
+                    "a scope-bound checkpoint requires the host data snapshot credential",
+                    obj="platform_data",
+                    phase="checkpoint-save",
+                )
+            if not self._cq_write_admission.wait_until_drained(_CQ_WRITE_DRAIN_TIMEOUT_SECONDS):
+                raise CheckpointError(
+                    "checkpoint_write_unreconciled",
+                    "writes did not drain before data capture",
+                    obj="platform_data",
+                    phase="checkpoint-save",
+                )
+            # Re-read after drain also for the early, non-write-claiming stages.
+            package.write_positions = self._checkpoint_write_positions(
                 self._cq_write_admission.snapshot()
             )
-        package.write_positions = write_positions
+            bindings = package.platform_bindings
+            package.platform_data = platform_data_request(
+                self.canonical_base_url,
+                data_key,
+                "capture",
+                {
+                    "project_id": bindings["project_id"],
+                    "ontology_ids": bindings.get("ontology_ids") or [bindings["ontology_id"]],
+                },
+            )
         result = save_checkpoint(
             self.run.root,
             package,
@@ -10792,6 +10827,7 @@ class TeamRunner:
         new_run_id: str,
         readback: PlatformReadback | None = None,
         authorization_reference: str | None = None,
+        fork_reason: str | None = None,
     ) -> TeamRun:
         """Resume production from a published checkpoint (design §4.2).
 
@@ -10807,6 +10843,13 @@ class TeamRunner:
 
         if self.run is not None or not self._safe_run_id(new_run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
+        if fork_reason is not None and not self.canonical_admin_key:
+            raise CheckpointError(
+                "checkpoint_data_credentials_missing",
+                "fork requires the host platform credential",
+                obj="platform_data",
+                phase="checkpoint-fork",
+            )
         if readback is None:
             if not self.canonical_admin_key or not self.canonical_base_url:
                 raise TeamConfigurationError(
@@ -10814,7 +10857,8 @@ class TeamRunner:
                     "(canonical base URL and admin key)"
                 )
             readback = http_readback(self.canonical_base_url, self.canonical_admin_key)
-        plan = prepare_recovery_plan(
+        fork_snapshot = None
+        plan_arguments = dict(
             source_run_root=source_run_root,
             checkpoint_id=checkpoint_id,
             new_run_id=new_run_id,
@@ -10822,6 +10866,12 @@ class TeamRunner:
             readback=readback,
             authorization_reference=authorization_reference,
         )
+        if fork_reason is not None:
+            from .checkpoint_data import prepare_fork_plan
+
+            plan, fork_snapshot = prepare_fork_plan(**plan_arguments, fork_reason=fork_reason)
+        else:
+            plan = prepare_recovery_plan(**plan_arguments)
         configuration = plan.manifest.get("configuration") or {}
         run = self.prepare(
             run_id=plan.new_run_id,
@@ -10831,6 +10881,64 @@ class TeamRunner:
             model_profile_id=configuration.get("model_profile_id"),
         )
         self._materialize_checkpoint_recovery(plan)
+        if fork_snapshot is not None:
+            from .checkpoint_data import platform_data_request
+
+            plan.origin["fork_pending"] = {
+                "target_project_id": plan.scope["project_id"],
+                "ontology_ids": plan.scope["ontology_ids"],
+                "snapshot_digest": fork_snapshot["digest"],
+            }
+            write_recovery_files(
+                run.root,
+                inspection=plan.inspection,
+                origin=plan.origin,
+                imports=plan.imports,
+                role_packets=plan.role_packets,
+            )
+            result = platform_data_request(
+                self.canonical_base_url,
+                self.canonical_admin_key,
+                "fork",
+                {
+                    "snapshot": fork_snapshot,
+                    "name": f"Checkpoint fork {new_run_id}",
+                    "target_project_id": plan.scope["project_id"],
+                },
+            )
+            plan.scope.update(
+                mode="checkpoint",
+                project_id=result["project_id"],
+                ontology_ids=result["ontology_ids"],
+                root_run_id=new_run_id,
+            )
+            run.scope.update(plan.scope)
+            plan.origin["platform_fork"] = result
+            plan.origin.pop("fork_pending", None)
+            plan.imports["identity_mappings"] = result["identity_mapping"]
+            plan.imports["approval_rebinding"] = {
+                "source_project_id": result["source_project_id"],
+                "target_project_id": result["project_id"],
+                "checkpoint_digest": plan.manifest_digest,
+                "snapshot_digest": result["snapshot_digest"],
+                "business_approvals": plan.approvals,
+                "translation_approval": "fresh_review_required",
+            }
+            for packet in plan.role_packets.values():
+                packet["fork_scope"] = dict(plan.scope)
+                packet["identity_mapping"] = result["identity_mapping"]
+                packet["instructions"].append(
+                    "Use the fork_scope and identity_mapping for all platform work. "
+                    "Source artifacts and approvals remain immutable historical evidence; "
+                    "republish unfinished plans against the new scope and review their translation."
+                )
+            write_recovery_files(
+                run.root,
+                inspection=plan.inspection,
+                origin=plan.origin,
+                imports=plan.imports,
+                role_packets=plan.role_packets,
+            )
         return run
 
     def _materialize_checkpoint_recovery(self, plan: RecoveryPlan) -> None:

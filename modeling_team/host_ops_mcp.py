@@ -467,6 +467,7 @@ def tool_resume_from_checkpoint(
     freeze_started_at: str | None = None,
     session_timeout: float | None = None,
     request_id: str | None = None,
+    fork_reason: str | None = None,
 ) -> dict[str, Any]:
     """Resume one explicit published checkpoint as a fresh managed run (§5.5).
 
@@ -488,6 +489,7 @@ def tool_resume_from_checkpoint(
         freeze_started_at=freeze_started_at,
         session_timeout=session_timeout,
         request_id=request_id,
+        **({"fork_reason": fork_reason} if fork_reason is not None else {}),
     )
 
 

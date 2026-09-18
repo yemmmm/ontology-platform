@@ -29,6 +29,7 @@ CHECKPOINT_MANIFEST_NAME = "manifest.json"
 CHECKPOINT_ARTIFACTS_DIRECTORY = "artifacts"
 CHECKPOINT_HOST_PRIVATE_DIRECTORY = "host-private"
 CHECKPOINT_EVIDENCE_NAME = "checkpoints"
+PLATFORM_DATA_PATH = "host-private/platform-data.json"
 
 CHECKPOINT_KIND_SCENARIO_MAPPED = "scenario_mapped"
 CHECKPOINT_KIND_CQ_FROZEN = "cq_frozen"
@@ -158,6 +159,7 @@ class StagePackage:
     platform_bindings: dict[str, Any] = field(default_factory=dict)
     write_positions: dict[str, Any] = field(default_factory=dict)
     missing: list[dict[str, Any]] = field(default_factory=list)
+    platform_data: dict[str, Any] | None = None
 
 
 def _now_iso(now: Callable[[], datetime] | None = None) -> str:
@@ -271,6 +273,7 @@ def _signature_payload(manifest: Mapping[str, Any]) -> Any:
         "artifacts": artifacts,
         "stage_facts": stage_facts,
         "write_positions": manifest.get("write_positions") or {},
+        **({"platform_data": manifest["platform_data"]} if "platform_data" in manifest else {}),
     }
 
 
@@ -330,6 +333,12 @@ def _verify_package(run_root: Path, checkpoint_id: str) -> tuple[dict[str, Any],
     if manifest.get("schema_version") != CHECKPOINT_SCHEMA:
         issues.append("schema_version is not " + CHECKPOINT_SCHEMA)
     package_root = checkpoints_root(run_root) / checkpoint_id
+    data_ref = manifest.get("platform_data")
+    if data_ref:
+        data_path = package_root / PLATFORM_DATA_PATH
+        if (not data_path.is_file() or data_path.is_symlink()
+                or file_digest(data_path) != data_ref.get("digest")):
+            issues.append("platform data snapshot is missing or changed")
     for artifact in manifest.get("artifacts") or []:
         if not isinstance(artifact, Mapping):
             issues.append("artifact entry is not an object")
@@ -447,6 +456,14 @@ def save_checkpoint(
         "write_positions": dict(package.write_positions or {}),
         **({"request_id": request_id} if request_id else {}),
     }
+    platform_data_bytes = None
+    if package.platform_data is not None:
+        platform_data_bytes = _canonical_bytes(package.platform_data)
+        manifest_payload["platform_data"] = {
+            "path": PLATFORM_DATA_PATH,
+            "digest": "sha256:" + hashlib.sha256(platform_data_bytes).hexdigest(),
+            "snapshot_digest": package.platform_data["digest"],
+        }
     _verify_cross_bindings(manifest_payload, resolved, run_root)
     # Dedup (design §3.4): same kind/scope/artifact digests/stage decisions/
     # write positions returns the existing package even under a new request id.
@@ -481,6 +498,14 @@ def save_checkpoint(
     temp_directory = base / f".{checkpoint_id}.tmp-{os.getpid()}-{os.urandom(4).hex()}"
     try:
         temp_directory.mkdir(parents=True, mode=0o700)
+        if platform_data_bytes is not None:
+            data_path = temp_directory / PLATFORM_DATA_PATH
+            data_path.parent.mkdir(mode=0o700, exist_ok=True)
+            with data_path.open("xb") as stream:
+                os.chmod(data_path, 0o600)
+                stream.write(platform_data_bytes)
+                stream.flush()
+                os.fsync(stream.fileno())
         for item in resolved:
             source = run_root.joinpath(*PurePosixPath(item.spec.source).parts)
             side = (
@@ -694,6 +719,11 @@ def _checkpoint_inspection(run_root: Path, checkpoint_id: str) -> dict[str, Any]
         "status": status,
         "issues": issues,
         "production_resume": production_resume,
+        "fork_resume": {
+            "available": bool(manifest.get("platform_data")) and not issues and not handoff_kind,
+            "snapshot": manifest.get("platform_data"),
+            "requires": "explicit fork_reason and stopped source writer",
+        },
         "reusable_artifacts": [
             {
                 "source": artifact.get("source"),

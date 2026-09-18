@@ -6,6 +6,7 @@ from app.api.auth import router as auth_router
 from app.security.http import authorize_api_request
 from app.api.interview import router as interview_router
 from app.api.build_sessions import router as build_sessions_router
+from app.api.checkpoint_data import router as checkpoint_data_router
 from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
 from app.api.protection_sets import router as protection_sets_router
@@ -23,6 +24,7 @@ router.include_router(auth_router)
 router.include_router(ontologies_router)
 router.include_router(interview_router)
 router.include_router(build_sessions_router)
+router.include_router(checkpoint_data_router)
 router.include_router(modeling_batches_router)
 router.include_router(modeling_workflow_router)
 router.include_router(semantic_router)

@@ -3125,6 +3125,7 @@ def resume_from_checkpoint(
     new_run_id: str,
     mode: str,
     authorization_reference: str,
+    fork_reason: str | None = None,
     freeze_started_at: str | None = None,
     session_timeout: float | int | None = None,
     request_id: str | None = None,
@@ -3166,6 +3167,14 @@ def resume_from_checkpoint(
             obj="mode",
             retryable=True,
             next_action="pass the 015 continuation mode explicitly",
+        )
+    if fork_reason is not None and (
+        mode != "production" or not isinstance(fork_reason, str) or not fork_reason.strip()
+    ):
+        raise HostOpError(
+            "launch_arguments_invalid", "fork_reason requires production mode and a nonempty reason",
+            obj="fork_reason", retryable=True,
+            next_action="use production mode and name the reason for an explicit fork",
         )
     if mode == "production" and freeze_started_at is None:
         raise HostOpError(
@@ -3232,6 +3241,8 @@ def resume_from_checkpoint(
     ]
     if validated_freeze is not None:
         argv.extend(["--freeze-started-at", validated_freeze])
+    if fork_reason is not None:
+        argv.extend(["--fork-reason", fork_reason])
     if session_timeout is not None:
         argv.extend(["--session-timeout", str(session_timeout)])
     argv.append("--enable-outer-input-fifo")
