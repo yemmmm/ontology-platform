@@ -589,29 +589,25 @@ def test_known_no_write_503_repairs_and_resumes_the_same_run_and_thread(tmp_path
             dependency.repair()
 
             # 8) the bound short resolution crosses the production foreground path.
+            # #31 (auth021): the resolution settles the ledger itself and the
+            # admission pump dispatches the resume control inline — the exact
+            # control a correct Coordinator would have issued — so the idle
+            # reporter is woken within this admission, not on a later
+            # Coordinator-issued resume.
+            before = len(sink.outputs)
             accepted = _admit_line(
                 runner, sink, _short_resolution_line(runner.run.run_id, issue_id, epoch)
             )
             assert accepted is None
-            assert _ledger(runner).state == "resolution_ready"
+            assert _ledger(runner).state == "resolved"
+            assert any(
+                entry["type"] == "issue-control" for entry in sink.outputs[before:]
+            )
             assert [
                 record["resolution_type"] for record in _evidence(staged, "issue-resolution")
             ] == ["repair_completed"]
 
-            # 9) the Coordinator resumes the idle reporter: same thread, new turn.
-            resume = _issue_control(
-                runner,
-                "resume",
-                issue_id,
-                epoch,
-                resolution_type="repair_completed",
-                repair_component="external_service",
-                resolution_text=REPAIR_TEXT,
-            )
-            assert resume["action"] == "resume"
-            resume_output = _pump(runner, sink)
-            assert [entry["type"] for entry in resume_output] == ["issue-control"]
-            assert _ledger(runner).state == "resolved"
+            # 9) the settlement dispatched the resume: same thread, new turn.
             controls = _evidence(staged, "issue-control")
             assert [record["action"] for record in controls] == ["pause", "resume"]
             assert {record["before_thread_id"] for record in controls} == {REPORTER_THREAD}
@@ -620,6 +616,22 @@ def test_known_no_write_503_repairs_and_resumes_the_same_run_and_thread(tmp_path
             assert controls[1]["after_turn_id"] != controls[0]["after_turn_id"]
             assert controls[1]["after_turn_id"] != pause_turn
             assert _issue_report_delivery_count(runner, "issue-control") == 2
+
+            # A Coordinator resume racing the settlement is a typed rejection.
+            try:
+                _issue_control(
+                    runner,
+                    "resume",
+                    issue_id,
+                    epoch,
+                    resolution_type="repair_completed",
+                    repair_component="external_service",
+                    resolution_text=REPAIR_TEXT,
+                )
+            except Exception as exc:
+                assert "issue resume requires persisted resolution" in str(exc)
+            else:
+                raise AssertionError("racing coordinator resume must be rejected")
 
             # 10) the original operation succeeds with the verbatim request.
             recovered = _call(endpoint, arguments)

@@ -789,6 +789,12 @@ class _Agent:
     # for one of these is consumed safely instead of latching a terminal
     # mismatch that would kill a thread recovered onto a newer turn.
     abandoned_turn_ids: list[str] = field(default_factory=list)
+    # Last retryable provider error (``willRetry=true``, external variant)
+    # observed on the current turn.  Silence after such an error is the
+    # wedged-stream signature (auth021 #32): the SDK promised a retry that
+    # never concluded, so the inactivity watchdog parks the role in a provider
+    # wait instead of the fatal latch.  Cleared whenever a new turn starts.
+    turn_provider_error: dict[str, Any] | None = None
     # External provider route this role rides (loopback provider session), when
     # any.  ``None`` means the built-in ``openai-codex`` route or no binding: a
     # provider-session failure cannot affect such a role.
@@ -4099,6 +4105,28 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if agent.last_output_monotonic
                 else timeout
             )
+            turn_error = agent.turn_provider_error
+        if isinstance(turn_error, dict) and turn_error.get("variant") in _PROVIDER_WAIT_VARIANTS:
+            # #32 (auth021): the last thing this turn observed was a retryable
+            # external provider error whose SDK retry never concluded — the
+            # wedged-stream signature.  The identical variant parks when the
+            # SDK exhausts (``willRetry=false``); park here too so the host can
+            # ``recover_provider`` instead of losing the run to the fatal latch.
+            # ``_enter_provider_wait`` refuses only an already-latched role, in
+            # which case the idempotent latch path below is the correct no-op.
+            self._enter_provider_wait(
+                agent,
+                {
+                    "source": "inactivity-watchdog",
+                    "reason": "llm-inactivity-timeout-after-retryable-provider-error",
+                    "variant": turn_error.get("variant"),
+                    "http_status": turn_error.get("http_status"),
+                    "turn_digest": turn_error.get("turn_digest"),
+                    "timeout_seconds": timeout,
+                    "idle_seconds": idle_seconds,
+                },
+            )
+            return
         detail = {
             "source": "inactivity-watchdog",
             "timeout_seconds": timeout,
@@ -5393,6 +5421,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # A retryable provider error is observable but deliberately does not
         # refresh the inactivity clock; only allowlisted work notifications do.
         self._append_runtime_evidence("provider-error", detail)
+        if detail.get("will_retry") is True and detail.get("variant") in _PROVIDER_WAIT_VARIANTS:
+            # #32 (auth021): remember the in-flight retryable error for this
+            # turn.  If the SDK's promised retry never concludes, the inactivity
+            # watchdog converts its timeout into a provider wait (park) instead
+            # of the fatal latch — the same variant parks on exhaustion below.
+            with agent.state_lock:
+                agent.turn_provider_error = dict(detail)
         if detail.get("will_retry") is False:
             if detail.get("variant") in _PROVIDER_WAIT_VARIANTS:
                 # 2026-09-14 provider-recovery: SDK retry exhaustion on an
@@ -5781,6 +5816,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     turn_id = self._turn_id(result)
                     agent.active_turn_id = turn_id
                     agent.last_started_turn_id = turn_id
+                    agent.turn_provider_error = None
                     agent.state = "running"
                     for pending in buffered:
                         self._notification(agent, pending)
@@ -6249,6 +6285,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 return
             agent.active_turn_id = turn_id
             agent.last_started_turn_id = turn_id
+            agent.turn_provider_error = None
             agent.state = "running"
         self._reset_activity_clock(agent)
 

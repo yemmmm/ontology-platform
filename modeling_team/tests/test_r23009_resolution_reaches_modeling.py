@@ -33,7 +33,9 @@ class _CapturingAdapter:
         return RuntimeDispatchReceipt("start", "turn-1")
 
 
-def _runner_with_pending_issue(root: Path, *, reporter: str) -> tuple[TeamRunner, dict]:
+def _runner_with_pending_issue(
+    root: Path, *, reporter: str, wire_issue_events: bool = False
+) -> tuple[TeamRunner, dict]:
     agents = [
         SimpleNamespace(agent_id=role, package=SimpleNamespace(role=role))
         for role in ("modeling", "protocol", "coordinator", "acceptance")
@@ -57,6 +59,14 @@ def _runner_with_pending_issue(root: Path, *, reporter: str) -> tuple[TeamRunner
     import threading
     runner._issue_event_lock = threading.Lock()
     runner._issue_event_queue = []
+
+    # Mirrors the ``start()`` wiring: broker controls land in the Runner's
+    # issue event queue for main-loop dispatch. Off by default so the legacy
+    # fan-out tests keep pinning only the delivery side.
+    def issue_event_callback(event: dict) -> None:
+        with runner._issue_event_lock:
+            runner._issue_event_queue.append(dict(event))
+
     # ``receive_outer`` pumps ``drain`` once after admission; these tests pin
     # the delivery fan-out only, so the main-loop pump is stubbed out.
     runner.drain = lambda: []  # type: ignore[method-assign]
@@ -65,6 +75,7 @@ def _runner_with_pending_issue(root: Path, *, reporter: str) -> tuple[TeamRunner
         {(reporter, "coordinator"), ("coordinator", reporter)},
         coordinator_agent_id="coordinator",
         issue_escalation_enabled=True,
+        issue_event_callback=issue_event_callback if wire_issue_events else None,
     )
     report = runner.transport.report_issue(
         reporter,
@@ -192,7 +203,99 @@ def test_short_external_service_repair_keeps_optional_legacy_fields_optional() -
         assert resolution.repair_component == "external_service"
         assert resolution.before_digest is None
         assert resolution.after_digest is None
-        assert runner.transport.issue_ledger.state == "resolution_ready"
+        # 2026-09-18 #31 (auth021): the outer resolution now settles the
+        # ledger itself (resume control through the broker); the main-loop
+        # dispatch that marks it resolved is stubbed out in this harness, so
+        # the observable state after ``receive_outer`` is ``resume_sent``.
+        assert runner.transport.issue_ledger.state == "resume_sent"
+
+
+def test_outer_resolution_settles_ledger_and_queues_resume_dispatch() -> None:
+    """#31 (auth021): an outer resolution is the host's authoritative settlement.
+
+    The Runner drives the resume control itself through the same broker entry
+    point a Coordinator resume would use, instead of waiting for the
+    Coordinator model to re-issue a byte-identical resume (start1 stalled
+    ~50 min on that model-dependent step while ``pending`` short-circuited
+    the idle fallback).
+    """
+    with tempfile.TemporaryDirectory() as directory:
+        runner, report = _runner_with_pending_issue(
+            Path(directory), reporter="protocol", wire_issue_events=True
+        )
+        runner.receive_outer(
+            {
+                "action": "issue_resolution",
+                "issue_id": report["issue_id"],
+                "reporter_id": "protocol",
+                "control_epoch": 1,
+                "resolution_type": "guidance",
+                "resolution_text": "Proceed with the reconciled binding.",
+            }
+        )
+        assert runner.transport.issue_ledger.state == "resume_sent"
+        with runner._issue_event_lock:
+            queued = list(runner._issue_event_queue)
+        resumes = [
+            event["control"]
+            for event in queued
+            if isinstance(event, dict)
+            and event.get("kind") == "issue_control"
+            and isinstance(event.get("control"), dict)
+            and event["control"].get("action") == "resume"
+        ]
+        assert resumes, "runner settlement must queue a resume control dispatch"
+        assert resumes[-1]["issue_id"] == report["issue_id"]
+        assert resumes[-1]["reporter_id"] == "protocol"
+
+
+def test_coordinator_resume_after_runner_settlement_is_typed_rejected() -> None:
+    """#31: a Coordinator resume racing the Runner settlement gets the ledger's
+    typed stale-state rejection instead of a second dispatch."""
+    with tempfile.TemporaryDirectory() as directory:
+        runner, report = _runner_with_pending_issue(Path(directory), reporter="protocol")
+        runner.receive_outer(
+            {
+                "action": "issue_resolution",
+                "issue_id": report["issue_id"],
+                "reporter_id": "protocol",
+                "control_epoch": 1,
+                "resolution_type": "guidance",
+                "resolution_text": "Proceed with the reconciled binding.",
+            }
+        )
+        assert runner.transport.issue_ledger.state == "resume_sent"
+        persisted = runner.transport.issue_ledger.active.resolution
+        assert persisted is not None
+        with pytest.raises(RoutingError, match="issue resume requires persisted resolution"):
+            runner.transport.issue_control(
+                "coordinator",
+                issue_id=report["issue_id"],
+                reporter_id="protocol",
+                action="resume",
+                control_epoch=1,
+                resolution=persisted,
+            )
+
+
+def test_abort_resolution_settles_ledger_to_aborted() -> None:
+    """#31: an outer abort resolution settles the ledger terminally — the
+    runner drives the abort control with the resolution text as reason."""
+    with tempfile.TemporaryDirectory() as directory:
+        runner, report = _runner_with_pending_issue(Path(directory), reporter="protocol")
+        runner.receive_outer(
+            {
+                "action": "issue_resolution",
+                "issue_id": report["issue_id"],
+                "reporter_id": "protocol",
+                "control_epoch": 1,
+                "resolution_type": "abort",
+                "resolution_text": "Abandon this run; the upstream task is void.",
+            }
+        )
+        ledger = runner.transport.issue_ledger
+        assert ledger.state == "aborted"
+        assert ledger.pending is False
 
 
 def test_legacy_repair_envelope_requires_complete_values_without_run_id() -> None:

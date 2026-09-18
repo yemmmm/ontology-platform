@@ -3978,6 +3978,48 @@ class TeamRunner:
                             "issue-resolution",
                             {"event": "modeling_delivery_failed"},
                         )
+            # 2026-09-18 #31 (auth021): the outer resolution is the host's
+            # authoritative settlement, yet it previously stopped at
+            # ``resolution_ready`` and waited for the Coordinator model to
+            # re-issue a byte-identical ``issue_control`` resume.  That
+            # model-dependent step proved unreliable (start1 stalled ~50 min
+            # with the pending ledger short-circuiting the idle fallback), and
+            # a Coordinator that does resume races this settlement.  Drive the
+            # exact control a correct Coordinator would, through the same
+            # broker entry point: the ledger moves to ``resume_sent`` (or
+            # ``aborted``) here and the queued main-loop dispatch delivers the
+            # wake to the reporter, marks the dispatch resolved, and flushes
+            # the queued deliveries.  A later Coordinator resume gets the
+            # existing typed stale-control rejection.  Settlement failure is
+            # evidence, never a teardown of the persisted resolution.
+            try:
+                if resolution.resolution_type == "abort":
+                    self.transport.issue_control(
+                        self._issue_coordinator_id(),
+                        issue_id=resolution.issue_id,
+                        reporter_id=resolution.reporter_id,
+                        action="abort",
+                        control_epoch=resolution.control_epoch,
+                        reason=resolution.resolution_text,
+                    )
+                else:
+                    self.transport.issue_control(
+                        self._issue_coordinator_id(),
+                        issue_id=resolution.issue_id,
+                        reporter_id=resolution.reporter_id,
+                        action="resume",
+                        control_epoch=resolution.control_epoch,
+                        resolution=resolution,
+                    )
+            except RoutingError as exc:
+                self._append_evidence(
+                    "issue-resolution",
+                    {
+                        "event": "runner-settlement-rejected",
+                        "issue_id": resolution.issue_id,
+                        "detail": str(exc)[:200],
+                    },
+                )
         elif action == "user":
             text = message.get("text")
             if not isinstance(text, str) or not text.strip():

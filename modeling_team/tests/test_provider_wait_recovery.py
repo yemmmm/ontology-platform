@@ -508,25 +508,29 @@ def test_coordinator_judged_recovery_resumes_the_same_thread(tmp_path: Path) -> 
             ),
         )
         assert accepted is None
-        assert ledger.state == "resolution_ready"
-
-        resume = _control(
-            runner,
-            "resume",
-            issue.issue_id,
-            issue.control_epoch,
-            resolution_type="repair_completed",
-            repair_component="external_service",
-            resolution_text=RECOVERY_TEXT,
-        )
-        assert resume["action"] == "resume"
-        _pump(runner, sink)
+        # #31 (auth021): the outer resolution settles the ledger itself and
+        # the admission pump dispatches the resume control inline, so the
+        # recovery on the same thread has already happened — no
+        # Coordinator-issued resume is needed anymore.
         assert ledger.state == "resolved"
         assert adapter.recoveries and adapter.recoveries[0][0] == "protocol"
         assert adapter.agents["protocol"].thread_id == "thread-protocol"
         assert adapter.provider_wait_status("protocol") is None
         _pump(runner, sink)  # next tick reconciles the runner-side registry
         assert runner._provider_wait_registry() == {}
+
+        # A Coordinator resume racing the runner settlement now gets the
+        # ledger's typed stale-state rejection instead of a second dispatch.
+        with pytest.raises(Exception, match="issue resume requires persisted resolution"):
+            _control(
+                runner,
+                "resume",
+                issue.issue_id,
+                issue.control_epoch,
+                resolution_type="repair_completed",
+                repair_component="external_service",
+                resolution_text=RECOVERY_TEXT,
+            )
     finally:
         staged.cleanup()
 
@@ -592,20 +596,17 @@ def test_failed_recovery_returns_to_waiting_with_backoff(tmp_path: Path) -> None
         issue = ledger.active_issue
         _control(runner, "pause", issue.issue_id, issue.control_epoch)
         _pump(runner, sink)
-        _admit_line(runner, sink, _resolution_line(runner.run.run_id, issue))
+        # The failing recovery is injected before the resolution admission:
+        # #31 (auth021) settles the ledger inside ``receive_outer`` and the
+        # admission pump dispatches the resume control inline, so the failure
+        # arms the inline dispatch and its output is observed through the
+        # same foreground sink rather than a later Coordinator resume.
         adapter.fail_next_recovery = True
-        resume = _control(
-            runner,
-            "resume",
-            issue.issue_id,
-            issue.control_epoch,
-            resolution_type="repair_completed",
-            repair_component="external_service",
-            resolution_text=RECOVERY_TEXT,
-        )
-        output = _pump(runner, sink)
+        before = len(sink.outputs)
+        _admit_line(runner, sink, _resolution_line(runner.run.run_id, issue))
+        inline = sink.outputs[before:]
         assert any(
-            entry.get("reason_code") == "provider_recovery_retry" for entry in output
+            entry.get("reason_code") == "provider_recovery_retry" for entry in inline
         )
         # The wait is restored and observable; nothing was rebound.
         assert adapter.provider_wait_status("protocol") is not None

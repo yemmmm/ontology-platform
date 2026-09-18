@@ -137,3 +137,109 @@ def test_watchdog_skips_non_running_state(tmp_path: Path) -> None:
         assert agent.state == "idle"
     finally:
         agent.inactivity_watchdog_stop.set()
+
+
+def _record_retryable_stream_disconnect(adapter: CodexRuntimeAdapter, agent: _Agent) -> None:
+    """Feed one real-shaped retryable provider error notification for the turn."""
+    agent.thread_id = "thread-1"
+    agent.active_turn_id = "turn-1"
+    agent.last_started_turn_id = "turn-1"
+    adapter._notification(
+        agent,
+        {
+            "method": "error",
+            "params": {
+                "error": {
+                    "message": "upstream stream disconnected",
+                    "codexErrorInfo": {
+                        "responseStreamDisconnected": {"httpStatusCode": None}
+                    },
+                },
+                "willRetry": True,
+                "threadId": "thread-1",
+                "turnId": "turn-1",
+            },
+        },
+    )
+
+
+def test_retryable_provider_error_is_remembered_per_turn(tmp_path: Path) -> None:
+    # #32 (auth021): a ``willRetry=true`` external error is observable evidence
+    # but must not itself latch or park — only the wedged-stream silence after
+    # it converts the watchdog timeout into a park.
+    adapter = _make_adapter(tmp_path)
+    agent = _make_agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+    _record_retryable_stream_disconnect(adapter, agent)
+    with agent.state_lock:
+        assert agent.turn_provider_error is not None
+        assert agent.turn_provider_error["variant"] == "responseStreamDisconnected"
+        assert agent.turn_provider_error["will_retry"] is True
+    assert agent.provider_wait is None
+    assert agent.runtime_failure is None
+    assert adapter.consume_inactivity_failures() == []
+    assert adapter.consume_provider_waits() == []
+
+
+def test_inactivity_timeout_parks_after_retryable_provider_error(tmp_path: Path) -> None:
+    # #32 (auth021 start1): the SDK promised a retry that never concluded; the
+    # stream then hung silently for 21 minutes and the watchdog killed the run
+    # fatally.  Silence after a recorded retryable external error is the
+    # wedged-stream signature: park in a provider wait for host
+    # ``recover_provider`` instead of the fatal latch.
+    adapter = _make_adapter(tmp_path)
+    agent = _make_agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+    agent.state = "running"
+    _record_retryable_stream_disconnect(adapter, agent)
+    with agent.state_lock:
+        agent.last_output_monotonic = time.monotonic() - 400.0
+    adapter._on_inactivity_timeout(agent, 300.0)
+    assert agent.state == "waiting_provider"
+    assert agent.provider_wait is not None
+    assert agent.provider_wait["variant"] == "responseStreamDisconnected"
+    assert (
+        agent.provider_wait["reason_code"]
+        == "llm-inactivity-timeout-after-retryable-provider-error"
+    )
+    assert agent.inactivity_failure is None
+    assert agent.runtime_failure is None
+    assert adapter.consume_inactivity_failures() == []
+    waits = adapter.consume_provider_waits()
+    assert len(waits) == 1
+    assert waits[0][0] == agent.agent_id
+    assert waits[0][1]["variant"] == "responseStreamDisconnected"
+    # A repeated watchdog tick must not duplicate the wait or queue it twice.
+    adapter._on_inactivity_timeout(agent, 300.0)
+    assert adapter.consume_provider_waits() == []
+    assert agent.provider_wait["notifications"] == 1
+
+
+def test_new_turn_clears_remembered_provider_error(tmp_path: Path) -> None:
+    # The memory is turn-scoped: once a new turn starts (the recovered path),
+    # a later silent hang is a plain hang again and keeps the fatal latch.
+    adapter = _make_adapter(tmp_path)
+    agent = _make_agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+    _record_retryable_stream_disconnect(adapter, agent)
+    assert agent.turn_provider_error is not None
+
+    def fake_rpc(agent_value, method, payload):
+        assert method == "turn/start"
+        return {"turn": {"id": "turn-2"}}
+
+    adapter._rpc = fake_rpc  # type: ignore[method-assign]
+    agent.first_turn_input = [{"type": "text", "text": "next turn"}]
+    adapter.start_task(agent.agent_id, "next turn", [], ["a", "b"])
+    with agent.state_lock:
+        assert agent.turn_provider_error is None
+        assert agent.last_started_turn_id == "turn-2"
+        assert agent.state == "running"
+    with agent.state_lock:
+        agent.last_output_monotonic = time.monotonic() - 400.0
+    adapter._on_inactivity_timeout(agent, 300.0)
+    assert agent.state == "failed"
+    assert agent.inactivity_failure is not None
+    assert agent.inactivity_failure["reason"] == "llm-inactivity-timeout"
+    assert agent.provider_wait is None
+    assert adapter.consume_provider_waits() == []
