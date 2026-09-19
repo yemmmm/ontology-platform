@@ -70,7 +70,7 @@ fixture 形态规则：快照、manifest 的 `platform_data` 块、恢复文件�
 | F-SEAL-001-成功 | 成功 | 源封存标记 | fork 提交时源项目全部 Ontology `status == "archived"` 且 `external_mappings["checkpoint_fork_archive"] == {target_project_id, snapshot_digest}`（行锁序与 capture 一致）；`project_is_checkpoint_archived` 为真；源 run、检查点与旧 Attempt 不被改写 |
 | F-SEAL-002-成功 | 成功 | 读可写拒（HTTP/MCP/语义写） | `GET /api/projects/<源>` 200；`PATCH` → 409 `{"code": "checkpoint_source_archived"}`；`POST /api/semantic/datasets:load`（trig 指向旧图）→ 409（`LockedSemanticGraph`，消息前缀 `checkpoint_source_archived: source Project is read-only`）；SPARQL 编辑与 canonical 写入同前缀阻断（`LockedSemanticGraph`/`CanonicalWriteBlocked`）；MCP `mutates_state` 工具触及源项目资源 → `PermissionError("checkpoint_source_archived: source Project is read-only")`；目标项目 `PATCH` 200 可继续推进 |
 | F-SEAL-003-边界 | 边界 | 封存门作用域与不泄露 | 非 UNSAFE 方法与 `scope == "read"` 不拦；`/api/checkpoint-data/` 前缀自身不受该门拦截（capture/fork 不因源封存被拒）；ownership 判定先于封存判定（跨项目请求不泄露封存状态，404/403 语义不变）；未封存项目写路径零影响（全量回归见 G1） |
-| F-SEAL-004-边界 | 边界 | 封存源读形态（合同第 5 点封存读收窄；2026-09-19 补证，证据见 §9） | 走真实 readiness/query-scope 代码路径（`OntologyQueryReadinessEvaluator`/`SemanticQueryScopeResolver`，不 mock 判定）：治理语义查询（服务层 `ScopedSparqlQueryService` 与 HTTP `POST /api/semantic/sparql:query`）项目级与 Ontology 级均 409 `scope_not_ready` 且不触及 RDF Store；scope discovery 报 `queryable=false`/`reason=ontology_archived`（项目级 `query_status=unavailable` + excluded 明细）；`GET /api/projects/<源>` 仍 200（对照 `PATCH` 409 `checkpoint_source_archived`）；范围外 Ontology 随源封存、无 fork 副本（不在 identity mapping、新项目不含其数据）且同样不可查询；新项目 scope `complete`、语义查询继续 |
+| F-SEAL-004-边界 | 边界 | 封存源读形态（合同第 5 点封存读收窄；2026-09-19 补证，证据见 §9，独立复核证据见 §10） | 走真实 readiness/query-scope 代码路径（`OntologyQueryReadinessEvaluator`/`SemanticQueryScopeResolver`，不 mock 判定）：治理语义查询（服务层 `ScopedSparqlQueryService` 与 HTTP `POST /api/semantic/sparql:query`）项目级与 Ontology 级均 409 `scope_not_ready` 且不触及 RDF Store；scope discovery 报 `queryable=false`/`reason=ontology_archived`（项目级 `query_status=unavailable` + excluded 明细）；`GET /api/projects/<源>` 仍 200（对照 `PATCH` 409 `checkpoint_source_archived`）；范围外 Ontology 随源封存、无 fork 副本（不在 identity mapping、新项目不含其数据）且同样不可查询；新项目 scope `complete`、语义查询继续 |
 
 ### D 组（HOST，宿主接口与 CLI）
 
@@ -276,3 +276,44 @@ fixture 形态规则：快照、manifest 的 `platform_data` 块、恢复文件�
 - **实测纠偏登记（非缺陷）**：HTTP 用例初版按"封存门先拦 POST"的静态推断断言 `checkpoint_source_archived`，实测为 `scope_not_ready`；核对 `required_scope`/`_check_checkpoint_archive` 后确认语义查询端点因 read scope 豁免而不经封存门（见上分层事实），测试按实测行为修正。未改任何产品代码或需求文本来迁就测试。
 - **GitNexus**：commit 前 `detect-changes --repo ontology-platform`（本轮编辑前后各跑一次，结论一致）→ 3 文件 4 符号、受影响流程 0、风险 low——4 个命中符号均为工作树内他人未提交的 requirements/SKILL 文档符号，第 3 个文件为本计划文档自身的修订（无符号映射）；本轮新增测试文件为未跟踪新文件、不涉及任何产品符号。索引不完整的既有登记（§7）不变；影响核对以直接调用点核对 + 针对性回归代替。
 - **边界**：本轮为确定性机械证据，不构成独立验收，不据此宣布真实 LLM 建模质量或独立语义验收通过；§4 分层与"明确排除"不变。
+
+## 10. 独立复核轮（2026-09-19，F-SEAL-004 交付后补充）
+
+**结论：F-SEAL-004 独立复核 PASS（0 缺陷）。** 本轮独立复核 §9（2026-09-19 开发自测）新增的封存源治理语义读语义证据；测试构造独立于写该证据的开发会话（场景形状、假 Store 判定机制、查询入口组合均不同），不改写 §8 与 §9 任何记录。
+
+- 执行者：requirement_tester（独立于 §9 开发会话）；日期：2026-09-19；轮次：交付后补充独立复核轮（F-SEAL-004 专项）。
+- 被测状态：HEAD `1f1e988`（含 `d8ef199` 的 F-SEAL-004 开发自测与 F1–F9 需求修订）；工作树他人未提交改动（`skills/modeling-dev-loop/SKILL.md`、`.codex/agents/`、`docs/diagrams/modeling-team-guide/`）未触碰、未纳入本轮任何操作；未执行 git commit。
+- 临时测试文件（跑完即删，本节为唯一证据记录）：`backend/tests/test_r30017_round2_seal004.py`（5 用例，Round 1 命名惯例）。独立构造要点：源项目 3 个 Ontology（2 个入快照范围、1 个范围外），入范围者跨多个默认图类目（ontology+data）多三元组内容；假 RDF Store 为内容寻址封存守卫（`query_sparql` 仅当查询串命中任一封存源图 IRI 才断言失败，其余查询照常记录应答——区别于 §9 的全局计数器式守卫），fork 后对全部源图 IRI 布防。
+- 分层事实只读复核：`security/http.py` `required_scope` 对 `POST /api/semantic/context:query` 与 `POST /api/semantic/sparql:query` 返回 `"read"`（L109–110），`_check_checkpoint_archive` 对 `scope=="read"` 直接放行（L579）——与 §9 登记一致。
+
+### 10.1 逐点结果（全部 PASS）
+
+| 被测点 | 独立验证方式与结果 | 结果 |
+| --- | --- | --- |
+| a) 项目级与 Ontology 级 scoped SPARQL → 409/`SemanticQueryScopeNotReady`，Store 零触达 | 服务层三入口：resolver 直调项目级（"Semantic query scope is not ready"）；`ScopedSparqlQueryService.query` Ontology 级混合列表（范围外+两个入范围 id）与项目级 **ASK 形态**查询均 409 `scope_not_ready`；`store.queries == []`（零触达，且守卫若被触达测试即失败） | PASS |
+| b) scope discover：封存项目 `unavailable`、excluded `reason="ontology_archived"` | `discover(queryable="false")`：恰 1 项目条目 `query_status="unavailable"` + 3 个 excluded 全 `ontology_archived`；3 个 Ontology 条目 `status="archived"`/`queryable=false`/`unavailable_reason="ontology_archived"`；`discover(queryable="true")` 零条目；`discover(query="Logi")` 按名检索命中唯一封存 Ontology 且 `queryable=false` | PASS |
+| c) 范围外 Ontology 随 fork 置 archived、不在新项目、图内容不进新项目 | 3 个源 Ontology 全 `archived`；范围外 id 不在 identity mapping、其全部图 IRI 与 mapping 键值集双侧不相交；新项目恰含 2 个映射 Ontology；范围外哨兵内容仅存在于其原图（全 Store 图扫描）；resolver 对其单独查询 409 `scope_not_ready` | PASS |
+| d) 新项目语义查询继续（到达 Store） | 服务层项目级查询：scope `complete`、含 2 个 fork Ontology、`query_type=="select"`、Store 恰收到 1 条查询且 FROM 子句含新图 IRI（封存守卫布防下通过，证查询只指向新图） | PASS |
+| e) HTTP 面对照：GET 200 / PATCH 409 `checkpoint_source_archived`；语义查询 POST 409 `scope_not_ready`（read key 与 admin key 双验证） | 真实 HTTP capture（2/3 Ontology 入范围）+fork 后：`GET /api/projects/<源>`（read key）200；`PATCH`（org admin key）409 `checkpoint_source_archived`；**项目级 admin key 在封存项目下 POST 新 Ontology** 亦 409 `checkpoint_source_archived`（过 ownership 后命中封存门）；`POST /api/semantic/sparql:query` read key 项目级与项目级 admin key Ontology 级（范围外 id）均 409 `scope_not_ready`；`POST /api/semantic/context:query`（read key）409 `scope_not_ready`（§9 未覆盖的第二查询入口）；`GET /api/semantic/scopes:discover` HTTP 面 `queryable=false`/`true` 与服务层同判；**新项目 HTTP 语义查询 200** 且 Store 恰收到 1 条指向新图的查询；全程封存源图零触达 | PASS |
+
+### 10.2 开发自测套件原样重跑
+
+`cd backend && uv run pytest tests/test_checkpoint_data_seal_read.py -q` → **6 passed**（与 §9 记录一致，原样通过）；临时文件 Ruff `All checks passed`。
+
+### 10.3 基线（按失败清单比对，非总数）
+
+- 后端：`cd backend && uv run pytest -q` → **1024 passed, 37 skipped, 0 failed**（登记 1013 + d8ef199 新增 6 + 本轮临时 5 = 1024；失败清单为空，零新增）。
+- Team：backend 目录 `env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest ../modeling_team/tests -q` → **2006 passed, 1 skipped, 339 subtests passed, 0 failed**（与登记 2006 逐一相符；本轮无团队侧临时用例；失败清单为空，零新增）。
+
+### 10.4 缺陷与注记
+
+**缺陷：0 项。** 注记（不计缺陷）：
+
+1. 授权层先于封存层的既有事实：项目级 key PATCH `/api/projects/<id>` 被 `security/http.py` L474–478 一律 403 `forbidden_scope`（本轮初版误以其为 409 探针，实测 403 后改用"项目级 admin key 在封存项目下 POST Ontology"证封存门 409）。该 403 为需求外既有授权规则，非 R3.0-017 缺陷，且与 F-SEAL-003"ownership 判定先于封存判定"的分层一致。
+2. 本轮分层复核再次确认：语义查询端点的 409 来自 readiness 层（`ontology_archived` → `SemanticQueryScopeNotReady`），封存写门因 `required_scope=="read"` 豁免不参与；写路径（PATCH/项目下 POST Ontology）则由封存门拦 409 `checkpoint_source_archived`。两层在 e) 用例内同请求面钉住。
+
+### 10.5 清理与边界确认
+
+- 临时测试文件 `backend/tests/test_r30017_round2_seal004.py` 已删除（tests 目录 grep 零匹配）；本轮未产生其他临时文件或输出文件。
+- `workspaces/modeling-runs` 扫描无 `r3017*` 残留 run 根。
+- 本轮无产品代码、需求、设计文档变更；§3 C 组 F-SEAL-004 行仅在既有证据指针括注内追加"独立复核证据见 §10"，其余列未动。G2 真实证据门维持 Round 1 结论，本轮未重跑 live；不声明真实 LLM 建模或独立语义验收通过（§4"明确排除"不变）。
