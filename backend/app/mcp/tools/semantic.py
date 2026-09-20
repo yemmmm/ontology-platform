@@ -764,20 +764,47 @@ def register_semantic(server: FastMCP) -> None:
         )
 
 
+def _selected_set_members(
+    session, graph_set_id: str, roles: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    settings = Settings()
+    service = SemanticGraphSetService(session, settings)
+    description = service.describe(graph_set_id)
+    return [member for member in description["members"] if member["role"] in roles]
+
+
+def _reject_unmaterialized_members(
+    members: list[dict[str, Any]], graph_set_id: str, roles: tuple[str, ...]
+) -> None:
+    """R3.0-016 #29: name never-materialized members before the store does.
+
+    ``update_membership`` registers a member at revision 0 until its first
+    write materializes the graph.  Handing such an IRI to the RDF store made
+    the external ``graph does not exists`` reply the only diagnostic — no
+    backend source explained it.  Fail here, in backend vocabulary, instead.
+    """
+
+    missing = [str(member["graph_iri"]) for member in members if not member.get("revision")]
+    if missing:
+        raise ValueError(
+            f"graph set {graph_set_id} has {'/'.join(roles)} member(s) with no "
+            f"materialized revision: {', '.join(missing)}; materialize the graph "
+            "or drop it from the set before validation/reasoning"
+        )
+
+
 def _resolve_data_graphs(
     session, graph_set_id: str, roles: tuple[str, ...] = ("asserted_data",)
 ) -> list[str]:
-    settings = Settings()
-    service = SemanticGraphSetService(session, settings)
-    description = service.describe(graph_set_id)
-    return [member["graph_iri"] for member in description["members"] if member["role"] in roles]
+    members = _selected_set_members(session, graph_set_id, roles)
+    _reject_unmaterialized_members(members, graph_set_id, roles)
+    return [member["graph_iri"] for member in members]
 
 
 def _resolve_role_graphs(session, graph_set_id: str, role: str) -> list[str]:
-    settings = Settings()
-    service = SemanticGraphSetService(session, settings)
-    description = service.describe(graph_set_id)
-    return [member["graph_iri"] for member in description["members"] if member["role"] == role]
+    members = _selected_set_members(session, graph_set_id, (role,))
+    _reject_unmaterialized_members(members, graph_set_id, (role,))
+    return [member["graph_iri"] for member in members]
 
 
 def _read_model_service(

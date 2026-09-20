@@ -83,12 +83,18 @@ objective: >-
   source rows; treat schema names and samples as mapping evidence, not
   business truth.
 role_sources:
+  # R3.0-016 ledger #21: Protocol's terminal duties quote business scope and
+  # terms verbatim into evidence excerpts, but its sandbox had neither owner
+  # source, forcing the excerpt supply chain through Coordinator/owner relay.
+  # scenario-brief.md and business-terms.md are staged to protocol too;
+  # schema.sql and sample-data.sql stay Modeling/competency-question-only
+  # (mapping evidence is not a Protocol terminal-report need — least privilege).
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source
-    roles: [coordinator, modeling, competency-question]
+    roles: [coordinator, modeling, competency-question, protocol]
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/business-terms.md
     classification: business-source
-    roles: [coordinator, modeling, competency-question]
+    roles: [coordinator, modeling, competency-question, protocol]
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/schema.sql
     classification: business-source
     roles: [modeling, competency-question]

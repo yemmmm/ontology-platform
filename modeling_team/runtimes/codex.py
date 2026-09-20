@@ -81,6 +81,7 @@ from ..protocol_retrieval_gate import ORDINARY_RETRIEVAL_RECEIPT_SCHEMA
 from ..transport_mcp import (
     TERMINAL_REPLY_BINDING_PATTERNS,
     TERMINAL_REPORT_GUARD_ERROR,
+    issue_control_transport_error,
     report_rejection_category,
     terminal_reply_binding_error,
 )
@@ -7326,6 +7327,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 return terminal_reply_binding_error(
                     gate, match.group("delivery_id"), match.group("peer")
                 )
+        # R3.0-016 #20 family: issue_control refusals that name rejected fields
+        # (or a sha256-prefix digest summary) are re-rendered from validated
+        # tokens, same contract as the reply-binding relaying above.
+        relayed = issue_control_transport_error(value)
+        if relayed is not None:
+            return relayed
         prefix = "terminal result requires terminal handoffs: "
         if not value.startswith(prefix):
             return None

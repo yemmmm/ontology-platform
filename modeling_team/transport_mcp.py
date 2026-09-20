@@ -41,8 +41,17 @@ else:
 
 
 _TERMINAL_ROLE_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}")
+# R3.0-016 protocol gate: the bare "retry" sentence hid why fresh evidence was
+# required — every successful stateful call (apply_atomic submit,
+# run_semantic_validation, run_semantic_reasoning) resets retrieval_state to
+# query_required, so evidence gathered before the last write never counts.  The
+# extension names the reset cause and both accepted exits while staying a fixed
+# value-free literal within the 200-char broker relay bound.  Like the legacy
+# sentence, it must stay free of regex metacharacters: suites interpolate it
+# unescaped into anchored patterns.
 TERMINAL_REPORT_GUARD_ERROR = (
-    "Protocol retrieval evidence is incomplete; retry the required query or verifier before terminal report"
+    "Protocol retrieval evidence is incomplete: a stateful call reset it to query_required;"
+    " before terminal report re-run query_semantic_context or pass verify_scoped_retrieval_fallback"
 )
 COORDINATION_OBSERVER_ERROR = "coordination evidence observer failed"
 _MCP_TOOL_ERROR_CODE = -32000
@@ -64,6 +73,34 @@ def _broker_error_message(value: object) -> str:
         if text and len(text) <= _BROKER_ERROR_MAX_CHARS:
             return text
     return _MCP_TOOL_ERROR_MESSAGE
+
+
+def _issue_control_field_error(
+    kind: str,
+    args: dict[str, object],
+    required: set[str],
+    allowed: set[str] | None = None,
+) -> RoutingError:
+    """Name the rejected issue_control fields instead of a bare "invalid".
+
+    A bare sentence forced the Coordinator to re-derive which of its fields was
+    rejected by trial and error.  Field names come from the fixed schema
+    vocabulary only, so the rendered sentence stays value-free and short; the
+    codex relay re-renders it from these same fixed names (see
+    TERMINAL_REPLY_BINDING_PATTERNS-style relaying in runtimes/codex.py).
+    """
+
+    unexpected = sorted(set(args) - (required if allowed is None else allowed))
+    missing = sorted(required - set(args))
+    message = f"issue_control {kind} fields are invalid"
+    parts = []
+    if missing:
+        parts.append("missing: " + ", ".join(missing))
+    if unexpected:
+        parts.append("unexpected: " + ", ".join(unexpected))
+    if parts:
+        message += " (" + "; ".join(parts) + ")"
+    return RoutingError(message)
 
 
 def _call_terminal_report_guard(
@@ -993,6 +1030,106 @@ def terminal_reply_binding_error(gate: str, delivery_id: str, peer_id: str) -> s
     raise RoutingError("unsupported terminal reply binding gate")
 
 
+# --- locatable issue_control refusals (R3.0-016 #20 family) -------------------
+#
+# issue_control refusals now name the rejected arguments and, on a resume/abort
+# equality replay mismatch, the first differing resolution field summarized as
+# a character length plus a 10-hex sha256 prefix — never the offending text.  A
+# Runtime that relays broker errors re-renders these sentences from validated
+# tokens (field-name charset, digest shape) and never returns the received
+# bytes, mirroring the reply-binding relaying above.
+
+_ISSUE_FIELD_NAME = r"[a-z_][a-z0-9_]{0,63}"
+_ISSUE_FIELD_LIST = rf"{_ISSUE_FIELD_NAME}(?:, {_ISSUE_FIELD_NAME})*"
+_ISSUE_FIELD_CLAUSES = (
+    rf"(?:(?:missing: (?P<missing_names>{_ISSUE_FIELD_LIST})"
+    rf"(?:; unexpected: (?P<unexpected_names>{_ISSUE_FIELD_LIST}))?)"
+    rf"|(?:unexpected: (?P<unexpected_only>{_ISSUE_FIELD_LIST})))?"
+)
+_ISSUE_DIGEST_SUMMARY = r"(?:[0-9]{1,5}ch )?sha256:[0-9a-f]{10}"
+_ISSUE_MISMATCH_TAIL = (
+    rf": differing (?P<field>{_ISSUE_FIELD_NAME}) "
+    rf"\(persisted (?P<persisted>{_ISSUE_DIGEST_SUMMARY}), "
+    rf"provided (?P<provided>{_ISSUE_DIGEST_SUMMARY})\)"
+    r"(?: \(\+(?P<extra>[0-9]{1,2}) more field\(s\) differ\))?"
+)
+
+
+def _issue_control_field_pattern(prefix: str, joiner: str, suffix: str) -> tuple[re.Pattern[str], str, str, str]:
+    return (
+        re.compile(
+            "^" + re.escape(prefix) + re.escape(joiner) + _ISSUE_FIELD_CLAUSES + re.escape(suffix) + "$"
+        ),
+        prefix,
+        joiner,
+        suffix,
+    )
+
+
+# (pattern, prefix, joiner, suffix): re-rendering is prefix + clauses + suffix.
+_ISSUE_CONTROL_FIELD_COMPILED: tuple[tuple[re.Pattern[str], str, str, str], ...] = (
+    _issue_control_field_pattern("issue_control arguments are invalid", ": ", ""),
+    _issue_control_field_pattern("issue_control resolution fields are invalid", " (", ")"),
+    _issue_control_field_pattern("issue_control repair fields are invalid", " (", ")"),
+    _issue_control_field_pattern("issue_control pause fields are invalid", " (", ")"),
+    _issue_control_field_pattern("issue_control abort fields are invalid", " (", ")"),
+)
+_ISSUE_CONTROL_MISMATCH_COMPILED: tuple[tuple[re.Pattern[str], str], ...] = tuple(
+    (re.compile("^" + re.escape(prefix) + _ISSUE_MISMATCH_TAIL + "$"), prefix)
+    for prefix in (
+        "issue resume resolution does not match persisted resolution",
+        "issue abort reason does not match persisted resolution",
+    )
+)
+
+
+def _issue_field_names(raw: str | None) -> list[str]:
+    """Validated, canonically ordered field names ([] when the clause is absent)."""
+
+    if not raw:
+        return []
+    names = [name.strip() for name in raw.split(",")]
+    if any(re.fullmatch(_ISSUE_FIELD_NAME, name) is None for name in names):
+        return []
+    return sorted(names)
+
+
+def issue_control_transport_error(value: object) -> str | None:
+    """Re-render one locatable issue_control refusal from validated tokens."""
+
+    if not isinstance(value, str) or len(value) > 200:
+        return None
+    for pattern, prefix, joiner, suffix in _ISSUE_CONTROL_FIELD_COMPILED:
+        match = pattern.fullmatch(value)
+        if match is None:
+            continue
+        missing = _issue_field_names(match.group("missing_names"))
+        unexpected = _issue_field_names(
+            match.group("unexpected_names") or match.group("unexpected_only")
+        )
+        clauses = []
+        if missing:
+            clauses.append("missing: " + ", ".join(missing))
+        if unexpected:
+            clauses.append("unexpected: " + ", ".join(unexpected))
+        if not clauses:
+            return prefix
+        return prefix + joiner + "; ".join(clauses) + suffix
+    for pattern, prefix in _ISSUE_CONTROL_MISMATCH_COMPILED:
+        match = pattern.fullmatch(value)
+        if match is None:
+            continue
+        rendered = (
+            f"{prefix}: differing {match.group('field')} "
+            f"(persisted {match.group('persisted')}, provided {match.group('provided')})"
+        )
+        extra = match.group("extra")
+        if extra:
+            rendered += f" (+{int(extra)} more field(s) differ)"
+        return rendered
+    return None
+
+
 def _observe_report_event(
     broker: TeamTransportBroker,
     agent_id: str,
@@ -1283,7 +1420,7 @@ def mcp_response(
             if resolution_type == "guidance" or resolution_type == "abort":
                 required = common | {"resolution_text"}
                 if set(args) != required:
-                    raise RoutingError("issue_control resolution fields are invalid")
+                    raise _issue_control_field_error("resolution", args, required)
             elif resolution_type == "repair_completed":
                 required = common | {"repair_component"}
                 allowed = required | {
@@ -1294,7 +1431,7 @@ def mcp_response(
                     "mutation_reconciliation",
                 }
                 if not required.issubset(args) or set(args) - allowed:
-                    raise RoutingError("issue_control repair fields are invalid")
+                    raise _issue_control_field_error("repair", args, required, allowed)
             else:
                 raise RoutingError("issue_control resolution type is invalid")
             try:
@@ -1320,10 +1457,14 @@ def mcp_response(
                 raise RoutingError(str(exc), code=code) from None
         elif action == "pause":
             if set(args) != {"issue_id", "reporter_id", "action", "control_epoch"}:
-                raise RoutingError("issue_control pause fields are invalid")
+                raise _issue_control_field_error(
+                    "pause", args, {"issue_id", "reporter_id", "action", "control_epoch"}
+                )
         elif action == "abort":
             if set(args) != {"issue_id", "reporter_id", "action", "control_epoch", "reason"}:
-                raise RoutingError("issue_control abort fields are invalid")
+                raise _issue_control_field_error(
+                    "abort", args, {"issue_id", "reporter_id", "action", "control_epoch", "reason"}
+                )
         else:
             raise RoutingError("issue_control action is invalid")
         value = broker.issue_control(

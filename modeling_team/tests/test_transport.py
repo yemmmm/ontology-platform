@@ -391,13 +391,15 @@ class TransportTests(unittest.TestCase):
                         "error": {
                             "code": -32000,
                             # The broker's own fixed text, not the generic
-                            # fallback: the caller learns which field was wrong
-                            # without the rejected argument value being echoed.
-                            "message": "issue_control arguments are invalid",
+                            # fallback.  R3.0-016 #20 family: the refusal now
+                            # names the schema field so the caller can fix the
+                            # call without a diagnosis round trip, while the
+                            # rejected argument VALUE stays unechoed.
+                            "message": "issue_control arguments are invalid: unexpected: unknown",
                         },
                     },
                 )
-                self.assertNotIn("unknown", json.dumps(rejected))
+                self.assertNotIn('"unknown": null', json.dumps(rejected))
             finally:
                 if process.stdin is not None:
                     process.stdin.close()

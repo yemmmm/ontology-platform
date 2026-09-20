@@ -83,8 +83,14 @@ def test_t_g1_1_full_real_task_loads_with_four_selectors() -> None:
         # blocked on its absence in auth006-start6 delivery-4.
         "acceptance-stage-handoff-contract.json",
     }
+    # R3.0-016 ledger #21: protocol also reads the two prose business inputs
+    # (its terminal duties quote scope and terms verbatim); schema.sql and
+    # sample-data.sql stay Modeling/competency-question-only.
     assert by_path["scenario-brief.md"].roles == frozenset(
-        {"coordinator", "modeling", "competency-question"}
+        {"coordinator", "modeling", "competency-question", "protocol"}
+    )
+    assert by_path["business-terms.md"].roles == frozenset(
+        {"coordinator", "modeling", "competency-question", "protocol"}
     )
     assert by_path["schema.sql"].roles == frozenset({"modeling", "competency-question"})
     for name in (

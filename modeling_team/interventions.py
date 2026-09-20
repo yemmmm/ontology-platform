@@ -10,6 +10,8 @@ evidence.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import re
 import time
 from dataclasses import dataclass, field, replace
@@ -486,8 +488,14 @@ class RecoverableIssueLedger:
         elif action == "resume":
             if active.state != "resolution_ready" or active.resolution is None:
                 raise IssueError("issue resume requires persisted resolution")
-            if resolution is None or resolution != active.resolution:
+            if resolution is None:
                 raise IssueError("issue resume resolution does not match persisted resolution")
+            if resolution != active.resolution:
+                raise _resolution_mismatch_error(
+                    "issue resume resolution does not match persisted resolution",
+                    active.resolution,
+                    resolution,
+                )
             active.state = "resume_sent"
             self._record("resume_sent", issue_id=issue_id)
         else:
@@ -498,7 +506,11 @@ class RecoverableIssueLedger:
             ):
                 raise IssueError("issue abort requires a persisted outer abort resolution")
             if reason != active.resolution.resolution_text:
-                raise IssueError("issue abort reason does not match persisted resolution")
+                raise _resolution_mismatch_error(
+                    "issue abort reason does not match persisted resolution",
+                    active.resolution,
+                    replace(active.resolution, resolution_text=str(reason)),
+                )
             active.state = "aborted"
             self._record("aborted", issue_id=issue_id, reason=reason)
         self._controls.append(control)
@@ -605,13 +617,78 @@ def normalize_issue_control_arguments(arguments: Any) -> dict[str, Any]:
     if not isinstance(arguments, Mapping):
         raise IssueError("issue_control arguments are invalid")
     declared = ISSUE_CONTROL_REQUIRED_FIELDS | ISSUE_CONTROL_OPTIONAL_FIELDS
-    if set(arguments) - declared or not ISSUE_CONTROL_REQUIRED_FIELDS.issubset(arguments):
-        raise IssueError("issue_control arguments are invalid")
+    unexpected = sorted({str(key) for key in set(arguments) - declared})
+    missing = sorted(ISSUE_CONTROL_REQUIRED_FIELDS - set(arguments))
+    if unexpected or missing:
+        # R3.0-016 issue_control: a bare "invalid" left the Coordinator unable
+        # to tell which of its fields was rejected, so a one-field mistake
+        # cost a full diagnosis round trip.  Name the fields; values stay out.
+        parts = []
+        if missing:
+            parts.append("missing: " + ", ".join(missing))
+        if unexpected:
+            parts.append("unexpected: " + ", ".join(unexpected))
+        message = "issue_control arguments are invalid: " + "; ".join(parts)
+        # Broker relay only carries errors up to _BROKER_ERROR_MAX_CHARS; drop
+        # the tail of an adversarially long unexpected list before it does.
+        while len(message) > 200 and unexpected:
+            unexpected = unexpected[:-1]
+            tail = "unexpected: " + ", ".join(unexpected) + (", …" if unexpected else "…")
+            parts = [p for p in parts if not p.startswith("unexpected: ")]
+            parts.append(tail)
+            message = "issue_control arguments are invalid: " + "; ".join(parts)
+        raise IssueError(message)
     return {
         key: value
         for key, value in arguments.items()
         if key not in ISSUE_CONTROL_OPTIONAL_FIELDS or value is not None
     }
+
+
+# Fields compared for equality on resume/abort replay.  Ordered for stable
+# diagnostics; control_epoch/ids are validated elsewhere, digests are opaque.
+_RESOLUTION_FIELDS = (
+    "resolution_type",
+    "control_epoch",
+    "resolution_text",
+    "repair_component",
+    "before_digest",
+    "after_digest",
+    "verification_reference",
+    "mutation_reconciliation",
+)
+
+
+def _resolution_field_summary(value: object) -> str:
+    """Short value-safe fingerprint (never reflects the offending text)."""
+
+    digest = hashlib.sha256(
+        json.dumps(value, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    ).hexdigest()[:10]
+    if isinstance(value, str):
+        return f"{len(value)}ch sha256:{digest}"
+    return f"sha256:{digest}"
+
+
+def _resolution_mismatch_error(message: str, persisted: IssueResolution, provided: IssueResolution) -> IssueError:
+    """Same non-match verdict, plus which fields differ (digests, not values)."""
+
+    differing = [
+        field
+        for field in _RESOLUTION_FIELDS
+        if getattr(persisted, field, None) != getattr(provided, field, None)
+    ]
+    if not differing:
+        return IssueError(message)
+    first = differing[0]
+    detail = (
+        f"differing {first} "
+        f"(persisted {_resolution_field_summary(getattr(persisted, first, None))}, "
+        f"provided {_resolution_field_summary(getattr(provided, first, None))})"
+    )
+    if len(differing) > 1:
+        detail += f" (+{len(differing) - 1} more field(s) differ)"
+    return IssueError(f"{message}: {detail}")
 
 
 __all__ = [

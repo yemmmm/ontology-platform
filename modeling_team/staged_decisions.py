@@ -2560,11 +2560,28 @@ def unified_translation_issue(
             continue
         matched.append((entry.get("decision"), entry.get("approved_by")))
     if not matched:
-        return StagedDecisionIssue(
-            "approval_missing",
-            f"no translation approval matches plan {plan_ref} at the current projection digest",
-            "",
+        # R3.0-016 #20 family: a bare "no approval matches" left the modeling
+        # role unable to distinguish "Coordinator never approved" from "my
+        # approval was recorded at an older projection digest" (a stateful
+        # call revises the digest).  List the digests that ARE recorded for
+        # this plan, prefix-truncated: host-owned sha256 values only.
+        recorded = sorted(
+            {
+                str(entry.get("projection_digest"))
+                for entry in translations
+                if isinstance(entry, Mapping)
+                and set(entry) == set(TRANSLATION_APPROVAL_FIELDS)
+                and entry.get("plan_ref") == plan_ref
+            }
         )
+        if recorded:
+            shown = ", ".join(digest[:16] for digest in recorded[:4])
+            if len(recorded) > 4:
+                shown += f", …(+{len(recorded) - 4} more)"
+            detail = f"no translation approval matches plan {plan_ref} at the current projection digest (recorded digests for this plan: {shown})"
+        else:
+            detail = f"no translation approval matches plan {plan_ref} at the current projection digest (no approval for this plan is recorded)"
+        return StagedDecisionIssue("approval_missing", detail, "")
     if len(set(matched)) > 1:
         return StagedDecisionIssue(
             "approval_conflict",
