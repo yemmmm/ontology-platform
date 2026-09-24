@@ -1,0 +1,29 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.38", ranksep="0.6", splines=polyline, outputorder=edgesfirst];
+node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=15, margin="0.20,0.14", color="#94a3b8", fontcolor="#172033", penwidth=1.1];
+edge [fontname="Noto Sans CJK SC", fontsize=11, color="#64748b", fontcolor="#475569", arrowsize=0.75];
+candidate [label="Modeling 发布候选版本\n内容 + 依据 + 未知 + 引用", fillcolor="#dbeafe", shape=box];
+approve [label="G1  业务决定已批准\n候选 / 版本 / 拓扑 / 值确认绑定\nCQ 公开投影已冻结", fillcolor="#ffedd5", shape=box];
+plan [label="Protocol 生成物化计划\n完整命令 + candidate / decision 绑定\nplan_ref / projection digest", fillcolor="#dbeafe", shape=box];
+pre [label="G2  Runner 提交准入\n角色、范围、阶段、引用与值解锁\n无未对账写入；记录 submission intent", fillcolor="#ffedd5", shape=box];
+dry [label="G3  平台 dry_run\n真实 schema / 依赖 / 约束 / 状态校验\n保留 Batch / Attempt / findings", fillcolor="#ffedd5", shape=box];
+ok [label="当前内容 dry-run validated？", fillcolor="#ffedd5", shape=diamond];
+fix [label="技术错误：Protocol 修正计划\n业务含义变化：交回责任 Agent\n内容变更发布新计划 / Batch", fillcolor="#dbeafe", shape=box];
+review [label="G4  Coordinator 翻译审阅\n核对获批语义是否忠实、完整\n批准绑定当前计划与成功 dry-run", fillcolor="#ffedd5", shape=box];
+apply [label="G5  同内容 apply_atomic\nRunner 核对当前批准与 dry-run 证据\n平台再次检查权限 / lease / workspace version\n幂等键与 Batch 内容一致", fillcolor="#ffedd5", shape=box];
+receipt [label="G6  权威结果闭合\n平台 Batch / Attempt + 实际回读\n关闭 intent，登记 receipt 与完成索引", fillcolor="#ccfbf1", shape=box];
+uncertain [label="写超时 / 回执缺失 / 结果不一致\n关闭写门，先查明真实写入状态\n不能凭“服务健康”再次 apply", fillcolor="#fee2e2", shape=box];
+candidate -> approve [label="", style=solid];
+approve -> plan [label="", style=solid];
+plan -> pre [label="", style=solid];
+pre -> dry [label="", style=solid];
+dry -> ok [label="", style=solid];
+ok -> review [label="是", style=solid];
+review -> apply [label="", style=solid];
+apply -> receipt [label="", style=solid];
+ok -> fix [label="否：返回 findings", style=solid];
+fix -> plan [label="仅修受影响部分", style=dashed];
+review -> fix [label="退回 / 内容变更", style=dashed];
+apply -> uncertain [label="结果不确定", style=solid];
+uncertain -> receipt [label="仅经权威对账确定结果", style=dashed];
+}

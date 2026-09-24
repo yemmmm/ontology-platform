@@ -1,0 +1,32 @@
+digraph G {
+graph [rankdir=LR, bgcolor="white", pad="0.3", nodesep="0.38", ranksep="0.6", splines=polyline, outputorder=edgesfirst];
+node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=15, margin="0.20,0.14", color="#94a3b8", fontcolor="#172033", penwidth=1.1];
+edge [fontname="Noto Sans CJK SC", fontsize=11, color="#64748b", fontcolor="#475569", arrowsize=0.75];
+user [label="用户 / 宿主\n业务回答、CQ 审核\n控制与授权", fillcolor="#fef3c7", shape=box];
+co [label="Coordinator\n分派有界任务、汇总状态\n批准切片 / 拓扑 / 共性 / 值选择\n当前计划翻译审阅", fillcolor="#dbeafe", shape=box];
+mo [label="Modeling\n访谈、场景地图、语义候选\n来源依据、未知项、共性分析\n不调用平台", fillcolor="#dbeafe", shape=box];
+pr [label="Protocol\n候选 → 平台物化计划\ndry-run / apply / 回读 / Evidence\n不补猜业务事实", fillcolor="#dbeafe", shape=box];
+cq [label="Competency Question\n全景题 → 切片题\n参考答案、依据、未知项\n不设计模型、不查询平台", fillcolor="#ede9fe", shape=box];
+direct [label="Runner 私有 CQ 直连\n审核 / 冻结 / 可见性分组\nCQ 无普通团队消息边", fillcolor="#e2e8f0", shape=box];
+pub [label="公开投影\n获批公开题 + 答案\n按角色允许范围发布", fillcolor="#ccfbf1", shape=box];
+secret [label="冻结私有题池\n隐藏题、参考答案、审核依据\n生产角色不可读取", fillcolor="#ede9fe", shape=cylinder];
+ex [label="Platform Examiner\n只接收隐藏题 + 获准模型范围\n只读查询并给出回答\n看不到参考答案 / 生产历史", fillcolor="#ede9fe", shape=box];
+judge [label="Acceptance Judge\n冻结参考答案与业务依据\nExaminer 回答 + 宿主核验的查询证据\n独立判定；不改模型", fillcolor="#ede9fe", shape=box];
+user -> co [label="普通业务与协调通道", style=solid];
+co -> mo [label="任务 / 批准", style=solid];
+mo -> co [label="候选 / 争议 / 状态", style=solid];
+co -> pr [label="批准 / 计划审阅", style=solid];
+pr -> co [label="计划 / findings / 回执", style=solid];
+mo -> pr [label="完整候选", style=solid];
+pr -> mo [label="翻译冲突 / 结果", style=solid];
+user -> direct [label="CQ 审核专用通道", style=solid];
+direct -> cq [label="问题与审核", style=solid];
+cq -> direct [label="草稿与修订", style=solid];
+direct -> pub [label="仅公开内容", style=solid];
+pub -> mo [label="建模输入", style=solid];
+pub -> co [label="协调可见投影", style=solid];
+direct -> secret [label="冻结保存", style=solid];
+secret -> ex [label="仅隐藏问题", style=solid];
+secret -> judge [label="参考答案与依据", style=solid];
+ex -> judge [label="答案与真实查询证据", style=solid];
+}

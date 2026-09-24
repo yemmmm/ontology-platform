@@ -1,0 +1,1156 @@
+<!doctype html><html lang="zh-CN"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Modeling Team · 六张图理解全流程</title><style>*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:#f5f7fb;color:#172033;font:16px/1.8 "Noto Sans CJK SC",system-ui,sans-serif}header,main{max-width:1380px;margin:auto;padding:32px}header{padding-top:52px}h1{font-size:38px;line-height:1.3;margin:12px 0}h2{font-size:25px;line-height:1.5}p{max-width:1100px}.eyebrow{letter-spacing:.14em;color:#475569;font-size:13px}nav{display:flex;flex-wrap:wrap;gap:10px;margin-top:24px}a{color:#1d4ed8;text-underline-offset:4px}nav a,.download{padding:8px 14px;background:white;border:1px solid #dbe3ed;border-radius:8px;text-decoration:none}section{background:white;border:1px solid #dbe3ed;border-radius:14px;padding:28px;margin-bottom:28px;scroll-margin-top:20px}.subtitle{color:#526175}.canvas{overflow:auto;border:1px solid #edf0f5;border-radius:10px;margin:18px 0;background:white}.canvas svg{display:block;min-width:650px;max-height:1100px;margin:auto}.toolbar{display:flex;gap:18px;align-items:center;flex-wrap:wrap;font-size:14px}.notes{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}.notes p{margin:0;background:#f5f7fb;border-radius:8px;padding:16px;font-size:14px}.sources{font-size:13px;color:#64748b;margin-top:18px}.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:14px}.legend span:before{content:"";display:inline-block;width:13px;height:13px;margin-right:7px;background:var(--color);border-radius:3px}.callout{border-left:4px solid #0d9488;background:#e6faf5;padding:14px 20px}.small{font-size:13px;color:#64748b}footer{padding:0 32px 40px;max-width:1380px;margin:auto}.terms{display:grid;grid-template-columns:repeat(auto-fit,minmax(250px,1fr));gap:16px}.terms p{font-size:14px;margin:0}button{background:white;border:1px solid #cbd5e1;border-radius:6px;padding:5px 12px;cursor:pointer;color:#172033}@media(max-width:700px){header,main{padding:18px}h1{font-size:29px}section{padding:16px}.canvas svg{min-width:600px}}@media print{body{background:white}header,main{padding:10px}section{break-before:page;border:0;padding:0}.toolbar,nav{display:none}.canvas{border:0}.canvas svg{min-width:0;max-height:75vh}.notes{font-size:12px}}</style><body><header>
+<div class="eyebrow">ONTOLOGY PLATFORM / MODELING TEAM</div><h1>六张图理解建模团队</h1><p>从业务访谈到语义模型，再到独立问题验收。以当前仓库 <code>08fe766</code>（2026-09-17 读取）与 v3.0 权威需求为依据；本图解不改变既有合同，也不代表任何真实运行已经验收通过。</p>
+<p class="callout">阅读主线：用户确认业务与问题 → Modeling 提出语义 → Coordinator 批准决定 → Protocol 翻译并通过平台写门 → 独立 Examiner 查询、Judge 判断。</p>
+<p><a class="download" href="modeling-team-guide.drawio" download>下载六页 draw.io 可编辑文件</a>　<a href="README.md">阅读文字说明与来源索引</a></p><nav>
+<a href="#01-architecture">01 · 系统架构</a>
+<a href="#02-roles">02 · 角色关系与信息边界</a>
+<a href="#03-workflow">03 · 从业务资料到可检验的语义模型</a>
+<a href="#04-write-gates">04 · 一个批次如何通过写入门禁</a>
+<a href="#05-acceptance">05 · 独立验收</a>
+<a href="#06-recovery">06 · 失败后怎么继续</a>
+</nav><p class="legend">
+<span style="--color:#fef3c7">用户 / 宿主</span>
+<span style="--color:#dbeafe">生产 Agent</span>
+<span style="--color:#e2e8f0">确定性执行</span>
+<span style="--color:#ffedd5">关键门禁</span>
+<span style="--color:#ede9fe">隔离 CQ / 验收</span>
+<span style="--color:#ccfbf1">数据 / 证据</span>
+<span style="--color:#fee2e2">失败 / 未知写入</span>
+</p><p class="small">箭头表示信息或执行关系；虚线表示条件性 / 间接关系或修订回路。长图可缩放和滚动，SVG 可单独打开。</p></header><main>
+<section id="01-architecture"><h2>01 · 系统架构：谁思考，谁执行，事实存在哪里</h2><p class="subtitle">以当前 v3 staged / unified / CQ 路径为主；具体启用能力由冻结的 Task / Profile 决定。</p><div class="toolbar"><a href="01-architecture.svg">打开 SVG 原图</a><a href="01-architecture.png">打开 PNG</a><label>缩放 <input type="range" min="60" max="200" value="100" oninput="zoomDiagram(this)"></label><button onclick="resetDiagram(this)">适应宽度</button></div><div class="canvas"><svg width="100%"
+ viewBox="0.00 0.00 786.20 1298.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 1276.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-1276.6 764.6,-1276.6 764.6,21.6 -21.6,21.6"/>
+<!-- user&#45;&gt;host -->
+<g id="edge1" class="edge">
+<title>user&#45;&gt;host</title>
+<path fill="none" stroke="#64748b" d="M228.5,-1183.76C228.5,-1164.25 228.5,-1139.74 228.5,-1119.08"/>
+<polygon fill="#64748b" stroke="#64748b" points="231.13,-1118.87 228.5,-1111.37 225.88,-1118.87 231.13,-1118.87"/>
+<text text-anchor="middle" x="267" y="-1153.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">授权 / 业务输入</text>
+</g>
+<!-- host&#45;&gt;runner -->
+<g id="edge3" class="edge">
+<title>host&#45;&gt;runner</title>
+<path fill="none" stroke="#64748b" d="M268.51,-1039.9C290.56,-1020.84 313.5,-1001 313.5,-1001 313.5,-1001 328.59,-987.79 346.28,-972.32"/>
+<polygon fill="#64748b" stroke="#64748b" points="348.44,-973.92 352.35,-967 344.98,-969.97 348.44,-973.92"/>
+<text text-anchor="middle" x="354" y="-992.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">启动 / 控制</text>
+</g>
+<!-- host&#45;&gt;accept -->
+<g id="edge10" class="edge">
+<title>host&#45;&gt;accept</title>
+<path fill="none" stroke="#64748b" d="M228.5,-1039.91C228.5,-995.15 228.5,-916.8 228.5,-865.16"/>
+<polygon fill="#64748b" stroke="#64748b" points="231.13,-864.92 228.5,-857.42 225.88,-864.92 231.13,-864.92"/>
+<text text-anchor="middle" x="268" y="-992.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">稳定交接后启动</text>
+</g>
+<!-- config&#45;&gt;runner -->
+<g id="edge2" class="edge">
+<title>config&#45;&gt;runner</title>
+<path fill="none" stroke="#64748b" d="M455.7,-1022.79C447.07,-1004.79 439.5,-989 439.5,-989 439.5,-989 435.89,-982.83 430.9,-974.29"/>
+<polygon fill="#64748b" stroke="#64748b" points="432.9,-972.51 426.85,-967.36 428.37,-975.16 432.9,-972.51"/>
+<text text-anchor="middle" x="490" y="-992.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">冻结并按角色投影</text>
+</g>
+<!-- runner&#45;&gt;runtime -->
+<g id="edge4" class="edge">
+<title>runner&#45;&gt;runtime</title>
+<path fill="none" stroke="#64748b" d="M451.53,-878.64C465.28,-866.72 476.5,-857 476.5,-857 476.5,-857 532.45,-786.76 572.31,-736.71"/>
+<polygon fill="#64748b" stroke="#64748b" points="574.47,-738.21 577.08,-730.71 570.36,-734.94 574.47,-738.21"/>
+<text text-anchor="middle" x="577.5" y="-810.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">统一运行接口</text>
+</g>
+<!-- runner&#45;&gt;files -->
+<g id="edge9" class="edge">
+<title>runner&#45;&gt;files</title>
+<path fill="none" stroke="#64748b" d="M394.9,-878.99C389.57,-844.28 381.98,-794.83 375.84,-754.87"/>
+<polygon fill="#64748b" stroke="#64748b" points="378.37,-754.03 374.64,-747.02 373.18,-754.83 378.37,-754.03"/>
+<text text-anchor="middle" x="431" y="-810.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">保存可核对证据</text>
+</g>
+<!-- runtime&#45;&gt;team -->
+<g id="edge5" class="edge">
+<title>runtime&#45;&gt;team</title>
+<path fill="none" stroke="#64748b" d="M593.47,-642.49C585.18,-622.7 575.2,-598.89 566.21,-577.46"/>
+<polygon fill="#64748b" stroke="#64748b" points="568.53,-576.19 563.21,-570.29 563.69,-578.22 568.53,-576.19"/>
+<text text-anchor="middle" x="616" y="-595.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">角色线程与工具</text>
+</g>
+<!-- team&#45;&gt;write -->
+<g id="edge6" class="edge">
+<title>team&#45;&gt;write</title>
+<path fill="none" stroke="#64748b" d="M505.02,-464.71C493.81,-448.79 481.51,-431.32 470.41,-415.56"/>
+<polygon fill="#64748b" stroke="#64748b" points="472.52,-414.01 466.06,-409.39 468.23,-417.03 472.52,-414.01"/>
+<text text-anchor="middle" x="529.5" y="-434.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">仅 Protocol 提交</text>
+</g>
+<!-- write&#45;&gt;api -->
+<g id="edge7" class="edge">
+<title>write&#45;&gt;api</title>
+<path fill="none" stroke="#64748b" d="M381.13,-320.62C361.03,-304.59 338.14,-286.33 317.56,-269.91"/>
+<polygon fill="#64748b" stroke="#64748b" points="319.04,-267.74 311.54,-265.11 315.77,-271.84 319.04,-267.74"/>
+<text text-anchor="middle" x="386.5" y="-290.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">受控模型写入</text>
+</g>
+<!-- api&#45;&gt;stores -->
+<g id="edge8" class="edge">
+<title>api&#45;&gt;stores</title>
+<path fill="none" stroke="#64748b" d="M220.61,-176.69C207.61,-161.42 192.68,-143.9 178.46,-127.21"/>
+<polygon fill="#64748b" stroke="#64748b" points="180.12,-125.11 173.26,-121.1 176.13,-128.51 180.12,-125.11"/>
+<text text-anchor="middle" x="248" y="-146.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">持久化与权威回读</text>
+</g>
+<!-- api&#45;&gt;db -->
+<g id="edge12" class="edge">
+<title>api&#45;&gt;db</title>
+<path fill="none" stroke="#64748b" stroke-dasharray="5,2" d="M294.39,-176.69C311.8,-156.25 332.66,-131.76 350.66,-110.62"/>
+<polygon fill="#64748b" stroke="#64748b" points="352.79,-112.17 355.66,-104.76 348.79,-108.77 352.79,-112.17"/>
+<text text-anchor="middle" x="391" y="-146.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">语义上下文支撑后续 SQL 链</text>
+</g>
+<!-- accept&#45;&gt;api -->
+<g id="edge11" class="edge">
+<title>accept&#45;&gt;api</title>
+<path fill="none" stroke="#64748b" d="M229.71,-768.9C231.47,-706.66 234.5,-599 234.5,-599 234.5,-599 234.5,-599 234.5,-364 234.5,-364 242.66,-313.6 249.26,-272.86"/>
+<polygon fill="#64748b" stroke="#64748b" points="251.87,-273.2 250.47,-265.38 246.68,-272.36 251.87,-273.2"/>
+<text text-anchor="middle" x="290.5" y="-514.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">限定 scope，只读查询</text>
+</g>
+<!-- user -->
+<g id="node1" class="node">
+<title>user</title>
+<path fill="#fef3c7" stroke="#94a3b8" stroke-width="1.1" d="M298.5,-1255C298.5,-1255 158.5,-1255 158.5,-1255 152.5,-1255 146.5,-1249 146.5,-1243 146.5,-1243 146.5,-1196 146.5,-1196 146.5,-1190 152.5,-1184 158.5,-1184 158.5,-1184 298.5,-1184 298.5,-1184 304.5,-1184 310.5,-1190 310.5,-1196 310.5,-1196 310.5,-1243 310.5,-1243 310.5,-1249 304.5,-1255 298.5,-1255"/>
+<text text-anchor="middle" x="228.5" y="-1233" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">用户 / 业务负责人</text>
+<text text-anchor="middle" x="228.5" y="-1216" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">确认业务、审核 CQ</text>
+<text text-anchor="middle" x="228.5" y="-1199" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">授权范围与建模次数</text>
+</g>
+<!-- host -->
+<g id="node2" class="node">
+<title>host</title>
+<path fill="#fef3c7" stroke="#94a3b8" stroke-width="1.1" d="M321,-1111C321,-1111 136,-1111 136,-1111 130,-1111 124,-1105 124,-1099 124,-1099 124,-1052 124,-1052 124,-1046 130,-1040 136,-1040 136,-1040 321,-1040 321,-1040 327,-1040 333,-1046 333,-1052 333,-1052 333,-1099 333,-1099 333,-1105 327,-1111 321,-1111"/>
+<text text-anchor="middle" x="228.5" y="-1089" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">宿主 Delivery Agent</text>
+<text text-anchor="middle" x="228.5" y="-1072" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">选择基线、启动与监控</text>
+<text text-anchor="middle" x="228.5" y="-1055" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">处理问题、资源与证据交接</text>
+</g>
+<!-- config -->
+<g id="node3" class="node">
+<title>config</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M588.5,-1128C588.5,-1128 372.5,-1128 372.5,-1128 366.5,-1128 360.5,-1122 360.5,-1116 360.5,-1116 360.5,-1035 360.5,-1035 360.5,-1029 366.5,-1023 372.5,-1023 372.5,-1023 588.5,-1023 588.5,-1023 594.5,-1023 600.5,-1029 600.5,-1035 600.5,-1035 600.5,-1116 600.5,-1116 600.5,-1122 594.5,-1128 588.5,-1128"/>
+<text text-anchor="middle" x="480.5" y="-1106" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">冻结输入</text>
+<text text-anchor="middle" x="480.5" y="-1089" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Task：目标 / 来源 / 工具 / 开关</text>
+<text text-anchor="middle" x="480.5" y="-1072" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Profile：角色 / 通信</text>
+<text text-anchor="middle" x="480.5" y="-1055" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Package + Skill：职责 / 方法</text>
+<text text-anchor="middle" x="480.5" y="-1038" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Model profile：模型与推理配置</text>
+</g>
+<!-- runner -->
+<g id="node4" class="node">
+<title>runner</title>
+<path fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.1" d="M506,-967C506,-967 297,-967 297,-967 291,-967 285,-961 285,-955 285,-955 285,-891 285,-891 285,-885 291,-879 297,-879 297,-879 506,-879 506,-879 512,-879 518,-885 518,-891 518,-891 518,-955 518,-955 518,-961 512,-967 506,-967"/>
+<text text-anchor="middle" x="401.5" y="-945" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">TeamRunner · 运行控制</text>
+<text text-anchor="middle" x="401.5" y="-928" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">生命周期 / 资料隔离 / 消息路由</text>
+<text text-anchor="middle" x="401.5" y="-911" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">产物绑定 / 写入准入 / 回执</text>
+<text text-anchor="middle" x="401.5" y="-894" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">暂停恢复 / 检查点</text>
+</g>
+<!-- runtime -->
+<g id="node5" class="node">
+<title>runtime</title>
+<path fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.1" d="M731,-730.5C731,-730.5 492,-730.5 492,-730.5 486,-730.5 480,-724.5 480,-718.5 480,-718.5 480,-654.5 480,-654.5 480,-648.5 486,-642.5 492,-642.5 492,-642.5 731,-642.5 731,-642.5 737,-642.5 743,-648.5 743,-654.5 743,-654.5 743,-718.5 743,-718.5 743,-724.5 737,-730.5 731,-730.5"/>
+<text text-anchor="middle" x="611.5" y="-708.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Runtime Adapter</text>
+<text text-anchor="middle" x="611.5" y="-691.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">当前常用：CodexRuntimeAdapter</text>
+<text text-anchor="middle" x="611.5" y="-674.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">创建角色线程、投影工具与 Skill</text>
+<text text-anchor="middle" x="611.5" y="-657.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">接收模型与工具调用事件</text>
+</g>
+<!-- team -->
+<g id="node6" class="node">
+<title>team</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M631,-570C631,-570 452,-570 452,-570 446,-570 440,-564 440,-558 440,-558 440,-477 440,-477 440,-471 446,-465 452,-465 452,-465 631,-465 631,-465 637,-465 643,-471 643,-477 643,-477 643,-558 643,-558 643,-564 637,-570 631,-570"/>
+<text text-anchor="middle" x="541.5" y="-548" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">生产角色</text>
+<text text-anchor="middle" x="541.5" y="-531" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Coordinator：协调与决策</text>
+<text text-anchor="middle" x="541.5" y="-514" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Modeling：业务语义</text>
+<text text-anchor="middle" x="541.5" y="-497" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Protocol：平台翻译</text>
+<text text-anchor="middle" x="541.5" y="-480" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">CQ：问题、答案与依据</text>
+</g>
+<!-- write -->
+<g id="node7" class="node">
+<title>write</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M544.5,-409C544.5,-409 326.5,-409 326.5,-409 320.5,-409 314.5,-403 314.5,-397 314.5,-397 314.5,-333 314.5,-333 314.5,-327 320.5,-321 326.5,-321 326.5,-321 544.5,-321 544.5,-321 550.5,-321 556.5,-327 556.5,-333 556.5,-333 556.5,-397 556.5,-397 556.5,-403 550.5,-409 544.5,-409"/>
+<text text-anchor="middle" x="435.5" y="-387" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Runner 受控写入入口</text>
+<text text-anchor="middle" x="435.5" y="-370" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Protocol 专属 staged capability</text>
+<text text-anchor="middle" x="435.5" y="-353" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">候选 / 计划 / 批准绑定</text>
+<text text-anchor="middle" x="435.5" y="-336" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">intent → 平台调用 → receipt</text>
+</g>
+<!-- api -->
+<g id="node8" class="node">
+<title>api</title>
+<path fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.1" d="M350,-265C350,-265 165,-265 165,-265 159,-265 153,-259 153,-253 153,-253 153,-189 153,-189 153,-183 159,-177 165,-177 165,-177 350,-177 350,-177 356,-177 362,-183 362,-189 362,-189 362,-253 362,-253 362,-259 356,-265 350,-265"/>
+<text text-anchor="middle" x="257.5" y="-243" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Semantic Platform</text>
+<text text-anchor="middle" x="257.5" y="-226" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">FastMCP / FastAPI</text>
+<text text-anchor="middle" x="257.5" y="-209" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Batch、Session、Lease</text>
+<text text-anchor="middle" x="257.5" y="-192" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">语义验证、推理、授权检索</text>
+</g>
+<!-- stores -->
+<g id="node9" class="node">
+<title>stores</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M245,-110C245,-116.07 190.09,-121 122.5,-121 54.91,-121 0,-116.07 0,-110 0,-110 0,-11 0,-11 0,-4.93 54.91,0 122.5,0 190.09,0 245,-4.93 245,-11 245,-11 245,-110 245,-110"/>
+<path fill="none" stroke="#94a3b8" stroke-width="1.1" d="M245,-110C245,-103.93 190.09,-99 122.5,-99 54.91,-99 0,-103.93 0,-110"/>
+<text text-anchor="middle" x="122.5" y="-82.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">平台持久化</text>
+<text text-anchor="middle" x="122.5" y="-65.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">PostgreSQL：运行与治理记录等</text>
+<text text-anchor="middle" x="122.5" y="-48.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">RDF / Oxigraph：权威语义图</text>
+<text text-anchor="middle" x="122.5" y="-31.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">两者无跨存储 ACID 承诺</text>
+</g>
+<!-- files -->
+<g id="node10" class="node">
+<title>files</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M452.5,-736C452.5,-742.07 413.51,-747 365.5,-747 317.49,-747 278.5,-742.07 278.5,-736 278.5,-736 278.5,-637 278.5,-637 278.5,-630.93 317.49,-626 365.5,-626 413.51,-626 452.5,-630.93 452.5,-637 452.5,-637 452.5,-736 452.5,-736"/>
+<path fill="none" stroke="#94a3b8" stroke-width="1.1" d="M452.5,-736C452.5,-729.93 413.51,-725 365.5,-725 317.49,-725 278.5,-729.93 278.5,-736"/>
+<text text-anchor="middle" x="365.5" y="-708.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">本地 run 证据</text>
+<text text-anchor="middle" x="365.5" y="-691.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">配置快照 / 角色产物</text>
+<text text-anchor="middle" x="365.5" y="-674.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">消息 / intent / receipt</text>
+<text text-anchor="middle" x="365.5" y="-657.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">检查点 / 验收报告</text>
+</g>
+<!-- accept -->
+<g id="node11" class="node">
+<title>accept</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M325,-857C325,-857 132,-857 132,-857 126,-857 120,-851 120,-845 120,-845 120,-781 120,-781 120,-775 126,-769 132,-769 132,-769 325,-769 325,-769 331,-769 337,-775 337,-781 337,-781 337,-845 337,-845 337,-851 331,-857 325,-857"/>
+<text text-anchor="middle" x="228.5" y="-835" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">独立验收 Runtime</text>
+<text text-anchor="middle" x="228.5" y="-818" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Platform Examiner + Judge</text>
+<text text-anchor="middle" x="228.5" y="-801" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">通过只读代理取证</text>
+<text text-anchor="middle" x="228.5" y="-784" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">冻结输入与隔离报告</text>
+</g>
+<!-- db -->
+<g id="node12" class="node">
+<title>db</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M500.5,-104.5C500.5,-104.5 284.5,-104.5 284.5,-104.5 278.5,-104.5 272.5,-98.5 272.5,-92.5 272.5,-92.5 272.5,-28.5 272.5,-28.5 272.5,-22.5 278.5,-16.5 284.5,-16.5 284.5,-16.5 500.5,-16.5 500.5,-16.5 506.5,-16.5 512.5,-22.5 512.5,-28.5 512.5,-28.5 512.5,-92.5 512.5,-92.5 512.5,-98.5 506.5,-104.5 500.5,-104.5"/>
+<text text-anchor="middle" x="392.5" y="-82.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">外部业务数据库（关系型场景）</text>
+<text text-anchor="middle" x="392.5" y="-65.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">保留真实业务行</text>
+<text text-anchor="middle" x="392.5" y="-48.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Consumer 先取获准语义上下文</text>
+<text text-anchor="middle" x="392.5" y="-31.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">再生成 SQL，经外部适配器执行</text>
+</g>
+</g>
+</svg>
+</div><div class="notes">
+<p>Runner 检查可观察的合同与写入事实；业务含义、拓扑选择和语义裁决由相应 Agent / 用户负责。</p>
+<p>图中的写门针对 staged 模型与 Evidence 写入；Protocol 还通过获准平台工具管理 Session / Lease 与验证、推理等操作。</p>
+<p>业务行留在外部关系库，平台语义图保存概念、规则和映射。示意箭头不表示平台自动执行 SQL。</p>
+</div><div class="sources">来源：<a href="../../../modeling_team/runner.py">TeamRunner 与写入准入</a> · <a href="../../../modeling_team/runtimes/base.py">Runtime Adapter 接口</a> · <a href="../../../modeling_team/runtimes/codex.py">Codex 实现</a> · <a href="../../../docs/architecture/overview.md">平台与持久化边界</a></div></section>
+<section id="02-roles"><h2>02 · 角色关系与信息边界</h2><p class="subtitle">三个生产角色经 Team Transport 协作；CQ 走 Runner 私有直连；独立验收另行启动。</p><div class="toolbar"><a href="02-roles.svg">打开 SVG 原图</a><a href="02-roles.png">打开 PNG</a><label>缩放 <input type="range" min="60" max="200" value="100" oninput="zoomDiagram(this)"></label><button onclick="resetDiagram(this)">适应宽度</button></div><div class="canvas"><svg width="100%"
+ viewBox="0.00 0.00 2021.20 494.70" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 473.1)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-473.1 1999.6,-473.1 1999.6,21.6 -21.6,21.6"/>
+<!-- user&#45;&gt;co -->
+<g id="edge1" class="edge">
+<title>user&#45;&gt;co</title>
+<path fill="none" stroke="#64748b" d="M157.01,-35.91C351.37,-36.92 844,-39.5 844,-39.5 844,-39.5 956,-148.5 956,-148.5 956,-148.5 959.13,-149.9 964.35,-152.23"/>
+<polygon fill="#64748b" stroke="#64748b" points="963.46,-154.71 971.37,-155.38 965.6,-149.92 963.46,-154.71"/>
+<text text-anchor="middle" x="547" y="-41.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">普通业务与协调通道</text>
+</g>
+<!-- user&#45;&gt;direct -->
+<g id="edge8" class="edge">
+<title>user&#45;&gt;direct</title>
+<path fill="none" stroke="#64748b" d="M157.02,-62.94C194.06,-76.04 238.85,-91.9 278.47,-105.92"/>
+<polygon fill="#64748b" stroke="#64748b" points="277.86,-108.49 285.8,-108.52 279.61,-103.54 277.86,-108.49"/>
+<text text-anchor="middle" x="221.5" y="-101.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">CQ 审核专用通道</text>
+</g>
+<!-- co&#45;&gt;mo -->
+<g id="edge2" class="edge">
+<title>co&#45;&gt;mo</title>
+<path fill="none" stroke="#64748b" d="M1186.12,-182.24C1247.2,-173 1310,-163.5 1310,-163.5 1310,-163.5 1327.47,-159.56 1350.86,-154.28"/>
+<polygon fill="#64748b" stroke="#64748b" points="1351.55,-156.81 1358.29,-152.6 1350.39,-151.69 1351.55,-156.81"/>
+<text text-anchor="middle" x="1259" y="-180.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">任务 / 批准</text>
+</g>
+<!-- co&#45;&gt;pr -->
+<g id="edge4" class="edge">
+<title>co&#45;&gt;pr</title>
+<path fill="none" stroke="#64748b" d="M1186.15,-238.11C1199.23,-242.53 1208,-245.5 1208,-245.5 1208,-245.5 1708,-245.5 1708,-245.5 1708,-245.5 1713.49,-243.91 1722.33,-241.35"/>
+<polygon fill="#64748b" stroke="#64748b" points="1723.23,-243.82 1729.71,-239.21 1721.77,-238.78 1723.23,-243.82"/>
+<text text-anchor="middle" x="1470.5" y="-248.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">批准 / 计划审阅</text>
+</g>
+<!-- mo&#45;&gt;co -->
+<g id="edge3" class="edge">
+<title>mo&#45;&gt;co</title>
+<path fill="none" stroke="#64748b" d="M1358.22,-136.44C1287.05,-142.15 1208,-148.5 1208,-148.5 1208,-148.5 1202.32,-150.63 1193.29,-154.02"/>
+<polygon fill="#64748b" stroke="#64748b" points="1192.25,-151.6 1186.15,-156.69 1194.09,-156.52 1192.25,-151.6"/>
+<text text-anchor="middle" x="1259" y="-151.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">候选 / 争议 / 状态</text>
+</g>
+<!-- mo&#45;&gt;pr -->
+<g id="edge6" class="edge">
+<title>mo&#45;&gt;pr</title>
+<path fill="none" stroke="#64748b" d="M1582.82,-135.03C1644.17,-139.18 1708,-143.5 1708,-143.5 1708,-143.5 1721.13,-148.93 1739.49,-156.53"/>
+<polygon fill="#64748b" stroke="#64748b" points="1738.54,-158.98 1746.48,-159.42 1740.55,-154.13 1738.54,-158.98"/>
+<text text-anchor="middle" x="1669.5" y="-146.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">完整候选</text>
+</g>
+<!-- pr&#45;&gt;co -->
+<g id="edge5" class="edge">
+<title>pr&#45;&gt;co</title>
+<path fill="none" stroke="#64748b" d="M1729.91,-202.87C1583.4,-202.12 1340.25,-200.87 1194.15,-200.13"/>
+<polygon fill="#64748b" stroke="#64748b" points="1193.91,-197.5 1186.4,-200.09 1193.89,-202.75 1193.91,-197.5"/>
+<text text-anchor="middle" x="1470.5" y="-204.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">计划 / findings / 回执</text>
+</g>
+<!-- pr&#45;&gt;mo -->
+<g id="edge7" class="edge">
+<title>pr&#45;&gt;mo</title>
+<path fill="none" stroke="#64748b" d="M1729.97,-178.99C1685.09,-170.05 1634.46,-159.96 1589.98,-151.1"/>
+<polygon fill="#64748b" stroke="#64748b" points="1590.48,-148.53 1582.61,-149.64 1589.46,-153.68 1590.48,-148.53"/>
+<text text-anchor="middle" x="1669.5" y="-177.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">翻译冲突 / 结果</text>
+</g>
+<!-- cq&#45;&gt;direct -->
+<g id="edge10" class="edge">
+<title>cq&#45;&gt;direct</title>
+<path fill="none" stroke="#64748b" d="M634.69,-96.78C613.89,-96.62 598,-96.5 598,-96.5 598,-96.5 496,-96.5 496,-96.5 496,-96.5 489.27,-99.13 479.06,-103.13"/>
+<polygon fill="#64748b" stroke="#64748b" points="477.92,-100.76 471.89,-105.93 479.83,-105.64 477.92,-100.76"/>
+<text text-anchor="middle" x="547" y="-99.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">草稿与修订</text>
+</g>
+<!-- direct&#45;&gt;cq -->
+<g id="edge9" class="edge">
+<title>direct&#45;&gt;cq</title>
+<path fill="none" stroke="#64748b" d="M474.33,-129.77C521.43,-123.85 578.69,-116.65 627.17,-110.55"/>
+<polygon fill="#64748b" stroke="#64748b" points="627.76,-113.12 634.88,-109.58 627.11,-107.92 627.76,-113.12"/>
+<text text-anchor="middle" x="547" y="-129.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">问题与审核</text>
+</g>
+<!-- direct&#45;&gt;pub -->
+<g id="edge11" class="edge">
+<title>direct&#45;&gt;pub</title>
+<path fill="none" stroke="#64748b" d="M474.33,-158.3C526.45,-167.68 591.02,-179.3 642.35,-188.54"/>
+<polygon fill="#64748b" stroke="#64748b" points="641.98,-191.14 649.83,-189.89 642.91,-185.98 641.98,-191.14"/>
+<text text-anchor="middle" x="547" y="-182.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">仅公开内容</text>
+</g>
+<!-- direct&#45;&gt;secret -->
+<g id="edge14" class="edge">
+<title>direct&#45;&gt;secret</title>
+<path fill="none" stroke="#64748b" d="M448.9,-177C501.92,-204.72 576.26,-243.59 635.31,-274.47"/>
+<polygon fill="#64748b" stroke="#64748b" points="634.21,-276.85 642.07,-278 636.64,-272.2 634.21,-276.85"/>
+<text text-anchor="middle" x="547" y="-257.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">冻结保存</text>
+</g>
+<!-- pub&#45;&gt;co -->
+<g id="edge13" class="edge">
+<title>pub&#45;&gt;co</title>
+<path fill="none" stroke="#64748b" d="M814.15,-203.3C854.28,-202.7 903.56,-201.97 948.12,-201.31"/>
+<polygon fill="#64748b" stroke="#64748b" points="948.34,-203.93 955.8,-201.19 948.26,-198.68 948.34,-203.93"/>
+<text text-anchor="middle" x="900" y="-204.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">协调可见投影</text>
+</g>
+<!-- pub&#45;&gt;mo -->
+<g id="edge12" class="edge">
+<title>pub&#45;&gt;mo</title>
+<path fill="none" stroke="#64748b" d="M814.14,-177.57C877.9,-156.42 956,-130.5 956,-130.5 956,-130.5 1199.13,-129.08 1350.79,-128.19"/>
+<polygon fill="#64748b" stroke="#64748b" points="1350.91,-130.82 1358.39,-128.15 1350.88,-125.57 1350.91,-130.82"/>
+<text text-anchor="middle" x="1071" y="-133.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">建模输入</text>
+</g>
+<!-- secret&#45;&gt;ex -->
+<g id="edge15" class="edge">
+<title>secret&#45;&gt;ex</title>
+<path fill="none" stroke="#64748b" d="M844.28,-351.91C878.83,-360.42 917.01,-369.82 952,-378.44"/>
+<polygon fill="#64748b" stroke="#64748b" points="951.5,-381.02 959.41,-380.26 952.76,-375.92 951.5,-381.02"/>
+<text text-anchor="middle" x="900" y="-375.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">仅隐藏问题</text>
+</g>
+<!-- secret&#45;&gt;judge -->
+<g id="edge16" class="edge">
+<title>secret&#45;&gt;judge</title>
+<path fill="none" stroke="#64748b" d="M844.11,-327.93C978.23,-332.08 1186,-338.5 1186,-338.5 1186,-338.5 1254.58,-351.08 1324.28,-363.86"/>
+<polygon fill="#64748b" stroke="#64748b" points="1324.05,-366.49 1331.9,-365.26 1325,-361.33 1324.05,-366.49"/>
+<text text-anchor="middle" x="1071" y="-341.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">参考答案与依据</text>
+</g>
+<!-- ex&#45;&gt;judge -->
+<g id="edge17" class="edge">
+<title>ex&#45;&gt;judge</title>
+<path fill="none" stroke="#64748b" d="M1182.73,-402.76C1226.46,-400.89 1277.33,-398.72 1323.98,-396.72"/>
+<polygon fill="#64748b" stroke="#64748b" points="1324.34,-399.34 1331.72,-396.39 1324.12,-394.09 1324.34,-399.34"/>
+<text text-anchor="middle" x="1259" y="-404.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">答案与真实查询证据</text>
+</g>
+<!-- user -->
+<g id="node1" class="node">
+<title>user</title>
+<path fill="#fef3c7" stroke="#94a3b8" stroke-width="1.1" d="M145,-71C145,-71 12,-71 12,-71 6,-71 0,-65 0,-59 0,-59 0,-12 0,-12 0,-6 6,0 12,0 12,0 145,0 145,0 151,0 157,-6 157,-12 157,-12 157,-59 157,-59 157,-65 151,-71 145,-71"/>
+<text text-anchor="middle" x="78.5" y="-49" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">用户 / 宿主</text>
+<text text-anchor="middle" x="78.5" y="-32" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">业务回答、CQ 审核</text>
+<text text-anchor="middle" x="78.5" y="-15" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">控制与授权</text>
+</g>
+<!-- co -->
+<g id="node2" class="node">
+<title>co</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M1174,-243.5C1174,-243.5 968,-243.5 968,-243.5 962,-243.5 956,-237.5 956,-231.5 956,-231.5 956,-167.5 956,-167.5 956,-161.5 962,-155.5 968,-155.5 968,-155.5 1174,-155.5 1174,-155.5 1180,-155.5 1186,-161.5 1186,-167.5 1186,-167.5 1186,-231.5 1186,-231.5 1186,-237.5 1180,-243.5 1174,-243.5"/>
+<text text-anchor="middle" x="1071" y="-221.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Coordinator</text>
+<text text-anchor="middle" x="1071" y="-204.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">分派有界任务、汇总状态</text>
+<text text-anchor="middle" x="1071" y="-187.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">批准切片 / 拓扑 / 共性 / 值选择</text>
+<text text-anchor="middle" x="1071" y="-170.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">当前计划翻译审阅</text>
+</g>
+<!-- mo -->
+<g id="node3" class="node">
+<title>mo</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M1570.5,-171.5C1570.5,-171.5 1370.5,-171.5 1370.5,-171.5 1364.5,-171.5 1358.5,-165.5 1358.5,-159.5 1358.5,-159.5 1358.5,-95.5 1358.5,-95.5 1358.5,-89.5 1364.5,-83.5 1370.5,-83.5 1370.5,-83.5 1570.5,-83.5 1570.5,-83.5 1576.5,-83.5 1582.5,-89.5 1582.5,-95.5 1582.5,-95.5 1582.5,-159.5 1582.5,-159.5 1582.5,-165.5 1576.5,-171.5 1570.5,-171.5"/>
+<text text-anchor="middle" x="1470.5" y="-149.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Modeling</text>
+<text text-anchor="middle" x="1470.5" y="-132.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">访谈、场景地图、语义候选</text>
+<text text-anchor="middle" x="1470.5" y="-115.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">来源依据、未知项、共性分析</text>
+<text text-anchor="middle" x="1470.5" y="-98.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">不调用平台</text>
+</g>
+<!-- pr -->
+<g id="node4" class="node">
+<title>pr</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M1966,-247.5C1966,-247.5 1742,-247.5 1742,-247.5 1736,-247.5 1730,-241.5 1730,-235.5 1730,-235.5 1730,-171.5 1730,-171.5 1730,-165.5 1736,-159.5 1742,-159.5 1742,-159.5 1966,-159.5 1966,-159.5 1972,-159.5 1978,-165.5 1978,-171.5 1978,-171.5 1978,-235.5 1978,-235.5 1978,-241.5 1972,-247.5 1966,-247.5"/>
+<text text-anchor="middle" x="1854" y="-225.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Protocol</text>
+<text text-anchor="middle" x="1854" y="-208.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">候选 → 平台物化计划</text>
+<text text-anchor="middle" x="1854" y="-191.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">dry&#45;run / apply / 回读 / Evidence</text>
+<text text-anchor="middle" x="1854" y="-174.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">不补猜业务事实</text>
+</g>
+<!-- cq -->
+<g id="node5" class="node">
+<title>cq</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M817,-141.5C817,-141.5 647,-141.5 647,-141.5 641,-141.5 635,-135.5 635,-129.5 635,-129.5 635,-65.5 635,-65.5 635,-59.5 641,-53.5 647,-53.5 647,-53.5 817,-53.5 817,-53.5 823,-53.5 829,-59.5 829,-65.5 829,-65.5 829,-129.5 829,-129.5 829,-135.5 823,-141.5 817,-141.5"/>
+<text text-anchor="middle" x="732" y="-119.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Competency Question</text>
+<text text-anchor="middle" x="732" y="-102.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">全景题 → 切片题</text>
+<text text-anchor="middle" x="732" y="-85.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">参考答案、依据、未知项</text>
+<text text-anchor="middle" x="732" y="-68.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">不设计模型、不查询平台</text>
+</g>
+<!-- direct -->
+<g id="node6" class="node">
+<title>direct</title>
+<path fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.1" d="M462,-177C462,-177 298,-177 298,-177 292,-177 286,-171 286,-165 286,-165 286,-118 286,-118 286,-112 292,-106 298,-106 298,-106 462,-106 462,-106 468,-106 474,-112 474,-118 474,-118 474,-165 474,-165 474,-171 468,-177 462,-177"/>
+<text text-anchor="middle" x="380" y="-155" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Runner 私有 CQ 直连</text>
+<text text-anchor="middle" x="380" y="-138" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">审核 / 冻结 / 可见性分组</text>
+<text text-anchor="middle" x="380" y="-121" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">CQ 无普通团队消息边</text>
+</g>
+<!-- pub -->
+<g id="node7" class="node">
+<title>pub</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M802,-240C802,-240 662,-240 662,-240 656,-240 650,-234 650,-228 650,-228 650,-181 650,-181 650,-175 656,-169 662,-169 662,-169 802,-169 802,-169 808,-169 814,-175 814,-181 814,-181 814,-228 814,-228 814,-234 808,-240 802,-240"/>
+<text text-anchor="middle" x="732" y="-218" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">公开投影</text>
+<text text-anchor="middle" x="732" y="-201" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">获批公开题 + 答案</text>
+<text text-anchor="middle" x="732" y="-184" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">按角色允许范围发布</text>
+</g>
+<!-- secret -->
+<g id="node8" class="node">
+<title>secret</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M844,-364.28C844,-369.16 793.8,-373.13 732,-373.13 670.2,-373.13 620,-369.16 620,-364.28 620,-364.28 620,-284.72 620,-284.72 620,-279.84 670.2,-275.87 732,-275.87 793.8,-275.87 844,-279.84 844,-284.72 844,-284.72 844,-364.28 844,-364.28"/>
+<path fill="none" stroke="#94a3b8" stroke-width="1.1" d="M844,-364.28C844,-359.41 793.8,-355.44 732,-355.44 670.2,-355.44 620,-359.41 620,-364.28"/>
+<text text-anchor="middle" x="732" y="-338" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">冻结私有题池</text>
+<text text-anchor="middle" x="732" y="-321" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">隐藏题、参考答案、审核依据</text>
+<text text-anchor="middle" x="732" y="-304" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">生产角色不可读取</text>
+</g>
+<!-- ex -->
+<g id="node9" class="node">
+<title>ex</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M1170.5,-451.5C1170.5,-451.5 971.5,-451.5 971.5,-451.5 965.5,-451.5 959.5,-445.5 959.5,-439.5 959.5,-439.5 959.5,-375.5 959.5,-375.5 959.5,-369.5 965.5,-363.5 971.5,-363.5 971.5,-363.5 1170.5,-363.5 1170.5,-363.5 1176.5,-363.5 1182.5,-369.5 1182.5,-375.5 1182.5,-375.5 1182.5,-439.5 1182.5,-439.5 1182.5,-445.5 1176.5,-451.5 1170.5,-451.5"/>
+<text text-anchor="middle" x="1071" y="-429.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Platform Examiner</text>
+<text text-anchor="middle" x="1071" y="-412.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">只接收隐藏题 + 获准模型范围</text>
+<text text-anchor="middle" x="1071" y="-395.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">只读查询并给出回答</text>
+<text text-anchor="middle" x="1071" y="-378.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">看不到参考答案 / 生产历史</text>
+</g>
+<!-- judge -->
+<g id="node10" class="node">
+<title>judge</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M1597,-434.5C1597,-434.5 1344,-434.5 1344,-434.5 1338,-434.5 1332,-428.5 1332,-422.5 1332,-422.5 1332,-358.5 1332,-358.5 1332,-352.5 1338,-346.5 1344,-346.5 1344,-346.5 1597,-346.5 1597,-346.5 1603,-346.5 1609,-352.5 1609,-358.5 1609,-358.5 1609,-422.5 1609,-422.5 1609,-428.5 1603,-434.5 1597,-434.5"/>
+<text text-anchor="middle" x="1470.5" y="-412.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Acceptance Judge</text>
+<text text-anchor="middle" x="1470.5" y="-395.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">冻结参考答案与业务依据</text>
+<text text-anchor="middle" x="1470.5" y="-378.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Examiner 回答 + 宿主核验的查询证据</text>
+<text text-anchor="middle" x="1470.5" y="-361.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">独立判定；不改模型</text>
+</g>
+</g>
+</svg>
+</div><div class="notes">
+<p>这里描述当前 v3 任务合同。共享角色包还包含旧模式说明；不能脱离所选 Task / Profile 把旧角色数量或旧职责套到所有运行。</p>
+<p>专业 Skill：Modeling 加载 ontology-modeling；CQ 加载 competency-question-authoring。Coordinator / Protocol 依靠角色提示和参考合同。</p>
+<p>例：公开题可以问“设备安装在哪类地点”；隐藏题检验其他获批关系。把隐藏答案交给生产方后，相应题只能作为非盲测回归。</p>
+</div><div class="sources">来源：<a href="../../../modeling_team/profiles/r3-0-011-competency-question.yaml">四角色 roster 和通信边</a> · <a href="../../../modeling_team/skills/README.md">当前角色 / Skill 对应</a> · <a href="../../../modeling_team/acceptance_runtime.py">隔离验收输入</a> · <a href="../../../docs/requirements/requirements-v3.0.md">R3.0-008B / 009 / 011 职责</a></div></section>
+<section id="03-workflow"><h2>03 · 从业务资料到可检验的语义模型</h2><p class="subtitle">先明确业务，再决定切片与拓扑；物化循环按获批范围逐批推进。</p><div class="toolbar"><a href="03-workflow.svg">打开 SVG 原图</a><a href="03-workflow.png">打开 PNG</a><label>缩放 <input type="range" min="60" max="200" value="100" oninput="zoomDiagram(this)"></label><button onclick="resetDiagram(this)">适应宽度</button></div><div class="canvas"><svg width="100%"
+ viewBox="0.00 0.00 560.20 1313.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 1291.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-1291.6 538.6,-1291.6 538.6,21.6 -21.6,21.6"/>
+<!-- s0&#45;&gt;s1 -->
+<g id="edge1" class="edge">
+<title>s0&#45;&gt;s1</title>
+<path fill="none" stroke="#64748b" d="M255.5,-1215.75C255.5,-1204.43 255.5,-1191.04 255.5,-1178.97"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-1178.77 255.5,-1171.27 252.88,-1178.77 258.13,-1178.77"/>
+</g>
+<!-- s1&#45;&gt;s2 -->
+<g id="edge2" class="edge">
+<title>s1&#45;&gt;s2</title>
+<path fill="none" stroke="#64748b" d="M255.5,-1116.75C255.5,-1105.43 255.5,-1092.04 255.5,-1079.97"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-1079.77 255.5,-1072.27 252.88,-1079.77 258.13,-1079.77"/>
+</g>
+<!-- s2&#45;&gt;s3 -->
+<g id="edge3" class="edge">
+<title>s2&#45;&gt;s3</title>
+<path fill="none" stroke="#64748b" d="M255.5,-1017.75C255.5,-1006.43 255.5,-993.04 255.5,-980.97"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-980.77 255.5,-973.27 252.88,-980.77 258.13,-980.77"/>
+</g>
+<!-- s3&#45;&gt;s4 -->
+<g id="edge4" class="edge">
+<title>s3&#45;&gt;s4</title>
+<path fill="none" stroke="#64748b" d="M255.5,-918.75C255.5,-907.43 255.5,-894.04 255.5,-881.97"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-881.77 255.5,-874.27 252.88,-881.77 258.13,-881.77"/>
+</g>
+<!-- s4&#45;&gt;s5 -->
+<g id="edge5" class="edge">
+<title>s4&#45;&gt;s5</title>
+<path fill="none" stroke="#64748b" d="M255.5,-819.92C255.5,-808.7 255.5,-795.3 255.5,-782.73"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-782.54 255.5,-775.04 252.88,-782.54 258.13,-782.54"/>
+</g>
+<!-- s5&#45;&gt;s6 -->
+<g id="edge6" class="edge">
+<title>s5&#45;&gt;s6</title>
+<path fill="none" stroke="#64748b" d="M255.5,-703.99C255.5,-692.38 255.5,-679.28 255.5,-667.12"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-666.79 255.5,-659.29 252.88,-666.79 258.13,-666.79"/>
+</g>
+<!-- s6&#45;&gt;s7 -->
+<g id="edge7" class="edge">
+<title>s6&#45;&gt;s7</title>
+<path fill="none" stroke="#64748b" d="M255.5,-587.99C255.5,-576.38 255.5,-563.28 255.5,-551.12"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-550.79 255.5,-543.29 252.88,-550.79 258.13,-550.79"/>
+</g>
+<!-- s7&#45;&gt;s8 -->
+<g id="edge8" class="edge">
+<title>s7&#45;&gt;s8</title>
+<path fill="none" stroke="#64748b" d="M255.5,-471.85C255.5,-460.18 255.5,-447.01 255.5,-434.74"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-434.73 255.5,-427.23 252.88,-434.73 258.13,-434.73"/>
+</g>
+<!-- s8&#45;&gt;map -->
+<g id="edge9" class="edge">
+<title>s8&#45;&gt;map</title>
+<path fill="none" stroke="#64748b" d="M221.88,-357.73C201.03,-338.34 174.33,-313.5 153.42,-294.05"/>
+<polygon fill="#64748b" stroke="#64748b" points="154.97,-291.9 147.69,-288.72 151.39,-295.75 154.97,-291.9"/>
+<text text-anchor="middle" x="249" y="-322.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">有，且业务含义已确认</text>
+</g>
+<!-- s8&#45;&gt;unknown -->
+<g id="edge10" class="edge">
+<title>s8&#45;&gt;unknown</title>
+<path fill="none" stroke="#64748b" d="M289.12,-357.73C306.94,-341.15 329.04,-320.6 348.13,-302.84"/>
+<polygon fill="#64748b" stroke="#64748b" points="350.25,-304.45 353.96,-297.42 346.68,-300.61 350.25,-304.45"/>
+<text text-anchor="middle" x="371.5" y="-322.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">无 / 相关值未确认</text>
+</g>
+<!-- map&#45;&gt;handoff -->
+<g id="edge11" class="edge">
+<title>map&#45;&gt;handoff</title>
+<path fill="none" stroke="#64748b" d="M150.02,-234.36C170.49,-216.82 197.56,-193.63 219.15,-175.14"/>
+<polygon fill="#64748b" stroke="#64748b" points="221.09,-176.93 225.08,-170.06 217.68,-172.94 221.09,-176.93"/>
+</g>
+<!-- unknown&#45;&gt;handoff -->
+<g id="edge12" class="edge">
+<title>unknown&#45;&gt;handoff</title>
+<path fill="none" stroke="#64748b" d="M351.06,-225.86C332.35,-209.83 310.29,-190.93 292.08,-175.33"/>
+<polygon fill="#64748b" stroke="#64748b" points="293.46,-173.06 286.06,-170.18 290.05,-177.05 293.46,-173.06"/>
+<text text-anchor="middle" x="374.5" y="-195.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">其他核心语义可继续</text>
+</g>
+<!-- handoff&#45;&gt;accept -->
+<g id="edge13" class="edge">
+<title>handoff&#45;&gt;accept</title>
+<path fill="none" stroke="#64748b" d="M255.5,-115.92C255.5,-104.7 255.5,-91.3 255.5,-78.73"/>
+<polygon fill="#64748b" stroke="#64748b" points="258.13,-78.54 255.5,-71.04 252.88,-78.54 258.13,-78.54"/>
+</g>
+<!-- s0 -->
+<g id="node1" class="node">
+<title>s0</title>
+<path fill="#fef3c7" stroke="#94a3b8" stroke-width="1.1" d="M406,-1270C406,-1270 105,-1270 105,-1270 99,-1270 93,-1264 93,-1258 93,-1258 93,-1228 93,-1228 93,-1222 99,-1216 105,-1216 105,-1216 406,-1216 406,-1216 412,-1216 418,-1222 418,-1228 418,-1228 418,-1258 418,-1258 418,-1264 412,-1270 406,-1270"/>
+<text text-anchor="middle" x="255.5" y="-1248" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">0 &#160;用户授权与最小启动准备</text>
+<text text-anchor="middle" x="255.5" y="-1231" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Delivery 冻结 Task / Profile / 来源 / 模型配置</text>
+</g>
+<!-- s1 -->
+<g id="node2" class="node">
+<title>s1</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M378,-1171C378,-1171 133,-1171 133,-1171 127,-1171 121,-1165 121,-1159 121,-1159 121,-1129 121,-1129 121,-1123 127,-1117 133,-1117 133,-1117 378,-1117 378,-1117 384,-1117 390,-1123 390,-1129 390,-1129 390,-1159 390,-1159 390,-1165 384,-1171 378,-1171"/>
+<text text-anchor="middle" x="255.5" y="-1149" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">1 &#160;场景理解与访谈</text>
+<text text-anchor="middle" x="255.5" y="-1132" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">业务目标、范围、核心流程与未知项</text>
+</g>
+<!-- s2 -->
+<g id="node3" class="node">
+<title>s2</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M385.5,-1072C385.5,-1072 125.5,-1072 125.5,-1072 119.5,-1072 113.5,-1066 113.5,-1060 113.5,-1060 113.5,-1030 113.5,-1030 113.5,-1024 119.5,-1018 125.5,-1018 125.5,-1018 385.5,-1018 385.5,-1018 391.5,-1018 397.5,-1024 397.5,-1030 397.5,-1030 397.5,-1060 397.5,-1060 397.5,-1066 391.5,-1072 385.5,-1072"/>
+<text text-anchor="middle" x="255.5" y="-1050" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">2 &#160;全景 CQ 草稿与用户审核</text>
+<text text-anchor="middle" x="255.5" y="-1033" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">预留隐藏题，仅公开投影进入后续分析</text>
+</g>
+<!-- s3 -->
+<g id="node4" class="node">
+<title>s3</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M385.5,-973C385.5,-973 125.5,-973 125.5,-973 119.5,-973 113.5,-967 113.5,-961 113.5,-961 113.5,-931 113.5,-931 113.5,-925 119.5,-919 125.5,-919 125.5,-919 385.5,-919 385.5,-919 391.5,-919 397.5,-925 397.5,-931 397.5,-931 397.5,-961 397.5,-961 397.5,-967 391.5,-973 385.5,-973"/>
+<text text-anchor="middle" x="255.5" y="-951" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">3 &#160;逻辑切片与项目级场景地图</text>
+<text text-anchor="middle" x="255.5" y="-934" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">按业务内聚、依赖、共享术语组织工作</text>
+</g>
+<!-- s4 -->
+<g id="node5" class="node">
+<title>s4</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M384,-874C384,-874 127,-874 127,-874 121,-874 115,-868 115,-862 115,-862 115,-832 115,-832 115,-826 121,-820 127,-820 127,-820 384,-820 384,-820 390,-820 396,-826 396,-832 396,-832 396,-862 396,-862 396,-868 390,-874 384,-874"/>
+<text text-anchor="middle" x="255.5" y="-852" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">4 &#160;切片 CQ 审核与分组冻结</text>
+<text text-anchor="middle" x="255.5" y="-835" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">公开题 / 答案给生产方；隐藏题池私有</text>
+</g>
+<!-- s5 -->
+<g id="node6" class="node">
+<title>s5</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M378,-775C378,-775 133,-775 133,-775 127,-775 121,-769 121,-763 121,-763 121,-716 121,-716 121,-710 127,-704 133,-704 133,-704 378,-704 378,-704 384,-704 390,-710 390,-716 390,-716 390,-763 390,-763 390,-769 384,-775 378,-775"/>
+<text text-anchor="middle" x="255.5" y="-753" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">5 &#160;平台中立候选图与共性分析</text>
+<text text-anchor="middle" x="255.5" y="-736" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">节点、关系、规则、来源与显式未知</text>
+<text text-anchor="middle" x="255.5" y="-719" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Coordinator 批准相应业务决定</text>
+</g>
+<!-- s6 -->
+<g id="node7" class="node">
+<title>s6</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M385.5,-659C385.5,-659 125.5,-659 125.5,-659 119.5,-659 113.5,-653 113.5,-647 113.5,-647 113.5,-600 113.5,-600 113.5,-594 119.5,-588 125.5,-588 125.5,-588 385.5,-588 385.5,-588 391.5,-588 397.5,-594 397.5,-600 397.5,-600 397.5,-647 397.5,-647 397.5,-653 391.5,-659 385.5,-659"/>
+<text text-anchor="middle" x="255.5" y="-637" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">6 &#160;Ontology 拓扑决策</text>
+<text text-anchor="middle" x="255.5" y="-620" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">单 Ontology / 多领域 / 共享核心 + 领域</text>
+<text text-anchor="middle" x="255.5" y="-603" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">按概念、权限、变更、查询等因素取舍</text>
+</g>
+<!-- s7 -->
+<g id="node8" class="node">
+<title>s7</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M378,-543C378,-543 133,-543 133,-543 127,-543 121,-537 121,-531 121,-531 121,-484 121,-484 121,-478 127,-472 133,-472 133,-472 378,-472 378,-472 384,-472 390,-478 390,-484 390,-484 390,-531 390,-531 390,-537 384,-543 378,-543"/>
+<text text-anchor="middle" x="255.5" y="-521" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">7 &#160;基础业务语义物化</text>
+<text text-anchor="middle" x="255.5" y="-504" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">稳定概念、关系、规则与跨切片连接</text>
+<text text-anchor="middle" x="255.5" y="-487" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">每批执行图 04 的写入循环</text>
+</g>
+<!-- s8 -->
+<g id="node9" class="node">
+<title>s8</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M243.63,-425.24C243.63,-425.24 17.37,-391.76 17.37,-391.76 11.44,-390.88 11.44,-389.12 17.37,-388.24 17.37,-388.24 243.63,-354.76 243.63,-354.76 249.56,-353.88 261.44,-353.88 267.37,-354.76 267.37,-354.76 493.63,-388.24 493.63,-388.24 499.56,-389.12 499.56,-390.88 493.63,-391.76 493.63,-391.76 267.37,-425.24 267.37,-425.24 261.44,-426.12 249.56,-426.12 243.63,-425.24"/>
+<text text-anchor="middle" x="255.5" y="-386.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">8 &#160;有已确认数据库 / 接口映射源？</text>
+</g>
+<!-- map -->
+<g id="node10" class="node">
+<title>map</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M227,-288.5C227,-288.5 12,-288.5 12,-288.5 6,-288.5 0,-282.5 0,-276.5 0,-276.5 0,-246.5 0,-246.5 0,-240.5 6,-234.5 12,-234.5 12,-234.5 227,-234.5 227,-234.5 233,-234.5 239,-240.5 239,-246.5 239,-246.5 239,-276.5 239,-276.5 239,-282.5 233,-288.5 227,-288.5"/>
+<text text-anchor="middle" x="119.5" y="-266.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">确认表列、编码、映射及值表达</text>
+<text text-anchor="middle" x="119.5" y="-249.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">批准后按同一写门物化</text>
+</g>
+<!-- unknown -->
+<g id="node11" class="node">
+<title>unknown</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M505,-297C505,-297 278,-297 278,-297 272,-297 266,-291 266,-285 266,-285 266,-238 266,-238 266,-232 272,-226 278,-226 278,-226 505,-226 505,-226 511,-226 517,-232 517,-238 517,-238 517,-285 517,-285 517,-291 511,-297 505,-297"/>
+<text text-anchor="middle" x="391.5" y="-275" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">无映射源或含义未确认</text>
+<text text-anchor="middle" x="391.5" y="-258" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">跳过相关映射 / 值物化</text>
+<text text-anchor="middle" x="391.5" y="-241" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">保留 analyzed_not_materialized</text>
+</g>
+<!-- handoff -->
+<g id="node12" class="node">
+<title>handoff</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M391.5,-170C391.5,-170 119.5,-170 119.5,-170 113.5,-170 107.5,-164 107.5,-158 107.5,-158 107.5,-128 107.5,-128 107.5,-122 113.5,-116 119.5,-116 119.5,-116 391.5,-116 391.5,-116 397.5,-116 403.5,-122 403.5,-128 403.5,-128 403.5,-158 403.5,-158 403.5,-164 397.5,-170 391.5,-170"/>
+<text text-anchor="middle" x="255.5" y="-148" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">9 &#160;验证 / 推理 / 授权检索与生产交接</text>
+<text text-anchor="middle" x="255.5" y="-131" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">模型状态、已应用 / 未应用、证据与缺口</text>
+</g>
+<!-- accept -->
+<g id="node13" class="node">
+<title>accept</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M385.5,-71C385.5,-71 125.5,-71 125.5,-71 119.5,-71 113.5,-65 113.5,-59 113.5,-59 113.5,-12 113.5,-12 113.5,-6 119.5,0 125.5,0 125.5,0 385.5,0 385.5,0 391.5,0 397.5,-6 397.5,-12 397.5,-12 397.5,-59 397.5,-59 397.5,-65 391.5,-71 385.5,-71"/>
+<text text-anchor="middle" x="255.5" y="-49" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">10 &#160;独立 CQ 验收或完整联合验收</text>
+<text text-anchor="middle" x="255.5" y="-32" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">由冻结的 acceptance_target 决定范围</text>
+<text text-anchor="middle" x="255.5" y="-15" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">见图 05</text>
+</g>
+</g>
+</svg>
+</div><div class="notes">
+<p>逻辑切片是工作组织，Ontology 是模型范围与治理边界，两者不要求一一对应。数据库表数量不能直接决定任何一种划分。</p>
+<p>例如先确认“设备安装在服务站”，再表达设备、服务站及安装关系。表名、列名和样例值只能帮助映射，不能自行证明业务含义。</p>
+<p>阶段允许修订受影响内容；新证据改变已批准业务或拓扑时，要显式重新确认。未知值不会阻止不依赖该值的核心语义继续。</p>
+<p>默认授权含三次 fresh semantic starts，除非用户另定；授权后应在 20 分钟内开始真实语义工作。该规则约束宿主推进，不是平台内固定次数死门。</p>
+</div><div class="sources">来源：<a href="../../../docs/requirements/requirements-v3.0.md">R3.0-008B 分阶段流程、009、011</a> · <a href="../../../modeling_team/tasks/r3-0-006-real-full.yaml">完整主线 Task</a> · <a href="../../../modeling_team/scenario_map.py">场景与拓扑产物合同</a></div></section>
+<section id="04-write-gates"><h2>04 · 一个批次如何通过写入门禁</h2><p class="subtitle">R3.0-014 的当前顺序：先 dry-run，再审阅平台翻译，最后 apply。</p><div class="toolbar"><a href="04-write-gates.svg">打开 SVG 原图</a><a href="04-write-gates.png">打开 PNG</a><label>缩放 <input type="range" min="60" max="200" value="100" oninput="zoomDiagram(this)"></label><button onclick="resetDiagram(this)">适应宽度</button></div><div class="canvas"><svg width="100%"
+ viewBox="0.00 0.00 671.20 1216.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 1194.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-1194.6 649.6,-1194.6 649.6,21.6 -21.6,21.6"/>
+<!-- candidate&#45;&gt;approve -->
+<g id="edge1" class="edge">
+<title>candidate&#45;&gt;approve</title>
+<path fill="none" stroke="#64748b" d="M456,-1118.92C456,-1107.7 456,-1094.3 456,-1081.73"/>
+<polygon fill="#64748b" stroke="#64748b" points="458.63,-1081.54 456,-1074.04 453.38,-1081.54 458.63,-1081.54"/>
+</g>
+<!-- approve&#45;&gt;plan -->
+<g id="edge2" class="edge">
+<title>approve&#45;&gt;plan</title>
+<path fill="none" stroke="#64748b" d="M456,-1002.99C456,-991.38 456,-978.28 456,-966.12"/>
+<polygon fill="#64748b" stroke="#64748b" points="458.63,-965.79 456,-958.29 453.38,-965.79 458.63,-965.79"/>
+</g>
+<!-- plan&#45;&gt;pre -->
+<g id="edge3" class="edge">
+<title>plan&#45;&gt;pre</title>
+<path fill="none" stroke="#64748b" d="M426.33,-886.99C415.78,-874.71 403.8,-860.78 392.85,-848.05"/>
+<polygon fill="#64748b" stroke="#64748b" points="394.79,-846.27 387.91,-842.29 390.81,-849.69 394.79,-846.27"/>
+</g>
+<!-- pre&#45;&gt;dry -->
+<g id="edge4" class="edge">
+<title>pre&#45;&gt;dry</title>
+<path fill="none" stroke="#64748b" d="M348.92,-770.99C345.83,-759.26 342.35,-746.03 339.12,-733.77"/>
+<polygon fill="#64748b" stroke="#64748b" points="341.6,-732.87 337.16,-726.29 336.53,-734.21 341.6,-732.87"/>
+</g>
+<!-- dry&#45;&gt;ok -->
+<g id="edge5" class="edge">
+<title>dry&#45;&gt;ok</title>
+<path fill="none" stroke="#64748b" d="M315.43,-654.93C309.76,-639.33 303.01,-620.77 297.06,-604.42"/>
+<polygon fill="#64748b" stroke="#64748b" points="299.43,-603.24 294.4,-597.09 294.49,-605.03 299.43,-603.24"/>
+</g>
+<!-- ok&#45;&gt;fix -->
+<g id="edge9" class="edge">
+<title>ok&#45;&gt;fix</title>
+<path fill="none" stroke="#64748b" d="M314.23,-530.11C342.12,-503.38 378,-469 378,-469 378,-469 426.8,-390.73 458.18,-340.41"/>
+<polygon fill="#64748b" stroke="#64748b" points="460.55,-341.57 462.29,-333.81 456.1,-338.79 460.55,-341.57"/>
+<text text-anchor="middle" x="466.5" y="-430.7" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">否：返回 findings</text>
+</g>
+<!-- ok&#45;&gt;review -->
+<g id="edge6" class="edge">
+<title>ok&#45;&gt;review</title>
+<path fill="none" stroke="#64748b" d="M270.9,-526.77C265.89,-511.28 259.91,-492.84 254.62,-476.53"/>
+<polygon fill="#64748b" stroke="#64748b" points="257.06,-475.53 252.25,-469.2 252.06,-477.14 257.06,-475.53"/>
+<text text-anchor="middle" x="269" y="-494.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">是</text>
+</g>
+<!-- fix&#45;&gt;plan -->
+<g id="edge10" class="edge">
+<title>fix&#45;&gt;plan</title>
+<path fill="none" stroke="#64748b" stroke-dasharray="5,2" d="M500.91,-333.73C520.17,-373.28 549,-432.5 549,-432.5 549,-807.5 549,-807.5 549,-807.5 549,-807.5 515.79,-848.21 489.06,-880.97"/>
+<polygon fill="#64748b" stroke="#64748b" points="486.86,-879.52 484.16,-886.99 490.93,-882.83 486.86,-879.52"/>
+<text text-anchor="middle" x="588.5" y="-624.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">仅修受影响部分</text>
+</g>
+<!-- review&#45;&gt;fix -->
+<g id="edge11" class="edge">
+<title>review&#45;&gt;fix</title>
+<path fill="none" stroke="#64748b" stroke-dasharray="5,2" d="M281.97,-397.85C302.07,-380.86 322,-364 322,-364 322,-364 354.6,-350.92 390.56,-336.49"/>
+<polygon fill="#64748b" stroke="#64748b" points="391.8,-338.82 397.78,-333.59 389.84,-333.95 391.8,-338.82"/>
+<text text-anchor="middle" x="360.5" y="-367.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">退回 / 内容变更</text>
+</g>
+<!-- review&#45;&gt;apply -->
+<g id="edge7" class="edge">
+<title>review&#45;&gt;apply</title>
+<path fill="none" stroke="#64748b" d="M222.27,-397.77C214.25,-382.9 204.73,-365.25 195.97,-349.01"/>
+<polygon fill="#64748b" stroke="#64748b" points="198.14,-347.51 192.27,-342.15 193.52,-350 198.14,-347.51"/>
+</g>
+<!-- apply&#45;&gt;receipt -->
+<g id="edge8" class="edge">
+<title>apply&#45;&gt;receipt</title>
+<path fill="none" stroke="#64748b" d="M169,-253.98C169,-205.52 169,-127.25 169,-79"/>
+<polygon fill="#64748b" stroke="#64748b" points="171.63,-78.74 169,-71.24 166.38,-78.74 171.63,-78.74"/>
+</g>
+<!-- apply&#45;&gt;uncertain -->
+<g id="edge12" class="edge">
+<title>apply&#45;&gt;uncertain</title>
+<path fill="none" stroke="#64748b" d="M213.8,-253.66C230.49,-237.51 249.34,-219.28 265.7,-203.45"/>
+<polygon fill="#64748b" stroke="#64748b" points="267.58,-205.29 271.14,-198.19 263.93,-201.51 267.58,-205.29"/>
+<text text-anchor="middle" x="275.5" y="-223.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">结果不确定</text>
+</g>
+<!-- uncertain&#45;&gt;receipt -->
+<g id="edge13" class="edge">
+<title>uncertain&#45;&gt;receipt</title>
+<path fill="none" stroke="#64748b" stroke-dasharray="5,2" d="M268.56,-126.68C251.36,-111.1 230.99,-92.65 213.17,-76.51"/>
+<polygon fill="#64748b" stroke="#64748b" points="214.56,-74.22 207.23,-71.13 211.03,-78.11 214.56,-74.22"/>
+<text text-anchor="middle" x="299.5" y="-96.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">仅经权威对账确定结果</text>
+</g>
+<!-- candidate -->
+<g id="node1" class="node">
+<title>candidate</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M539.5,-1173C539.5,-1173 372.5,-1173 372.5,-1173 366.5,-1173 360.5,-1167 360.5,-1161 360.5,-1161 360.5,-1131 360.5,-1131 360.5,-1125 366.5,-1119 372.5,-1119 372.5,-1119 539.5,-1119 539.5,-1119 545.5,-1119 551.5,-1125 551.5,-1131 551.5,-1131 551.5,-1161 551.5,-1161 551.5,-1167 545.5,-1173 539.5,-1173"/>
+<text text-anchor="middle" x="456" y="-1151" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Modeling 发布候选版本</text>
+<text text-anchor="middle" x="456" y="-1134" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">内容 + 依据 + 未知 + 引用</text>
+</g>
+<!-- approve -->
+<g id="node2" class="node">
+<title>approve</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M559,-1074C559,-1074 353,-1074 353,-1074 347,-1074 341,-1068 341,-1062 341,-1062 341,-1015 341,-1015 341,-1009 347,-1003 353,-1003 353,-1003 559,-1003 559,-1003 565,-1003 571,-1009 571,-1015 571,-1015 571,-1062 571,-1062 571,-1068 565,-1074 559,-1074"/>
+<text text-anchor="middle" x="456" y="-1052" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">G1 &#160;业务决定已批准</text>
+<text text-anchor="middle" x="456" y="-1035" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">候选 / 版本 / 拓扑 / 值确认绑定</text>
+<text text-anchor="middle" x="456" y="-1018" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">CQ 公开投影已冻结</text>
+</g>
+<!-- plan -->
+<g id="node3" class="node">
+<title>plan</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M581.5,-958C581.5,-958 330.5,-958 330.5,-958 324.5,-958 318.5,-952 318.5,-946 318.5,-946 318.5,-899 318.5,-899 318.5,-893 324.5,-887 330.5,-887 330.5,-887 581.5,-887 581.5,-887 587.5,-887 593.5,-893 593.5,-899 593.5,-899 593.5,-946 593.5,-946 593.5,-952 587.5,-958 581.5,-958"/>
+<text text-anchor="middle" x="456" y="-936" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Protocol 生成物化计划</text>
+<text text-anchor="middle" x="456" y="-919" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">完整命令 + candidate / decision 绑定</text>
+<text text-anchor="middle" x="456" y="-902" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">plan_ref / projection digest</text>
+</g>
+<!-- pre -->
+<g id="node4" class="node">
+<title>pre</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M491.5,-842C491.5,-842 224.5,-842 224.5,-842 218.5,-842 212.5,-836 212.5,-830 212.5,-830 212.5,-783 212.5,-783 212.5,-777 218.5,-771 224.5,-771 224.5,-771 491.5,-771 491.5,-771 497.5,-771 503.5,-777 503.5,-783 503.5,-783 503.5,-830 503.5,-830 503.5,-836 497.5,-842 491.5,-842"/>
+<text text-anchor="middle" x="358" y="-820" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">G2 &#160;Runner 提交准入</text>
+<text text-anchor="middle" x="358" y="-803" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">角色、范围、阶段、引用与值解锁</text>
+<text text-anchor="middle" x="358" y="-786" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">无未对账写入；记录 submission intent</text>
+</g>
+<!-- dry -->
+<g id="node5" class="node">
+<title>dry</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M452,-726C452,-726 204,-726 204,-726 198,-726 192,-720 192,-714 192,-714 192,-667 192,-667 192,-661 198,-655 204,-655 204,-655 452,-655 452,-655 458,-655 464,-661 464,-667 464,-667 464,-714 464,-714 464,-720 458,-726 452,-726"/>
+<text text-anchor="middle" x="328" y="-704" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">G3 &#160;平台 dry_run</text>
+<text text-anchor="middle" x="328" y="-687" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">真实 schema / 依赖 / 约束 / 状态校验</text>
+<text text-anchor="middle" x="328" y="-670" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">保留 Batch / Attempt / findings</text>
+</g>
+<!-- ok -->
+<g id="node6" class="node">
+<title>ok</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M270.16,-597.06C270.16,-597.06 67.84,-563.94 67.84,-563.94 61.92,-562.97 61.92,-561.03 67.84,-560.06 67.84,-560.06 270.16,-526.94 270.16,-526.94 276.08,-525.97 287.92,-525.97 293.84,-526.94 293.84,-526.94 496.16,-560.06 496.16,-560.06 502.08,-561.03 502.08,-562.97 496.16,-563.94 496.16,-563.94 293.84,-597.06 293.84,-597.06 287.92,-598.03 276.08,-598.03 270.16,-597.06"/>
+<text text-anchor="middle" x="282" y="-558.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">当前内容 dry&#45;run validated？</text>
+</g>
+<!-- fix -->
+<g id="node7" class="node">
+<title>fix</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M590.5,-333.5C590.5,-333.5 377.5,-333.5 377.5,-333.5 371.5,-333.5 365.5,-327.5 365.5,-321.5 365.5,-321.5 365.5,-274.5 365.5,-274.5 365.5,-268.5 371.5,-262.5 377.5,-262.5 377.5,-262.5 590.5,-262.5 590.5,-262.5 596.5,-262.5 602.5,-268.5 602.5,-274.5 602.5,-274.5 602.5,-321.5 602.5,-321.5 602.5,-327.5 596.5,-333.5 590.5,-333.5"/>
+<text text-anchor="middle" x="484" y="-311.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">技术错误：Protocol 修正计划</text>
+<text text-anchor="middle" x="484" y="-294.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">业务含义变化：交回责任 Agent</text>
+<text text-anchor="middle" x="484" y="-277.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">内容变更发布新计划 / Batch</text>
+</g>
+<!-- review -->
+<g id="node8" class="node">
+<title>review</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M353,-469C353,-469 129,-469 129,-469 123,-469 117,-463 117,-457 117,-457 117,-410 117,-410 117,-404 123,-398 129,-398 129,-398 353,-398 353,-398 359,-398 365,-404 365,-410 365,-410 365,-457 365,-457 365,-463 359,-469 353,-469"/>
+<text text-anchor="middle" x="241" y="-447" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">G4 &#160;Coordinator 翻译审阅</text>
+<text text-anchor="middle" x="241" y="-430" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">核对获批语义是否忠实、完整</text>
+<text text-anchor="middle" x="241" y="-413" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">批准绑定当前计划与成功 dry&#45;run</text>
+</g>
+<!-- apply -->
+<g id="node9" class="node">
+<title>apply</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M326,-342C326,-342 12,-342 12,-342 6,-342 0,-336 0,-330 0,-330 0,-266 0,-266 0,-260 6,-254 12,-254 12,-254 326,-254 326,-254 332,-254 338,-260 338,-266 338,-266 338,-330 338,-330 338,-336 332,-342 326,-342"/>
+<text text-anchor="middle" x="169" y="-320" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">G5 &#160;同内容 apply_atomic</text>
+<text text-anchor="middle" x="169" y="-303" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Runner 核对当前批准与 dry&#45;run 证据</text>
+<text text-anchor="middle" x="169" y="-286" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">平台再次检查权限 / lease / workspace version</text>
+<text text-anchor="middle" x="169" y="-269" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">幂等键与 Batch 内容一致</text>
+</g>
+<!-- receipt -->
+<g id="node10" class="node">
+<title>receipt</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M296.5,-71C296.5,-71 41.5,-71 41.5,-71 35.5,-71 29.5,-65 29.5,-59 29.5,-59 29.5,-12 29.5,-12 29.5,-6 35.5,0 41.5,0 41.5,0 296.5,0 296.5,0 302.5,0 308.5,-6 308.5,-12 308.5,-12 308.5,-59 308.5,-59 308.5,-65 302.5,-71 296.5,-71"/>
+<text text-anchor="middle" x="169" y="-49" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">G6 &#160;权威结果闭合</text>
+<text text-anchor="middle" x="169" y="-32" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">平台 Batch / Attempt + 实际回读</text>
+<text text-anchor="middle" x="169" y="-15" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">关闭 intent，登记 receipt 与完成索引</text>
+</g>
+<!-- uncertain -->
+<g id="node11" class="node">
+<title>uncertain</title>
+<path fill="#fee2e2" stroke="#94a3b8" stroke-width="1.1" d="M414.5,-198C414.5,-198 199.5,-198 199.5,-198 193.5,-198 187.5,-192 187.5,-186 187.5,-186 187.5,-139 187.5,-139 187.5,-133 193.5,-127 199.5,-127 199.5,-127 414.5,-127 414.5,-127 420.5,-127 426.5,-133 426.5,-139 426.5,-139 426.5,-186 426.5,-186 426.5,-192 420.5,-198 414.5,-198"/>
+<text text-anchor="middle" x="307" y="-176" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">写超时 / 回执缺失 / 结果不一致</text>
+<text text-anchor="middle" x="307" y="-159" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">关闭写门，先查明真实写入状态</text>
+<text text-anchor="middle" x="307" y="-142" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">不能凭“服务健康”再次 apply</text>
+</g>
+</g>
+</svg>
+</div><div class="notes">
+<p>dry-run 不应用正式模型资源，但会留下 Batch / Attempt 等执行证据。validated 只证明校验时点通过，不等于 applied 或语义质量 PASS。</p>
+<p>不同的业务命令内容必须使用新计划与新 Batch；不能拿旧批准或相同幂等键掩盖内容变化。apply 前仍要检查当前运行状态。</p>
+<p>纯 workspace version 漂移：重新 dry-run；若内容、决定和审批人不变，可按合同复用翻译批准。业务语义改变则重审受影响决定。</p>
+<p>图中展示应保护的合同。当前代码仍存在对不闭合 intent / receipt 的 kill-switch；不是所有拒绝都已能自动恢复。遇到此类阻断需按 T0 检查必要性并报告首个失败层，不能把它判为模型质量失败。</p>
+</div><div class="sources">来源：<a href="../../../docs/requirements/requirements-v3.0.md">R3.0-014 与 008B / 009</a> · <a href="../../../modeling_team/runner.py">提交入口与 G4 / G5 绑定</a> · <a href="../../../modeling_team/staged_decisions.py">批准 / dry-run / intent / receipt 校验</a> · <a href="../../../modeling_team/staged_batch_write_forwarder.py">真实平台调用与回读</a></div></section>
+<section id="05-acceptance"><h2>05 · 独立验收：模型能否真正支持业务问题</h2><p class="subtitle">CQ 阶段验收可先产生语义证据；结论必须限定在启动时冻结的范围。</p><div class="toolbar"><a href="05-acceptance.svg">打开 SVG 原图</a><a href="05-acceptance.png">打开 PNG</a><label>缩放 <input type="range" min="60" max="200" value="100" oninput="zoomDiagram(this)"></label><button onclick="resetDiagram(this)">适应宽度</button></div><div class="canvas"><svg width="100%"
+ viewBox="0.00 0.00 618.20 1007.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 985.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-985.6 596.6,-985.6 596.6,21.6 -21.6,21.6"/>
+<!-- prod&#45;&gt;stable -->
+<g id="edge1" class="edge">
+<title>prod&#45;&gt;stable</title>
+<path fill="none" stroke="#64748b" d="M165.19,-884.26C183.9,-866.55 206.96,-844.72 227.38,-825.39"/>
+<polygon fill="#64748b" stroke="#64748b" points="229.42,-827.07 233.07,-820.01 225.81,-823.26 229.42,-827.07"/>
+</g>
+<!-- stable&#45;&gt;exam -->
+<g id="edge2" class="edge">
+<title>stable&#45;&gt;exam</title>
+<path fill="none" stroke="#64748b" d="M278.5,-731.74C278.5,-719.89 278.5,-706.94 278.5,-694.71"/>
+<polygon fill="#64748b" stroke="#64748b" points="281.13,-694.71 278.5,-687.21 275.88,-694.71 281.13,-694.71"/>
+</g>
+<!-- exam&#45;&gt;proxy -->
+<g id="edge3" class="edge">
+<title>exam&#45;&gt;proxy</title>
+<path fill="none" stroke="#64748b" d="M251.62,-598.62C242.07,-583.21 231.24,-565.74 221.38,-549.82"/>
+<polygon fill="#64748b" stroke="#64748b" points="223.4,-548.1 217.22,-543.11 218.94,-550.87 223.4,-548.1"/>
+<text text-anchor="middle" x="271.5" y="-568.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">获准只读调用</text>
+</g>
+<!-- exam&#45;&gt;judge -->
+<g id="edge5" class="edge">
+<title>exam&#45;&gt;judge</title>
+<path fill="none" stroke="#64748b" d="M300.51,-598.64C306.56,-586.72 311.5,-577 311.5,-577 311.5,-577 325.5,-543 325.5,-543 325.5,-543 325.5,-455 325.5,-455 325.5,-455 311.5,-421 311.5,-421 311.5,-421 308.37,-414.83 304.03,-406.29"/>
+<polygon fill="#64748b" stroke="#64748b" points="306.25,-404.86 300.51,-399.36 301.57,-407.23 306.25,-404.86"/>
+<text text-anchor="middle" x="359.5" y="-496.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">回答与未知项</text>
+</g>
+<!-- proxy&#45;&gt;judge -->
+<g id="edge4" class="edge">
+<title>proxy&#45;&gt;judge</title>
+<path fill="none" stroke="#64748b" d="M217.38,-454.62C226.93,-439.21 237.76,-421.74 247.62,-405.82"/>
+<polygon fill="#64748b" stroke="#64748b" points="250.06,-406.87 251.78,-399.11 245.6,-404.1 250.06,-406.87"/>
+<text text-anchor="middle" x="271.5" y="-424.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">真实查询证据</text>
+</g>
+<!-- judge&#45;&gt;result -->
+<g id="edge6" class="edge">
+<title>judge&#45;&gt;result</title>
+<path fill="none" stroke="#64748b" d="M278.5,-310.63C278.5,-298.97 278.5,-286.16 278.5,-273.8"/>
+<polygon fill="#64748b" stroke="#64748b" points="281.13,-273.67 278.5,-266.17 275.88,-273.67 281.13,-273.67"/>
+</g>
+<!-- result&#45;&gt;layers -->
+<g id="edge8" class="edge">
+<title>result&#45;&gt;layers</title>
+<path fill="none" stroke="#64748b" d="M278.5,-160.88C278.5,-145.53 278.5,-128.59 278.5,-112.79"/>
+<polygon fill="#64748b" stroke="#64748b" points="281.13,-112.64 278.5,-105.14 275.88,-112.64 281.13,-112.64"/>
+<text text-anchor="middle" x="318" y="-130.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">按实际证据报告</text>
+</g>
+<!-- scope&#45;&gt;stable -->
+<g id="edge7" class="edge">
+<title>scope&#45;&gt;stable</title>
+<path fill="none" stroke="#64748b" d="M383.37,-875.62C366.54,-859.8 347.4,-841.8 330.13,-825.55"/>
+<polygon fill="#64748b" stroke="#64748b" points="331.6,-823.34 324.34,-820.11 328.01,-827.16 331.6,-823.34"/>
+<text text-anchor="middle" x="410.5" y="-845.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">按冻结范围决定交接</text>
+</g>
+<!-- prod -->
+<g id="node1" class="node">
+<title>prod</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M245,-955.5C245,-955.5 12,-955.5 12,-955.5 6,-955.5 0,-949.5 0,-943.5 0,-943.5 0,-896.5 0,-896.5 0,-890.5 6,-884.5 12,-884.5 12,-884.5 245,-884.5 245,-884.5 251,-884.5 257,-890.5 257,-896.5 257,-896.5 257,-943.5 257,-943.5 257,-949.5 251,-955.5 245,-955.5"/>
+<text text-anchor="middle" x="128.5" y="-933.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">生产模型与交接</text>
+<text text-anchor="middle" x="128.5" y="-916.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">实际 applied / 明确未应用</text>
+<text text-anchor="middle" x="128.5" y="-899.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">验证、推理、Evidence、已知缺口</text>
+</g>
+<!-- stable -->
+<g id="node2" class="node">
+<title>stable</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M371,-820C371,-820 186,-820 186,-820 180,-820 174,-814 174,-808 174,-808 174,-744 174,-744 174,-738 180,-732 186,-732 186,-732 371,-732 371,-732 377,-732 383,-738 383,-744 383,-744 383,-808 383,-808 383,-814 377,-820 371,-820"/>
+<text text-anchor="middle" x="278.5" y="-798" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">验收入场硬门</text>
+<text text-anchor="middle" x="278.5" y="-781" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">授权 scope 与冻结 CQ 绑定</text>
+<text text-anchor="middle" x="278.5" y="-764" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">先关新写，再排空在途写</text>
+<text text-anchor="middle" x="278.5" y="-747" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">无不确定写入；状态可核对</text>
+</g>
+<!-- exam -->
+<g id="node3" class="node">
+<title>exam</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M386,-687C386,-687 171,-687 171,-687 165,-687 159,-681 159,-675 159,-675 159,-611 159,-611 159,-605 165,-599 171,-599 171,-599 386,-599 386,-599 392,-599 398,-605 398,-611 398,-611 398,-675 398,-675 398,-681 392,-687 386,-687"/>
+<text text-anchor="middle" x="278.5" y="-665" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">独立 Platform Examiner</text>
+<text text-anchor="middle" x="278.5" y="-648" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">隐藏问题 + 获准模型范围</text>
+<text text-anchor="middle" x="278.5" y="-631" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">一次批次会话逐题查询和作答</text>
+<text text-anchor="middle" x="278.5" y="-614" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">无源资料、参考答案、生产历史</text>
+</g>
+<!-- proxy -->
+<g id="node4" class="node">
+<title>proxy</title>
+<path fill="#e2e8f0" stroke="#94a3b8" stroke-width="1.1" d="M300,-543C300,-543 81,-543 81,-543 75,-543 69,-537 69,-531 69,-531 69,-467 69,-467 69,-461 75,-455 81,-455 81,-455 300,-455 300,-455 306,-455 312,-461 312,-467 312,-467 312,-531 312,-531 312,-537 306,-543 300,-543"/>
+<text text-anchor="middle" x="190.5" y="-521" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">只读代理 → 语义平台</text>
+<text text-anchor="middle" x="190.5" y="-504" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">真实请求、响应与 proxy receipt</text>
+<text text-anchor="middle" x="190.5" y="-487" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">保留截断 / 缺失 / forbidden</text>
+<text text-anchor="middle" x="190.5" y="-470" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">宿主核对 scope 与摘要</text>
+</g>
+<!-- judge -->
+<g id="node5" class="node">
+<title>judge</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M378.5,-399C378.5,-399 178.5,-399 178.5,-399 172.5,-399 166.5,-393 166.5,-387 166.5,-387 166.5,-323 166.5,-323 166.5,-317 172.5,-311 178.5,-311 178.5,-311 378.5,-311 378.5,-311 384.5,-311 390.5,-317 390.5,-323 390.5,-323 390.5,-387 390.5,-387 390.5,-393 384.5,-399 378.5,-399"/>
+<text text-anchor="middle" x="278.5" y="-377" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">独立 Acceptance Judge</text>
+<text text-anchor="middle" x="278.5" y="-360" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">真实回答与核验后的平台证据</text>
+<text text-anchor="middle" x="278.5" y="-343" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">对照冻结参考答案及业务依据</text>
+<text text-anchor="middle" x="278.5" y="-326" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">逐题裁决</text>
+</g>
+<!-- result -->
+<g id="node6" class="node">
+<title>result</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M451,-266C451,-266 106,-266 106,-266 100,-266 94,-260 94,-254 94,-254 94,-173 94,-173 94,-167 100,-161 106,-161 106,-161 451,-161 451,-161 457,-161 463,-167 463,-173 463,-173 463,-254 463,-254 463,-260 457,-266 451,-266"/>
+<text text-anchor="middle" x="278.5" y="-244" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">四种单题状态</text>
+<text text-anchor="middle" x="278.5" y="-227" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">pass：依据充分</text>
+<text text-anchor="middle" x="278.5" y="-210" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">model&#45;recall&#45;insufficient：模型 / 召回不足</text>
+<text text-anchor="middle" x="278.5" y="-193" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">question&#45;answer&#45;review：题目 / 答案待复核</text>
+<text text-anchor="middle" x="278.5" y="-176" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">platform&#45;runtime&#45;incomplete：平台 / 运行未完成</text>
+</g>
+<!-- scope -->
+<g id="node7" class="node">
+<title>scope</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M563,-964C563,-964 296,-964 296,-964 290,-964 284,-958 284,-952 284,-952 284,-888 284,-888 284,-882 290,-876 296,-876 296,-876 563,-876 563,-876 569,-876 575,-882 575,-888 575,-888 575,-952 575,-952 575,-958 569,-964 563,-964"/>
+<text text-anchor="middle" x="429.5" y="-942" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">冻结的验收目标</text>
+<text text-anchor="middle" x="429.5" y="-925" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">cq_semantic：业务答案与检索依据</text>
+<text text-anchor="middle" x="429.5" y="-908" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">full_joint：完整联合验收</text>
+<text text-anchor="middle" x="429.5" y="-891" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">省略 acceptance_target 默认 full_joint</text>
+</g>
+<!-- layers -->
+<g id="node8" class="node">
+<title>layers</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M401,-105C401,-105 156,-105 156,-105 150,-105 144,-99 144,-93 144,-93 144,-12 144,-12 144,-6 150,0 156,0 156,0 401,0 401,0 407,0 413,-6 413,-12 413,-12 413,-93 413,-93 413,-99 407,-105 401,-105"/>
+<text text-anchor="middle" x="278.5" y="-83" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">分开记录完成证据</text>
+<text text-anchor="middle" x="278.5" y="-66" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">L0 Runtime：真实链路运行</text>
+<text text-anchor="middle" x="278.5" y="-49" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">L1 Modeling quality：独立语义质量</text>
+<text text-anchor="middle" x="278.5" y="-32" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">L2 Repeatability：重复性</text>
+<text text-anchor="middle" x="278.5" y="-15" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">L3 Productization：产品化</text>
+</g>
+</g>
+</svg>
+</div><div class="notes">
+<p>cq_semantic 允许已知部分交付以及联合清单 pending，只要稳定读取、授权、业务依据与写入完整性门满足。已知未应用内容必须披露，不能缩减获批隐藏题分母。</p>
+<p>完整 CQ PASS 需要覆盖获批题集。题目/答案待复核不是模型错误；平台调用未完成也不能推导模型质量结论。单题失败尽可能继续其余题。</p>
+<p>知道指标公式、连接路径和映射，不等于验证数据库实际数值。真实 SQL 生成、执行与结果比对仍是独立证据链。</p>
+<p>验收期间生产方不能修改模型。发现状态漂移或资料泄漏时，保留报告并取消相应完整 PASS / 盲测资格；修模由生产方承担，另记验收批次。</p>
+<p>completed 只说明某角色结束。恢复成功、测试通过、CQ PASS 和 full_joint PASS 分别表达不同事实。</p>
+</div><div class="sources">来源：<a href="../../../docs/requirements/requirements-v3.0.md">R3.0-011 / 012 与 006</a> · <a href="../../../modeling_team/acceptance_runtime.py">批量验收、只读证据与角色隔离</a> · <a href="../../../modeling_team/competency_questions.py">四态裁决</a> · <a href="../../../modeling_team/runner.py">CQWriteAdmission 与交接</a></div></section>
+<section id="06-recovery"><h2>06 · 失败后怎么继续：活线程、检查点与写入对账</h2><p class="subtitle">先识别真实失败层，再恢复同一业务目标；检查点保存成果，不回滚数据库。</p><div class="toolbar"><a href="06-recovery.svg">打开 SVG 原图</a><a href="06-recovery.png">打开 PNG</a><label>缩放 <input type="range" min="60" max="200" value="100" oninput="zoomDiagram(this)"></label><button onclick="resetDiagram(this)">适应宽度</button></div><div class="canvas"><svg width="100%"
+ viewBox="0.00 0.00 931.20 1182.20" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(21.6 1160.6)">
+<title>G</title>
+<polygon fill="white" stroke="transparent" points="-21.6,21.6 -21.6,-1160.6 909.6,-1160.6 909.6,21.6 -21.6,21.6"/>
+<!-- issue&#45;&gt;write -->
+<g id="edge1" class="edge">
+<title>issue&#45;&gt;write</title>
+<path fill="none" stroke="#64748b" d="M248,-1084.82C248,-1073.66 248,-1060.31 248,-1047.72"/>
+<polygon fill="#64748b" stroke="#64748b" points="250.63,-1047.5 248,-1040 245.38,-1047.5 250.63,-1047.5"/>
+</g>
+<!-- write&#45;&gt;reconcile -->
+<g id="edge2" class="edge">
+<title>write&#45;&gt;reconcile</title>
+<path fill="none" stroke="#64748b" d="M226.67,-970.01C216.02,-954.03 202.9,-934.36 190.99,-916.49"/>
+<polygon fill="#64748b" stroke="#64748b" points="193.01,-914.79 186.67,-910 188.64,-917.7 193.01,-914.79"/>
+<text text-anchor="middle" x="215" y="-935.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">是</text>
+</g>
+<!-- write&#45;&gt;alive -->
+<g id="edge3" class="edge">
+<title>write&#45;&gt;alive</title>
+<path fill="none" stroke="#64748b" d="M265.77,-969.31C280.14,-942.86 298,-910 298,-910 298,-910 321,-800 321,-800 321,-800 321,-788 321,-788 321,-788 300.72,-765.22 281.53,-743.67"/>
+<polygon fill="#64748b" stroke="#64748b" points="283.38,-741.79 276.43,-737.94 279.46,-745.29 283.38,-741.79"/>
+<text text-anchor="middle" x="323" y="-863.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">否</text>
+</g>
+<!-- reconcile&#45;&gt;alive -->
+<g id="edge4" class="edge">
+<title>reconcile&#45;&gt;alive</title>
+<path fill="none" stroke="#64748b" d="M159.68,-822C160.36,-804.36 161,-788 161,-788 161,-788 185.92,-764.51 209.09,-742.68"/>
+<polygon fill="#64748b" stroke="#64748b" points="210.95,-744.52 214.61,-737.47 207.35,-740.7 210.95,-744.52"/>
+<text text-anchor="middle" x="240" y="-791.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">已充分确定结果；否则保持阻塞</text>
+</g>
+<!-- alive&#45;&gt;live -->
+<g id="edge5" class="edge">
+<title>alive&#45;&gt;live</title>
+<path fill="none" stroke="#64748b" d="M248,-667.89C248,-624.62 248,-551.82 248,-502.86"/>
+<polygon fill="#64748b" stroke="#64748b" points="250.63,-502.72 248,-495.22 245.38,-502.72 250.63,-502.72"/>
+<text text-anchor="middle" x="254" y="-613.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">是</text>
+</g>
+<!-- alive&#45;&gt;checkpoint -->
+<g id="edge6" class="edge">
+<title>alive&#45;&gt;checkpoint</title>
+<path fill="none" stroke="#64748b" d="M313.05,-677.61C372.2,-653.62 460.14,-617.95 526.57,-590.99"/>
+<polygon fill="#64748b" stroke="#64748b" points="527.78,-593.34 533.75,-588.08 525.81,-588.47 527.78,-593.34"/>
+<text text-anchor="middle" x="529" y="-613.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">否，且有可用检查点</text>
+</g>
+<!-- live&#45;&gt;budget -->
+<g id="edge11" class="edge">
+<title>live&#45;&gt;budget</title>
+<path fill="none" stroke="#64748b" d="M251.9,-406.7C259.37,-323.62 275,-150 275,-150 275,-150 307.2,-130.58 342.72,-109.16"/>
+<polygon fill="#64748b" stroke="#64748b" points="344.31,-111.26 349.38,-105.14 341.6,-106.77 344.31,-111.26"/>
+</g>
+<!-- checkpoint&#45;&gt;target -->
+<g id="edge7" class="edge">
+<title>checkpoint&#45;&gt;target</title>
+<path fill="none" stroke="#64748b" d="M619,-516.69C619,-482.38 619,-429.84 619,-392.73"/>
+<polygon fill="#64748b" stroke="#64748b" points="621.63,-392.56 619,-385.06 616.38,-392.56 621.63,-392.56"/>
+</g>
+<!-- target&#45;&gt;new -->
+<g id="edge8" class="edge">
+<title>target&#45;&gt;new</title>
+<path fill="none" stroke="#64748b" d="M579.98,-316.57C558.79,-300.04 531.9,-279.07 507.06,-259.7"/>
+<polygon fill="#64748b" stroke="#64748b" points="508.66,-257.61 501.13,-255.07 505.43,-261.75 508.66,-257.61"/>
+<text text-anchor="middle" x="566" y="-280.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">剩余生产</text>
+</g>
+<!-- target&#45;&gt;only -->
+<g id="edge9" class="edge">
+<title>target&#45;&gt;only</title>
+<path fill="none" stroke="#64748b" d="M647.63,-315.15C664.18,-296.74 685.36,-273.18 703.99,-252.45"/>
+<polygon fill="#64748b" stroke="#64748b" points="706.11,-254.02 709.18,-246.69 702.21,-250.51 706.11,-254.02"/>
+<text text-anchor="middle" x="707.5" y="-280.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">生产已交接</text>
+</g>
+<!-- new&#45;&gt;budget -->
+<g id="edge12" class="edge">
+<title>new&#45;&gt;budget</title>
+<path fill="none" stroke="#64748b" d="M435,-149.74C435,-137.79 435,-125 435,-112.77"/>
+<polygon fill="#64748b" stroke="#64748b" points="437.63,-112.73 435,-105.23 432.38,-112.73 437.63,-112.73"/>
+</g>
+<!-- only&#45;&gt;budget -->
+<g id="edge13" class="edge">
+<title>only&#45;&gt;budget</title>
+<path fill="none" stroke="#64748b" d="M657.05,-158.49C623.97,-142.85 586.11,-124.95 551.15,-108.42"/>
+<polygon fill="#64748b" stroke="#64748b" points="552.1,-105.97 544.2,-105.13 549.85,-110.71 552.1,-105.97"/>
+</g>
+<!-- kinds&#45;&gt;checkpoint -->
+<g id="edge10" class="edge">
+<title>kinds&#45;&gt;checkpoint</title>
+<path fill="none" stroke="#64748b" stroke-dasharray="5,2" d="M654.34,-643.65C648.01,-627.49 641.29,-610.37 635.44,-595.44"/>
+<polygon fill="#64748b" stroke="#64748b" points="637.82,-594.33 632.64,-588.3 632.94,-596.24 637.82,-594.33"/>
+<text text-anchor="middle" x="680" y="-613.2" font-family="Noto Sans CJK SC" font-size="11.00" fill="#475569">按明确 ID 选取</text>
+</g>
+<!-- issue -->
+<g id="node1" class="node">
+<title>issue</title>
+<path fill="#fee2e2" stroke="#94a3b8" stroke-width="1.1" d="M378,-1139C378,-1139 118,-1139 118,-1139 112,-1139 106,-1133 106,-1127 106,-1127 106,-1097 106,-1097 106,-1091 112,-1085 118,-1085 118,-1085 378,-1085 378,-1085 384,-1085 390,-1091 390,-1097 390,-1097 390,-1127 390,-1127 390,-1133 384,-1139 378,-1139"/>
+<text text-anchor="middle" x="248" y="-1117" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">发生阻断 / 用户要求阶段暂停</text>
+<text text-anchor="middle" x="248" y="-1100" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">记录首个失败层与实际 mutation state</text>
+</g>
+<!-- write -->
+<g id="node2" class="node">
+<title>write</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M236.21,-1037.75C236.21,-1037.75 65.79,-1005.25 65.79,-1005.25 59.89,-1004.12 59.89,-1001.88 65.79,-1000.75 65.79,-1000.75 236.21,-968.25 236.21,-968.25 242.11,-967.12 253.89,-967.12 259.79,-968.25 259.79,-968.25 430.21,-1000.75 430.21,-1000.75 436.11,-1001.88 436.11,-1004.12 430.21,-1005.25 430.21,-1005.25 259.79,-1037.75 259.79,-1037.75 253.89,-1038.88 242.11,-1038.88 236.21,-1037.75"/>
+<text text-anchor="middle" x="248" y="-999.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">存在不确定或部分写入？</text>
+</g>
+<!-- reconcile -->
+<g id="node3" class="node">
+<title>reconcile</title>
+<path fill="#fee2e2" stroke="#94a3b8" stroke-width="1.1" d="M273,-910C273,-910 43,-910 43,-910 37,-910 31,-904 31,-898 31,-898 31,-834 31,-834 31,-828 37,-822 43,-822 43,-822 273,-822 273,-822 279,-822 285,-828 285,-834 285,-834 285,-898 285,-898 285,-904 279,-910 273,-910"/>
+<text text-anchor="middle" x="158" y="-888" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">先关闭写门并对账</text>
+<text text-anchor="middle" x="158" y="-871" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">覆盖恢复链全部 Ontology</text>
+<text text-anchor="middle" x="158" y="-854" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">Batch / Attempt / Evidence / 回执</text>
+<text text-anchor="middle" x="158" y="-837" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">包括检查点之后的写入</text>
+</g>
+<!-- alive -->
+<g id="node4" class="node">
+<title>alive</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M236.13,-740.23C236.13,-740.23 11.87,-706.77 11.87,-706.77 5.93,-705.89 5.93,-704.11 11.87,-703.23 11.87,-703.23 236.13,-669.77 236.13,-669.77 242.07,-668.89 253.93,-668.89 259.87,-669.77 259.87,-669.77 484.13,-703.23 484.13,-703.23 490.07,-704.11 490.07,-705.89 484.13,-706.77 484.13,-706.77 259.87,-740.23 259.87,-740.23 253.93,-741.11 242.07,-741.11 236.13,-740.23"/>
+<text text-anchor="middle" x="248" y="-701.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">原 run / 角色线程仍可安全继续？</text>
+</g>
+<!-- live -->
+<g id="node5" class="node">
+<title>live</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M384,-495C384,-495 112,-495 112,-495 106,-495 100,-489 100,-483 100,-483 100,-419 100,-419 100,-413 106,-407 112,-407 112,-407 384,-407 384,-407 390,-407 396,-413 396,-419 396,-419 396,-483 396,-483 396,-489 390,-495 384,-495"/>
+<text text-anchor="middle" x="248" y="-473" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">同 run 恢复（006）</text>
+<text text-anchor="middle" x="248" y="-456" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">report_issue → pause</text>
+<text text-anchor="middle" x="248" y="-439" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">宿主结构化 issue_resolution → resume</text>
+<text text-anchor="middle" x="248" y="-422" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">修复当前失败步骤 / 供应商等待</text>
+</g>
+<!-- checkpoint -->
+<g id="node6" class="node">
+<title>checkpoint</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M749,-588C749,-588 489,-588 489,-588 483,-588 477,-582 477,-576 477,-576 477,-529 477,-529 477,-523 483,-517 489,-517 489,-517 749,-517 749,-517 755,-517 761,-523 761,-529 761,-529 761,-576 761,-576 761,-582 755,-588 749,-588"/>
+<text text-anchor="middle" x="619" y="-566" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">进程已退出：选择明确检查点（015）</text>
+<text text-anchor="middle" x="619" y="-549" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">核对配置、材料、业务范围、写入尾部</text>
+<text text-anchor="middle" x="619" y="-532" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">原写者 / Session / Lease 已安全收尾</text>
+</g>
+<!-- target -->
+<g id="node7" class="node">
+<title>target</title>
+<path fill="#ffedd5" stroke="#94a3b8" stroke-width="1.1" d="M607.13,-383.27C607.13,-383.27 376.87,-349.73 376.87,-349.73 370.94,-348.86 370.94,-347.14 376.87,-346.27 376.87,-346.27 607.13,-312.73 607.13,-312.73 613.06,-311.86 624.94,-311.86 630.87,-312.73 630.87,-312.73 861.13,-346.27 861.13,-346.27 867.06,-347.14 867.06,-348.86 861.13,-349.73 861.13,-349.73 630.87,-383.27 630.87,-383.27 624.94,-384.14 613.06,-384.14 607.13,-383.27"/>
+<text text-anchor="middle" x="619" y="-344.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">还需生产建模，还是仅继续验收？</text>
+</g>
+<!-- new -->
+<g id="node8" class="node">
+<title>new</title>
+<path fill="#dbeafe" stroke="#94a3b8" stroke-width="1.1" d="M569,-255C569,-255 301,-255 301,-255 295,-255 289,-249 289,-243 289,-243 289,-162 289,-162 289,-156 295,-150 301,-150 301,-150 569,-150 569,-150 575,-150 581,-156 581,-162 581,-162 581,-243 581,-243 581,-249 575,-255 569,-255"/>
+<text text-anchor="middle" x="435" y="-233" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">S2 &#160;生产接续</text>
+<text text-anchor="middle" x="435" y="-216" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">新 run + 新线程 + 新 Session</text>
+<text text-anchor="middle" x="435" y="-199" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">复用有效业务成果 / 审批</text>
+<text text-anchor="middle" x="435" y="-182" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">已 applied 跳过，剩余计划重新 dry&#45;run</text>
+<text text-anchor="middle" x="435" y="-165" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">当前 Coordinator 重新翻译审阅</text>
+</g>
+<!-- only -->
+<g id="node9" class="node">
+<title>only</title>
+<path fill="#ede9fe" stroke="#94a3b8" stroke-width="1.1" d="M876,-246.5C876,-246.5 620,-246.5 620,-246.5 614,-246.5 608,-240.5 608,-234.5 608,-234.5 608,-170.5 608,-170.5 608,-164.5 614,-158.5 620,-158.5 620,-158.5 876,-158.5 876,-158.5 882,-158.5 888,-164.5 888,-170.5 888,-170.5 888,-234.5 888,-234.5 888,-240.5 882,-246.5 876,-246.5"/>
+<text text-anchor="middle" x="748" y="-224.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">S4 &#160;仅继续验收</text>
+<text text-anchor="middle" x="748" y="-207.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">重验 production_handoff 与稳定状态</text>
+<text text-anchor="middle" x="748" y="-190.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">只启动独立验收，不启动生产写角色</text>
+<text text-anchor="middle" x="748" y="-173.5" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">保留原报告，生成新验收记录</text>
+</g>
+<!-- kinds -->
+<g id="node10" class="node">
+<title>kinds</title>
+<path fill="#ccfbf1" stroke="#94a3b8" stroke-width="1.1" d="M820.5,-766C820.5,-766 535.5,-766 535.5,-766 529.5,-766 523.5,-760 523.5,-754 523.5,-754 523.5,-656 523.5,-656 523.5,-650 529.5,-644 535.5,-644 535.5,-644 820.5,-644 820.5,-644 826.5,-644 832.5,-650 832.5,-656 832.5,-656 832.5,-754 832.5,-754 832.5,-760 826.5,-766 820.5,-766"/>
+<text text-anchor="middle" x="678" y="-744" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">S1 &#160;五类检查点</text>
+<text text-anchor="middle" x="678" y="-727" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">scenario_mapped：已有访谈 / 场景决定</text>
+<text text-anchor="middle" x="678" y="-710" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">cq_frozen：已审核冻结 CQ</text>
+<text text-anchor="middle" x="678" y="-693" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">semantic_approved：获批语义成果</text>
+<text text-anchor="middle" x="678" y="-676" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">materialization_progress：确定物化进度</text>
+<text text-anchor="middle" x="678" y="-659" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">production_handoff：稳定生产交接</text>
+</g>
+<!-- budget -->
+<g id="node11" class="node">
+<title>budget</title>
+<path fill="#fef3c7" stroke="#94a3b8" stroke-width="1.1" d="M572,-105C572,-105 298,-105 298,-105 292,-105 286,-99 286,-93 286,-93 286,-12 286,-12 286,-6 292,0 298,0 298,0 572,0 572,0 578,0 584,-6 584,-12 584,-12 584,-93 584,-93 584,-99 578,-105 572,-105"/>
+<text text-anchor="middle" x="435" y="-83" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">授权与保留</text>
+<text text-anchor="middle" x="435" y="-66" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">同活线程继续：沿原授权</text>
+<text text-anchor="middle" x="435" y="-49" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">新生产线程：消耗 fresh semantic start</text>
+<text text-anchor="middle" x="435" y="-32" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">只保存 / 查看 / 仅验收：不消耗建模 start</text>
+<text text-anchor="middle" x="435" y="-15" font-family="Noto Sans CJK SC" font-size="15.00" fill="#172033">历史失败、写入证据、曝光记录均保留</text>
+</g>
+</g>
+</svg>
+</div><div class="notes">
+<p>四类根因：modeling-quality、platform-contract、collaboration/routing、runtime/infrastructure。普通等待或格式错误应返回可操作反馈，不能自动等同整个 run 死亡。</p>
+<p>当前 015 交付范围为 S1 + S2 + S4；S3 翻译批准自动迁移延后，因此新生产 run 走正常翻译审阅回退。不能声称所有审批均自动继承。</p>
+<p>没有可用检查点或必要资源已丢失时，不能伪造恢复。代码 / 提示修复需要新进程时，可在记录新执行基线后按检查点合同接续。</p>
+<p>保存检查点失败不应终止正常建模，也不要求所有切片均完成才保存。检查点不同于平台 Build Session checkpoint；前者交接阶段成果，后者属于平台会话生命周期。</p>
+<p>图是当前机制说明，并非任何一次真实 L0 / L1 已通过的证明。本次只读取代码与文档、生成图解，没有启动建模或改动运行资源。</p>
+</div><div class="sources">来源：<a href="../../../docs/requirements/requirements-v3.0.md">R3.0-006 / 015</a> · <a href="../../../modeling_team/checkpoints.py">检查点保存与 inspect</a> · <a href="../../../modeling_team/checkpoint_recovery.py">生产 / 验收接续与对账</a> · <a href="../../../modeling_team/runner.py">存活运行恢复与准入</a></div></section>
+<section><h2>读图时只需记住这些词</h2><div class="terms">
+<p><b>Task / Profile / Package</b><br>这次做什么 / 谁参加并如何通信 / 每个角色的职责与方法。</p>
+<p><b>Run / Thread / Build Session</b><br>一次团队执行 / 一个模型角色的对话线程 / 平台上的建模操作会话。</p>
+<p><b>CQ（能力问题）</b><br>模型应能够支持回答的业务问题，用公开题引导建模，用隐藏题独立检验。</p>
+<p><b>候选 / 物化计划</b><br>候选表达业务含义；计划把获批含义翻译成平台命令。</p>
+<p><b>Batch / Attempt</b><br>一组不可变命令内容 / 这组内容的一次执行尝试。dry-run 与 apply 的证据要分别看。</p>
+<p><b>intent / receipt</b><br>提交前记录打算执行的内容 / 提交后保留并核对的真实平台结果。</p>
+<p><b>Evidence / lineage</b><br>某个主张的来源依据 / 资源与语义语句的来源和演变链。</p>
+<p><b>Checkpoint</b><br>保存可复用阶段成果与执行位置。恢复时仍要核对当前平台状态。</p>
+</div></section></main><footer class="small">生成方式：Graphviz 确定性布局与 SVG / PNG 渲染；同一布局转换为原生多页 mxGraph XML。内容核对使用当前文件与聚焦调用检查，GitNexus 查询作为导航辅助。仅文档产物，未运行建模、验收或平台写入。</footer><script>function zoomDiagram(el){const s=el.closest("section").querySelector("svg");s.style.width=el.value+"%";s.style.maxHeight="none"}function resetDiagram(el){const sec=el.closest("section");const s=sec.querySelector("svg");s.style.width="100%";s.style.maxHeight="1100px";sec.querySelector("input").value=100}</script></body></html>

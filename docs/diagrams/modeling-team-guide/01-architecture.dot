@@ -1,0 +1,29 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.38", ranksep="0.6", splines=polyline, outputorder=edgesfirst];
+node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=15, margin="0.20,0.14", color="#94a3b8", fontcolor="#172033", penwidth=1.1];
+edge [fontname="Noto Sans CJK SC", fontsize=11, color="#64748b", fontcolor="#475569", arrowsize=0.75];
+user [label="用户 / 业务负责人\n确认业务、审核 CQ\n授权范围与建模次数", fillcolor="#fef3c7", shape=box];
+host [label="宿主 Delivery Agent\n选择基线、启动与监控\n处理问题、资源与证据交接", fillcolor="#fef3c7", shape=box];
+config [label="冻结输入\nTask：目标 / 来源 / 工具 / 开关\nProfile：角色 / 通信\nPackage + Skill：职责 / 方法\nModel profile：模型与推理配置", fillcolor="#ccfbf1", shape=box];
+runner [label="TeamRunner · 运行控制\n生命周期 / 资料隔离 / 消息路由\n产物绑定 / 写入准入 / 回执\n暂停恢复 / 检查点", fillcolor="#e2e8f0", shape=box];
+runtime [label="Runtime Adapter\n当前常用：CodexRuntimeAdapter\n创建角色线程、投影工具与 Skill\n接收模型与工具调用事件", fillcolor="#e2e8f0", shape=box];
+team [label="生产角色\nCoordinator：协调与决策\nModeling：业务语义\nProtocol：平台翻译\nCQ：问题、答案与依据", fillcolor="#dbeafe", shape=box];
+write [label="Runner 受控写入入口\nProtocol 专属 staged capability\n候选 / 计划 / 批准绑定\nintent → 平台调用 → receipt", fillcolor="#ffedd5", shape=box];
+api [label="Semantic Platform\nFastMCP / FastAPI\nBatch、Session、Lease\n语义验证、推理、授权检索", fillcolor="#e2e8f0", shape=box];
+stores [label="平台持久化\nPostgreSQL：运行与治理记录等\nRDF / Oxigraph：权威语义图\n两者无跨存储 ACID 承诺", fillcolor="#ccfbf1", shape=cylinder];
+files [label="本地 run 证据\n配置快照 / 角色产物\n消息 / intent / receipt\n检查点 / 验收报告", fillcolor="#ccfbf1", shape=cylinder];
+accept [label="独立验收 Runtime\nPlatform Examiner + Judge\n通过只读代理取证\n冻结输入与隔离报告", fillcolor="#ede9fe", shape=box];
+db [label="外部业务数据库（关系型场景）\n保留真实业务行\nConsumer 先取获准语义上下文\n再生成 SQL，经外部适配器执行", fillcolor="#ccfbf1", shape=box];
+user -> host [label="授权 / 业务输入", style=solid];
+config -> runner [label="冻结并按角色投影", style=solid];
+host -> runner [label="启动 / 控制", style=solid];
+runner -> runtime [label="统一运行接口", style=solid];
+runtime -> team [label="角色线程与工具", style=solid];
+team -> write [label="仅 Protocol 提交", style=solid];
+write -> api [label="受控模型写入", style=solid];
+api -> stores [label="持久化与权威回读", style=solid];
+runner -> files [label="保存可核对证据", style=solid];
+host -> accept [label="稳定交接后启动", style=solid];
+accept -> api [label="限定 scope，只读查询", style=solid];
+api -> db [label="语义上下文支撑后续 SQL 链", style=dashed];
+}

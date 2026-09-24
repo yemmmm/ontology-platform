@@ -1,0 +1,21 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.38", ranksep="0.6", splines=polyline, outputorder=edgesfirst];
+node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=15, margin="0.20,0.14", color="#94a3b8", fontcolor="#172033", penwidth=1.1];
+edge [fontname="Noto Sans CJK SC", fontsize=11, color="#64748b", fontcolor="#475569", arrowsize=0.75];
+prod [label="生产模型与交接\n实际 applied / 明确未应用\n验证、推理、Evidence、已知缺口", fillcolor="#ccfbf1", shape=box];
+stable [label="验收入场硬门\n授权 scope 与冻结 CQ 绑定\n先关新写，再排空在途写\n无不确定写入；状态可核对", fillcolor="#ffedd5", shape=box];
+exam [label="独立 Platform Examiner\n隐藏问题 + 获准模型范围\n一次批次会话逐题查询和作答\n无源资料、参考答案、生产历史", fillcolor="#ede9fe", shape=box];
+proxy [label="只读代理 → 语义平台\n真实请求、响应与 proxy receipt\n保留截断 / 缺失 / forbidden\n宿主核对 scope 与摘要", fillcolor="#e2e8f0", shape=box];
+judge [label="独立 Acceptance Judge\n真实回答与核验后的平台证据\n对照冻结参考答案及业务依据\n逐题裁决", fillcolor="#ede9fe", shape=box];
+result [label="四种单题状态\npass：依据充分\nmodel-recall-insufficient：模型 / 召回不足\nquestion-answer-review：题目 / 答案待复核\nplatform-runtime-incomplete：平台 / 运行未完成", fillcolor="#ccfbf1", shape=box];
+scope [label="冻结的验收目标\ncq_semantic：业务答案与检索依据\nfull_joint：完整联合验收\n省略 acceptance_target 默认 full_joint", fillcolor="#ffedd5", shape=box];
+layers [label="分开记录完成证据\nL0 Runtime：真实链路运行\nL1 Modeling quality：独立语义质量\nL2 Repeatability：重复性\nL3 Productization：产品化", fillcolor="#ccfbf1", shape=box];
+prod -> stable [label="", style=solid];
+stable -> exam [label="", style=solid];
+exam -> proxy [label="获准只读调用", style=solid];
+proxy -> judge [label="真实查询证据", style=solid];
+exam -> judge [label="回答与未知项", style=solid];
+judge -> result [label="", style=solid];
+scope -> stable [label="按冻结范围决定交接", style=solid];
+result -> layers [label="按实际证据报告", style=solid];
+}

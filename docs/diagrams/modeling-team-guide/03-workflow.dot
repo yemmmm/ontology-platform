@@ -1,0 +1,31 @@
+digraph G {
+graph [rankdir=TB, bgcolor="white", pad="0.3", nodesep="0.38", ranksep="0.6", splines=polyline, outputorder=edgesfirst];
+node [shape=box, style="rounded,filled", fontname="Noto Sans CJK SC", fontsize=15, margin="0.20,0.14", color="#94a3b8", fontcolor="#172033", penwidth=1.1];
+edge [fontname="Noto Sans CJK SC", fontsize=11, color="#64748b", fontcolor="#475569", arrowsize=0.75];
+s0 [label="0  用户授权与最小启动准备\nDelivery 冻结 Task / Profile / 来源 / 模型配置", fillcolor="#fef3c7", shape=box];
+s1 [label="1  场景理解与访谈\n业务目标、范围、核心流程与未知项", fillcolor="#dbeafe", shape=box];
+s2 [label="2  全景 CQ 草稿与用户审核\n预留隐藏题，仅公开投影进入后续分析", fillcolor="#ede9fe", shape=box];
+s3 [label="3  逻辑切片与项目级场景地图\n按业务内聚、依赖、共享术语组织工作", fillcolor="#dbeafe", shape=box];
+s4 [label="4  切片 CQ 审核与分组冻结\n公开题 / 答案给生产方；隐藏题池私有", fillcolor="#ede9fe", shape=box];
+s5 [label="5  平台中立候选图与共性分析\n节点、关系、规则、来源与显式未知\nCoordinator 批准相应业务决定", fillcolor="#dbeafe", shape=box];
+s6 [label="6  Ontology 拓扑决策\n单 Ontology / 多领域 / 共享核心 + 领域\n按概念、权限、变更、查询等因素取舍", fillcolor="#dbeafe", shape=box];
+s7 [label="7  基础业务语义物化\n稳定概念、关系、规则与跨切片连接\n每批执行图 04 的写入循环", fillcolor="#ffedd5", shape=box];
+s8 [label="8  有已确认数据库 / 接口映射源？", fillcolor="#ffedd5", shape=diamond];
+map [label="确认表列、编码、映射及值表达\n批准后按同一写门物化", fillcolor="#dbeafe", shape=box];
+unknown [label="无映射源或含义未确认\n跳过相关映射 / 值物化\n保留 analyzed_not_materialized", fillcolor="#ccfbf1", shape=box];
+handoff [label="9  验证 / 推理 / 授权检索与生产交接\n模型状态、已应用 / 未应用、证据与缺口", fillcolor="#ccfbf1", shape=box];
+accept [label="10  独立 CQ 验收或完整联合验收\n由冻结的 acceptance_target 决定范围\n见图 05", fillcolor="#ede9fe", shape=box];
+s0 -> s1 [label="", style=solid];
+s1 -> s2 [label="", style=solid];
+s2 -> s3 [label="", style=solid];
+s3 -> s4 [label="", style=solid];
+s4 -> s5 [label="", style=solid];
+s5 -> s6 [label="", style=solid];
+s6 -> s7 [label="", style=solid];
+s7 -> s8 [label="", style=solid];
+s8 -> map [label="有，且业务含义已确认", style=solid];
+s8 -> unknown [label="无 / 相关值未确认", style=solid];
+map -> handoff [label="", style=solid];
+unknown -> handoff [label="其他核心语义可继续", style=solid];
+handoff -> accept [label="", style=solid];
+}
