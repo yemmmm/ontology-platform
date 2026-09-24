@@ -1,6 +1,8 @@
 # R3.0-014 物化计划先 dry-run 后翻译审阅 — 共享测试计划
 
 - 日期：2026-09-13
+- 当前机械验收（2026-09-24）：独立 Round 1 为 `PARTIAL / REVISE`；已执行测试通过，
+  但 M4/M8/M9/M15/M26/M27/M30/M31 缺完整专项链路证据，详见 §7.7。
 - 状态（2026-09-14 同步）：`b849fcf` 已实现；D1/D2/D3/D4 设计历史保留，D4 PASS。独立机械执行结果尚未登记；auth014 有部分真实 L0 宿主记录，未独立复核，完整 L0/L1 未通过；见 §7.6。
 - 需求：[requirements-v3.0.md 的 R3.0-014](../../requirements/requirements-v3.0.md#r30-014-物化计划先-dry-run-后翻译审阅)
 - 设计：[R3.0-014 交付设计](../designs/2026-09-13-r3-0-014-dry-run-before-translation-review-design.md)
@@ -191,7 +193,7 @@ revision、projection/content/response digest、workspace 前后版本、failure
 | 阶段 | 完成条件 | 当前状态 |
 | --- | --- | --- |
 | 设计 | 权威需求、设计、共享计划一致；独立评审无未处置 Critical/High | PASS（D4，仅设计） |
-| 机械实现验收 | M1-M31 中适用项通过，旧模式和 hidden 隔离回归通过 | 实现已存在，独立机械结果未登记 |
+| 机械实现验收 | M1-M31 中适用项通过，旧模式和 hidden 隔离回归通过 | 独立 Round 1 `PARTIAL / REVISE`；8 组专项链路证据未闭合，见 §7.7 |
 | L0 Runtime | 真实平台 dry-run/proof/apply/unknown/cleanup 闭合 | 部分宿主记录，L0-5 未执行，本次未独立复核 |
 | L1 Modeling quality | 独立语义翻译和模型质量证据通过；失败不被平台状态洗绿 | 未完成 |
 | 完成 | 以上门槛、需求状态同步、独立 PASS 和安全清理均完成 | 未完成 |
@@ -223,3 +225,45 @@ revision、projection/content/response digest、workspace 前后版本、failure
   记录 auth014 的宿主 L0-1/2/3/4/6 取证陈述；L0-5 unknown 未触发，L1 未完成。本轮未
   独立复核原事件/模型，因此不升级为全部 L0 或 L1 PASS。
 - 本轮只同步需求/设计/共享计划的当前状态，保留所有历史轮；无新测试、服务重启或建模授权消耗。
+
+### 7.7 2026-09-24 独立机械测试 Round 1
+
+- **总体结论：`PARTIAL / REVISE`。** 本轮没有已执行断言失败，但不能把机械回归绿灯写成
+  R3.0-014 的 M1-M31 全量独立 PASS。未启动真实 semantic modeling、未使用新的建模授权、未
+  修改产品代码，也未读取、覆盖或清理既有保留 run。
+- **基线与工作区**：代码基线为 `b77e87f`（`Record database and API mapping perspectives for v4`）。
+  工作区已有其他修改：`docs/requirements/requirements-v3.0.md`、
+  `skills/modeling-dev-loop/SKILL.md`，以及未跟踪的 `.codex/agents/`、
+  `docs/delivery/records/2026-09-24-v3-status-closeout.md` 和
+  `docs/diagrams/modeling-team-guide/`；本轮只追加本测试计划。
+- **执行命令与实际结果**：
+  1. `env -u DEEPSEEK_API_KEY uv run --project backend python -m pytest -q modeling_team/tests/test_r30014_dry_run_before_translation.py`
+     —— `12 passed in 1.71s`，退出码 `0`。
+  2. `env -u DEEPSEEK_API_KEY uv run --project backend python -m pytest -q modeling_team/tests/`
+     —— `2016 passed, 1 skipped, 339 subtests passed in 168.29s`，退出码 `0`。
+  3. `cd backend && uv run pytest -q tests/test_modeling_batches_service.py tests/test_modeling_batches_api.py`
+     —— `80 passed, 45 warnings in 9.52s`，退出码 `0`。警告均为 FastAPI/httpx/rdflib 弃用提示，
+     未形成 R3.0-014 失败。
+- **独立机械证据**：专用文件直接覆盖并通过 M1-M3、M5-M7、M10-M14、M16、M21、M23-M24、
+  M28-M29，包括 rejected/旧/格式漂移翻译历史不阻断 dry-run、Attempt 身份完整性、当前
+  Coordinator 与精确 plan/projection 绑定、content hash/workspace/idempotency gate、旧 008B
+  路径隔离。后端与相邻 008B/009/forwarder 回归进一步支持 M12、M14、M17-M20、M22、M25，
+  以及 dry-run 零正式资源写入、Batch 内容不可变、未知结果对账和恢复 fence 释放边界。
+- **仍未形成完整 R3.0-014 独立证据的用例**：
+  - M4：同一 run 内从 `validation_failed` 修正为新 key 成功 dry-run，并保留失败 Attempt/Batch
+    的端到端链路；
+  - M8/M9：技术修正生成新 plan/client batch/projection 后只审最终计划，以及业务含义变化退回
+    责任 Agent、发布新候选/决定并使旧翻译批准失效；
+  - M15：plan/candidate 改写后的 stale gate 有覆盖，但没有 R3.0-014 专项的软链逃逸复现；
+  - M26/M30：失败 Attempt/apply 经证明无副作用后，在同一 run 以新 Batch/plan/key 重走
+    dry-run、翻译批准和 apply 的完整续跑；现有后端测试只证明较低层恢复/重试边界；
+  - M27：同一 plan 并发 dry-run/apply 或 write admission quiescing 下无双写、无跨 key 混用的
+    专项测试；
+  - M31：等效重复与冲突 gate 有断言，但 Coordinator 按键读改写、`deliveries.jsonl` 的
+    previous/current 五字段、`app-server-events.jsonl` 交叉定位及回告失败补发的完整留痕没有
+    本轮独立断言。
+- **L0/L1**：本轮没有真实平台 L0，也没有独立语义翻译 L1；auth014 的历史宿主陈述不在本轮
+  复核范围，继续保留 §7.6 的限制。
+- **缺陷与建议**：没有新的产品断言失败；当前完成门应记为 `REVISE`，建议需求开发补齐上述
+  R3.0-014 专项链路测试后再进行独立复测。本轮机械测试结果不能单独将 R3.0-014 标记为
+  complete。
