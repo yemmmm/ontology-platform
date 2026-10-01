@@ -20,6 +20,7 @@ from rdflib import Literal, URIRef
 from rdflib.namespace import RDFS, SKOS
 
 from app.core.config import Settings
+from app.services.action_semantics import validate_action_annotation
 from app.repositories.rdf_store import RdfGraphDelta
 from app.services.fact_id import compute_fact_id
 from app.services.semantic_export import SemanticNamespace, namespace_from_settings
@@ -3084,7 +3085,36 @@ def compile_command(
     # neither changes formal membership nor creates a platform resource kind.
     if "semantic_definition" in payload:
         _compile_semantic_definition(compiled, payload, ns)
+    for field, predicate in (
+        ("action_definition", "actionDefinition"),
+        ("parameter_definition", "parameterDefinition"),
+    ):
+        if field in payload:
+            _compile_action_annotation(compiled, payload, ns, field, predicate)
     return compiled
+
+
+def _compile_action_annotation(
+    compiled: CompiledCommand, payload: dict[str, Any], ns: SemanticNamespace,
+    field: str, predicate: str,
+) -> None:
+    if compiled.command_kind not in {"create_entity", "update_entity"}:
+        raise InvalidCommandPayload(f"{field} is only supported by create/update_entity")
+    value = payload[field]
+    try:
+        validate_action_annotation(field, value)
+    except ValueError as exc:
+        raise InvalidCommandPayload(str(exc)) from exc
+    subject = compiled.metadata["entity_iri"]
+    graph = compiled.target_graph_iris[0]
+    term = f"<{ns.vocab}{predicate}>"
+    if compiled.command_kind == "update_entity":
+        compiled.delta.deletes.append((f"<{subject}>", term, "?o", graph))
+    if value is not None:
+        compiled.delta.inserts.append((
+            f"<{subject}>", term,
+            _literal_term(json.dumps(value, ensure_ascii=False, sort_keys=True)), graph,
+        ))
 
 
 def _compile_semantic_definition(
@@ -3120,6 +3150,8 @@ def _compile_semantic_definition(
     subject_iri = payload.get(f"{resource_kind}_iri") or str(
         ns.resource(resource_kind.replace("_", "-"), resource_id)
     )
+    if resource_kind == "entity":
+        subject_iri = compiled.metadata["entity_iri"]
     graph_iri = compiled.target_graph_iris[0]
     predicate = f"<{ns.vocab}semanticDefinition>"
     if kind.startswith("update_"):

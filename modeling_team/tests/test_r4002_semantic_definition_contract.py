@@ -21,7 +21,9 @@ def test_role_visible_contract_agrees_with_protocol_authoring_contract():
         contracts[0]["multiview_semantic_definition"]
         == contracts[1]["multiview_semantic_definition"]
     )
-    assert contracts[1]["unified_candidate"]["item_optional_fields"] == ["semantic_definition"]
+    assert contracts[1]["unified_candidate"]["item_optional_fields"] == [
+        "semantic_definition", "action_definition", "parameter_definition",
+    ]
 
 
 def test_unified_candidate_preserves_optional_declaration_without_opening_field_set():

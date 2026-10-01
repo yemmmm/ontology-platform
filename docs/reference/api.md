@@ -284,3 +284,74 @@ item 字段 `semantic_definition`，Protocol 将已批准内容原样转入 payl
 Protocol 绑定平台身份，Modeling 不猜测平台 IRI；已存在资源继续遵循原 receipt 绑定合同。
 详见 [当前候选合同](../../modeling_team/references/platform-neutral-candidate-authoring.json)。
 本增量不引入 Evidence／lineage、自动同义合并或跨 Project 共享。
+
+### R4.0-003 可复用 Action 与业务参数
+
+Action 和业务参数复用普通 Entity 的稳定身份及 `semantic_definition`，不新增资源类型、
+表或路由。Action 声明 `semantic_role: "behavior"`，名称、含义和范围随定义保存；人工或
+尚无外部能力的动作合法，无需正式 Class、工具绑定、风险、幂等性或凭证说明。
+`create_entity`／`update_entity` 的 Batch 和 canonical payload 新增两个可选注释：
+
+```json
+{
+  "action_definition": {"input_status": "defined", "output_status": "none"},
+  "parameter_definition": {
+    "direction": "output",
+    "value_kind": "object_reference",
+    "cardinality": "single",
+    "required": null,
+    "occurrence_condition": "成功完成时",
+    "result_kind": "updated_input"
+  }
+}
+```
+
+上例展示字段合同；实际 Action 和每个参数分别存于自己的 Entity 上，通过普通关系连接，
+不会把它们合并成一个身份。每份注释是非空对象，所有字段可省略；省略表示没有提供说明，
+不推导默认值。更新省略整份注释表示保持，`null` 清除整份，对象替换整份。
+不支持的字段、值或资源类型返回可修正的 payload 错误。
+
+| 注释字段 | 接受值及含义 |
+| --- | --- |
+| Action `input_status`／`output_status` | `defined`：已定义并通过关系连接参数；`none`：明确无业务输入／返回值；`unknown`：尚未确认。未声明输出与明确无输出不同 |
+| 参数 `direction` | `input`／`output`／`unknown` |
+| 参数 `value_kind` | `object_reference`／`value`／`unknown`；对象、属性或共享定义的具体引用在图关系中 |
+| 参数 `value_type` | 已确认的非空值类型字符串或 `null`（未知），不从名称猜测 |
+| 参数 `required` | 布尔值或 `null`（未知）；结果出现条件也可用 `occurrence_condition` 说明 |
+| 参数 `cardinality` | `single`／`collection`／`unknown` |
+| 参数 `occurrence_condition`／`unit`／`missing_meaning` | 非空已确认说明或 `null`（未知） |
+| 参数 `enum_values` | JSON 标量数组；`[]` 明确没有声明枚举限制，`null` 未确认；省略为没有说明 |
+| 参数 `result_kind` | `updated_input`／`new_object`／`computed_value`／`unknown`；更新输入时用普通关系引用具体输入参数 |
+
+已确认参数至少说明名称、业务含义、方向、对象引用或值类型、必填性或结果出现条件以及
+单值／集合含义；未确认部分显式保留未知。两个同类输入也保持不同参数身份，身份本身不
+证明两个运行时对象不同。本合同不保存实际参数值、业务行或流程调用变量。
+
+条件、效果、局部职责和能力关联使用普通语义节点，分别保留自然语言含义、适用范围、未知
+及已知冲突。普通关系将节点连接到动作、适用对象／Class、参数、属性、共享规则或角色。
+正式子类适用可由 Class 层次辨明；共同条件和局部追加条件同时保留，明确例外不自动覆盖。
+效果的范围说明成功、失败或部分结果条件；定义写入不产生已发生的业务事实或权限。
+
+能力关联节点说明对应含义及范围，并通过普通关系指向独立 Operation。允许零或多个能力，
+同一能力可被多个动作引用；不自动推断等价、顺序、完整实现或版本兼容。组合步骤的缺口、
+未确认对应和冲突随关联读回。更改关联不改写 Action；真正改变参数、条件或效果时须修改
+业务定义。Operation 原有活动工具绑定、正式目标 Class 等校验继续生效。
+
+中立候选在 `semantic.action_definition`／`semantic.parameter_definition` 表达注释；
+unified 候选接纳同名可选 item 字段，由 Protocol 将获准内容原样映射到 Entity 命令。
+新增中立 `operation` item：`semantic.operation_id` 是独立能力身份，`target_class` 指定
+候选内的正式 Class，其余字段沿用 Operation v1。Protocol 翻译为 `create_operation`，
+在 Class／Property 后、关联前写入；`definition_ref` 可引用该 Operation 的 item ID。
+既有资源继续使用其原有获准读取／receipt 绑定，不能伪造新身份代替绑定。
+
+RDF 在各 Entity 上保存 `op:actionDefinition`／`op:parameterDefinition` JSON 字面量。
+`entity-list`／`entity-detail` 在 `detail_fields`、精确资源读取在 `properties` 返回对应对象。
+引用保留为普通 RDF 关系；通过 `/api/semantic/statements`（`statement-list`）读取涉及
+Class／Operation 的关系，不要求两端是 NamedIndividual。Class 层次从 `class-topology`
+等既有入口读取；Operation 自身说明保持在既有受治理能力检索路径中。
+`entity-relations` 的两端仍限于 NamedIndividual。
+
+所有读取沿用已有 access_view：隐藏参数、规则或 Operation 的关系引用在计数、排序、
+分页前过滤，精确隐藏与不存在响应同形。未返回获准关系不能推断没有约束或实现；IRI
+过滤不自动保护复制到可见正文中的敏感文本。本增量不增加 Evidence／lineage、条件判定、
+能力选择、外部调用或流程编排。详细中立表达见[候选合同](../../modeling_team/references/platform-neutral-candidate-authoring.json)。

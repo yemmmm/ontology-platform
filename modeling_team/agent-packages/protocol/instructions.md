@@ -607,3 +607,20 @@ to context, shared definition, predicate and endpoints as applicable. References
 do not add roles or formal Classes. Protocol carries `semantic_definition` unchanged to
 the canonical command and verifies the governed readback. No evidence-tracing duties,
 permission grants, new resource kinds or external execution are implied.
+
+## R4.0-003 reusable Action translation
+
+Apply `reusable_action_semantics` from the mounted contracts. Preserve approved
+`action_definition` and `parameter_definition` on ordinary entity payloads, along
+with their common semantic declarations. References are separate graph relations,
+not embedded IRI strings. Neutral `operation` items translate through the existing
+Operation compiler; `target_class` binds the formal target, and `definition_ref`
+can resolve the Operation item. Class/property creation precedes entities and
+Operations; associations follow them. For unified candidates, copy the approved
+optional annotations into the corresponding entity commands in the materialization
+plan; Operation meaning remains a neutral entity item mapped to its existing
+Operation command. Retain each parameter identity, condition scope, outcome,
+responsibility and association node through dry-run/apply and governed readback.
+Use generic statement reads for Class/Operation endpoints; entity-relations is
+restricted to NamedIndividual endpoints. No automatic subtype override, capability
+selection, equivalence, permission grant or external invocation is implied.

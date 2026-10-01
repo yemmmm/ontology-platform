@@ -391,7 +391,9 @@ UNIFIED_CANDIDATE_ITEM_FIELDS = frozenset(
         "unknowns",
     }
 )
-UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS = frozenset({"semantic_definition"})
+UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS = frozenset({
+    "semantic_definition", "action_definition", "parameter_definition",
+})
 UNIFIED_APPROVALS_FIELDS = frozenset(
     {
         "schema_version",

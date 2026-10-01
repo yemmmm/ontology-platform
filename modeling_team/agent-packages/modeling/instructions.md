@@ -338,3 +338,19 @@ to context, shared definition, predicate and endpoints as applicable. References
 do not add roles or formal Classes. Protocol carries `semantic_definition` unchanged to
 the canonical command and verifies the governed readback. No evidence-tracing duties,
 permission grants, new resource kinds or external execution are implied.
+
+## R4.0-003 reusable Action declarations
+
+Use `reusable_action_semantics` in the same mounted authoring/role contract.
+Keep the Action's `semantic_role=behavior` independent from an Operation.
+Declare `action_definition` input/output status and distinct parameter entities
+with `parameter_definition`; same object type never merges parameter identities.
+Keep object/property/rule/parameter/result references in ordinary graph relations.
+Conditions, effects, responsibilities and capability associations use ordinary
+scoped nodes with natural-language meanings and explicit links. Preserve common
+and additional subtype conditions together; explicit exceptions and known
+conflicts remain readable. No output does not mean no effect; missing or unknown
+metadata never implies absence. Multiple Operations imply neither equivalence
+nor ordering. A neutral `operation` item retains Operation v1 requirements and
+uses `target_class`, never guessed platform IRIs. Do not execute any capability
+or create actual business rows, invocation bindings, Evidence or lineage duties.

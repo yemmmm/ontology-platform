@@ -1044,18 +1044,29 @@ for _name in (
     "relation-type-list", "entity-list",
 ):
     _template = _TEMPLATES[_name]
-    _body = _template.body.replace(" WHERE {", " ?semantic_definition WHERE {", 1)
+    _annotations = {"semantic_definition": "semanticDefinition"}
+    if _name in {"entity-detail", "entity-list"}:
+        _annotations.update({
+            "action_definition": "actionDefinition",
+            "parameter_definition": "parameterDefinition",
+        })
+    _body = _template.body.replace(
+        " WHERE {", " " + " ".join(f"?{field}" for field in _annotations) + " WHERE {", 1
+    )
     _end = _body.rfind("\n        }")
     _body = (
         _body[:_end]
-        + "\n          OPTIONAL { VALUES ?definition_graph { {graph_iris} } "
-        + f"GRAPH ?definition_graph {{ ?{_template.primary_iri_variable} "
-        + f"<{OP_VOCAB_PREFIX}semanticDefinition> ?semantic_definition . }} }}"
+        + "".join(
+            "\n          OPTIONAL { VALUES ?definition_graph { {graph_iris} } "
+            + f"GRAPH ?definition_graph {{ ?{_template.primary_iri_variable} "
+            + f"<{OP_VOCAB_PREFIX}{predicate}> ?{field} . }} }}"
+            for field, predicate in _annotations.items()
+        )
         + _body[_end:]
     )
     _TEMPLATES[_name] = replace(
         _template, body=_body, projection_version="semantic-read-v2",
-        detail_variables=(*_template.detail_variables, "semantic_definition"),
+        detail_variables=(*_template.detail_variables, *_annotations),
     )
 
 

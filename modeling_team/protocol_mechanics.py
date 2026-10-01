@@ -2201,6 +2201,7 @@ def translate_candidate_to_batches(
         resource = {
             "class": ("class", "class_id"), "predicate": ("property", "predicate"),
             "entity": ("entity", "entity_id"), "explicit_unknown": ("entity", "entity_id"),
+            "operation": ("operation", "operation_id"),
         }.get(item["item_kind"])
         if resource:
             resource_kind, id_field = resource
@@ -2340,6 +2341,13 @@ def translate_candidate_to_batches(
                         "predicate and context references; do not annotate an anonymous edge",
                     )
                 payload["semantic_definition"] = semantic["semantic_definition"]
+            for field in ("action_definition", "parameter_definition"):
+                if field in semantic:
+                    if command_kind != "create_entity":
+                        raise _TranslateConflict(
+                            "invalid_action_annotation_target", f"{field} belongs on an entity definition"
+                        )
+                    payload[field] = semantic[field]
         except _TranslateConflict as exc:
             conflicts.append(_conflict(item_id, exc.code, exc.detail))
             continue
@@ -2442,6 +2450,7 @@ _TRANSLATE_STAGE_FOR_COMMAND = {
     "create_class": "class",
     "create_property": "property",
     "create_entity": "entity",
+    "create_operation": "entity",
     "create_relation": "relation",
     "create_shape": "shape",
 }
@@ -2591,6 +2600,25 @@ def _translate_entity(
     if "aliases" in semantic:
         payload["aliases"] = semantic["aliases"]
     return "create_entity", payload
+
+
+def _translate_operation(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    # Reuse Operation v1 verbatim except the neutral target Class identity.
+    # Neither an Action nor its parameters inherit this external contract.
+    allowed = {
+        "operation_id", "name", "description", "aliases", "target_class", "parameters",
+        "preconditions", "effects", "possible_failures", "idempotency", "risk_level",
+        "tool_bindings", "credential_requirements", "status", "schema_version",
+    }
+    if set(semantic) - allowed:
+        raise _TranslateConflict("invalid_operation_fields", "Operation has unsupported fields")
+    _require_semantic_string(semantic, "operation_id")
+    target = _require_semantic_string(semantic, "target_class")
+    payload = {key: value for key, value in semantic.items() if key != "target_class"}
+    payload["target_resource_type_iri"] = _platform_resource_iri("class", target)
+    return "create_operation", payload
 
 
 def _translate_definition_relation(
@@ -2743,6 +2771,7 @@ _TRANSLATE_ITEM_HANDLERS = {
     "predicate": _translate_predicate,
     "entity": _translate_entity,
     "explicit_unknown": _translate_entity,
+    "operation": _translate_operation,
     "relation": _translate_relation,
     "shape": _translate_shape,
 }

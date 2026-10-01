@@ -90,8 +90,32 @@
         "label": {"type": "string", "required": true},
         "aliases": {"type": "array", "items": "string", "required": false, "default": []},
         "properties": {"type": "object", "required": false, "default": {}, "additional_properties": true, "description": "Property keys are non-empty strings; lists are rejected by the handler."},
-        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
+        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."},
+        "action_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-003 input/output status on an ordinary Action; see reusable_action_semantics."},
+        "parameter_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-003 structured parameter metadata on its own stable entity; references remain graph relations."}
       }
+    },
+    "create_operation": {
+      "additional_properties": false,
+      "required_when_active": ["name", "target_resource_type_iri", "idempotency", "risk_level", "tool_bindings"],
+      "fields": {
+        "operation_id": {"type": "string", "required": false},
+        "name": {"type": "string", "required": true},
+        "description": {"type": "string", "required": false},
+        "aliases": {"type": "array", "required": false},
+        "target_resource_type_iri": {"type": "string", "required": true},
+        "parameters": {"type": "array", "required": false},
+        "preconditions": {"type": "array", "required": false},
+        "effects": {"type": "array", "required": false},
+        "possible_failures": {"type": "array", "required": false},
+        "idempotency": {"type": "object", "required": true},
+        "risk_level": {"type": "string", "required": true},
+        "tool_bindings": {"type": "array", "required": true},
+        "credential_requirements": {"type": "array", "required": false},
+        "status": {"type": "string", "required": false},
+        "schema_version": {"type": "string", "required": false}
+      },
+      "invariant": "Operation v1 validation remains unchanged; active Operations require a nonempty tool binding. No secrets or Action annotations. Association nodes link to this resource, never merge identities."
     },
     "create_relation": {
       "additional_properties": false,
@@ -117,7 +141,7 @@
     "applied_stages": {
       "class": {"command_kinds": ["create_class"], "execution": "independent dry_run then apply_atomic"},
       "property_or_relation_type": {"command_kinds": ["create_property", "create_relation_type"], "execution": "independent dry_run then apply_atomic"},
-      "entity": {"command_kinds": ["create_entity"], "execution": "independent dry_run then apply_atomic"},
+      "entity": {"command_kinds": ["create_entity", "create_operation"], "execution": "independent dry_run then apply_atomic"},
       "relation": {"command_kinds": ["create_relation"], "execution": "independent dry_run then apply_atomic"},
       "dependency_safe_shape": {"command_kinds": ["create_shape"], "execution": "independent dry_run then apply_atomic"}
     },

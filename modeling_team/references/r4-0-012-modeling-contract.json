@@ -32,7 +32,7 @@
     "schema_version": "r3-0-009-unified-graph/v2",
     "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
     "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
-    "item_optional_fields": ["semantic_definition"],
+    "item_optional_fields": ["semantic_definition", "action_definition", "parameter_definition"],
     "item_kinds": ["entity", "relation", "property", "shape"],
     "rules": [
       "Items are neutral and contain no guessed platform identifier or receipt handle.",
@@ -112,5 +112,93 @@
       "All fields are optional to preserve previous contracts. A v4 definition must declare confirmed role, meaning and scope needed by its consumer; unresolved parts are explicit unknowns. No Evidence or lineage fields are added."
     ],
     "readback": "Existing governed read models class-detail, entity-detail, ontology-schema-summary, property-list, relation-type-list and entity-list project detail_fields.semantic_definition. Exact /api/semantic/resources/{iri} projects it in properties.semantic_definition. Generic relation/statement reads expose context/reference links. Hidden resources follow the existing indistinguishable 404/empty result contract. Only authorized returned content supports a business interpretation."
+  },
+  "reusable_action_semantics": {
+    "requirement_id": "R4.0-003",
+    "annotations": {
+      "action_definition": {
+        "input_status": [
+          "defined",
+          "none",
+          "unknown"
+        ],
+        "output_status": [
+          "defined",
+          "none",
+          "unknown"
+        ]
+      },
+      "parameter_definition": {
+        "direction": [
+          "input",
+          "output",
+          "unknown"
+        ],
+        "value_kind": [
+          "object_reference",
+          "value",
+          "unknown"
+        ],
+        "value_type": "Non-empty confirmed value type string, or null for unknown.",
+        "required": "Boolean, or null for unknown.",
+        "occurrence_condition": "Non-empty result appearance condition, or null for unknown.",
+        "cardinality": [
+          "single",
+          "collection",
+          "unknown"
+        ],
+        "unit": "Non-empty confirmed unit, or null for unknown.",
+        "enum_values": "Scalar value array; [] means no declared enumeration restriction; null means unknown.",
+        "missing_meaning": "Non-empty confirmed missing-value meaning, or null for unknown.",
+        "result_kind": [
+          "updated_input",
+          "new_object",
+          "computed_value",
+          "unknown"
+        ]
+      }
+    },
+    "annotation_rules": [
+      "These are optional annotations on ordinary entity definitions, not new resource kinds. In neutral candidates place them inside semantic; in unified candidates use optional item fields. Protocol copies approved content unchanged into create/update_entity payloads.",
+      "Each annotation is a non-empty object, or null to clear it. Each listed field is optional. Omission means no information, never none or unknown. No defaults are inferred. Unknown fields or invalid values return a local repairable payload error.",
+      "Each Action declares semantic_definition.semantic_role=behavior, a label, meaning and scope. Manual or unconnected Actions never require an Operation, Class, tool binding, execution risk, credential or idempotency declaration.",
+      "Each input/output position is a separate ordinary entity with a label and semantic_definition meaning/scope. Keep different parameter identities even when they reference the same object type. Identity does not assert distinct runtime objects.",
+      "For confirmed parameter contracts declare direction, value_kind, cardinality and required or occurrence_condition; use unknown/null and semantic_definition.unknowns for unresolved parts. No actual parameter values or relational rows are materialized.",
+      "Outputs declare result_kind when confirmed. An updated_input result links to the specific input parameter through an ordinary relation. New-object and computed-value meanings are explicit; omission does not infer either.",
+      "None input/output status is an explicit absence declaration, defined points to declared parameters via ordinary relations, unknown preserves unresolved meaning. Missing output status does not mean no output. No return value does not mean no effect."
+    ],
+    "relation_rules": [
+      "Define ordinary relation predicates with confirmed meanings. Link Action to applicable object/Class definitions, parameter definitions, conditions, effects, scoped responsibilities and capability association nodes. Examples of local predicate names: appliesTo, hasParameter, hasPrecondition, hasEffect, hasResponsibility, hasCapabilityAssociation; none is a platform built-in.",
+      "All resource references use ordinary graph edges, never JSON IRI strings in annotations. Neutral relation endpoints may use {definition_ref: item_id} to reference current-candidate class, predicate, entity or operation definitions. Existing-resource bindings retain their own authorized receipt contract.",
+      "Conditions and effects are ordinary nodes with semantic_definition role, natural-language meaning and applicability; link them to relevant parameters, properties, objects or shared rules. A successful effect uses explicit success scope. Known rejected/failed/partial outcomes and conflicting interpretations remain readable, never become already-occurred facts.",
+      "Formal subclass applicability follows the explicit rdfs:subClassOf path; preserve common preconditions and scoped additional conditions together. No override/exception priority or execution decision is inferred. A no-Class object remains legal. Scope exceptions explicitly or use a distinct confirmed Action meaning; keep known multiclass conflicts in conflicting_meanings.",
+      "Scoped responsibility nodes link the Action, shared role definition and applicable context. Such relations never grant reading or execution rights.",
+      "Capability association nodes record corresponding meaning, applicability, unknowns and conflicts in semantic_definition, and link to confirmed Operations. Zero/many associations are legal and reusable. Multiple links imply neither equivalence, alternative completeness nor ordering. A partial step describes its combination gap; no composition/selection engine is added.",
+      "Changing an association does not mutate the shared Action definition or establish compatibility. An actual semantic change must revise that definition. Do not copy Operation risk/idempotency/credentials/conditions/effects onto an Action without confirmation."
+    ],
+    "neutral_operation": {
+      "item_kind": "operation",
+      "identity": "semantic.operation_id is a stable neutral identity; definition_ref uses the operation item_id.",
+      "target": "semantic.target_class names a Class in the candidate; Protocol translates it to target_resource_type_iri. Operation remains separate from ordinary Action/object definitions.",
+      "fields": [
+        "operation_id",
+        "name",
+        "description",
+        "aliases",
+        "target_class",
+        "parameters",
+        "preconditions",
+        "effects",
+        "possible_failures",
+        "idempotency",
+        "risk_level",
+        "tool_bindings",
+        "credential_requirements",
+        "status",
+        "schema_version"
+      ],
+      "validation": "All remaining fields retain Operation v1 validation, including active binding requirements and prohibition of secrets. Protocol creates it after Class/property definitions, before association relations. No external call occurs."
+    },
+    "readback": "Existing entity-list/entity-detail expose detail_fields.action_definition and detail_fields.parameter_definition; exact resource reads expose the same fields in properties. Generic statements read Class/parameter/rule/Operation references including non-NamedIndividual endpoints. All use existing access filtering before pagination/counts. Hidden references are not copied into metadata; missing authorized links cannot establish absence. Operation semantics remain available through existing governed reads. No Evidence/lineage fields are added."
   }
 }
