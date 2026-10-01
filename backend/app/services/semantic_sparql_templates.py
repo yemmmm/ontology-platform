@@ -1049,6 +1049,7 @@ for _name in (
         _annotations.update({
             "action_definition": "actionDefinition",
             "parameter_definition": "parameterDefinition",
+            "rule_definition": "ruleDefinition",
         })
     _body = _template.body.replace(
         " WHERE {", " " + " ".join(f"?{field}" for field in _annotations) + " WHERE {", 1

@@ -4,7 +4,7 @@
 
 - 日期：2026-10-01。
 - 权威需求：[R4.0-005 业务规则分类与脚本语义](../../requirements/requirements-v4.0.md#r40-005-业务规则分类与脚本语义)。
-- 状态：需求细化与设计已形成；D1、D2 均由用户于 2026-10-01 明确确认。D2 确认本期只表达推导语义，实际生成关系／节点的物化能力保留为未交付能力。独立方案复审 Round 2 PASS（0 Critical／0 High）；未实施、未做功能测试或真实语义验收；本设计不授予真实建模、外部调用或平台脚本执行授权。
+- 状态：需求细化与设计已形成；D1、D2 均由用户于 2026-10-01 明确确认。D2 确认本期只表达推导语义，实际生成关系／节点的物化能力保留为未交付能力。独立方案复审 Round 2 PASS（0 Critical／0 High）；功能已实现，开发验证及 A1—A10 机械／独立功能验证 PASS；A11 未授权、未执行，整体 PARTIAL。实施记录见 [交付记录](../records/2026-10-01-r4-0-005-business-rule-script-semantics-delivery-record.md)；本设计不授予真实建模、外部调用或平台脚本执行授权。
 - 初次设计基线：`d04a8bd`；方案审阅基线为设计提交 `11f757c` 及本次文档修订。并发 004 开发改动不作为本次已验收基线。
 - 依赖：[R4.0-002 多视角语义组织](../../requirements/requirements-v4.0.md#r40-002-多视角语义组织与共享定义)、[R4.0-003 Action 与参数合同](../../requirements/requirements-v4.0.md#r40-003-可复用业务-action-与外部能力关联)、[R4.0-004 流程绑定设计](2026-10-01-r4-0-004-process-binding-design.md)、R3.0-009 的统一语义图和现有受治理读取。
 - 同步约束：沿用 R4.0-012 的追溯停用范围，不加入 Evidence、lineage 或来源摘录字段。规则脚本可以是业务模型内容，但不得借脚本或自然语言复制受限规则正文来绕过既有授权。
@@ -57,7 +57,7 @@ D1 已确认：脚本可以是声明式语言、Python、JavaScript 或其他已
 
 ### 5.1 规则定义节点
 
-规则使用普通 `entity`，在 `semantic_definition` 中声明 `semantic_role=rule`、业务含义和适用范围。未来实施可以在现有 Action／Parameter 注解模式上增加一个受合同约束的 `rule_definition` 注解；本轮不修改该代码或合同。该注解的最小语义字段如下，字段名是实施交接建议：
+规则使用普通 `entity`，在 `semantic_definition` 中声明 `semantic_role=rule`、业务含义和适用范围。本次在现有 Action／Parameter 注解模式上增加受合同约束的 `rule_definition` 注解；其字段如下，具体类型和更新合同见[接口文档](../../reference/api.md#r40-005-业务规则与脚本声明)：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -124,7 +124,7 @@ D2 已由用户确认：本期只表达“会产生什么语义节点／关系�
 
 ### 6.1 字段从 candidate 到读回的具体映射
 
-下表是实现交接合同。`rule_definition` 是未来需要补进活动候选／Protocol／Batch payload 白名单／编译器的实体注解；本轮不修改这些并发维护的文件。实现开始前必须以最终活动合同重新核对字段名，但不能把此项缺口留成“有证据再决定”的开放设计。
+下表是实现交接合同。`rule_definition` 已补进活动候选／Protocol／Batch payload 白名单／编译器，实体读回路径同步实现。本次以 003／004 最终活动合同重新核对字段，保留原参数和来源语义。
 
 | 语义内容 | Candidate 表达 | Protocol 阶段 | Entity payload／RDF | 受治理读回 |
 | --- | --- | --- | --- | --- |
@@ -148,7 +148,7 @@ Batch 的 `_compile` 在语义编译前调用 `ModelingCommandHandlerRegistry.va
 
 ## 8. 实施交接与验证意图
 
-本节是未来取得开发授权后的最小交接，不表示已实施。
+本节保留设计交接要求；本次取得开发授权后已落实，实施与验证结果见 §11。
 
 1. D1、D2 已关闭；实施授权后将结论同步到规则合同、示例、输入输出状态和验收。D1 无需再选择统一语言，D2 的自动物化能力保留为未交付范围。
 2. 在活动 Modeling／Protocol 合同中加入规则注解与关系规则，保留 004 的参数来源字段和身份；不得只改提示而让 Protocol 丢掉脚本、说明、语言声明或共同变更内容。
@@ -170,7 +170,7 @@ Batch 的 `_compile` 在语义编译前调用 `ModelingCommandHandlerRegistry.va
 
 ### 8.2 检查要求与完成边界
 
-本轮仅执行文档检查：相对链接存在、Markdown 围栏／表格结构、需求—决策—设计—验收编号对应及 `git diff --check`。不运行后端／前端套件，不重启服务，不创建真实 Project／Ontology，不执行 Rule／Shape／OWL 或真实建模。本轮已关闭 D1、D2；自动派生关系／节点物化仍明确记录为未交付能力。
+需求细化轮仅执行文档检查：相对链接存在、Markdown 围栏／表格结构、需求—决策—设计—验收编号对应及 `git diff --check`。不运行后端／前端套件，不重启服务，不创建真实 Project／Ontology，不执行 Rule／Shape／OWL 或真实建模。本轮已关闭 D1、D2；自动派生关系／节点物化仍明确记录为未交付能力。
 
 ## 9. 决策收尾
 
@@ -187,3 +187,11 @@ Batch 的 `_compile` 在语义编译前调用 `ModelingCommandHandlerRegistry.va
 - 修订：§6／§6.1 补齐 `modeling_handlers.py` 的 `create_entity`／`update_entity` 白名单、Batch item 接口合同及 `_compile`／`prepare` 前置校验；需求 F7／A10 同步要求完整 Batch 创建、更新、读回及错误反例。
 - Round 2（2026-10-01，同一独立方案审阅 Agent）：PASS，0 Critical／0 High；上一轮唯一 High 关闭，未发现新严重问题，无待确认关键假设。D1／D2 未改变。
 - 本次为静态只读方案审阅；文档链接、锚点、编号、格式及 diff 检查通过。未运行产品测试、服务或真实建模，方案 PASS 不代表功能或语义验收 PASS。
+
+## 11. 开发与验证结果（2026-10-01）
+
+- D1／D2 不变：平台仅存取脚本，自动派生关系／节点物化仍未交付。普通 Entity 的规则注解贯通中立候选、unified 可选字段、Protocol、Batch `_compile`／`prepare`、RDF 和受治理 list/detail/exact 读回；不新增参数字段、专用资源、执行引擎或追溯义务。
+- 注解类型与 003 同步：非空对象或 null；kind／输入输出状态是受限枚举，其余字段为非空文本或 null。各字段可省略以保留不完整声明，不能据此宣称可执行；execution_environment 以文本说明外部输入绑定、输出、失败和副作用。更新对象替换、null 清除、省略保持。
+- 后端全量 1053 PASS／38 既有 SKIP；最终 Team 全量 2033 PASS／1 既有 SKIP／314 subtests PASS；服务重启 active，8001 health ok、5173 HTTP 200。
+- 独立真实 HTTP／PostgreSQL／Oxigraph 功能测试 PASS：第 4 轮 T1—T6 的 369 项成功断言加第 5 轮 T7／T8 的 41 项断言，临时资源清理全部通过。原失败均是测试输入／比较错误，逐轮保留，产品缺陷为 0。
+- A3／A4 的对象／阈值资料判断、A9 的文本敏感审阅不由机械证据代替；A11 未授权／未执行，整体语义状态 PARTIAL。详细分层、原始证据及清理见[独立测试记录](../test-plans/2026-10-01-r4-0-005-business-rule-script-semantics-test-plan.md)与[交付记录](../records/2026-10-01-r4-0-005-business-rule-script-semantics-delivery-record.md)。

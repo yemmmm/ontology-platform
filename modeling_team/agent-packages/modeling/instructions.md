@@ -386,3 +386,21 @@ remain in 011, compatibility review in 007. Do not copy protected rules into pub
 text/constants or create business rows, runtime arguments, execution state or tracing.
 Use only authorized returned content; missing edges do not prove absence or hidden
 resources. Functional fixture results do not establish A12 real semantic acceptance.
+
+## R4.0-005 business rule declarations
+
+Use `business_rule_semantics` in the mounted authoring/role contracts. Rules are
+ordinary entities with `semantic_role=rule` and `rule_definition`; distinguish
+judgment/constraint from derivation. Declare each script's language, version,
+source and external Consumer agreement for input/output, failures and side effects.
+Platform storage never executes the script or automatically materializes results.
+Keep explanation, scope, script, input/output and joint change note together;
+known conflicts stay in `conflicting_meanings`, unresolved parts stay unknown.
+Reuse 003 parameter entities and 004 value/source relations with explicit identities,
+object directions, call/output parameters and iteration scopes. Do not add parameter
+fields or replace identities with text paths. Preserve unknown/not_applicable/empty/
+none/rejected/error distinctions. Result identity and effective scope are definitions,
+never run IDs, business rows or occurred Actions. Shape, OWL and platform Rule results
+remain separate from external judgments. Reference protected rules without copying
+their sensitive text; IRI filtering is not text protection. A11 real semantic
+acceptance remains separate from functional fixtures.

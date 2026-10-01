@@ -355,3 +355,51 @@ Class／Operation 的关系，不要求两端是 NamedIndividual。Class 层次�
 分页前过滤，精确隐藏与不存在响应同形。未返回获准关系不能推断没有约束或实现；IRI
 过滤不自动保护复制到可见正文中的敏感文本。本增量不增加 Evidence／lineage、条件判定、
 能力选择、外部调用或流程编排。详细中立表达见[候选合同](../../modeling_team/references/platform-neutral-candidate-authoring.json)。
+
+### R4.0-005 业务规则与脚本声明
+
+规则仍为普通 Entity，使用 `semantic_definition.semantic_role: "rule"` 保存名称、业务含义、
+适用范围、未知和 `conflicting_meanings`。`create_entity`／`update_entity` 的可选
+`rule_definition` 保存业务规则合同，不是 `semantic_rule_definition`／Rule Run 的执行正文：
+
+```json
+{
+  "rule_definition": {
+    "kind": "judgment_constraint",
+    "script_language": "Python",
+    "script_version": "3.11",
+    "script_source": "amount >= 100000",
+    "execution_environment": "外部 Consumer 按普通输入关系绑定 amount，输出资格判断；失败返回 error；不允许副作用",
+    "input_status": "defined",
+    "output_status": "defined",
+    "missing_policy": "unknown 保持未知；not_applicable 不适用；empty 是已知空；rejected/error 不产生成功结果",
+    "change_note": "脚本、说明、输入输出与范围共同修订；阈值边界冲突保留并交业务复核"
+  }
+}
+```
+
+`kind` 仅允许 `judgment_constraint`／`derivation`；输入／输出状态仅允许
+`defined`／`none`／`unknown`。其余六个字段为非空文本或 `null`（未知）。注解是非空对象或
+`null`：创建省略不产生声明；更新对象完整替换、`null` 清除、省略保持。各字段可省略，
+表示没有信息；部分声明允许保存，不证明规则完整或可执行。已确认规则应按业务资料补齐逐条
+语言、版本、正文、执行环境及输入绑定、输出形式、失败／副作用约定。语言不限定为 Python。
+未知字段、非法对象／字段类型／枚举值返回可定位到 item 和字段的可修复 payload 错误。
+
+输入／输出使用现有独立参数 Entity 及原 `parameter_definition`，结果含义使用输出的
+`semantic_definition`；005 不扩展参数字段。规则与对象、Action、流程、参数、条件、结果
+通过普通关系连接。来源沿用 004 的 `sourceKind` 五类值及 `toParameter`、`fromValue`、
+`refersToDefinition` 等模型声明关系，保留对象方向、调用／输出参数和迭代作用域，
+不将端点身份藏在 JSON 或文本路径中。关系读取使用既有受治理 statements／relations。
+
+中立候选的 `semantic.rule_definition` 由 Protocol 复制到实体创建 payload；unified 候选
+接纳同名可选 item 字段，创建／更新复用原批准物化计划及授权身份绑定，不增加中立更新语法。
+Batch `_compile`／`prepare` 校验后写入 `op:ruleDefinition` JSON 字面量。
+`entity-list`／`entity-detail` 返回 `detail_fields.rule_definition`；精确 resource 读取返回
+`properties.rule_definition`。授权过滤仍先于分页／计数／排序，隐藏与不存在精确读取同形。
+
+平台只保存和读取脚本，不求值、不调用外部能力、不自动生成派生关系／节点；显式受治理
+建模仍可提交已确认定义。Shape、OWL、平台 `rule-result` 和外部业务判断保持原边界。
+脚本、说明、合同和范围共同维护，已知冲突和共同变更说明保留；平台不自动判断自由文本冲突
+或敏感信息，IRI 过滤不保护复制出的正文。未返回关系不能解释为无输入或无约束。
+不新增表、规则专用资源／路由、执行器或 Evidence／lineage。完整合同见
+[规则声明](../../modeling_team/references/platform-neutral-candidate-authoring.json)的 `business_rule_semantics`。

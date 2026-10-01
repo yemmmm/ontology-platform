@@ -24,7 +24,7 @@
   见[交付记录](../delivery/records/2026-10-01-r4-0-004-process-binding-delivery-record.md)。
 - R4.0-005 增量（2026-10-01）：需求细化与设计已形成；D1、D2 均由用户明确确认。D2
   确认本期只表达推导语义，自动生成关系／节点的物化能力保留为未交付能力。005 独立方案复审 Round 2 PASS（0 Critical／0 High）；
-  尚未实施、功能验证或真实语义验收，不新增真实建模或外部执行授权。见[详细设计](../delivery/designs/2026-10-01-r4-0-005-business-rule-script-semantics-design.md)。
+  已完成功能实现及 A1—A10 机械／独立功能验证；A11 未授权、未执行，整体 PARTIAL。见[详细设计](../delivery/designs/2026-10-01-r4-0-005-business-rule-script-semantics-design.md)与[交付记录](../delivery/records/2026-10-01-r4-0-005-business-rule-script-semantics-delivery-record.md)。
 - R4.0-006 增量（2026-10-01）：用户授权需求细化与设计，已形成主体／角色／Grant 与现有
   保护集的详细方案；D1／D2 已由用户明确确认：普通用户仅通过 Key 访问，同用户同 Project
   的 Key 共用角色权限，Key scope 仍独立判断。需求细化与设计完成。
@@ -51,7 +51,7 @@
 - v4.0 阶段性停用证据追溯并解除建模、检索和验收主流程对它的依赖；建模 Agent 不承担
   证据留存职责，具体范围与验收约束见 R4.0-012。
 - R4.0-012 的范围与验收约束已确认；R4.0-002 已完成功能交付；R4.0-003 已完成需求细化，
-  独立需求审阅 PASS，开发进展以其交付记录为准；R4.0-004 已完成功能交付与 A1—A11 独立功能验收，A12 未授权、未执行，整体 PARTIAL；R4.0-005 需求与设计已完成、独立方案复审 Round 2 PASS，D1／D2 已确认、自动物化未交付；R4.0-006 需求细化与设计已完成，D1／D2 已确认，未实施／验收；其余条目仍为待细化登记。
+  独立需求审阅 PASS，开发进展以其交付记录为准；R4.0-004 已完成功能交付与 A1—A11 独立功能验收，A12 未授权、未执行，整体 PARTIAL；R4.0-005 功能已实现、A1—A10 机械／独立功能验证 PASS，A11 未授权／未执行，整体 PARTIAL、自动物化未交付；R4.0-006 需求细化与设计已完成，D1／D2 已确认，未实施／验收；其余条目仍为待细化登记。
   草案建议、“待讨论”和风险中的修正方向不代表已批准的技术方案。
   R4.0-001 持续改进保持独立，不作为多视角建模的整包前置。
 
@@ -63,7 +63,7 @@
 | R4.0-002 | 多视角语义组织与共享定义 | 已实现；A1—A7 独立功能验收 PASS；A8 未执行，整体 PARTIAL |
 | R4.0-003 | 可复用业务 Action 与外部能力关联 | 已实现；A1—A9 独立功能验收 PASS；A10 未执行，整体 PARTIAL |
 | R4.0-004 | 流程语义、动作调用与参数绑定 | 功能已实现；A1—A11 独立功能验收 PASS；A12 未授权、未执行，整体 PARTIAL；D8 暂不纳入并行同步 |
-| R4.0-005 | 业务规则分类与脚本语义 | 需求与设计完成；独立方案复审 Round 2 PASS；D1／D2 已确认，自动物化未交付 |
+| R4.0-005 | 业务规则分类与脚本语义 | 功能已实现；A1—A10 机械／独立功能验证 PASS；A11 未授权／未执行，整体 PARTIAL；自动物化未交付 |
 | R4.0-006 | 业务角色与主体语义访问控制 | 需求细化与设计完成；D1／D2 已确认；未实施／验收 |
 | R4.0-007 | 多视角建模协同与既有流程适配 | 复用、责任归属、冲突、遗漏与变更影响 |
 | R4.0-008 | 跨视角语义检索与上下文组织 | 关联召回、解释、授权与完整性 |
@@ -660,7 +660,8 @@ D8 已决定本期不纳入并行与同步汇合，相关已知业务需求只�
 
 状态：需求细化与设计已形成（2026-10-01）；D1、D2 均由用户本轮明确确认。D2 确认本期只表达
 推导语义，自动生成关系／节点的物化能力保留为未交付能力。独立方案复审 Round 2 PASS（0 Critical／0 High）；
-尚未实施、功能验证或真实语义验收；
+功能实现、开发验证及 A1—A10 机械／独立功能验证已完成；A3／A4／A9 的资料语义判断不由机械结果替代，A11 未授权、未执行，整体 PARTIAL；
+见[交付记录](../delivery/records/2026-10-01-r4-0-005-business-rule-script-semantics-delivery-record.md)及[独立测试记录](../delivery/test-plans/2026-10-01-r4-0-005-business-rule-script-semantics-test-plan.md)。
 本条不授予真实建模、外部调用或平台脚本执行授权。详细设计见[业务规则分类与脚本语义设计](../delivery/designs/2026-10-01-r4-0-005-business-rule-script-semantics-design.md)。
 
 **目标与范围**：让 Consumer 能解释一个业务规则是什么、适用于哪个对象／Action／流程、输入从
@@ -748,7 +749,7 @@ OWL／图推理可以产生类型蕴含，平台 Rule 可以在获准图集上�
 
 **F7 — 候选、翻译、物化与受治理读回**
 
-- 规则为普通 `entity`，沿用 `semantic_definition`。未来实现增加受合同约束的 `rule_definition` entity 注解，
+- 规则为普通 `entity`，沿用 `semantic_definition`。本次实现增加受合同约束的 `rule_definition` entity 注解，
   至少承载 `kind`、`script_language`、`script_version`、`script_source`、`execution_environment`、
   `input_status`、`output_status`、`missing_policy` 和共同变更说明；输入／输出身份由参数实体和普通关系承载，
   不把受限端点藏在脚本 JSON 中。
@@ -756,7 +757,7 @@ OWL／图推理可以产生类型蕴含，平台 Rule 可以在获准图集上�
   `update_entity` payload；同步扩展 `modeling_handlers.py` 中两种命令的 `ALLOWED_FIELDS` 和 Batch item payload 合同，
   通过 `_compile`／`prepare` 的字段校验后，编译器以 `op:ruleDefinition` JSON literal 保留它，读取模板在 entity detail／list
   和精确资源详情投影相同字段。普通关系继续通过 `definition_ref` 翻译为 RDF 边并受端点授权过滤。
-- 需要实现的触点是当前 Protocol annotation 白名单与 payload 复制、Batch 实体命令 payload 白名单、命令编译器 annotation 验证／谓词投影、
+- 本次实现的触点是当前 Protocol annotation 白名单与 payload 复制、Batch 实体命令 payload 白名单、命令编译器 annotation 验证／谓词投影、
   entity 读取模板及读模型字段；不新增数据库表、规则专用资源、平台执行器或领域专用查询。实际实施前重新核对
   活跃合同，但不能只改提示而让字段在物化或读回时丢失。
 - 候选、翻译、dry-run／apply、回执、恢复和读回沿用既有合同；结构合法、能写入或能读取不等于业务规则语义正确。
@@ -798,7 +799,7 @@ OWL／图推理可以产生类型蕴含，平台 Rule 可以在获准图集上�
 
 #### 5. 验收条款与统一验证安排
 
-以下 A1—A11 是后续功能与语义验收意图，当前均未执行。A4、A9 明确区分机械合同证据与独立语义判断；平台不会从自由文本自动发现阈值冲突或敏感信息。
+以下 A1—A10 的机械／独立功能范围已验证 PASS；A3、A4、A9 的业务资料语义判断仍留待后续统一授权，A11 未授权、未执行。平台不会从自由文本自动发现阈值冲突或敏感信息。
 
 | 编号 | 场景 | 通过条件 |
 | --- | --- | --- |
@@ -814,7 +815,7 @@ OWL／图推理可以产生类型蕴含，平台 Rule 可以在获准图集上�
 | A10 | 含 `rule_definition` 的创建与更新候选分别经 Protocol、真实 Batch payload 校验、dry-run、apply 和读回；另含非法注解类型、未知 payload 字段及引用错误 | 合法注解通过 `_compile`／`prepare` 并完整读回；错误定位到 item／字段／关系且可继续修正；未知字段仍拒绝；直接 `compile_command` 单测不能替代完整 Batch 路径；不新增执行器或专用资源 |
 | A11 | 后续获准真实场景及独立语义验收 | 独立验收根据资料和受治理读取检查分类、阈值／单位、来源、缺失处理、输出身份和有效范围；未完成时整体保持未验收或 PARTIAL |
 
-本轮只检查相对链接、Markdown／表格结构、条款编号对应及 `git diff --check`；不运行产品套件、服务、Rule／Shape／OWL、真实建模或外部调用。D1／D2 已关闭；自动派生关系／节点物化仍明确为未交付能力。未取得真实语义结果时不得标记本条整体 PASS。
+需求细化轮的文档检查已完成；本次开发执行后端／Team 全量、服务重启健康及独立真实 HTTP／PostgreSQL／Oxigraph 功能测试。D1／D2 不变，不执行真实建模、业务脚本或外部调用；自动派生关系／节点物化仍为未交付能力。未取得 A11 真实语义结果时本条整体保持 PARTIAL。
 
 ### R4.0-006 业务角色与主体语义访问控制
 

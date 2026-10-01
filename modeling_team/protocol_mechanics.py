@@ -2341,11 +2341,13 @@ def translate_candidate_to_batches(
                         "predicate and context references; do not annotate an anonymous edge",
                     )
                 payload["semantic_definition"] = semantic["semantic_definition"]
-            for field in ("action_definition", "parameter_definition"):
+            for field in ("action_definition", "parameter_definition", "rule_definition"):
                 if field in semantic:
                     if command_kind != "create_entity":
                         raise _TranslateConflict(
-                            "invalid_action_annotation_target", f"{field} belongs on an entity definition"
+                            ("invalid_rule_annotation_target" if field == "rule_definition"
+                             else "invalid_action_annotation_target"),
+                            f"{field} belongs on an entity definition"
                         )
                     payload[field] = semantic[field]
         except _TranslateConflict as exc:

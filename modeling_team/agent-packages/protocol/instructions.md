@@ -652,3 +652,20 @@ no hidden resource and no completeness. Do not reveal protected references/count
 Keep existing dry-run/apply_atomic, receipts and uncertain-write recovery. Local
 binding changes never overwrite shared Action definitions or prove compatibility.
 No external execution, runtime arguments, business rows or Evidence are added.
+
+## R4.0-005 stored business rule translation
+
+Apply `business_rule_semantics` in the mounted contracts. Preserve approved
+`rule_definition` alongside the same entity's `semantic_definition`. Neutral
+translation supports entity definitions; unified create/update commands use the
+existing approved materialization plan and authorized identity bindings. No new
+neutral update syntax or rule command is introduced. All input/output, condition,
+source and result references stay ordinary relations; parameter annotations and
+sourceKind meanings remain those of 003/004.
+
+Verify Batch payload validation, dry-run/apply and governed detail/list/exact
+readback of `op:ruleDefinition`. Omission preserves, object replaces and null clears.
+Return item/field-local feedback for invalid annotations or unresolved references
+and permit repair. Preserve scripts, explanation conflicts and change notes without
+evaluating or selecting their meaning. Use existing receipts and uncertain-write
+recovery. No script execution, derived materialization, credentials or tracing.

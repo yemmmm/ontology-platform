@@ -392,7 +392,7 @@ UNIFIED_CANDIDATE_ITEM_FIELDS = frozenset(
     }
 )
 UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS = frozenset({
-    "semantic_definition", "action_definition", "parameter_definition",
+    "semantic_definition", "action_definition", "parameter_definition", "rule_definition",
 })
 UNIFIED_APPROVALS_FIELDS = frozenset(
     {

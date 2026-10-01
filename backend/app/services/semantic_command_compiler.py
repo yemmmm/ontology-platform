@@ -21,6 +21,7 @@ from rdflib.namespace import RDFS, SKOS
 
 from app.core.config import Settings
 from app.services.action_semantics import validate_action_annotation
+from app.services.business_rule_semantics import validate_rule_annotation
 from app.repositories.rdf_store import RdfGraphDelta
 from app.services.fact_id import compute_fact_id
 from app.services.semantic_export import SemanticNamespace, namespace_from_settings
@@ -3088,6 +3089,7 @@ def compile_command(
     for field, predicate in (
         ("action_definition", "actionDefinition"),
         ("parameter_definition", "parameterDefinition"),
+        ("rule_definition", "ruleDefinition"),
     ):
         if field in payload:
             _compile_action_annotation(compiled, payload, ns, field, predicate)
@@ -3102,7 +3104,10 @@ def _compile_action_annotation(
         raise InvalidCommandPayload(f"{field} is only supported by create/update_entity")
     value = payload[field]
     try:
-        validate_action_annotation(field, value)
+        if field == "rule_definition":
+            validate_rule_annotation(value)
+        else:
+            validate_action_annotation(field, value)
     except ValueError as exc:
         raise InvalidCommandPayload(str(exc)) from exc
     subject = compiled.metadata["entity_iri"]

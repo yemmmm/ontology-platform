@@ -383,7 +383,9 @@ for _kind in (
         ALLOWED_FIELDS[f"{_verb}_{_kind}"].add("semantic_definition")
 
 for _verb in ("create", "update"):
-    ALLOWED_FIELDS[f"{_verb}_entity"].update({"action_definition", "parameter_definition"})
+    ALLOWED_FIELDS[f"{_verb}_entity"].update({
+        "action_definition", "parameter_definition", "rule_definition",
+    })
 
 
 @dataclass(frozen=True)

@@ -92,7 +92,8 @@
         "properties": {"type": "object", "required": false, "default": {}, "additional_properties": true, "description": "Property keys are non-empty strings; lists are rejected by the handler."},
         "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."},
         "action_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-003 input/output status on an ordinary Action; see reusable_action_semantics."},
-        "parameter_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-003 structured parameter metadata on its own stable entity; references remain graph relations."}
+        "parameter_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-003 structured parameter metadata on its own stable entity; references remain graph relations."},
+        "rule_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-005 stored business rule declaration; see business_rule_semantics. No script execution."}
       }
     },
     "create_operation": {
@@ -231,5 +232,62 @@
       "enum_values": {"type": "array", "required": false, "items": "json-scalar"}
     }
   },
-  "forbidden_target_fields": ["actor", "graph_iri", "graph_set_id", "ontology_id", "shape_graph_iris", "target_graph_iri"]
+  "forbidden_target_fields": ["actor", "graph_iri", "graph_set_id", "ontology_id", "shape_graph_iris", "target_graph_iri"],
+  "update_payloads": {
+    "update_entity": {
+      "additional_properties": false,
+      "identity": "entity_id or entity_iri, using the existing authorized identity binding.",
+      "fields": {
+        "entity_id": {
+          "type": "string",
+          "required": false
+        },
+        "entity_iri": {
+          "type": "string",
+          "required": false
+        },
+        "label": {
+          "type": "string",
+          "required": false
+        },
+        "aliases": {
+          "type": "array",
+          "required": false
+        },
+        "properties": {
+          "type": "object",
+          "required": false
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false
+        },
+        "action_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false
+        },
+        "parameter_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false
+        },
+        "rule_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false
+        }
+      },
+      "annotation_update": "Annotations replace as objects, clear with null, and remain unchanged when omitted. rule_definition follows business_rule_semantics; no execution."
+    }
+  }
 }
