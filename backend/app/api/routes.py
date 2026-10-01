@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store
 from app.api.auth import router as auth_router
+from app.api.subject_access import router as subject_access_router
 from app.security.http import authorize_api_request
 from app.api.interview import router as interview_router
 from app.api.build_sessions import router as build_sessions_router
@@ -18,6 +19,7 @@ from app.services.health import check_oxigraph, check_postgres
 
 router = APIRouter(dependencies=[Depends(authorize_api_request)])
 router.include_router(auth_router)
+router.include_router(subject_access_router)
 router.include_router(ontologies_router)
 router.include_router(interview_router)
 router.include_router(build_sessions_router)

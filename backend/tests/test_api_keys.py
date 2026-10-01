@@ -12,6 +12,7 @@ def test_plaintext_is_returned_once_and_hash_only_is_stored(r008_client):
         "/api/api-keys",
         json={
             "name": "new-reader",
+            "user_id": r008_client["ids"]["p1_user_id"],
             "project_id": r008_client["ids"]["p1"],
             "scopes": ["read"],
         },

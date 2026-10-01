@@ -23,7 +23,7 @@ from app.repositories.models import (
     SemanticProtectionSetModel,
 )
 from app.repositories.rdf_store import SparqlResult
-from app.security.auth import create_api_key
+from subject_access_support import create_api_key
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_context_query import SemanticContextQueryService
 from fastapi.testclient import TestClient

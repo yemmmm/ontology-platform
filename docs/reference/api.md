@@ -21,6 +21,52 @@ Project-bound 主体只能访问其 Project；显式提交 foreign Project 返�
 foreign opaque resource ID 时返回 404。UI session 写请求还要求可信 Origin、CSRF cookie 与
 `X-CSRF-Token` 相等。
 
+### R4.0-006 主体与角色授权
+
+普通用户仅通过个人 Key 访问；管理员仍可登录。`users.is_org_admin`／停用状态由服务端检查，
+普通用户（包括旧 session）不能登录或取得组织管理员权限。Key scope 和语义 Grant 分别判断。
+
+Org Admin 用 `POST /api/users` 登记普通用户（`username`），`GET /api/users`／`/{user_id}`
+读取，`PATCH /api/users/{user_id}` 修改 `username` 或 `disabled`；不接受密码、管理员标志或自助注册。
+Org Admin 用 `POST /api/projects/{project_id}/members`（`user_id`）添加成员，
+`DELETE .../members/{user_id}` 移除；Project Admin 只能读取本项目成员的最小身份。
+
+本项目 Admin 可管理 `/api/projects/{project_id}/semantic-access-roles`：
+GET／POST 及 `/{role_id}` 的 GET／PATCH／DELETE。创建字段为 `name`、`description`、`grants`，
+以及可选的 `business_role_iri`＋`business_role_ontology_id`。名称项目内唯一，重复返回 409；
+Grant 复用保护集的精确字符串规范（至多 64 个、单个至多 128 字符、非空可打印、去重），不按空白或
+大小写自动归并。显式关联核对同项目已有 `semantic_definition.semantic_role=business_role`，
+读回 `business_role_status` 为 `unassociated`／`valid`／`missing`／`invalid_definition`；
+业务角色后续变更／缺失不改变权限，可由管理员修正关联。
+
+`GET /api/projects/{project_id}/members/{user_id}/roles` 读取角色 id 集合；PUT 使用
+`{"role_ids": ["role-id"]}` 原子替换（空列表移除全部角色）。跨项目或不存在的角色使整个请求
+返回 422，原集合不变。read／model Key 不能调用上述管理接口；Project Admin 不读取全局用户。
+
+`POST /api/api-keys` 必须提交 `user_id`、`name`、`project_id` 和 `scopes`；项目 Key 的用户
+必须已经加入本项目，组织 admin Key 必须归属启用的组织管理员。明文仍仅创建时返回。
+读回包含 `user_id`，不含 Grant。PATCH 仅可修改 `name`，不能转移用户／项目或提高 scope。
+旧 `semantic_grants` 字段在创建／更新时均返回 422；旧 Key Grant 不迁移或参与授权。
+仅既有服务端 bootstrap 登记路径允许无归属组织 admin 凭据，API 省略用户或使用 bootstrap 名称
+均不能取得该例外。已有无归属普通 Key 需由管理员明确配置成员并重新发行，不自动猜测归属。
+当前 Team 客户端的旧 Key payload 也需要显式用户归属；既有流程接入适配归 R4.0-007。
+
+每次 HTTP 请求／MCP 调用重新检查 Key、所属用户、项目成员和角色。有效 Grant 为角色并集；
+同用户同项目的所有 Key 共用角色权限，各 Key scope／撤销独立。组织 Key 也先检查所属用户
+启用且仍为组织管理员，再进入管理员绕过；用户管理员标志不能提升项目 read Key 的 scope。
+正常无角色／空 Grant 仍可读普通资源；依赖故障／损坏角色配置返回可重试 `503 dependency_error`
+（MCP 为同名错误），不当作正常空权限或永久撤销凭据。
+
+管理提交后的新调用无需重启即可生效。有效 scope／Grant 变化使旧 Context cursor 返回
+`context_cursor_mismatch`，从首页重查；等价有效权限不使分页失效，凭据失效先返回认证错误。
+移出项目会同事务撤销该用户本项目 Key 并清空分配，重新加入不复活旧 Key；禁用／重启用用户
+可失效／恢复仍合格的未撤销 Key。删角色清分配，删项目级联清成员与角色而保留全局用户。
+checkpoint fork 保留保护集和业务定义，成员、Key、权限角色与分配不复制。
+
+主体、分配及 Grant 仅存在控制面，不加入 RDF／模型导出／SPARQL／Consumer 语义响应。
+受治理读取继续保持无权与不存在不可区分、分页前过滤和保护集 OR；权限角色不会授予外部数据
+或业务执行权限，也不会自动检测说明／脚本中复制的敏感文本。
+
 ## 当前主要工作流
 
 ### Project、Ontology 与需求澄清
@@ -240,6 +286,20 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic-protection-sets | `PATCH` | `/api/protection-sets/{protection_set_id}` | Update Protection Set |
 | semantic-protection-sets | `DELETE` | `/api/protection-sets/{protection_set_id}` | Delete Protection Set |
 | semantic-protection-sets | `DELETE` | `/api/protection-sets/{protection_set_id}/members` | Remove Protection Set Members |
+| subject semantic access | `GET` | `/api/projects/{project_id}/members` | List Members |
+| subject semantic access | `GET` | `/api/projects/{project_id}/members/{user_id}/roles` | Get Member Roles |
+| subject semantic access | `GET` | `/api/projects/{project_id}/semantic-access-roles` | List Roles |
+| subject semantic access | `GET` | `/api/projects/{project_id}/semantic-access-roles/{role_id}` | Get Role |
+| subject semantic access | `GET` | `/api/users` | List Users |
+| subject semantic access | `GET` | `/api/users/{user_id}` | Get User |
+| subject semantic access | `POST` | `/api/projects/{project_id}/members` | Add Member |
+| subject semantic access | `POST` | `/api/projects/{project_id}/semantic-access-roles` | Create Role |
+| subject semantic access | `POST` | `/api/users` | Create User |
+| subject semantic access | `PUT` | `/api/projects/{project_id}/members/{user_id}/roles` | Put Member Roles |
+| subject semantic access | `PATCH` | `/api/projects/{project_id}/semantic-access-roles/{role_id}` | Update Role |
+| subject semantic access | `PATCH` | `/api/users/{user_id}` | Update User |
+| subject semantic access | `DELETE` | `/api/projects/{project_id}/members/{user_id}` | Delete Member |
+| subject semantic access | `DELETE` | `/api/projects/{project_id}/semantic-access-roles/{role_id}` | Delete Role |
 | untagged | `GET` | `/api/health` | Health |
 | untagged | `GET` | `/api/health/dependencies` | Dependency Health |
 | untagged | `GET` | `/api/health/postgres` | Postgres Health |

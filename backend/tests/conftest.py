@@ -20,7 +20,8 @@ from sqlalchemy.pool import StaticPool
 from app.repositories.postgres import Base
 from app.main import create_app
 from app.repositories.models import ProjectModel, UserModel
-from app.security.auth import create_api_key, hash_password
+from app.security.auth import hash_password
+from subject_access_support import create_api_key
 from app.security.auth import AuthPrincipal
 from app.security.auth import resolve_api_key
 from app.security.http import AuthenticationMiddleware, principal_dependency
@@ -140,6 +141,7 @@ def r008_client():
             UserModel(
                 id=str(uuid4()),
                 username="admin",
+                is_org_admin=True,
                 password_hash=hash_password("correct horse battery staple"),
                 session_version=1,
             )
@@ -147,6 +149,7 @@ def r008_client():
         session.commit()
         ids = {
             "p1": p1.id,
+            "p1_user_id": p1_read_record.user_id,
             "p2": p2.id,
             "org_key_id": org_record.id,
             "p1_read_key_id": p1_read_record.id,

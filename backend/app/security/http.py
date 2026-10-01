@@ -31,7 +31,10 @@ from app.repositories.models import (
     SemanticProjectionJobModel,
     SemanticEditAuditModel,
 )
-from app.security.auth import AuthPrincipal, audit_security_event, resolve_api_key, resolve_session
+from app.security.auth import (
+    AuthPrincipal, AuthorizationDependencyError, audit_security_event, resolve_api_key, resolve_session,
+)
+from sqlalchemy.exc import SQLAlchemyError
 from app.security.secrets import reject_domain_secrets
 
 PUBLIC_PATHS = {
@@ -85,6 +88,7 @@ HTTP_ROUTE_POLICIES: dict[tuple[str, str], str] = {}
 _ADMIN_PATHS = (
     "/api/checkpoint-data",
     "/api/api-keys",
+    "/api/users",
     "/api/semantic/migrations",
     "/api/semantic/derived-results:gc",
     "/api/semantic/canonical-mode",
@@ -93,6 +97,8 @@ _ADMIN_PATHS = (
 
 def required_scope(method: str, path: str) -> str:
     if any(path.startswith(prefix) for prefix in _ADMIN_PATHS):
+        return "admin"
+    if re.fullmatch(r"/api/projects/[^/]+/(members|semantic-access-roles)(/.*)?", path):
         return "admin"
     if "/protection-sets" in path:
         return "model"
@@ -163,11 +169,19 @@ class AuthenticationMiddleware:
         session_value = request.cookies.get(SESSION_COOKIE, "")
         bearer_principal = None
         session_principal = None
-        with session_factory() as db:
-            if bearer_value:
-                bearer_principal = resolve_api_key(db, bearer_value)
-            if session_value:
-                session_principal = resolve_session(db, session_value, app.state.session_secret)
+        try:
+            with session_factory() as db:
+                if bearer_value:
+                    bearer_principal = resolve_api_key(db, bearer_value)
+                if session_value:
+                    session_principal = resolve_session(db, session_value, app.state.session_secret)
+        except (AuthorizationDependencyError, SQLAlchemyError):
+            await JSONResponse(
+                {"detail": {"code": "dependency_error", "message":
+                            "Subject authorization unavailable; repair dependency and retry"}},
+                status_code=503,
+            )(scope, receive, send)
+            return
         principal = bearer_principal or session_principal
         if bearer_value and bearer_principal is None:
             audit_security_event(

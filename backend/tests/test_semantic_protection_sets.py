@@ -172,47 +172,16 @@ def test_management_writes_audit_events(r008_client):
     } <= event_types
 
 
-def test_patch_api_keys_manages_semantic_grants(r008_client):
+def test_patch_api_keys_rejects_legacy_semantic_grants(r008_client):
     client = r008_client["client"]
     key_id = r008_client["ids"]["p1_read_key_id"]
-    org_headers = _bearer(r008_client["org_key"])
-
-    patched = client.patch(
-        f"/api/api-keys/{key_id}",
-        json={"semantic_grants": ["cost-visibility"]},
-        headers=org_headers,
-    )
-    assert patched.status_code == 200, patched.text
-    assert patched.json()["semantic_grants"] == ["cost-visibility"]
-
-    # grant management is admin-only
-    model_headers = _bearer(r008_client["p1_model_key"])
-    denied = client.patch(
-        f"/api/api-keys/{key_id}",
-        json={"semantic_grants": ["cost-visibility"]},
-        headers=model_headers,
-    )
-    assert denied.status_code == 403
-
-    invalid = client.patch(
-        f"/api/api-keys/{key_id}",
-        json={"semantic_grants": [""]},
-        headers=org_headers,
-    )
-    assert invalid.status_code == 422
-    too_many = client.patch(
-        f"/api/api-keys/{key_id}",
-        json={"semantic_grants": [f"g{i}" for i in range(65)]},
-        headers=org_headers,
-    )
-    assert too_many.status_code == 422
-
-    with r008_client["factory"]() as session:
-        events = session.scalars(
-            select(SecurityAuditEventModel).where(
-                SecurityAuditEventModel.resource_id == key_id,
-                SecurityAuditEventModel.event_type == "api_key_updated",
-            )
-        ).all()
-    assert events
-    assert any("grants_added" in (event.details or {}) for event in events)
+    for grants in (["cost-visibility"], [], None):
+        patched = client.patch(
+            f"/api/api-keys/{key_id}", json={"semantic_grants": grants},
+            headers=_bearer(r008_client["org_key"]),
+        )
+        assert patched.status_code == 422
+    assert client.patch(
+        f"/api/api-keys/{key_id}", json={"semantic_grants": ["cost-visibility"]},
+        headers=_bearer(r008_client["p1_model_key"]),
+    ).status_code == 403

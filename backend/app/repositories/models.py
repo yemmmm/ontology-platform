@@ -7,6 +7,7 @@ from sqlalchemy import (
     CheckConstraint,
     DateTime,
     ForeignKey,
+    ForeignKeyConstraint,
     Index,
     Integer,
     LargeBinary,
@@ -615,7 +616,8 @@ class ApiKeyModel(Base):
     key_hash: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
     project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
     scopes: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
-    semantic_grants: Mapped[list[str] | None] = mapped_column(JSONB, nullable=True)
+    user_id: Mapped[str | None] = mapped_column(ForeignKey("users.id"))
+    is_bootstrap: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         server_default=func.now(),
@@ -670,7 +672,9 @@ class UserModel(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
     username: Mapped[str] = mapped_column(String(200), nullable=False, unique=True)
-    password_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    password_hash: Mapped[str | None] = mapped_column(Text)
+    is_org_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    disabled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     session_version: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -678,6 +682,53 @@ class UserModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
     )
+
+
+class ProjectUserMembershipModel(Base):
+    __tablename__ = "project_user_memberships"
+
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), primary_key=True
+    )
+    user_id: Mapped[str] = mapped_column(ForeignKey("users.id"), primary_key=True)
+
+
+class SemanticAccessRoleModel(Base):
+    __tablename__ = "semantic_access_roles"
+    __table_args__ = (
+        UniqueConstraint("project_id", "id", name="uq_access_role_project_id"),
+        UniqueConstraint("project_id", "name", name="uq_access_role_project_name"),
+    )
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.id", ondelete="CASCADE"), nullable=False
+    )
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    description: Mapped[str | None] = mapped_column(Text)
+    grants: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    business_role_iri: Mapped[str | None] = mapped_column(String(1024))
+    business_role_ontology_id: Mapped[str | None] = mapped_column(String(36))
+
+
+class SemanticAccessRoleMemberModel(Base):
+    __tablename__ = "semantic_access_role_members"
+    __table_args__ = (
+        ForeignKeyConstraint(
+            ["project_id", "user_id"],
+            ["project_user_memberships.project_id", "project_user_memberships.user_id"],
+            ondelete="CASCADE",
+        ),
+        ForeignKeyConstraint(
+            ["project_id", "role_id"],
+            ["semantic_access_roles.project_id", "semantic_access_roles.id"],
+            ondelete="CASCADE",
+        ),
+    )
+
+    project_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    role_id: Mapped[str] = mapped_column(String(36), primary_key=True)
 
 
 class SecurityAuditEventModel(Base):

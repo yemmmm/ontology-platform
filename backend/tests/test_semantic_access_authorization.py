@@ -6,7 +6,8 @@ import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.repositories.models import OntologyModel, ProjectModel
-from app.security.auth import AuthPrincipal, create_api_key, parse_semantic_grants, resolve_api_key
+from app.security.auth import AuthPrincipal, resolve_api_key
+from subject_access_support import create_api_key
 from app.services.evidence_reference import (
     EvidenceReferenceNotFound,
     EvidenceReferenceService,
@@ -159,13 +160,6 @@ def test_resolver_fails_closed_on_database_error(in_memory_session):
         SemanticAccessResolver(FailingSession()).resolve(_principal("P"), "P")
 
 
-def test_malformed_grant_record_parses_to_empty(in_memory_session):
-    assert parse_semantic_grants(None) == frozenset()
-    assert parse_semantic_grants("cost-visibility") == frozenset()
-    assert parse_semantic_grants(["a", 2]) == frozenset()
-    assert parse_semantic_grants([" cost-visibility "]) == frozenset({"cost-visibility"})
-
-
 def test_view_statement_row_and_quad_filtering():
     view = SemanticAccessView(
         requires_filtering=True,
@@ -247,7 +241,7 @@ def test_evidence_reference_visibility_by_association_target(in_memory_session):
     assert manager_service.get_visible(cost_ref.id).id == cost_ref.id
 
 
-def test_created_api_key_carries_semantic_grants(in_memory_session):
+def test_created_api_key_resolves_role_grants(in_memory_session):
     _seed_project(in_memory_session, "P")
     _record, plaintext = create_api_key(
         in_memory_session,

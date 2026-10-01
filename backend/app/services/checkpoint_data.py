@@ -368,6 +368,9 @@ class CheckpointDataService:
                         else value
                         for key, value in original.items()
                     }
+                    if model is m.SemanticProtectionSetModel:
+                        # Grant names are opaque permissions, never platform resource identities.
+                        data["allowed_grants"] = original["allowed_grants"]
                     for prop in inspect(model).column_attrs:
                         value = data.get(prop.key)
                         python_type = prop.columns[0].type.python_type

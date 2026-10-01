@@ -24,9 +24,9 @@ from app.repositories.models import ApiKeyModel
 from app.security.auth import (
     AuthPrincipal,
     audit_security_event,
-    parse_semantic_grants,
+    principal_from_key,
+    AuthorizationDependencyError,
     resolve_api_key,
-    validate_scopes,
 )
 from app.security.http import _collect_resource_ids, _project_for_resource
 from app.security.secrets import scan_domain_payload
@@ -326,22 +326,15 @@ def _closure_payload(fn: Callable) -> dict[str, Any]:
 def _authorize_tool(session: Session, tool_name: str, fn: Callable) -> AuthPrincipal:
     if _principal is None:
         raise PermissionError("MCP authentication has not completed")
-    record = session.get(ApiKeyModel, _principal.subject_id)
-    if record is None or record.revoked_at is not None:
-        raise PermissionError("MCP credential is no longer valid")
+    from sqlalchemy.exc import SQLAlchemyError
+
     try:
-        current_scopes = validate_scopes(record.scopes, record.project_id)
-    except ValueError as exc:
-        raise PermissionError("MCP credential is no longer valid") from exc
-    principal = AuthPrincipal(
-        subject_type="api_key",
-        subject_id=record.id,
-        actor=f"key:{record.name}",
-        scopes=current_scopes,
-        project_id=record.project_id,
-        auth_method="mcp",
-        semantic_grants=parse_semantic_grants(record.semantic_grants),
-    )
+        record = session.get(ApiKeyModel, _principal.subject_id)
+        principal = principal_from_key(session, record, auth_method="mcp")
+    except SQLAlchemyError as exc:
+        raise AuthorizationDependencyError() from exc
+    if principal is None:
+        raise PermissionError("MCP credential is no longer valid")
     # R1.2-004: refresh the process-wide principal so tool callbacks can read
     # the verified identity through ``runtime_principal()`` instead of trusting
     # a client-supplied field. This never accepts a caller-controlled identity.

@@ -17,9 +17,18 @@ from argon2 import PasswordHasher
 from argon2.exceptions import InvalidHashError, VerifyMismatchError
 from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 from app.core.config import Settings
-from app.repositories.models import ApiKeyModel, SecurityAuditEventModel, UserModel
+from app.repositories.models import (
+    ApiKeyModel,
+    SecurityAuditEventModel,
+    UserModel,
+    ProjectUserMembershipModel,
+    SemanticAccessRoleModel,
+    SemanticAccessRoleMemberModel,
+)
+from app.services.semantic_protection_set import normalize_grants, ProtectionSetError
 
 logger = logging.getLogger(__name__)
 _password_hasher = PasswordHasher()
@@ -48,6 +57,7 @@ class AuthPrincipal:
     project_id: str | None
     auth_method: str
     semantic_grants: frozenset[str] = frozenset()
+    user_id: str | None = None
 
     @property
     def effective_scopes(self) -> frozenset[str]:
@@ -96,42 +106,78 @@ def validate_scopes(scopes: list[str] | set[str], project_id: str | None) -> fro
     return normalized
 
 
-def parse_semantic_grants(raw: Any) -> frozenset[str]:
-    """Parse an ``api_keys.semantic_grants`` JSONB value into a grant set.
+class AuthorizationDependencyError(RuntimeError):
+    code = "dependency_error"
+    status_code = 503
 
-    Fail-closed: a record that is not a JSON list of non-empty printable
-    strings yields an empty grant set (plus one warning log) instead of an
-    error, so a corrupted record can never widen access or break requests.
-    """
-    if raw is None:
-        return frozenset()
-    if not isinstance(raw, list) or not all(
-        isinstance(item, str) and item.strip() for item in raw
-    ):
-        logger.warning("Ignoring malformed semantic_grants record: %r", raw)
-        return frozenset()
-    return frozenset(item.strip() for item in raw)
+    def __init__(self):
+        super().__init__("Subject authorization unavailable; retry after repairing the dependency")
 
 
-def resolve_api_key(session: Session, plaintext: str) -> AuthPrincipal | None:
-    record = session.scalar(
-        select(ApiKeyModel).where(ApiKeyModel.key_hash == hash_api_key(plaintext))
-    )
+def principal_from_key(
+    session: Session, record: ApiKeyModel | None, *, auth_method: str = "bearer"
+) -> AuthPrincipal | None:
+    """Shared HTTP/MCP per-call resolution. Empty roles are a valid empty permission set."""
     if record is None or record.revoked_at is not None:
         return None
     try:
         scopes = validate_scopes(record.scopes, record.project_id)
-    except ValueError:
+    except (ValueError, TypeError):
         return None
+    grants: set[str] = set()
+    try:
+        if record.user_id is not None:
+            user = session.get(UserModel, record.user_id)
+            if user is None or user.disabled_at is not None:
+                return None
+            if record.project_id is None and not user.is_org_admin:
+                return None
+        elif not (record.is_bootstrap and record.project_id is None and "admin" in scopes):
+            return None
+        if record.project_id is not None:
+            if session.get(ProjectUserMembershipModel, (record.project_id, record.user_id)) is None:
+                return None
+            roles = session.scalars(
+                select(SemanticAccessRoleModel)
+                .join(
+                    SemanticAccessRoleMemberModel,
+                    (SemanticAccessRoleMemberModel.role_id == SemanticAccessRoleModel.id)
+                    & (
+                        SemanticAccessRoleMemberModel.project_id
+                        == SemanticAccessRoleModel.project_id
+                    ),
+                )
+                .where(
+                    SemanticAccessRoleMemberModel.project_id == record.project_id,
+                    SemanticAccessRoleMemberModel.user_id == record.user_id,
+                )
+            )
+            for role in roles:
+                if not isinstance(role.grants, list):
+                    raise AuthorizationDependencyError()
+                grants.update(normalize_grants(role.grants))
+    except (SQLAlchemyError, ProtectionSetError) as exc:
+        raise AuthorizationDependencyError() from exc
     return AuthPrincipal(
         subject_type="api_key",
         subject_id=record.id,
         actor=f"key:{record.name}",
         scopes=scopes,
         project_id=record.project_id,
-        auth_method="bearer",
-        semantic_grants=parse_semantic_grants(record.semantic_grants),
+        auth_method=auth_method,
+        semantic_grants=frozenset(grants),
+        user_id=record.user_id,
     )
+
+
+def resolve_api_key(session: Session, plaintext: str) -> AuthPrincipal | None:
+    try:
+        record = session.scalar(
+            select(ApiKeyModel).where(ApiKeyModel.key_hash == hash_api_key(plaintext))
+        )
+        return principal_from_key(session, record)
+    except SQLAlchemyError as exc:
+        raise AuthorizationDependencyError() from exc
 
 
 def create_api_key(
@@ -141,9 +187,24 @@ def create_api_key(
     project_id: str | None,
     scopes: list[str],
     plaintext: str | None = None,
-    semantic_grants: list[str] | None = None,
+    user_id: str | None = None,
+    bootstrap: bool = False,
 ) -> tuple[ApiKeyModel, str]:
     normalized = validate_scopes(scopes, project_id)
+    if user_id is None:
+        if not (bootstrap and project_id is None and "admin" in normalized):
+            raise ValueError("user_id is required")
+    else:
+        user = session.get(UserModel, user_id)
+        if user is None or user.disabled_at is not None:
+            raise ValueError("user_id must identify an enabled user")
+        if project_id is None and not user.is_org_admin:
+            raise ValueError("organization admin keys require an organization administrator")
+        if (
+            project_id is not None
+            and session.get(ProjectUserMembershipModel, (project_id, user_id)) is None
+        ):
+            raise ValueError("user_id must be a member of the selected Project")
     key = plaintext or generate_api_key(set(normalized))
     expected_prefix = f"sk_{highest_scope(normalized)}_"
     if not key.startswith(expected_prefix) or len(key) != len(expected_prefix) + 32:
@@ -154,7 +215,8 @@ def create_api_key(
         key_hash=hash_api_key(key),
         project_id=project_id,
         scopes=sorted(normalized, key=_SCOPE_ORDER.__getitem__),
-        semantic_grants=sorted(set(semantic_grants)) if semantic_grants else None,
+        user_id=user_id,
+        is_bootstrap=bootstrap and user_id is None,
     )
     session.add(record)
     session.commit()
@@ -228,6 +290,8 @@ def resolve_session(session: Session, token: str, secret_key: str) -> AuthPrinci
         user = session.get(UserModel, payload["uid"])
         if (
             user is None
+            or not user.is_org_admin
+            or user.disabled_at is not None
             or user.username != payload["username"]
             or user.session_version != int(payload["version"])
         ):
@@ -241,6 +305,7 @@ def resolve_session(session: Session, token: str, secret_key: str) -> AuthPrinci
         scopes=frozenset({"admin"}),
         project_id=None,
         auth_method="session",
+        user_id=user.id,
     )
 
 
@@ -272,6 +337,7 @@ def bootstrap_identities(session_factory: sessionmaker, settings: Settings) -> N
                     id=str(uuid4()),
                     username=username,
                     password_hash=hash_password(password),
+                    is_org_admin=True,
                     session_version=1,
                 )
             )
@@ -279,7 +345,15 @@ def bootstrap_identities(session_factory: sessionmaker, settings: Settings) -> N
         plaintext = settings.ontology_bootstrap_admin_api_key
         if plaintext:
             key_hash = hash_api_key(plaintext)
-            if session.scalar(select(ApiKeyModel).where(ApiKeyModel.key_hash == key_hash)):
+            existing = session.scalar(select(ApiKeyModel).where(ApiKeyModel.key_hash == key_hash))
+            if existing is not None:
+                if (
+                    existing.user_id is None
+                    and existing.project_id is None
+                    and "admin" in existing.scopes
+                ):
+                    existing.is_bootstrap = True
+                    session.commit()
                 return
             named = session.scalar(select(ApiKeyModel).where(ApiKeyModel.name == "bootstrap-admin"))
             if named is not None:
@@ -291,6 +365,7 @@ def bootstrap_identities(session_factory: sessionmaker, settings: Settings) -> N
                 project_id=None,
                 scopes=["admin"],
                 plaintext=plaintext,
+                bootstrap=True,
             )
 
 

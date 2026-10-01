@@ -35,6 +35,7 @@ def provision_operator(
                     id=str(uuid4()),
                     username=username,
                     password_hash=hash_password(password),
+                    is_org_admin=True,
                     session_version=1,
                 )
                 session.add(user)
@@ -49,6 +50,7 @@ def provision_operator(
                 name="operator-admin",
                 project_id=None,
                 scopes=["admin"],
+                user_id=user.id,
             )
         payload = {
             "username": username,

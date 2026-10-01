@@ -4,7 +4,7 @@ import pytest
 
 from app.api.schemas import BuildSessionCreate, OntologyCreate
 from app.repositories.models import SemanticGraphSetModel, SemanticRuleModel
-from app.security.auth import create_api_key
+from subject_access_support import create_api_key
 from app.security.http import (
     HTTP_ROUTE_POLICIES,
     PUBLIC_PATHS,

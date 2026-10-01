@@ -7,12 +7,12 @@ from datetime import datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session
-from app.repositories.models import ApiKeyModel, ProjectModel, UserModel
+from app.repositories.models import ApiKeyModel, ProjectModel, ProjectUserMembershipModel, UserModel
 from app.security.auth import (
     AuthPrincipal,
     audit_security_event,
@@ -41,17 +41,20 @@ class PrincipalRead(BaseModel):
     actor: str
     scopes: list[str]
     project_id: str | None
+    user_id: str | None
 
 
 class ApiKeyCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    user_id: str = Field(min_length=1, max_length=36)
     name: str = Field(min_length=1, max_length=200)
     project_id: str | None = None
     scopes: list[str] = Field(min_length=1)
-    semantic_grants: list[str] | None = None
 
 
 class ApiKeyUpdate(BaseModel):
-    semantic_grants: list[str] | None = None
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=200)
 
 
 class ApiKeyRead(BaseModel):
@@ -59,7 +62,7 @@ class ApiKeyRead(BaseModel):
     name: str
     project_id: str | None
     scopes: list[str]
-    semantic_grants: list[str]
+    user_id: str | None
     created_at: datetime
     revoked_at: datetime | None
 
@@ -70,32 +73,10 @@ class ApiKeyRead(BaseModel):
             name=record.name,
             project_id=record.project_id,
             scopes=list(record.scopes),
-            semantic_grants=list(record.semantic_grants or []),
+            user_id=record.user_id,
             created_at=record.created_at,
             revoked_at=record.revoked_at,
         )
-
-
-def _validate_semantic_grants(grants: list[str] | None) -> list[str] | None:
-    if grants is None:
-        return None
-    if len(grants) > 64:
-        raise HTTPException(status_code=422, detail="semantic_grants supports at most 64 items")
-    normalized: list[str] = []
-    for item in grants:
-        if (
-            not isinstance(item, str)
-            or not item.strip()
-            or len(item) > 128
-            or not item.isprintable()
-        ):
-            raise HTTPException(
-                status_code=422,
-                detail="semantic_grants items must be non-empty printable strings of at most 128 characters",
-            )
-        if item not in normalized:
-            normalized.append(item)
-    return normalized
 
 
 class ApiKeyCreated(ApiKeyRead):
@@ -109,6 +90,7 @@ def _principal_read(principal: AuthPrincipal) -> PrincipalRead:
         actor=principal.actor,
         scopes=sorted(principal.effective_scopes),
         project_id=principal.project_id,
+        user_id=principal.user_id,
     )
 
 
@@ -138,7 +120,13 @@ def login(
         )
         raise HTTPException(status_code=429, detail={"code": "login_rate_limited"})
     user = session.scalar(select(UserModel).where(UserModel.username == payload.username))
-    if user is None or not verify_password(user.password_hash, payload.password):
+    if (
+        user is None
+        or not user.is_org_admin
+        or user.disabled_at is not None
+        or not user.password_hash
+        or not verify_password(user.password_hash, payload.password)
+    ):
         failures.append(now)
         audit_security_event(
             request.app.state.session_factory,
@@ -155,6 +143,7 @@ def login(
         scopes=frozenset({"admin"}),
         project_id=None,
         auth_method="session",
+        user_id=user.id,
     )
     secure = request.app.state.settings.app_env.lower() in {"production", "prod"}
     response.set_cookie(
@@ -221,6 +210,11 @@ def create_key(
         raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
     if payload.project_id is not None and session.get(ProjectModel, payload.project_id) is None:
         raise HTTPException(status_code=404, detail="Project not found")
+    if (
+        not principal.is_org_admin
+        and session.get(ProjectUserMembershipModel, (payload.project_id, payload.user_id)) is None
+    ):
+        raise HTTPException(status_code=404, detail="Member not found")
     try:
         validate_scopes(payload.scopes, payload.project_id)
         record, plaintext = create_api_key(
@@ -228,7 +222,7 @@ def create_key(
             name=payload.name,
             project_id=payload.project_id,
             scopes=payload.scopes,
-            semantic_grants=_validate_semantic_grants(payload.semantic_grants),
+            user_id=payload.user_id,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
@@ -273,9 +267,7 @@ def update_api_key(
     record = _visible_key(session, key_id, principal)
     if record.project_id is None and not principal.is_org_admin:
         raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
-    grants = _validate_semantic_grants(payload.semantic_grants)
-    previous_grants = list(record.semantic_grants or [])
-    record.semantic_grants = grants
+    record.name = payload.name
     session.commit()
     session.refresh(record)
     audit_security_event(
@@ -286,10 +278,6 @@ def update_api_key(
         project_id=record.project_id,
         resource_type="api_key",
         resource_id=record.id,
-        details={
-            "grants_added": sorted(set(grants or []) - set(previous_grants)),
-            "grants_removed": sorted(set(previous_grants) - set(grants or [])),
-        },
     )
     return ApiKeyRead.from_record(record)
 
