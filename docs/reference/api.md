@@ -245,3 +245,42 @@ uv run python ../scripts/sync-interface-docs.py --write
 | untagged | `GET` | `/api/health/postgres` | Postgres Health |
 
 <!-- END GENERATED HTTP API INVENTORY -->
+
+### R4.0-002 共同业务语义说明
+
+`create/update_class`、`create/update_property`、`create/update_relation_type` 与
+`create/update_entity` 的 Modeling Batch payload 支持可选 `semantic_definition`：
+
+```json
+{
+  "semantic_role": "business_role",
+  "business_meaning": "负责审核业务内容",
+  "applicability": "售后场景",
+  "unknowns": ["审核时限待确认"],
+  "not_applicable": ["制造审批"],
+  "conflicting_meanings": ["两种审核时限口径待确认"]
+}
+```
+
+三个文本字段为非空字符串，三个集合字段为非空字符串数组；字段可省略，未知字段及错误类型
+返回可修正的合同错误。更新时省略表示保持，`null` 清除整份声明，对象替换整份声明。
+RDF 使用资源本身的 `op:semanticDefinition` JSON 字面量；这不会改变正式 Class、平台
+resource kind 或权限。角色是已确认业务含义的开放字符串，不按视角推导，也不授予权限。
+
+既有 `class-detail`、`entity-detail`、`ontology-schema-summary`、`property-list`、
+`relation-type-list`、`entity-list` 读模型在 `detail_fields.semantic_definition` 返回声明，
+对应投影版本为 `semantic-read-v2`。精确 `GET /api/semantic/resources/{resource_iri}` 在
+`properties.semantic_definition` 返回声明，并支持上述实体、Class 与 Property 资源。
+所有路径保留既有 scope 与 access_view；隐藏资源与不存在资源均返回同形 404／空结果。
+
+局部职责或关系用独立的普通语义节点表达，节点说明本地含义并通过通用关系明确连接上下文、
+共享定义、关系定义及两端；从既有关系／statement 读取取得这些引用。节点中的未知、冲突和
+不适用保持独立；未返回声明或关系不足以推断不存在约束。业务行继续留在外部系统。
+
+中立候选在 `semantic.semantic_definition` 表达上述声明，unified graph 候选使用可选的
+item 字段 `semantic_definition`，Protocol 将已批准内容原样转入 payload。Class 可省略，
+`semantic.classes` 是中立 Class ID 列表；普通分组使用关系。候选关系端点可用
+`{"definition_ref": "candidate-item-id"}` 引用本候选中的 Class／predicate／entity，
+Protocol 绑定平台身份，Modeling 不猜测平台 IRI；已存在资源继续遵循原 receipt 绑定合同。
+详见 [当前候选合同](../../modeling_team/references/platform-neutral-candidate-authoring.json)。
+本增量不引入 Evidence／lineage、自动同义合并或跨 Project 共享。

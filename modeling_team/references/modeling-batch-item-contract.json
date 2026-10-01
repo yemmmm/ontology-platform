@@ -35,7 +35,8 @@
         "description": {"type": "string", "required": false},
         "aliases": {"type": "array", "items": "string", "required": false, "default": []},
         "parent_class_ids": {"type": "array", "items": "string", "required": false, "default": []},
-        "external_mappings": {"type": "object", "required": false, "default": {}}
+        "external_mappings": {"type": "object", "required": false, "default": {}},
+        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
       }
     },
     "create_property": {
@@ -48,7 +49,8 @@
         "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
         "description": {"type": "string", "required": false},
         "datatype": {"type": "string", "required": false, "branch": "DatatypeProperty; a datatype property MUST carry its real datatype"},
-        "object_class_id": {"type": "string", "required": false, "branch": "ObjectProperty Class range; optional. datatype and object_class_id are mutually exclusive; when both are supplied the payload is rejected"}
+        "object_class_id": {"type": "string", "required": false, "branch": "ObjectProperty Class range; optional. datatype and object_class_id are mutually exclusive; when both are supplied the payload is rejected"},
+        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
       }
     },
     "create_relation_type": {
@@ -63,7 +65,8 @@
         "symmetric": {"type": "boolean", "required": false, "default": false},
         "transitive": {"type": "boolean", "required": false, "default": false},
         "scope_policy": {"type": "string", "required": false, "default": "both"},
-        "status": {"type": "string", "required": false, "default": "active"}
+        "status": {"type": "string", "required": false, "default": "active"},
+        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
       }
     },
     "create_shape": {
@@ -86,7 +89,8 @@
         "class_iris": {"type": "array", "items": "string", "required": false, "description": "Full formal Class set (R3.0-009 §4.1/§6.2). Entries are class ids or absolute IRIs, deduplicated by the compiler. Omitted, null and [] are the same legal zero-member state; no placeholder Class is invented."},
         "label": {"type": "string", "required": true},
         "aliases": {"type": "array", "items": "string", "required": false, "default": []},
-        "properties": {"type": "object", "required": false, "default": {}, "additional_properties": true, "description": "Property keys are non-empty strings; lists are rejected by the handler."}
+        "properties": {"type": "object", "required": false, "default": {}, "additional_properties": true, "description": "Property keys are non-empty strings; lists are rejected by the handler."},
+        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
       }
     },
     "create_relation": {

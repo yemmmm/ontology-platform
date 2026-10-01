@@ -32,6 +32,7 @@
     "schema_version": "r3-0-009-unified-graph/v2",
     "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
     "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
+    "item_optional_fields": ["semantic_definition"],
     "item_kinds": ["entity", "relation", "property", "shape"],
     "rules": [
       "Items are neutral and contain no guessed platform identifier or receipt handle.",
@@ -80,5 +81,36 @@
     "transport": "Send the complete semantic candidate through the visible Team Transport route. Protocol translates it and owns all Batch, receipt, platform ID and readback mechanics.",
     "feedback": "A typed translation, readback or validation finding is repaired only in the named semantic content; send a complete revision bound to the new delivery.",
     "completion": "Report semantic completion only after Protocol returns the bound deterministic run outcome and CQ/acceptance handoff is ready; independent acceptance owns the final semantic verdict."
+  },
+  "multiview_semantic_definition": {
+    "requirement_id": "R4.0-002",
+    "field": "semantic_definition",
+    "fields": [
+      "semantic_role",
+      "business_meaning",
+      "applicability",
+      "unknowns",
+      "not_applicable",
+      "conflicting_meanings"
+    ],
+    "field_rules": {
+      "semantic_role": "A non-empty business semantic role string. Common roles are object, behavior, rule, business_role, process, data_mapping, interface_mapping. They are declarations, not platform resource kinds, permission roles, fixed enums or view labels. Additional confirmed meanings such as classification/context/local_usage are allowed. Multi-view references do not change the declared role.",
+      "business_meaning": "Non-empty natural-language meaning, including responsibility or property value/unit/direction meaning as applicable.",
+      "applicability": "Non-empty natural-language business applicability. It never grants a platform permission or selects a graph/Ontology.",
+      "unknowns": "List of non-empty unresolved questions. [] explicitly declares no known unknowns in this delivered definition; omission declares no information.",
+      "not_applicable": "List of explicit non-applicable meanings; absence is not evidence of non-applicability.",
+      "conflicting_meanings": "List of known unresolved conflicting explanations; keep each rather than silently selecting one."
+    },
+    "candidate_rules": [
+      "Place semantic_definition within semantic on ordinary class, predicate or entity/explicit_unknown items. In unified graph candidates it is an optional item field; copy the approved declaration unchanged into the corresponding command payload.",
+      "Use one candidate definition identity once. References use its entity semantic ID or a relation endpoint wrapper {definition_ref: item_id} for a class, predicate or entity declaration in this complete candidate. Never merge by label or alias; different meanings require distinct identities.",
+      "An entity may omit class, or provide classes as a list of neutral Class IDs. This expresses formal membership only. When class and classes both appear, the scalar must be among the list. Ordinary grouping is a business predicate relation, never implicit formal membership.",
+      "Predicates may omit domain and object-valued range when no formal Class restriction is approved. A fact predicate retains its datatype range. A formal subclass is declared only for confirmed set inclusion.",
+      "A relation with different local meaning is represented by a separate ordinary semantic node carrying its local semantic_definition and explicit relations to context, shared definition, source, target, and predicate definition as needed. The defining predicates explain each link. Do not place semantic_definition on an anonymous relation item.",
+      "Keep local context references as ordinary graph relations, not hidden IRI strings inside semantic_definition. Local meanings do not overwrite shared declarations.",
+      "Protocol owns platform identity/receipt binding and dependency ordering. definition_ref is a current-candidate reference only; receipt-backed existing_entity_ref keeps its existing authorized task contract. No global registry or cross-Project sharing is introduced.",
+      "All fields are optional to preserve previous contracts. A v4 definition must declare confirmed role, meaning and scope needed by its consumer; unresolved parts are explicit unknowns. No Evidence or lineage fields are added."
+    ],
+    "readback": "Existing governed read models class-detail, entity-detail, ontology-schema-summary, property-list, relation-type-list and entity-list project detail_fields.semantic_definition. Exact /api/semantic/resources/{iri} projects it in properties.semantic_definition. Generic relation/statement reads expose context/reference links. Hidden resources follow the existing indistinguishable 404/empty result contract. Only authorized returned content supports a business interpretation."
   }
 }

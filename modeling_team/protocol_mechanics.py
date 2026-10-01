@@ -2194,6 +2194,25 @@ def translate_candidate_to_batches(
         if _is_nonempty_string(name):
             declared_predicates[name] = semantic
 
+    definition_refs: dict[str, str] = {}
+    identities: dict[tuple[str, str], str] = {}
+    duplicate_identities: dict[str, str] = {}
+    for item in items:
+        resource = {
+            "class": ("class", "class_id"), "predicate": ("property", "predicate"),
+            "entity": ("entity", "entity_id"), "explicit_unknown": ("entity", "entity_id"),
+        }.get(item["item_kind"])
+        if resource:
+            resource_kind, id_field = resource
+            identifier = item["semantic"].get(id_field)
+            if _is_nonempty_string(identifier):
+                key = (resource_kind, identifier)
+                if key in identities:
+                    duplicate_identities[item["item_id"]] = identities[key]
+                    continue
+                identities[key] = item["item_id"]
+                definition_refs[item["item_id"]] = _platform_resource_iri(resource_kind, identifier)
+
     staged: dict[str, list[dict[str, Any]]] = {stage: [] for stage in _TRANSLATE_STAGE_ORDER}
     delete_items: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
@@ -2201,6 +2220,13 @@ def translate_candidate_to_batches(
         kind = item["item_kind"]
         semantic = item["semantic"]
         item_id = item["item_id"]
+        if item_id in duplicate_identities:
+            conflicts.append(_conflict(
+                item_id, "duplicate_semantic_identity",
+                f"Identity already declared by {duplicate_identities[item_id]}; "
+                "reuse that definition or supply a distinct semantic identity",
+            ))
+            continue
         handler = _TRANSLATE_ITEM_HANDLERS.get(kind)
         if kind in {"consumer_query", "negative_probe"}:
             continue
@@ -2292,12 +2318,28 @@ def translate_candidate_to_batches(
             conflicts.append(_conflict(item_id, "unsupported_item_kind", kind))
             continue
         try:
-            if kind == "relation" and existing_bindings:
+            if kind == "relation" and any(
+                isinstance(semantic.get(field), dict) and "definition_ref" in semantic[field]
+                for field in ("subject", "object")
+            ):
+                command_kind, payload = _translate_definition_relation(
+                    semantic, declared_entity_ids, declared_predicates, definition_refs,
+                    existing_bindings,
+                )
+            elif kind == "relation" and existing_bindings:
                 command_kind, payload = _translate_existing_relation(
                     semantic, declared_entity_ids, declared_predicates, existing_bindings
                 )
             else:
                 command_kind, payload = handler(semantic, declared_entity_ids, declared_predicates)
+            if "semantic_definition" in semantic:
+                if command_kind == "create_relation":
+                    raise _TranslateConflict(
+                        "relation_definition_requires_context_node",
+                        "Put local relation meaning on an explicit context node with endpoint, "
+                        "predicate and context references; do not annotate an anonymous edge",
+                    )
+                payload["semantic_definition"] = semantic["semantic_definition"]
         except _TranslateConflict as exc:
             conflicts.append(_conflict(item_id, exc.code, exc.detail))
             continue
@@ -2481,7 +2523,9 @@ def _translate_class(
     semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
 ) -> tuple[str, dict[str, Any]]:
     class_id = _require_semantic_string(semantic, "class_id")
-    payload: dict[str, Any] = {"class_id": class_id, "name": class_id}
+    payload: dict[str, Any] = {"class_id": class_id, "name": semantic.get("label", class_id)}
+    if "aliases" in semantic:
+        payload["aliases"] = semantic["aliases"]
     description = semantic.get("description")
     if _is_nonempty_string(description):
         payload["description"] = description
@@ -2495,9 +2539,11 @@ def _translate_predicate(
     semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
 ) -> tuple[str, dict[str, Any]]:
     name = _require_semantic_string(semantic, "predicate")
-    domain = _require_semantic_string(semantic, "domain")
+    domain = semantic.get("domain")
     predicate_kind = semantic.get("predicate_kind")
-    payload: dict[str, Any] = {"property_id": name, "class_id": domain, "name": name}
+    payload: dict[str, Any] = {"property_id": name, "name": semantic.get("label", name)}
+    if _is_nonempty_string(domain):
+        payload["class_id"] = domain
     description = semantic.get("description")
     if _is_nonempty_string(description):
         payload["description"] = description
@@ -2508,9 +2554,8 @@ def _translate_predicate(
         payload["datatype"] = range_value
     elif predicate_kind == "relation":
         range_value = semantic.get("range")
-        if not _is_nonempty_string(range_value):
-            raise _TranslateConflict("missing_range", "semantic.range is not bound for a relation predicate")
-        payload["object_class_id"] = range_value
+        if _is_nonempty_string(range_value):
+            payload["object_class_id"] = range_value
     else:
         raise _TranslateConflict(
             "unsupported_predicate_kind",
@@ -2523,7 +2568,7 @@ def _translate_entity(
     semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
 ) -> tuple[str, dict[str, Any]]:
     entity_id = _require_semantic_string(semantic, "entity_id")
-    class_ref = _require_semantic_string(semantic, "class")
+    class_ref = semantic.get("class")
     values = semantic.get("values")
     if not isinstance(values, dict) or not values:
         raise _TranslateConflict("missing_values", "semantic.values is not bound")
@@ -2533,11 +2578,49 @@ def _translate_entity(
     properties = {key: value for key, value in values.items() if key != "label"}
     payload: dict[str, Any] = {
         "entity_id": entity_id,
-        "class_iri_or_legacy_id": class_ref,
         "label": label,
         "properties": properties,
     }
+    if _is_nonempty_string(class_ref):
+        payload["class_iri_or_legacy_id"] = class_ref
+    if "classes" in semantic:
+        classes = semantic["classes"]
+        if not isinstance(classes, list) or any(not _is_nonempty_string(v) for v in classes):
+            raise _TranslateConflict("invalid_classes", "semantic.classes must be a list of class references")
+        payload["class_iris"] = [_platform_resource_iri("class", value) for value in classes]
+    if "aliases" in semantic:
+        payload["aliases"] = semantic["aliases"]
     return "create_entity", payload
+
+
+def _translate_definition_relation(
+    semantic: dict[str, Any], entities: set[str], predicates: dict[str, dict[str, Any]],
+    definitions: dict[str, str], existing_bindings: dict[str, str],
+) -> tuple[str, dict[str, Any]]:
+    def endpoint(field: str) -> str:
+        value = semantic.get(field)
+        if isinstance(value, dict) and set(value) == {"existing_entity_ref"}:
+            ref = _existing_ref(value["existing_entity_ref"])
+            iri = existing_bindings.get(ref["semantic_id"])
+            if iri:
+                return iri
+        if isinstance(value, dict) and set(value) == {"definition_ref"}:
+            reference = value["definition_ref"]
+            iri = definitions.get(reference) if _is_nonempty_string(reference) else None
+            if iri:
+                return iri
+        elif isinstance(value, str) and value in entities:
+            return _platform_resource_iri("entity", value)
+        raise _TranslateConflict("unbound_definition_reference", f"semantic.{field} is not a declared definition")
+
+    predicate = _require_semantic_string(semantic, "predicate")
+    if predicates.get(predicate, {}).get("predicate_kind") != "relation":
+        raise _TranslateConflict("unbound_relation_predicate", predicate)
+    return "create_relation", {
+        "source_entity_iri": endpoint("subject"),
+        "relation_type_iri": _platform_resource_iri("property", predicate),
+        "target_entity_iri": endpoint("object"),
+    }
 
 
 def _translate_relation(

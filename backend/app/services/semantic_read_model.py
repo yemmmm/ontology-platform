@@ -10,6 +10,7 @@ counting, or truncation.
 from __future__ import annotations
 
 from datetime import datetime
+import json
 from typing import Any, Protocol
 
 from app.repositories.rdf_store import RdfStoreRepository
@@ -496,6 +497,17 @@ class SemanticReadModelService:
             if not entity_iri:
                 raise ReadModelError(f"{template.name} requires an entity IRI")
             query = query.replace("{entity_iri}", _sparql_iri_value(entity_iri))
+        elif entity_iri and template.name in {
+            "entity-detail", "class-detail", "property-list", "relation-type-list",
+        }:
+            # Exact resource lookup binds identity before LIMIT/authorization;
+            # it must not search only the first page of a broad listing.
+            target = _sparql_iri_value(entity_iri)
+            query = query.replace(
+                "WHERE {",
+                f"WHERE {{ VALUES ?{template.primary_iri_variable} {{ <{target}> }}",
+                1,
+            )
         return query
 
     def _graph_iris_for_scope(
@@ -575,6 +587,13 @@ class SemanticReadModelService:
                 continue
             value = SemanticReadModelService._cell(row, variable)
             if value is not None:
+                if variable == "semantic_definition":
+                    try:
+                        value = json.loads(value)
+                    except (ValueError, TypeError):
+                        # Direct RDF writes may contain an uninterpreted literal;
+                        # preserve it rather than inventing a business meaning.
+                        pass
                 fields[variable] = value
         return fields
 

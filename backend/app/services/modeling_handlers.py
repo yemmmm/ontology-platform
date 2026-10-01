@@ -376,6 +376,12 @@ ALLOWED_FIELDS: dict[str, set[str]] = {
     "delete_metric_definition": {"metric_id", "metric_iri"},
 }
 
+for _kind in (
+    "class", "property", "entity", "relation_type",
+):
+    for _verb in ("create", "update"):
+        ALLOWED_FIELDS[f"{_verb}_{_kind}"].add("semantic_definition")
+
 
 @dataclass(frozen=True)
 class ModelingWriteEffect:

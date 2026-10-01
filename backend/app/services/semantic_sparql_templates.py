@@ -8,7 +8,7 @@ semantic query endpoint from earlier phases.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from rdflib import Literal, URIRef
 
@@ -1034,6 +1034,29 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         """),
     ),
 }
+
+
+# R4.0-002 common business declaration, over the same governed graph scope.
+# Keep it as a literal: contextual references remain ordinary graph relations,
+# where existing resource authorization can filter their endpoints.
+for _name in (
+    "class-detail", "entity-detail", "ontology-schema-summary", "property-list",
+    "relation-type-list", "entity-list",
+):
+    _template = _TEMPLATES[_name]
+    _body = _template.body.replace(" WHERE {", " ?semantic_definition WHERE {", 1)
+    _end = _body.rfind("\n        }")
+    _body = (
+        _body[:_end]
+        + "\n          OPTIONAL { VALUES ?definition_graph { {graph_iris} } "
+        + f"GRAPH ?definition_graph {{ ?{_template.primary_iri_variable} "
+        + f"<{OP_VOCAB_PREFIX}semanticDefinition> ?semantic_definition . }} }}"
+        + _body[_end:]
+    )
+    _TEMPLATES[_name] = replace(
+        _template, body=_body, projection_version="semantic-read-v2",
+        detail_variables=(*_template.detail_variables, "semantic_definition"),
+    )
 
 
 def get_template(name: str) -> ReadModelTemplate:

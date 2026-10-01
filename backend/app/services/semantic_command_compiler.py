@@ -3079,4 +3079,53 @@ def compile_command(
             f"Supported: {', '.join(supported_command_kinds())}"
         )
     ns = namespace_from_settings(settings)
-    return compiler(payload, ns, settings)
+    compiled = compiler(payload, ns, settings)
+    # R4.0-002: a business declaration annotates an existing resource; it
+    # neither changes formal membership nor creates a platform resource kind.
+    if "semantic_definition" in payload:
+        _compile_semantic_definition(compiled, payload, ns)
+    return compiled
+
+
+def _compile_semantic_definition(
+    compiled: CompiledCommand, payload: dict[str, Any], ns: SemanticNamespace
+) -> None:
+    kind = compiled.command_kind
+    if kind not in {
+        "create_class", "update_class", "create_property", "update_property",
+        "create_entity", "update_entity", "create_relation_type", "update_relation_type",
+    }:
+        raise InvalidCommandPayload(f"semantic_definition is not supported by {kind}")
+    definition = payload["semantic_definition"]
+    if definition is not None:
+        if not isinstance(definition, dict) or not definition:
+            raise InvalidCommandPayload("semantic_definition must be a non-empty object or null")
+        allowed = {
+            "semantic_role", "business_meaning", "applicability", "unknowns",
+            "not_applicable", "conflicting_meanings",
+        }
+        if set(definition) - allowed:
+            raise InvalidCommandPayload("semantic_definition contains unsupported fields")
+        for field, value in definition.items():
+            if field in {"unknowns", "not_applicable", "conflicting_meanings"}:
+                valid = isinstance(value, list) and all(
+                    isinstance(entry, str) and entry.strip() for entry in value
+                )
+            else:
+                valid = isinstance(value, str) and bool(value.strip())
+            if not valid:
+                raise InvalidCommandPayload(f"semantic_definition.{field} has an invalid value")
+    resource_kind = compiled.object_kind
+    resource_id = payload.get(f"{resource_kind}_id") or compiled.source_ids[0]
+    subject_iri = payload.get(f"{resource_kind}_iri") or str(
+        ns.resource(resource_kind.replace("_", "-"), resource_id)
+    )
+    graph_iri = compiled.target_graph_iris[0]
+    predicate = f"<{ns.vocab}semanticDefinition>"
+    if kind.startswith("update_"):
+        compiled.delta.deletes.append((f"<{subject_iri}>", predicate, "?o", graph_iri))
+    if definition is not None:
+        compiled.delta.inserts.append(
+            (f"<{subject_iri}>", predicate,
+             _literal_term(json.dumps(definition, ensure_ascii=False, sort_keys=True)), graph_iri)
+        )

@@ -1602,24 +1602,26 @@ def read_resource(
         session, principal, project_id_for_graph_set(session, graph_set_id)
     )
     service = _read_model_service(session, rdf_store, settings, access_view=access_view)
-    envelope = service.read_model(
-        graph_set_id=graph_set_id,
-        model_name="entity-detail",
-        include=include,
-    )
-    for item in envelope["items"]:
-        if item["iri"] == resource_iri:
-            return SemanticResourceRead(
-                iri=resource_iri,
-                label=item.get("label"),
-                graph_set_id=graph_set_id,
-                source_signature=envelope["source_signature"],
-                assertion_kind=item["assertion_kind"],
-                source_graph_iri=item["source_graph_iri"],
-                properties={},
-                derived_state=envelope["derived_state"],
-                warnings=envelope["warnings"],
-            )
+    for model_name in ("entity-detail", "class-detail", "property-list", "relation-type-list"):
+        envelope = service.read_model(
+            graph_set_id=graph_set_id,
+            model_name=model_name,
+            include=include,
+            entity_iri=resource_iri,
+        )
+        for item in envelope["items"]:
+            if item["iri"] == resource_iri:
+                return SemanticResourceRead(
+                    iri=resource_iri,
+                    label=item.get("label"),
+                    graph_set_id=graph_set_id,
+                    source_signature=envelope["source_signature"],
+                    assertion_kind=item["assertion_kind"],
+                    source_graph_iri=item["source_graph_iri"],
+                    properties=item.get("detail_fields", {}),
+                    derived_state=envelope["derived_state"],
+                    warnings=envelope["warnings"],
+                )
     raise HTTPException(status_code=404, detail=f"Resource not found: {resource_iri}")
 
 

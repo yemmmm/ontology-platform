@@ -326,3 +326,15 @@ Publish every neutral candidate artifact listed in the slot's `candidate_artifac
 `stage3-neutral-graph/candidates/{candidate_id}-r{revision}.json`, with the filename values equal
 to the artifact's `candidate_id` and integer `revision`. Never rename, replace or delete anything
 under `stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.
+
+## R4.0-002 common semantic declarations
+
+Use `multiview_semantic_definition` in the mounted
+`modeling_team/references/platform-neutral-candidate-authoring.json` and the role-visible
+R4 Modeling contract. Declare confirmed business semantic role, meaning, applicability and
+unknowns on the corresponding definition. Preserve one shared identity; same names do not
+merge meanings. Keep local responsibilities/conditions on an explicit ordinary node linked
+to context, shared definition, predicate and endpoints as applicable. References across views
+do not add roles or formal Classes. Protocol carries `semantic_definition` unchanged to
+the canonical command and verifies the governed readback. No evidence-tracing duties,
+permission grants, new resource kinds or external execution are implied.

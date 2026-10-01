@@ -391,6 +391,7 @@ UNIFIED_CANDIDATE_ITEM_FIELDS = frozenset(
         "unknowns",
     }
 )
+UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS = frozenset({"semantic_definition"})
 UNIFIED_APPROVALS_FIELDS = frozenset(
     {
         "schema_version",
@@ -2107,7 +2108,10 @@ def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
         items = []
     seen_items: set[str] = set()
     for item in items:
-        if not isinstance(item, Mapping) or set(item) != set(UNIFIED_CANDIDATE_ITEM_FIELDS):
+        if not isinstance(item, Mapping) or (
+            set(item) - UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS
+            != set(UNIFIED_CANDIDATE_ITEM_FIELDS)
+        ):
             issues.append(
                 StagedDecisionIssue(
                     "unified_schema_mismatch", "candidate item fields drift from the contract", ""

@@ -595,3 +595,15 @@ Coordinator has approved (confirmed status with a matching approvals entry); nev
 or a direct `submit_modeling_batch` call. If a submission result is reported as
 `staged_batch_forward_unknown` or `staged_unreconciled_batch`, stop submitting and surface it:
 manual adjudication is required before anything else can be submitted.
+
+## R4.0-002 common semantic declarations
+
+Use `multiview_semantic_definition` in the mounted
+`modeling_team/references/platform-neutral-candidate-authoring.json` and the role-visible
+R4 Modeling contract. Declare confirmed business semantic role, meaning, applicability and
+unknowns on the corresponding definition. Preserve one shared identity; same names do not
+merge meanings. Keep local responsibilities/conditions on an explicit ordinary node linked
+to context, shared definition, predicate and endpoints as applicable. References across views
+do not add roles or formal Classes. Protocol carries `semantic_definition` unchanged to
+the canonical command and verifies the governed readback. No evidence-tracing duties,
+permission grants, new resource kinds or external execution are implied.

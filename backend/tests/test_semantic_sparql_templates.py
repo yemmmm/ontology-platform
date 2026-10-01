@@ -56,7 +56,8 @@ def test_class_shape_custom_template_targets_custom_subgraph():
 
 def test_entity_list_template_registered():
     template = get_template("entity-list")
-    assert template.projection_version == "semantic-read-v1"
+    assert template.projection_version == "semantic-read-v2"
+    assert "semantic_definition" in template.detail_variables
     # entity-list reads from asserted_data and optionally decorates with derived.
     assert "asserted_data" in template.required_roles
     assert template.needs_reasoning is True

@@ -548,6 +548,12 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             self.assertIn(phrase, checklist_text)
 
         reference_text = json.dumps(reference, ensure_ascii=False).lower()
+        # R4 declarations use business_role/business_meaning as generic vocabulary;
+        # all other scenario-specific forbidden terms still apply to the full contract.
+        base_reference_text = json.dumps(
+            {key: value for key, value in reference.items()
+             if key != "multiview_semantic_definition"}, ensure_ascii=False
+        ).lower()
         fixture_text = (root / STRUCTURAL_FIXTURE).read_text(encoding="utf-8").lower()
         for forbidden in (
             "dify",
@@ -564,7 +570,7 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             "source text",
             "answer",
         ):
-            self.assertNotIn(forbidden, reference_text)
+            self.assertNotIn(forbidden, base_reference_text if forbidden == "business" else reference_text)
             self.assertNotIn(forbidden, fixture_text)
         self.assertIsNone(re.search(r"\b[abc]\s*->\s*[abc]\b", reference_text))
 
