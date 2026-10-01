@@ -4,8 +4,8 @@
 
 - 日期：2026-10-01。
 - 权威需求：[R4.0-005 业务规则分类与脚本语义](../../requirements/requirements-v4.0.md#r40-005-业务规则分类与脚本语义)。
-- 状态：需求细化与设计已形成；D1、D2 均由用户于 2026-10-01 明确确认。D2 确认本期只表达推导语义，实际生成关系／节点的物化能力保留为未交付能力。未实施、未独立审阅、未做功能测试或真实语义验收；本设计不授予真实建模、外部调用或平台脚本执行授权。
-- 查阅基线：当前 `main` 的 `d04a8bd`；工作区在本轮开始时干净。
+- 状态：需求细化与设计已形成；D1、D2 均由用户于 2026-10-01 明确确认。D2 确认本期只表达推导语义，实际生成关系／节点的物化能力保留为未交付能力。独立方案复审 Round 2 PASS（0 Critical／0 High）；未实施、未做功能测试或真实语义验收；本设计不授予真实建模、外部调用或平台脚本执行授权。
+- 初次设计基线：`d04a8bd`；方案审阅基线为设计提交 `11f757c` 及本次文档修订。并发 004 开发改动不作为本次已验收基线。
 - 依赖：[R4.0-002 多视角语义组织](../../requirements/requirements-v4.0.md#r40-002-多视角语义组织与共享定义)、[R4.0-003 Action 与参数合同](../../requirements/requirements-v4.0.md#r40-003-可复用业务-action-与外部能力关联)、[R4.0-004 流程绑定设计](2026-10-01-r4-0-004-process-binding-design.md)、R3.0-009 的统一语义图和现有受治理读取。
 - 同步约束：沿用 R4.0-012 的追溯停用范围，不加入 Evidence、lineage 或来源摘录字段。规则脚本可以是业务模型内容，但不得借脚本或自然语言复制受限规则正文来绕过既有授权。
 
@@ -115,7 +115,8 @@ D2 已由用户确认：本期只表达“会产生什么语义节点／关系�
 | Modeling 候选 | [`platform-neutral-candidate-authoring.json`](../../../modeling_team/references/platform-neutral-candidate-authoring.json) 的 entity／predicate／relation／values／`semantic_definition` 和 `definition_ref` | 在当前合同允许的普通 item 上增加经批准的规则注解／关系；不得让 Agent 自行写平台 IRI、Batch、执行参数或证据字段 |
 | 角色合同 | [`r4-0-012-modeling-contract.json`](../../../modeling_team/references/r4-0-012-modeling-contract.json) 的共同语义声明及 003 Action／Parameter 合同 | 实施授权后需要补充 `rule_definition` 的字段规则、输入输出状态、逐条语言声明和 Consumer 执行约定；与 004 参数来源引用机械对齐，不改写 004 业务含义 |
 | Protocol 翻译 | [`protocol_mechanics.py`](../../../modeling_team/protocol_mechanics.py) 的确定性 item 翻译、`semantic_definition` 复制和关系依赖排序 | 需要有证据时扩展 entity 注解白名单和 payload 复制；不新增 rule 专用翻译器、执行阶段或随机身份 |
-| 平台写入 | [`semantic_command_compiler.py`](../../../backend/app/services/semantic_command_compiler.py) 的普通 entity／property／relation 及现有 Shape／Batch | 规则定义和关系走普通语义资源；只修复有证据的字段丢失／引用错误，不新增规则表、运行器或专用资源类型 |
+| Batch payload 校验 | [`modeling_handlers.py`](../../../backend/app/services/modeling_handlers.py) 的 `ALLOWED_FIELDS`、`validate_payload_shape`／`prepare`；[`modeling_batches.py`](../../../backend/app/services/modeling_batches.py) 的 `_compile` | 为 `create_entity`／`update_entity` 的允许字段集合增加 `rule_definition`，同步 Batch item payload 合同；保留其他未知字段及目标覆盖字段的拒绝，不跳过编译前校验 |
+| 平台写入 | [`semantic_command_compiler.py`](../../../backend/app/services/semantic_command_compiler.py) 的普通 entity／property／relation 及现有 Shape／Batch | 通过 Batch payload 校验后，将规则注解编译为普通实体的 RDF 属性；不新增规则表、运行器或专用资源类型 |
 | 平台读取 | [`semantic_read_model.py`](../../../backend/app/services/semantic_read_model.py)、semantic 资源／关系／statement-list 读取 | 受治理结果应能逐步取得规则身份、类别、说明、脚本合同、输入／输出和来源关系；没有授权的脚本正文与关联保持不可见，不用缺边推断无约束 |
 | 现有 Rule／Shape／推理 | [`semantic_rule_definition.py`](../../../backend/app/services/semantic_rule_definition.py)、[`semantic_rule_execution.py`](../../../backend/app/services/semantic_rule_execution.py)、[`semantic_reasoning.py`](../../../backend/app/services/semantic_reasoning.py) | 仅复用其边界和运行结果合同。若未来把某规则映射到既有 Platform DSL，必须显式声明它是平台执行适配，仍保留 R4.0-005 的业务语义定义；不把该适配扩展为 Python／JavaScript 等外部脚本执行器 |
 
@@ -123,7 +124,7 @@ D2 已由用户确认：本期只表达“会产生什么语义节点／关系�
 
 ### 6.1 字段从 candidate 到读回的具体映射
 
-下表是实现交接合同。`rule_definition` 是未来需要补进活动候选／Protocol／编译器白名单的实体注解；本轮不修改这些并发维护的文件。实现开始前必须以最终活动合同重新核对字段名，但不能把此项缺口留成“有证据再决定”的开放设计。
+下表是实现交接合同。`rule_definition` 是未来需要补进活动候选／Protocol／Batch payload 白名单／编译器的实体注解；本轮不修改这些并发维护的文件。实现开始前必须以最终活动合同重新核对字段名，但不能把此项缺口留成“有证据再决定”的开放设计。
 
 | 语义内容 | Candidate 表达 | Protocol 阶段 | Entity payload／RDF | 受治理读回 |
 | --- | --- | --- | --- | --- |
@@ -133,7 +134,9 @@ D2 已由用户确认：本期只表达“会产生什么语义节点／关系�
 | 输入实际来源 | 复用 004 的 `value_reference`／`parameter_binding` 实体和 `sourceKind`：`process_input`、`call_output`、`object_property`、`constant`、`iteration_item`；绑定保留 `toParameter`、`fromValue`、`refersToDefinition` 等普通关系 | 复用 004 的 relation 翻译和 `definition_ref`；不解析 `工单.金额` 等自由文本，不新增规则专用来源枚举 | 关系写入现有语义图；对象属性、调用输出和迭代作用域按普通 RDF 边保存，实际值不写入 | 读取绑定、值来源和端点身份；授权后缺失的端点只表示当前结果不足，不表示没有规则输入 |
 | 条件与推导目标 | 条件／结果说明使用有身份的普通实体和普通关系，`usesValue`、`guardedBy`、`producesProperty`、`producesRelation` 等谓词由模型声明 | 按普通 entity／relation 依赖排序；不将条件编译成平台执行计划 | 条件、目标属性／关系和有效范围是普通资源／边；不新增 `rule_node` 或执行表 | 现有资源、关系和 statement-list 读回；Consumer 结合可见脚本和关系解释业务含义 |
 
-当前代码的最小改动触点是明确的：`protocol_mechanics.py` 的 annotation 白名单与 payload 复制、`semantic_command_compiler.py` 的 annotation predicate／验证、`semantic_sparql_templates.py` 的 entity 详情／列表投影，以及对应的 `semantic_read_model.py` 读回字段。`rule_definition` 是本设计确定的实体注解路径，不能把脚本藏在未声明的 `values` JSON 中而绕过合同。上述触点不要求数据库迁移、Rule 执行器、专用规则 API 或新平台资源类型。
+当前代码的最小改动触点是明确的：`protocol_mechanics.py` 的 annotation 白名单与 payload 复制、`modeling_handlers.py` 中 `create_entity`／`update_entity` 的 `ALLOWED_FIELDS`、`semantic_command_compiler.py` 的 annotation predicate／验证、`semantic_sparql_templates.py` 的 entity 详情／列表投影，以及对应的 `semantic_read_model.py` 读回字段；Batch item payload 的活动接口合同同步更新。`rule_definition` 是本设计确定的实体注解路径，不能把脚本藏在未声明的 `values` JSON 中而绕过合同。上述触点不要求数据库迁移、Rule 执行器、专用规则 API 或新平台资源类型。
+
+Batch 的 `_compile` 在语义编译前调用 `ModelingCommandHandlerRegistry.validate_payload_shape`，`prepare` 也执行该校验。仅修改 Protocol 与 `compile_command` 会得到 `Unknown payload field(s): rule_definition`；实施必须同时放行上述两种实体命令的合法注解，并由编译器校验注解内容。A10 应让含 `rule_definition` 的创建与更新候选分别经过真实 Batch dry-run／apply 和受治理读回；同时验证非法注解类型、未知 payload 字段仍返回可定位错误。直接调用 `compile_command` 的单测不能替代此链路证据。
 
 ## 7. 授权、冲突和失败处理
 
@@ -150,7 +153,7 @@ D2 已由用户确认：本期只表达“会产生什么语义节点／关系�
 1. D1、D2 已关闭；实施授权后将结论同步到规则合同、示例、输入输出状态和验收。D1 无需再选择统一语言，D2 的自动物化能力保留为未交付范围。
 2. 在活动 Modeling／Protocol 合同中加入规则注解与关系规则，保留 004 的参数来源字段和身份；不得只改提示而让 Protocol 丢掉脚本、说明、语言声明或共同变更内容。
 3. 用完整候选验证规则实体、两个输入来源、自然语言和脚本属于同一规则定义、逐条语言／执行环境声明、判断与推导输出，以及受限脚本／说明冲突；修复应定位到 item、字段或关系。
-4. 经现有翻译、真实 dry-run／apply 和受治理读回验证字段无丢失；仅在未来明确纳入现有 Platform DSL 时，按其既有运行测试验证适配，不把运行结果写回源图。
+4. 经现有翻译、Batch `_compile`／`prepare` 的 payload 校验、真实 dry-run／apply 和受治理读回验证创建及更新字段无丢失；直接编译器测试不能替代此路径。仅在未来明确纳入现有 Platform DSL 时，按其既有运行测试验证适配，不把运行结果写回源图。
 5. 功能验证、独立功能验收、后续 R4.0-009 真实建模和独立语义验收分别记录。当前没有任何运行或验收结论。
 
 ### 8.1 正常与反例验收
@@ -177,3 +180,10 @@ D2 已由用户确认：本期只表达“会产生什么语义节点／关系�
 - D2：推导输出本期是否自动物化为可查询关系／节点。用户确认本期只表达推导语义，实际自动生成和物化能力保留为未交付；显式受治理建模仍可提交已确认的语义定义，不把运行 ID 当业务身份，不把业务记录写入语义图（用户确认，2026-10-01）。
 
 本设计采用的高把握常规决定是：规则只分判断／约束和推导两类；转换作为推导的明确输出目的；输入输出复用 004 来源合同；unknown、not_applicable、empty、none、error 不互相转换；脚本／说明／输入输出属于同一规则定义并使用共同变更说明；平台 Rule／Shape／OWL 与外部业务规则分层；不新增执行引擎、专用资源类型、领域查询或证据字段。自动派生关系／节点物化明确保留为后续未交付能力。
+
+## 10. 方案审阅记录
+
+- Round 1（2026-10-01，独立方案审阅 Agent）：REVISE，0 Critical／1 High。遗漏 Batch 实体命令 payload 白名单，合法 `rule_definition` 会在编译前被拒绝。
+- 修订：§6／§6.1 补齐 `modeling_handlers.py` 的 `create_entity`／`update_entity` 白名单、Batch item 接口合同及 `_compile`／`prepare` 前置校验；需求 F7／A10 同步要求完整 Batch 创建、更新、读回及错误反例。
+- Round 2（2026-10-01，同一独立方案审阅 Agent）：PASS，0 Critical／0 High；上一轮唯一 High 关闭，未发现新严重问题，无待确认关键假设。D1／D2 未改变。
+- 本次为静态只读方案审阅；文档链接、锚点、编号、格式及 diff 检查通过。未运行产品测试、服务或真实建模，方案 PASS 不代表功能或语义验收 PASS。
