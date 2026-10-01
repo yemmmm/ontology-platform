@@ -275,6 +275,7 @@ class _FakeForwarder:
 
 
 class _FakeScope:
+    key_user_id = "operator-user"
     admin_key = "admin"
     project_id = "P"
 

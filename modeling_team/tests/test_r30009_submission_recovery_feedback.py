@@ -159,7 +159,7 @@ def test_close_checks_stop_at_the_first_issue(tmp_path, monkeypatch):
         _open_platform_gate_unified(staged)
         evaluated: list[str] = []
 
-        def _spy_candidate(run_root, projection):
+        def _spy_candidate(run_root, projection, **kwargs):
             evaluated.append("candidate")
             return None
 

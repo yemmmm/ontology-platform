@@ -1059,6 +1059,8 @@ def test_existing_platform_scope_allows_completed_history_without_delete() -> No
                 },
                 "agent_state": {"active_sessions": [], "recent_sessions": []},
             }
+        if path == "/api/auth/me":
+            return 200, {"user_id": "operator-user"}
         if path == "/api/api-keys":
             return 201, {"id": "protocol-key", "plaintext_key": "secret"}
         if path.endswith(":revoke"):

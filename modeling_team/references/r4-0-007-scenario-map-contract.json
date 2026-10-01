@@ -1,0 +1,253 @@
+{
+  "schema_version": "r4-0-007-scenario-map-contract/v1",
+  "purpose": "Active multiview collaboration contract. Structural checks only; business confirmation, compatibility and independent semantic acceptance remain distinct. Old artifacts keep their original schema.",
+  "artifact_locations": {
+    "base": "workspaces/modeling-runs/<run-id>/scenario-map/",
+    "scenario_map": "scenario-map.json",
+    "topology_decision": "topology-decision.json",
+    "protection_iri_suggestions": "protection-iri-suggestions.json",
+    "note": "These are run-workspace process artifacts, not platform storage. A missing, non-JSON, symlinked, or escaping path is rejected without touching anything outside the run directory."
+  },
+  "scenario_map": {
+    "schema_version": "r4-0-007-scenario-map/v1",
+    "maintainer": "coordinator",
+    "required_sections": [
+      "slices",
+      "shared_terms",
+      "cross_slice_dependencies",
+      "cross_slice_competency_questions",
+      "explicit_unknowns",
+      "adjustments"
+    ],
+    "identity_fields": [
+      "scenario_id",
+      "topology_decision_ref"
+    ],
+    "slices_item_fields": [
+      "slice_id",
+      "name",
+      "scope",
+      "owner",
+      "status",
+      "viewpoints"
+    ],
+    "rules": [
+      "Top-level fields are closed: schema_version, scenario_id, topology_decision_ref and the six required_sections. Contract metadata is never an artifact field.",
+      "Each slice has exactly slices_item_fields. All fields except viewpoints are nonempty strings; slice_id is unique.",
+      "Shared definitions are registered by definition_id, not term; one owner_slice resolves to a known slice. used_by_slices is nonempty and contains known slices.",
+      "Use the closed viewpoints, shared_terms and adjustments contracts above. Candidate/item identities are neutral; revision is a positive integer, not a boolean.",
+      "Dependencies, cross-slice questions, explicit_unknowns and topology_decision_ref retain the r3-0-002 field contracts.",
+      "Ordinary adjustments use only change and approved_by_coordinator (nonempty strings). Shared meaning changes also carry review.",
+      "Errors identify item/field locations and can be corrected within the same run; no view count, reviewer count or semantic compatibility gate is added."
+    ],
+    "failure_reason_codes": [
+      "map_schema_mismatch",
+      "map_missing_section",
+      "map_dangling_reference",
+      "map_term_owner_not_unique",
+      "map_unparsable"
+    ],
+    "viewpoints": {
+      "fields": [
+        "viewpoint",
+        "status",
+        "note"
+      ],
+      "viewpoint": [
+        "object",
+        "behavior",
+        "rule",
+        "role",
+        "process",
+        "data_mapping",
+        "interface_mapping"
+      ],
+      "status": [
+        "pending",
+        "modeled",
+        "unknown",
+        "not_applicable"
+      ],
+      "rules": [
+        "An array, possibly empty; no repeated viewpoint per slice; note is nonempty.",
+        "Absent viewpoints are unassessed, never implicitly not_applicable. No mandatory seven-phase sequence or one Agent per viewpoint."
+      ]
+    },
+    "shared_terms": {
+      "required_fields": [
+        "term",
+        "used_by_slices",
+        "owner_slice",
+        "definition_id",
+        "meaning_scope",
+        "status",
+        "candidate_refs"
+      ],
+      "optional_fields": [
+        "notes"
+      ],
+      "status": [
+        "proposed",
+        "confirmed",
+        "unknown",
+        "conflict"
+      ],
+      "candidate_ref_fields": [
+        "candidate_id",
+        "revision",
+        "item_id"
+      ],
+      "rules": [
+        "definition_id is a stable neutral semantic key, not an IRI; it is unique within the scenario/authorized Project. Same term with different meaning_scope may have distinct keys. Do not merge unconfirmed synonyms.",
+        "owner_slice resolves to slices[].owner; maintenance ownership grants no semantic access.",
+        "candidate_refs may be empty before publication; otherwise each points to an item in a complete immutable unified candidate at its current revision.",
+        "Same definition across candidates reuses the approved read/receipt-bound platform identity; never create a synonymous duplicate. confirmed means business confirmation only."
+      ]
+    },
+    "adjustments": {
+      "required_fields": [
+        "change",
+        "approved_by_coordinator"
+      ],
+      "optional_fields": [
+        "review"
+      ],
+      "review": {
+        "fields": [
+          "definition_ids",
+          "before_refs",
+          "after_refs",
+          "coverage",
+          "coverage_note",
+          "references",
+          "outcome",
+          "reason"
+        ],
+        "coverage": [
+          "complete",
+          "incomplete"
+        ],
+        "outcome": [
+          "pending",
+          "ready",
+          "deferred",
+          "conflict"
+        ],
+        "reference_fields": [
+          "candidate_id",
+          "revision",
+          "item_id",
+          "slice_id",
+          "result",
+          "note"
+        ],
+        "result": [
+          "unchanged",
+          "revised",
+          "unknown",
+          "conflict"
+        ],
+        "rules": [
+          "definition_ids references the registered shared keys. before_refs and after_refs use candidate_ref_fields; before_refs are historical, after_refs current. For a new definition before_refs can be empty; obtain an authorized baseline before changing existing meaning.",
+          "References resolve to checked candidate items within slice scope; revised references point to the after revision. notes explain impact and old location. Other results point to the checked current revision.",
+          "coverage concerns only the declared authorized scope. Record direct and known indirect dependencies in processes, rules, parameters, mappings and public CQs. Truncation, expired reads, unlocated external consumers or unresolved dependencies mean incomplete, never no references.",
+          "outcome and approval of this record do not authorize apply. Keep candidate unknowns/conflicting_meanings; delay only unsafe changes. Actual application still requires content-bound business and translation approval."
+        ]
+      }
+    }
+  },
+  "topology_decision": {
+    "schema_version": "r3-0-002-topology-decision/v1",
+    "timing": "Recorded before the first real apply; while it is missing or structurally incomplete, the independent platform MCP gate stays closed and rejects every platform call, including reads. That is expected behavior: repair the artifact from the typed reason code sent to Coordinator and wait for the next Runner re-check; do not retry platform calls.",
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "options",
+      "selected_option",
+      "rationale",
+      "decided_by"
+    ],
+    "required_option_ids": [
+      "single_ontology",
+      "domain_ontology_split",
+      "shared_core_plus_domain"
+    ],
+    "option_fields": [
+      "option_id",
+      "assessment"
+    ],
+    "dimensions": [
+      "concept_cohesion",
+      "relation_density",
+      "reuse",
+      "permission_boundary",
+      "change_cadence",
+      "cross_domain_query"
+    ],
+    "rules": [
+      "at least three options and always the three required option_ids; custom options may be appended",
+      "each options entry has exactly the two option_fields: option_id is a non-empty string, and assessment is an object whose keys are exactly the six dimensions listed above, each with a non-empty value; the dimensions are assessment keys, never an option-level dimensions container (a wrong option shape is reported as topology_schema_mismatch)",
+      "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
+      "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
+      "selected_option must be one of the listed options and rationale must be non-empty",
+      "R3.0-006 additive optional field ontology_plan: must be absent when selected_option is single_ontology, required for every other selection; value is a mechanical list [{name, slice_ids}] with at least two entries, non-empty unique names, and every scenario-map slice assigned to at least one planned Ontology, with a logical slice allowed to be served by more than one planned Ontology (shared core plus domain topology; slice references close against the scenario map's slice list)"
+    ],
+    "optional_fields": {
+      "ontology_plan": {
+        "entry_fields": [
+          "name",
+          "slice_ids"
+        ],
+        "rules": [
+          "at least two planned Ontologies",
+          "name values are non-empty and unique",
+          "slice_ids is a non-empty list of distinct slice_ids of the current scenario map",
+          "every scenario-map slice belongs to at least one planned Ontology; a slice may be served by more than one planned Ontology"
+        ]
+      }
+    },
+    "gate_failure_reason_codes": [
+      "topology_missing_artifact",
+      "topology_unparsable",
+      "topology_schema_mismatch",
+      "topology_insufficient_options",
+      "topology_missing_required_option",
+      "topology_missing_dimension",
+      "topology_empty_dimension",
+      "topology_missing_selection",
+      "topology_empty_rationale",
+      "topology_missing_ontology_plan",
+      "topology_invalid_ontology_plan",
+      "topology_dangling_slice"
+    ]
+  },
+  "protection_iri_suggestions": {
+    "schema_version": "r3-0-002-protection-iri-suggestions/v1",
+    "maintainer": "coordinator (summarized from slice proposals)",
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "entries",
+      "summarized_by"
+    ],
+    "entry_fields": [
+      "iri",
+      "reason",
+      "proposing_slice",
+      "target_protection_set"
+    ],
+    "rules": [
+      "the artifact's field set is closed and is exactly the `fields` list; `maintainer` is contract metadata describing who maintains the artifact, never an artifact field",
+      "iri is one non-empty absolute IRI; dangling IRIs for resources not yet created are allowed",
+      "target_protection_set is existing:<id> or new:<name>",
+      "proposing_slice must be a slice of the current scenario map",
+      "format only: the decision to protect, and every execution failure, follows the existing R3.0-004 protection-set contract"
+    ]
+  },
+  "execution": {
+    "multi_ontology_batches": "One Modeling Batch binds exactly one Ontology. A multi-Ontology topology means at least one batch per Ontology, applied by Protocol in scenario-map dependency order; dry_run then apply_atomic per batch; no cross-batch atomicity is required or provided.",
+    "protection_sets": "Protection sets are Project-level, may span Ontologies, and must never drive the Ontology split. Protection-set changes and ontology publication are two independent operations and are never part of the same Modeling Batch. Protecting target IRIs before creating the resources is the recommended order, not a platform constraint.",
+    "order": "Interleave viewpoint analysis within approved slice dependencies; record slice/order adjustments. Definition-before-reference is a write dependency, not a fixed semantic phase sequence.",
+    "shared_changes": "Reference current governed definitions. Re-review before changes (including deletion/meaning/scope). Compatible changes retain identity. Revise a definition and its affected references in one available atomic Batch. Without cross-Batch/Ontology atomicity, confirm a distinct new meaning/contract, materialize it first and switch references in safe groups while old definitions retain old meaning; otherwise defer. No same-identity version pinning or automatic compatibility inference."
+  }
+}

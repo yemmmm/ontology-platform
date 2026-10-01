@@ -875,6 +875,8 @@ class TeamRunner:
         normalized_scope: dict[str, str] = dict(scope)
         if formal_contract is not None:
             normalized_scope = normalize_scope_for_contract(scope, formal_contract.scope_mode)
+        # Only a successful fork receipt below may stamp this host fact.
+        normalized_scope.pop("fork_created_by_run", None)
         root = self.repository_root / "workspaces" / "modeling-runs" / run_id
         if root.exists():
             raise TeamConfigurationError("run directory already exists")
@@ -4711,7 +4713,7 @@ class TeamRunner:
         }
 
     def _deliver_multi_slice_gate_feedback(
-        self, reason_code: str, artifact: str
+        self, reason_code: str, artifact: str, detail: str = ""
     ) -> None:
         """Typed, deduplicated closed-gate feedback to the Coordinator (T0)."""
 
@@ -4726,9 +4728,10 @@ class TeamRunner:
             "gate_state": "closed",
             "reason_code": reason_code,
             "artifact": artifact,
+            "detail": detail,
             "remediation": (
-                "Repair the scenario-map artifact per "
-                "modeling_team/references/r3-0-002-scenario-map-contract.json; "
+                "Repair the named field using the scenario-map contract in the Task's "
+                "mounted role_sources; keep its schema_version. "
                 "the platform MCP gate re-checks it on the next Runner cycle. "
                 "The run is not terminated; do not retry platform calls."
             ),
@@ -4767,7 +4770,7 @@ class TeamRunner:
         )
 
     def _multi_slice_gate_reject(
-        self, reason_code: str, artifact: str, fingerprint: str
+        self, reason_code: str, artifact: str, fingerprint: str, detail: str = ""
     ) -> None:
         """Keep the gate closed with one deterministic reason, feedback once."""
 
@@ -4785,7 +4788,7 @@ class TeamRunner:
         if fingerprint in self._multi_slice_gate_feedback_fingerprints:
             return
         self._multi_slice_gate_feedback_fingerprints.add(fingerprint)
-        self._deliver_multi_slice_gate_feedback(reason_code, artifact)
+        self._deliver_multi_slice_gate_feedback(reason_code, artifact, detail)
 
     # --- R3.0-008B segment 1: staged modeling decision gates -----------------
 
@@ -5112,7 +5115,13 @@ class TeamRunner:
                 task_id=self.run.configuration.task.task_id,
             )
             if close_issue is None:
-                close_issue = unified_candidate_issue(run_root, projection)
+                close_issue = unified_candidate_issue(
+                    run_root, projection,
+                    check_existing_identity=any(
+                        source.path.name == "r4-0-007-scenario-map-contract.json"
+                        for source in self.run.configuration.task.role_sources
+                    ),
+                )
             approvals = (
                 load_approvals(paths["approvals"])
                 if paths["approvals"].is_file() and not paths["approvals"].is_symlink()
@@ -5470,10 +5479,12 @@ class TeamRunner:
             code = getattr(exc, "reason_code", "map_unparsable")
             self._multi_slice_gate_reject(code, map_rel, f"{code}:unreadable")
             return
-        map_issues = validate_scenario_map(scenario_map)
+        map_issues = validate_scenario_map(scenario_map, run_root=run_root)
         if map_issues:
             code = map_issues[0].reason_code
-            self._multi_slice_gate_reject(code, map_rel, f"{code}:{map_digest}")
+            self._multi_slice_gate_reject(
+                code, map_rel, f"{code}:{map_digest}", map_issues[0].detail
+            )
             return
         # R3.0-006 M3 second pass: the topology decision is validated before
         # the map exists (so a missing map never blocks structural repair
@@ -7741,6 +7752,15 @@ class TeamRunner:
             "batch_id": batch_id,
             "report_directory": attempt["report_directory"],
         }
+        map_path = self.run.root / "scenario-map" / "scenario-map.json"
+        if map_path.is_file() and not map_path.is_symlink():
+            from .scenario_map import MULTIVIEW_SCENARIO_MAP_SCHEMA
+
+            scenario_map = load_scenario_map(map_path)
+            if scenario_map.get("schema_version") == MULTIVIEW_SCENARIO_MAP_SCHEMA:
+                payload["collaboration_artifact"] = {
+                    "path": "scenario-map/scenario-map.json", "digest": digest_file(map_path),
+                }
         encoded = (json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n").encode()
         path = self.run.root / "acceptance-v3" / "production-handoff.json"
         try:
@@ -10908,6 +10928,7 @@ class TeamRunner:
                 project_id=result["project_id"],
                 ontology_ids=result["ontology_ids"],
                 root_run_id=new_run_id,
+                fork_created_by_run=new_run_id,
             )
             run.scope.update(plan.scope)
             plan.origin["platform_fork"] = result

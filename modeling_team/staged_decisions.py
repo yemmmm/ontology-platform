@@ -2414,7 +2414,7 @@ def unified_plan_issue(
 
 
 def unified_candidate_issue(
-    run_root: Path, projection: Mapping[str, Any]
+    run_root: Path, projection: Mapping[str, Any], *, check_existing_identity: bool = False
 ) -> StagedDecisionIssue | None:
     """Close the projection against the currently published candidate revision."""
 
@@ -2456,6 +2456,57 @@ def unified_candidate_issue(
                     "approval_content_mismatch",
                     f"candidate item {item_id} does not match its approved digest",
                     "",
+                )
+    if check_existing_identity:
+        return unified_identity_issue(projection, published)
+    return None
+
+
+def unified_identity_issue(
+    projection: Mapping[str, Any], published: Mapping[str, Any]
+) -> StagedDecisionIssue | None:
+    """R4 plan identity checks, without inferring synonymous business meaning."""
+    identities: dict[str, Mapping[str, Any]] = {}
+    for index, binding in enumerate(projection.get("identity_bindings") or []):
+        location = f"identity_bindings[{index}]"
+        if (not isinstance(binding, Mapping) or set(binding) != {
+            "candidate_item_id", "resource_iri", "receipt_ref", "evidence_ref"
+        } or not _nonempty(binding.get("candidate_item_id"))):
+            return StagedDecisionIssue("missing_candidate_reference", f"{location}: fields", "")
+        item_id = binding["candidate_item_id"]
+        if item_id not in published or item_id in identities:
+            return StagedDecisionIssue("missing_candidate_reference", f"{location}: candidate item", "")
+        iri, receipt = binding["resource_iri"], binding["receipt_ref"]
+        if (bool(iri) == bool(receipt)
+            or (iri and (not _nonempty(iri) or ":" not in iri or not _nonempty(binding["evidence_ref"])))
+            or (receipt and (not _nonempty(receipt) or binding["evidence_ref"] is not None))):
+            return StagedDecisionIssue("missing_candidate_reference", f"{location}: read/receipt binding", "")
+        identities[item_id] = binding
+    targets = {
+        "entity": "entity_iri", "class": "class_iri", "property": "property_iri",
+        "shape": "shape_iri", "operation": "operation_iri",
+    }
+    items = projection.get("items") or []
+    for decision in projection.get("decision_bindings") or []:
+        command = items[decision["command_index"]]
+        kind = command["command_kind"]
+        prefix, _, resource = kind.partition("_")
+        if prefix not in {"create", "update", "delete"} or resource not in targets:
+            continue
+        for item_id in decision.get("candidate_item_ids") or []:
+            identity = identities.get(item_id)
+            if identity is None:
+                return StagedDecisionIssue("missing_candidate_reference", f"{item_id}: no identity binding", "")
+            iri = identity.get("resource_iri")
+            if iri and prefix == "create":
+                return StagedDecisionIssue(
+                    "approval_content_mismatch", f"{item_id}: existing identity cannot use {kind}", ""
+                )
+            if prefix in {"update", "delete"} and (
+                not iri or command["payload"].get(targets[resource]) != iri
+            ):
+                return StagedDecisionIssue(
+                    "approval_content_mismatch", f"{item_id}: {kind} target differs from identity binding", ""
                 )
     return None
 

@@ -7,7 +7,10 @@ schema_version: 2
 task_id: r4-0-012-tracing-suspension
 objective: >-
   Model a bounded multi-slice semantic scenario from the approved business
-  sources.  Preserve source fidelity, explicit unknowns, competency-question
+  sources.  Use the mounted r4-0-007 scenario-map contract for interleaved
+  viewpoints, stable shared definitions, maintenance ownership, explicit
+  unknowns/conflicts and scoped reference reviews before shared changes.
+  Preserve source fidelity, explicit unknowns, competency-question
   coverage, generic semantic scope, deterministic dry-run/apply/readback,
   authorization and independent acceptance.  Modeling candidates contain
   semantic meaning, shared slice scope and unknowns only; Protocol owns Batch
@@ -28,7 +31,7 @@ role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/sample-data.sql
     classification: business-source
     roles: [modeling, competency-question]
-  - path: modeling_team/references/r3-0-002-scenario-map-contract.json
+  - path: modeling_team/references/r4-0-007-scenario-map-contract.json
     classification: coordination
     roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/r3-0-008b-staged-decisions-contract.json
@@ -99,3 +102,4 @@ parameters:
   unified_semantic_graph: true
   competency_question_acceptance: true
   acceptance_target: cq_semantic
+  modeling_checkpoints: true

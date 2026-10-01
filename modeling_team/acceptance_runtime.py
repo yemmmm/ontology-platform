@@ -440,8 +440,8 @@ class AcceptanceBatchPacket:
         # optional so an unretained batch keeps the exact 011 packet shape.
         optional: set[str] = set()
         if role == CQ_ACCEPTANCE_JUDGE_ROLE:
-            optional = {"platform_read_responses"}
-        if set(normalized) != expected and set(normalized) != expected | optional:
+            optional = {"platform_read_responses", "collaboration_context"}
+        if not expected <= set(normalized) or set(normalized) - expected - optional:
             raise ChildRuntimeError("v3 acceptance packet fields are invalid")
         for key in ("run_id", "batch_id"):
             if not isinstance(normalized[key], str) or not normalized[key]:
@@ -516,6 +516,27 @@ class AcceptanceBatchPacket:
                 normalized["platform_read_responses"] = _validated_platform_read_responses(
                     normalized["platform_read_responses"], question_ids=question_ids
                 )
+            if "collaboration_context" in normalized:
+                context = normalized["collaboration_context"]
+                if (not isinstance(context, Mapping)
+                    or set(context) != {"schema_version", "scope_note", "definitions"}
+                    or context["schema_version"] != "r4-0-007-collaboration-context/v1"
+                    or not isinstance(context["scope_note"], str) or not context["scope_note"]
+                    or not isinstance(context["definitions"], list)):
+                    raise ChildRuntimeError("v4 collaboration context is invalid")
+                for definition in context["definitions"]:
+                    if (not isinstance(definition, Mapping) or set(definition) != {
+                        "definition_id", "resource_iri", "status", "reviews"
+                    } or any(not isinstance(definition[field], str) or not definition[field]
+                             for field in ("definition_id", "resource_iri"))
+                        or definition["status"] not in ("proposed", "confirmed", "unknown", "conflict")
+                        or not isinstance(definition["reviews"], list)):
+                        raise ChildRuntimeError("v4 collaboration definition is invalid")
+                    for review in definition["reviews"]:
+                        if (not isinstance(review, Mapping) or set(review) != {"coverage", "outcome"}
+                            or review["coverage"] not in ("complete", "incomplete")
+                            or review["outcome"] not in ("pending", "ready", "deferred", "conflict")):
+                            raise ChildRuntimeError("v4 collaboration review is invalid")
             normalized["evidence_bundle"] = bundle
         frozen = _freeze_packet(normalized)
         digest = _packet_digest(_unfreeze_packet(frozen))

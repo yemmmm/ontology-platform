@@ -49,7 +49,10 @@ Grant 复用保护集的精确字符串规范（至多 64 个、单个至多 128
 旧 `semantic_grants` 字段在创建／更新时均返回 422；旧 Key Grant 不迁移或参与授权。
 仅既有服务端 bootstrap 登记路径允许无归属组织 admin 凭据，API 省略用户或使用 bootstrap 名称
 均不能取得该例外。已有无归属普通 Key 需由管理员明确配置成员并重新发行，不自动猜测归属。
-当前 Team 客户端的旧 Key payload 也需要显式用户归属；既有流程接入适配归 R4.0-007。
+R4.0-007 已将 Team 的宿主临时 admin、Protocol model 和 Modeling read Key 显式绑定
+到既有 operator-admin 所属用户。仅在本轮新建或宿主确认成功 fork 的新 Project 中加入
+该用户成员；existing／普通 checkpoint 接续不修改成员权限，缺成员时返回可定位错误。
+不创建用户或语义角色，不复制旧 Project 的权限。
 
 每次 HTTP 请求／MCP 调用重新检查 Key、所属用户、项目成员和角色。有效 Grant 为角色并集；
 同用户同项目的所有 Key 共用角色权限，各 Key scope／撤销独立。组织 Key 也先检查所属用户

@@ -167,6 +167,7 @@ def test_runner_captures_and_prepares_fork_with_new_scope(monkeypatch):
         )
         assert calls == ["capture", "fork"]
         assert target.run.scope["project_id"] != "project"
+        assert target.run.scope["fork_created_by_run"] == target_id
         assert target._cq_freeze["snapshot_digest"] == frozen["snapshot_digest"]
         origin = json.loads((target.run.root / "recovery/origin.json").read_text())
         assert origin["root_run_id"] == target_id

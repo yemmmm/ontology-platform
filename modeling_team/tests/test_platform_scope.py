@@ -13,6 +13,8 @@ class ScopeClient:
         self.calls.append((method, path))
         if method == "POST" and path == "/api/projects":
             return 201, {"id": "project-1"}
+        if method == "POST" and path.endswith("/members"):
+            return 201, {"user_id": "operator-user"}
         if method == "POST" and path.endswith("/ontologies"):
             return 201, {"id": "ontology-1"}
         if path.endswith("workspace-context"):
@@ -23,6 +25,8 @@ class ScopeClient:
             return 200, {"agent_state": {"active_sessions": [], "recent_sessions": []}}
         if method == "GET" and path.endswith("/ontologies"):
             return 200, [{"id": "ontology-1"}]
+        if path == "/api/auth/me":
+            return 200, {"user_id": "operator-user"}
         if path == "/api/api-keys":
             return 201, {"id": "model-key", "plaintext_key": "secret"}
         if path.endswith(":revoke"):

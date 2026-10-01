@@ -404,9 +404,13 @@ class ModelingReadKeyLifecycle:
             raise ModelingReadError("Modeling read-key admin lifecycle is unavailable")
         if getattr(self.scope, "project_id", project_id) != project_id:
             raise ModelingReadError("Modeling read key Project scope drifted")
+        user_id = getattr(self.scope, "key_user_id", None)
+        if not isinstance(user_id, str) or not user_id:
+            raise ModelingReadError("Modeling read key requires the Team operator user binding")
         status, value = request(
             "POST", "/api/api-keys",
-            {"name": f"r2-3-003-modeling-read-{run_id}", "project_id": project_id, "scopes": ["read"]},
+            {"name": f"r2-3-003-modeling-read-{run_id}", "project_id": project_id,
+             "scopes": ["read"], "user_id": user_id},
             admin,
         )
         if status != 201 or not isinstance(value, Mapping):

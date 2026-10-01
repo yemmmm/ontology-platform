@@ -53,6 +53,30 @@ For controlled values, distinguish analysis from confirmed business semantics. F
 contract for analysis conclusions, revisions and materialization decisions. Source-table samples
 may motivate a question or mapping; they do not authorize confirmation or materialization.
 
+## Coordinate viewpoints and shared changes
+
+Use the Task-selected scenario-map contract. For R4.0-007, send Coordinator the closed coverage,
+stable definition_id/candidate-item correspondence and scoped reference review; Coordinator
+owns the map. Interleave object, behavior, rule, role, process, data and interface mapping views
+as dependencies permit. Unassessed views are not implicitly inapplicable. Do not require seven
+outputs or one Agent per view. Keep shared terms, cross-slice dependencies and public CQs visible.
+
+Separate same-name different meanings, shared meaning and local restrictions. Reuse confirmed
+shared identity through Protocol's authorized read/receipt binding, never guess IRIs or create a
+synonymous duplicate. Main maintenance ownership coordinates changes and grants no permissions.
+Before changing or deleting a shared definition, compare complete old/new candidates and direct
+plus known indirect uses: object/parameter identity and source, requiredness/cardinality, conditions,
+units/time/nulls, rule script/explanation/input/output/scope, mappings and public CQs. Record
+unchanged/revised/unknown/conflict and declared scope; incomplete reads or unresolved dependencies
+cannot prove compatibility. Retain unknowns/conflicting_meanings in candidate/model, not only chat.
+
+Apply D1: current definitions, compatible identity reuse after review, synchronous affected changes
+in one available atomic Batch; otherwise a confirmed distinct new contract written first and safe
+reference groups while old meaning remains, or defer only unsafe work. No cross-Batch atomicity,
+automatic clones or same-identity version pinning. Stable IRI/version/dry-run is not semantic proof.
+Refresh affected review on candidate/resource drift. Checkpoints retain pending reviews; fork
+retains neutral keys but rebinds platform identity. Collaboration records are work, not lineage.
+
 ## Author and revise the candidate
 
 Use the mounted candidate-authoring and task-specific semantic contracts for exact output fields.

@@ -205,10 +205,12 @@ non-target unknowns, and leaves all live IRI/impact details to Protocol receipts
 ## Multi-slice workflow (R3.0-002)
 
 When the task declares `multi_slice_workflow`, you additionally own the project-level scenario map:
-maintain the six sections (slices, shared-term registry with exactly one owner slice per term,
+maintain the six sections (slices, shared-term registry with exactly one owner slice per shared definition,
 cross-slice dependencies, per-slice ownership, cross-slice competency questions, explicit unknowns)
 and every recorded adjustment in `scenario-map/scenario-map.json` per
-`modeling_team/references/r3-0-002-scenario-map-contract.json`. Each `adjustments[]` entry carries
+the scenario-map contract selected in the Task role_sources (R4 selects
+`modeling_team/references/r4-0-007-scenario-map-contract.json`; historical R3 keeps its original
+schema). Each `adjustments[]` entry carries
 `change` and `approved_by_coordinator` as non-empty strings — `approved_by_coordinator` is your
 coordinator agent id, never a boolean or any other JSON type. Before the first real apply,
 record `scenario-map/topology-decision.json` comparing at least single_ontology,
@@ -250,3 +252,35 @@ verdicts/evidence/checked_by; your terminal `completed` report is refused while 
 invalid, while a `blocked` report always passes. Treat every Runner staged-gate reason code as a
 repair instruction naming the artifact to fix; the run is not terminated. You still never call
 platform write interfaces yourself, and never submit or approve a Modeling Batch directly.
+
+
+## Active multiview collaboration (R4.0-007)
+
+When the Task mounts the r4-0-007 scenario-map contract, use exactly
+`r4-0-007-scenario-map/v1`; never invent fields in a closed contract. Maintain slices[].viewpoints,
+shared_terms by stable neutral definition_id (not term), and adjustments[].review. See the mounted
+contract for exact fields and enums. Same-name distinct meanings stay distinct. Register the
+candidate_id/revision/item_id correspondence and unique owner_slice; slices[].owner is work
+responsibility, not a semantic Grant. proposed/confirmed/unknown/conflict are business states,
+not write or acceptance states. Confirm business meaning from approved materials/answers, never
+from a structural PASS. Coordinate reference owners through existing roles, without extra Agents
+or a fixed sequence of seven viewpoints.
+
+Before a shared change, coordinate old/new complete candidates and checks of direct references
+and known indirect processes, rules, parameter bindings, data/interface mappings and public CQs.
+Record the declared authorized scope and read limits, reference results and actual outcome/reason.
+Truncated or missing scope means incomplete; do not claim no references or disclose private names,
+counts or existence to an unauthorized role. A local condition stays local. Retain unknowns and
+conflicting_meanings in the candidate/model as well as the review. Only unsafe affected changes
+wait; independent content continues. Changing after_refs requires renewed review of actual meaning.
+
+D1: references use current governed definitions. Keep identity for reviewed compatible changes;
+revise all affected definitions/references together in an available single atomic Batch. If unsafe
+across Batches/Ontologies, confirm a distinct new contract/scope, materialize it first and switch
+references in groups while old definitions preserve old meaning, or defer. Do not automate clones,
+assume cross-Batch atomicity, or promise version pinning. review approval is not apply permission;
+use the current candidate-content and translation approvals. Check resource drift with Protocol.
+Save/continue retains responsibility, coverage and pending/deferred reviews. Fork keeps neutral
+keys but requires the new Project identity mapping and fresh plans/dry-run; old platform bindings
+are historical. Hand off honest unknown/conflict and coverage boundaries for independent acceptance;
+production_handoff proves readiness only. These records are work content, not Evidence/lineage.

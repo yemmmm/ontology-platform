@@ -76,6 +76,8 @@ class PlatformScope:
     # the run.  An otherwise-empty owned scope is then retained (keys still
     # revoked) instead of taking the first-stage delete path.
     checkpoint_retention: dict[str, Any] | None = None
+    # The host-selected operator owns run keys; scenario-map owners are unrelated.
+    key_user_id: str | None = None
 
     def __post_init__(self) -> None:
         if self.request is None:
@@ -90,12 +92,21 @@ class PlatformScope:
         self.mode = mode
         self.admin_key, self.admin_key_id = self.bootstrap_admin()
         try:
+            principal = self._ok("GET", "/api/auth/me")
+            self.key_user_id = principal.get("user_id")
+            if not isinstance(self.key_user_id, str) or not self.key_user_id:
+                raise PlatformScopeError("Team operator admin key has no enabled user binding")
             if mode == "create":
                 self._create()
             elif mode == "checkpoint":
                 self._checkpoint_binding(scope)
             else:
                 self._existing(scope)
+            if mode == "create" or scope.get("fork_created_by_run") == self.run_id:
+                self._ok(
+                    "POST", f"/api/projects/{self.project_id}/members",
+                    {"user_id": self.key_user_id}, statuses={201},
+                )
             self._create_protocol_key()
         except Exception:
             self.cleanup()
@@ -408,6 +419,7 @@ class PlatformScope:
                 "name": f"r2-3-001-{self.run_id}",
                 "project_id": self.project_id,
                 "scopes": ["model"],
+                "user_id": self.key_user_id,
             },
             statuses={201},
         )

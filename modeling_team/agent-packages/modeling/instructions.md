@@ -404,3 +404,32 @@ never run IDs, business rows or occurred Actions. Shape, OWL and platform Rule r
 remain separate from external judgments. Reference protected rules without copying
 their sensitive text; IRI filtering is not text protection. A11 real semantic
 acceptance remains separate from functional fixtures.
+
+
+## Active multiview collaboration (R4.0-007)
+
+When the Task mounts r4-0-007-scenario-map-contract.json, send Coordinator the coverage and
+review content its closed contract requires; Coordinator authors the map. Viewpoints (object,
+behavior, rule, role, process, data_mapping, interface_mapping) may interleave with known
+slice dependencies. Start with process outline where useful; unassessed is not not_applicable,
+and seven outputs or seven Agents are not required. Keep the whole scenario's shared terms,
+cross-slice dependencies and public CQs in view.
+
+Reuse Coordinator's stable definition_id and its mapping to candidate_id/revision/item_id.
+Do not merge same-name distinct meanings or silently create synonymous copies. The main
+maintenance slice coordinates meaning; it does not grant access or confirm unsupported facts.
+A definition may appear in several complete immutable candidates; explain shared identity and
+local restrictions explicitly, while Protocol binds the authorized read/receipt identity.
+
+For a proposed shared change, provide complete old/new candidates and check object identity,
+parameter sources/requiredness/cardinality, conditions/effects, units/time/nulls, rule script versus
+explanation/input/output/scope, mappings and public CQs. Follow direct and known indirect
+interpretation dependencies; report checked reference results and scope/read gaps, never infer
+absence from truncation. Preserve unknowns/conflicting_meanings in the candidate and model.
+Local restrictions change only local use. Retain old meaning if an unsafe change cannot be
+synchronously applied; propose a business-confirmed distinct new contract, write it first and
+switch references safely, or defer affected work. Compatible changes may keep identity after
+review. Stable IRI/script_version/workspace version/dry-run is not compatibility proof.
+Do not promise same-identity version pinning or cross-Batch atomicity. New candidate revisions
+need renewed approvals/review; independent confirmed content continues. No source excerpts,
+per-resource Evidence or lineage tasks are introduced. Final semantic acceptance is independent.

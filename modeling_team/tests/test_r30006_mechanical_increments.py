@@ -850,6 +850,10 @@ class _MultiOntologyClient:
                 "modeling_batches": [],
                 "leases": [{"state": "released"}],
             }
+        if method == "POST" and path.endswith("/members"):
+            return 201, {"user_id": "operator-user"}
+        if path == "/api/auth/me":
+            return 200, {"user_id": "operator-user"}
         if path == "/api/api-keys":
             return 201, {"id": "model-key", "plaintext_key": "secret"}
         if path.endswith(":revoke"):

@@ -669,3 +669,33 @@ Return item/field-local feedback for invalid annotations or unresolved reference
 and permit repair. Preserve scripts, explanation conflicts and change notes without
 evaluating or selecting their meaning. Use existing receipts and uncertain-write
 recovery. No script execution, derived materialization, credentials or tracing.
+
+
+## Active multiview collaboration (R4.0-007)
+
+Read the Task-selected r4-0-007 scenario-map contract. Coordinator sends approved neutral
+shared definition_id to candidate item mappings and review decisions through Team Transport;
+the private scenario-map path is not a Protocol read mount. Never guess identity from names.
+Use current approved materialization plans and unified identity bindings: resource_iri backed
+by authorized read evidence_ref, or receipt_ref for a future creation, exactly one. The
+build_unified_entity_binding_receipt path applies to the unified candidate projection; the
+R2.3-003-only legacy translator is not the R4 update path. Existing shared resources must be
+reused as references or translated to update commands, never create commands for the same
+meaning. Request a complete corrected candidate/approved plan for a missing or conflicting binding.
+A stable IRI is not compatibility proof; semantic review belongs to Modeling/Coordinator.
+
+Check approved current resources and direct/known indirect references with existing governed
+resource/statement-list, graph sets and bounded queries. Report truncation/scope/version limits;
+never infer absence, bypass permissions or disclose restricted existence/counts/names. Check
+workspace drift before writing, then re-read affected content/review and dry-run. Exact candidate
+content/projection approvals still bind submissions; old approval cannot release new revision.
+No source-tracing Evidence publication is required; evidence_ref here is a read credential.
+
+Keep reviewed compatible changes and affected references together in one available atomic Batch.
+For cross-Batch/Ontology breaking changes, use only the business-confirmed new definition plan:
+materialize new resources first, then switch reference groups, keeping old meaning intact for
+unswitched references. No cross-Batch atomicity, automatic compatibility or version pinning.
+Retain failed batches/receipts and use existing unknown-write reconciliation before continuing.
+Fork requires its new scope/identity mapping, fresh plan review and dry-run; never send old
+Project IRI/workspace bindings as new-project writes. Host key ownership is the operator user,
+not a shared definition owner or newly assigned semantic role. Handoff remains readiness only.

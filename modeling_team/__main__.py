@@ -100,14 +100,21 @@ def _bootstrap_helpers(root: Path):
     from app.repositories.models import ApiKeyModel
     from app.repositories.postgres import create_session_factory
     from app.security.auth import create_api_key, revoke_key
+    from sqlalchemy import select
 
     def create() -> tuple[str, str]:
         with create_session_factory(Settings(_env_file=backend / ".env"))() as session:
+            operator = session.scalar(
+                select(ApiKeyModel).where(ApiKeyModel.name == "operator-admin")
+            )
+            if operator is None or operator.revoked_at is not None or not operator.user_id:
+                raise TeamConfigurationError("enabled operator-admin user binding is required")
             record, plaintext = create_api_key(
                 session,
                 name="r2-3-001-team-runner-admin",
                 project_id=None,
                 scopes=["admin"],
+                user_id=operator.user_id,
             )
         return plaintext, record.id
 
@@ -1382,6 +1389,89 @@ def _cq_build_judge_evidence_bundle(
     return bundle, failures
 
 
+def _cq_collaboration_context(
+    run_root: Path, responses: Mapping[str, object]
+) -> dict[str, object] | None:
+    """Host-bound collaboration statuses for visible resources only, Judge only."""
+    from .contracts import digest_file
+    from .scenario_map import collaboration_projection, load_scenario_map, validate_scenario_map
+
+    handoff_path = run_root / "acceptance-v3/production-handoff.json"
+    if not handoff_path.is_file() or handoff_path.is_symlink():
+        return None
+    reference = _read_json_object(handoff_path).get("collaboration_artifact")
+    if reference is None:
+        return None
+    if (not isinstance(reference, dict) or set(reference) != {"path", "digest"}
+        or reference["path"] != "scenario-map/scenario-map.json"):
+        raise TeamConfigurationError("collaboration_binding_changed: invalid handoff reference")
+    path = run_root / reference["path"]
+    if path.is_symlink() or not path.is_file() or digest_file(path) != reference["digest"]:
+        raise TeamConfigurationError("collaboration_binding_changed: handoff content changed")
+    scenario_map = load_scenario_map(path)
+    if validate_scenario_map(scenario_map, run_root=run_root):
+        raise TeamConfigurationError("collaboration_binding_changed: invalid scenario map")
+    visible: set[str] = set()
+
+    def observe(value: object) -> None:
+        if isinstance(value, Mapping):
+            for key, child in value.items():
+                if key in {"iri", "resource_iri", "entity_iri", "class_iri", "property_iri"}:
+                    if isinstance(child, str) and ":" in child:
+                        visible.add(child)
+                elif isinstance(child, (Mapping, list)):
+                    observe(child)
+        elif isinstance(value, list):
+            for child in value:
+                observe(child)
+
+    # Ignore Examiner answer strings and locators: only validated read results.
+    for entries in responses.values():
+        for entry in entries:
+            observe(entry["result"])
+    bindings = {}
+    from .staged_decisions import load_materialization_plan, validate_materialization_plan
+    from .protocol_mechanics import _platform_resource_iri
+
+    for plan_path in (run_root / "stage3-neutral-graph/materialization-plans").glob("*.json"):
+        if plan_path.is_symlink():
+            continue
+        plan = load_materialization_plan(plan_path)
+        if validate_materialization_plan(plan):
+            continue
+        projection = plan["projection"]
+        # Future receipt bindings have no IRI yet. Match their approved explicit
+        # create IDs against IRIs actually returned by this authorized read;
+        # neither the planned ID nor the receipt alone establishes visibility.
+        created = {}
+        for decision in projection["decision_bindings"]:
+            command = projection["items"][decision["command_index"]]
+            prefix, _, kind = command["command_kind"].partition("_")
+            if prefix != "create" or kind not in {"entity", "class", "property", "shape", "operation"}:
+                continue
+            identifier = command["payload"].get(f"{kind}_id")
+            if not isinstance(identifier, str) or not identifier:
+                continue
+            iri = _platform_resource_iri(kind, identifier)
+            if iri in visible:
+                for item_id in decision["candidate_item_ids"]:
+                    created.setdefault(item_id, set()).add(iri)
+        for binding in projection["identity_bindings"]:
+            iri = binding.get("resource_iri")
+            if binding.get("receipt_ref"):
+                matches = created.get(binding["candidate_item_id"], set())
+                if len(matches) > 1:
+                    raise TeamConfigurationError("collaboration_binding_changed: identity conflict")
+                iri = next(iter(matches), None)
+            if iri in visible and (binding.get("evidence_ref") or binding.get("receipt_ref")):
+                key = (projection["candidate_id"], projection["candidate_revision"],
+                       binding["candidate_item_id"])
+                if key in bindings and bindings[key] != iri:
+                    raise TeamConfigurationError("collaboration_binding_changed: identity conflict")
+                bindings[key] = iri
+    return collaboration_projection(scenario_map, bindings=bindings, visible_iris=visible)
+
+
 _CQ_PLATFORM_ROLE_INSTRUCTIONS = (
     "Answer every hidden batch question in packet order. For each question use only "
     "the authorized read-only platform reads you need, then call submit_examiner_report "
@@ -1393,6 +1483,9 @@ _CQ_PLATFORM_ROLE_INSTRUCTIONS = (
     "runtime-incomplete with the actual first failure_layer, never a guess."
 )
 _CQ_JUDGE_ROLE_INSTRUCTIONS = (
+    "Any collaboration_context contains only scoped work states for already visible resources, "
+    "never semantic evidence or a completion verdict. Preserve unknown/conflict and incomplete "
+    "review boundaries; omitted definitions do not establish absence. "
     "Judge every frozen question independently against the attached answer points, "
     "evidence bundle and Examiner reports. Judge the necessary business meaning of "
     "each answer, not verbatim equality; a supported explicit_unknown passes. The "
@@ -1997,6 +2090,10 @@ def _cq_execute_batch(
             # the retained report instead of discarding the examiner reports.
             judge_stage = "acceptance-judge-setup"
             try:
+                collaboration = _cq_collaboration_context(
+                    run_root, {question_id: response_projection[question_id]
+                               for question_id in judgeable}
+                )
                 judge_packet = build_acceptance_judge_packet(
                     run_id=str(contract["run_id"]),
                     batch_id=batch_id,
@@ -2021,6 +2118,7 @@ def _cq_execute_batch(
                         for question_id in judgeable
                     },
                     verdict_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
+                    **({"collaboration_context": collaboration} if collaboration is not None else {}),
                 )
                 adapter = CodexRuntimeAdapter(repository_root=root)
                 adapter._run_root = artifacts
