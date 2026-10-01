@@ -353,4 +353,36 @@ conflicts remain readable. No output does not mean no effect; missing or unknown
 metadata never implies absence. Multiple Operations imply neither equivalence
 nor ordering. A neutral `operation` item retains Operation v1 requirements and
 uses `target_class`, never guessed platform IRIs. Do not execute any capability
-or create actual business rows, invocation bindings, Evidence or lineage duties.
+or create actual business rows, runtime invocation arguments, Evidence or lineage duties.
+
+## R4.0-004 process and parameter binding declarations
+
+Use `process_binding_semantics` in the mounted authoring/role contract and the
+complete `process_binding_example_candidate` in the mounted authoring reference.
+The example is a neutral candidate; the active unified flow retains its existing
+envelope, approval and materialization-plan contracts. Use ordinary entities,
+declared fact predicates and relations; Class remains optional. Process vocabulary
+is model data, not reserved platform fields or an executable workflow schema.
+
+Separate shared Action/parameter definitions from each call site, scoped value
+reference and binding. A binding names its call, that Action's input parameter
+and one source reference. A call output names both the producing call and output
+parameter; property access names base reference, property, direction and cardinality.
+Keep process input/output, approved semantic constants and iteration items explicit.
+Control transitions and data dependencies are separate; never infer order from
+candidate/list positions. Preserve shared conditions and local restrictions together.
+
+Explain conditional/default/no-match paths and conditional output use. Collection
+and pre/post-condition loops declare body, exit, item scopes and continuation;
+nested item references identify their own loop. Reuse one call definition per body.
+State initial/next-iteration values and outside collection/selection rules; zero
+iterations, missing/failed outputs and ordering are confirmed or explicit unknowns.
+Do not invent first/last/default values or claim unknown bindings are executable.
+D8 excludes parallel branches and all/any synchronization; disclose that scope gap.
+
+Manual Actions need no Operation. Confirmed capability composition uses a local
+implementation context with explicit steps, order and dependencies; API mappings
+remain in 011, compatibility review in 007. Do not copy protected rules into public
+text/constants or create business rows, runtime arguments, execution state or tracing.
+Use only authorized returned content; missing edges do not prove absence or hidden
+resources. Functional fixture results do not establish A12 real semantic acceptance.

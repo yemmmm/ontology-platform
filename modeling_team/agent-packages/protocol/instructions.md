@@ -624,3 +624,31 @@ responsibility and association node through dry-run/apply and governed readback.
 Use generic statement reads for Class/Operation endpoints; entity-relations is
 restricted to NamedIndividual endpoints. No automatic subtype override, capability
 selection, equivalence, permission grant or external invocation is implied.
+
+## R4.0-004 ordinary process graph translation
+
+Apply `process_binding_semantics` and `process_binding_example_candidate` in the
+mounted authoring reference. Preserve the approved process/call/value/binding/
+transition/scope identities and R4.0-003 annotations with existing commands.
+Neutral `semantic.values` become properties of declared fact predicates; all
+definition references stay ordinary graph relations. Unified candidates retain
+existing fields and the approved materialization plan, not the example's neutral
+envelope. Do not add process commands, a flow AST or platform vocabulary enums.
+
+Create dependencies before relations using existing phases; business cycles do
+not require topologically sorting execution steps. Return existing item/field
+feedback for malformed declarations/unresolved references and permit correction.
+Do not infer Action parameter ownership, correct business sources, conditional
+availability, loop results or execution readiness from text or compatible types.
+Preserve explicit unknowns; a structurally legal wrong binding requires semantic
+review, not a new platform flow validator.
+
+Verify governed details and generic statement/relation reads, including arbitrary
+fact predicates, paging/truncation and non-NamedIndividual endpoints. Exact
+resource `properties` only exposes its declared projection. Repeated invokesAction
+or inScope edges cannot use the old required_paths unique-instance contract;
+do not invent a predicate per edge. Missing authorized edges prove no absence,
+no hidden resource and no completeness. Do not reveal protected references/counts.
+Keep existing dry-run/apply_atomic, receipts and uncertain-write recovery. Local
+binding changes never overwrite shared Action definitions or prove compatibility.
+No external execution, runtime arguments, business rows or Evidence are added.

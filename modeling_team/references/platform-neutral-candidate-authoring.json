@@ -328,5 +328,1398 @@
       "validation": "All remaining fields retain Operation v1 validation, including active binding requirements and prohibition of secrets. Protocol creates it after Class/property definitions, before association relations. No external call occurs."
     },
     "readback": "Existing entity-list/entity-detail expose detail_fields.action_definition and detail_fields.parameter_definition; exact resource reads expose the same fields in properties. Generic statements read Class/parameter/rule/Operation references including non-NamedIndividual endpoints. All use existing access filtering before pagination/counts. Hidden references are not copied into metadata; missing authorized links cannot establish absence. Operation semantics remain available through existing governed reads. No Evidence/lineage fields are added."
+  },
+  "process_binding_semantics": {
+    "requirement_id": "R4.0-004",
+    "representation": "Ordinary entity, predicate and relation items; Class is optional. Names below are example model vocabulary, never reserved fields, resource kinds or execution commands.",
+    "roles": [
+      "process",
+      "action_call",
+      "process_parameter",
+      "value_reference",
+      "parameter_binding",
+      "process_transition",
+      "branch_decision",
+      "iteration_scope",
+      "process_terminal",
+      "implementation_context",
+      "capability_step"
+    ],
+    "declarations": "Put role, business_meaning, applicability and explicit unknowns/not_applicable/conflicting_meanings in semantic_definition. Reuse R4.0-003 parameter_definition on process parameters. All resource references are ordinary edges.",
+    "relations": {
+      "inProcess": "Local definition -> owning process.",
+      "inScope": "Local definition -> branch/iteration/implementation scope.",
+      "invokesAction": "Call site -> exactly one confirmed shared Action; not an occurred invocation.",
+      "hasParameter": "Action -> its own R4.0-003 parameter definition; direction is parameter_definition.direction.",
+      "hasProcessInput": "Process -> its input definition.",
+      "hasProcessOutput": "Process -> its output definition.",
+      "refersToDefinition": "Parameter/value reference -> shared object/value meaning; not runtime object equality.",
+      "inputOfProcess": "Input value reference -> process.",
+      "forParameter": "Input/output value reference -> specific parameter definition.",
+      "outputOfCall": "Output value reference -> specific call site, paired with forParameter for that Action output.",
+      "atCall": "Input binding -> call site.",
+      "atProcess": "Process output binding -> process.",
+      "toParameter": "Binding -> input parameter of the invoked Action, or output parameter of the owning process.",
+      "fromValue": "Binding -> one source value reference; a collection is one explicitly collection-valued reference.",
+      "baseValue": "Property value reference -> base object value reference.",
+      "viaProperty": "Property value reference -> property/relation definition; declare direction and cardinality.",
+      "entryStep": "Process -> entry.",
+      "fromStep": "Transition -> source step.",
+      "toStep": "Transition -> target step/terminal.",
+      "guardedBy": "Transition or binding -> local decision/shared rule; no platform evaluation.",
+      "usesValue": "Decision -> input value reference.",
+      "iteratesOver": "Iteration scope -> collection value reference.",
+      "currentItemOf": "Current item reference -> its own iteration scope.",
+      "bodyEntry": "Iteration -> body entry.",
+      "exitStep": "Iteration -> exit.",
+      "continuesWhen": "Iteration -> continue decision.",
+      "initialValue": "Loop-carried value definition -> initial source.",
+      "iterationResult": "Loop-carried value definition -> this iteration update used next time.",
+      "collectsValue": "Result outside iteration -> specific iteration output reference.",
+      "selectedBy": "Outside result -> confirmed collection/selection/reduction rule.",
+      "implementsCall": "Implementation context -> business call.",
+      "usesOperation": "Capability step -> confirmed Operation."
+    },
+    "facts": {
+      "sourceKind": "process_input, call_output, object_property, constant, iteration_item; a conversion or reduction instead explicitly references its own definition.",
+      "selectionMode": "Confirmed exclusive, priority or unknown choice; no implicit first edge/default on unknown guard.",
+      "priority": "Only confirmed business priority, never display order or implicit iteration order.",
+      "loopKind": "Confirmed collection or conditional repetition.",
+      "conditionTiming": "Confirmed pre or post condition for conditional repetition.",
+      "literalValue": "Approved semantic scalar constant only; declare its datatype and missing meaning."
+    },
+    "authoring_checks": [
+      "Each process, call, parameter, value reference, binding, transition and local scope has a stable independent identity. Multiple calls/processes reuse one Action and its parameter identities. Same Class/name or different IRIs do not assert runtime equality or inequality.",
+      "A complete input binding has one atCall, one toParameter belonging to that Action input, and one fromValue. A process output binding instead has atProcess and that process output. Parameter names, labels and paths never substitute for references.",
+      "A call output reference has both outputOfCall and forParameter, plus its iteration/branch scope and appearance condition when applicable. A property reference has baseValue and viaProperty with explicit direction/cardinality; multi-hop access uses separate references.",
+      "For every required input declare a source or explicit unknown; explain optional omission. Omitted/unknown/not-applicable/none/conditional output are distinct. No return value does not mean no effect. Unknown models may preserve known content but are not declared executable or binding-complete.",
+      "Declare entry, transitions and terminals separately from data dependencies. Each transition has one fromStep and one toStep. Preserve decision inputs, exclusive/priority selection, default and no-match consequences, or their unknowns. Alternative paths can converge without synchronization; conditional sources remain conditional.",
+      "Collection loops declare collection, current item, body and exit; nested current items link to separate scopes. Conditional loops declare pre/post timing, continuation, body and exit. One body-call definition represents any iteration; never duplicate runtime iterations.",
+      "Loop-carried references state initialValue, iterationResult and next-iteration meaning. Outside results state collection/selection/reduction semantics and link iteration output and rule. Zero iterations, empty collections, failed/missing output and ordering are confirmed or explicit unknowns; never invent last/first/default values.",
+      "A manual Action needs no Operation. Local implementation context links its business call, capability steps and confirmed order/dependencies. Each step retains Operation v1 requirements. API field/parameter mappings stay in R4.0-011; unresolved mappings are unknowns, never invented JSONPath or parameter IRIs.",
+      "Keep shared preconditions and local restrictions together; no silent waiver. Revise local bindings without overwriting shared Action/parameter declarations. Stable IRI is not compatibility proof; version binding and shared-change review remain R4.0-007.",
+      "Do not model parallel branches or all/any synchronization as sequential/exclusive paths: D8 excludes them this period. Disclose any such business requirement as a scope gap.",
+      "Do not save business rows, real arguments, credentials, execution state, Evidence or lineage. Approved semantic constants are definitions, not runtime values. Do not copy protected rule thresholds into public text/constants."
+    ],
+    "protocol_checks": [
+      "Use the existing closed neutral/unified candidate fields. Neutral declarations belong in semantic; unified declarations remain approved optional item fields. Map values to ordinary properties, resolving declared fact predicates and datatypes; never add process_definition or a new command.",
+      "Modeling chooses semantics; Protocol preserves them and binds identities. Definitions precede reference relations. Business graph cycles are legal; no execution-order sort or flow reachability/dominance/termination validator is added. Existing shape/authorization/atomic-write constraints remain unchanged.",
+      "Invalid fields/types/duplicate identities/unresolved references return existing item/field-local repair feedback; correct and retry the same goal. A structurally legal wrong business binding can be stored: independent semantic acceptance must identify it, not a platform guess.",
+      "Read nodes via governed detail/list, edges and arbitrary facts via generic statements with existing paging/truncation status. Exact resource properties is a declared projection, not all fact predicates. Read non-NamedIndividual Class/property/Operation endpoints with statements. Do not infer order from returned rows.",
+      "The old consumer_query.required_paths contract requires one instance per listed predicate; repeated invokesAction/inScope are ordinary repeated vocabulary, not unique per-edge predicates. Use generic statement/relation reads; do not force them into that contract.",
+      "Hidden and nonexistent resources share existing 404/empty contracts. Filtering precedes paging/counts. Missing authorized edges prove neither no binding/guard nor a hidden resource; do not reveal hidden counts or convert authorization filtering into model unknowns.",
+      "Use existing Batch dry_run/apply_atomic, receipts and uncertain-write recovery. No process executor, new table/route, external invocation or authorization propagation is introduced."
+    ],
+    "example_location": "process_binding_example_candidate in the mounted platform-neutral-candidate-authoring.json; complete neutral candidate, not a unified-candidate envelope. For unified candidates preserve its meanings/references using the existing unified fields and approved materialization plan.",
+    "verification_boundary": "Functional fixture roundtrip proves contracts and storage/readback only. A12 real modeling and independent source-based semantic acceptance need separate authorization."
+  },
+  "process_binding_example_candidate": {
+    "candidate_kind": "platform-neutral-candidate-v3",
+    "candidate_revision": "r4004-example-v1",
+    "scope": "approved-project",
+    "constraints": [],
+    "items": [
+      {
+        "item_id": "ticket",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "ticket",
+          "values": {
+            "label": "ticket"
+          },
+          "semantic_definition": {
+            "semantic_role": "object",
+            "business_meaning": "工单共同定义；不保存工单行",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "process-a",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "process-a",
+          "values": {
+            "label": "process-a"
+          },
+          "semantic_definition": {
+            "semantic_role": "process",
+            "business_meaning": "处理原工单及成功生成的返修工单",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "process-b",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "process-b",
+          "values": {
+            "label": "process-b"
+          },
+          "semantic_definition": {
+            "semantic_role": "process",
+            "business_meaning": "人工关闭流程，复用关闭动作",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "create-repair",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "create-repair",
+          "values": {
+            "label": "create-repair"
+          },
+          "semantic_definition": {
+            "semantic_role": "behavior",
+            "business_meaning": "成功时生成返修工单",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          },
+          "action_definition": {
+            "input_status": "defined",
+            "output_status": "defined"
+          }
+        }
+      },
+      {
+        "item_id": "close",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "close",
+          "values": {
+            "label": "close"
+          },
+          "semantic_definition": {
+            "semantic_role": "behavior",
+            "business_meaning": "人工关闭工单；仍须满足验收条件",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          },
+          "action_definition": {
+            "input_status": "defined",
+            "output_status": "none"
+          }
+        }
+      },
+      {
+        "item_id": "create-target",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "create-target",
+          "values": {
+            "label": "create-target"
+          },
+          "semantic_definition": {
+            "semantic_role": "parameter",
+            "business_meaning": "生成返修所依据的原工单",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          },
+          "parameter_definition": {
+            "direction": "input",
+            "value_kind": "object_reference",
+            "cardinality": "single",
+            "required": true
+          }
+        }
+      },
+      {
+        "item_id": "repair-output",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "repair-output",
+          "values": {
+            "label": "repair-output"
+          },
+          "semantic_definition": {
+            "semantic_role": "parameter",
+            "business_meaning": "本调用成功时生成的新返修工单",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          },
+          "parameter_definition": {
+            "direction": "output",
+            "value_kind": "object_reference",
+            "cardinality": "single",
+            "result_kind": "new_object",
+            "occurrence_condition": "生成返修成功时"
+          }
+        }
+      },
+      {
+        "item_id": "close-target",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "close-target",
+          "values": {
+            "label": "close-target"
+          },
+          "semantic_definition": {
+            "semantic_role": "parameter",
+            "business_meaning": "要关闭的工单",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          },
+          "parameter_definition": {
+            "direction": "input",
+            "value_kind": "object_reference",
+            "cardinality": "single",
+            "required": true
+          }
+        }
+      },
+      {
+        "item_id": "original-input",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "original-input",
+          "values": {
+            "label": "original-input"
+          },
+          "semantic_definition": {
+            "semantic_role": "process_parameter",
+            "business_meaning": "流程的原工单输入",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          },
+          "parameter_definition": {
+            "direction": "input",
+            "value_kind": "object_reference",
+            "cardinality": "single",
+            "required": true
+          }
+        }
+      },
+      {
+        "item_id": "call-create",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "call-create",
+          "values": {
+            "label": "call-create"
+          },
+          "semantic_definition": {
+            "semantic_role": "action_call",
+            "business_meaning": "生成返修工单的调用位置",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "call-close-original",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "call-close-original",
+          "values": {
+            "label": "call-close-original"
+          },
+          "semantic_definition": {
+            "semantic_role": "action_call",
+            "business_meaning": "关闭原工单的调用位置",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "call-close-repair",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "call-close-repair",
+          "values": {
+            "label": "call-close-repair"
+          },
+          "semantic_definition": {
+            "semantic_role": "action_call",
+            "business_meaning": "关闭返修工单的调用位置",
+            "applicability": "返修生成成功且已验收时"
+          }
+        }
+      },
+      {
+        "item_id": "call-b-close",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "call-b-close",
+          "values": {
+            "label": "call-b-close"
+          },
+          "semantic_definition": {
+            "semantic_role": "action_call",
+            "business_meaning": "另一个流程中的关闭位置",
+            "applicability": "工单关闭安排；业务定义而非运行",
+            "unknowns": [
+              "流程二必填目标来源尚未确认，不能宣称绑定完整"
+            ]
+          }
+        }
+      },
+      {
+        "item_id": "v-original",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "v-original",
+          "values": {
+            "label": "原工单引用",
+            "sourceKind": "process_input"
+          },
+          "semantic_definition": {
+            "semantic_role": "value_reference",
+            "business_meaning": "本流程的原工单位置，不是工单行",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "v-repair",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "v-repair",
+          "values": {
+            "label": "返修工单引用",
+            "sourceKind": "call_output"
+          },
+          "semantic_definition": {
+            "semantic_role": "value_reference",
+            "business_meaning": "指定生成调用的返修输出位置",
+            "applicability": "生成返修成功时"
+          }
+        }
+      },
+      {
+        "item_id": "bind-create",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "bind-create",
+          "values": {
+            "label": "bind-create"
+          },
+          "semantic_definition": {
+            "semantic_role": "parameter_binding",
+            "business_meaning": "将原工单用于生成返修的目标输入",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "bind-original",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "bind-original",
+          "values": {
+            "label": "bind-original"
+          },
+          "semantic_definition": {
+            "semantic_role": "parameter_binding",
+            "business_meaning": "将原工单用于原工单关闭目标",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "bind-repair",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "bind-repair",
+          "values": {
+            "label": "bind-repair"
+          },
+          "semantic_definition": {
+            "semantic_role": "parameter_binding",
+            "business_meaning": "将该调用的返修输出用于关闭目标",
+            "applicability": "生成返修成功且已验收时"
+          }
+        }
+      },
+      {
+        "item_id": "ready",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "ready",
+          "values": {
+            "label": "返修可关闭判断",
+            "selectionMode": "exclusive"
+          },
+          "semantic_definition": {
+            "semantic_role": "branch_decision",
+            "business_meaning": "仅返修成功且已验收时可进入返修关闭；默认不等于条件未知",
+            "applicability": "已确认互斥选择"
+          }
+        }
+      },
+      {
+        "item_id": "t-create-original",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "t-create-original",
+          "values": {
+            "label": "t-create-original"
+          },
+          "semantic_definition": {
+            "semantic_role": "process_transition",
+            "business_meaning": "返修生成结果已确定后转原工单关闭",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "t-original-repair",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "t-original-repair",
+          "values": {
+            "label": "t-original-repair"
+          },
+          "semantic_definition": {
+            "semantic_role": "process_transition",
+            "business_meaning": "原工单关闭后仅满足返修条件才转返修关闭",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "t-original-end",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "t-original-end",
+          "values": {
+            "label": "t-original-end"
+          },
+          "semantic_definition": {
+            "semantic_role": "process_transition",
+            "business_meaning": "明确无返修可关闭时终止；条件未知的后果仍未知",
+            "applicability": "工单关闭安排；业务定义而非运行",
+            "unknowns": [
+              "返修结果未知时的后续处理尚未确认"
+            ]
+          }
+        }
+      },
+      {
+        "item_id": "t-repair-end",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "t-repair-end",
+          "values": {
+            "label": "t-repair-end"
+          },
+          "semantic_definition": {
+            "semantic_role": "process_transition",
+            "business_meaning": "返修关闭后到结束",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "end",
+        "item_kind": "entity",
+        "semantic": {
+          "entity_id": "end",
+          "values": {
+            "label": "end"
+          },
+          "semantic_definition": {
+            "semantic_role": "process_terminal",
+            "business_meaning": "流程定义的结束位置，不表示已完成",
+            "applicability": "工单关闭安排；业务定义而非运行"
+          }
+        }
+      },
+      {
+        "item_id": "p-inProcess",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "inProcess",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Local definition -> owning process.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-invokesAction",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "invokesAction",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Call site -> exactly one confirmed shared Action; not an occurred invocation.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-hasParameter",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "hasParameter",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Action -> its own R4.0-003 parameter definition; direction is parameter_definition.direction.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-hasProcessInput",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "hasProcessInput",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Process -> its input definition.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-refersToDefinition",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "refersToDefinition",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Parameter/value reference -> shared object/value meaning; not runtime object equality.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-inputOfProcess",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "inputOfProcess",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Input value reference -> process.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-forParameter",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "forParameter",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Input/output value reference -> specific parameter definition.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-outputOfCall",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "outputOfCall",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Output value reference -> specific call site, paired with forParameter for that Action output.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-atCall",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "atCall",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Input binding -> call site.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-toParameter",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "toParameter",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Binding -> input parameter of the invoked Action, or output parameter of the owning process.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-fromValue",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "fromValue",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Binding -> one source value reference; a collection is one explicitly collection-valued reference.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-entryStep",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "entryStep",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Process -> entry.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-fromStep",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "fromStep",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Transition -> source step.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-toStep",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "toStep",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Transition -> target step/terminal.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-guardedBy",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "guardedBy",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Transition or binding -> local decision/shared rule; no platform evaluation.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-usesValue",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "usesValue",
+          "predicate_kind": "relation",
+          "semantic_definition": {
+            "semantic_role": "relationship",
+            "business_meaning": "Decision -> input value reference.",
+            "applicability": "本示例主语到宾语的明确引用"
+          }
+        }
+      },
+      {
+        "item_id": "p-sourceKind",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "sourceKind",
+          "predicate_kind": "fact",
+          "range": "string",
+          "semantic_definition": {
+            "semantic_role": "attribute",
+            "business_meaning": "process_input, call_output, object_property, constant, iteration_item; a conversion or reduction instead explicitly references its own definition.",
+            "applicability": "本示例语义定义，不是平台枚举"
+          }
+        }
+      },
+      {
+        "item_id": "p-selectionMode",
+        "item_kind": "predicate",
+        "semantic": {
+          "predicate": "selectionMode",
+          "predicate_kind": "fact",
+          "range": "string",
+          "semantic_definition": {
+            "semantic_role": "attribute",
+            "business_meaning": "Confirmed exclusive, priority or unknown choice; no implicit first edge/default on unknown guard.",
+            "applicability": "本示例语义定义，不是平台枚举"
+          }
+        }
+      },
+      {
+        "item_id": "r-0",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "hasParameter",
+          "subject": {
+            "definition_ref": "create-repair"
+          },
+          "object": {
+            "definition_ref": "create-target"
+          }
+        }
+      },
+      {
+        "item_id": "r-1",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "hasParameter",
+          "subject": {
+            "definition_ref": "create-repair"
+          },
+          "object": {
+            "definition_ref": "repair-output"
+          }
+        }
+      },
+      {
+        "item_id": "r-2",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "hasParameter",
+          "subject": {
+            "definition_ref": "close"
+          },
+          "object": {
+            "definition_ref": "close-target"
+          }
+        }
+      },
+      {
+        "item_id": "r-3",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "hasProcessInput",
+          "subject": {
+            "definition_ref": "process-a"
+          },
+          "object": {
+            "definition_ref": "original-input"
+          }
+        }
+      },
+      {
+        "item_id": "r-4",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inputOfProcess",
+          "subject": {
+            "definition_ref": "v-original"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-5",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "forParameter",
+          "subject": {
+            "definition_ref": "v-original"
+          },
+          "object": {
+            "definition_ref": "original-input"
+          }
+        }
+      },
+      {
+        "item_id": "r-6",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "outputOfCall",
+          "subject": {
+            "definition_ref": "v-repair"
+          },
+          "object": {
+            "definition_ref": "call-create"
+          }
+        }
+      },
+      {
+        "item_id": "r-7",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "forParameter",
+          "subject": {
+            "definition_ref": "v-repair"
+          },
+          "object": {
+            "definition_ref": "repair-output"
+          }
+        }
+      },
+      {
+        "item_id": "r-8",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "usesValue",
+          "subject": {
+            "definition_ref": "ready"
+          },
+          "object": {
+            "definition_ref": "v-repair"
+          }
+        }
+      },
+      {
+        "item_id": "r-9",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "entryStep",
+          "subject": {
+            "definition_ref": "process-a"
+          },
+          "object": {
+            "definition_ref": "call-create"
+          }
+        }
+      },
+      {
+        "item_id": "r-10",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "entryStep",
+          "subject": {
+            "definition_ref": "process-b"
+          },
+          "object": {
+            "definition_ref": "call-b-close"
+          }
+        }
+      },
+      {
+        "item_id": "r-11",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "invokesAction",
+          "subject": {
+            "definition_ref": "call-create"
+          },
+          "object": {
+            "definition_ref": "create-repair"
+          }
+        }
+      },
+      {
+        "item_id": "r-12",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "call-create"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-13",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "invokesAction",
+          "subject": {
+            "definition_ref": "call-close-original"
+          },
+          "object": {
+            "definition_ref": "close"
+          }
+        }
+      },
+      {
+        "item_id": "r-14",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "call-close-original"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-15",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "invokesAction",
+          "subject": {
+            "definition_ref": "call-close-repair"
+          },
+          "object": {
+            "definition_ref": "close"
+          }
+        }
+      },
+      {
+        "item_id": "r-16",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "call-close-repair"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-17",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "invokesAction",
+          "subject": {
+            "definition_ref": "call-b-close"
+          },
+          "object": {
+            "definition_ref": "close"
+          }
+        }
+      },
+      {
+        "item_id": "r-18",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "call-b-close"
+          },
+          "object": {
+            "definition_ref": "process-b"
+          }
+        }
+      },
+      {
+        "item_id": "r-19",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "atCall",
+          "subject": {
+            "definition_ref": "bind-create"
+          },
+          "object": {
+            "definition_ref": "call-create"
+          }
+        }
+      },
+      {
+        "item_id": "r-20",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "toParameter",
+          "subject": {
+            "definition_ref": "bind-create"
+          },
+          "object": {
+            "definition_ref": "create-target"
+          }
+        }
+      },
+      {
+        "item_id": "r-21",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "fromValue",
+          "subject": {
+            "definition_ref": "bind-create"
+          },
+          "object": {
+            "definition_ref": "v-original"
+          }
+        }
+      },
+      {
+        "item_id": "r-22",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "bind-create"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-23",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "atCall",
+          "subject": {
+            "definition_ref": "bind-original"
+          },
+          "object": {
+            "definition_ref": "call-close-original"
+          }
+        }
+      },
+      {
+        "item_id": "r-24",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "toParameter",
+          "subject": {
+            "definition_ref": "bind-original"
+          },
+          "object": {
+            "definition_ref": "close-target"
+          }
+        }
+      },
+      {
+        "item_id": "r-25",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "fromValue",
+          "subject": {
+            "definition_ref": "bind-original"
+          },
+          "object": {
+            "definition_ref": "v-original"
+          }
+        }
+      },
+      {
+        "item_id": "r-26",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "bind-original"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-27",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "atCall",
+          "subject": {
+            "definition_ref": "bind-repair"
+          },
+          "object": {
+            "definition_ref": "call-close-repair"
+          }
+        }
+      },
+      {
+        "item_id": "r-28",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "toParameter",
+          "subject": {
+            "definition_ref": "bind-repair"
+          },
+          "object": {
+            "definition_ref": "close-target"
+          }
+        }
+      },
+      {
+        "item_id": "r-29",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "fromValue",
+          "subject": {
+            "definition_ref": "bind-repair"
+          },
+          "object": {
+            "definition_ref": "v-repair"
+          }
+        }
+      },
+      {
+        "item_id": "r-30",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "bind-repair"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-31",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "refersToDefinition",
+          "subject": {
+            "definition_ref": "create-target"
+          },
+          "object": {
+            "definition_ref": "ticket"
+          }
+        }
+      },
+      {
+        "item_id": "r-32",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "refersToDefinition",
+          "subject": {
+            "definition_ref": "repair-output"
+          },
+          "object": {
+            "definition_ref": "ticket"
+          }
+        }
+      },
+      {
+        "item_id": "r-33",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "refersToDefinition",
+          "subject": {
+            "definition_ref": "close-target"
+          },
+          "object": {
+            "definition_ref": "ticket"
+          }
+        }
+      },
+      {
+        "item_id": "r-34",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "refersToDefinition",
+          "subject": {
+            "definition_ref": "original-input"
+          },
+          "object": {
+            "definition_ref": "ticket"
+          }
+        }
+      },
+      {
+        "item_id": "r-35",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "refersToDefinition",
+          "subject": {
+            "definition_ref": "v-original"
+          },
+          "object": {
+            "definition_ref": "ticket"
+          }
+        }
+      },
+      {
+        "item_id": "r-36",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "refersToDefinition",
+          "subject": {
+            "definition_ref": "v-repair"
+          },
+          "object": {
+            "definition_ref": "ticket"
+          }
+        }
+      },
+      {
+        "item_id": "r-37",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "fromStep",
+          "subject": {
+            "definition_ref": "t-create-original"
+          },
+          "object": {
+            "definition_ref": "call-create"
+          }
+        }
+      },
+      {
+        "item_id": "r-38",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "toStep",
+          "subject": {
+            "definition_ref": "t-create-original"
+          },
+          "object": {
+            "definition_ref": "call-close-original"
+          }
+        }
+      },
+      {
+        "item_id": "r-39",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "t-create-original"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-40",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "fromStep",
+          "subject": {
+            "definition_ref": "t-original-repair"
+          },
+          "object": {
+            "definition_ref": "call-close-original"
+          }
+        }
+      },
+      {
+        "item_id": "r-41",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "toStep",
+          "subject": {
+            "definition_ref": "t-original-repair"
+          },
+          "object": {
+            "definition_ref": "call-close-repair"
+          }
+        }
+      },
+      {
+        "item_id": "r-42",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "t-original-repair"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-43",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "fromStep",
+          "subject": {
+            "definition_ref": "t-original-end"
+          },
+          "object": {
+            "definition_ref": "call-close-original"
+          }
+        }
+      },
+      {
+        "item_id": "r-44",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "toStep",
+          "subject": {
+            "definition_ref": "t-original-end"
+          },
+          "object": {
+            "definition_ref": "end"
+          }
+        }
+      },
+      {
+        "item_id": "r-45",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "t-original-end"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-46",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "fromStep",
+          "subject": {
+            "definition_ref": "t-repair-end"
+          },
+          "object": {
+            "definition_ref": "call-close-repair"
+          }
+        }
+      },
+      {
+        "item_id": "r-47",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "toStep",
+          "subject": {
+            "definition_ref": "t-repair-end"
+          },
+          "object": {
+            "definition_ref": "end"
+          }
+        }
+      },
+      {
+        "item_id": "r-48",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "inProcess",
+          "subject": {
+            "definition_ref": "t-repair-end"
+          },
+          "object": {
+            "definition_ref": "process-a"
+          }
+        }
+      },
+      {
+        "item_id": "r-49",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "guardedBy",
+          "subject": {
+            "definition_ref": "t-original-repair"
+          },
+          "object": {
+            "definition_ref": "ready"
+          }
+        }
+      },
+      {
+        "item_id": "r-50",
+        "item_kind": "relation",
+        "semantic": {
+          "predicate": "guardedBy",
+          "subject": {
+            "definition_ref": "bind-repair"
+          },
+          "object": {
+            "definition_ref": "ready"
+          }
+        }
+      }
+    ]
   }
 }
