@@ -6,7 +6,9 @@
 - 状态：需求细化与设计完成；D1／D2 已由用户明确确认：普通用户仅通过 Key 访问，同用户
   同 Project 的 Key 共用角色权限，Key scope 仍独立判断。
   完整决策记录见[权威需求](../../requirements/requirements-v4.0.md#r40-006-业务角色与主体语义访问控制)。
-- 本轮只交付文档，不实施、不启动真实建模、不调用外部业务系统。未做独立设计审阅、功能测试或语义验收。
+- 本轮只交付文档，不实施、不启动真实建模、不调用外部业务系统。用户后续授权独立方案审阅；
+  Round 1 为 REVISE（0 Critical／1 High），H006-01 修订后 Round 2 PASS（0 Critical／0 High）。
+  该结果仅证明方案具备实施条件，未做功能测试或语义验收。
 - 静态核对起点：HEAD `3537d3d`；005 正在并行实现，已有后端和 Team 未提交修改，本轮不修改这些文件。
 - 依赖：R4.0-002 的业务角色及共享身份、R3.0-004 的保护集和授权读取、既有 Key scope／Project
   边界、R4.0-012 的追溯停用。005 的脚本实现不是本条设计或实施前置。
@@ -65,7 +67,7 @@ flowchart LR
 | 结构 | 最小内容与约束 |
 | --- | --- |
 | users（扩展现有） | 稳定 id、唯一 username、disabled_at；增加明确的 is_org_admin，区分现有管理员与普通主体。Key-only 用户 password_hash 可为空；不创建密码占位或默认密码 |
-| api_keys（扩展现有） | 增加 user_id；项目 Key 必须关联用户及该 Project 的成员关系。project_id、scopes、撤销及一次性明文展示沿用；已发 Key 不转移用户／项目 |
+| api_keys（扩展现有） | 增加 user_id；管理 API 创建的 Key 必须关联用户，项目 Key 还须关联该 Project 的成员关系。仅服务端 bootstrap 无用户例外；project_id、scopes、撤销及一次性明文展示沿用，已发 Key 不转移归属 |
 | project_user_memberships（新增） | project_id＋user_id 唯一；表示管理员将用户纳入项目，是项目边界，不是一个语义 Grant |
 | semantic_access_roles（新增） | id、project_id、项目内唯一 name、description、grants；可选 business_role_iri、business_role_ontology_id，明确映射同项目已确认的业务角色 |
 | semantic_access_role_members（新增） | 项目成员与项目角色的多对多关系；同一用户可有多个角色，同一角色可分配多名用户；唯一约束去重并保证同项目 |
@@ -89,7 +91,9 @@ flowchart LR
 Key 管理保留原 scope 上限和管理员权限。项目 Key 只引用本项目已加入的用户，用户没有
 语义角色仍可用合法 read Key 访问普通资源。组织管理员 bootstrap Key 保留既有特殊管理路径；
 不为了套用普通用户链而把组织级 Key 绑定任意 Project。新建有用户归属的组织 admin Key
-只允许关联显式组织管理员，不能将普通用户提升为组织管理员。
+只允许关联显式组织管理员，不能将普通用户提升为组织管理员。管理 API 创建的 Key 必须
+提交用户归属，包括组织 admin Key；只有既有服务端 bootstrap 登记路径保留无用户归属的
+组织 admin 凭据例外，不能通过 API 省略 user_id 或将 Key 命名为 bootstrap 获得该例外。
 
 ### 4.1 D1：普通用户仅通过 Key 访问
 
@@ -112,10 +116,13 @@ Key 是 read、另一个是 model，两者可读的语义 Grant 相同，后者�
 
 ```text
 1. 按现有哈希查 Key；不存在／已撤销、scope 非法 → 既有认证失败。
-2. 项目 Key：读取所属 user 和该 Project 的成员关系。
-   用户缺失／禁用、成员关系缺失 → 既有认证失败，不回退成无用户 Key。
-3. 读取成员被分配的同 Project 权限角色；有效 Grant = 各角色 grants 的去重并集。
-   正常无角色或空 grants → 空集合；数据库／角色解析失败 → 授权依赖错误，不能返回正常空集合。
+2. 所有有用户归属的 Key：先读取所属 user，用户缺失／禁用 → 既有认证失败。
+   组织 admin Key 还必须逐调用确认 user.is_org_admin=true，不符合时认证失败。
+   无用户归属仅允许既有 bootstrap 登记路径的组织 admin 凭据；其他 Key 不回退到该例外。
+3. 项目 Key：再读取该 user 的同 Project 成员及角色；成员缺失 → 既有认证失败。
+   有效 Grant = 各角色 grants 的去重并集；正常无角色／空 grants → 空集合。
+   组织 admin Key（包括明确的 bootstrap 例外）只免除项目成员／角色查询，Grant 为空。
+   用户／成员／角色数据库或解析失败 → 授权依赖错误，不能返回正常空集合。
 4. 生成服务端 principal：保留 Key subject_id、actor、scope 和 project_id，增加 user_id；
    semantic_grants 表示本次计算结果，不是 Key 列的原始值。
 5. 既有 HTTP／MCP scope 和 Project 校验通过后，由 SemanticAccessResolver 匹配保护集。
@@ -126,7 +133,8 @@ Key 是 read、另一个是 model，两者可读的语义 Grant 相同，后者�
 当成同一个分页凭据；增加 user_id 表明其共同用户。客户端传入 user_id、role、Grant 或业务职责
 不能覆盖该 principal。真实未知或格式错误返回可定位反馈，修正配置后可以重试，不终结建模目标。
 
-HTTP 每次请求、MCP 每次工具调用重新读取用户／成员／角色；抽取共享的“已验证 Key 记录 →
+HTTP 每次请求、MCP 每次工具调用先重新检查所有有归属 Key 的用户状态，再按 Key 类型
+检查组织管理员资格或项目成员／角色；抽取共享的“已验证 Key 记录 →
 principal”解析入口，替换 MCP 的重复构造。无需角色缓存、授权版本表、消息广播或重启机制。
 管理提交完成后开始的新请求／调用应使用新权限；已开始的调用保持该次已解析范围，不承诺
 追溯收回已经返回或正在返回的内容，不增加跨请求锁。
@@ -147,7 +155,7 @@ context_cursor_mismatch，调用方从首页重查；不把 Grant 明文放进 c
 | `/api/projects/{project_id}/members` | GET 列成员；POST 添加既有 user；DELETE 指定成员 | Org Admin 可维护；Project Admin 只读本项目 |
 | `/api/projects/{project_id}/semantic-access-roles`，对应 `/{role_id}` | GET／POST／PATCH／DELETE 角色及 Grant／业务角色关联 | 本 Project Admin 或 Org Admin |
 | `/api/projects/{project_id}/members/{user_id}/roles` | GET／PUT 完整角色集合；空列表移除全部角色，不移除项目成员 | 本 Project Admin 或 Org Admin |
-| `/api/api-keys`，对应 `/{key_id}` | 创建项目 Key 提交 user_id；读回归属，不返回旧直接 Grant；不再写 semantic_grants，不允许转移归属 | 保留既有管理员 scope 上限和 Project 限制 |
+| `/api/api-keys`，对应 `/{key_id}` | 创建 Key 必须提交 user_id，项目 Key 另检成员关系，组织 admin Key 另检用户管理员资格；读回归属，不返回旧直接 Grant；不再写 semantic_grants，不允许转移归属 | 保留既有管理员 scope 上限和 Project 限制 |
 
 项目用户／角色管理返回 id、名称、Project、角色或 Grant 及显式业务角色引用，仅向获准
 管理者开放。语义资源读回不附带谁有权限、角色成员、保护集、Grant 或控制面映射。
@@ -174,15 +182,19 @@ role_id 拒绝整个变更，原集合保持不变。Grant 规范沿用已有可
   不因一次异常永久撤销 Key 或结束 run；依赖恢复后按原凭据重试。
 - 管理接口参数／范围错误：422、冲突 409 或既有管理面权限错误；返回可定位字段／关联问题，
   控制面不存在或不在管理员可见范围的目标使用一致 404，不把管理错误扩散到语义读取响应。
-- 禁用用户使其所有 Key 在新调用中失效；再次启用恢复未撤销 Key 的有效性。撤销 Key 本身仍不可逆。
+- 禁用用户使其所有有归属 Key（包括组织 admin Key）在新 HTTP／MCP 调用中失效；组织级
+  有归属 Key 的 user 不再具有 is_org_admin 时也失效。该校验先于 principal 的 admin scope
+  判断及保护集绕过执行，不能因为 project_id=None 而跳过。再次启用恢复仍符合身份资格的
+  未撤销 Key；无用户归属 bootstrap 不属于该用户，不受该用户禁用影响。撤销 Key 本身仍不可逆。
   删除项目成员时同事务撤销其本项目 Key，清除角色分配；重新加入须创建新 Key，避免旧凭据复活。
 - 删除角色清除相关分配，其他角色仍生效；移除全部角色仍保留普通资源可读。删除 Project
   级联删除其成员、角色及分配，用户本身保留，其他 Project 不受影响。
 - checkpoint fork 继续复制保护集及业务定义，不复制用户成员、Key、角色或授权分配；新 Project
   的普通消费者在重新配置前不能打开已复制的受保护资源。仍由 Org Admin 管理新 Project，
   不通过 fork 自动继承原项目用户权限，不扩建快照／恢复框架。
-- 组织／项目管理员继续按既有 scope 绕过对应保护集；组织用户标志只用于明确管理员身份和
-  登录资格，不将普通用户的每个 read Key 自动变成管理员 Key。
+- 组织／项目管理员只在上述凭据及用户检查通过后按既有 scope 绕过对应保护集；组织用户
+  标志用于管理员登录及组织 admin Key 的身份资格，不提高任何项目 Key 的 scope，不将
+  管理员用户自己的普通 read Key 自动变成管理员 Key。
 
 ## 8. 实施交接与验证意图
 
@@ -192,11 +204,16 @@ role_id 拒绝整个变更，原集合保持不变。Grant 规范沿用已有可
 改动同文件，实施方只合入本条必要差异。
 
 本轮 D1／D2 已关闭，具体选择已同步身份、Key 和验收合同。文档层选择已足够交接时停止扩展，
-不在本轮提前加表、跑产品测试、重启服务或安排独立 Agent；后续实施仍以用户实际授权为准。
+细化轮未提前加表、跑产品测试、重启服务或安排独立 Agent；后续实施仍以用户实际授权为准。
+
+后续用户已单独授权独立方案审阅与修订复审；审阅过程只读，文档修订由原设计方完成。
+该授权不改变本节的实施／运行边界，审阅记录见下方第 10 节。
 
 验证对应权威需求 A1—A11：
 
 - 身份／Key：同一用户多 Key、不同 scope、跨项目同名角色、禁用／撤销、无成员以及角色为空。
+  增加有归属组织 admin Key：禁用所属用户／失去组织管理员资格后，HTTP 与持续 MCP 进程
+  的下一次调用均失败；只有明确的无归属 bootstrap 保留例外，管理员用户的项目 read Key 不升权。
 - 角色：多角色 OR、Grant 替换／撤销、删除一角色而其他角色继续生效；HTTP 和持续 MCP 进程
   在同次管理提交后的新调用一致，旧 Context cursor 不混用前后权限。
 - 边界：普通／model 主体不能配置角色或 Grant；Project Admin 无权操作其他项目或全局目录；
@@ -215,4 +232,13 @@ role_id 拒绝整个变更，原集合保持不变。Grant 规范沿用已有可
 - 006 决策 D1—D10、验收 A1—A11 编号连续且无重复；D1／D2 的用户回答已同步到功能范围、
   数据结构、请求解析和对应验收，不残留待定分支。
 - 文档 diff 只包含 006 条目、其状态／索引及本设计；相邻 005 的代码、合同和验证文件未修改。
-- `git diff --check` 文档检查通过；无独立设计审阅、产品测试、服务重启或真实语义结果。
+- `git diff --check` 初始细化文档检查通过；当时未做独立设计审阅、产品测试、服务重启或真实语义验收。
+- 本轮修订后重新核对 70 个本地链接、6 个 Markdown 锚点、33 张表格、围栏及 D／A 编号；
+  检查通过。独立方案结果另列下节，不将文档检查当作功能／真实语义证据。
+
+## 10. 独立方案审阅记录
+
+| 轮次 | 审阅结论与问题 | 修订与证据边界 |
+| --- | --- | --- |
+| Round 1（2026-10-01） | `bc84abb`；REVISE，0 Critical／1 High；H006-01：请求算法只检查项目 Key 的用户状态，有归属组织 admin Key 可跳过用户禁用检查 | 原设计方修订所有有归属 Key 先检查用户状态，组织级另检管理员资格；bootstrap 无归属例外仅用于服务端登记路径，同步 F4／F6、A4／A8 及设计。由 Round 2 复核处置；无新业务决策、未实施／测试／运行 |
+| Round 2（2026-10-01） | `bc84abb` 加本轮 H006-01 文档修订；PASS，0 Critical／0 High；H006-01 为 FIXED（方案层） | 同一独立 plan_reviewer 只读复审修订及相邻边界，复用前轮未变化证据；确认身份停用、组织管理员资格、bootstrap 例外和项目 read Key 不升权已一致，无新增严重问题或关键假设。未修改文件／测试／启动服务或建模；通过后只补记状态和记录，不改被审阅功能合同 |
