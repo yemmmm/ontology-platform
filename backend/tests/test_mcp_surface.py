@@ -37,7 +37,6 @@ ALLOWED_TOOLS = {
     "get_modeling_execution_event",
     "list_modeling_execution_events",
     "export_modeling_workflow_record",
-    "get_ontology_lineage",
     "get_ontology_workspace_context",
     "repair_ontology_workspace",
     "get_project_brief",
@@ -46,10 +45,6 @@ ALLOWED_TOOLS = {
     "list_competency_questions",
     "propose_competency_questions",
     "validate_competency_question",
-    "create_evidence_reference",
-    "list_evidence_references",
-    "get_evidence_reference",
-    "associate_evidence_reference",
     "semantic_sparql_query",
     "query_semantic_context",
     "discover_semantic_scopes",
@@ -72,7 +67,6 @@ ALLOWED_TOOLS = {
     "export_semantic_graph_set",
     "inspect_semantic_projection_status",
     "start_semantic_projection_job",
-    "inspect_semantic_statement_provenance",
     "preflight_semantic_migration",
     "create_semantic_migration_run",
     "run_next_semantic_migration_batch",
@@ -92,6 +86,12 @@ ALLOWED_TOOLS = {
 # Tools that must never come back: legacy governance/publication/catalog/
 # graph/documents/facts machinery is gone for good post-B2.
 FORBIDDEN_TOOLS = {
+    "get_ontology_lineage",
+    "create_evidence_reference",
+    "list_evidence_references",
+    "get_evidence_reference",
+    "associate_evidence_reference",
+    "inspect_semantic_statement_provenance",
     "approve_proposal",
     "apply_approved_proposal",
     "review_fact_claim",
@@ -180,9 +180,19 @@ def test_submit_modeling_batch_schema_exposes_nested_modeling_items() -> None:
     item = schema["$defs"][item_ref.removeprefix("#/$defs/")]
     assert {"client_item_id", "command_kind", "payload"} <= set(item["required"])
     assert item["properties"]["payload"]["type"] == "object"
-    assert item["properties"]["command_kind"]["enum"] == ModelingCommandHandlerRegistry(
-        Settings()
-    ).command_kinds
+    assert set(item["properties"]) == {
+        "client_item_id",
+        "command_kind",
+        "payload",
+        "depends_on",
+        "rationale",
+        "competency_question_ids",
+    }
+    assert item["additionalProperties"] is False
+    assert (
+        item["properties"]["command_kind"]["enum"]
+        == ModelingCommandHandlerRegistry(Settings()).command_kinds
+    )
     guidance = item["properties"]["payload"]["description"]
     for required_phrase in (
         "create_class: name",

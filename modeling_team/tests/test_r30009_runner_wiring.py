@@ -49,7 +49,7 @@ UNIFIED_TASK = REPO_ROOT / "modeling_team" / "tasks" / "r3-0-009-unified-graph-r
 
 def _candidate() -> dict:
     return {
-        "schema_version": "r3-0-009-unified-graph/v1",
+        "schema_version": "r3-0-009-unified-graph/v2",
         "scenario_id": "placeholder-scenario",
         "candidate_id": "cand-1",
         "revision": 2,
@@ -60,7 +60,6 @@ def _candidate() -> dict:
                 "business_meaning": "placeholder meaning",
                 "value": {"label": "placeholder"},
                 "relation_endpoints": None,
-                "evidence_refs": ["ev-1"],
                 "slice_ids": ["slice-1"],
                 "shared_scope": None,
                 "unknowns": [],
@@ -72,7 +71,7 @@ def _candidate() -> dict:
 
 def _unified_approvals(candidate: dict) -> dict:
     return {
-        "schema_version": "r3-0-009-approvals/v1",
+        "schema_version": "r3-0-009-approvals/v2",
         "scenario_id": "placeholder-scenario",
         "maintained_by": "coordinator",
         "entries": [
@@ -91,7 +90,6 @@ def _unified_approvals(candidate: dict) -> dict:
                 "content_digest": candidate_item_digest(candidate["items"][0]),
                 "decision": "approved",
                 "reason": "confirmed by business",
-                "evidence_refs": ["ev-1"],
                 "slice_ids": ["slice-1"],
                 "shared_scope": None,
                 "scope": None,
@@ -208,7 +206,7 @@ def _stage_unified(run_root: Path) -> tuple[dict, dict]:
     items = _batch_items()
     projection = _projection(candidate, items)
     plan = {
-        "schema_version": "r3-0-009-materialization-plan/v1",
+        "schema_version": "r3-0-009-materialization-plan/v2",
         "plan_id": "plan-1",
         "revision": 1,
         "projection": projection,
@@ -225,7 +223,7 @@ def _stage_unified(run_root: Path) -> tuple[dict, dict]:
         "produced_by": "modeling",
         "approved_by": "coordinator",
         "candidate_artifacts": ["stage3-neutral-graph/candidates/cand-1-r2.json"],
-        "candidate_contract": "r3-0-009-unified-graph/v1",
+        "candidate_contract": "r3-0-009-unified-graph/v2",
         "slot_note": "neutral slot",
     }
     _write_json(paths["stage3_slot"], slot)

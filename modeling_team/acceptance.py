@@ -34,7 +34,6 @@ from .capability_mcp import (
     PROTOCOL_OPERATIONS,
     PROTOCOL_STAGE_OPERATIONS,
     ROLE_OPERATIONS,
-    STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION,
     STAGED_PROTOCOL_OPERATION,
     STAGED_PROTOCOL_RUN_OPERATIONS,
     RunnerCapabilityEndpoint,
@@ -1458,7 +1457,6 @@ class RunnerAcceptanceCarrier:
         candidate_receipt_builder: Callable[[str, str], Mapping[str, Any]] | None = None,
         candidate_conflict_builder: Callable[[str, str, str, str], Mapping[str, Any]] | None = None,
         staged_submission_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
-        staged_association_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         staged_protocol_capability: bool = False,
         cq_draft_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ):
@@ -1512,7 +1510,6 @@ class RunnerAcceptanceCarrier:
         # the same reason as the submission handler (the Runner, not the Protocol
         # agent, holds the platform credential) but carries no durable attempt
         # state: the platform association is idempotent by (target, reference).
-        self._staged_association_handler = staged_association_handler
         self._staged_protocol_capability = staged_protocol_capability
         # R3.0-011: the competency-question role's single Runner-private
         # capability.  ``None`` keeps every non-011 carrier byte-identical: no
@@ -3842,14 +3839,6 @@ class RunnerAcceptanceCarrier:
             if self._staged_submission_handler is None:
                 _error("staged Modeling Batch submission is unavailable")
             return self._staged_submission_handler(args)
-        if role == "protocol" and operation == STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION:
-            # R3.0-008B/#17: the evidence repost is the staged channel's second
-            # platform write projection.  The Runner-owned handler unwraps the
-            # ``association`` envelope; the role id itself never leaves here.
-            self._check_capability("protocol", args["protocol_id"], capability)
-            if self._staged_association_handler is None:
-                _error("staged evidence association is unavailable")
-            return self._staged_association_handler(args)
         if role == "coordinator":
             if operation == "coordinator_ticket_draft_from_delivery":
                 return self.coordinator_ticket_draft_from_delivery(

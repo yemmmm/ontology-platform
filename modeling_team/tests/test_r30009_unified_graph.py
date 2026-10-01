@@ -78,7 +78,7 @@ def _codes(issues) -> list[str]:
 @pytest.fixture()
 def candidate():
     return {
-        "schema_version": "r3-0-009-unified-graph/v1",
+        "schema_version": "r3-0-009-unified-graph/v2",
         "scenario_id": "scenario-1",
         "candidate_id": "cand-1",
         "revision": 2,
@@ -89,7 +89,6 @@ def candidate():
                 "business_meaning": "placeholder meaning",
                 "value": {"label": "placeholder"},
                 "relation_endpoints": None,
-                "evidence_refs": ["ev-1"],
                 "slice_ids": ["slice-1"],
                 "shared_scope": None,
                 "unknowns": [],
@@ -100,7 +99,6 @@ def candidate():
                 "business_meaning": "placeholder relation",
                 "value": {"predicate": "relatedTo"},
                 "relation_endpoints": {"from_item_id": "item-entity", "to_item_id": "item-entity"},
-                "evidence_refs": ["ev-2"],
                 "slice_ids": ["slice-1"],
                 "shared_scope": "shared",
                 "unknowns": [],
@@ -151,7 +149,7 @@ def projection(candidate):
 @pytest.fixture()
 def plan(projection):
     return {
-        "schema_version": "r3-0-009-materialization-plan/v1",
+        "schema_version": "r3-0-009-materialization-plan/v2",
         "plan_id": "plan-1",
         "revision": 1,
         "projection": projection,
@@ -162,7 +160,7 @@ def plan(projection):
 @pytest.fixture()
 def approvals(candidate):
     return {
-        "schema_version": "r3-0-009-approvals/v1",
+        "schema_version": "r3-0-009-approvals/v2",
         "scenario_id": "scenario-1",
         "maintained_by": "coordinator",
         "entries": [],
@@ -176,7 +174,6 @@ def approvals(candidate):
                 "content_digest": candidate_item_digest(candidate["items"][0]),
                 "decision": "approved",
                 "reason": "confirmed by business",
-                "evidence_refs": ["ev-1"],
                 "slice_ids": ["slice-1"],
                 "shared_scope": None,
                 "scope": None,
@@ -213,7 +210,7 @@ def test_task_declares_unified_parameter_and_loads_with_multi_slice_profile():
             encoding="utf-8"
         )
     )
-    assert contract["schema_version"] == "r3-0-009-unified-graph-contract/v1"
+    assert contract["schema_version"] == "r3-0-009-unified-graph-contract/v2"
 
 
 def test_unified_parameter_requires_the_two_underlying_capabilities(tmp_path):
@@ -272,7 +269,6 @@ def test_s_closed_field_sets_match_design():
         "business_meaning",
         "value",
         "relation_endpoints",
-        "evidence_refs",
         "slice_ids",
         "shared_scope",
         "unknowns",
@@ -313,7 +309,7 @@ def test_s_valid_unified_artifacts_pass(candidate, projection, plan, approvals):
         "produced_by": "modeling",
         "approved_by": "coordinator",
         "candidate_artifacts": ["stage3-neutral-graph/candidates/cand-1-r2.json"],
-        "candidate_contract": "r3-0-009-unified-graph/v1",
+        "candidate_contract": "r3-0-009-unified-graph/v2",
         "slot_note": "neutral slot",
     }
     assert validate_unified_stage3_slot(slot) == ()
@@ -342,7 +338,6 @@ def test_s_member_relation_is_an_approved_decision_target_kind(candidate, approv
     member_decision["target_kind"] = "member_relation"
     member_decision["target_id"] = "item-relation"
     member_decision["content_digest"] = candidate_item_digest(candidate["items"][1])
-    member_decision["evidence_refs"] = ["ev-2"]
     member_approvals = dict(approvals)
     member_approvals["decisions"] = [*approvals["decisions"], member_decision]
 
@@ -394,9 +389,9 @@ def test_b_unified_artifact_schema_drift_is_typed(candidate, projection, plan, a
     assert _codes(validate_unified_approvals({**approvals, "decisions": [node_with_scope]})) == [
         "relation_scope_ambiguous"
     ]
-    no_evidence = {**approvals["decisions"][0], "evidence_refs": []}
-    assert _codes(validate_unified_approvals({**approvals, "decisions": [no_evidence]})) == [
-        "approval_missing"
+    obsolete_evidence = {**approvals["decisions"][0], "evidence_refs": []}
+    assert _codes(validate_unified_approvals({**approvals, "decisions": [obsolete_evidence]})) == [
+        "unified_schema_mismatch"
     ]
     no_digest = {**approvals["decisions"][0], "content_digest": ""}
     assert _codes(validate_unified_approvals({**approvals, "decisions": [no_digest]})) == [
@@ -463,8 +458,6 @@ def test_projection_omits_execution_parameters_and_defaults_items(projection):
         "command_kind": "create_entity",
         "payload": {"label": "placeholder", "class_iris": []},
         "depends_on": [],
-        "evidence_reference_ids": [],
-        "evidence": [],
         "rationale": None,
         "competency_question_ids": [],
     }
@@ -792,7 +785,7 @@ def test_partial_009_intent_arguments_are_rejected():
 
 def _candidate_for(refs):
     return {
-        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_kind": "platform-neutral-candidate-v3",
         "candidate_id": "cand-1",
         "candidate_revision": 1,
         "scope": {"ontology_id": "ont-1"},
@@ -941,3 +934,9 @@ def test_binding_receipt_rejects_digest_and_state_drift():
     dropped = {**body, "bindings": [receipt["bindings"][0]], "receipt_digest": receipt["receipt_digest"]}
     with pytest.raises(ProtocolRetrievalFallbackError):
         validate_unified_entity_binding_receipt(candidate, dropped)
+
+
+def test_unified_candidate_rejects_legacy_trace_field_and_schema(candidate):
+    obsolete = {**candidate, "items": [{**candidate["items"][0], "evidence_refs": []}]}
+    assert _codes(validate_unified_candidate(obsolete)) == ["unified_schema_mismatch"]
+    assert _codes(validate_unified_candidate({**candidate, "schema_version": "r3-0-009-unified-graph/v1"})) == ["unified_schema_mismatch"]

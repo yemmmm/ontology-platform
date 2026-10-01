@@ -1,0 +1,559 @@
+{
+  "candidate_kind": "platform-neutral-candidate-v3",
+  "candidate_revision": "dify-cba-slice-r3",
+  "scope": {
+    "description": "Published C behavior consumed by B, cross-release output meaning, and B behavior when C returns no numeric score.",
+    "name": "Dify Workflow-as-Tool C to B to A semantic slice"
+  },
+  "constraints": [
+    "Only a Workflow that starts with a User Input node can be turned into a reusable Tool; a Chatflow cannot be used as a Tool.",
+    "C, B, and A are independently managed workflows with separate draft and publication lifecycles.",
+    "B invokes C as a published Tool by workflow identity, and A publishes what B reports as publishable.",
+    "C Version 2 is the latest published version and exposes quality_rating:number; C Version 1 exposes quality_score:number.",
+    "quality_score and quality_rating are distinct published output fields; equivalence, rename continuity, and value compatibility must not be asserted.",
+    "When C's classifier dependency is unavailable, C can complete successfully without a numeric score and return a diagnostic code.",
+    "B's action when C has no numeric score remains explicitly unknown; no block, continue, retry, or review behavior is asserted."
+  ],
+  "items": [
+    {
+      "item_id": "class-semantic-resource",
+      "item_kind": "class",
+      "semantic": {
+        "class_id": "SemanticResource",
+        "description": "Common class for resources in this workflow slice."
+      }
+    },
+    {
+      "item_id": "class-workflow",
+      "item_kind": "class",
+      "semantic": {
+        "class_id": "Workflow",
+        "superclass": "SemanticResource"
+      }
+    },
+    {
+      "item_id": "class-invoking-workflow",
+      "item_kind": "class",
+      "semantic": {
+        "class_id": "InvokingWorkflow",
+        "superclass": "Workflow"
+      }
+    },
+    {
+      "item_id": "class-workflow-version",
+      "item_kind": "class",
+      "semantic": {
+        "class_id": "WorkflowVersion",
+        "superclass": "SemanticResource"
+      }
+    },
+    {
+      "item_id": "class-output-field",
+      "item_kind": "class",
+      "semantic": {
+        "class_id": "OutputField",
+        "superclass": "SemanticResource"
+      }
+    },
+    {
+      "item_id": "class-explicit-unknown",
+      "item_kind": "class",
+      "semantic": {
+        "class_id": "ExplicitUnknown",
+        "superclass": "SemanticResource"
+      }
+    },
+    {
+      "item_id": "predicate-publicationStatus",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "WorkflowVersion",
+        "predicate": "publicationStatus",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-versionState",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "WorkflowVersion",
+        "predicate": "versionState",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-fieldName",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "OutputField",
+        "predicate": "fieldName",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-fieldDatatype",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "OutputField",
+        "predicate": "fieldDatatype",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-markedLatest",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "WorkflowVersion",
+        "predicate": "markedLatest",
+        "predicate_kind": "fact",
+        "range": "boolean"
+      }
+    },
+    {
+      "item_id": "predicate-configurationBinding",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "InvokingWorkflow",
+        "predicate": "configurationBinding",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-noNumericScoreOutcome",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "Workflow",
+        "predicate": "noNumericScoreOutcome",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-diagnosticOutcome",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "Workflow",
+        "predicate": "diagnosticOutcome",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-unknownKind",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "ExplicitUnknown",
+        "predicate": "unknownKind",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-unknownQuestion",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "ExplicitUnknown",
+        "predicate": "unknownQuestion",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-unknownRationale",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "ExplicitUnknown",
+        "predicate": "unknownRationale",
+        "predicate_kind": "fact",
+        "range": "string"
+      }
+    },
+    {
+      "item_id": "predicate-hasVersion",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "Workflow",
+        "predicate": "hasVersion",
+        "predicate_kind": "relation",
+        "range": "WorkflowVersion"
+      }
+    },
+    {
+      "item_id": "predicate-hasOutput",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "WorkflowVersion",
+        "predicate": "hasOutput",
+        "predicate_kind": "relation",
+        "range": "OutputField"
+      }
+    },
+    {
+      "item_id": "predicate-invokesTool",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "InvokingWorkflow",
+        "predicate": "invokesTool",
+        "predicate_kind": "relation",
+        "range": "Workflow"
+      }
+    },
+    {
+      "item_id": "predicate-publishesResultOf",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "Workflow",
+        "predicate": "publishesResultOf",
+        "predicate_kind": "relation",
+        "range": "Workflow"
+      }
+    },
+    {
+      "item_id": "predicate-currentlyConsumesOutput",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "InvokingWorkflow",
+        "predicate": "currentlyConsumesOutput",
+        "predicate_kind": "relation",
+        "range": "OutputField"
+      }
+    },
+    {
+      "item_id": "predicate-unknownAffectsOutput",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "ExplicitUnknown",
+        "predicate": "unknownAffectsOutput",
+        "predicate_kind": "relation",
+        "range": "OutputField"
+      }
+    },
+    {
+      "item_id": "predicate-unknownConcernsWorkflow",
+      "item_kind": "predicate",
+      "semantic": {
+        "domain": "ExplicitUnknown",
+        "predicate": "unknownConcernsWorkflow",
+        "predicate_kind": "relation",
+        "range": "Workflow"
+      }
+    },
+    {
+      "item_id": "shape-invoking-workflow",
+      "item_kind": "shape",
+      "semantic": {
+        "paths": [
+          {
+            "min_count": 1,
+            "path_id": "path-invokes-tool-required",
+            "predicate": "invokesTool",
+            "range": "Workflow"
+          }
+        ],
+        "shape_id": "InvokingWorkflowShape",
+        "target_class": "InvokingWorkflow"
+      }
+    },
+    {
+      "item_id": "entity-workflow-c",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "Workflow",
+        "entity_id": "workflow-c",
+        "values": {
+          "diagnosticOutcome": "returns a diagnostic code",
+          "label": "C",
+          "noNumericScoreOutcome": "can complete successfully without a numeric score when its classifier dependency is unavailable"
+        }
+      }
+    },
+    {
+      "item_id": "entity-workflow-b",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "InvokingWorkflow",
+        "entity_id": "workflow-b",
+        "values": {
+          "configurationBinding": "C by workflow identity, not release ID",
+          "label": "B"
+        }
+      }
+    },
+    {
+      "item_id": "entity-workflow-a",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "Workflow",
+        "entity_id": "workflow-a",
+        "values": {
+          "label": "A"
+        }
+      }
+    },
+    {
+      "item_id": "entity-c-v1",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "WorkflowVersion",
+        "entity_id": "c-version-1",
+        "values": {
+          "label": "Version 1",
+          "markedLatest": false,
+          "publicationStatus": "published",
+          "versionState": "historical"
+        }
+      }
+    },
+    {
+      "item_id": "entity-c-v2",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "WorkflowVersion",
+        "entity_id": "c-version-2",
+        "values": {
+          "label": "Version 2",
+          "markedLatest": true,
+          "publicationStatus": "published",
+          "versionState": "current published latest"
+        }
+      }
+    },
+    {
+      "item_id": "entity-c-draft",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "WorkflowVersion",
+        "entity_id": "c-current-draft",
+        "values": {
+          "label": "Current Draft",
+          "markedLatest": false,
+          "publicationStatus": "not callable by other workflows",
+          "versionState": "draft"
+        }
+      }
+    },
+    {
+      "item_id": "entity-quality-score",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "OutputField",
+        "entity_id": "quality-score-field",
+        "values": {
+          "fieldDatatype": "number",
+          "fieldName": "quality_score",
+          "label": "quality_score"
+        }
+      }
+    },
+    {
+      "item_id": "entity-quality-rating",
+      "item_kind": "entity",
+      "semantic": {
+        "class": "OutputField",
+        "entity_id": "quality-rating-field",
+        "values": {
+          "fieldDatatype": "number",
+          "fieldName": "quality_rating",
+          "label": "quality_rating"
+        }
+      }
+    },
+    {
+      "item_id": "unknown-cross-release-meaning",
+      "item_kind": "explicit_unknown",
+      "semantic": {
+        "class": "ExplicitUnknown",
+        "entity_id": "unknown-cross-release-output-meaning",
+        "values": {
+          "label": "Cross-release semantic relationship between quality_score and quality_rating",
+          "unknownKind": "explicit_unknown",
+          "unknownQuestion": "Do quality_score and quality_rating preserve the same business meaning across releases?",
+          "unknownRationale": "The source does not confirm continuity; equivalence, rename continuity, and value compatibility are not asserted."
+        }
+      }
+    },
+    {
+      "item_id": "unknown-b-no-score-behavior",
+      "item_kind": "explicit_unknown",
+      "semantic": {
+        "class": "ExplicitUnknown",
+        "entity_id": "unknown-b-no-score-behavior",
+        "values": {
+          "label": "B behavior when C has no score",
+          "unknownKind": "explicit_unknown",
+          "unknownQuestion": "Does B block, continue, retry, or mark for review when C has no numeric score?",
+          "unknownRationale": "B's note says low-scoring content is not publishable but does not state its behavior when the score is absent."
+        }
+      }
+    },
+    {
+      "item_id": "relation-c-has-v1",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "c-version-1",
+        "predicate": "hasVersion",
+        "relation_id": "c-has-v1",
+        "subject": "workflow-c"
+      }
+    },
+    {
+      "item_id": "relation-c-has-v2",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "c-version-2",
+        "predicate": "hasVersion",
+        "relation_id": "c-has-v2",
+        "subject": "workflow-c"
+      }
+    },
+    {
+      "item_id": "relation-c-has-draft",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "c-current-draft",
+        "predicate": "hasVersion",
+        "relation_id": "c-has-draft",
+        "subject": "workflow-c"
+      }
+    },
+    {
+      "item_id": "relation-v1-has-score",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "quality-score-field",
+        "predicate": "hasOutput",
+        "relation_id": "v1-has-score",
+        "subject": "c-version-1"
+      }
+    },
+    {
+      "item_id": "relation-v2-has-rating",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "quality-rating-field",
+        "predicate": "hasOutput",
+        "relation_id": "v2-has-rating",
+        "subject": "c-version-2"
+      }
+    },
+    {
+      "item_id": "relation-draft-has-rating",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "quality-rating-field",
+        "predicate": "hasOutput",
+        "relation_id": "draft-has-rating",
+        "subject": "c-current-draft"
+      }
+    },
+    {
+      "item_id": "relation-b-invokes-c",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "workflow-c",
+        "predicate": "invokesTool",
+        "relation_id": "b-invokes-c",
+        "subject": "workflow-b"
+      }
+    },
+    {
+      "item_id": "relation-a-publishes-b",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "workflow-b",
+        "predicate": "publishesResultOf",
+        "relation_id": "a-publishes-b",
+        "subject": "workflow-a"
+      }
+    },
+    {
+      "item_id": "relation-b-current-output",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "quality-rating-field",
+        "predicate": "currentlyConsumesOutput",
+        "relation_id": "b-current-output",
+        "subject": "workflow-b"
+      }
+    },
+    {
+      "item_id": "relation-cross-unknown-score",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "quality-score-field",
+        "predicate": "unknownAffectsOutput",
+        "relation_id": "cross-unknown-score",
+        "subject": "unknown-cross-release-output-meaning"
+      }
+    },
+    {
+      "item_id": "relation-cross-unknown-rating",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "quality-rating-field",
+        "predicate": "unknownAffectsOutput",
+        "relation_id": "cross-unknown-rating",
+        "subject": "unknown-cross-release-output-meaning"
+      }
+    },
+    {
+      "item_id": "relation-noscore-unknown-b",
+      "item_kind": "relation",
+      "semantic": {
+        "object": "workflow-b",
+        "predicate": "unknownConcernsWorkflow",
+        "relation_id": "noscore-unknown-b",
+        "subject": "unknown-b-no-score-behavior"
+      }
+    },
+    {
+      "item_id": "negative-probe-invoking-workflow",
+      "item_kind": "negative_probe",
+      "semantic": {
+        "expected_result": "rejected",
+        "invalid_instance": {
+          "class": "InvokingWorkflow",
+          "label": "B",
+          "values": {
+            "configurationBinding": "C by workflow identity, not release ID"
+          }
+        },
+        "path": "path-invokes-tool-required",
+        "probe_id": "probe-invoking-workflow-must-invoke-tool",
+        "shape_id": "InvokingWorkflowShape"
+      }
+    },
+    {
+      "item_id": "consumer-query-current-c-behavior",
+      "item_kind": "consumer_query",
+      "semantic": {
+        "query_id": "current-c-behavior-consumed-by-b",
+        "question": "What concrete published C behavior does B currently consume?",
+        "required_paths": [
+          "invokesTool",
+          "currentlyConsumesOutput",
+          "fieldName",
+          "fieldDatatype"
+        ]
+      }
+    },
+    {
+      "item_id": "consumer-query-b-no-score",
+      "item_kind": "consumer_query",
+      "semantic": {
+        "query_id": "b-behavior-without-c-score",
+        "question": "What is B known to do when C has no score?",
+        "required_paths": [
+          "unknownConcernsWorkflow",
+          "unknownQuestion",
+          "unknownRationale"
+        ]
+      }
+    }
+  ]
+}

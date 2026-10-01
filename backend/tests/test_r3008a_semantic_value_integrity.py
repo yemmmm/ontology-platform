@@ -144,9 +144,6 @@ def _item(item_id: str, command_kind: str, payload: dict, **overrides):
         "command_kind": command_kind,
         "payload": payload,
         "rationale": "R3.0-008A controlled-value fixture",
-        "evidence": [
-            {"document_name": "schema-ddl.md", "excerpt": f"{item_id} is grounded."}
-        ],
     }
     data.update(overrides)
     return ModelingItemInput(**data)

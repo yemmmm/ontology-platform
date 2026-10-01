@@ -30,9 +30,6 @@ export function normalizeAssertionKind(kind: string): AssertionKind {
   if (lower.includes("import")) return "imported";
   if (lower.includes("review")) return "review_metadata";
   if (lower.includes("policy")) return "policy_metadata";
-  // Phase 8.2 — "missing_evidence" is no longer an assertion kind. It is a
-  // derived state surfaced through evidence binding count; legacy rows that
-  // still carry the old kind fall back to the default asserted tag.
   return "asserted";
 }
 
@@ -48,28 +45,6 @@ export function AssertionKindBadge({ kind, stale }: { kind: string; stale?: bool
         {stale ? <span aria-label="stale-marker"> · {t("Stale")}</span> : null}
       </Tag>
     </Tooltip>
-  );
-}
-
-/**
- * Phase 8.2 — EvidenceStatusBadge now derives its state from the
- * binding count rather than a free-text status string. Zero bindings
- * renders the red "missing evidence" tag; otherwise a green tag reports
- * the binding count.
- */
-export function EvidenceStatusBadge({ bindingCount }: { bindingCount: number }) {
-  const t = useT();
-  if (bindingCount === 0) {
-    return (
-      <Tag color="red" aria-label="evidence-status-missing">
-        {t("missing evidence")}
-      </Tag>
-    );
-  }
-  return (
-    <Tag color="green" aria-label={`evidence-status-bound-${bindingCount}`}>
-      {bindingCount} {t("evidence")}
-    </Tag>
   );
 }
 

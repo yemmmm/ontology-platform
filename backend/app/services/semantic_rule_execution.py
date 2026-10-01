@@ -1,12 +1,12 @@
 """Phase 5 rule execution: SPARQL CONSTRUCT, platform DSL, and workflow rules.
 
 A rule run resolves the graph set, picks compatible rule definitions, executes
-them in deterministic order (priority, then rule_iri, then version), attaches
-provenance and assertion-kind annotations to the generated statements, writes
+them in deterministic order (priority, then rule_iri, then version), writes
 the result graph to ``graph/rule-result/{run_id}``, optionally writes run
 metadata to ``graph/rule-run/{run_id}``, persists ``semantic_rule_runs``
 metadata, and promotes a Phase 4 rule pointer when the run is requested to
-become current.
+become current.  Rule identity remains in the run metadata and result
+projection; source-tracing records are not collected by this service.
 """
 
 from __future__ import annotations
@@ -75,7 +75,9 @@ class SemanticRuleExecutionService:
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
         )
-        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
+        # Retain injection compatibility for historical callers. Rule
+        # execution no longer constructs or invokes a pure lineage collector.
+        self.lineage_recorder = lineage_recorder
 
     def execute_construct_template(
         self,
@@ -148,12 +150,6 @@ class SemanticRuleExecutionService:
             self._finalise_run(
                 run=run,
                 execution=execution,
-            )
-            self._record_lineage(
-                run=run,
-                execution=execution,
-                assertion_kind="construct_derived",
-                rule_definition=rule_definition,
             )
             promoted_pointer = self._maybe_promote_pointer(
                 run=run,
@@ -259,12 +255,6 @@ class SemanticRuleExecutionService:
             self._finalise_run(
                 run=run,
                 execution=execution,
-            )
-            self._record_lineage(
-                run=run,
-                execution=execution,
-                assertion_kind=result_kind,
-                rule_definition=rule_definition,
             )
             promoted_pointer = self._maybe_promote_pointer(
                 run=run,
@@ -433,46 +423,13 @@ class SemanticRuleExecutionService:
                         statement_limit=safety_profile["max_generated_statements"],
                     )
                     result_kind = _result_kind_for(rule, "rule_derived")
-                exact_premises = (
-                    _dsl_premises(rule.body, execution) if rule.language == "platform_dsl" else None
-                )
-                for statement_index, statement in enumerate(execution.statements):
-                    proof_level = (
-                        "exact"
-                        if exact_premises is not None and statement_index in exact_premises
-                        else "coarse"
-                    )
-                    coarse_reason = None
-                    if proof_level == "coarse":
-                        coarse_reason = (
-                            "dsl_binding_incomplete"
-                            if rule.language == "platform_dsl"
-                            else "construct_binding_to_premise_unavailable"
-                        )
+                for statement in execution.statements:
                     aggregated.append(
                         {
                             **statement,
                             "rule_id": rule.id,
                             "rule_version": rule.version,
                             "assertion_kind": result_kind,
-                            "lineage_proof_level": proof_level,
-                            "lineage_premises": (
-                                exact_premises.get(statement_index, [])
-                                if exact_premises is not None
-                                else []
-                            ),
-                            "lineage_origin_metadata": {
-                                "rule_sources": [
-                                    {
-                                        "rule_definition_id": rule.id,
-                                        "rule_version": rule.version,
-                                        "rule_iri": rule.rule_iri,
-                                        "language": rule.language,
-                                        "proof_level": proof_level,
-                                        "coarse_reason": coarse_reason,
-                                    }
-                                ]
-                            },
                         }
                     )
                 explanations.append(
@@ -495,12 +452,6 @@ class SemanticRuleExecutionService:
                 run=run,
                 execution=_GroupExecution(statements=aggregated, warnings=[]),
                 extra_metadata={"explanations": explanations},
-            )
-            self._record_lineage(
-                run=run,
-                execution=_GroupExecution(statements=aggregated, warnings=[]),
-                assertion_kind="rule_derived",
-                rule_definition=None,
             )
             promoted_pointer = None
             if promote_pointer:
@@ -672,56 +623,6 @@ class SemanticRuleExecutionService:
         self.session.add(run)
         self.session.commit()
         return run
-
-    def _record_lineage(
-        self,
-        *,
-        run: SemanticRuleRunModel,
-        execution: ConstructExecution | DslExecution | "_GroupExecution",
-        assertion_kind: str,
-        rule_definition: SemanticRuleDefinitionModel | None,
-    ) -> None:
-        if not run.result_graph_iri or not execution.statements:
-            return
-        ontology_id = self.lineage_recorder.ontology_id_for_graph_set(run.graph_set_id)
-        if ontology_id is None:
-            return
-        proof_level = "coarse"
-        premises_by_output: dict[int, list[tuple[str, str, str, str]]] = {}
-        coarse_reason = "construct_binding_to_premise_unavailable"
-        if rule_definition is not None and rule_definition.language == "platform_dsl":
-            exact = _dsl_premises(rule_definition.body, execution)
-            if exact is not None:
-                proof_level = "exact"
-                premises_by_output = exact
-                coarse_reason = ""
-            else:
-                coarse_reason = "dsl_binding_incomplete"
-        elif run.engine_name == "rule_group":
-            if any(
-                statement.get("lineage_proof_level") == "exact"
-                for statement in execution.statements
-            ):
-                proof_level = "exact"
-                coarse_reason = ""
-        self.lineage_recorder.record_derived_statements(
-            ontology_id=ontology_id,
-            graph_set_id=run.graph_set_id,
-            result_graph_iri=run.result_graph_iri,
-            statements=execution.statements,
-            assertion_kind=assertion_kind,
-            origin_kind="rule_run",
-            run_id=run.id,
-            proof_level=proof_level,
-            input_graph_revisions=(run.run_metadata or {}).get("input_graph_revisions", {}),
-            premises_by_output=premises_by_output,
-            origin_metadata={
-                "coarse_reason": coarse_reason or None,
-                "rule_definition_id": (rule_definition.id if rule_definition is not None else None),
-                "rule_version": (rule_definition.version if rule_definition is not None else None),
-                "source_signature": run.source_signature,
-            },
-        )
 
     def _input_graph_revisions(self, graph_set_id: str) -> dict[str, int]:
         graph_iris = list(
@@ -978,48 +879,6 @@ def _result_kind_for(
     if output_kind == "annotation":
         return "rule_derived"
     return default
-
-
-def _dsl_premises(
-    body: dict[str, Any],
-    execution: DslExecution | "_GroupExecution" | ConstructExecution,
-) -> dict[int, list[tuple[str, str, str, str]]] | None:
-    """Resolve exact DSL premise quads from projected bindings.
-
-    Returning ``None`` is an explicit downgrade to coarse proof; callers never
-    create guessed premise edges.
-    """
-    bindings = getattr(execution, "bindings", [])
-    when = [clause for clause in body.get("when", []) if "filter" not in clause]
-    if not when or not bindings:
-        return None
-    resolved: dict[int, list[tuple[str, str, str, str]]] = {}
-    for output_index, statement in enumerate(execution.statements):
-        try:
-            binding = bindings[int(statement["binding_index"])]
-        except (KeyError, IndexError, TypeError, ValueError):
-            return None
-        graph_iri = str(binding.get("g", ""))
-        if graph_iri.startswith("<") and graph_iri.endswith(">"):
-            graph_iri = graph_iri[1:-1]
-        if not graph_iri:
-            return None
-        n3_values = binding.get("__n3__", {})
-        premises: list[tuple[str, str, str, str]] = []
-        for clause in when:
-            terms: list[str] = []
-            for field in ("s", "p", "o"):
-                term = str(clause[field])
-                if term.startswith("?"):
-                    name = term[1:]
-                    value = n3_values.get(name) or binding.get(name)
-                    if value is None:
-                        return None
-                    term = str(value)
-                terms.append(term)
-            premises.append((terms[0], terms[1], terms[2], graph_iri))
-        resolved[output_index] = premises
-    return resolved
 
 
 def _coerce_term(term: str):

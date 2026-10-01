@@ -4,9 +4,8 @@ from uuid import uuid4
 
 from app.api.schemas import BuildSessionCreate
 from app.core.config import Settings
-from app.repositories.models import OntologyModel, SemanticStatementOccurrenceModel
+from app.repositories.models import OntologyModel
 from app.services.build_sessions import BuildSessionService
-from app.services.semantic_lineage_identity import occurrence_id_for, statement_id_for_quad
 
 
 def _bearer(value: str) -> dict[str, str]:
@@ -38,32 +37,6 @@ def _artifact(ontology_id: str):
         "workflow_version": "r1.1-v1",
         "ontology_id": ontology_id,
     }
-
-
-def _seed_lineage(r008_client, ontology_id: str) -> str:
-    subject = "https://workflow.test/resource/api-known"
-    predicate = "https://workflow.test/property/status"
-    obj = '"known"'
-    graph_iri = "https://workflow.test/graph/api"
-    statement_id = statement_id_for_quad(subject, predicate, obj, graph_iri)
-    with r008_client["factory"]() as session:
-        session.add(
-            SemanticStatementOccurrenceModel(
-                id=occurrence_id_for(statement_id, 1),
-                ontology_id=ontology_id,
-                graph_set_id=None,
-                statement_id=statement_id,
-                subject_iri=subject,
-                predicate_iri=predicate,
-                object_ntriples=obj,
-                graph_iri=graph_iri,
-                graph_revision=1,
-                assertion_kind="asserted",
-                status="active",
-            )
-        )
-        session.commit()
-    return statement_id
 
 
 def test_rest_idempotency_permissions_export_and_opaque_foreign_isolation(r008_client):
@@ -158,10 +131,9 @@ def test_rest_secret_rejection_does_not_persist_or_echo(r008_client):
     assert listed.json()["items"] == []
 
 
-def test_rest_lineage_reference_is_resolved_and_type_mismatch_is_stable(r008_client):
+def test_rest_lineage_reference_is_rejected_by_workflow_contract(r008_client):
     client = r008_client["client"]
     session_id, ontology_id = _seed_session(r008_client, "p1")
-    statement_id = _seed_lineage(r008_client, ontology_id)
     path = f"/api/build-sessions/{session_id}/modeling-execution-events"
     base = {
         "workflow_name": "ontology-builder",
@@ -173,39 +145,21 @@ def test_rest_lineage_reference_is_resolved_and_type_mismatch_is_stable(r008_cli
         "actor_role": "main_agent",
         "summary": "Checked lineage reference",
     }
-    known = client.post(
+    rejected = client.post(
         path,
         headers=_bearer(r008_client["p1_model_key"]),
         json={
             **base,
-            "client_event_id": "api-known-lineage",
+            "client_event_id": "api-lineage",
             "related_resources": [
                 {
                     "resource_type": "lineage",
                     "ontology_id": ontology_id,
                     "target_type": "statement",
-                    "target_id": statement_id,
+                    "target_id": "0" * 64,
                 }
             ],
         },
     )
-    assert known.status_code == 201, known.text
-
-    mismatched = client.post(
-        path,
-        headers=_bearer(r008_client["p1_model_key"]),
-        json={
-            **base,
-            "client_event_id": "api-mismatched-lineage",
-            "related_resources": [
-                {
-                    "resource_type": "lineage",
-                    "ontology_id": ontology_id,
-                    "target_type": "resource",
-                    "target_id": statement_id,
-                }
-            ],
-        },
-    )
-    assert mismatched.status_code == 409
-    assert mismatched.json()["detail"]["code"] == "workflow_reference_conflict"
+    assert rejected.status_code == 422, rejected.text
+    assert rejected.json()["detail"][0]["loc"][-1] == "resource_type"

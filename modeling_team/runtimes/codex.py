@@ -162,13 +162,10 @@ def _sanitize_rpc_message(message: str) -> str | None:
 
 
 _RETRIEVAL_BLOCKING_WARNINGS = frozenset(
-    {
-        "evidence_missing",
-        "lineage_missing",
-        "lineage_partial",
-        "lineage_truncated",
-        "legacy_lineage_unavailable",
-    }
+    # Source-tracing publication is suspended by the active modeling contract.
+    # Keep the warning plumbing for historical run artifacts, but do not make
+    # those warnings a live semantic retrieval gate.
+    {}
 )
 
 _PRIVATE_AGENT_BASE_ARTIFACT_NAMES = (
@@ -3568,24 +3565,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     @staticmethod
     def _proof_gate_enabled(run: Any) -> bool:
-        """Resolve proof-v2 assets from an explicit gate, not schema version alone.
+        """Return whether the active Protocol runtime mounts proof assets.
 
-        A missing or null binding is non-proof.  Real TeamRun instances carry the
-        marker, so a non-null binding is the only normal proof gate; the archived
-        P2a production task remains an explicit proof-gated overlay.
+        Source-tracing publication and proof-v2 verification are retired from
+        the production facade.  Historical proof helpers remain importable for
+        offline fixtures, but a loaded run must never turn a gate marker into a
+        live runtime dependency.
         """
-        gate_binding = getattr(run, "gate_binding", None)
-        configuration = getattr(run, "configuration", None)
-        task = getattr(configuration, "task", None)
-        profile = getattr(configuration, "profile", None)
-        expected_binding = getattr(task, "expected_matrix_binding", None) or getattr(
-            profile, "expected_matrix_binding", None
-        )
-        return (
-            gate_binding is not None
-            or expected_binding is not None
-            or getattr(task, "task_id", None) == "p2a-protocol-production"
-        )
+        return False
 
     def _role_capability_operations(self, role: str, *, run: Any | None = None) -> tuple[str, ...]:
         """Return only capabilities actually configured for this formal run.
@@ -4189,11 +4176,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         agent.mechanics_contract_path = contract
 
     def _stage_protocol_retrieval_mcp(self, run: Any, agent: _Agent) -> None:
-        """Stage the sole v2 Protocol retrieval MCP wrapper and verifier as immutable assets."""
+        """Stage the active Protocol retrieval MCP wrapper as immutable assets."""
         task = getattr(getattr(run, "configuration", None), "task", None)
         if agent.package.role != "protocol" or getattr(task, "schema_version", 1) != 2:
             return
-        agent.proof_gate = self._proof_gate_enabled(run)
+        agent.proof_gate = False
         assets = run.root / "runtime-assets" / "protocol"
         assets.mkdir(parents=True, mode=0o700, exist_ok=True)
         os.chmod(assets.parent, 0o700)
@@ -4209,15 +4196,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError("Protocol retrieval MCP asset directory is invalid")
         wrapper = assets / "protocol-retrieval-mcp.py"
         verifier = assets / "protocol_mechanics.py"
-        proof_v2 = assets / "proof_v2.py"
         source_specs = [
             (wrapper, self.root / "modeling_team" / "protocol_retrieval_mcp.py", "protocol_retrieval_mcp", 0o444),
             (verifier, self.root / "modeling_team" / "protocol_mechanics.py", "protocol_retrieval_verifier", 0o444),
         ]
-        if agent.proof_gate:
-            source_specs.append(
-                (proof_v2, self.root / "modeling_team" / "proof_v2.py", "proof_v2", 0o600)
-            )
         baseline_path = run.root / "baseline-manifest.json"
         baseline = json.loads(baseline_path.read_text(encoding="utf-8")) if baseline_path.exists() else {}
         expected_digests = baseline.get("files", {}) if isinstance(baseline, dict) else {}
@@ -4257,7 +4239,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 raise CodexRuntimeError("Protocol retrieval MCP staged asset metadata is invalid")
         agent.retrieval_mcp_path = wrapper
         agent.retrieval_verifier_path = verifier
-        agent.proof_v2_path = proof_v2 if agent.proof_gate else None
+        agent.proof_v2_path = None
 
     def probe_role_visibility(self, run: Any) -> dict[str, Any]:
         """Run only path-readability probes inside each Agent's own bwrap namespace."""
@@ -4539,7 +4521,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "required = true",
                         "[mcp_servers.protocol_mechanics.env]",
                         f'PROTOCOL_RUNTIME_RUN_ID = {json.dumps(run_id)}',
-                        f'PROTOCOL_PROOF_GATE = {json.dumps("1" if agent.proof_gate else "0")}',
                         f'PROTOCOL_FORMAL_CANDIDATE_GATE = {json.dumps("1" if self._coordination_enabled else "0")}',
                     ]
                 )
@@ -5095,14 +5076,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     f"/proc/self/fd/{descriptors[1]}",
                     "/opt/protocol_mechanics.py",
                 ]
-                if len(descriptors) == 3:
-                    mounts.extend(
-                        [
-                            "--ro-bind",
-                            f"/proc/self/fd/{descriptors[2]}",
-                            "/opt/proof_v2.py",
-                        ]
-                    )
                 command[command.index("--chdir") : command.index("--chdir")] = mounts
             if agent.schema_version == 2:
                 if self._candidate_platform_gate_enabled:
@@ -5195,10 +5168,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._close_retrieval_asset_fds(agent)
 
     def _open_protocol_retrieval_assets(self, agent: _Agent) -> tuple[int, ...]:
-        """Open immutable wrapper/verifier/proof descriptors for the Protocol-only bwrap mount."""
+        """Open immutable active Protocol retrieval MCP descriptors for the bwrap mount."""
         if agent.retrieval_asset_fds:
-            expected_count = 3 if agent.proof_gate else 2
-            if len(agent.retrieval_asset_fds) != expected_count:
+            if len(agent.retrieval_asset_fds) != 2:
                 raise CodexRuntimeError("Protocol retrieval MCP descriptor state is invalid")
             return agent.retrieval_asset_fds
         if (
@@ -5213,10 +5185,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             (agent.retrieval_mcp_path, expected_root / "protocol-retrieval-mcp.py", self.root / "modeling_team/protocol_retrieval_mcp.py", 0o444),
             (agent.retrieval_verifier_path, expected_root / "protocol_mechanics.py", self.root / "modeling_team/protocol_mechanics.py", 0o444),
         ]
-        if agent.proof_gate:
-            expected.append(
-                (agent.proof_v2_path, expected_root / "proof_v2.py", self.root / "modeling_team/proof_v2.py", 0o600)
-            )
         descriptors: list[int] = []
         try:
             for path, expected_path, source, mode in expected:
@@ -6185,12 +6153,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 expected["protocol_mechanics"] = {
                     "build_candidate_receipt",
                     "translate_candidate_to_batches",
-                    "verify_scoped_retrieval_fallback",
                 }
                 if self._coordination_enabled:
                     expected["protocol_mechanics"].add("build_candidate_conflict")
-                if agent.proof_gate:
-                    expected["protocol_mechanics"].add("write_candidate_item_evidence_map")
         if agent.package.role == "modeling" and self._is_r23003_run(getattr(self, "_active_run", None)):
             expected["modeling_read_proxy"] = set(MODELING_READ_TOOLS)
         capability_operations = self._role_capability_operations(agent.package.role)
@@ -7111,11 +7076,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 return False
             for item in collection:
                 if not isinstance(item, dict) or item.get("ontology_id") not in requested:
-                    return False
-                if item.get("assertion_kind") == "asserted" and item.get("evidence_status") != "supported":
-                    return False
-                lineage = item.get("lineage")
-                if not isinstance(lineage, dict) or lineage.get("status") != "complete":
                     return False
                 if not self._warnings_are_complete(item.get("warnings")):
                     return False

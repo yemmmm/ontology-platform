@@ -18,7 +18,6 @@ from app.mcp.runtime import (
 )
 from app.repositories.rdf_store import RdfStoreRepository
 from app.repositories.models import (
-    OntologyModel,
     SemanticGraphSetModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
@@ -65,7 +64,6 @@ from app.services.semantic_access import (
     SemanticAccessResolver,
     project_id_for_graph_set,
 )
-from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
 
 
 def _rdf_store() -> RdfStoreRepository:
@@ -161,16 +159,6 @@ def _rule_definition_service(session) -> SemanticRuleDefinitionService:
 def _rule_execution_service(session) -> SemanticRuleExecutionService:
     settings = Settings()
     return SemanticRuleExecutionService(session, _rdf_store(), settings)
-
-
-def _lineage_service(session, project_id: str | None = None) -> OntologyLineageService:
-    return OntologyLineageService(
-        session,
-        _rdf_store(),
-        access_view=SemanticAccessResolver(session).resolve(
-            runtime_principal(), project_id
-        ),
-    )
 
 
 def _list_scoped_run_records(
@@ -630,44 +618,6 @@ def register_semantic(server: FastMCP) -> None:
             )
         )
 
-    @server.tool()
-    def get_ontology_lineage(
-        ontology_id: str,
-        target_type: str,
-        target_id: str,
-        include_history: bool = False,
-        max_depth: int = 3,
-        limit: int = 100,
-    ) -> dict[str, Any]:
-        """Read bounded statement, resource, or Rule Definition lineage for an Ontology."""
-        def _handle(session, _driver, _embedding_client):
-            ontology = session.get(OntologyModel, ontology_id)
-            return _lineage_service(
-                session, ontology.project_id if ontology else None
-            ).get_lineage(
-                ontology_id=ontology_id,
-                target_type=target_type,
-                target_id=target_id,
-                include_history=include_history,
-                max_depth=max_depth,
-                limit=limit,
-            )
-
-        return _run_tool(_handle)
-
-    @server.tool()
-    def inspect_semantic_statement_provenance(
-        graph_set_id: str,
-        statement_iri: str,
-        include: str = "asserted",
-    ) -> dict[str, Any]:
-        """Deprecated compatibility wrapper; use get_ontology_lineage."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _statement_provenance(
-                session, graph_set_id, statement_iri, include
-            )
-        )
-
     # ------------------------------------------------------------------
     # Phase 7 — canonical RDF dataset migration tools
     # ------------------------------------------------------------------
@@ -944,26 +894,6 @@ def _start_projection_job(
         "relationship_count": refreshed.relationship_count,
         "document_count": refreshed.document_count,
     }
-
-
-def _statement_provenance(
-    session,
-    graph_set_id: str,
-    statement_iri: str,
-    include: str,
-) -> dict[str, Any]:
-    graph_set = _graph_set_service(session).get_graph_set(graph_set_id)
-    if graph_set.scope_type != "ontology" or not graph_set.scope_id:
-        raise LineageTargetNotFound("Graph Set is not scoped to an Ontology")
-    result = _lineage_service(
-        session, project_id_for_graph_set(session, graph_set_id)
-    ).get_lineage(
-        ontology_id=graph_set.scope_id,
-        target_type="resource",
-        target_id=statement_iri,
-        include_history=include in {"history", "all"},
-    )
-    return {**result, "deprecated": True, "replacement_tool": "get_ontology_lineage"}
 
 
 def _run_scoped_rule(

@@ -8,21 +8,12 @@ from typing import Any
 from mcp.server.fastmcp import FastMCP
 
 from app.api.schemas import ModelingExecutionEventCreate, ModelingWorkflowArtifactCreate
-from app.core.config import Settings
 from app.mcp.runtime import _run_tool, runtime_actor
-from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_workflow import ModelingWorkflowService
-from app.services.ontology_lineage import OntologyLineageService
 
 
 def _service(session) -> ModelingWorkflowService:
-    return ModelingWorkflowService(
-        session,
-        actor=runtime_actor(),
-        lineage_service=OntologyLineageService(
-            session, RdfStoreRepository(Settings().oxigraph_url)
-        ),
-    )
+    return ModelingWorkflowService(session, actor=runtime_actor())
 
 
 def register_modeling_workflow(server: FastMCP) -> None:

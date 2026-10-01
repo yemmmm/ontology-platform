@@ -154,10 +154,10 @@ class P2ProtocolDriverTests(unittest.TestCase):
             manifest["runtime_contract"]["p2_protocol_driver"]["required_terminal_stage"],
             "protocol_report_accepted",
         )
-        self.assertEqual(
-            manifest["files"]["proof_v2"],
-            digest_file(root / "modeling_team/proof_v2.py"),
-        )
+        # The archived driver remains loadable offline, but the active
+        # baseline does not mount its proof-v2 runtime asset.
+        self.assertNotIn("proof_v2", manifest["files"])
+        self.assertNotIn("proof_v2", manifest["runtime_contract"])
         self.assertEqual(
             manifest["files"]["p2_monitor_adverse_order_profile"],
             digest_file(root / "modeling_team/profiles/p2-adverse-order-smoke.yaml"),

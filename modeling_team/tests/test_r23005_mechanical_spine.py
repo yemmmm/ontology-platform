@@ -51,7 +51,7 @@ class R23005MechanicalSpineTests(unittest.TestCase):
     @staticmethod
     def _candidate() -> dict[str, object]:
         return {
-            "candidate_kind": "platform-neutral-candidate-v2",
+            "candidate_kind": "platform-neutral-candidate-v3",
             "candidate_revision": "test-r3",
             "scope": {"business_slice": "runtime-neutral-publication"},
             "constraints": ["Preserve the accepted business meaning."],

@@ -99,7 +99,6 @@ class SemanticSearchProjectionService(ProjectionWriter):
                     "source_graph_iri": str(graph),
                     "source_signature": scope.source_signature,
                     "graph_set_id": scope.graph_set_id,
-                    "evidence_status": "unknown",
                     "is_stale": is_stale,
                     "visibility_labels": [],
                 }

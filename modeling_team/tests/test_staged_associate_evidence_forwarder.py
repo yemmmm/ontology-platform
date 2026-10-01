@@ -19,7 +19,6 @@ import inspect
 import json
 import os
 import sys
-import time
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import rmtree
@@ -394,7 +393,7 @@ def _evidence_call(staged, association):
         endpoint.stop()
 
 
-def test_capability_evidence_repost_reaches_the_real_child_without_a_receipt(tmp_path):
+def test_retired_capability_cannot_reach_the_offline_child(tmp_path):
     staged = _StagedRunner(tmp_path)
     try:
         staged.prepare()
@@ -402,13 +401,8 @@ def test_capability_evidence_repost_reaches_the_real_child_without_a_receipt(tmp
 
         response = _evidence_call(staged, _association())
 
-        assert "error" not in response, response
-        structured = response["result"]["structuredContent"]
-        assert structured["ok"] is True, structured
-        assert structured["data"]["total"] == 1
-        record = _read_record(seam["record"])
-        assert record is not None
-        assert record["association"]["target_type"] == "modeling_item"
+        assert response["error"]["code"] == -32001
+        assert _read_record(seam["record"]) is None
 
         # Evidence is not materialization: no intent, no receipt, and the write
         # integrity latch stays exactly where it was.
@@ -419,20 +413,19 @@ def test_capability_evidence_repost_reaches_the_real_child_without_a_receipt(tmp
         staged.cleanup()
 
 
-def test_capability_evidence_repost_keeps_a_definite_refusal_retryable(tmp_path):
+def test_retired_capability_rejects_repeated_calls_without_latching_the_run(tmp_path):
     staged = _StagedRunner(tmp_path)
     try:
         staged.prepare()
-        _bind_fixture_evidence_forwarder(staged, tmp_path, "reject", code="not_found")
+        seam = _bind_fixture_evidence_forwarder(staged, tmp_path, "reject", code="not_found")
 
         response = _evidence_call(staged, _association())
 
-        structured = response["result"]["structuredContent"]
-        assert structured["ok"] is False, structured
-        assert structured["error"]["reason_code"] == "staged_evidence_forward_failed"
-        assert "not_found" in structured["error"]["detail"]
-        # An idempotent association has no durable attempt state: nothing is latched
-        # and the identical call may simply be replayed.
+        assert response["error"]["code"] == -32001
+        assert _evidence_call(staged, _association())["error"]["code"] == -32001
+        assert _read_record(seam["record"]) is None
+        assert not (staged.run_root / "staged-decisions" / "intents").exists()
+        assert not (staged.run_root / "staged-decisions" / "receipts").exists()
         assert staged.runner._staged_gate_killed is False
     finally:
         staged.cleanup()
@@ -462,7 +455,7 @@ def _cli_argv(task: Path, run_id: str, scope_path: Path) -> list[str]:
     ]
 
 
-def test_foreground_cli_binds_a_real_evidence_forwarder_only_for_staged_runs(
+def test_foreground_cli_does_not_bind_the_retired_evidence_forwarder(
     tmp_path, monkeypatch
 ):
     from modeling_team import __main__ as cli
@@ -495,14 +488,7 @@ def test_foreground_cli_binds_a_real_evidence_forwarder_only_for_staged_runs(
             cli.main()
         staged_runner = captured[-1]
         assert staged_runner._staged_decisions is True
-        bound = staged_runner.staged_evidence_forwarder
-        assert callable(bound)
-        # The bound callable is the real forwarder for this run's root and key: with the
-        # key absent it refuses as definite and spawns nothing at all.
-        staged_runner.run.protocol_key = None
-        with pytest.raises(StagedBatchForwardError) as failure:
-            bound(_association())
-        assert "protocol key" in str(failure.value)
+        assert getattr(staged_runner, "staged_evidence_forwarder", None) is None
 
         # A run that does not select staged decisions keeps the fail-closed default.
         monkeypatch.setattr(sys, "argv", _cli_argv(MULTI_SLICE_SMOKE, run_ids[1], scope_path))
@@ -510,7 +496,7 @@ def test_foreground_cli_binds_a_real_evidence_forwarder_only_for_staged_runs(
             cli.main()
         plain_runner = captured[-1]
         assert plain_runner._staged_decisions is False
-        assert plain_runner.staged_evidence_forwarder is None
+        assert getattr(plain_runner, "staged_evidence_forwarder", None) is None
     finally:
         for runner in captured:
             runner.cleanup()

@@ -14,7 +14,6 @@ delivery contract, and the prompt/contract files the Protocol role reads.
 from __future__ import annotations
 
 import hashlib
-import inspect
 import json
 from datetime import UTC, datetime
 from shutil import rmtree
@@ -80,73 +79,31 @@ def _argument_envelope(**overrides) -> dict:
 
 
 def test_staged_protocol_operation_set_pairs_submission_with_evidence_repost():
-    # The staged run's protocol surface is exactly these two operations, in this
-    # order, and the role registry carries the same pair on top of the formal set.
+    # R4.0-012 removes source-tracing reposts from the active staged surface.
     assert STAGED_PROTOCOL_RUN_OPERATIONS == (
         STAGED_PROTOCOL_OPERATION,
-        STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION,
     )
     assert STAGED_PROTOCOL_OPERATIONS == (*PROTOCOL_OPERATIONS, *STAGED_PROTOCOL_RUN_OPERATIONS)
     assert ROLE_OPERATIONS["protocol"] == STAGED_PROTOCOL_OPERATIONS
-    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION in CAPABILITY_TOOL_SCHEMAS
+    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION not in STAGED_PROTOCOL_OPERATIONS
+    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION not in CAPABILITY_TOOL_SCHEMAS
 
 
 def test_associate_evidence_schema_mirrors_the_platform_tool_arguments():
-    """The advertised envelope is the platform tool's own parameter set."""
+    """The retired evidence-repost operation has no active schema."""
 
-    from app.mcp.tools.evidence import register_evidence
-
-    captured: dict[str, object] = {}
-
-    class _RecorderServer:
-        def tool(self):
-            def decorator(function):
-                captured[function.__name__] = function
-                return function
-
-            return decorator
-
-    register_evidence(_RecorderServer())
-    function = captured.get("associate_evidence_reference")
-    assert function is not None, "the backend must register associate_evidence_reference"
-    platform_params = set(inspect.signature(function).parameters) - {"actor"}
-
-    schema = CAPABILITY_TOOL_SCHEMAS[STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION]
-    assert set(schema["properties"]) == {"protocol_id", "association"}
-    assert schema["required"] == ["protocol_id", "association"]
-    association = schema["properties"]["association"]
-    assert set(association["properties"]) == platform_params
-    assert set(association["required"]) == {
-        "project_id",
-        "ontology_id",
-        "target_type",
-        "target_id",
-    }
-    assert association["additionalProperties"] is False
-
-    # Every optional platform argument stays optional here.
-    for key in platform_params - set(association["required"]):
-        assert key not in schema["required"]
+    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION not in CAPABILITY_TOOL_SCHEMAS
 
 
 def test_capability_endpoint_declares_and_dispatches_the_evidence_operation(tmp_path):
-    seen: list[dict] = []
-
     def submission_handler(args):
         return {"ok": True, "batch_id": "platform-batch-1"}
-
-    def association_handler(args):
-        seen.append(dict(args))
-        if args["association"].get("target_id") == "rejected":
-            raise StagedSubmissionRejection("staged_evidence_forward_failed", "fixture refusal")
-        return {"items": [{"id": "association-1"}], "total": 1}
 
     carrier = RunnerAcceptanceCarrier(
         tmp_path / "carrier",
         task_id="staged-associate",
         acceptance_id="acceptance",
         staged_submission_handler=submission_handler,
-        staged_association_handler=association_handler,
         staged_protocol_capability=True,
     )
     endpoint = carrier.capability_endpoint("protocol")
@@ -159,40 +116,16 @@ def test_capability_endpoint_declares_and_dispatches_the_evidence_operation(tmp_
     names = [tool["name"] for tool in listing["result"]["tools"]]
     assert names == list(STAGED_PROTOCOL_RUN_OPERATIONS)
 
-    def call(arguments):
-        return endpoint.handle(
-            {
-                "jsonrpc": "2.0",
-                "id": "call",
-                "token": token,
-                "method": "tools/call",
-                "params": {"name": STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION, "arguments": arguments},
-            }
-        )
-
-    ok = call(_argument_envelope())
-    assert ok["result"]["structuredContent"]["ok"] is True
-    assert ok["result"]["structuredContent"]["data"]["total"] == 1
-    assert seen[0]["protocol_id"] == "protocol"
-
-    typed = call(_argument_envelope(association=_association(target_id="rejected")))
-    error = typed["result"]["structuredContent"]["error"]
-    assert error["reason_code"] == "staged_evidence_forward_failed"
-
-    # A foreign actor identity is the same opaque rejection as every other role.
-    foreign = call(_argument_envelope(protocol_id="modeling"))
-    assert foreign["error"]["code"] == -32001
-
-    # The schema is enforced at the endpoint: an unknown association key, an
-    # unknown envelope key and a missing envelope never reach the handler.
-    for arguments in (
-        _argument_envelope(association={**_association(), "actor": "forged"}),
-        _argument_envelope(association="not-a-mapping"),
-        {"protocol_id": "protocol"},
-        _argument_envelope(unexpected="key"),
-    ):
-        rejected = call(arguments)
-        assert rejected["error"]["code"] == -32001, arguments
+    retired = endpoint.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": "call",
+            "token": token,
+            "method": "tools/call",
+            "params": {"name": STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION, "arguments": _argument_envelope()},
+        }
+    )
+    assert retired["error"]["code"] == -32001
 
     # A non-staged carrier advertises neither staged operation.
     plain = RunnerAcceptanceCarrier(
@@ -399,8 +332,8 @@ def test_staged_associate_evidence_travels_the_live_protocol_socket(tmp_path):
             )
         finally:
             endpoint.stop()
-        assert response["result"]["structuredContent"]["ok"] is True
-        assert forwarder.calls == [_association()]
+        assert response["error"]["code"] == -32001
+        assert forwarder.calls == []
     finally:
         staged.cleanup()
 
@@ -410,41 +343,16 @@ def test_staged_associate_evidence_travels_the_live_protocol_socket(tmp_path):
 
 def test_protocol_instructions_declare_the_evidence_repost_contract():
     instructions = INSTRUCTIONS.read_text(encoding="utf-8")
-    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION in instructions
+    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION not in instructions
     staged_section = instructions.split("## Staged modeling decisions (R3.0-008B)", 1)[1]
-    # The whole staged section, sub-headings included: the evidence repost contract
-    # lives in its own `###` block and must be read by the Protocol role as part of
-    # the staged capability surface, not as a separate topic.
-    evidence_section = staged_section.split("\n## ", 1)[0]
-    assert "associate_evidence_reference" in evidence_section
-    assert "modeling_item" in evidence_section
-    # Only owner-authorized evidence may be reposted: the owner's own answer or
-    # an approved business-package document, quoted verbatim, with the source
-    # named; never self-authored evidence and never frozen CQ pool content.
-    assert "owner" in evidence_section.lower()
-    assert "document_name" in evidence_section
-    assert "self-authored" in evidence_section or "自著" in evidence_section
-    assert "frozen" in evidence_section
+    assert "associate_evidence_reference" not in staged_section
 
 
 def test_staged_contract_files_enumerate_both_staged_operations():
     contract = json.loads(CONTRACT_008B.read_text(encoding="utf-8"))
-    operations = [
-        contract["staged_submission_capability"]["operation"],
-        contract["staged_evidence_capability"]["operation"],
-    ]
-    assert operations == list(STAGED_PROTOCOL_RUN_OPERATIONS)
-    assert (
-        contract["staged_evidence_capability"]["platform_tool"]
-        == "associate_evidence_reference"
-    )
-    assert contract["staged_evidence_capability"]["target_type"] == "modeling_item"
-    for code in ("staged_evidence_forward_failed", "staged_evidence_forward_unknown"):
-        assert code in contract["staged_evidence_capability"]["failure_reason_codes"]
+    assert contract["staged_submission_capability"]["operation"] == STAGED_PROTOCOL_OPERATION
+    assert "staged_evidence_capability" not in contract
 
     unified = json.loads(CONTRACT_009.read_text(encoding="utf-8"))
     assert unified["submission_capability"]["operation"] == STAGED_PROTOCOL_OPERATION
-    # 009 extends 008B in place and shares the same role-private surface.
-    assert unified["evidence_capability"]["operation"] == (
-        STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION
-    )
+    assert "evidence_capability" not in unified

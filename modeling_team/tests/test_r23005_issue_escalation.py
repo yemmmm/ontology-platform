@@ -25,7 +25,7 @@ from modeling_team.transport_mcp import RoutingError, TeamTransportBroker, mcp_r
 
 def _candidate() -> dict[str, object]:
     return {
-        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_kind": "platform-neutral-candidate-v3",
         "candidate_revision": "rev-1",
         "scope": "new",
         "constraints": ["source-grounded"],

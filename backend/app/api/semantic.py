@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -83,11 +83,6 @@ from app.repositories.models import (
 )
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
-from app.services.evidence_reference import (
-    EvidenceReferenceError,
-    EvidenceReferenceService,
-    association_to_dict,
-)
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService, SemanticServiceError
 from app.services.semantic_context_query import (
@@ -606,6 +601,7 @@ def update_graph_editability(
 
 @router.get("/export")
 def export_dataset(
+    request: Request,
     format: Annotated[str, Query(pattern="^(trig|json-ld|turtle)$")] = "trig",
     graph_iri: Annotated[list[str] | None, Query()] = None,
     principal: AuthPrincipal = Depends(principal_dependency),
@@ -613,6 +609,14 @@ def export_dataset(
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
+    if "include_evidence" in request.query_params:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "unsupported_parameter",
+                "message": "include_evidence is no longer supported",
+            },
+        )
     try:
         access_view = _access_view(session, principal, principal.project_id)
         requested = list(graph_iri) if graph_iri else None
@@ -1443,26 +1447,6 @@ def compile_and_apply_product_command(
 ) -> SemanticCanonicalProductWriteResponse:
     service = _canonical_write_service(session, rdf_store, settings)
     try:
-        evidence_service = EvidenceReferenceService(session)
-        graph_set = session.get(SemanticGraphSetModel, request.graph_set_id)
-        ontology = (
-            session.get(OntologyModel, graph_set.scope_id)
-            if graph_set is not None and graph_set.scope_type == "ontology" and graph_set.scope_id
-            else None
-        )
-        has_evidence = bool(request.evidence_reference_ids or request.evidence)
-        if has_evidence and ontology is None:
-            raise EvidenceReferenceError(
-                "Evidence-aware canonical writes require an ontology-scoped graph set"
-            )
-        if has_evidence:
-            evidence_service.resolve_candidates(
-                ontology.project_id,
-                reference_ids=request.evidence_reference_ids,
-                inline_evidence=request.evidence,
-                actor=principal.actor,
-                persist=False,
-            )
         result = service.apply_command(
             request.command_kind,
             request.payload,
@@ -1471,68 +1455,15 @@ def compile_and_apply_product_command(
             reason=request.reason,
             validate=request.validate_edit,
             shape_graph_iris=request.shape_graph_iris,
-            commit=not has_evidence,
+            commit=True,
         )
-        if has_evidence:
-            resolved = evidence_service.resolve_candidates(
-                ontology.project_id,
-                reference_ids=request.evidence_reference_ids,
-                inline_evidence=request.evidence,
-                actor=principal.actor,
-                persist=True,
-            )
-            references = [row for row, _candidate, _created in resolved if row is not None]
-            associations = evidence_service.associate(
-                project_id=ontology.project_id,
-                ontology_id=ontology.id,
-                graph_set_id=request.graph_set_id,
-                target_type=request.command_kind,
-                target_id=request.evidence_target_id
-                or _canonical_evidence_target_id(request.payload, result["audit_id"]),
-                client_item_id=request.client_item_id,
-                edit_audit_id=result["audit_id"],
-                references=references,
-                actor=principal.actor,
-            )
-            session.commit()
-            result["evidence_associations"] = [association_to_dict(row) for row in associations]
-            result["retrieval_indexes"] = SemanticRetrievalCoordinator(
-                session, rdf_store, settings
-            ).rebuild_affected(
-                affected_graph_iris=result["affected_graph_iris"],
-                ontology_ids=[ontology.id],
-            )
-        else:
-            result["evidence_associations"] = []
     except CanonicalSemanticWriteError as exc:
         session.rollback()
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     except CommandCompilerError as exc:
         session.rollback()
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    except EvidenceReferenceError as exc:
-        session.rollback()
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
     return SemanticCanonicalProductWriteResponse(**result)
-
-
-def _canonical_evidence_target_id(payload: dict, audit_id: str) -> str:
-    for key in (
-        "fact_id",
-        "class_iri",
-        "property_iri",
-        "relation_type_iri",
-        "entity_iri",
-        "relation_iri",
-        "mapping_iri",
-        "rule_iri",
-        "subject_iri",
-        "id",
-    ):
-        value = payload.get(key)
-        if value:
-            return str(value)
-    return audit_id
 
 
 @router.get("/canonical-mode", response_model=SemanticCanonicalModeRead)
@@ -1684,7 +1615,6 @@ def read_resource(
                 graph_set_id=graph_set_id,
                 source_signature=envelope["source_signature"],
                 assertion_kind=item["assertion_kind"],
-                evidence_status=item["evidence_status"],
                 source_graph_iri=item["source_graph_iri"],
                 properties={},
                 derived_state=envelope["derived_state"],
@@ -1721,9 +1651,9 @@ def list_statements(
 @router.get("/graph-sets/{graph_set_id}/export")
 def export_graph_set(
     graph_set_id: str,
+    request: Request,
     format: Annotated[str, Query()] = "trig",
     include: Annotated[str, Query()] = "asserted",
-    include_evidence: Annotated[bool, Query()] = False,
     include_shapes: Annotated[bool, Query()] = False,
     include_policy: Annotated[bool, Query()] = False,
     include_metadata: Annotated[bool, Query()] = False,
@@ -1733,6 +1663,14 @@ def export_graph_set(
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> Response:
+    if "include_evidence" in request.query_params:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "unsupported_parameter",
+                "message": "include_evidence is no longer supported",
+            },
+        )
     access_view = _access_view(
         session, principal, project_id_for_graph_set(session, graph_set_id)
     )
@@ -1742,7 +1680,6 @@ def export_graph_set(
             graph_set_id=graph_set_id,
             format=format,
             include=include,
-            include_evidence=include_evidence,
             include_shapes=include_shapes,
             include_policy=include_policy,
             include_metadata=include_metadata,

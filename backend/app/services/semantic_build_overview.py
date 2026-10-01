@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 
 @dataclass(frozen=True)
@@ -21,7 +20,6 @@ class GraphSetMemberStaleness:
 class GraphSetStaleness:
     graph_set_id: str
     members: list[GraphSetMemberStaleness]
-    missing_evidence_count: int
     last_semantic_edit_at: str | None
 
 
@@ -94,7 +92,6 @@ class BuildOverviewService:
         return GraphSetStaleness(
             graph_set_id=payload.get("graph_set_id", ""),
             members=members,
-            missing_evidence_count=int(payload.get("missing_evidence_count", 0)),
             last_semantic_edit_at=payload.get("last_semantic_edit_at"),
         )
 
@@ -129,12 +126,5 @@ class BuildOverviewService:
                 label="重新运行推理 / 规则",
                 detail="派生结果已过期",
                 tab="governance",
-            ))
-        if graph_set.missing_evidence_count > 0:
-            candidates.append(NextAction(
-                key="audit_missing_evidence",
-                label="审查缺证据断言",
-                detail=f"{graph_set.missing_evidence_count} 条",
-                tab="evidence",
             ))
         return candidates[:3]

@@ -17,12 +17,11 @@ def _service(read_model_payload, brief, questions):
     )
 
 
-def _gs_payload(members=None, missing=0):
+def _gs_payload(members=None):
     return {
         "items": [{
             "graph_set_id": "gs-1",
             "members": members or [],
-            "missing_evidence_count": missing,
             "last_semantic_edit_at": None,
         }],
     }
@@ -65,7 +64,7 @@ def test_build_overview_composes_all_sections():
 
 def test_build_overview_next_actions_priority_order():
     svc = _service(
-        _gs_payload(members=[_member(validation_stale=True, reasoning_stale=True)], missing=5),
+        _gs_payload(members=[_member(validation_stale=True, reasoning_stale=True)]),
         _brief(0.0, ["a", "b"]),
         _questions(1, draft=1),
     )
@@ -76,7 +75,7 @@ def test_build_overview_next_actions_priority_order():
 
 def test_build_overview_no_actions_when_clean():
     svc = _service(
-        _gs_payload(members=[_member()], missing=0),
+        _gs_payload(members=[_member()]),
         _brief(1.0),
         _questions(0),
     )
@@ -88,4 +87,3 @@ def test_parse_empty_payload_is_safe():
     svc = _service({}, _brief(1.0), _questions(0))
     resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o", graph_set_id="gs")
     assert resp.graph_set.members == []
-    assert resp.graph_set.missing_evidence_count == 0

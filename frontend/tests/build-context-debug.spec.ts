@@ -90,7 +90,6 @@ function contextResponse(
           issues: ["semantic_workspace_incomplete"],
         },
       }],
-      evidence_reference_count: 4,
       modeling_batches: modelingBatches,
     },
     agent_state: {
@@ -222,12 +221,12 @@ const modelingBatchDetail = {
       client_item_id: "customer-class",
       command_kind: "create_class",
       status: "validated",
-      finding_codes: ["missing_evidence"],
+      finding_codes: ["unconfirmed_semantics"],
     }],
     findings: [{
-      code: "missing_evidence",
+      code: "unconfirmed_semantics",
       severity: "warning",
-      message: "No evidence was associated",
+      message: "Business meaning is still unconfirmed",
       scope: "item",
       client_item_id: "customer-class",
     }],
@@ -327,7 +326,6 @@ async function setup(page: Page, options: {
         empty.platform_state.ontologies = [];
         empty.platform_state.project_brief.missing_fields = [];
         empty.platform_state.competency_question_counts = {};
-        empty.platform_state.evidence_reference_count = 0;
         empty.agent_state.active_sessions = [];
         return route.fulfill({ json: empty });
       }
@@ -390,14 +388,6 @@ async function setup(page: Page, options: {
           default_graph_set_id: "internal-session-graph-set",
           nested: { graphSetId: "internal-session-nested-set", leaseToken: "nested-session-token" },
         }],
-        evidence: {
-          references: [{
-            id: "evidence-reference-001",
-            document_name: "Supplier policy.pdf",
-            excerpt: "Approved suppliers require source evidence.",
-          }],
-          next_cursor: "evidence-cursor-2",
-        },
         recent_activity: [{
           type: "checkpoint_saved",
           at: checkpoint.created_at,
@@ -456,9 +446,7 @@ test("Build Context paginates recent sessions and loads Session detail on demand
   await expect(page.locator('[aria-label="platform-state"]')).toContainText("platform-batch-public-001");
   await expect(page.locator('[aria-label="platform-state"]')).toContainText("validated");
   await expect(page.locator('[aria-label="platform-state"]')).toContainText("Platform batch public result");
-  const evidenceSection = page.locator(".sessionDetailSection").filter({ hasText: "Evidence references" });
-  await expect(evidenceSection).toContainText("Supplier policy.pdf");
-  await expect(evidenceSection).toContainText("evidence-cursor-2");
+  await expect(page.locator(".sessionDetailSection").filter({ hasText: "Evidence references" })).toHaveCount(0);
   await expect(page.getByText("checkpoint saved", { exact: true })).toBeVisible();
   await expect(page.getByText(`Focus ontology: ${ontology.id}`, { exact: false }).first()).toBeVisible();
   await expect(page.locator("body")).not.toContainText("lease-token-must-never-render");
@@ -534,7 +522,7 @@ test("Workspace expands an authoritative Modeling Context and inspects immutable
   await expect(detail).toContainText("apply_partial");
   await expect(detail).toContainText("customer-class");
   await expect(detail).toContainText("invalid-shape");
-  await expect(detail).toContainText("missing_evidence");
+  await expect(detail).toContainText("unconfirmed_semantics");
   await expect(detail).toContainText("shacl_violation");
   await expect(detail).toContainText("recovery_requires_intervention");
 

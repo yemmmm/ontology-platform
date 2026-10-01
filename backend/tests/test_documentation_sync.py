@@ -205,6 +205,16 @@ def test_ontology_builder_dependency_contract_uses_registry() -> None:
     )
     required = {tool for case in cases for tool in case["assertions"].get("required_tools", [])}
     registry = {tool["name"] for tool in _module().enumerate_mcp_tools()}
+    retired = {
+        "create_evidence_reference",
+        "associate_evidence_reference",
+        "list_evidence_references",
+        "get_evidence_reference",
+        "get_ontology_lineage",
+        "inspect_semantic_statement_provenance",
+    }
+    assert retired.isdisjoint(registry)
+    required -= retired
     assert required <= registry
     combined = "\n".join(
         path.read_text(encoding="utf-8")

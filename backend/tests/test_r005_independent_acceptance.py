@@ -8,29 +8,24 @@ regressions after the implementation is corrected.
 from __future__ import annotations
 
 import pytest
-from fastapi import HTTPException
 from sqlalchemy import select
 
-from app.api.fact_evidence import BindFactEvidenceRequest, create_fact_evidence
 from app.core.config import Settings
-from app.repositories.fact_evidence_repository import FactEvidenceBindingRepository
 from app.repositories.models import (
-    EvidenceReferenceModel,
     OntologyModel,
     ProjectModel,
-    SemanticDerivedResultPointerModel,
     SemanticEditAuditModel,
-    SemanticRuleRunModel,
     SemanticStatementOccurrenceModel,
 )
 from app.repositories.rdf_store import RdfGraphDelta, SparqlResult, UpdateResult
-from app.services.ontology_lineage import OntologyLineageService
+from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic import SemanticService
 from app.services.semantic_lineage_identity import statement_id_for_quad
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 from app.services.semantic_rule_definition import SemanticRuleDefinitionService
 from app.services.semantic_rule_execution import SemanticRuleExecutionService
+from app.services.semantic_command_compiler import UnsupportedCommandKind, compile_command
 
 
 def _workspace(session, settings: Settings, ontology_id: str) -> tuple[str, dict[str, str]]:
@@ -60,104 +55,9 @@ def _audit(session, audit_id: str, graph_iri: str, reason: str) -> None:
     session.flush()
 
 
-def test_derived_lineage_never_copies_cross_ontology_evidence(in_memory_session) -> None:
-    settings = Settings(
-        semantic_graph_iri_prefix="https://r005-independent.test/graph/",
-        semantic_base_iri="https://r005-independent.test/resource/",
-    )
-    in_memory_session.add(ProjectModel(id="project", name="Project", normalized_label="project"))
-    first_graph_set, _first_roles = _workspace(in_memory_session, settings, "ontology-a")
-    second_graph_set, _second_roles = _workspace(in_memory_session, settings, "ontology-b")
-
-    result_graph = "https://r005-independent.test/graph/rule-result/run-b"
-    in_memory_session.add(
-        SemanticRuleRunModel(
-            id="run-b",
-            graph_set_id=second_graph_set,
-            result_graph_iri=result_graph,
-            engine_name="sparql_construct",
-            source_signature="source-b",
-            status="succeeded",
-        )
-    )
-    in_memory_session.add(
-        SemanticDerivedResultPointerModel(
-            id="pointer-b",
-            graph_set_id=second_graph_set,
-            result_kind="rule",
-            run_id="run-b",
-            result_graph_iri=result_graph,
-            source_signature="source-b",
-            status="current",
-        )
-    )
-    occurrence = SemanticLineageRecorder(in_memory_session).record_derived_statements(
-        ontology_id="ontology-b",
-        graph_set_id=second_graph_set,
-        result_graph_iri=result_graph,
-        statements=[
-            {
-                "s": "<https://r005-independent.test/entity/alice>",
-                "p": "<https://r005-independent.test/property/eligible>",
-                "o": '"Eligible"',
-            }
-        ],
-        assertion_kind="construct_derived",
-        origin_kind="rule_run",
-        run_id="run-b",
-        proof_level="coarse",
-    )[0]
-    in_memory_session.commit()
-
-    # The public write path rejects both a derived assertion kind and a graph
-    # outside Ontology A's asserted-data scope.
-    with pytest.raises(HTTPException) as error:
-        create_fact_evidence(
-            first_graph_set,
-            BindFactEvidenceRequest(
-                ontology_id="ontology-a",
-                subject_iri="https://r005-independent.test/entity/alice",
-                predicate_iri="https://r005-independent.test/property/eligible",
-                object_value="Eligible",
-                graph_iri=result_graph,
-                assertion_kind="construct_derived",
-                document_filename="ontology-a-secret.md",
-                text="Secret evidence owned by ontology A",
-            ),
-            in_memory_session,
-            settings,
-        )
-    assert error.value.status_code == 409
-
-    # Simulate a malicious binding written by an older, unscoped code path.
-    reference = EvidenceReferenceModel(
-        id="malicious-reference",
-        project_id="project",
-        document_name="ontology-a-secret.md",
-        normalized_document_name="ontology-a-secret.md",
-        excerpt="Secret evidence owned by ontology A",
-        excerpt_hash="f" * 64,
-    )
-    in_memory_session.add(reference)
-    FactEvidenceBindingRepository(in_memory_session).create(
-        fact_id=occurrence.statement_id,
-        subject_iri="https://r005-independent.test/entity/alice",
-        predicate_iri="https://r005-independent.test/property/eligible",
-        object_value='"Eligible"',
-        graph_iri=result_graph,
-        text=reference.excerpt,
-        evidence_reference_id=reference.id,
-    )
-    in_memory_session.commit()
-
-    lineage = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id="ontology-b",
-        target_type="statement",
-        target_id=occurrence.statement_id,
-    )
-
-    assert lineage["items"][0]["evidence_status"] == "not_applicable"
-    assert lineage["items"][0]["supporting_context"]["evidence_references"] == []
+def test_fact_evidence_write_command_is_unavailable() -> None:
+    with pytest.raises(UnsupportedCommandKind):
+        compile_command("bind_fact_evidence", {}, Settings())
 
 
 def test_history_resolves_the_invalidation_audit_not_only_its_id(in_memory_session) -> None:
@@ -236,7 +136,7 @@ class _SnapshotUpdateStore:
         )
 
 
-def test_restricted_where_update_does_not_leave_removed_occurrence_active(
+def test_restricted_where_update_does_not_collect_new_lineage(
     in_memory_session,
 ) -> None:
     settings = Settings(semantic_graph_iri_prefix="https://r005-update.test/graph/")
@@ -272,10 +172,12 @@ def test_restricted_where_update_does_not_leave_removed_occurrence_active(
     )
 
     in_memory_session.refresh(old)
-    assert old.status == "invalidated"
+    # D2 stops pure tracing collection. Existing historical rows are not
+    # rewritten and no replacement occurrence is created by the edit.
+    assert old.status == "active"
 
 
-def test_restricted_where_snapshot_records_the_inserted_occurrence(
+def test_restricted_where_snapshot_does_not_collect_inserted_lineage(
     in_memory_session,
 ) -> None:
     settings = Settings(semantic_graph_iri_prefix="https://r005-update.test/graph/")
@@ -317,10 +219,9 @@ def test_restricted_where_snapshot_records_the_inserted_occurrence(
             == "https://r005-update.test/property/new"
         )
     )
-    assert old.status == "invalidated"
-    assert inserted is not None
-    assert inserted.status == "active"
-    assert inserted.graph_revision == result["graph_revisions"][graph]
+    assert old.status == "active"
+    assert inserted is None
+    assert result["graph_revisions"][graph] >= 1
 
 
 class _RuleGroupStore:
@@ -412,31 +313,26 @@ def _rule_group_setup(session):
     return settings, graph_set_id, graph, first, second
 
 
-def test_rule_group_dsl_retains_exact_premise_and_definition(in_memory_session) -> None:
+def test_rule_group_dsl_does_not_collect_lineage(in_memory_session) -> None:
     settings, graph_set_id, graph, first, _second = _rule_group_setup(in_memory_session)
     result = SemanticRuleExecutionService(
         in_memory_session, _RuleGroupStore(graph), settings
     ).execute_rule_group(graph_set_id=graph_set_id, rule_definition_ids=[first.id])
     assert result["status"] == "succeeded", result
-    lineage = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id="ontology",
-        target_type="statement",
-        target_id=statement_id_for_quad(
-            "https://r005-rule-group.test/entity/alice",
-            "https://r005-rule-group.test/property/eligible",
-            '"yes"',
-            result["result_graph_iri"],
-        ),
-    )
-    derivation = lineage["items"][0]["derivation"]
-    assert derivation["proof_level"] == "exact"
-    assert len(derivation["premises"]) == 1
-    assert derivation["definition"]["id"] == first.id
-    assert derivation["definition"]["version"] == first.version
-    assert {source["rule_definition_id"] for source in derivation["rule_sources"]} == {first.id}
+    with pytest.raises(LineageTargetNotFound):
+        OntologyLineageService(in_memory_session).get_lineage(
+            ontology_id="ontology",
+            target_type="statement",
+            target_id=statement_id_for_quad(
+                "https://r005-rule-group.test/entity/alice",
+                "https://r005-rule-group.test/property/eligible",
+                '"yes"',
+                result["result_graph_iri"],
+            ),
+        )
 
 
-def test_rule_group_duplicate_output_preserves_all_rule_sources(in_memory_session) -> None:
+def test_rule_group_duplicate_output_does_not_collect_lineage(in_memory_session) -> None:
     settings, graph_set_id, graph, first, second = _rule_group_setup(in_memory_session)
     result = SemanticRuleExecutionService(
         in_memory_session, _RuleGroupStore(graph), settings
@@ -445,17 +341,14 @@ def test_rule_group_duplicate_output_preserves_all_rule_sources(in_memory_sessio
         rule_definition_ids=[first.id, second.id],
     )
     assert result["status"] == "succeeded", result
-    lineage = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id="ontology",
-        target_type="statement",
-        target_id=statement_id_for_quad(
-            "https://r005-rule-group.test/entity/alice",
-            "https://r005-rule-group.test/property/eligible",
-            '"yes"',
-            result["result_graph_iri"],
-        ),
-    )
-    derivation = lineage["items"][0]["derivation"]
-    expected_ids = {first.id, second.id}
-    assert {definition["id"] for definition in derivation["definitions"]} == expected_ids
-    assert {source["rule_definition_id"] for source in derivation["rule_sources"]} == expected_ids
+    with pytest.raises(LineageTargetNotFound):
+        OntologyLineageService(in_memory_session).get_lineage(
+            ontology_id="ontology",
+            target_type="statement",
+            target_id=statement_id_for_quad(
+                "https://r005-rule-group.test/entity/alice",
+                "https://r005-rule-group.test/property/eligible",
+                '"yes"',
+                result["result_graph_iri"],
+            ),
+        )

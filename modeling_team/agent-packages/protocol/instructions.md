@@ -24,7 +24,7 @@ inspecting Runtime code or binaries. The qualified spellings used elsewhere in t
 these same Team Transport tools; resolve each to the identity your current catalog advertises.
 
 For formal R2.3-005 (`task_id=r2-3-005-formal-acceptance`), the capability smoke shortcut is
-forbidden: a candidate receipt or a health/read-only result is intermediate evidence, never
+forbidden: a candidate receipt or a health/read-only result is intermediate execution state, never
 completion. Execute all five current-run stages (dry-run, apply, readback, validation, reasoning),
 complete governed retrieval, publish the acceptance-stage handoff to Coordinator, send the bound
 gate-complete notice to Modeling, and then send `silent_for_acceptance`; do not call
@@ -48,7 +48,7 @@ delete declarations. The native tool returns the complete, dependency-ordered ba
 class/property/entity/relation/shape command, every `resource_id` bound to the candidate's own IDs
 (so the platform emits readable IRIs, not generated UUIDs), object predicates via
 `create_property`+`object_class_id` (never `create_relation_type`), relation-statement
-subjects/objects/predicates bound to candidate IDs, evidence carried, and digests computed. Apply
+subjects/objects/predicates bound to candidate IDs, and digests computed. Apply
 each returned batch verbatim in the returned order via `submit_modeling_batch` (its `dry_run` then
 `apply_atomic`); do not hand-author, reorder, rebind, rename, or choose `command_kind` yourself,
 and never omit the candidate IDs the plan supplies. If the plan returns any `conflicts`, send a
@@ -136,21 +136,21 @@ or a free-form question), whose `resource_types` is exactly one `relation` or `f
 path, whose `assertion_types` is exactly `["asserted"]`, and whose scope is the run-owned
 `project_id` plus `scope_mode=ontologies` and the exact singleton `ontology_ids`. Freeze all other
 query fields and consume context cursors before match cursors until the selected chain terminates.
-Broad CQ/question queries do not contribute retrieval evidence. After every required path has a
-complete supported statement chain, the Runner's common host artifact gate registers the typed
-ordinary receipt; do not hand-write a receipt or use expected answers, source answers, or warning
-rows as retrieval evidence.
+Broad CQ/question queries do not establish a path result. After every required path has a complete,
+non-degraded statement result with the requested predicate/value bindings, the Runner's common host
+artifact gate registers the typed ordinary receipt; do not hand-write a receipt or use expected
+answers, source answers, or warning rows as a semantic result.
 
 Before the first query, use only the exact `resource_types` values advertised by the
 `query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, and `operation`.
 Never probe unsupported aliases such as `entity`, `entities`, or `individual`; an unsupported value is
 a contract error, not a discovery mechanism. Read the entire consumer question and its required
-response before freezing the first request. Classify all evidence families it needs (for example,
+response before freezing the first request. Classify all semantic result families it needs (for example,
 relation topology together with literal facts requires the single tuple `relation` plus `fact`) and
 choose one complete, immutable tuple containing every required supported kind. If a narrow tuple cannot
 express all required families, use the widest tuple that the public contract explicitly permits; do not
-choose a relation-only tuple when fact evidence is also required. Self-check coverage before the first
-call. If the contract cannot express the required evidence families, return a concrete pre-query
+choose a relation-only tuple when fact results are also required. Self-check coverage before the first
+call. If the contract cannot express the required result families, return a concrete pre-query
 translation conflict and do not issue a probe or a partial query.
 
 Freeze each competency question's first request as one exact tuple of `query`, `project_id`,
@@ -166,72 +166,19 @@ returned `context_cursor` until `next_context_cursor` is null and the context pa
 Only then send the returned `next_match_cursor` for the next match page, and start a new context chain
 for that page. Never send both cursors, reuse a context cursor across match pages, or stop after the
 first page. Retrieval is complete only after every question's match/context chains terminate with
-non-truncated, non-degraded results and the required Evidence and lineage are present. Entity/fact
-readback or an ordinary fallback read cannot replace this generic retrieval proof; an incomplete
-generic result must remain incomplete (and use the formal native fallback sequence where the loaded
-contract makes that verifier eligible).
+non-truncated, non-degraded results and the required semantic rows are present. Entity/fact
+readback can supplement the generic result but cannot replace an incomplete scope, path or page;
+report the concrete retrieval conflict and repair the named request.
 
-Preserve candidate citation meaning one-to-one: every citation must support the field/assertion it is
-attached to and carry either inline `{document_name, excerpt}` or an existing reference ID. Never
-forward an empty citation/evidence array for an entity or explicit-unknown item. Keep source digest,
-location, and owner-answer metadata in the local Protocol receipt/evidence binding rather than
-pretending they are platform fields; after apply, read back EvidenceReference/Association and origin
-lineage and verify the binding.
-
-For a proof-gated task with a non-null `expected_matrix_binding`, before returning a successful
-proof-v2 retrieval receipt, use the same reference's
-`semantic_retrieval_completion_contract`. The generic query must be scoped to the selected Ontology;
-truncation, missing required Evidence/lineage, cross-ontology facts, or an invalid/failed required
-continuation are retrieval-completeness conflicts. Apply this ordered routing for an eligible
-fresh-create scope: (1) a generic query result with `complete=true` is successful retrieval evidence;
-(2) for an incomplete, degraded, or truncated generic query, you MUST collect every formal fallback
-proof response below unmodified; (3) you MUST call native MCP server `protocol_mechanics`, tool
-`verify_scoped_retrieval_fallback`, with those ten proof fields as direct arguments (never nest a
-`proof` object, omit a field, or add a wrapper field) before deciding terminal conflict; (4) a native
-verifier result with `complete=true` is successful retrieval evidence; (5) only after a native
-verifier tool/protocol error or incomplete result, fail closed with a terminal
-retrieval-completeness conflict. Do not directly block an eligible fresh-create incomplete, degraded,
-or truncated generic query. For the verifier's `mode` proof field, send only the exact literal
-`create`; `fresh_create` is not accepted. Supply the unmodified full
-`{ok,data}` envelope for every MCP response (`ok: true`, object `data`) and use only `data.*`: initial
-and final modeling context, workspace context, one stable unfiltered Session Batch inventory, every
-Batch detail, entity and raw statement reads, and statement lineage. Bind the exact asserted_ontology,
-asserted_data, and Shapes workspace members plus the final workspace `ontology_id`,
-`default_graph_set_id`, and `source_signature`; that final workspace read is stable evidence and never
-authorizes a workspace mutation. Each unmodified entity-list/statement-list envelope must repeat that
-Graph Set ID and signature with its exact model name, `include=asserted`, and asserted-data
-`source_graph_iri` on every row. Classify applied write Batches separately from dry-run-only
-validation Batches, including a rejected Shape probe that contributes no state; recompute canonical
-delta hashes, workspace chain, graph-role writes, fact IDs, and exact asserted-data equality. Facts
-may omit the generic row `fact_id`; calculate the ID from the raw quad in every case, and reject any
-optional row ID that disagrees. Effective
-statement capacity is `min(requested_limit, 1000)` and must be strictly above expected facts. Every
-candidate-required assertion needs exact non-truncated statement lineage: selected Ontology/target,
-computed fact ID and quad, asserted-data technical trace, origins, and supporting Evidence; its
-lineage request record must use that same computed ID. Do not infer
-completeness from no warnings, project host-side response shapes, invent a query, use SPARQL or a new
-API, or add business semantics.
-Only the stable unfiltered Session Batch inventory has a no-cursor completion gate; do not invent
-`truncated` or `next_cursor` fields for statement-list.
-The native verifier uses its frozen command `/usr/bin/python3 /opt/protocol-retrieval-mcp.py`; do not
-import host code or substitute a local helper. Outside the eligible fresh-create fallback sequence,
-an incomplete binding or proof remains a concrete retrieval-completeness conflict instead of a
-successful receipt.
-
-For an ordinary v2 task without an `expected_matrix_binding`, keep the same generic Ontology-scoped
-query and fallback mechanics, but do not require assertion matrices, candidate evidence maps, or
-the native proof-v2 verifier. Accept a source-grounded platform-neutral candidate and return the
-deterministic Protocol receipt or a concrete candidate-to-Batch translation conflict; Protocol owns
-all platform IDs, Batch items, and lifecycle fields. During this translation, map every candidate
-`evidence_citations` entry one-to-one into platform-supported inline `evidence:{document_name,excerpt}`
-or an existing reference ID. Entity and `explicit_unknown` items must never carry empty evidence or
-`evidence_reference_ids` when their candidate citation requires support. Source SHA, locator, and
-owner-answer metadata stay in the local receipt/evidence binding; after apply/readback, verify the
-platform EvidenceReference/Association and origin lineage rather than exposing those metadata as
-platform fields.
+For an ordinary v2/v3 task, use the same generic Ontology-scoped query and pagination contract.
+Do not require assertion matrices, proof-only envelopes, source attachments or a fallback verifier.
+Accept the source-neutral platform candidate and return the deterministic Protocol receipt or a
+concrete candidate-to-Batch translation conflict; Protocol owns all platform IDs, Batch items and
+lifecycle fields. A normal result without retired tracing metadata still passes when scope, rows,
+predicate/value bindings and pagination are complete.
 
 The candidate's whole-candidate/immutable rule is semantic integrity: preserve the complete
-meaning, constraints, dependencies, citations, and queries exactly while translating it. Protocol
+meaning, constraints, dependencies, and queries exactly while translating it. Protocol
 alone performs the dependency-ordered platform translation (class, property/relation type, entity,
 receipt-bound generated IDs/IRIs, relation, then dependency-safe Shape). Atomicity applies
 independently to each required apply stage: run that stage's `dry_run`, then its `apply_atomic`, and
@@ -263,7 +210,7 @@ Before the first ordinary-neutral candidate and before every full revision, read
 and apply its scenario-neutral envelope and closure checklist. The semantic candidate itself has
 only `candidate_kind`, `candidate_revision`, `scope`, `constraints`, and `items` at the top level;
 `constraints` is a list of non-empty strings, each item has a unique `item_id`, non-empty
-`item_kind`, object `semantic`, and optional object-list `evidence_citations`. Transport delivery
+`item_kind`, object `semantic`, and no source-tracing item fields. Transport delivery
 and reply identities (`delivery_id`, `reply_to_delivery_id`, `expects_reply`) plus Batch/platform
 IDs are outside that neutral object and are not extra candidate fields. This reference is a
 checklist/example only; do not copy its illustrative identifiers into a live candidate.
@@ -274,26 +221,6 @@ candidate: `entity` and `explicit_unknown` items use `semantic.values.label`, wh
 label is missing or blank, return a concrete candidate-to-Batch translation conflict before any
 platform call. Labels are business semantic content; never derive or invent one from an item ID,
 entity ID, or question text.
-
-For an active proof-v2 task with the provided non-null `expected_matrix_binding`, the native verifier
-input is the exact fifteen-field direct envelope:
-`mode, initial_modeling_context, final_modeling_context, workspace_context, batch_inventory,
-batch_details, entities_read, statements_read, candidate_required_assertions, term_bindings,
-materialized_quads, materialized_digest, evidence_bindings, statement_lineage, pagination`.
-Preserve Modeling's v2 candidate citations and, before the first submit (including dry-run), validate
-assertion IDs/scope/citations against the frozen matrix and write exactly one immutable
-`evidence/candidate-item-evidence-map.json`. The map is one row per assertion×citation with the
-Round63 `inline_evidence_identity` and `citation_group_digest`; compare only the group-projected safe
-dry-run plan (`client_item_id, inline_evidence_identity, dedupe_identity`) before the first apply.
-Use the native Protocol-only `protocol_mechanics` tool
-`write_candidate_item_evidence_map` to produce this file: pass the frozen candidate object, the exact
-assertion-to-`client_item_id` mapping as its direct arguments; do not pass a `run_id` (the tool binds
-the Host-injected runtime run ID to the immutable `/opt/mechanics-contract.json`). The tool calls the
-canonical proof-v2 builder and validator, writes only the fixed runtime work path, and permits a
-same-content retry but rejects any extra/missing field, tamper, missing/mismatched runtime context,
-alternate path, or overwrite. Never hand-author or repair the JSON map outside that tool.
-Do not read host sources or add locator/owner fields to Batch requests, and never treat a missing,
-extra, duplicate, or mismatched citation/group as a warning.
 
 Candidate history is not Protocol state. Never merge, reconstruct, or mutate a candidate across
 deliveries, and never turn a patch-only revision into a candidate by consulting prior messages.
@@ -312,7 +239,7 @@ Use the advertised Team Transport identity for every Team Transport call: the na
 never with the namespace dropped. A `candidate_receipt_required` response means the barrier is
 closed: stop and wait for Modeling rather than retrying a platform health/read call.
 
-For a Task using R3.0-009 `unified_semantic_graph` mode, the approved `r3-0-009-unified-graph/v1`
+For a Task using R3.0-009 `unified_semantic_graph` mode, the approved `r3-0-009-unified-graph/v2`
 candidate does not use the R2.3 native `build_candidate_receipt` schema. Wait for its direct
 Modeling handoff, then use the Runner-validated stage-3 slot, source-grounded approvals,
 topology gate, frozen CQ when the Task enables CQ acceptance, and current Coordinator's
@@ -363,7 +290,7 @@ Team Transport for you. They reject stale, foreign, duplicate receipt/conflict, 
 delivery IDs; one conflict is allowed immediately after that receipt build when translation fails,
 before either response is sent. The receipt or conflict is about the current retained candidate
 only; `revision_basis`, `revision_operation`, `replace_item_id`, and other patch/history fields
-cannot supply omitted items, citations, constraints, dependencies, or consumer queries.
+cannot supply omitted items, constraints, dependencies, or consumer queries.
 
 For formal R2.3-003 only, when the accepted receipt has already been sent and registered and a
 later live binding read exposes a pre-mutation mismatch, call the typed conflict builder with the
@@ -401,17 +328,6 @@ For receipt-bound ordinary/unbound v2 paths, the existing rule remains: Complete
 Transport response. This ordinary-path rule does not override the formal R2.3-005 receipt barrier
 above.
 
-For formal R2.3-005, every `relation` item must carry at least one source-grounded
-`evidence_citations` entry that supports that relation. If any relation citation list is missing or
-empty, complete the receipt-builder step first, then use the corresponding typed or native conflict
-builder and send only its conflict result; do not send an accepted receipt, even if the neutral
-builder accepted the envelope. This relation-specific gate does not turn into a hard requirement for
-ordinary unbound v2 tasks. A `build_candidate_receipt`
-result with `status=accepted` proves only the neutral envelope and canonical semantic/candidate
-digests. It is not evidence of `dry_run`, `apply_atomic`, readback, semantic validation, reasoning,
-or governed retrieval. Until every required platform and retrieval gate is complete, do not send
-`silent_for_acceptance` or a successful handoff.
-
 `silent_for_acceptance` and the acceptance-stage handoff are readiness/coordination signals, not
 terminal results. After sending either signal, remain active and do not call `mcp__team_transport__report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff` (including the Modeling terminal
 dependency and any required cleanup). Never infer that handoff from a successful five-stage
@@ -424,8 +340,8 @@ typed path, do not parse or reconstruct that text: the Runner-owned operation is
 
 On the untyped path, before sending any candidate receipt or revision response, call the native
 Protocol-only `protocol_mechanics` tool `build_candidate_receipt` with exactly the complete frozen
-v2 candidate as its sole argument. The tool validates the candidate's exact fields, citations,
-canonical ordering, and semantic/candidate digests, then computes the exact four-field payload
+platform-neutral candidate as its sole argument. The tool validates the neutral envelope and
+computes the deterministic four-field payload
 `status,candidate_revision,semantic_digest,candidate_digest`. Use its exact `structuredContent`
 (or canonical text) as the Team Transport message body; never hand-author, add, omit, or reorder
 receipt fields, and never pass receipt fields as tool arguments. The tool does not send the message
@@ -504,44 +420,6 @@ For a specialist interoperability smoke task, the Source Specialist exchange is 
 After Modeling directly requests health, call the permitted health tool exactly once, return its exact
 result directly to Modeling, then report terminal. Do not wait for or send a Source Specialist message.
 
-## Native proof and P2 provenance boundary (proof-gated only)
-
-Apply this section only when the loaded Task or Profile carries a non-null
-`expected_matrix_binding` (the bound R2.3-002 proof-v2 task). For an ordinary unbound v2 task,
-skip this native-proof/P2 prerequisite and follow the neutral candidate and generic retrieval
-contract above; do not manufacture proof receipts or P2 provenance.
-
-The native proof's ten direct top-level fields are exactly `mode`, `initial_modeling_context`,
-`final_modeling_context`, `workspace_context`, `batch_inventory`, `batch_details`, `entities_read`,
-`statements_read`, `candidate_required_assertions`, and `statement_lineage`; never add a `proof`
-wrapper. `candidate_required_assertions` is one strict object with exactly
-`schema_version, candidate_revision, delivery_id, reply_chain, semantic_digest, candidate_digest,
-items, materialized_digest, materialized_quads`. `statement_lineage` is one strict object with
-exactly `schema_version, candidate_revision, delivery_id, reply_chain, semantic_digest,
-candidate_digest, materialized_digest, max_depth, records`; `max_depth` is an integer from 0 through
-5. Items and materialized quads are non-empty canonical-byte-sorted arrays, and each lineage record
-has exactly `fact_id, quad, response`, with one computed fact ID and one full unprojected
-`{ok:true,data:<object>}` envelope. Reject missing/extra/empty/duplicate/unbound records and any
-digest, revision, reply-chain, graph, Ontology, or fact/quad drift. A vacuous create proof is never
-complete.
-
-P2-Protocol is TeamRunner-free and may claim only the observed sequence
-`query_semantic_context -> fallback_required -> later verifier complete -> Broker terminal guard/report
-acceptance -> Protocol runtime cleanup`. Do not claim or fabricate Modeling terminal, Runner
-`terminal-result-handoff`, ack, all-agent settlement, or manually send
-`sender_id='runner/terminal-result'`; the final fresh Producer owns that provenance evidence.
-
-An independent tester may run the bounded production P2-Protocol driver with
-`uv run --project backend python -m modeling_team.p2_protocol_driver --contract
-modeling_team/references/p2-protocol-driver-contract.json`. This path supplies one declared
-synthetic Modeling candidate over the real Broker and starts only this Protocol Agent through the
-production Codex Adapter/bwrap/app-server/native-MCP stack. It does not use the foreground Runner,
-business sources, a StartLedger reservation, or semantic-start evidence. Treat the Runner's
-terminal-handoff prerequisite as stronger than any assignment wording: never report terminal before
-the observed verifier completion and the Broker's guard has accepted the report. If the driver
-reports a forbidden provenance event or incomplete cleanup, the run is failed closed; do not infer a
-PASS from a direct verifier call or a local/mock substitute.
-
 ## Cooperative issue escalation
 
 When a protocol or platform operation cannot be safely completed, call native Team Transport
@@ -566,7 +444,7 @@ path; report the limitation and await the outer owner's lifecycle decision.
 
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, do not use this formal
 R2.3-005 ticket pipeline. Deliver the actual bounded application, readback, validation,
-reasoning, governed retrieval and Evidence results to Coordinator for the Host CQ handoff.
+reasoning and governed retrieval results to Coordinator for the Host CQ handoff.
 Resolve current peer reply obligations and follow the ordinary production terminal ordering;
 the Host invokes `cq_handoff_complete` after production settles. Do not wait for a CQ verdict
 or invent a Prompt E handoff nonce for this route.
@@ -620,7 +498,7 @@ failure; act on exactly that reason and never retry blindly:
   without `stage_calls` so the carrier auto-selects, rather than re-selecting stages yourself.
 - `ordinary_retrieval_incomplete` (carries `error.detail`) — the ordinary-retrieval receipt could not be
   built. Re-complete the specific required path/page named in `error.detail` (full lexical fallback,
-  non-truncated, with required Evidence/lineage), then retry the handoff.
+  non-truncated, with the requested semantic rows), then retry the handoff.
 - `accepted_candidate_unavailable` or `stage_handoff_run_identity_unavailable` — a Runner-owned binding
   is missing that Protocol cannot repair. Do not retry; immediately call `mcp__team_transport__report_issue`.
 
@@ -717,33 +595,3 @@ Coordinator has approved (confirmed status with a matching approvals entry); nev
 or a direct `submit_modeling_batch` call. If a submission result is reported as
 `staged_batch_forward_unknown` or `staged_unreconciled_batch`, stop submitting and surface it:
 manual adjudication is required before anything else can be submitted.
-
-### Re-posting owner-authorized evidence (#17)
-
-Materialized items are scored on lineage, so a created item's structural assertions (an `rdf:type`
-or vocabulary/identifier triple, for example) carry no evidence unless you attach it. The second
-staged capability exists for exactly that: `protocol_staged_associate_evidence` on the same
-`runner_capability` MCP server, which forwards one call to the platform tool
-`associate_evidence_reference` per association, with an `association` envelope carrying that
-platform tool's own arguments — `project_id`, `ontology_id`, `target_type="modeling_item"`,
-`target_id`, and `evidence_reference_ids` or `evidence:[{document_name, excerpt}]` (optional
-`graph_set_id`, `client_item_id`, `edit_audit_id`). `target_id` is the platform Modeling Item id
-that the submission receipt or the attempt read-back names — never a resource IRI, never a
-statement id, and never an id you constructed yourself.
-
-Re-post only owner-authorized evidence: a verbatim excerpt of an owner answer the Host has already
-adjudicated, or of an approved business-package document, with `document_name` naming that source.
-Never author evidence yourself — the platform evidences the ontology with owner statements, not
-with self-authored justification — never paraphrase or extend the owner's words into a stronger
-claim, and never cite competency-question pool content as platform evidence: the pool is frozen
-question material, not a source document, and citing it corrupts the retrieval gate it is supposed
-to serve. If the owner has not answered, the honest state is a missing-evidence gap you surface; it
-is not something to close by writing your own justification.
-
-This capability is not a submission: it writes no materialization intent, needs no plan or approval
-entry, and is unaffected by the competency-question freeze. It is idempotent — repeating the same
-association changes nothing — so a rejection reason code is simply repaired and retried, while
-`staged_evidence_forward_unknown` means the platform may or may not hold the association and the
-same call may be replayed safely. When the write-integrity gate is closed
-(`staged_gate_closed`), no staged capability accepts anything: surface it and wait for
-adjudication.

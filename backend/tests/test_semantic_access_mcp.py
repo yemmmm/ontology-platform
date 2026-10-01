@@ -8,8 +8,6 @@ from app.mcp.runtime import set_runtime_principal
 from app.mcp.server import mcp
 from app.repositories.models import OntologyModel, ProjectModel
 from app.security.auth import create_api_key, resolve_api_key
-from app.services.evidence_reference import EvidenceReferenceService
-from app.services.semantic_protection_set import SemanticProtectionSetService
 
 COST_IRI = "https://example.test/entity/cost-1"
 
@@ -97,47 +95,6 @@ def test_read_principal_cannot_manage_protection_sets_over_mcp(
     assert denied["ok"] is False
 
 
-def test_mcp_evidence_reads_honor_grants_like_http(
-    in_memory_session, monkeypatch, mcp_principal_factory
-):
-    _seed(in_memory_session)
-    SemanticProtectionSetService(in_memory_session).create_set(
-        project_id="p",
-        name="cost-visibility",
-        allowed_grants=["cost-visibility"],
-        members=[{"resource_iri": COST_IRI, "ontology_id": "o"}],
-    )
-    service = EvidenceReferenceService(in_memory_session)
-    cost_ref, _ = service.get_or_create("p", "cost-doc", "cost excerpt")
-    public_ref, _ = service.get_or_create("p", "public-doc", "public excerpt")
-    service.associate(
-        project_id="p",
-        ontology_id="o",
-        graph_set_id=None,
-        target_type="entity",
-        target_id=COST_IRI,
-        references=[cost_ref],
-        actor="tester",
-    )
-    in_memory_session.commit()
-
-    factory = sessionmaker(bind=in_memory_session.get_bind(), autoflush=False, autocommit=False)
-    monkeypatch.setattr("app.mcp.runtime.get_resources", lambda: (factory, None, object()))
-
-    try:
-        _activate(in_memory_session, "operator", "p", ["read"])
-        operator = _tool("list_evidence_references").fn(project_id="p")
-        assert operator["ok"] is True, operator
-        assert [item["id"] for item in operator["data"]["items"]] == [public_ref.id]
-        hidden = _tool("get_evidence_reference").fn(reference_id=cost_ref.id)
-        assert hidden["ok"] is False
-
-        _activate(in_memory_session, "manager", "p", ["read"], grants=["cost-visibility"])
-        manager = _tool("list_evidence_references").fn(project_id="p")
-        assert manager["ok"] is True
-        assert len(manager["data"]["items"]) == 2
-        detail = _tool("get_evidence_reference").fn(reference_id=cost_ref.id)
-        assert detail["ok"] is True
-        assert detail["data"]["association_count"] == 1
-    finally:
-        set_runtime_principal(None)
+def test_mcp_evidence_tools_are_not_registered():
+    tools = {tool.name for tool in mcp._tool_manager.list_tools()}  # noqa: SLF001
+    assert {"list_evidence_references", "get_evidence_reference"}.isdisjoint(tools)

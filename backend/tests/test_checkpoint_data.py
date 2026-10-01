@@ -89,7 +89,7 @@ def source(in_memory_session):
     return session, store, settings, iri
 
 
-def test_fork_uses_saved_data_and_preserves_evidence_and_protection(source):
+def test_fork_uses_saved_data_and_preserves_protection_without_suspended_evidence(source):
     session, store, settings, iri = source
     service = CheckpointDataService(session, store)
     snapshot = service.capture("project", ["ontology"])
@@ -102,11 +102,9 @@ def test_fork_uses_saved_data_and_preserves_evidence_and_protection(source):
     assert result["project_id"] != "project"
     assert "Before checkpoint" in store.graphs[mapping[iri]]
     assert "After checkpoint" in store.graphs[iri]
-    assert session.get(m.EvidenceReferenceModel, mapping["reference"]).excerpt == "Approved fact"
-    association = session.get(m.EvidenceAssociationModel, mapping["association"])
-    assert association.evidence_reference_id == mapping["reference"]
-    assert association.ontology_id == mapping["ontology"]
-    assert association.target_id == "urn:business:Order"
+    assert "reference" not in mapping
+    assert "association" not in mapping
+    assert session.get(m.EvidenceReferenceModel, "reference").excerpt == "Later edit"
     protected = session.get(m.SemanticProtectionSetModel, mapping["protection"])
     assert protected.allowed_grants == ["internal"]
     workspace = OntologyWorkspaceService(session, settings).context(mapping["ontology"])

@@ -49,17 +49,12 @@ PROTOCOL_STAGE_OPERATIONS: tuple[str, ...] = PROTOCOL_OPERATIONS[:2]
 # picks its exact operation set, so non-staged endpoints never configure the
 # staged operation.
 STAGED_PROTOCOL_OPERATION = "protocol_staged_submit_modeling_batch"
-# R3.0-008B/#17: the staged run's second projection.  A staged batch materializes
-# items whose lineage is scored at the terminal retrieval gate, and the
-# owner-authorized evidence that has to back those items can only be attached
-# through the platform's ``associate_evidence_reference``.  Without this
-# projection the gate is constructively unsatisfiable for any run that
-# materializes before the owner answers (auth010 start4, item e80f85b1), so the
-# capability is staged-run-exclusive exactly like the submission operation.
+# Historical name retained for reading old run manifests.  R4.0-012 removes
+# the operation from every active capability surface; it is deliberately not
+# included in the active operation tuple or schema registry below.
 STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION = "protocol_staged_associate_evidence"
 STAGED_PROTOCOL_RUN_OPERATIONS: tuple[str, ...] = (
     STAGED_PROTOCOL_OPERATION,
-    STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION,
 )
 STAGED_PROTOCOL_OPERATIONS: tuple[str, ...] = (*PROTOCOL_OPERATIONS, *STAGED_PROTOCOL_RUN_OPERATIONS)
 MODELING_OPERATIONS: tuple[str, ...] = ("modeling_publish_staged_candidate",)
@@ -200,51 +195,6 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "plan_ref": {"type": "string"},
         },
         "required": ["protocol_id", "batch", "value_traces", "l3_nodes"],
-        "additionalProperties": False,
-    },
-    "protocol_staged_associate_evidence": {
-        "type": "object",
-        "properties": {
-            "protocol_id": {"type": "string"},
-            # ``association`` mirrors the real ``associate_evidence_reference``
-            # parameters one for one (project_id, ontology_id, target_type,
-            # target_id, evidence_reference_ids, evidence[{document_name,
-            # excerpt}], graph_set_id, client_item_id, edit_audit_id).  The
-            # platform tool's own ``actor`` parameter is deliberately NOT part
-            # of this envelope: the platform derives the actor from the Runner's
-            # protocol credential, so a role can never name one.
-            "association": {
-                "type": "object",
-                "properties": {
-                    "project_id": {"type": "string"},
-                    "ontology_id": {"type": "string"},
-                    "target_type": {"type": "string"},
-                    "target_id": {"type": "string"},
-                    "evidence_reference_ids": {
-                        "type": "array",
-                        "items": {"type": "string"},
-                    },
-                    "evidence": {
-                        "type": "array",
-                        "items": {
-                            "type": "object",
-                            "properties": {
-                                "document_name": {"type": "string"},
-                                "excerpt": {"type": "string"},
-                            },
-                            "required": ["document_name", "excerpt"],
-                            "additionalProperties": False,
-                        },
-                    },
-                    "graph_set_id": {"type": "string"},
-                    "client_item_id": {"type": "string"},
-                    "edit_audit_id": {"type": "string"},
-                },
-                "required": ["project_id", "ontology_id", "target_type", "target_id"],
-                "additionalProperties": False,
-            },
-        },
-        "required": ["protocol_id", "association"],
         "additionalProperties": False,
     },
     "coordinator_ticket_draft": {

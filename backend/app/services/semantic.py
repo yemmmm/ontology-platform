@@ -16,7 +16,6 @@ from app.repositories.models import (
     SemanticGraphRevisionModel,
     SemanticGraphStateModel,
     SemanticReasoningRunModel,
-    SemanticStatementOccurrenceModel,
     SemanticValidationRunModel,
 )
 from app.repositories.rdf_store import (
@@ -113,7 +112,9 @@ class SemanticService:
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
         )
-        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
+        # The legacy recorder remains injectable for old callers, but current
+        # semantic writes do not construct or invoke a pure lineage collector.
+        self.lineage_recorder = lineage_recorder
 
     def load_dataset(
         self, content: str, format: str, base_iri: str | None = None
@@ -237,13 +238,7 @@ class SemanticService:
         elif not validate:
             warnings.append("SHACL validation skipped by request")
 
-        before_snapshot = (
-            _snapshot_graph_quads(self.rdf_store, affected_graphs) if restricted_where else None
-        )
         update_result = self.rdf_store.update_sparql(update)
-        after_snapshot = (
-            _snapshot_graph_quads(self.rdf_store, affected_graphs) if restricted_where else None
-        )
         all_warnings = [*warnings, *update_result.warnings]
         audit = SemanticEditAuditModel(
             id=str(uuid4()),
@@ -254,7 +249,6 @@ class SemanticService:
             affected_graph_iris=affected_graphs,
             validation_result=validation_result,
             graph_delta=delta,
-            evidence_status=None,
             warning_state={**warning_state, "warnings": all_warnings},
             applied=update_result.applied,
         )
@@ -269,22 +263,6 @@ class SemanticService:
                 affected_graphs,
                 audit_id=audit.id,
                 actor=actor,
-            )
-            if before_snapshot is not None and after_snapshot is not None:
-                lineage_delta = _lineage_delta_from_snapshots(before_snapshot, after_snapshot)
-                self._reconcile_missing_active_occurrences(
-                    lineage_delta, after_snapshot, affected_graphs
-                )
-            else:
-                lineage_delta = _lineage_delta_from_edit(
-                    format=format,
-                    content=content,
-                    target_graph_iri=target_graph_iri,
-                )
-            self.lineage_recorder.record_asserted_delta(
-                delta=lineage_delta,
-                graph_revisions=revision_bumps,
-                audit_id=audit.id,
             )
             stale_rows = self.derived_state_service.mark_stale_after_edit(
                 affected_graphs, audit_id=audit.id
@@ -335,31 +313,6 @@ class SemanticService:
             raise error from exc
         return any(graph.triples((None, RDF.type, URIRef(operation_type))))
 
-    def _reconcile_missing_active_occurrences(
-        self,
-        delta: RdfGraphDelta,
-        after_snapshot: dict[str, set[tuple[str, str, str, str]]],
-        affected_graphs: list[str],
-    ) -> None:
-        active_rows = self.session.scalars(
-            select(SemanticStatementOccurrenceModel).where(
-                SemanticStatementOccurrenceModel.graph_iri.in_(affected_graphs),
-                SemanticStatementOccurrenceModel.status == "active",
-                SemanticStatementOccurrenceModel.assertion_kind == "asserted",
-            )
-        )
-        deletes = set(delta.deletes)
-        for row in active_rows:
-            quad = (
-                row.subject_iri,
-                row.predicate_iri,
-                row.object_ntriples,
-                row.graph_iri,
-            )
-            if quad not in after_snapshot.get(row.graph_iri, set()):
-                deletes.add(quad)
-        delta.deletes = sorted(deletes)
-
     def list_edit_audits(self, limit: int = 50) -> list[dict[str, Any]]:
         bounded_limit = max(1, min(limit, 200))
         rows = self.session.scalars(
@@ -377,7 +330,6 @@ class SemanticService:
                 "affected_graph_iris": row.affected_graph_iris,
                 "validation_result": row.validation_result,
                 "graph_delta": row.graph_delta,
-                "evidence_status": row.evidence_status,
                 "warning_state": row.warning_state,
                 "applied": row.applied,
                 "created_at": row.created_at,
@@ -529,27 +481,6 @@ class SemanticService:
                 run.run_metadata["source_signature"] = source_signature
                 run.run_metadata["input_graph_revisions"] = input_graph_revisions
                 run.run_metadata["engine_version"] = engine_version
-                ontology_id = self.lineage_recorder.ontology_id_for_graph_set(graph_set_id)
-                if ontology_id and result.inferred_rdf:
-                    inferred = Graph()
-                    inferred.parse(data=result.inferred_rdf, format=RdfFormat.TURTLE.value)
-                    self.lineage_recorder.record_derived_statements(
-                        ontology_id=ontology_id,
-                        graph_set_id=graph_set_id,
-                        result_graph_iri=result_graph_iri or "",
-                        statements=[
-                            {"s": s.n3(), "p": p.n3(), "o": o.n3()} for s, p, o in inferred
-                        ],
-                        assertion_kind="owl_inferred",
-                        origin_kind="reasoning_run",
-                        run_id=run_id,
-                        proof_level="coarse",
-                        input_graph_revisions=input_graph_revisions,
-                        origin_metadata={
-                            "coarse_reason": "reasoner_proof_unavailable",
-                            "source_signature": source_signature,
-                        },
-                    )
             self.session.commit()
             response = _reasoning_response(run, result, result_graph_iri)
             if promoted_pointer:
@@ -893,40 +824,6 @@ def _lineage_delta_from_edit(
             (subject.n3(), predicate.n3(), obj.n3(), graph_iri) for subject, predicate, obj in graph
         )
     return delta
-
-
-def _snapshot_graph_quads(
-    rdf_store: RdfStoreRepository,
-    graph_iris: list[str],
-) -> dict[str, set[tuple[str, str, str, str]]] | None:
-    if not hasattr(rdf_store, "get_graph"):
-        return None
-    snapshots: dict[str, set[tuple[str, str, str, str]]] = {}
-    try:
-        for graph_iri in graph_iris:
-            graph = Graph()
-            payload = rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value)
-            if payload and payload.strip():
-                graph.parse(data=payload, format=RdfFormat.TURTLE.value)
-            snapshots[graph_iri] = {
-                (subject.n3(), predicate.n3(), obj.n3(), graph_iri)
-                for subject, predicate, obj in graph
-            }
-    except Exception:
-        return None
-    return snapshots
-
-
-def _lineage_delta_from_snapshots(
-    before: dict[str, set[tuple[str, str, str, str]]],
-    after: dict[str, set[tuple[str, str, str, str]]],
-) -> RdfGraphDelta:
-    before_quads = set().union(*before.values()) if before else set()
-    after_quads = set().union(*after.values()) if after else set()
-    return RdfGraphDelta(
-        inserts=sorted(after_quads - before_quads),
-        deletes=sorted(before_quads - after_quads),
-    )
 
 
 _RESTRICTED_TRIPLE_PATTERN = re.compile(

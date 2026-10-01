@@ -505,15 +505,14 @@ class CodexIsolationTests(unittest.TestCase):
             adapter._stage_protocol_retrieval_mcp(run, coordinator)
             self.assertIsNotNone(protocol.retrieval_mcp_path)
             self.assertIsNotNone(protocol.retrieval_verifier_path)
-            self.assertIsNotNone(protocol.proof_v2_path)
+            self.assertIsNone(protocol.proof_v2_path)
             self.assertIsNone(coordinator.retrieval_mcp_path)
             self.assertEqual(stat.S_IMODE(protocol.retrieval_mcp_path.stat().st_mode), 0o444)
             self.assertEqual(stat.S_IMODE(protocol.retrieval_verifier_path.stat().st_mode), 0o444)
-            self.assertEqual(stat.S_IMODE(protocol.proof_v2_path.stat().st_mode), 0o600)
             command = adapter.namespace_command(protocol)
             descriptor_paths = [value for value in command if value.startswith("/proc/self/fd/")]
-            self.assertEqual(len(descriptor_paths), 3)
-            self.assertIn("/opt/proof_v2.py", command)
+            self.assertEqual(len(descriptor_paths), 2)
+            self.assertNotIn("/opt/proof_v2.py", command)
             self.assertNotIn("/opt/protocol-retrieval-mcp.py", adapter.namespace_command(coordinator))
             os.lseek(protocol.retrieval_asset_fds[0], 0, os.SEEK_SET)
             original = os.read(protocol.retrieval_asset_fds[0], 1024)
@@ -555,8 +554,6 @@ class CodexIsolationTests(unittest.TestCase):
                 "tools": [
                     {"name": "build_candidate_receipt"},
                     {"name": "translate_candidate_to_batches"},
-                    {"name": "verify_scoped_retrieval_fallback"},
-                    {"name": "write_candidate_item_evidence_map"},
                 ],
             },
         ]
@@ -2295,7 +2292,7 @@ class CodexIsolationTests(unittest.TestCase):
             root=root,
             strict=True,
         )
-        self.assertTrue(
+        self.assertFalse(
             CodexRuntimeAdapter._proof_gate_enabled(
                 SimpleNamespace(configuration=bound, gate_binding=None)
             )
@@ -2376,7 +2373,6 @@ class CodexIsolationTests(unittest.TestCase):
                 [
                     "build_candidate_receipt",
                     "translate_candidate_to_batches",
-                    "verify_scoped_retrieval_fallback",
                 ],
             )
 
@@ -2397,19 +2393,15 @@ class CodexIsolationTests(unittest.TestCase):
         runner = TeamRunner(repository_root=root, adapter=SimpleNamespace())
         runner.run = SimpleNamespace(configuration=bound, protocol_context=None)
         proof_prompt = runner._task_text("protocol")
-        self.assertIn("frozen proof matrix", proof_prompt)
-        self.assertIn("candidate-item-evidence-map", proof_prompt)
+        self.assertNotIn("frozen proof matrix", proof_prompt)
+        self.assertNotIn("candidate-item-evidence-map", proof_prompt)
+        self.assertNotIn("For this proof-gated task", proof_prompt)
+        self.assertIn("generic mechanics contract", proof_prompt)
         runner.run = SimpleNamespace(configuration=ordinary, protocol_context=None)
         neutral_prompt = runner._task_text("protocol")
-        self.assertNotIn("frozen proof matrix", neutral_prompt)
         self.assertNotIn("candidate-item-evidence-map", neutral_prompt)
         self.assertIn("generic mechanics contract", neutral_prompt)
-        for phrase in (
-            "platform-supported inline `evidence:{document_name,excerpt}`",
-            "entity and explicit_unknown evidence/evidence_reference_ids",
-            "EvidenceReference/Association plus origin lineage",
-        ):
-            self.assertIn(phrase, neutral_prompt)
+        self.assertNotIn("For this proof-gated task", neutral_prompt)
 
     def test_terminal_guard_drains_pending_stdout_and_fails_closed_when_io_is_busy(self) -> None:
         root = repository_root()
@@ -2933,29 +2925,30 @@ class CodexIsolationTests(unittest.TestCase):
                 value["data"].update(overrides)
                 return value
 
-            for malformed in (
-                formal_query(evidence_status="missing"),
-                formal_query(ontology_id="ontology-other"),
-                formal_query(lineage={"status": "partial"}),
-                with_data(recall={"completeness": "degraded"}),
-                with_data(truncated=True),
-                with_data(matches_page={"truncated": True, "next_match_cursor": None}),
-                with_data(matches_page={"truncated": False, "next_match_cursor": "more"}),
-                with_data(result_status="no_match"),
-                with_data(warnings=[{"code": "legacy_lineage_unavailable"}]),
-                with_data(warnings=None),
-                with_data(primary_matches=None),
-            ):
+            malformed_cases = (
+                (formal_query(evidence_status="missing"), "complete"),
+                (formal_query(ontology_id="ontology-other"), "fallback_required"),
+                (formal_query(lineage={"status": "partial"}), "complete"),
+                (with_data(recall={"completeness": "degraded"}), "fallback_required"),
+                (with_data(truncated=True), "fallback_required"),
+                (with_data(matches_page={"truncated": True, "next_match_cursor": None}), "fallback_required"),
+                (with_data(matches_page={"truncated": False, "next_match_cursor": "more"}), "fallback_required"),
+                (with_data(result_status="no_match"), "fallback_required"),
+                # Lineage-only warning codes are no longer a retrieval gate.
+                (with_data(warnings=[{"code": "legacy_lineage_unavailable"}]), "complete"),
+                (with_data(warnings=None), "fallback_required"),
+                (with_data(primary_matches=None), "fallback_required"),
+            )
+            for malformed, expected_state in malformed_cases:
                 completed("query_semantic_context", arguments=query_arguments, result={"structuredContent": malformed})
-                self.assertEqual(agent.retrieval_state, "fallback_required")
-                adapter._notification(agent, {"method": "turn/completed", "params": {}})
-                adapter._notification(agent, {"method": "turn/started", "params": {"turn": {"id": "later"}}})
-                completed(
-                    "verify_scoped_retrieval_fallback",
-                    server="protocol_mechanics",
-                    result={"structuredContent": {"complete": True}},
-                )
-                self.assertEqual(agent.retrieval_state, "fallback_satisfied")
+                self.assertEqual(agent.retrieval_state, expected_state)
+                if expected_state == "fallback_required":
+                    completed(
+                        "query_semantic_context",
+                        arguments=query_arguments,
+                        result={"structuredContent": formal_query()},
+                    )
+                    self.assertEqual(agent.retrieval_state, "complete")
 
             noneligible = _Agent(
                 "modeling",

@@ -8,7 +8,7 @@ def test_graph_set_staleness_template_registered():
     assert template.needs_reasoning is True
     assert template.needs_rules is True
     assert template.default_limit == 1
-    assert "missing-evidence" in template.body
+    assert "missing-evidence" not in template.body
 
 
 def test_list_templates_includes_graph_set_staleness():

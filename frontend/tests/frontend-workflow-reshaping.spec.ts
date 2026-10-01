@@ -100,12 +100,6 @@ async function mockApi(page: Page) {
     };
     else if (path === "/semantic/graph-sets") body = { graph_sets: [graphSet] };
     else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}`) body = graphSet;
-    else if (path === `/semantic/graph-sets/${GRAPH_SET_ID}/missing-evidence`) body = {
-      graph_set_id: GRAPH_SET_ID,
-      dependencies: [],
-      summary: {},
-      warning: null,
-    };
     else if (path === "/semantic/rule-definitions") body = { rules: [] };
     // Match by pathname so read-model query strings such as ?include=asserted
     // do not bypass the route mock.
@@ -125,7 +119,7 @@ async function mockApi(page: Page) {
     };
     else if (path === "/semantic/status") body = {
       graphs: { total: 2 },
-      derived: { missing_evidence_count: 0, stale_derived_count: 0 },
+      derived: { stale_derived_count: 0 },
     };
     else if (path === "/semantic/projections/status") body = {
       manifests: [],

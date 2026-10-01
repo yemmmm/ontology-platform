@@ -69,7 +69,6 @@ def _item(client_item_id: str) -> ModelingItemInput:
         client_item_id=client_item_id,
         command_kind="create_class",
         payload={"name": f"Customer {client_item_id}"},
-        evidence=[{"document_name": "domain.md", "excerpt": "A customer exists."}],
     )
 
 
@@ -132,7 +131,7 @@ def test_concurrent_same_batch_and_attempt_converge_to_one_record() -> None:
         engine.dispose()
 
 
-def test_concurrent_inline_evidence_upserts_one_reference_for_two_ontologies() -> None:
+def test_concurrent_apply_does_not_collect_suspended_evidence_for_two_ontologies() -> None:
     settings = _settings()
     engine = create_engine(settings.database_url)
     factory = sessionmaker(bind=engine, autoflush=False, autocommit=False)
@@ -189,12 +188,12 @@ def test_concurrent_inline_evidence_upserts_one_reference_for_two_ontologies() -
                 select(func.count(EvidenceReferenceModel.id)).where(
                     EvidenceReferenceModel.project_id == project_id
                 )
-            ) == 1
+            ) == 0
             assert session.scalar(
                 select(func.count(EvidenceAssociationModel.id)).where(
                     EvidenceAssociationModel.project_id == project_id
                 )
-            ) == 2
+            ) == 0
     finally:
         with factory() as session:
             project = session.get(ProjectModel, project_id)

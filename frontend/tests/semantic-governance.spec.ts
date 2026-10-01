@@ -110,7 +110,6 @@ const validationRun = {
   shape_version: "v1",
   engine_version: "pyshacl-0.26",
   validation_scope: "asserted_only",
-  missing_evidence_dependencies: {},
   staleness: { stale: false },
   started_at: "2026-07-05T00:00:00Z",
   finished_at: "2026-07-05T00:00:05Z",
@@ -131,7 +130,6 @@ const reasoningRun = {
   shape_version: null,
   tasks: ["consistency"],
   profile: "owl2_dl",
-  missing_evidence_dependencies: {},
   warnings: [],
   derived_pointer: { kind: "reasoning_result", stale: false },
   started_at: "2026-07-05T00:00:00Z",
@@ -153,7 +151,6 @@ const ruleRun = {
   bindings: [],
   warnings: [],
   truncated: false,
-  missing_evidence_dependencies: {},
   audit_status: "system_accepted",
   explanations: [],
   rule_count: 1,
@@ -161,19 +158,6 @@ const ruleRun = {
   started_at: "2026-07-05T00:00:00Z",
   finished_at: "2026-07-05T00:00:02Z",
   error: null,
-};
-const missingEvidenceSummary = {
-  graph_set_id: graphSet.id,
-  dependencies: [
-    {
-      graph_iri: dataGraph.graph_iri,
-      subject: "ex:Supplier/A",
-      predicate: "ex:certifiedBy",
-      evidence_status: "missing_evidence",
-    },
-  ],
-  summary: { missing_evidence_count: 1 },
-  warning: "Some statements carry missing-evidence status.",
 };
 const auditRecord = {
   id: "audit-1",
@@ -188,7 +172,6 @@ const auditRecord = {
     removed_quads: [],
     affected_graph_iris: [namedGraph.graph_iri],
   },
-  evidence_status: "evidence_bound",
   warning_state: {},
   applied: true,
   created_at: "2026-07-05T00:00:00Z",
@@ -215,7 +198,7 @@ async function mockApi(page: Page) {
     else if (path === `/ontologies/${ontology.id}/relations`) body = [];
     else if (path === "/semantic/status") body = {
       graphs: { total: 2, by_category: { ontology: 1, data: 1 }, editability: { editable: 1, locked: 1 } },
-      derived: { missing_evidence_count: 1, stale_count: 1, stale_derived_count: 1 },
+      derived: { stale_count: 1, stale_derived_count: 1 },
     };
     else if (path === "/semantic/projections/status") body = {
       manifests: [{ id: "manifest-1", graph_set_id: graphSet.id, projection_kind: "search", status: "stale" }],
@@ -317,6 +300,8 @@ async function mockApi(page: Page) {
 }
 
 test("graph set detail shows members, pointers, and triggers reasoning run", async ({ page }) => {
+  const requests: string[] = [];
+  page.on("request", (request) => requests.push(new URL(request.url()).pathname));
   await mockApi(page);
   await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=graph-sets`);
   await expect(page.getByRole("heading", { name: "Graph Set Detail" })).toBeVisible();
@@ -327,6 +312,8 @@ test("graph set detail shows members, pointers, and triggers reasoning run", asy
   );
   await page.getByRole("button", { name: "Run reasoning" }).click();
   await runRequest;
+  await expect(page.getByText("Missing-evidence facts", { exact: true })).toHaveCount(0);
+  expect(requests.some((path) => /evidence|lineage|provenance/.test(path))).toBe(false);
 });
 
 test("rules page scopes listing and creation to the active ontology", async ({ page }) => {

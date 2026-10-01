@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from sqlalchemy import func, select
 
 from app.core.config import Settings
@@ -282,7 +283,7 @@ class _DslStore:
         return UpdateResult()
 
 
-def test_platform_dsl_records_exact_premise_without_copying_evidence(
+def test_platform_dsl_does_not_record_suspended_lineage(
     in_memory_session,
 ) -> None:
     settings, ontology, graph_set_id, roles = _workspace(in_memory_session)
@@ -336,24 +337,19 @@ def test_platform_dsl_records_exact_premise_without_copying_evidence(
     statement_id = statement_id_for_quad(
         output["s"], output["p"], output["o"], result["result_graph_iri"]
     )
-    lineage = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id=ontology.id,
-        target_type="statement",
-        target_id=statement_id,
-    )
-    item = lineage["items"][0]
-    assert item["evidence_status"] == "not_applicable"
-    assert item["supporting_context"]["evidence_references"] == []
-    assert item["derivation"]["proof_level"] == "exact"
-    assert len(item["derivation"]["premises"]) == 1
-    assert item["dependency_evidence_status"] == "contains_missing"
+    with pytest.raises(LineageTargetNotFound):
+        OntologyLineageService(in_memory_session).get_lineage(
+            ontology_id=ontology.id,
+            target_type="statement",
+            target_id=statement_id,
+        )
     assert (
         in_memory_session.scalar(select(func.count()).select_from(SemanticStatementPremiseModel))
-        == 1
+        == 0
     )
 
 
-def test_rule_group_preserves_all_rule_versions_and_exact_dsl_premises(
+def test_rule_group_does_not_record_suspended_lineage(
     in_memory_session,
 ) -> None:
     settings, ontology, graph_set_id, roles = _workspace(in_memory_session)
@@ -413,21 +409,11 @@ def test_rule_group_preserves_all_rule_versions_and_exact_dsl_premises(
             SemanticStatementOccurrenceModel.graph_iri == result["result_graph_iri"]
         )
     )
-    lineage = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id=ontology.id,
-        target_type="statement",
-        target_id=statement.statement_id,
+    assert statement is None
+    assert (
+        in_memory_session.scalar(select(func.count()).select_from(SemanticStatementPremiseModel))
+        == 0
     )
-    item = lineage["items"][0]
-    origin = next(origin for origin in item["origins"] if origin["kind"] == "rule_run")
-    sources = origin["metadata"]["rule_sources"]
-    assert {source["rule_definition_id"] for source in sources} == {rule.id for rule in rules}
-    assert {source["rule_version"] for source in sources} == {rule.version for rule in rules}
-    assert {definition["id"] for definition in item["derivation"]["definitions"]} == {
-        rule.id for rule in rules
-    }
-    assert item["derivation"]["proof_level"] == "exact"
-    assert len(item["derivation"]["premises"]) == 1
 
 
 class _DerivedStore:
@@ -466,7 +452,7 @@ class _FailingLineageRecorder:
         raise RuntimeError("lineage persistence failed")
 
 
-def test_lineage_failure_marks_rule_run_failed_without_occurrences(
+def test_lineage_failure_hook_is_not_called_for_rule_runs(
     in_memory_session,
 ) -> None:
     settings, _ontology, graph_set_id, roles = _workspace(in_memory_session)
@@ -485,15 +471,15 @@ def test_lineage_failure_marks_rule_run_failed_without_occurrences(
             f"WHERE {{ GRAPH <{roles['asserted_data']}> {{ ?s ?p ?o }} }}"
         ),
     )
-    assert result["status"] == "failed"
-    assert result["error"] == "lineage persistence failed"
+    assert result["status"] == "succeeded"
+    assert result.get("error") is None
     assert (
         in_memory_session.scalar(select(func.count()).select_from(SemanticStatementOccurrenceModel))
         == 0
     )
 
 
-def test_construct_and_owl_outputs_are_honestly_coarse(in_memory_session) -> None:
+def test_construct_and_owl_outputs_do_not_record_suspended_lineage(in_memory_session) -> None:
     settings, ontology, graph_set_id, roles = _workspace(in_memory_session)
     construct_store = _DerivedStore(
         "<https://lineage.test/entity/alice> <https://lineage.test/property/eligible> true ."
@@ -514,16 +500,12 @@ def test_construct_and_owl_outputs_are_honestly_coarse(in_memory_session) -> Non
         construct_statement["o"],
         construct["result_graph_iri"],
     )
-    construct_lineage = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id=ontology.id,
-        target_type="statement",
-        target_id=construct_id,
-    )
-    construct_item = construct_lineage["items"][0]
-    assert construct_item["derivation"]["proof_level"] == "coarse"
-    assert construct_item["derivation"]["premises"] == []
-    assert construct_item["supporting_context"]["evidence_references"] == []
-    assert construct_item["derivation"]["run"]["input_graph_revisions"]
+    with pytest.raises(LineageTargetNotFound):
+        OntologyLineageService(in_memory_session).get_lineage(
+            ontology_id=ontology.id,
+            target_type="statement",
+            target_id=construct_id,
+        )
 
     reasoning_store = _DerivedStore()
     reasoning = SemanticReasoningService(
@@ -544,16 +526,12 @@ def test_construct_and_owl_outputs_are_honestly_coarse(in_memory_session) -> Non
         "<https://lineage.test/class/Person>",
         reasoning["result_graph_iri"],
     )
-    reasoning_lineage = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id=ontology.id,
-        target_type="statement",
-        target_id=reasoning_id,
-    )
-    reasoning_item = reasoning_lineage["items"][0]
-    assert reasoning_item["derivation"]["proof_level"] == "coarse"
-    assert reasoning_item["derivation"]["run"]["engine_version"] == "reasoner:test"
-    assert reasoning_item["derivation"]["premises"] == []
-    assert reasoning_item["evidence_status"] == "not_applicable"
+    with pytest.raises(LineageTargetNotFound):
+        OntologyLineageService(in_memory_session).get_lineage(
+            ontology_id=ontology.id,
+            target_type="statement",
+            target_id=reasoning_id,
+        )
 
 
 class _LegacyStore:

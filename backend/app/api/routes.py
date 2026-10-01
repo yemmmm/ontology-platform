@@ -10,9 +10,6 @@ from app.api.checkpoint_data import router as checkpoint_data_router
 from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
 from app.api.protection_sets import router as protection_sets_router
-from app.api.evidence import router as evidence_router
-from app.api.evidence_references import router as evidence_references_router
-from app.api.fact_evidence import router as fact_evidence_router
 from app.api.mcp_catalog import router as mcp_catalog_router
 from app.api.modeling_batches import router as modeling_batches_router
 from app.api.modeling_workflow import router as modeling_workflow_router
@@ -29,9 +26,6 @@ router.include_router(modeling_batches_router)
 router.include_router(modeling_workflow_router)
 router.include_router(semantic_router)
 router.include_router(protection_sets_router)
-router.include_router(evidence_router)
-router.include_router(evidence_references_router)
-router.include_router(fact_evidence_router)
 router.include_router(mcp_catalog_router)
 
 

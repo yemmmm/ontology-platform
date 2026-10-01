@@ -162,7 +162,7 @@ def test_issue_abort_reconciliation_rejects_nonzero_mutation_state_without_ledge
 
 def _candidate() -> dict:
     return {
-        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_kind": "platform-neutral-candidate-v3",
         "candidate_revision": 1,
         "scope": "retained",
         "constraints": ["source-grounded"],
@@ -938,7 +938,7 @@ def test_r23003_continuation_reuses_phase_a_entities_and_splits_delete_batches()
         ("publication-outcome-review-001", "PublicationOutcome"),
     )
     candidate = {
-        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_kind": "platform-neutral-candidate-v3",
         "candidate_revision": 2,
         "scope": "retained-continuation",
         "constraints": ["source-grounded", "phase-a-readback-continuation"],

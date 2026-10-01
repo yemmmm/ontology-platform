@@ -98,9 +98,6 @@ def _item(item_id: str, command_kind: str, payload: dict, **overrides):
         "command_kind": command_kind,
         "payload": payload,
         "rationale": "Relational schema mapping fixture",
-        "evidence": [
-            {"document_name": "schema-ddl.md", "excerpt": f"{item_id} mapping is grounded."}
-        ],
     }
     data.update(overrides)
     return ModelingItemInput(**data)

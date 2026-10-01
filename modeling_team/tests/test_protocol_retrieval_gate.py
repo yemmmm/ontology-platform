@@ -89,7 +89,7 @@ def _candidate(*, paths: list[tuple[str, str]] | None = None) -> dict:
             }
         )
     return {
-        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_kind": "platform-neutral-candidate-v3",
         "candidate_revision": "revision-1",
         "scope": "slice",
         "constraints": ["preserve source meaning"],
@@ -147,7 +147,7 @@ def _shared_path_candidate() -> dict:
         ]
     )
     return {
-        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_kind": "platform-neutral-candidate-v3",
         "candidate_revision": "revision-1",
         "scope": "slice",
         "constraints": ["preserve source meaning"],
@@ -207,8 +207,6 @@ def _result(
     *,
     predicate: str | None = None,
     resource_type: str = "relation",
-    evidence: bool = True,
-    lineage: bool = True,
     next_context: str | None = None,
     next_match: str | None = None,
     truncated: bool = False,
@@ -241,9 +239,6 @@ def _result(
             else None,
             "object_language": None,
         },
-        "evidence_status": "supported" if evidence else "missing",
-        "evidence_reference_ids": [f"evidence-{path}"] if evidence else [],
-        "lineage": {"status": "complete" if lineage else "partial"},
     }
     return {
         "structuredContent": {
@@ -314,13 +309,26 @@ def test_wrong_query_type_or_ontology_does_not_satisfy_path(tmp_path: Path, muta
         carrier.validate_ordinary_retrieval()
 
 
-@pytest.mark.parametrize("kwargs", [{"predicate": "urn:test#wrong"}, {"evidence": False}, {"lineage": False}])
+@pytest.mark.parametrize("kwargs", [{"predicate": "urn:test#wrong"}])
 def test_invalid_selected_statement_does_not_satisfy_path(tmp_path: Path, kwargs: dict) -> None:
     candidate = _candidate(paths=[("q-one", "invokesTool")])
     carrier = _carrier(tmp_path, candidate)
     _register_query(carrier, "invokesTool", result=_result("invokesTool", **kwargs))
     with pytest.raises(AcceptanceContractError, match="required retrieval path"):
         carrier.validate_ordinary_retrieval()
+
+
+@pytest.mark.parametrize("legacy_fields", [
+    {"evidence_status": "missing", "evidence_reference_ids": []},
+    {"lineage": {"status": "partial"}},
+])
+def test_legacy_tracing_fields_do_not_gate_candidate_bound_retrieval(tmp_path: Path, legacy_fields: dict) -> None:
+    carrier = _carrier(tmp_path, _candidate(paths=[("q-one", "invokesTool")]))
+    result = _result("invokesTool")
+    result["structuredContent"]["data"]["primary_matches"][0].update(legacy_fields)
+    _register_query(carrier, "invokesTool", result=result)
+    receipt = carrier.validate_ordinary_retrieval()
+    assert receipt["chains"][0]["statement_ids"] == ["statement-invokesTool"]
 
 
 @pytest.mark.parametrize(

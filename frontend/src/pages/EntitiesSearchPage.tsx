@@ -29,7 +29,6 @@ type EntitySearchRow = {
   assertion_kind: "asserted" | "owl_inferred" | "rule_derived";
   source_graph_iri: string;
   source_signature: string | null;
-  evidence_status: string | null;
   is_stale: boolean;
   graph_set_id: string;
 };
@@ -352,8 +351,6 @@ function EntityDetailPanel({
           </dd>
         </div>
         <div>
-          <dt>{t("Evidence status")}</dt>
-          <dd>{row.evidence_status ?? "—"}</dd>
         </div>
         <div>
           <dt>{t("Source graph")}</dt>

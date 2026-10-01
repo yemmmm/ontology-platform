@@ -16,11 +16,21 @@ from sqlalchemy.orm import Session
 from app.repositories import models as m
 from app.core.config import Settings
 from app.services.ontology_workspace import OntologyWorkspaceService
-from app.services.semantic_lineage_identity import occurrence_id_for, statement_id_for_quad
 from app.services.checkpoint_archive import ARCHIVE_KEY
 
 
-SNAPSHOT_SCHEMA = "r3-0-017-platform-data/v1"
+SNAPSHOT_SCHEMA = "r3-0-017-platform-data/v2"
+
+# These columns remain in the relational schema for now, but they are not
+# part of the new checkpoint contract. A checkpoint must not reintroduce the
+# suspended source-evidence product through a copied row shape.
+_SUSPENDED_TRACE_COLUMNS = {
+    "modeling_items": frozenset({"evidence_reference_ids", "evidence"}),
+    "modeling_attempt_item_results": frozenset(
+        {"evidence_reference_ids", "evidence_association_ids"}
+    ),
+    "semantic_edit_audits": frozenset({"evidence_status"}),
+}
 
 
 class CheckpointDataError(ValueError):
@@ -38,7 +48,10 @@ def snapshot_digest(value: dict[str, Any]) -> str:
 
 def _row(record: Any) -> dict[str, Any]:
     result = {}
+    omitted = _SUSPENDED_TRACE_COLUMNS.get(record.__tablename__, frozenset())
     for prop in inspect(type(record)).column_attrs:
+        if prop.key in omitted:
+            continue
         value = getattr(record, prop.key)
         if isinstance(value, datetime):
             value = {"datetime": value.isoformat()}
@@ -121,8 +134,6 @@ class CheckpointDataService:
         for model in (
             m.ProjectBriefModel,
             m.InterviewAnswerModel,
-            m.EvidenceArtifactModel,
-            m.EvidenceReferenceModel,
             m.DataSourceModel,
             m.DataResourceModel,
             m.ExternalFieldModel,
@@ -131,17 +142,10 @@ class CheckpointDataService:
             collect(model, model.project_id == project_id)
         for model in (
             m.CompetencyQuestionModel,
-            m.EvidenceAssociationModel,
             m.SemanticMappingModel,
             m.SemanticRuleModel,
         ):
             collect(model, model.ontology_id.in_(ids))
-        collect(
-            m.EvidenceChunkModel,
-            m.EvidenceChunkModel.document_id.in_(
-                [item["id"] for item in tables["evidence_artifacts"]]
-            ),
-        )
         collect(
             m.SemanticProtectionSetMemberModel,
             m.SemanticProtectionSetMemberModel.protection_set_id.in_(
@@ -178,18 +182,29 @@ class CheckpointDataService:
         for model in (
             m.SemanticGraphRevisionModel,
             m.SemanticGraphStateModel,
-            m.FactEvidenceBindingModel,
-            m.SemanticStatementOccurrenceModel,
         ):
             collect(model, model.graph_iri.in_(graph_iris))
-        occurrences = [item["id"] for item in tables["semantic_statement_occurrences"]]
-        collect(
-            m.SemanticStatementOriginModel,
-            m.SemanticStatementOriginModel.statement_occurrence_id.in_(occurrences),
-        )
-        collect(
-            m.SemanticStatementPremiseModel,
-            m.SemanticStatementPremiseModel.derived_occurrence_id.in_(occurrences),
+        # Edit audits are shared write records rather than lineage evidence.
+        # Keep audits that belong to the captured graphs, including an audit
+        # referenced as a graph revision's last edit, while dropping their
+        # suspended evidence-status column through ``_row``.
+        revision_audit_ids = {
+            item.get("last_edit_audit_id")
+            for item in tables["semantic_graph_revisions"]
+            if item.get("last_edit_audit_id")
+        }
+        audit_rows = []
+        for audit in self.session.scalars(select(m.SemanticEditAuditModel)):
+            affected = set(audit.affected_graph_iris or [])
+            if (
+                audit.id in revision_audit_ids
+                or audit.target_graph_iri in graph_iris
+                or affected.intersection(graph_iris)
+            ):
+                audit_rows.append(_row(audit))
+        tables["semantic_edit_audits"] = sorted(
+            audit_rows,
+            key=lambda record: json.dumps(record, sort_keys=True),
         )
         graphs = {
             iri: self.rdf_store.export_named_graph(iri, "turtle")
@@ -256,9 +271,6 @@ class CheckpointDataService:
             m.OntologyModel,
             m.ProjectBriefModel,
             m.InterviewAnswerModel,
-            m.EvidenceArtifactModel,
-            m.EvidenceChunkModel,
-            m.EvidenceReferenceModel,
             m.DataSourceModel,
             m.DataResourceModel,
             m.ExternalFieldModel,
@@ -268,16 +280,12 @@ class CheckpointDataService:
             m.SemanticGraphSetModel,
             m.SemanticGraphSetMemberModel,
             m.CompetencyQuestionModel,
-            m.EvidenceAssociationModel,
             m.SemanticMappingModel,
             m.SemanticProtectionSetModel,
             m.SemanticProtectionSetMemberModel,
             m.SemanticRuleModel,
             m.SemanticRuleDefinitionModel,
-            m.FactEvidenceBindingModel,
-            m.SemanticStatementOccurrenceModel,
-            m.SemanticStatementOriginModel,
-            m.SemanticStatementPremiseModel,
+            m.SemanticEditAuditModel,
         )
         if set(tables) != {model.__tablename__ for model in model_types}:
             raise CheckpointDataError("snapshot_invalid", "Snapshot table inventory does not match")
@@ -331,24 +339,6 @@ class CheckpointDataService:
                 return {mapping.get(key, key): remap(item) for key, item in value.items()}
             return value
 
-        # Statement identity incorporates its graph, unlike business resource IRIs.
-        for row in tables["semantic_statement_occurrences"]:
-            statement_id = statement_id_for_quad(
-                row["subject_iri"],
-                row["predicate_iri"],
-                row["object_ntriples"],
-                graph_mapping[row["graph_iri"]],
-            )
-            mapping[row["statement_id"]] = statement_id
-            mapping[row["id"]] = occurrence_id_for(statement_id, row["graph_revision"])
-        for row in tables["fact_evidence_bindings"]:
-            mapping[row["fact_id"]] = statement_id_for_quad(
-                row["subject_iri"],
-                row["predicate_iri"],
-                row["object_value"],
-                graph_mapping[row["graph_iri"]],
-            )
-
         prepared_graphs = {}
         for old, content in snapshot["graphs"].items():
             graph = Graph().parse(data=content, format="turtle")
@@ -396,23 +386,6 @@ class CheckpointDataService:
                         }
                     elif model is m.SemanticRuleModel:
                         data["current_definition_id"] = None  # resolve FK cycle below
-                    elif model is m.SemanticGraphRevisionModel:
-                        data["last_edit_audit_id"] = None
-                    elif model is m.EvidenceAssociationModel:
-                        data["edit_audit_id"] = None
-                    elif model is m.SemanticStatementOccurrenceModel:
-                        data["invalidated_by_audit_id"] = None
-                    elif model is m.SemanticStatementOriginModel:
-                        # Preserve producer provenance as a source reference, not a
-                        # claim that the old producer ran inside the new Project.
-                        data["origin_metadata"] = {
-                            **data.get("origin_metadata", {}),
-                            "fork_source_project_id": source_project,
-                            "snapshot_digest": snapshot["digest"],
-                            "source_origin_kind": original["origin_kind"],
-                            "source_origin_id": original["origin_id"],
-                        }
-                        data["origin_kind"] = "legacy_unknown"
                     self.session.add(model(**data))
                 self.session.flush()
             for original in tables["semantic_rules"]:

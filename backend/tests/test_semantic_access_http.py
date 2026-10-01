@@ -324,6 +324,20 @@ def test_read_model_route_filters_protected_rows(http_env):
     assert PUBLIC_IRI in response.text
 
 
+@pytest.mark.parametrize("include_evidence", ["true", "false"])
+def test_export_graph_set_rejects_retired_include_evidence(http_env, include_evidence):
+    response = http_env["client"].get(
+        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/export",
+        params={"include_evidence": include_evidence},
+        headers=http_env["operator"],
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["detail"] == {
+        "code": "unsupported_parameter",
+        "message": "include_evidence is no longer supported",
+    }
+
+
 def test_export_graph_set_route_omits_protected_quads(http_env):
     client = http_env["client"]
     response = client.get(

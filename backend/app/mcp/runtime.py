@@ -80,8 +80,6 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     "get_entity_statement_context": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
-    "list_evidence_references": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
-    "get_evidence_reference": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "get_build_context": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "get_ontology_workspace_context": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
@@ -106,10 +104,6 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
     "inspect_semantic_projection_status": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
-    "get_ontology_lineage": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
-    "inspect_semantic_statement_provenance": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
     "list_semantic_validation_runs": _policy(
@@ -144,12 +138,6 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
     "submit_modeling_batch": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
-    "create_evidence_reference": _policy(
-        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
-    ),
-    "associate_evidence_reference": _policy(
-        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
-    ),
     "save_interview_answer": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "update_project_brief": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "propose_competency_questions": _policy(

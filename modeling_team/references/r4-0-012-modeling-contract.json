@@ -1,0 +1,84 @@
+{
+  "schema_version": "r4-0-012-modeling-contract/v1",
+  "purpose": "Modeling-role semantic handoff for R4.0-012. This reference contains business meaning, unknowns, slice scope and value-analysis fields only; Protocol execution envelopes and host read handles are not part of the Modeling payload.",
+  "candidate": {
+    "schema_version": "platform-neutral-candidate-authoring/v2",
+    "candidate_kind": "platform-neutral-candidate-v3",
+    "fields": ["candidate_kind", "candidate_revision", "scope", "constraints", "items"],
+    "item_fields": ["item_id", "item_kind", "semantic"],
+    "rules": [
+      "Every item_id is unique and item_kind is non-empty.",
+      "semantic carries business meaning, relations, values, Shapes, entities, explicit unknowns and consumer paths.",
+      "Do not add source citation, source-tracing, lineage, provenance, platform IDs, receipts, Batch fields or execution parameters.",
+      "Keep candidate meaning complete and immutable across revisions; preserve unresolved facts as explicit unknowns.",
+      "A consumer query required path names one predicate declared in the same candidate and has one connected binding.",
+      "A required Shape path declares min_count 1; every materialized entity or explicit unknown has a meaningful semantic label.",
+      "Every class, predicate, relation, Shape path, entity, value and negative probe reference closes over the current candidate.",
+      "Candidate constraints are semantic invariants; transport identities, platform scope and per-stage execution remain outside the candidate.",
+      "Relational rows remain in their source database and are never copied into RDF individuals."
+    ]
+  },
+  "multi_slice": {
+    "enabled_by": "parameters.multi_slice_workflow",
+    "candidate_scope_fields": ["scenario_id", "slice_id", "slice_owner", "shared_terms", "dependencies", "cross_slice_questions"],
+    "rules": [
+      "Author one complete candidate for each approved logical slice.",
+      "Shared terms have one Coordinator-owned slice owner; do not silently merge or split them.",
+      "A source table does not choose an Ontology boundary; topology and protection scope are Coordinator decisions.",
+      "Modeling sends requested scenario-map content to Coordinator and does not write Coordinator-exclusive files."
+    ]
+  },
+  "unified_candidate": {
+    "schema_version": "r3-0-009-unified-graph/v2",
+    "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
+    "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
+    "item_kinds": ["entity", "relation", "property", "shape"],
+    "rules": [
+      "Items are neutral and contain no guessed platform identifier or receipt handle.",
+      "shared_scope is the only item-level commonality carrier; scope decisions belong to Coordinator approvals.",
+      "Keep business meaning, value semantics, relation endpoints, slice membership and explicit unknowns complete.",
+      "Do not add evidence_refs, lineage, provenance, receipt_ref or platform execution fields."
+    ]
+  },
+  "value_conclusions": {
+    "schema_version": "r3-0-008b-analysis-conclusions/v2",
+    "fields": ["schema_version", "scenario_id", "maintained_by", "entries"],
+    "entry_fields": ["conclusion_id", "mapped_property", "candidate_value", "business_meaning_hypothesis", "proposed_level", "blocking_unknowns", "status", "confirmed_enum_value", "confirmed_level", "confirmed_by", "conflict_note", "revision"],
+    "artifact_paths": {
+      "current": "value-semantics/conclusions/analysis-conclusions.json",
+      "archive": "value-semantics/conclusions-archive/<conclusion_id>.r<revision>.json"
+    },
+    "rules": [
+      "Use analyzed, confirmed, materialized or conflict status with the legal revision transitions.",
+      "Legal transitions are analyzed -> confirmed, confirmed -> materialized, analyzed -> conflict, confirmed -> conflict, and conflict -> analyzed through an archived higher revision.",
+      "An analyzed entry has no confirmed value, confirmer or conflict note; confirmed/materialized entries require confirmed value and confirmer; conflict requires a conflict note.",
+      "Archive the immutable predecessor before incrementing revision; Coordinator owns confirmation and approvals, Modeling never self-confirms.",
+      "Never self-confirm business meaning from schema names or sample rows; retain unknowns until business confirmation.",
+      "Do not add source citation or lineage fields."
+    ]
+  },
+  "stage3_artifacts": {
+    "modeling_owned": ["stage3-neutral-graph/neutral-candidate.json", "stage3-neutral-graph/candidates/{candidate_id}-r{revision}.json"],
+    "protocol_owned": ["stage3-neutral-graph/materialization-plans/"],
+    "stage3_slot": {
+      "schema_version": "r3-0-009-stage3-slot/v1",
+      "fields": ["schema_version", "scenario_id", "produced_by", "approved_by", "candidate_artifacts", "candidate_contract", "slot_note"],
+      "candidate_contract": "r3-0-009-unified-graph/v2",
+      "rules": [
+        "candidate_artifacts contains the published candidate paths under stage3-neutral-graph/candidates/ and each filename carries its candidate_id and positive integer revision",
+        "Modeling writes the slot and Coordinator supplies approved_by through the approval record",
+        "The slot contains semantic candidate publication metadata only; Protocol materialization plans, receipts, read handles and execution fields are outside this Modeling contract"
+      ]
+    },
+    "rules": [
+      "Publish only complete neutral candidate artifacts with candidate ID and revision matching their filenames.",
+      "Do not create, rename, replace or delete Protocol materialization plans."
+    ]
+  },
+  "handoff": {
+    "required": ["candidate", "candidate_revision", "semantic_digest", "scope", "explicit_unknowns", "known_gaps"],
+    "transport": "Send the complete semantic candidate through the visible Team Transport route. Protocol translates it and owns all Batch, receipt, platform ID and readback mechanics.",
+    "feedback": "A typed translation, readback or validation finding is repaired only in the named semantic content; send a complete revision bound to the new delivery.",
+    "completion": "Report semantic completion only after Protocol returns the bound deterministic run outcome and CQ/acceptance handoff is ready; independent acceptance owns the final semantic verdict."
+  }
+}

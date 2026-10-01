@@ -16,7 +16,9 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 
-FORMAL_CANDIDATE_KIND = "platform-neutral-candidate-v2"
+# R4.0-012 active candidate shape: source-tracing fields are no longer part
+# of the neutral handoff. Historical v2 artifacts remain readable elsewhere.
+FORMAL_CANDIDATE_KIND = "platform-neutral-candidate-v3"
 FORMAL_CANDIDATE_FIELDS = frozenset(
     {"candidate_kind", "candidate_revision", "scope", "constraints", "items"}
 )
@@ -127,7 +129,7 @@ def validate_formal_candidate(candidate: Any) -> dict[str, Any]:
             "formal candidate fields are not exact" + (f" ({'; '.join(details)})" if details else "")
         )
     if candidate.get("candidate_kind") != FORMAL_CANDIDATE_KIND:
-        raise FormalCandidateError("formal candidate kind is not platform-neutral-candidate-v2")
+        raise FormalCandidateError("formal candidate kind is not platform-neutral-candidate-v3")
     _validate_revision(candidate.get("candidate_revision"))
     scope = candidate.get("scope")
     if not (_nonempty_string(scope) or (isinstance(scope, dict) and bool(scope))):
@@ -150,12 +152,10 @@ def validate_formal_candidate(candidate: Any) -> dict[str, Any]:
         item_ids.add(item["item_id"])
         if "semantic" not in item or item["semantic"] is None:
             raise FormalCandidateError("formal candidate semantic payload is missing")
-        citations = item.get("evidence_citations")
-        if citations is not None and (
-            not isinstance(citations, list)
-            or any(not isinstance(citation, dict) for citation in citations)
-        ):
-            raise FormalCandidateError("formal candidate evidence citations are invalid")
+        if "evidence_citations" in item:
+            raise FormalCandidateError(
+                "formal candidate source-tracing fields are not accepted"
+            )
     try:
         detached = copy.deepcopy(candidate)
         _canonical_bytes(detached)

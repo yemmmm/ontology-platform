@@ -44,7 +44,7 @@ def _slot(*, unified: bool) -> dict:
         "approved_by": "coordinator",
         "candidate_artifacts": ["stage3-neutral-graph/candidates/candidate.json"],
         "candidate_contract" if unified else "deferred_contract": (
-            "r3-0-009-unified-graph/v1" if unified else "R3.0-009"
+            "r3-0-009-unified-graph/v2" if unified else "R3.0-009"
         ),
         "slot_note": None,
     }
@@ -157,17 +157,18 @@ def test_t_g1_2_legacy_real_tasks_unchanged_and_loadable(
 
 def test_t_g1_3_slot_contract_text_matches_validator_dispatch() -> None:
     text = MODELING_INSTRUCTIONS.read_text(encoding="utf-8")
-    # The staged sentence dispatches on the mounted contract instead of
-    # hard-coding the 008B deferred form.
-    assert "deferred_contract: R3.0-009" in text
-    assert "candidate_contract: r3-0-009-unified-graph/v1" in text
+    # The active Modeling package uses the mounted v4 contract and its
+    # unified v2 slot; the frozen legacy Task objective below remains a
+    # historical asset and is not the active prompt contract.
+    assert "r3-0-009-stage3-slot/v1" in text
+    assert "candidate_contract: r3-0-009-unified-graph/v2" in text
     assert "unified_semantic_graph: true" in text
     assert "materialization-plans" in text
     # The 008B-only slot form is exactly what the non-unified validator wants.
     assert validate_stage3_slot(_slot(unified=False)) == ()
     assert validate_stage3_slot(_slot(unified=False), unified=True) != ()
-    # The 008B+009 slot form is exactly what the unified validator wants, and
-    # the deferred form is not an accepted unified contract value.
+    # The v2 unified slot form is exactly what the validator wants, and the
+    # deferred form is not an accepted unified contract value.
     assert validate_stage3_slot(_slot(unified=True), unified=True) == ()
     assert validate_stage3_slot(_slot(unified=False), unified=True) != ()
     # The full real Task objective never reinstates a deferred_contract path.

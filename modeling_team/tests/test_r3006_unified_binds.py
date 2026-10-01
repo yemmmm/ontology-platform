@@ -302,7 +302,7 @@ def _valid_modeling_bytes() -> tuple[str, str]:
         "produced_by": "modeling",
         "approved_by": "coordinator",
         "candidate_artifacts": ["stage3-neutral-graph/candidates/cand-1-r2.json"],
-        "candidate_contract": "r3-0-009-unified-graph/v1",
+        "candidate_contract": "r3-0-009-unified-graph/v2",
         "slot_note": "neutral slot",
     }
     encode = lambda value: base64.b64encode(  # noqa: E731

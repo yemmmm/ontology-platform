@@ -273,58 +273,6 @@ export type OntologyExport = {
   relations: Relation[];
 };
 
-export type EvidenceBinding = {
-  id?: string;
-  fact_id?: string;
-  chunk_id?: string | null;
-  evidence_artifact_id?: string | null;
-  document_filename?: string | null;
-  sequence?: number | null;
-  char_start?: number | null;
-  char_end?: number | null;
-  text_preview?: string;
-  text?: string;
-  actor?: string | null;
-  reason?: string | null;
-  created_at?: string | null;
-  // Legacy fields retained for read-model consumers not yet migrated to the
-  // Phase 8 schema (EvidenceExplorerPanel, EvidenceBindingPanel, etc.).
-  chunk_iri?: string | null;
-  document_iri?: string | null;
-};
-
-/**
- * Phase 8 — fact-evidence binding record returned by
- * ``POST /api/semantic/graph-sets/{gs}/fact-evidence``. This shape mirrors
- * the backend ``FactEvidenceBinding`` Pydantic schema (backend/app/api/schemas.py)
- * and is distinct from the loose ``EvidenceBinding`` read-model projection
- * used by the composer outputs.
- */
-export type FactEvidenceBinding = {
-  id: string;
-  fact_id: string;
-  subject_iri: string;
-  predicate_iri: string;
-  object_value: string;
-  graph_iri: string;
-  chunk_id?: string | null;
-  evidence_artifact_id?: string | null;
-  evidence_reference_id?: string | null;
-  document_filename?: string | null;
-  sequence?: number | null;
-  char_start?: number | null;
-  char_end?: number | null;
-  text: string;
-  actor?: string | null;
-  reason?: string | null;
-  created_at?: string | null;
-};
-
-export type MissingEvidenceFactsResponse = {
-  count: number;
-  fact_ids: string[];
-};
-
 export type Health = Record<string, unknown>;
 
 export type Evidence = {
@@ -547,7 +495,6 @@ export type ModelingBatchImmutableItem = ModelingBatchItemResult & {
   ordinal?: number;
   payload?: JsonObject;
   depends_on?: string[];
-  evidence_reference_ids?: string[];
   rationale?: string | null;
   competency_question_ids?: string[];
 };
@@ -664,7 +611,6 @@ export type BuildSessionDetail = {
   involved_ontology_ids: string[];
   leases: OntologyLeaseSummary[];
   modeling_batches: JsonObject[];
-  evidence: JsonObject;
   recent_activity: JsonObject[];
 };
 
@@ -675,7 +621,6 @@ export type BuildContext = {
     project_brief: ProjectBrief;
     competency_question_counts: Record<string, number>;
     ontologies: BuildContextOntology[];
-    evidence_reference_count: number;
     modeling_batches: JsonObject[];
   };
   agent_state: {
@@ -849,7 +794,6 @@ export type SemanticEditAuditRead = {
   affected_graph_iris: string[];
   validation_result: SemanticJsonObject | null;
   graph_delta: SemanticJsonObject;
-  evidence_status: string | null;
   warning_state: SemanticJsonObject;
   applied: boolean;
   created_at: string;
@@ -895,7 +839,6 @@ export type SemanticValidationRunRead = {
   shape_version: string | null;
   engine_version: string | null;
   validation_scope: string;
-  missing_evidence_dependencies: SemanticJsonObject;
   staleness: SemanticJsonObject;
   started_at: string | null;
   finished_at: string | null;
@@ -917,7 +860,6 @@ export type SemanticReasoningRunRead = {
   shape_version: string | null;
   tasks: string[];
   profile: string;
-  missing_evidence_dependencies: SemanticJsonObject;
   warnings: string[];
   derived_pointer: SemanticJsonObject | null;
   started_at: string | null;
@@ -940,7 +882,6 @@ export type SemanticRuleRunRead = {
   bindings: SemanticJsonObject[];
   warnings: string[];
   truncated: boolean;
-  missing_evidence_dependencies: SemanticJsonObject;
   audit_status: string;
   explanations: SemanticJsonObject[];
   rule_count: number | null;
@@ -1001,7 +942,6 @@ export type SemanticStatementItem = {
   label: string | null;
   source_graph_iri: string;
   assertion_kind: string;
-  evidence_ids: string[];
   provenance: SemanticJsonObject;
   audit_status: string | null;
   staleness: SemanticJsonObject;

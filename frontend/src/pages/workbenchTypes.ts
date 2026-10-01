@@ -43,7 +43,6 @@ export type GraphSetMemberStaleness = {
 export type GraphSetStaleness = {
   graph_set_id: string;
   members: GraphSetMemberStaleness[];
-  missing_evidence_count: number;
   last_semantic_edit_at: string | null;
 };
 

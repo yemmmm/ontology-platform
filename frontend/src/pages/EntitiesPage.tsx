@@ -31,7 +31,6 @@ type EntityListRow = {
   label: string | null;
   source_graph_iri: string;
   assertion_kind: string;
-  evidence_status?: string;
   /** R3.0-009 §6.2/§9.3: the full visible formal Class set, deduplicated and
    * IRI-sorted. An empty array is the legal zero-class state, never a
    * truncation. */
@@ -993,7 +992,6 @@ function EntityGraphDetailPanel({
                   </div>
                 )}
                 <div><dt>{t("Assertion")}</dt><dd>{assertionKindLabel(selectedEntity.assertion_kind, t)}</dd></div>
-                <div><dt>{t("Evidence")}</dt><dd>{selectedEntity.evidence_status ?? t("Not available")}</dd></div>
               </>
             )}
             {selectedRelation && (

@@ -62,9 +62,8 @@ def test_publication_readiness_composer_routes_to_dispatch(
 
 
 def test_publication_readiness_returns_gate_set(fake_graph_set_with_members):
-    """End-to-end composer run: gates include validation/reasoning/rule/
-    missing_evidence/open_edits/projection_freshness, and the missing-evidence
-    gate is ``passed`` because the FakeStore returns zero missing rows."""
+    """End-to-end composer run: gates cover derived state, edits, and
+    projection freshness without a missing-evidence gate."""
     svc, graph_set_id = fake_graph_set_with_members
     envelope = svc.read_model(
         graph_set_id=graph_set_id,
@@ -78,15 +77,9 @@ def test_publication_readiness_returns_gate_set(fake_graph_set_with_members):
         "validation_stale",
         "reasoning_stale",
         "rule_stale",
-        "missing_evidence",
         "open_edits",
         "projection_freshness",
     }
-    # Missing-evidence gate is passed because the FakeStore canned row reports
-    # ``count=0``.
-    missing = next(g for g in item["gates"] if g["gate"] == "missing_evidence")
-    assert missing["status"] == "passed"
-    assert "0 facts missing evidence" == missing["label"]
 
 
 # ---------------------------------------------------------------------------
@@ -270,6 +263,5 @@ def test_graph_set_delta_counts_independent_of_display_cap(
     assert len(ad["added"]) <= 10
     # Truncation flag set.
     assert rows["truncated"] is True
-
 
 

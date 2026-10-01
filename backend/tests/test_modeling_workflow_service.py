@@ -5,6 +5,7 @@ from __future__ import annotations
 from uuid import uuid4
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -22,7 +23,6 @@ from app.repositories.models import (
     ModelingWorkflowArtifactModel,
     OntologyModel,
     ProjectModel,
-    SemanticStatementOccurrenceModel,
 )
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchService
@@ -34,7 +34,6 @@ from app.services.modeling_workflow import (
     ModelingWorkflowService,
     _canonical_json,
 )
-from app.services.semantic_lineage_identity import occurrence_id_for, statement_id_for_quad
 
 
 @pytest.fixture()
@@ -94,31 +93,6 @@ def _event(client_event_id: str, event_type: str = "phase_completed", **changes)
 def _assert_error(error, code, status=409):
     assert error.value.code == code
     assert error.value.status_code == status
-
-
-def _lineage_occurrence(session: Session, ontology_id: str, *, suffix: str) -> str:
-    subject = f"https://workflow.test/resource/{suffix}"
-    predicate = "https://workflow.test/property/status"
-    obj = '"known"'
-    graph_iri = f"https://workflow.test/graph/{suffix}"
-    statement_id = statement_id_for_quad(subject, predicate, obj, graph_iri)
-    session.add(
-        SemanticStatementOccurrenceModel(
-            id=occurrence_id_for(statement_id, 1),
-            ontology_id=ontology_id,
-            graph_set_id=None,
-            statement_id=statement_id,
-            subject_iri=subject,
-            predicate_iri=predicate,
-            object_ntriples=obj,
-            graph_iri=graph_iri,
-            graph_revision=1,
-            assertion_kind="asserted",
-            status="active",
-        )
-    )
-    session.commit()
-    return statement_id
 
 
 def _event_with_canonical_size(client_event_id: str, size: int):
@@ -478,88 +452,19 @@ def test_event_finding_reference_requires_exact_attempt_fingerprint(workflow):
     _assert_error(unknown, "workflow_reference_conflict")
 
 
-def test_lineage_reference_uses_existing_read_model_and_fails_closed(workflow):
-    service, session, session_id, ontology_id = workflow
-    known_statement_id = _lineage_occurrence(session, ontology_id, suffix="known")
-
-    accepted, _ = service.record_event(
-        session_id,
+def test_lineage_reference_is_rejected_by_workflow_contract(workflow):
+    _service, _session, _session_id, _ontology_id = workflow
+    with pytest.raises(ValidationError, match="resource_type"):
         _event(
-            "known-lineage",
+            "lineage-reference",
             "verification_completed",
             phase="verification",
             related_resources=[
                 {
                     "resource_type": "lineage",
-                    "ontology_id": ontology_id,
+                    "ontology_id": _ontology_id,
                     "target_type": "statement",
-                    "target_id": known_statement_id,
+                    "target_id": "0" * 64,
                 }
             ],
-        ),
-    )
-    assert accepted["related_resources"][0]["target_id"] == known_statement_id
-
-    invalid_references = [
-        {
-            "client_event_id": "missing-lineage",
-            "ontology_id": ontology_id,
-            "target_type": "statement",
-            "target_id": "0" * 64,
-        },
-        {
-            "client_event_id": "type-mismatched-lineage",
-            "ontology_id": ontology_id,
-            "target_type": "resource",
-            "target_id": known_statement_id,
-        },
-    ]
-    for invalid in invalid_references:
-        with pytest.raises(ModelingWorkflowError) as conflict:
-            service.record_event(
-                session_id,
-                _event(
-                    invalid["client_event_id"],
-                    "verification_completed",
-                    phase="verification",
-                    related_resources=[
-                        {
-                            "resource_type": "lineage",
-                            "ontology_id": invalid["ontology_id"],
-                            "target_type": invalid["target_type"],
-                            "target_id": invalid["target_id"],
-                        }
-                    ],
-                ),
-            )
-        _assert_error(conflict, "workflow_reference_conflict")
-
-    foreign_project = ProjectModel(
-        id=f"foreign-lineage-{uuid4().hex}",
-        name="Foreign lineage",
-        normalized_label=f"foreign-lineage-{uuid4().hex}",
-    )
-    foreign_ontology = OntologyModel(
-        id=str(uuid4()), project_id=foreign_project.id, name="Foreign lineage"
-    )
-    session.add_all([foreign_project, foreign_ontology])
-    session.commit()
-    foreign_statement_id = _lineage_occurrence(session, foreign_ontology.id, suffix="foreign")
-    with pytest.raises(ModelingWorkflowError) as foreign:
-        service.record_event(
-            session_id,
-            _event(
-                "foreign-lineage",
-                "verification_completed",
-                phase="verification",
-                related_resources=[
-                    {
-                        "resource_type": "lineage",
-                        "ontology_id": foreign_ontology.id,
-                        "target_type": "statement",
-                        "target_id": foreign_statement_id,
-                    }
-                ],
-            ),
         )
-    _assert_error(foreign, "workflow_reference_conflict")

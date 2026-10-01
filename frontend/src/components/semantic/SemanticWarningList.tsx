@@ -15,7 +15,7 @@ export function SemanticWarningList({ warnings, title }: { warnings: SemanticWar
         {normalized.map((warning, idx) => (
           <li key={idx}>
             <Alert
-              type={warning.kind === "missing_evidence" ? "error" : "warning"}
+              type="warning"
               showIcon
               message={warning.field ? `${warning.field}: ${warning.message}` : warning.message}
               description={warning.detail ?? undefined}

@@ -21,7 +21,7 @@ from rdflib.namespace import RDFS, SKOS
 
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfGraphDelta
-from app.services.fact_id import canonical_object_term, compute_fact_id
+from app.services.fact_id import compute_fact_id
 from app.services.semantic_export import SemanticNamespace, namespace_from_settings
 from app.services.operation_semantics import (
     OperationValidationError,
@@ -2055,7 +2055,7 @@ def compile_review_assertion(
     an optional ``op:linkedFixProposal`` for rejections. Target graph is
     selected by ``assertion_kind``:
 
-    - ``asserted`` / ``missing_evidence`` → ``graph/data/{ontology_id}``
+    - ``asserted`` → ``graph/data/{ontology_id}``
     - ``inferred`` → ``result_graph_iri`` (caller-supplied reasoning-result)
     - ``rule_derived`` → ``result_graph_iri`` (caller-supplied rule-result)
 
@@ -2064,9 +2064,9 @@ def compile_review_assertion(
     """
     ontology_id = _required(payload, "ontology_id")
     assertion_kind = payload.get("assertion_kind", "asserted")
-    if assertion_kind not in {"asserted", "inferred", "rule_derived", "missing_evidence"}:
+    if assertion_kind not in {"asserted", "inferred", "rule_derived"}:
         raise InvalidCommandPayload(
-            "assertion_kind must be one of: asserted, inferred, rule_derived, missing_evidence"
+            "assertion_kind must be one of: asserted, inferred, rule_derived"
         )
     subject_iri = _required(payload, "subject_iri")
     predicate_iri = _required(payload, "predicate_iri")
@@ -2084,7 +2084,7 @@ def compile_review_assertion(
     result_graph_iri = payload.get("result_graph_iri")
 
     # Select target graph by assertion_kind.
-    if assertion_kind in {"asserted", "missing_evidence"}:
+    if assertion_kind == "asserted":
         graph_iri = _data_graph_iri(ns, ontology_id)
     elif assertion_kind == "inferred":
         if not result_graph_iri:
@@ -2152,98 +2152,6 @@ def compile_review_assertion(
             "linked_fix_proposal_id": linked_fix_proposal_id,
             "graph_iri": graph_iri,
         },
-    )
-
-
-def compile_bind_fact_evidence(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    """Bind evidence text or chunk to a specific fact (identified by fact_id).
-
-    Stores in Postgres only — does not write RDF. The fact_id is computed
-    from (s, p, o, g) using canonical N-Triples; if the caller provides a
-    fact_id it must match or the command is rejected.
-
-    .. note::
-        Must be applied via the POST /api/semantic/graph-sets/{gs}/fact-evidence
-        REST endpoint, NOT via ``apply_compiled_command``. The compiler emits
-        an empty RdfGraphDelta on purpose; applying it through the standard
-        RDF-only executor will silently no-op the Postgres write.
-    """
-    ontology_id = _required(payload, "ontology_id")
-    subject_iri = _required(payload, "subject_iri")
-    predicate_iri = _required(payload, "predicate_iri")
-    object_value = _required(payload, "object_value")
-    object_is_iri = bool(payload.get("object_is_iri", False))
-    object_datatype = payload.get("object_datatype")
-    object_lang = payload.get("object_lang")
-    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
-    text = str(_required(payload, "text")).strip()
-    if not text:
-        raise InvalidCommandPayload("text must not be empty")
-
-    object_term = canonical_object_term(
-        object_value, is_iri=object_is_iri, datatype=object_datatype, lang=object_lang
-    )
-    fid = compute_fact_id(subject_iri, predicate_iri, object_term, graph_iri)
-
-    provided_fid = payload.get("fact_id")
-    if provided_fid is not None and provided_fid != fid:
-        raise InvalidCommandPayload(
-            f"fact_id mismatch: caller provided {provided_fid}, computed {fid}"
-        )
-
-    # No RDF writes — repository call is performed by the command executor
-    # at apply time, not here. The delta is empty.
-    delta = RdfGraphDelta(inserts=[], deletes=[])
-    return CompiledCommand(
-        command_kind="bind_fact_evidence",
-        delta=delta,
-        object_kind="fact_evidence",
-        source_ids=[subject_iri, fid],
-        target_graph_iris=[],  # no graph writes
-        metadata={
-            "ontology_id": ontology_id,
-            "fact_id": fid,
-            "subject_iri": subject_iri,
-            "predicate_iri": predicate_iri,
-            "object_value": object_term,
-            "graph_iri": graph_iri,
-            "chunk_id": payload.get("chunk_id"),
-            "evidence_artifact_id": payload.get("evidence_artifact_id"),
-            "document_filename": payload.get("document_filename"),
-            "sequence": payload.get("sequence"),
-            "char_start": payload.get("char_start"),
-            "char_end": payload.get("char_end"),
-            "text": text,
-            "actor": payload.get("actor"),
-            "reason": payload.get("reason"),
-        },
-    )
-
-
-def compile_unbind_fact_evidence(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    """Delete a fact evidence binding from Postgres by binding_id.
-
-    .. note::
-        Must be applied via the DELETE
-        /api/semantic/graph-sets/{gs}/fact-evidence/{binding_id} REST
-        endpoint, NOT via ``apply_compiled_command``. The compiler emits an
-        empty RdfGraphDelta on purpose; applying it through the standard
-        RDF-only executor will silently no-op the Postgres write.
-    """
-    _required(payload, "ontology_id")
-    binding_id = _required(payload, "binding_id")
-    delta = RdfGraphDelta(inserts=[], deletes=[])
-    return CompiledCommand(
-        command_kind="unbind_fact_evidence",
-        delta=delta,
-        object_kind="fact_evidence",
-        source_ids=[binding_id],
-        target_graph_iris=[],
-        metadata={"ontology_id": payload["ontology_id"], "binding_id": binding_id},
     )
 
 
@@ -3121,8 +3029,6 @@ _COMPILERS: dict[str, Compiler] = {
     "create_relation_type": compile_create_relation_type,
     "update_fact": compile_update_fact,
     "delete_fact": compile_delete_fact,
-    "bind_fact_evidence": compile_bind_fact_evidence,
-    "unbind_fact_evidence": compile_unbind_fact_evidence,
     "update_class": compile_update_class,
     "delete_class": compile_delete_class,
     "create_property": compile_create_property,

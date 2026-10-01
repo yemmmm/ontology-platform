@@ -29,7 +29,6 @@ _PROJECTION_TERMS = {
     "projection": "http://ontology-platform.local/semantic/vocab/projection/",
     "assertionKind": "projection:assertionKind",
     "sourceGraph": "projection:sourceGraph",
-    "evidenceStatus": "projection:evidenceStatus",
     "derivedState": "projection:derivedState",
     "isStale": "projection:isStale",
 }
@@ -53,7 +52,6 @@ class SemanticExportService:
         graph_set_id: str,
         format: str,
         include: str = "asserted",
-        include_evidence: bool = False,
         include_shapes: bool = False,
         include_policy: bool = False,
         include_metadata: bool = False,
@@ -65,8 +63,6 @@ class SemanticExportService:
             allow_stale_derived=allow_stale_derived,
         )
         graph_iris = list(scope.source_graph_iris)
-        if include_evidence:
-            graph_iris.extend(scope.governance_graph_iris)
         if include_shapes:
             graph_iris.extend(scope.shape_graph_iris)
         if scope.reasoning_result_graph_iri and scope.derived_state.get(

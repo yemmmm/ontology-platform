@@ -1,5 +1,5 @@
 {
-  "schema_version": "r3-0-008b-staged-decisions-contract/v1",
+  "schema_version": "r3-0-008b-staged-decisions-contract/v2",
   "purpose": "Agent-readable artifact and capability contract for the R3.0-008B staged modeling decisions (segment 1, mechanical increment): the analyzed_not_materialized analysis conclusions, the stage 3 minimal slot prerequisite, the materialization unlock, coordinator approvals, the materialization ledger, the joint acceptance checklist, and the Runner-private staged Modeling Batch submission capability. Mechanical only; business semantics are owned by the modeling Agents and confirmed by the Coordinator.",
   "artifact_locations": {
     "base": "workspaces/modeling-runs/<run-id>/",
@@ -51,7 +51,7 @@
     ]
   },
   "analysis_conclusions": {
-    "schema_version": "r3-0-008b-analysis-conclusions/v1",
+    "schema_version": "r3-0-008b-analysis-conclusions/v2",
     "maintainer": "modeling",
     "fields": ["schema_version", "scenario_id", "maintained_by", "entries"],
     "entry_fields": [
@@ -59,7 +59,6 @@
       "mapped_property",
       "candidate_value",
       "business_meaning_hypothesis",
-      "evidence_refs",
       "proposed_level",
       "blocking_unknowns",
       "status",
@@ -78,7 +77,7 @@
       "conflict -> analyzed (via revision increment with archived predecessor)"
     ],
     "rules": [
-      "mapped_property is an absolute IRI; evidence_refs is a non-empty list; proposed_level is one of L1, L2, L3; blocking_unknowns is an optional list",
+      "mapped_property is an absolute IRI; proposed_level is one of L1, L2, L3; blocking_unknowns is an optional list",
       "candidate_value and confirmed_enum_value each hold the conclusion's enum code set: either one non-empty string, or a non-empty list of non-empty strings when the conclusion resolves several codes (one create_enum_meaning command is submitted per code); an empty value, empty list, or a list holding empty or non-string items is invalid (conclusions_schema_mismatch for candidate_value, conclusions_invalid_status_fields for a confirmed/materialized confirmed_enum_value)",
       "status analyzed forbids confirmed_enum_value, confirmed_by, and conflict_note",
       "status confirmed and materialized require confirmed_enum_value and confirmed_by and forbid conflict_note",
@@ -324,49 +323,6 @@
       "staged_batch_forward_unknown",
       "staged_ledger_stale",
       "staged_unreconciled_batch"
-    ]
-  },
-  "staged_evidence_capability": {
-    "operation": "protocol_staged_associate_evidence",
-    "owner": "protocol (via the runner_capability MCP server)",
-    "platform_tool": "associate_evidence_reference",
-    "target_type": "modeling_item",
-    "arguments": [
-      "protocol_id",
-      "association"
-    ],
-    "association_envelope": {
-      "required_fields": [
-        "project_id",
-        "ontology_id",
-        "target_type",
-        "target_id"
-      ],
-      "optional_fields": [
-        "evidence_reference_ids",
-        "evidence",
-        "graph_set_id",
-        "client_item_id",
-        "edit_audit_id"
-      ],
-      "evidence_entry_fields": [
-        "document_name",
-        "excerpt"
-      ],
-      "rules": [
-        "the envelope mirrors the platform associate_evidence_reference signature minus actor; only the association object is forwarded to the platform, byte-for-byte",
-        "target_type is always modeling_item; target_id is the platform Modeling Item id read back from the authoritative receipt or a platform read-back, never a self-invented identifier",
-        "evidence may only be quoted verbatim from an owner-authorized source; document_name names that source; a role must never author evidence or cite the CQ-frozen conclusion pool as platform evidence",
-        "at least one of evidence_reference_ids or evidence must be non-empty, otherwise the association cannot satisfy a lineage gate and is rejected",
-        "this path writes no submission intent and no receipt, consults no conclusions, and requires no approval chain; it never freezes or mutates the CQ pool",
-        "association is idempotent per (target, evidence reference), so an indeterminate forward is retry-safe and does not fire the kill-switch"
-      ]
-    },
-    "failure_reason_codes": [
-      "staged_gate_closed",
-      "staged_submit_schema_mismatch",
-      "staged_evidence_forward_failed",
-      "staged_evidence_forward_unknown"
     ]
   },
   "kill_switch": {

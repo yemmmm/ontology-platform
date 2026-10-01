@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -11,8 +10,8 @@ import unittest
 from pathlib import Path
 from types import SimpleNamespace
 
-from modeling_team.contracts import _load_package, digest_file, repository_root
-from modeling_team.runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError, _Agent
+from modeling_team.contracts import _load_package, repository_root
+from modeling_team.runtimes.codex import CodexRuntimeAdapter, _Agent
 
 
 class ProofV2RuntimeAssetTests(unittest.TestCase):
@@ -40,15 +39,15 @@ class ProofV2RuntimeAssetTests(unittest.TestCase):
         adapter._stage_protocol_retrieval_mcp(run, agent)
         return adapter, agent
 
-    def test_staged_dir_subprocess_initialize_and_tools_list_imports_proof_v2(self) -> None:
+    def test_active_staged_dir_exposes_only_neutral_protocol_tools(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             staged = Path(directory)
-            for name in ("protocol_retrieval_mcp.py", "protocol_mechanics.py", "proof_v2.py"):
+            for name in ("protocol_retrieval_mcp.py", "protocol_mechanics.py"):
                 source = root / "modeling_team" / name
                 target = staged / name
                 shutil.copyfile(source, target)
-                os.chmod(target, 0o600 if name == "proof_v2.py" else 0o444)
+                os.chmod(target, 0o444)
             environment = os.environ.copy()
             environment["PYTHONPATH"] = str(staged)
             process = subprocess.Popen(
@@ -80,14 +79,13 @@ class ProofV2RuntimeAssetTests(unittest.TestCase):
                             {item["name"] for item in tools},
                             {
                                 "build_candidate_receipt",
-                                "verify_scoped_retrieval_fallback",
-                                "write_candidate_item_evidence_map",
                                 "translate_candidate_to_batches",
                             },
                         )
-                        tool = next(item for item in tools if item["name"] == "verify_scoped_retrieval_fallback")
-                        self.assertEqual(tool["name"], "verify_scoped_retrieval_fallback")
-                        self.assertIn("pagination", tool["inputSchema"]["properties"])
+                        self.assertNotIn(
+                            "verify_scoped_retrieval_fallback",
+                            {item["name"] for item in tools},
+                        )
                 process.stdin.close()
                 self.assertEqual(process.wait(timeout=5), 0)
             finally:
@@ -95,35 +93,30 @@ class ProofV2RuntimeAssetTests(unittest.TestCase):
                     process.kill()
                     process.wait(timeout=5)
 
-    def test_missing_or_tampered_proof_v2_asset_fails_closed(self) -> None:
+    def test_proof_v2_asset_is_not_staged_even_when_historical_gate_is_present(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             adapter, agent = self._run(root, base)
-            assert agent.proof_v2_path is not None
-            agent.proof_v2_path.unlink()
-            with self.assertRaisesRegex(CodexRuntimeError, "asset is unavailable|asset metadata is invalid"):
-                adapter._open_protocol_retrieval_assets(agent)
+            self.assertIsNone(agent.proof_v2_path)
+            descriptors = adapter._open_protocol_retrieval_assets(agent)
+            self.assertEqual(len(descriptors), 2)
+            adapter._close_retrieval_asset_fds(agent)
 
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             adapter, agent = self._run(root, base)
-            assert agent.proof_v2_path is not None
-            agent.proof_v2_path.write_text("tampered", encoding="utf-8")
-            os.chmod(agent.proof_v2_path, 0o600)
-            with self.assertRaisesRegex(CodexRuntimeError, "asset digest is invalid"):
-                adapter._open_protocol_retrieval_assets(agent)
+            self.assertIsNone(agent.proof_v2_path)
+            descriptors = adapter._open_protocol_retrieval_assets(agent)
+            self.assertEqual(len(descriptors), 2)
+            adapter._close_retrieval_asset_fds(agent)
 
-    def test_proof_v2_asset_contract_hash_and_modes_are_bound(self) -> None:
+    def test_active_runtime_does_not_bind_proof_v2_asset_contract(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
             adapter, agent = self._run(root, base)
-            assert agent.proof_v2_path is not None
-            self.assertEqual(digest_file(root / "modeling_team/proof_v2.py"), digest_file(agent.proof_v2_path))
-            self.assertEqual(stat.S_IMODE(agent.proof_v2_path.stat().st_mode), 0o600)
-            self.assertEqual(stat.S_IMODE(agent.proof_v2_path.parent.stat().st_mode), 0o700)
-            self.assertEqual(agent.proof_v2_path.stat().st_uid, os.getuid())
+            self.assertIsNone(agent.proof_v2_path)
             adapter.stop()
 
 

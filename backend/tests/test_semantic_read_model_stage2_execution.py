@@ -695,14 +695,10 @@ def test_fact_audit_queue_kind_asserted_routes_to_data_graph(in_memory_session) 
     assert DATA_GRAPH in (store.last_graph_iris or [])
 
 
-def test_fact_audit_queue_kind_missing_evidence_uses_unified_fact_template(
+def test_fact_audit_queue_kind_missing_evidence_is_rejected(
     in_memory_session,
 ) -> None:
-    """Phase 3 refactor: kind=missing_evidence now reuses the unified
-    ``fact-audit-queue`` SPARQL template and derives ``evidence_status`` from
-    the Postgres ``fact_evidence_bindings`` table. Without any seeded
-    bindings every asserted row classifies as missing_evidence.
-    """
+    """The retired missing-evidence projection is not a fact queue kind."""
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore(
         rows_by_marker={
@@ -717,14 +713,12 @@ def test_fact_audit_queue_kind_missing_evidence_uses_unified_fact_template(
         }
     )
     client = _client(store, in_memory_session)
-    body = _read_model(client, "fact-audit-queue", kind="missing_evidence")
-    assert body["items"]
-    assert body["items"][0]["assertion_kind"] == "missing_evidence"
-    assert body["items"][0]["evidence_status"] == "missing_evidence"
-    # The legacy missing-evidence-list SPARQL template is gone; the unified
-    # fact-audit-queue template is what gets executed now.
-    assert "fact-audit-queue" in (store.last_query or "")
-    assert "missing-evidence-list" not in (store.last_query or "")
+    response = client.get(
+        "/api/semantic/graph-sets/gs-1/read-models/fact-audit-queue",
+        params={"include": "asserted", "kind": "missing_evidence"},
+    )
+    assert response.status_code == 400
+    assert "Unsupported fact-audit-queue kind" in response.json()["detail"]
 
 
 def test_fact_audit_queue_kind_inferred_without_pointer_returns_empty_with_warning(

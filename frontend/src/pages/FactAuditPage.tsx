@@ -9,8 +9,6 @@
  *   - inferred         → effective reasoning-result graph
  *   - rule_derived     → effective rule-result graph
  *
- * The "missing evidence" view is a client-side filter toggle on the Asserted tab.
- *
  * Toolbar actions:
  *   - Generate  → POST /graph-sets/{gs}/reasoning-runs + /rule-runs (async,
  *                 polled until both settle, then refetch)
@@ -18,11 +16,7 @@
  *   - Refresh   → invalidate local cache and refetch
  *
  * Selected facts can be edited/deleted through the canonical-write command
- * path. Phase 8 routes evidence bind/unbind through the dedicated
- * ``/graph-sets/{gs}/fact-evidence`` REST endpoints (see semanticApi.ts).
- *
- * Legacy inline implementation retained as ``FactAuditPage.legacy.tsx``
- * and dispatched from App.tsx when no ``?graphSet=`` URL parameter is set.
+ * path.
  */
 
 import {
@@ -36,25 +30,20 @@ import {
   Segmented,
   Space,
   Spin,
-  Switch,
   Tag,
 } from "antd";
-import { Edit3, FileText, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Edit3, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
 import {
-  bindFactEvidence,
   compileAndApplyProductCommand,
   getReasoningRun,
   getRuleRun,
   readModel,
   runGraphSetReasoning,
   runGraphSetRules,
-  unbindFactEvidence,
 } from "../semanticApi";
-import { EvidenceChunkPicker } from "../components/semantic";
-import type { EvidenceBinding } from "../types";
 import type { WorkbenchRequest } from "./workbenchTypes";
 
 type AssertionKind = "asserted" | "inferred" | "rule_derived";
@@ -91,15 +80,11 @@ type FactRow = {
   object_label: string | null;
   graph_iri: string;
   source_graph_iri: string;
-  evidence_status: "with_evidence" | "missing_evidence" | "not_applicable";
   audit_status: "pending" | "approved" | "rejected" | "needs_correction";
   stale: boolean;
   stale_reason: string | null;
   derived_from?: { run_id: string; rule_id?: string; rule_version?: string; reason?: string };
-  /** Stage 4 §4.4 — populated when ``field_set=evidence`` is passed.
-   * Empty array means no ``prov:wasDerivedFrom`` triple exists for this
-   * fact; the drawer falls back to the "missing evidence" empty state. */
-  evidence_bindings?: EvidenceBinding[];
+
 };
 
 type FactAuditPageProps = {
@@ -127,7 +112,6 @@ const POLL_TIMEOUT_MS = 60_000;
 export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: FactAuditPageProps) {
   const t = useT();
   const [kind, setKind] = useState<AssertionKind>("asserted");
-  const [missingEvidenceOnly, setMissingEvidenceOnly] = useState(false);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -136,7 +120,6 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [editOpen, setEditOpen] = useState(false);
   const [editObjectValue, setEditObjectValue] = useState("");
-  const [pickerOpen, setPickerOpen] = useState(false);
   const [warnings, setWarnings] = useState<Array<{ code: string; message: string }>>([]);
 
   const load = useCallback(async () => {
@@ -147,10 +130,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         request,
         graphSetId,
         "fact-audit-queue",
-        // Stage 4 §4.4 — pass field_set=evidence so every row carries
-        // an ``evidence_bindings`` array (possibly empty) for the
-        // inspector drawer to render via EvidenceExplorerPanel.
-        { kind, include: INCLUDE_FOR_KIND[kind], fieldSet: "evidence" },
+        { kind, include: INCLUDE_FOR_KIND[kind] },
       );
       const rows = envelope.items ?? [];
       setItems(rows);
@@ -174,12 +154,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
     () => items.find((row) => row.id === selectedId) ?? null,
     [items, selectedId],
   );
-  const displayedItems = useMemo(() => {
-    if (kind === "asserted" && missingEvidenceOnly) {
-      return items.filter((row) => (row.evidence_bindings ?? []).length === 0);
-    }
-    return items;
-  }, [items, kind, missingEvidenceOnly]);
+  const displayedItems = items;
   const visibleWarnings = useMemo(() => {
     const seen = new Set<string>();
     return warnings.filter((warning) => {
@@ -252,67 +227,6 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
       });
       setSuccess(t("Fact deleted."));
       setSelectedId(null);
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function addEvidence(
-    text: string,
-    meta?: { document_filename?: string; sequence?: number },
-  ) {
-    if (!selected || !text.trim()) return;
-    setBusy(true);
-    setError("");
-    try {
-      // Phase 8 §3 — bind text evidence via the dedicated fact-evidence
-      // endpoint (replaces the legacy bind_fact_evidence_text canonical
-      // write command, which has been removed). The backend resolves the
-      // subject/predicate/object triple plus ontology id to a fact_id.
-      await bindFactEvidence(request, graphSetId, {
-        ontology_id: ontologyId,
-        subject_iri: selected.subject_iri,
-        predicate_iri: selected.predicate_iri,
-        object_value: stringifyFactObjectValue(selected.object_value, selected.object_is_iri),
-        object_is_iri: selected.object_is_iri,
-        graph_iri: selected.graph_iri,
-        fact_id: selected.fact_id,
-        assertion_kind: selected.assertion_kind,
-        text,
-        document_filename: meta?.document_filename,
-        sequence: meta?.sequence,
-        actor: "user:facts-page",
-        reason: "Bind text evidence from Facts page",
-      });
-      setSuccess(t("Evidence bound."));
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function removeEvidence(binding: EvidenceBinding) {
-    if (!selected) return;
-    const bindingId = binding.id;
-    if (!bindingId) {
-      // Legacy read-model rows (no Phase 8 id) cannot be removed via the
-      // new endpoint — surface a clear error rather than silently failing.
-      setError(t("This evidence binding cannot be removed (missing id)."));
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      // Phase 8 §3 — DELETE /fact-evidence/{binding_id} replaces the old
-      // unbind_fact_evidence canonical write command (which keyed off
-      // chunk_iri). Idempotent on the backend.
-      await unbindFactEvidence(request, graphSetId, bindingId);
-      setSuccess(t("Evidence unbound."));
       await load();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
@@ -498,20 +412,10 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
             onChange={(value) => {
               const next = value as AssertionKind;
               setKind(next);
-              if (next !== "asserted") setMissingEvidenceOnly(false);
             }}
             options={KIND_OPTIONS}
           />
-          {kind === "asserted" && (
-            <Space size={6}>
-              <Switch
-                size="small"
-                checked={missingEvidenceOnly}
-                onChange={setMissingEvidenceOnly}
-              />
-              <span>{t("Missing evidence only")}</span>
-            </Space>
-          )}
+
         </Space>
       </Card>
 
@@ -541,9 +445,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
               )}
               <Space wrap>
                 {selected.stale && <Tag color="warning">{t("STALE")}</Tag>}
-                {(selected.evidence_bindings ?? []).length === 0 && !REASONED_KINDS.has(selected.assertion_kind) && (
-                  <Tag color="warning">{t("missing evidence")}</Tag>
-                )}
+
               </Space>
               <Descriptions
                 size="small"
@@ -558,22 +460,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
                     : []),
                 ]}
               />
-              {!REASONED_KINDS.has(selected.assertion_kind) && (
-                <Card
-                  size="small"
-                  title={t("Evidence · {n} binding(s)", {
-                    n: (selected.evidence_bindings ?? []).length,
-                  })}
-                  aria-label="fact-evidence-explorer"
-                >
-                  <EvidenceBindingEditor
-                    bindings={selected.evidence_bindings ?? []}
-                    onAdd={() => setPickerOpen(true)}
-                    onRemove={(binding) => void removeEvidence(binding)}
-                    disabled={busy || readOnly}
-                  />
-                </Card>
-              )}
+
               <Space wrap>
                 <Button
                   icon={<Edit3 size={15} />}
@@ -624,16 +511,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         </Space>
       </Modal>
 
-      {selected && (
-        <EvidenceChunkPicker
-          open={pickerOpen}
-          factId={selected.fact_id}
-          onClose={() => setPickerOpen(false)}
-          onSubmit={async (text, meta) => {
-            await addEvidence(text, meta);
-          }}
-        />
-      )}
+
     </section>
   );
 }
@@ -678,66 +556,6 @@ function FactQueue({
   );
 }
 
-function EvidenceBindingEditor({
-  bindings,
-  onAdd,
-  onRemove,
-  disabled,
-}: {
-  bindings: EvidenceBinding[];
-  onAdd: () => void;
-  onRemove: (binding: EvidenceBinding) => void;
-  disabled: boolean;
-}) {
-  const t = useT();
-  return (
-    <Space direction="vertical" size={10} style={{ width: "100%" }}>
-      {bindings.length === 0 ? (
-        <Empty image={<FileText size={28} />} description={t("No evidence binding for this fact.")} />
-      ) : (
-        <Space direction="vertical" size={8} style={{ width: "100%" }}>
-          {bindings.map((binding) => {
-            // Phase 8 — bindings now carry a stable ``id``; fall back to the
-            // legacy chunk_iri for unmigrated read-model rows.
-            const rowKey = binding.id ?? binding.chunk_iri ?? binding.fact_id ?? "";
-            const preview = binding.text_preview ?? binding.text ?? "";
-            return (
-              <div
-                key={rowKey}
-                className="evidenceBindingRow"
-                aria-label={`evidence-binding-${rowKey}`}
-              >
-                <div className="evidenceBindingHeader">
-                  <FileText size={14} />
-                  <strong>{binding.document_filename ?? t("Text evidence")}</strong>
-                  {typeof binding.sequence === "number" && <Tag>#{binding.sequence}</Tag>}
-                  <Button
-                    danger
-                    size="small"
-                    icon={<Trash2 size={13} />}
-                    onClick={() => onRemove(binding)}
-                    disabled={disabled}
-                  >
-                    {t("Delete")}
-                  </Button>
-                </div>
-                <p className="factEvidenceText">{preview}</p>
-              </div>
-            );
-          })}
-        </Space>
-      )}
-      <Button
-        icon={<Plus size={15} />}
-        onClick={onAdd}
-        disabled={disabled}
-      >
-        {t("Add evidence")}
-      </Button>
-    </Space>
-  );
-}
-
 function shortenIri(iri: string): string {
   if (!iri) return "";
   const idx = Math.max(iri.lastIndexOf("#"), iri.lastIndexOf("/"));
@@ -776,24 +594,6 @@ function factLineFull(row: FactRow) {
       ? (row.object_label ?? row.object_value)
       : JSON.stringify(row.object_value);
   return `${row.subject_label ?? row.subject_iri} → ${row.predicate_label ?? row.predicate_iri} → ${objectText}`;
-}
-
-/**
- * Phase 8 §3 — coerce a FactRow's typed ``object_value`` (rendered by the
- * read model as either a string or a JSON literal) into the canonical
- * string form expected by ``bindFactEvidence``. For IRI-typed objects we
- * prefer the raw IRI (``object_value`` already carries it when
- * ``object_is_iri`` is true); for literals we fall back to the existing
- * display rendering to preserve the user-visible form.
- */
-function stringifyFactObjectValue(value: unknown, isIri: boolean): string {
-  if (typeof value === "string") return value;
-  if (value === null || value === undefined) return "";
-  if (isIri && typeof value === "object" && value !== null && "value" in value) {
-    const inner = (value as { value?: unknown }).value;
-    if (typeof inner === "string") return inner;
-  }
-  return JSON.stringify(value);
 }
 
 function ModalFactLine({ children }: { children: string }) {

@@ -1,4 +1,8 @@
-"""Minimal stdio MCP facade for the Protocol-only retrieval fallback verifier."""
+"""Minimal stdio MCP facade for active Protocol candidate mechanics.
+
+Historical retrieval-proof helpers remain importable for offline fixtures, but
+the production facade does not publish or dispatch them.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +33,8 @@ CANDIDATE_CONFLICT_TOOL_NAME = "build_candidate_conflict"
 TRANSLATE_CANDIDATE_TOOL_NAME = "translate_candidate_to_batches"
 EVIDENCE_MAP_RELATIVE_PATH = Path("evidence/candidate-item-evidence-map.json")
 RUNTIME_RUN_ID_ENV = "PROTOCOL_RUNTIME_RUN_ID"
+# Historical environment name retained only so offline fixtures can refer to
+# it; the production facade never reads it.
 PROOF_GATE_ENV = "PROTOCOL_PROOF_GATE"
 FORMAL_CANDIDATE_GATE_ENV = "PROTOCOL_FORMAL_CANDIDATE_GATE"
 RUNTIME_CONTEXT_PATH = Path("/opt/mechanics-contract.json")
@@ -811,26 +817,15 @@ def _evidence_map_tool() -> dict[str, Any]:
 
 def _candidate_receipt_schema() -> dict[str, Any]:
     """Advertise the candidate-only deterministic receipt producer contract."""
-    if _proof_gate_enabled():
-        candidate_schema = json.loads(
-            json.dumps(_candidate_item_evidence_map_schema()["properties"]["candidate"])
-        )
-        candidate_schema["description"] = (
-            "The complete immutable candidate-required-assertions/v2 envelope delivered by Modeling; "
-            "receipt fields must not be supplied separately."
-        )
-        description = (
-            "Validate one complete frozen candidate-required-assertions/v2 envelope and return "
-            "the exact four-field receipt for Team Transport. Receipt fields are computed by "
-            "Protocol mechanics and are not caller arguments."
-        )
-    else:
-        candidate_schema = _neutral_candidate_schema()
-        description = (
-            "Validate one source-grounded, platform-neutral semantic candidate and return a "
-            "deterministic four-field Protocol receipt. Protocol owns candidate-v2/Batch "
-            "translation; callers do not provide platform IDs, Batch fields, or proof metadata."
-        )
+    # The old proof gate is intentionally ignored.  The production candidate
+    # receipt surface stays platform-neutral even when an archived Task or
+    # environment sets PROTOCOL_PROOF_GATE=1; proof-v2 remains offline code.
+    candidate_schema = _neutral_candidate_schema()
+    description = (
+        "Validate one source-grounded, platform-neutral semantic candidate and return a "
+        "deterministic four-field Protocol receipt. Protocol owns candidate-v2/Batch "
+        "translation; callers do not provide platform IDs, Batch fields, or proof metadata."
+    )
     return {
         "type": "object",
         "description": description,
@@ -845,10 +840,10 @@ def _neutral_candidate_schema() -> dict[str, Any]:
         "type": "object",
         "description": (
             "Platform-neutral semantic candidate from Modeling. Protocol translates this "
-            "candidate into deterministic candidate-v2/Batch requests."
+            "candidate into deterministic candidate-v3/Batch requests."
         ),
         "required": ["candidate_kind", "candidate_revision", "scope", "constraints", "items"],
-        "additionalProperties": True,
+        "additionalProperties": False,
         "properties": {
             "candidate_kind": {"type": "string", "minLength": 1},
             "candidate_revision": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "string", "minLength": 1}]},
@@ -860,12 +855,11 @@ def _neutral_candidate_schema() -> dict[str, Any]:
                 "items": {
                     "type": "object",
                     "required": ["item_id", "item_kind", "semantic"],
-                    "additionalProperties": True,
+                    "additionalProperties": False,
                     "properties": {
                         "item_id": {"type": "string", "minLength": 1},
                         "item_kind": {"type": "string", "minLength": 1},
                         "semantic": {},
-                        "evidence_citations": {"type": "array", "items": {"type": "object"}},
                     },
                 },
             },
@@ -909,7 +903,7 @@ def _translate_candidate_tool() -> dict[str, Any]:
     return {
         "name": TRANSLATE_CANDIDATE_TOOL_NAME,
         "description": (
-            "Deterministically translate one frozen platform-neutral-candidate-v2 into an "
+            "Deterministically translate one frozen platform-neutral-candidate-v3 into an "
             "ordered, submit-ready batch plan (class -> property -> entity -> relation -> "
             "shape). Pure candidate-bound mechanics: no platform calls, no receipts. Every "
             "create_* payload binds the candidate's own ID so the platform emits readable "
@@ -976,11 +970,6 @@ def _validate_translate_candidate_arguments(arguments: object) -> str | None:
     if "phase_a_readback" in arguments and not isinstance(arguments["phase_a_readback"], bool):
         return "translate candidate phase_a_readback must be a boolean"
     return None
-
-
-def _proof_gate_enabled() -> bool:
-    """Keep direct/local invocations proof-compatible unless Runtime sets the gate explicitly."""
-    return os.environ.get(PROOF_GATE_ENV, "1") == "1"
 
 
 def _formal_candidate_gate_enabled() -> bool:
@@ -1176,10 +1165,13 @@ def handle(request: object) -> dict[str, Any] | None:
             {"protocolVersion": "2024-11-05", "capabilities": {"tools": {}}, "serverInfo": {"name": "protocol_mechanics", "version": "1"}},
         )
     if method == "tools/list":
-        tools = [_candidate_receipt_tool(), _tool()]
+        # R4.0-012: source-tracing publication is no longer an active
+        # Protocol capability.  The old builders and proof schema remain
+        # importable for historical offline fixtures, but the verifier is not
+        # a production MCP capability.  Do not re-open it from an environment
+        # variable or an archived Task.
+        tools = [_candidate_receipt_tool()]
         tools.append(_translate_candidate_tool())
-        if _proof_gate_enabled():
-            tools.insert(1, _evidence_map_tool())
         if _formal_candidate_gate_enabled():
             tools.insert(1, _candidate_conflict_tool())
         return _result(
@@ -1196,12 +1188,6 @@ def handle(request: object) -> dict[str, Any] | None:
         assert isinstance(arguments, dict)
         candidate = arguments["candidate"]
         assert isinstance(candidate, dict)
-        if _proof_gate_enabled() and candidate.get("schema_version") != "candidate-required-assertions/v2":
-            return _error(
-                request_id,
-                -32602,
-                "candidate receipt requires candidate-required-assertions/v2 under the proof gate",
-            )
         try:
             receipt = build_candidate_receipt(candidate)
         except ProtocolRetrievalFallbackError as exc:
@@ -1240,38 +1226,9 @@ def handle(request: object) -> dict[str, Any] | None:
             },
         )
     if params.get("name") == EVIDENCE_MAP_TOOL_NAME:
-        if not _proof_gate_enabled():
-            return _error(request_id, -32601, "method or tool is unavailable")
-        error = _validate_evidence_map_arguments(arguments)
-        if error is not None:
-            return _error(request_id, -32602, error)
-        assert isinstance(arguments, dict)
-        candidate = arguments["candidate"]
-        client_item_ids = arguments["client_item_ids"]
-        assert isinstance(candidate, dict)
-        assert isinstance(client_item_ids, dict)
-        try:
-            run_id = _authorized_runtime_run_id()
-            evidence_map = build_candidate_item_evidence_map(
-                candidate,
-                client_item_ids,
-                run_id=run_id,
-            )
-            evidence_map = validate_candidate_item_evidence_map(
-                candidate,
-                evidence_map,
-                expected_run_id=run_id,
-            )
-            _write_candidate_item_evidence_map(evidence_map)
-        except ProtocolRetrievalFallbackError as exc:
-            return _error(request_id, -32011, f"candidate evidence map failed: {exc}")
-        return _result(
-            request_id,
-            {
-                "content": [{"type": "text", "text": json.dumps(evidence_map, sort_keys=True)}],
-                "structuredContent": evidence_map,
-            },
-        )
+        # Keep the historical name recognizable so callers receive the normal
+        # unknown-tool contract rather than accidentally writing a map.
+        return _error(request_id, -32601, "method or tool is unavailable")
     if params.get("name") == TRANSLATE_CANDIDATE_TOOL_NAME:
         error = _validate_translate_candidate_arguments(arguments)
         if error is not None:
@@ -1300,20 +1257,12 @@ def handle(request: object) -> dict[str, Any] | None:
                 "structuredContent": plan,
             },
         )
-    if params.get("name") != TOOL_NAME:
+    # The native proof verifier is retained only as an offline helper.  It is
+    # deliberately unavailable through this production facade for every
+    # environment and every historical Task configuration.
+    if params.get("name") == TOOL_NAME:
         return _error(request_id, -32601, "method or tool is unavailable")
-    error = _validate_arguments(arguments)
-    if error is not None:
-        return _error(request_id, -32602, error)
-    assert isinstance(arguments, dict)
-    try:
-        proof = verify_scoped_retrieval_fallback(arguments)
-    except ProtocolRetrievalFallbackError as exc:
-        return _error(request_id, -32010, f"retrieval fallback proof failed: {exc}")
-    return _result(
-        request_id,
-        {"content": [{"type": "text", "text": json.dumps(proof, sort_keys=True)}], "structuredContent": proof},
-    )
+    return _error(request_id, -32601, "method or tool is unavailable")
 
 
 def main() -> int:

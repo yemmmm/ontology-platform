@@ -19,7 +19,6 @@ from sqlalchemy.orm import Session
 
 from app.api.schemas import (
     ModelingBatchSubmit,
-    ModelingOperationPlanEvidenceRead,
 )
 from app.core.config import Settings
 from app.repositories.models import (
@@ -42,11 +41,6 @@ from app.repositories.models import (
 )
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.build_sessions import BuildSessionError, BuildSessionService
-from app.services.evidence_reference import (
-    EvidenceReferenceError,
-    EvidenceReferenceService,
-    normalize_evidence,
-)
 from app.services.modeling_handlers import (
     ModelingCommandHandlerRegistry,
     PreparedModelingCommand,
@@ -509,7 +503,6 @@ class ModelingBatchService:
                 },
                 "audit_id": str(uuid5(NAMESPACE_URL, f"modeling-attempt:{attempt.id}:audit")),
                 "actor": auth.actor,
-                "evidence": self._evidence_plan(attempt, batch, selected),
             }
             delete_receipts = []
             for item_id in sorted(selected):
@@ -884,16 +877,7 @@ class ModelingBatchService:
                 )
                 continue
             self._validate_rule_command(batch, item.client_item_id, command, findings)
-            self._validate_evidence_and_questions(batch, item, findings)
-            if not item.evidence_reference_ids and not item.evidence:
-                findings.append(
-                    _finding(
-                        "missing_evidence",
-                        "warning",
-                        "Modeling Item has no Evidence",
-                        item_ids=[item.client_item_id],
-                    )
-                )
+            self._validate_competency_questions(batch, item, findings)
             if not item.rationale:
                 findings.append(
                     _finding(
@@ -1799,30 +1783,12 @@ class ModelingBatchService:
             return result, dependencies
         return value, dependencies
 
-    def _validate_evidence_and_questions(
+    def _validate_competency_questions(
         self,
         batch: ModelingBatchModel,
         item: ModelingItemModel,
         findings: list[dict[str, Any]],
     ) -> None:
-        evidence_service = EvidenceReferenceService(self.session)
-        try:
-            evidence_service.resolve_candidates(
-                batch.project_id,
-                reference_ids=item.evidence_reference_ids,
-                inline_evidence=item.evidence,
-                persist=False,
-            )
-        except EvidenceReferenceError as exc:
-            findings.append(
-                _finding(
-                    "evidence_not_found",
-                    "error",
-                    str(exc),
-                    item_ids=[item.client_item_id],
-                    path=["evidence"],
-                )
-            )
         for question_id in item.competency_question_ids:
             question = self.session.get(CompetencyQuestionModel, question_id)
             if question is None or question.project_id != batch.project_id:
@@ -2075,7 +2041,6 @@ class ModelingBatchService:
                         auth.actor,
                         attempt.audit_id,
                     )
-            self._persist_evidence(attempt, auth.actor)
             self._mark_rule_derived_stale(attempt.graph_set_id)
             self.session.flush()
             locked = self.session.scalar(
@@ -2670,108 +2635,6 @@ class ModelingBatchService:
         rule.status = "active"
         rule.current_definition_id = existing.id
 
-    def _persist_evidence(self, attempt, actor):
-        service = EvidenceReferenceService(self.session)
-        item_by_client = {item.client_item_id: item for item in attempt.batch.items}
-        result_by_client = {result.client_item_id: result for result in attempt.item_results}
-        for client_item_id in attempt.operation_plan.get("selected_client_item_ids", []):
-            item = item_by_client[client_item_id]
-            result = result_by_client[client_item_id]
-            entries = attempt.operation_plan.get("evidence", {}).get(client_item_id, [])
-            references = []
-            association_ids = {}
-            for entry in entries:
-                if entry.get("document_name") is not None:
-                    reference, _created = service.get_or_create(
-                        attempt.batch.project_id,
-                        entry["document_name"],
-                        entry["excerpt"],
-                        actor=actor,
-                        reference_id=entry["reference_id"],
-                    )
-                else:
-                    reference = service.get(
-                        entry["reference_id"], project_id=attempt.batch.project_id
-                    )
-                references.append(reference)
-                association_ids[reference.id] = entry["association_id"]
-            associations = service.associate(
-                project_id=attempt.batch.project_id,
-                ontology_id=attempt.batch.ontology_id,
-                graph_set_id=attempt.graph_set_id,
-                target_type="modeling_item",
-                target_id=item.id,
-                references=references,
-                client_item_id=client_item_id,
-                edit_audit_id=attempt.audit_id,
-                actor=actor,
-                association_ids=association_ids,
-            )
-            result.evidence_reference_ids = [row.id for row in references]
-            result.evidence_association_ids = [row.id for row in associations]
-
-    def _evidence_plan(self, attempt, batch, selected):
-        service = EvidenceReferenceService(self.session)
-        planned: dict[str, list[dict[str, Any]]] = {}
-        for item in batch.items:
-            if item.client_item_id not in selected:
-                continue
-            entries: list[dict[str, Any]] = []
-            seen: set[str] = set()
-            for reference_id in item.evidence_reference_ids:
-                reference = service.get(reference_id, project_id=batch.project_id)
-                if reference.id in seen:
-                    continue
-                seen.add(reference.id)
-                entries.append(
-                    {
-                        "reference_id": reference.id,
-                        "association_id": str(
-                            uuid5(
-                                NAMESPACE_URL,
-                                f"modeling-evidence-association:{attempt.id}:{item.id}:"
-                                f"{reference.id}",
-                            )
-                        ),
-                    }
-                )
-            for evidence in item.evidence:
-                normalized = normalize_evidence(
-                    evidence.get("document_name", ""), evidence.get("excerpt", "")
-                )
-                existing = service.find_existing(batch.project_id, normalized)
-                reference_id = (
-                    existing.id
-                    if existing
-                    else str(
-                        uuid5(
-                            NAMESPACE_URL,
-                            f"modeling-evidence:{batch.project_id}:"
-                            f"{normalized.document_name}:{normalized.excerpt_hash}",
-                        )
-                    )
-                )
-                if reference_id in seen:
-                    continue
-                seen.add(reference_id)
-                entries.append(
-                    {
-                        "reference_id": reference_id,
-                        "association_id": str(
-                            uuid5(
-                                NAMESPACE_URL,
-                                f"modeling-evidence-association:{attempt.id}:{item.id}:"
-                                f"{reference_id}",
-                            )
-                        ),
-                        "document_name": normalized.document_name,
-                        "excerpt": normalized.excerpt,
-                        "excerpt_hash": normalized.excerpt_hash,
-                    }
-                )
-            planned[item.client_item_id] = entries
-        return planned
-
     def _ensure_rule_only_audit(self, attempt, actor):
         if self.session.get(SemanticEditAuditModel, attempt.audit_id) is None:
             self.session.add(
@@ -2784,7 +2647,6 @@ class ModelingBatchService:
                     affected_graph_iris=[],
                     validation_result={"conforms": True},
                     graph_delta=attempt.normalized_delta,
-                    evidence_status="item_scoped",
                     warning_state={
                         "findings": attempt.findings,
                         "graph_set_id": attempt.graph_set_id,
@@ -2937,8 +2799,6 @@ class ModelingBatchService:
                     command_kind=item["command_kind"],
                     payload=item["payload"],
                     depends_on=item["depends_on"],
-                    evidence_reference_ids=item["evidence_reference_ids"],
-                    evidence=item["evidence"],
                     rationale=item["rationale"],
                     competency_question_ids=item["competency_question_ids"],
                 )
@@ -2994,7 +2854,6 @@ class ModelingBatchService:
             "findings": attempt.findings or [],
             "normalized_delta": attempt.normalized_delta or {},
             "delta_hash": attempt.delta_hash,
-            "evidence_candidates": self._evidence_candidates(batch),
             "recovery": {
                 "state": attempt.recovery_state,
                 "safe_to_retry": bool(
@@ -3008,56 +2867,7 @@ class ModelingBatchService:
             "created_at": attempt.created_at,
             "completed_at": attempt.completed_at,
         }
-        # The operation plan is an internal persisted structure.  Expose only
-        # its source-minimal Evidence projection on dry-run receipts so the
-        # Protocol can compare its candidate-local map without receiving
-        # locators, owner identities, or any raw source beyond submitted
-        # inline excerpts.  Apply/recovery receipts retain their existing
-        # shape and semantics.
-        if attempt.mode == "dry_run":
-            response["operation_plan"] = {
-                "evidence": self._safe_operation_plan_evidence(attempt)
-            }
         return response
-
-    def _safe_operation_plan_evidence(self, attempt) -> list[dict[str, str]]:
-        """Project persisted Evidence plan rows into a safe dry-run shape.
-
-        ``_evidence_plan`` remains the single source of deduplication and
-        deterministic reference allocation.  This method only reads those
-        planned rows and resolves metadata for existing references; it never
-        creates or mutates Evidence rows.
-        """
-
-        planned = (attempt.operation_plan or {}).get("evidence") or {}
-        if not planned:
-            return []
-        service = EvidenceReferenceService(self.session)
-        rows: list[dict[str, str]] = []
-        for client_item_id in sorted(planned):
-            for entry in planned.get(client_item_id) or []:
-                reference_id = str(entry.get("reference_id") or "")
-                document_name = entry.get("document_name")
-                excerpt_hash = entry.get("excerpt_hash")
-                if document_name is None or excerpt_hash is None:
-                    # Existing references are represented in the internal
-                    # plan by their stable reference ID.  Resolve only the
-                    # safe metadata needed for map comparison; do not copy
-                    # the stored excerpt into the receipt.
-                    reference = service.get(
-                        reference_id,
-                        project_id=attempt.batch.project_id,
-                    )
-                    document_name = reference.normalized_document_name
-                    excerpt_hash = reference.excerpt_hash
-                projection = ModelingOperationPlanEvidenceRead(
-                    client_item_id=client_item_id,
-                    document_name=str(document_name),
-                    normalized_excerpt_sha256=str(excerpt_hash),
-                    dedupe_identity=reference_id,
-                )
-                rows.append(projection.model_dump(mode="json"))
-        return rows
 
     def _batch_detail(self, batch):
         return {
@@ -3077,8 +2887,6 @@ class ModelingBatchService:
                     "payload": item.payload,
                     "depends_on": item.depends_on,
                     "resource_outputs": item.resource_outputs,
-                    "evidence_reference_ids": item.evidence_reference_ids,
-                    "evidence": item.evidence,
                     "rationale": item.rationale,
                     "competency_question_ids": item.competency_question_ids,
                 }
@@ -3160,8 +2968,6 @@ class ModelingBatchService:
             "resource_outputs": result.resource_outputs,
             "atomic_group_id": result.atomic_group_id,
             "finding_codes": result.finding_codes,
-            "evidence_reference_ids": result.evidence_reference_ids,
-            "evidence_association_ids": result.evidence_association_ids,
         }
 
     def _observed_graph_hash(self, graph_iri: str) -> str:
@@ -3291,7 +3097,6 @@ class ModelingBatchService:
         for item in sorted(payload.items, key=lambda value: value.client_item_id):
             data = item.model_dump(mode="json")
             data["depends_on"] = sorted(set(data["depends_on"]))
-            data["evidence_reference_ids"] = sorted(set(data["evidence_reference_ids"]))
             data["competency_question_ids"] = sorted(set(data["competency_question_ids"]))
             items.append(data)
         ids = [item["client_item_id"] for item in items]
@@ -3325,33 +3130,6 @@ class ModelingBatchService:
                 actual=len(payload.items),
                 limit=self.settings.modeling_batch_max_items,
             )
-        evidence = [item for model_item in payload.items for item in model_item.evidence]
-        if len(evidence) > self.settings.modeling_batch_max_inline_evidence:
-            raise ModelingBatchError(
-                "inline_evidence_limit_exceeded",
-                "Too many inline Evidence excerpts: this request was refused at "
-                "intake and nothing was persisted; resubmit with at most "
-                "{limit} inline excerpts (this request carried {actual}) by "
-                "moving per-item evidence into Evidence References "
-                "(evidence_reference_ids) or the evidence-association channel "
-                "instead of inline excerpts".format(
-                    actual=len(evidence),
-                    limit=self.settings.modeling_batch_max_inline_evidence,
-                ),
-                status_code=413,
-                actual=len(evidence),
-                limit=self.settings.modeling_batch_max_inline_evidence,
-            )
-        for item in evidence:
-            if len(item.excerpt) > self.settings.modeling_batch_max_evidence_excerpt_chars:
-                raise ModelingBatchError(
-                    "evidence_excerpt_too_large",
-                    "Evidence excerpt is too large",
-                    status_code=413,
-                    actual=len(item.excerpt),
-                    limit=self.settings.modeling_batch_max_evidence_excerpt_chars,
-                )
-
     @staticmethod
     def _dedupe_findings(findings):
         unique = {}
@@ -3376,23 +3154,6 @@ class ModelingBatchService:
             }
             fingerprinted.append({**finding, "finding_fingerprint": _hash(identity)})
         return fingerprinted
-
-    @staticmethod
-    def _evidence_candidates(batch):
-        return [
-            {
-                "client_item_id": item.client_item_id,
-                "existing_reference_ids": item.evidence_reference_ids,
-                "inline": [
-                    {
-                        "document_name": evidence["document_name"],
-                        "excerpt_hash": hashlib.sha256(evidence["excerpt"].encode()).hexdigest(),
-                    }
-                    for evidence in item.evidence
-                ],
-            }
-            for item in batch.items
-        ]
 
     def _now(self):
         value = self.session.scalar(select(func.now()))

@@ -74,7 +74,24 @@ def test_exact_four_plan_compiles_and_service_dry_run_has_zero_rdf_side_effects(
         receipt,
         expected_run_id="p2a-service-integration",
     )
-    items = [ModelingItemInput.model_validate(item) for item in plan["items"]]
+    # The P2a plan is retained as an offline historical proof fixture and
+    # still contains its retired source-tracing fields.  Construct the active
+    # Batch envelope explicitly from its semantic command fields; the public
+    # schema must reject the retired fields rather than silently normalizing
+    # them.
+    items = [
+        ModelingItemInput.model_validate(
+            {
+                "client_item_id": item["client_item_id"],
+                "command_kind": item["command_kind"],
+                "payload": item["payload"],
+                "depends_on": item["depends_on"],
+                "rationale": item["rationale"],
+                "competency_question_ids": item["competency_question_ids"],
+            }
+        )
+        for item in plan["items"]
+    ]
 
     engine = create_engine(
         "sqlite:///:memory:",
@@ -141,7 +158,7 @@ def test_exact_four_plan_compiles_and_service_dry_run_has_zero_rdf_side_effects(
     assert [item["client_item_id"] for item in result["items"]] == list(
         ASSERTION_CLIENT_ITEM_IDS.values()
     )
-    assert len(result["operation_plan"]["evidence"]) == 4
+    assert "operation_plan" not in result
     assert not any(finding["blocking"] for finding in result["findings"])
     assert rdf.deltas == []
     normalized = json.dumps(result["normalized_delta"], sort_keys=True)

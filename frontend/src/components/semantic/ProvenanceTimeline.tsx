@@ -33,19 +33,12 @@ export function ProvenanceTimeline({ audits }: { audits: SemanticEditAuditRead[]
             <span>{audit.reason ?? t("reason unset")}</span>
             <span>{formatDate(audit.created_at)}</span>
             <span aria-label="audit-applied">{audit.applied ? t("applied") : t("rejected")}</span>
-            {audit.evidence_status && (
-              <Tag>{audit.evidence_status}</Tag>
-            )}
             <pre className="jsonBlock">{prettyJson(audit.graph_delta)}</pre>
           </li>
         ))}
       </ol>
     </section>
   );
-}
-
-function Tag({ children }: { children: React.ReactNode }) {
-  return <span className="tagChip">{children}</span>;
 }
 
 function prettyJson(value: SemanticJsonObject): string {

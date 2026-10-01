@@ -72,7 +72,6 @@ def test_build_overview_returns_200_with_valid_graph_set(
                     reasoning_stale=False, rule_stale=False,
                     last_semantic_edit_at=None,
                 )],
-                missing_evidence_count=0,
                 last_semantic_edit_at=None,
             ),
             project_brief=BriefSummary(1.0, []),

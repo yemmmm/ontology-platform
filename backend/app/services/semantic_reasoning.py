@@ -52,7 +52,9 @@ class SemanticReasoningService:
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
         )
-        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
+        # Retain injection compatibility for historical callers. Reasoning
+        # results no longer construct or invoke a pure lineage collector.
+        self.lineage_recorder = lineage_recorder
 
     def run_reasoning(
         self,
@@ -153,29 +155,6 @@ class SemanticReasoningService:
                     "became_current_at": pointer.became_current_at,
                 }
                 self._mark_rule_pointers_stale_after_reasoning(graph_set_id)
-                ontology_id = self.lineage_recorder.ontology_id_for_graph_set(graph_set_id)
-                if ontology_id and result.inferred_rdf:
-                    from rdflib import Graph
-
-                    inferred = Graph()
-                    inferred.parse(data=result.inferred_rdf, format=RdfFormat.TURTLE.value)
-                    self.lineage_recorder.record_derived_statements(
-                        ontology_id=ontology_id,
-                        graph_set_id=graph_set_id,
-                        result_graph_iri=result_graph_iri or "",
-                        statements=[
-                            {"s": s.n3(), "p": p.n3(), "o": o.n3()} for s, p, o in inferred
-                        ],
-                        assertion_kind="owl_inferred",
-                        origin_kind="reasoning_run",
-                        run_id=run_id,
-                        proof_level="coarse",
-                        input_graph_revisions=input_graph_revisions,
-                        origin_metadata={
-                            "coarse_reason": "reasoner_proof_unavailable",
-                            "source_signature": source_signature,
-                        },
-                    )
             self.session.commit()
             response = _reasoning_response(run, result, result_graph_iri, warnings)
             if promoted_pointer:

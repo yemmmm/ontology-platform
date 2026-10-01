@@ -15,12 +15,10 @@ from sqlalchemy.orm import Session
 from app.api.schemas import (
     ModelingExecutionEventCreate,
     ModelingWorkflowArtifactCreate,
-    WorkflowRelatedResource,
 )
 from app.repositories.models import (
     BuildSessionModel,
     CompetencyQuestionModel,
-    EvidenceReferenceModel,
     InterviewAnswerModel,
     ModelingBatchAttemptModel,
     ModelingBatchModel,
@@ -32,8 +30,6 @@ from app.repositories.models import (
     SemanticValidationRunModel,
 )
 from app.security.secrets import SecretDetected, scan_domain_payload
-from app.services.ontology_lineage import OntologyLineageError, OntologyLineageService
-from app.services.semantic_lineage_identity import InvalidLineageStatement
 
 ARTIFACT_CONTENT_LIMIT = 1024 * 1024
 EVENT_PAYLOAD_LIMIT = 64 * 1024
@@ -74,11 +70,9 @@ class ModelingWorkflowService:
         session: Session,
         *,
         actor: str = "system:unattributed",
-        lineage_service: OntologyLineageService | None = None,
     ) -> None:
         self.session = session
         self.actor = actor
-        self.lineage_service = lineage_service or OntologyLineageService(session)
 
     # ------------------------------------------------------------------
     # Artifact versions
@@ -644,9 +638,6 @@ class ModelingWorkflowService:
             if kind == "competency_question":
                 row = self.session.get(CompetencyQuestionModel, resource_id)
                 valid = row is not None and row.project_id == build_session.project_id
-            elif kind == "evidence_reference":
-                row = self.session.get(EvidenceReferenceModel, resource_id)
-                valid = row is not None and row.project_id == build_session.project_id
             elif kind == "modeling_batch":
                 row = self.session.get(ModelingBatchModel, resource_id)
                 valid = row is not None and row.build_session_id == build_session.id
@@ -668,8 +659,6 @@ class ModelingWorkflowService:
                 valid = (
                     row is not None and self._validation_project(row) == build_session.project_id
                 )
-            elif kind == "lineage":
-                valid = self._validate_lineage_reference(build_session, resource)
             elif kind in {"ontology", "lease"}:
                 ontology = self._owned_ontology(build_session.project_id, resource_id)
                 if kind == "lease":
@@ -691,30 +680,6 @@ class ModelingWorkflowService:
                 valid = False
             if not valid:
                 self._reference_conflict(f"Invalid or foreign related resource: {kind}")
-
-    def _validate_lineage_reference(
-        self, build_session: BuildSessionModel, resource: WorkflowRelatedResource
-    ) -> bool:
-        if (
-            resource.ontology_id is None
-            or resource.target_type is None
-            or resource.target_id is None
-        ):
-            return False
-        if self._owned_ontology(build_session.project_id, resource.ontology_id) is None:
-            return False
-        try:
-            self.lineage_service.get_lineage(
-                ontology_id=resource.ontology_id,
-                target_type=resource.target_type,
-                target_id=resource.target_id,
-                include_history=False,
-                max_depth=0,
-                limit=1,
-            )
-        except (OntologyLineageError, InvalidLineageStatement):
-            return False
-        return True
 
     def _validation_project(self, run: SemanticValidationRunModel) -> str | None:
         metadata = run.run_metadata or {}

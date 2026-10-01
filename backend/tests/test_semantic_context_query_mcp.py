@@ -302,8 +302,8 @@ def test_context_mcp_strips_unknown_shape_lineage_marker(scoped_mcp, monkeypatch
     shape_item = related[0]
     assert "_lineage_target" not in shape_item
     assert "target_kind" not in shape_item
-    assert shape_item["lineage"] == {"status": "missing"}
-    assert "synthetic" not in str(shape_item["lineage"])
+    assert "lineage" not in shape_item
+    assert shape_item["warnings"] == []
 
 
 # ---------------------------------------------------------------------------

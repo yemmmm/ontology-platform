@@ -288,7 +288,6 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
             "impact_receipt_digest": receipt["receipt_digest"],
         },
         rationale="Remove one frozen explicit unknown after live impact binding.",
-        evidence=[{"document_name": "domain.md", "excerpt": "The target is explicitly unknown."}],
     )
     request = ModelingBatchSubmit(
         client_batch_id="r23003-recovery-batch",
@@ -299,18 +298,18 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
         lease_token=lease["lease_token"],
         items=[item],
     )
-    original_persist = service._persist_evidence
+    original_mark_stale = service._mark_rule_derived_stale
 
     def fail_after_rdf(*_args, **_kwargs):
         raise RuntimeError("injected post-RDF/pre-SQL failure")
 
-    monkeypatch.setattr(service, "_persist_evidence", fail_after_rdf)
+    monkeypatch.setattr(service, "_mark_rule_derived_stale", fail_after_rdf)
     first = service.submit(session_id, request)
     assert first["attempt_status"] == "recovering"
     assert first["recovery"]["state"] == "pending"
     assert len(store.graph) == 0
 
-    monkeypatch.setattr(service, "_persist_evidence", original_persist)
+    monkeypatch.setattr(service, "_mark_rule_derived_stale", original_mark_stale)
     second = service.submit(session_id, request)
     assert second["attempt_status"] == "applied"
     assert second["recovery"]["state"] == "converged"

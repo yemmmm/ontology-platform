@@ -1,12 +1,13 @@
 # Modeling handoff patterns
 
 Adapt these patterns to the mounted candidate contract and declared communication route. They
-carry business semantics and evidence, not platform requests, host controls or hidden answers.
+carry business semantics and execution findings, not platform requests, host controls or hidden
+answers.
 
 ## Clarify a material gap
 
 ```text
-Observed evidence: <approved source and locator, or confirmed answer>
+Observed business input: <approved source context, or confirmed answer>
 Unresolved business meaning: <one precise ambiguity>
 Affected conclusion: <what changes in the model or public consumer answer>
 Question: <one plain business question>
@@ -21,11 +22,11 @@ questions. An unavailable answer remains explicit; it is not permission to guess
 ```text
 Candidate: <complete candidate or immutable artifact reference required by the Task>
 Revision and scope: <bindings from that contract>
-Source basis: <approved sources and confirmed-answer references>
+Business basis: <approved sources and confirmed-answer references>
 Semantic decisions: <material choices and their business reasons>
 Explicit unknowns: <affected meaning and unresolved question>
 Dependencies: <required semantic links and approved cross-slice ownership>
-Requested execution evidence: <Task-required translation/application/check results>
+Requested execution result: <Task-required translation/application/check results>
 ```
 
 Use the exact machine-readable schema where one is required; the headings above are explanatory,
@@ -39,7 +40,7 @@ Observed conflict: <exact returned finding>
 Classification: <semantic defect, protocol contract, routing, or infrastructure>
 Semantic response: <source-supported correction or why no semantic change is justified>
 Replacement: <complete revised candidate/artifact, only when required>
-Remaining unknowns: <what the present evidence cannot establish>
+Remaining unknowns: <what the present inputs cannot establish>
 ```
 
 Never change a business conclusion just to bypass an execution restriction. Do not repair or

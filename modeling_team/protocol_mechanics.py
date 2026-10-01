@@ -1311,10 +1311,15 @@ def _neutral_candidate_receipt(candidate: dict[str, Any]) -> dict[str, Any]:
     delegated back to Modeling.
     """
     required = {"candidate_kind", "candidate_revision", "scope", "constraints", "items"}
-    if not required.issubset(candidate):
+    if set(candidate) != required:
         missing = sorted(required - set(candidate))
+        extra = sorted(set(candidate) - required)
+        if missing:
+            raise ProtocolRetrievalFallbackError(
+                f"neutral candidate is missing required fields: {', '.join(missing)}"
+            )
         raise ProtocolRetrievalFallbackError(
-            f"neutral candidate is missing required fields: {', '.join(missing)}"
+            f"neutral candidate contains unsupported fields: {', '.join(extra)}"
         )
     if not _is_nonempty_string(candidate.get("candidate_kind")):
         raise ProtocolRetrievalFallbackError("neutral candidate kind is not bound")
@@ -1343,14 +1348,14 @@ def _neutral_candidate_receipt(candidate: dict[str, Any]) -> dict[str, Any]:
         if item["item_id"] in item_ids:
             raise ProtocolRetrievalFallbackError("neutral candidate item IDs are duplicated")
         item_ids.add(item["item_id"])
+        if set(item) != {"item_id", "item_kind", "semantic"}:
+            raise ProtocolRetrievalFallbackError("neutral candidate item contains unsupported fields")
         if "semantic" not in item or item["semantic"] is None:
             raise ProtocolRetrievalFallbackError("neutral candidate semantic payload is missing")
-        citations = item.get("evidence_citations")
-        if citations is not None and (
-            not isinstance(citations, list)
-            or any(not isinstance(citation, dict) for citation in citations)
-        ):
-            raise ProtocolRetrievalFallbackError("neutral candidate evidence citations are invalid")
+        if "evidence_citations" in item:
+            raise ProtocolRetrievalFallbackError(
+                "neutral candidate source-tracing fields are not accepted"
+            )
 
     semantic_value = {
         "candidate_kind": candidate["candidate_kind"],
@@ -2196,8 +2201,6 @@ def translate_candidate_to_batches(
         kind = item["item_kind"]
         semantic = item["semantic"]
         item_id = item["item_id"]
-        citations = item.get("evidence_citations") or []
-        evidence = _inline_evidence(citations)
         handler = _TRANSLATE_ITEM_HANDLERS.get(kind)
         if kind in {"consumer_query", "negative_probe"}:
             continue
@@ -2278,7 +2281,6 @@ def translate_candidate_to_batches(
                                 json.dumps(dict(impact), ensure_ascii=False)
                             ),
                         },
-                        "evidence": evidence,
                     }
                 )
             except _TranslateConflict as exc:
@@ -2305,7 +2307,6 @@ def translate_candidate_to_batches(
                 "client_item_id": item_id,
                 "command_kind": command_kind,
                 "payload": payload,
-                "evidence": evidence,
             }
         )
 
@@ -2411,8 +2412,8 @@ def _validate_translate_candidate(candidate: Any) -> dict[str, Any]:
         normalized = json.loads(json.dumps(candidate, ensure_ascii=False))
     except (TypeError, ValueError) as exc:
         raise ProtocolRetrievalFallbackError("translate candidate is not JSON") from exc
-    if normalized.get("candidate_kind") != "platform-neutral-candidate-v2":
-        raise ProtocolRetrievalFallbackError("translate candidate kind is not platform-neutral-candidate-v2")
+    if normalized.get("candidate_kind") != "platform-neutral-candidate-v3":
+        raise ProtocolRetrievalFallbackError("translate candidate kind is not platform-neutral-candidate-v3")
     revision = normalized.get("candidate_revision")
     if isinstance(revision, bool) or not (
         (isinstance(revision, int) and revision > 0) or _is_nonempty_string(revision)
@@ -2442,12 +2443,10 @@ def _validate_translate_candidate(candidate: Any) -> dict[str, Any]:
         semantic = item.get("semantic")
         if not isinstance(semantic, dict) or not semantic:
             raise ProtocolRetrievalFallbackError("translate candidate semantic payload is missing")
-        citations = item.get("evidence_citations")
-        if citations is not None and (
-            not isinstance(citations, list)
-            or any(not isinstance(citation, dict) for citation in citations)
-        ):
-            raise ProtocolRetrievalFallbackError("translate candidate evidence citations are invalid")
+        if "evidence_citations" in item:
+            raise ProtocolRetrievalFallbackError(
+                "translate candidate source-tracing fields are not accepted"
+            )
     return normalized
 
 

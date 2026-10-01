@@ -182,7 +182,6 @@ function factRow(kind: string) {
     object_label: "active",
     graph_iri: "http://x/g",
     source_graph_iri: "http://x/g",
-    evidence_status: "with_evidence",
     audit_status: "pending",
     stale: false,
     stale_reason: null,

@@ -276,7 +276,7 @@ def _persist_mapping(session, mapping: SemanticMappingModel) -> None:
     session.add(mapping)
 
 
-def test_unified_query_returns_primary_related_and_only_evidence_ids(in_memory_session):
+def test_unified_query_returns_primary_related_without_trace_fields(in_memory_session):
     settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
     _ready_ontology(in_memory_session, settings)
     rows = _candidate_rows(settings, "ontology-1")
@@ -314,7 +314,7 @@ def test_unified_query_returns_primary_related_and_only_evidence_ids(in_memory_s
     assert next(item for item in facts if item["data"]["object"] == "发布说明")["data"][
         "object_language"
     ] == "zh"
-    assert result["primary_matches"][0]["evidence_reference_ids"] == ["evidence-1"]
+    assert "evidence_reference_ids" not in result["primary_matches"][0]
     # Direct consumer response: no producer-internal fields, compact scope/recall.
     assert all("_expression_indexes" not in item for item in result["primary_matches"])
     assert result["scope"]["project_id"] == "project-1"
@@ -596,23 +596,14 @@ def test_generated_shape_constraint_projects_property_lineage_target(
     assert shape_item["kind"] == "fact"
     assert shape_item["data"]["constraint"]["provenance"] == "generated"
     assert shape_item["target_kind"] == "resource"
-    assert shape_item["_lineage_target"] == {
-        "target_type": "resource",
-        "target_id": property_iri,
-    }
+    assert "_lineage_target" not in shape_item
 
     decorated = service._decorate(shape_item, scope)
     assert "_lineage_target" not in decorated
-    assert decorated["lineage"] == {
-        "target_type": "resource",
-        "target_id": property_iri,
-        "status": "complete",
-    }
-    assert decorated["evidence_reference_ids"] == ["property-evidence"]
+    assert "lineage" not in decorated
+    assert "evidence_reference_ids" not in decorated
     assert decorated["warnings"] == []
-    assert evidence_lineage.calls[0]["target_type"] == "resource"
-    assert evidence_lineage.calls[0]["target_id"] == property_iri
-    assert evidence_lineage.calls[0]["target_id"] != shape_item["id"]
+    assert evidence_lineage.calls == []
 
 
 @pytest.mark.parametrize(
@@ -662,11 +653,8 @@ def test_shape_constraint_without_generated_canonical_property_fails_closed(
     assert "target_kind" not in shape_item
     decorated = service._decorate(shape_item, scope)
     assert "_lineage_target" not in decorated
-    assert decorated["lineage"] == {"status": "missing"}
-    assert {warning["code"] for warning in decorated["warnings"]} == {
-        "evidence_missing",
-        "lineage_missing",
-    }
+    assert "lineage" not in decorated
+    assert decorated["warnings"] == []
     assert lineage.calls == []
 
 
@@ -718,12 +706,8 @@ def test_shape_constraint_unknown_internal_lineage_marker_is_stripped(
 
     assert "_lineage_target" not in decorated
     assert "target_kind" not in decorated
-    assert decorated["lineage"] == {"status": "missing"}
-    assert "synthetic" not in str(decorated["lineage"])
-    assert {warning["code"] for warning in decorated["warnings"]} == {
-        "evidence_missing",
-        "lineage_missing",
-    }
+    assert "lineage" not in decorated
+    assert decorated["warnings"] == []
     assert lineage.calls == []
 
 
@@ -1221,11 +1205,9 @@ def test_object_property_resource_and_relation_fact_use_distinct_lineage_targets
 
     decorated_property = service._decorate(property_resource, scope)
     decorated_fact = service._decorate(relation_fact, scope)
-    calls_by_id = {call["target_id"]: call["target_type"] for call in lineage.calls}
-    assert decorated_property["lineage"]["target_type"] == "resource"
-    assert decorated_fact["lineage"]["target_type"] == "statement"
-    assert calls_by_id[property_iri] == "resource"
-    assert calls_by_id[relation_fact["id"]] == "statement"
+    assert "lineage" not in decorated_property
+    assert "lineage" not in decorated_fact
+    assert lineage.calls == []
 
 
 def test_property_label_matches_facts_only_within_the_same_ontology(in_memory_session):
@@ -1880,8 +1862,8 @@ def test_compact_context_detail_projects_related_rows_to_essentials(in_memory_se
     compact = service.query_multi(**kwargs, context_detail="compact")
     full = service.query_multi(**kwargs)
 
-    # R2.3-009 (2026-08-21): compact keeps identity/kind/label, statement
-    # essentials, evidence status, and root-path anchors only.
+    # Compact keeps identity/kind/label, statement essentials, and root-path
+    # anchors only.
     assert compact["result_status"] == "matched"
     assert compact["related_context"]
     allowed_row = {"id", "kind", "label", "evidence_status", "root_paths", "data"}
@@ -1906,7 +1888,7 @@ def test_compact_context_detail_projects_related_rows_to_essentials(in_memory_se
     assert any(item["data"].get("subject_label") == "发布工作流" for item in facts)
     # The default projection stays unchanged for existing REST consumers.
     assert len(full["related_context"]) == len(compact["related_context"])
-    assert any("lineage" in item for item in full["related_context"])
+    assert all("lineage" not in item for item in full["related_context"])
     assert any("iri" in item for item in full["related_context"])
 
 

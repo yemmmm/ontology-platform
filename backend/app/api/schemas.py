@@ -306,7 +306,6 @@ class BuildSessionDetailRead(BaseModel):
     involved_ontology_ids: list[str]
     leases: list[OntologyLeaseSummaryRead]
     modeling_batches: list[dict[str, Any]] = Field(default_factory=list)
-    evidence: dict[str, Any] = Field(default_factory=dict)
     recent_activity: list[dict[str, Any]] = Field(default_factory=list)
     modeling_workflow_summary: dict[str, Any] = Field(default_factory=dict)
 
@@ -386,12 +385,10 @@ class ModelingWorkflowArtifactCreate(ModelingWorkflowSchema):
 class WorkflowRelatedResource(ModelingWorkflowSchema):
     resource_type: Literal[
         "competency_question",
-        "evidence_reference",
         "modeling_batch",
         "modeling_attempt",
         "finding",
         "validation_run",
-        "lineage",
         "ontology",
         "lease",
         "workflow_artifact",
@@ -409,9 +406,6 @@ class WorkflowRelatedResource(ModelingWorkflowSchema):
         if self.resource_type == "finding":
             if not self.attempt_id or not self.finding_fingerprint or self.resource_id:
                 raise ValueError("finding requires attempt_id and finding_fingerprint only")
-        elif self.resource_type == "lineage":
-            if not self.ontology_id or not self.target_type or not self.target_id:
-                raise ValueError("lineage requires ontology_id, target_type, and target_id")
         elif not self.resource_id:
             raise ValueError(f"{self.resource_type} requires resource_id")
         return self
@@ -424,7 +418,6 @@ class ModelingQualityIssue(ModelingWorkflowSchema):
         "identity_error",
         "relation_error",
         "granularity_error",
-        "insufficient_evidence",
         "competency_question_gap",
         "over_modeling",
         "stale_knowledge",
@@ -497,18 +490,11 @@ class ModelingBatchSchema(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class InlineModelingEvidence(ModelingBatchSchema):
-    document_name: str = Field(min_length=1, max_length=255)
-    excerpt: str = Field(min_length=1)
-
-
 class ModelingItemInput(ModelingBatchSchema):
     client_item_id: str = Field(min_length=1, max_length=255)
     command_kind: str = Field(min_length=1, max_length=80)
     payload: dict[str, Any]
     depends_on: list[str] = Field(default_factory=list)
-    evidence_reference_ids: list[str] = Field(default_factory=list)
-    evidence: list[InlineModelingEvidence] = Field(default_factory=list)
     rationale: str | None = Field(default=None, max_length=20_000)
     competency_question_ids: list[str] = Field(default_factory=list)
 
@@ -526,25 +512,8 @@ class ModelingBatchSubmit(ModelingBatchSchema):
     items: list[ModelingItemInput] = Field(min_length=1)
 
 
-class ModelingOperationPlanEvidenceRead(ModelingBatchSchema):
-    """Safe, source-minimal Evidence projection for a dry-run Attempt.
-
-    The persisted Attempt plan contains internal reference and association IDs
-    (and, for inline Evidence, the submitted excerpt).  The public dry-run
-    receipt exposes only the fields needed to compare a candidate-local map;
-    locators, owner identities, and raw source text never cross this boundary.
-    """
-
-    client_item_id: str = Field(min_length=1, max_length=255)
-    document_name: str = Field(min_length=1, max_length=255)
-    normalized_excerpt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    dedupe_identity: str = Field(min_length=1, max_length=255)
-
-
 class ModelingOperationPlanRead(ModelingBatchSchema):
-    """Additive safe operation-plan fields returned for dry-run Attempts."""
-
-    evidence: list[ModelingOperationPlanEvidenceRead] = Field(default_factory=list)
+    """Public dry-run operation plan envelope."""
 
 
 class ValidationFindingRead(BaseModel):
@@ -816,7 +785,6 @@ class SemanticEditAuditRead(BaseModel):
     affected_graph_iris: list[str]
     validation_result: dict[str, Any] | None = None
     graph_delta: dict[str, Any]
-    evidence_status: str | None = None
     warning_state: dict[str, Any]
     applied: bool
     created_at: datetime
@@ -1152,7 +1120,6 @@ class SemanticResourceRead(BaseModel):
     graph_set_id: str | None = None
     source_signature: str | None = None
     assertion_kind: str
-    evidence_status: str
     source_graph_iri: str
     properties: dict[str, Any] = Field(default_factory=dict)
     derived_state: dict[str, Any] = Field(default_factory=dict)
@@ -1167,7 +1134,6 @@ class SemanticExportRequest(BaseModel):
         "asserted-plus-rules",
         "full-working-view",
     ] = "asserted"
-    include_evidence: bool = False
     include_shapes: bool = False
     include_policy: bool = False
     include_metadata: bool = False
@@ -1406,6 +1372,8 @@ class SemanticCanonicalProductWriteRequest(BaseModel):
     compiler that produces an :class:`RdfGraphDelta` for the canonical writer.
     """
 
+    model_config = ConfigDict(extra="forbid")
+
     command_kind: Literal[_canonical_command_kinds()]  # type: ignore[valid-type]
     graph_set_id: str
     target_graph_iri: str | None = None
@@ -1415,9 +1383,6 @@ class SemanticCanonicalProductWriteRequest(BaseModel):
     validate_edit: bool = True
     shape_graph_iris: list[str] = Field(default_factory=list)
     client_item_id: str | None = None
-    evidence_target_id: str | None = None
-    evidence_reference_ids: list[str] = Field(default_factory=list)
-    evidence: list[dict[str, str]] = Field(default_factory=list)
 
 
 class SemanticCanonicalProductWriteResponse(BaseModel):
@@ -1431,7 +1396,6 @@ class SemanticCanonicalProductWriteResponse(BaseModel):
     graph_revisions: dict[str, int] = Field(default_factory=dict)
     stale_derived_pointers: list[dict[str, Any]] = Field(default_factory=list)
     retrieval_indexes: list[dict[str, Any]] = Field(default_factory=list)
-    evidence_associations: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SemanticCanonicalModeRead(BaseModel):

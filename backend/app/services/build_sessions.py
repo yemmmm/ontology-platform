@@ -29,7 +29,6 @@ from app.repositories.models import (
     BuildCheckpointModel,
     BuildSessionModel,
     CompetencyQuestionModel,
-    EvidenceReferenceModel,
     ModelingBatchAttemptModel,
     ModelingBatchModel,
     OntologyLeaseModel,
@@ -286,14 +285,6 @@ class BuildSessionService:
                 "project_brief": interview.get_project_brief(self.session, project_id),
                 "competency_question_counts": question_counts,
                 "ontologies": ontology_state,
-                "evidence_reference_count": int(
-                    self.session.scalar(
-                        select(func.count(EvidenceReferenceModel.id)).where(
-                            EvidenceReferenceModel.project_id == project_id
-                        )
-                    )
-                    or 0
-                ),
                 "modeling_batches": [self._modeling_batch_summary(item) for item in recent_batches],
             },
             "agent_state": {
@@ -373,7 +364,6 @@ class BuildSessionService:
             "involved_ontology_ids": sorted(item for item in ontology_ids if item),
             "leases": [self._lease_summary(item) for item in leases],
             "modeling_batches": [self._modeling_batch_summary(item) for item in session_batches],
-            "evidence": {"references": [], "next_cursor": None},
             "recent_activity": recent_activity,
             "modeling_workflow_summary": ModelingWorkflowService(
                 self.session, actor=self.actor

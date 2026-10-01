@@ -32,13 +32,19 @@ pointer 状态，因此按 `admin + org-only + mutates_state` 执行，而不是
    不依赖旧聊天或本地 ledger 恢复。
 3. 通过 Brief、Interview Answer 和 Competency Question 澄清需求；先保存 Business Knowledge Pack
    与 Modeling Coverage Matrix，再进入建模。
-4. 外部 Agent 自行读取资料，以 Evidence Reference 保存实际使用的文档名和原文片段；三个子角色
+4. 外部 Agent 自行读取资料理解和核对语义；三个子角色
    使用独立只读上下文，只有主 Agent 持有 MCP credential。
 5. 主 Agent 保存模型草案，调用 `submit_modeling_batch` dry-run；独立 reviewer 读取原资料、产物和
    每个带 fingerprint 的 Finding，只有 PASS 才进入 apply。
 6. 主 Agent 获取 lease 并 apply exact reviewed batch；不经过旧 Proposal/Review/Publish 队列。
-7. 用 Context Query、scoped SPARQL、read model、validation 和 lineage 验证，保存 verification
+7. 用 Context Query、scoped SPARQL、read model 和 validation 验证，保存 verification
    artifact/event、checkpoint，并完成或取消 Build Session。
+
+v4 R4.0-012 停用 Evidence 与完整 lineage：专用工具与旧 provenance 别名不再注册，
+候选及 Batch 不接受追溯字段，正常检索不查询追溯链，也不要求 Agent 留证或补证。
+工具响应定位、写入回执、审批、CQ 和独立验收记录继续保留；无历史只读替代工具。
+当前 Team 入口为 [v4 Task](../../modeling_team/tasks/r4-0-012-tracing-suspension.yaml)，
+复用现有多切片与 CQ Profile；旧追溯 Task 仅保留历史定义，不作为当前运行入口。
 
 平台返回结构化语义上下文，不生成最终自然语言答案，也不代替外部 Agent 调用目标系统。
 
@@ -125,10 +131,8 @@ uv run python ../scripts/sync-interface-docs.py --write
 | build_sessions | `save_build_checkpoint` | Idempotently append an Agent-reported Build Checkpoint. | client_checkpoint_id, current_step, expected_revision, phase, session_id | blockers, client_checkpoint_id, current_step, expected_revision, failure, next_step, ontology_id, phase, related_batch_id, session_id, summary | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `submit_modeling_batch` | Dry-run or idempotently apply one immutable Ontology Modeling Batch. | client_batch_id, expected_workspace_version, idempotency_key, items, ontology_id, session_id | client_batch_id, expected_workspace_version, idempotency_key, items, lease_token, mode, ontology_id, session_id | `backend/app/mcp/tools/modeling_batches.py` |
 | semantic | `add_semantic_protection_set_members` | Batch-add resource IRIs to a protection set (idempotent). | members, protection_set_id | actor, members, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
-| semantic | `associate_evidence_reference` | Create or reuse references and associate them with one concrete modeling result. | ontology_id, project_id, target_id, target_type | actor, client_item_id, edit_audit_id, evidence, evidence_reference_ids, graph_set_id, ontology_id, project_id, target_id, target_type | `backend/app/mcp/tools/evidence.py` |
 | semantic | `check_semantic_staleness` | Reconcile derived-result staleness and return current/stale counts. | - | - | `backend/app/mcp/tools/semantic.py` |
 | semantic | `compile_and_apply_canonical_command` | Compile and apply a structured product command through the Phase 7 canonical writer. | command_kind, graph_set_id, payload | actor, command_kind, graph_set_id, payload, reason, shape_graph_iris | `backend/app/mcp/tools/semantic.py` |
-| semantic | `create_evidence_reference` | Create or idempotently reuse a project evidence reference. | document_name, excerpt, project_id | actor, document_name, excerpt, project_id | `backend/app/mcp/tools/evidence.py` |
 | semantic | `create_semantic_migration_run` | Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode. | mode, scope_type | batch_size, created_by, mode, scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `create_semantic_protection_set` | Create a protection set (named resource IRIs + OR-semantics grants). | name, project_id | actor, allowed_grants, description, members, name, project_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `cutover_semantic_migration_run` | Execute the guarded RDF-primary cutover for a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
@@ -136,16 +140,12 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `describe_semantic_graph_set` | Return graph-set membership, source signature, and current derived pointers. | graph_set_id | graph_set_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `discover_semantic_scopes` | Discover authorized Project/Ontology query scopes and readiness. | - | cursor, limit, query, queryable | `backend/app/mcp/tools/semantic.py` |
 | semantic | `export_semantic_graph_set` | Export a graph set as Turtle, TriG, or JSON-LD. | graph_set_id | allow_stale_derived, format, graph_set_id, include | `backend/app/mcp/tools/semantic.py` |
-| semantic | `get_evidence_reference` | Read one evidence reference and its modeling-result associations. | reference_id | reference_id | `backend/app/mcp/tools/evidence.py` |
-| semantic | `get_ontology_lineage` | Read bounded statement, resource, or Rule Definition lineage for an Ontology. | ontology_id, target_id, target_type | include_history, limit, max_depth, ontology_id, target_id, target_type | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_governance_status` | Return a governance status summary: graph counts, editability, derived staleness. | - | - | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_read_model` | Read a compact graph-derived business JSON read model for a graph set. | graph_set_id, model_name | allow_stale_derived, entity_iri, graph_set_id, include, limit, model_name | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_reasoning_run` | Read one existing reasoning run, bound to an authorized graph set. | graph_set_id, reasoning_run_id | graph_set_id, reasoning_run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_rule_definition` | Read the current stored body and metadata of one Rule Definition by ID. | rule_definition_id | rule_definition_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_validation_run` | Read one existing validation run, bound to an authorized graph set. | graph_set_id, validation_run_id | graph_set_id, validation_run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `inspect_semantic_projection_status` | Inspect projection freshness by graph set and projection kind. | - | graph_set_id | `backend/app/mcp/tools/semantic.py` |
-| semantic | `inspect_semantic_statement_provenance` | Deprecated compatibility wrapper; use get_ontology_lineage. | graph_set_id, statement_iri | graph_set_id, include, statement_iri | `backend/app/mcp/tools/semantic.py` |
-| semantic | `list_evidence_references` | List project evidence references without loading complete source documents. | project_id | limit, offset, project_id, search | `backend/app/mcp/tools/evidence.py` |
 | semantic | `list_semantic_derived_pointers` | List derived-result pointers for reasoning/rule results. | - | graph_set_id, result_kind, status | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_edit_audits` | List recent governed semantic edit audit records. | - | limit | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_protection_sets` | List the protection sets of one authorized Project. | project_id | project_id | `backend/app/mcp/tools/protection_sets.py` |

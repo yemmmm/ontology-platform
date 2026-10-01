@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import sys
 import tempfile
@@ -24,7 +23,8 @@ from modeling_team.contracts import (
 from modeling_team.handoff import HANDOFF_FIELDS, publish_offline_scope_handoff, publish_scope_handoff
 from modeling_team.protocol_mechanics import (
     ProtocolRetrievalFallbackError,
-    verify_scoped_retrieval_fallback,
+    build_candidate_receipt,
+    translate_candidate_to_batches,
 )
 from modeling_team.runner import TeamRunner
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
@@ -201,10 +201,9 @@ class R23002Tests(unittest.TestCase):
         self.assertIn("create_relation_type for the same predicate", binding["forbidden"][0])
         self.assertIn("concrete translation conflict", binding["binding_conflict"])
 
-        helper_rule = reference["semantic_retrieval_completion_contract"]["fallback"][
-            "deterministic_helper"
-        ]["rule"]
-        self.assertIn("mode field MUST equal the exact string create; fresh_create is not accepted", helper_rule)
+        fallback = reference["semantic_retrieval_completion_contract"]["fallback"]
+        self.assertIn("ordinary scoped readback path", fallback["allowed"])
+        self.assertIn("exact predicate/value and scope checks", fallback["readback"])
 
         instructions = (
             root / "modeling_team/agent-packages/protocol/instructions.md"
@@ -215,7 +214,7 @@ class R23002Tests(unittest.TestCase):
             "Shape `path_id` to the same formal create-property `resource_id`",
             "Do not create `create_relation_type` for the same predicate",
             "concrete pre-write translation\nconflict",
-            "only the exact literal\n`create`; `fresh_create` is not accepted",
+            "Do not require assertion matrices, proof-only envelopes, source attachments or a fallback verifier.",
         ):
             self.assertIn(phrase, instructions)
 
@@ -375,7 +374,7 @@ class R23002Tests(unittest.TestCase):
             root / "modeling_team/agent-packages/modeling/instructions.md"
         ).read_text(encoding="utf-8")
         self.assertIn("structured platform-neutral semantic candidate", modeling_instructions)
-        self.assertIn("classes,\nproperties, relations, Shapes, entities, evidence, explicit unknowns, and dependencies", modeling_instructions)
+        self.assertIn("classes,\nproperties, relations, Shapes, entities, explicit unknowns, and dependencies", modeling_instructions)
         self.assertIn("do not author exact platform\nitems", modeling_instructions)
         self.assertIn("Protocol mechanically translates", modeling_instructions)
         self.assertIn("expects_reply=true", modeling_instructions)
@@ -572,38 +571,20 @@ class R23002Tests(unittest.TestCase):
             (root / "modeling_team/references/modeling-batch-item-contract.json").read_text(encoding="utf-8")
         )
         retrieval = reference["semantic_retrieval_completion_contract"]
-        self.assertIn("no business semantics, tester answer, answer count", retrieval["purpose"])
+        self.assertIn("no business semantics or source-tracing payload", retrieval["purpose"])
         self.assertEqual(
             retrieval["successful_receipt_requires"],
             [
                 "ontology-scoped generic query",
                 "no truncation",
-                "required Evidence and lineage",
                 "no cross-ontology fact",
+                "predicate/value and identity binding",
                 "successful continuation whenever paging is required",
             ],
         )
-        self.assertIn("same-subject facts both block", retrieval["fallback"]["facts_read"])
-        self.assertNotIn("may use", retrieval["fallback"]["allowed"].lower())
-        self.assertEqual(
-            retrieval["fallback"]["mandatory_sequence"],
-            [
-                "A generic query result with complete=true is successful retrieval evidence.",
-                "For an eligible fresh-create incomplete, degraded, or truncated generic query, collect every formal proof response below unmodified.",
-                "Call the native Protocol-only MCP verifier verify_scoped_retrieval_fallback with that formal proof before deciding terminal conflict.",
-                "A native verifier result with complete=true is successful retrieval evidence.",
-                "Only after a native verifier tool/protocol error or incomplete result, fail closed with a terminal retrieval-completeness conflict.",
-            ],
-        )
-        self.assertEqual(
-            retrieval["fallback"]["deterministic_helper"],
-            {
-                "mcp_server": "protocol_mechanics",
-                "tool": "verify_scoped_retrieval_fallback",
-                "command": "/usr/bin/python3 /opt/protocol-retrieval-mcp.py",
-                "rule": "Call this native Protocol-only MCP tool with the ten mechanical proof fields as direct arguments, never under a proof wrapper and with no missing or extra field, before deciding terminal conflict. The mode field MUST equal the exact string create; fresh_create is not accepted. The wrapper rejects malformed arguments with -32602. A complete=true result is successful retrieval evidence; only a tool/protocol error or incomplete result fails closed as a retrieval-completeness conflict.",
-            },
-        )
+        self.assertIn("ordinary scoped readback path", retrieval["fallback"]["allowed"])
+        self.assertIn("exact predicate/value and scope checks", retrieval["fallback"]["readback"])
+        self.assertNotIn("deterministic_helper", retrieval["fallback"])
         self.assertNotIn("C -> B -> A", json.dumps(retrieval))
         self.assertNotIn("quality_rating", json.dumps(retrieval))
 
@@ -615,7 +596,7 @@ class R23002Tests(unittest.TestCase):
             "one grounded plain question at a\ntime",
             "reassess every remaining material gap",
             "tester answer set, answer count, scenario target, or expected ontology",
-            "otherwise incomplete retrieval proof as a conflict",
+            "otherwise\nincomplete semantic retrieval as a conflict",
         ):
             self.assertIn(phrase, modeling_instructions)
         self.assertNotIn("C -> B -> A", modeling_instructions)
@@ -623,39 +604,17 @@ class R23002Tests(unittest.TestCase):
             root / "modeling_team/agent-packages/protocol/instructions.md"
         ).read_text(encoding="utf-8")
         for phrase in (
-            "semantic_retrieval_completion_contract",
-            "truncation, missing required Evidence/lineage, cross-ontology facts",
-            "unmodified full",
-            "fact IDs",
-            "exact non-truncated statement lineage",
-            "use SPARQL or a new\nAPI",
+            "Accept the source-neutral platform candidate",
+            "Do not require assertion matrices, proof-only envelopes, source attachments or a fallback verifier.",
+            "normal result without retired tracing metadata still passes",
+            "complete,\nnon-degraded statement result",
         ):
             self.assertIn(phrase, protocol_instructions)
-        self.assertNotIn("may use the specified\nfallback", protocol_instructions.lower())
-        protocol_ordered_phrases = (
-            "generic query result with `complete=true` is successful retrieval evidence",
-            "you MUST collect every formal fallback\nproof response below unmodified",
-            "you MUST call native MCP server `protocol_mechanics`, tool\n`verify_scoped_retrieval_fallback`, with those ten proof fields as direct arguments (never nest a\n`proof` object, omit a field, or add a wrapper field) before deciding terminal conflict",
-            "native\nverifier result with `complete=true` is successful retrieval evidence",
-            "only after a native\nverifier tool/protocol error or incomplete result, fail closed with a terminal\nretrieval-completeness conflict",
-        )
-        self.assertEqual(
-            [protocol_instructions.index(phrase) for phrase in protocol_ordered_phrases],
-            sorted(protocol_instructions.index(phrase) for phrase in protocol_ordered_phrases),
-        )
+        self.assertNotIn("verify_scoped_retrieval_fallback", protocol_instructions)
+        self.assertNotIn("write_candidate_item_evidence_map", protocol_instructions)
 
         task_text = (root / "modeling_team/tasks/new-scope-business-slice.yaml").read_text(encoding="utf-8")
-        self.assertNotIn("may use", task_text.lower())
-        task_ordered_phrases = (
-            "Protocol MUST first collect the formal fallback proof and call the native verifier",
-            "it must not directly block",
-            "Generic-query or native-verifier complete=true is successful retrieval\n  evidence",
-            "Only a native verifier tool/protocol error or incomplete result is a fail-closed\n  retrieval-completeness conflict",
-        )
-        self.assertEqual(
-            [task_text.index(phrase) for phrase in task_ordered_phrases],
-            sorted(task_text.index(phrase) for phrase in task_ordered_phrases),
-        )
+        self.assertIn("Before freezing a candidate", task_text)
 
         configuration = load_team_configuration(
             root / "modeling_team/profiles/base-three-agent.yaml",
@@ -670,381 +629,43 @@ class R23002Tests(unittest.TestCase):
         self.assertNotIn(staged_reference, runner._task_text("coordinator"))
         self.assertNotIn(staged_reference, runner._task_text("modeling"))
 
-        def envelope(data: dict[str, object]) -> dict[str, object]:
-            return {"ok": True, "data": data}
-
-        graphs = {
-            "asserted_ontology": "graph:ontology",
-            "asserted_data": "graph:data",
-            "shapes": "graph:shapes",
-        }
-        counts = {
-            "classes": 1,
-            "properties": 1,
-            "relation_types": 1,
-            "shapes": 1,
-            "entities": 3,
-            "relations": 1,
-            "facts": 3,
-        }
-
-        def quad(subject: str, predicate: str, object_: str, graph: str) -> list[str]:
-            return [f"<{subject}>", f"<{predicate}>", f"<{object_}>", graph]
-
-        def delta_hash(delta: dict[str, object]) -> str:
-            encoded = json.dumps(delta, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
-            return hashlib.sha256(encoded.encode()).hexdigest()
-
-        def fact_id(subject: str, predicate: str, object_: str, graph: str) -> str:
-            canonical = f"<{subject}> <{predicate}> <{object_}> <{graph}>"
-            return hashlib.sha256(canonical.encode()).hexdigest()
-
-        def statement(subject: str, predicate: str, object_: str) -> dict[str, str]:
-            return {
-                "subject": subject,
-                "predicate": predicate,
-                "object": object_,
-                "object_kind": "iri",
-                "object_datatype": None,
-                "object_language": None,
-                "source_graph_iri": graphs["asserted_data"],
-            }
-
-        commands = [
-            ("class", "create_class", "class-1", graphs["asserted_ontology"]),
-            ("property", "create_property", "property-1", graphs["asserted_ontology"]),
-            ("relation-type", "create_relation_type", "relation-type-1", graphs["asserted_ontology"]),
-            ("shape", "create_shape", "shape-1", graphs["shapes"]),
-            ("source", "create_entity", "entity-source", graphs["asserted_data"]),
-            ("target-one", "create_entity", "entity-target-one", graphs["asserted_data"]),
-            ("target-two", "create_entity", "entity-target-two", graphs["asserted_data"]),
-        ]
-        inserts = [
-            quad(iri, "type", command_kind.removeprefix("create_"), graph)
-            for _, command_kind, iri, graph in commands
-        ]
-        inserts += [
-            quad("entity-source", "relation", "entity-target-one", graphs["asserted_data"]),
-            quad("entity-source", "relation", "entity-target-two", graphs["asserted_data"]),
-        ]
-        applied_delta = {"inserts": inserts, "deletes": [], "clear_graphs": [], "drop_graphs": []}
-        write_items = [
-            {
-                "item_id": item_id,
-                "command_kind": command_kind,
-                "payload": {},
-                "resource_outputs": {"resource_id": item_id, "resource_iri": iri},
-            }
-            for item_id, command_kind, iri, _ in commands
-        ] + [
-            {
-                "item_id": "relation-one",
-                "command_kind": "create_relation",
-                "payload": {
-                    "source_entity_iri": "entity-source",
-                    "relation_type_iri": "relation",
-                    "target_entity_iri": "entity-target-one",
-                },
-                "resource_outputs": {},
-            },
-            {
-                "item_id": "relation-two",
-                "command_kind": "create_relation",
-                "payload": {
-                    "source_entity_iri": "entity-source",
-                    "relation_type_iri": "relation",
-                    "target_entity_iri": "entity-target-two",
-                },
-                "resource_outputs": {},
-            },
-        ]
-        applied_results = [
-            {
-                "item_id": item["item_id"],
-                "status": "applied",
-                "resource_outputs": item["resource_outputs"],
-            }
-            for item in write_items
-        ]
-        write_detail = {
-            "batch_id": "batch-write",
-            "ontology_id": "ontology-1",
-            "build_session_id": "session-1",
-            "items": write_items,
-            "attempts": [
-                {"mode": "dry_run", "attempt_status": "validated"},
+        candidate = {
+            "candidate_kind": "platform-neutral-candidate-v3",
+            "candidate_revision": "r23002-candidate-1",
+            "scope": {"ontology": "ontology-1"},
+            "constraints": ["source-grounded", "scope-correct"],
+            "items": [
                 {
-                    "mode": "apply_atomic",
-                    "attempt_status": "applied",
-                    "workspace": {"before_version": "workspace-0", "after_version": "workspace-1"},
-                    "normalized_delta": applied_delta,
-                    "delta_hash": delta_hash(applied_delta),
-                    "items": applied_results,
-                },
+                    "item_id": "class-1",
+                    "item_kind": "class",
+                    "semantic": {
+                        "class_id": "Entity",
+                        "name": "Entity",
+                        "description": "A semantic entity.",
+                    },
+                }
             ],
         }
-        rejected_shape_detail = {
-            "batch_id": "batch-rejected-shape",
-            "ontology_id": "ontology-1",
-            "build_session_id": "session-1",
-            "items": [{"item_id": "bad-shape", "command_kind": "create_shape", "payload": {}}],
-            "attempts": [{"mode": "dry_run", "attempt_status": "validation_failed"}],
-        }
-        facts = [
-            statement("entity-source", "type", "entity"),
-            statement("entity-target-one", "type", "entity"),
-            statement("entity-target-two", "type", "entity"),
-            statement("entity-source", "relation", "entity-target-one"),
-            statement("entity-source", "relation", "entity-target-two"),
-        ]
-        assertions = [
-            {
-                "graph_role": "asserted_data",
-                "subject": item["subject"],
-                "predicate": item["predicate"],
-                "object": item["object"],
-                "object_kind": item["object_kind"],
-                "object_datatype": item["object_datatype"],
-                "object_language": item["object_language"],
-            }
-            for item in facts[-2:]
-        ]
-
-        def lineage(assertion: dict[str, str]) -> dict[str, object]:
-            computed_fact_id = fact_id(
-                assertion["subject"], assertion["predicate"], assertion["object"], graphs["asserted_data"]
-            )
-            return envelope(
-                {
-                    "ontology_id": "ontology-1",
-                    "target": {"type": "statement", "id": computed_fact_id},
-                    "truncated": False,
-                    "items": [
-                        {
-                            "statement_id": computed_fact_id,
-                            "statement": {
-                                "subject": assertion["subject"],
-                                "predicate": assertion["predicate"],
-                                "object": f"<{assertion['object']}>",
-                            },
-                            "technical_trace": {"graph_iri": graphs["asserted_data"]},
-                            "origins": [{"kind": "modeling_item"}],
-                            "supporting_context": {"evidence_references": [{"id": "evidence-1"}]},
-                        }
-                    ],
-                }
-            )
-
-        initial_counts = {name: 0 for name in counts}
-        proof = {
-            "mode": "create",
-            "initial_modeling_context": envelope(
-                {"ontology": {"id": "ontology-1"}, "workspace": {"workspace_version": "workspace-0"}, "resource_counts": initial_counts}
-            ),
-            "final_modeling_context": envelope(
-                {"ontology": {"id": "ontology-1"}, "workspace": {"workspace_version": "workspace-1"}, "resource_counts": counts}
-            ),
-            "workspace_context": envelope(
-                {
-                    "ontology_id": "ontology-1",
-                    "state": "ready",
-                    "default_graph_set_id": "graph-set-1",
-                    "source_signature": "source-signature-1",
-                    "members": [
-                        {"role": role, "graph_iri": graph, "owner_type": "ontology", "owner_id": "ontology-1"}
-                        for role, graph in graphs.items()
-                    ],
-                }
-            ),
-            "batch_inventory": {
-                "requested_limit": 3,
-                "cursor": None,
-                "status_filter": None,
-                "response": envelope({"batches": [{"batch_id": "batch-write"}, {"batch_id": "batch-rejected-shape"}], "next_cursor": None}),
-            },
-            "batch_details": [envelope(write_detail), envelope(rejected_shape_detail)],
-            "entities_read": envelope(
-                {
-                    "graph_set_id": "graph-set-1",
-                    "source_signature": "source-signature-1",
-                    "model_name": "entity-list",
-                    "include": "asserted",
-                    "items": [
-                        {"iri": iri, "source_graph_iri": graphs["asserted_data"]}
-                        for iri in ["entity-source", "entity-target-one", "entity-target-two"]
-                    ],
-                }
-            ),
-            "statements_read": {
-                "requested_limit": 6,
-                "response": envelope(
-                    {
-                        "graph_set_id": "graph-set-1",
-                        "source_signature": "source-signature-1",
-                        "model_name": "statement-list",
-                        "include": "asserted",
-                        "items": facts,
-                    }
-                ),
-            },
-            "candidate_required_assertions": {},
-            "statement_lineage": {},
-        }
-        semantic_payload = {"schema_version": "candidate-required-assertions/v1", "statements": assertions}
-        semantic_digest = hashlib.sha256(
-            json.dumps(semantic_payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-        candidate_binding = {
-            "schema_version": "candidate-required-assertions/v1",
-            "candidate_revision": "candidate-revision-1",
-            "delivery_id": "delivery-candidate-1",
-            "reply_chain": ["delivery-candidate-1"],
-            "semantic_digest": semantic_digest,
-        }
-        candidate_digest = hashlib.sha256(
-            json.dumps(candidate_binding, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-        ).hexdigest()
-        materialized_quads = [
-            {**item, "source_graph_iri": graphs["asserted_data"]}
-            for item in assertions
-        ]
-        materialized_quads.sort(
-            key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+        receipt = build_candidate_receipt(candidate)
+        self.assertEqual(receipt["status"], "accepted")
+        self.assertEqual(receipt["candidate_revision"], candidate["candidate_revision"])
+        self.assertEqual(
+            set(receipt),
+            {"status", "candidate_revision", "semantic_digest", "candidate_digest"},
         )
-        materialized_digest = hashlib.sha256(
-            json.dumps(
-                {"candidate_digest": candidate_digest, "quads": materialized_quads},
-                ensure_ascii=False,
-                sort_keys=True,
-                separators=(",", ":"),
-            ).encode("utf-8")
-        ).hexdigest()
-        proof["candidate_required_assertions"] = {
-            **candidate_binding,
-            "candidate_digest": candidate_digest,
-            "items": assertions,
-            "materialized_digest": materialized_digest,
-            "materialized_quads": materialized_quads,
-        }
-        proof["statement_lineage"] = {
-            **candidate_binding,
-            "candidate_digest": candidate_digest,
-            "materialized_digest": materialized_digest,
-            "max_depth": 2,
-            "records": [
-                {
-                    "fact_id": fact_id(item["subject"], item["predicate"], item["object"], graphs["asserted_data"]),
-                    "quad": {**item, "source_graph_iri": graphs["asserted_data"]},
-                    "response": lineage({**item, "source_graph_iri": graphs["asserted_data"]}),
-                }
-                for item in assertions
-            ],
-        }
-        result = verify_scoped_retrieval_fallback(proof)
-        self.assertEqual(result["complete"], True)
-        self.assertEqual(result["ontology_id"], "ontology-1")
-        self.assertEqual(result["expected_triple_count"], len(facts))
-        self.assertEqual(result["fact_subject_count"], 3)
-        self.assertEqual(result["relation_source_count"], 1)
-        self.assertEqual(result["candidate_digest"], candidate_digest)
-        self.assertEqual(result["materialized_digest"], materialized_digest)
+        plan = translate_candidate_to_batches(candidate)
+        self.assertEqual([batch["stage_kind"] for batch in plan["batches"]], ["class"])
+        self.assertEqual(plan["batches"][0]["items"][0]["client_item_id"], "class-1")
 
-        def invalid_copy() -> dict[str, object]:
-            return json.loads(json.dumps(proof))
+        source_trace_candidate = json.loads(json.dumps(candidate))
+        source_trace_candidate["items"][0]["evidence_citations"] = [{"document": "source.md"}]
+        with self.assertRaisesRegex(ProtocolRetrievalFallbackError, "unsupported fields"):
+            build_candidate_receipt(source_trace_candidate)
 
-        wrong_ontology = invalid_copy()
-        wrong_ontology["final_modeling_context"]["data"]["ontology"]["id"] = "ontology-other"
-        count_drift = invalid_copy()
-        count_drift["final_modeling_context"]["data"]["resource_counts"]["classes"] = 2
-        same_subject_missing_and_extra = invalid_copy()
-        changed = same_subject_missing_and_extra["statements_read"]["response"]["data"]["items"][-1]
-        changed["object"] = "entity-unexpected"
-        missing_provenance = invalid_copy()
-        missing_provenance["statement_lineage"]["records"][0]["response"]["data"]["items"][0]["supporting_context"] = {"evidence_references": []}
-        inventory_cursor = invalid_copy()
-        inventory_cursor["batch_inventory"]["response"]["data"]["next_cursor"] = "more"
-        insufficient_capacity = invalid_copy()
-        insufficient_capacity["statements_read"]["requested_limit"] -= 1
-        false_envelope = invalid_copy()
-        false_envelope["entities_read"]["ok"] = False
-        root_data = invalid_copy()
-        root_data["entities_read"] = {"ok": True, "ontology_id": "ontology-1", "items": []}
-        extra_envelope = invalid_copy()
-        extra_envelope["entities_read"]["extra"] = "not-a-response-field"
-        inventory_mismatch = invalid_copy()
-        inventory_mismatch["batch_details"].pop()
-        rejected_shape_counted = invalid_copy()
-        rejected_shape_counted["batch_details"][1]["data"]["attempts"][0].update(
-            {"mode": "apply_atomic", "attempt_status": "applied"}
-        )
-        graph_mismatch = invalid_copy()
-        bad_delta = graph_mismatch["batch_details"][0]["data"]["attempts"][1]["normalized_delta"]
-        bad_delta["inserts"][0][3] = graphs["asserted_data"]
-        graph_mismatch["batch_details"][0]["data"]["attempts"][1]["delta_hash"] = delta_hash(bad_delta)
-        delta_hash_drift = invalid_copy()
-        delta_hash_drift["batch_details"][0]["data"]["attempts"][1]["delta_hash"] = "wrong"
-        workspace_break = invalid_copy()
-        workspace_break["batch_details"][0]["data"]["attempts"][1]["workspace"]["before_version"] = "workspace-other"
-        bad_fact_id = invalid_copy()
-        bad_fact_id["statements_read"]["response"]["data"]["items"][0]["fact_id"] = "wrong"
-        delta_fact_drift = invalid_copy()
-        drift_delta = delta_fact_drift["batch_details"][0]["data"]["attempts"][1]["normalized_delta"]
-        drift_delta["inserts"][-1][2] = "<entity-unexpected>"
-        delta_fact_drift["batch_details"][0]["data"]["attempts"][1]["delta_hash"] = delta_hash(drift_delta)
-        entity_iri_drift = invalid_copy()
-        entity_iri_drift["entities_read"]["data"]["items"][0]["iri"] = "entity-other"
-        workspace_graph_set_drift = invalid_copy()
-        workspace_graph_set_drift["workspace_context"]["data"]["default_graph_set_id"] = "graph-set-other"
-        entity_envelope_drift = invalid_copy()
-        entity_envelope_drift["entities_read"]["data"]["source_signature"] = "source-signature-other"
-        statement_envelope_drift = invalid_copy()
-        statement_envelope_drift["statements_read"]["response"]["data"]["model_name"] = "entity-list"
-        entity_graph_drift = invalid_copy()
-        entity_graph_drift["entities_read"]["data"]["items"][0]["source_graph_iri"] = graphs["asserted_ontology"]
-        lineage_record_drift = invalid_copy()
-        lineage_record_drift["statement_lineage"]["records"][0]["fact_id"] = "wrong"
-        lineage_target_drift = invalid_copy()
-        lineage_target_drift["statement_lineage"]["records"][0]["response"]["data"]["target"]["id"] = "wrong"
-        for invalid, message in (
-            (wrong_ontology, "identity drifts"),
-            (count_drift, "count drifts"),
-            (same_subject_missing_and_extra, "exactly equal"),
-            (missing_provenance, "exact statement lineage"),
-            (inventory_cursor, "batch inventory is incomplete"),
-            (insufficient_capacity, "capacity is unknown or insufficient"),
-            (false_envelope, "full successful MCP envelope"),
-            (root_data, "full successful MCP envelope"),
-            (extra_envelope, "full successful MCP envelope"),
-            (inventory_mismatch, "inventory does not exactly match details"),
-            (rejected_shape_counted, "applied attempt is invalid"),
-            (graph_mismatch, "graph role"),
-            (delta_hash_drift, "delta hash drifts"),
-            (workspace_break, "workspace chain is not contiguous"),
-            (bad_fact_id, "fact ID is invalid"),
-            (delta_fact_drift, "relation payload does not match applied data"),
-            (entity_iri_drift, "identity drifts"),
-            (workspace_graph_set_drift, "does not bind the verified workspace"),
-            (entity_envelope_drift, "does not bind the verified workspace"),
-            (statement_envelope_drift, "does not bind the verified workspace"),
-            (entity_graph_drift, "outside the asserted-data graph"),
-            (lineage_record_drift, "statement lineage fact_id is invalid"),
-            (lineage_target_drift, "statement lineage scope is invalid"),
-        ):
-            with self.subTest(message=message):
-                with self.assertRaisesRegex(ProtocolRetrievalFallbackError, message):
-                    verify_scoped_retrieval_fallback(invalid)
-
-        boundary = invalid_copy()
-        boundary_delta = boundary["batch_details"][0]["data"]["attempts"][1]["normalized_delta"]
-        boundary_delta["inserts"].extend(
-            quad("entity-source", f"extra-{index}", "entity-target-one", graphs["asserted_data"])
-            for index in range(995)
-        )
-        boundary["batch_details"][0]["data"]["attempts"][1]["delta_hash"] = delta_hash(boundary_delta)
-        hidden = statement("entity-source", "hidden", "entity-target-two")
-        boundary["statements_read"]["response"]["data"]["items"].append(hidden)
-        with self.assertRaisesRegex(ProtocolRetrievalFallbackError, "capacity is unknown or insufficient"):
-            verify_scoped_retrieval_fallback(boundary)
+        unsupported_candidate_field = json.loads(json.dumps(candidate))
+        unsupported_candidate_field["candidate_required_assertions"] = {}
+        with self.assertRaisesRegex(ProtocolRetrievalFallbackError, "unsupported fields"):
+            build_candidate_receipt(unsupported_candidate_field)
 
     def test_v1_task_text_remains_unchanged(self) -> None:
         root = repository_root()
@@ -1145,7 +766,7 @@ class R23002Tests(unittest.TestCase):
                     digest_file(root / "modeling_team/protocol_retrieval_mcp.py"),
                 )
                 self.assertEqual(
-                    baseline["files"]["protocol_retrieval_verifier"],
+                    baseline["files"]["protocol_mechanics"],
                     digest_file(root / "modeling_team/protocol_mechanics.py"),
                 )
                 self.assertEqual(
@@ -1158,8 +779,6 @@ class R23002Tests(unittest.TestCase):
                         "runtime_context_path": "/opt/mechanics-contract.json",
                         "tools": [
                             "build_candidate_receipt",
-                            "verify_scoped_retrieval_fallback",
-                            "write_candidate_item_evidence_map",
                             "translate_candidate_to_batches",
                         ],
                     },
@@ -1810,11 +1429,11 @@ class R23002Tests(unittest.TestCase):
         )
         for name, relative in {
             "foreground_monitor": "modeling_team/foreground_monitor.py",
-            "candidate_required_assertions": "modeling_team/references/candidate-required-assertions-v1.json",
-            "native_retrieval_proof": "modeling_team/references/native-retrieval-proof-v1.json",
             "p2_monitor_contract": "modeling_team/references/p2-monitor-contract.json",
         }.items():
             self.assertEqual(manifest["files"][name], digest_file(root / relative))
+        self.assertNotIn("candidate_required_assertions", manifest["files"])
+        self.assertNotIn("native_retrieval_proof", manifest["files"])
         self.assertEqual(manifest["call_sites"]["runner.prepare"], manifest["files"]["runner"])
         self.assertEqual(manifest["call_sites"]["codex.start_roster"], manifest["files"]["codex_adapter"])
         self.assertEqual(manifest["call_sites"]["transport.ack_terminal_handoff"], manifest["files"]["team_transport"])

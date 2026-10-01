@@ -8,7 +8,7 @@ import { expect, test, type Page } from "@playwright/test";
 //   3. OWL inferred scope filter drops row count to 0 (fixture has no inferred).
 //   4. Tools → MCP tools: catalog shows ≥ 30 tools including
 //      `compile_and_apply_canonical_command`.
-//   5. Knowledge → Facts: fact drawer renders EvidenceExplorer bindings
+//   5. Knowledge → Facts: fact drawer renders ordinary RDF terms
 //      (document_filename + sequence + text_preview).
 //   6. Governance → Graph Governance: OWL Consistency section renders
 //      consistent: true, is_stale: false.
@@ -48,7 +48,6 @@ const entitySearchItems = [
     assertion_kind: "asserted",
     source_graph_iri: DATA_GRAPH,
     source_signature: "sig-acme",
-    evidence_status: "with_evidence",
     is_stale: false,
     graph_set_id: GRAPH_SET_ID,
   },
@@ -126,34 +125,10 @@ const mcpToolsEnvelope = {
 };
 
 // ---------------------------------------------------------------------------
-// Fixtures — evidence-artifacts + chunks (spec §5.1)
+// Fixtures — ordinary fact-audit-queue (R4.0-012)
 // ---------------------------------------------------------------------------
 
-const evidenceArtifact = {
-  id: "ev-art-1",
-  project_id: project.id,
-  filename: "acme-overview.pdf",
-  uploaded_at: "2026-07-01T00:00:00Z",
-  content_type: "application/pdf",
-  size_bytes: 1024,
-};
-
-const evidenceChunks = [
-  {
-    id: "ev-chunk-1",
-    artifact_id: evidenceArtifact.id,
-    sequence: 1,
-    char_start: 0,
-    char_end: 120,
-    text_preview: "Acme is a manufacturer of widgets headquartered in Springfield.",
-  },
-];
-
-// ---------------------------------------------------------------------------
-// Fixtures — fact-audit-queue with field_set=evidence (spec §4.4)
-// ---------------------------------------------------------------------------
-
-const factWithEvidence = {
+const factWithoutEvidence = {
   id: "fact-1",
   fact_id: "fact-1",
   assertion_kind: "asserted",
@@ -165,24 +140,13 @@ const factWithEvidence = {
   object_label: "manufacturing",
   graph_iri: DATA_GRAPH,
   source_graph_iri: DATA_GRAPH,
-  evidence_status: "with_evidence",
   audit_status: "pending",
   stale: false,
   stale_reason: null,
-  evidence_bindings: [
-    {
-      chunk_iri: "tag:ontology-platform.internal,2026:evidence/ev-art-1/1",
-      document_iri: `tag:ontology-platform.internal,2026:document/${evidenceArtifact.id}`,
-      document_filename: evidenceArtifact.filename,
-      sequence: 1,
-      char_start: 0,
-      char_end: 120,
-      text_preview: "Acme is a manufacturer of widgets headquartered in Springfield.",
-    },
-  ],
+
 };
 
-const factAuditEvidenceEnvelope = {
+const factAuditEnvelope = {
   graph_set_id: GRAPH_SET_ID,
   source_signature: "sig-acme",
   projection_version: "1",
@@ -190,7 +154,7 @@ const factAuditEvidenceEnvelope = {
   include: "asserted",
   derived_state: {},
   warnings: [],
-  items: [factWithEvidence],
+  items: [factWithoutEvidence],
 };
 
 // ---------------------------------------------------------------------------
@@ -287,7 +251,6 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
         graph_set: {
           graph_set_id: GRAPH_SET_ID,
           members: [],
-          missing_evidence_count: 0,
           last_semantic_edit_at: null,
         },
         project_brief: { completeness: 1, missing_fields: [] },
@@ -308,7 +271,7 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
     } else if (
       path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/fact-audit-queue`
     ) {
-      body = mode === "empty" ? { ...factAuditEvidenceEnvelope, items: [] } : factAuditEvidenceEnvelope;
+      body = mode === "empty" ? { ...factAuditEnvelope, items: [] } : factAuditEnvelope;
     } else if (
       path === `/semantic/graph-sets/${GRAPH_SET_ID}/read-models/owl-consistency-summary`
     ) {
@@ -318,15 +281,6 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
     // --- Stage 4 MCP catalog (spec §5.4) ---
     else if (path === "/mcp/tools") {
       body = mcpToolsEnvelope;
-    }
-
-    // --- Stage 4 evidence-artifact REST surface (spec §5.1) ---
-    else if (path === `/projects/${project.id}/evidence-artifacts`) {
-      body = mode === "empty" ? [] : [evidenceArtifact];
-    } else if (path === `/evidence-artifacts/${evidenceArtifact.id}`) {
-      body = evidenceArtifact;
-    } else if (path === `/evidence-artifacts/${evidenceArtifact.id}/chunks`) {
-      body = mode === "empty" ? [] : evidenceChunks;
     }
 
     // --- GraphGovernancePage scaffolding (active graph set lookup) ---
@@ -576,27 +530,25 @@ test("MCP tools catalog lists ≥ 30 tools including canonical command", async (
 });
 
 // ---------------------------------------------------------------------------
-// Step 6 — Knowledge → Facts: drawer shows evidence bindings.
+// Step 6 — Facts retain inspect/edit controls without a trace collection task.
 // ---------------------------------------------------------------------------
 
-test("fact audit drawer shows bound chunk for the Acme fact", async ({
-  page,
-}) => {
+test("fact audit drawer reads without evidence parameters or requests", async ({ page }) => {
+  const reads: URL[] = [];
+  page.on("request", (request) => {
+    if (request.url().includes("/api/")) reads.push(new URL(request.url()));
+  });
   await mockStage4(page);
   await page.goto(workspaceUrl("facts"));
-
-  // The fact queue renders the Acme fact row.
   const factRow = page.getByText("Acme Corp → industry →").first();
   await expect(factRow).toBeVisible();
   await factRow.click();
-
-  // The fact inspector mounts the evidence explorer card.
-  await expect(page.locator('[aria-label="fact-evidence-explorer"]')).toBeVisible();
-
-  // The evidence editor renders the binding row carrying the
-  // document_filename + sequence + text_preview.
-  const bindingRow = page.locator('[aria-label^="evidence-binding-"]').first();
-  await expect(bindingRow).toBeVisible();
-  await expect(bindingRow).toContainText(evidenceArtifact.filename);
-  await expect(bindingRow).toContainText("Acme is a manufacturer of widgets");
+  await expect(page.getByText("Fact inspector", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Edit", exact: true })).toBeVisible();
+  await expect(page.locator('[aria-label="fact-evidence-explorer"]')).toHaveCount(0);
+  await expect(page.getByText("Missing evidence only", { exact: true })).toHaveCount(0);
+  expect(reads.some((url) => /evidence|lineage|provenance/.test(url.pathname))).toBe(false);
+  const factReads = reads.filter((url) => url.pathname.includes("fact-audit-queue"));
+  expect(factReads.length).toBeGreaterThan(0);
+  expect(factReads.every((url) => url.searchParams.get("field_set") !== "evidence")).toBe(true);
 });

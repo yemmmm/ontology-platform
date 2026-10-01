@@ -473,7 +473,6 @@ class TeamRunner:
         deepseek_credential_path: Path | None = None,
         glm_credential_path: Path | None = None,
         staged_batch_forwarder: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
-        staged_evidence_forwarder: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ):
         self.repository_root, self.adapter, self.scope_factory, self.ledger_root, self.ledger_factory, self.freeze_started_at, self.ledger_now = (
             repository_root,
@@ -495,11 +494,6 @@ class TeamRunner:
         # ``staged_batch_forward_failed`` reason code.  It must NOT reuse the
         # read-only McpReadForwarder/PLATFORM_PROXY_READ_TOOLS surface.
         self.staged_batch_forwarder = staged_batch_forwarder
-        # R3.0-008B/#17: the injected host-side forwarder for the staged evidence
-        # repost.  It reaches the canonical ``associate_evidence_reference`` and
-        # nothing else.  ``None`` keeps the capability fail-closed with the typed
-        # ``staged_evidence_forward_failed`` reason code.
-        self.staged_evidence_forwarder = staged_evidence_forwarder
         # These paths are constructor-only test seams.  Production callers leave
         # them unset and therefore bind each route's fixed external credential
         # location; a profile only ever reads the routes it actually names.
@@ -1235,9 +1229,6 @@ class TeamRunner:
             staged_submission_handler=(
                 self._handle_staged_submit_modeling_batch if self._staged_decisions else None
             ),
-            staged_association_handler=(
-                self._handle_staged_associate_evidence if self._staged_decisions else None
-            ),
             cq_draft_handler=(
                 self._publish_cq_question_draft if self._competency_questions else None
             ),
@@ -1408,6 +1399,11 @@ class TeamRunner:
     ) -> dict[str, Any]:
         if task_overlay_path is not None and frozen_task_overlay is not None:
             raise TeamConfigurationError("Task overlay cannot be both live and frozen")
+        # Proof-v2 and candidate evidence-map artifacts belong only to the
+        # explicitly bound historical proof task.  Active v4/non-proof runs
+        # must not carry those files or runtime contracts into their frozen
+        # baseline, even when old artifacts happen to exist in the checkout.
+        expected_binding = self._expected_matrix_binding(configuration)
         files = {
             "runner": self.repository_root / "modeling_team/runner.py",
             "acceptance_contract": self.repository_root / "modeling_team/acceptance.py",
@@ -1427,19 +1423,11 @@ class TeamRunner:
             "protocol_mcp_launch": self.repository_root / "modeling_team/protocol_mcp_launch.py",
             "candidate_platform_gate": self.repository_root / "modeling_team/candidate_platform_gate.py",
             "protocol_mechanics": self.repository_root / "modeling_team/protocol_mechanics.py",
-            "proof_v2": self.repository_root / "modeling_team/proof_v2.py",
-            "proof_matrix_generator": self.repository_root / "modeling_team/matrix_artifact.py",
-            "proof_matrix_retained_handoff": self.repository_root / "modeling_team/references/r2-3-002-retained-rev7-handoff.json",
-            "proof_matrix_source_manifest": self.repository_root / "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/manifest.json",
             "protocol_retrieval_mcp": self.repository_root / "modeling_team/protocol_retrieval_mcp.py",
             "protocol_retrieval_verifier": self.repository_root / "modeling_team/protocol_mechanics.py",
             "foreground_monitor": self.repository_root / "modeling_team/foreground_monitor.py",
             "foreground_cli": self.repository_root / "modeling_team/__main__.py",
             "monitor_handoff": self.repository_root / "modeling_team/monitor_handoff.py",
-            "candidate_required_assertions": self.repository_root / "modeling_team/references/candidate-required-assertions-v1.json",
-            "native_retrieval_proof": self.repository_root / "modeling_team/references/native-retrieval-proof-v1.json",
-            "candidate_required_assertions_v2": self.repository_root / "modeling_team/references/candidate-required-assertions-v2.json",
-            "native_retrieval_proof_v2": self.repository_root / "modeling_team/references/native-retrieval-proof-v2.json",
             "p2_monitor_contract": self.repository_root / "modeling_team/references/p2-monitor-contract.json",
             "p2_monitor_handoff_contract": self.repository_root / "modeling_team/references/p2-monitor-handoff-contract.json",
             "p2_protocol_driver": self.repository_root / "modeling_team/p2_protocol_driver.py",
@@ -1459,6 +1447,19 @@ class TeamRunner:
             "examiner_source_skill": self.repository_root / "modeling_team/skills/source-examiner/SKILL.md",
             "examiner_platform_skill": self.repository_root / "modeling_team/skills/platform-examiner/SKILL.md",
         }
+        if expected_binding is not None:
+            files.update(
+                {
+                    "proof_v2": self.repository_root / "modeling_team/proof_v2.py",
+                    "proof_matrix_generator": self.repository_root / "modeling_team/matrix_artifact.py",
+                    "proof_matrix_retained_handoff": self.repository_root / "modeling_team/references/r2-3-002-retained-rev7-handoff.json",
+                    "proof_matrix_source_manifest": self.repository_root / "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/manifest.json",
+                    "candidate_required_assertions": self.repository_root / "modeling_team/references/candidate-required-assertions-v1.json",
+                    "native_retrieval_proof": self.repository_root / "modeling_team/references/native-retrieval-proof-v1.json",
+                    "candidate_required_assertions_v2": self.repository_root / "modeling_team/references/candidate-required-assertions-v2.json",
+                    "native_retrieval_proof_v2": self.repository_root / "modeling_team/references/native-retrieval-proof-v2.json",
+                }
+            )
         task_overlay = frozen_task_overlay
         if task_overlay is None and task_overlay_path is not None:
             task_overlay = load_task_input_overlay(
@@ -1487,14 +1488,13 @@ class TeamRunner:
         reasoner = files["protocol_reasoner_script"]
         if reasoner.is_symlink() or not reasoner.is_file():
             raise TeamConfigurationError("Protocol reasoner script is unavailable for baseline")
-        if configuration.task.schema_version == 2:
+        if configuration.task.schema_version == 2 and expected_binding is not None:
             matrix = self.repository_root / _PROOF_MATRIX_RELATIVE
             p2a = self.repository_root / _P2A_PASS_RELATIVE
             # The expected binding is fixed in Task/Profile for fresh R2.3
             # runs.  Legacy cumulative tests may compute a baseline before
             # the tester-owned artifacts are installed; retain that path's
             # compatibility while binding actual artifacts whenever present.
-            expected_binding = configuration.task.expected_matrix_binding or configuration.profile.expected_matrix_binding
             if expected_binding is not None and (not matrix.is_file() or not p2a.is_file()):
                 raise TeamConfigurationError("proof matrix/P2a artifacts are unavailable for baseline")
             if matrix.is_file() and not matrix.is_symlink():
@@ -1576,8 +1576,6 @@ class TeamRunner:
                 "monitor_handoff.protocol": digests["monitor_handoff"],
                 "runner.terminal_handoff_evidence": digests["runner"],
                 "runner.team_transport_event_sink": digests["runner"],
-                "runner.proof_v2_preflight": digests["runner"],
-                "runner.proof_v2_matrix_generator": digests["proof_matrix_generator"],
                 "runner.outer_answer_fsync_delivery": digests["runner"],
                 "runner.acceptance_carrier": digests["runner"],
                 "runner.capability_broker": digests["capability_mcp"],
@@ -1585,6 +1583,14 @@ class TeamRunner:
                 "runner.candidate_publication": digests["candidate_publication"],
                 "runner.acceptance_child_runtime": digests["acceptance_runtime"],
                 "runner.acceptance_read_proxy": digests["read_proxy_mcp"],
+                **(
+                    {
+                        "runner.proof_v2_preflight": digests["runner"],
+                        "runner.proof_v2_matrix_generator": digests["proof_matrix_generator"],
+                    }
+                    if expected_binding is not None
+                    else {}
+                ),
                 **(
                     {"runner.modeling_read_surface": digests["modeling_readonly"]}
                     if formal_contract is not None and formal_contract.requirement_id == "R2.3-003"
@@ -1663,28 +1669,32 @@ class TeamRunner:
                     "runtime_context_path": "/opt/mechanics-contract.json",
                     "tools": [
                         "build_candidate_receipt",
-                        "verify_scoped_retrieval_fallback",
-                        "write_candidate_item_evidence_map",
                         "translate_candidate_to_batches",
                     ],
                 },
-                "proof_v2": {
-                    "candidate_schema": "candidate-required-assertions/v2",
-                    "candidate_item_evidence_map_path": "evidence/candidate-item-evidence-map.json",
-                    "candidate_item_evidence_map_schema": "r2-3-002-candidate-item-evidence-map/v1",
-                    "matrix_path": _PROOF_MATRIX_RELATIVE,
-                    "p2a_pass_path": _P2A_PASS_RELATIVE,
-                    "matrix_schema": _MATRIX_SCHEMA,
-                    "p2a_pass_schema": _P2A_SCHEMA,
-                    "runtime_asset": {
-                        "source_path": "modeling_team/proof_v2.py",
-                        "staged_path": "runtime-assets/protocol/proof_v2.py",
-                        "mount_path": "/opt/proof_v2.py",
-                        "mode": "0600",
-                        "parent_mode": "0700",
-                        "sha256": digests["proof_v2"],
-                    },
-                },
+                **(
+                    {
+                        "proof_v2": {
+                            "candidate_schema": "candidate-required-assertions/v2",
+                            "candidate_item_evidence_map_path": "evidence/candidate-item-evidence-map.json",
+                            "candidate_item_evidence_map_schema": "r2-3-002-candidate-item-evidence-map/v1",
+                            "matrix_path": _PROOF_MATRIX_RELATIVE,
+                            "p2a_pass_path": _P2A_PASS_RELATIVE,
+                            "matrix_schema": _MATRIX_SCHEMA,
+                            "p2a_pass_schema": _P2A_SCHEMA,
+                            "runtime_asset": {
+                                "source_path": "modeling_team/proof_v2.py",
+                                "staged_path": "runtime-assets/protocol/proof_v2.py",
+                                "mount_path": "/opt/proof_v2.py",
+                                "mode": "0600",
+                                "parent_mode": "0700",
+                                "sha256": digests["proof_v2"],
+                            },
+                        }
+                    }
+                    if expected_binding is not None
+                    else {}
+                ),
                 "p2_protocol_driver": {
                     "command": "uv",
                     "argv": [
@@ -1748,7 +1758,11 @@ class TeamRunner:
                     ],
                 },
             },
-            "expected_matrix_binding": configuration.task.expected_matrix_binding or configuration.profile.expected_matrix_binding,
+            **(
+                {"expected_matrix_binding": expected_binding}
+                if expected_binding is not None
+                else {}
+            ),
         }
         if selected_profile_id is not None:
             profile = load_team_model_profile(self.repository_root, selected_profile_id)
@@ -3314,10 +3328,6 @@ class TeamRunner:
         assert self.run
         task = self.run.configuration.task
         if task.schema_version == 2:
-            proof_gate = (
-                getattr(self.run, "gate_binding", None) is not None
-                or self._expected_matrix_binding(self.run.configuration) is not None
-            )
             formal_coordination = self._formal_coordination_enabled()
             generation = (
                 self.coordinator_phase.generation
@@ -3342,8 +3352,8 @@ class TeamRunner:
             # trailing section, so the static role/instruction prefix stays
             # byte-identical whenever only the objective changes.  The reuse
             # guidance below is guidance for the same thread; it never relaxes
-            # the mandatory initial complete read, live refreshes, or evidence
-            # obligations, and never widens a role's authorized sources.
+            # the mandatory initial complete read, live refreshes, authorization
+            # checks, or read/write validation, and never widens authorized sources.
             objective_suffix = "\n\nTask objective:\n" + task.objective
             if self._resume_plan is not None and role in self._resume_plan.role_packets:
                 objective_suffix += (
@@ -3369,7 +3379,7 @@ class TeamRunner:
                 + "conversation, or use hidden material. Reread the necessary source "
                 + "sections before relying on them whenever compaction lost them or the relevant content is "
                 + "missing, stale, changed, or truncated. This reuse never skips a task-required live "
-                + "workspace read, a refresh, a validation, or a full evidence obligation. "
+                + "workspace read, a refresh, authorization checks, and read/write validation. "
                 + "Use the Team Transport tool names your Runtime advertises in its tool catalog for this "
                 + "run: a native dynamic-tool Runtime advertises them bare (for example "
                 + "`send_team_message` for direct Team Transport messages), while an MCP-bound Runtime "
@@ -3391,8 +3401,8 @@ class TeamRunner:
                     "question or answer wording from: never copy question/answer text or projection "
                     "dumps into the platform, a Team Transport message, or a candidate field, and "
                     "never use hidden material. You may still model the approved answers' public "
-                    "business meaning as ordinary modeling input, citing the projection question_id "
-                    "as evidence provenance."
+                    "business meaning as ordinary modeling input, retaining the projection question_id "
+                    "only as the question identity."
                 )
             if generation is not None:
                 text += (
@@ -3514,8 +3524,8 @@ class TeamRunner:
                     "candidate or revision, send exactly one of those two responses through Team Transport, with "
                     "reply_to_delivery_id set to that candidate's delivery_id. Remain active for "
                     "revisions, and report terminal only after the Runner delivers Modeling's terminal-handoff. "
-                    "Preserve source-grounded evidence_citations when present; do not read/guess source locators or "
-                    "owner answers. Use the generic mechanics contract and configured retrieval fallback for ordinary "
+                    "Keep the candidate's complete semantic meaning; do not read or guess unmounted source material. "
+                    "Use the generic mechanics contract and configured retrieval path for ordinary "
                     "candidates. For ordinary formal retrieval, use the accepted candidate's consumer_query "
                     "required_paths as the sole plan: issue one query_semantic_context call per required path with "
                     "query exactly equal to that path, singleton relation/fact resource_types, asserted-only and "
@@ -3636,13 +3646,6 @@ class TeamRunner:
                             "never send free text, a patch, or a duplicate receipt/reply. If the native conflict builder "
                             "or result-shape check fails, report blocked and send no receipt/reply."
                         )
-                if proof_gate:
-                    text += (
-                        " For this proof-gated task, before the first submit_modeling_batch call, validate assertion "
-                        "IDs/scope/citations against the frozen proof matrix, write the run-local "
-                        "candidate-item-evidence-map, compare the group-projected safe dry-run Evidence plan, and "
-                        "complete the native proof-v2 verifier."
-                    )
                 context = self.run.protocol_context
                 if context:
                     return (
@@ -3797,8 +3800,8 @@ class TeamRunner:
                     "returned delivery_id. Wait for Protocol's delivered receipt or conflict whose "
                     "reply_to_delivery_id matches it. On conflict, send a revision as a new expects_reply request; "
                     "if you cannot revise, send no further candidate and report blocked. Do not create a reply "
-                    "request solely to unlock a terminal result. Every candidate item must "
-                    "preserve source-grounded evidence_citations when available; do not put platform IDs, Batch IDs, "
+                    "request solely to unlock a terminal result. Every candidate item must preserve its complete "
+                    "business meaning, explicit unknowns and slice scope; do not put platform IDs, Batch IDs, "
                     "or receipt labels into the platform-neutral candidate."
                 )
                 if is_r23003:
@@ -3828,12 +3831,6 @@ class TeamRunner:
                         "candidate. The capability owns the exact candidate_text, digest checks, recipient, "
                         "expects_reply flag, and delivery ID. Retain its returned delivery_id and wait for the "
                         "normal Protocol reply bound to that ID."
-                    )
-                if proof_gate:
-                    modeling_text += (
-                        " For this proof-gated task, every item must carry non-empty evidence_citations with the "
-                        "exact document_name, excerpt, source artifact/locator/hash, and owner_answer_id fields, "
-                        "and the candidate must satisfy the frozen assertion matrix."
                     )
                 return modeling_text + objective_suffix
             if role == "competency-question" and self._competency_questions:

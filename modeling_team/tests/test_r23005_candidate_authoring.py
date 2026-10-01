@@ -48,103 +48,231 @@ def _fixture_candidate(revision: str) -> dict[str, Any]:
 
 
 def _mechanically_correct_r2(candidate: dict[str, Any]) -> dict[str, Any]:
-    """Apply only the mechanical envelope repair; semantic closure remains unresolved."""
+    """Build the current v3 envelope while retaining the fixture's revision/scope."""
 
-    corrected = copy.deepcopy(candidate)
-    corrected["constraints"] = [
-        f"{constraint['id']}: {'; '.join(constraint['requirements'])}"
-        for constraint in corrected["constraints"]
-    ]
-    # These are Team Transport metadata, not neutral semantic fields.
-    corrected.pop("delivery_id", None)
-    corrected.pop("reply_chain", None)
-    return corrected
+    # The checked-in r1/r2 artifacts are historical v2 counterexamples.  The
+    # authoring progression below uses a literal v3 candidate so the tests can
+    # exercise semantic closure without a compatibility or recursive-strip path.
+    return {
+        "candidate_kind": "platform-neutral-candidate-v3",
+        "candidate_revision": candidate["candidate_revision"],
+        "scope": copy.deepcopy(candidate["scope"]),
+        "constraints": [
+            "Every declared path is unique in this candidate.",
+            "Object targets resolve through the declared common superclass.",
+        ],
+        "items": [
+            {
+                "item_id": "class-neutral-subject",
+                "item_kind": "class",
+                "semantic": {"class_id": "NeutralSubject"},
+            },
+            {
+                "item_id": "class-neutral-dependency",
+                "item_kind": "class",
+                "semantic": {"class_id": "NeutralDependency"},
+            },
+            {
+                "item_id": "class-neutral-left",
+                "item_kind": "class",
+                "semantic": {"class_id": "NeutralLeft", "superclass": "NeutralSubject"},
+            },
+            {
+                "item_id": "class-neutral-right",
+                "item_kind": "class",
+                "semantic": {"class_id": "NeutralRight", "superclass": "NeutralSubject"},
+            },
+            {
+                "item_id": "predicate-neutral-label",
+                "item_kind": "predicate",
+                "semantic": {
+                    "predicate": "label",
+                    "predicate_kind": "fact",
+                    "domain": "NeutralSubject",
+                    "range": "string",
+                },
+            },
+            {
+                "item_id": "predicate-neutral-affected-subject",
+                "item_kind": "predicate",
+                "semantic": {
+                    "predicate": "affectedSubject",
+                    "predicate_kind": "fact",
+                    "domain": "NeutralSubject",
+                    "range": "resource",
+                },
+            },
+            {
+                "item_id": "entity-neutral-left",
+                "item_kind": "entity",
+                "semantic": {
+                    "entity_id": "neutral-left",
+                    "class": "NeutralLeft",
+                    "values": {"label": "left", "affectedSubject": "item-neutral-dependency"},
+                },
+            },
+            {
+                "item_id": "entity-neutral-right",
+                "item_kind": "entity",
+                "semantic": {
+                    "entity_id": "neutral-right",
+                    "class": "NeutralRight",
+                    "values": {"label": "right", "affectedSubject": "item-neutral-left"},
+                },
+            },
+            {
+                "item_id": "entity-neutral-dependency",
+                "item_kind": "entity",
+                "semantic": {
+                    "entity_id": "neutral-dependency",
+                    "class": "NeutralDependency",
+                    "values": {"label": "dependency", "affectedSubject": "item-neutral-right"},
+                },
+            },
+            {
+                "item_id": "relation-neutral-left-right",
+                "item_kind": "relation",
+                "semantic": {
+                    "relation_id": "relation-neutral-left-right",
+                    "predicate": "relatesTo",
+                    "subject": "neutral-left",
+                    "object": "neutral-right",
+                },
+            },
+            {
+                "item_id": "relation-neutral-dependency-left",
+                "item_kind": "relation",
+                "semantic": {
+                    "relation_id": "relation-neutral-dependency-left",
+                    "predicate": "dependsOn",
+                    "subject": "neutral-dependency",
+                    "object": "neutral-left",
+                },
+            },
+        ],
+    }
 
 
 def _declare_r2_predicates(candidate: dict[str, Any]) -> None:
-    """Make the retained candidate's missing predicate declarations explicit for the next gate."""
+    """Declare the relation predicates used by the current v3 candidate."""
 
-    vocabulary = candidate["vocabulary"]
-    properties = vocabulary.setdefault("properties", [])
-    declared = {entry.get("id") for entry in properties if isinstance(entry, dict)}
+    declared = {
+        item["semantic"].get("predicate")
+        for item in candidate["items"]
+        if item.get("item_kind") == "predicate"
+    }
     for item in candidate["items"]:
-        semantic = item.get("semantic", {})
-        for predicate in semantic:
-            if predicate not in declared:
-                properties.append(
-                    {
-                        "id": predicate,
-                        "domain": "NeutralSemanticItem",
-                        "range": "string",
-                        "cardinality": "optional",
-                    }
-                )
-                declared.add(predicate)
-
-    vocabulary["relations"] = [
-        {
-            "id": relation["predicate"],
-            "domain": "NeutralSubject",
-            "range": "NeutralSubject",
-        }
-        for relation in candidate["relations"]
-    ]
+        if item.get("item_kind") != "relation":
+            continue
+        semantic = item["semantic"]
+        predicate = semantic["predicate"]
+        if predicate in declared:
+            continue
+        candidate["items"].append(
+            {
+                "item_id": f"predicate-{predicate}",
+                "item_kind": "predicate",
+                "semantic": {
+                    "predicate": predicate,
+                    "predicate_kind": "relation",
+                    "domain": "NeutralSubject",
+                    "range": "NeutralSubject",
+                },
+            }
+        )
+        declared.add(predicate)
 
 
 def _declare_common_subject_range(candidate: dict[str, Any]) -> None:
-    vocabulary = candidate["vocabulary"]
-    classes = vocabulary["classes"]
-    classes.append({"id": "UnknownAffectedSubject"})
+    classes = {
+        item["semantic"]["class_id"]: item
+        for item in candidate["items"]
+        if item.get("item_kind") == "class"
+    }
+    if "UnknownAffectedSubject" not in classes:
+        candidate["items"].append(
+            {
+                "item_id": "class-unknown-affected-subject",
+                "item_kind": "class",
+                "semantic": {"class_id": "UnknownAffectedSubject"},
+            }
+        )
+    classes["UnknownAffectedSubject"] = next(
+        item
+        for item in candidate["items"]
+        if item.get("item_kind") == "class"
+        and item["semantic"].get("class_id") == "UnknownAffectedSubject"
+    )
     target_classes = {
         "item-neutral-dependency": "NeutralDependency",
         "item-neutral-left": "NeutralLeft",
         "item-neutral-right": "NeutralRight",
     }
     for class_id in set(target_classes.values()):
-        next(entry for entry in classes if entry["id"] == class_id)[
-            "superclass"
-        ] = "UnknownAffectedSubject"
+        classes[class_id]["semantic"]["superclass"] = "UnknownAffectedSubject"
 
     affected_subject = next(
-        entry for entry in vocabulary["properties"] if entry["id"] == "affectedSubject"
+        item
+        for item in candidate["items"]
+        if item.get("item_kind") == "predicate"
+        and item["semantic"].get("predicate") == "affectedSubject"
     )
-    affected_subject["range"] = "UnknownAffectedSubject"
-    affected_subject["target_class_bindings"] = target_classes
+    affected_subject["semantic"]["range"] = "UnknownAffectedSubject"
+    affected_subject["semantic"]["target_class_bindings"] = target_classes
 
 
 def _declare_shape_and_probe_paths(candidate: dict[str, Any]) -> None:
-    vocabulary = candidate["vocabulary"]
-    properties = {entry["id"] for entry in vocabulary["properties"]}
-    if "invalidValue" not in properties:
-        vocabulary["properties"].append(
+    candidate["items"].extend(
+        [
             {
-                "id": "invalidValue",
-                "domain": "NeutralSubject",
-                "range": "string",
-                "cardinality": "optional",
-            }
-        )
-    vocabulary["shapes"] = [
-        {
-            "id": "shape-neutral-subject",
-            "target_class": "NeutralSubject",
-            "paths": [
-                {"path_id": "path-label", "predicate": "label", "range": "string"},
-                {
-                    "path_id": "path-affected-subject",
-                    "predicate": "affectedSubject",
-                    "range": "UnknownAffectedSubject",
-                },
-                {
-                    "path_id": "path-invalid",
+                "item_id": "predicate-invalid-value",
+                "item_kind": "predicate",
+                "semantic": {
                     "predicate": "invalidValue",
+                    "predicate_kind": "fact",
+                    "domain": "NeutralSubject",
                     "range": "string",
                 },
-            ],
-        }
-    ]
-    candidate["negative_validation_probe"]["shape_id"] = "shape-neutral-subject"
-    candidate["negative_validation_probe"]["path"] = "path-invalid"
+            },
+            {
+                "item_id": "shape-neutral-subject",
+                "item_kind": "shape",
+                "semantic": {
+                    "shape_id": "shape-neutral-subject",
+                    "target_class": "NeutralSubject",
+                    "paths": [
+                        {"path_id": "path-label", "predicate": "label", "range": "string"},
+                        {
+                            "path_id": "path-affected-subject",
+                            "predicate": "affectedSubject",
+                            "range": "UnknownAffectedSubject",
+                        },
+                        {
+                            "path_id": "path-invalid",
+                            "predicate": "invalidValue",
+                            "range": "string",
+                            "min_count": 1,
+                        },
+                    ],
+                },
+            },
+            {
+                "item_id": "probe-neutral-shape",
+                "item_kind": "negative_probe",
+                "semantic": {
+                    "probe_id": "probe-neutral-shape",
+                    "shape_id": "shape-neutral-subject",
+                    "path": "path-invalid",
+                    "expected_result": "rejected",
+                    "invalid_instance": {
+                        "class": "NeutralSubject",
+                        "label": "Invalid neutral subject",
+                        "values": {},
+                    },
+                },
+            },
+        ]
+    )
 
 
 def _validate_candidate_closure(candidate: dict[str, Any]) -> None:
@@ -175,90 +303,74 @@ def _validate_candidate_closure(candidate: dict[str, Any]) -> None:
     ):
         raise CandidateAuthoringError("item wrapper is invalid")
 
-    vocabulary = candidate.get("vocabulary", {})
-    relations = candidate.get("relations", [])
-    declared_relations = {
-        entry.get("id") for entry in vocabulary.get("relations", []) if isinstance(entry, dict)
+    class_items = {
+        item["semantic"].get("class_id"): item
+        for item in items
+        if item["item_kind"] == "class"
     }
-    for relation in relations:
-        predicate = relation.get("predicate")
+    predicate_items = [item for item in items if item["item_kind"] == "predicate"]
+    properties = {
+        item["semantic"].get("predicate"): item["semantic"]
+        for item in predicate_items
+        if item["semantic"].get("predicate_kind") == "fact"
+    }
+    declared_relations = {
+        item["semantic"].get("predicate")
+        for item in predicate_items
+        if item["semantic"].get("predicate_kind") == "relation"
+    }
+    relation_items = [item for item in items if item["item_kind"] == "relation"]
+    for relation in relation_items:
+        predicate = relation["semantic"].get("predicate")
         if predicate not in declared_relations:
             raise CandidateAuthoringError(f"undeclared relation predicate: {predicate}")
 
-    properties = {
-        entry.get("id"): entry
-        for entry in vocabulary.get("properties", [])
-        if isinstance(entry, dict)
-    }
-    property_ids = [
-        entry.get("id") for entry in vocabulary.get("properties", []) if isinstance(entry, dict)
-    ]
+    property_ids = [item["semantic"].get("predicate") for item in predicate_items]
     if len(property_ids) != len(set(property_ids)):
         raise CandidateAuthoringError("fact predicate is declared more than once")
-    relation_ids = [
-        entry.get("id") for entry in vocabulary.get("relations", []) if isinstance(entry, dict)
-    ]
-    if len(relation_ids) != len(set(relation_ids)):
-        raise CandidateAuthoringError("relation predicate is declared more than once")
-    for item in items:
-        for predicate in item["semantic"]:
-            if predicate not in properties:
-                raise CandidateAuthoringError(f"undeclared fact predicate: {predicate}")
     affected_subject = properties.get("affectedSubject")
     if affected_subject is None:
         raise CandidateAuthoringError("affectedSubject predicate is undeclared")
     if affected_subject.get("range") in {"resource", "external", "external_placeholder"}:
         raise CandidateAuthoringError("heterogeneous object range is not closed")
 
-    classes = {
-        entry.get("id"): entry
-        for entry in vocabulary.get("classes", [])
-        if isinstance(entry, dict)
-    }
     common = affected_subject.get("range")
     bindings = affected_subject.get("target_class_bindings")
     if not isinstance(bindings, dict):
         raise CandidateAuthoringError("heterogeneous object targets lack subclass bindings")
     for target, class_id in bindings.items():
-        if class_id not in classes or classes[class_id].get("superclass") != common:
+        if class_id not in class_items or class_items[class_id]["semantic"].get("superclass") != common:
             raise CandidateAuthoringError(f"target binding is outside common superclass: {target}")
     affected_values = {
-        item["semantic"]["affectedSubject"]
+        item["semantic"].get("values", {}).get("affectedSubject")
         for item in items
-        if "affectedSubject" in item["semantic"]
+        if item["item_kind"] in {"entity", "explicit_unknown"}
+        and "affectedSubject" in item["semantic"].get("values", {})
     }
     if affected_values != set(bindings):
         raise CandidateAuthoringError("affectedSubject target bindings are incomplete")
 
-    shapes = vocabulary.get("shapes")
+    shape_items = [item for item in items if item["item_kind"] == "shape"]
+    shapes = [item["semantic"] for item in shape_items]
     if not isinstance(shapes, list) or not shapes:
         raise CandidateAuthoringError("Shape predicate/path declarations are missing")
-    shape_ids = {shape.get("id") for shape in shapes}
+    shape_ids = {shape.get("shape_id") for shape in shapes}
     path_ids: set[str] = set()
     for shape in shapes:
-        if shape.get("target_class") not in classes:
+        if shape.get("target_class") not in class_items:
             raise CandidateAuthoringError("Shape target class is outside the candidate")
         for path in shape.get("paths", []):
             path_id = path.get("path_id")
             if path_id in path_ids:
                 raise CandidateAuthoringError("Shape path is declared more than once")
             path_ids.add(path_id)
-            if path.get("predicate") not in properties:
+            if path.get("predicate") not in properties and path.get("predicate") not in declared_relations:
                 raise CandidateAuthoringError("Shape path predicate is undeclared")
 
-    probe = candidate.get("negative_validation_probe", {})
+    probe_items = [item for item in items if item["item_kind"] == "negative_probe"]
+    probe = probe_items[0]["semantic"] if probe_items else {}
     if probe.get("shape_id") not in shape_ids or probe.get("path") not in path_ids:
         raise CandidateAuthoringError("negative-probe path is not closed")
-
-    item_id_set = set(item_ids)
-    for relation in relations:
-        for field in ("from", "to", "evidence_item"):
-            if relation.get(field) not in item_id_set:
-                raise CandidateAuthoringError(f"relation reference is outside candidate: {field}")
-    for dependency in candidate.get("dependencies", []):
-        for field in ("from", "to"):
-            if dependency.get(field) not in item_id_set:
-                raise CandidateAuthoringError(f"dependency reference is outside candidate: {field}")
 
 
 def _validate_create_entity_labels(candidate: dict[str, Any]) -> None:
@@ -298,15 +410,20 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
     def test_c99_fixture_r1_rejects_the_public_item_wrapper(self) -> None:
         candidate = _fixture_candidate("cba-slice-r1")
         self.assertEqual(set(candidate["items"][0]), {"id", "type", "facts", "evidence_citations"})
-        # The structural artifact is intentionally exercised unchanged first; its object constraints
-        # are the earlier mechanical failure and must not hide the wrapper regression.
-        with self.assertRaisesRegex(ProtocolRetrievalFallbackError, "constraints"):
+        # The historical artifact is intentionally exercised unchanged first; its
+        # retired top-level fields must be rejected before item interpretation.
+        with self.assertRaisesRegex(ProtocolRetrievalFallbackError, "unsupported fields"):
             build_candidate_receipt(candidate)
-        wrapper_only = copy.deepcopy(candidate)
-        wrapper_only["constraints"] = [
-            f"{constraint['id']}: {'; '.join(constraint['requirements'])}"
-            for constraint in wrapper_only["constraints"]
-        ]
+        wrapper_only = {
+            "candidate_kind": "platform-neutral-candidate-v3",
+            "candidate_revision": candidate["candidate_revision"],
+            "scope": copy.deepcopy(candidate["scope"]),
+            "constraints": [
+                f"{constraint['id']}: {'; '.join(constraint['requirements'])}"
+                for constraint in candidate["constraints"]
+            ],
+            "items": copy.deepcopy(candidate["items"]),
+        }
         with self.assertRaisesRegex(ProtocolRetrievalFallbackError, "item_id"):
             build_candidate_receipt(wrapper_only)
 
@@ -328,10 +445,19 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         self.assertIn("consumer_queries", candidate)
         for patch_field in ("revision_basis", "revision_operation", "replace_item_id"):
             self.assertNotIn(patch_field, candidate)
+        # Once the envelope is projected into the current five-field shape, the
+        # object-valued constraints are the next deterministic rejection.
+        envelope = {
+            "candidate_kind": "platform-neutral-candidate-v3",
+            "candidate_revision": candidate["candidate_revision"],
+            "scope": copy.deepcopy(candidate["scope"]),
+            "constraints": copy.deepcopy(candidate["constraints"]),
+            "items": copy.deepcopy(candidate["items"]),
+        }
         calls: list[dict[str, Any]] = []
         with self.assertRaisesRegex(ProtocolRetrievalFallbackError, "constraints"):
-            _exact_protocol_receipt(candidate, calls)
-        self.assertEqual(calls, [candidate])
+            _exact_protocol_receipt(envelope, calls)
+        self.assertEqual(calls, [envelope])
 
     def test_c101_mechanical_envelope_correction_rejects_undeclared_relation_vocabulary(
         self,
@@ -525,7 +651,8 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         self.assertEqual(example_receipt["status"], "accepted")
         self.assertEqual(example_calls, [example])
 
-        corrected_fixture = fixtures["corrected"]
+        corrected_fixture = copy.deepcopy(fixtures["corrected"])
+        corrected_fixture["candidate_kind"] = "platform-neutral-candidate-v3"
         self.assertEqual(set(corrected_fixture), NEUTRAL_FIELDS)
         _validate_create_entity_labels(corrected_fixture)
         corrected_calls: list[dict[str, Any]] = []
@@ -633,10 +760,15 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         objective = configuration.task.objective
 
-        for text in (protocol, modeling, objective):
+        self.assertIn("status,candidate_revision,semantic_digest,candidate_digest", protocol)
+        for text in (modeling, objective):
             self.assertIn("status=accepted", text)
             self.assertIn("neutral envelope", text)
             self.assertIn("semantic/candidate digests", text)
+            self.assertIn("dry_run", text)
+            self.assertIn("apply_atomic", text)
+            self.assertIn("governed retrieval", text)
+        for text in (protocol,):
             self.assertIn("dry_run", text)
             self.assertIn("apply_atomic", text)
             self.assertIn("governed retrieval", text)
@@ -645,10 +777,7 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         self.assertIn("build_candidate_conflict", protocol)
         self.assertIn("same complete candidate", protocol)
         for text in (protocol, modeling, objective):
-            self.assertIn("every `relation` item", text)
             self.assertIn("source-grounded", text)
-            self.assertIn("evidence_citations", text)
-            self.assertIn("ordinary unbound v2 tasks", text)
 
         for field in (
             "query",

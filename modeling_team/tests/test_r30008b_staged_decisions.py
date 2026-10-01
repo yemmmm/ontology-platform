@@ -62,7 +62,6 @@ def _conclusion_entry(**overrides) -> dict:
         "mapped_property": "https://example.test/prop/placeholder-status",
         "candidate_value": "placeholder-alpha",
         "business_meaning_hypothesis": "placeholder hypothesis",
-        "evidence_refs": ["sources/placeholder-brief.md#p3"],
         "proposed_level": "L2",
         "blocking_unknowns": None,
         "status": "analyzed",
@@ -78,7 +77,7 @@ def _conclusion_entry(**overrides) -> dict:
 
 def _conclusions(entries, **overrides) -> dict:
     artifact = {
-        "schema_version": "r3-0-008b-analysis-conclusions/v1",
+        "schema_version": "r3-0-008b-analysis-conclusions/v2",
         "scenario_id": "placeholder-scenario",
         "maintained_by": "modeling",
         "entries": entries,
@@ -991,6 +990,16 @@ def test_d1_conclusions_schema_mismatch_is_typed():
     assert "conclusions_schema_mismatch" in _codes(validate_analysis_conclusions(bad_entry))
 
 
+def test_conclusions_reject_legacy_trace_fields_and_version():
+    entry = _conclusion_entry(evidence_refs=[])
+    assert _codes(validate_analysis_conclusions(_conclusions([entry]))) == [
+        "conclusions_schema_mismatch"
+    ]
+    obsolete = _conclusions([_conclusion_entry()])
+    obsolete["schema_version"] = "r3-0-008b-analysis-conclusions/v1"
+    assert _codes(validate_analysis_conclusions(obsolete)) == ["conclusions_schema_mismatch"]
+
+
 def test_d1_unlock_failure_reason_codes_are_typed(tmp_path):
     run_root = tmp_path / "run"
     paths = staged_decision_artifact_paths(run_root)
@@ -1022,7 +1031,7 @@ def test_reference_contract_json_is_valid_and_self_consistent():
             / "r3-0-008b-staged-decisions-contract.json"
         ).read_text(encoding="utf-8")
     )
-    assert contract["schema_version"] == "r3-0-008b-staged-decisions-contract/v1"
+    assert contract["schema_version"] == "r3-0-008b-staged-decisions-contract/v2"
     assert (
         contract["joint_acceptance_checklist"]["fixed_item_ids"] == CHECKLIST_ITEMS
     )

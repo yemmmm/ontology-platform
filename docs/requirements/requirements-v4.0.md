@@ -2,17 +2,17 @@
 
 ## 文档信息
 
-- 状态：需求登记与细化；R4.0-012 的 D1／D2 已确认，详细设计已形成，尚未实现或验收。
+- 状态：需求登记与细化；R4.0-012 已实现，A1—A7 独立功能验收 PASS；A8／L1 未授权、未执行，整体 PARTIAL。
 - 登记日期：2026-09-22
 - 更新日期：2026-10-01
 - 基础版本：[v3.0 需求](requirements-v3.0.md)
 - 关联基线：[v1.0 需求](requirements-v1.0.md)中的 Operation、受治理读写与证据能力；
   证据追溯在 v4.0 中的继承范围以 R4.0-012 为准。
 - 本次增量：2026-10-01 用户确认 R4.0-012 的 D1／D2：统一停用专用证据／追溯入口，
-  停止纯追溯后台采集，保留写入、授权与恢复必需的技术记录；授权开展详细设计。
+  停止纯追溯后台采集，保留写入、授权与恢复必需的技术记录；后续授权子 Agent 开发与测试。
   [详细设计](../delivery/designs/2026-10-01-r4-0-012-tracing-suspension-design.md)已形成；
   当前项目没有真实数据，本期不考虑历史数据读写兼容。其他多视角条目仍待细化。
-  本次未实现、未执行真实建模或独立语义验收，不新增真实运行授权，也不改写旧版本交付结论。
+  本次实现及 A1—A7 独立功能验收已通过；未执行真实建模或独立语义验收，不新增真实运行授权，也不改写旧版本交付结论。
 
 ## 本次讨论的范围与边界
 
@@ -46,7 +46,7 @@
 | R4.0-009 | 多视角真实建模与独立语义验收 | 实际场景与跨视角业务问题验证 |
 | R4.0-010 | 数据映射视角与外部数据库关联 | 数据粒度、标识、表字段、关联路径及业务含义映射 |
 | R4.0-011 | 接口映射视角与外部 API 关联 | 查询结果、请求响应及业务 Action 与外部能力的关联 |
-| R4.0-012 | 证据追溯能力阶段性停用与多视角建模解耦 | D1／D2 已确认，详细设计已形成；未实现／验收 |
+| R4.0-012 | 证据追溯能力阶段性停用与多视角建模解耦 | 已实现；A1—A7 独立 PASS，A8 未执行，整体 PARTIAL |
 
 ## 需求列表
 
@@ -200,8 +200,9 @@
 
 ### R4.0-012 证据追溯能力阶段性停用与多视角建模解耦
 
-状态：D1／D2 已于 2026-10-01 经用户确认，详细设计已形成；未实现或验收。
+状态：已实现；2026-10-01 独立测试 Round 2 判定 A1—A7 功能 PASS。A8／L1 未授权、未执行，整体 PARTIAL。
 设计见 [R4.0-012 详细设计](../delivery/designs/2026-10-01-r4-0-012-tracing-suspension-design.md)。
+实现、失败修复及验收证据见 [交付记录](../delivery/records/2026-10-01-r4-0-012-tracing-suspension-delivery-record.md)和 [测试记录](../delivery/test-plans/2026-10-01-r4-0-012-tracing-suspension-test-plan.md)。
 已确认停用方向、建模 Agent 不承担证据留存职责，以及本期不考虑历史数据读写兼容。
 
 **问题与目标**：多视角下共享定义、Action 调用、规则及映射的追溯关系需要重新评估。
@@ -360,7 +361,7 @@ Evidence／lineage 不豁免源忠实度和语义正确性。
 | Batch 写入 | [Batch 合同](../../modeling_team/references/modeling-batch-item-contract.json)暴露证据字段；[批次服务](../../backend/app/services/modeling_batches.py)生成缺证告警、解析和持久化证据 | F3、F5 |
 | 语义读取 | [Context Query](../../backend/app/services/semantic_context_query.py)调用 lineage 服务并投影证据状态和告警；相关 read model、事实读取与默认／精简投影需同步核对 | F4 |
 | 专用 REST／MCP | [Evidence Reference REST](../../backend/app/api/evidence_references.py)、[事实证据 REST](../../backend/app/api/fact_evidence.py)、[旧证据读取](../../backend/app/api/evidence.py)、[Ontology lineage](../../backend/app/api/ontologies.py)、[Evidence 工具](../../backend/app/mcp/tools/evidence.py)、[semantic 工具](../../backend/app/mcp/tools/semantic.py)及实际路由／工具注册 | F5 |
-| 前端 | [导航与状态](../../frontend/src/App.tsx)、[Evidence 页面](../../frontend/src/pages/EvidenceReferencesPage.tsx)、[事实页](../../frontend/src/pages/FactAuditPage.tsx)、[治理页](../../frontend/src/pages/GraphGovernancePage.tsx)、[构建页](../../frontend/src/pages/BuildContextDebugPage.tsx)及实体／搜索页的证据字段 | F6 |
+| 前端 | [导航与状态](../../frontend/src/App.tsx)、原 `EvidenceReferencesPage.tsx`（本轮已撤下）、[事实页](../../frontend/src/pages/FactAuditPage.tsx)、[治理页](../../frontend/src/pages/GraphGovernancePage.tsx)、[构建页](../../frontend/src/pages/BuildContextDebugPage.tsx)及实体／搜索页的证据字段 | F6 |
 | 写入与恢复共享实现 | [canonical write](../../backend/app/services/semantic_canonical_write.py)在审计和版本更新附近记录 statement lineage；[检查点数据](../../backend/app/services/checkpoint_data.py)包含相关表及身份处理，需区分新运行的恢复完整性与已排除的历史数据兼容 | F3 |
 | 独立验收 | [验收角色](../../modeling_team/agent-packages/acceptance/instructions-v3.md)与 [CQ Examiner](../../modeling_team/agent-packages/v3-acceptance-batch/platform-examiner.md)使用业务资料和查询响应；这些验收依据不能当作平台 Evidence 任务一并删除 | F7 |
 

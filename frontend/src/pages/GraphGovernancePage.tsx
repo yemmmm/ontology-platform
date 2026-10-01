@@ -192,11 +192,7 @@ export function GraphGovernancePage({
           hint={summary.staleProjections > 0 ? t("Projection manifests need rebuild") : t("Projection manifests are current")}
           tone={summary.staleProjections > 0 ? "warning" : "ok"}
         />
-        <StatTile
-          label={t("Missing evidence")}
-          value={summary.missingEvidence}
-          tone={summary.missingEvidence > 0 ? "error" : "ok"}
-        />
+
       </section>
 
       <OwlConsistencySection
@@ -259,9 +255,7 @@ export function GraphGovernancePage({
                     <div><dt>{t("Audit ID")}</dt><dd><code>{audit.id}</code></dd></div>
                     <div><dt>{t("Actor")}</dt><dd>{audit.actor ?? t("unknown")}</dd></div>
                     <div><dt>{t("Reason")}</dt><dd>{audit.reason ?? t("unset")}</dd></div>
-                    {audit.evidence_status && (
-                      <div><dt>{t("Evidence")}</dt><dd>{audit.evidence_status}</dd></div>
-                    )}
+
                   </dl>
                   <details>
                     <summary>{t("Graph delta")}</summary>
@@ -325,7 +319,6 @@ function ValidationReasoningSummary({ status }: { status: SemanticGovernanceStat
       <div><dt>{t("Editable vs locked")}</dt><dd>{prettyJson(graphs.editability ?? graphs.editability_state ?? {})}</dd></div>
       <div><dt>{t("Reasoning pointers")}</dt><dd>{prettyJson(derived.reasoning ?? derived.reasoning_pointers ?? {})}</dd></div>
       <div><dt>{t("Rule pointers")}</dt><dd>{prettyJson(derived.rules ?? derived.rule_pointers ?? {})}</dd></div>
-      <div><dt>{t("Missing-evidence warnings")}</dt><dd>{prettyJson(derived.missing_evidence ?? derived.missing_evidence_summary ?? {})}</dd></div>
     </dl>
   );
 }
@@ -346,7 +339,6 @@ function deriveSummary(
   const staleDerived = pickNumber(derivedSummary, ["stale_count", "stale"]) ?? countStaleDerived(status);
   const staleProjections =
     projectionStatus?.stale_projection_count ?? safeArray(projectionStatus?.stale).length;
-  const missingEvidence = pickNumber(derivedSummary, ["missing_evidence_count", "missing_evidence"]) ?? 0;
   const activeGraphSets = graphSetList.filter((graphSet) => graphSet.status === "active").length;
   return {
     registeredGraphs: typeof graphCount === "number" ? graphCount : graphList.length,
@@ -354,7 +346,6 @@ function deriveSummary(
     actualGraphs: actualGraphs || graphList.length,
     staleDerived,
     staleProjections,
-    missingEvidence,
     graphSetsCount: graphSetList.length,
     activeGraphSets,
     graphSetNames: graphSetList.map((graphSet) => graphSet.name),

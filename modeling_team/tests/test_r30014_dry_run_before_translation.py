@@ -79,7 +79,7 @@ def _apply_args(key: str = "placeholder-key-2") -> dict:
 
 def _translation_approvals(*entries) -> dict:
     return {
-        "schema_version": "r3-0-009-approvals/v1",
+        "schema_version": "r3-0-009-approvals/v2",
         "scenario_id": "placeholder-scenario",
         "maintained_by": "coordinator",
         "entries": [],
@@ -152,7 +152,6 @@ def test_platform_content_hash_matches_the_backend_service_hash():
             "client_item_id": "placeholder-item-1",
             "command_kind": "create_entity",
             "payload": {"entity_id": "placeholder-entity-1", "label": "one", "class_iris": []},
-            "evidence_reference_ids": ["ev-2", "ev-1"],
         },
     ]
     payload = ModelingBatchSubmit(
@@ -232,7 +231,7 @@ def test_translation_gate_matrix():
         coordinator_id="",
     ).reason_code == "missing_candidate_reference"
     assert unified_translation_issue(
-        {"schema_version": "r3-0-009-approvals/v1", "translation_approvals": "nope"},
+        {"schema_version": "r3-0-009-approvals/v2", "translation_approvals": "nope"},
         plan_ref=PLAN_REF, projection_digest=DIGEST, coordinator_id="coordinator-agent-1",
     ).reason_code == "unified_schema_mismatch"
     assert unified_translation_issue(

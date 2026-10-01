@@ -146,7 +146,10 @@ class CanonicalSemanticWriteService:
             session, settings
         )
         self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
-        self.lineage_recorder = lineage_recorder or SemanticLineageRecorder(session)
+        # Retain injection compatibility for historical callers. The active
+        # canonical write path does not construct or invoke a pure lineage
+        # collector.
+        self.lineage_recorder = lineage_recorder
 
     def apply_compiled_command(
         self,
@@ -178,9 +181,6 @@ class CanonicalSemanticWriteService:
         """
         compiled = self._with_shape_cascade(compiled)
         warnings: list[str] = []
-        evidence_status = compiled.metadata.get("evidence_status")
-        if compiled.metadata.get("missing_evidence"):
-            warnings.append("Canonical write produced facts with missing evidence status")
 
         validation_result = self.validate_compiled_command(
             compiled,
@@ -209,7 +209,6 @@ class CanonicalSemanticWriteService:
             compiled=compiled,
             actor=actor,
             reason=reason,
-            evidence_status=evidence_status,
             validation_result=validation_result,
             warnings=all_warnings,
             applied=write_result.applied,
@@ -220,18 +219,6 @@ class CanonicalSemanticWriteService:
             _revision_graphs_for(affected),
             audit_id=audit.id,
             actor=actor,
-        )
-        self.lineage_recorder.record_asserted_delta(
-            delta=compiled.delta,
-            graph_revisions=revision_bumps,
-            audit_id=audit.id,
-            ontology_id=(
-                str(compiled.metadata.get("ontology_id"))
-                if compiled.metadata.get("ontology_id")
-                else None
-            ),
-            graph_set_id=graph_set_id,
-            modeling_item_effects=modeling_item_effects,
         )
         stale_rows = self.derived_state_service.mark_stale_after_edit(
             affected, audit_id=audit.id, commit=False
@@ -571,7 +558,6 @@ class CanonicalSemanticWriteService:
         compiled: CompiledCommand,
         actor: str | None,
         reason: str | None,
-        evidence_status: str | None,
         validation_result: dict[str, Any] | None,
         warnings: list[str],
         applied: bool,
@@ -593,7 +579,6 @@ class CanonicalSemanticWriteService:
             affected_graph_iris=affected,
             validation_result=validation_result,
             graph_delta=_delta_to_dict(compiled.delta),
-            evidence_status=evidence_status,
             warning_state={
                 "warnings": warnings,
                 "command_kind": compiled.command_kind,

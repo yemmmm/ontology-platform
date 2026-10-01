@@ -14,7 +14,7 @@
 只能查询 metadata 或幂等撤销。
 
 - `read`：读取、export、Context Query 与 scoped SPARQL。
-- `model`：包含 read，并允许建模、Evidence、Build Session 与受治理 RDF 写入。
+- `model`：包含 read，并允许建模、Build Session 与受治理 RDF 写入。
 - `admin`：包含 model/read，并允许 Project、Ontology、API key 与全局治理操作。
 
 Project-bound 主体只能访问其 Project；显式提交 foreign Project 返回 `403 forbidden_scope`，只提供
@@ -46,19 +46,20 @@ Artifact 以 `artifact_key` 创建不可变线性版本，Event 以 `client_even
 状态；更正只能追加 superseding event。`GET .../modeling-workflow:export` 提供完整 JSON 或 Markdown
 复盘记录，`GET /api/build-sessions/{session_id}` 只内联小型 `modeling_workflow_summary`。
 
-证据采用轻量 Evidence Reference：外部 Agent 自行读取资料，只提交实际使用的
-`document_name + excerpt`，再把引用关联到 Modeling Item。当前没有完整文档上传、解析或旧
-Proposal/Review/Publish 队列。
+v4 R4.0-012 阶段性停用 Evidence／完整 lineage。Agent 读取业务资料理解与核对语义，
+候选、Batch 与 canonical command 不接受追溯专用字段，不要求登记引用或补齐追溯链。
+写入回执、审计、授权、图版本和必要恢复继续由平台与宿主保存；独立语义验收仍核对获准资料。
+专用证据与追溯入口已撤下，旧参数按现有参数验证错误拒绝；不提供历史只读兼容。
 
 ### 查询与验证
 
 - 授权范围发现：`GET /api/semantic/scopes:discover`
 - Context Query：`POST /api/semantic/context:query`
 - scoped SPARQL：`POST /api/semantic/sparql:query`
-- Ontology read model、lineage、statement provenance、SHACL validation、reasoning 和 rule
+- Ontology read model、SHACL validation、reasoning 和 rule
   execution 均以清单中的当前操作为准。
 
-Context Query 返回结构化资源、事实、关系、操作、约束和精简 lineage，不生成最终自然语言答案。
+Context Query 返回结构化资源、事实、关系、操作、约束和真实完整性状态，不生成最终自然语言答案。
 旧 Agent Test API 已移除；外部 Agent 负责组合结构化结果并生成最终答案。
 
 R1.2-004 起 Context Query 支持一次提交一组同主题的相关表达式。请求体的标准字段是
@@ -138,18 +139,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | build sessions | `POST` | `/api/projects/{project_id}/build-sessions` | Create Build Session |
 | checkpoint-data | `POST` | `/api/checkpoint-data/capture` | Capture Data |
 | checkpoint-data | `POST` | `/api/checkpoint-data/fork` | Fork Data |
-| evidence | `GET` | `/api/chunks/{chunk_id}` | Get Evidence Chunk |
-| evidence | `GET` | `/api/evidence-artifacts/{artifact_id}` | Get Evidence Artifact |
-| evidence | `GET` | `/api/evidence-artifacts/{artifact_id}/chunks` | List Evidence Artifact Chunks |
-| evidence | `GET` | `/api/projects/{project_id}/evidence-artifacts` | List Project Evidence Artifacts |
-| evidence-references | `GET` | `/api/evidence-references/{reference_id}` | Get Evidence Reference |
-| evidence-references | `GET` | `/api/evidence-references/{reference_id}/associations` | List Evidence Associations |
-| evidence-references | `GET` | `/api/projects/{project_id}/evidence-associations` | List Target Evidence Associations |
-| evidence-references | `GET` | `/api/projects/{project_id}/evidence-references` | List Evidence References |
-| evidence-references | `POST` | `/api/projects/{project_id}/evidence-associations` | Create Evidence Associations |
-| evidence-references | `POST` | `/api/projects/{project_id}/evidence-associations:batch` | Apply Evidence Association Batch |
-| evidence-references | `POST` | `/api/projects/{project_id}/evidence-references` | Create Evidence Reference |
-| evidence-references | `POST` | `/api/projects/{project_id}/evidence-references:resolve` | Resolve Evidence References |
 | mcp-catalog | `GET` | `/api/mcp/tools` | List Mcp Tools |
 | modeling batches | `GET` | `/api/build-sessions/{session_id}/modeling-batches` | List Session Modeling Batches |
 | modeling batches | `GET` | `/api/modeling-batches/{batch_id}` | Get Modeling Batch |
@@ -165,7 +154,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | modeling workflow | `POST` | `/api/build-sessions/{session_id}/modeling-execution-events` | Record Modeling Execution Event |
 | modeling workflow | `POST` | `/api/build-sessions/{session_id}/modeling-workflow-artifacts` | Create Modeling Workflow Artifact |
 | ontologies | `GET` | `/api/ontologies/{ontology_id}` | Get Ontology |
-| ontologies | `GET` | `/api/ontologies/{ontology_id}/lineage` | Get Ontology Lineage |
 | ontologies | `GET` | `/api/ontologies/{ontology_id}/workspace-context` | Get Ontology Workspace Context |
 | ontologies | `GET` | `/api/projects` | List Projects |
 | ontologies | `GET` | `/api/projects/{project_id}` | Get Project |
@@ -193,7 +181,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `GET` | `/api/semantic/graph-sets` | List Graph Sets |
 | semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}` | Get Graph Set |
 | semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/export` | Export Graph Set |
-| semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/missing-evidence-facts` | List Missing Evidence Facts |
 | semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}` | Read Model |
 | semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/shapes/classes/{class_iri}` | Read Class Shape Guidance |
 | semantic | `GET` | `/api/semantic/graphs` | List Graph Registry |
@@ -223,7 +210,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/edits` | Create Semantic Edit |
 | semantic | `POST` | `/api/semantic/graph-sets` | Create Graph Set |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/construct-runs` | Create Graph Set Construct Run |
-| semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/fact-evidence` | Create Fact Evidence |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/projection-jobs` | Create Projection Job For Set |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/reasoning-runs` | Create Graph Set Reasoning Run |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/rule-runs` | Create Graph Set Rule Run |
@@ -246,7 +232,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `PUT` | `/api/semantic/graph-sets/{graph_set_id}/members` | Update Graph Set Members |
 | semantic | `PATCH` | `/api/semantic/graphs/{graph_iri}/editability` | Update Graph Editability |
 | semantic | `PATCH` | `/api/semantic/rule-definitions/{rule_id}` | Update Rule Definition |
-| semantic | `DELETE` | `/api/semantic/graph-sets/{graph_set_id}/fact-evidence/{binding_id}` | Delete Fact Evidence |
 | semantic | `DELETE` | `/api/semantic/rule-definitions/{rule_id}` | Delete Rule Definition |
 | semantic-protection-sets | `GET` | `/api/projects/{project_id}/protection-sets` | List Protection Sets |
 | semantic-protection-sets | `GET` | `/api/protection-sets/{protection_set_id}` | Get Protection Set |

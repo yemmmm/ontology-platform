@@ -26,7 +26,7 @@ from .scenario_map import _ABSOLUTE_IRI, _nonempty
 
 # --- Schema constants -------------------------------------------------------
 
-ANALYSIS_CONCLUSIONS_SCHEMA = "r3-0-008b-analysis-conclusions/v1"
+ANALYSIS_CONCLUSIONS_SCHEMA = "r3-0-008b-analysis-conclusions/v2"
 STAGE3_SLOT_SCHEMA = "r3-0-008b-stage3-slot/v1"
 MATERIALIZATION_UNLOCK_SCHEMA = "r3-0-008b-materialization-unlock/v1"
 APPROVALS_SCHEMA = "r3-0-008b-approvals/v1"
@@ -37,13 +37,16 @@ SUBMISSION_RECEIPT_SCHEMA = "r3-0-008b-submission-receipt/v1"
 STAGED_GATE_FEEDBACK_SCHEMA = "r3-0-008b-staged-gate-feedback/v1"
 
 # R3.0-009 unified semantic graph (design §9.1): the same artifact paths carry
-# new versioned schemas. Readers and writers dispatch on the Task parameter
-# plus the recorded ``schema_version``; old runs keep validating their own
-# 008B schemas and are never migrated in place.
+# versioned schemas. R4.0-012 removes source-tracing fields from the active
+# unified contracts, so new artifacts use v2; historical v1 run files remain
+# immutable and are not migrated in place.
 UNIFIED_STAGE3_SLOT_SCHEMA = "r3-0-009-stage3-slot/v1"
-UNIFIED_GRAPH_CANDIDATE_SCHEMA = "r3-0-009-unified-graph/v1"
-UNIFIED_APPROVALS_SCHEMA = "r3-0-009-approvals/v1"
-UNIFIED_MATERIALIZATION_PLAN_SCHEMA = "r3-0-009-materialization-plan/v1"
+UNIFIED_GRAPH_CANDIDATE_SCHEMA = "r3-0-009-unified-graph/v2"
+UNIFIED_APPROVALS_SCHEMA = "r3-0-009-approvals/v2"
+UNIFIED_MATERIALIZATION_PLAN_SCHEMA = "r3-0-009-materialization-plan/v2"
+# The intent/receipt envelope field sets are unchanged.  Their projection
+# digest naturally changes with the active item projection, but that does not
+# require a second envelope schema or a compatibility branch.
 UNIFIED_SUBMISSION_INTENT_SCHEMA = "r3-0-009-submission-intent/v1"
 UNIFIED_SUBMISSION_RECEIPT_SCHEMA = "r3-0-009-submission-receipt/v1"
 UNIFIED_GRAPH_TASK_PARAMETER = "unified_semantic_graph"
@@ -248,7 +251,6 @@ CONCLUSION_ENTRY_FIELDS = frozenset(
         "mapped_property",
         "candidate_value",
         "business_meaning_hypothesis",
-        "evidence_refs",
         "proposed_level",
         "blocking_unknowns",
         "status",
@@ -375,7 +377,7 @@ UNIFIED_CANDIDATE_FIELDS = frozenset(
         "explicit_unknowns",
     }
 )
-# A candidate item keeps business meaning, value/relation endpoints, evidence,
+# A candidate item keeps business meaning, value/relation endpoints,
 # slice/shared-scope provenance and its own unknowns — never a platform IRI.
 UNIFIED_CANDIDATE_ITEM_FIELDS = frozenset(
     {
@@ -384,7 +386,6 @@ UNIFIED_CANDIDATE_ITEM_FIELDS = frozenset(
         "business_meaning",
         "value",
         "relation_endpoints",
-        "evidence_refs",
         "slice_ids",
         "shared_scope",
         "unknowns",
@@ -410,7 +411,6 @@ DECISION_FIELDS = frozenset(
         "content_digest",
         "decision",
         "reason",
-        "evidence_refs",
         "slice_ids",
         "shared_scope",
         "scope",
@@ -763,10 +763,6 @@ def validate_analysis_conclusions(
                 StagedDecisionIssue(
                     "conclusions_schema_mismatch", f"{conclusion_id}:{'; '.join(text_field_problems)}", artifact
                 )
-            )
-        if not _nonempty_strings(entry.get("evidence_refs")):
-            issues.append(
-                StagedDecisionIssue("conclusions_schema_mismatch", f"{conclusion_id}:evidence_refs", artifact)
             )
         if entry.get("proposed_level") not in VALUE_LEVELS:
             issues.append(
@@ -1237,8 +1233,6 @@ UNIFIED_BATCH_ITEM_FIELDS = frozenset(
         "command_kind",
         "payload",
         "depends_on",
-        "evidence_reference_ids",
-        "evidence",
         "rationale",
         "competency_question_ids",
     }
@@ -1273,20 +1267,12 @@ def _batch_envelope_issues(batch: Any, *, unified: bool = False) -> StagedDecisi
                 or not isinstance(item.get("payload"), Mapping)
             ):
                 return StagedDecisionIssue("staged_submit_schema_mismatch", "item shape", artifact)
-            for field in ("depends_on", "evidence_reference_ids", "competency_question_ids"):
+            for field in ("depends_on", "competency_question_ids"):
                 value = item.get(field, [])
                 if not isinstance(value, list) or any(not _nonempty(entry) for entry in value):
                     return StagedDecisionIssue(
                         "staged_submit_schema_mismatch", field, artifact
                     )
-            evidence = item.get("evidence", [])
-            if not isinstance(evidence, list) or any(
-                not isinstance(entry, Mapping)
-                or not _nonempty(entry.get("document_name"))
-                or not _nonempty(entry.get("excerpt"))
-                for entry in evidence
-            ):
-                return StagedDecisionIssue("staged_submit_schema_mismatch", "evidence", artifact)
             rationale = item.get("rationale")
             if rationale is not None and not isinstance(rationale, str):
                 return StagedDecisionIssue("staged_submit_schema_mismatch", "rationale", artifact)
@@ -1644,7 +1630,7 @@ def build_submission_intent(
 
     With no 009 arguments this is byte-identical to the 008B intent. With a
     ``plan_ref`` plus projection the record switches to
-    ``r3-0-009-submission-intent/v1`` and carries the approved projection and
+    ``r3-0-009-submission-intent/v2`` and carries the approved projection and
     its digest; ``projection_digest`` is always recomputed here so a caller
     cannot store a projection under a foreign digest.
     """
@@ -2042,8 +2028,6 @@ def _normalize_item_projection(item: Mapping[str, Any]) -> dict[str, Any]:
         "command_kind": item.get("command_kind"),
         "payload": item.get("payload") or {},
         "depends_on": list(item.get("depends_on") or []),
-        "evidence_reference_ids": list(item.get("evidence_reference_ids") or []),
-        "evidence": list(item.get("evidence") or []),
         "rationale": item.get("rationale"),
         "competency_question_ids": list(item.get("competency_question_ids") or []),
     }
@@ -2092,18 +2076,18 @@ def validate_unified_stage3_slot(value: Any) -> tuple[StagedDecisionIssue, ...]:
 
 
 def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
-    """``r3-0-009-unified-graph/v1`` candidate items are neutral and closed."""
+    """``r3-0-009-unified-graph/v2`` candidate items are neutral and closed."""
 
     if not isinstance(value, Mapping) or value.get("schema_version") != UNIFIED_GRAPH_CANDIDATE_SCHEMA:
         return (
             StagedDecisionIssue(
-                "unified_schema_mismatch", "candidate is not r3-0-009-unified-graph/v1", ""
+                "unified_schema_mismatch", "candidate is not r3-0-009-unified-graph/v2", ""
             ),
         )
     if set(value) != set(UNIFIED_CANDIDATE_FIELDS):
         return (
             StagedDecisionIssue(
-                "unified_schema_mismatch", "candidate fields drift from r3-0-009-unified-graph/v1", ""
+                "unified_schema_mismatch", "candidate fields drift from r3-0-009-unified-graph/v2", ""
             ),
         )
     issues: list[StagedDecisionIssue] = []
@@ -2147,7 +2131,7 @@ def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
 
 
 def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
-    """``r3-0-009-approvals/v1``: legacy entries plus decisions/translations.
+    """``r3-0-009-approvals/v2``: legacy entries plus decisions/translations.
 
     ``entries`` keeps its 008B meaning and closed field set; ``decisions`` is
     validated entry by entry because every business decision gates both modes,
@@ -2160,13 +2144,13 @@ def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
     if not isinstance(value, Mapping) or value.get("schema_version") != UNIFIED_APPROVALS_SCHEMA:
         return (
             StagedDecisionIssue(
-                "unified_schema_mismatch", "approvals are not r3-0-009-approvals/v1", ""
+                "unified_schema_mismatch", "approvals are not r3-0-009-approvals/v2", ""
             ),
         )
     if set(value) != set(UNIFIED_APPROVALS_FIELDS):
         return (
             StagedDecisionIssue(
-                "unified_schema_mismatch", "approvals fields drift from r3-0-009-approvals/v1", ""
+                "unified_schema_mismatch", "approvals fields drift from r3-0-009-approvals/v2", ""
             ),
         )
     issues: list[StagedDecisionIssue] = []
@@ -2178,7 +2162,7 @@ def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
         if not isinstance(decision, Mapping) or set(decision) != set(DECISION_FIELDS):
             issues.append(
                 StagedDecisionIssue(
-                    "unified_schema_mismatch", "decision fields drift from r3-0-009-approvals/v1", ""
+                    "unified_schema_mismatch", "decision fields drift from r3-0-009-approvals/v2", ""
                 )
             )
             continue
@@ -2200,10 +2184,6 @@ def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
                 StagedDecisionIssue(
                     "approval_missing", f"decision {decision_id} target_kind is invalid", ""
                 )
-            )
-        if not _nonempty_strings(decision.get("evidence_refs")):
-            issues.append(
-                StagedDecisionIssue("approval_missing", f"decision {decision_id} has no evidence", "")
             )
         if not _nonempty(decision.get("content_digest")):
             issues.append(
@@ -2248,7 +2228,7 @@ def validate_unified_approvals(value: Any) -> tuple[StagedDecisionIssue, ...]:
 
 
 def validate_materialization_plan(value: Any) -> tuple[StagedDecisionIssue, ...]:
-    """``r3-0-009-materialization-plan/v1``: projection plus its digest."""
+    """``r3-0-009-materialization-plan/v2``: projection plus its digest."""
 
     if (
         not isinstance(value, Mapping)
@@ -2257,7 +2237,7 @@ def validate_materialization_plan(value: Any) -> tuple[StagedDecisionIssue, ...]
         return (
             StagedDecisionIssue(
                 "unified_schema_mismatch",
-                "materialization plan is not r3-0-009-materialization-plan/v1",
+                "materialization plan is not r3-0-009-materialization-plan/v2",
                 "",
             ),
         )
@@ -2537,7 +2517,7 @@ def unified_translation_issue(
 
     if not isinstance(approvals, Mapping):
         return StagedDecisionIssue(
-            "unified_schema_mismatch", "approvals are not r3-0-009-approvals/v1", ""
+            "unified_schema_mismatch", "approvals are not r3-0-009-approvals/v2", ""
         )
     translations = approvals.get("translation_approvals")
     if not isinstance(translations, list):
@@ -2624,7 +2604,6 @@ def platform_content_hash(batch: Mapping[str, Any]) -> str:
     for item in ordered:
         data = _normalize_item_projection(item)
         data["depends_on"] = sorted(set(data["depends_on"]))
-        data["evidence_reference_ids"] = sorted(set(data["evidence_reference_ids"]))
         data["competency_question_ids"] = sorted(set(data["competency_question_ids"]))
         items.append(data)
     content = {"ontology_id": batch.get("ontology_id"), "items": items}
@@ -2792,7 +2771,7 @@ def staged_intent_schema_issue(record: Mapping[str, Any]) -> StagedDecisionIssue
     if schema == UNIFIED_SUBMISSION_INTENT_SCHEMA:
         if set(record) != set(UNIFIED_INTENT_FIELDS):
             return StagedDecisionIssue(
-                "unified_schema_mismatch", "intent fields drift from r3-0-009-submission-intent/v1", ""
+                "unified_schema_mismatch", "intent fields drift from r3-0-009-submission-intent/v2", ""
             )
         if not _nonempty(record.get("plan_ref")):
             return StagedDecisionIssue("missing_candidate_reference", "intent has no plan_ref", "")
@@ -2822,7 +2801,7 @@ def staged_receipt_schema_issue(record: Mapping[str, Any]) -> StagedDecisionIssu
         if set(record) != set(UNIFIED_RECEIPT_FIELDS):
             return StagedDecisionIssue(
                 "unified_schema_mismatch",
-                "receipt fields drift from r3-0-009-submission-receipt/v1",
+                "receipt fields drift from r3-0-009-submission-receipt/v2",
                 "",
             )
         if not _nonempty(record.get("plan_ref")):

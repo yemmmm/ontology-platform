@@ -78,8 +78,8 @@ READ_REUSE_PHRASES = (
     "never access another role's private sources, inherit another run's conversation, "
     "or use hidden material",
     "compaction lost them or the relevant content is missing, stale, changed, or truncated",
-    "never skips a task-required live workspace read, a refresh, a validation, "
-    "or a full evidence obligation",
+    "never skips a task-required live workspace read, a refresh, authorization checks, "
+    "and read/write validation",
 )
 
 

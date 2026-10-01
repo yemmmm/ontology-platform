@@ -11,7 +11,6 @@ import {
   Workflow,
 } from "lucide-react";
 import type {
-  MissingEvidenceFactsResponse,
   SemanticGraphSetRead,
   SemanticJsonObject,
   SemanticRuleDefinitionListResponse,
@@ -23,7 +22,6 @@ import {
   buildGraphSetExportUrl,
   createGraphSet,
   getGraphSet,
-  getMissingEvidenceFacts,
   listGraphSets,
   listRuleDefinitions,
   runGraphSetReasoning,
@@ -60,7 +58,6 @@ export function GraphSetPage({
   const [selectedId, setSelectedId] = useState(initialGraphSetId ?? "");
   const [graphSet, setGraphSet] = useState<SemanticGraphSetRead | null>(null);
   const [rules, setRules] = useState<SemanticRuleDefinitionListResponse | null>(null);
-  const [missingEvidence, setMissingEvidence] = useState<MissingEvidenceFactsResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -90,13 +87,11 @@ export function GraphSetPage({
     }
     setLoading(true);
     try {
-      const [detail, evidence, ruleList] = await Promise.all([
+      const [detail, ruleList] = await Promise.all([
         getGraphSet(request, id),
-        getMissingEvidenceFacts(request, id).catch(() => null),
         listRuleDefinitions(request, { limit: 50 }).catch(() => ({ rules: [] })),
       ]);
       setGraphSet(detail);
-      setMissingEvidence(evidence);
       setRules(ruleList);
     } catch (error) {
       notify(errorNotice(error));
@@ -114,7 +109,6 @@ export function GraphSetPage({
     if (selectedId) void loadDetail(selectedId);
     else {
       setGraphSet(null);
-      setMissingEvidence(null);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedId]);
@@ -245,7 +239,7 @@ export function GraphSetPage({
         <div>
           <span className="eyebrow">{t("Graph Governance")}</span>
           <h2>{t("Graph Set Detail")}</h2>
-          <p>{t("Inspect members, source signature, current derived pointers, staleness, and missing-evidence dependencies.")}</p>
+          <p>{t("Inspect members, source signature, current derived pointers, and staleness.")}</p>
         </div>
         <RefreshButton busy={loading} onClick={() => selectedId && void loadDetail(selectedId)} />
       </header>
@@ -338,20 +332,6 @@ export function GraphSetPage({
             <RuleResultPanel run={ruleRun} />
           </section>
 
-          <SemanticPanel title={t("Missing-evidence facts")} icon={<Workflow size={15} />}>
-            {!missingEvidence ? (
-              <SemanticEmpty title={t("No missing-evidence summary available")} />
-            ) : (
-              <dl className="kvList">
-                <div><dt>{t("Missing-evidence count")}</dt><dd>{missingEvidence.count}</dd></div>
-                <div>
-                  <dt>{t("Fact IDs")}</dt>
-                  <dd><pre className="jsonBlock">{JSON.stringify(missingEvidence.fact_ids, null, 2)}</pre></dd>
-                </div>
-              </dl>
-            )}
-          </SemanticPanel>
-
           <SemanticPanel title={t("Export")} icon={<Download size={15} />}>
             <ExportControls graphSet={graphSet} />
           </SemanticPanel>
@@ -412,7 +392,6 @@ function ExportControls({ graphSet }: { graphSet: SemanticGraphSetRead }) {
   const url = buildGraphSetExportUrl(graphSet.id, {
     format,
     include,
-    includeEvidence: false,
     includeShapes: false,
     includePolicy: false,
     includeMetadata: true,

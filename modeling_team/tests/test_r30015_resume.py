@@ -785,9 +785,6 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
                     "command_kind": "create_class",
                     "payload": {"name": "Customer"},
                     "rationale": "Needed by the competency questions",
-                    "evidence": [
-                        {"document_name": "domain.md", "excerpt": "Customer is a term."}
-                    ],
                 }
             )
 

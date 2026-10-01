@@ -1,5 +1,5 @@
 {
-  "schema_version": "platform-neutral-candidate-authoring/v1",
+  "schema_version": "platform-neutral-candidate-authoring/v2",
   "purpose": "Scenario-neutral authoring contract for an ordinary semantic candidate.",
   "semantic_handoff": {
     "candidate_integrity": "The candidate is one complete, self-contained, immutable semantic object; whole-candidate integrity applies to its meaning and content, not to one platform transaction.",
@@ -49,14 +49,8 @@
       "item_kind",
       "semantic"
     ],
-    "item_optional_fields": [
-      "evidence_citations"
-    ],
+    "item_optional_fields": [],
     "item_additional_properties": false,
-    "evidence_citations": {
-      "type": "list",
-      "items": "object"
-    },
     "consumer_query_one_connected_binding": {
       "type": "constraint",
       "rule": "Every predicate named in consumer_query.semantic.required_paths is instantiated by exactly one relation (or fact) item in the whole candidate - one subject-object pair - so the query resolves to exactly one connected binding. A predicate instantiated on two different pairs (for example one generic hasKnownGap relation per explicit unknown) is ambiguous and is rejected with consumer-query-plan-invalid on every revision that keeps it in required_paths. Keep multi-instance predicates out of required_paths; give each explicit unknown a dedicated single-instance predicate referenced by its own consumer_query item, and when one query lists several paths their unique bindings must share a connected subject."
@@ -80,7 +74,7 @@
     "Keep Team Transport delivery/reply identities and Batch/platform IDs outside the neutral semantic candidate."
   ],
   "example_candidate": {
-    "candidate_kind": "platform-neutral-candidate-v2",
+    "candidate_kind": "platform-neutral-candidate-v3",
     "candidate_revision": "neutral-example-1",
     "scope": {
       "name": "small-neutral-example",

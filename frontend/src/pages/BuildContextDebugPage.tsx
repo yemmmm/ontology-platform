@@ -201,7 +201,6 @@ export function BuildContextDebugPage(props: { projectId: string; request: Reque
 
           <div className="contextMetricGrid">
             <ContextMetric label={t("Brief completeness")} value={`${Math.round(platform.project_brief.completeness * 100)}%`} />
-            <ContextMetric label={t("Evidence references")} value={platform.evidence_reference_count} />
             <ContextMetric label={t("Ontologies")} value={platform.ontologies.length} />
             <ContextMetric label={t("Modeling batches")} value={platform.modeling_batches.length} />
           </div>
@@ -817,8 +816,6 @@ function CheckpointSummary({ checkpoint }: { checkpoint: BuildCheckpoint }) {
 
 function SessionDetail({ detail }: { detail: BuildSessionDetail }) {
   const t = useT();
-  const evidenceReferences = Array.isArray(detail.evidence.references) ? detail.evidence.references : [];
-  const evidenceNextCursor = detail.evidence.next_cursor;
   return (
     <div className="sessionDetail">
       <DetailSection title={t("Involved ontologies")} count={detail.involved_ontology_ids.length}>
@@ -852,22 +849,6 @@ function SessionDetail({ detail }: { detail: BuildSessionDetail }) {
         {detail.modeling_batches.length ? (
           <SafeBatchSummaries batches={detail.modeling_batches} />
         ) : <p className="contextEmptyLine">{t("No modeling batches linked to this session")}</p>}
-      </DetailSection>
-
-      <DetailSection title={t("Evidence references")} count={evidenceReferences.length}>
-        {evidenceReferences.length ? (
-          <div className="safeSummaryList">
-            {evidenceReferences.map((reference, index) => (
-              <pre key={evidenceReferenceKey(reference, index)}>{prettyJson(safeRecordSummary(reference, [
-                "id", "document_name", "excerpt", "excerpt_hash", "created_at",
-              ]))}</pre>
-            ))}
-          </div>
-        ) : <p className="contextEmptyLine">{t("No evidence references linked to this session")}</p>}
-        <p className="detailReadOnlyHint">
-          {t("Read-only evidence entries are identified by the stable references returned by this recovery response.")}
-          <span>{t("Next cursor")}: {formatScalar(evidenceNextCursor, t("None"))}</span>
-        </p>
       </DetailSection>
 
       <DetailSection title={t("Recent activity")} count={detail.recent_activity.length}>
@@ -932,13 +913,6 @@ function safeRecordSummary(value: unknown, allowedKeys: string[]): Record<string
       .map((key) => [key, safeDebugPayload(record[key])]),
   );
   return Object.keys(summary).length ? summary : { summary: "No public summary fields returned" };
-}
-
-function evidenceReferenceKey(value: unknown, index: number) {
-  if (value && typeof value === "object" && !Array.isArray(value) && "id" in value) {
-    return String((value as Record<string, unknown>).id);
-  }
-  return `evidence-${index}`;
 }
 
 function humanizeActivityType(value: unknown) {

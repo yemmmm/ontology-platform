@@ -496,15 +496,9 @@ class ProtocolRetrievalGate:
                 ):
                     continue
             if any(token in code or token in message for token in ("lineage", "evidence")):
-                # Retrieval warnings are aggregate over all returned resources.
-                # A lexical chain may carry an unrelated missing-evidence warning
-                # while its candidate-bound statement is fully supported; the
-                # row-level evidence/lineage checks below decide that case.  For
-                # hybrid, the conservative fallback signal is recorded too.
-                if search_mode == "hybrid":
-                    warnings_observed.append(
-                        f"retrieval response has blocking warning: {code or message}"
-                    )
+                # R4.0-012 removes source-tracing completeness from the ordinary
+                # retrieval gate.  Such warnings are neither a read failure nor
+                # a reason to ask Protocol to repost source material.
                 continue
             if any(
                 token in code or token in message
@@ -607,18 +601,6 @@ class ProtocolRetrievalGate:
                         continue
                 else:
                     continue
-                if row.get("evidence_status") != "supported":
-                    continue
-                evidence_ids = row.get("evidence_reference_ids")
-                lineage = row.get("lineage")
-                if (
-                    not isinstance(evidence_ids, list)
-                    or not evidence_ids
-                    or any(not isinstance(value, str) or not value for value in evidence_ids)
-                    or not isinstance(lineage, Mapping)
-                    or lineage.get("status") != "complete"
-                ):
-                    continue
                 statement_id = row.get("id")
                 if not isinstance(statement_id, str) or not statement_id:
                     continue
@@ -632,7 +614,6 @@ class ProtocolRetrievalGate:
                         "object_type": data_row.get("object_type"),
                         "object_datatype": data_row.get("object_datatype"),
                         "object_language": data_row.get("object_language"),
-                        "evidence_reference_ids": sorted(set(evidence_ids)),
                     }
                 )
         return rows
@@ -926,18 +907,10 @@ class ProtocolRetrievalGate:
         if not terminal:
             raise ProtocolRetrievalGateError("retrieval chain did not reach a terminal cursor")
         if not selected:
-            raise ProtocolRetrievalGateError("retrieval chain returned no supported statement for path")
-        evidence_ids = sorted(
-            {
-                evidence_id
-                for row in selected.values()
-                for evidence_id in row["evidence_reference_ids"]
-            }
-        )
+            raise ProtocolRetrievalGateError("retrieval chain returned no candidate-bound statement for path")
         return {
             "artifact_paths": artifact_paths,
             "statement_ids": sorted(selected),
-            "evidence_reference_ids": evidence_ids,
             "ontology_id": ontology_id,
             "project_id": project_id,
             "search_mode": first_arguments["search_mode"],

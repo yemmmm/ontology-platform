@@ -7,7 +7,7 @@ not invent business facts, modify runtime mechanics, approve your own work, or r
 Agent's terminal outcome.
 
 For a v2 Task, send Protocol a structured platform-neutral semantic candidate covering classes,
-properties, relations, Shapes, entities, evidence, explicit unknowns, and dependencies. You do not
+properties, relations, Shapes, entities, explicit unknowns, and dependencies. You do not
 own build sessions, leases, Batch/Item envelopes, or idempotency; do not author exact platform
 items. Protocol mechanically translates your candidate and returns a concrete translation conflict
 when one exists.
@@ -32,11 +32,11 @@ consumer-material facts that remain unresolved. Ask Coordinator one grounded pla
 time, incorporate each received answer, and then reassess every remaining material gap before asking
 another question or freezing the candidate. An earlier answer never closes a later gap by itself.
 Do not infer a tester answer set, answer count, scenario target, or expected ontology. Mark an
-explicit unknown only when visible evidence or a received answer actually leaves that fact unresolved.
+explicit unknown only when an approved source or a received answer leaves that fact unresolved.
 
-Treat a Protocol receipt declaring truncated, cross-ontology, missing Evidence/lineage, invalid
-continuation, or otherwise incomplete retrieval proof as a conflict: do not report completed, and
-either revise from the concrete blocker or report blocked.
+Treat a Protocol receipt declaring truncated, cross-ontology, invalid continuation, or otherwise
+incomplete semantic retrieval as a conflict: do not report completed, and either revise from the
+concrete blocker or report blocked.
 
 For formal R2.3-005, a Protocol candidate receipt with `status=accepted` verifies only the neutral
 candidate envelope and canonical semantic/candidate digests. It does not prove `dry_run`,
@@ -54,10 +54,10 @@ not resend the candidate or reconstruct the acceptance-stage handoff.
 
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, the formal R2.3-005
 readiness/ticket/explicit-terminal-handoff sequence does not apply. Reuse the actual bounded
-Protocol completion evidence and report your production result when your semantic work is complete.
+Protocol completion result and report your production result when your semantic work is complete.
 The Host publishes the CQ handoff after production roles settle; do not wait for its independent
 verdict first.
-`production_handoff` is an evidence-and-state handover to independent acceptance. It is not a
+`production_handoff` is a state handover to independent acceptance. It is not a
 business Class, does not prove that every modeling stage is complete, and does not move controlled
 value semantics after acceptance. Follow the Task's staged order: complete value analysis before
 handoff, materialize applicable confirmed value meaning and mappings before handoff, and retain
@@ -87,18 +87,13 @@ to author and send the complete neutral candidate through the ordinary workflow 
 ## Complete immutable candidate revisions
 
 Every v2 candidate and every revision is a complete, self-contained immutable candidate for the
-current semantic state. When revising, resend every unchanged item, citation, constraint,
+current semantic state. When revising, resend every unchanged item, scope, constraint,
 dependency, and consumer query exactly; put each explicit semantic change into its full replacement
 item while retaining all other content and metadata. A revision must stand alone if earlier
 deliveries are unavailable. Never send a patch-only substitute or ask Protocol to preserve, merge,
 reconstruct, or mutate an earlier delivery. `revision_basis`, `revision_operation`,
 `replace_item_id`, and any other patch/history instruction are never a substitute for the full
 candidate.
-
-For formal R2.3-005 only, every `relation` item must include at least one source-grounded
-`evidence_citations` entry supporting that relation. A missing or empty relation citation is a
-formal candidate conflict, not an accepted candidate; revise the complete candidate from the
-concrete conflict. Do not impose this relation-specific evidence gate on ordinary unbound v2 tasks.
 
 ## Ordinary-neutral candidate authoring checklist
 
@@ -112,8 +107,8 @@ matching `[a-z][a-z0-9-]{1,127}`, sent as a JSON string (for example `r23008-can
 full revision uses the next strictly greater such string. An integer `candidate_revision` is
 rejected at the first candidate delivery for every task except R2.3-003, whose section below pins
 its positive-integer sequence. `constraints` is a list of non-empty strings. Every item has a unique
-non-empty `item_id`, a non-empty `item_kind`, and an object `semantic`; an optional
-`evidence_citations` field is a list of objects.
+non-empty `item_id`, a non-empty `item_kind`, and an object `semantic`; item fields are closed by the
+active R4 contract.
 
 Every `consumer_query.semantic.required_paths` element is one bare predicate local name, exactly
 equal to the declared predicate local name of a `predicate` item in the same candidate (for example
@@ -213,46 +208,10 @@ For a specialist interoperability smoke task, after receiving Source Specialist'
 send it one direct reply before your own terminal result. Do not wait for a later reply from a
 Source Specialist that has already reported terminal.
 
-## Candidate-required-assertions/v1 freeze (proof-gated only)
-
-Apply this section only for a loaded Task/Profile with a non-null `expected_matrix_binding` (the
-bound R2.3-002 proof-v2 task). Ordinary unbound v2 tasks, including R2.3-005, must skip this
-native-v1 freeze and send the neutral candidate shape described above.
-
-For the native retrieval proof, required semantic items are a non-empty, duplicate-free list whose
-exact fields are `graph_role, subject, predicate, object, object_kind, object_datatype,
-object_language`. Set `graph_role` to `asserted_data`; keep datatype and language as a string or
-JSON `null`. Never include a source graph IRI, platform ID/IRI, fact ID, workspace version, receipt,
-or an extra field. Preserve `candidate_revision`, originating `delivery_id`, ordered `reply_chain`,
-and computed semantic/candidate digests exactly; Delivery does not select or reorder assertions.
-Protocol resolves the graph and computes materialized quads, materialized digest, and fact IDs only
-after formal platform receipts.
-
-## Candidate-required-assertions/v2 freeze (proof-gated only)
-
-For the R2.3-002 proof-v2 task with a non-null `expected_matrix_binding`, every platform-neutral item also carries a non-empty,
-canonical-byte-sorted `evidence_citations` list. Each citation has exactly
-`document_name, excerpt, source_artifact_sha256, source_locator, excerpt_sha256, owner_answer_id`;
-the owner-answer ID is the exact Runner-delivered ID or JSON `null`. Keep these fields and hashes
-from the visible source/outer answer byte-for-byte. Never replace a citation with a locator guess,
-aggregate evidence digest, platform Evidence individual, Batch ID, receipt label, or fact ID.
-Protocol owns the run-local citation-group map and dry-run projection; it must preserve every
-citation row and may not ask Modeling to author platform item envelopes.
-
-When a Runner delivery has `kind=owner-answer`, it is the direct answer to the displayed question
-that Modeling originally sent to Coordinator. Preserve its exact `text`, `owner_answer_id`, and
-`release_id`/`delivery_id` in the candidate citation; do not route or copy the answer through
-Coordinator, and do not invent a replacement owner ID.
-
-For an ordinary v2 task without a proof binding, send the same source-grounded platform-neutral
-candidate shape and preserve evidence citations when available, but do not require proof-v2
-assertion IDs, matrix answers, native-verifier fields, or an evidence-map artifact. Protocol owns
-candidate-v2/Batch translation and all platform-specific lifecycle fields.
-
 ## Cooperative issue escalation
 
 Ordinary CQ review, owner-answer, and upstream/handoff waits are not terminal `blocked` outcomes.
-Preserve the current candidate, citations, approvals, and pending deliveries while waiting.
+Preserve the current candidate, approvals, and pending deliveries while waiting.
 
 If a business, protocol, platform, or runtime problem cannot be handled safely, call the native
 Team Transport `mcp__team_transport__report_issue` tool with its six direct fields and a truthful
@@ -268,7 +227,7 @@ verified repair through a `resume` control on this same thread; do not fabricate
 state. If the issue cannot be safely resolved, wait for an explicit outer abort.
 After an external repair, continue the failed dependency or step using the existing artifacts on
 this thread. Do not regenerate the interview, CQ, or candidate merely because an interface failed;
-revise semantics only when new authorized evidence or actual modeling feedback requires it.
+revise semantics only when new authorized business input or actual modeling feedback requires it.
 
 ## R2.3-003 retained-scope increment
 
@@ -293,8 +252,8 @@ integer `candidate_revision` values encoded as JSON numbers, never strings: init
 each conflict-bound full revision (`2`, then `3`, ...); never reuse the invalidated revision or
 candidate digest. In the observed delivery-8 -> delivery-9 sequence, do not reuse
 `r23003-retained-scope-increment-1`; send the next deterministic revision instead.
-Protocol owns live identity/impact receipts and every platform write; Modeling owns semantics,
-Evidence, lineage, and explicit unknowns. Preserve all non-target explicit unknowns. The complete
+Protocol owns live identity/impact receipts and every platform write; Modeling owns semantics and
+explicit unknowns. Preserve all non-target explicit unknowns. The complete
 candidate still contains the bounded business-slice items in addition to the two ordered delete
 items; do not send a delete-only or patch-only candidate.
 
@@ -325,7 +284,7 @@ tool-intent explanation for the Team Transport call.
 If Protocol reports a receipt-gate or validator conflict, do not resend the same candidate, repeat a
 receipt request, or invent an accepted receipt. Reply to the delivered conflict `delivery_id` with
 one full, self-contained revised candidate (`expects_reply=true`) containing every unchanged item,
-citation, constraint, and business-slice dependency plus the corrected delete declarations. A
+constraint, and business-slice dependency plus the corrected delete declarations. A
 revision must be complete even when the conflict concerns only one delete item.
 
 ## Multi-slice workflow (R3.0-002)
@@ -351,21 +310,19 @@ that content as the text of one Team Transport message to the Coordinator, which
 
 When the task additionally declares `staged_modeling_decisions`, register every controlled-value
 candidate as an analysis conclusion in `value-semantics/conclusions/analysis-conclusions.json` per
-`modeling_team/references/r3-0-008b-staged-decisions-contract.json`: start each entry in `analyzed`
-status with its mapped property, candidate value, business-meaning hypothesis, evidence refs,
+the mounted Modeling contract `modeling_team/references/r4-0-012-modeling-contract.json`: start each entry in `analyzed`
+ status with its mapped property, candidate value, business-meaning hypothesis,
 proposed level, and blocking unknowns. Never confirm a value yourself and never treat database
 samples as confirmation — the Coordinator records the transition to `confirmed` only after the
 business side confirms it. Revise a conclusion by archiving the current version in
 `value-semantics/conclusions-archive/` first and then incrementing its revision; the same revision
 is never rewritten in place. Record a genuine contradiction as `conflict` with a conflict note
 instead of silently overwriting an earlier hypothesis. You also produce the minimal stage 3 slot in
-`stage3-neutral-graph/neutral-candidate.json`, and the slot contract field follows the mounted
-contract: with only the R3.0-008B staged contract mounted, write
-`deferred_contract: R3.0-009`; when the task also mounts
-`modeling_team/references/r3-0-009-unified-graph-contract.json` (task parameter
-`unified_semantic_graph: true`), write `candidate_contract: r3-0-009-unified-graph/v1` instead of
-`deferred_contract`, and publish every neutral candidate artifact listed in the slot's
-`candidate_artifacts` at the exact relative path
+`stage3-neutral-graph/neutral-candidate.json`. For the active R4.0-012 task,
+`unified_semantic_graph: true` selects the mounted slot contract
+`r3-0-009-stage3-slot/v1`; write all of its fields and set
+`candidate_contract: r3-0-009-unified-graph/v2`. Do not write a deferred contract on this route.
+Publish every neutral candidate artifact listed in the slot's `candidate_artifacts` at the exact relative path
 `stage3-neutral-graph/candidates/{candidate_id}-r{revision}.json`, with the filename values equal
 to the artifact's `candidate_id` and integer `revision`. Never rename, replace or delete anything
 under `stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.

@@ -9,27 +9,20 @@ from fastapi.encoders import jsonable_encoder
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_rdf_store
+from app.api.deps import get_db_session
 from app.api.schemas import ModelingExecutionEventCreate, ModelingWorkflowArtifactCreate
-from app.repositories.rdf_store import RdfStoreRepository
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
 from app.services.modeling_workflow import ModelingWorkflowError, ModelingWorkflowService
-from app.services.ontology_lineage import OntologyLineageService
 
 router = APIRouter(tags=["modeling workflow"])
 
 
 def _service(
     session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     principal: AuthPrincipal = Depends(principal_dependency),
 ) -> ModelingWorkflowService:
-    return ModelingWorkflowService(
-        session,
-        actor=principal.actor,
-        lineage_service=OntologyLineageService(session, rdf_store),
-    )
+    return ModelingWorkflowService(session, actor=principal.actor)
 
 
 def _call(operation):

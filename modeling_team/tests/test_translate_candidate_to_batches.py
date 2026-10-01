@@ -7,9 +7,10 @@ entity_id/property_id binding and produced UUID IRIs).  This test pins the
 deterministic tool against start53's actually-applied golden batches so the two
 classes of regression cannot silently return.
 
-The golden batches live in a gitignored workspace run directory; when those
-fixtures are absent the test skips instead of failing, so it remains authoritative
-in any checkout that has the start53 evidence on disk.
+The active candidate is a checked-in v3 literal fixture.  The golden batches
+live in a gitignored workspace run directory; when those historical response
+fixtures are absent the test skips instead of failing, so it remains
+authoritative in any checkout that has the start53 evidence on disk.
 """
 
 from __future__ import annotations
@@ -27,7 +28,7 @@ from modeling_team.protocol_mechanics import (
 
 CANDIDATE_PATH = (
     repository_root()
-    / "modeling_team/.continuations/r23005-start24-r3-exact-candidate.json"
+    / "modeling_team/tests/fixtures/r23005-start53-v3-candidate.json"
 )
 GOLDEN_RESPONSES_DIR = (
     repository_root()
@@ -118,8 +119,6 @@ class TranslateCandidateToBatchesGoldenTest(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls) -> None:
-        if not CANDIDATE_PATH.exists():
-            raise unittest.SkipTest(f"start53 candidate fixture absent: {CANDIDATE_PATH}")
         if not GOLDEN_RESPONSES_DIR.exists():
             raise unittest.SkipTest(
                 f"start53 golden responses directory absent: {GOLDEN_RESPONSES_DIR}"
@@ -130,10 +129,9 @@ class TranslateCandidateToBatchesGoldenTest(unittest.TestCase):
                 f"start53 golden apply batches incomplete: {sorted(cls.golden)}"
             )
         with open(CANDIDATE_PATH) as handle:
-            continuation = json.load(handle)
-        candidate = continuation.get("candidate")
+            candidate = json.load(handle)
         if not isinstance(candidate, dict):
-            raise unittest.SkipTest("start53 continuation has no candidate envelope")
+            raise AssertionError("checked-in v3 candidate fixture is not an object")
         cls.candidate = candidate
         cls.plan = translate_candidate_to_batches(candidate)
 
@@ -208,9 +206,7 @@ class TranslateCandidateToBatchesGoldenTest(unittest.TestCase):
                 self.assertEqual(item["command_kind"], command)
                 self.assertIn("client_item_id", item)
                 self.assertIsInstance(item["payload"], dict)
-                self.assertIsInstance(item["evidence"], list)
-                for citation in item["evidence"]:
-                    self.assertEqual(set(citation), {"document_name", "excerpt"})
+                self.assertNotIn("evidence", item)
 
     def test_create_payloads_bind_candidate_ids_to_readable_resource_iris(self) -> None:
         """Every create_* carries the candidate ID; IRIs are readable, not UUIDs (start54 regression)."""
@@ -358,7 +354,7 @@ class TranslateCandidateToBatchesContractTest(unittest.TestCase):
 
     def _example_candidate(self) -> dict[str, Any]:
         return {
-            "candidate_kind": "platform-neutral-candidate-v2",
+            "candidate_kind": "platform-neutral-candidate-v3",
             "candidate_revision": "contract-example-1",
             "scope": {"name": "contract-example"},
             "constraints": ["One declared path."],
@@ -401,9 +397,6 @@ class TranslateCandidateToBatchesContractTest(unittest.TestCase):
                         "class": "ClassA",
                         "values": {"label": "Instance A", "refersTo": "b"},
                     },
-                    "evidence_citations": [
-                        {"document_name": "doc.md", "excerpt": "supports A"}
-                    ],
                 },
             ],
         }
@@ -418,7 +411,7 @@ class TranslateCandidateToBatchesContractTest(unittest.TestCase):
         translate_candidate_to_batches(candidate)
         self.assertEqual(candidate, snapshot)
 
-    def test_empty_stage_is_omitted_and_evidence_carried(self) -> None:
+    def test_empty_stage_is_omitted_without_source_tracing_fields(self) -> None:
         plan = translate_candidate_to_batches(self._example_candidate())
         stages = [batch["stage_kind"] for batch in plan["batches"]]
         self.assertEqual(stages, ["class", "property", "entity"])
@@ -428,9 +421,7 @@ class TranslateCandidateToBatchesContractTest(unittest.TestCase):
             for item in batch["items"]
             if item["client_item_id"] == "entity-a"
         )
-        self.assertEqual(
-            entity_item["evidence"], [{"document_name": "doc.md", "excerpt": "supports A"}]
-        )
+        self.assertNotIn("evidence", entity_item)
 
     def test_untranslatable_items_collect_conflicts_without_emitting(self) -> None:
         candidate = self._example_candidate()

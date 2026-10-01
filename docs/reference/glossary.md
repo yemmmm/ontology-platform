@@ -1,11 +1,12 @@
 # Ontology Platform Glossary
 
-> **Note (2026-07-08):** As of the evidence-storage refactor, "evidence
-> status" / "missing-evidence fact" / "derived_from_missing_evidence" are
-> derived states computed from the Postgres `fact_evidence_bindings`
-> table, not RDF markers. The legacy `op:evidenceStatus` literal and
-> `prov:wasDerivedFrom` evidence edges have been removed. See
-> `docs/delivery/designs/2026-07-08-evidence-postgres-refactor-design.md`.
+> **v4 scope (R4.0-012, 2026-10-01):** Evidence Reference, Evidence Association,
+> Statement Occurrence, Lineage, Lineage Completeness, Derivation Proof Level, Evidence Status,
+> Missing-Evidence Fact and related coverage terms below describe historical contracts. Their
+> dedicated APIs, collection and ordinary-read projections are suspended in v4; Agents do not
+> register sources or complete trace chains. Semantic correctness still uses business materials,
+> interviews and independent acceptance. Write receipts, audit deltas, authorization, graph
+> revisions, derived-result pointers, rule identity and necessary recovery remain active.
 
 This context defines the language for governed ontology and knowledge graph modeling in the
 platform. It keeps semantic-web refactor terms distinct from current storage and UI terms.
@@ -14,7 +15,8 @@ platform. It keeps semantic-web refactor terms distinct from current storage and
 
 **Semantic Resource**:
 A thing identified by a stable IRI in the platform's semantic model, such as a class, property,
-entity, proposal, evidence item, review decision, rule, or policy.
+entity, proposal, review decision, rule, or policy. Evidence items are historical resources whose
+dedicated access is suspended in v4.
 _Avoid_: row, record, node
 
 **Evidence Reference**:
@@ -85,7 +87,7 @@ _Avoid_: previous Session state, Checkpoint summary, replayed batch history
 
 **Structured Semantic Context**:
 A question-centered, machine-readable collection of relevant semantic resources, supporting facts,
-relationships, rules, operations, constraints, lineage states, and objectively recorded
+relationships, rules, operations, constraints, and objectively recorded
 incompleteness warnings selected from one Project. It gives an external Agent grounded material for
 answering or continuing a query, but is not a platform-generated final answer.
 _Avoid_: search result list, generated answer, Agent conversation context
@@ -107,13 +109,15 @@ _Avoid_: platform-inferred Agent plan, mutable progress note
 **Business Knowledge Pack**:
 A versioned, structured handoff that records the confirmed business goal and scope, source inventory,
 terminology, actors, objects, events, processes, rules, exceptions, boundaries, competency questions,
-evidence index, ambiguities, and deferred knowledge before ontology design begins. It expresses
+ambiguities, and deferred knowledge before ontology design begins. Historical versions also required
+an evidence index; v4 does not require source registration or excerpt retention. It expresses
 business understanding and must not silently pre-decide Classes, Properties, or Relation Types.
 _Avoid_: document summary, ontology schema, Agent chat transcript
 
 **Modeling Coverage Matrix**:
-A versioned trace from sources or user statements through business knowledge items and competency
-questions to model elements, Evidence References, and an explicit coverage state. It makes known
+A versioned coverage view relating business knowledge items and competency questions to model
+elements and explicit known gaps. Historical versions also linked source statements and Evidence
+References; v4 does not require those tracing links. It makes known
 omissions and deferrals reviewable but does not claim absolute knowledge completeness.
 _Avoid_: completion percentage, source upload manifest, validation report
 
@@ -140,7 +144,7 @@ linked by stable identifiers instead of copied into a second source of truth.
 _Avoid_: free-form diary entry, replay command, inferred hidden action
 
 **Semantic Platform Core**:
-The deterministic platform authority for Project and Ontology state, Evidence, Modeling Batches,
+The deterministic platform authority for Project and Ontology state, Modeling Batches,
 leases, validation, versions, audit, query, authorization, and persistence. It does not perform
 modeling judgment through a general model and does not treat Agent Runtime state as semantic fact.
 _Avoid_: Modeling Agent, Agent Runtime, model host
@@ -243,7 +247,8 @@ _Avoid_: new Modeling Batch, content revision, duplicate application
 
 **Modeling Item**:
 One client-identified modeling change inside a Modeling Batch. It is the smallest unit for command
-compilation, validation status, modeling rationale, competency-question links, and evidence links.
+compilation, validation status, modeling rationale, and competency-question links. Historical evidence
+links are excluded from v4 command contracts.
 _Avoid_: RDF statement, batch-level evidence, chat step
 
 **Atomic Dependency Group**:
@@ -384,8 +389,8 @@ important attached facts.
 _Avoid_: data graph, property graph source
 
 **Fact List**:
-A product list view of business assertions with evidence status, source context, validation state,
-and edit history where available.
+A product list view of business assertions with graph and derivation identity, validation state,
+and edit history where available. Evidence status and trace projections are suspended in v4.
 _Avoid_: triple table, statement registry
 
 **Workspace Edit Lock**:

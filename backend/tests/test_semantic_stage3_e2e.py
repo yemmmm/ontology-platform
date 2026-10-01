@@ -28,8 +28,6 @@ from __future__ import annotations
 # not ``conftest.py`` so pytest won't auto-discover).
 pytest_plugins = ("conftest_stage3",)
 
-import pytest
-
 from app.repositories.models import SemanticEditAuditModel
 from conftest_stage3 import (
     DATA_GRAPH,
@@ -263,9 +261,8 @@ def test_step7_lock_data_then_all_gates_pass(
     in_memory_session, fake_graph_set_with_members
 ):
     """After locking both ontology and data graphs, the editable_graph_count
-    drops to zero and the readiness row reports ``ready=True`` once all gates
-    are passed. With no SemanticEditAuditModel rows and the canned
-    missing-evidence count of 0, every gate is ``passed``."""
+    drops to zero. The readiness gates cover current derived state and open
+    edits; suspended missing-evidence state is not included."""
     from app.repositories.models import SemanticGraphRegistryModel
 
     svc, graph_set_id = fake_graph_set_with_members
@@ -293,12 +290,7 @@ def test_step7_lock_data_then_all_gates_pass(
     )
     row = env["items"][0]
     assert row["editable_graph_count"] == 0
-    # The missing_evidence gate is the only blocking gate (others may be
-    # warnings); without projections and derived pointers, projection_freshness
-    # is warning and validation/reasoning/rule are blocked. So ready=False in
-    # the test fixture, but the missing_evidence + open_edits gates both pass.
-    missing = next(g for g in row["gates"] if g["gate"] == "missing_evidence")
-    assert missing["status"] == "passed"
+    assert all(g["gate"] != "missing_evidence" for g in row["gates"])
     open_edits = next(g for g in row["gates"] if g["gate"] == "open_edits")
     assert open_edits["status"] == "passed"
 

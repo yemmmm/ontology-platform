@@ -448,10 +448,9 @@ class P2AProtocolDriverTests(unittest.TestCase):
             manifest["runtime_contract"]["p2a_protocol_driver"]["candidate_sender_id"],
             SYNTHETIC_MODELING_ID,
         )
-        self.assertEqual(
-            manifest["runtime_contract"]["proof_v2"]["runtime_asset"]["sha256"],
-            digest_file(self.root / "modeling_team/proof_v2.py"),
-        )
+        # P2a remains an offline historical helper; active baselines do not
+        # expose or mount its proof-v2 runtime contract.
+        self.assertNotIn("proof_v2", manifest["runtime_contract"])
         legacy = load_team_configuration(
             self.root / "modeling_team/profiles/base-three-agent.yaml",
             self.root / "modeling_team/tasks/new-scope-business-slice.yaml",

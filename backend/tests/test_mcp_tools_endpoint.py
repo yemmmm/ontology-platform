@@ -80,3 +80,30 @@ def test_mcp_tools_entry_shape_is_complete():
         assert isinstance(summary, dict)
         assert "properties" in summary
         assert "required" in summary
+
+
+def test_mcp_tools_excludes_tracing_and_aliases():
+    response = _client().get("/api/mcp/tools")
+    assert response.status_code == 200
+    tools = response.json()["tools"]
+    names = {tool["name"] for tool in tools}
+    assert names.isdisjoint(
+        {
+            "create_evidence_reference",
+            "list_evidence_references",
+            "get_evidence_reference",
+            "associate_evidence_reference",
+            "get_ontology_lineage",
+            "inspect_semantic_statement_provenance",
+        }
+    )
+    assert all(not tool["source_file"].endswith("/evidence.py") for tool in tools)
+    by_name = {tool["name"]: tool for tool in tools}
+    for name in ("compile_and_apply_canonical_command", "export_semantic_graph_set"):
+        properties = by_name[name]["input_schema_summary"]["properties"]
+        assert {
+            "evidence",
+            "evidence_reference_ids",
+            "evidence_target_id",
+            "include_evidence",
+        }.isdisjoint(properties)

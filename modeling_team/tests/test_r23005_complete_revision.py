@@ -89,10 +89,7 @@ def _item_kind(item_id: str) -> str:
 
 def _start5_item(item_id: str) -> dict[str, Any]:
     kind = _item_kind(item_id)
-    semantic: dict[str, Any] = {
-        "label": item_id,
-        "evidence_citations": ["landscape"],
-    }
+    semantic: dict[str, Any] = {"label": item_id}
     if kind == "property":
         semantic.update({"domain": "Workflow", "range": "string", "cardinality": "exactly 1"})
     elif kind == "relation":
@@ -104,23 +101,14 @@ def _start5_item(item_id: str) -> dict[str, Any]:
                 "rules": ["kind exactly explicit_unknown", "exactly one affectedSubject", "no answer value"],
             }
         )
-        semantic["evidence_citations"] = ["owner_binding", "owner_continuity", "exception"]
     elif kind == "entity":
-        semantic.update({"types": ["Workflow"]})
+        semantic.update({"types": ["Workflow"], "values": {"label": item_id}})
     elif kind == "assertion":
         semantic.update({"subject": "workflow:B", "predicate": "invokesAsPublishedTool", "object": "workflow:C"})
     return {"item_id": item_id, "item_kind": kind, "semantic": semantic}
 
 
 def _start5_revision_five() -> dict[str, Any]:
-    citations = {
-        "tools": _citation("tools"),
-        "exception": _citation("exception"),
-        "register": _citation("register"),
-        "landscape": _citation("landscape"),
-        "owner_binding": _citation("owner-binding", owner_answer_id="owner-answer-delivery-1"),
-        "owner_continuity": _citation("owner-continuity", owner_answer_id="owner-answer-delivery-2"),
-    }
     items = [_start5_item(item_id) for item_id in _START5_ITEM_IDS]
     for item in items:
         if item["item_id"] == "shape:WorkflowVersion":
@@ -129,7 +117,6 @@ def _start5_revision_five() -> dict[str, Any]:
                 "exactly one publicationStatus",
                 "exactly one hasOutputContract",
             ]
-            item["semantic"]["evidence_citations"] = ["register"]
         elif item["item_id"] == "shape:ExplicitUnknown":
             item["semantic"]["rules"] = [
                 "kind exactly explicit_unknown",
@@ -139,20 +126,11 @@ def _start5_revision_five() -> dict[str, Any]:
                 "no answer value",
             ]
     return {
-        "candidate_version": "v2",
-        "candidate_revision": 5,
-        "candidate_kind": "platform_neutral_ontology_slice",
+        "candidate_kind": "platform-neutral-candidate-v3",
+        "candidate_revision": "start5-r5",
         "scope": "single bounded C -> B -> A modeling slice",
-        "semantic_start_count": 1,
         "constraints": copy.deepcopy(_START5_CONSTRAINTS),
         "items": items,
-        "evidence_citations": citations,
-        "dependencies": {
-            "path": ["workflow:C", "workflow:B", "workflow:A"],
-            "lifecycle": "each workflow has separate draft and publication lifecycle",
-            "evidence_citations": ["landscape"],
-        },
-        "consumer_queries": copy.deepcopy(_START5_QUERIES),
     }
 
 
@@ -161,40 +139,21 @@ def _start5_partial_revision() -> dict[str, Any]:
     shape = copy.deepcopy(next(item for item in full["items"] if item["item_id"] == "shape:ExplicitUnknown"))
     shape["semantic"]["rules"].remove("no answer value")
     return {
-        "candidate_version": "v2",
-        "candidate_revision": 6,
         "candidate_kind": full["candidate_kind"],
+        "candidate_revision": "start5-r6",
         "scope": full["scope"],
-        "semantic_start_count": full["semantic_start_count"],
-        "revision_basis": {
-            "delivery_id": "delivery-16",
-            "preserve_all_other_items_byte_for_byte": True,
-        },
         "constraints": copy.deepcopy(full["constraints"]),
         "items": [shape],
-        "revision_operation": {
-            "replace_item_id": "shape:ExplicitUnknown",
-            "remove_executable_rule": "no answer value",
-        },
-        "evidence_citations": {
-            key: copy.deepcopy(full["evidence_citations"][key])
-            for key in ("exception", "owner_binding", "owner_continuity")
-        },
     }
 
 
 def _assert_complete_candidate(candidate: dict[str, Any]) -> None:
     required = {
-        "candidate_version",
-        "candidate_revision",
         "candidate_kind",
+        "candidate_revision",
         "scope",
-        "semantic_start_count",
         "constraints",
         "items",
-        "evidence_citations",
-        "dependencies",
-        "consumer_queries",
     }
     patch_fields = {"revision_basis", "revision_operation", "replace_item_id"}
     missing = required - set(candidate)
@@ -211,18 +170,11 @@ def _assert_complete_candidate(candidate: dict[str, Any]) -> None:
         raise CandidateRevisionContractError("complete candidate item inventory drifted")
     if not isinstance(candidate["constraints"], list) or not candidate["constraints"]:
         raise CandidateRevisionContractError("complete candidate constraints are missing")
-    if not isinstance(candidate["consumer_queries"], list) or len(candidate["consumer_queries"]) != 3:
-        raise CandidateRevisionContractError("complete candidate consumer queries are missing")
-    citations = candidate["evidence_citations"]
-    if not isinstance(citations, dict) or set(citations) != {
-        "tools",
-        "exception",
-        "register",
-        "landscape",
-        "owner_binding",
-        "owner_continuity",
-    }:
-        raise CandidateRevisionContractError("complete candidate citation metadata is incomplete")
+    for item in items:
+        if set(item) != {"item_id", "item_kind", "semantic"}:
+            raise CandidateRevisionContractError("candidate item fields are not exact")
+        if "evidence_citations" in item["semantic"]:
+            raise CandidateRevisionContractError("candidate source-tracing fields are not accepted")
 
 
 def _protocol_candidate_reply(candidate: dict[str, Any], calls: list[dict[str, Any]]) -> dict[str, Any]:
@@ -251,8 +203,8 @@ class R23005CompleteRevisionTests(unittest.TestCase):
         task_objective = configuration.task.objective
         for text in (modeling_text, task_objective):
             self.assertIn("complete, self-contained", text)
-            self.assertIn("unchanged items, citations, constraints", text)
-            self.assertIn("consumer queries", text)
+            self.assertIn("unchanged items", text)
+            self.assertIn("constraints", text)
             self.assertIn("patch-only", text)
         self.assertIn("revision_basis", modeling_text)
         self.assertIn("revision_operation", task_objective)
@@ -289,7 +241,7 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "response before freezing the first request",
             "relation topology together with literal facts requires the single tuple `relation` plus `fact`",
             "choose one complete, immutable tuple containing every required supported kind",
-            "relation-only tuple when fact evidence is also required",
+            "relation-only tuple",
             "return a concrete pre-query",
             "do not issue a probe or a partial query",
         ):
@@ -339,7 +291,7 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "from a candidate receipt",
             "For formal R2.3-005 (`task_id=r2-3-005-formal-acceptance`)",
             "the capability smoke shortcut is forbidden",
-            "a candidate receipt or a health/read-only result is intermediate evidence, never",
+            "a candidate receipt or a health/read-only result is intermediate execution state, never",
             "Execute all five current-run stages (dry-run, apply, readback, validation, reasoning)",
             "complete governed retrieval",
             "publish the acceptance-stage handoff to Coordinator",
@@ -395,39 +347,28 @@ class R23005CompleteRevisionTests(unittest.TestCase):
         calls: list[dict[str, Any]] = []
         response = _protocol_candidate_reply(partial, calls)
         self.assertEqual(response["status"], "conflict")
-        self.assertIn("complete, self-contained candidate", response["reason"])
+        self.assertIn("complete candidate", response["reason"])
         self.assertEqual(len(calls), 1)
         self.assertEqual(calls[0], before)
         self.assertEqual(partial, before)
         self.assertEqual([item["item_id"] for item in partial["items"]], ["shape:ExplicitUnknown"])
         self.assertNotIn("class:Workflow", {item["item_id"] for item in partial["items"]})
-        self.assertEqual(response["receipt_probe"]["candidate_revision"], 6)
+        self.assertEqual(response["receipt_probe"]["candidate_revision"], "start5-r6")
 
     def test_c97_retained_complete_correction_reaches_ordinary_neutral_receipt(self) -> None:
         revision_five = _start5_revision_five()
         corrected = copy.deepcopy(revision_five)
-        corrected["candidate_revision"] = 6
+        corrected["candidate_revision"] = "start5-r6"
         shape = next(item for item in corrected["items"] if item["item_id"] == "shape:ExplicitUnknown")
         shape["semantic"]["rules"].remove("no answer value")
         calls: list[dict[str, Any]] = []
         response = _protocol_candidate_reply(corrected, calls)
         self.assertEqual(response["status"], "accepted")
-        self.assertEqual(response["candidate_revision"], 6)
+        self.assertEqual(response["candidate_revision"], "start5-r6")
         self.assertEqual(len(calls), 1)
         self.assertEqual(len(calls[0]["items"]), 38)
-        self.assertEqual(set(calls[0]["evidence_citations"]), {
-            "tools",
-            "exception",
-            "register",
-            "landscape",
-            "owner_binding",
-            "owner_continuity",
-        })
         self.assertEqual(calls[0]["constraints"], revision_five["constraints"])
-        self.assertEqual(calls[0]["consumer_queries"], revision_five["consumer_queries"])
-        self.assertEqual(
-            calls[0]["evidence_citations"], revision_five["evidence_citations"]
-        )
+        self.assertTrue(all("evidence_citations" not in item for item in calls[0]["items"]))
         self.assertEqual(response, build_candidate_receipt(corrected))
 
     def test_c98_proof_bound_002_and_neutral_005_boundaries_remain_distinct(self) -> None:

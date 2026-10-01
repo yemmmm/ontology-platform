@@ -107,7 +107,7 @@ def _members_from_iris(graph_iris, derived_state):
     return result
 
 
-def test_schema_summary_returns_envelope_with_origin_metadata():
+def test_schema_summary_returns_envelope_with_assertion_metadata():
     resolver = FakeScopeResolver(_resolution(["http://op/s/graph/ontology/ov-1"]))
     store = FakeStore(
         {
@@ -134,7 +134,7 @@ def test_schema_summary_returns_envelope_with_origin_metadata():
     item = envelope["items"][0]
     assert item["assertion_kind"] == "asserted"
     assert item["source_graph_iri"] == "http://op/s/graph/ontology/ov-1"
-    assert item["evidence_status"] == "not_applicable"
+    assert "evidence_status" not in item
     assert "staleness" in item
 
 
@@ -280,8 +280,7 @@ def test_graph_set_staleness_summary_assembles_members_and_count():
     assert len(envelope["items"]) == 1
     item = envelope["items"][0]
     assert item["graph_set_id"] == "gs-1"
-    # No session wired in — composer returns 0 rather than consulting SPARQL.
-    assert item["missing_evidence_count"] == 0
+    assert "missing_evidence_count" not in item
     # Verify member-level data
     assert len(item["members"]) == 2
     roles = {m["role"] for m in item["members"]}
@@ -441,9 +440,7 @@ def test_fact_audit_queue_kind_asserted_queries_data_graph_only():
     assert row["subject_iri"] == "http://op.local/ns/entity/alice"
     assert row["predicate_iri"] == "http://op.local/ns/property/email"
     assert row["assertion_kind"] == "asserted"
-    # evidence_status defaults to with_evidence for asserted triples (no
-    # missing-evidence marker on the subject).
-    assert row["evidence_status"] == "with_evidence"
+    assert "evidence_status" not in row
     assert row["stale"] is False
 
 
@@ -542,16 +539,8 @@ def test_fact_audit_queue_kind_rule_derived_queries_rule_result_graph():
     assert row["derived_from"]["run_id"] == "run-9"
 
 
-def test_fact_audit_queue_kind_missing_evidence_filters_data_graph_rows():
-    """kind=missing_evidence runs the unified ``fact-audit-queue`` template
-    against the asserted data graph and marks every returned row as
-    ``missing_evidence`` when no PG evidence bindings are present.
-
-    Phase 3 refactor: the legacy ``missing-evidence-list`` SPARQL template
-    was removed; ``evidence_status`` is now derived from the
-    ``fact_evidence_bindings`` table. Without a real session every asserted
-    row classifies as missing_evidence.
-    """
+def test_fact_audit_queue_rejects_missing_evidence_kind():
+    """The retired missing-evidence projection is not a normal read model."""
     data_iri = "http://op.local/graph/data/ont-1"
     resolution = _resolution(graph_iris=[data_iri])
     store = FakeStore({
@@ -572,15 +561,12 @@ def test_fact_audit_queue_kind_missing_evidence_filters_data_graph_rows():
         timeout_seconds=10,
         default_limit=500,
     )
-    envelope = service.read_model(
-        graph_set_id="gs-1",
-        model_name="fact-audit-queue",
-        kind="missing_evidence",
-    )
-    assert len(envelope["items"]) == 1
-    row = envelope["items"][0]
-    assert row["assertion_kind"] == "missing_evidence"
-    assert row["evidence_status"] == "missing_evidence"
+    with pytest.raises(ReadModelError, match="Unsupported fact-audit-queue kind"):
+        service.read_model(
+            graph_set_id="gs-1",
+            model_name="fact-audit-queue",
+            kind="missing_evidence",
+        )
 
 
 def test_fact_audit_queue_inferred_with_stale_pointer_marks_rows_stale():
@@ -900,7 +886,7 @@ def test_entity_detail_values_addition_preserves_decorated_row_shape():
 
     assert item["source_graph_iri"] == R307_DATA_GRAPH
     assert item["assertion_kind"] == "asserted"
-    assert item["evidence_status"] == "not_applicable"
+    assert "evidence_status" not in item
     assert item["iri"] == "https://r307.test/entity/T1"
     assert item["label"] == "r307-target"
 

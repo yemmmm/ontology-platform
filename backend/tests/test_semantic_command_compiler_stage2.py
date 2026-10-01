@@ -11,8 +11,11 @@ from __future__ import annotations
 import pytest
 
 from app.core.config import Settings
-from app.services.semantic_command_compiler import InvalidCommandPayload, compile_command
-from app.services.semantic_export import namespace_from_settings
+from app.services.semantic_command_compiler import (
+    InvalidCommandPayload,
+    UnsupportedCommandKind,
+    compile_command,
+)
 
 
 _RDFS_LABEL = "<http://www.w3.org/2000/01/rdf-schema#label>"
@@ -912,13 +915,8 @@ def test_delete_fact_uses_iri_object_when_requested():
     ) in compiled.delta.deletes
 
 
-def test_bind_and_unbind_fact_evidence():
-    """bind_fact_evidence / unbind_fact_evidence compile to Postgres-only commands.
-
-    The compiler emits an empty RdfGraphDelta (writes go through the dedicated
-    fact-evidence REST endpoint at apply time) and surfaces the computed
-    fact_id / binding_id in metadata.
-    """
+def test_bind_and_unbind_fact_evidence_are_retired_command_kinds():
+    """The suspended tracing product cannot be reached through the compiler."""
     bind_payload = {
         "ontology_id": "ont-1",
         "subject_iri": "http://op.local/ns/entity/alice",
@@ -928,48 +926,14 @@ def test_bind_and_unbind_fact_evidence():
         "text": "Alice is enrolled in Class 1.",
     }
 
-    bound = compile_command("bind_fact_evidence", bind_payload, _settings())
-
-    graph_iri = "http://op.local/graph/data/ont-1"
-    assert bound.command_kind == "bind_fact_evidence"
-    assert bound.object_kind == "fact_evidence"
-    assert bound.delta.inserts == []
-    assert bound.delta.deletes == []
-    assert bound.target_graph_iris == []
-    # fact_id is deterministically computed from (s, p, o, g)
-    assert bound.metadata["fact_id"]
-    assert bound.metadata["subject_iri"] == "http://op.local/ns/entity/alice"
-    assert bound.metadata["predicate_iri"] == "http://op.local/ns/property/enrolledIn"
-    assert bound.metadata["object_value"] == "<http://op.local/ns/class/Class1>"
-    assert bound.metadata["graph_iri"] == graph_iri
-    assert bound.metadata["text"] == "Alice is enrolled in Class 1."
-
-    # Providing a mismatched fact_id must be rejected.
-    from app.services.semantic_command_compiler import InvalidCommandPayload
-
-    bad_payload = dict(bind_payload)
-    bad_payload["fact_id"] = "sha256:deadbeef"
-    with pytest.raises(InvalidCommandPayload):
-        compile_command("bind_fact_evidence", bad_payload, _settings())
-
-    # Providing the matching fact_id is accepted.
-    good_payload = dict(bind_payload)
-    good_payload["fact_id"] = bound.metadata["fact_id"]
-    recompiled = compile_command("bind_fact_evidence", good_payload, _settings())
-    assert recompiled.metadata["fact_id"] == bound.metadata["fact_id"]
-
-    # unbind_fact_evidence resolves purely by binding_id; the compiler records
-    # it in metadata and emits no RDF writes either.
-    unbound = compile_command(
-        "unbind_fact_evidence",
-        {
-            "ontology_id": "ont-1",
-            "binding_id": "00000000-0000-0000-0000-000000000001",
-        },
-        _settings(),
-    )
-    assert unbound.command_kind == "unbind_fact_evidence"
-    assert unbound.object_kind == "fact_evidence"
-    assert unbound.delta.inserts == []
-    assert unbound.delta.deletes == []
-    assert unbound.metadata["binding_id"] == "00000000-0000-0000-0000-000000000001"
+    with pytest.raises(UnsupportedCommandKind):
+        compile_command("bind_fact_evidence", bind_payload, _settings())
+    with pytest.raises(UnsupportedCommandKind):
+        compile_command(
+            "unbind_fact_evidence",
+            {
+                "ontology_id": "ont-1",
+                "binding_id": "00000000-0000-0000-0000-000000000001",
+            },
+            _settings(),
+        )

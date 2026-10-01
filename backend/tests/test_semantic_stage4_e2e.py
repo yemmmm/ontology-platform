@@ -17,13 +17,14 @@ Tests:
 """
 from __future__ import annotations
 
+import pytest
+
 from conftest_stage4 import (
     ACME_CLASS,
     ACME_CLASS_LABEL,
     ACME_COMMENT,
     ACME_ENTITY,
     ACME_LABEL,
-    CHUNK_TEXT,
     EVIDENCE_DATA_GRAPH,
 )
 
@@ -445,69 +446,16 @@ def test_fact_audit_queue_evidence_bindings(
     assert "prov:wasDerivedFrom" not in last_query
 
 
-def test_fact_audit_queue_evidence_bindings_with_seed(
-    in_memory_session, fake_graph_set_with_evidence, monkeypatch
+def test_fact_audit_queue_rejects_suspended_evidence_projection(
+    fake_graph_set_with_evidence,
 ):
-    """When the fact-audit-queue body returns rows AND the evidence
-    field_set is requested, each row carries a populated
-    ``evidence_bindings`` list drawn from the Postgres
-    ``fact_evidence_bindings`` table."""
-    from uuid import uuid4
-
-    from app.repositories.models import FactEvidenceBindingModel
-    from app.services.fact_id import canonical_object_term, compute_fact_id
-
     svc, graph_set_id = fake_graph_set_with_evidence
+    from app.services.semantic_read_model import ReadModelError
 
-    predicate_iri = "http://example.org/p"
-    object_value = "Acme Corp"
-    object_term = canonical_object_term(object_value)
-    fact_id = compute_fact_id(
-        ACME_ENTITY, predicate_iri, object_term, EVIDENCE_DATA_GRAPH
-    )
-
-    binding = FactEvidenceBindingModel(
-        id=str(uuid4()),
-        fact_id=fact_id,
-        subject_iri=ACME_ENTITY,
-        predicate_iri=predicate_iri,
-        object_value=object_term,
-        graph_iri=EVIDENCE_DATA_GRAPH,
-        chunk_id=None,
-        evidence_artifact_id=None,
-        document_filename="doc-1.pdf",
-        sequence=0,
-        char_start=0,
-        char_end=len(CHUNK_TEXT),
-        text=CHUNK_TEXT,
-    )
-    in_memory_session.add(binding)
-    in_memory_session.commit()
-
-    fake_row = {
-        "subject": {"value": ACME_ENTITY, "type": "uri"},
-        "subject_label": {"value": ACME_LABEL, "type": "literal"},
-        "predicate": {"value": predicate_iri, "type": "uri"},
-        "predicate_label": {"value": "p", "type": "literal"},
-        "object": {"value": object_value, "type": "literal"},
-        "object_label": {"value": object_value, "type": "literal"},
-        "graph": {"value": EVIDENCE_DATA_GRAPH, "type": "uri"},
-    }
-    monkeypatch.setattr(
-        svc, "_fetch_fact_rows", lambda iris, template_name: [fake_row]
-    )
-
-    items, warnings = svc._compose_fact_audit_queue(
-        scope=svc.scope_resolver.resolve(graph_set_id, include="asserted"),
-        kind="asserted",
-        field_set="evidence",
-    )
-    assert len(items) == 1
-    bindings = items[0].get("evidence_bindings")
-    assert bindings is not None
-    assert len(bindings) == 1
-    b = bindings[0]
-    # PG-backed binding exposes the seeded text and document filename.
-    assert b.get("text_preview") == CHUNK_TEXT
-    assert b.get("document_filename") == "doc-1.pdf"
-    assert b.get("sequence") == 0
+    with pytest.raises(ReadModelError, match="field_set=evidence is no longer supported"):
+        svc.read_model(
+            graph_set_id=graph_set_id,
+            model_name="fact-audit-queue",
+            include="asserted",
+            field_set="evidence",
+        )

@@ -441,7 +441,7 @@ def test_build_context_is_project_wide_and_hides_graph_internals(build_client) -
     assert payload["project"]["id"] == PROJECT_ID
     ontology_ids = {item["id"] for item in payload["platform_state"]["ontologies"]}
     assert ontology_ids == {ONTOLOGY_ID, SECOND_ONTOLOGY_ID}
-    assert payload["platform_state"]["evidence_reference_count"] == 1
+    assert "evidence_reference_count" not in payload["platform_state"]
     assert payload["agent_state"]["active_sessions"]
     _assert_no_internal_graph_or_token(payload)
 

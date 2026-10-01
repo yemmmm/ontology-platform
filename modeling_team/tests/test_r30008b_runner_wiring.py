@@ -808,9 +808,9 @@ def test_s9_staged_protocol_gets_capability_socket_and_advertisement(tmp_path):
     socket.parent.mkdir(parents=True, exist_ok=True)
     adapter._acceptance = SimpleNamespace(capability_socket_path=lambda role: socket)
     try:
-        # A staged run advertises the staged run pair: the batch write and the
-        # evidence repost, in that order, and nothing else.
+        # A staged run advertises only the batch-write operation; source repost is withdrawn.
         assert adapter._role_capability_operations("protocol") == STAGED_PROTOCOL_RUN_OPERATIONS
+        assert STAGED_PROTOCOL_RUN_OPERATIONS == ("protocol_staged_submit_modeling_batch",)
         command = adapter.namespace_command(_role_agent(base, "protocol"))
         assert [
             "--bind",

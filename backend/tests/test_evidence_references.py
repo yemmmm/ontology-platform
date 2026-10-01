@@ -263,7 +263,7 @@ def test_association_batch_dry_run_atomic_failure_and_partial_apply(
     assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 1
 
 
-def test_canonical_write_atomically_persists_inline_evidence(
+def test_canonical_write_does_not_expose_inline_evidence(
     in_memory_session: Session, monkeypatch
 ) -> None:
     _seed_scope(in_memory_session)
@@ -271,7 +271,7 @@ def test_canonical_write_atomically_persists_inline_evidence(
     class FakeCanonicalWriter:
         def apply_command(self, command_kind, payload, **kwargs):
             assert command_kind == "create_class"
-            assert kwargs["commit"] is False
+            assert kwargs["commit"] is True
             in_memory_session.add(
                 SemanticEditAuditModel(
                     id="audit-evidence",
@@ -309,12 +309,6 @@ def test_canonical_write_atomically_persists_inline_evidence(
             payload={"class_iri": "https://example.test/Workflow", "label": "Workflow"},
             actor="agent:test",
             client_item_id="item-class-1",
-            evidence=[
-                {
-                    "document_name": "API Guide",
-                    "excerpt": "A workflow can be published.",
-                }
-            ],
         ),
         principal=AuthPrincipal(
             subject_type="api_key",
@@ -329,9 +323,6 @@ def test_canonical_write_atomically_persists_inline_evidence(
         settings=Settings(),
     )
     assert response.applied is True
-    assert len(response.evidence_associations) == 1
-    association = response.evidence_associations[0]
-    assert association["target_id"] == "https://example.test/Workflow"
-    assert association["edit_audit_id"] == "audit-evidence"
-    assert in_memory_session.scalar(select(func.count(EvidenceReferenceModel.id))) == 1
-    assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 1
+    assert not hasattr(response, "evidence_associations")
+    assert in_memory_session.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
+    assert in_memory_session.scalar(select(func.count(EvidenceAssociationModel.id))) == 0

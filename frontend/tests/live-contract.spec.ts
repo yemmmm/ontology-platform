@@ -19,7 +19,6 @@ interface GraphScope {
   ontology: string;
   data: string;
   shapes: string;
-  evidence: string;
   policy: string;
 }
 
@@ -56,7 +55,6 @@ function uniqueScope(): GraphScope {
     ontology: `${base}/ontology/live-${id}`,
     data: `${base}/data/live-${id}`,
     shapes: `${base}/shapes/live-${id}`,
-    evidence: `${base}/evidence/live-${id}`,
     policy: `${base}/policy/live-${id}`,
   };
 }
@@ -73,7 +71,6 @@ function seedTrig(s: GraphScope): string {
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
 @prefix sh: <http://www.w3.org/ns/shacl#> .
-@prefix prov: <http://www.w3.org/ns/prov#> .
 
 <${s.ontology}> {
   ex:Person a owl:Class ; rdfs:label "Person" .
@@ -92,10 +89,6 @@ function seedTrig(s: GraphScope): string {
   ex:PersonShape a sh:NodeShape ;
     sh:targetClass ex:Person ;
     sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:datatype xsd:string ] .
-}
-
-<${s.evidence}> {
-  <http://ontology-platform.local/semantic/evidence/live-ev> a prov:Entity .
 }
 
 <${s.policy}> {
@@ -175,7 +168,6 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
       ontology: members.asserted_ontology,
       data: members.asserted_data,
       shapes: members.shapes,
-      evidence: `${members.policy}/evidence-not-in-query-scope`,
       policy: members.policy,
     };
     registerCleanup(project.json.id, s);
@@ -237,7 +229,6 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
       target_graph_iri: s.data,
       actor: "live-contract",
       reason: "valid edit",
-      evidence_status: "evidence_bound",
       warning_state: {},
     });
     expect(good.status).toBe(200);
@@ -251,7 +242,6 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
       target_graph_iri: s.data,
       actor: "live-contract",
       reason: "malformed",
-      evidence_status: "evidence_bound",
       warning_state: {},
     });
     expect(bad.status).toBe(400);
@@ -278,7 +268,6 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
       ontology: members.asserted_ontology,
       data: members.asserted_data,
       shapes: members.shapes,
-      evidence: `${members.policy}/evidence-not-in-query-scope`,
       policy: members.policy,
     };
     registerCleanup(project.json.id, s);

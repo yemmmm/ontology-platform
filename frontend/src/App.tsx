@@ -5,7 +5,6 @@ import {
   Check,
   ChevronRight,
   Database,
-  FileText,
   GitBranch,
   History,
   Layers,
@@ -45,7 +44,6 @@ import { EntitiesPage } from "./pages/EntitiesPage";
 import { RulesPage } from "./pages/RulesPage";
 import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { RequirementQuestionsPage } from "./pages/RequirementQuestionsPage";
-import { EvidenceReferencesPage } from "./pages/EvidenceReferencesPage";
 import { McpToolsPage } from "./pages/McpToolsPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { GraphSetPage } from "./pages/GraphSetPage";
@@ -82,7 +80,6 @@ type LegacyWorkspaceTab =
 type CurrentWorkspaceTab =
   | "brief"
   | "questions"
-  | "evidence"
   | "facts"
   | "classes"
   | "entities"
@@ -131,7 +128,6 @@ const workspaceTabs: Array<{
 }> = [
   { id: "brief", stage: "overview", label: "Overview", detail: "Brief · status", icon: BookOpen },
   { id: "questions", stage: "overview", label: "Structured Requirements", detail: "Requirement clarification", icon: Check },
-  { id: "evidence", stage: "overview", label: "Evidence", detail: "Shared source excerpts", icon: FileText },
   { id: "classes", stage: "modeling", label: "Classes", detail: "Class diagram", icon: Layers },
   { id: "entities", stage: "modeling", label: "Entities", detail: "Entity diagram", icon: Database },
   { id: "rules", stage: "modeling", label: "Rules", detail: "Rule definitions", icon: Workflow },
@@ -774,7 +770,7 @@ function OntologyHomePage(props: {
         title={t("Delete project")}
         danger
         confirmLabel={t("Delete project")}
-        warning={t("This permanently deletes \"{name}\" and all ontologies, entities, relations, evidence, and proposals inside it.", { name: deleteTarget?.name ?? "" })}
+        warning={t("This permanently deletes \"{name}\" and all ontologies, entities, relations, and proposals inside it.", { name: deleteTarget?.name ?? "" })}
         onConfirm={deleteProject}
         onCancel={() => setDeleteTarget(null)}
       >
@@ -877,17 +873,6 @@ function WorkspaceContent(props: {
     return (
       <RequirementQuestionsPage
         onDirtyChange={props.setPageDirty}
-        projectId={props.project.id}
-        readOnly={readOnly}
-        request={governedRequest}
-      />
-    );
-  }
-
-  if (props.tab === "evidence") {
-    return (
-      <EvidenceReferencesPage
-        ontologyId={props.ontology.id}
         projectId={props.project.id}
         readOnly={readOnly}
         request={governedRequest}
@@ -1222,7 +1207,6 @@ function OverviewDiagnostics(props: {
     [reasoningRuns, ruleRuns, t, validationRuns],
   );
   const graphCount = numericJsonValue(status?.graphs, "total");
-  const missingEvidenceCount = numericJsonValue(status?.derived, "missing_evidence_count");
   const staleDerivedCount =
     numericJsonValue(status?.derived, "stale_derived_count") ?? numericJsonValue(status?.derived, "stale_count");
 
@@ -1236,8 +1220,6 @@ function OverviewDiagnostics(props: {
         <dl className="detailList">
           <dt>{t("Registered workspace areas")}</dt>
           <dd>{graphCount ?? t("unknown")}</dd>
-          <dt>{t("Missing evidence")}</dt>
-          <dd>{missingEvidenceCount ?? 0}</dd>
           <dt>{t("Stale derived results")}</dt>
           <dd>{staleDerivedCount ?? 0}</dd>
         </dl>

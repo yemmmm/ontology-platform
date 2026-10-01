@@ -41,7 +41,6 @@ def _candidate(revision: object = "rev-1") -> dict[str, object]:
                 "item_id": "workflow-1",
                 "item_kind": "entity",
                 "semantic": {"label": "Workflow"},
-                "evidence_citations": [{"document": "tools.mdx"}],
             }
         ],
     }
@@ -794,12 +793,11 @@ def test_formal_candidate_rejects_non_string_constraints() -> None:
 
 def test_redrive_retains_exact_candidate_bytes_and_runtime_attribution() -> None:
     original_text = (
-        '{"candidate_kind":"platform-neutral-candidate-v2",'
+        '{"candidate_kind":"platform-neutral-candidate-v3",'
         '"candidate_revision":"rev-1","scope":"工作流-é",'
         '"constraints":["preserve explicit unknowns"],'
         '"items":[{"item_id":"workflow-1","item_kind":"entity",'
-        '"semantic":{"label":"工作流"},'
-        '"evidence_citations":[{"document":"tools.mdx"}]}]}\n  '
+        '"semantic":{"label":"工作流"}}]}\n  '
     )
     progress = FormalCandidateProgress(clock=lambda: 0.0)
     delivery = _delivery("modeling", "protocol", original_text, "d1")

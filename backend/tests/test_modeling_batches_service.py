@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import json
-from hashlib import sha256
 from types import SimpleNamespace
 
 import pytest
+from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -14,12 +14,10 @@ from app.api.schemas import (
     BuildSessionCreate,
     ModelingBatchSubmit,
     ModelingItemInput,
-    ModelingOperationPlanRead,
     OntologyLeaseAcquire,
 )
 from app.core.config import Settings
 from app.repositories.models import (
-    EvidenceAssociationModel,
     EvidenceReferenceModel,
     ModelingBatchAttemptModel,
     ModelingBatchModel,
@@ -164,7 +162,6 @@ def _item(item_id: str, *, name: str = "Customer", **overrides):
         "command_kind": "create_class",
         "payload": {"name": name},
         "rationale": "Needed by customer competency questions",
-        "evidence": [{"document_name": "domain.md", "excerpt": f"{name} is a domain term."}],
     }
     data.update(overrides)
     return ModelingItemInput(**data)
@@ -200,63 +197,28 @@ def test_dry_run_is_persistent_deterministic_and_has_zero_side_effects(modeling)
     assert "lease" not in json.dumps(first, default=str).lower()
 
 
-def test_dry_run_operation_plan_projects_inline_evidence_safely_and_dedupes(modeling):
+def test_dry_run_rejects_inline_evidence_input(modeling):
     service, db, _rdf, session_id, _lease, version = modeling
     excerpt = "Customer is a domain term."
-    item = _item(
-        "customer",
-        evidence=[
-            {"document_name": "domain.md", "excerpt": excerpt},
-            # Equivalent after normalization; _evidence_plan must keep one
-            # deterministic reference and the response must project it once.
-            {"document_name": " domain.md ", "excerpt": "\n" + excerpt + "\r\n"},
-            # Same excerpt under another document remains a distinct citation.
-            {"document_name": "glossary.md", "excerpt": excerpt},
-        ],
-    )
-
-    result = service.submit(session_id, _request(version, [item]))
-
-    rows = result["operation_plan"]["evidence"]
-    assert len(rows) == 2
-    assert all(
-        set(row) == {
-            "client_item_id",
-            "document_name",
-            "normalized_excerpt_sha256",
-            "dedupe_identity",
-        }
-        for row in rows
-    )
-    assert {row["document_name"] for row in rows} == {"domain.md", "glossary.md"}
-    assert {
-        row["normalized_excerpt_sha256"] for row in rows
-    } == {sha256(excerpt.encode("utf-8")).hexdigest()}
-    assert len({row["dedupe_identity"] for row in rows}) == 2
-    assert excerpt not in json.dumps(result["operation_plan"])
-    # Response validation uses the same Pydantic contract exposed to API
-    # consumers; this is still a dry-run and must not create Evidence rows.
-    assert ModelingOperationPlanRead.model_validate(result["operation_plan"])
+    with pytest.raises(ValidationError):
+        _item("customer", evidence=[{"document_name": "domain.md", "excerpt": excerpt}])
     assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
 
 
-def test_dry_run_without_evidence_keeps_warning_and_empty_safe_plan(modeling):
+def test_dry_run_without_evidence_has_no_trace_warning_or_projection(modeling):
     service, db, _rdf, session_id, _lease, version = modeling
     result = service.submit(
         session_id,
         _request(
             version,
-            [_item("customer", evidence=[])],
+            [_item("customer")],
             batch="missing-evidence-plan",
             key="missing-evidence-plan",
         ),
     )
 
-    warning = next(
-        finding for finding in result["findings"] if finding["code"] == "missing_evidence"
-    )
-    assert warning["severity"] == "warning"
-    assert result["operation_plan"]["evidence"] == []
+    assert all(finding["code"] != "missing_evidence" for finding in result["findings"])
+    assert "operation_plan" not in result
     assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
 
 
@@ -604,7 +566,7 @@ def test_entity_property_lists_are_rejected_by_handler_before_compiler(command_k
         ModelingCommandHandlerRegistry(_settings()).validate_payload_shape(command_kind, payload)
 
 
-def test_partial_applies_stable_subset_and_only_its_evidence(modeling):
+def test_partial_applies_stable_subset_without_evidence_side_effects(modeling):
     service, db, rdf, session_id, lease, version = modeling
     invalid = _item("bad", command_kind="unknown_command", payload={})
     dependent = _item("dependent", depends_on=["bad"])
@@ -622,33 +584,13 @@ def test_partial_applies_stable_subset_and_only_its_evidence(modeling):
     assert "operation_plan" not in result
     assert status == {"bad": "failed", "dependent": "blocked", "good": "applied"}
     assert len(rdf.deltas) == 1
-    assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 1
-    assert db.scalar(select(func.count(EvidenceAssociationModel.id))) == 1
-    assert db.scalar(select(func.count(SemanticStatementOccurrenceModel.id))) > 0
-    good_item_id = next(
-        item["item_id"] for item in result["items"] if item["client_item_id"] == "good"
-    )
-    modeling_origins = list(
-        db.scalars(
-            select(SemanticStatementOriginModel).where(
-                SemanticStatementOriginModel.origin_kind == "modeling_item"
-            )
-        )
-    )
-    assert modeling_origins
-    assert {origin.origin_id for origin in modeling_origins} == {good_item_id}
+    assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
     resource_iri = next(
         item["resource_outputs"]["resource_iri"]
         for item in result["items"]
         if item["client_item_id"] == "good"
     )
-    lineage = OntologyLineageService(db).get_lineage(
-        ontology_id=ONTOLOGY_ID,
-        target_type="resource",
-        target_id=resource_iri,
-    )
-    assert lineage["evidence_status"] == "supported"
-    assert lineage["items"][0]["supporting_context"]["rationales"]
+    assert resource_iri
 
 
 def test_item_ref_cycle_forms_atomic_group_without_becoming_an_error(modeling):
@@ -1849,9 +1791,6 @@ def _shape_item(
             "constraints": constraints,
         },
         "rationale": "Shape constrains a competency-question focus node",
-        "evidence": [
-            {"document_name": "domain.md", "excerpt": "Every customer carries an email."}
-        ],
     }
     if depends_on:
         data["depends_on"] = depends_on

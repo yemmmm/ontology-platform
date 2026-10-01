@@ -1,5 +1,5 @@
 {
-  "schema_version": "r3-0-009-unified-graph-contract/v1",
+  "schema_version": "r3-0-009-unified-graph-contract/v2",
   "purpose": "Agent-readable artifact, approval and submission contract for the R3.0-009 unified semantic graph and commonality abstraction flow. It extends the R3.0-008B staged decisions contract in place: same run root, same seven-gate order, same Runner-private submission capability, plus the versioned 009 candidate, coordinator decisions, translation approvals, materialization plan and the 009 intent/receipt bindings. It is only in force for a Team Task that declares parameters.unified_semantic_graph: true; 008B tasks keep their own schemas and are never re-validated against this contract.",
   "task_parameter": {
     "name": "unified_semantic_graph",
@@ -10,13 +10,13 @@
     "rule": "Readers and writers dispatch on the recorded schema_version of each artifact together with the Task mode. 008B mode writes and validates only the r3-0-008b v1 schemas; 009 mode writes the schemas listed here. A schema/mode mismatch is a typed, fixable error, never a silent downgrade. Historical evidence is validated with the schema it records; an old intent/receipt is never retro-fitted with 009 bindings.",
     "schemas": {
       "stage3_slot": "r3-0-009-stage3-slot/v1",
-      "candidate": "r3-0-009-unified-graph/v1",
-      "approvals": "r3-0-009-approvals/v1",
-      "materialization_plan": "r3-0-009-materialization-plan/v1",
+      "candidate": "r3-0-009-unified-graph/v2",
+      "approvals": "r3-0-009-approvals/v2",
+      "materialization_plan": "r3-0-009-materialization-plan/v2",
       "submission_intent": "r3-0-009-submission-intent/v1",
       "submission_receipt": "r3-0-009-submission-receipt/v1",
       "existing_entity_binding": "r3-0-009-existing-entity-binding/v1",
-      "contract_version_anchor": "r3-0-009-unified-graph/v1"
+      "contract_version_anchor": "r3-0-009-unified-graph/v2"
     }
   },
   "artifact_locations": {
@@ -51,15 +51,15 @@
     "schema_version": "r3-0-009-stage3-slot/v1",
     "fields": ["schema_version", "scenario_id", "produced_by", "approved_by", "candidate_artifacts", "candidate_contract", "slot_note"],
     "rules": [
-      "candidate_contract replaces the 008B deferred_contract and must name r3-0-009-unified-graph/v1",
+      "candidate_contract replaces the 008B deferred_contract and must name r3-0-009-unified-graph/v2",
       "candidate_artifacts lists the published candidate files this slot approves",
       "Modeling writes the slot; the Coordinator confirms it inside the approvals artifact"
     ]
   },
   "candidate": {
-    "schema_version": "r3-0-009-unified-graph/v1",
+    "schema_version": "r3-0-009-unified-graph/v2",
     "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
-    "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "evidence_refs", "slice_ids", "shared_scope", "unknowns"],
+    "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
     "item_kinds": ["entity", "relation", "property", "shape"],
     "rules": [
       "items are neutral: no guessed platform IRI, semantic ID, or receipt reference",
@@ -69,17 +69,17 @@
     ]
   },
   "approvals": {
-    "schema_version": "r3-0-009-approvals/v1",
+    "schema_version": "r3-0-009-approvals/v2",
     "fields": ["schema_version", "scenario_id", "maintained_by", "entries", "decisions", "translation_approvals"],
     "entry_rule": "entries keeps the 008B conclusion_confirmation/stage3_slot entries, their fields and their validation, unchanged and unmixed with the new kinds.",
-    "decision_fields": ["decision_id", "target_kind", "target_id", "candidate_id", "content_revision", "content_digest", "decision", "reason", "evidence_refs", "slice_ids", "shared_scope", "scope"],
+    "decision_fields": ["decision_id", "target_kind", "target_id", "candidate_id", "content_revision", "content_digest", "decision", "reason", "slice_ids", "shared_scope", "scope"],
     "decision_kinds": ["approved", "rejected", "deferred"],
     "decision_target_kinds": ["commonality_node", "member_relation", "commonality_relation"],
     "translation_approval_fields": ["plan_ref", "projection_digest", "approved_by", "decision", "reason"],
     "rules": [
       "the Coordinator is the only writer; only an approved current decision releases a translation",
       "scope is mandatory for commonality_relation decisions as a non-empty JSON object (a mapping of scope names to values, never an array or a plain string) and must stay null everywhere else",
-      "every decision carries at least one evidence_ref and the content_digest of the exact candidate content it approves",
+      "every decision carries the content_digest of the exact candidate content it approves",
       "a translation approval proves one plan_ref/projection_digest pair, not a mutable file name",
       "R3.0-014: translation_approvals never gate a dry-run. Empty, old-plan, rejected or format-drifted entries are history: only the list shape itself is validated up front, and the exact-key match is evaluated at apply time only",
       "R3.0-014: an apply additionally requires one current translation approval keyed exactly to the submitted (plan_ref, projection_digest) whose approved_by is the run's current Coordinator role ID. Equivalent repeats (same key, approver and decision) count as one decision; a genuine decision or approver conflict on the same key is approval_conflict",
@@ -87,10 +87,10 @@
     ]
   },
   "materialization_plan": {
-    "schema_version": "r3-0-009-materialization-plan/v1",
+    "schema_version": "r3-0-009-materialization-plan/v2",
     "fields": ["schema_version", "plan_id", "revision", "projection", "projection_digest"],
     "projection_fields": ["task_id", "contract_version", "scenario_id", "session_id", "client_batch_id", "ontology_id", "candidate_id", "candidate_revision", "candidate_digest", "items", "decision_bindings", "identity_bindings"],
-    "projection_item_fields": ["client_item_id", "command_kind", "payload", "depends_on", "evidence_reference_ids", "evidence", "rationale", "competency_question_ids"],
+    "projection_item_fields": ["client_item_id", "command_kind", "payload", "depends_on", "rationale", "competency_question_ids"],
     "decision_binding_fields": ["command_index", "client_item_id", "candidate_item_ids", "candidate_revision", "candidate_content_digests", "decision_ids"],
     "identity_binding_fields": ["candidate_item_id", "resource_iri", "receipt_ref", "evidence_ref"],
     "rules": [
@@ -129,24 +129,6 @@
       "R3.0-014: the capability response passes the Attempt facts through verbatim — mode, attempt_id, attempt_status, content_hash and findings — while ok states only that the receipt was written"
     ],
     "isolation": "plan_ref, projection, projection_digest and decision_bindings are Runner-private sidecar fields. They are never added to the platform ModelingItemInput payload, which forbids extra fields, and never leave the Runner sandbox."
-  },
-  "evidence_capability": {
-    "operation": "protocol_staged_associate_evidence",
-    "owner": "protocol (via the runner_capability MCP server)",
-    "platform_tool": "associate_evidence_reference",
-    "target_type": "modeling_item",
-    "arguments": ["protocol_id", "association"],
-    "rules": [
-      "the association targets the Modeling Item a receipt or read-back named (target_id), never a candidate revision id or an invented identifier",
-      "this capability is out of the plan/approval chain: it mints no intent, consults no projection, and cannot unlock or re-open a materialization",
-      "it is the read-side complement of submission_capability: it closes the lineage gate of an item the staged write created, and it is idempotent per (target, evidence reference)"
-    ],
-    "failure_reason_codes": [
-      "staged_gate_closed",
-      "staged_submit_schema_mismatch",
-      "staged_evidence_forward_failed",
-      "staged_evidence_forward_unknown"
-    ]
   },
   "intent_receipt": {
     "intent_fields": ["schema_version", "ordinal", "idempotency_key", "client_batch_id", "session_id", "mode", "commands", "value_traces", "l3_nodes", "status", "plan_ref", "projection", "projection_digest", "decision_bindings"],

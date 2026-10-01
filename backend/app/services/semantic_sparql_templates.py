@@ -45,10 +45,6 @@ class ReadModelTemplate:
     # because their items are assembled by dedicated composers, not by the
     # generic decorator.
     primary_iri_variable: str = ""
-    # Default evidence_status surfaced via _decorate_row when no row-level
-    # binding has been resolved. The PG-derived read path overrides this with
-    # "with_evidence" / "missing_evidence" at apply time.
-    evidence_status: str = "not_applicable"
     # Non-whitelist SELECT variables that the row decorator passes through
     # into the response item's ``detail_fields`` subobject (keys omitted when
     # unbound). The default keeps every existing template byte-identical.
@@ -150,9 +146,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="asserted",
         body="""# template: graph-set-staleness
         # COMPOSER. The SemanticReadModelService delegates to
-        # ``_compose_graph_set_staleness``; missing-evidence counts are
-        # derived from fact_evidence_bindings in Postgres (Phase 3). The
-        # body is intentionally empty.
+        # ``_compose_graph_set_staleness``. The body is intentionally empty.
         """,
     ),
     "class-topology": ReadModelTemplate(
@@ -546,10 +540,9 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         body="""# template: fact-audit-queue
         # COMPOSER. The SemanticReadModelService detects this template name
         # and delegates to ``_compose_fact_audit_queue``. The composer uses
-        # the ``?kind=`` query parameter (asserted / inferred / rule_derived /
-        # missing_evidence) to select source graphs and decorates each row
-        # into the unified FactRow shape (spec §6.3). evidence_status is
-        # derived per-row from PG fact_evidence_bindings (Phase 3).
+        # the ``?kind=`` query parameter (asserted / inferred / rule_derived)
+        # to select source graphs and decorates each row into the unified
+        # FactRow shape.
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
@@ -609,7 +602,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         body="""# template: publication-readiness
         # Single-row composer. Body is intentionally empty; the service
         # delegates to ``_compose_publication_readiness`` which reuses the
-        # graph-set-staleness and missing-evidence aggregators.
+        # graph-set-staleness aggregator.
         """,
     ),
     "graph-set-history-list": ReadModelTemplate(

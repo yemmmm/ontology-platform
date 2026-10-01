@@ -311,7 +311,7 @@ def test_canonical_projection_requires_explicit_scope_and_identity() -> None:
 
 def test_synthetic_only_entity_shape_fails_closed() -> None:
     candidate = {
-        "candidate_kind": "platform-neutral-candidate-v2",
+        "candidate_kind": "platform-neutral-candidate-v3",
         "candidate_revision": 1,
         "scope": "retained",
         "constraints": ["source-grounded"],
