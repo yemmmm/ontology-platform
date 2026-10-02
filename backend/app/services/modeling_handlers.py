@@ -605,9 +605,11 @@ class ModelingCommandHandlerRegistry:
                         resource_key=f"{graph_iri}:{subject}",
                         slot_key=predicate,
                         operation=operation,
+                        # A relation slot holds several targets for one relation
+                        # type, so removing one target stays multi-valued.
                         cardinality=(
                             "multi"
-                            if prepared.command_kind == "create_relation"
+                            if prepared.command_kind in {"create_relation", "delete_relation"}
                             or _is_multi_value_predicate(predicate)
                             else "single"
                         ),

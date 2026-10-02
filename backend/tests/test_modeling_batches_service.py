@@ -1511,6 +1511,60 @@ def test_create_and_delete_same_relation_target_still_conflict(modeling):
     assert "conflicting_item_effects" in {finding["code"] for finding in result["findings"]}
 
 
+def test_relation_target_replacement_for_same_subject_and_type_is_valid(modeling):
+    """R4.0-007 F5/A6: one atomic Batch may delete the old relation statement and
+    add a different one on the same multi-valued slot; that is a declared
+    replacement, not two writers racing one target."""
+    service, _db, _rdf, session_id, _lease, version = modeling
+    base = {
+        "source_entity_iri": "https://r004.test/resource/entity/workflow-definition",
+        "relation_type_iri": "https://r004.test/resource/relation/has-input",
+    }
+    replacement = [
+        ModelingItemInput(
+            client_item_id="remove-definition-input-1",
+            command_kind="delete_relation",
+            payload={**base, "target_entity_iri": "https://r004.test/resource/entity/input-1"},
+        ),
+        ModelingItemInput(
+            client_item_id="add-definition-input-2",
+            command_kind="create_relation",
+            payload={**base, "target_entity_iri": "https://r004.test/resource/entity/input-2"},
+        ),
+    ]
+
+    result = service.submit(session_id, _request(version, replacement))
+
+    assert result["attempt_status"] == "validated"
+    assert "conflicting_item_effects" not in {
+        finding["code"] for finding in result["findings"]
+    }
+    delta = result["normalized_delta"]
+    assert len(delta["deletes"]) == 1 and "input-1" in json.dumps(delta["deletes"][0])
+    assert len(delta["inserts"]) == 1 and "input-2" in json.dumps(delta["inserts"][0])
+
+
+def test_single_value_slot_delete_and_add_still_conflicts(modeling):
+    """The multi-valued replacement exemption must not admit single-valued
+    last-write-wins: two items rewriting one entity label can still race."""
+    service, _db, _rdf, session_id, _lease, version = modeling
+    first = ModelingItemInput(
+        client_item_id="relabel-a",
+        command_kind="update_entity",
+        payload={"entity_id": "https://r004.test/resource/entity/customer", "label": "A"},
+    )
+    second = ModelingItemInput(
+        client_item_id="relabel-b",
+        command_kind="update_entity",
+        payload={"entity_id": "https://r004.test/resource/entity/customer", "label": "B"},
+    )
+
+    result = service.submit(session_id, _request(version, [first, second]))
+
+    assert result["attempt_status"] == "validation_failed"
+    assert "conflicting_item_effects" in {finding["code"] for finding in result["findings"]}
+
+
 def test_recovery_observes_applied_rdf_and_finalizes_without_rewriting(modeling):
     service, db, _rdf, session_id, lease, version = modeling
     uncertain = UncertainRdfStore(persist_before_failure=True)

@@ -900,6 +900,10 @@ class ModelingBatchService:
                         # D15: defining and refining one Shape inside a batch is
                         # a declared sequence, not two writers racing one target.
                         continue
+                    if self._multi_valued_statement_replacement(left, right):
+                        # R4.0-007 F5/A6: switching a reference deletes the old
+                        # statement and adds the new one in one atomic Batch.
+                        continue
                     findings.append(
                         _finding(
                             "conflicting_item_effects",
@@ -909,6 +913,34 @@ class ModelingBatchService:
                         )
                     )
         return prepared, self._dedupe_findings(findings), groups, dependency_map
+
+    @staticmethod
+    def _multi_valued_statement_replacement(left, right) -> bool:
+        """True for one concrete delete+insert pair replacing a statement.
+
+        R4.0-007 F5/A6 switches a reference by removing the old relation
+        statement and adding the new one in the same atomic Batch. On a
+        multi-valued slot that pair has one defined outcome, so it is a declared
+        replacement rather than two writers racing one target. The exemption
+        stays narrow: same resource and slot, concrete statements only (no
+        wildcard match or cascade delete), different objects, multi-valued on
+        both sides. Deleting and re-adding the *same* statement stays a
+        conflict because the merged delta would both remove and insert it.
+        """
+        if {left.operation, right.operation} != {"delete", "insert"}:
+            return False
+        if left.cardinality != "multi" or right.cardinality != "multi":
+            return False
+        if left.resource_key != right.resource_key or left.slot_key != right.slot_key:
+            return False
+        if left.value_hash == right.value_hash:
+            return False
+        return not (
+            left.match_pattern
+            or right.match_pattern
+            or left.cascade_footprint
+            or right.cascade_footprint
+        )
 
     def _ordered_shape_refinement(
         self, left, right, prepared: dict[str, PreparedModelingCommand], dependency_map

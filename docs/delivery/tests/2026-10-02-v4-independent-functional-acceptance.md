@@ -18,10 +18,14 @@
 本轮没有改动任何既有测试。已有测试由独立验收方重新执行，并核对其实际断言；
 这提供独立功能执行证据，仍不等于独立创建的业务 oracle 或真实语义验收。
 
-功能结果：008／010 的 A1—A9 在本次有界测试合同内 PASS；007 的 A1—A9 为 PARTIAL，
+Round 1 功能结果：008／010 的 A1—A9 在本次有界测试合同内 PASS；007 的 A1—A9 为 PARTIAL，
 011 的 A1—A9 为 PARTIAL（共享变更／绑定漂移的业务重审证据不足）。
 四项 A10 均未由本验收方执行，四项整体均为 PARTIAL。
-未发现实证 Critical／High 产品缺陷。PARTIAL 项是确切覆盖缺口，不能反推产品失败。
+Round 1 未发现实证 Critical／High 产品缺陷。其 PARTIAL 项是确切覆盖缺口，不能反推产品失败。
+2026-10-03 续验发现的实际失败另列于下方，不用 Round 1 结论覆盖。
+续验收口：007 A4／A5／A6 bounded PASS，修复后的独立 backend 全量 1144 passed／54 skipped；
+原 High 已经独立定向复验修复。007 A1—A9 在记录的有界功能范围内 PASS，011 A5／A7
+仍为 PARTIAL；008／010 原功能结论保持，四项 A10 与整体仍为 PARTIAL。
 
 ## Round 1：实际执行
 
@@ -124,3 +128,80 @@ snapshot／fork 使用服务层真实存储往返，未设置 HTTP 模式，不�
 共享变更／绑定漂移重审实例或后续独立真实语义取证；不能用本轮开发 fixture 的结构合法
 消除该缺口。A10 保持待独立真实证据，不读取生产过程中的隐藏答案补全。
 本记录不改权威需求状态、不提交。只检查新记录的格式与空白，不重复全量套件或重启。
+
+## Round 2：2026-10-03 未覆盖点续验
+
+用户取消时间限制后，独立验收方继续 007 A4／A5／A6 与 011 A5／A7；仍不参与真实
+建模 run 的创建、继续、修复，不读生产输入、CQ 或隐藏答案，不修改平台实现、业务资料或模型。
+唯一新增可执行文件为 `backend/tests/test_v4_independent_change_acceptance.py`。
+使用已有 UUID 隔离的 `mapping_application` fixture、BuildSession／lease、Batch 服务与
+PostgreSQL／Oxigraph；引用重审使用现有 Context Query 服务和真实 RDFLib SPARQL。
+没有临时业务执行器、通用影响分析器或 Consumer 自动判定实现。
+
+### 轮次与失败保留
+
+| 轮次 | 实际结果与原因 | 原始日志 |
+| --- | --- | --- |
+| 新测试 Round 1 | 3 failed；两项测试误用不存在的 `SemanticNamespace.data_graph` 方法；查询 fixture 缺谓词 label，RDFLib 聚合比较抛 TypeError。均是本轮 fixture 问题，不归因产品或建模质量 | `/tmp/v4-independent-change-round1.log` |
+| Round 2 | 修订命令工作目录错，修改未执行；旧测试再次 3 failed。保留执行错误，不声称已修订或获得新行为证据 | `/tmp/v4-independent-change-round2.log` |
+| Round 3 | 修正为既有 `graph("data", ontology)` 并声明测试谓词 label 后：2 failed、1 passed、4405 warnings，23.76 秒。memory 和真实 PG／Oxigraph 的原子引用切换均被 `conflicting_item_effects` 拒绝；A4 有界间接链／漏绑检查通过 | `/tmp/v4-independent-change-round3.log` |
+| Round 4 精确诊断 | 1 failed、2 deselected、15 warnings，1.71 秒；独立重跑 memory 用例，记录完整 finding。失败发生在第一次切换，后续第二 Ontology 失败／修正路径尚未执行 | `/tmp/v4-independent-change-round4.log` |
+| Round 2 后端全量 | 1 failed、1141 passed、54 skipped、17783 warnings，294.98 秒；唯一失败为新独立 memory 原子切换测试，live 变体在未启用 opt-in 的全量中跳过（其真实依赖失败已由 Round 3 单独证明） | `/tmp/v4-independent-change-backend-full-round1.log` |
+| 修复后 fixture 前提复核 | 修复责任方解除 effect 冲突后，原 test 进入后续步骤，`missing-action` 绝对 IRI 被 applied；原失败注入假设不属于通用 RDF 关系合同。此为测试前提问题，不扩大为目标本地声明的新平台硬门 | 修复责任方 `/tmp/h007-repro-after.log`，本验收仅接收该复现交接、另行核对当前编译合同 |
+| Round 5 独立复验 | 将 B 的非法 target 改为明确拒绝的相对 IRI，成功切换／旧引用／同 session 修正断言保持：3 passed、4421 warnings，22.40 秒，包含 memory、真实 PostgreSQL／Oxigraph 与有界链查询 | `/tmp/v4-independent-change-round5.log` |
+| Round 6 最终定向 | 补实际新参数 `parameterDefinition.required=true`、新 Action 关联参数、旧 Action 无新参数三项读回：3 passed、4421 warnings，24.22 秒 | `/tmp/v4-independent-change-round6.log` |
+| 修复后独立后端全量 | 1144 passed、54 skipped、17791 warnings，247.19 秒；当前新增独立测试与修复方回归均纳入，live opt-in 仍单列 Round 6，不把 skipped 当 PASS | `/tmp/v4-independent-change-backend-full-round2.log` |
+
+复现命令（目录 `backend/`）：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. RUN_RELATIONAL_MAPPING_LIVE=1 uv run pytest -q --tb=short --disable-warnings tests/test_v4_independent_change_acceptance.py
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest -q --tb=short --disable-warnings tests/test_v4_independent_change_acceptance.py -k memory
+```
+
+新增测试 Ruff format／check 已通过。因为新增 backend 可执行测试，已按仓库要求执行
+`env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest -q --tb=short --disable-warnings`
+全量测试，日志 `/tmp/v4-independent-change-backend-full-round1.log`；终态为上述 1 failed。
+修复前该轮不报告 backend 完成或全量 PASS。
+修复后的当前后端全量另在 `/tmp/v4-independent-change-backend-full-round2.log`，
+1144 passed／54 skipped。最终定向、全量与新增测试 Ruff／空白检查通过；到此停止扩展检查。
+没有服务重启：本验收只补测试，不修改被运行平台；另有明确不重启的任务边界。
+
+### H007-CHANGE-01：安全原子引用切换被误拒绝（High，原始失败；定向复验已修复）
+
+独立 fixture 已保存旧 Action（无必填 reason）、新 Action（新合同）及新 mandatory reason 参数。
+call-a／call-b 各自仍引用旧 Action。对 a 的同一 Batch 提交：
+
+- `delete_relation(call-a, related, old-action)`；
+- `create_relation(call-a, related, new-action)`。
+
+两个不同对象的精确关系删除／新增应可在原子 Batch 最终态替换。当前实际返回
+`attempt_status=validation_failed`，blocking finding `conflicting_item_effects`，消息为
+`Items contain incompatible writes to the same semantic target`，归属两个 item。
+memory 与真实 PostgreSQL／Oxigraph 都复现；失败保留了 Attempt／findings，未发生不确定写入。
+代码定位：`backend/app/services/modeling_batches.py` 的 effect overlap 分支（续验时 893—909 行），
+遇任一 delete 即拒绝该重叠；普通关系没有 `update_relation` 替代入口。
+这阻断 007 A5／A6 规定的同 Batch 引用安全切换。拆成先删／后建不提供同一 Batch 原子性，
+不能用它绕过要求或把结果写成 PASS。
+已报告主 Agent，由独立于本验收方的修复责任方处理；验收方不修改守卫、不放宽失败断言。
+随后独立复验原成功切换断言通过。后续失败注入改用合同明确非法的相对 IRI；不假设普通
+RDF object 必须先在本地 declare，亦不新增目标声明完整性机制。保留所有修复前的 Attempt、
+findings、失败日志与实际测试轮次；没有把修复后的结果覆盖回原失败轮。
+
+### 当前逐条结论
+
+| 条款 | 续验状态与精确边界 |
+| --- | --- |
+| 007 A4 | bounded PASS（声明链的有界功能）：从 mandatory parameter 沿共享 Action／两次 usage 到两个 flow，depth=3、全页 drain 后两条间接链可读；独立 fixture oracle 检出移除 usage-2 的 binding，flow-2 仍可到达。小页／depth=1 返回 cursor 和 truncated，不返回全局 compatible。真实 Agent 是否识别全部隐含业务影响仍为 PARTIAL／A10，不以本测试判断模型质量 |
+| 007 A5 | bounded PASS：真实 PostgreSQL／Oxigraph 先物化新合同与必填 reason；原定义全部 outbound triples 不变、未切换 B 仍指旧定义；不引入同身份版本固定。实际客户业务是否同义／兼容仍留 A10 |
+| 007 A6 | bounded PASS（预写失败）：A 删除旧关系／创建新关系在同 Batch 成功，B 同 Batch 中非法相对 IRI 被定位拒绝，删除旧关系没有先落地，B 仍旧、A 仍新；修正后复用原 BuildSession／lease 完成 B 切换，旧定义始终不变。保留各 Attempt／findings；没有对不确定 RDF 写入作故障注入，也不宣称跨 Batch 原子性 |
+| 011 A5 | PARTIAL：原绑定选择／读取证据继续有效；本期使用普通节点的 bindingId＋Operation 图边，平台无 Consumer 的确定性失效绑定响应器，不能靠测试方自行比较列表冒充真实 Consumer 报缺口 |
+| 011 A7 | PARTIAL：旧 fixture 仅构造删 binding 后的合法图／计划并确认不会自动换绑；尚无实际 Consumer／Coordinator 对真实 drift 发起、保存重审结论的证据。当前 Coordinator 指令明确要求该重审，但指令存在不是执行证据 |
+
+011 的不足不是已证明的产品缺陷：权威设计明确局部 JSON bindingId 不由平台自动保证完整性。
+要补实际 Consumer 语义行为需要独立获准的模型 Consumer 或真实语义取证，本任务不得
+自行创建／继续真实 run，也不能新建“只比较 binding ID”的测试解释器来伪造产品行为。
+四项 A10 仍未由本功能验收方执行。Round 2 以上结论不能替代独立语义验收。
+本轮真实依赖测试直接导入当前 service，与隔离 PostgreSQL／Oxigraph 往返；本验收没有重启，
+不据此声称正在运行的 HTTP 服务已经加载该修复。服务重启与运行端点验证由交付宿主负责。
+本轮不提交、不回退其他工作者的文件，不修改需求状态或保留运行证据。

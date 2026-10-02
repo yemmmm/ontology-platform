@@ -68,3 +68,13 @@ Coordinator随后重复原生resume得到拒绝，宿主根据已保留正式恢
 第二轮实际已在2026-10-02T15:03:17.676406Z因Protocol的1200秒llm-inactivity-timeout退出；17:00截止记录对全部run均为already_exited。该基础设施终态不推导建模质量。
 第二轮已有合法四切片scenario map与cq_frozen-0001检查点；CQ冻结cq-batch-0001，摘要sha256:2ebd142138906f8ca9ec0088b1a640accab08e0b5d706da39bf7b9df7e419a3d，16公开/8隐藏题。生产恢复将保留冻结池并消耗一次新semantic start，先重算写尾/资源/审批绑定。
 issue-2的prompt-contract缺陷已持久补入r4-0-012活动合同及中性候选身份边界：L1/L2/L3真实含义、absolute IRI语法、analyzed中性URN不等于获准平台属性身份。未改校验器、源run、业务定义或物化门；不能机械地把reference_value替换为L3。相关51项测试通过，JSON与diff检查通过，仍不代表原步骤成功或真实语义PASS。
+
+05:32 +08，检查点生产接续run `r4009-20261003-solmedium-auth01-start3`：新冻结提交0c3df11，semantic start 2026-10-02T21:32:31.647564Z，baseline907881d6824bbf7fc11a5dc56e49863906998ce76a5f4c57c2b66e5681eaa0a4。累计已用3、剩余2。
+恢复源settlement单独记录，不修改旧run；恢复实时核查原writer已退出、FIFO消失、active lease为空，完成操作为空。四个实际角色config均gpt-6.1-sol medium，值分析合同修复已在新挂载；原v1/v2测试业务定义经已绑定owner问答复用，两个请求均accepted，未传隐藏题。冻结CQ保持同一摘要；模型写入/独立判定尚待取得。
+
+## 2026-10-03 05:54 +08：独立功能窄修与运行生效
+
+独立补验复现H007-CHANGE-01：同多值关系slot删除旧对象、增加不同新对象被conflicting_item_effects误拒。T0保留真正冲突/资源cascade与atomic门，仅豁免具体不同对象的multi删除新增；delete_relation effect与create_relation一致multi。独立test的missing-action不存在本地声明并不是非法RDF，失败注入改为合同明确非法相对IRI，旧轮日志保留，不增加端点存在性机制。
+外部Claude Code session5bb39b51-d8c1-4191-8584-5379b25a0c13，actual deepseek-flash/effortmax，只修最窄service/handler/已有回归/API说明；不代建模。开发与独立全后端均1144 passed/54 skipped；独立最终定向memory/live/3跳链3passed，007 A4/A5/A6 bounded PASS，011 A5/A7仍PARTIAL。详细独立记录不因修复覆盖真实语义缺口。
+Team此时处于正式issue-1 WAITING_OWNER，报告zero-mutation，submission-intents目录为空，尚未提交模型；Protocol已创建Session但没有apply请求。05:53:52 +08重启ontology-platform.service，active；/api/health返回ok，前端HTTP200。此为服务与修复加载边界，不是建模或语义PASS。
+本轮issue-1是public unified计划/身份carrier说明不足：现helper只接旧候选，contract误称显式id被替换、receipt_ref结构缺失。按真实实现提供机械指导并持久修权威contract，保留当前Session、候选、审批和未知写入门，恢复同一start不额外计数。

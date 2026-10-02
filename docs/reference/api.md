@@ -89,6 +89,11 @@ workspace repair 操作修复。
 外部 Agent 使用 Build Session 和 Ontology Lease 管理恢复与并发，再通过 Modeling Batch 完成
 `dry_run` 和 apply。平台保存建模结果、幂等状态、冲突和审计，不在 HTTP 层替 Agent 做领域判断。
 
+同一多值关系槽（相同主体与谓词）可在一个 `apply_atomic` Batch 中删除旧对象的关系并新增
+不同对象的关系，以原子切换引用。该豁免不适用于单值竞争写、同一确切 statement 的增删，
+或通配／cascade 删除导致的冲突；这些真实冲突仍按既有校验拒绝。Batch 验证失败不修改旧状态，
+跨 Batch／Ontology 的切换不具备整体原子性。
+
 R1.1 分阶段工作流使用 Build Session 下的 Modeling Workflow Artifact 和 Modeling Execution Event：
 Artifact 以 `artifact_key` 创建不可变线性版本，Event 以 `client_event_id` 幂等追加并获得 Session 内
 稳定序号。问题事件使用 current-head compare-and-set 保存 `open/answered/skipped/uncertain/reopened`
