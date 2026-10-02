@@ -40,7 +40,7 @@
       "metric_definition": "create_metric_definition"
     },
     "stage_order": ["definitions", "table_mapping", "join_mapping", "enum_meaning", "metric_definition", "relations"],
-    "host_configuration": "Protocol reads semantic_base_iri from the injected mechanical platform context and passes it to translate_candidate_to_batches; it is never authored in the neutral candidate.",
+    "host_configuration": "For legacy neutral candidates only, Protocol reads semantic_base_iri from the injected mechanical platform context for translate_candidate_to_batches. For immutable unified candidates Protocol manually builds approved dependency-ordered plans using modeling-batch-item-contract.json canonical mapping payloads, recursively binds references only from real authorized reads/formal receipts, and never rewrites the candidate or guesses an IRI. Protocol remains the only platform writer; host configuration stays outside the neutral candidate.",
     "active_binding_tool": "build_unified_resource_binding_receipt accepts an unmodified governed read envelope plus selected project_id, ontology_id and workspace_version scope, then binds actual resource_kind, semantic_id and resource_iri.",
     "identity": "Receipt and read binding always carries resource_kind and resource_iri; mapping resources are never coerced to entity.",
     "readback": "Use governed resource-kind reads and the existing resource-specific mapping/metric projections. Do not use asserted_data statements as a mapping completeness shortcut.",

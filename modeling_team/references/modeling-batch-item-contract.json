@@ -7,6 +7,330 @@
     "A candidate_item_id is a neutral semantic identity. Protocol preserves candidate correspondence through the approved decision_bindings and identity_bindings; it need not equal the platform resource ID or every create payload ID.",
     "An explicit ID does not authorize guessing its platform IRI. Bind dependent stages to real resource_id/resource_iri outputs from the formal preceding receipt or authorized read, retaining content-bound approval, dry_run/apply and protection requirements."
   ],
+  "mapping_payload_structures": {
+    "identifier_pattern": "^[A-Za-z0-9_]+(\\.[A-Za-z0-9_]+)?$",
+    "column_mapping": {
+      "fields": [
+        "column",
+        "property_iri",
+        "role"
+      ],
+      "required": [
+        "column"
+      ],
+      "role": [
+        "value",
+        "business_key"
+      ],
+      "default_role": "value",
+      "rules": [
+        "column matches identifier_pattern; property_iri when supplied is an absolute RDF IRI, required for business_key. Unknown fields are rejected."
+      ]
+    },
+    "join_step": {
+      "table_form_fields": [
+        "from_table",
+        "to_table",
+        "from_columns",
+        "to_columns"
+      ],
+      "mapping_form_fields": [
+        "from_mapping_iri",
+        "to_mapping_iri",
+        "from_role",
+        "to_role",
+        "from_columns",
+        "to_columns"
+      ],
+      "rules": [
+        "Each step has exactly one listed field set. Table names and columns match identifier_pattern. Mapping references are absolute IRIs; roles are nonempty strings.",
+        "from_columns/to_columns are nonempty equal-length arrays. All steps use the same form. Adjacent table steps match to_table/from_table; mapping steps match to_mapping_iri/from_mapping_iri and to_role/from_role."
+      ]
+    },
+    "metric_filter": {
+      "fields": [
+        "field",
+        "operator",
+        "value"
+      ],
+      "rules": [
+        "Exactly these fields: field is an absolute property IRI; operator and value are nonempty strings. No operator enum is imposed by the compiler."
+      ]
+    },
+    "mapping_definition": {
+      "table_mapping": {
+        "fields": [
+          "source_key",
+          "schema_version",
+          "row_grain",
+          "record_key_columns",
+          "object_key_columns",
+          "identifiers",
+          "field_meanings",
+          "row_scope"
+        ],
+        "required": [
+          "source_key"
+        ],
+        "rules": [
+          "source_key and optional schema_version/row_grain/row_scope are nonempty strings or null. record_key_columns/object_key_columns are string arrays (possibly empty) or null. identifiers/field_meanings are arrays (possibly empty) or null."
+        ],
+        "identifier_fields": [
+          "columns",
+          "kind",
+          "property_iri",
+          "scope",
+          "correspondence"
+        ],
+        "identifier_required": [
+          "columns",
+          "kind"
+        ],
+        "identifier_kind": [
+          "technical",
+          "business",
+          "external",
+          "unknown"
+        ],
+        "identifier_rules": [
+          "columns is a nonempty array of nonempty strings; property_iri optional absolute IRI/null; scope/correspondence optional nonempty string/null."
+        ],
+        "field_meaning_fields": [
+          "column",
+          "source_meaning",
+          "source_unit",
+          "target_unit",
+          "time_semantics",
+          "null_meaning",
+          "conversion_rule_iri"
+        ],
+        "field_meaning_required": [
+          "column"
+        ],
+        "field_meaning_rules": [
+          "column matches identifier_pattern; conversion_rule_iri is optional absolute IRI/null; other fields optional nonempty string/null."
+        ]
+      },
+      "join_mapping": {
+        "fields": [
+          "step_semantics",
+          "relationship_meaning",
+          "duplicate_risk",
+          "execution_prerequisite"
+        ],
+        "step_fields": [
+          "step_index",
+          "join_type",
+          "cardinality",
+          "additional_condition",
+          "condition_rule_iri"
+        ],
+        "step_required": [
+          "step_index"
+        ],
+        "join_type": [
+          "inner",
+          "left",
+          "right",
+          "full",
+          "unknown"
+        ],
+        "cardinality": [
+          "one_to_one",
+          "one_to_many",
+          "many_to_one",
+          "many_to_many",
+          "unknown"
+        ],
+        "rules": [
+          "step_semantics is an array (possibly empty) or null; each step_index is a unique nonnegative integer, never a boolean. join_type/cardinality may be absent/null.",
+          "relationship_meaning/duplicate_risk/execution_prerequisite/additional_condition are optional nonempty strings/null; condition_rule_iri is optional absolute IRI/null."
+        ]
+      },
+      "enum_meaning": {
+        "fields": [
+          "conversion_rule_iri"
+        ],
+        "rules": [
+          "Optional absolute IRI or null."
+        ]
+      },
+      "metric_definition": {
+        "fields": [
+          "contexts"
+        ],
+        "context_fields": [
+          "context_key",
+          "applicability",
+          "base_mapping_iri",
+          "base_role",
+          "join_mapping_iris",
+          "property_bindings",
+          "counted_identity",
+          "duplicate_handling",
+          "conversion_rule_iris"
+        ],
+        "context_required": [
+          "context_key"
+        ],
+        "property_binding_fields": [
+          "property_iri",
+          "table_mapping_iri",
+          "role",
+          "column"
+        ],
+        "counted_identity_fields": [
+          "table_mapping_iri",
+          "role",
+          "columns"
+        ],
+        "rules": [
+          "contexts is an array (possibly empty) or null; context_key is a unique nonempty string. applicability/base_role/duplicate_handling are optional nonempty strings/null; base_mapping_iri optional absolute IRI/null.",
+          "join_mapping_iris/conversion_rule_iris are arrays of absolute IRIs (possibly empty) when present, not null. property_bindings/counted_identity are arrays (possibly empty) or null.",
+          "Each property_bindings item has exactly all property_binding_fields: absolute property/table-mapping IRIs, role nonempty string/null, column identifier. Each counted_identity item has exactly all counted_identity_fields: absolute table-mapping IRI, role nonempty string/null, nonempty string array columns."
+        ]
+      }
+    },
+    "rules": [
+      "Every mapping_definition object and nested member is closed to its listed fields; optional fields may be absent. mapping_definition itself may be absent/null. Empty objects are accepted except table_mapping, which requires the source_key key.",
+      "Only canonical *_iri names carry platform references. Preserve unknowns, scope, conversion meaning and approved business semantics; never choose them from a field name."
+    ]
+  },
+  "mapping_reference_binding": {
+    "rules": [
+      "Mapping candidates remain unchanged. Protocol recursively resolves {definition_ref:item_id} or governed existing-resource wrappers to actual authorized read/formal receipt identities before submitting the corresponding canonical carrier; unresolved references remain repairable and mapping writes stay closed. No guessed future IRIs or automatic alias passthrough.",
+      "Semantic neutral aliases are not Batch payload fields: mapped_class/mapped_class_ref -> mapped_class_iri; mapped_definition/mapped_definition_ref -> mapped_definition_iri; property_ref -> property_iri; table_mapping_ref -> table_mapping_iri; semantic_value_ref -> semantic_value; relation_type/relation_type_ref -> relation_type_iri; time_field_ref -> time_field; measure_property_ref -> measure_property_iri. Aliases and canonical values must agree if both were authored; never silently override a conflict.",
+      "For mapping-form join steps, canonical fields are from_mapping_iri/to_mapping_iri and from_role/to_role. source_table_ref/target_table_ref are not accepted canonical fields or automatic aliases; use the candidate's explicitly approved endpoint meanings to bind them to the matching mapping-role pair, or ask for repair if that meaning is unresolved.",
+      "Nested references likewise use canonical property_iri/conversion_rule_iri/condition_rule_iri/base_mapping_iri/join_mapping_iris/table_mapping_iri/conversion_rule_iris fields as listed above; resolve wrappers recursively through arrays and objects, including metric contexts. Column/table names and schema_source stay authorized physical metadata, not resource references.",
+      "These carriers do not waive schema/data-mapping scope, value confirmation, candidate/translation approval, protection, dry-run/apply or receipt/readback requirements. Independently approved ordinary stages may proceed while unresolved mapping stages stay closed."
+    ],
+    "example_note": "Examples use syntax placeholders only. Their IRIs denote stand-ins for real authorized receipt/read outputs, not namespace guesses or permitted current-run identities.",
+    "syntax_examples": {
+      "create_table_mapping": {
+        "name": "Example mapping",
+        "mapped_definition_iri": "https://example.test/bound/definition",
+        "table_name": "example_table",
+        "column_mappings": [
+          {
+            "column": "example_code",
+            "property_iri": "https://example.test/bound/property",
+            "role": "value"
+          }
+        ],
+        "schema_source": "example schema",
+        "mapping_definition": {
+          "source_key": "example-source",
+          "identifiers": [
+            {
+              "columns": [
+                "example_code"
+              ],
+              "kind": "business",
+              "property_iri": "https://example.test/bound/property"
+            }
+          ],
+          "field_meanings": [
+            {
+              "column": "example_code",
+              "conversion_rule_iri": "https://example.test/bound/rule"
+            }
+          ]
+        }
+      },
+      "create_join_mapping": {
+        "name": "Example join",
+        "relation_type_iri": "https://example.test/bound/relation-type",
+        "join_direction": "forward",
+        "join_path": [
+          {
+            "from_mapping_iri": "https://example.test/bound/table-a",
+            "to_mapping_iri": "https://example.test/bound/table-b",
+            "from_role": "example-a",
+            "to_role": "example-b",
+            "from_columns": [
+              "example_key"
+            ],
+            "to_columns": [
+              "example_key"
+            ]
+          }
+        ],
+        "schema_source": "example schema",
+        "mapping_definition": {
+          "step_semantics": [
+            {
+              "step_index": 0,
+              "join_type": "inner",
+              "cardinality": "unknown",
+              "condition_rule_iri": "https://example.test/bound/rule"
+            }
+          ]
+        }
+      },
+      "create_enum_meaning": {
+        "name": "Example code meaning",
+        "property_iri": "https://example.test/bound/property",
+        "enum_value": "example-code",
+        "business_meaning": "Placeholder meaning",
+        "table_mapping_iri": "https://example.test/bound/table-a",
+        "column": "example_code",
+        "semantic_value": "https://example.test/bound/value",
+        "schema_source": "example schema",
+        "mapping_definition": {
+          "conversion_rule_iri": "https://example.test/bound/rule"
+        }
+      },
+      "create_metric_definition": {
+        "name": "Example metric",
+        "grain": [
+          "https://example.test/bound/property"
+        ],
+        "time_field": "https://example.test/bound/time-property",
+        "filters": [
+          {
+            "field": "https://example.test/bound/property",
+            "operator": "=",
+            "value": "example-code"
+          }
+        ],
+        "aggregation": "count",
+        "null_value_rule": "Placeholder null rule",
+        "denominator_rule": "Placeholder denominator rule",
+        "schema_source": "example schema",
+        "mapping_definition": {
+          "contexts": [
+            {
+              "context_key": "example-context",
+              "base_mapping_iri": "https://example.test/bound/table-a",
+              "join_mapping_iris": [
+                "https://example.test/bound/join"
+              ],
+              "property_bindings": [
+                {
+                  "property_iri": "https://example.test/bound/property",
+                  "table_mapping_iri": "https://example.test/bound/table-a",
+                  "role": "example-a",
+                  "column": "example_code"
+                }
+              ],
+              "counted_identity": [
+                {
+                  "table_mapping_iri": "https://example.test/bound/table-a",
+                  "role": "example-a",
+                  "columns": [
+                    "example_key"
+                  ]
+                }
+              ],
+              "conversion_rule_iris": [
+                "https://example.test/bound/rule"
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
   "batch_envelope": {
     "additional_properties": false,
     "fields": {
@@ -32,6 +356,380 @@
     }
   },
   "create_payloads": {
+    "create_table_mapping": {
+      "additional_properties": false,
+      "required": [
+        "name",
+        "table_name",
+        "column_mappings",
+        "schema_source"
+      ],
+      "fields": {
+        "table_mapping_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is preserved; omitted/empty uses deterministic Modeling Item output ID"
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "schema_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": true,
+          "description": "The key must be present; null is accepted and a string must be nonempty. Use authorized schema metadata, never a DSN or credential."
+        },
+        "semantic_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "mapping_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "items": "mapping_payload_structures.mapping_definition"
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "Existing common semantic declaration; no Evidence/lineage fields."
+        },
+        "mapped_class_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": false
+        },
+        "mapped_definition_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": false
+        },
+        "table_name": {
+          "type": "string",
+          "required": true,
+          "format": "relational-identifier"
+        },
+        "column_mappings": {
+          "type": "array",
+          "required": true,
+          "min_items": 1,
+          "items": "mapping_payload_structures.column_mapping"
+        }
+      },
+      "rules": [
+        "Exactly one nonempty mapped_class_iri or mapped_definition_iri; never both.",
+        "column_mappings is nonempty; column is required, property_iri optional for value roles but required for business_key."
+      ],
+      "exactly_one_required": [
+        "mapped_class_iri",
+        "mapped_definition_iri"
+      ]
+    },
+    "create_join_mapping": {
+      "additional_properties": false,
+      "required": [
+        "name",
+        "relation_type_iri",
+        "join_direction",
+        "join_path",
+        "schema_source"
+      ],
+      "fields": {
+        "join_mapping_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is preserved; omitted/empty uses deterministic Modeling Item output ID"
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "schema_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": true,
+          "description": "The key must be present; null is accepted and a string must be nonempty. Use authorized schema metadata, never a DSN or credential."
+        },
+        "semantic_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "mapping_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "items": "mapping_payload_structures.mapping_definition"
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "Existing common semantic declaration; no Evidence/lineage fields."
+        },
+        "relation_type_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": true
+        },
+        "join_direction": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "forward",
+            "reverse"
+          ]
+        },
+        "join_path": {
+          "type": "array",
+          "required": true,
+          "min_items": 1,
+          "items": "mapping_payload_structures.join_step"
+        }
+      },
+      "rules": [
+        "Use one closed join-step shape throughout the path; table-name and mapping-reference forms cannot be mixed.",
+        "Each column pair is nonempty and equal length; adjacent steps close by table, or by mapping IRI plus role."
+      ]
+    },
+    "create_enum_meaning": {
+      "additional_properties": false,
+      "required": [
+        "name",
+        "property_iri",
+        "enum_value",
+        "business_meaning",
+        "schema_source"
+      ],
+      "fields": {
+        "enum_meaning_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is preserved; omitted/empty uses deterministic Modeling Item output ID"
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "schema_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": true,
+          "description": "The key must be present; null is accepted and a string must be nonempty. Use authorized schema metadata, never a DSN or credential."
+        },
+        "semantic_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "mapping_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "items": "mapping_payload_structures.mapping_definition"
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "Existing common semantic declaration; no Evidence/lineage fields."
+        },
+        "property_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": true
+        },
+        "enum_value": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        },
+        "business_meaning": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        },
+        "table_mapping_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": false
+        },
+        "column": {
+          "type": "string",
+          "required": false,
+          "format": "relational-identifier"
+        },
+        "semantic_value": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "description": "One absolute RDF IRI for L3; absent/null/empty means no semanticValue (L2). Arrays are invalid."
+        }
+      },
+      "rules": [
+        "table_mapping_iri and column are either both non-null values or both absent/null. Empty strings do not satisfy the scoped pair.",
+        "property_iri and enum_value must match the confirmed value conclusion for materialization; syntax alone does not confirm a code or level."
+      ]
+    },
+    "create_metric_definition": {
+      "additional_properties": false,
+      "required": [
+        "name",
+        "grain",
+        "time_field",
+        "filters",
+        "aggregation",
+        "null_value_rule",
+        "denominator_rule",
+        "schema_source"
+      ],
+      "fields": {
+        "metric_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is preserved; omitted/empty uses deterministic Modeling Item output ID"
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "schema_source": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": true,
+          "description": "The key must be present; null is accepted and a string must be nonempty. Use authorized schema metadata, never a DSN or credential."
+        },
+        "semantic_version": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "mapping_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "items": "mapping_payload_structures.mapping_definition"
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "Existing common semantic declaration; no Evidence/lineage fields."
+        },
+        "grain": {
+          "type": "array",
+          "required": true,
+          "items": "absolute-rdf-iri",
+          "min_items": 0
+        },
+        "time_field": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": true
+        },
+        "measure_property_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": false
+        },
+        "value_expression": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "filters": {
+          "type": "array",
+          "required": true,
+          "items": "mapping_payload_structures.metric_filter",
+          "min_items": 0
+        },
+        "aggregation": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "sum",
+            "avg",
+            "count",
+            "count_distinct",
+            "min",
+            "max"
+          ]
+        },
+        "null_value_rule": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        },
+        "denominator_rule": {
+          "type": "string",
+          "required": true,
+          "min_length": 1
+        }
+      },
+      "rules": [
+        "measure_property_iri is required for sum, avg, count_distinct, min and max; only count may omit it.",
+        "grain and filters may be empty arrays; their entries use actual bound property IRIs."
+      ]
+    },
     "create_class": {
       "additional_properties": false,
       "required": ["name"],

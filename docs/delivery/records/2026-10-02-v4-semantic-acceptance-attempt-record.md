@@ -81,3 +81,5 @@ Team此时处于正式issue-1 WAITING_OWNER，报告zero-mutation，submission-i
 
 05:56 +08：issue-1绑定protocol/epoch1的guidance已accepted，Runner自动恢复，源candidate与Session不改。affected运行GET BuildSession HTTP200，未声称领域行为由read端点证明。05:57首统一properties plan通过Coordinator当前摘要review，真实dry-run Attempt validated（batch2e9f7568-efc2-405d-a5c5-eb2cc1ed27f7，attempt93078f51-86e5-4b01-8675-b61961056ff0），intent已receipted，无未知写入；不是apply或L1。
 public Batch/统一图合同持久修：显式创建id字段保留、缺省才确定性生成，resource_id为输出而非payload；future identity receipt_ref是非空字符串定位符，既有资源需获准读引用，未来IRI不猜；Protocol可手工构造完整统一计划而非使用仅支持旧格式helper。两个合同与新测试32passed、JSON/Ruff/diff通过；当前run经已发送guidance继续，不篡改其冻结挂载。
+
+06:24 +08：运行issue-2/protocol/epoch1为mapping canonical carrier缺失；formal阶段隔离guidance已accepted并自动恢复，不把未来mapping当独立core前置。owner canonical补充v4-start3-mapping-carrier-guidance已accepted，实际属性阶段持续推进；没有新start，余额2保持。已核真实Handler/compiler补4类mapping create carrier、columns/join/filter和4类mapping_definition闭合shape；formalreceipt/read递归绑定，不猜IRI或source/target role，unsupported字段保持可修反馈，schema_source null不新增硬门。相邻010仅区分legacy helper与unified手工计划。真实prepare/compile＋已有mapping回归27passed，Ruff/JSON/diff通过；当前run冻副本不改，未知字段指导通过owner反馈。映射原操作尚未执行，不声称修复后的语义PASS。
