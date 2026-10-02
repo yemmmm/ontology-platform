@@ -257,8 +257,10 @@
       "entry_fields": ["command_index", "entity_id", "semantic_value_iri"],
       "rules": [
         "every L3 create_entity command must be listed (it is a materialization command: the unlock precondition applies)",
-        "each node must reference the create_entity payload identity and carry a semantic_value_iri that either appears in this batch or was already receipted",
-        "an L3 node is only backed by a confirmed conclusion whose effective level (confirmed_level or proposed_level) is L3 (staged_l3_unapproved otherwise)"
+        "each node must reference the create_entity payload identity and carry a semantic_value_iri matching an enum command's semantic_value in the same batch; future receipt_ref is an identity-binding locator, never a replacement for this IRI",
+        "an L3 node is backed by a same-batch enum command value_trace naming a confirmed conclusion whose effective level (confirmed_level or proposed_level) is L3 (staged_l3_unapproved otherwise); the materialize unlock and existing approval gates still apply",
+        "For the first combined create_entity plus create_enum_meaning stage, Host may supply the authoritative intended resource_iri from actual backend outputs_for, deployed Settings and the exact nonempty explicit entity_id and planned command context. Use it in l3_nodes.semantic_value_iri and the matching enum payload.semantic_value; the node's unified identity_binding stays future receipt_ref with resource_iri/evidence_ref null. This does not assert resource existence or waive confirmation.",
+        "Compare the actual dry_run/apply resource_outputs to Host's intended resource_id/resource_iri and stop affected writes/dependencies if they drift. Later dependent stages use real receipt/read identities; neither Modeling nor Protocol guesses namespace IRIs."
       ]
     },
     "execution_rules": [

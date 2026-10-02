@@ -83,3 +83,7 @@ Team此时处于正式issue-1 WAITING_OWNER，报告zero-mutation，submission-i
 public Batch/统一图合同持久修：显式创建id字段保留、缺省才确定性生成，resource_id为输出而非payload；future identity receipt_ref是非空字符串定位符，既有资源需获准读引用，未来IRI不猜；Protocol可手工构造完整统一计划而非使用仅支持旧格式helper。两个合同与新测试32passed、JSON/Ruff/diff通过；当前run经已发送guidance继续，不篡改其冻结挂载。
 
 06:24 +08：运行issue-2/protocol/epoch1为mapping canonical carrier缺失；formal阶段隔离guidance已accepted并自动恢复，不把未来mapping当独立core前置。owner canonical补充v4-start3-mapping-carrier-guidance已accepted，实际属性阶段持续推进；没有新start，余额2保持。已核真实Handler/compiler补4类mapping create carrier、columns/join/filter和4类mapping_definition闭合shape；formalreceipt/read递归绑定，不猜IRI或source/target role，unsupported字段保持可修反馈，schema_source null不新增硬门。相邻010仅区分legacy helper与unified手工计划。真实prepare/compile＋已有mapping回归27passed，Ruff/JSON/diff通过；当前run冻副本不改，未知字段指导通过owner反馈。映射原操作尚未执行，不声称修复后的语义PASS。
+
+06:49 +08：已完成普通core/flow/governance/mappings定义批次及部分关系，实际写入后均通过正式Attempt/receipt与有界分页读回核对；完整模型尚未handoff，独立CQ尚未执行，整体PARTIAL。128项flow关系dry-run因max_items100在写入前被拒，保留原拒绝并改为两批64项候选计划重新审核；不改语义或容量配置、不消耗freshstart。
+
+Protocol197/198机械启动缺口T0：ProtectionSet实际允许dangling resourceIRI，成本可先dry_run获实际outputs，再preprotect后单独apply；首次L3可由宿主按actual outputs_for/deployedSettings/非空explicit entity_id提供authoritative intendedidentity，仅用于preprotection或samebatch L3 attachment/enum。不是既有资源声明，future identitybinding仍receipt_ref；同批enum的confirmed-L3 trace、materialize unlock、候选/翻译审批及dry-run/application门不变，实际输出漂移则停。纯函数actualprepare/compile及staged/unified校验验证该合法路径，未改守卫、候选、冻挂载或平台数据。权威三合同最窄澄清+机械回归50passed，JSON/Ruff/diff通过；当前run经owner正式指导继续，后续实际L3/成本写入仍待取证。额度累计3/5，余额2，01点限制仍已取消。
