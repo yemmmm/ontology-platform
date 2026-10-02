@@ -40,9 +40,19 @@ and no way to re-derive answers from a live system.
   per-material reading of the question would have produced a different answer.
 - A successful but irrelevant or cross-question platform response is an
   evidence-routing failure, not a platform outage. Use
-  `model-recall-insufficient` with `failure_layer=collaboration/routing` and
-  name the evidence mismatch in `note`. Reserve `platform-runtime-incomplete`
-  for a tool or runtime failure that prevented the required authorized read.
+  `platform-runtime-incomplete` with `failure_layer=collaboration/routing` and
+  name the evidence mismatch in `note`. For a tool or runtime failure that
+  prevented the required authorized read, use `platform-runtime-incomplete`
+  with `platform-contract` or `runtime/infrastructure` as the first failure layer.
+  `model-recall-insufficient` requires a successful relevant read showing a
+  semantic gap and always uses `failure_layer=modeling-quality`.
+- Per-question platform evidence must come from `query_semantic_context`,
+  `get_semantic_read_model`, `get_entity_statement_context`,
+  `get_ontology_read_model` or `semantic_sparql_query`. Project Brief, production
+  sessions/context, host workspace observations and retired tracing tools are
+  never business-answer evidence, even with a valid receipt. Frozen material
+  states the expected business meaning; it cannot prove that the platform
+  materialized or returned that meaning.
 - If a submission is rejected, the reason names the exact problem. Fix that field
   and resubmit the same question; the batch sink keeps accepting corrected
   verdicts for the whole session. The session deadline is the only budget.

@@ -42,7 +42,7 @@ CLI_ENTRY = FIXTURE_DIR / "cli_entry.py"
 FREEZE_ID = "freeze-0001"
 RUN_ID = "r3011-cli-run"
 READ_KEY = "fixture-acceptance-read-key-" + "0f" * 16
-READ_TOOLS = ("get_ontology_workspace_context", "query_semantic_context")
+READ_TOOLS = ("query_semantic_context",)
 PROJECT_ID = "project-1"
 ONTOLOGY_A = "ontology-1"
 ONTOLOGY_B = "ontology-2"
@@ -411,7 +411,7 @@ def _assert_mounted_v3_prompts(markers: dict[str, str], *, platform: bool) -> No
     # The mounted v3 read surface was really advertised to the child.
     if platform:
         assert markers["schemas"] == (
-            "get_ontology_workspace_context:1,query_semantic_context:1"
+            "query_semantic_context:1"
         ), markers
 
 
@@ -467,7 +467,7 @@ def test_tg41_two_v3_sessions_complete_the_batch_through_real_sockets(happy_run:
     # adapter through PATH; no launcher/factory symbol was replaced.
     assert evidence["codex_resolved"] == str(scenario["fixture_codex"]), evidence
     assert evidence["canonical_is_controlled"] is True
-    assert evidence["expected_tools"] == list(READ_TOOLS)
+    assert evidence["expected_tools"] == list(READ_TOOLS) + ["get_ontology_workspace_context"]
 
     assert proc.returncode == 0, (
         "expected full batch PASS from the real CLI flow\n"

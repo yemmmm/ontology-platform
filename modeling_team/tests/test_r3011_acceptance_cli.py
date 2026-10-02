@@ -291,7 +291,7 @@ def test_marker_handoff_never_gates_and_markers_never_reach_the_report(
         {
             "repository_root": REPO_ROOT,
             "read_key": "read-key",
-            "expected_tools": ("query_semantic_context",),
+            "expected_tools": ("query_semantic_context", "get_ontology_workspace_context"),
         }
     ]
     observed = _observed_binding(

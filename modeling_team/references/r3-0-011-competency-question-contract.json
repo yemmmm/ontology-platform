@@ -157,7 +157,7 @@
       "collaboration/routing",
       "runtime/infrastructure"
     ],
-    "rule": "question-answer-review is a question state, not a fifth failure layer; a pure answer-review item may leave failure_layer empty and must not be counted as a model failure. Full PASS requires every question in the approved batch to carry a valid verdict with no pending review, no unexecuted item and no unsatisfied scope. An empty hidden set or a slice without a valid hidden question keeps an explicit acceptance coverage gap and can never produce a whole-batch or whole-scenario PASS.",
+    "rule": "model-recall-insufficient requires modeling-quality; platform-runtime-incomplete requires runtime/infrastructure, platform-contract or collaboration/routing according to the first failure layer, including irrelevant or misbound read evidence. question-answer-review is a question state, not a fifth failure layer; a pure answer-review item may leave failure_layer empty and must not be counted as a model failure. Full PASS requires every question in the approved batch to carry a valid verdict with no pending review, no unexecuted item and no unsatisfied scope. An empty hidden set or a slice without a valid hidden question keeps an explicit acceptance coverage gap and can never produce a whole-batch or whole-scenario PASS.",
     "read_only": "The cq-acceptance command and both v3 sessions are read-only for the platform: no StartLedger write, no fresh semantic start consumption, no production run start, continue, or repair."
   },
   "reason_codes": [

@@ -28,8 +28,9 @@ fields: `schema_version`, `batch_id`, `question_id`, `verdict`, `failure_layer`,
   coverage gap; leave `failure_layer` null unless you hold real runtime or model
   evidence. A pure review item is never a modeling failure.
 * `platform-runtime-incomplete` — the platform, agent, or runtime did not
-  complete, or the question was never executed. `failure_layer` is
-  `runtime/infrastructure` or `platform-contract`.
+  complete, the question was never executed, or its evidence is irrelevant or
+  bound to the wrong question. `failure_layer` is `runtime/infrastructure`,
+  `platform-contract` or `collaboration/routing`, according to the first failure.
 
 Never guess a missing answer, never delete a question to make a batch pass, and
 never convert an unexecuted question into a modeling-quality failure.
@@ -38,7 +39,7 @@ The failure layer vocabulary is exactly these four (design §4.2):
 `modeling-quality`, `platform-contract`, `collaboration/routing`,
 `runtime/infrastructure`. `model-recall-insufficient` always carries
 `modeling-quality`; `platform-runtime-incomplete` carries
-`runtime/infrastructure` or `platform-contract`; only `pass` and
+`runtime/infrastructure`, `platform-contract` or `collaboration/routing`; only `pass` and
 `question-answer-review` may leave the layer empty.
 
 ## Boundaries

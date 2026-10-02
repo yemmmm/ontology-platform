@@ -42,7 +42,8 @@ from .acceptance_runtime import (
     ChildRuntimeError,
     ExaminerRuntimeBlocked,
     McpReadForwarder,
-    PLATFORM_PROXY_READ_TOOLS,
+    CQ_SEMANTIC_READ_TOOLS,
+    CQ_HOST_STATE_READ_TOOLS,
     PLATFORM_READ_ARTIFACT_SCHEMA,
     build_acceptance_judge_packet,
     build_platform_batch_packet,
@@ -1083,7 +1084,7 @@ def _cq_collect_platform_read_responses(
     receipts_by_ordinal: dict[int, object] = {}
     for receipt in receipts if isinstance(receipts, (list, tuple)) else ():
         receipts_by_ordinal[int(getattr(receipt, "ordinal", -1))] = receipt
-    tools = set(authorized_tools)
+    tools = set(authorized_tools) & set(CQ_SEMANTIC_READ_TOOLS)
     # Exactly the handle spelling the host issues: ``p`` plus the canonical
     # decimal ordinal, no leading zeros, no extra segments.
     handle_pattern = re.compile(r"^p(0|[1-9][0-9]*)$")
@@ -1750,10 +1751,9 @@ def _cq_consume_production_handoff(
             "Ontology"
         )
     authorized = [item for item in ontology_ids if isinstance(item, str) and item]
-    # The v012 handoff records scope authorization only; every tool in the CQ
-    # read-only inventory is a platform read, and the ScopedReadProxy/ticket
-    # still bound each request to the authorized Ontology set.
-    tools = [str(tool) for tool in PLATFORM_PROXY_READ_TOOLS]
+    # The child receives only semantic reads; host-only state observations do
+    # not become a read capability or per-question evidence for the child.
+    tools = list(CQ_SEMANTIC_READ_TOOLS)
     binding = validate_model_binding(
         {
             "schema_version": "r3-0-011-model-binding/v1",
@@ -1785,6 +1785,22 @@ def _cq_consume_production_handoff(
         authorized_ontology_ids=authorized,
     )
     return report_dir, binding
+
+
+def _cq_read_tools(binding: dict[str, object]) -> list[str]:
+    """Reject outdated/broader handoffs without rewriting their artifacts."""
+
+    tools = binding["ontologies"][0]["authorized_read_tools"]
+    for entry in binding["ontologies"]:
+        declared = entry["authorized_read_tools"]
+        unsupported = set(declared) - set(CQ_SEMANTIC_READ_TOOLS)
+        if unsupported or set(declared) != set(tools):
+            raise TeamConfigurationError(
+                f"cq_read_tools_unsupported: ontology {entry['ontology_id']} has "
+                f"unsupported tools {sorted(unsupported)} or differs from the batch tool scope; "
+                "generate a new semantic-only handoff/attempt; keep the old artifacts unchanged"
+            )
+    return list(tools)
 
 
 def _cq_execute_batch(
@@ -1832,9 +1848,10 @@ def _cq_execute_batch(
         )
     profile_id = getattr(args, "model_profile", None) or _CQ_DEFAULT_MODEL_PROFILE_ID
     profile = load_team_model_profile(root, profile_id)
-    read_tools = [str(tool) for tool in binding["ontologies"][0]["authorized_read_tools"]]
+    read_tools = _cq_read_tools(binding)
     forwarder = forwarder_factory(
-        repository_root=root, read_key=read_key, expected_tools=tuple(read_tools)
+        repository_root=root, read_key=read_key,
+        expected_tools=tuple(read_tools) + CQ_HOST_STATE_READ_TOOLS,
     )
     sessions: dict[str, object] = {}
     reports: list[dict[str, object]] = []
@@ -1889,9 +1906,7 @@ def _cq_execute_batch(
                     str(entry["ontology_id"]) for entry in binding["ontologies"]
                 ],
                 model_binding=pre_binding or binding,
-                authorized_read_tools=[
-                    str(tool) for tool in binding["ontologies"][0]["authorized_read_tools"]
-                ],
+                authorized_read_tools=read_tools,
                 report_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
                 session={"mode": "single-continuous-batch", "ordered": True},
             )
@@ -2408,6 +2423,9 @@ def _run_cq_acceptance(
                     "cq_model_binding_missing: model binding is not bound to this freeze "
                     "snapshot"
                 )
+        # Also validate unexecuted reports and checkpoint acceptance continuations;
+        # an old broad handoff must not silently acquire a new tool scope.
+        _cq_read_tools(binding)
         # The executed path constructs the batch binding from its own actual
         # pre-session read and re-reads the post-session state itself (D5); the
         # handoff post-batch binding stays an input only for the legacy

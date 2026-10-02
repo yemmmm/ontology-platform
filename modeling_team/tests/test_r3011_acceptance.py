@@ -800,7 +800,7 @@ def test_f3_packet_rejects_a_binding_bound_to_another_batch_or_freeze():
 def test_f4_recall_and_runtime_verdicts_must_name_their_failure_layer():
     assert CQ_REQUIRED_FAILURE_LAYERS == {
         "model-recall-insufficient": ("modeling-quality",),
-        "platform-runtime-incomplete": ("runtime/infrastructure", "platform-contract"),
+        "platform-runtime-incomplete": ("runtime/infrastructure", "platform-contract", "collaboration/routing"),
     }
 
     def _verdict(**overrides) -> dict:

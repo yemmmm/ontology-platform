@@ -259,12 +259,13 @@ def test_sink_rejects_a_bad_token_without_touching_the_batch(tmp_path):
 # --- v3 read proxy: packet-scoped multi-Ontology reads ------------------------
 
 
-def _proxy(tmp_path: Path, *, tools=( "get_ontology_workspace_context",), forward=None):
+def _proxy(tmp_path: Path, *, tools=( "get_ontology_read_model",), forward=None):
     from modeling_team.tests.test_r3011_acceptance import _freeze
 
     frozen = _freeze(_questions())
     packet = _platform_packet(
         freeze=_questions(),
+        authorized_read_tools=list(tools),
         authorized_scope=["ontology-1", "ontology-2"],
         model_binding={
             "schema_version": "r3-0-011-model-binding/v1",
@@ -322,8 +323,8 @@ def test_v3_proxy_forwards_each_authorized_ontology(tmp_path):
             {
                 "token": "proxy-token",
                 "operation": "tools/call",
-                "tool": "get_ontology_workspace_context",
-                "arguments": {"project_id": "project-1", "ontology_id": "ontology-1"},
+                "tool": "get_ontology_read_model",
+                "arguments": {"model_name": "classes", "project_id": "project-1", "ontology_id": "ontology-1"},
             }
         )
         assert first["ok"] is True
@@ -332,8 +333,8 @@ def test_v3_proxy_forwards_each_authorized_ontology(tmp_path):
             {
                 "token": "proxy-token",
                 "operation": "tools/call",
-                "tool": "get_ontology_workspace_context",
-                "arguments": {"project_id": "project-1", "ontology_id": "ontology-2"},
+                "tool": "get_ontology_read_model",
+                "arguments": {"model_name": "classes", "project_id": "project-1", "ontology_id": "ontology-2"},
             }
         )
         assert second["ok"] is True
@@ -367,8 +368,8 @@ def test_v3_proxy_refuses_unauthorized_and_cross_project_selections(tmp_path):
             {
                 "token": "proxy-token",
                 "operation": "tools/call",
-                "tool": "get_ontology_workspace_context",
-                "arguments": {"project_id": "project-1", "ontology_id": "ontology-9"},
+                "tool": "get_ontology_read_model",
+                "arguments": {"model_name": "classes", "project_id": "project-1", "ontology_id": "ontology-9"},
             }
         )
         assert unknown["ok"] is False and unknown["code"] == "read-scope-denied"
@@ -380,8 +381,9 @@ def test_v3_proxy_refuses_unauthorized_and_cross_project_selections(tmp_path):
             {
                 "token": "proxy-token",
                 "operation": "tools/call",
-                "tool": "get_ontology_workspace_context",
+                "tool": "get_ontology_read_model",
                 "arguments": {
+                    "model_name": "classes",
                     "project_id": "project-1",
                     "ontology_id": "ontology-2",
                     "graph_set_id": "graph-set-1",
@@ -397,8 +399,8 @@ def test_v3_proxy_refuses_unauthorized_and_cross_project_selections(tmp_path):
             {
                 "token": "proxy-token",
                 "operation": "tools/call",
-                "tool": "get_ontology_workspace_context",
-                "arguments": {"ticket_digest": "sha256:" + "9" * 64},
+                "tool": "get_ontology_read_model",
+                "arguments": {"model_name": "classes", "ticket_digest": "sha256:" + "9" * 64},
             }
         )
         assert wrong_ticket["ok"] is False and wrong_ticket["code"] == "read-scope-denied"
@@ -421,14 +423,14 @@ def test_v3_proxy_default_selection_is_the_first_authorized_ontology(tmp_path):
             {
                 "token": "proxy-token",
                 "operation": "tools/call",
-                "tool": "get_ontology_workspace_context",
-                "arguments": {"project_id": "project-1"},
+                "tool": "get_ontology_read_model",
+                "arguments": {"model_name": "classes", "project_id": "project-1"},
             }
         )
         assert response["ok"] is True
         assert forwarded[0][1]["ontology_id"] == "ontology-1"
         listed = proxy.handle({"token": "proxy-token", "operation": "tools/list"})
-        assert listed["ok"] is True and listed["tools"] == ["get_ontology_workspace_context"]
+        assert listed["ok"] is True and listed["tools"] == ["get_ontology_read_model"]
         denied = proxy.handle(
             {
                 "token": "proxy-token",
@@ -455,8 +457,8 @@ def test_v3_proxy_revocation_and_bad_token_stay_typed(tmp_path):
             {
                 "token": "proxy-token",
                 "operation": "tools/call",
-                "tool": "get_ontology_workspace_context",
-                "arguments": {"project_id": "project-1"},
+                "tool": "get_ontology_read_model",
+                "arguments": {"model_name": "classes", "project_id": "project-1"},
             }
         )
         assert after["ok"] is False and after["code"] == "read-key-revoked"
@@ -527,13 +529,13 @@ def test_v3_proxy_serves_the_real_read_proxy_bridge(tmp_path):
 
     try:
         listed = request(1, "tools/list")["result"]["tools"]
-        assert [item["name"] for item in listed] == ["get_ontology_workspace_context"]
+        assert [item["name"] for item in listed] == ["get_ontology_read_model"]
         called = request(
             2,
             "tools/call",
             {
-                "name": "get_ontology_workspace_context",
-                "arguments": {"project_id": "project-1", "ontology_id": "ontology-2"},
+                "name": "get_ontology_read_model",
+                "arguments": {"model_name": "classes", "project_id": "project-1", "ontology_id": "ontology-2"},
             },
         )
         assert called["result"]["isError"] is False
@@ -636,6 +638,7 @@ def _multi_proxy(
     ids = [f"ontology-{index}" for index in range(1, count + 1)]
     packet = _platform_packet(
         freeze=questions,
+        authorized_read_tools=list(tools),
         authorized_scope=ids,
         model_binding={
             "schema_version": "r3-0-011-model-binding/v1",
@@ -1213,7 +1216,7 @@ def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
         return {"ok": True, "data": {"state": "ready"}}
 
     proxy, packet = _multi_proxy(
-        tmp_path, count=2, tools=("get_ontology_workspace_context",), forward=forward
+        tmp_path, count=2, tools=("get_ontology_read_model",), forward=forward
     )
     process, request = _drive_bridge(
         tmp_path,
@@ -1234,7 +1237,7 @@ def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
         called = request(
             2,
             "tools/call",
-            {"name": "get_ontology_workspace_context", "arguments": {}},
+            {"name": "get_ontology_read_model", "arguments": {"model_name": "classes"}},
         )
         assert called["result"]["isError"] is False
         sent = forwarded[-1][1]

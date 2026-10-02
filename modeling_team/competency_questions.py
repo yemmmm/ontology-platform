@@ -104,7 +104,9 @@ CQ_FAILURE_LAYERS: tuple[str, ...] = (
 # empty; every other verdict state must name its layer.
 CQ_REQUIRED_FAILURE_LAYERS: dict[str, tuple[str, ...]] = {
     "model-recall-insufficient": ("modeling-quality",),
-    "platform-runtime-incomplete": ("runtime/infrastructure", "platform-contract"),
+    "platform-runtime-incomplete": (
+        "runtime/infrastructure", "platform-contract", "collaboration/routing"
+    ),
 }
 # Design §5 (Round 2 R4): exposure provenance stays OUTSIDE the frozen snapshot
 # schema (``r3-0-011-cq-freeze/v1`` is unchanged) and lives only in the

@@ -361,6 +361,17 @@ CQ_ACCEPTANCE_BRANCH_LEGACY = "legacy-r2.3-per-question"
 CQ_ACCEPTANCE_PLATFORM_ROLE = "platform-examiner"
 CQ_ACCEPTANCE_JUDGE_ROLE = "acceptance"
 
+# Active CQ acceptance consumes modeled semantics only. The historical full
+# read catalog remains available to the separately versioned legacy path.
+CQ_SEMANTIC_READ_TOOLS: tuple[str, ...] = (
+    "query_semantic_context",
+    "get_semantic_read_model",
+    "get_entity_statement_context",
+    "get_ontology_read_model",
+    "semantic_sparql_query",
+)
+CQ_HOST_STATE_READ_TOOLS: tuple[str, ...] = ("get_ontology_workspace_context",)
+
 # A Platform Examiner stays blind: no answer points, no evidence bundle, no
 # review binding and no conversation history may enter its batch packet.
 _V3_BLIND_FORBIDDEN_FIELDS = frozenset(
@@ -481,10 +492,13 @@ class AcceptanceBatchPacket:
             if (
                 not isinstance(tools, list)
                 or not tools
-                or any(tool not in PLATFORM_PROXY_READ_TOOLS for tool in tools)
+                or any(tool not in CQ_SEMANTIC_READ_TOOLS for tool in tools)
                 or len(set(tools)) != len(tools)
             ):
                 raise ChildRuntimeError("v3 acceptance read tools are invalid")
+            if any(set(entry["authorized_read_tools"]) != set(tools)
+                   for entry in binding["ontologies"]):
+                raise ChildRuntimeError("v3 acceptance read tools do not match the model binding")
             if not isinstance(normalized["report_schema"], Mapping):
                 raise ChildRuntimeError("v3 acceptance report_schema is invalid")
             session = normalized["session"]
@@ -667,9 +681,9 @@ def _validated_platform_read_responses(
                 raise ChildRuntimeError(
                     "v3 judge packet platform response projection fields are invalid"
                 )
-            if entry["tool"] not in PLATFORM_PROXY_READ_TOOLS:
+            if entry["tool"] not in CQ_SEMANTIC_READ_TOOLS:
                 raise ChildRuntimeError(
-                    "v3 judge packet platform response tool is not read-only"
+                    "v3 judge packet platform response tool is not an authorized CQ semantic read"
                 )
             for field in ("request_digest", "response_digest"):
                 if not _v3_digest(entry[field]):
@@ -3181,7 +3195,10 @@ class McpReadForwarder:
                 # inventory through this proxy; no extra tool can cross the boundary.
                 missing = set(self.expected_tools) - set(inventory)
                 if missing:
-                    raise ChildRuntimeError("canonical MCP read tool inventory is incomplete")
+                    raise ChildRuntimeError(
+                        "canonical MCP read tool inventory is incomplete: "
+                        + ", ".join(sorted(missing))
+                    )
                 self._tool_schemas = {name: inventory[name] for name in self.expected_tools}
                 self._inventory_digest = _digest(
                     {"canonical_tools": sorted(inventory), "ticket_tools": list(self.expected_tools)}
@@ -3536,6 +3553,8 @@ __all__ = [
     "CQ_ACCEPTANCE_BRANCH_LEGACY",
     "CQ_ACCEPTANCE_PLATFORM_ROLE",
     "CQ_ACCEPTANCE_JUDGE_ROLE",
+    "CQ_SEMANTIC_READ_TOOLS",
+    "CQ_HOST_STATE_READ_TOOLS",
     "V3BatchReportContract",
     "v3_proxy_scope_entries",
     "v3_ticket_digest",
