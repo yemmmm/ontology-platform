@@ -29,3 +29,20 @@ GitNexus impact 为 LOW（3 个直接依赖、0 条已索引流程）；detect_c
 安全继续同一存活运行不重复计数；生产检查点接续或重建建模线程计为新 start。独立 acceptance-only 接续不消耗建模 start。
 
 真实结果尚未产生，各条目的整体 PARTIAL／未验收状态不因本次授权而改写。每轮追加 run ID、冻结版本、实际角色模型、第一阻塞、写入／保留状态、独立判定及余额。
+
+## 2026-10-02 22:20 +08 观察与截止约束
+
+用户后续明确授权宿主代答访谈、补充标记为测试定义的业务资料并审核冻结 CQ。
+本轮补充为 `workspaces/v4-acceptance-20261002/approved-business-supplement-v1.md`，通过 CQ 私有访谈与生产 owner 通道分别送入，不含隐藏题或旧版答案。
+
+- 启动前失败 `r4009-20261002-solmedium-auth01-start1`：operator-admin Key 未绑定用户，未创建 Project/Ontology，semantic starts=0。绑定原 Key 到当前唯一启用既有 org-admin 用户，未新增用户/权限。维修证据在宿主目录。
+- 第一次语义开始 `r4009-20261002-solmedium-auth01-start1b`：2026-10-02T14:12:16.610366Z，冻结提交 `8e6a18c`，基线摘要 `23774bccd0aecabe0ee3e0485a2a76e5f800a4d3b7b6aabc2e77562ffe8ce5ab`；四个实际角色 config 均为 gpt-6.1-sol medium。
+- 第一阻塞为 runtime/infrastructure：Coordinator 日志 `workspace routing discovery timed out`，SDK 两种传输重试后终止。当前宿主未继承代理；复用 .bashrc 中既有 localhost 出站代理后，同一 endpoint 返回 HTTP 401（未认证网络探测，非模型服务成功）。不改运行时或提示合同，不降模型。
+- 第一轮已退出；临时 Project/Protocol Key 和 admin Key 均撤销，scope 按 scenario_mapped-0001 已发布检查点引用保留。没有 staged Batch 写入事件，不声称取得 L0/L1 PASS；runtime secret audit 未全部清除标记保留在原始清理记录，不声称全局零残留。
+- 已消耗 1 次，余额 4；下一步带正确代理环境 fresh start，不重写失败产物。
+
+独立功能验收实际 324 passed／1 skipped；008、010 的 A1—A9 有界 PASS；007 A4—A6 与 011 A5／A7 保留具体覆盖缺口。见 [独立记录](../tests/2026-10-02-v4-independent-functional-acceptance.md)。各项真实 A10 未执行，整体仍 PARTIAL。
+
+用户要求北京时间 2026-10-03 01:00 未完成即停止所有本轮任务并收回余额。
+已安装 user systemd timer `v4-acceptance-deadline-20261003.timer`，触发 UTC 2026-10-02 17:00:00，AccuracySec=1s；list-timers 确認显示 01:00:00 +08。
+脚本 `workspaces/v4-acceptance-20261002/deadline-stop.py` 首先撤销剩余额度，再按台账向存活 Runner 发 stop；必要时在 30 秒收尾窗口后只停止仍匹配的本轮进程组。保留资源与未知写入供重启前核对，不删除平台数据。结果落宿主目录；用户未重新授权前不再开 start。
