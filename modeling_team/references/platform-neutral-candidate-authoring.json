@@ -6,6 +6,11 @@
     "protocol_translation": "Protocol alone translates that immutable candidate into dependency-ordered platform stages.",
     "stage_atomicity": "Atomicity applies independently to each required apply stage: run dry_run, then apply_atomic for that stage.",
     "receipt_binding": "Protocol binds generated platform IDs and IRIs only from preceding formal receipts or required reads before dependent stages.",
+    "value_analysis_boundary": [
+      "Value analysis conclusions are a separate artifact under the active r4-0-012-modeling-contract.json; their proposed_level uses only L1 ordinary literal, L2 enum meaning mapping, or L3 first-class semantic value. reference_value is not a level; these choices are unrelated to runtime acceptance stages.",
+      "Candidate property keys remain neutral. The separate analysis-conclusions mapped_property requires an absolute IRI; an analyzed entry may use a neutral absolute semantic-property URN as an unmaterialized analysis reference, never as a guessed governed property identity.",
+      "Protocol alone obtains and binds the actual authorized property identity. Materialization requires exact agreement between the confirmed conclusion mapped_property and the platform property reference; there is no automatic neutral-URN alias conversion. Preserve immutable analysis predecessors and existing confirmation/approval boundaries."
+    ],
     "modeling_exclusions": [
       "Platform execution strategy",
       "Fresh Project/Ontology scope or IDs",

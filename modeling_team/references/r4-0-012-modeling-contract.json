@@ -45,6 +45,42 @@
     "schema_version": "r3-0-008b-analysis-conclusions/v2",
     "fields": ["schema_version", "scenario_id", "maintained_by", "entries"],
     "entry_fields": ["conclusion_id", "mapped_property", "candidate_value", "business_meaning_hypothesis", "proposed_level", "blocking_unknowns", "status", "confirmed_enum_value", "confirmed_level", "confirmed_by", "conflict_note", "revision"],
+    "value_levels": {
+      "L1": "Ordinary literal: save, compare or filter the value without an independently stable business meaning. Use the property's literal; no independent semantic value node is required.",
+      "L2": "Enum meaning mapping: explain a confirmed source code through EnumValueMeaning (mappedProperty, enumValue, businessMeaning) for interpretation and SQL, without an independent value node for classification, relations, rules or reuse. semanticValue is absent.",
+      "L3": "First-class semantic value: a value with stable business identity participating in classification, relations, rules, multilingual meaning or cross-slice reuse. A normal semantic node carries the meaning; a separate EnumValueMeaning mapping points to it through semanticValue and carries the confirmed source code."
+    },
+    "field_rules": [
+      "The top-level object has exactly fields. scenario_id and maintained_by are nonempty strings; entries is an array and may be empty. Each entry uses only entry_fields; metadata such as value_levels, field_rules and syntax_example is never an artifact field.",
+      "conclusion_id is a nonempty string unique within entries. mapped_property is an absolute IRI string matching ^[A-Za-z][A-Za-z0-9+.\\-]*:\\S+$; a bare candidate property key is invalid. An absolute URN satisfies this syntax check, which does not prove platform existence, authorization or identity binding.",
+      "An analyzed entry may use a neutral absolute semantic-property URN before platform identity is available, solely as an unmaterialized analysis reference. Keep its relation to the candidate property explicit in the analysis meaning or unknowns; do not add an alias field, infer a platform IRI or claim the URN is a governed property.",
+      "Before materialization Protocol obtains the authorized property identity through the existing translation/read/receipt process. A create_enum_meaning payload's property_iri must exactly equal the confirmed conclusion's mapped_property; update traces must likewise match mapped_property. No automatic URN-to-platform-IRI alias conversion exists. Any required identity change follows the existing conclusion revision and Coordinator confirmation/approval contract, never a silent rewrite of prior analysis.",
+      "candidate_value is one nonempty string or a nonempty array of nonempty strings; business_meaning_hypothesis is a nonempty string. blocking_unknowns is absent, null or an array (possibly empty) of nonempty strings.",
+      "proposed_level is exactly L1, L2 or L3; confirmed_level is absent/null or the same enum. reference_value is not a level. These are business value expression choices from R3.0-008A, not L1 Modeling quality, L2 Repeatability or L3 Productization acceptance stages; no sequential upgrade is required.",
+      "revision is a positive integer, never a boolean. Without an archive it is 1; with an archive it is exactly max(archived revisions)+1 with an existing legal status transition. A field-shape correction to an unpublished analysis is not permission to rewrite immutable published predecessors.",
+      "For analyzed entries, omit or use null for confirmed_enum_value, confirmed_by and conflict_note. For confirmed/materialized entries, confirmed_enum_value is a nonempty string or nonempty array of nonempty strings and confirmed_by is nonempty; conflict_note is absent/null. For conflict, conflict_note is nonempty and confirmed_by is absent/null. materialized additionally requires the existing matching ledger entry.",
+      "Unknown source codes, business meanings or property bindings remain analyzed with explicit blocking_unknowns; syntax acceptance never confirms them or releases apply. Retain existing analysis content while repairing only field shape and preserving the authorized business scope."
+    ],
+    "syntax_example_note": "Neutral placeholders show syntax only; this example supplies no business code, meaning, level choice, platform identity or approval for the current scenario.",
+    "syntax_example": {
+      "schema_version": "r3-0-008b-analysis-conclusions/v2",
+      "scenario_id": "example-scenario",
+      "maintained_by": "modeling",
+      "entries": [{
+        "conclusion_id": "example-conclusion",
+        "mapped_property": "urn:analysis:property:example",
+        "candidate_value": "placeholder-code",
+        "business_meaning_hypothesis": "Placeholder hypothesis for a candidate property; its governed identity is not yet bound.",
+        "proposed_level": "L2",
+        "blocking_unknowns": ["Business meaning, source code and governed property identity await confirmation."],
+        "status": "analyzed",
+        "confirmed_enum_value": null,
+        "confirmed_level": null,
+        "confirmed_by": null,
+        "conflict_note": null,
+        "revision": 1
+      }]
+    },
     "artifact_paths": {
       "current": "value-semantics/conclusions/analysis-conclusions.json",
       "archive": "value-semantics/conclusions-archive/<conclusion_id>.r<revision>.json"

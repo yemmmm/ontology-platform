@@ -61,3 +61,10 @@ T0：缺少语法可通过准确反馈修正，无不确定写入，不应终止
 同run通过绑定 issue-1/coordinator/epoch=1 的正式 guidance 恢复。14:38:04Z 的 issue-resolution与自动resume均已持久化。
 Coordinator随后重复原生resume得到拒绝，宿主根据已保留正式恢复记录明确告知其无需重复控制动作；不修改冻结副本，不新开start，不因RUNNING本身声称原步骤已经成功。
 后续以合法scenario map、实际切片交接、模型写入与独立报告为进展证据。01:00停止约束与余额撤销脚本保持有效。
+
+## 2026-10-03 05:31 +08：取消截止并恢复原余额
+
+用户明确要求继续流程、取消上一轮凌晨一点限制。原额度5次、已消耗2次；恢复当时收回的未用3次，不增加总额度、不改模型。原timer已不在loaded状态，无后续截止。
+第二轮实际已在2026-10-02T15:03:17.676406Z因Protocol的1200秒llm-inactivity-timeout退出；17:00截止记录对全部run均为already_exited。该基础设施终态不推导建模质量。
+第二轮已有合法四切片scenario map与cq_frozen-0001检查点；CQ冻结cq-batch-0001，摘要sha256:2ebd142138906f8ca9ec0088b1a640accab08e0b5d706da39bf7b9df7e419a3d，16公开/8隐藏题。生产恢复将保留冻结池并消耗一次新semantic start，先重算写尾/资源/审批绑定。
+issue-2的prompt-contract缺陷已持久补入r4-0-012活动合同及中性候选身份边界：L1/L2/L3真实含义、absolute IRI语法、analyzed中性URN不等于获准平台属性身份。未改校验器、源run、业务定义或物化门；不能机械地把reference_value替换为L3。相关51项测试通过，JSON与diff检查通过，仍不代表原步骤成功或真实语义PASS。
