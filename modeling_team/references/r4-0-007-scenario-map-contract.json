@@ -36,7 +36,7 @@
       "Each slice has exactly slices_item_fields. All fields except viewpoints are nonempty strings; slice_id is unique.",
       "Shared definitions are registered by definition_id, not term; one owner_slice resolves to a known slice. used_by_slices is nonempty and contains known slices.",
       "Use the closed viewpoints, shared_terms and adjustments contracts above. Candidate/item identities are neutral; revision is a positive integer, not a boolean.",
-      "Dependencies, cross-slice questions, explicit_unknowns and topology_decision_ref retain the r3-0-002 field contracts.",
+      "Dependencies, cross-slice questions, explicit_unknowns and topology_decision_ref retain the r3-0-002 field contracts, enumerated below so this mounted contract is self-contained.",
       "Ordinary adjustments use only change and approved_by_coordinator (nonempty strings). Shared meaning changes also carry review.",
       "Errors identify item/field locations and can be corrected within the same run; no view count, reviewer count or semantic compatibility gate is added."
     ],
@@ -154,6 +154,100 @@
           "outcome and approval of this record do not authorize apply. Keep candidate unknowns/conflicting_meanings; delay only unsafe changes. Actual application still requires content-bound business and translation approval."
         ]
       }
+    },
+    "identity_rules": [
+      "schema_version is exactly r4-0-007-scenario-map/v1; scenario_id is a nonempty string.",
+      "topology_decision_ref is a string: empty/whitespace while undecided, otherwise its trimmed value is exactly topology-decision.json. Recording a reference does not create or approve the topology artifact.",
+      "All six required_sections are arrays; slices has at least one item, while the other five arrays may be empty. The three inherited sections below are top-level arrays, never fields inside slices[]."
+    ],
+    "cross_slice_dependencies": {
+      "fields": [
+        "from_slice",
+        "to_slice",
+        "direction",
+        "connection_points"
+      ],
+      "rules": [
+        "Each item is an object with exactly these fields. from_slice and to_slice are existing slices[].slice_id values.",
+        "direction is a nonempty string, with no structural enum. connection_points is a nonempty array of nonempty strings.",
+        "Record actual dependencies from authorized inputs and explain their direction; example values illustrate syntax only and prescribe no business dependency."
+      ]
+    },
+    "cross_slice_competency_questions": {
+      "fields": [
+        "question_id",
+        "question",
+        "spans_slices"
+      ],
+      "rules": [
+        "Each item is an object with exactly these fields. question_id and question are nonempty strings.",
+        "spans_slices is an array with at least two entries, each an existing slices[].slice_id value. Structural validation does not impose a uniqueness check.",
+        "Use authorized public questions only; this section is not approval and must not contain hidden acceptance questions or expected answers."
+      ]
+    },
+    "explicit_unknowns": {
+      "fields": [
+        "topic",
+        "needed_from",
+        "status"
+      ],
+      "rules": [
+        "Each item is an object with exactly these fields; all three values are nonempty strings. status has no structural enum.",
+        "Record actual unresolved topics and who or what is needed to resolve them; do not invent missing business facts."
+      ]
+    },
+    "syntax_example_note": "This complete mechanically valid example uses neutral placeholders solely to show field shapes. It supplies no business facts, CQ answers, semantic confirmation, approval or topology choice; author the actual artifact from authorized inputs. Metadata keys such as identity_rules, fields, rules and syntax_example are not artifact fields.",
+    "syntax_example": {
+      "schema_version": "r4-0-007-scenario-map/v1",
+      "scenario_id": "example-scenario",
+      "topology_decision_ref": "",
+      "slices": [
+        {
+          "slice_id": "slice-a",
+          "name": "Example scope A",
+          "scope": "Placeholder authorized scope A",
+          "owner": "coordinator",
+          "status": "pending",
+          "viewpoints": []
+        },
+        {
+          "slice_id": "slice-b",
+          "name": "Example scope B",
+          "scope": "Placeholder authorized scope B",
+          "owner": "coordinator",
+          "status": "pending",
+          "viewpoints": []
+        }
+      ],
+      "shared_terms": [],
+      "cross_slice_dependencies": [
+        {
+          "from_slice": "slice-a",
+          "to_slice": "slice-b",
+          "direction": "Describe the dependency direction",
+          "connection_points": [
+            "Describe a connection point"
+          ]
+        }
+      ],
+      "cross_slice_competency_questions": [
+        {
+          "question_id": "example-public-cq",
+          "question": "Placeholder authorized question spanning the declared scopes?",
+          "spans_slices": [
+            "slice-a",
+            "slice-b"
+          ]
+        }
+      ],
+      "explicit_unknowns": [
+        {
+          "topic": "Placeholder unresolved topic",
+          "needed_from": "Authorized business respondent",
+          "status": "unresolved"
+        }
+      ],
+      "adjustments": []
     }
   },
   "topology_decision": {

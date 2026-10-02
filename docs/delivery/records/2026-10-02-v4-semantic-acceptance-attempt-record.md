@@ -46,3 +46,18 @@ GitNexus impact 为 LOW（3 个直接依赖、0 条已索引流程）；detect_c
 用户要求北京时间 2026-10-03 01:00 未完成即停止所有本轮任务并收回余额。
 已安装 user systemd timer `v4-acceptance-deadline-20261003.timer`，触发 UTC 2026-10-02 17:00:00，AccuracySec=1s；list-timers 确認显示 01:00:00 +08。
 脚本 `workspaces/v4-acceptance-20261002/deadline-stop.py` 首先撤销剩余额度，再按台账向存活 Runner 发 stop；必要时在 30 秒收尾窗口后只停止仍匹配的本轮进程组。保留资源与未知写入供重启前核对，不删除平台数据。结果落宿主目录；用户未重新授权前不再开 start。
+
+## 第二轮：2026-10-02 22:21—22:42 +08
+
+`r4009-20261002-solmedium-auth01-start2` 从冻结提交 `ac3cd3f` 启动，代理使用本机已配置出站环境并保留 localhost bypass。
+semantic start 为 2026-10-02T14:21:01.502479Z；各角色取得实际响应，额度累计已用2，余额3。
+
+全景公开题八项已经按 v1、v2 补充资料逐条审核；切片和隐藏题池未冻结，不能用全景批准冒充完整验收。
+第一次协调阻塞 issue-1 为 prompt-contract：活动 scenario-map 合同没有枚举其继承的三个字段。
+T0：缺少语法可通过准确反馈修正，无不确定写入，不应终止run；原结构校验保护确定性与引用闭合，保留校验而补权威合同。
+修复仅在 r4-0-007 活动合同补齐 cross_slice_dependencies、cross_slice_competency_questions、explicit_unknowns
+的真实shape、顶层/切片规则和无业务答案的中性例形，并增加真实加载/校验的四项回归。相关20项PASS，最终四项再次PASS，JSON/diff/Ruff通过。
+
+同run通过绑定 issue-1/coordinator/epoch=1 的正式 guidance 恢复。14:38:04Z 的 issue-resolution与自动resume均已持久化。
+Coordinator随后重复原生resume得到拒绝，宿主根据已保留正式恢复记录明确告知其无需重复控制动作；不修改冻结副本，不新开start，不因RUNNING本身声称原步骤已经成功。
+后续以合法scenario map、实际切片交接、模型写入与独立报告为进展证据。01:00停止约束与余额撤销脚本保持有效。
