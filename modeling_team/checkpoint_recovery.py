@@ -1591,6 +1591,33 @@ def _approvals_of(manifest: Mapping[str, Any], source_run_root: Path) -> dict[st
     return None
 
 
+def _approval_heads(entries: Any) -> dict[tuple[str, str], Mapping[str, Any]]:
+    """Collapse approvals entries to the effective head per decision key.
+
+    A decision binds at ``(kind, target_id)``; its head is the entry with the
+    highest revision and everything older is history (never a decision to
+    resurrect, never a revocation by itself).  List order never outranks the
+    revision.
+    """
+
+    heads: dict[tuple[str, str], Mapping[str, Any]] = {}
+    for entry in entries if isinstance(entries, list) else []:
+        if not isinstance(entry, Mapping):
+            continue
+        key = (str(entry.get("kind")), str(entry.get("target_id")))
+        head = heads.get(key)
+        if head is None or _approval_revision(entry) >= _approval_revision(head):
+            heads[key] = entry
+    return heads
+
+
+def _approval_revision(entry: Mapping[str, Any]) -> int:
+    revision = entry.get("revision")
+    if isinstance(revision, int) and not isinstance(revision, bool):
+        return revision
+    return -1
+
+
 def validate_business_approvals(
     manifest: Mapping[str, Any], source_run_root: Path
 ) -> dict[str, Any]:
@@ -1599,8 +1626,11 @@ def validate_business_approvals(
     Accepts an approval only when the file is packaged by THIS exact checkpoint
     (digest-verified by the package check), its ``approved_by`` matches the
     coordinator agent id resolved from the source run's own profile snapshot,
-    and the source run's CURRENT approvals file still carries the same decision
-    (a post-save revocation or replacement stays revoked).  Rejections are
+    and the source run's CURRENT approvals file still carries the same effective
+    decision for every ``(kind, target_id)``: the highest revision on each side
+    must agree in both revision and approved decision content, so older packaged
+    revisions are history rather than decisions to resurrect, and a post-save
+    revocation or replacement of the head stays revoked.  Rejections are
     typed and item-scoped: the source run is never modified and correctable
     conflicts only make the affected items wait.
     """
@@ -1639,23 +1669,19 @@ def validate_business_approvals(
             obj="profile.snapshot.yaml",
             retryable=False,
         )
-    entries = packaged.get("entries")
-    current: dict[tuple[str, str], Mapping[str, Any]] = {}
+    packaged_heads = _approval_heads(packaged.get("entries"))
+    current_heads: dict[tuple[str, str], Mapping[str, Any]] = {}
     current_path = staged_decision_artifact_paths(Path(source_run_root))["approvals"]
     if current_path.is_file():
         try:
             current_value = json.loads(current_path.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError):
             current_value = None
-        if isinstance(current_value, Mapping) and isinstance(current_value.get("entries"), list):
-            for entry in current_value["entries"]:
-                if isinstance(entry, Mapping):
-                    current[(str(entry.get("kind")), str(entry.get("target_id")))] = entry
+        if isinstance(current_value, Mapping):
+            current_heads = _approval_heads(current_value.get("entries"))
     valid: list[dict[str, Any]] = []
     invalidated: list[dict[str, Any]] = []
-    for entry in entries if isinstance(entries, list) else []:
-        if not isinstance(entry, Mapping):
-            continue
+    for entry in packaged_heads.values():
         record = {
             "kind": entry.get("kind"),
             "target_id": entry.get("target_id"),
@@ -1681,7 +1707,8 @@ def validate_business_approvals(
                 }
             )
             continue
-        current_entry = current.get((str(entry.get("kind")), str(entry.get("target_id"))))
+        key = (str(entry.get("kind")), str(entry.get("target_id")))
+        current_entry = current_heads.get(key)
         if current_entry is None or current_entry.get("revision") != entry.get("revision"):
             invalidated.append(
                 {
@@ -1690,6 +1717,23 @@ def validate_business_approvals(
                     "detail": "the source run's current approvals no longer carry "
                     "this decision at this revision (revoked or replaced after "
                     "the save); a checkpoint cannot resurrect it",
+                }
+            )
+            continue
+        # Same revision, different decision content: the head was replaced in
+        # place, so the packaged decision must not slip through as a reuse.
+        if (
+            current_entry.get("approved_by") != entry.get("approved_by")
+            or current_entry.get("confirmed_enum_value")
+            != entry.get("confirmed_enum_value")
+        ):
+            invalidated.append(
+                {
+                    **record,
+                    "reason": REASON_APPROVAL_BINDING_CHANGED,
+                    "detail": "the source run's current approvals carry different "
+                    "decision content at this revision (replaced after the save); "
+                    "a checkpoint cannot resurrect it",
                 }
             )
             continue

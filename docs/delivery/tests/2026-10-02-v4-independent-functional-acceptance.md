@@ -263,3 +263,45 @@ checkpoint 合同。测试先创建一条独立的已结算 intent／receipt 作
 实际 run checkpoint 全链 reconciliation 和随后恢复，均未由本验收执行，保留 PARTIAL。
 本功能证据不得替代语义验收；007／008／010 的已有有界功能结论不变，011 A5／A7 及四项
 A10 仍保持上文的 PARTIAL，不据此宣布真实建模质量或 CQ 语义 PASS。
+
+## Round 4 — 多 revision 业务批准恢复的独立有界功能验收
+
+范围依据：R3.0-015「恢复与审批合同」第 3 条及其设计 §6.1／共享测试计划 M27、M30。
+原有效批准可复用，但旧检查点不能复活随后撤销或替换的决定。交付方修复
+`checkpoint_recovery.validate_business_approvals` 并提供 ready 通知后，验收方独立新增
+`modeling_team/tests/test_v4_independent_recovery_approval_acceptance.py`，不修改产品实现或
+开发方既有测试。本轮未读取真实 run／检查点／业务批准／CQ／隐藏题，未执行真实恢复或
+semantic start，未调用业务 API／SQL，未重启或提交，原生产失败证据保持不变。
+
+在 `backend/` 实际执行：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest ../modeling_team/tests/test_v4_independent_recovery_approval_acceptance.py -q > /tmp/v4-independent-recovery-approval-round1.log 2>&1
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run ruff format ../modeling_team/tests/test_v4_independent_recovery_approval_acceptance.py
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run ruff check ../modeling_team/tests/test_v4_independent_recovery_approval_acceptance.py
+```
+
+结果：**9 passed in 0.50s**，日志 `/tmp/v4-independent-recovery-approval-round1.log`；Ruff
+format／check 通过。完整回归由交付方另行执行，其收集可能早于本独立文件；主 Agent 明确
+要求新文件单独运行即可，本轮没有重复全套，也不计开发自测为独立证据。
+
+fixture 复用既有 `save_checkpoint` 包装路径，只有测试方合成的中性批准、profile 和临时
+文件。两个 conclusion 各含多个 revision，slot 含两个 revision，列表故意乱序；checkpoint
+内和当前视图保留旧历史。每次验证前后均比较整个临时源树，确认验证只读、未更改源文件。
+
+| 验收点 | 结果与实际断言 |
+| --- | --- |
+| 未变化的多 revision 历史 | bounded PASS：当前相同历史倒序，另追加无关 translation 记录；无 invalidated，仅导入 conclusion 的 revision 4／7 和 slot 的 revision 6，保留原批准人、批准路径及 checkpoint digest。不按最后一个列表位置或逐 revision 存在判定 |
+| 当前更高 head | bounded PASS：追加 revision 8，但旧 revision 4／3／1 保留；保存时的 revision 4 被 `approval_binding_changed` 定位失效，不因仍能找到旧条目放行 |
+| 当前撤销 head | bounded PASS：追加 revision 8 的 withdrawn 决定并保留旧 approved history；保存时批准失效，不复活旧决定 |
+| 删除 latest、只留旧历史 | bounded PASS：删除 revision 4，保留 revision 3／1；不得回退到较旧批准，保存时的 revision 4 失效 |
+| 同 revision 决定内容变化 | bounded PASS：仅改变最新 head 的 `confirmed_enum_value`；对应批准失效，其他 conclusion／slot 可继续复用 |
+| 同 revision 批准人变化 | bounded PASS：仅改变最新 head 的 `approved_by`；对应批准失效，其他批准不受牵连 |
+| 源 profile 渠道变化 | bounded PASS：source profile_id 与 checkpoint configuration 不一致，返回类型化 `CheckpointError(approval_binding_changed)` |
+| 逻辑 Coordinator 身份变化 | bounded PASS：相同 profile_id 换到另一 Coordinator 身份，两个 conclusion 批准失效。slot 按既有合同仅为非空批准人标记，不误当 conclusion 的提交授权 |
+| 未被包装的 run-side 批准 | bounded PASS：在函数输入 manifest 中去掉批准 artifact，仍存在的临时 run-side approved 文件不会成为恢复批准，`present=false`、`valid=[]`。这验证批准函数的来源选择边界，不把人为修改的 manifest 称为已通过完整包校验的 checkpoint |
+
+本轮未发现新的实证 High／Critical 缺陷。当前狭义批准校验为 bounded PASS，不能推导实际
+恢复进程、源所有权、完整包 digest 防篡改、写入全链对账或恢复后的真实模型质量已通过。
+这些路径没有由本轮执行，继续保留 PARTIAL；真实恢复与语义取证由其独立授权责任方推进。
+011 A5／A7 及四项 A10 的结论仍不变，任何历史批准数量或有界功能 PASS 都不是语义 PASS。

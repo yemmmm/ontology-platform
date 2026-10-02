@@ -1601,6 +1601,191 @@ def test_m30_approval_channel_rejects_wrong_identity_and_revocation(tmp_path):
     assert result["present"] is False
 
 
+def _legacy_history_entries() -> list[dict]:
+    """A generic approvals history: seven conclusions each carrying a superseded
+    revision plus its effective head, and one stage3 slot with four revisions."""
+
+    entries: list[dict] = []
+    for index in range(1, 8):
+        for revision in (2, 5):
+            entries.append(
+                {
+                    "kind": "conclusion_confirmation",
+                    "target_id": f"concl-{index}",
+                    "revision": revision,
+                    "confirmed_enum_value": f"code-{index}-v{revision}",
+                    "approved_by": "team-coordinator-7",
+                    "note": f"revision {revision}",
+                }
+            )
+    for revision in (1, 2, 3, 4):
+        entries.append(
+            {
+                "kind": "stage3_slot",
+                "target_id": "slot-1",
+                "revision": revision,
+                "approved_by": "team-coordinator-7",
+            }
+        )
+    return entries
+
+
+def _approval_heads(result: dict) -> dict[tuple[str, str], int]:
+    return {
+        (record["kind"], record["target_id"]): record["revision"]
+        for record in result["valid"]
+    }
+
+
+def test_legacy_approval_history_reuses_only_effective_heads(tmp_path):
+    entries = _legacy_history_entries()
+    assert len(entries) == 18
+    run_root, saved = _approvals_run(
+        tmp_path, entries=entries, profile_agents=_COORDINATOR_AGENTS
+    )
+    before = _tree_state(run_root)
+    result = validate_business_approvals(
+        _manifest_of(run_root, saved["checkpoint_id"]), run_root
+    )
+    # Packaged and current views carry the identical 18-entry history: the 10
+    # superseded revisions are ancestry, never post-save revocations.
+    assert result["present"] is True
+    assert result["invalidated"] == []
+    assert _approval_heads(result) == {
+        **{("conclusion_confirmation", f"concl-{index}"): 5 for index in range(1, 8)},
+        ("stage3_slot", "slot-1"): 4,
+    }
+    assert len(result["valid"]) == 8
+    assert all(
+        record["approved_by"] == "team-coordinator-7" for record in result["valid"]
+    )
+    # Correctable conflicts never touch the source run.
+    assert _tree_state(run_root) == before
+
+
+def test_legacy_approval_head_changes_still_invalidate(tmp_path):
+    entries = _legacy_history_entries()
+
+    # A later head in the current view invalidates the checkpoint's head even
+    # though that older revision is still present as history.
+    run_root, saved = _approvals_run(
+        tmp_path / "later-head", entries=entries, profile_agents=_COORDINATOR_AGENTS
+    )
+    _write_json(
+        run_root / APPROVALS_RELATIVE,
+        {
+            "schema_version": "r3-0-008b-approvals/v1",
+            "entries": [
+                *entries,
+                {
+                    "kind": "conclusion_confirmation",
+                    "target_id": "concl-1",
+                    "revision": 6,
+                    "confirmed_enum_value": "code-1-v6",
+                    "approved_by": "team-coordinator-7",
+                    "note": "later decision",
+                },
+            ],
+        },
+    )
+    before = _tree_state(run_root)
+    result = validate_business_approvals(
+        _manifest_of(run_root, saved["checkpoint_id"]), run_root
+    )
+    assert [
+        (record["kind"], record["target_id"], record["revision"])
+        for record in result["invalidated"]
+    ] == [("conclusion_confirmation", "concl-1", 5)]
+    assert result["invalidated"][0]["reason"] == REASON_APPROVAL_BINDING_CHANGED
+    assert "cannot resurrect" in result["invalidated"][0]["detail"]
+    assert _approval_heads(result) == {
+        **{("conclusion_confirmation", f"concl-{index}"): 5 for index in range(2, 8)},
+        ("stage3_slot", "slot-1"): 4,
+    }
+    assert _tree_state(run_root) == before
+
+    # The same revision with different decision content is a replacement, not
+    # a reuse.
+    run_root, saved = _approvals_run(
+        tmp_path / "same-revision", entries=entries, profile_agents=_COORDINATOR_AGENTS
+    )
+    _write_json(
+        run_root / APPROVALS_RELATIVE,
+        {
+            "schema_version": "r3-0-008b-approvals/v1",
+            "entries": [
+                {**entry, "confirmed_enum_value": "code-2-other"}
+                if entry["target_id"] == "concl-2" and entry["revision"] == 5
+                else entry
+                for entry in entries
+            ],
+        },
+    )
+    result = validate_business_approvals(
+        _manifest_of(run_root, saved["checkpoint_id"]), run_root
+    )
+    assert [
+        (record["target_id"], record["revision"]) for record in result["invalidated"]
+    ] == [("concl-2", 5)]
+
+    # A target the current view dropped entirely is revoked.
+    run_root, saved = _approvals_run(
+        tmp_path / "removed", entries=entries, profile_agents=_COORDINATOR_AGENTS
+    )
+    _write_json(
+        run_root / APPROVALS_RELATIVE,
+        {
+            "schema_version": "r3-0-008b-approvals/v1",
+            "entries": [entry for entry in entries if entry["target_id"] != "concl-3"],
+        },
+    )
+    result = validate_business_approvals(
+        _manifest_of(run_root, saved["checkpoint_id"]), run_root
+    )
+    assert [
+        (record["target_id"], record["revision"]) for record in result["invalidated"]
+    ] == [("concl-3", 5)]
+
+    # The current view moving a head off the resolved coordinator identity is a
+    # replacement too.
+    run_root, saved = _approvals_run(
+        tmp_path / "approver", entries=entries, profile_agents=_COORDINATOR_AGENTS
+    )
+    _write_json(
+        run_root / APPROVALS_RELATIVE,
+        {
+            "schema_version": "r3-0-008b-approvals/v1",
+            "entries": [
+                {**entry, "approved_by": "coordinator"}
+                if entry["target_id"] == "concl-4" and entry["revision"] == 5
+                else entry
+                for entry in entries
+            ],
+        },
+    )
+    result = validate_business_approvals(
+        _manifest_of(run_root, saved["checkpoint_id"]), run_root
+    )
+    assert [
+        (record["target_id"], record["revision"]) for record in result["invalidated"]
+    ] == [("concl-4", 5)]
+
+    # A source profile that no longer matches the checkpoint configuration is
+    # still a typed channel failure.
+    run_root, saved = _approvals_run(
+        tmp_path / "profile", entries=entries, profile_agents=_COORDINATOR_AGENTS
+    )
+    (run_root / "profile.snapshot.yaml").write_text(
+        json.dumps({"profile_id": "other-profile", "agents": _COORDINATOR_AGENTS}),
+        encoding="utf-8",
+    )
+    with pytest.raises(CheckpointError) as drifted:
+        validate_business_approvals(
+            _manifest_of(run_root, saved["checkpoint_id"]), run_root
+        )
+    assert drifted.value.reason_code == REASON_APPROVAL_BINDING_CHANGED
+
+
 def _manifest_of(run_root: Path, checkpoint_id: str) -> dict:
     return json.loads(
         (
