@@ -449,6 +449,19 @@ as `api_key`, `oauth2`, or `mcp_server_auth`. It never contains a credential ins
 token, password, authorization header, or secret value.
 _Avoid_: credential reference, stored secret, authentication header
 
+**Interface Mapping**:
+A semantic description connecting an external interface's messages and fields to shared business
+definitions, parameters, reference values and applicable capability contexts. Under R4.0-011 it is
+modeled with ordinary semantic resources and explicit relations, not a new platform resource type.
+It may refer to an existing Operation's specific Tool Binding; it does not execute the interface.
+_Avoid_: connector, executable request template, business Action, stored response instance
+
+**API Field Definition**:
+A stable semantic position within a particular interface message, distinguished by its message,
+parent object or collection-element role and member name. It maps to business parameters or
+properties without taking over their identities, and contains no actual request or response values.
+_Avoid_: business parameter identity, runtime object ID, display path alone
+
 **Business Scenario**:
 A bounded end-to-end operational domain used to elicit, model, and verify shared business semantics across one or
 more logical modeling slices. It includes the source boundary and cross-slice questions, but it does not prescribe
