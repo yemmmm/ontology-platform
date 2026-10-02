@@ -266,6 +266,11 @@ def test_same_batch_class_then_table_mapping_passes(modeling):
     """G2 on the merged view: a class created in the same batch satisfies
     mapped_class_iri without any store round-trip."""
     service, _db, _rdf, session_id, _lease, version = modeling
+    # The Class is new in this batch; its referenced Properties already exist.
+    _rdf.graphs[ONTOLOGY_GRAPH] = "\n".join(
+        f"<{BASE}property/{name}> a <http://www.w3.org/2002/07/owl#DatatypeProperty> ."
+        for name in ("work-order-no", "status")
+    )
     items = [
         _item(
             "class-wo",
@@ -357,7 +362,7 @@ def test_g3_forward_unmapped_table_is_blocked(modeling):
     ]
     assert join_findings
     assert join_findings[0]["client_item_ids"] == ["jm-1"]
-    assert join_findings[0]["path"] == ["payload", "join_path"]
+    assert join_findings[0]["path"] == ["payload", "join_path", 0, "to_table"]
 
 
 def test_g3_reverse_delete_table_mapping_blocks_existing_join(modeling):

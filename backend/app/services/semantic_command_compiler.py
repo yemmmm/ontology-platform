@@ -2175,6 +2175,9 @@ _DSN_USERINFO_RE = re.compile(r"[A-Za-z0-9._%+-]+:[^@\s]+@[A-Za-z0-9.\-]+")
 _RELATIONAL_DSN_EXEMPT_FIELDS = frozenset(
     {
         "mapped_class_iri",
+        "mapped_definition_iri",
+        "from_mapping_iri",
+        "to_mapping_iri",
         "relation_type_iri",
         "property_iri",
         "time_field",
@@ -2185,6 +2188,11 @@ _RELATIONAL_DSN_EXEMPT_FIELDS = frozenset(
         "join_mapping_iri",
         "enum_meaning_iri",
         "metric_iri",
+        "condition_rule_iri",
+        "conversion_rule_iri",
+        "conversion_rule_iris",
+        "base_mapping_iri",
+        "join_mapping_iris",
         # R3.0-008A: intra-ontology IRI reference constrained by G7-a/b, and
         # an absolute IRI always contains "://", which the DSN gate would
         # otherwise misread as an embedded URL.
@@ -2285,13 +2293,19 @@ def _validate_relational_payload(payload: dict[str, Any]) -> None:
 
 
 def _relational_json_literal(value: Any) -> str:
-    """Canonical JSON literal: ``json.dumps(payload, ensure_ascii=False)``.
+    """Canonical JSON literal with stable object-key ordering.
+
+    Relationship mapping payloads are persisted inside PostgreSQL JSONB and
+    may be returned with nested object keys in a different order during
+    recovery.  Sorting keys here keeps the RDF literal identical across the
+    initial compile and a plan recompile while preserving list order and the
+    existing UTF-8 JSON representation.
 
     The repr path of ``_literal_term(dict)`` is forbidden here — it stores a
     Python repr that is not valid JSON and would silently defeat the
     authorization layer's JSON reference extraction helper.
     """
-    encoded = json.dumps(value, ensure_ascii=False)
+    encoded = json.dumps(value, ensure_ascii=False, sort_keys=True)
     return Literal(encoded, datatype=URIRef(_RDF_JSON_DATATYPE)).n3()
 
 
@@ -2306,23 +2320,373 @@ def _normalize_column_mappings(value: Any) -> list[dict[str, str]]:
         unknown = sorted(set(entry) - {"property_iri", "column", "role"})
         if unknown:
             raise InvalidCommandPayload(f"{label} has unknown field(s): {', '.join(unknown)}")
-        missing = sorted({"property_iri", "column"} - set(entry))
+        missing = sorted({"column"} - set(entry))
         if missing:
             raise InvalidCommandPayload(f"{label} is missing field(s): {', '.join(missing)}")
         role = entry.get("role", "value")
         if role not in {"value", "business_key"}:
             raise InvalidCommandPayload(f"{label}.role must be 'value' or 'business_key'")
-        normalized.append(
-            {
-                "property_iri": _relational_iri_value(entry["property_iri"], f"{label}.property_iri"),
-                "column": _relational_identifier_value(entry["column"], f"{label}.column"),
-                "role": role,
-            }
+        normalized_entry: dict[str, str] = {}
+        property_iri = entry.get("property_iri")
+        if property_iri is not None:
+            normalized_entry["property_iri"] = _relational_iri_value(
+                property_iri, f"{label}.property_iri"
+            )
+        elif role == "business_key":
+            raise InvalidCommandPayload(
+                f"{label}.property_iri is required when role is 'business_key'"
+            )
+        normalized_entry["column"] = _relational_identifier_value(
+            entry["column"], f"{label}.column"
         )
-    if not any(item["role"] == "business_key" for item in normalized):
+        normalized_entry["role"] = role
+        normalized.append(normalized_entry)
+    return normalized
+
+
+def _mapping_nullable_string(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidCommandPayload(f"{label} must be a non-empty string or null")
+    return value
+
+
+def _mapping_string_list(
+    value: Any, label: str, *, allow_empty: bool = False
+) -> list[str] | None:
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise InvalidCommandPayload(f"{label} must be an array of strings or null")
+    if not value and not allow_empty:
+        raise InvalidCommandPayload(f"{label} must not be empty when provided")
+    result: list[str] = []
+    for index, entry in enumerate(value):
+        if not isinstance(entry, str) or not entry.strip():
+            raise InvalidCommandPayload(f"{label}[{index}] must be a non-empty string")
+        result.append(entry)
+    return result
+
+
+def _mapping_nullable_iri(value: Any, label: str) -> str | None:
+    if value is None:
+        return None
+    return _relational_iri_value(value, label)
+
+
+def _normalize_mapping_definition(value: Any, *, resource_kind: str) -> dict[str, Any] | None:
+    """Validate one R4.0-010 mapping annotation without inferring semantics.
+
+    The four resource kinds deliberately use closed, small structures.  This
+    keeps a misspelled field from becoming an unreadable annotation while
+    leaving business meaning (and unresolved values) to the author.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, dict):
         raise InvalidCommandPayload(
-            "column_mappings must declare at least one business_key column"
+            f"mapping_definition for {resource_kind} must be an object or null"
         )
+
+    allowed_by_kind: dict[str, set[str]] = {
+        "table_mapping": {
+            "source_key", "schema_version", "row_grain", "record_key_columns",
+            "object_key_columns", "identifiers", "field_meanings", "row_scope",
+        },
+        "join_mapping": {
+            "step_semantics", "relationship_meaning", "duplicate_risk",
+            "execution_prerequisite",
+        },
+        "enum_meaning": {"conversion_rule_iri"},
+        "metric": {"contexts"},
+    }
+    allowed = allowed_by_kind[resource_kind]
+    unknown = sorted(set(value) - allowed)
+    if unknown:
+        raise InvalidCommandPayload(
+            "mapping_definition contains unsupported field(s): " + ", ".join(unknown)
+        )
+
+    normalized: dict[str, Any] = {}
+    if resource_kind == "table_mapping":
+        if "source_key" not in value:
+            raise InvalidCommandPayload(
+                "mapping_definition.source_key is required for a table mapping"
+            )
+        normalized["source_key"] = _mapping_nullable_string(
+            value.get("source_key"), "mapping_definition.source_key"
+        )
+        for field in ("schema_version", "row_grain", "row_scope"):
+            if field in value:
+                normalized[field] = _mapping_nullable_string(
+                    value[field], f"mapping_definition.{field}"
+                )
+        for field in ("record_key_columns", "object_key_columns"):
+            if field in value:
+                normalized[field] = _mapping_string_list(
+                    value[field], f"mapping_definition.{field}", allow_empty=True
+                )
+
+        identifiers = value.get("identifiers")
+        if identifiers is not None:
+            if not isinstance(identifiers, list):
+                raise InvalidCommandPayload(
+                    "mapping_definition.identifiers must be an array"
+                )
+            normalized_identifiers: list[dict[str, Any]] = []
+            allowed_identifier = {
+                "columns", "kind", "property_iri", "scope", "correspondence"
+            }
+            for index, entry in enumerate(identifiers):
+                label = f"mapping_definition.identifiers[{index}]"
+                if not isinstance(entry, dict):
+                    raise InvalidCommandPayload(f"{label} must be an object")
+                unknown = sorted(set(entry) - allowed_identifier)
+                if unknown:
+                    raise InvalidCommandPayload(
+                        f"{label} has unsupported field(s): {', '.join(unknown)}"
+                    )
+                if "columns" not in entry:
+                    raise InvalidCommandPayload(f"{label}.columns is required")
+                columns = _mapping_string_list(entry["columns"], f"{label}.columns")
+                assert columns is not None
+                kind = entry.get("kind")
+                if kind not in {"technical", "business", "external", "unknown"}:
+                    raise InvalidCommandPayload(
+                        f"{label}.kind must be technical, business, external, or unknown"
+                    )
+                normalized_entry: dict[str, Any] = {"columns": columns, "kind": kind}
+                for field in ("property_iri", "scope", "correspondence"):
+                    if field in entry:
+                        if field == "property_iri":
+                            normalized_entry[field] = _mapping_nullable_iri(
+                                entry[field], f"{label}.{field}"
+                            )
+                        else:
+                            normalized_entry[field] = _mapping_nullable_string(
+                                entry[field], f"{label}.{field}"
+                            )
+                normalized_identifiers.append(normalized_entry)
+            normalized["identifiers"] = normalized_identifiers
+
+        field_meanings = value.get("field_meanings")
+        if field_meanings is not None:
+            if not isinstance(field_meanings, list):
+                raise InvalidCommandPayload(
+                    "mapping_definition.field_meanings must be an array"
+                )
+            normalized_meanings: list[dict[str, Any]] = []
+            allowed_meaning = {
+                "column", "source_meaning", "source_unit", "target_unit",
+                "time_semantics", "null_meaning", "conversion_rule_iri",
+            }
+            for index, entry in enumerate(field_meanings):
+                label = f"mapping_definition.field_meanings[{index}]"
+                if not isinstance(entry, dict):
+                    raise InvalidCommandPayload(f"{label} must be an object")
+                unknown = sorted(set(entry) - allowed_meaning)
+                if unknown:
+                    raise InvalidCommandPayload(
+                        f"{label} has unsupported field(s): {', '.join(unknown)}"
+                    )
+                if "column" not in entry:
+                    raise InvalidCommandPayload(f"{label}.column is required")
+                normalized_entry = {
+                    "column": _relational_identifier_value(
+                        entry["column"], f"{label}.column"
+                    )
+                }
+                for field in sorted(allowed_meaning - {"column"}):
+                    if field not in entry:
+                        continue
+                    if field == "conversion_rule_iri":
+                        normalized_entry[field] = _mapping_nullable_iri(
+                            entry[field], f"{label}.{field}"
+                        )
+                    else:
+                        normalized_entry[field] = _mapping_nullable_string(
+                            entry[field], f"{label}.{field}"
+                        )
+                normalized_meanings.append(normalized_entry)
+            normalized["field_meanings"] = normalized_meanings
+    elif resource_kind == "join_mapping":
+        for field in ("relationship_meaning", "duplicate_risk", "execution_prerequisite"):
+            if field in value:
+                normalized[field] = _mapping_nullable_string(
+                    value[field], f"mapping_definition.{field}"
+                )
+        step_semantics = value.get("step_semantics")
+        if step_semantics is not None:
+            if not isinstance(step_semantics, list):
+                raise InvalidCommandPayload(
+                    "mapping_definition.step_semantics must be an array"
+                )
+            allowed_step = {
+                "step_index", "join_type", "cardinality", "additional_condition",
+                "condition_rule_iri",
+            }
+            normalized_steps: list[dict[str, Any]] = []
+            seen_indices: set[int] = set()
+            for index, entry in enumerate(step_semantics):
+                label = f"mapping_definition.step_semantics[{index}]"
+                if not isinstance(entry, dict):
+                    raise InvalidCommandPayload(f"{label} must be an object")
+                unknown = sorted(set(entry) - allowed_step)
+                if unknown:
+                    raise InvalidCommandPayload(
+                        f"{label} has unsupported field(s): {', '.join(unknown)}"
+                    )
+                step_index = entry.get("step_index")
+                if not isinstance(step_index, int) or isinstance(step_index, bool) or step_index < 0:
+                    raise InvalidCommandPayload(f"{label}.step_index must be a non-negative integer")
+                if step_index in seen_indices:
+                    raise InvalidCommandPayload(
+                        f"{label}.step_index must be unique"
+                    )
+                seen_indices.add(step_index)
+                join_type = entry.get("join_type")
+                if join_type is not None and join_type not in {"inner", "left", "right", "full", "unknown"}:
+                    raise InvalidCommandPayload(
+                        f"{label}.join_type has an unsupported value"
+                    )
+                cardinality = entry.get("cardinality")
+                if cardinality is not None and cardinality not in {
+                    "one_to_one", "one_to_many", "many_to_one", "many_to_many", "unknown"
+                }:
+                    raise InvalidCommandPayload(
+                        f"{label}.cardinality has an unsupported value"
+                    )
+                normalized_entry = {"step_index": step_index}
+                if join_type is not None:
+                    normalized_entry["join_type"] = join_type
+                if cardinality is not None:
+                    normalized_entry["cardinality"] = cardinality
+                for field in ("additional_condition", "condition_rule_iri"):
+                    if field not in entry:
+                        continue
+                    normalized_entry[field] = (
+                        _mapping_nullable_iri(entry[field], f"{label}.{field}")
+                        if field == "condition_rule_iri"
+                        else _mapping_nullable_string(entry[field], f"{label}.{field}")
+                    )
+                normalized_steps.append(normalized_entry)
+            normalized["step_semantics"] = normalized_steps
+    elif resource_kind == "enum_meaning":
+        if "conversion_rule_iri" in value:
+            normalized["conversion_rule_iri"] = _mapping_nullable_iri(
+                value["conversion_rule_iri"], "mapping_definition.conversion_rule_iri"
+            )
+    elif resource_kind == "metric":
+        contexts = value.get("contexts")
+        if contexts is not None:
+            if not isinstance(contexts, list):
+                raise InvalidCommandPayload("mapping_definition.contexts must be an array")
+            allowed_context = {
+                "context_key", "applicability", "base_mapping_iri", "base_role",
+                "join_mapping_iris", "property_bindings", "counted_identity",
+                "duplicate_handling", "conversion_rule_iris",
+            }
+            normalized_contexts: list[dict[str, Any]] = []
+            seen_keys: set[str] = set()
+            for index, entry in enumerate(contexts):
+                label = f"mapping_definition.contexts[{index}]"
+                if not isinstance(entry, dict):
+                    raise InvalidCommandPayload(f"{label} must be an object")
+                unknown = sorted(set(entry) - allowed_context)
+                if unknown:
+                    raise InvalidCommandPayload(
+                        f"{label} has unsupported field(s): {', '.join(unknown)}"
+                    )
+                context_key = entry.get("context_key")
+                if not isinstance(context_key, str) or not context_key.strip():
+                    raise InvalidCommandPayload(f"{label}.context_key must be a non-empty string")
+                if context_key in seen_keys:
+                    raise InvalidCommandPayload(f"{label}.context_key must be unique")
+                seen_keys.add(context_key)
+                normalized_entry: dict[str, Any] = {"context_key": context_key}
+                for field in ("applicability", "base_role", "duplicate_handling"):
+                    if field in entry:
+                        normalized_entry[field] = _mapping_nullable_string(
+                            entry[field], f"{label}.{field}"
+                        )
+                if "base_mapping_iri" in entry:
+                    normalized_entry["base_mapping_iri"] = _mapping_nullable_iri(
+                        entry["base_mapping_iri"], f"{label}.base_mapping_iri"
+                    )
+                if "join_mapping_iris" in entry:
+                    join_iris = entry["join_mapping_iris"]
+                    if not isinstance(join_iris, list):
+                        raise InvalidCommandPayload(f"{label}.join_mapping_iris must be an array")
+                    normalized_entry["join_mapping_iris"] = [
+                        _relational_iri_value(item, f"{label}.join_mapping_iris[{position}]")
+                        for position, item in enumerate(join_iris)
+                    ]
+                if "conversion_rule_iris" in entry:
+                    rules = entry["conversion_rule_iris"]
+                    if not isinstance(rules, list):
+                        raise InvalidCommandPayload(f"{label}.conversion_rule_iris must be an array")
+                    normalized_entry["conversion_rule_iris"] = [
+                        _relational_iri_value(item, f"{label}.conversion_rule_iris[{position}]")
+                        for position, item in enumerate(rules)
+                    ]
+                for field in ("property_bindings", "counted_identity"):
+                    if field not in entry:
+                        continue
+                    members = entry[field]
+                    if members is None:
+                        normalized_entry[field] = None
+                        continue
+                    if not isinstance(members, list):
+                        raise InvalidCommandPayload(f"{label}.{field} must be an array or null")
+                    normalized_members: list[dict[str, Any]] = []
+                    allowed_member = (
+                        {"property_iri", "table_mapping_iri", "role", "column"}
+                        if field == "property_bindings"
+                        else {"table_mapping_iri", "role", "columns"}
+                    )
+                    for member_index, member in enumerate(members):
+                        member_label = f"{label}.{field}[{member_index}]"
+                        if not isinstance(member, dict):
+                            raise InvalidCommandPayload(f"{member_label} must be an object")
+                        member_unknown = sorted(set(member) - allowed_member)
+                        if member_unknown:
+                            raise InvalidCommandPayload(
+                                f"{member_label} has unsupported field(s): {', '.join(member_unknown)}"
+                            )
+                        required = (
+                            {"property_iri", "table_mapping_iri", "role", "column"}
+                            if field == "property_bindings"
+                            else {"table_mapping_iri", "role", "columns"}
+                        )
+                        missing = sorted(required - set(member))
+                        if missing:
+                            raise InvalidCommandPayload(
+                                f"{member_label} is missing field(s): {', '.join(missing)}"
+                            )
+                        normalized_member: dict[str, Any] = {
+                            "table_mapping_iri": _relational_iri_value(
+                                member["table_mapping_iri"], f"{member_label}.table_mapping_iri"
+                            ),
+                            "role": _mapping_nullable_string(
+                                member["role"], f"{member_label}.role"
+                            ),
+                        }
+                        if field == "property_bindings":
+                            normalized_member["property_iri"] = _relational_iri_value(
+                                member["property_iri"], f"{member_label}.property_iri"
+                            )
+                            normalized_member["column"] = _relational_identifier_value(
+                                member["column"], f"{member_label}.column"
+                            )
+                        else:
+                            normalized_member["columns"] = _mapping_string_list(
+                                member["columns"], f"{member_label}.columns"
+                            )
+                        normalized_members.append(normalized_member)
+                    normalized_entry[field] = normalized_members
+                normalized_contexts.append(normalized_entry)
+            normalized["contexts"] = normalized_contexts
     return normalized
 
 
@@ -2332,14 +2696,32 @@ def _normalize_join_path(value: Any) -> list[dict[str, Any]]:
             "join_path must be a non-empty JSON array of ordered steps"
         )
     steps: list[dict[str, Any]] = []
+    path_shape: str | None = None
     for index, step in enumerate(value):
         label = f"join_path[{index}]"
         if not isinstance(step, dict):
             raise InvalidCommandPayload(f"{label} must be a JSON object")
-        if set(step) != {"from_table", "to_table", "from_columns", "to_columns"}:
+        keys = set(step)
+        old_keys = {"from_table", "to_table", "from_columns", "to_columns"}
+        referenced_keys = {
+            "from_mapping_iri", "to_mapping_iri", "from_role", "to_role",
+            "from_columns", "to_columns",
+        }
+        if keys == old_keys:
+            current_shape = "table"
+        elif keys == referenced_keys:
+            current_shape = "mapping"
+        else:
             raise InvalidCommandPayload(
-                f"{label} must have exactly from_table, to_table, from_columns, to_columns"
+                f"{label} must have exactly from_table, to_table, from_columns, to_columns "
+                "or exactly from_mapping_iri, to_mapping_iri, from_role, to_role, "
+                "from_columns, to_columns; "
+                "mixed or unknown fields are not allowed"
             )
+        if path_shape is None:
+            path_shape = current_shape
+        elif current_shape != path_shape:
+            raise InvalidCommandPayload("join_path cannot mix table and mapping references")
         from_columns = step["from_columns"]
         to_columns = step["to_columns"]
         if not isinstance(from_columns, list) or not from_columns:
@@ -2350,25 +2732,59 @@ def _normalize_join_path(value: Any) -> list[dict[str, Any]]:
             raise InvalidCommandPayload(
                 f"{label}.from_columns and to_columns must have equal length"
             )
-        steps.append(
-            {
-                "from_table": _relational_identifier_value(step["from_table"], f"{label}.from_table"),
-                "to_table": _relational_identifier_value(step["to_table"], f"{label}.to_table"),
-                "from_columns": [
-                    _relational_identifier_value(column, f"{label}.from_columns[{position}]")
-                    for position, column in enumerate(from_columns)
-                ],
-                "to_columns": [
-                    _relational_identifier_value(column, f"{label}.to_columns[{position}]")
-                    for position, column in enumerate(to_columns)
-                ],
-            }
-        )
+        common = {
+            "from_columns": [
+                _relational_identifier_value(column, f"{label}.from_columns[{position}]")
+                for position, column in enumerate(from_columns)
+            ],
+            "to_columns": [
+                _relational_identifier_value(column, f"{label}.to_columns[{position}]")
+                for position, column in enumerate(to_columns)
+            ],
+        }
+        if current_shape == "table":
+            steps.append(
+                {
+                    "from_table": _relational_identifier_value(
+                        step["from_table"], f"{label}.from_table"
+                    ),
+                    "to_table": _relational_identifier_value(
+                        step["to_table"], f"{label}.to_table"
+                    ),
+                    **common,
+                }
+            )
+        else:
+            steps.append(
+                {
+                    "from_mapping_iri": _relational_iri_value(
+                        step["from_mapping_iri"], f"{label}.from_mapping_iri"
+                    ),
+                    "to_mapping_iri": _relational_iri_value(
+                        step["to_mapping_iri"], f"{label}.to_mapping_iri"
+                    ),
+                    "from_role": _relational_string(
+                        {"from_role": step["from_role"]}, "from_role", required=True
+                    ),
+                    "to_role": _relational_string(
+                        {"to_role": step["to_role"]}, "to_role", required=True
+                    ),
+                    **common,
+                }
+            )
     for index in range(len(steps) - 1):
-        if steps[index]["to_table"] != steps[index + 1]["from_table"]:
+        if path_shape == "table":
+            if steps[index]["to_table"] != steps[index + 1]["from_table"]:
+                raise InvalidCommandPayload(
+                    f"join_path steps {index} and {index + 1} are not adjacent: "
+                    f"{steps[index]['to_table']} != {steps[index + 1]['from_table']}"
+                )
+        elif (
+            steps[index]["to_mapping_iri"] != steps[index + 1]["from_mapping_iri"]
+            or steps[index]["to_role"] != steps[index + 1]["from_role"]
+        ):
             raise InvalidCommandPayload(
-                f"join_path steps {index} and {index + 1} are not adjacent: "
-                f"{steps[index]['to_table']} != {steps[index + 1]['from_table']}"
+                f"join_path steps {index} and {index + 1} are not adjacent by mapping and role"
             )
     return steps
 
@@ -2513,7 +2929,21 @@ def compile_create_table_mapping(
     if not isinstance(resource_id, str) or not resource_id:
         raise InvalidCommandPayload("table_mapping_id must be a non-empty string")
     name = _relational_string(payload, "name", required=True) or ""
-    mapped_class_iri = _relational_iri_ref(payload, "mapped_class_iri")
+    mapped_class_iri: str | None = None
+    mapped_definition_iri: str | None = None
+    supplied_targets = [
+        field for field in ("mapped_class_iri", "mapped_definition_iri")
+        if payload.get(field) not in (None, "")
+    ]
+    if len(supplied_targets) != 1:
+        raise InvalidCommandPayload(
+            "create_table_mapping requires exactly one of mapped_class_iri or "
+            "mapped_definition_iri"
+        )
+    if "mapped_class_iri" in supplied_targets:
+        mapped_class_iri = _relational_iri_ref(payload, "mapped_class_iri")
+    else:
+        mapped_definition_iri = _relational_iri_ref(payload, "mapped_definition_iri")
     table_name = _relational_identifier_value(payload.get("table_name"), "table_name")
     column_mappings = _normalize_column_mappings(payload.get("column_mappings"))
     subject_iri = str(ns.resource("table-mapping", resource_id))
@@ -2530,9 +2960,14 @@ def compile_create_table_mapping(
         schema_source_required=True,
     )
     subject = f"<{subject_iri}>"
+    if mapped_class_iri is not None:
+        quads.append((subject, f"<{op}mappedClass>", f"<{mapped_class_iri}>", graph_iri))
+    if mapped_definition_iri is not None:
+        quads.append(
+            (subject, f"<{op}mappedDefinition>", f"<{mapped_definition_iri}>", graph_iri)
+        )
     quads.extend(
         [
-            (subject, f"<{op}mappedClass>", f"<{mapped_class_iri}>", graph_iri),
             (subject, f"<{op}tableName>", _literal_term(table_name), graph_iri),
             (subject, f"<{op}columnMappings>", _relational_json_literal(column_mappings), graph_iri),
         ]
@@ -2548,6 +2983,8 @@ def compile_create_table_mapping(
             "table_mapping_id": resource_id,
             "table_mapping_iri": subject_iri,
             "table_name": table_name,
+            "mapped_class_iri": mapped_class_iri,
+            "mapped_definition_iri": mapped_definition_iri,
         },
     )
 
@@ -2559,6 +2996,8 @@ def compile_update_table_mapping(
     _validate_relational_payload(payload)
     if "column_mappings" in payload:
         _normalize_column_mappings(payload["column_mappings"])
+    if "mapping_definition" in payload and payload["mapping_definition"] is not None:
+        _normalize_mapping_definition(payload["mapping_definition"], resource_kind="table_mapping")
     if "table_name" in payload and payload["table_name"]:
         _relational_identifier_value(payload["table_name"], "table_name")
     subject_iri, resource_id = _relational_subject(
@@ -2674,6 +3113,8 @@ def compile_update_join_mapping(
     _validate_relational_payload(payload)
     if "join_path" in payload and payload["join_path"] is not None:
         _normalize_join_path(payload["join_path"])
+    if "mapping_definition" in payload and payload["mapping_definition"] is not None:
+        _normalize_mapping_definition(payload["mapping_definition"], resource_kind="join_mapping")
     if "join_direction" in payload and payload["join_direction"]:
         if payload["join_direction"] not in {"forward", "reverse"}:
             raise InvalidCommandPayload("join_direction must be 'forward' or 'reverse'")
@@ -2745,6 +3186,22 @@ def compile_create_enum_meaning(
     property_iri = _relational_iri_ref(payload, "property_iri")
     enum_value = _relational_string(payload, "enum_value", required=True)
     business_meaning = _relational_string(payload, "business_meaning", required=True)
+    scoped_mapping = payload.get("table_mapping_iri")
+    scoped_column = payload.get("column")
+    if (scoped_mapping is None) != (scoped_column is None):
+        raise InvalidCommandPayload(
+            "table_mapping_iri and column must be supplied together for a scoped enum meaning"
+        )
+    scoped_mapping_iri = (
+        _relational_iri_value(scoped_mapping, "table_mapping_iri")
+        if scoped_mapping is not None
+        else None
+    )
+    scoped_column_name = (
+        _relational_identifier_value(scoped_column, "column")
+        if scoped_column is not None
+        else None
+    )
     subject_iri = str(ns.resource("enum-meaning", resource_id))
     graph_iri = _ontology_graph_iri(ns, ontology_id)
     op = str(ns.vocab)
@@ -2766,6 +3223,13 @@ def compile_create_enum_meaning(
             (subject, f"<{op}businessMeaning>", _literal_term(business_meaning), graph_iri),
         ]
     )
+    if scoped_mapping_iri is not None:
+        quads.extend(
+            [
+                (subject, f"<{op}tableMapping>", f"<{scoped_mapping_iri}>", graph_iri),
+                (subject, f"<{op}columnName>", _literal_term(scoped_column_name), graph_iri),
+            ]
+        )
     # R3.0-008A L3 form: optional single op:semanticValue IRI reference to a
     # first-class business semantic node. Absent/empty stays L2; a non-string
     # or non-IRI shape is rejected here (G7-c single-value enforcement at the
@@ -2788,6 +3252,8 @@ def compile_create_enum_meaning(
             "mapped_property_iri": property_iri,
             "enum_value": enum_value,
             "semantic_value_iri": semantic_value_iri,
+            "table_mapping_iri": scoped_mapping_iri,
+            "column": scoped_column_name,
         },
     )
 
@@ -2797,6 +3263,16 @@ def compile_update_enum_meaning(
 ) -> CompiledCommand:
     ontology_id = _required(payload, "ontology_id")
     _validate_relational_payload(payload)
+    scoped_fields = {"table_mapping_iri", "column"}
+    if scoped_fields.intersection(payload) and not scoped_fields.issubset(payload):
+        raise InvalidCommandPayload(
+            "table_mapping_iri and column must be supplied together for a scoped enum meaning"
+        )
+    if "table_mapping_iri" in payload and payload["table_mapping_iri"] is not None:
+        _relational_iri_value(payload["table_mapping_iri"], "table_mapping_iri")
+        _relational_identifier_value(payload.get("column"), "column")
+    if "mapping_definition" in payload and payload["mapping_definition"] is not None:
+        _normalize_mapping_definition(payload["mapping_definition"], resource_kind="enum_meaning")
     subject_iri, resource_id = _relational_subject(
         payload, ns, id_key="enum_meaning_id", iri_key="enum_meaning_iri", kind="enum-meaning"
     )
@@ -2813,8 +3289,12 @@ def compile_update_enum_meaning(
             "business_meaning": f"{op}businessMeaning",
             "schema_source": f"{op}schemaSource",
             "semantic_version": f"{op}semanticVersion",
+            "column": f"{op}columnName",
         },
-        iri_fields={"semantic_value": f"{op}semanticValue"},
+        iri_fields={
+            "semantic_value": f"{op}semanticValue",
+            "table_mapping_iri": f"{op}tableMapping",
+        },
         json_fields={},
     )
     # R3.0-008A: null/"" clears op:semanticValue (L3 -> L2 downgrade); a new
@@ -2836,6 +3316,8 @@ def compile_update_enum_meaning(
             "enum_meaning_id": payload.get("enum_meaning_id"),
             "enum_meaning_iri": subject_iri,
             "semantic_value_iri": update_semantic_value_iri,
+            "table_mapping_iri": payload.get("table_mapping_iri"),
+            "column": payload.get("column"),
         },
     )
 
@@ -2953,6 +3435,8 @@ def compile_update_metric_definition(
         _normalize_metric_grain(payload["grain"])
     if "filters" in payload and payload["filters"] is not None:
         _normalize_metric_filters(payload["filters"])
+    if "mapping_definition" in payload and payload["mapping_definition"] is not None:
+        _normalize_mapping_definition(payload["mapping_definition"], resource_kind="metric")
     for field in ("null_value_rule", "denominator_rule"):
         if field in payload and (payload[field] is None or payload[field] == ""):
             raise InvalidCommandPayload(
@@ -3086,6 +3570,8 @@ def compile_command(
     # neither changes formal membership nor creates a platform resource kind.
     if "semantic_definition" in payload:
         _compile_semantic_definition(compiled, payload, ns)
+    if "mapping_definition" in payload:
+        _compile_mapping_definition(compiled, payload, ns)
     for field, predicate in (
         ("action_definition", "actionDefinition"),
         ("parameter_definition", "parameterDefinition"),
@@ -3129,6 +3615,10 @@ def _compile_semantic_definition(
     if kind not in {
         "create_class", "update_class", "create_property", "update_property",
         "create_entity", "update_entity", "create_relation_type", "update_relation_type",
+        "create_table_mapping", "update_table_mapping",
+        "create_join_mapping", "update_join_mapping",
+        "create_enum_meaning", "update_enum_meaning",
+        "create_metric_definition", "update_metric_definition",
     }:
         raise InvalidCommandPayload(f"semantic_definition is not supported by {kind}")
     definition = payload["semantic_definition"]
@@ -3150,13 +3640,7 @@ def _compile_semantic_definition(
                 valid = isinstance(value, str) and bool(value.strip())
             if not valid:
                 raise InvalidCommandPayload(f"semantic_definition.{field} has an invalid value")
-    resource_kind = compiled.object_kind
-    resource_id = payload.get(f"{resource_kind}_id") or compiled.source_ids[0]
-    subject_iri = payload.get(f"{resource_kind}_iri") or str(
-        ns.resource(resource_kind.replace("_", "-"), resource_id)
-    )
-    if resource_kind == "entity":
-        subject_iri = compiled.metadata["entity_iri"]
+    subject_iri = _compiled_subject_iri(compiled, payload, ns)
     graph_iri = compiled.target_graph_iris[0]
     predicate = f"<{ns.vocab}semanticDefinition>"
     if kind.startswith("update_"):
@@ -3165,4 +3649,62 @@ def _compile_semantic_definition(
         compiled.delta.inserts.append(
             (f"<{subject_iri}>", predicate,
              _literal_term(json.dumps(definition, ensure_ascii=False, sort_keys=True)), graph_iri)
+        )
+
+
+def _compiled_subject_iri(
+    compiled: CompiledCommand, payload: dict[str, Any], ns: SemanticNamespace
+) -> str:
+    """Return the compiler-resolved subject for annotation writes."""
+    subject_key_by_kind = {
+        "class": "class_iri",
+        "property": "property_iri",
+        "entity": "entity_iri",
+        "relation_type": "relation_type_iri",
+        "table_mapping": "table_mapping_iri",
+        "join_mapping": "join_mapping_iri",
+        "enum_meaning": "enum_meaning_iri",
+        "metric": "metric_iri",
+    }
+    preferred_key = subject_key_by_kind.get(compiled.object_kind)
+    for key in (preferred_key, "subject_iri"):
+        if key is None:
+            continue
+        value = compiled.metadata.get(key)
+        if value:
+            return str(value)
+    resource_kind = compiled.object_kind
+    resource_id = payload.get(f"{resource_kind}_id") or compiled.source_ids[0]
+    return str(ns.resource(resource_kind.replace("_", "-"), resource_id))
+
+
+def _compile_mapping_definition(
+    compiled: CompiledCommand, payload: dict[str, Any], ns: SemanticNamespace
+) -> None:
+    """Attach a closed R4.0-010 mapping annotation to its real subject."""
+    if compiled.command_kind not in {
+        "create_table_mapping", "update_table_mapping",
+        "create_join_mapping", "update_join_mapping",
+        "create_enum_meaning", "update_enum_meaning",
+        "create_metric_definition", "update_metric_definition",
+    }:
+        raise InvalidCommandPayload(
+            f"mapping_definition is not supported by {compiled.command_kind}"
+        )
+    definition = payload["mapping_definition"]
+    if definition is not None:
+        _normalize_mapping_definition(definition, resource_kind=compiled.object_kind)
+    subject_iri = _compiled_subject_iri(compiled, payload, ns)
+    graph_iri = compiled.target_graph_iris[0]
+    predicate = f"<{ns.vocab}mappingDefinition>"
+    if compiled.command_kind.startswith("update_"):
+        compiled.delta.deletes.append((f"<{subject_iri}>", predicate, "?o", graph_iri))
+    if definition is not None:
+        compiled.delta.inserts.append(
+            (
+                f"<{subject_iri}>",
+                predicate,
+                _relational_json_literal(definition),
+                graph_iri,
+            )
         )

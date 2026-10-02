@@ -32,6 +32,9 @@ COST_IRI = "https://r304.test/SparePartStandardCost"
 PUBLIC_IRI = "https://r304.test/PublicResource"
 PUBLIC_TM_IRI = "https://r304.test/table-mapping/public-tm"
 COST_TM_IRI = "https://r304.test/table-mapping/cost-tm"
+PUBLIC_JM_IRI = "https://r304.test/join-mapping/public-jm"
+PUBLIC_ENUM_IRI = "https://r304.test/enum-meaning/public-status"
+PUBLIC_METRIC_IRI = "https://r304.test/metric/public-count"
 NAME_PREDICATE = "https://r304.test/name"
 
 
@@ -55,7 +58,89 @@ class AccessStore:
             result_format="application/sparql-results+json",
         )
 
+    def _mapping_detail(self, kind: str, iri: str) -> dict:
+        common = {
+            "label": _literal(f"public {kind}"),
+            "mapping_definition": _literal(
+                json.dumps(
+                    {
+                        "source_key": "ops",
+                        "row_grain": "one public row",
+                        "field_meanings": [{"column": "status", "conversion_rule_iri": PUBLIC_IRI}],
+                    }
+                )
+            ),
+            "semantic_definition": _literal(
+                json.dumps({"semantic_role": "data_mapping", "unknowns": []})
+            ),
+            "graph": _uri(self.data_graph),
+        }
+        if kind == "table-mapping":
+            return {
+                "table_mapping": _uri(iri),
+                "table_name": _literal("service.public"),
+                "mapped_definition": _uri(PUBLIC_IRI),
+                "column_mappings": _literal(
+                    json.dumps([{"property_iri": PUBLIC_IRI, "column": "id", "role": "value"}])
+                ),
+                "schema_source": _literal("schema-2026"),
+                "semantic_version": _literal("v1"),
+                **common,
+            }
+        if kind == "join-mapping":
+            return {
+                "join_mapping": _uri(iri),
+                "mapped_relation": _uri(PUBLIC_IRI),
+                "join_direction": _literal("forward"),
+                "join_path": _literal("[]"),
+                "schema_source": _literal("schema-2026"),
+                "semantic_version": _literal("v1"),
+                **common,
+            }
+        if kind == "enum-meaning":
+            return {
+                "enum_meaning": _uri(iri),
+                "mapped_property": _uri(PUBLIC_IRI),
+                "table_mapping": _uri(PUBLIC_TM_IRI),
+                "column": _literal("status"),
+                "enum_value": _literal("open"),
+                "business_meaning": _literal("Open"),
+                "semantic_value": _uri(PUBLIC_IRI),
+                "schema_source": _literal("schema-2026"),
+                "semantic_version": _literal("v1"),
+                **common,
+            }
+        return {
+            "metric": _uri(iri),
+            "grain": _literal(json.dumps([PUBLIC_IRI])),
+            "time_field": _literal("created_at"),
+            "measure": _uri(PUBLIC_IRI),
+            "value_expression": _literal("count"),
+            "filters": _literal("[]"),
+            "aggregation": _literal("count"),
+            "null_value_rule": _literal("unknown"),
+            "denominator_rule": _literal("unknown"),
+            "schema_source": _literal("schema-2026"),
+            "semantic_version": _literal("v1"),
+            **common,
+        }
+
     def query_sparql(self, query, timeout_seconds, limit):  # noqa: ARG002
+        for kind in ("table-mapping", "join-mapping", "enum-meaning", "metric"):
+            if f"template: {kind}-detail" in query:
+                return self._select(
+                    [
+                        self._mapping_detail(
+                            kind,
+                            {
+                                "table-mapping": PUBLIC_TM_IRI,
+                                "join-mapping": PUBLIC_JM_IRI,
+                                "enum-meaning": PUBLIC_ENUM_IRI,
+                                "metric": PUBLIC_METRIC_IRI,
+                            }[kind],
+                        )
+                    ]
+                )
         if "template: table-mapping-list" in query:
             return self._select(
                 [
@@ -150,8 +235,8 @@ class AccessStore:
         if graph_iri == self.data_graph:
             return (
                 f"<{self.data_graph}> {{\n"
-                f"  <{COST_IRI}> <{NAME_PREDICATE}> \"cost\" .\n"
-                f"  <{PUBLIC_IRI}> <{NAME_PREDICATE}> \"public\" .\n"
+                f'  <{COST_IRI}> <{NAME_PREDICATE}> "cost" .\n'
+                f'  <{PUBLIC_IRI}> <{NAME_PREDICATE}> "public" .\n'
                 "}\n"
             )
         return ""
@@ -179,8 +264,7 @@ def http_env(in_memory_session):
     ]
     data_graph = next(
         member["graph_iri"]
-        for member in OntologyWorkspaceService(session, settings)
-        .context(ontology_a.id)["members"]
+        for member in OntologyWorkspaceService(session, settings).context(ontology_a.id)["members"]
         if member["role"] == "asserted_data"
     )
     protection_set = SemanticProtectionSetModel(
@@ -292,6 +376,52 @@ def test_resource_route_returns_not_found_for_protected_member(http_env):
     assert manager.json()["iri"] == COST_IRI
 
 
+@pytest.mark.parametrize(
+    ("resource_iri", "kind_field"),
+    [
+        (PUBLIC_TM_IRI, "table_name"),
+        (PUBLIC_JM_IRI, "join_direction"),
+        (PUBLIC_ENUM_IRI, "column"),
+        (PUBLIC_METRIC_IRI, "aggregation"),
+    ],
+)
+def test_resource_route_reads_r4010_mapping_resources(
+    http_env, resource_iri, kind_field, monkeypatch
+):
+    original_query = AccessStore.query_sparql
+
+    def generic_overlap(store, query, timeout_seconds, limit):
+        # A mapping with semanticDefinition can also match entity-detail.
+        # Its specialized projection must win and retain mappingDefinition.
+        if "template: entity-detail" in query:
+            return store._select(
+                [
+                    {
+                        "entity": _uri(resource_iri),
+                        "label": _literal("generic overlap"),
+                        "graph": _uri(store.data_graph),
+                        "semantic_definition": _literal(
+                            json.dumps({"semantic_role": "data_mapping"})
+                        ),
+                    }
+                ]
+            )
+        return original_query(store, query, timeout_seconds, limit)
+
+    monkeypatch.setattr(AccessStore, "query_sparql", generic_overlap)
+    response = http_env["client"].get(
+        f"/api/semantic/resources/{resource_iri}",
+        params={"graph_set_id": http_env["graph_set_a"]},
+        headers=http_env["operator"],
+    )
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["iri"] == resource_iri
+    assert body["properties"]["mapping_definition"]["source_key"] == "ops"
+    assert body["properties"]["semantic_definition"]["semantic_role"] == "data_mapping"
+    assert kind_field in body["properties"]
+
+
 def test_statements_route_filters_rows_before_pagination(http_env):
     client = http_env["client"]
     response = client.get(
@@ -376,14 +506,24 @@ def test_context_query_route_filters_protected_candidates(http_env, monkeypatch)
                 "id": PUBLIC_IRI,
                 "iri": PUBLIC_IRI,
                 "label": "public",
-                "match": {"score": 900, "matched_terms": ["topic"], "matched_fields": ["label"], "reasons": ["exact_label"]},
+                "match": {
+                    "score": 900,
+                    "matched_terms": ["topic"],
+                    "matched_fields": ["label"],
+                    "reasons": ["exact_label"],
+                },
             },
             {
                 **base,
                 "id": COST_IRI,
                 "iri": COST_IRI,
                 "label": "cost",
-                "match": {"score": 800, "matched_terms": ["topic"], "matched_fields": ["label"], "reasons": ["label_contains"]},
+                "match": {
+                    "score": 800,
+                    "matched_terms": ["topic"],
+                    "matched_fields": ["label"],
+                    "reasons": ["label_contains"],
+                },
             },
         ]
 

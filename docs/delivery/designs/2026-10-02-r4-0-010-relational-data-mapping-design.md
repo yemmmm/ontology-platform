@@ -1,13 +1,15 @@
 # R4.0-010 数据映射视角与外部数据库关联设计
 
 - 日期：2026-10-02。
-- 状态：需求细化与设计完成，独立方案复审 Round 2 PASS（0 Critical／0 High）；
-  未实施、未执行功能／真实语义验收。
+- 状态：独立方案复审 Round 2 PASS（0 Critical／0 High）；后续用户授权按设计开发和测试，
+  功能已实现，开发侧 A1—A9 功能验证 PASS，见[测试记录](../tests/2026-10-02-r4-0-010-relational-data-mapping-test-record.md)。
+  独立功能／A10 真实语义验收未执行，整体 PARTIAL。
 - 权威范围及决策主表：[R4.0-010](../../requirements/requirements-v4.0.md#r40-010-数据映射视角与外部数据库关联)。
 - 代码基线：`9aa73d1`；开始时工作树干净。定向核对编译、Batch 映射校验、候选翻译、
   审批投影、映射／指标读取及跨视角上下文，未运行产品或数据库。
-- 用户授权：完成需求细化、设计，随后独立 Agent 审阅并修订至方案 PASS；不含开发、
-  数据库访问、外部执行或真实建模。D1—D10 无待用户决策项。
+- 设计阶段授权：完成需求细化、设计，随后独立 Agent 审阅并修订至方案 PASS。
+  后续另授权开发和测试，使用隔离平台数据库 fixture；不含外部业务数据库查询、外部执行或真实建模。
+  D1—D10 无待用户决策项。
 - 继承：[R3.0-003](../../requirements/requirements-v3.0.md#r30-003-纯语义-ontology-与关系型-schema-映射)、
   [既有映射设计](2026-08-26-r3-0-003-relational-schema-mapping-design.md)、
   [术语](../../reference/glossary.md)。历史设计的 Evidence 要求以当前 012 停用边界为准。
@@ -320,7 +322,7 @@ A10 归 [009 映射段](2026-10-02-r4-0-009-multiview-semantic-acceptance-design
 | --- | --- | --- |
 | semantic_command_compiler.py／modeling_handlers.py | mapped_definition、scoped enum、referenced join、mapping_definition／semantic_definition；准确主体、增改删语义 | A1—A7 |
 | modeling_batches.py／semantic_canonical_write.py／semantic.py 及相关删图入口 | 共用确定性映射检查；Project→Ontology 锁顺序、最终重校验、既有 Attempt／fence 的拒绝／恢复边界；拓扑、列／角色闭合、编码唯一性和反向引用 | A2—A7 |
-| protocol_mechanics.py／staged_decisions.py／实际 p2a Protocol 驱动 | 两种候选映射语义、身份绑定、审批摘要／投影、依赖翻译、回执及读回识别 | A7、A9 |
+| protocol_mechanics.py／staged_decisions.py／活动 Protocol MCP 与 Team Runner | 两种候选映射语义、身份绑定、审批摘要／投影、依赖翻译、回执及读回识别；归档 p2a driver 不作为活动执行入口 | A7、A9 |
 | 活动 authoring／modeling reference、Skill、Task 组装 | 同步中性字段与未知处理，不向 Modeling 暴露平台 IRI 或追溯职责；选定 009 映射段时组装 | A1、A9；A10 后续授权 |
 | semantic_sparql_templates.py／semantic_read_model.py／semantic_context_query.py | 新投影／解码、两种 mapped 目标、明确引用展开、full／compact／cursor；专属读与 Context Query 一致 | A1、A4—A9 |
 | semantic_access.py（仅发现覆盖缺口时） | 保证新载荷／派生关联端点进入现有嵌套引用过滤，不新增权限模型 | A8 |

@@ -25,7 +25,10 @@ from app.repositories.models import (
     ProjectModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
+    SemanticGraphRegistryModel,
 )
+from app.repositories.rdf_store import RdfGraphDelta, RdfStoreRepository
+from app.services.checkpoint_archive import lock_projects
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 
@@ -85,8 +88,12 @@ def update_project(session: Session, project_id: str, payload: ProjectUpdate) ->
     return project
 
 
-def delete_project(session: Session, project_id: str) -> None:
+def delete_project(session: Session, project_id: str, settings=None, rdf_store=None) -> None:
+    lock_projects(session, [project_id])
     project = get_project(session, project_id)
+    check_mapping_deletion(
+        session, [ontology.id for ontology in project.ontologies], settings, rdf_store
+    )
     _delete_ontology_rules(session, [ontology.id for ontology in project.ontologies])
     session.delete(project)
     commit_or_409(session, "Project could not be deleted")
@@ -147,11 +154,58 @@ def update_ontology(session: Session, ontology_id: str, payload: OntologyUpdate)
     return ontology
 
 
-def delete_ontology(session: Session, ontology_id: str) -> None:
+def delete_ontology(session: Session, ontology_id: str, settings=None, rdf_store=None) -> None:
     ontology = get_ontology(session, ontology_id)
+    lock_projects(session, [ontology.project_id])
+    session.scalar(select(OntologyModel).where(OntologyModel.id == ontology_id).with_for_update())
+    check_mapping_deletion(session, [ontology_id], settings, rdf_store)
     _delete_ontology_rules(session, [ontology.id])
     session.delete(ontology)
     commit_or_409(session, "Ontology could not be deleted")
+
+
+def check_mapping_deletion(session, ontology_ids, settings=None, rdf_store=None):
+    """Prevent lifecycle removal from orphaning a surviving declared mapping."""
+    from app.services.semantic_mapping_state import (
+        MappingWriteError,
+        mapping_write_findings,
+        project_fence_check,
+    )
+
+    projects = list(
+        session.scalars(
+            select(OntologyModel.project_id).where(OntologyModel.id.in_(ontology_ids)).distinct()
+        )
+    )
+    try:
+        project_fence_check(session, projects)
+        graph_iris = list(
+            session.scalars(
+                select(SemanticGraphRegistryModel.graph_iri).where(
+                    SemanticGraphRegistryModel.semantic_owner_type == "ontology",
+                    SemanticGraphRegistryModel.semantic_owner_id.in_(ontology_ids),
+                    SemanticGraphRegistryModel.category.in_(["ontology", "data"]),
+                )
+            )
+        )
+        if not graph_iris:
+            return
+        settings = settings or Settings()
+        rdf_store = rdf_store or RdfStoreRepository(settings.oxigraph_url)
+        findings = mapping_write_findings(
+            session, rdf_store, settings, RdfGraphDelta(clear_graphs=graph_iris)
+        )
+        if findings:
+            raise MappingWriteError(findings[0]["code"], findings[0]["message"], findings)
+    except MappingWriteError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": exc.code,
+                "message": str(exc),
+                "findings": exc.findings,
+            },
+        ) from exc
 
 
 def _delete_ontology_rules(session: Session, ontology_ids: list[str]) -> None:

@@ -90,6 +90,15 @@ semantic ownership, preserve unaffected meaning, and submit the required full re
 Do not hand-author platform envelopes or ask Protocol to invent missing semantics. Follow the
 selected revision contract instead of sending an unbound patch or silently altering a frozen file.
 
+For R4.0-010, model the four neutral mapping item kinds (`table_mapping`, `join_mapping`,
+`enum_meaning`, `metric_definition`) in either active candidate form. Include the complete
+physical role, grain, key, path, encoding or metric context plus `mapping_definition`, and use
+recursive `{definition_ref: item_id}` links. Use an explicit unknown for unsupported business
+identity, cardinality, conversion or deduplication decisions. Do not copy database rows or put
+IRIs, Batch/receipt fields, credentials or SQL in the candidate. Protocol owns the mapping
+command order and the resource-kind governed binding; read the active R4 reference before each
+full revision.
+
 See [prompts.md](references/prompts.md) for a bounded semantic handoff and clarification pattern.
 
 ## Assess returned execution results

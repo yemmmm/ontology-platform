@@ -19,6 +19,7 @@ from protocol_mechanics import (
     build_candidate_conflict,
     build_candidate_receipt,
     build_candidate_item_evidence_map,
+    build_unified_resource_binding_receipt,
     protocol_mechanics_contract_bytes,
     translate_candidate_to_batches,
     validate_candidate_item_evidence_map,
@@ -31,6 +32,7 @@ EVIDENCE_MAP_TOOL_NAME = "write_candidate_item_evidence_map"
 CANDIDATE_RECEIPT_TOOL_NAME = "build_candidate_receipt"
 CANDIDATE_CONFLICT_TOOL_NAME = "build_candidate_conflict"
 TRANSLATE_CANDIDATE_TOOL_NAME = "translate_candidate_to_batches"
+RESOURCE_BINDING_RECEIPT_TOOL_NAME = "build_unified_resource_binding_receipt"
 EVIDENCE_MAP_RELATIVE_PATH = Path("evidence/candidate-item-evidence-map.json")
 RUNTIME_RUN_ID_ENV = "PROTOCOL_RUNTIME_RUN_ID"
 # Historical environment name retained only so offline fixtures can refer to
@@ -904,8 +906,9 @@ def _translate_candidate_tool() -> dict[str, Any]:
         "name": TRANSLATE_CANDIDATE_TOOL_NAME,
         "description": (
             "Deterministically translate one frozen platform-neutral-candidate-v3 into an "
-            "ordered, submit-ready batch plan (class -> property -> entity -> relation -> "
-            "shape). Pure candidate-bound mechanics: no platform calls, no receipts. Every "
+            "ordered, submit-ready batch plan (definitions -> table/join/enum/metric mappings "
+            "-> relations -> shapes for mapping candidates; legacy class -> property -> entity "
+            "-> relation -> shape otherwise). Pure candidate-bound mechanics: no platform calls, no receipts. Every "
             "create_* payload binds the candidate's own ID so the platform emits readable "
             "resource IRIs; object predicates always use create_property+object_class_id. "
             "R2.3-005 and ordinary candidates pass only candidate; R2.3-003 may additionally "
@@ -920,12 +923,12 @@ def _translate_candidate_tool() -> dict[str, Any]:
                 "candidate": _neutral_candidate_schema(),
                 "requirement_id": {
                     "type": "string",
-                    "enum": ["R2.3-003"],
-                    "description": "The only requirement-specific extension is R2.3-003.",
+                    "enum": ["R2.3-003", "R4.0-010"],
+                    "description": "R2.3-003 entity deletion or R4.0-010 resource-kind governed bindings.",
                 },
                 "existing_binding_receipt": {
                     "type": "object",
-                    "description": "Protocol-owned canonical identity/read receipt for existing refs.",
+                    "description": "Protocol-owned canonical identity/read receipt for existing refs; R4.0-010 receipts preserve resource_kind.",
                 },
                 "deletion_impact_receipts": {
                     "type": "object",
@@ -935,6 +938,51 @@ def _translate_candidate_tool() -> dict[str, Any]:
                 "phase_a_readback": {
                     "type": "boolean",
                     "description": "True only after durable Phase-A write/readback; required before Phase B.",
+                },
+                "semantic_base_iri": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": (
+                        "Protocol host semantic namespace for this isolated workspace; kept "
+                        "outside the neutral candidate. Defaults to the local platform namespace."
+                    ),
+                },
+            },
+        },
+    }
+
+
+def _resource_binding_receipt_tool() -> dict[str, Any]:
+    return {
+        "name": RESOURCE_BINDING_RECEIPT_TOOL_NAME,
+        "description": (
+            "Bind active R4.0-010 existing_resource_ref items to one unmodified, authorized "
+            "governed resource read envelope. The selected Project/Ontology/workspace scope "
+            "is explicit; resource kind, stable ID and actual IRI come from the read envelope. "
+            "No asserted_data statement shortcut or entity-only binding is accepted."
+        ),
+        "inputSchema": {
+            "type": "object",
+            "required": ["candidate", "read_envelope", "scope"],
+            "additionalProperties": False,
+            "properties": {
+                "candidate": _neutral_candidate_schema(),
+                "read_envelope": {
+                    "type": ["object", "array"],
+                    "description": (
+                        "Unmodified response from an authorized governed resource/read-model "
+                        "read; exact resource reads and list envelopes are accepted."
+                    ),
+                },
+                "scope": {
+                    "type": "object",
+                    "required": ["project_id", "ontology_id", "workspace_version"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "project_id": {"type": "string", "minLength": 1},
+                        "ontology_id": {"type": "string", "minLength": 1},
+                        "workspace_version": {"type": "string", "minLength": 1},
+                    },
                 },
             },
         },
@@ -950,6 +998,7 @@ def _validate_translate_candidate_arguments(arguments: object) -> str | None:
         "existing_binding_receipt",
         "deletion_impact_receipts",
         "phase_a_readback",
+        "semantic_base_iri",
     }
     if not set(arguments).issubset(allowed):
         return "translate candidate arguments contain unsupported fields"
@@ -957,8 +1006,10 @@ def _validate_translate_candidate_arguments(arguments: object) -> str | None:
         return "translate candidate candidate must be an object"
     if set(arguments) == {"candidate"}:
         return None
-    if arguments.get("requirement_id") != "R2.3-003":
-        return "translate candidate extensions are restricted to R2.3-003"
+    if arguments.get("requirement_id") not in {"R2.3-003", "R4.0-010"} and set(arguments) != {
+        "candidate", "semantic_base_iri"
+    }:
+        return "translate candidate extensions are restricted to R2.3-003 or R4.0-010"
     if "existing_binding_receipt" in arguments and not isinstance(
         arguments["existing_binding_receipt"], dict
     ):
@@ -969,6 +1020,33 @@ def _validate_translate_candidate_arguments(arguments: object) -> str | None:
         return "translate candidate deletion_impact_receipts must be an object"
     if "phase_a_readback" in arguments and not isinstance(arguments["phase_a_readback"], bool):
         return "translate candidate phase_a_readback must be a boolean"
+    if "semantic_base_iri" in arguments and (
+        not isinstance(arguments["semantic_base_iri"], str)
+        or not arguments["semantic_base_iri"].strip()
+    ):
+        return "translate candidate semantic_base_iri must be a non-empty string"
+    return None
+
+
+def _validate_resource_binding_receipt_arguments(arguments: object) -> str | None:
+    if not isinstance(arguments, dict) or set(arguments) != {
+        "candidate", "read_envelope", "scope"
+    }:
+        return "resource binding receipt arguments must contain exactly candidate, read_envelope and scope"
+    if not isinstance(arguments.get("candidate"), dict):
+        return "resource binding receipt candidate must be an object"
+    if not isinstance(arguments.get("read_envelope"), (dict, list)):
+        return "resource binding receipt read_envelope must be an object or array"
+    scope = arguments.get("scope")
+    if not isinstance(scope, dict) or set(scope) != {
+        "project_id", "ontology_id", "workspace_version"
+    }:
+        return "resource binding receipt scope must contain exactly project_id, ontology_id and workspace_version"
+    if any(
+        not isinstance(scope.get(field), str) or not scope[field].strip()
+        for field in ("project_id", "ontology_id", "workspace_version")
+    ):
+        return "resource binding receipt scope fields must be non-empty strings"
     return None
 
 
@@ -1170,7 +1248,7 @@ def handle(request: object) -> dict[str, Any] | None:
         # importable for historical offline fixtures, but the verifier is not
         # a production MCP capability.  Do not re-open it from an environment
         # variable or an archived Task.
-        tools = [_candidate_receipt_tool()]
+        tools = [_candidate_receipt_tool(), _resource_binding_receipt_tool()]
         tools.append(_translate_candidate_tool())
         if _formal_candidate_gate_enabled():
             tools.insert(1, _candidate_conflict_tool())
@@ -1192,6 +1270,33 @@ def handle(request: object) -> dict[str, Any] | None:
             receipt = build_candidate_receipt(candidate)
         except ProtocolRetrievalFallbackError as exc:
             return _error(request_id, -32012, f"candidate receipt failed: {exc}")
+        payload = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+        return _result(
+            request_id,
+            {
+                "content": [{"type": "text", "text": payload}],
+                "structuredContent": receipt,
+            },
+        )
+    if params.get("name") == RESOURCE_BINDING_RECEIPT_TOOL_NAME:
+        error = _validate_resource_binding_receipt_arguments(arguments)
+        if error is not None:
+            return _error(request_id, -32602, error)
+        assert isinstance(arguments, dict)
+        candidate = arguments["candidate"]
+        read_envelope = arguments["read_envelope"]
+        scope = arguments["scope"]
+        assert isinstance(candidate, dict) and isinstance(scope, dict)
+        try:
+            receipt = build_unified_resource_binding_receipt(
+                candidate,
+                read_envelope,
+                project_id=scope["project_id"],
+                ontology_id=scope["ontology_id"],
+                workspace_version=scope["workspace_version"],
+            )
+        except ProtocolRetrievalFallbackError as exc:
+            return _error(request_id, -32015, f"resource binding receipt failed: {exc}")
         payload = json.dumps(receipt, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
         return _result(
             request_id,
@@ -1246,6 +1351,7 @@ def handle(request: object) -> dict[str, Any] | None:
                     requirement_id=arguments.get("requirement_id"),
                     deletion_impact_receipts=arguments.get("deletion_impact_receipts"),
                     phase_a_readback=arguments.get("phase_a_readback", False),
+                    semantic_base_iri=arguments.get("semantic_base_iri"),
                 )
         except ProtocolRetrievalFallbackError as exc:
             return _error(request_id, -32014, f"candidate translation failed: {exc}")

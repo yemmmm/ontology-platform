@@ -1,8 +1,11 @@
 import asyncio
 
+from sqlalchemy.orm import sessionmaker
+
 from app.core.config import Settings
 from app.mcp.server import mcp
 from app.mcp.tools import register_all
+from app.repositories.models import OntologyModel, ProjectModel
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
 
 
@@ -217,3 +220,59 @@ def test_get_semantic_read_model_accepts_optional_entity_iri() -> None:
     assert {"type": "string"} in entity.get("anyOf", [])
     assert "entity_iri" not in schema.get("required", [])
     assert list(schema["properties"])[-1] == "entity_iri"
+
+
+def test_mcp_ontology_read_model_forwards_r4010_exact_detail_name(
+    in_memory_session, monkeypatch, mcp_principal_factory
+) -> None:
+    """The MCP adapter must expose the same exact mapping detail models as REST."""
+    from app.api.modeling_batches import READ_MODEL_NAMES
+
+    mapping_models = {
+        "table-mapping-list",
+        "table-mapping-detail",
+        "join-mapping-list",
+        "join-mapping-detail",
+        "enum-meaning-list",
+        "enum-meaning-detail",
+        "metric-list",
+        "metric-detail",
+    }
+    assert mapping_models <= set(READ_MODEL_NAMES)
+
+    in_memory_session.add_all(
+        [
+            ProjectModel(id="p-r4010", name="R4010", normalized_label="r4010"),
+            OntologyModel(id="o-r4010", project_id="p-r4010", name="R4010 ontology"),
+        ]
+    )
+    in_memory_session.commit()
+    mcp_principal_factory(in_memory_session, project_id="p-r4010", scopes=["read"])
+    factory = sessionmaker(bind=in_memory_session.get_bind(), autoflush=False, autocommit=False)
+    monkeypatch.setattr("app.mcp.runtime.get_resources", lambda: (factory, None, None))
+
+    captured: dict[str, object] = {}
+
+    def fake_read_model_adapter(**kwargs):
+        captured.update(kwargs)
+        return {
+            "model_name": kwargs["model_name"],
+            "items": [{"iri": kwargs["entity_iri"], "detail_fields": {"mapping_definition": {}}}],
+            "warnings": [],
+        }
+
+    monkeypatch.setattr(
+        "app.mcp.tools.modeling_batches.read_model_adapter", fake_read_model_adapter
+    )
+    tool = mcp._tool_manager.get_tool("get_ontology_read_model")  # noqa: SLF001
+    assert tool is not None
+    resource_iri = "https://r4010.test/metric/public-count"
+    result = tool.fn(
+        ontology_id="o-r4010",
+        model_name="metric-detail",
+        entity_iri=resource_iri,
+    )
+
+    assert result["ok"] is True, result
+    assert captured["model_name"] == "metric-detail"
+    assert captured["entity_iri"] == resource_iri

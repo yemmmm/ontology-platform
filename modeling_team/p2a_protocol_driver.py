@@ -23,7 +23,7 @@ import stat
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from .contracts import (
     ProfileAgent,
@@ -399,6 +399,88 @@ def _authorized_get(scope: PlatformScope, path: str) -> Any:
     return value
 
 
+_MAPPING_COMMAND_RESOURCE_KINDS = {
+    "create_table_mapping": ("table_mapping", "table_mapping_id"),
+    "update_table_mapping": ("table_mapping", "table_mapping_id"),
+    "delete_table_mapping": ("table_mapping", "table_mapping_id"),
+    "create_join_mapping": ("join_mapping", "join_mapping_id"),
+    "update_join_mapping": ("join_mapping", "join_mapping_id"),
+    "delete_join_mapping": ("join_mapping", "join_mapping_id"),
+    "create_enum_meaning": ("enum_meaning", "enum_meaning_id"),
+    "update_enum_meaning": ("enum_meaning", "enum_meaning_id"),
+    "delete_enum_meaning": ("enum_meaning", "enum_meaning_id"),
+    # The backend's concrete governed kind for a neutral metric_definition is
+    # ``metric``.  Preserve that kind in the P2a snapshot instead of routing
+    # through the historical entity projection.
+    "create_metric_definition": ("metric", "metric_id"),
+    "update_metric_definition": ("metric", "metric_id"),
+    "delete_metric_definition": ("metric", "metric_id"),
+}
+
+
+def _mapping_resource_bindings(detail: Mapping[str, Any]) -> list[dict[str, str]]:
+    """Project mapping command outputs with their concrete resource kind.
+
+    P2a is retained as a historical driver, but its safe batch snapshots are
+    also consumed when diagnosing an active Protocol run.  Mapping resources
+    have no entity class, so this projection intentionally accepts only the
+    resource-specific ``resource_outputs`` returned by the Batch contract and
+    never falls back to ``entity_iri`` or an entity kind.
+    """
+
+    rows: list[dict[str, str]] = []
+    items = detail.get("items")
+    if not isinstance(items, list):
+        return rows
+    for item in items:
+        if not isinstance(item, Mapping):
+            continue
+        command_kind = item.get("command_kind")
+        spec = _MAPPING_COMMAND_RESOURCE_KINDS.get(command_kind)
+        if spec is None:
+            continue
+        resource_kind, id_field = spec
+        outputs = item.get("resource_outputs")
+        if not isinstance(outputs, Mapping):
+            raise P2AProtocolDriverError(
+                f"{command_kind} resource outputs are unavailable"
+            )
+        output_kind = outputs.get("resource_kind")
+        if output_kind is not None and output_kind != resource_kind:
+            raise P2AProtocolDriverError(
+                f"{command_kind} resource kind drifted"
+            )
+        resource_id = outputs.get("resource_id")
+        if not isinstance(resource_id, str) or not resource_id:
+            payload = item.get("payload")
+            resource_id = payload.get(id_field) if isinstance(payload, Mapping) else None
+        resource_iri = outputs.get("resource_iri")
+        client_item_id = item.get("client_item_id")
+        if (
+            not isinstance(client_item_id, str)
+            or not client_item_id
+            or not isinstance(resource_id, str)
+            or not resource_id
+            or not isinstance(resource_iri, str)
+            or not resource_iri
+        ):
+            raise P2AProtocolDriverError(
+                f"{command_kind} resource identity is incomplete"
+            )
+        rows.append(
+            {
+                "client_item_id": client_item_id,
+                "resource_id": resource_id,
+                "resource_kind": resource_kind,
+                "resource_iri": resource_iri,
+            }
+        )
+    identities = {(row["resource_kind"], row["resource_id"]) for row in rows}
+    if len(identities) != len(rows):
+        raise P2AProtocolDriverError("mapping resource identities are duplicated")
+    return sorted(rows, key=lambda row: row["client_item_id"])
+
+
 def _batch_safe_snapshot(detail: dict[str, Any]) -> dict[str, Any]:
     attempts = detail.get("attempts")
     safe_attempts: list[dict[str, Any]] = []
@@ -434,6 +516,7 @@ def _batch_safe_snapshot(detail: dict[str, Any]) -> dict[str, Any]:
             for item in detail.get("items", [])
             if isinstance(item, dict) and isinstance(item.get("client_item_id"), str)
         ),
+        "resource_bindings": _mapping_resource_bindings(detail),
         "attempts": safe_attempts,
     }
 

@@ -6,8 +6,14 @@ import json
 import hashlib
 import base64
 from collections.abc import Mapping
+from contextvars import ContextVar
 from typing import Any
 from urllib.parse import urlparse
+
+
+_TRANSLATION_BASE_OVERRIDE: ContextVar[str | None] = ContextVar(
+    "protocol_translation_base_override", default=None
+)
 
 try:
     from .r23003_contract import (
@@ -1503,6 +1509,53 @@ def _existing_refs(value: Any) -> list[dict[str, str]]:
     return found
 
 
+_RESOURCE_REF_FIELDS = {"semantic_id", "resource_kind"}
+_RESOURCE_REF_KINDS = frozenset(
+    {"class", "property", "entity", "shape", "operation", "table_mapping", "join_mapping", "enum_meaning", "metric"}
+)
+
+
+def _resource_ref(value: Any) -> dict[str, str]:
+    if not isinstance(value, Mapping) or set(value) != _RESOURCE_REF_FIELDS:
+        raise ProtocolRetrievalFallbackError(
+            "existing_resource_ref must contain only semantic_id and resource_kind"
+        )
+    semantic_id = value.get("semantic_id")
+    resource_kind = value.get("resource_kind")
+    if (
+        not _is_nonempty_string(semantic_id)
+        or "://" in semantic_id
+        or not _is_nonempty_string(resource_kind)
+        or resource_kind not in _RESOURCE_REF_KINDS
+    ):
+        raise ProtocolRetrievalFallbackError("existing_resource_ref identity is invalid")
+    return {"semantic_id": semantic_id, "resource_kind": resource_kind}
+
+
+def _resource_refs(value: Any) -> list[dict[str, str]]:
+    """Collect active R4 resource refs without treating every row as an entity."""
+
+    found: list[dict[str, str]] = []
+    if isinstance(value, Mapping):
+        if "existing_resource_ref" in value:
+            ref_value = value["existing_resource_ref"]
+            if isinstance(ref_value, Mapping):
+                found.append(_resource_ref(ref_value))
+            else:
+                found.append(_resource_ref(value))
+        elif set(value) == _RESOURCE_REF_FIELDS:
+            # ``item_kind=existing_resource_ref`` uses the semantic payload
+            # directly; endpoint wrappers use the nested form above.
+            found.append(_resource_ref(value))
+        for child in value.values():
+            if child is not value:
+                found.extend(_resource_refs(child))
+    elif isinstance(value, list):
+        for child in value:
+            found.extend(_resource_refs(child))
+    return found
+
+
 def _read_model_entities(read_model: Any) -> list[Mapping[str, Any]]:
     if isinstance(read_model, Mapping):
         for key in ("entities", "items", "resources"):
@@ -2117,7 +2170,344 @@ def validate_unified_entity_binding_receipt(
     return json.loads(json.dumps(dict(receipt), ensure_ascii=False))
 
 
-def translate_candidate_to_batches(
+_UNIFIED_RESOURCE_BINDING_SCHEMA = "r4-0-010-resource-binding/v1"
+
+
+def _unwrap_governed_read_envelope(read_model: Any) -> Any:
+    """Return the payload of a governed read response without changing it."""
+
+    current = read_model
+    # REST/MCP callers commonly provide ``{"ok": true, "data": ...}`` or
+    # ``{"result": {"structuredContent": ...}}`` around the read model.
+    # Unwrap only these transport envelopes; the resource read itself remains
+    # the source of identity and detail fields.
+    for _ in range(3):
+        if not isinstance(current, Mapping):
+            break
+        if "data" in current and isinstance(current.get("data"), (Mapping, list)):
+            current = current["data"]
+            continue
+        if "result" in current and isinstance(current.get("result"), Mapping):
+            result = current["result"]
+            if "structuredContent" in result and isinstance(
+                result.get("structuredContent"), (Mapping, list)
+            ):
+                current = result["structuredContent"]
+                continue
+            current = result
+            continue
+        break
+    return current
+
+
+def _read_resource_rows(read_model: Any) -> list[Mapping[str, Any]]:
+    """Extract generic governed resource rows without selecting an entity view."""
+
+    read_model = _unwrap_governed_read_envelope(read_model)
+    if isinstance(read_model, Mapping):
+        for key in ("resources", "items", "mappings"):
+            value = read_model.get(key)
+            if isinstance(value, list):
+                return [item for item in value if isinstance(item, Mapping)]
+        if isinstance(read_model.get("data"), list):
+            return [item for item in read_model["data"] if isinstance(item, Mapping)]
+        # Exact ``/semantic/resources/{iri}`` reads are already one governed
+        # resource envelope.  Keep the response as one row for the generic
+        # kind-aware binding path.
+        if _is_nonempty_string(read_model.get("iri")):
+            return [read_model]
+        nested = read_model.get("result")
+        if nested is not None and nested is not read_model:
+            return _read_resource_rows(nested)
+    elif isinstance(read_model, list):
+        return [item for item in read_model if isinstance(item, Mapping)]
+    return []
+
+
+def _read_resource_kind(row: Mapping[str, Any]) -> str | None:
+    value = row.get("resource_kind") or row.get("object_kind") or row.get("kind")
+    aliases = {
+        "table-mapping": "table_mapping",
+        "join-mapping": "join_mapping",
+        "enum-meaning": "enum_meaning",
+        "metric-definition": "metric",
+        "metric_definition": "metric",
+    }
+    if isinstance(value, str):
+        return aliases.get(value, value)
+    iri = _read_resource_iri(row)
+    if not _is_nonempty_string(iri):
+        return None
+    path_parts = [part for part in urlparse(iri).path.split("/") if part]
+    if not path_parts:
+        return None
+    return aliases.get(path_parts[-2], path_parts[-2]) if len(path_parts) >= 2 else None
+
+
+def _read_resource_id(row: Mapping[str, Any]) -> str | None:
+    for field in ("semantic_id", "resource_id", "id"):
+        value = row.get(field)
+        if _is_nonempty_string(value) and "://" not in value:
+            return value
+    iri = _read_resource_iri(row)
+    if _is_nonempty_string(iri):
+        path_parts = [part for part in urlparse(iri).path.split("/") if part]
+        if path_parts:
+            return path_parts[-1]
+    return None
+
+
+def _read_resource_iri(row: Mapping[str, Any]) -> str | None:
+    for field in ("resource_iri", "iri"):
+        value = row.get(field)
+        if _is_nonempty_string(value) and ":" in value:
+            return value
+    return None
+
+
+def _read_resource_evidence(row: Mapping[str, Any]) -> Any:
+    for field in ("read_evidence", "evidence", "binding_evidence"):
+        if field in row:
+            return row[field]
+    return None
+
+
+def build_unified_resource_binding_receipt(
+    candidate: Any,
+    read_model: Any,
+    *,
+    project_id: str,
+    ontology_id: str,
+    workspace_version: str,
+) -> dict[str, Any]:
+    """Bind active R4 resource refs to a governed read model.
+
+    The returned binding deliberately carries ``resource_kind`` and
+    ``resource_iri`` instead of an entity-specific field.  It is suitable for
+    TableMapping, JoinMapping, EnumValueMeaning, MetricDefinition and other
+    explicitly supported resource kinds; the read model remains authoritative.
+    """
+
+    normalized = _validate_translate_candidate(candidate)
+    refs = _resource_refs(normalized)
+    if not refs:
+        raise ProtocolRetrievalFallbackError("candidate has no existing_resource_ref")
+    expected: dict[str, dict[str, str]] = {}
+    for ref in refs:
+        prior = expected.get(ref["semantic_id"])
+        if prior is not None and prior != ref:
+            raise ProtocolRetrievalFallbackError("existing resource ref kind drifts")
+        expected[ref["semantic_id"]] = ref
+    for field, value in (
+        ("project_id", project_id),
+        ("ontology_id", ontology_id),
+        ("workspace_version", workspace_version),
+    ):
+        if not _is_nonempty_string(value) or "://" in value:
+            raise ProtocolRetrievalFallbackError(f"resource binding {field} is invalid")
+    read_body = _unwrap_governed_read_envelope(read_model)
+    # A governed read may carry scope at envelope level.  When present it must
+    # agree with the caller-selected scope; absent fields are supplied by the
+    # selected scope below because the public read models identify graph sets,
+    # not SQL workspace rows.
+    for source in (read_model, read_body):
+        if not isinstance(source, Mapping):
+            continue
+        nested_scope = source.get("scope")
+        scope_sources = [source]
+        if isinstance(nested_scope, Mapping):
+            scope_sources.append(nested_scope)
+        for scoped in scope_sources:
+            for field, expected_value in (
+                ("project_id", project_id),
+                ("ontology_id", ontology_id),
+                ("workspace_version", workspace_version),
+            ):
+                actual = scoped.get(field)
+                if actual is not None and actual != expected_value:
+                    raise ProtocolRetrievalFallbackError("resource read scope drifts")
+    indexed: dict[tuple[str, str], Mapping[str, Any]] = {}
+    envelope_digest = _canonical_digest(read_model)
+    body_source_signature = (
+        read_body.get("source_signature")
+        if isinstance(read_body, Mapping)
+        else None
+    )
+    body_source_graph = (
+        read_body.get("source_graph_iri")
+        if isinstance(read_body, Mapping)
+        else None
+    )
+    for raw_row in _read_resource_rows(read_model):
+        row = dict(raw_row)
+        row_project = row.get("project_id")
+        row_ontology = row.get("ontology_id")
+        row_workspace = row.get("workspace_version")
+        if any(
+            not _is_nonempty_string(value)
+            or value != expected_value
+            for value, expected_value in (
+                (row_project, project_id),
+                (row_ontology, ontology_id),
+                (row_workspace, workspace_version),
+            )
+        ):
+            if any(
+                value is not None and value != expected_value
+                for value, expected_value in (
+                    (row_project, project_id),
+                    (row_ontology, ontology_id),
+                    (row_workspace, workspace_version),
+                )
+            ):
+                raise ProtocolRetrievalFallbackError("resource read scope drifts")
+        row["project_id"] = project_id
+        row["ontology_id"] = ontology_id
+        row["workspace_version"] = workspace_version
+        if _read_resource_evidence(row) in (None, "", [], {}):
+            # The API read model does not currently duplicate SQL workspace
+            # scope into every item.  Bind the exact authorized envelope
+            # digest, plus its public source signature/graph markers, as the
+            # read evidence used by this Protocol receipt.
+            evidence: dict[str, Any] = {"envelope_digest": envelope_digest}
+            source_signature = row.get("source_signature", body_source_signature)
+            source_graph = row.get("source_graph_iri", body_source_graph)
+            assertion_kind = row.get("assertion_kind")
+            if _is_nonempty_string(source_signature):
+                evidence["source_signature"] = source_signature
+            if _is_nonempty_string(source_graph):
+                evidence["source_graph_iri"] = source_graph
+            if _is_nonempty_string(assertion_kind):
+                evidence["assertion_kind"] = assertion_kind
+            row["read_evidence"] = evidence
+        resource_id = _read_resource_id(row)
+        resource_kind = _read_resource_kind(row)
+        if resource_id is None or resource_kind is None:
+            raise ProtocolRetrievalFallbackError("resource read identity is incomplete")
+        key = (resource_kind, resource_id)
+        if key in indexed:
+            raise ProtocolRetrievalFallbackError("resource read contains duplicate identities")
+        indexed[key] = row
+    bindings: list[dict[str, Any]] = []
+    for semantic_id in sorted(expected):
+        ref = expected[semantic_id]
+        row = indexed.get((ref["resource_kind"], semantic_id))
+        if row is None and ref["resource_kind"] == "metric_definition":
+            row = indexed.get(("metric", semantic_id))
+        if row is None:
+            raise ProtocolRetrievalFallbackError(
+                f"existing {ref['resource_kind']} {semantic_id} is missing"
+            )
+        resource_kind = _read_resource_kind(row)
+        resource_iri = _read_resource_iri(row)
+        evidence = _read_resource_evidence(row)
+        if resource_kind is None or resource_iri is None or evidence in (None, "", [], {}):
+            raise ProtocolRetrievalFallbackError(
+                f"existing {ref['resource_kind']} {semantic_id} read binding is incomplete"
+            )
+        bindings.append(
+            {
+                "semantic_id": semantic_id,
+                "resource_kind": resource_kind,
+                "resource_iri": resource_iri,
+                "read_evidence": evidence,
+                "project_id": project_id,
+                "ontology_id": ontology_id,
+                "workspace_version": workspace_version,
+            }
+        )
+    receipt = {
+        "schema_version": _UNIFIED_RESOURCE_BINDING_SCHEMA,
+        "requirement_id": "R4.0-010",
+        "candidate_digest": _canonical_digest(normalized),
+        "project_id": project_id,
+        "ontology_id": ontology_id,
+        "workspace_version": workspace_version,
+        "bindings": bindings,
+    }
+    receipt["receipt_digest"] = _canonical_digest(receipt)
+    return receipt
+
+
+def validate_unified_resource_binding_receipt(
+    candidate: Any,
+    receipt: Any,
+    *,
+    project_id: str | None = None,
+    ontology_id: str | None = None,
+    workspace_version: str | None = None,
+) -> dict[str, Any]:
+    """Validate a resource-kind-aware R4 governed-read binding receipt."""
+
+    normalized = _validate_translate_candidate(candidate)
+    if not isinstance(receipt, Mapping):
+        raise ProtocolRetrievalFallbackError("resource binding receipt is invalid")
+    required = {
+        "schema_version", "requirement_id", "candidate_digest", "project_id",
+        "ontology_id", "workspace_version", "bindings", "receipt_digest",
+    }
+    if set(receipt) != required or receipt.get("schema_version") != _UNIFIED_RESOURCE_BINDING_SCHEMA:
+        raise ProtocolRetrievalFallbackError("resource binding receipt fields drift")
+    if receipt.get("requirement_id") != "R4.0-010":
+        raise ProtocolRetrievalFallbackError("resource binding receipt requirement drifts")
+    if receipt.get("candidate_digest") != _canonical_digest(normalized):
+        raise ProtocolRetrievalFallbackError("resource binding receipt candidate drifted")
+    for field, expected_value in (
+        ("project_id", project_id),
+        ("ontology_id", ontology_id),
+        ("workspace_version", workspace_version),
+    ):
+        value = receipt.get(field)
+        if not _is_nonempty_string(value) or (
+            expected_value is not None and value != expected_value
+        ):
+            raise ProtocolRetrievalFallbackError(f"resource binding receipt {field} drifts")
+    refs = {ref["semantic_id"]: ref for ref in _resource_refs(normalized)}
+    bindings = receipt.get("bindings")
+    if not isinstance(bindings, list) or not bindings:
+        raise ProtocolRetrievalFallbackError("resource binding receipt bindings are invalid")
+    seen: set[str] = set()
+    for item in bindings:
+        if not isinstance(item, Mapping) or set(item) != {
+            "semantic_id", "resource_kind", "resource_iri", "read_evidence",
+            "project_id", "ontology_id", "workspace_version",
+        }:
+            raise ProtocolRetrievalFallbackError("resource binding receipt item fields drift")
+        semantic_id = item.get("semantic_id")
+        resource_kind = item.get("resource_kind")
+        if (
+            not _is_nonempty_string(semantic_id)
+            or semantic_id in seen
+            or semantic_id not in refs
+            or resource_kind != refs[semantic_id]["resource_kind"]
+            or resource_kind not in _RESOURCE_REF_KINDS
+        ):
+            raise ProtocolRetrievalFallbackError("resource binding receipt ref mismatch")
+        if not _is_nonempty_string(item.get("resource_iri")) or ":" not in item["resource_iri"]:
+            raise ProtocolRetrievalFallbackError("resource binding receipt IRI is invalid")
+        if item.get("read_evidence") in (None, "", [], {}):
+            raise ProtocolRetrievalFallbackError("resource binding receipt evidence is missing")
+        for field in ("project_id", "ontology_id", "workspace_version"):
+            if item.get(field) != receipt.get(field):
+                raise ProtocolRetrievalFallbackError("resource binding receipt scope drifts")
+        seen.add(semantic_id)
+    if seen != set(refs):
+        raise ProtocolRetrievalFallbackError("resource binding receipt does not cover candidate refs")
+    if list(sorted(seen)) != [item["semantic_id"] for item in bindings]:
+        raise ProtocolRetrievalFallbackError("resource binding receipt ordering is not canonical")
+    body = dict(receipt)
+    supplied_digest = body.pop("receipt_digest")
+    if supplied_digest != _canonical_digest(body):
+        raise ProtocolRetrievalFallbackError("resource binding receipt digest is invalid")
+    return json.loads(json.dumps(dict(receipt), ensure_ascii=False))
+
+
+# Short aliases used by the active Protocol/p2a integration surface.
+build_mapping_binding_receipt = build_unified_resource_binding_receipt
+validate_mapping_binding_receipt = validate_unified_resource_binding_receipt
+
+
+def _translate_candidate_to_batches_impl(
     candidate: Any,
     existing_binding_receipt: Any | None = None,
     *,
@@ -2153,7 +2543,28 @@ def translate_candidate_to_batches(
         except ValueError as exc:
             raise ProtocolRetrievalFallbackError(str(exc)) from exc
     existing_refs = _existing_refs(normalized)
-    if existing_refs:
+    resource_refs = _resource_refs(normalized)
+    if existing_refs and resource_refs:
+        raise ProtocolRetrievalFallbackError(
+            "candidate cannot mix existing_entity_ref and existing_resource_ref"
+        )
+    validated_receipt: Mapping[str, Any] | None = None
+    resource_binding_receipt: Mapping[str, Any] | None = None
+    if resource_refs:
+        if requirement_id != "R4.0-010":
+            raise ProtocolRetrievalFallbackError(
+                "existing_resource_ref is only accepted by R4.0-010"
+            )
+        if existing_binding_receipt is None:
+            raise ProtocolRetrievalFallbackError("existing resource binding receipt is required")
+        resource_binding_receipt = validate_unified_resource_binding_receipt(
+            normalized, existing_binding_receipt
+        )
+        existing_bindings = {
+            item["semantic_id"]: item["resource_iri"]
+            for item in resource_binding_receipt["bindings"]
+        }
+    elif existing_refs:
         if requirement_id != "R2.3-003":
             raise ProtocolRetrievalFallbackError(
                 "existing_entity_ref is only accepted by R2.3-003"
@@ -2168,13 +2579,15 @@ def translate_candidate_to_batches(
             for item in validated_receipt["bindings"]
         }
     else:
-        if existing_binding_receipt is not None or requirement_id == "R2.3-003":
+        if existing_binding_receipt is not None or requirement_id in {"R2.3-003", "R4.0-010"}:
             if existing_binding_receipt is not None:
                 raise ProtocolRetrievalFallbackError("existing binding receipt has no candidate refs")
             # The requirement-specific path must not silently accept a create-only
             # candidate: callers should make the scope mode explicit.
             if requirement_id == "R2.3-003":
                 raise ProtocolRetrievalFallbackError("R2.3-003 candidate has no existing refs")
+            if requirement_id == "R4.0-010":
+                raise ProtocolRetrievalFallbackError("R4.0-010 candidate has no existing refs")
         existing_bindings = {}
     revision = normalized["candidate_revision"]
     items = normalized["items"]
@@ -2203,6 +2616,9 @@ def translate_candidate_to_batches(
             "entity": ("entity", "entity_id"), "explicit_unknown": ("entity", "entity_id"),
             "operation": ("operation", "operation_id"),
         }.get(item["item_kind"])
+        mapping_spec = _MAPPING_RESOURCE_SPECS.get(item["item_kind"])
+        if mapping_spec is not None:
+            resource = (str(mapping_spec["resource_kind"]), str(mapping_spec["id_field"]))
         if resource:
             resource_kind, id_field = resource
             identifier = item["semantic"].get(id_field)
@@ -2212,11 +2628,25 @@ def translate_candidate_to_batches(
                     duplicate_identities[item["item_id"]] = identities[key]
                     continue
                 identities[key] = item["item_id"]
-                definition_refs[item["item_id"]] = _platform_resource_iri(resource_kind, identifier)
+                # ``predicate`` is the neutral candidate kind, while its
+                # platform resource is a Property.  Build refs from the
+                # resolved concrete kind so nested mapping refs never point
+                # at the legacy ``/predicate`` path.
+                if mapping_spec is not None:
+                    definition_refs[item["item_id"]] = _candidate_resource_iri(
+                        item["item_kind"], identifier
+                    )
+                else:
+                    definition_refs[item["item_id"]] = _platform_resource_iri(
+                        resource_kind, identifier
+                    )
 
-    staged: dict[str, list[dict[str, Any]]] = {stage: [] for stage in _TRANSLATE_STAGE_ORDER}
+    has_mapping_items = any(item["item_kind"] in _MAPPING_RESOURCE_SPECS for item in items)
+    stage_order = _MAPPING_TRANSLATE_STAGE_ORDER if has_mapping_items else _TRANSLATE_STAGE_ORDER
+    staged: dict[str, list[dict[str, Any]]] = {stage: [] for stage in stage_order}
     delete_items: list[dict[str, Any]] = []
     conflicts: list[dict[str, Any]] = []
+    resource_identities: list[dict[str, str]] = []
     for item in items:
         kind = item["item_kind"]
         semantic = item["semantic"]
@@ -2234,6 +2664,10 @@ def translate_candidate_to_batches(
         if kind == "existing_entity_ref":
             # A binding declaration is read-only metadata; it never becomes a
             # create/update command.  Relations consume the frozen IRI below.
+            continue
+        if kind == "existing_resource_ref":
+            # Active R4 resource bindings are read-only declarations.  The
+            # governed receipt is the only source of their concrete IRI.
             continue
         if kind == "delete_existing_entity":
             if requirement_id != "R2.3-003":
@@ -2320,7 +2754,8 @@ def translate_candidate_to_batches(
             continue
         try:
             if kind == "relation" and any(
-                isinstance(semantic.get(field), dict) and "definition_ref" in semantic[field]
+                isinstance(semantic.get(field), dict)
+                and ({"definition_ref", "existing_entity_ref", "existing_resource_ref"} & set(semantic[field]))
                 for field in ("subject", "object")
             ):
                 command_kind, payload = _translate_definition_relation(
@@ -2332,7 +2767,19 @@ def translate_candidate_to_batches(
                     semantic, declared_entity_ids, declared_predicates, existing_bindings
                 )
             else:
-                command_kind, payload = handler(semantic, declared_entity_ids, declared_predicates)
+                handler_semantic = semantic
+                if kind in _MAPPING_RESOURCE_SPECS:
+                    handler_semantic = _resolve_candidate_references(
+                        semantic, definition_refs, existing_bindings
+                    )
+                command_kind, payload = handler(
+                    handler_semantic, declared_entity_ids, declared_predicates
+                )
+                if _contains_unresolved_reference(payload):
+                    raise _TranslateConflict(
+                        "unresolved_definition_reference",
+                        "mapping payload contains an unresolved reference",
+                    )
             if "semantic_definition" in semantic:
                 if command_kind == "create_relation":
                     raise _TranslateConflict(
@@ -2354,6 +2801,9 @@ def translate_candidate_to_batches(
             conflicts.append(_conflict(item_id, exc.code, exc.detail))
             continue
         stage = _TRANSLATE_STAGE_FOR_COMMAND[command_kind]
+        if stage not in staged:
+            conflicts.append(_conflict(item_id, "unsupported_command_stage", command_kind))
+            continue
         staged[stage].append(
             {
                 "client_item_id": item_id,
@@ -2361,9 +2811,21 @@ def translate_candidate_to_batches(
                 "payload": payload,
             }
         )
+        mapping_spec = _MAPPING_RESOURCE_SPECS.get(kind)
+        if mapping_spec is not None:
+            resource_id = payload.get(str(mapping_spec["id_field"]))
+            if _is_nonempty_string(resource_id):
+                resource_identities.append(
+                    {
+                        "candidate_item_id": item_id,
+                        "resource_kind": str(mapping_spec["resource_kind"]),
+                        "resource_id": resource_id,
+                        "resource_iri": _candidate_resource_iri(kind, resource_id),
+                    }
+                )
 
     batches: list[dict[str, Any]] = []
-    for index, stage in enumerate(_TRANSLATE_STAGE_ORDER, start=1):
+    for index, stage in enumerate(stage_order, start=1):
         stage_items = sorted(staged[stage], key=lambda value: value["client_item_id"])
         if not stage_items:
             continue
@@ -2411,7 +2873,7 @@ def translate_candidate_to_batches(
                 "items": items,
             }
         ),
-        "stage_order": list(_TRANSLATE_STAGE_ORDER),
+        "stage_order": list(stage_order),
         # R2.3-009 start7/8 (2026-08-20): the platform binds one idempotency key
         # to one request hash (content, mode, expected workspace version), so a
         # dry-run key and its apply must differ, and a retry after any apply or
@@ -2428,6 +2890,17 @@ def translate_candidate_to_batches(
         "batches": batches,
         "conflicts": conflicts,
     }
+    if resource_identities:
+        # This is a neutral, deterministic identity index for approval/read
+        # binding.  The actual receipt remains authoritative after submit.
+        result["resource_identities"] = resource_identities
+        result["mapping_resource_kinds"] = sorted(
+            {item["resource_kind"] for item in resource_identities}
+        )
+    if resource_refs:
+        result["requirement_id"] = "R4.0-010"
+        assert resource_binding_receipt is not None
+        result["existing_binding_receipt_digest"] = resource_binding_receipt["receipt_digest"]
     if existing_refs:
         result["requirement_id"] = "R2.3-003"
         result["existing_binding_receipt_digest"] = validated_receipt["receipt_digest"]
@@ -2435,6 +2908,48 @@ def translate_candidate_to_batches(
         result["phase_a_readback"] = True
         result["delete_only_batch"] = True
     return result
+
+
+def _validated_translation_base(value: Any) -> str | None:
+    if value is None:
+        return None
+    if not _is_nonempty_string(value):
+        raise ProtocolRetrievalFallbackError("semantic_base_iri must be a non-empty absolute IRI")
+    parsed = urlparse(value)
+    if not parsed.scheme or (not parsed.netloc and parsed.scheme not in {"urn"}):
+        raise ProtocolRetrievalFallbackError("semantic_base_iri must be a non-empty absolute IRI")
+    return value.rstrip("/")
+
+
+def translate_candidate_to_batches(
+    candidate: Any,
+    existing_binding_receipt: Any | None = None,
+    *,
+    requirement_id: str | None = None,
+    deletion_impact_receipts: Mapping[str, Any] | None = None,
+    phase_a_readback: bool = False,
+    semantic_base_iri: str | None = None,
+) -> dict[str, Any]:
+    """Translate using the host-selected semantic namespace.
+
+    ``semantic_base_iri`` is Protocol host configuration, kept outside the
+    neutral candidate.  The default remains the historical local namespace;
+    a real isolated workspace can pass its configured base without rewriting
+    the resulting plan after translation.
+    """
+
+    base = _validated_translation_base(semantic_base_iri)
+    token = _TRANSLATION_BASE_OVERRIDE.set(base)
+    try:
+        return _translate_candidate_to_batches_impl(
+            candidate,
+            existing_binding_receipt,
+            requirement_id=requirement_id,
+            deletion_impact_receipts=deletion_impact_receipts,
+            phase_a_readback=phase_a_readback,
+        )
+    finally:
+        _TRANSLATION_BASE_OVERRIDE.reset(token)
 
 
 class _TranslateConflict(Exception):
@@ -2448,6 +2963,20 @@ class _TranslateConflict(Exception):
 
 _TRANSLATE_PLATFORM_IRI_BASE = "http://ontology-platform.local/semantic"
 _TRANSLATE_STAGE_ORDER = ("class", "property", "entity", "relation", "shape")
+# R4.0-010 extends the existing dependency plan without changing the legacy
+# five-stage plan for non-mapping candidates.  Definitions (class/property/
+# entity/operation) precede mappings; ordinary relations are always last.
+_MAPPING_TRANSLATE_STAGE_ORDER = (
+    "class",
+    "property",
+    "entity",
+    "table_mapping",
+    "join_mapping",
+    "enum_meaning",
+    "metric_definition",
+    "relation",
+    "shape",
+)
 _TRANSLATE_STAGE_FOR_COMMAND = {
     "create_class": "class",
     "create_property": "property",
@@ -2455,6 +2984,39 @@ _TRANSLATE_STAGE_FOR_COMMAND = {
     "create_operation": "entity",
     "create_relation": "relation",
     "create_shape": "shape",
+    "create_table_mapping": "table_mapping",
+    "create_join_mapping": "join_mapping",
+    "create_enum_meaning": "enum_meaning",
+    "create_metric_definition": "metric_definition",
+}
+_MAPPING_RESOURCE_SPECS = {
+    "table_mapping": {
+        "command_kind": "create_table_mapping",
+        "id_field": "table_mapping_id",
+        "resource_kind": "table_mapping",
+        "iri_kind": "table-mapping",
+    },
+    "join_mapping": {
+        "command_kind": "create_join_mapping",
+        "id_field": "join_mapping_id",
+        "resource_kind": "join_mapping",
+        "iri_kind": "join-mapping",
+    },
+    "enum_meaning": {
+        "command_kind": "create_enum_meaning",
+        "id_field": "enum_meaning_id",
+        "resource_kind": "enum_meaning",
+        "iri_kind": "enum-meaning",
+    },
+    "metric_definition": {
+        "command_kind": "create_metric_definition",
+        "id_field": "metric_id",
+        # The backend's CompiledCommand object_kind is ``metric``.  Keep that
+        # concrete read/write kind in the identity metadata while retaining
+        # metric_definition as the neutral candidate kind.
+        "resource_kind": "metric",
+        "iri_kind": "metric",
+    },
 }
 
 
@@ -2527,7 +3089,17 @@ def _require_semantic_string(semantic: dict[str, Any], field: str) -> str:
 
 
 def _platform_resource_iri(kind: str, resource_id: str) -> str:
-    return f"{_TRANSLATE_PLATFORM_IRI_BASE}/{kind}/{resource_id}"
+    base = _TRANSLATION_BASE_OVERRIDE.get() or _TRANSLATE_PLATFORM_IRI_BASE
+    return f"{base}/{kind}/{resource_id}"
+
+
+def _candidate_resource_iri(item_kind: str, resource_id: str) -> str:
+    """Return the deterministic namespace path for a candidate resource kind."""
+
+    spec = _MAPPING_RESOURCE_SPECS.get(item_kind)
+    if spec is not None:
+        return _platform_resource_iri(str(spec["iri_kind"]), resource_id)
+    return _platform_resource_iri(item_kind, resource_id)
 
 
 def _translate_class(
@@ -2623,6 +3195,239 @@ def _translate_operation(
     return "create_operation", payload
 
 
+def _mapping_iri(value: Any, field: str) -> str:
+    """Require an already resolved absolute IRI at the command boundary."""
+
+    if not _is_nonempty_string(value):
+        raise _TranslateConflict(f"missing_{field}", f"semantic.{field} is not bound")
+    parsed = urlparse(value)
+    if not parsed.scheme or (not parsed.netloc and parsed.scheme not in {"urn"}):
+        raise _TranslateConflict(
+            f"invalid_{field}", f"semantic.{field} must resolve to an absolute IRI"
+        )
+    return value
+
+
+def _mapping_payload(
+    semantic: dict[str, Any], *, allowed: set[str], aliases: Mapping[str, str]
+) -> dict[str, Any]:
+    """Normalize neutral mapping aliases without inventing command fields."""
+
+    normalized = dict(semantic)
+    for source, target in aliases.items():
+        if source not in normalized:
+            continue
+        if target in normalized and normalized[target] != normalized[source]:
+            raise _TranslateConflict(
+                "mapping_identity_conflict",
+                f"semantic.{source} and semantic.{target} disagree",
+            )
+        normalized[target] = normalized.pop(source)
+    unknown = sorted(set(normalized) - allowed)
+    if unknown:
+        raise _TranslateConflict(
+            "unsupported_mapping_fields",
+            "unsupported mapping field(s): " + ", ".join(unknown),
+        )
+    return normalized
+
+
+def _translate_table_mapping(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    allowed = {
+        "table_mapping_id", "name", "description", "mapped_class_iri",
+        "mapped_definition_iri", "table_name", "column_mappings",
+        "mapping_definition", "schema_source", "semantic_version", "semantic_definition",
+    }
+    payload = _mapping_payload(
+        semantic,
+        allowed=allowed,
+        aliases={
+            "id": "table_mapping_id",
+            "label": "name",
+            "mapped_class": "mapped_class_iri",
+            "mapped_definition": "mapped_definition_iri",
+            "mapped_class_ref": "mapped_class_iri",
+            "mapped_definition_ref": "mapped_definition_iri",
+        },
+    )
+    identifier = _require_semantic_string(payload, "table_mapping_id")
+    payload["table_mapping_id"] = identifier
+    payload.setdefault("name", identifier)
+    target_fields = [
+        field for field in ("mapped_class_iri", "mapped_definition_iri")
+        if payload.get(field) not in (None, "")
+    ]
+    if len(target_fields) != 1:
+        raise _TranslateConflict(
+            "mapping_target_required",
+            "table mapping requires exactly one mapped_class or mapped_definition reference",
+        )
+    _mapping_iri(payload[target_fields[0]], target_fields[0])
+    _require_semantic_string(payload, "table_name")
+    columns = payload.get("column_mappings")
+    if not isinstance(columns, list) or not columns:
+        raise _TranslateConflict("missing_column_mappings", "semantic.column_mappings is not bound")
+    return "create_table_mapping", payload
+
+
+def _translate_join_mapping(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    allowed = {
+        "join_mapping_id", "name", "description", "relation_type_iri",
+        "join_direction", "join_path", "mapping_definition", "schema_source",
+        "semantic_version", "semantic_definition",
+    }
+    payload = _mapping_payload(
+        semantic,
+        allowed=allowed,
+        aliases={
+            "id": "join_mapping_id",
+            "label": "name",
+            "relation_type": "relation_type_iri",
+            "relation_type_ref": "relation_type_iri",
+        },
+    )
+    identifier = _require_semantic_string(payload, "join_mapping_id")
+    payload["join_mapping_id"] = identifier
+    payload.setdefault("name", identifier)
+    _mapping_iri(payload.get("relation_type_iri"), "relation_type_iri")
+    direction = payload.get("join_direction")
+    if direction not in {"forward", "reverse"}:
+        raise _TranslateConflict("invalid_join_direction", "semantic.join_direction is invalid")
+    path = payload.get("join_path")
+    if not isinstance(path, list) or not path:
+        raise _TranslateConflict("missing_join_path", "semantic.join_path is not bound")
+    return "create_join_mapping", payload
+
+
+def _translate_enum_meaning(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    allowed = {
+        "enum_meaning_id", "name", "description", "property_iri", "enum_value",
+        "business_meaning", "table_mapping_iri", "column", "semantic_value",
+        "mapping_definition", "schema_source", "semantic_version", "semantic_definition",
+    }
+    payload = _mapping_payload(
+        semantic,
+        allowed=allowed,
+        aliases={
+            "id": "enum_meaning_id",
+            "label": "name",
+            "property_ref": "property_iri",
+            "table_mapping_ref": "table_mapping_iri",
+            "semantic_value_ref": "semantic_value",
+        },
+    )
+    identifier = _require_semantic_string(payload, "enum_meaning_id")
+    payload["enum_meaning_id"] = identifier
+    payload.setdefault("name", identifier)
+    _mapping_iri(payload.get("property_iri"), "property_iri")
+    _require_semantic_string(payload, "enum_value")
+    _require_semantic_string(payload, "business_meaning")
+    if payload.get("table_mapping_iri") is not None:
+        _mapping_iri(payload["table_mapping_iri"], "table_mapping_iri")
+        _require_semantic_string(payload, "column")
+    elif payload.get("column") is not None:
+        raise _TranslateConflict(
+            "mapping_scope_incomplete",
+            "semantic.column requires a table_mapping reference",
+        )
+    if payload.get("semantic_value") is not None:
+        _mapping_iri(payload["semantic_value"], "semantic_value")
+    return "create_enum_meaning", payload
+
+
+def _translate_metric_definition(
+    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
+) -> tuple[str, dict[str, Any]]:
+    allowed = {
+        "metric_id", "name", "description", "grain", "time_field",
+        "measure_property_iri", "value_expression", "filters", "aggregation",
+        "null_value_rule", "denominator_rule", "mapping_definition", "schema_source",
+        "semantic_version", "semantic_definition",
+    }
+    payload = _mapping_payload(
+        semantic,
+        allowed=allowed,
+        aliases={
+            "id": "metric_id",
+            "label": "name",
+            "time_field_ref": "time_field",
+            "measure_property_ref": "measure_property_iri",
+        },
+    )
+    identifier = _require_semantic_string(payload, "metric_id")
+    payload["metric_id"] = identifier
+    payload.setdefault("name", identifier)
+    _mapping_iri(payload.get("time_field"), "time_field")
+    if payload.get("measure_property_iri") is not None:
+        _mapping_iri(payload["measure_property_iri"], "measure_property_iri")
+    if payload.get("aggregation") not in {"sum", "avg", "count", "count_distinct", "min", "max"}:
+        raise _TranslateConflict("invalid_metric_aggregation", "semantic.aggregation is invalid")
+    for field in ("null_value_rule", "denominator_rule"):
+        _require_semantic_string(payload, field)
+    if "grain" not in payload:
+        raise _TranslateConflict("missing_grain", "semantic.grain is not bound")
+    return "create_metric_definition", payload
+
+
+def _resolve_candidate_references(
+    value: Any,
+    definitions: Mapping[str, str],
+    resource_bindings: Mapping[str, str] | None = None,
+) -> Any:
+    """Recursively resolve current-candidate and governed existing refs."""
+
+    if isinstance(value, Mapping):
+        if "definition_ref" in value:
+            if set(value) != {"definition_ref"} or not _is_nonempty_string(value["definition_ref"]):
+                raise _TranslateConflict(
+                    "invalid_definition_reference", "definition_ref wrapper is invalid"
+                )
+            try:
+                return definitions[value["definition_ref"]]
+            except KeyError as exc:
+                raise _TranslateConflict(
+                    "unbound_definition_reference", value["definition_ref"]
+                ) from exc
+        if "existing_resource_ref" in value:
+            if set(value) != {"existing_resource_ref"}:
+                raise _TranslateConflict(
+                    "invalid_resource_reference", "existing_resource_ref wrapper is invalid"
+                )
+            ref = value["existing_resource_ref"]
+            if not isinstance(ref, Mapping) or set(ref) != {"semantic_id", "resource_kind"}:
+                raise _TranslateConflict(
+                    "invalid_resource_reference", "existing_resource_ref fields are invalid"
+                )
+            if resource_bindings is None or ref.get("semantic_id") not in resource_bindings:
+                raise _TranslateConflict(
+                    "unbound_resource_reference", str(ref.get("semantic_id"))
+                )
+            return resource_bindings[ref["semantic_id"]]
+        return {
+            key: _resolve_candidate_references(child, definitions, resource_bindings)
+            for key, child in value.items()
+        }
+    if isinstance(value, list):
+        return [_resolve_candidate_references(child, definitions, resource_bindings) for child in value]
+    return value
+
+
+def _contains_unresolved_reference(value: Any) -> bool:
+    if isinstance(value, Mapping):
+        if "definition_ref" in value or "existing_resource_ref" in value:
+            return True
+        return any(_contains_unresolved_reference(child) for child in value.values())
+    if isinstance(value, list):
+        return any(_contains_unresolved_reference(child) for child in value)
+    return False
+
+
 def _translate_definition_relation(
     semantic: dict[str, Any], entities: set[str], predicates: dict[str, dict[str, Any]],
     definitions: dict[str, str], existing_bindings: dict[str, str],
@@ -2631,6 +3436,11 @@ def _translate_definition_relation(
         value = semantic.get(field)
         if isinstance(value, dict) and set(value) == {"existing_entity_ref"}:
             ref = _existing_ref(value["existing_entity_ref"])
+            iri = existing_bindings.get(ref["semantic_id"])
+            if iri:
+                return iri
+        if isinstance(value, dict) and set(value) == {"existing_resource_ref"}:
+            ref = _resource_ref(value["existing_resource_ref"])
             iri = existing_bindings.get(ref["semantic_id"])
             if iri:
                 return iri
@@ -2776,6 +3586,10 @@ _TRANSLATE_ITEM_HANDLERS = {
     "operation": _translate_operation,
     "relation": _translate_relation,
     "shape": _translate_shape,
+    "table_mapping": _translate_table_mapping,
+    "join_mapping": _translate_join_mapping,
+    "enum_meaning": _translate_enum_meaning,
+    "metric_definition": _translate_metric_definition,
 }
 
 

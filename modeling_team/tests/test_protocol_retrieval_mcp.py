@@ -420,9 +420,12 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 "existing_binding_receipt",
                 "deletion_impact_receipts",
                 "phase_a_readback",
+                "semantic_base_iri",
             },
         )
-        self.assertEqual(schema["properties"]["requirement_id"]["enum"], ["R2.3-003"])
+        self.assertEqual(
+            schema["properties"]["requirement_id"]["enum"], ["R2.3-003", "R4.0-010"]
+        )
         project_id = "project-003"
         ontology_id = "ontology-003"
         workspace_version = "workspace-v1"

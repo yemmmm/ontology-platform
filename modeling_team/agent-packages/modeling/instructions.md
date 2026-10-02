@@ -405,6 +405,26 @@ remain separate from external judgments. Reference protected rules without copyi
 their sensitive text; IRI filtering is not text protection. A11 real semantic
 acceptance remains separate from functional fixtures.
 
+## R4.0-010 relational mapping candidates
+
+When the active task mounts `r4-0-010-relational-mapping-contract.json`, use the same
+platform-neutral candidate boundary in both candidate forms. A mapping item has one of the
+neutral kinds `table_mapping`, `join_mapping`, `enum_meaning`, or `metric_definition`; its
+`semantic` object carries the physical location, roles, keys, path, value meaning, metric
+context and `mapping_definition` required by that kind, together with any confirmed
+`semantic_definition` and explicit unknowns. Use `{definition_ref: item_id}` recursively for
+current candidate references. Existing resources use only the active governed
+`{existing_resource_ref: {semantic_id, resource_kind}}` form, never the R2.3 entity-only
+binding, and never a guessed platform IRI.
+
+Keep database rows, DSNs, credentials, SQL, platform IDs, Batch fields, receipts and Evidence
+out of the semantic candidate. Schema names and samples locate physical columns; they do not
+confirm business identity, grain, cardinality, conversion, deduplication or metric meaning.
+Preserve unresolved or conflicting mapping choices as explicit unknowns. A mapping may point to
+a plain business definition without forcing a Class, and a technical key or join column must not
+be promoted to a business identifier without source support. Ordinary relations that reference
+mapping items remain semantic relations; Protocol materializes them after the mapping stages.
+
 
 ## Active multiview collaboration (R4.0-007)
 

@@ -78,6 +78,9 @@ class CheckpointDataService:
             # Keep the locks on a separate connection so SQL and RDF both see
             # the completed writer, not old SQL paired with its new RDF.
             with Session(bind=self.session.get_bind()) as writer_lock:
+                from app.services.checkpoint_archive import lock_projects
+
+                lock_projects(writer_lock, [project_id])
                 list(
                     writer_lock.scalars(
                         select(m.OntologyModel.id)
@@ -302,6 +305,9 @@ class CheckpointDataService:
             if "id" in row
         }
         source_project = snapshot["project_id"]
+        from app.services.checkpoint_archive import lock_projects
+
+        lock_projects(self.session, [source_project])
         mapping[source_project] = target_project_id
         source_ontologies = snapshot["ontology_ids"]
         if (

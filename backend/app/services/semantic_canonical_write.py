@@ -190,6 +190,24 @@ class CanonicalSemanticWriteService:
             created_shape_iris=created_shape_iris,
             fence_attempt_id=fence_attempt_id,
         )
+        if fence_attempt_id is None:
+            from app.services.semantic_mapping_state import (
+                MappingWriteError,
+                require_batch_mapping_write,
+            )
+
+            try:
+                require_batch_mapping_write(
+                    self.session,
+                    self.rdf_store,
+                    self.settings,
+                    compiled.delta,
+                    compiled.metadata.get("ontology_id"),
+                )
+            except MappingWriteError as exc:
+                error = CanonicalWriteBlocked(str(exc))
+                error.code = exc.code
+                raise error from exc
         if not validate:
             warnings.append("SHACL validation skipped by request")
 
@@ -324,6 +342,36 @@ class CanonicalSemanticWriteService:
             self._require_managed_graph(graph_iri)
             self._require_editable_graph(graph_iri)
             self._require_direct_editable_category(graph_iri)
+        from app.services.semantic_mapping_state import (
+            MappingWriteError,
+            mapping_state,
+            mapping_write_findings,
+            mapping_write_relevant,
+            project_fence_check,
+        )
+
+        ontology_id = compiled.metadata.get("ontology_id")
+        try:
+            if mapping_write_relevant(
+                self.session, self.rdf_store, self.settings, compiled.delta, ontology_id
+            ):
+                projects, *_ = mapping_state(
+                    self.session, self.rdf_store, self.settings, compiled.delta, ontology_id
+                )
+                project_fence_check(self.session, projects, fence_attempt_id)
+            findings = mapping_write_findings(
+                self.session, self.rdf_store, self.settings, compiled.delta, ontology_id
+            )
+            if findings:
+                error = CanonicalShaclViolation(
+                    findings[0]["message"], {"conforms": False, "violations": findings}
+                )
+                error.code = findings[0]["code"]
+                raise error
+        except MappingWriteError as exc:
+            error = CanonicalWriteBlocked(str(exc))
+            error.code = exc.code
+            raise error from exc
         try:
             validate_operation_delta(self.rdf_store, compiled.delta, self.settings)
         except OperationValidationError as exc:
@@ -357,12 +405,12 @@ class CanonicalSemanticWriteService:
         ontology_id = compiled.metadata.get("ontology_id")
         if ontology_id:
             ontology = self.session.scalar(
-                select(OntologyModel)
-                .where(OntologyModel.id == str(ontology_id))
-                .with_for_update()
+                select(OntologyModel).where(OntologyModel.id == str(ontology_id)).with_for_update()
             )
             if ontology and (ontology.external_mappings or {}).get("checkpoint_fork_archive"):
-                raise CanonicalWriteBlocked("checkpoint_source_archived: source Ontology is read-only")
+                raise CanonicalWriteBlocked(
+                    "checkpoint_source_archived: source Ontology is read-only"
+                )
 
     def compile_only(
         self,
@@ -394,7 +442,7 @@ class CanonicalSemanticWriteService:
         if not targets:
             return compiled
         extra: list[tuple[str, str, str, str]] = []
-        for (graph_iri, shape_iri) in sorted(targets):
+        for graph_iri, shape_iri in sorted(targets):
             if not hasattr(self.rdf_store, "graph_exists") or not self.rdf_store.graph_exists(
                 graph_iri
             ):
@@ -429,9 +477,7 @@ class CanonicalSemanticWriteService:
     def _require_existing_shape(self, compiled: CompiledCommand, shape_iri: str) -> None:
         """``update_shape`` replaces an existing shape, it never creates one (D11)."""
         graph_iri = compiled.metadata.get("graph_iri") or (
-            compiled.delta.affected_graph_iris()[0]
-            if compiled.delta.affected_graph_iris()
-            else ""
+            compiled.delta.affected_graph_iris()[0] if compiled.delta.affected_graph_iris() else ""
         )
         exists = getattr(self.rdf_store, "graph_exists", None)
         content = ""
@@ -649,9 +695,7 @@ def _projection_violations(report_graph: Graph | None) -> list[dict[str, Any]]:
                 "result_path": _node_text(report_graph.value(result, SH.resultPath)),
                 "value": _node_text(report_graph.value(result, SH.value)),
                 "source_shape": _node_text(report_graph.value(result, SH.sourceShape)),
-                "constraint": _node_text(
-                    report_graph.value(result, SH.sourceConstraintComponent)
-                ),
+                "constraint": _node_text(report_graph.value(result, SH.sourceConstraintComponent)),
                 "severity": _node_text(report_graph.value(result, SH.resultSeverity)),
                 "message": _node_text(report_graph.value(result, SH.resultMessage)),
             }

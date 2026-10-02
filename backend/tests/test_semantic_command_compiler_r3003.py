@@ -1,14 +1,16 @@
 """R3.0-003 relational schema mapping command compiler unit tests.
 
 Compile-level checks for the 12 new commands: exact quad shapes, canonical
-JSON literals (``json.dumps(..., ensure_ascii=False)``, never the Python
-repr path), the compile-time gates G1 (payload shape) / G4 (business_key) /
-G7 (DSN/URL rejection), and the secret-scan entry hook.
+JSON literals (``json.dumps(..., ensure_ascii=False, sort_keys=True)``, never
+the Python repr path), the compile-time gates G1 (payload shape) / G4
+(reference-aware column roles) / G7 (DSN/URL rejection), and the secret-scan
+entry hook.
 """
 
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 
 import pytest
 from rdflib import URIRef
@@ -28,11 +30,24 @@ SETTINGS = Settings(semantic_base_iri=BASE, semantic_graph_iri_prefix=GRAPH)
 
 
 def _json_literal(value) -> str:
-    return Literal(json.dumps(value, ensure_ascii=False), datatype=URIRef(RDF_JSON)).n3()
+    return Literal(
+        json.dumps(value, ensure_ascii=False, sort_keys=True), datatype=URIRef(RDF_JSON)
+    ).n3()
 
 
 def _quads(compiled):
     return compiled.delta.inserts
+
+
+def _reverse_object_keys(value):
+    if isinstance(value, dict):
+        return {
+            key: _reverse_object_keys(value[key])
+            for key in reversed(list(value))
+        }
+    if isinstance(value, list):
+        return [_reverse_object_keys(item) for item in value]
+    return value
 
 
 TABLE_PAYLOAD = {
@@ -180,6 +195,42 @@ def test_create_metric_definition_exact_quads_and_json_literals():
     # ensure_ascii=False: the raw Chinese characters, not \u escapes, must be
     # stored so the authorization JSON reference extraction stays possible.
     assert "已关闭" in filters_literal and "\\u" not in filters_literal
+
+
+def test_r4010_mapping_json_literals_are_stable_after_jsonb_key_reordering():
+    table_payload = deepcopy(TABLE_PAYLOAD)
+    table_payload["mapping_definition"] = {
+        "source_key": "service-db",
+        "identifiers": [{"kind": "technical", "columns": ["work_order_no"]}],
+    }
+    join_payload = deepcopy(JOIN_PAYLOAD)
+    enum_payload = deepcopy(ENUM_PAYLOAD)
+    enum_payload["mapping_definition"] = {"conversion_rule_iri": None}
+    metric_payload = deepcopy(METRIC_PAYLOAD)
+    metric_payload["mapping_definition"] = {
+        "contexts": [
+            {
+                "context_key": "service",
+                "base_mapping_iri": f"{BASE}table-mapping/tm-1",
+                "base_role": "orders",
+                "join_mapping_iris": [],
+            }
+        ]
+    }
+    for command_kind, payload in (
+        ("create_table_mapping", table_payload),
+        ("create_join_mapping", join_payload),
+        ("create_enum_meaning", enum_payload),
+        ("create_metric_definition", metric_payload),
+    ):
+        original = compile_command(command_kind, payload, SETTINGS)
+        reordered = compile_command(
+            command_kind,
+            _reverse_object_keys(payload),
+            SETTINGS,
+        )
+        assert original.delta.inserts == reordered.delta.inserts
+        assert original.delta.deletes == reordered.delta.deletes
 
 
 def test_metric_count_aggregation_allows_missing_measure():
@@ -392,16 +443,36 @@ def test_g1_metric_aggregation_and_references():
 
 
 # ---------------------------------------------------------------------------
-# G4: business_key presence
+# G4: column role and technical-column semantics
 # ---------------------------------------------------------------------------
 
 
-def test_g4_business_key_required():
+def test_g4_business_key_is_optional_and_technical_columns_are_allowed():
     payload = dict(TABLE_PAYLOAD)
     payload["column_mappings"] = [
         {"property_iri": f"{BASE}property/status", "column": "status"}
     ]
-    with pytest.raises(InvalidCommandPayload, match="business_key"):
+    compiled = compile_command("create_table_mapping", payload, SETTINGS)
+    triples = {(s, p, o) for s, p, o, _g in _quads(compiled)}
+    assert (f"<{BASE}table-mapping/tm-1>", f"<{OP}columnMappings>", _json_literal([
+        {"property_iri": f"{BASE}property/status", "column": "status", "role": "value"}
+    ])) in triples
+
+    payload["column_mappings"] = [
+        {"column": "tenant_id"},
+        {"property_iri": f"{BASE}property/status", "column": "status"},
+    ]
+    compiled = compile_command("create_table_mapping", payload, SETTINGS)
+    triples = {(s, p, o) for s, p, o, _g in _quads(compiled)}
+    assert (f"<{BASE}table-mapping/tm-1>", f"<{OP}columnMappings>", _json_literal([
+        {"column": "tenant_id", "role": "value"},
+        {"property_iri": f"{BASE}property/status", "column": "status", "role": "value"},
+    ])) in triples
+
+    payload["column_mappings"] = [
+        {"column": "tenant_id", "role": "business_key"},
+    ]
+    with pytest.raises(InvalidCommandPayload, match="property_iri is required when role"):
         compile_command("create_table_mapping", payload, SETTINGS)
 
     payload["column_mappings"] = [
@@ -489,3 +560,130 @@ def test_missing_schema_source_rejected_on_create():
     del payload["schema_source"]
     with pytest.raises(InvalidCommandPayload, match="schema_source"):
         compile_command("create_table_mapping", payload, SETTINGS)
+
+
+def test_r4010_table_definition_and_referenced_join_shape():
+    table_payload = dict(TABLE_PAYLOAD)
+    table_payload.pop("mapped_class_iri")
+    table_payload["mapped_definition_iri"] = f"{BASE}definition/work-order"
+    table_payload["mapping_definition"] = {
+        "source_key": "service-db",
+        "record_key_columns": ["work_order_no"],
+        "object_key_columns": None,
+    }
+    table = compile_command("create_table_mapping", table_payload, SETTINGS)
+    table_triples = {(s, p, o) for s, p, o, _g in _quads(table)}
+    assert (
+        f"<{BASE}table-mapping/tm-1>",
+        f"<{OP}mappedDefinition>",
+        f"<{BASE}definition/work-order>",
+    ) in table_triples
+    assert any(p == f"<{OP}mappingDefinition>" for _s, p, _o in table_triples)
+
+    join_payload = dict(JOIN_PAYLOAD)
+    join_payload["join_path"] = [
+        {
+            "from_mapping_iri": f"{BASE}table-mapping/tm-1",
+            "to_mapping_iri": f"{BASE}table-mapping/tm-2",
+            "from_role": "orders",
+            "to_role": "lines",
+            "from_columns": ["work_order_no"],
+            "to_columns": ["work_order_no"],
+        }
+    ]
+    join = compile_command("create_join_mapping", join_payload, SETTINGS)
+    join_triples = {(s, p, o) for s, p, o, _g in _quads(join)}
+    path_literal = next(o for _s, p, o in join_triples if p == f"<{OP}joinPath>")
+    assert "from_mapping_iri" in path_literal and "from_role" in path_literal
+
+    join_payload["join_path"] = [
+        dict(join_payload["join_path"][0]),
+        {
+            "from_table": "service.work_order_parts",
+            "to_table": "service.spare_parts",
+            "from_columns": ["part_id"],
+            "to_columns": ["id"],
+        },
+    ]
+    with pytest.raises(InvalidCommandPayload, match="cannot mix"):
+        compile_command("create_join_mapping", join_payload, SETTINGS)
+
+
+def test_r4010_mapping_annotations_use_actual_subject_and_null_clears():
+    payload = {
+        "ontology_id": ONTOLOGY_ID,
+        "metric_id": "metric-annotated",
+        "name": "Annotated metric",
+        "grain": [f"{BASE}property/workOrderNo"],
+        "time_field": f"{BASE}property/reportedAt",
+        "aggregation": "count",
+        "filters": [],
+        "null_value_rule": "unknown",
+        "denominator_rule": "not applicable",
+        "schema_source": "schema-v1",
+        "semantic_definition": {"semantic_role": "data_mapping"},
+        "mapping_definition": {"contexts": []},
+    }
+    compiled = compile_command("create_metric_definition", payload, SETTINGS)
+    triples = {(s, p, o) for s, p, o, _g in _quads(compiled)}
+    assert (
+        f"<{BASE}metric/metric-annotated>",
+        f"<{OP}semanticDefinition>",
+        '"{\\"semantic_role\\": \\"data_mapping\\"}"',
+    ) in triples
+    assert any(
+        s == f"<{BASE}metric/metric-annotated>" and p == f"<{OP}mappingDefinition>"
+        for s, p, _o in triples
+    )
+
+    cleared = compile_command(
+        "update_metric_definition",
+        {
+            "ontology_id": ONTOLOGY_ID,
+            "metric_iri": f"{BASE}metric/metric-annotated",
+            "semantic_definition": None,
+            "mapping_definition": None,
+        },
+        SETTINGS,
+    )
+    deleted = {(s, p, o) for s, p, o, _g in cleared.delta.deletes}
+    assert (
+        f"<{BASE}metric/metric-annotated>",
+        f"<{OP}semanticDefinition>",
+        "?o",
+    ) in deleted
+    assert (
+        f"<{BASE}metric/metric-annotated>",
+        f"<{OP}mappingDefinition>",
+        "?o",
+    ) in deleted
+
+
+def test_entity_semantic_definition_targets_entity_when_class_membership_exists():
+    compiled = compile_command(
+        "create_entity",
+        {
+            "ontology_id": ONTOLOGY_ID,
+            "entity_id": "annotated-entity",
+            "label": "Annotated entity",
+            "class_iri_or_legacy_id": f"{BASE}class/WorkOrder",
+            "semantic_definition": {
+                "semantic_role": "object",
+                "business_meaning": "The entity meaning",
+            },
+        },
+        SETTINGS,
+    )
+    annotations = [
+        (subject, predicate, obj)
+        for subject, predicate, obj, _graph in compiled.delta.inserts
+        if predicate == f"<{OP}semanticDefinition>"
+    ]
+    assert annotations == [
+        (
+            f"<{BASE}entity/annotated-entity>",
+            f"<{OP}semanticDefinition>",
+            '"{\\"business_meaning\\": \\"The entity meaning\\", '
+            '\\"semantic_role\\": \\"object\\"}"',
+        )
+    ]

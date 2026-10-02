@@ -130,6 +130,16 @@ READ_MODEL_NAMES = {
     "facts": "statement-list",
     "history": "graph-set-history-list",
     "delta": "graph-set-delta",
+    # R4.0-010 keeps the exact list/detail model names available through the
+    # Ontology read-model adapter used by the MCP surface as well as REST.
+    "table-mapping-list": "table-mapping-list",
+    "table-mapping-detail": "table-mapping-detail",
+    "join-mapping-list": "join-mapping-list",
+    "join-mapping-detail": "join-mapping-detail",
+    "enum-meaning-list": "enum-meaning-list",
+    "enum-meaning-detail": "enum-meaning-detail",
+    "metric-list": "metric-list",
+    "metric-detail": "metric-detail",
 }
 
 

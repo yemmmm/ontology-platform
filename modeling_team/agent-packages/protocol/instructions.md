@@ -680,6 +680,33 @@ and permit repair. Preserve scripts, explanation conflicts and change notes with
 evaluating or selecting their meaning. Use existing receipts and uncertain-write
 recovery. No script execution, derived materialization, credentials or tracing.
 
+## R4.0-010 relational mapping translation and readback
+
+When the active task mounts `r4-0-010-relational-mapping-contract.json`, accept the two active
+candidate forms' neutral kinds `table_mapping`, `join_mapping`, `enum_meaning`, and
+`metric_definition` and preserve all semantic and mapping-definition fields in the canonical
+command payload. Resolve every nested `{definition_ref: item_id}` recursively before building a
+Batch; any unresolved reference is a concrete conflict. The dependency plan creates ordinary
+definitions and properties first, then TableMapping, JoinMapping, EnumValueMeaning and
+MetricDefinition, with ordinary relations that point to mappings after those resources.
+
+Use the existing `create_table_mapping`, `create_join_mapping`, `create_enum_meaning`, and
+`create_metric_definition` commands and the normal dry-run/apply/receipt path. Mapping identity
+is the candidate semantic key bound to the existing namespace and receipt. For an existing
+resource, require the active governed read binding with `semantic_id`, `resource_kind`,
+`resource_iri`, scope and read evidence; preserve the concrete resource kind through approval,
+receipt and readback. A mapping or metric must never be coerced to an entity just because a
+legacy helper exposes an entity field. Validate full approval payloads, including unknowns,
+semantic definitions and nested mapping references, and use the resource-specific governed
+reads or Context Query projection for completeness. Do not use asserted-data statements,
+database rows, credentials, Evidence or lineage as a mapping completion shortcut.
+
+Use the `semantic_base_iri` from the injected mechanical platform context when calling
+`translate_candidate_to_batches`; pass it as the host-only tool argument so every generated
+definition reference, resource identity and Batch payload addresses the current workspace.
+Never invent or ask Modeling to author this namespace, and retain the default only when the
+host context explicitly omits it.
+
 
 ## Active multiview collaboration (R4.0-007)
 

@@ -722,6 +722,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         detail_variables=(
             "table_name",
             "mapped_class",
+            "mapped_definition",
             "column_mappings",
             "schema_source",
             "semantic_version",
@@ -729,7 +730,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         body=_op_body("""# template: table-mapping-list
         PREFIX op: <{op_prefix}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?table_mapping ?label ?table_name ?mapped_class ?column_mappings
+        SELECT DISTINCT ?table_mapping ?label ?table_name ?mapped_class ?mapped_definition ?column_mappings
                         ?schema_source ?semantic_version ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
@@ -737,6 +738,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             OPTIONAL { ?table_mapping rdfs:label ?label . }
             OPTIONAL { ?table_mapping op:tableName ?table_name . }
             OPTIONAL { ?table_mapping op:mappedClass ?mapped_class . }
+            OPTIONAL { ?table_mapping op:mappedDefinition ?mapped_definition . }
             OPTIONAL { ?table_mapping op:columnMappings ?column_mappings . }
             OPTIONAL { ?table_mapping op:schemaSource ?schema_source . }
             OPTIONAL { ?table_mapping op:semanticVersion ?semantic_version . }
@@ -759,6 +761,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         detail_variables=(
             "table_name",
             "mapped_class",
+            "mapped_definition",
             "column_mappings",
             "schema_source",
             "semantic_version",
@@ -768,7 +771,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # ({entity_iri} placeholder mechanism, entity-literal-facts precedent).
         PREFIX op: <{op_prefix}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?table_mapping ?label ?table_name ?mapped_class ?column_mappings
+        SELECT DISTINCT ?table_mapping ?label ?table_name ?mapped_class ?mapped_definition ?column_mappings
                         ?schema_source ?semantic_version ?graph WHERE {
           VALUES ?g { {graph_iris} }
           VALUES ?table_mapping { <{entity_iri}> }
@@ -777,6 +780,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             OPTIONAL { ?table_mapping rdfs:label ?label . }
             OPTIONAL { ?table_mapping op:tableName ?table_name . }
             OPTIONAL { ?table_mapping op:mappedClass ?mapped_class . }
+            OPTIONAL { ?table_mapping op:mappedDefinition ?mapped_definition . }
             OPTIONAL { ?table_mapping op:columnMappings ?column_mappings . }
             OPTIONAL { ?table_mapping op:schemaSource ?schema_source . }
             OPTIONAL { ?table_mapping op:semanticVersion ?semantic_version . }
@@ -871,6 +875,8 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         primary_iri_variable="enum_meaning",
         detail_variables=(
             "mapped_property",
+            "table_mapping",
+            "column",
             "enum_value",
             "business_meaning",
             "semantic_value",
@@ -880,13 +886,15 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         body=_op_body("""# template: enum-meaning-list
         PREFIX op: <{op_prefix}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?enum_value ?business_meaning
+        SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?table_mapping ?column ?enum_value ?business_meaning
                         ?semantic_value ?schema_source ?semantic_version ?graph WHERE {
           VALUES ?g { {graph_iris} }
           GRAPH ?g {
             ?enum_meaning a op:EnumValueMeaning .
             OPTIONAL { ?enum_meaning rdfs:label ?label . }
             OPTIONAL { ?enum_meaning op:mappedProperty ?mapped_property . }
+            OPTIONAL { ?enum_meaning op:tableMapping ?table_mapping . }
+            OPTIONAL { ?enum_meaning op:columnName ?column . }
             OPTIONAL { ?enum_meaning op:enumValue ?enum_value . }
             OPTIONAL { ?enum_meaning op:businessMeaning ?business_meaning . }
             OPTIONAL { ?enum_meaning op:semanticValue ?semantic_value . }
@@ -910,6 +918,8 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         primary_iri_variable="enum_meaning",
         detail_variables=(
             "mapped_property",
+            "table_mapping",
+            "column",
             "enum_value",
             "business_meaning",
             "semantic_value",
@@ -919,7 +929,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         body=_op_body("""# template: enum-meaning-detail
         PREFIX op: <{op_prefix}>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?enum_value ?business_meaning
+        SELECT DISTINCT ?enum_meaning ?label ?mapped_property ?table_mapping ?column ?enum_value ?business_meaning
                         ?semantic_value ?schema_source ?semantic_version ?graph WHERE {
           VALUES ?g { {graph_iris} }
           VALUES ?enum_meaning { <{entity_iri}> }
@@ -927,6 +937,8 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
             ?enum_meaning a op:EnumValueMeaning .
             OPTIONAL { ?enum_meaning rdfs:label ?label . }
             OPTIONAL { ?enum_meaning op:mappedProperty ?mapped_property . }
+            OPTIONAL { ?enum_meaning op:tableMapping ?table_mapping . }
+            OPTIONAL { ?enum_meaning op:columnName ?column . }
             OPTIONAL { ?enum_meaning op:enumValue ?enum_value . }
             OPTIONAL { ?enum_meaning op:businessMeaning ?business_meaning . }
             OPTIONAL { ?enum_meaning op:semanticValue ?semantic_value . }
@@ -1043,9 +1055,18 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
 for _name in (
     "class-detail", "entity-detail", "ontology-schema-summary", "property-list",
     "relation-type-list", "entity-list",
+    "table-mapping-list", "table-mapping-detail", "join-mapping-list",
+    "join-mapping-detail", "enum-meaning-list", "enum-meaning-detail",
+    "metric-list", "metric-detail",
 ):
     _template = _TEMPLATES[_name]
     _annotations = {"semantic_definition": "semanticDefinition"}
+    if _name in {
+        "table-mapping-list", "table-mapping-detail", "join-mapping-list",
+        "join-mapping-detail", "enum-meaning-list", "enum-meaning-detail",
+        "metric-list", "metric-detail",
+    }:
+        _annotations["mapping_definition"] = "mappingDefinition"
     if _name in {"entity-detail", "entity-list"}:
         _annotations.update({
             "action_definition": "actionDefinition",
@@ -1055,6 +1076,21 @@ for _name in (
     _body = _template.body.replace(
         " WHERE {", " " + " ".join(f"?{field}" for field in _annotations) + " WHERE {", 1
     )
+    if _name in {"entity-detail", "entity-list"}:
+        # Mapping resources have their own complete, authorized projections.
+        # A generic label match must not bypass their nested-reference checks.
+        _mapping_types = " ".join(
+            f"<{OP_VOCAB_PREFIX}{kind}>"
+            for kind in ("TableMapping", "JoinMapping", "EnumValueMeaning", "MetricDefinition")
+        )
+        _body = _body.replace(
+            " WHERE {",
+            " WHERE { FILTER NOT EXISTS { VALUES ?mapping_kind_graph { {graph_iris} } "
+            "GRAPH ?mapping_kind_graph { VALUES ?mapping_resource_kind { "
+            + _mapping_types
+            + " } ?entity a ?mapping_resource_kind . } }",
+            1,
+        )
     _end = _body.rfind("\n        }")
     _body = (
         _body[:_end]

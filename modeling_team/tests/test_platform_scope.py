@@ -85,6 +85,7 @@ class RetainedProducerClient(ScopeClient):
             return 200, {"batches": [{"batch_id": "batch-1"}]}
         if path.endswith("modeling-context"):
             return 200, {
+                "semantic_base_iri": "https://example/resource/",
                 "project": {"id": "project-1"},
                 "ontology": {"id": "ontology-1"},
                 "workspace": {"state": "ready", "workspace_version": "version-1"},
@@ -249,7 +250,12 @@ class PlatformScopeTests(unittest.TestCase):
         scope.prepare({"mode": "create"})
         self.assertEqual(
             scope.read_protocol_context(),
-            {"project_id": "project-1", "ontology_id": "ontology-1", "workspace_version": "version-1"},
+            {
+                "project_id": "project-1",
+                "ontology_id": "ontology-1",
+                "workspace_version": "version-1",
+                "semantic_base_iri": "https://example/resource/",
+            },
         )
 
     def test_successful_retention_rejects_zero_or_cancelled_session(self) -> None:

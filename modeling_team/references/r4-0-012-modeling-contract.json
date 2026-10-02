@@ -33,7 +33,7 @@
     "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
     "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
     "item_optional_fields": ["semantic_definition", "action_definition", "parameter_definition", "rule_definition"],
-    "item_kinds": ["entity", "relation", "property", "shape"],
+    "item_kinds": ["entity", "relation", "property", "shape", "table_mapping", "join_mapping", "enum_meaning", "metric_definition"],
     "rules": [
       "Items are neutral and contain no guessed platform identifier or receipt handle.",
       "shared_scope is the only item-level commonality carrier; scope decisions belong to Coordinator approvals.",
@@ -329,5 +329,23 @@
     ],
     "readback": "entity-list/entity-detail expose detail_fields.rule_definition; exact resource reads expose properties.rule_definition. Ordinary statements/relations expose identities and sources through existing endpoint and pre-pagination authorization filtering. Missing edges do not prove no input/constraint. Hidden/nonexistent exact responses are indistinguishable.",
     "verification_boundary": "A1-A10 functional fixture evidence only; source-based judgments and A11 real modeling/independent semantic acceptance require later authorization. Automatic derivation materialization remains undelivered."
+  },
+  "relational_mapping": {
+    "requirement_id": "R4.0-010",
+    "candidate_item_kinds": ["table_mapping", "join_mapping", "enum_meaning", "metric_definition"],
+    "neutral_fields": ["item_id", "item_kind", "semantic"],
+    "unified_fields": ["business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns", "semantic_definition"],
+    "mapping_definition_fields": {
+      "table_mapping": ["source_key", "schema_version", "row_grain", "record_key_columns", "object_key_columns", "identifiers", "field_meanings", "row_scope"],
+      "join_mapping": ["step_semantics", "relationship_meaning", "duplicate_risk", "execution_prerequisite"],
+      "enum_meaning": ["conversion_rule_iri"],
+      "metric_definition": ["contexts"]
+    },
+    "rules": [
+      "Mapping item_id and its resource-specific semantic key are neutral identity; never author platform IRIs, ontology IDs, Batch fields, receipts or database rows.",
+      "Resolve every nested {definition_ref: item_id} against this candidate. Preserve unknown, not_applicable and conflicting meanings instead of filling them from schema names or samples.",
+      "Existing mapping resources require the active R4.0-010 governed resource-kind binding; do not reuse the R2.3-003 entity-only binding.",
+      "Protocol owns mapping command translation, dependency stages, approval projection, receipt identity and governed resource-kind readback."
+    ]
   }
 }

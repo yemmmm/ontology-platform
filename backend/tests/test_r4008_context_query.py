@@ -544,6 +544,66 @@ def test_generic_related_mapping_metric_and_operation_projection(context):
     )
 
 
+def test_r4010_nested_mapping_references_are_directional_derived_edges(context):
+    service, graph, declare, query, vocab = context
+    from rdflib.namespace import OWL, RDF
+
+    mapping = declare(
+        "work-order-mapping",
+        "Mapping",
+        mappingDefinition={
+            "source_key": "ops",
+            "field_meanings": [{
+                "column": "status_code",
+                "conversion_rule_iri": "https://business.test/rule/status-code",
+            }],
+        },
+    )
+    graph.add((mapping, RDF.type, URIRef(vocab + "TableMapping")))
+    graph.add(
+        (
+            mapping,
+            URIRef(vocab + "columnMappings"),
+            Literal(json.dumps([{
+                "column": "status_code",
+                "property_iri": "https://business.test/property/status",
+            }])),
+        )
+    )
+    target = declare("status", "Property", label="Status")
+    graph.add((target, RDF.type, OWL.DatatypeProperty))
+
+    result = query([str(mapping)], depth=1)
+    derived = [
+        row for row in result["related_context"]
+        if row["data"].get("derived_reference")
+    ]
+
+    assert derived
+    edge = next(
+        row for row in derived
+        if row["data"]["target_iri"] == "https://business.test/rule/status-code"
+    )
+    assert edge["target_kind"] == "derived_reference"
+    assert edge["origin"] == "derived_reference"
+    assert edge["data"]["source_iri"] == str(mapping)
+    assert edge["data"]["predicate"] == vocab + "mappingDefinition"
+    assert edge["data"]["source_path"] == (
+        "data.mapping_definition.field_meanings[0].conversion_rule_iri"
+    )
+    assert edge["data"]["field_path"] == edge["data"]["source_path"]
+    assert "subject" not in edge["data"] and "object" not in edge["data"]
+
+    compact = query([str(mapping)], depth=1, context_detail="compact")
+    compact_edge = next(
+        row for row in compact["related_context"]
+        if row["data"].get("derived_reference")
+        and row["data"].get("target_iri") == "https://business.test/rule/status-code"
+    )
+    assert compact_edge["id"] == edge["id"]
+    assert compact_edge["data"]["source_path"] == edge["data"]["source_path"]
+
+
 def test_equal_annotation_text_in_distinct_rdf_terms_is_ambiguous(context):
     _, graph, declare, query, vocab = context
     root = declare("root", "Action")

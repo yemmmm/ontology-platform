@@ -77,6 +77,7 @@ CONTEXT_EXPANSION_BUDGET = 5000
 RDF_READ_CHUNK_SIZE = 500
 _ANNOTATION_NAMES = {
     "semantic_definition": "semanticDefinition",
+    "mapping_definition": "mappingDefinition",
     "action_definition": "actionDefinition",
     "parameter_definition": "parameterDefinition",
     "rule_definition": "ruleDefinition",
@@ -116,6 +117,7 @@ _CONTEXT_ORIGIN_RANK = {
     "asserted_literal": 0,
     "asserted_relation": 1,
     "resource": 2,
+    "derived_reference": 2,
     "derived_statement": 3,
     "shape_constraint": 4,
     "tbox_statement": 5,
@@ -1191,6 +1193,19 @@ class SemanticContextQueryService:
         selected_resource_types, selected_assertion_types,
     ):
         related = []
+        # Structured mapping annotations contain a small, closed set of
+        # resource-reference fields.  They are not RDF triples, but they are
+        # still directional semantic links for a Consumer.  Project these
+        # links before ordinary graph expansion so the endpoint remains
+        # available when the JSON literal is the only connection.
+        related.extend(self._structured_reference_items(
+            root,
+            scope,
+            selected_resource_types=selected_resource_types,
+            selected_assertion_types=selected_assertion_types,
+        ))
+        if self._work_stopped:
+            return related
         # All producers share the visible work budget; the page size is applied
         # only after their complete visible union has been sorted.
         if "asserted" in selected_assertion_types:
@@ -1210,6 +1225,84 @@ class SemanticContextQueryService:
             resource_types=selected_resource_types, assertion_types=selected_assertion_types,
         ))
         return related
+
+    def _structured_reference_items(
+        self,
+        source: dict[str, Any],
+        scope: SemanticQueryScope,
+        *,
+        selected_resource_types: set[str],
+        selected_assertion_types: set[str],
+    ) -> list[dict[str, Any]]:
+        """Expose approved JSON mapping references as derived context edges.
+
+        The edge identity is deliberately separate from an RDF statement:
+        ``subject + predicate + field_path + target`` is hashed into ``id``;
+        the public payload carries ``source_path`` and ``derived_reference``
+        instead of pretending the JSON field was stored as a graph triple.
+        Only fixed mapping fields are inspected.  Arbitrary JSON strings never
+        become graph endpoints.
+        """
+        source_iri = source.get("iri")
+        if not isinstance(source_iri, str) or not source_iri:
+            return []
+        vocab = str(namespace_from_settings(self.settings).vocab)
+        items: list[dict[str, Any]] = []
+        for reference in _structured_mapping_references(source, vocab):
+            target = reference["target"]
+            # The target is included in the full value authorization check;
+            # filtering only the endpoint resource would leak its existence
+            # through a derived edge.
+            edge = {
+                "id": _structured_reference_id(
+                    source_iri,
+                    reference["predicate"],
+                    reference["field_path"],
+                    target,
+                ),
+                "kind": "relation",
+                "target_kind": "derived_reference",
+                "ontology_id": source.get("ontology_id"),
+                "iri": target,
+                "label": f"{_local_name(source_iri)} → {_local_name(target)}",
+                "aliases": [],
+                "description": None,
+                "data": {
+                    "source_iri": source_iri,
+                    "target_iri": target,
+                    "predicate": reference["predicate"],
+                    "field_path": reference["field_path"],
+                    "source_path": reference["field_path"],
+                    "json_path": reference["json_path"],
+                    "derived_reference": True,
+                },
+                "distance": max(1, int(source.get("distance") or 0) + 1),
+                "assertion_kind": source.get("assertion_kind", "asserted"),
+                "match": _neighborhood_match(max(1, int(source.get("distance") or 0) + 1)),
+            }
+            if not self.access_view.filter_candidate(edge):
+                continue
+            if _assertion_filter_value(edge["assertion_kind"]) not in selected_assertion_types:
+                continue
+            if self._accept_work(edge) and "relation" in selected_resource_types:
+                items.append(edge)
+            if self._work_stopped:
+                break
+
+            # A visible target resource gives the Consumer the usual resource
+            # projection and keeps the derived edge useful across Ontologies.
+            target_resource = self._resource_item(scope, target)
+            if target_resource is None or not self.access_view.filter_candidate(target_resource):
+                continue
+            target_resource["distance"] = edge["distance"]
+            target_resource["match"] = _neighborhood_match(edge["distance"])
+            if _assertion_filter_value(target_resource.get("assertion_kind", "asserted")) not in selected_assertion_types:
+                continue
+            if self._accept_work(target_resource) and target_resource.get("kind") in selected_resource_types:
+                items.append(target_resource)
+            if self._work_stopped:
+                break
+        return items
 
 
     def _decorate_related(
@@ -1598,9 +1691,9 @@ LIMIT 5000
         query = f"""# template: semantic-context-mappings
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX op: <{vocab}>
-SELECT ?graph ?mapping ?type ?label ?mappedClass ?mappedRelation ?mappedProperty
-       ?tableName ?enumValue ?businessMeaning ?columnMappings ?joinPath ?schemaSource
-       ?semanticValue
+SELECT ?graph ?mapping ?type ?label ?mappedClass ?mappedDefinition ?mappedRelation
+       ?mappedProperty ?tableName ?enumValue ?businessMeaning ?columnMappings ?joinPath
+       ?schemaSource ?semanticValue ?tableMapping ?column ?mappingDefinition
 WHERE {{
   VALUES ?graph {{ {graph_values} }}
   {resource_values}
@@ -1609,8 +1702,11 @@ WHERE {{
     ?mapping a ?type ;
              rdfs:label ?label .
     OPTIONAL {{ ?mapping op:mappedClass ?mappedClass . }}
+    OPTIONAL {{ ?mapping op:mappedDefinition ?mappedDefinition . }}
     OPTIONAL {{ ?mapping op:mappedRelationType ?mappedRelation . }}
     OPTIONAL {{ ?mapping op:mappedProperty ?mappedProperty . }}
+    OPTIONAL {{ ?mapping op:tableMapping ?tableMapping . }}
+    OPTIONAL {{ ?mapping op:columnName ?column . }}
     OPTIONAL {{ ?mapping op:tableName ?tableName . }}
     OPTIONAL {{ ?mapping op:enumValue ?enumValue . }}
     OPTIONAL {{ ?mapping op:businessMeaning ?businessMeaning . }}
@@ -1618,6 +1714,7 @@ WHERE {{
     OPTIONAL {{ ?mapping op:joinPath ?joinPath . }}
     OPTIONAL {{ ?mapping op:schemaSource ?schemaSource . }}
     OPTIONAL {{ ?mapping op:semanticValue ?semanticValue . }}
+    OPTIONAL {{ ?mapping op:mappingDefinition ?mappingDefinition . }}
   }}
 }}
 ORDER BY ?graph ?mapping
@@ -1636,8 +1733,11 @@ LIMIT 5000
             }
             for payload_key, row_key in (
                 ("mapped_class", "mappedClass"),
+                ("mapped_definition", "mappedDefinition"),
                 ("mapped_relation", "mappedRelation"),
                 ("mapped_property", "mappedProperty"),
+                ("table_mapping", "tableMapping"),
+                ("column", "column"),
                 ("table_name", "tableName"),
                 ("enum_value", "enumValue"),
                 ("business_meaning", "businessMeaning"),
@@ -1654,6 +1754,9 @@ LIMIT 5000
                         data[payload_key] = json.loads(value)
                     except json.JSONDecodeError:
                         data[payload_key] = value
+            mapping_definition = _json_value(_value(row, "mappingDefinition"))
+            if mapping_definition is not None:
+                data["mapping_definition"] = mapping_definition
             match = _best_match(
                 text,
                 terms,
@@ -1700,6 +1803,7 @@ LIMIT 5000
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX op: <{vocab}>
 SELECT ?graph ?metric ?label ?comment ?grain ?timeField ?measure ?aggregation ?filters
+       ?mappingDefinition
 WHERE {{
   VALUES ?graph {{ {graph_values} }}
   {resource_values}
@@ -1712,6 +1816,7 @@ WHERE {{
     OPTIONAL {{ ?metric op:metricMeasure ?measure . }}
     OPTIONAL {{ ?metric op:metricAggregation ?aggregation . }}
     OPTIONAL {{ ?metric op:metricFilters ?filters . }}
+    OPTIONAL {{ ?metric op:mappingDefinition ?mappingDefinition . }}
   }}
 }}
 ORDER BY ?graph ?metric
@@ -1748,6 +1853,9 @@ LIMIT 5000
                     data["filters"] = json.loads(filters_value)
                 except json.JSONDecodeError:
                     data["filters"] = filters_value
+            mapping_definition = _json_value(_value(row, "mappingDefinition"))
+            if mapping_definition is not None:
+                data["mapping_definition"] = mapping_definition
             comment = _value(row, "comment")
             match = _best_match(
                 text,
@@ -2187,7 +2295,7 @@ LIMIT 5000
             # Shape constraints are target-less projections unless the
             # generated property marker above validated successfully.
             target_kind = "resource" if shape_resource_target is not None else None
-        elif target_kind not in {"resource", "statement"}:
+        elif target_kind not in {"resource", "statement", "derived_reference"}:
             # Keep compatibility with semantic-retrieval candidates that
             # predate explicit target metadata.  A statement has the generic
             # subject/predicate/object shape; a relation-typed RDF resource
@@ -2394,6 +2502,8 @@ def _anchor_candidate_from_rows(
 
 def _origin_for(item: Mapping[str, Any], data: Mapping[str, Any]) -> str:
     """Classify one public match without trusting presentation ``kind`` alone."""
+    if item.get("target_kind") == "derived_reference" or data.get("derived_reference"):
+        return "derived_reference"
     if data.get("constraint") is not None or item.get("match", {}).get("reasons") == ["shape_constraint"]:
         return "shape_constraint"
     if {"subject", "predicate", "object"} <= set(data):
@@ -2642,6 +2752,21 @@ def _binding_attribute(row: dict[str, Any], key: str, attribute: str) -> str | N
 
 def _split_aggregate(value: str | None) -> list[str]:
     return [item for item in (value or "").split("|") if item]
+
+
+def _json_value(value: str | None) -> Any:
+    """Decode one JSON literal while retaining an invalid literal verbatim.
+
+    Mapping annotations are authored as JSON, but direct RDF edits can leave
+    malformed values behind.  Read paths preserve that value for the existing
+    annotation diagnostics instead of inventing a projection or dropping it.
+    """
+    if value is None:
+        return None
+    try:
+        return json.loads(value)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return value
 
 
 def _binding_n3(binding: Any) -> str:
@@ -2946,6 +3071,117 @@ def _is_statement(item: Mapping[str, Any]) -> bool:
     return item.get("target_kind") == "statement" or {"subject", "predicate", "object"} <= set(
         item.get("data") or {}
     )
+
+
+def _structured_mapping_references(
+    item: Mapping[str, Any], vocab: str
+) -> list[dict[str, str]]:
+    """Return only the R4.0-010 closed set of nested IRI references.
+
+    ``mapping_definition`` is intentionally treated by resource kind.  This
+    prevents a future free-form annotation field, a table name, or an example
+    value from silently becoming an executable-looking semantic edge.
+    """
+    data = item.get("data")
+    if not isinstance(data, Mapping) or item.get("kind") not in {"mapping", "metric"}:
+        return []
+    resource_types = {
+        _local_name(str(value)) for value in (data.get("rdf_types") or [])
+        if isinstance(value, str)
+    }
+    references: list[dict[str, str]] = []
+
+    def add(value: Any, path: str, predicate_name: str) -> None:
+        if not isinstance(value, str) or not _is_reference_iri(value):
+            return
+        references.append({
+            "target": value,
+            "predicate": vocab + predicate_name,
+            "field_path": f"data.{path}",
+            "json_path": path,
+        })
+
+    def add_list_field(
+        field: str, keys: tuple[str, ...], predicate_name: str,
+    ) -> None:
+        values = data.get(field)
+        if not isinstance(values, list):
+            return
+        for index, entry in enumerate(values):
+            if not isinstance(entry, Mapping):
+                continue
+            for key in keys:
+                add(entry.get(key), f"{field}[{index}].{key}", predicate_name)
+
+    mapping_definition = data.get("mapping_definition")
+    if not isinstance(mapping_definition, Mapping):
+        mapping_definition = {}
+
+    if "TableMapping" in resource_types:
+        add_list_field("column_mappings", ("property_iri",), "columnMappings")
+        for index, entry in enumerate(mapping_definition.get("identifiers") or []):
+            if isinstance(entry, Mapping):
+                add(entry.get("property_iri"), f"mapping_definition.identifiers[{index}].property_iri", "mappingDefinition")
+        for index, entry in enumerate(mapping_definition.get("field_meanings") or []):
+            if isinstance(entry, Mapping):
+                add(entry.get("conversion_rule_iri"), f"mapping_definition.field_meanings[{index}].conversion_rule_iri", "mappingDefinition")
+    elif "JoinMapping" in resource_types:
+        add_list_field(
+            "join_path",
+            ("from_mapping_iri", "to_mapping_iri"),
+            "joinPath",
+        )
+        for index, entry in enumerate(mapping_definition.get("step_semantics") or []):
+            if isinstance(entry, Mapping):
+                add(entry.get("condition_rule_iri"), f"mapping_definition.step_semantics[{index}].condition_rule_iri", "mappingDefinition")
+    elif "EnumValueMeaning" in resource_types:
+        add(
+            mapping_definition.get("conversion_rule_iri"),
+            "mapping_definition.conversion_rule_iri",
+            "mappingDefinition",
+        )
+    elif "MetricDefinition" in resource_types:
+        contexts = mapping_definition.get("contexts")
+        if isinstance(contexts, list):
+            for context_index, context in enumerate(contexts):
+                if not isinstance(context, Mapping):
+                    continue
+                prefix = f"mapping_definition.contexts[{context_index}]"
+                add(context.get("base_mapping_iri"), f"{prefix}.base_mapping_iri", "mappingDefinition")
+                for index, value in enumerate(context.get("join_mapping_iris") or []):
+                    add(value, f"{prefix}.join_mapping_iris[{index}]", "mappingDefinition")
+                for index, binding in enumerate(context.get("property_bindings") or []):
+                    if not isinstance(binding, Mapping):
+                        continue
+                    add(binding.get("property_iri"), f"{prefix}.property_bindings[{index}].property_iri", "mappingDefinition")
+                    add(binding.get("table_mapping_iri"), f"{prefix}.property_bindings[{index}].table_mapping_iri", "mappingDefinition")
+                for index, identity in enumerate(context.get("counted_identity") or []):
+                    if not isinstance(identity, Mapping):
+                        continue
+                    add(identity.get("table_mapping_iri"), f"{prefix}.counted_identity[{index}].table_mapping_iri", "mappingDefinition")
+                for index, value in enumerate(context.get("conversion_rule_iris") or []):
+                    add(value, f"{prefix}.conversion_rule_iris[{index}]", "mappingDefinition")
+    return references
+
+
+def _is_reference_iri(value: str) -> bool:
+    parsed = urlsplit(value.strip())
+    return parsed.scheme.lower() in {"http", "https", "urn"} and bool(
+        parsed.netloc or parsed.path
+    )
+
+
+def _structured_reference_id(
+    subject: str, predicate: str, field_path: str, target: str
+) -> str:
+    preimage = json.dumps(
+        [subject, predicate, field_path, target],
+        ensure_ascii=False,
+        separators=(",", ":"),
+    )
+    return "urn:ontology-platform:derived-reference:" + hashlib.sha256(
+        preimage.encode("utf-8")
+    ).hexdigest()
 
 
 def _neighborhood_match(distance: int) -> dict[str, Any]:

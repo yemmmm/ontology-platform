@@ -99,6 +99,49 @@ complete 的有界展开均不证明业务完整。脚本投影省略由 `projec
 已获准 IRI 以 full 补读。context cursor 独立恢复原匹配页；角色筛选与当前可见集合参与绑定。
 无权与不存在保持同形；平台不执行规则脚本、数据库查询或外部调用。
 
+R4.0-010 的 `get_semantic_read_model` 使用与 REST 相同的八个 mapping／metric model name：
+四类资源各有 list/detail。返回的 `detail_fields` 解码 `mapping_definition` 与
+`semantic_definition`；TableMapping 同时报告 `mapped_class` 或 `mapped_definition`，
+EnumValueMeaning 可报告 `table_mapping`＋`column` 作用域，JoinMapping／MetricDefinition
+保留其路径、角色、粒度、指标 contexts 与来源／Schema 定位。缺省、`null`、unknown 和冲突
+按存储值返回，MCP 不把 source_key 或 schema_version 当作数据库权限、连接能力或已验证事实。
+`get_ontology_read_model` 也接受这八个精确 model name，并通过 `entity_iri` 读取单个 mapping／
+metric 资源；不存在或无权资源沿用该读取面的空结果合同，REST resource endpoint 的 `404` 语义
+保持不变。
+
+以 mapping／metric IRI 调用 `query_semantic_context` 时，固定结构化字段引用还会生成
+`related_context` 的 `origin=derived_reference` 行。其 `data` 包含 `source_iri`、`target_iri`、
+`predicate`、`field_path`／`source_path` 和 `derived_reference: true`；`id` 由 source、predicate、
+字段路径和 target 稳定计算，因此可安全去重和续 cursor。该行是 JSON 引用的方向性投影，不是
+新存储的 RDF statement。完整值先做语义访问过滤，受限嵌套引用在过滤后的计数和 cursor 中均不
+出现。平台只读取映射说明与已声明引用，不执行 SQL、转换或外部数据库访问；数据库数据权限仍
+由外部系统负责。
+
+读取中的无效／多值注解会保留获准原始 statement，并在响应 warning 中返回
+`annotation_read_diagnostic`；scope、cursor、RDF 依赖错误沿既有 `invalid_*`／snapshot 或
+可重试依赖错误合同返回。修正范围或注解后可重新发起同一读取目标。
+
+跨 Ontology 映射引用使用与 REST 相同的显式 scope bridge：已有的非默认 Graph Set 必须是
+`scope_type="ontology"`，`scope_id` 指向引用拥有方 Ontology，并带
+`metadata.mapping_reference_scope=true`；其成员仅能是同一 Project 中已注册、获准依赖 Ontology
+的 asserted `ontology`／`data` 图。Project 相同不产生隐式引用权限。`describe_semantic_graph_set`
+可读取 bridge 的 scope 与成员，`get_semantic_read_model`、`query_semantic_context` 和
+`export_semantic_graph_set` 只消费当前 active bridge；Root／Protocol 以这些 scope 计算每个 owner
+最终投影的 reference graph，不把未列入成员的图带入响应。
+
+映射或声明依赖的写入仍必须走 Modeling Batch 的 `dry_run`／`apply_atomic`、Attempt、Project
+fence 与恢复回执。MCP 的 `submit_semantic_edit`、canonical command 及 raw RDF import 遵循同一
+边界；绕过 Batch 会返回 `mapping_batch_required`。依赖 Project 有未收敛写入时返回可恢复的
+`mapping_reference_write_fenced`，客户端先读取／reconcile 原 Attempt 与 fence，再重试原目标。
+
+bridge 成员／supersedes 修改若破坏存量引用，返回 `mapping_reference_scope_in_use`；先修订依赖映射
+后可继续。引用校验范围不会自动扩大实际读取的 Graph Set／Ontology scope。
+
+活动 Team Protocol facade（不属于下表的平台 MCP）公开 `build_unified_resource_binding_receipt`：
+输入完整 governed `read_envelope`、candidate 和显式 Project／Ontology／workspace scope，输出实际
+resource kind／id／IRI 与读证据绑定。`translate_candidate_to_batches` 使用该 receipt，并接受宿主
+提供的 `semantic_base_iri`；该值来自注入的 modeling-context，不是 Modeling 候选字段。
+
 <!-- BEGIN GENERATED MCP TOOL INVENTORY -->
 
 | Category | Tool | Description | Required parameters | All parameters | Source |

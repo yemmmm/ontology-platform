@@ -156,6 +156,86 @@ compact 保留业务解释与身份，省略已有规则的 `script_source`，�
 候选／上下文摘要。保护成员变化影响可见结果时返回 snapshot_changed，隐藏集合变化不单独
 失效。输出前复核已绑定 Ontology 的 workspace／source 版本，避免混读。
 
+R4.0-010 的四类数据映射资源沿用同一个 read-model 入口：
+`GET /api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}` 支持
+`table-mapping-list`／`table-mapping-detail`、`join-mapping-list`／`join-mapping-detail`、
+`enum-meaning-list`／`enum-meaning-detail` 和 `metric-list`／`metric-detail`。
+detail 行的 `detail_fields` 保留物理定位与已声明引用，并解码结构化注解：TableMapping 包含
+`table_name`、`mapped_class` 或 `mapped_definition`、`column_mappings`、`schema_source`、
+`semantic_version`、`mapping_definition`、`semantic_definition`；JoinMapping 包含
+`mapped_relation`、`join_direction`、`join_path` 及相同两种注解；EnumValueMeaning 包含
+`mapped_property`、可选的 `table_mapping` 与 `column` 作用域、`enum_value`、
+`business_meaning`、`semantic_value` 及两种注解；MetricDefinition 保留既有粒度／时间／度量／
+聚合字段及 `mapping_definition`、`semantic_definition`。`mapped_class` 与 `mapped_definition`
+表达两种互斥的 TableMapping 目标形式；`mapping_definition` 的 `source_key`、Schema 版本、
+粒度、身份、路径、基数、字段含义和指标 contexts 是说明与引用，不是连接配置或执行授权。
+缺省字段表示未提供，JSON `null` 表示已知未知；平台不会从同名表或 Schema 猜补业务含义。
+精确 REST 资源读取 `GET /api/semantic/resources/{resource_iri}?graph_set_id=...` 也会按同一
+合同尝试四种 `*-detail` 模板，并在 `properties` 返回这些字段；不存在或无权的 mapping／metric
+资源仍返回同形 `404`。
+
+Context Query 的精确 IRI 锚点也适用于这些 mapping／metric 资源。除实际 RDF 边外，固定结构化
+映射字段中的获准 IRI 引用会在 `related_context` 返回方向性派生行，例如：
+
+```json
+{
+  "origin": "derived_reference",
+  "target_kind": "derived_reference",
+  "id": "urn:ontology-platform:derived-reference:<stable-sha256>",
+  "data": {
+    "source_iri": "https://example.test/table-mapping/orders",
+    "target_iri": "https://example.test/rules/status-code",
+    "predicate": "http://ontology-platform.local/semantic/vocab/mappingDefinition",
+    "field_path": "data.mapping_definition.field_meanings[0].conversion_rule_iri",
+    "source_path": "data.mapping_definition.field_meanings[0].conversion_rule_iri",
+    "derived_reference": true
+  }
+}
+```
+
+派生行的身份由 source IRI、predicate、field path 和 target IRI 稳定计算；它不伪装为已存 RDF
+statement。完整值先经过主体访问过滤，再计算列表／计数／cursor；嵌套受限引用会使相关行不可见，
+不会返回占位、专属计数或存在性提示。无权与不存在沿用同形空结果／404。无效 JSON 或多值注解
+保留获准原始 statement，并附 `annotation_read_diagnostic` warning；scope、cursor 和读取依赖
+故障继续使用既有可重试错误合同。平台只保存和读取映射，不连接外部数据库、不执行 SQL／转换，
+数据库行列权限由外部系统负责。
+
+跨 Ontology 的映射引用只通过显式的 reference-scope bridge 进入写入引用校验范围。读取仍使用
+调用方显式选择的 Graph Set／Ontology scope，不自动扩展。该 bridge 使用一个
+已有的、非默认 Graph Set，且必须同时满足：`scope_type="ontology"`、`scope_id` 是引用拥有方
+Ontology 的 ID、`metadata.mapping_reference_scope=true`，以及 `members` 只包含同一 Project
+内已注册、获准依赖 Ontology 的 `ontology`／`data` 图（即 asserted ontology/data graphs）。同一
+Project 关系本身不会隐式开放另一 Ontology 的映射、规则、属性或数据图；默认 Graph Set 也不会
+自动成为引用桥。Root／Protocol 负责形成并校验获准依赖集合，平台在最终读回时只使用 active 的
+这些 scope，并按 owner 计算投影后的 reference graph。
+
+bridge 的请求形状沿用已有 `POST /api/semantic/graph-sets`／Graph Set membership 合同，例如：
+
+```json
+{
+  "name": "orders mapping references",
+  "scope_type": "ontology",
+  "scope_id": "owner-ontology-id",
+  "metadata": {"mapping_reference_scope": true},
+  "members": [
+    {"graph_iri": ".../ontology/approved-dependency", "role": "asserted_ontology"},
+    {"graph_iri": ".../data/approved-dependency", "role": "asserted_data"}
+  ]
+}
+```
+
+映射资源或其声明依赖的直接编辑必须进入已有 Modeling Batch 的 `dry_run`／`apply_atomic`、
+Attempt、Project fence 和恢复回执；`POST /api/semantic/edits`、原始 TriG／N-Quads／JSON-LD
+导入及其他 raw import 也沿用同一合同，不能用绕过 Batch 的写入闭合引用。没有合适 Batch 时返回
+`mapping_batch_required`。如果依赖 Project 存在尚未收敛的写入，返回可重试的
+`mapping_reference_write_fenced`；调用方应先读取／reconcile 原 Attempt 和 fence，再重试原目标，
+不要把同一不确定写入伪装成新的独立结果。
+
+修改 bridge 成员或通过 `supersedes` 收缩范围时，在 Project／Ontology 锁及 fence 下重验存量引用；
+会使映射悬空的修改返回 HTTP 409、`mapping_reference_scope_in_use` 和定位 findings。
+先用 Batch 修订依赖资源后可重试。`modeling-context` 返回非秘密的 `semantic_base_iri`，
+Protocol 以该 namespace 构造当前平台引用，不从业务候选猜测 IRI。
+
 能力发现：`GET /api/mcp/tools` 在响应的 `capabilities.semantic_context_query` 中返回当前部署
 公开的 `queries`/`query`/`limit`/`context_limit`/`depth` 上下限、cursor 种类
 （`match`、`context`）、cursor 生命周期（默认 600 秒），以及是否配置了稳定 cursor 签名密钥。

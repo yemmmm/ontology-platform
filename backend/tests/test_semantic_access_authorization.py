@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -186,10 +188,17 @@ def test_view_statement_row_and_quad_filtering():
     dataset = Dataset()
     graph = dataset.graph(URIRef("https://example.test/graph/a"))
     graph.add((URIRef(PUBLIC_IRI), URIRef("https://example.test/p/n"), Literal("x")))
+    nested = json.dumps({"conversion_rule_iri": COST_IRI})
+    graph.add((URIRef(PUBLIC_IRI), URIRef("https://example.test/p/mapping"), Literal(nested)))
     graph.add((URIRef(COST_IRI), URIRef("https://example.test/p/n"), Literal("y")))
     filtered = view.filter_quads(dataset)
     remaining = {str(triple[0]) for _g in filtered.graphs() for triple in _g}
     assert remaining == {PUBLIC_IRI}
+    assert not any(
+        str(triple[2]) == nested
+        for graph in filtered.graphs()
+        for triple in graph
+    )
 
 
 def test_evidence_reference_visibility_by_association_target(in_memory_session):

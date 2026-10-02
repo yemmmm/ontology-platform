@@ -1,6 +1,34 @@
 from app.services.semantic_sparql_templates import get_template, list_templates
 
 
+def test_generic_entity_queries_do_not_bypass_mapping_reference_authorization():
+    from rdflib import Dataset, Literal, URIRef
+    from rdflib.namespace import RDF, RDFS, OWL
+    from app.services.semantic_read_model import SemanticReadModelService
+
+    dataset = Dataset()
+    graph_iri = "https://r4010.test/ontology"
+    graph = dataset.graph(URIRef(graph_iri))
+    ordinary = URIRef("https://r4010.test/entity/ordinary")
+    graph.add((ordinary, RDF.type, OWL.NamedIndividual))
+    graph.add((ordinary, RDFS.label, Literal("ordinary")))
+    id_predicate = URIRef("http://ontology-platform.local/semantic/vocab/id")
+    graph.add((ordinary, id_predicate, Literal("ordinary")))
+    for kind in ("TableMapping", "JoinMapping", "EnumValueMeaning", "MetricDefinition"):
+        resource = URIRef("https://r4010.test/mapping/" + kind)
+        graph.add((resource, RDF.type, OWL.NamedIndividual))
+        graph.add(
+            (resource, RDF.type, URIRef("http://ontology-platform.local/semantic/vocab/" + kind))
+        )
+        graph.add((resource, RDFS.label, Literal(kind)))
+        graph.add((resource, id_predicate, Literal(kind)))
+    for name in ("entity-detail", "entity-list"):
+        query = SemanticReadModelService._compile_template_query(
+            get_template(name), [graph_iri], 100
+        )
+        assert {str(row.entity) for row in dataset.query(query)} == {str(ordinary)}
+
+
 def test_graph_set_staleness_template_registered():
     template = get_template("graph-set-staleness")
     assert template.projection_version == "semantic-read-v1"
@@ -17,6 +45,7 @@ def test_list_templates_includes_graph_set_staleness():
 
 
 # Stage 2 §3.2 templates ---------------------------------------------------
+
 
 def test_class_topology_template_registered():
     template = get_template("class-topology")

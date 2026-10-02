@@ -37,9 +37,71 @@ class GraphSetNotFound(GraphSetError):
 
 
 class SemanticGraphSetService:
-    def __init__(self, session: Session, settings: Settings) -> None:
+    def __init__(self, session: Session, settings: Settings, rdf_store=None) -> None:
         self.session = session
         self.settings = settings
+        self.rdf_store = rdf_store
+
+    def _mapping_scope_before(self, graph_set):
+        if (
+            not graph_set
+            or (graph_set.graph_set_metadata or {}).get("mapping_reference_scope") is not True
+        ):
+            return None
+        from app.repositories.models import OntologyModel
+        from app.services.checkpoint_archive import lock_projects
+        from app.services.semantic_mapping_state import MappingWriteError, project_fence_check
+
+        owner = self.session.get(OntologyModel, graph_set.scope_id)
+        if owner is None or graph_set.scope_type != "ontology":
+            return None
+        lock_projects(self.session, [owner.project_id])
+        self.session.scalar(
+            select(OntologyModel).where(OntologyModel.id == owner.id).with_for_update()
+        )
+        self.session.refresh(graph_set)
+        try:
+            project_fence_check(self.session, [owner.project_id])
+        except MappingWriteError as exc:
+            self._mapping_scope_error(exc.code, str(exc), exc.findings)
+        return owner.id, self._mapping_scope_findings(owner.id)
+
+    def _mapping_scope_findings(self, owner_id):
+        from app.repositories.rdf_store import RdfGraphDelta, RdfStoreRepository
+        from app.services.semantic_mapping_integrity import validate_mapping_graph
+        from app.services.semantic_mapping_state import _union, mapping_state
+
+        store = self.rdf_store or RdfStoreRepository(self.settings.oxigraph_url)
+        _, owners, before, _, scopes = mapping_state(
+            self.session, store, self.settings, RdfGraphDelta(), owner_id
+        )
+        return validate_mapping_graph(
+            _union(before[iri] for iri in owners[owner_id]),
+            reference_graph=_union(before[iri] for iri in scopes[owner_id]),
+        )
+
+    @staticmethod
+    def _mapping_scope_error(code, message, findings):
+        error = GraphSetError(message)
+        error.status_code = 409
+        error.detail = {"code": code, "message": message, "findings": findings}
+        raise error
+
+    def _mapping_scope_after(self, snapshot):
+        if snapshot is None:
+            return
+        self.session.flush()
+        owner, previous = snapshot
+        findings = [
+            finding for finding in self._mapping_scope_findings(owner) if finding not in previous
+        ]
+        if findings:
+            self.session.rollback()
+            self._mapping_scope_error(
+                "mapping_reference_scope_in_use",
+                "Revise dependent mappings through Modeling Batch before shrinking their reference scope",
+                findings,
+            )
 
     def create_graph_set(
         self,
@@ -55,6 +117,9 @@ class SemanticGraphSetService:
             raise GraphSetError("Graph set name is required")
         if not members:
             raise GraphSetError("Graph set requires at least one member")
+        snapshot = (
+            self._mapping_scope_before(self.get_graph_set(supersedes)) if supersedes else None
+        )
         graph_set = SemanticGraphSetModel(
             id=str(uuid4()),
             name=name,
@@ -80,6 +145,7 @@ class SemanticGraphSetService:
             )
         if supersedes:
             self._mark_superseded(supersedes)
+        self._mapping_scope_after(snapshot)
         graph_set.source_signature = self._compute_signature(graph_set)
         self.session.commit()
         return graph_set
@@ -90,6 +156,7 @@ class SemanticGraphSetService:
         members: list[dict[str, Any]],
     ) -> SemanticGraphSetModel:
         graph_set = self.get_graph_set(graph_set_id)
+        snapshot = self._mapping_scope_before(graph_set)
         if graph_set.is_default:
             self._validate_default_membership(graph_set, members)
         for member in graph_set.members:
@@ -109,6 +176,7 @@ class SemanticGraphSetService:
                 )
             )
         graph_set.source_signature = self._compute_signature(graph_set)
+        self._mapping_scope_after(snapshot)
         self._mark_dependent_pointers_stale(graph_set_id)
         self.session.commit()
         return graph_set
@@ -127,9 +195,7 @@ class SemanticGraphSetService:
         scope_id: str | None = None,
         status: str | None = None,
     ) -> list[SemanticGraphSetModel]:
-        statement = select(SemanticGraphSetModel).order_by(
-            SemanticGraphSetModel.created_at.desc()
-        )
+        statement = select(SemanticGraphSetModel).order_by(SemanticGraphSetModel.created_at.desc())
         if scope_type:
             statement = statement.where(SemanticGraphSetModel.scope_type == scope_type)
         if scope_id:
@@ -171,10 +237,7 @@ class SemanticGraphSetService:
 
     def _compute_signature(self, graph_set: SemanticGraphSetModel) -> str:
         members_sorted = sorted(
-            (
-                (member.graph_iri, member.role, member.sort_order)
-                for member in graph_set.members
-            ),
+            ((member.graph_iri, member.role, member.sort_order) for member in graph_set.members),
             key=lambda item: (item[2], item[0]),
         )
         revisions = self._revisions_for(graph_set)

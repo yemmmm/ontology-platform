@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.api.deps import get_db_session, get_settings
+from app.api.deps import get_db_session, get_settings, get_rdf_store
 from app.api.schemas import (
     OntologyCreateResponse,
     OntologyCreate,
@@ -67,7 +67,16 @@ def delete_project(
     request: Request,
     principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+    rdf_store=Depends(get_rdf_store),
 ):
+    # Validate before key revocation (which commits independently).
+    service.check_mapping_deletion(
+        session,
+        [ontology.id for ontology in service.get_project(session, project_id).ontologies],
+        settings,
+        rdf_store,
+    )
     keys = list(
         session.scalars(
             select(ApiKeyModel).where(
@@ -88,7 +97,7 @@ def delete_project(
             resource_id=key.id,
             details={"reason": "project_deleted"},
         )
-    service.delete_project(session, project_id)
+    service.delete_project(session, project_id, settings, rdf_store)
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
@@ -178,6 +187,11 @@ def update_ontology(
 
 
 @router.delete("/ontologies/{ontology_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_ontology(ontology_id: str, session: Session = Depends(get_db_session)):
-    service.delete_ontology(session, ontology_id)
+def delete_ontology(
+    ontology_id: str,
+    session: Session = Depends(get_db_session),
+    settings: Settings = Depends(get_settings),
+    rdf_store=Depends(get_rdf_store),
+):
+    service.delete_ontology(session, ontology_id, settings, rdf_store)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -139,9 +139,16 @@ def test_warns_on_stale_reasoning_when_requested():
 def test_export_drops_quads_referencing_unauthorized_members():
     from app.services.semantic_access import SemanticAccessView
 
+    hidden = "http://example.test/hidden-rule"
     store = FakeStore(
         {
-            "http://op/s/graph/data/a": "@prefix ex: <http://example.test/> .\n<http://op/s/graph/data/a> { ex:a ex:b ex:c . }\n",
+            "http://op/s/graph/data/a": (
+                "@prefix ex: <http://example.test/> .\n"
+                "<http://op/s/graph/data/a> {\n"
+                "  ex:a ex:b ex:c .\n"
+                f"  ex:a ex:mappingDefinition {json.dumps(json.dumps({'conversion_rule_iri': hidden}))} .\n"
+                "}\n"
+            ),
             "http://op/s/graph/data/b": "@prefix ex: <http://example.test/> .\n<http://op/s/graph/data/b> { ex:x ex:y ex:z . }\n",
         }
     )
@@ -152,7 +159,7 @@ def test_export_drops_quads_referencing_unauthorized_members():
     )
     view = SemanticAccessView(
         requires_filtering=True,
-        _unauthorized_iris=frozenset({"http://example.test/x"}),
+        _unauthorized_iris=frozenset({"http://example.test/x", hidden}),
     )
     service = SemanticExportService(
         rdf_store=store,
@@ -163,6 +170,7 @@ def test_export_drops_quads_referencing_unauthorized_members():
     payload, warnings = service.export("gs-1", format="trig", include="asserted")
     assert "ex:a" in payload
     assert "ex:x" not in payload
+    assert "mappingDefinition" not in payload
     assert warnings == []
 
 

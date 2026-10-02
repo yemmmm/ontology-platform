@@ -1766,5 +1766,28 @@
     ],
     "readback": "entity-list/entity-detail expose detail_fields.rule_definition; exact resource reads expose properties.rule_definition. Ordinary statements/relations expose identities and sources through existing endpoint and pre-pagination authorization filtering. Missing edges do not prove no input/constraint. Hidden/nonexistent exact responses are indistinguishable.",
     "verification_boundary": "A1-A10 functional fixture evidence only; source-based judgments and A11 real modeling/independent semantic acceptance require later authorization. Automatic derivation materialization remains undelivered."
+  },
+  "relational_mapping": {
+    "requirement_id": "R4.0-010",
+    "item_kinds": ["table_mapping", "join_mapping", "enum_meaning", "metric_definition"],
+    "neutral_identity": "item_id plus the resource-specific semantic key (table_mapping_id, join_mapping_id, enum_meaning_id or metric_id). Names, schema versions and slice IDs do not create a new identity.",
+    "common_fields": ["semantic_definition", "mapping_definition"],
+    "semantic_definition": {
+      "semantic_role": "Use data_mapping for the four mapping resources.",
+      "fields": ["business_meaning", "applicability", "unknowns", "not_applicable", "conflicting_meanings"]
+    },
+    "mapping_definition": {
+      "table_mapping": ["source_key", "schema_version", "row_grain", "record_key_columns", "object_key_columns", "identifiers", "field_meanings", "row_scope"],
+      "join_mapping": ["step_semantics", "relationship_meaning", "duplicate_risk", "execution_prerequisite"],
+      "enum_meaning": ["conversion_rule_iri"],
+      "metric_definition": ["contexts"]
+    },
+    "reference_rules": [
+      "Use {definition_ref: item_id} recursively for current-candidate definitions, including nested mapping_definition fields; never write a platform IRI or a Batch/receipt field in a neutral candidate.",
+      "Use an explicitly governed existing_resource_ref with its resource_kind only when the active R4.0-010 Protocol receipt binds that resource. Do not use the R2.3-003 existing_entity_ref contract for mappings.",
+      "Keep database rows, connection strings, credentials, executable SQL and conversion scripts outside the candidate. Schema/sample inputs locate and validate mappings but do not establish business meaning.",
+      "A relation that points to a mapping resource is ordinary semantic content and is translated after all mapping resources; it does not turn the mapping into an entity."
+    ],
+    "protocol_and_readback": "Protocol maps the four kinds to create_table_mapping, create_join_mapping, create_enum_meaning and create_metric_definition in dependency order, carries the full approved payload into the approval projection, and binds receipts/readback by resource kind. Governed reads preserve mapping-specific fields and nested references; no asserted_data statements shortcut is sufficient."
   }
 }

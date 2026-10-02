@@ -11,7 +11,6 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from rdflib import Graph, URIRef
-from rdflib.namespace import OWL, RDF
 from rdflib.util import from_n3
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
@@ -39,7 +38,7 @@ from app.repositories.models import (
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
 )
-from app.repositories.rdf_store import RdfStoreRepository
+from app.repositories.rdf_store import RdfGraphDelta, RdfStoreRepository
 from app.services.build_sessions import BuildSessionError, BuildSessionService
 from app.services.modeling_handlers import (
     ModelingCommandHandlerRegistry,
@@ -64,7 +63,6 @@ from app.services.semantic_command_compiler import (
     InvalidCommandPayload,
 )
 from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_export import namespace_from_settings
 from app.services.semantic_rule_definition import (
     ALLOWED_INPUT_ROLES,
     ALLOWED_LANGUAGES,
@@ -144,9 +142,7 @@ def _validate_delete_only_impact_receipt(value: Any) -> dict[str, Any]:
         "receipt_digest",
     }
     if set(value) != required:
-        raise InvalidCommandPayload(
-            "delete-only impact_receipt has an invalid field set"
-        )
+        raise InvalidCommandPayload("delete-only impact_receipt has an invalid field set")
     if value.get("schema_version") != "r2-3-003-delete-impact/v1":
         raise InvalidCommandPayload("delete-only impact_receipt schema is unsupported")
     if value.get("complete") is not True:
@@ -231,10 +227,12 @@ _RELATIONAL_MAPPING_COMMAND_KINDS = frozenset(
 )
 
 _RELATIONAL_METADATA_IRI_KEYS = (
-    "table_mapping_iri",
-    "join_mapping_iri",
+    # Scoped enums also carry their referenced table_mapping_iri. Resolve the
+    # written resource first, rather than treating that dependency as output.
     "enum_meaning_iri",
     "metric_iri",
+    "join_mapping_iri",
+    "table_mapping_iri",
 )
 
 
@@ -244,34 +242,6 @@ def _relational_resource_iri(metadata: dict[str, Any]) -> str | None:
         if value:
             return str(value)
     return None
-
-
-def _parse_json_columns(value: Any) -> set[str]:
-    """Column names from a ``op:columnMappings`` JSON literal."""
-    if value is None:
-        return set()
-    try:
-        parsed = json.loads(str(value))
-    except (TypeError, json.JSONDecodeError):
-        return set()
-    if not isinstance(parsed, list):
-        return set()
-    return {
-        str(entry.get("column"))
-        for entry in parsed
-        if isinstance(entry, dict) and entry.get("column")
-    }
-
-
-def _parse_json_steps(value: Any) -> list[dict[str, Any]]:
-    """Ordered steps from an ``op:joinPath`` JSON literal."""
-    if value is None:
-        return []
-    try:
-        parsed = json.loads(str(value))
-    except (TypeError, json.JSONDecodeError):
-        return []
-    return parsed if isinstance(parsed, list) else []
 
 
 class ModelingBatchService:
@@ -315,6 +285,13 @@ class ModelingBatchService:
                         status_code=422,
                     ) from exc
         self._check_capacity(payload, request_bytes)
+        from app.services.checkpoint_archive import lock_projects
+
+        project_id = self.session.scalar(
+            select(BuildSessionModel.project_id).where(BuildSessionModel.id == build_session_id)
+        )
+        if project_id:
+            lock_projects(self.session, [project_id])
         build_session = self.session.scalar(
             select(BuildSessionModel)
             .where(BuildSessionModel.id == build_session_id)
@@ -679,6 +656,7 @@ class ModelingBatchService:
         }
         rdf_counts, counts_warning = self._rdf_resource_counts(workspace)
         return {
+            "semantic_base_iri": self.settings.semantic_base_iri,
             "project": {"id": ontology.project_id},
             "ontology": {"id": ontology.id, "name": ontology.name, "status": ontology.status},
             "workspace": {
@@ -847,7 +825,9 @@ class ModelingBatchService:
                     payload=resolved,
                 )
                 if item.command_kind == "delete_entity" and "impact_receipt" in command.payload:
-                    receipt = _validate_delete_only_impact_receipt(command.payload["impact_receipt"])
+                    receipt = _validate_delete_only_impact_receipt(
+                        command.payload["impact_receipt"]
+                    )
                     if command.payload.get("impact_receipt_digest") != receipt["receipt_digest"]:
                         raise InvalidCommandPayload(
                             "delete-only impact_receipt_digest does not match receipt"
@@ -948,11 +928,7 @@ class ModelingBatchService:
         kinds = {left_command.command_kind, right_command.command_kind}
         if kinds != {"create_shape", "update_shape"}:
             return False
-        create = (
-            left_command
-            if left_command.command_kind == "create_shape"
-            else right_command
-        )
+        create = left_command if left_command.command_kind == "create_shape" else right_command
         update = right_command if create is left_command else left_command
         if create.compiled is None or update.compiled is None:
             return False
@@ -1037,9 +1013,7 @@ class ModelingBatchService:
                         item_ids=[item_id],
                     )
                 ]
-        relational_findings = self._validate_relational_mapping_commands(
-            batch, prepared, selected
-        )
+        relational_findings = self._validate_relational_mapping_commands(batch, prepared, selected)
         if relational_findings:
             return relational_findings
         compiled = CompiledCommand(
@@ -1116,8 +1090,7 @@ class ModelingBatchService:
                     for item_id in sorted(selected)
                     if prepared.get(item_id)
                     and prepared[item_id].command_kind in {"update_shape", "delete_shape"}
-                    and str(prepared[item_id].compiled.metadata.get("shape_iri") or "")
-                    in str(exc)
+                    and str(prepared[item_id].compiled.metadata.get("shape_iri") or "") in str(exc)
                 ]
             return [
                 _finding(
@@ -1137,9 +1110,7 @@ class ModelingBatchService:
         relative = list(getattr(exc, "path", ()) or ())
         if not item_ids or not relative:
             return relative
-        first = next(
-            (item for item in batch.items if item.client_item_id == item_ids[0]), None
-        )
+        first = next((item for item in batch.items if item.client_item_id == item_ids[0]), None)
         if first is None:
             return relative
         fields = relative[1:] if relative[0] == "payload" else relative
@@ -1151,105 +1122,49 @@ class ModelingBatchService:
         prepared: dict[str, PreparedModelingCommand],
         selected: set[str],
     ) -> list[dict[str, Any]]:
-        """Deterministic G2/G3/G5/G6 gates for relational mapping commands.
-
-        Existence and cross-resource checks run on the merged view (current
-        ontology graph + same-batch compiled inserts); TableMapping
-        update/delete also checks that existing JoinMappings do not become
-        dangling (G3 reverse). No LLM calls.
-        """
-        relational_items = [
-            (item.client_item_id, prepared[item.client_item_id])
-            for item in sorted(batch.items, key=lambda entry: entry.ordinal)
-            if item.client_item_id in selected
-            and item.client_item_id in prepared
-            and prepared[item.client_item_id].command_kind in _RELATIONAL_MAPPING_COMMAND_KINDS
+        """Check the final delta, including explicit cross-graph reverse dependencies."""
+        commands = [
+            prepared[item_id]
+            for item_id in sorted(selected)
+            if item_id in prepared and prepared[item_id].compiled is not None
         ]
-        # R3.0-008A G7-d trigger: delete_entity is the command-surface carrier
-        # of L3 first-class nodes (written to the data graph), so a batch that
-        # deletes an entity must also run the semanticValue dangling scan even
-        # when it carries no relational mapping command at all.
-        delete_entity_items = [
-            (item.client_item_id, prepared[item.client_item_id])
-            for item in sorted(batch.items, key=lambda entry: entry.ordinal)
-            if item.client_item_id in selected
-            and item.client_item_id in prepared
-            and prepared[item.client_item_id].command_kind == "delete_entity"
-        ]
-        if not relational_items and not delete_entity_items:
+        if not commands:
             return []
         if self.rdf_store is None:
             return [
                 _finding(
                     "candidate_validation_failed",
                     "error",
-                    "RDF store is unavailable for deterministic relational mapping validation",
+                    "RDF store is unavailable for mapping validation",
                     scope="batch",
                 )
             ]
-        ns = namespace_from_settings(self.settings)
-        op = str(ns.vocab)
-        graph_iri = str(ns.graph("ontology", batch.ontology_id))
-        store_graph = Graph()
-        graph_exists = not hasattr(self.rdf_store, "graph_exists") or (
-            self.rdf_store.graph_exists(graph_iri)
+        from app.services.semantic_mapping_state import mapping_state, mapping_write_findings
+
+        delta = union_delta(commands)
+        _projects, _owners, before, _after, _scopes = mapping_state(
+            self.session, self.rdf_store, self.settings, delta, batch.ontology_id
         )
-        content = self.rdf_store.get_graph(graph_iri, "turtle") if graph_exists else ""
-        if content and content.strip():
-            store_graph.parse(data=content, format="turtle")
-        merged = Graph()
-        for triple in store_graph:
-            merged.add(triple)
-        # Project the same-batch commands onto the merged view: deletes first
-        # (so TableMapping update/delete can leave existing JoinMappings
-        # dangling in this view), then inserts.
+        original = Graph()
+        for graph in before.values():
+            for triple in graph:
+                original.add(triple)
+        findings = []
+        created = set()
+        subjects = {}
         for item_id in sorted(selected):
             command = prepared.get(item_id)
             if command is None or command.compiled is None:
                 continue
-            for subject, predicate, obj, target_graph in command.compiled.delta.deletes:
-                if target_graph != graph_iri:
-                    continue
-                if predicate == "?p":
-                    # Whole-subject wildcard delete (delete_* relational commands).
-                    for triple in list(merged.triples((URIRef(subject[1:-1]), None, None))):
-                        merged.remove(triple)
-                elif obj == "?o":
-                    for triple in list(
-                        merged.triples((URIRef(subject[1:-1]), URIRef(predicate[1:-1]), None))
-                    ):
-                        merged.remove(triple)
-                else:
-                    merged.remove(
-                        (
-                            from_n3(subject),
-                            from_n3(predicate),
-                            from_n3(obj),
-                        )
-                    )
-        nt_lines = []
-        for item_id in sorted(selected):
-            command = prepared.get(item_id)
-            if command is None or command.compiled is None:
+            if command.command_kind not in _RELATIONAL_MAPPING_COMMAND_KINDS:
                 continue
-            for subject, predicate, obj, target_graph in command.compiled.delta.inserts:
-                if target_graph == graph_iri:
-                    nt_lines.append(f"{subject} {predicate} {obj} .")
-        if nt_lines:
-            merged.parse(data="\n".join(nt_lines), format="nt")
-
-        findings: list[dict[str, Any]] = []
-
-        # ---- G6: create collisions / update-delete target existence ----
-        batch_created: set[str] = set()
-        for item_id, command in relational_items:
-            subject_iri = _relational_resource_iri(command.compiled.metadata)
-            if subject_iri is None:
+            iri = _relational_resource_iri(command.compiled.metadata)
+            if not iri:
                 continue
-            exists = any(store_graph.triples((URIRef(subject_iri), None, None)))
-            is_create = command.command_kind.startswith("create_")
-            if is_create:
-                if exists or subject_iri in batch_created:
+            subjects[iri] = item_id
+            exists = any(original.triples((URIRef(iri), None, None)))
+            if command.command_kind.startswith("create_"):
+                if exists or iri in created:
                     findings.append(
                         _finding(
                             "resource_already_exists",
@@ -1259,9 +1174,8 @@ class ModelingBatchService:
                             path=["payload"],
                         )
                     )
-                    continue
-                batch_created.add(subject_iri)
-            elif not exists and subject_iri not in batch_created:
+                created.add(iri)
+            elif not exists and iri not in created:
                 findings.append(
                     _finding(
                         "resource_not_found",
@@ -1271,368 +1185,20 @@ class ModelingBatchService:
                         path=["payload"],
                     )
                 )
-
-        # ---- G2: referenced IRIs exist in the merged view ----
-        class_types = {OWL.Class, URIRef("http://www.w3.org/2000/01/rdf-schema#Class")}
-        relation_types = {OWL.ObjectProperty}
-        property_types = {
-            OWL.ObjectProperty,
-            OWL.DatatypeProperty,
-            URIRef("http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"),
-        }
-
-        def reference_missing(iri: str | None, expected_types: set) -> bool:
-            if not iri:
-                return False
-            subject = URIRef(iri)
-            for type_iri in expected_types:
-                if (subject, RDF.type, type_iri) in merged:
-                    return False
-            return True
-
-        def add_reference_finding(item_id: str, field: str, iri: str, role: str) -> None:
-            findings.append(
-                _finding(
-                    "invalid_resource_reference",
-                    "error",
-                    f"{field} does not reference an existing {role} in the target Ontology: {iri}",
-                    item_ids=[item_id],
-                    path=["payload", field],
-                )
-            )
-
-        for item_id, command in relational_items:
-            payload = command.payload
-            kind = command.command_kind
-            if kind == "create_table_mapping" and reference_missing(
-                payload.get("mapped_class_iri"), class_types
-            ):
-                add_reference_finding(item_id, "mapped_class_iri", payload["mapped_class_iri"], "class")
-            elif kind == "create_join_mapping" and reference_missing(
-                payload.get("relation_type_iri"), relation_types
-            ):
-                add_reference_finding(
-                    item_id, "relation_type_iri", payload["relation_type_iri"], "relation type"
-                )
-            elif kind == "create_enum_meaning" and reference_missing(
-                payload.get("property_iri"), property_types
-            ):
-                add_reference_finding(item_id, "property_iri", payload["property_iri"], "property")
-            elif kind in {"create_metric_definition", "update_metric_definition"}:
-                grain = payload.get("grain")
-                if isinstance(grain, list):
-                    for index, grain_iri in enumerate(grain):
-                        if reference_missing(grain_iri, property_types):
-                            add_reference_finding(
-                                item_id, f"grain[{index}]", str(grain_iri), "property"
-                            )
-                for field in ("time_field", "measure_property_iri"):
-                    if payload.get(field) and reference_missing(payload[field], property_types):
-                        add_reference_finding(item_id, field, payload[field], "property")
-                filters = payload.get("filters")
-                if isinstance(filters, list):
-                    for index, entry in enumerate(filters):
-                        if isinstance(entry, dict) and reference_missing(
-                            entry.get("field"), property_types
-                        ):
-                            add_reference_finding(
-                                item_id, f"filters[{index}].field", str(entry.get("field")), "property"
-                            )
-
-        # ---- G5: (mappedProperty, enumValue) uniqueness per Ontology ----
-        enum_pairs = {}
-        for subject, _, _ in merged.triples((None, RDF.type, URIRef(f"{op}EnumValueMeaning"))):
-            property_value = merged.value(subject, URIRef(f"{op}mappedProperty"))
-            enum_value = merged.value(subject, URIRef(f"{op}enumValue"))
-            if property_value is not None and enum_value is not None:
-                enum_pairs[str(subject)] = (str(property_value), str(enum_value))
-        if any(
-            command.command_kind in {"create_enum_meaning", "update_enum_meaning"}
-            for _item_id, command in relational_items
+        for finding in mapping_write_findings(
+            self.session, self.rdf_store, self.settings, delta, batch.ontology_id
         ):
-            pair_counts: dict[tuple[str, str], int] = {}
-            for pair in enum_pairs.values():
-                pair_counts[pair] = pair_counts.get(pair, 0) + 1
-            for item_id, command in relational_items:
-                if command.command_kind not in {"create_enum_meaning", "update_enum_meaning"}:
-                    continue
-                subject_iri = _relational_resource_iri(command.compiled.metadata)
-                pair = enum_pairs.get(subject_iri or "")
-                if pair is not None and pair_counts.get(pair, 0) > 1:
-                    findings.append(
-                        _finding(
-                            "resource_already_exists",
-                            "error",
-                            "Enum value meaning duplicates an existing (property, enum value) "
-                            f"pair in the target Ontology: {pair[1]}",
-                            item_ids=[item_id],
-                            path=["payload", "enum_value"],
-                        )
-                    )
-
-        # ---- G3: join path closure, forward and reverse ----
-        table_records: dict[str, dict[str, Any]] = {}
-        for subject, _, _ in merged.triples((None, RDF.type, URIRef(f"{op}TableMapping"))):
-            table_name = merged.value(subject, URIRef(f"{op}tableName"))
-            columns_value = merged.value(subject, URIRef(f"{op}columnMappings"))
-            columns = _parse_json_columns(columns_value)
-            table_records[str(subject)] = {
-                "table_name": str(table_name) if table_name is not None else None,
-                "columns": columns,
-            }
-        store_table_records: dict[str, dict[str, Any]] = {}
-        for subject, _, _ in store_graph.triples((None, RDF.type, URIRef(f"{op}TableMapping"))):
-            table_name = store_graph.value(subject, URIRef(f"{op}tableName"))
-            columns_value = store_graph.value(subject, URIRef(f"{op}columnMappings"))
-            store_table_records[str(subject)] = {
-                "table_name": str(table_name) if table_name is not None else None,
-                "columns": _parse_json_columns(columns_value),
-            }
-        join_records: dict[str, dict[str, Any]] = {}
-        for subject, _, _ in merged.triples((None, RDF.type, URIRef(f"{op}JoinMapping"))):
-            join_path_value = merged.value(subject, URIRef(f"{op}joinPath"))
-            join_records[str(subject)] = {
-                "join_path": _parse_json_steps(join_path_value),
-            }
-        tables_by_name = {
-            record["table_name"]: record
-            for record in table_records.values()
-            if record["table_name"]
-        }
-        batch_join_subjects = {
-            _relational_resource_iri(command.compiled.metadata): item_id
-            for item_id, command in relational_items
-            if command.command_kind in {"create_join_mapping", "update_join_mapping"}
-            and _relational_resource_iri(command.compiled.metadata) is not None
-        }
-        batch_table_change_items = [
-            (item_id, command)
-            for item_id, command in relational_items
-            if command.command_kind in {"update_table_mapping", "delete_table_mapping"}
-        ]
-        for join_subject, record in sorted(join_records.items()):
-            unresolved: list[tuple[str | None, str | None]] = []
-            steps = record["join_path"]
-            for index, step in enumerate(steps):
-                if (
-                    index + 1 < len(steps)
-                    and step.get("to_table") != steps[index + 1].get("from_table")
-                ):
-                    unresolved.append((None, None))
-                for table_key, columns_key in (("from_table", "from_columns"), ("to_table", "to_columns")):
-                    table = step.get(table_key)
-                    table_record = tables_by_name.get(table)
-                    if table_record is None:
-                        unresolved.append((table, None))
-                        continue
-                    for column in step.get(columns_key, []):
-                        if column not in table_record["columns"]:
-                            unresolved.append((table, column))
-            if not unresolved:
-                continue
-            details = "; ".join(
-                f"table {table or '?'}{' column ' + column if column else ''} is not mapped"
-                for table, column in unresolved
-            )
-            batch_join_item = batch_join_subjects.get(join_subject)
-            if batch_join_item is not None:
-                findings.append(
-                    _finding(
-                        "join_path_not_mapped",
-                        "error",
-                        f"Join path is not closed by TableMappings in the target Ontology: {details}",
-                        item_ids=[batch_join_item],
-                        path=["payload", "join_path"],
-                    )
-                )
-                continue
-            attributed = [
-                item_id
-                for item_id, command in batch_table_change_items
-                if any(
-                    table is not None
-                    and store_table_records.get(
-                        _relational_resource_iri(command.compiled.metadata) or "", {}
-                    ).get("table_name")
-                    == table
-                    for table, _column in unresolved
-                )
-            ]
+            item_id = subjects.get(str(finding.get("subject", "")))
             findings.append(
                 _finding(
-                    "join_path_not_mapped",
-                    "error",
-                    "Updating or deleting a TableMapping would leave an existing JoinMapping "
-                    f"dangling: {details}",
-                    item_ids=sorted(set(attributed)),
-                    scope="item" if attributed else "batch",
-                    path=["payload"],
+                    finding["code"],
+                    finding.get("severity", "error"),
+                    finding["message"],
+                    item_ids=[item_id] if item_id else sorted(selected),
+                    path=["payload", *finding.get("path", [])],
+                    resource_iri=finding.get("subject"),
                 )
             )
-
-        # ---- G7: semanticValue structural gate (R3.0-008A design §3.3) ----
-        # Runs on its own dual-graph merged view (ontology graph + data graph
-        # of the batch target Ontology, plus same-batch projections filtered
-        # to both graphs). G2/G3/G5/G6 above keep the ontology-graph-only view
-        # and are untouched: EnumValueMeaning subjects live in the ontology
-        # graph while their L3 targets live in the data graph, so a dual view
-        # is the mechanical precondition for target existence to be visible.
-        enum_command_items = [
-            (item_id, command)
-            for item_id, command in relational_items
-            if command.command_kind in {"create_enum_meaning", "update_enum_meaning"}
-        ]
-        if enum_command_items or delete_entity_items:
-            data_graph_iri = str(ns.graph("data", batch.ontology_id))
-            g7_graphs = {graph_iri, data_graph_iri}
-            g7_view = Graph()
-            for source_graph in (graph_iri, data_graph_iri):
-                source_exists = not hasattr(self.rdf_store, "graph_exists") or (
-                    self.rdf_store.graph_exists(source_graph)
-                )
-                source_content = (
-                    self.rdf_store.get_graph(source_graph, "turtle") if source_exists else ""
-                )
-                if source_content and source_content.strip():
-                    g7_view.parse(data=source_content, format="turtle")
-            # Project the same-batch commands onto the dual view (deletes
-            # first, then inserts — same ordering contract as the merged view
-            # above). Note the object-position wildcard of delete_entity is a
-            # no-op under this projection by design: dangling protection is
-            # defined by the target appearing as a subject (design review
-            # note), which the whole-subject wildcard delete already removes.
-            for item_id in sorted(selected):
-                command = prepared.get(item_id)
-                if command is None or command.compiled is None:
-                    continue
-                for subject, predicate, obj, target_graph in command.compiled.delta.deletes:
-                    if target_graph not in g7_graphs:
-                        continue
-                    if predicate == "?p":
-                        for triple in list(g7_view.triples((URIRef(subject[1:-1]), None, None))):
-                            g7_view.remove(triple)
-                    elif obj == "?o":
-                        for triple in list(
-                            g7_view.triples(
-                                (URIRef(subject[1:-1]), URIRef(predicate[1:-1]), None)
-                            )
-                        ):
-                            g7_view.remove(triple)
-                    else:
-                        g7_view.remove(
-                            (
-                                from_n3(subject),
-                                from_n3(predicate),
-                                from_n3(obj),
-                            )
-                        )
-            g7_insert_lines = []
-            for item_id in sorted(selected):
-                command = prepared.get(item_id)
-                if command is None or command.compiled is None:
-                    continue
-                for subject, predicate, obj, target_graph in command.compiled.delta.inserts:
-                    if target_graph in g7_graphs:
-                        g7_insert_lines.append(f"{subject} {predicate} {obj} .")
-            if g7_insert_lines:
-                g7_view.parse(data="\n".join(g7_insert_lines), format="nt")
-
-            semantic_predicate = URIRef(f"{op}semanticValue")
-            mapping_type_iris = {
-                URIRef(f"{op}{type_name}")
-                for type_name in (
-                    "EnumValueMeaning",
-                    "TableMapping",
-                    "JoinMapping",
-                    "MetricDefinition",
-                )
-            }
-
-            # G7-a (target exists) / G7-b (non-mapping resource type).
-            for item_id, command in enum_command_items:
-                semantic_value = (
-                    command.compiled.metadata.get("semantic_value_iri")
-                    or command.payload.get("semantic_value")
-                )
-                if not semantic_value:
-                    continue
-                target = URIRef(str(semantic_value))
-                if not any(g7_view.triples((target, None, None))):
-                    findings.append(
-                        _finding(
-                            "invalid_resource_reference",
-                            "error",
-                            "semantic_value does not reference an existing first-class semantic "
-                            f"node in the target Ontology: {semantic_value}",
-                            item_ids=[item_id],
-                            path=["payload", "semantic_value"],
-                        )
-                    )
-                    continue
-                if any((target, RDF.type, type_iri) in g7_view for type_iri in mapping_type_iris):
-                    findings.append(
-                        _finding(
-                            "invalid_resource_reference",
-                            "error",
-                            "semantic_value must reference a non-mapping first-class semantic "
-                            f"node: {semantic_value}",
-                            item_ids=[item_id],
-                            path=["payload", "semantic_value"],
-                        )
-                    )
-
-            # G7-c (at most one semanticValue per EnumValueMeaning, catching
-            # direct-write residue) and, when the batch deletes entities, the
-            # G7-d dangling scan over every EnumValueMeaning in the dual view.
-            enum_subject_items = {
-                _relational_resource_iri(command.compiled.metadata): item_id
-                for item_id, command in enum_command_items
-                if _relational_resource_iri(command.compiled.metadata) is not None
-            }
-            dangling_targets: list[str] = []
-            for subject, _, _ in g7_view.triples((None, RDF.type, URIRef(f"{op}EnumValueMeaning"))):
-                values = list(g7_view.objects(subject, semantic_predicate))
-                if len(values) > 1:
-                    owner_item = enum_subject_items.get(str(subject))
-                    findings.append(
-                        _finding(
-                            "invalid_resource_reference",
-                            "error",
-                            "EnumValueMeaning must carry at most one semanticValue: "
-                            f"{subject}",
-                            item_ids=[owner_item] if owner_item else [],
-                            scope="item" if owner_item else "batch",
-                            path=["payload", "semantic_value"],
-                        )
-                    )
-                    continue
-                if not values:
-                    continue
-                target = URIRef(str(values[0]))
-                if not any(g7_view.triples((target, None, None))):
-                    dangling_targets.append(str(values[0]))
-            if dangling_targets and delete_entity_items:
-                deleted_subject_items = {
-                    str(command.compiled.metadata.get("entity_iri") or ""): item_id
-                    for item_id, command in delete_entity_items
-                }
-                for target in dangling_targets:
-                    attributed = [
-                        item_id
-                        for deleted_iri, item_id in deleted_subject_items.items()
-                        if deleted_iri == target
-                    ]
-                    findings.append(
-                        _finding(
-                            "semantic_value_dangling",
-                            "error",
-                            "Deleting this entity would leave an EnumValueMeaning "
-                            f"semanticValue dangling: {target}",
-                            item_ids=sorted(set(attributed)),
-                            scope="item" if attributed else "batch",
-                            path=["payload"],
-                        )
-                    )
         return findings
 
     def _validate_rule_command(
@@ -1958,9 +1524,19 @@ class ModelingBatchService:
         created_batch=False,
         created_attempt=False,
     ):
+        from app.services.checkpoint_archive import lock_projects
+
         batch = attempt.batch
         plan = attempt.operation_plan
+        project_id = None
         try:
+            project_id = self.session.scalar(
+                select(OntologyModel.project_id).where(OntologyModel.id == batch.ontology_id)
+            )
+            lock_projects(self.session, [project_id] if project_id else [])
+            self.session.scalar(
+                select(OntologyModel).where(OntologyModel.id == batch.ontology_id).with_for_update()
+            )
             commands = self._commands_from_plan(batch.ontology_id, plan)
             rdf_commands = [
                 command for command in commands.values() if command.compiled is not None
@@ -2006,6 +1582,9 @@ class ModelingBatchService:
                             modeling_item_effects=modeling_item_effects,
                         )
                     except (CanonicalShaclViolation, CanonicalSemanticWriteError) as exc:
+                        if rdf_already_applied:
+                            # A recovery failure cannot erase evidence of an existing write.
+                            raise
                         # Deterministic pre-write rejection (D13): the canonical
                         # pipeline validates before it writes, so nothing reached
                         # the store and reconciliation is trivial. It must fail
@@ -2013,6 +1592,12 @@ class ModelingBatchService:
                         # unfixed payload would only re-fail and a missing
                         # optional graph could escalate to a write fence.
                         self.session.rollback()
+                        lock_projects(self.session, [project_id] if project_id else [])
+                        self.session.scalar(
+                            select(OntologyModel)
+                            .where(OntologyModel.id == batch.ontology_id)
+                            .with_for_update()
+                        )
                         current = self.session.scalar(
                             select(ModelingBatchAttemptModel)
                             .where(ModelingBatchAttemptModel.id == attempt.id)
@@ -2080,6 +1665,10 @@ class ModelingBatchService:
             return self._attempt_response(current, created_batch, created_attempt)
         except Exception as exc:
             self.session.rollback()
+            lock_projects(self.session, [project_id] if project_id else [])
+            self.session.scalar(
+                select(OntologyModel).where(OntologyModel.id == batch.ontology_id).with_for_update()
+            )
             current = self.session.scalar(
                 select(ModelingBatchAttemptModel)
                 .where(ModelingBatchAttemptModel.id == attempt.id)
@@ -2111,6 +1700,33 @@ class ModelingBatchService:
         return self._attempt_response(attempt, created_batch, created_attempt)
 
     def _resume_attempt(self, attempt, auth):
+        from app.services.checkpoint_archive import lock_projects
+
+        ontology_id = attempt.batch.ontology_id
+        project_id = self.session.scalar(
+            select(OntologyModel.project_id).where(OntologyModel.id == ontology_id)
+        )
+        lock_projects(self.session, [project_id] if project_id else [])
+        self.session.scalar(
+            select(OntologyModel).where(OntologyModel.id == ontology_id).with_for_update()
+        )
+        from app.services.semantic_mapping_state import (
+            MappingWriteError,
+            mapping_write_relevant,
+            project_fence_check,
+        )
+
+        try:
+            if self.rdf_store is not None and mapping_write_relevant(
+                self.session,
+                self.rdf_store,
+                self.settings,
+                RdfGraphDelta(**attempt.normalized_delta),
+                ontology_id,
+            ):
+                project_fence_check(self.session, [project_id] if project_id else [], attempt.id)
+        except MappingWriteError as exc:
+            raise ModelingBatchError(exc.code, str(exc)) from exc
         attempt = self.session.scalar(
             select(ModelingBatchAttemptModel)
             .where(ModelingBatchAttemptModel.id == attempt.id)
@@ -2144,11 +1760,7 @@ class ModelingBatchService:
                 "safe_to_retry": reconcilable,
                 "message": "Automatic recovery step limit reached",
                 "observation": observation,
-                **(
-                    {"reason_code": observation["reason"]}
-                    if observation.get("reason")
-                    else {}
-                ),
+                **({"reason_code": observation["reason"]} if observation.get("reason") else {}),
             }
             self.session.commit()
             return self._attempt_response(attempt, False, False)
@@ -2224,7 +1836,9 @@ class ModelingBatchService:
         if not isinstance(metadata, dict):
             return None
         entries = metadata.get("receipts")
-        if metadata.get("schema_version") != "r2-3-003-delete-impact/v1" or not isinstance(entries, list):
+        if metadata.get("schema_version") != "r2-3-003-delete-impact/v1" or not isinstance(
+            entries, list
+        ):
             return {"state": "partial_or_drifted", "reason": "delete_only_receipt_metadata_invalid"}
         if self.rdf_store is None or not hasattr(self.rdf_store, "get_graph"):
             return {"state": "partial_or_drifted", "reason": "rdf_observation_unavailable"}
@@ -2255,7 +1869,10 @@ class ModelingBatchService:
         details: list[dict[str, Any]] = []
         for entry in entries:
             if not isinstance(entry, dict):
-                return {"state": "partial_or_drifted", "reason": "delete_only_receipt_entry_invalid"}
+                return {
+                    "state": "partial_or_drifted",
+                    "reason": "delete_only_receipt_entry_invalid",
+                }
             receipt = entry.get("impact_receipt")
             target_iri = entry.get("entity_iri")
             if (
@@ -2264,7 +1881,10 @@ class ModelingBatchService:
                 or not target_iri
                 or receipt.get("complete") is not True
             ):
-                return {"state": "partial_or_drifted", "reason": "delete_only_receipt_entry_invalid"}
+                return {
+                    "state": "partial_or_drifted",
+                    "reason": "delete_only_receipt_entry_invalid",
+                }
             before = receipt.get("statements")
             if not isinstance(before, list):
                 return {"state": "partial_or_drifted", "reason": "delete_only_before_set_invalid"}
@@ -2361,9 +1981,7 @@ class ModelingBatchService:
             return {"state": "unexpected", "reason": "rdf_observation_unavailable"}
         graphs: dict[str, Graph] = {}
         try:
-            graphs = self._load_observed_graphs(
-                sorted({quad[3] for quad in [*inserts, *deletes]})
-            )
+            graphs = self._load_observed_graphs(sorted({quad[3] for quad in [*inserts, *deletes]}))
         except Exception as exc:
             return {"state": "unexpected", "reason": "rdf_observation_failed", "error": str(exc)}
 
@@ -2689,6 +2307,32 @@ class ModelingBatchService:
             "message": message,
             "violations": violations,
         }
+        selected = attempt.operation_plan.get("selected_client_item_ids", [])
+        new_findings = []
+        for violation in violations or [{"code": code, "message": message}]:
+            subject = violation.get("subject")
+            item_ids = [
+                key
+                for key, command in attempt.operation_plan.get("commands", {}).items()
+                if subject and command.get("outputs", {}).get("resource_iri") == subject
+            ]
+            new_findings.append(
+                _finding(
+                    violation.get("code", code),
+                    "error",
+                    violation.get("message", message),
+                    item_ids=item_ids or selected,
+                    path=["payload", *violation.get("path", [])],
+                    retryable=code == "mapping_reference_write_fenced",
+                )
+            )
+        attempt.findings = self._fingerprint_findings(
+            attempt.id, [*(attempt.findings or []), *new_findings]
+        )
+        for result in attempt.item_results:
+            if result.client_item_id in selected:
+                result.status = "not_applied"
+                result.finding_codes = list(dict.fromkeys([*(result.finding_codes or []), code]))
         fence = self.session.get(OntologyWriteFenceModel, attempt.batch.ontology_id)
         if fence and fence.attempt_id == attempt.id:
             self.session.delete(fence)
@@ -2863,7 +2507,9 @@ class ModelingBatchService:
                 ),
                 "detail": attempt.recovery_detail or {},
             },
-            "retrieval_indexes": list((attempt.recovery_detail or {}).get("retrieval_indexes") or []),
+            "retrieval_indexes": list(
+                (attempt.recovery_detail or {}).get("retrieval_indexes") or []
+            ),
             "created_at": attempt.created_at,
             "completed_at": attempt.completed_at,
         }
@@ -3130,6 +2776,7 @@ class ModelingBatchService:
                 actual=len(payload.items),
                 limit=self.settings.modeling_batch_max_items,
             )
+
     @staticmethod
     def _dedupe_findings(findings):
         unique = {}

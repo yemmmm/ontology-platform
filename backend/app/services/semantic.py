@@ -124,11 +124,32 @@ class SemanticService:
             from app.services.checkpoint_archive import ARCHIVE_KEY, lock_graph_owners
 
             dataset = _parse_dataset(content, format, base_iri or self.settings.semantic_base_iri)
-            graph_iris = [str(graph.identifier) for graph in dataset.graphs()
-                          if isinstance(graph.identifier, URIRef)]
+            graph_iris = [
+                str(graph.identifier)
+                for graph in dataset.graphs()
+                if isinstance(graph.identifier, URIRef)
+            ]
             owners = lock_graph_owners(self.session, graph_iris)
             if any((owner.external_mappings or {}).get(ARCHIVE_KEY) for owner in owners):
                 raise LockedSemanticGraph("checkpoint_source_archived: source Project is read-only")
+            from app.services.semantic_mapping_state import (
+                MappingWriteError,
+                require_batch_mapping_write,
+            )
+
+            delta = RdfGraphDelta(
+                inserts=[
+                    (subject.n3(), predicate.n3(), obj.n3(), str(graph.identifier))
+                    for graph in dataset.graphs()
+                    for subject, predicate, obj in graph
+                ]
+            )
+            try:
+                require_batch_mapping_write(self.session, self.rdf_store, self.settings, delta)
+            except MappingWriteError as exc:
+                error = SemanticServiceError(str(exc))
+                error.code = exc.code
+                raise error from exc
         return self.rdf_store.load_dataset(content, format)
 
     def query_sparql(
@@ -188,7 +209,6 @@ class SemanticService:
         for graph_iri in affected_graphs:
             self._require_managed_graph(graph_iri)
             self._require_editable_graph(graph_iri)
-            self._require_direct_editable_category(graph_iri)
 
         restricted_where = format == "sparql-update" and _is_restricted_delete_insert_where(content)
         operation_vocab = operation_vocabulary(self.settings)
@@ -214,6 +234,38 @@ class SemanticService:
             content=content,
             target_graph_iri=target_graph_iri,
         )
+        from app.services.semantic_mapping_state import (
+            MappingWriteError,
+            require_batch_mapping_write,
+        )
+
+        try:
+            mapping_delta = explicit_delta
+            if explicit_delta.is_empty:
+                # The legacy extractor is best-effort. An unprojected raw edit
+                # must not hide changes to resources declared by a mapping.
+                mapping_delta = RdfGraphDelta(clear_graphs=affected_graphs)
+                if re.search(
+                    r"(?:[:/])(?:TableMapping|JoinMapping|EnumValueMeaning|MetricDefinition)\b",
+                    content,
+                ):
+                    raise MappingWriteError(
+                        "mapping_batch_required",
+                        "This raw mapping edit cannot be projected reliably; submit deterministic "
+                        "mapping commands through Modeling Batch dry_run/apply_atomic",
+                    )
+            require_batch_mapping_write(
+                self.session,
+                self.rdf_store,
+                self.settings,
+                mapping_delta,
+            )
+        except MappingWriteError as exc:
+            error = SemanticServiceError(str(exc))
+            error.code = exc.code
+            raise error from exc
+        for graph_iri in affected_graphs:
+            self._require_direct_editable_category(graph_iri)
         try:
             validate_operation_delta(self.rdf_store, explicit_delta, self.settings)
         except OperationValidationError as exc:
@@ -813,10 +865,19 @@ def _lineage_delta_from_edit(
         content,
         flags=re.IGNORECASE | re.DOTALL,
     )
+    prefixes = "\n".join(
+        f"@prefix {prefix}: <{iri}> ."
+        for prefix, iri in re.findall(
+            r"\bPREFIX\s+([A-Za-z][\w-]*|):\s*<([^>]+)>", content, flags=re.IGNORECASE
+        )
+    )
     for operation, graph_iri, body in blocks:
         graph = Graph()
         try:
-            graph.parse(data=body, format=RdfFormat.TURTLE.value)
+            # SPARQL permits omitting the last triple's dot; Turtle does not.
+            body = body.rstrip()
+            body = body if body.endswith(".") else body + "\n."
+            graph.parse(data=prefixes + "\n" + body, format=RdfFormat.TURTLE.value)
         except Exception:
             continue
         target = delta.inserts if operation.lower() == "insert" else delta.deletes

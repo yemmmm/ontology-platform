@@ -553,6 +553,7 @@ class CodexIsolationTests(unittest.TestCase):
                 "name": "protocol_mechanics",
                 "tools": [
                     {"name": "build_candidate_receipt"},
+                    {"name": "build_unified_resource_binding_receipt"},
                     {"name": "translate_candidate_to_batches"},
                 ],
             },
@@ -2372,6 +2373,7 @@ class CodexIsolationTests(unittest.TestCase):
                 ),
                 [
                     "build_candidate_receipt",
+                    "build_unified_resource_binding_receipt",
                     "translate_candidate_to_batches",
                 ],
             )

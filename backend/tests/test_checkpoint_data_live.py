@@ -71,6 +71,9 @@ def test_postgres_oxigraph_snapshot_fork_roundtrip():
 
         with ThreadPoolExecutor(max_workers=1) as pool, factory() as writer:
             writer.scalar(
+                select(m.ProjectModel).where(m.ProjectModel.id == project_id).with_for_update()
+            )
+            writer.scalar(
                 select(m.OntologyModel).where(m.OntologyModel.id == ontology_id).with_for_update()
             )
             future = pool.submit(capture)

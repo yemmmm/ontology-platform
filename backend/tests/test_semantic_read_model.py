@@ -1034,6 +1034,136 @@ def test_r3003_access_view_hides_rows_by_detail_field_and_embedded_json():
     assert [item["iri"] for item in items] == [f"{R3003_BASE}table-mapping/tm-1"]
 
 
+@pytest.mark.parametrize(
+    ("model_name", "row", "expected"),
+    [
+        (
+            "table-mapping-list",
+            {
+                "table_mapping": f"{R3003_BASE}table-mapping/tm-2",
+                "label": "mapped definition",
+                "mapped_class": f"{R3003_BASE}class/Legacy",
+                "mapped_definition": f"{R3003_BASE}definition/WorkOrder",
+                "mapping_definition": json.dumps({
+                    "source_key": "ops",
+                    "row_grain": "one work order row",
+                }),
+                "semantic_definition": json.dumps({
+                    "semantic_role": "data_mapping",
+                    "unknowns": ["business key"],
+                }),
+                "graph": R3003_ONTOLOGY_GRAPH,
+            },
+            {
+                "mapped_class": f"{R3003_BASE}class/Legacy",
+                "mapped_definition": f"{R3003_BASE}definition/WorkOrder",
+                "mapping_definition": {"source_key": "ops", "row_grain": "one work order row"},
+                "semantic_definition": {"semantic_role": "data_mapping", "unknowns": ["business key"]},
+            },
+        ),
+        (
+            "join-mapping-list",
+            {
+                "join_mapping": f"{R3003_BASE}join-mapping/jm-1",
+                "label": "work order details",
+                "mapping_definition": json.dumps({
+                    "step_semantics": [{"step_index": 0, "cardinality": "one_to_many"}],
+                }),
+                "semantic_definition": json.dumps({"semantic_role": "data_mapping"}),
+                "graph": R3003_ONTOLOGY_GRAPH,
+            },
+            {
+                "mapping_definition": {"step_semantics": [{"step_index": 0, "cardinality": "one_to_many"}]},
+                "semantic_definition": {"semantic_role": "data_mapping"},
+            },
+        ),
+        (
+            "enum-meaning-list",
+            {
+                "enum_meaning": f"{R3003_BASE}enum-meaning/status-open",
+                "label": "open status",
+                "table_mapping": f"{R3003_BASE}table-mapping/tm-2",
+                "column": "status_code",
+                "mapping_definition": json.dumps({"conversion_rule_iri": None}),
+                "semantic_definition": json.dumps({"semantic_role": "data_mapping"}),
+                "graph": R3003_ONTOLOGY_GRAPH,
+            },
+            {
+                "table_mapping": f"{R3003_BASE}table-mapping/tm-2",
+                "column": "status_code",
+                "mapping_definition": {"conversion_rule_iri": None},
+                "semantic_definition": {"semantic_role": "data_mapping"},
+            },
+        ),
+        (
+            "metric-list",
+            {
+                "metric": f"{R3003_BASE}metric/work-order-count",
+                "label": "work order count",
+                "mapping_definition": json.dumps({
+                    "contexts": [{
+                        "context_key": "orders",
+                        "base_mapping_iri": f"{R3003_BASE}table-mapping/tm-2",
+                        "base_role": "work_order",
+                    }],
+                }),
+                "semantic_definition": json.dumps({"semantic_role": "data_mapping"}),
+                "graph": R3003_ONTOLOGY_GRAPH,
+            },
+            {
+                "mapping_definition": {
+                    "contexts": [{
+                        "context_key": "orders",
+                        "base_mapping_iri": f"{R3003_BASE}table-mapping/tm-2",
+                        "base_role": "work_order",
+                    }]
+                },
+                "semantic_definition": {"semantic_role": "data_mapping"},
+            },
+        ),
+    ],
+)
+def test_r4010_mapping_read_models_decode_mapping_and_semantic_annotations(
+    model_name, row, expected
+):
+    resolver = FakeScopeResolver(_resolution([R3003_ONTOLOGY_GRAPH]))
+    store = FakeStore({model_name: [row]})
+    service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
+
+    item = service.read_model("gs-1", model_name)["items"][0]
+
+    for field, value in expected.items():
+        assert item["detail_fields"][field] == value
+
+
+def test_r4010_mapping_annotation_references_are_filtered_before_pagination():
+    from app.services.semantic_access import SemanticAccessView
+
+    hidden = f"{R3003_BASE}mapping/hidden-rule"
+    row = {
+        "table_mapping": f"{R3003_BASE}table-mapping/tm-hidden",
+        "label": "hidden nested reference",
+        "mapping_definition": json.dumps({
+            "source_key": "ops",
+            "field_meanings": [{"column": "status", "conversion_rule_iri": hidden}],
+        }),
+        "graph": R3003_ONTOLOGY_GRAPH,
+    }
+    service = SemanticReadModelService(
+        rdf_store=FakeStore({"table-mapping-list": [row]}),
+        scope_resolver=FakeScopeResolver(_resolution([R3003_ONTOLOGY_GRAPH])),
+        access_view=SemanticAccessView(
+            requires_filtering=True,
+            _unauthorized_iris=frozenset({hidden}),
+        ),
+    )
+
+    envelope = service.read_model("gs-1", "table-mapping-list")
+
+    assert envelope["items"] == []
+    assert envelope["paging"]["visible_count"] == 0
+
+
 # ------------------------------------------------------------------
 # R3.0-003 D1 regression: templates must read the compiler's vocabulary
 # namespace against a real SPARQL engine (Oxigraph). Gated like the

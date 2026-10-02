@@ -783,9 +783,10 @@ def create_graph_set(
     request: SemanticGraphSetCreate,
     principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticGraphSetRead:
-    service = _graph_set_service(session, settings)
+    service = SemanticGraphSetService(session, settings, rdf_store)
     try:
         graph_set = service.create_graph_set(
             name=request.name,
@@ -797,7 +798,7 @@ def create_graph_set(
             supersedes=request.supersedes,
         )
     except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=getattr(exc, "detail", str(exc))) from exc
     return SemanticGraphSetRead(**service.describe(graph_set.id))
 
 
@@ -820,16 +821,17 @@ def update_graph_set_members(
     graph_set_id: str,
     request: SemanticGraphSetMembershipUpdate,
     session: Session = Depends(get_db_session),
+    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticGraphSetRead:
-    service = _graph_set_service(session, settings)
+    service = SemanticGraphSetService(session, settings, rdf_store)
     try:
         graph_set = service.update_membership(
             graph_set_id,
             [member.model_dump() for member in request.members],
         )
     except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
+        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=getattr(exc, "detail", str(exc))) from exc
     return SemanticGraphSetRead(**service.describe(graph_set.id))
 
 
@@ -1603,7 +1605,20 @@ def read_resource(
         session, principal, project_id_for_graph_set(session, graph_set_id)
     )
     service = _read_model_service(session, rdf_store, settings, access_view=access_view)
-    for model_name in ("entity-detail", "class-detail", "property-list", "relation-type-list"):
+    # Mapping/metric resources use the same exact-IRI read contract as the
+    # original generic resources.  Keep these specialized templates behind
+    # the resource endpoint so REST callers do not need to know which
+    # projection family owns a resource before requesting it.
+    for model_name in (
+        "table-mapping-detail",
+        "join-mapping-detail",
+        "enum-meaning-detail",
+        "metric-detail",
+        "entity-detail",
+        "class-detail",
+        "property-list",
+        "relation-type-list",
+    ):
         envelope = service.read_model(
             graph_set_id=graph_set_id,
             model_name=model_name,

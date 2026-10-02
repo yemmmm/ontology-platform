@@ -6152,6 +6152,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if agent.schema_version == 2:
                 expected["protocol_mechanics"] = {
                     "build_candidate_receipt",
+                    "build_unified_resource_binding_receipt",
                     "translate_candidate_to_batches",
                 }
                 if self._coordination_enabled:

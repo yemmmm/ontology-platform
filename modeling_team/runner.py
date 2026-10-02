@@ -1671,6 +1671,7 @@ class TeamRunner:
                     "runtime_context_path": "/opt/mechanics-contract.json",
                     "tools": [
                         "build_candidate_receipt",
+                        "build_unified_resource_binding_receipt",
                         "translate_candidate_to_batches",
                     ],
                 },
@@ -5547,9 +5548,11 @@ class TeamRunner:
                 "candidate_digest": identity["candidate_digest"],
             },
         )
-        self._apply_multi_slice_ontology_plan(decision)
+        self._apply_multi_slice_ontology_plan(decision, scenario_map)
 
-    def _apply_multi_slice_ontology_plan(self, decision: dict[str, Any]) -> None:
+    def _apply_multi_slice_ontology_plan(
+        self, decision: dict[str, Any], scenario_map: dict[str, Any] | None = None
+    ) -> None:
         """R3.0-006 M3: apply an accepted multi-Ontology plan after gate open.
 
         The first plan entry is the scope-precreated Ontology; the Runner
@@ -5593,6 +5596,48 @@ class TeamRunner:
                 "ontology_ids": list(ontology_ids),
             },
         )
+        mapping_scope = getattr(scope, "apply_mapping_reference_graph_sets", None)
+        mapping_dependencies = (
+            scenario_map.get("cross_slice_dependencies")
+            if isinstance(scenario_map, dict)
+            else None
+        )
+        if (
+            callable(mapping_scope)
+            and isinstance(mapping_dependencies, list)
+            and mapping_dependencies
+            and getattr(scope, "mapping_reference_direction", None)
+        ):
+            mapping_direction = getattr(scope, "mapping_reference_direction", None)
+            try:
+                graph_set_ids = mapping_scope(
+                    scenario_map,
+                    plan,
+                    dependent_direction=mapping_direction,
+                )
+            except Exception as exc:
+                self._append_evidence(
+                    "multi-slice-gate",
+                    {
+                        "event": "mapping-reference-graph-sets-apply-failed",
+                        "classification": "runtime/infrastructure",
+                        "detail": str(exc),
+                    },
+                )
+                # Do not deliver a multi-Ontology Protocol scope until its
+                # selected mapping reference Graph Sets are active. The gate
+                # remains open for the existing retry/resume path, while the
+                # failed bridge stays visible as infrastructure evidence.
+                return
+            self._append_evidence(
+                "multi-slice-gate",
+                {
+                    "event": "mapping-reference-graph-sets-applied",
+                    "ontology_ids": list(ontology_ids),
+                    "graph_set_ids": dict(graph_set_ids),
+                    "dependent_direction": mapping_direction,
+                },
+            )
         try:
             self.run.protocol_context = scope.read_protocol_context()
         except Exception as exc:

@@ -79,6 +79,7 @@ class ProofV2RuntimeAssetTests(unittest.TestCase):
                             {item["name"] for item in tools},
                             {
                                 "build_candidate_receipt",
+                                "build_unified_resource_binding_receipt",
                                 "translate_candidate_to_batches",
                             },
                         )

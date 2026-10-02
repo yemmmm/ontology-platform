@@ -127,6 +127,9 @@ class _SnapshotUpdateStore:
         self.updated = True
         return UpdateResult()
 
+    def graph_exists(self, graph_iri: str) -> bool:
+        return graph_iri == self.graph_iri
+
     def get_graph(self, graph_iri: str, _format: str) -> str:
         assert graph_iri == self.graph_iri
         predicate = "new" if self.updated else "old"

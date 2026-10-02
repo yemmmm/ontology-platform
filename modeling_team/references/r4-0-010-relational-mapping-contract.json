@@ -1,0 +1,49 @@
+{
+  "schema_version": "r4-0-010-relational-mapping-contract/v1",
+  "purpose": "Active Team contract for source-neutral relational mapping candidates and Protocol read/write handoff.",
+  "requirement_id": "R4.0-010",
+  "neutral_candidate": {
+    "schema_version": "platform-neutral-candidate-authoring/v2",
+    "candidate_kind": "platform-neutral-candidate-v3",
+    "item_kinds": ["table_mapping", "join_mapping", "enum_meaning", "metric_definition"],
+    "item_fields": ["item_id", "item_kind", "semantic"],
+    "forbidden_fields": ["ontology_id", "graph_set_id", "batch_id", "command_kind", "resource_iri", "receipt_ref", "evidence"],
+    "identity": "item_id plus table_mapping_id, join_mapping_id, enum_meaning_id or metric_id; schema version and labels do not create identities"
+  },
+  "unified_candidate": {
+    "schema_version": "r3-0-009-unified-graph/v2",
+    "item_kinds": ["table_mapping", "join_mapping", "enum_meaning", "metric_definition"],
+    "optional_item_fields": ["semantic_definition"],
+    "identity": "Candidate item identity and full item digest remain neutral; approval projection carries the complete translated payload."
+  },
+  "semantic_definition": {
+    "semantic_role": "data_mapping",
+    "fields": ["business_meaning", "applicability", "unknowns", "not_applicable", "conflicting_meanings"],
+    "rule": "Unknown, not applicable and conflicting meanings remain explicit; schema names and sample values do not establish business meaning."
+  },
+  "mapping_definition": {
+    "table_mapping": ["source_key", "schema_version", "row_grain", "record_key_columns", "object_key_columns", "identifiers", "field_meanings", "row_scope"],
+    "join_mapping": ["step_semantics", "relationship_meaning", "duplicate_risk", "execution_prerequisite"],
+    "enum_meaning": ["conversion_rule_iri"],
+    "metric_definition": ["contexts"]
+  },
+  "references": {
+    "current_candidate": "Recursively use {definition_ref: item_id}; unresolved or platform-shaped references are repairable Protocol conflicts.",
+    "existing_resource": "Use {existing_resource_ref: {semantic_id, resource_kind}} only with the active R4.0-010 governed resource binding receipt. The R2.3-003 existing_entity_ref contract is not a mapping binding.",
+    "database_boundary": "Schema and representative samples locate physical tables/columns. Business rows, DSNs, credentials, SQL execution and conversion scripts remain external."
+  },
+  "protocol_contract": {
+    "commands": {
+      "table_mapping": "create_table_mapping",
+      "join_mapping": "create_join_mapping",
+      "enum_meaning": "create_enum_meaning",
+      "metric_definition": "create_metric_definition"
+    },
+    "stage_order": ["definitions", "table_mapping", "join_mapping", "enum_meaning", "metric_definition", "relations"],
+    "host_configuration": "Protocol reads semantic_base_iri from the injected mechanical platform context and passes it to translate_candidate_to_batches; it is never authored in the neutral candidate.",
+    "active_binding_tool": "build_unified_resource_binding_receipt accepts an unmodified governed read envelope plus selected project_id, ontology_id and workspace_version scope, then binds actual resource_kind, semantic_id and resource_iri.",
+    "identity": "Receipt and read binding always carries resource_kind and resource_iri; mapping resources are never coerced to entity.",
+    "readback": "Use governed resource-kind reads and the existing resource-specific mapping/metric projections. Do not use asserted_data statements as a mapping completeness shortcut.",
+    "evidence": "No new Evidence or lineage artifact is required; existing Batch, Attempt, dry-run/apply, receipt and recovery records remain authoritative."
+  }
+}

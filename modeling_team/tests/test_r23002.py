@@ -160,12 +160,16 @@ class R23002Tests(unittest.TestCase):
         class Session:
             def __init__(self) -> None:
                 self.values = iter([
+                    "project",
                     SimpleNamespace(status="active", project_id="project"),
                     SimpleNamespace(project_id="project"),
                 ])
 
             def scalar(self, _statement):
                 return next(self.values)
+
+            def scalars(self, _statement):
+                return []
 
         def batch(mode: str, lease_token: str | None) -> ModelingBatchSubmit:
             return ModelingBatchSubmit(
@@ -779,6 +783,7 @@ class R23002Tests(unittest.TestCase):
                         "runtime_context_path": "/opt/mechanics-contract.json",
                         "tools": [
                             "build_candidate_receipt",
+                            "build_unified_resource_binding_receipt",
                             "translate_candidate_to_batches",
                         ],
                     },

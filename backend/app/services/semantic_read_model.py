@@ -588,7 +588,8 @@ class SemanticReadModelService:
             value = SemanticReadModelService._cell(row, variable)
             if value is not None:
                 if variable in {
-                    "semantic_definition", "action_definition", "parameter_definition", "rule_definition",
+                    "semantic_definition", "mapping_definition", "action_definition",
+                    "parameter_definition", "rule_definition",
                 }:
                     try:
                         value = json.loads(value)

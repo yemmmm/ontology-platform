@@ -103,7 +103,19 @@ INTENT_STATUSES = ("submitted", "receipted", "unknown")
 # R3.0-009 closed value sets: commonality decisions and their translation.
 DECISION_KINDS = ("approved", "rejected", "deferred")
 DECISION_TARGET_KINDS = ("commonality_node", "member_relation", "commonality_relation")
-UNIFIED_CANDIDATE_ITEM_KINDS = ("entity", "relation", "property", "shape")
+# R4.0-010 keeps the unified candidate neutral while admitting the four
+# existing relational resources.  The command/resource identity is bound by
+# Protocol later; these names are semantic candidate item kinds only.
+UNIFIED_CANDIDATE_ITEM_KINDS = (
+    "entity",
+    "relation",
+    "property",
+    "shape",
+    "table_mapping",
+    "join_mapping",
+    "enum_meaning",
+    "metric_definition",
+)
 
 # The legal cross-revision conclusion state transitions (design section 3.3).
 LEGAL_CONCLUSION_TRANSITIONS = frozenset(
@@ -459,6 +471,15 @@ DECISION_BINDING_FIELDS = frozenset(
 )
 IDENTITY_BINDING_FIELDS = frozenset(
     {"candidate_item_id", "resource_iri", "receipt_ref", "evidence_ref"}
+)
+# A mapping identity carries its concrete resource kind in addition to the
+# historical four-field identity binding.  Keep the legacy set unchanged so
+# frozen R3.0-009 projections remain byte-compatible.
+MAPPING_IDENTITY_BINDING_FIELDS = frozenset(
+    {*IDENTITY_BINDING_FIELDS, "resource_kind"}
+)
+MAPPING_RESOURCE_KINDS = frozenset(
+    {"table_mapping", "join_mapping", "enum_meaning", "metric", "metric_definition"}
 )
 # The 009 intent/receipt keep every 008B field and add the plan/projection
 # bindings; the receipt copies them from the saved intent (design §9.2).
@@ -1951,6 +1972,7 @@ def build_identity_binding(
     resource_iri: str | None = None,
     receipt_ref: str | None = None,
     evidence_ref: str | None = None,
+    resource_kind: str | None = None,
 ) -> dict[str, Any]:
     """Bind one candidate item to an existing resource or a future receipt.
 
@@ -1959,6 +1981,16 @@ def build_identity_binding(
     receipt) may be set; both is a contradiction, neither is unresolvable.
     """
 
+    if not _nonempty(candidate_item_id) or "://" in str(candidate_item_id):
+        raise StagedDecisionArtifactError(
+            "missing_candidate_reference",
+            "identity binding candidate_item_id is invalid",
+        )
+    if resource_kind is not None and resource_kind not in MAPPING_RESOURCE_KINDS:
+        raise StagedDecisionArtifactError(
+            "unified_schema_mismatch",
+            "mapping identity binding resource_kind is invalid",
+        )
     if bool(resource_iri) == bool(receipt_ref):
         raise StagedDecisionArtifactError(
             "missing_candidate_reference",
@@ -1971,12 +2003,18 @@ def build_identity_binding(
         )
     if resource_iri is None:
         evidence_ref = None
-    return {
+    result = {
         "candidate_item_id": candidate_item_id,
         "resource_iri": resource_iri,
         "receipt_ref": receipt_ref,
         "evidence_ref": evidence_ref,
     }
+    # Preserve the historical shape for ordinary entity/class/property
+    # bindings.  Mapping commands opt in to the resource-kind discriminator so
+    # receipt/readback code cannot collapse them into an entity identity.
+    if resource_kind is not None:
+        result["resource_kind"] = resource_kind
+    return result
 
 
 def build_approval_projection(
@@ -2078,6 +2116,54 @@ def validate_unified_stage3_slot(value: Any) -> tuple[StagedDecisionIssue, ...]:
     return tuple(issues)
 
 
+def _unified_definition_ref_issues(
+    value: Any, *, item_ids: set[str], location: str
+) -> list[StagedDecisionIssue]:
+    """Validate recursive neutral references in a unified candidate item.
+
+    Mapping annotations can contain references several levels deep (for
+    example a metric context's property binding or a join path step).  The
+    unified envelope remains platform-neutral, so every ``definition_ref``
+    must point at another item in this candidate and no platform IRI may be
+    substituted for it at this boundary.
+    """
+
+    issues: list[StagedDecisionIssue] = []
+    if isinstance(value, Mapping):
+        if "definition_ref" in value:
+            if set(value) != {"definition_ref"} or not _nonempty(value.get("definition_ref")):
+                issues.append(
+                    StagedDecisionIssue(
+                        "unified_schema_mismatch",
+                        f"{location}.definition_ref is invalid",
+                        location,
+                    )
+                )
+            elif value["definition_ref"] not in item_ids:
+                issues.append(
+                    StagedDecisionIssue(
+                        "missing_candidate_reference",
+                        f"{location}.definition_ref is not declared",
+                        location,
+                    )
+                )
+            return issues
+        for key, child in value.items():
+            issues.extend(
+                _unified_definition_ref_issues(
+                    child, item_ids=item_ids, location=f"{location}.{key}"
+                )
+            )
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            issues.extend(
+                _unified_definition_ref_issues(
+                    child, item_ids=item_ids, location=f"{location}[{index}]"
+                )
+            )
+    return issues
+
+
 def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
     """``r3-0-009-unified-graph/v2`` candidate items are neutral and closed."""
 
@@ -2109,6 +2195,7 @@ def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
         issues.append(StagedDecisionIssue("missing_candidate_reference", "candidate has no items", ""))
         items = []
     seen_items: set[str] = set()
+    valid_items: list[Mapping[str, Any]] = []
     for item in items:
         if not isinstance(item, Mapping) or (
             set(item) - UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS
@@ -2133,6 +2220,16 @@ def validate_unified_candidate(value: Any) -> tuple[StagedDecisionIssue, ...]:
             issues.append(
                 StagedDecisionIssue("unified_schema_mismatch", "candidate item_kind is invalid", "")
             )
+        else:
+            valid_items.append(item)
+    for item in valid_items:
+        issues.extend(
+            _unified_definition_ref_issues(
+                item,
+                item_ids=seen_items,
+                location=f"items[{item.get('item_id')}]",
+            )
+        )
     return tuple(issues)
 
 
@@ -2469,14 +2566,20 @@ def unified_identity_issue(
     identities: dict[str, Mapping[str, Any]] = {}
     for index, binding in enumerate(projection.get("identity_bindings") or []):
         location = f"identity_bindings[{index}]"
-        if (not isinstance(binding, Mapping) or set(binding) != {
-            "candidate_item_id", "resource_iri", "receipt_ref", "evidence_ref"
-        } or not _nonempty(binding.get("candidate_item_id"))):
+        if not isinstance(binding, Mapping):
             return StagedDecisionIssue("missing_candidate_reference", f"{location}: fields", "")
+        fields = set(binding)
+        if fields not in (set(IDENTITY_BINDING_FIELDS), set(MAPPING_IDENTITY_BINDING_FIELDS)):
+            return StagedDecisionIssue("missing_candidate_reference", f"{location}: fields", "")
+        if not _nonempty(binding.get("candidate_item_id")):
+            return StagedDecisionIssue("missing_candidate_reference", f"{location}: candidate item", "")
         item_id = binding["candidate_item_id"]
         if item_id not in published or item_id in identities:
             return StagedDecisionIssue("missing_candidate_reference", f"{location}: candidate item", "")
         iri, receipt = binding["resource_iri"], binding["receipt_ref"]
+        resource_kind = binding.get("resource_kind")
+        if resource_kind is not None and resource_kind not in MAPPING_RESOURCE_KINDS:
+            return StagedDecisionIssue("missing_candidate_reference", f"{location}: resource kind", "")
         if (bool(iri) == bool(receipt)
             or (iri and (not _nonempty(iri) or ":" not in iri or not _nonempty(binding["evidence_ref"])))
             or (receipt and (not _nonempty(receipt) or binding["evidence_ref"] is not None))):
@@ -2485,6 +2588,8 @@ def unified_identity_issue(
     targets = {
         "entity": "entity_iri", "class": "class_iri", "property": "property_iri",
         "shape": "shape_iri", "operation": "operation_iri",
+        "table_mapping": "table_mapping_iri", "join_mapping": "join_mapping_iri",
+        "enum_meaning": "enum_meaning_iri", "metric_definition": "metric_iri",
     }
     items = projection.get("items") or []
     for decision in projection.get("decision_bindings") or []:
@@ -2497,6 +2602,22 @@ def unified_identity_issue(
             identity = identities.get(item_id)
             if identity is None:
                 return StagedDecisionIssue("missing_candidate_reference", f"{item_id}: no identity binding", "")
+            if resource in {"table_mapping", "join_mapping", "enum_meaning", "metric_definition"}:
+                expected_kinds = {resource}
+                if resource == "metric_definition":
+                    expected_kinds.add("metric")
+                if identity.get("resource_kind") not in expected_kinds:
+                    return StagedDecisionIssue(
+                        "approval_content_mismatch",
+                        f"{item_id}: resource kind does not match {kind}",
+                        "",
+                    )
+            elif identity.get("resource_kind") is not None:
+                return StagedDecisionIssue(
+                    "approval_content_mismatch",
+                    f"{item_id}: mapping identity cannot bind {kind}",
+                    "",
+                )
             iri = identity.get("resource_iri")
             if iri and prefix == "create":
                 return StagedDecisionIssue(
@@ -3003,6 +3124,8 @@ __all__ = [
     "DECISION_TARGET_KINDS",
     "ENUM_COMMAND_KINDS",
     "IDENTITY_BINDING_FIELDS",
+    "MAPPING_IDENTITY_BINDING_FIELDS",
+    "MAPPING_RESOURCE_KINDS",
     "INTENT_FIELDS",
     "INTENT_STATUSES",
     "JOINT_ACCEPTANCE_CHECKLIST_SCHEMA",
