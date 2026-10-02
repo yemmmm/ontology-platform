@@ -3,9 +3,11 @@
 ## 1. 状态与基线
 
 - 权威范围：[R4.0-009](../../requirements/requirements-v4.0.md#r40-009-多视角真实建模与独立语义验收)。
-  完整 D1—D8 决策及来源以该条目为主；D1 场景、D2 分段安排待用户决定，本设计对应推荐方案。
-- 代码核对基线：`6bd653c`，2026-10-02；开始时工作区干净。本轮仅授权细化与设计，未修改
-  运行合同／代码／业务资料，未启动建模或独立 Agent，未运行产品测试、SQL、API 或脚本。
+  完整 D1—D9 决策及来源以该条目为主；用户已确认 D1 沿用工业设备售后场景、D2 分段验收。
+- 代码核对基线：`6bd653c`；初始设计提交 `ef5c6ce`，2026-10-02。用户后续确认 D1／D2，
+  并授权独立方案审阅及修订至 PASS；Round 1 的两项 High 已修订，同一 Agent Round 2
+  复审 PASS（0 Critical／0 High），记录见第 8 节。未修改运行合同／代码／业务资料，
+  未启动建模，未运行产品测试、SQL、API 或脚本。
 - 继承 [R3.0-011／012](../../requirements/requirements-v3.0.md#r30-011-能力问题驱动建模与批次级语义验收)
   的 CQ 隔离与独立批次验收；追溯义务由 R4.0-012 替代。旧任务、冻结题池和历史报告保持原义。
 - 当前 002—008、012 已有功能实现记录，007／008 的独立功能验收仍未执行，所有相关真实语义
@@ -19,7 +21,7 @@
 
 ### 2.1 场景选择与来源
 
-D1 推荐沿用[工业设备售后服务输入](../../evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md)。
+按已确认 D1，沿用[工业设备售后服务输入](../../evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md)。
 它已具有业务术语、关系型 Schema、样例数据和当前 R4 Task，适合把工单处理与资产、合同、
 人员、备件关联。相比重新建场景可减少准备；相比 checkpoint-minimal，两概念小场景不足以
 支撑流程、规则、角色及映射的验收目标。现有资料是实验 fixture，不声称客户生产材料。
@@ -47,11 +49,10 @@ D1 推荐沿用[工业设备售后服务输入](../../evaluation-scenarios/indus
 生产只挂载获准输入与已批准访谈；`verification/`、冻结答案、验收讨论及既往模型不进入
 生产角色。若新增输入与旧 tester-only 预期冲突，保留版本并复核预期，不要求新模型迁就旧答案。
 
-### 2.2 分段建议与可复用证据
+### 2.2 已确认分段与可复用证据
 
-D2 推荐第一段验证核心多视角，第二段在 010／011 交付后验证映射。不是先做一轮 mock，
-也不要求两次 fresh start；每一段都应产生其声明范围的真实语义证据。用户若选择一次整体验收，
-合并执行时机即可，覆盖、隔离和证据分层不变。
+按已确认 D2，第一段验证核心多视角，第二段在 010／011 交付后验证映射。每一段都应产生
+其声明范围的真实语义证据；分段不要求两次 fresh start，也不自动增加运行额度。
 
 第一段按 002—008／012 建模，显式披露映射未交付或未验证；已有 mapping／Operation 可以
 受治理读取，但不能由此宣布 010／011 完成。第二段补充映射后检查共享对象、Action 参数及
@@ -69,16 +70,17 @@ D2 推荐第一段验证核心多视角，第二段在 010／011 交付后验证
 | [R4 活跃 Task](../../../modeling_team/tasks/r4-0-012-tracing-suspension.yaml) | `multi_slice_workflow`、staged、unified graph、CQ、`cq_semantic`、checkpoint；加载 007／012 合同 | 以它为当前基线，后续增加一个明确标识 009 的 Task／输入差异，复用角色和运行链；不回退旧 R3 Task 或重建 Runner |
 | [CQ profile](../../../modeling_team/profiles/r3-0-011-competency-question.yaml) | Coordinator、Modeling、Protocol、CQ；CQ 经宿主私有通道 | 复用；模型提供者／effort 随用户真实运行授权决定，不在本设计指定或追加角色 |
 | [007 场景地图](../../../modeling_team/references/r4-0-007-scenario-map-contract.json) | 七视角分析状态、稳定语义键、共享维护、引用重审 | 复用原 Schema，不塞验收分数、隐藏题或新覆盖字段 |
-| [CQ 合同实现](../../../modeling_team/competency_questions.py)及[合同 reference](../../../modeling_team/references/r3-0-011-competency-question-contract.json) | 审核、公开投影、冻结、四态汇总、曝光记录 | 保持题池 Schema；仅修 D8 的失败组合不一致并验证所有实际加载提示 |
+| [CQ 合同实现](../../../modeling_team/competency_questions.py)及[合同 reference](../../../modeling_team/references/r3-0-011-competency-question-contract.json) | 审核、公开投影、冻结、四态汇总、曝光记录 | 保持题池 Schema；修 D8 失败组合与 D9 活动目录边界，并核对实际加载提示 |
 | [host_ops](../../../modeling_team/host_ops.py) | `submit_cq_review`、`freeze_cq`、`complete_cq_handoff`、`complete_cq_acceptance`、状态／事件 | 沿用内容绑定的宿主动作，不以直接改文件替代审批，不新增管理接口 |
 | [Runner](../../../modeling_team/runner.py) | CQ 生产交接、写入排空、attempt 唯一报告位置 | 沿用，不把 joint terminal 清单变成 CQ 取证前置，不为分段新增枚举 |
-| [cq-acceptance CLI](../../../modeling_team/__main__.py) | 加载 freeze／handoff；读取环境中的获准 read Key；前后实际状态读取、执行批次及裁决 | 每次记录实际 scope／身份／attempt；`--unexecuted-report` 只生成未执行报告，不能当真实验收 |
-| [acceptance runtime](../../../modeling_team/acceptance_runtime.py)与[批次 Examiner](../../../modeling_team/agent-packages/v3-acceptance-batch/platform-examiner.md) | 只读代理、可信响应留存、同会话逐题作答、008 查询参数与分页 | 复用已支持的 `semantic_roles`、depth、full／compact，不新建通用 Consumer 或私有检索旁路 |
+| [cq-acceptance CLI](../../../modeling_team/__main__.py) | 加载 freeze／handoff；读取环境中的获准 read Key；前后实际状态读取、执行批次及裁决 | 按 §6.3 区分 child 语义目录和宿主状态目录，记录 scope／身份／attempt；`--unexecuted-report` 不算真实验收 |
+| [acceptance runtime](../../../modeling_team/acceptance_runtime.py)与[批次 Examiner](../../../modeling_team/agent-packages/v3-acceptance-batch/platform-examiner.md) | 只读代理、可信响应留存、同会话逐题作答、008 查询参数与分页 | 复用 `semantic_roles`、depth、full／compact；按 §6.3 收窄实际 packet／proxy 工具及逐题响应来源 |
 | [批次 Judge](../../../modeling_team/agent-packages/v3-acceptance-batch/acceptance-judge.md) | 冻结答案／业务依据＋Examiner／实际响应；无平台调用 | 与校验器统一 D8；Judge 不建模、不回读活跃平台、不修被验收 run |
 | [Context Query](../../../backend/app/services/semantic_context_query.py) | 明确关系展开、角色筛选、注解、游标与受治理补读 | 009 以真实问题验证，无当前理由新增生产代码；发现缺陷再归属 008 等最窄层 |
 
 后续最小工作是补充并确认业务资料、选择运行输入、生成及审核真实 CQ、开展既有运行和验收，
-并修复已定位的失败分类合同接缝。当前没有依据新增 DB／API 连接框架、证据仓库或仪表板。
+并修复失败分类、已停用工具依赖与生产上下文旁路。当前没有依据新增 DB／API 连接框架、
+证据仓库或仪表板；后两项是独立审阅确认的现有路径缺口，不能仅靠提示禁用。
 
 ## 4. 角色边界与执行数据流
 
@@ -245,7 +247,65 @@ modeling-quality；pass 不允许失败层；错误组合返回可定位反馈�
 题继续，任何未完成题不产生整批 PASS。是否还需调整汇总分组以实际调用点检查为准，禁止
 另造一次性语义裁判。这项是实施期必要的小修，不是本轮已经完成的修复。
 
-### 6.3 结论汇总与恢复
+### 6.3 D9：活动 CQ 工具目录与取证来源
+
+独立审阅 H009-01／02 确认当前路径不能原样复用：
+`_cq_consume_production_handoff` 把完整 `PLATFORM_PROXY_READ_TOOLS` 写入 binding，
+`_cq_execute_batch` 同时据此创建 forwarder 和 child packet。完整目录仍包含四个已被
+[当前 MCP 注册](../../../backend/app/mcp/tools/__init__.py)撤下的追溯工具，forwarder
+要求目录成员全部存在，会在 Examiner 启动前失败；该目录还将 Project Brief、会话和生产
+摘要开放给 child，造成业务依据未经语义物化却可进入答案的旁路。以上为静态必经调用链证据，
+不是实际运行复现。
+
+最小修正是在现有 CQ 入口维护一个明确的语义读取集合，以及一个仅供宿主使用的状态集合；
+它们是该路径的静态工具选择，不新增权限框架、Task 开关或平台路由：
+
+| 使用者 | 本次允许工具 | 输入／输出边界 |
+| --- | --- | --- |
+| Examiner child | `query_semantic_context`、`get_semantic_read_model`、`get_entity_statement_context`、`get_ontology_read_model`、`semantic_sparql_query` | 仍受同一普通 read Key、Project／Ontology／graph scope、现有字段与只读查询校验约束；只消费实际语义资源 |
+| Host 状态观察 | `get_ontology_workspace_context` | `_cq_observe_model_binding` 前后读取仍保留；只将已有模型／图状态摘要和 scope 绑定送入 packet，不送原始上下文或生产摘要 |
+| 实际 MCP forwarder | 上述两集合的并集 | 检查并集工具在当前 MCP 注册中存在；宿主可调用状态工具，child 经过独立的既有 `ScopedReadProxy.allowed_tools` 限制 |
+
+`get_project_build_context`、`get_build_session`、`get_modeling_context`、任何生产／恢复
+上下文、四个追溯专用工具都不进入 child 目录，也不作为 Judge 的逐题平台语义依据。
+其他未列工具不因属于“只读”就自动开放。历史完整目录可为历史合同解码保留，不作为当前
+CQ 默认能力；不改历史冻结题、回执或报告，也不恢复停用接口。
+
+具体交接和拒绝位置：
+
+1. `_cq_consume_production_handoff` 构建当前 binding 时使用语义集合；CLI 在执行入口
+   对实际获准目录做同样核对，覆盖普通 handoff 与 checkpoint 的仅验收接续路径。旧输入
+   若声明已不支持的工具，给出可定位的合同反馈，由宿主生成新的有效交接／attempt，不
+   原地修改旧产物或静默声称其工具范围未变。非本需求旧 R2.3 的回放格式不据此重写。
+2. `_cq_execute_batch` 给 forwarder 的 `expected_tools` 使用语义集合与宿主状态集合的
+   并集；给 binding／`build_platform_batch_packet`、child 工具 Schema 和
+   `ScopedReadProxy.allowed_tools` 的只有同一语义集合。当前 packet 不能通过历史全目录
+   的宽泛成员检查重新接受生产工具；复用现有集合／scope 校验落实该边界。
+3. child 即使构造正确参数调用宿主工具或 Brief／Session 工具，也由现有代理在转发前拒绝，
+   不产生成功读取回执；错误仍允许修正后继续题目。宿主前后状态检查不得经 child 代做，
+   原始状态响应不进入 `platform_read_responses`。
+4. `_cq_collect_platform_read_responses` 及 Judge packet 的响应核验以本批获准语义工具
+   集合为准；来自生产上下文、宿主状态或停用工具的响应，即使有正确 digest／真实 receipt，
+   也不得作为 CQ 业务答案依据。拒绝项按实际第一失败层记录，无有效依据的题不能 PASS。
+   既有协同状态投影可供 Judge 理解 unknown／conflict，但不成为业务答案证据。
+5. `McpReadForwarder` 仍检查此次实际需要的工具全部已注册；不通过捕获并忽略 missing-tools
+   或恢复 Evidence 注册绕过 H009-01。当前 schema 参数和 008 的分页／角色能力保持原合同。
+
+最小实施触点为 `modeling_team/__main__.py` 的目录选择／交接／响应组装、
+`acceptance_runtime.py` 的 CQ 集合与 packet／响应检查；
+[Codex runtime](../../../modeling_team/runtimes/codex.py) 继续承接 packet 所选目录，只有确有
+默认回退或传递缺口时局部调整。后端服务内容没有当前修改理由，不删除通用 Build Session
+读取，也不新增脱敏服务或第二套只读代理。
+
+实施验证必须针对当前真实 MCP 注册目录，而非为测试虚构一个“包含所有旧工具”的服务：
+检查 CLI→binding→packet→child proxy→forwarder 的实际工具集合一致性；并集中的每项都
+可注册，缺少必要语义／状态工具仍报错，缺少已停用四工具不阻断启动。验证 host 前后状态
+观察成功且仍能发现漂移，child 伪造调用 Brief／Session／workspace／追溯工具均在转发前
+被拒绝。以“答案仅存在于 Project Brief／生产摘要、语义图未物化”的合同反例验证其不会
+进入 Examiner 或 Judge 平台依据、不会产生语义 PASS；它属于功能隔离证明，不能替代 L1。
+同时覆盖正常语义读取和 checkpoint 仅验收接续，保留既有回执、分页及四态恢复测试。
+
+### 6.4 结论汇总与恢复
 
 L0 只证明实际启动、写入／回读和独立只读链能够完成，L1 还需源忠实、语义正确、获批覆盖
 及真实受治理检索。独立 Judge 的 batch PASS 只能代表绑定的题池和模型状态；宿主必须检查
@@ -260,11 +320,12 @@ attempt，旧报告不覆盖。模型生产修改需退出只读阶段、由获�
 
 后续实施按最小差异推进：
 
-1. 按 D1／D2 最终选择准备并确认缺失业务资料，定稿 009 Task 输入和宿主覆盖记录；复用
+1. 按已确认 D1／D2 准备并确认缺失业务资料，定稿 009 Task 输入和宿主覆盖记录；复用
    007／012、现有 profile、CQ／审批和只读验收链，不加载旧 Evidence 要求。
-2. 对 D8 做局部提示／合同修正及相关 CQ 校验／批次恢复测试；变更活跃提示／技能时运行
-   适用合同校验。若涉及 backend 代码，按仓库规则补测试、跑后端全量并重启验证；纯资料和
-   Task／提示修改不据此启动产品全套测试或服务重启。
+2. 对 D8 失败分类和 D9 活动工具目录做局部修正，执行 CQ 校验、真实注册目录一致性、
+   child 隔离、宿主状态观察及批次恢复的相关测试；变更活跃提示／技能时运行适用合同校验。
+   若涉及 backend 代码，按仓库规则补测试、跑后端全量并重启验证；纯资料和 Task／提示
+   修改不据此启动产品全套测试或服务重启。
 3. 未来明确获得真实建模授权后执行最小安全检查、开始实际运行，记录 run ID、额度及时间，
    按既有业务回答、CQ 审核和内容批准流程推进。每次授权默认三次 fresh starts，用户指定
    数量优先；分段、读取 attempt 和模型版本都不能成为自动追加 start 的理由。
@@ -272,8 +333,27 @@ attempt，旧报告不覆盖。模型生产修改需退出只读阶段、由获�
    回填全部必验范围。具体语言模型、日期、运行 ID、实际题干和答案由届时授权／审核绑定，
    不是本设计遗漏的产品决策，也不能由当前文档预先批准。
 
-本轮文档自查已通过（2026-10-02）：两份文档的 93 个本地链接／锚点、Markdown 围栏，
-F1—F9、D1—D8、A1—A12 连续唯一编号，以及其余 11 个需求条目正文与基线一致性检查；
+本轮文档自查已通过（2026-10-02）：两份文档的 96 个本地链接／锚点、Markdown 围栏，
+F1—F9、D1—D9、A1—A12 连续唯一编号，以及其余 11 个需求条目正文与基线一致性检查；
 人工核对 Mermaid 节点／数据流、需求—决策—设计—验收对应，`git diff --check` 通过。
-D1／D2 在状态、正文和决策表中均保留待定。检查只证明文档一致性，不是独立设计审阅、
-功能验证、真实建模或语义验收。只修改权威需求的 009 及状态／索引和本设计。
+本轮已将 D1／D2 确认同步到状态、正文、决策表与验收安排；独立方案复审结论见下节。
+文档检查不代表功能验证、真实建模或语义验收。只修改权威需求的 009 及状态／索引和本设计。
+
+
+## 8. 独立方案审阅记录
+
+本节仅记录需求／设计可实施性的独立只读审阅；不代表代码已修复、功能验证或 L0／L1 通过。
+用户于 2026-10-02 确认 D1／D2 并授权独立审阅及修订至 PASS，使用同一独立 `plan_reviewer`。
+
+| 轮次 | 基线与结论 | 严重问题与处置 |
+| --- | --- | --- |
+| Round 1（2026-10-02） | `ef5c6ce` 加 D1／D2 确认；REVISE，0 Critical／2 High | H009-01：CQ 全工具目录依赖四个已停用 Evidence／lineage 工具，forwarder 启动必经注册检查会失败。H009-02：同目录把 Project Brief／生产会话上下文开放给 Examiner，可绕过语义模型取得答案。主 Agent 已补 F3、D9、A11、§3／§6.3／实施与验证边界，限定语义工具目录、保留 host 状态观察并核对 Judge 逐题响应来源；由 Round 2 复核 |
+| Round 2（2026-10-02） | `ef5c6ce` 加 D1／D2 确认及 H009-01／02 修订；PASS，0 Critical／0 High | H009-01、H009-02 均为 FIXED（方案层）。同一 Agent 确认 forwarder 并集与 child 语义子集、宿主状态检查、转发前拒绝和 Judge 响应来源约束已闭合，普通入口及 checkpoint 仅验收接续均有验证安排；F3／D9／A11 与实施顺序同步，无新增严重问题或待确认关键假设 |
+
+Round 1 核对 AGENTS.md、009 全部条款、相邻边界、活动 Task／Profile／references、CQ 冻结和
+交接、CLI／child 代理、失败校验／汇总、权限策略及 MCP 注册；D1／D2、D8 方向及脚本／映射
+证据边界没有其他 Critical／High。审阅者未修改文件、执行测试、启动服务／建模或提交。
+
+Round 2 复用 Round 1 未变化的核对结果，定向复核修订文档及相关 CLI、代理、状态观察和
+响应校验调用点。审阅全程只读；通过后主 Agent 仅同步状态与记录，未改变已复审的行为设计。
+方案 PASS 允许交接实施，不代表代码已修复、功能验证或 L0／L1 已通过。
