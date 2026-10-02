@@ -554,7 +554,7 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         {key: value for key, value in reference.items()
          if key not in {"multiview_semantic_definition", "process_binding_semantics",
                         "process_binding_example_candidate", "business_rule_semantics",
-                        "relational_mapping"}}, ensure_ascii=False
+                        "relational_mapping", "interface_mapping"}}, ensure_ascii=False
         ).lower()
         fixture_text = (root / STRUCTURAL_FIXTURE).read_text(encoding="utf-8").lower()
         for forbidden in (

@@ -284,3 +284,14 @@ Save/continue retains responsibility, coverage and pending/deferred reviews. For
 keys but requires the new Project identity mapping and fresh plans/dry-run; old platform bindings
 are historical. Hand off honest unknown/conflict and coverage boundaries for independent acceptance;
 production_handoff proves readiness only. These records are work content, not Evidence/lineage.
+
+### R4.0-011 interface reference review
+
+Use the mounted `r4-0-011-api-mapping-contract.json` and `interface_mapping` conventions
+for the scenario-map interface view. Approve complete candidates and translated projections,
+including field ownership/direction, shared parameter/object identity, call context, scoped code
+and exact Operation/bindingId. Different interface/document versions do not imply changed Action
+identity. Review requiredness, codes, results, identifiers and binding deletion against affected
+parameters, processes, database mappings and questions; missing local JSON keys are semantic gaps,
+not automatically enforced RDF references. Preserve unknown/conflict, distinguish acceptance from
+completion and paging from complete results. Fixture checks do not replace independent A10.

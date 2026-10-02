@@ -119,3 +119,29 @@ owns the final semantic verdict. A role completion or mechanical check is not th
 
 Do not invoke historical artifacts listed in
 [deprecated-artifacts.md](references/deprecated-artifacts.md).
+
+## Map external API descriptions
+
+For R4.0-011 read the mounted `r4-0-011-api-mapping-contract.json` and its complete
+`neutral_example`; the `interface_mapping` section of both authoring/role contracts applies
+also to unified candidates. Use ordinary definitions and explicit edges, not a new platform kind.
+A query interface can have no Class, Action or Operation. Keep system/interface/document versions,
+request/response variants and stable field identities separate; use parent/member/element edges
+for nested structures. Distinguish no body, unknown structure, missing, null and empty collection.
+
+Bind fields to the specific business parameter/object position and call context. Do not equate
+API IDs, business numbers or database keys; describe composite members and conversion direction.
+Codes belong to a field and scope and may share business reference values with database mappings.
+Preserve unknowns/conflicts, units, time zones and default/null meanings; do not execute conversions.
+
+If using an Operation, reference the exact `(Operation, bindingId)` and read that binding's
+location; never default to the first binding or keep a second authoritative location. Without
+one, retain independent nonsecret location and scoped unknowns. Distinguish alternatives,
+combination steps and partial capability; 004 owns ordering. A page is not all results, protocol
+success is not business success, and async acceptance/task identity is not object completion.
+
+Review affected references on field/code/result/binding changes; use distinct identities for
+concurrent incompatible versions. Keep credentials, actual messages/runtime IDs and business rows
+out of the model. Use governed entity/role/edge reads and controlled Operation projections;
+incomplete retrieval does not prove absence. Static samples and fixture PASS do not establish
+A10 real semantic acceptance, online availability or execution success.

@@ -453,3 +453,14 @@ review. Stable IRI/script_version/workspace version/dry-run is not compatibility
 Do not promise same-identity version pinning or cross-Batch atomicity. New candidate revisions
 need renewed approvals/review; independent confirmed content continues. No source excerpts,
 per-resource Evidence or lineage tasks are introduced. Final semantic acceptance is independent.
+
+### R4.0-011 interface mapping
+
+When mounted, read `r4-0-011-api-mapping-contract.json` and its complete `neutral_example`,
+and the `interface_mapping` authoring/role section. Apply its ordinary graph method in both
+active candidate formats. Query interfaces need no Class/Action/Operation. Preserve distinct
+message/field identities, same-type parameter positions and repeated-call contexts, composite
+IDs and field-scoped codes. Never infer ID equality, invert a conversion or treat 202 acceptance,
+a task ID or one page as business completion/all results. Reference exact Operation plus bindingId
+without duplicating its location. Review binding/field/version changes with Coordinator; missing
+bindings remain gaps. Do not store real credentials/messages/rows or create Evidence obligations.

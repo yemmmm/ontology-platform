@@ -736,3 +736,18 @@ Retain failed batches/receipts and use existing unknown-write reconciliation bef
 Fork requires its new scope/identity mapping, fresh plan review and dry-run; never send old
 Project IRI/workspace bindings as new-project writes. Host key ownership is the operator user,
 not a shared definition owner or newly assigned semantic role. Handoff remains readiness only.
+
+### R4.0-011 ordinary interface mapping
+
+Read the mounted `r4-0-011-api-mapping-contract.json` (`neutral_example`) and
+`interface_mapping` section. Translate declared entity/predicate/relation items with the existing
+neutral tool; in unified mode carry complete values, annotations and edges into the existing
+approved materialization plan. Do not invent API commands, business parameters or mapping meaning.
+No Class/Action/Operation is required for an independent query interface. Operation references
+select the exact bindingId through an ordinary binding node; preserve the controlled projection.
+For existing Operation/TableMapping use the existing receipt-backed `existing_resource_ref`
+mechanism with `requirement_id=R4.0-010`; that is the mechanical tool's compatibility tag, not an
+API semantic assertion. Bind the actual kind and current host namespace, never guess an IRI.
+Return repairable translation conflicts. Missing binding IDs require semantic reference review,
+not automatic substitution. Governed facts/edges and bounded Context Query can require multiple
+reads; truncation/filtering does not prove absence. Do not invoke business APIs or add Evidence.

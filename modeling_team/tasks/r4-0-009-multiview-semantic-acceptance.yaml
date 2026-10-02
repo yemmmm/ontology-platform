@@ -54,6 +54,9 @@ role_sources:
   - path: modeling_team/references/r4-0-012-modeling-contract.json
     classification: coordination
     roles: [modeling]
+  - path: modeling_team/references/r4-0-011-api-mapping-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/r4-0-010-relational-mapping-contract.json
     classification: coordination
     roles: [modeling, protocol]
