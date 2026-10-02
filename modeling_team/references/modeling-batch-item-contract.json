@@ -1,6 +1,12 @@
 {
   "schema": "modeling-batch-item-contract-v3",
   "purpose": "Protocol-only, platform-generic construction contract for immutable Modeling Batches. This reference contains no domain model, scenario target, or acceptance answer.",
+  "create_identity_rules": [
+    "For create commands, a nonempty explicit resource-specific ID field (such as class_id, property_id, relation_type_id, shape_id or entity_id) is accepted and preserved in resource_outputs.resource_id. If omitted or empty, the platform generates the deterministic UUID5 output from batch_id, ontology_id, client_item_id and command_kind.",
+    "prepare normalizes the resource-specific payload ID to that selected output; it does not replace a supplied nonempty ID with a different deterministic ID. resource_id is a receipt output key, not a generic create payload field; use only the ID field allowed by that command's payload contract.",
+    "A candidate_item_id is a neutral semantic identity. Protocol preserves candidate correspondence through the approved decision_bindings and identity_bindings; it need not equal the platform resource ID or every create payload ID.",
+    "An explicit ID does not authorize guessing its platform IRI. Bind dependent stages to real resource_id/resource_iri outputs from the formal preceding receipt or authorized read, retaining content-bound approval, dry_run/apply and protection requirements."
+  ],
   "batch_envelope": {
     "additional_properties": false,
     "fields": {
@@ -30,7 +36,7 @@
       "additional_properties": false,
       "required": ["name"],
       "fields": {
-        "class_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "class_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
         "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
         "description": {"type": "string", "required": false},
         "aliases": {"type": "array", "items": "string", "required": false, "default": []},
@@ -44,7 +50,7 @@
       "required": ["name"],
       "at_most_one_required": ["datatype", "object_class_id"],
       "fields": {
-        "property_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "property_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
         "class_id": {"type": "string", "required": false, "server_current_acceptance": "approved domain Class is optional (R3.0-009 §4.3); compiler does not prevalidate scalar type; Protocol MUST send a string"},
         "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
         "description": {"type": "string", "required": false},
@@ -57,7 +63,7 @@
       "additional_properties": false,
       "required": ["name", "source_class_id", "target_class_id"],
       "fields": {
-        "relation_type_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "relation_type_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
         "name": {"type": "string", "required": true},
         "source_class_id": {"type": "string", "required": true},
         "target_class_id": {"type": "string", "required": true},
@@ -73,7 +79,7 @@
       "additional_properties": false,
       "exactly_one_required": ["target_class_id", "target_node_iri", "target_subjects_of_iri"],
       "fields": {
-        "shape_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "shape_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
         "target_class_id": {"type": "string", "required": false, "branch": "Legacy class target; resolved to sh:targetClass."},
         "target_node_iri": {"type": "string", "required": false, "format": "absolute-rdf-iri", "branch": "sh:targetNode; caller-supplied absolute IRI, the platform never guesses an IRI from a name."},
         "target_subjects_of_iri": {"type": "string", "required": false, "format": "absolute-rdf-iri", "branch": "sh:targetSubjectsOf; caller-supplied absolute IRI."},
@@ -84,7 +90,7 @@
       "additional_properties": false,
       "required": ["label"],
       "fields": {
-        "entity_id": {"type": "string", "required": false, "server_behavior": "accepted then replaced by the deterministic Modeling Item output ID"},
+        "entity_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
         "class_iri_or_legacy_id": {"type": "string", "required": false, "branch": "Legacy scalar Class; when class_iris is also supplied the expanded scalar MUST be a member of it, otherwise the payload is a class_membership_conflict."},
         "class_iris": {"type": "array", "items": "string", "required": false, "description": "Full formal Class set (R3.0-009 §4.1/§6.2). Entries are class ids or absolute IRIs, deduplicated by the compiler. Omitted, null and [] are the same legal zero-member state; no placeholder Class is invented."},
         "label": {"type": "string", "required": true},

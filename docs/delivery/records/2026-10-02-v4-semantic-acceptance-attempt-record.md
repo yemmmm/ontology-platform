@@ -78,3 +78,6 @@ issue-2的prompt-contract缺陷已持久补入r4-0-012活动合同及中性候�
 外部Claude Code session5bb39b51-d8c1-4191-8584-5379b25a0c13，actual deepseek-flash/effortmax，只修最窄service/handler/已有回归/API说明；不代建模。开发与独立全后端均1144 passed/54 skipped；独立最终定向memory/live/3跳链3passed，007 A4/A5/A6 bounded PASS，011 A5/A7仍PARTIAL。详细独立记录不因修复覆盖真实语义缺口。
 Team此时处于正式issue-1 WAITING_OWNER，报告zero-mutation，submission-intents目录为空，尚未提交模型；Protocol已创建Session但没有apply请求。05:53:52 +08重启ontology-platform.service，active；/api/health返回ok，前端HTTP200。此为服务与修复加载边界，不是建模或语义PASS。
 本轮issue-1是public unified计划/身份carrier说明不足：现helper只接旧候选，contract误称显式id被替换、receipt_ref结构缺失。按真实实现提供机械指导并持久修权威contract，保留当前Session、候选、审批和未知写入门，恢复同一start不额外计数。
+
+05:56 +08：issue-1绑定protocol/epoch1的guidance已accepted，Runner自动恢复，源candidate与Session不改。affected运行GET BuildSession HTTP200，未声称领域行为由read端点证明。05:57首统一properties plan通过Coordinator当前摘要review，真实dry-run Attempt validated（batch2e9f7568-efc2-405d-a5c5-eb2cc1ed27f7，attempt93078f51-86e5-4b01-8675-b61961056ff0），intent已receipted，无未知写入；不是apply或L1。
+public Batch/统一图合同持久修：显式创建id字段保留、缺省才确定性生成，resource_id为输出而非payload；future identity receipt_ref是非空字符串定位符，既有资源需获准读引用，未来IRI不猜；Protocol可手工构造完整统一计划而非使用仅支持旧格式helper。两个合同与新测试32passed、JSON/Ruff/diff通过；当前run经已发送guidance继续，不篡改其冻结挂载。
