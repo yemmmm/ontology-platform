@@ -34,6 +34,25 @@ def context_query_capabilities(settings: Settings) -> dict[str, Any]:
         "context_limit": {
             "default": settings.semantic_context_query_context_limit_default,
             "max": settings.semantic_context_query_context_limit_max,
+            "min": 0,
+            "controls": "returned_page_size",
+        },
+        "semantic_roles": {
+            "optional": True, "match": "declared_exact_case_sensitive",
+            "combine": "or", "applies_to": "primary_matches",
+        },
+        "result_scope": "authorized_query_scope",
+        "expansion": {
+            "visible_work_budget": 5000,
+            "statuses": ["complete", "partial", "not_requested"],
+            "complete_within": ["scope", "assertion_types", "depth", "current_match_page"],
+            "business_completeness": False,
+        },
+        "context_detail": {
+            "rest_default": "full", "mcp_default": "compact",
+            "applies_to": "related_context", "primary_matches": "full",
+            "compact_omits": ["data.rule_definition.script_source", "data.object"],
+            "omission_marker": "projection.omitted_fields",
         },
         "depth": {
             "default": settings.semantic_context_query_depth_default,

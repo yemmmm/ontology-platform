@@ -177,6 +177,12 @@ class SemanticAccessView:
             value = item.get(key)
             if isinstance(value, str) and value in self._unauthorized_iris:
                 return False
+        if self.any_unauthorized(
+            item.get(key) for key in (
+                "description", "label", "aliases", "_annotation_values", "_authorization_values",
+            )
+        ):
+            return False
         data = item.get("data")
         if isinstance(data, Mapping):
             if not self.is_statement_visible(
@@ -197,9 +203,8 @@ class SemanticAccessView:
         if isinstance(evidence, list):
             for record in evidence:
                 if isinstance(record, Mapping):
-                    for value in record.values():
-                        if isinstance(value, str) and value in self._unauthorized_iris:
-                            return False
+                    if self.any_unauthorized(record.values()):
+                        return False
                 elif isinstance(record, str) and record in self._unauthorized_iris:
                     return False
         return True

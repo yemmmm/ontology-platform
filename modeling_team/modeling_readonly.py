@@ -194,7 +194,7 @@ class ModelingReadProxy:
             allowed = {
                 "project_id", "scope_mode", "query", "queries", "ontology_ids", "resource_types",
                 "assertion_types", "search_mode", "depth", "limit", "context_limit",
-                "match_cursor", "context_cursor",
+                "match_cursor", "context_cursor", "semantic_roles", "context_detail",
             }
             if not set(arguments).issubset(allowed):
                 raise ModelingReadError("semantic query arguments are outside the Modeling policy")
@@ -204,19 +204,22 @@ class ModelingReadProxy:
                 or arguments.get("ontology_ids") != [self.ontology_id]
             ):
                 raise ModelingReadError("semantic query requires exact Project/Ontology scope")
-            for field in ("resource_types", "assertion_types"):
+            for field in ("resource_types", "assertion_types", "semantic_roles"):
                 if field in arguments and arguments[field] is not None and (
                     not isinstance(arguments[field], list)
-                    or any(not isinstance(item, str) or not item for item in arguments[field])
+                    or (field == "semantic_roles" and not arguments[field])
+                    or any(not isinstance(item, str) or not item.strip() for item in arguments[field])
                 ):
                     raise ModelingReadError(f"semantic query {field} is invalid")
             for field in ("depth", "limit", "context_limit"):
                 if field in arguments and (
                     isinstance(arguments[field], bool)
                     or not isinstance(arguments[field], int)
-                    or arguments[field] <= 0
+                    or arguments[field] < (1 if field == "limit" else 0)
                 ):
                     raise ModelingReadError(f"semantic query {field} is invalid")
+            if arguments.get("context_detail", "compact") not in {"full", "compact"}:
+                raise ModelingReadError("semantic query context_detail is invalid")
             if "query" not in arguments and "queries" not in arguments:
                 raise ModelingReadError("semantic query requires a non-empty query")
             if "query" in arguments and (

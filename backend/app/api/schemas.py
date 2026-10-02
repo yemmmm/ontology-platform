@@ -627,6 +627,7 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
         | None
     ) = None
     assertion_types: list[Literal["asserted", "derived"]] | None = None
+    semantic_roles: list[str] | None = Field(default=None, min_length=1)
     search_mode: Literal["hybrid", "lexical"] = "hybrid"
     depth: int = Field(default=1, ge=0, le=3)
     limit: int = Field(default=20, ge=1, le=100)
@@ -637,6 +638,11 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
 
     @model_validator(mode="after")
     def _validate_query_and_cursors(self) -> "SemanticContextQueryRequest":
+        if self.semantic_roles is not None:
+            roles = sorted({item.strip() for item in self.semantic_roles})
+            if not all(roles):
+                raise ValueError("'semantic_roles' must contain non-empty strings")
+            self.semantic_roles = roles
         if (self.queries is None) == (self.query is None):
             raise ValueError(
                 "Provide exactly one of 'queries' or 'query'"

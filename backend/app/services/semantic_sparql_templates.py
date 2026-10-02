@@ -11,6 +11,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 
 from rdflib import Literal, URIRef
+from rdflib.namespace import RDF, RDFS
 
 from app.core.config import DEFAULT_SEMANTIC_BASE_IRI
 
@@ -1090,6 +1091,7 @@ def semantic_context_candidates_query(
     limit: int,
     operation_type: str | None = None,
     operation_predicates: set[str] | None = None,
+    after_key: str | None = None,
 ) -> str:
     """Return the fixed lexical corpus query for a resolved current scope."""
     graph_scope_values = _graph_scope_values(graph_to_ontology)
@@ -1102,12 +1104,17 @@ def semantic_context_candidates_query(
     description_match = _contains_any("LCASE(STR(?lexicalDescription))", terms)
     predicate_label_match = _contains_any("LCASE(STR(?lexicalPredicateLabel))", terms)
     operation_filters = _operation_projection_filters(operation_type, operation_predicates)
+    row_key = _context_row_key((
+        "?graph", "?subject", "?predicate", "?object", "?candidateType",
+        "?matchedField", "?matchedValue",
+    ))
+    continuation = f"FILTER(?rowKey > {Literal(after_key).n3()})" if after_key else ""
     return f"""# template: semantic-context-candidates
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX skos: <http://www.w3.org/2004/02/skos/core#>
 PREFIX dcterms: <http://purl.org/dc/terms/>
-SELECT ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue
+SELECT ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue ?rowKey
        (SAMPLE(?subjectLabelValue) AS ?subjectLabel)
        (GROUP_CONCAT(DISTINCT STR(?aliasValue); separator="|") AS ?aliases)
        (SAMPLE(?descriptionValue) AS ?description)
@@ -1173,9 +1180,11 @@ WHERE {{
     UNION {{ ?subject dcterms:description ?descriptionValue . }}
   }} }}
   OPTIONAL {{ GRAPH ?graph {{ ?subject rdf:type ?subjectTypeValue . }} }}
+  BIND({row_key} AS ?rowKey)
+  {continuation}
 }}
-GROUP BY ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue
-ORDER BY ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue
+GROUP BY ?graph ?candidateType ?subject ?predicate ?object ?matchedField ?matchedValue ?rowKey
+ORDER BY ?rowKey
 LIMIT {int(limit)}
 """
 
@@ -1186,28 +1195,76 @@ def semantic_context_neighborhood_query(
     limit: int,
     operation_type: str | None = None,
     operation_predicates: set[str] | None = None,
+    after_key: str | None = None,
 ) -> str:
     values = _iri_values(graph_iris)
     anchors = _iri_values(anchor_iris)
     operation_filters = _operation_projection_filters(operation_type, operation_predicates)
+    row_key = _context_row_key(("?graph", "?subject", "?predicate", "?object"))
+    continuation = f"FILTER(?rowKey > {Literal(after_key).n3()})" if after_key else ""
     return f"""# template: semantic-context-neighborhood
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-SELECT ?graph ?subject ?predicate ?object ?subjectLabel ?objectLabel
-       ?predicateLabel ?subjectType WHERE {{
+SELECT ?graph ?subject ?predicate ?object ?rowKey
+       (MIN(STR(?subjectLabelValue)) AS ?subjectLabel)
+       (MIN(STR(?objectLabelValue)) AS ?objectLabel)
+       (MIN(STR(?predicateLabelValue)) AS ?predicateLabel) WHERE {{
   VALUES ?graph {{ {values} }}
   GRAPH ?graph {{
     VALUES ?anchor {{ {anchors} }}
     ?subject ?predicate ?object .
     FILTER(?subject = ?anchor || ?object = ?anchor)
     {operation_filters}
-    OPTIONAL {{ ?subject rdfs:label ?subjectLabel . }}
-    OPTIONAL {{ ?object rdfs:label ?objectLabel . }}
-    OPTIONAL {{ ?predicate rdfs:label ?predicateLabel . }}
-    OPTIONAL {{ ?subject rdf:type ?subjectType . }}
+    OPTIONAL {{ ?subject rdfs:label ?subjectLabelValue . }}
+    OPTIONAL {{ ?object rdfs:label ?objectLabelValue . }}
+    OPTIONAL {{ ?predicate rdfs:label ?predicateLabelValue . }}
   }}
+  BIND({row_key} AS ?rowKey)
+  {continuation}
 }}
-ORDER BY ?graph ?subject ?predicate ?object
+GROUP BY ?graph ?subject ?predicate ?object ?rowKey
+ORDER BY ?rowKey
+LIMIT {int(limit)}
+"""
+
+
+def _context_row_key(variables: tuple[str, ...]) -> str:
+    """Lossless, length-prefixed term keys, including literal type and language."""
+    parts = []
+    for variable in variables:
+        for expression in (
+            f"COALESCE(STR({variable}), '')",
+            f"IF(BOUND({variable}), IF(ISIRI({variable}), 'iri', "
+            f"IF(ISBLANK({variable}), 'bnode', 'literal')), '')",
+            f"COALESCE(STR(DATATYPE({variable})), '')",
+            f"COALESCE(LANG({variable}), '')",
+        ):
+            parts.extend((f"STR(STRLEN({expression}))", "':'", expression))
+    return "CONCAT(" + ", ".join(parts) + ")"
+
+
+def semantic_context_resource_descriptions_query(
+    graph_iris: list[str], resource_iris: list[str], limit: int,
+    annotation_predicates: list[str], after_key: str | None = None,
+) -> str:
+    """Read only a resource's existing description, types and business annotations."""
+    predicates = [
+        str(RDF.type), str(RDFS.label), str(RDFS.comment),
+        "http://purl.org/dc/terms/description", "http://www.w3.org/2004/02/skos/core#altLabel",
+        *annotation_predicates,
+    ]
+    row_key = _context_row_key(("?graph", "?subject", "?predicate", "?object"))
+    continuation = f"FILTER(?rowKey > {Literal(after_key).n3()})" if after_key else ""
+    return f"""# template: semantic-context-resource-descriptions
+SELECT ?graph ?subject ?predicate ?object ?rowKey WHERE {{
+  VALUES ?graph {{ {_iri_values(graph_iris)} }}
+  VALUES ?subject {{ {_iri_values(resource_iris)} }}
+  VALUES ?predicate {{ {_iri_values(predicates)} }}
+  GRAPH ?graph {{ ?subject ?predicate ?object . }}
+  BIND({row_key} AS ?rowKey)
+  {continuation}
+}}
+ORDER BY ?rowKey
 LIMIT {int(limit)}
 """
 

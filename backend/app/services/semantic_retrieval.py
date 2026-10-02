@@ -14,7 +14,7 @@ import re
 import unicodedata
 from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from rdflib import Dataset, Literal, URIRef
 from rdflib.namespace import RDF, RDFS
@@ -264,6 +264,7 @@ class PgVectorRetrievalRepository:
         resource_kinds: set[str],
         query_vector: list[float],
         limit: int,
+        after: tuple[float, str] | None = None,
     ) -> list[dict[str, Any]]:
         if not resource_kinds:
             return []
@@ -278,7 +279,8 @@ class PgVectorRetrievalRepository:
                 """
                 SELECT d.resource_iri, d.resource_kind, d.assertion_kind, d.label,
                        d.labels, d.aliases, d.descriptions, d.mapping_evidence, d.rdf_types,
-                       1 - (d.embedding <=> CAST(:query_vector AS vector)) AS similarity
+                       1 - (d.embedding <=> CAST(:query_vector AS vector)) AS similarity,
+                       d.embedding <=> CAST(:query_vector AS vector) AS distance
                   FROM semantic_retrieval_documents AS d
                   JOIN semantic_projection_manifests AS m
                     ON m.active_job_id = d.build_job_id
@@ -295,6 +297,9 @@ class PgVectorRetrievalRepository:
                    AND m.status = 'current'
                    AND m.source_signature = :source_signature
                    AND m.projection_version = :projection_version
+                   AND (CAST(:after_distance AS double precision) IS NULL OR
+                        (d.embedding <=> CAST(:query_vector AS vector), d.resource_iri)
+                        > (CAST(:after_distance AS double precision), :after_iri))
                  ORDER BY d.embedding <=> CAST(:query_vector AS vector), d.resource_iri
                  LIMIT :limit
                 """
@@ -311,6 +316,8 @@ class PgVectorRetrievalRepository:
                 "resource_kinds": sorted(resource_kinds),
                 "query_vector": _vector_literal(query_vector),
                 "limit": limit,
+                "after_distance": after[0] if after is not None else None,
+                "after_iri": after[1] if after is not None else "",
             },
         )
         return [dict(row) for row in result.mappings()]
@@ -784,6 +791,7 @@ class SemanticResourceRetrievalService:
         resource_kinds: set[str],
         search_mode: str,
         limit: int,
+        candidate_filter: Callable[[list[dict[str, Any]]], list[dict[str, Any]]] | None = None,
     ) -> dict[str, Any]:
         """Run one bounded embedding batch for multiple related expressions.
 
@@ -847,6 +855,8 @@ class SemanticResourceRetrievalService:
         per_ontology_limit = min(200, max(50, limit * 5))
         candidates_by_query: list[list[dict[str, Any]]] = []
         any_complete = False
+        window_incomplete = False
+        filter_error: Exception | None = None
         try:
             for vector in vectors:
                 per_expression: list[dict[str, Any]] = []
@@ -856,7 +866,7 @@ class SemanticResourceRetrievalService:
                     )["status"]
                     if status != "current":
                         continue
-                    rows = self.repository.exact_cosine_candidates(
+                    scan_args = dict(
                         graph_set_id=ontology.graph_set_id,
                         ontology_id=ontology.ontology_id,
                         workspace_version=ontology.workspace_version,
@@ -866,15 +876,55 @@ class SemanticResourceRetrievalService:
                         query_vector=vector,
                         limit=per_ontology_limit,
                     )
-                    per_expression.extend(
-                        _semantic_candidate(row, ontology.ontology_id, self.config.min_similarity)
-                        for row in rows
-                        if float(row["similarity"]) >= self.config.min_similarity
-                    )
+                    qualified: dict[str, dict[str, Any]] = {}
+                    after = None
+                    while True:
+                        rows = self.repository.exact_cosine_candidates(
+                            **scan_args, **({"after": after} if after is not None else {})
+                        )
+                        candidates = []
+                        for row in rows:
+                            if float(row["similarity"]) < self.config.min_similarity:
+                                continue
+                            candidate = _semantic_candidate(
+                                row, ontology.ontology_id, self.config.min_similarity
+                            )
+                            if candidate_filter is not None:
+                                candidate["_authorization_values"] = [
+                                    row.get(field) for field in (
+                                        "labels", "aliases", "descriptions", "mapping_evidence",
+                                        "rdf_types",
+                                    )
+                                ]
+                            candidates.append(candidate)
+                        if candidate_filter is not None:
+                            try:
+                                candidates = candidate_filter(candidates)
+                            except Exception as exc:
+                                filter_error = exc
+                                raise
+                        for candidate in candidates:
+                            qualified.setdefault(candidate["id"], candidate)
+                            if len(qualified) > per_ontology_limit:
+                                break
+                        if candidate_filter is None or len(qualified) > per_ontology_limit:
+                            window_incomplete |= (
+                                candidate_filter is not None and len(qualified) > per_ontology_limit
+                            )
+                            break
+                        if len(rows) < per_ontology_limit or (
+                            rows and float(rows[-1]["similarity"]) < self.config.min_similarity
+                        ):
+                            break
+                        # pgvector's unrounded distance is the continuation key.
+                        after = (float(rows[-1]["distance"]), rows[-1]["resource_iri"])
+                    per_expression.extend(list(qualified.values())[:per_ontology_limit])
                 candidates_by_query.append(per_expression)
                 if per_expression:
                     any_complete = True
         except Exception:
+            if filter_error is not None:
+                raise filter_error
             return {
                 "candidates_by_query": [[] for _ in queries],
                 "indexes": indexes,
@@ -884,10 +934,17 @@ class SemanticResourceRetrievalService:
                 ],
                 "completeness": "degraded",
             }
+        if window_incomplete:
+            warnings.append({
+                "code": "candidate_window_incomplete",
+                "message": "Qualified candidate window is incomplete; narrow the query or use an IRI.",
+            })
         if any_complete:
-            completeness = "degraded" if unavailable else "complete"
+            completeness = "degraded" if unavailable or window_incomplete else "complete"
         else:
-            completeness = "degraded"
+            completeness = (
+                "complete" if candidate_filter is not None and not unavailable else "degraded"
+            )
         return {
             "candidates_by_query": candidates_by_query,
             "indexes": indexes,
@@ -946,12 +1003,12 @@ def fuse_context_candidates(
     lexical: list[dict[str, Any]], semantic: list[dict[str, Any]]
 ) -> list[dict[str, Any]]:
     """Fuse scoped lexical, governed-mapping, and semantic candidates by identity."""
-    by_key = {(item["ontology_id"], item["id"]): item for item in lexical}
+    by_key = {(item["ontology_id"], item["kind"], item["id"]): item for item in lexical}
     for item in lexical:
         _normalise_match(item, semantic_similarity=None)
         _merge_mapping_evidence(item, item)
     for item in semantic:
-        key = (item["ontology_id"], item["id"])
+        key = (item["ontology_id"], item["kind"], item["id"])
         existing = by_key.get(key)
         if existing is None:
             by_key[key] = item

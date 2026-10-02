@@ -16,8 +16,8 @@ from rdflib.namespace import RDF
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.repositories.models import SemanticRuleDefinitionModel, SemanticRuleModel
-from app.repositories.rdf_store import RdfStoreRepository
+from app.repositories.models import OntologyModel, SemanticRuleDefinitionModel, SemanticRuleModel
+from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
 from app.security.auth import AuthPrincipal
 from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_context_cursor import (
@@ -50,6 +50,8 @@ from app.services.semantic_retrieval import (
 from app.services.semantic_sparql_templates import (
     semantic_context_candidates_query,
     semantic_context_neighborhood_query,
+    semantic_context_resource_descriptions_query,
+    _context_row_key,
 )
 from app.services.operation_semantics import (
     OPERATION_SCHEMA_VERSION,
@@ -71,6 +73,14 @@ RESOURCE_TYPE_ORDER = (
     "metric",
 )
 RESOURCE_TYPES = set(RESOURCE_TYPE_ORDER)
+CONTEXT_EXPANSION_BUDGET = 5000
+RDF_READ_CHUNK_SIZE = 500
+_ANNOTATION_NAMES = {
+    "semantic_definition": "semanticDefinition",
+    "action_definition": "actionDefinition",
+    "parameter_definition": "parameterDefinition",
+    "rule_definition": "ruleDefinition",
+}
 ASSERTION_TYPES = {"asserted", "derived"}
 _KIND_ORDER = {kind: index for index, kind in enumerate(RESOURCE_TYPE_ORDER)}
 _CLASS_TYPES = {
@@ -159,6 +169,10 @@ class SemanticContextQueryService:
         self.operation_type = self.operation_vocab["type"]
         self.settings = scope_resolver.settings
         self.cursor_codec = cursor_codec
+        self._semantic_roles = None
+        self._description_cache = {}
+        self._resource_cache = {}
+        self._request_assertions = set(ASSERTION_TYPES)
 
     def query(
         self,
@@ -169,6 +183,7 @@ class SemanticContextQueryService:
         query: str,
         resource_types: list[str] | None = None,
         assertion_types: list[str] | None = None,
+        semantic_roles: list[str] | None = None,
         search_mode: str = "hybrid",
         depth: int = 1,
         limit: int = 20,
@@ -190,6 +205,7 @@ class SemanticContextQueryService:
             queries=[query],
             resource_types=resource_types,
             assertion_types=assertion_types,
+            semantic_roles=semantic_roles,
             search_mode=search_mode,
             depth=depth,
             limit=limit,
@@ -208,6 +224,7 @@ class SemanticContextQueryService:
         queries: list[str],
         resource_types: list[str] | None = None,
         assertion_types: list[str] | None = None,
+        semantic_roles: list[str] | None = None,
         search_mode: str = "hybrid",
         depth: int = 1,
         limit: int = 20,
@@ -227,6 +244,14 @@ class SemanticContextQueryService:
         ``compact`` keeps identity/kind/label/statement essentials/evidence
         status/root paths only.
         """
+        semantic_roles = _normalize_semantic_roles(semantic_roles)
+        self._semantic_roles = semantic_roles
+        self._description_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._resource_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._candidate_window_incomplete = False
+        self._expansion = {"status": "not_requested"}
+        self._request_depth = depth
+        self._request_assertions = set(assertion_types or ASSERTION_TYPES)
         if principal is None:
             raise SemanticContextQueryError(
                 "A server-derived principal binding is required for Context Query"
@@ -249,6 +274,7 @@ class SemanticContextQueryService:
                 ontology_ids=ontology_ids,
                 resource_types=resource_types,
                 assertion_types=assertion_types,
+                semantic_roles=semantic_roles,
                 search_mode=search_mode,
                 depth=depth,
                 limit=limit,
@@ -294,6 +320,7 @@ class SemanticContextQueryService:
             normalized_queries=normalized_queries,
             resource_types=resource_types,
             assertion_types=assertion_types,
+            semantic_roles=semantic_roles,
             search_mode=search_mode,
             depth=depth,
             limit=limit,
@@ -302,6 +329,12 @@ class SemanticContextQueryService:
             source_signatures=source_signatures,
         )
 
+        match_payload = self._decode_cursor_opt(
+            cursor_codec, match_cursor, binding=binding, expected_kind=CURSOR_KIND_MATCH,
+        )
+        context_payload = self._decode_cursor_opt(
+            cursor_codec, context_cursor, binding=binding, expected_kind=CURSOR_KIND_CONTEXT,
+        )
         warnings: list[dict[str, str]] = [*scope.warnings, *_ontology_warnings(scope)]
         if not scope.graph_iris:
             return self._multi_response(
@@ -328,8 +361,10 @@ class SemanticContextQueryService:
         retrieval_indexes: list[dict[str, Any]] = []
         retrieval_completeness = "complete"
         for expression in execution_set:
-            rows = self._lexical_candidate_rows(scope, expression.terms, candidate_limit)
-            candidates = self._rdf_candidates(rows, scope, expression.text, expression.terms)
+            candidates = self._qualified_lexical_candidates(
+                scope, expression.text, expression.terms, candidate_limit,
+                selected_resource_types, selected_assertion_types,
+            )
             candidates.extend(self._rule_candidates(scope, expression.text, expression.terms))
             if "operation" in selected_resource_types:
                 candidates.extend(self._operation_candidates(scope, expression.text, expression.terms))
@@ -349,9 +384,9 @@ class SemanticContextQueryService:
             # (lexical RDF, rules, operations, governed mappings) before
             # fusion so ranking, fusion summaries, truncation, and cursors
             # are computed on the authorized subset only.
-            candidates = [
-                item for item in candidates if self.access_view.filter_candidate(item)
-            ]
+            candidates = self._qualified_candidates(
+                candidates, scope, selected_resource_types, selected_assertion_types
+            )
             for item in candidates:
                 item.setdefault("_expression_indexes", set()).update(expression.original_indexes)
             lexical_by_expression.append(candidates)
@@ -362,6 +397,9 @@ class SemanticContextQueryService:
             resource_kinds=selected_resource_types - {"fact"},
             search_mode=search_mode,
             limit=limit,
+            candidate_filter=lambda items: self._qualified_candidates(
+                items, scope, selected_resource_types, selected_assertion_types
+            ),
         )
         retrieval_warnings = list(retrieval.get("warnings") or [])
         retrieval_indexes = list(retrieval.get("indexes") or [])
@@ -370,9 +408,9 @@ class SemanticContextQueryService:
             promoted = promote_exact_label_candidates(
                 candidates, execution_set[expression_index].text
             )
-            promoted = [
-                item for item in promoted if self.access_view.filter_candidate(item)
-            ]
+            promoted = self._qualified_candidates(
+                promoted, scope, selected_resource_types, selected_assertion_types
+            )
             for item in promoted:
                 item.setdefault("_expression_indexes", set()).update(
                     execution_set[expression_index].original_indexes
@@ -381,6 +419,12 @@ class SemanticContextQueryService:
                 lexical_by_expression[expression_index], promoted
             )
 
+        if self._candidate_window_incomplete:
+            retrieval_completeness = "degraded"
+            warnings.append({
+                "code": "candidate_window_incomplete",
+                "message": "Qualified candidate window is incomplete; narrow the query or use an IRI.",
+            })
         warnings.extend(retrieval_warnings)
         fused, matched_queries_by_item, support_count_by_item = self._fuse_multi_expression(
             lexical_by_expression, execution_set
@@ -397,18 +441,20 @@ class SemanticContextQueryService:
         fused.sort(key=lambda item: _multi_sort_key(item, scope, fusion_by_item))
         fused = _dedupe_multi(fused)
 
-        # Apply match cursor (resume after the bound sort key) and the match budget.
-        match_payload = self._decode_cursor_opt(
-            cursor_codec,
-            match_cursor,
-            binding=binding,
-            expected_kind=CURSOR_KIND_MATCH,
-        )
-        if match_payload is not None:
+        candidate_digest = _visible_digest(fused)
+        payload = context_payload or match_payload
+        if payload is not None and payload.candidate_digest != candidate_digest:
+            raise SemanticContextSnapshotChanged("Visible candidates no longer match the cursor")
+        if context_payload is not None:
+            fused = _resume_after_key(fused, context_payload.match_page_start_key)
+        elif match_payload is not None:
             fused = _resume_after_key(fused, match_payload.resume_key)
 
         matches_truncated = len(fused) > limit
         primary = fused[:limit]
+        root_digest = _root_digest(primary)
+        if context_payload is not None and context_payload.root_match_digest != root_digest:
+            raise SemanticContextSnapshotChanged("Visible roots no longer match the cursor")
         next_match_cursor: str | None = None
         if matches_truncated:
             next_match_cursor = self._encode_cursor(
@@ -419,11 +465,10 @@ class SemanticContextQueryService:
                     workspace_versions=workspace_versions,
                     source_signatures=source_signatures,
                     resume_key=_match_resume_key(fused[limit]),
-                    root_match_ids=(),
+                    candidate_digest=candidate_digest,
                 ),
             )
 
-        primary_ids = [self._identity_key(item) for item in primary]
         decorated_primary, related_raw, root_paths_by_item = self._expand_multi_primary(
             primary=primary,
             scope=scope,
@@ -434,13 +479,10 @@ class SemanticContextQueryService:
         )
 
         # Apply context cursor within the bound root-match page only.
-        context_payload = self._decode_cursor_opt(
-            cursor_codec,
-            context_cursor,
-            binding=binding,
-            expected_kind=CURSOR_KIND_CONTEXT,
-        )
+        context_digest = self._visible_context_digest(related_raw, root_paths_by_item)
         if context_payload is not None:
+            if context_payload.context_digest != context_digest:
+                raise SemanticContextSnapshotChanged("Visible context no longer matches the cursor")
             related_raw = _resume_context_after_key(related_raw, context_payload.resume_key)
         context_truncated = len(related_raw) > context_limit
         related_page = related_raw[:context_limit]
@@ -454,7 +496,10 @@ class SemanticContextQueryService:
                     workspace_versions=workspace_versions,
                     source_signatures=source_signatures,
                     resume_key=_context_resume_key(related_raw[context_limit]),
-                    root_match_ids=tuple(primary_ids),
+                    match_page_start_key=_match_resume_key(primary[0]),
+                    root_match_digest=root_digest,
+                    candidate_digest=candidate_digest,
+                    context_digest=context_digest,
                 ),
             )
 
@@ -514,6 +559,7 @@ class SemanticContextQueryService:
         ontology_ids: list[str] | None,
         resource_types: list[str] | None,
         assertion_types: list[str] | None,
+        semantic_roles: list[str] | None,
         search_mode: str,
         depth: int,
         limit: int,
@@ -558,12 +604,16 @@ class SemanticContextQueryService:
             normalized_queries=[anchor_iri],
             resource_types=resource_types,
             assertion_types=assertion_types,
+            semantic_roles=semantic_roles,
             search_mode=search_mode,
             depth=depth,
             limit=limit,
             context_limit=context_limit,
             workspace_versions=workspace_versions,
             source_signatures=source_signatures,
+        )
+        context_payload = self._decode_cursor_opt(
+            cursor_codec, context_cursor, binding=binding, expected_kind=CURSOR_KIND_CONTEXT,
         )
         warnings: list[dict[str, str]] = [*scope.warnings, *_ontology_warnings(scope)]
         empty_recall = {
@@ -589,25 +639,15 @@ class SemanticContextQueryService:
                 context_cursor_out=None,
                 context_detail=context_detail,
             )
-        candidate_fetch_limit = min(5000, max(500, context_limit * 50 + 100))
-        result = self.rdf_store.query_sparql(
-            semantic_context_neighborhood_query(
-                scope.graph_iris,
-                [anchor_iri],
-                candidate_fetch_limit,
-                self.operation_type,
-                self.operation_predicates,
-            ),
-            timeout_seconds=10,
-            limit=candidate_fetch_limit,
-        )
-        anchor_item = _anchor_candidate_from_rows(
-            _bindings(result.result), scope, anchor_iri
-        )
-        # R3.0-004: an unauthorized anchor IRI follows the exact same
-        # anchor_not_found path as an IRI absent from the scope.
-        if anchor_item is not None and not self.access_view.is_member_visible(anchor_iri):
-            anchor_item = None
+        anchor_item = self._resource_item(scope, anchor_iri)
+        if anchor_item is not None:
+            qualified = self._qualified_candidates(
+                [anchor_item], scope, selected_resource_types, selected_assertion_types
+            )
+            anchor_item = qualified[0] if qualified else None
+        candidate_digest = _visible_digest([anchor_item] if anchor_item else [])
+        if context_payload is not None and context_payload.candidate_digest != candidate_digest:
+            raise SemanticContextSnapshotChanged("Visible anchor no longer matches the cursor")
         if anchor_item is None:
             warnings.append(
                 {
@@ -641,13 +681,10 @@ class SemanticContextQueryService:
             selected_resource_types=selected_resource_types,
             selected_assertion_types=selected_assertion_types,
         )
-        context_payload = self._decode_cursor_opt(
-            cursor_codec,
-            context_cursor,
-            binding=binding,
-            expected_kind=CURSOR_KIND_CONTEXT,
-        )
+        context_digest = self._visible_context_digest(related_raw, root_paths_by_item)
         if context_payload is not None:
+            if context_payload.context_digest != context_digest:
+                raise SemanticContextSnapshotChanged("Visible context no longer matches the cursor")
             related_raw = _resume_context_after_key(related_raw, context_payload.resume_key)
         context_truncated = len(related_raw) > context_limit
         related_page = related_raw[:context_limit]
@@ -661,7 +698,10 @@ class SemanticContextQueryService:
                     workspace_versions=workspace_versions,
                     source_signatures=source_signatures,
                     resume_key=_context_resume_key(related_raw[context_limit]),
-                    root_match_ids=(anchor_item["id"],),
+                    match_page_start_key=_match_resume_key(anchor_item),
+                    root_match_digest=_root_digest([anchor_item]),
+                    candidate_digest=candidate_digest,
+                    context_digest=context_digest,
                 ),
             )
         if context_truncated:
@@ -701,6 +741,253 @@ class SemanticContextQueryService:
             context_detail=context_detail,
         )
 
+    def _selected_graphs(self, scope: SemanticQueryScope) -> list[str]:
+        return [
+            graph for graph in scope.graph_iris
+            if _assertion_filter_value(scope.graph_assertion_kinds.get(graph, "asserted"))
+            in self._request_assertions
+        ]
+
+    def _read_chunks(self, build_query):
+        """Stable RDF continuation; raw/hidden rows never consume a visible budget."""
+        after = None
+        while True:
+            result = self.rdf_store.query_sparql(
+                build_query(RDF_READ_CHUNK_SIZE, after),
+                timeout_seconds=10, limit=RDF_READ_CHUNK_SIZE,
+            )
+            rows = _bindings(result.result)
+            yield rows
+            if len(rows) < RDF_READ_CHUNK_SIZE:
+                return
+            key = _value(rows[-1], "rowKey")
+            if not key or key == after:
+                raise SemanticContextQueryError("RDF continuation key is missing or did not advance")
+            after = key
+
+    def _hydrate_candidates(
+        self, items: list[dict[str, Any]], scope: SemanticQueryScope,
+    ) -> list[dict[str, Any]]:
+        resources = [item for item in items if not _is_statement(item)]
+        iris = sorted({item["iri"] for item in resources if item.get("iri")})
+        missing = [iri for iri in iris if any(
+            (entry.ontology_id, iri) not in self._description_cache for entry in scope.ontologies
+        )]
+        vocab = str(namespace_from_settings(self.settings).vocab)
+        predicates = {vocab + name: field for field, name in _ANNOTATION_NAMES.items()}
+        if missing:
+            rows_by_resource: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
+            for rows in self._read_chunks(lambda limit, after: (
+                semantic_context_resource_descriptions_query(
+                    self._selected_graphs(scope), missing, limit, list(predicates), after,
+                )
+            )):
+                for row in rows:
+                    graph, subject = _value(row, "graph"), _value(row, "subject")
+                    if graph in scope.graph_to_ontology and subject in missing:
+                        rows_by_resource[(scope.graph_to_ontology[graph], subject)].append(row)
+            for iri in missing:
+                for ontology in scope.ontologies:
+                    key = (ontology.ontology_id, iri)
+                    own_rows = rows_by_resource.get(key, [])
+                    values: dict[str, set[str]] = defaultdict(set)
+                    annotation_terms: dict[str, dict[str, str]] = defaultdict(dict)
+                    for row in own_rows:
+                        predicate, value = _value(row, "predicate"), _value(row, "object")
+                        if predicate and value is not None:
+                            values[predicate].add(value)
+                            if predicate in predicates:
+                                annotation_terms[predicate][_binding_n3(row["object"])] = value
+                    payload: dict[str, Any] = {"data": {}, "_annotation_values": [
+                        value for values_ in values.values() for value in sorted(values_)
+                    ]}
+                    diagnostics = []
+                    # Full values stay available for authorization before any projection.
+                    for predicate, field in predicates.items():
+                        raw_values = list(annotation_terms[predicate].values())
+                        if not raw_values:
+                            continue
+                        if len(raw_values) != 1:
+                            diagnostics.append({"field": field, "code": "ambiguous_annotation"})
+                            continue
+                        try:
+                            value = json.loads(raw_values[0])
+                            if not isinstance(value, dict):
+                                raise ValueError("Annotation must be a JSON object")
+                        except (ValueError, TypeError):
+                            diagnostics.append({"field": field, "code": "invalid_annotation"})
+                            continue
+                        payload["data"][field] = value
+                    if diagnostics:
+                        payload["data"]["annotation_read_diagnostics"] = diagnostics
+                    descriptions = sorted(
+                        values.get("http://www.w3.org/2000/01/rdf-schema#comment", set())
+                        | values.get("http://purl.org/dc/terms/description", set())
+                    )
+                    if descriptions:
+                        payload["description"] = descriptions[0]
+                    labels = sorted(values.get("http://www.w3.org/2000/01/rdf-schema#label", ()))
+                    if labels:
+                        payload["labels"] = labels
+                        payload["label"] = labels[0]
+                    aliases = sorted(values.get("http://www.w3.org/2004/02/skos/core#altLabel", ()))
+                    if aliases:
+                        payload["aliases"] = aliases
+                    types = sorted(values.get(str(RDF.type), ()))
+                    if types:
+                        payload["data"]["rdf_types"] = types
+                    if own_rows:
+                        payload["_own_rows"] = own_rows
+                    self._description_cache[key] = payload
+        for item in resources:
+            payload = self._description_cache.get((item["ontology_id"], item.get("iri")), {})
+            item["data"] = {**(item.get("data") or {}), **payload.get("data", {})}
+            if "description" in payload:
+                item["description"] = payload["description"]
+            item["_annotation_values"] = payload.get("_annotation_values", [])
+        return items
+
+    def _qualified_candidates(
+        self, items: list[dict[str, Any]], scope: SemanticQueryScope,
+        resource_types: set[str], assertion_types: set[str],
+    ) -> list[dict[str, Any]]:
+        self._hydrate_candidates(items, scope)
+        for item in items:
+            if not _is_statement(item) and item["kind"] in {"operation", "mapping", "metric"}:
+                own_rows = self._description_cache.get(
+                    (item["ontology_id"], item.get("iri")), {}
+                ).get("_own_rows", [])
+                if own_rows:
+                    projection = self._resource_from_rows(own_rows, scope, item["iri"])
+                    if projection is not None:
+                        item["data"] = {**item["data"], **projection["data"]}
+        return [item for item in items if (
+            item["kind"] in resource_types
+            and _assertion_filter_value(item["assertion_kind"]) in assertion_types
+            and self.access_view.filter_candidate(item)
+            and (not self._semantic_roles or (
+                not _is_statement(item)
+                and (item.get("data", {}).get("semantic_definition") or {}).get("semantic_role")
+                in self._semantic_roles
+            ))
+        )]
+
+    def _qualified_lexical_candidates(
+        self, scope: SemanticQueryScope, text: str, terms: list[str], limit: int,
+        resource_types: set[str], assertion_types: set[str],
+    ) -> list[dict[str, Any]]:
+        # Resources can have many matching literals split across raw chunks.
+        # Hydrate each complete resource before counting its identity once.
+        candidates: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for rows in self._read_chunks(lambda chunk_limit, after: (
+            semantic_context_candidates_query(
+                scope.graph_to_ontology, terms, chunk_limit, self.operation_type,
+                self.operation_predicates, after,
+            )
+        )):
+            items = self._rdf_candidates(rows, scope, text, terms)
+            for item in self._qualified_candidates(items, scope, resource_types, assertion_types):
+                key = self._identity_key(item)
+                if key in candidates:
+                    candidates[key] = self._merge_into(candidates[key], item)
+                else:
+                    candidates[key] = item
+                if len(candidates) > limit:
+                    self._candidate_window_incomplete = True
+                    return list(candidates.values())[:limit]
+        return list(candidates.values())
+
+    def _resource_item(self, scope: SemanticQueryScope, iri: str) -> dict[str, Any] | None:
+        seed = [{"iri": iri, "id": iri, "kind": "instance", "ontology_id": entry.ontology_id,
+                 "data": {}, "assertion_kind": "asserted"} for entry in scope.ontologies]
+        self._hydrate_candidates(seed, scope)
+        for entry in scope.ontologies:
+            rows = self._description_cache[(entry.ontology_id, iri)].get("_own_rows", [])
+            if rows:
+                return self._resource_from_rows(rows, scope, iri)
+        # An IRI used only as an endpoint still exists, but a hidden edge must
+        # not be used to disclose that existence.
+        for rows in self._read_chunks(lambda limit, after: semantic_context_neighborhood_query(
+            self._selected_graphs(scope), [iri], limit, self.operation_type,
+            self.operation_predicates, after,
+        )):
+            visible = [row for row in rows if self.access_view.filter_candidate(
+                self._statement_item(row, scope, distance=0) or {}
+            )]
+            if visible:
+                return self._resource_from_rows(visible, scope, iri)
+        return None
+
+    def _resource_from_rows(self, rows, scope, iri):
+        item = _anchor_candidate_from_rows(rows, scope, iri)
+        if item is None:
+            return None
+        key = (item["ontology_id"], iri)
+        if key in self._resource_cache:
+            return dict(self._resource_cache[key])
+        self._hydrate_candidates([item], scope)
+        # Read the existing specialized projections rather than exposing
+        # Operation internals as ordinary neighboring triples.
+        if item["kind"] in {"operation", "mapping", "metric"}:
+            producer = getattr(self, f"_{item['kind']}_candidates")
+            projected = producer(scope, iri, [iri], resource_iris=[iri])
+            projected = [candidate for candidate in projected
+                         if candidate["ontology_id"] == item["ontology_id"]]
+            if projected:
+                item = projected[0]
+                self._hydrate_candidates([item], scope)
+        self._resource_cache[key] = item
+        return dict(item)
+
+    def _producer_rows(self, query: str):
+        """Continue existing specialized RDF projections by their complete row identity."""
+        select_end = query.index("WHERE")
+        select_body = query[:select_end]
+        # Existing aggregate aliases are presentation fields, not row identity.
+        select_body = re.sub(r"\([^\n]*\)", "", select_body)
+        variables = tuple(dict.fromkeys(re.findall(r"\?\w+", select_body)))
+        query = query[:select_end] + " ?rowKey " + query[select_end:]
+        close = query.rfind("\n}")
+        query = query[:close] + "\n  BIND(" + _context_row_key(variables) + (
+            " AS ?rowKey)\n  {continuation}\n"
+        ) + query[close:]
+        if "GROUP BY" in query:
+            query = query.replace("\nORDER BY", " ?rowKey\nORDER BY", 1)
+        query = re.sub(r"ORDER BY[^\n]*", "ORDER BY ?rowKey", query)
+        query = query.replace("LIMIT 5000", "LIMIT {chunk_limit}")
+        for rows in self._read_chunks(lambda limit, after: query.replace(
+            "{chunk_limit}", str(limit)
+        ).replace(
+            "{continuation}", f"FILTER(?rowKey > {Literal(after).n3()})" if after else ""
+        )):
+            yield from rows
+
+    def _visible_context_digest(self, items, paths):
+        return _json_digest({
+            "items": _visible_digest(items),
+            "paths": [[list(key), value] for key, value in sorted(paths.items())],
+            "expansion": self._expansion,
+        })
+
+    def _verify_scope_snapshot(self, scope: SemanticQueryScope) -> None:
+        project_id = scope.project_id
+        # Re-read committed metadata rather than an SQLAlchemy identity-map copy.
+        self.session.expire_all()
+        # Check only the already-bound Ontologies; do not resolve the Project or
+        # rerun discovery/recall for every expression or for the final fence.
+        for entry in scope.ontologies:
+            ontology = self.session.get(OntologyModel, entry.ontology_id)
+            if ontology is None or ontology.project_id != project_id:
+                raise SemanticContextSnapshotChanged("Semantic scope changed during the query")
+            readiness = self.scope_resolver.readiness.evaluate(ontology)
+            if (
+                not readiness.queryable or readiness.read_scope is None
+                or readiness.workspace_version != entry.workspace_version
+                or readiness.read_scope.source_signature != entry.source_signature
+            ):
+                raise SemanticContextSnapshotChanged("Semantic scope changed during the query")
+
+
     def _lexical_candidate_rows(
         self, scope: SemanticQueryScope, terms: list[str], candidate_limit: int
     ) -> list[dict[str, Any]]:
@@ -734,7 +1021,7 @@ class SemanticContextQueryService:
 
         for expression_index, candidates in enumerate(lexical_by_expression):
             for item in candidates:
-                key = (item["ontology_id"], item["id"])
+                key = (item["ontology_id"], item["kind"], item["id"])
                 existing = by_key.get(key)
                 tagged = dict(item)
                 tagged.pop("_expression_indexes", None)
@@ -842,117 +1129,88 @@ class SemanticContextQueryService:
         return summary
 
     def _expand_multi_primary(
-        self,
-        *,
-        primary: list[dict[str, Any]],
-        scope: SemanticQueryScope,
-        depth: int,
-        context_limit: int,
-        selected_resource_types: set[str],
-        selected_assertion_types: set[str],
-    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[tuple[str, str], list[dict[str, Any]]]]:
+        self, *, primary, scope, depth, context_limit,
+        selected_resource_types, selected_assertion_types,
+    ):
         decorated_primary = [self._decorate(item, scope) for item in primary]
-        related_raw: list[dict[str, Any]] = []
-        root_paths_by_item: dict[tuple[str, str], list[dict[str, Any]]] = defaultdict(list)
-        if context_limit <= 0 or depth <= 0 or not primary:
+        related_raw = []
+        root_paths_by_item = defaultdict(list)
+        self._work_items: set[tuple[str, str, str]] = set()
+        self._expansion = {"status": "not_requested"}
+        self._work_stopped = False
+        if context_limit <= 0 or depth <= 0:
             return decorated_primary, related_raw, root_paths_by_item
-
-        for rank, item in enumerate(primary):
-            for related_item in self._related_for_root(
-                item,
-                scope=scope,
-                depth=depth,
-                context_limit=context_limit,
+        self._expansion = {"status": "complete"}
+        primary_keys = {self._identity_key(item) for item in primary}
+        for rank, root in enumerate(primary):
+            for item in self._related_for_root(
+                root, scope=scope, depth=depth, context_limit=CONTEXT_EXPANSION_BUDGET,
                 selected_resource_types=selected_resource_types,
                 selected_assertion_types=selected_assertion_types,
             ):
-                key = self._identity_key(related_item)
-                root_id = item["id"]
-                root_paths_by_item[key].append(
-                    {
-                        "root_match_id": root_id,
-                        "graph_distance": int(related_item.get("distance") or 1),
-                        "_root_rank": rank,
-                    }
-                )
-                related_item.setdefault("_seen_keys", set()).add(key)
-                related_raw.append(related_item)
-
-        # Dedupe by (ontology, kind, id), aggregating all root paths per identity.
-        # R3.0-004: hide unauthorized related items before dedupe and the
-        # canonical context ordering so the context cursor, context_limit, and
-        # truncation flags describe the authorized subset only.
-        deduped: dict[tuple[str, str, str], dict[str, Any]] = {}
-        for item in related_raw:
-            if not self.access_view.filter_candidate(item):
-                continue
-            key = self._identity_key(item)
-            existing = deduped.get(key)
-            if existing is None:
-                item = dict(item)
-                item.pop("_seen_keys", None)
-                deduped[key] = item
-        for item in deduped.values():
-            key = self._identity_key(item)
-            paths = sorted(
-                root_paths_by_item.get(key, []),
-                key=lambda path: (path["_root_rank"], path["graph_distance"], path["root_match_id"]),
-            )
-            cleaned = [
+                key = self._identity_key(item)
+                if key in primary_keys:
+                    continue
+                root_paths_by_item[key].append({
+                    "root_match_id": root["id"],
+                    "graph_distance": int(item.get("distance") or 1), "_root_rank": rank,
+                })
+                related_raw.append(item)
+            if self._work_stopped:
+                break
+        deduped = {self._identity_key(item): item for item in related_raw}
+        for key in deduped:
+            shortest = {}
+            for path in root_paths_by_item[key]:
+                rank = path["_root_rank"]
+                if rank not in shortest or path["graph_distance"] < shortest[rank]["graph_distance"]:
+                    shortest[rank] = path
+            root_paths_by_item[key] = [
                 {"root_match_id": path["root_match_id"], "graph_distance": path["graph_distance"]}
-                for path in paths
+                for _, path in sorted(shortest.items())
             ]
-            root_paths_by_item[key] = cleaned
-
-        ordered = list(deduped.values())
-        ordered.sort(key=lambda item: _context_sort_key(item, scope, root_paths_by_item))
+        ordered = sorted(deduped.values(), key=lambda item: _context_sort_key(
+            item, scope, root_paths_by_item,
+        ))
         return decorated_primary, ordered, root_paths_by_item
 
+    def _accept_work(self, item):
+        if not self.access_view.filter_candidate(item):
+            return False
+        key = self._identity_key(item)
+        if key not in self._work_items:
+            if len(self._work_items) >= CONTEXT_EXPANSION_BUDGET:
+                self._work_stopped = True
+                self._expansion = {"status": "partial", "reason": "expansion_budget_reached"}
+                return False
+            self._work_items.add(key)
+        return True
+
     def _related_for_root(
-        self,
-        root: dict[str, Any],
-        *,
-        scope: SemanticQueryScope,
-        depth: int,
-        context_limit: int,
-        selected_resource_types: set[str],
-        selected_assertion_types: set[str],
-    ) -> list[dict[str, Any]]:
-        related: list[dict[str, Any]] = []
-        if context_limit <= 0:
-            return related
-        # Each producer may contribute up to one full page for this root.  The
-        # caller unions every root's producer output and applies the canonical
-        # context total order before ``context_limit`` is enforced, so no single
-        # producer (for example generated shape constraints) may consume the
-        # whole page and starve asserted literal facts/relations.  This keeps
-        # small pages (``context_limit <= 3`` in the lean Examiner proxy) useful
-        # for answering factual questions without changing the larger-page
-        # contract.
-        page_limit = context_limit
-        if (
-            "fact" in selected_resource_types
-            and "asserted" in selected_assertion_types
-        ):
-            shape_items = self._shape_constraint_items([root], scope, limit=page_limit)
-            related.extend(shape_items)
-        operation_context = self._operation_target_context(
-            [root],
-            scope,
-            limit=page_limit,
-            enabled="concept" in selected_resource_types,
-        )
-        related.extend(operation_context)
-        neighborhood = self._expand_neighborhood(
-            [root],
-            scope,
-            depth=depth,
-            limit=page_limit,
-            resource_types=selected_resource_types,
-            assertion_types=selected_assertion_types,
-        )
-        related.extend(neighborhood)
+        self, root, *, scope, depth, context_limit,
+        selected_resource_types, selected_assertion_types,
+    ):
+        related = []
+        # All producers share the visible work budget; the page size is applied
+        # only after their complete visible union has been sorted.
+        if "asserted" in selected_assertion_types:
+            for item in self._shape_constraint_items([root], scope, limit=None):
+                if self._accept_work(item) and item["kind"] in selected_resource_types:
+                    related.append(item)
+                if self._work_stopped:
+                    return related
+        for item in self._operation_target_context([root], scope, limit=None, enabled=True):
+            self._hydrate_candidates([item], scope)
+            if self._accept_work(item) and item["kind"] in selected_resource_types:
+                related.append(item)
+            if self._work_stopped:
+                return related
+        related.extend(self._expand_neighborhood(
+            [root], scope, depth=depth, limit=CONTEXT_EXPANSION_BUDGET,
+            resource_types=selected_resource_types, assertion_types=selected_assertion_types,
+        ))
         return related
+
 
     def _decorate_related(
         self,
@@ -968,8 +1226,8 @@ class SemanticContextQueryService:
             decorated.append(decorated_item)
         return decorated
 
-    def _identity_key(self, item: dict[str, Any]) -> tuple[str, str]:
-        return (item["ontology_id"], item["id"])
+    def _identity_key(self, item: dict[str, Any]) -> tuple[str, str, str]:
+        return (item["ontology_id"], item["kind"], item["id"])
 
     def _decode_cursor_opt(
         self,
@@ -1020,6 +1278,7 @@ class SemanticContextQueryService:
         context_cursor_out: str | None,
         context_detail: str = "full",
     ) -> dict[str, Any]:
+        self._verify_scope_snapshot(scope)
         decorated_primary: list[dict[str, Any]] = []
         for item in primary:
             key = self._identity_key(item)
@@ -1043,13 +1302,24 @@ class SemanticContextQueryService:
             item_copy["root_paths"] = list(root_paths_by_item.get(key, []))
             decorated_related.append(item_copy)
         if context_detail == "compact":
-            decorated_related = [_compact_related_row(row) for row in decorated_related]
+            rule_predicate = str(namespace_from_settings(self.settings).vocab) + "ruleDefinition"
+            decorated_related = [
+                _compact_related_row(row, rule_predicate=rule_predicate) for row in decorated_related
+            ]
+        if self._expansion["status"] == "partial":
+            warnings.append({
+                "code": "context_expansion_incomplete",
+                "message": "Context expansion is incomplete; narrow the query or continue from an IRI.",
+            })
         truncated = bool(matches_truncated or context_truncated)
         # The consumer already knows what it asked for.  Keep only the stable
         # echo needed by multi-expression callers and cursor binding.
         query_echo: dict[str, Any] = {
             "queries": list(original_queries),
             "normalized_queries": list(normalized_queries),
+            "semantic_roles": self._semantic_roles,
+            "depth": self._request_depth,
+            "result_scope": "authorized_query_scope",
         }
         return {
             "query": query_echo,
@@ -1066,6 +1336,7 @@ class SemanticContextQueryService:
                 "returned": len(decorated_related),
                 "truncated": bool(context_truncated),
                 "next_context_cursor": context_cursor_out,
+                "expansion": dict(self._expansion),
             },
             "truncated": truncated,
             "recall": _public_recall(recall),
@@ -1164,9 +1435,12 @@ class SemanticContextQueryService:
                 statements.append(statement)
 
         candidates: list[dict[str, Any]] = []
+        self._hydrate_candidates(list(resources.values()), scope)
         for resource in resources.values():
-            types = resource.pop("types")
-            labels = resource.pop("labels")
+            payload = self._description_cache.get((resource["ontology_id"], resource["iri"]), {})
+            types = resource.pop("types") | set(resource["data"].get("rdf_types", []))
+            labels = sorted(set(resource.pop("labels")) | set(payload.get("labels", [])))
+            resource["aliases"] = sorted(set(resource["aliases"]) | set(payload.get("aliases", [])))
             if self.operation_type in types:
                 continue
             if types & _CLASS_TYPES:
@@ -1178,6 +1452,7 @@ class SemanticContextQueryService:
                 None,
             )
             resource["data"] = {
+                **resource["data"],
                 "rdf_types": sorted(types),
                 "label_evidence": sorted(set(labels)),
             }
@@ -1199,10 +1474,15 @@ class SemanticContextQueryService:
         return candidates
 
     def _operation_candidates(
-        self, scope: SemanticQueryScope, text: str, terms: list[str]
+        self, scope: SemanticQueryScope, text: str, terms: list[str],
+        resource_iris: list[str] | None = None
     ) -> list[dict[str, Any]]:
         graph_values = " ".join(URIRef(graph).n3() for graph in scope.graph_iris)
         v = self.operation_vocab
+        resource_values = (
+            "VALUES ?operation { " + " ".join(URIRef(iri).n3() for iri in resource_iris) + " }"
+            if resource_iris else ""
+        )
         query = f"""# template: semantic-context-operations
 PREFIX rdf: <{RDF}>
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -1213,6 +1493,7 @@ SELECT ?graph ?operation ?operationId ?name ?description ?target ?targetLabel
        (GROUP_CONCAT(DISTINCT STR(?alias); separator="|") AS ?aliases)
 WHERE {{
   VALUES ?graph {{ {graph_values} }}
+  {resource_values}
   GRAPH ?graph {{
     ?operation a <{v["type"]}> ;
       <{v["id"]}> ?operationId ;
@@ -1240,12 +1521,8 @@ GROUP BY ?graph ?operation ?operationId ?name ?description ?target ?targetLabel
 ORDER BY ?graph ?operation
 LIMIT 5000
 """
-        try:
-            result = self.rdf_store.query_sparql(query, timeout_seconds=10, limit=5000)
-        except Exception:
-            return []
         candidates = []
-        for row in _bindings(result.result):
+        for row in self._producer_rows(query):
             graph = _value(row, "graph")
             iri = _value(row, "operation")
             if not graph or graph not in scope.graph_to_ontology or not iri:
@@ -1282,6 +1559,8 @@ LIMIT 5000
             ]
             match_fields.extend(_operation_lexical_fields(operation))
             match = _best_match(text, terms, match_fields)
+            if resource_iris and iri in resource_iris:
+                match = _neighborhood_match(1)
             if match:
                 candidates.append(
                     {
@@ -1302,7 +1581,8 @@ LIMIT 5000
         return candidates
 
     def _mapping_candidates(
-        self, scope: SemanticQueryScope, text: str, terms: list[str]
+        self, scope: SemanticQueryScope, text: str, terms: list[str],
+        resource_iris: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """Lexical candidates for relational schema mapping resources
         (TableMapping / JoinMapping / EnumValueMeaning), pattern-aligned with
@@ -1311,6 +1591,10 @@ LIMIT 5000
         payload so consumers see the reference topology."""
         graph_values = " ".join(URIRef(graph).n3() for graph in scope.graph_iris)
         vocab = str(namespace_from_settings(self.settings).vocab)
+        resource_values = (
+            "VALUES ?mapping { " + " ".join(URIRef(iri).n3() for iri in resource_iris) + " }"
+            if resource_iris else ""
+        )
         query = f"""# template: semantic-context-mappings
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX op: <{vocab}>
@@ -1319,6 +1603,7 @@ SELECT ?graph ?mapping ?type ?label ?mappedClass ?mappedRelation ?mappedProperty
        ?semanticValue
 WHERE {{
   VALUES ?graph {{ {graph_values} }}
+  {resource_values}
   VALUES ?type {{ op:TableMapping op:JoinMapping op:EnumValueMeaning }}
   GRAPH ?graph {{
     ?mapping a ?type ;
@@ -1338,12 +1623,8 @@ WHERE {{
 ORDER BY ?graph ?mapping
 LIMIT 5000
 """
-        try:
-            result = self.rdf_store.query_sparql(query, timeout_seconds=10, limit=5000)
-        except Exception:
-            return []
         candidates: list[dict[str, Any]] = []
-        for row in _bindings(result.result):
+        for row in self._producer_rows(query):
             graph = _value(row, "graph")
             iri = _value(row, "mapping")
             if not graph or graph not in scope.graph_to_ontology or not iri:
@@ -1384,6 +1665,8 @@ LIMIT 5000
                     ("description", data.get("business_meaning"), 450, "description"),
                 ],
             )
+            if resource_iris and iri in resource_iris:
+                match = _neighborhood_match(1)
             if match:
                 candidates.append(
                     {
@@ -1403,17 +1686,23 @@ LIMIT 5000
         return candidates
 
     def _metric_candidates(
-        self, scope: SemanticQueryScope, text: str, terms: list[str]
+        self, scope: SemanticQueryScope, text: str, terms: list[str],
+        resource_iris: list[str] | None = None
     ) -> list[dict[str, Any]]:
         """Lexical candidates for MetricDefinition resources (label/comment)."""
         graph_values = " ".join(URIRef(graph).n3() for graph in scope.graph_iris)
         vocab = str(namespace_from_settings(self.settings).vocab)
+        resource_values = (
+            "VALUES ?metric { " + " ".join(URIRef(iri).n3() for iri in resource_iris) + " }"
+            if resource_iris else ""
+        )
         query = f"""# template: semantic-context-metrics
 PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
 PREFIX op: <{vocab}>
 SELECT ?graph ?metric ?label ?comment ?grain ?timeField ?measure ?aggregation ?filters
 WHERE {{
   VALUES ?graph {{ {graph_values} }}
+  {resource_values}
   GRAPH ?graph {{
     ?metric a op:MetricDefinition ;
             rdfs:label ?label .
@@ -1428,12 +1717,8 @@ WHERE {{
 ORDER BY ?graph ?metric
 LIMIT 5000
 """
-        try:
-            result = self.rdf_store.query_sparql(query, timeout_seconds=10, limit=5000)
-        except Exception:
-            return []
         candidates: list[dict[str, Any]] = []
-        for row in _bindings(result.result):
+        for row in self._producer_rows(query):
             graph = _value(row, "graph")
             iri = _value(row, "metric")
             if not graph or graph not in scope.graph_to_ontology or not iri:
@@ -1473,6 +1758,8 @@ LIMIT 5000
                     ("description", comment, 450, "description"),
                 ],
             )
+            if resource_iris and iri in resource_iris:
+                match = _neighborhood_match(1)
             if match:
                 candidates.append(
                     {
@@ -1499,7 +1786,7 @@ LIMIT 5000
         limit: int,
         enabled: bool,
     ) -> list[dict[str, Any]]:
-        if not enabled or limit <= 0:
+        if not enabled or (limit is not None and limit <= 0):
             return []
         result = []
         seen = set()
@@ -1531,7 +1818,7 @@ LIMIT 5000
                     },
                 }
             )
-            if len(result) >= limit:
+            if limit is not None and len(result) >= limit:
                 break
         return result
 
@@ -1561,6 +1848,8 @@ LIMIT 5000
                     guidance = self.shape_endpoint.read_merged_guidance(
                         ontology_scope.graph_set_id, target_class
                     )
+                except RdfStoreError:
+                    raise
                 except Exception:
                     continue
                 for field in guidance.get("fields", []):
@@ -1637,7 +1926,7 @@ LIMIT 5000
                             "target_id": canonical_path,
                         }
                     items.append(item)
-                    if len(items) >= limit:
+                    if limit is not None and len(items) >= limit:
                         return items
         return items
 
@@ -1698,67 +1987,108 @@ LIMIT 5000
         return candidates
 
     def _expand_neighborhood(
-        self,
-        primary: list[dict[str, Any]],
-        scope: SemanticQueryScope,
-        *,
-        depth: int,
-        limit: int,
-        resource_types: set[str],
-        assertion_types: set[str],
-    ) -> list[dict[str, Any]]:
-        frontier = sorted(
-            {
-                item["iri"]
-                for item in primary
-                if item.get("iri") and str(item["iri"]).startswith(("http://", "https://", "urn:"))
-            }
-        )
+        self, primary, scope, *, depth, limit, resource_types, assertion_types,
+    ):
+        anchors = set()
+        for item in primary:
+            if _is_statement(item):
+                data = item.get("data") or {}
+                if data.get("subject"):
+                    anchors.add(data["subject"])
+                if data.get("object_type") == "uri":
+                    anchors.add(data["object"])
+            elif item.get("iri"):
+                anchors.add(item["iri"])
+        frontier = sorted(anchors)
         seen_anchors = set(frontier)
-        seen_items = {item["id"] for item in primary}
-        related: list[dict[str, Any]] = []
+        seen_items = set()
+        related = []
         for distance in range(1, depth + 1):
-            if not frontier or len(related) >= limit:
+            if not frontier or self._work_stopped:
                 break
-            query_limit = min(5000, max(100, (limit - len(related)) * 20))
-            result = self.rdf_store.query_sparql(
+            next_frontier = set()
+            for rows in self._read_chunks(lambda chunk_limit, after: (
                 semantic_context_neighborhood_query(
-                    scope.graph_iris,
-                    frontier,
-                    query_limit,
-                    self.operation_type,
-                    self.operation_predicates,
-                ),
-                timeout_seconds=10,
-                limit=query_limit,
-            )
-            next_frontier: set[str] = set()
-            for row in _bindings(result.result):
-                item = self._statement_item(row, scope, distance=distance)
-                if item is None or item["id"] in seen_items:
-                    continue
-                if item["kind"] not in resource_types:
-                    continue
-                if _assertion_filter_value(item["assertion_kind"]) not in assertion_types:
-                    continue
-                item["match"] = {
-                    "score": max(1, 300 - distance * 50),
-                    "matched_terms": [],
-                    "matched_fields": ["neighborhood"],
-                    "reasons": ["relation_neighborhood"],
-                }
-                related.append(item)
-                seen_items.add(item["id"])
-                for key in ("subject", "object"):
-                    value = item["data"].get(key)
-                    if isinstance(value, str) and value.startswith(("http://", "https://", "urn:")):
-                        if value not in seen_anchors:
-                            next_frontier.add(value)
-                if len(related) >= limit:
-                    break
+                    self._selected_graphs(scope), frontier, chunk_limit,
+                    self.operation_type, self.operation_predicates, after,
+                )
+            )):
+                statements = [item for row in rows
+                              if (item := self._statement_item(row, scope, distance=distance))]
+                # Batch hydration of endpoint descriptions before authorization,
+                # with no JSON strings converted into implicit traversal links.
+                endpoint_seeds = {}
+                for item in statements:
+                    data = item["data"]
+                    endpoints = [data["subject"]]
+                    if data.get("object_type") == "uri":
+                        endpoints.append(data["object"])
+                    for iri in endpoints:
+                        endpoint_seeds[(item["ontology_id"], iri)] = {
+                            "id": iri, "iri": iri, "kind": "instance",
+                            "target_kind": "resource", "ontology_id": item["ontology_id"],
+                            "data": {}, "assertion_kind": item["assertion_kind"],
+                        }
+                self._hydrate_candidates(list(endpoint_seeds.values()), scope)
+                for item in statements:
+                    key = self._identity_key(item)
+                    if key in seen_items:
+                        continue
+                    seen_items.add(key)
+                    data = item["data"]
+                    endpoints = [data["subject"]]
+                    if data.get("object_type") == "uri":
+                        endpoints.append(data["object"])
+                    seeds = [endpoint_seeds[(item["ontology_id"], iri)] for iri in endpoints]
+                    endpoint_resources = []
+                    for iri, seed in zip(endpoints, seeds):
+                        own_definitions = [
+                            entry for entry in scope.ontologies
+                            if self._description_cache[(entry.ontology_id, iri)].get("_own_rows")
+                        ]
+                        resource_items = [
+                            self._resource_from_rows(
+                                self._description_cache[(entry.ontology_id, iri)]["_own_rows"],
+                                scope, iri,
+                            ) for entry in own_definitions
+                        ]
+                        if not resource_items:
+                            resource_items = [{
+                                **seed, "label": _local_name(iri), "distance": distance,
+                                "match": _neighborhood_match(distance),
+                            }]
+                        endpoint_resources.append([resource for resource in resource_items
+                                                   if resource is not None])
+                    if not self.access_view.filter_candidate(item) or any(
+                        not self.access_view.filter_candidate(resource)
+                        for resources in endpoint_resources for resource in resources
+                    ):
+                        continue
+                    if not self._accept_work(item):
+                        if self._work_stopped:
+                            return related
+                        continue
+                    item["match"] = _neighborhood_match(distance)
+                    if item["kind"] in resource_types:
+                        related.append(item)
+                    for iri, resource_items in zip(endpoints, endpoint_resources):
+                        if iri not in seen_anchors:
+                            next_frontier.add(iri)
+                        for resource in resource_items:
+                            if resource is None:
+                                continue
+                            resource["distance"] = distance
+                            resource["match"] = _neighborhood_match(distance)
+                            if self._accept_work(resource) and resource["kind"] in resource_types:
+                                related.append(resource)
+                            if self._work_stopped:
+                                return related
+                if self._work_stopped:
+                    return related
             seen_anchors.update(next_frontier)
             frontier = sorted(next_frontier)
         return related
+
 
     def _statement_item(
         self, row: dict[str, Any], scope: SemanticQueryScope, *, distance: int
@@ -1793,6 +2123,7 @@ LIMIT 5000
             "aliases": [],
             "description": None,
             "data": {
+                "graph_iri": graph,
                 "subject": subject,
                 "subject_label": subject_label,
                 "predicate": predicate,
@@ -1886,7 +2217,12 @@ LIMIT 5000
                 "run_id": descriptor.get("run_id"),
             }
 
-        item_warnings: list[dict[str, str]] = []
+        item_warnings: list[dict[str, str]] = list(item.get("warnings") or [])
+        if item.get("data", {}).get("annotation_read_diagnostics"):
+            item_warnings.append({
+                "code": "annotation_read_diagnostic",
+                "message": "An existing annotation could not be read unambiguously; inspect its statement.",
+            })
         if derived_state and derived_state.get("status") == "stale":
             item_warnings.append(
                 {"code": "derived_result_stale", "message": "Derived result is stale."}
@@ -2104,6 +2440,9 @@ def _public_item(item: Mapping[str, Any]) -> dict[str, Any]:
         "assertion_kind": item.get("assertion_kind"),
         "data": data,
         "warnings": list(item.get("warnings") or []),
+        "description": item.get("description"),
+        "assertion_type": item.get("assertion_type"),
+        "derived_state": item.get("derived_state"),
         "match": _public_match(item),
     }
     if item.get("target_kind") is not None:
@@ -2113,44 +2452,30 @@ def _public_item(item: Mapping[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in public.items() if value is not None}
 
 
-_COMPACT_RELATED_DATA_KEYS = (
-    # Statement essentials only: subject/predicate/object identity the consumer
-    # needs to read a fact or relation. Long IRIs, warnings, and match metadata
-    # stay in the ``full`` projection.
-    "subject_label",
-    "predicate_label",
-    "predicate",
-    "object",
-    "object_label",
-    "object_type",
-)
-
-
-def _compact_related_row(row: Mapping[str, Any]) -> dict[str, Any]:
-    """Project one decorated related-context row to its compact form.
-
-    R2.3-009 examiner diagnosis (2026-08-21): live measurement showed
-    ``related_context`` dominates the context-query payload (97KB of 115KB on a
-    default examiner question) and most of each row is repeated IRIs and
-    template metadata the consumer re-derives from ``primary_matches``.  The
-    compact projection keeps identity, kind, label, statement essentials,
-    and the root-path anchors that explain adjacency.
-    """
-    data = row.get("data")
-    essentials = (
-        {key: data[key] for key in _COMPACT_RELATED_DATA_KEYS if data.get(key) is not None}
-        if isinstance(data, Mapping)
-        else {}
-    )
-    compact: dict[str, Any] = {
-        "id": row.get("id"),
-        "kind": row.get("kind"),
-        "label": row.get("label"),
-        "root_paths": list(row.get("root_paths") or []),
-    }
-    if essentials:
-        compact["data"] = essentials
-    return {key: value for key, value in compact.items() if value is not None}
+def _compact_related_row(
+    row: Mapping[str, Any], *, rule_predicate: str,
+) -> dict[str, Any]:
+    """Preserve business meaning and identity; declare script-only omissions."""
+    compact = {key: value for key, value in row.items() if key != "match"}
+    data = dict(row.get("data") or {})
+    omitted = []
+    definition = data.get("rule_definition")
+    if isinstance(definition, Mapping) and "script_source" in definition:
+        data["rule_definition"] = {key: value for key, value in definition.items()
+                                   if key != "script_source"}
+        omitted.append("data.rule_definition.script_source")
+    if data.get("predicate") == rule_predicate and isinstance(data.get("object"), str):
+        try:
+            raw = json.loads(data["object"])
+        except (TypeError, ValueError):
+            raw = None
+        if isinstance(raw, dict) and "script_source" in raw:
+            data.pop("object")
+            omitted.append("data.object")
+    compact["data"] = data
+    if omitted:
+        compact["projection"] = {"omitted_fields": omitted}
+    return compact
 
 
 def _public_scope(scope: Mapping[str, Any]) -> dict[str, Any]:
@@ -2367,7 +2692,7 @@ def _dedupe_items(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for item in items:
-        key = (item["ontology_id"], item["id"])
+        key = (item["ontology_id"], item["kind"], item["id"])
         if key not in seen:
             seen.add(key)
             result.append(item)
@@ -2513,7 +2838,7 @@ def _multi_sort_key(
     fusion_by_item: dict[tuple[str, str], dict[str, Any]],
 ) -> tuple[Any, ...]:
     ontology_order = {entry.ontology_id: index for index, entry in enumerate(scope.ontologies)}
-    key = (item["ontology_id"], item["id"])
+    key = (item["ontology_id"], item["kind"], item["id"])
     fusion = fusion_by_item.get(key, {})
     tier_rank = 0 if fusion.get("best_evidence_tier") == "exact" else 1
     stale_penalty = 100 if _item_is_stale(item, scope) else 0
@@ -2533,7 +2858,7 @@ def _dedupe_multi(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
     result: list[dict[str, Any]] = []
     seen: set[tuple[str, str]] = set()
     for item in items:
-        key = (item["ontology_id"], item["id"])
+        key = (item["ontology_id"], item["kind"], item["id"])
         if key in seen:
             continue
         seen.add(key)
@@ -2544,6 +2869,7 @@ def _dedupe_multi(items: list[dict[str, Any]]) -> list[dict[str, Any]]:
 def _match_resume_key(item: dict[str, Any]) -> tuple[Any, ...]:
     return (
         item["ontology_id"],
+        item["kind"],
         item["id"],
     )
 
@@ -2559,12 +2885,10 @@ def _context_resume_key(item: dict[str, Any]) -> tuple[Any, ...]:
 def _resume_after_key(items: list[dict[str, Any]], key: tuple[Any, ...]) -> list[dict[str, Any]]:
     if not key:
         return items
-    key_prefix = tuple(key[:2])
     for index, item in enumerate(items):
-        if _match_resume_key(item) == key_prefix:
+        if _match_resume_key(item) == tuple(key):
             return items[index:]
-    # Fall back: resume key from a stale/rotated cursor stream is no longer present.
-    return items
+    raise SemanticContextSnapshotChanged("Visible match continuation no longer exists")
 
 
 def _resume_context_after_key(
@@ -2575,7 +2899,7 @@ def _resume_context_after_key(
     for index, item in enumerate(items):
         if _context_resume_key(item) == tuple(key):
             return items[index:]
-    return items
+    raise SemanticContextSnapshotChanged("Visible context continuation no longer exists")
 
 
 def _context_sort_key(
@@ -2584,7 +2908,7 @@ def _context_sort_key(
     root_paths_by_item: dict[tuple[str, str], list[dict[str, Any]]],
 ) -> tuple[Any, ...]:
     ontology_order = {entry.ontology_id: index for index, entry in enumerate(scope.ontologies)}
-    identity = (item["ontology_id"], item["id"])
+    identity = (item["ontology_id"], item["kind"], item["id"])
     paths = root_paths_by_item.get(identity, [])
     min_distance = min((int(path["graph_distance"]) for path in paths), default=99)
     return (
@@ -2606,3 +2930,41 @@ def _dedupe_warnings(warnings: list[dict[str, str]]) -> list[dict[str, str]]:
             seen.add(key)
             result.append(warning)
     return result
+
+
+def _normalize_semantic_roles(roles: list[str] | None) -> list[str] | None:
+    if roles is None:
+        return None
+    if not isinstance(roles, list) or not roles or any(
+        not isinstance(role, str) or not role.strip() for role in roles
+    ):
+        raise SemanticContextQueryError("semantic_roles must be a non-empty list of non-empty strings")
+    return sorted({role.strip() for role in roles})
+
+
+def _is_statement(item: Mapping[str, Any]) -> bool:
+    return item.get("target_kind") == "statement" or {"subject", "predicate", "object"} <= set(
+        item.get("data") or {}
+    )
+
+
+def _neighborhood_match(distance: int) -> dict[str, Any]:
+    return {"score": max(1, 300 - distance * 50), "matched_terms": [],
+            "matched_fields": ["neighborhood"], "reasons": ["relation_neighborhood"]}
+
+
+def _json_digest(value: Any) -> str:
+    raw = json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+                     default=lambda item: sorted(item) if isinstance(item, set) else str(item))
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _visible_digest(items: list[dict[str, Any]]) -> str:
+    return _json_digest([
+        {"item": _public_item(item), "annotation_values": item.get("_annotation_values", [])}
+        for item in items
+    ])
+
+
+def _root_digest(items: list[dict[str, Any]]) -> str:
+    return _json_digest([_match_resume_key(item) for item in items])

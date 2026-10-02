@@ -331,7 +331,8 @@ def test_unified_query_returns_primary_related_without_trace_fields(in_memory_se
     assert "secret.txt" not in serialized
     assert "private rationale" not in serialized
     assert "graph_set" not in serialized
-    assert "https://graphs.test" not in serialized
+    assert all(item["data"].get("graph_iri", "").startswith("https://graphs.test")
+               for item in result["related_context"] if item.get("target_kind") == "statement")
     assert "https://secret.test/shapes" not in serialized
     assert all("semantic-context" in query for query in store.queries)
 
@@ -1862,22 +1863,19 @@ def test_compact_context_detail_projects_related_rows_to_essentials(in_memory_se
     compact = service.query_multi(**kwargs, context_detail="compact")
     full = service.query_multi(**kwargs)
 
-    # Compact keeps identity/kind/label, statement essentials, and root-path
-    # anchors only.
+    # R4.0-008 compact keeps the full business/statement identity and meaning;
+    # only script bodies and debugging match metadata are omitted.
     assert compact["result_status"] == "matched"
     assert compact["related_context"]
-    allowed_row = {"id", "kind", "label", "evidence_status", "root_paths", "data"}
-    allowed_data = {
-        "subject_label",
-        "predicate_label",
-        "predicate",
-        "object",
-        "object_label",
-        "object_type",
-    }
     for item in compact["related_context"]:
-        assert set(item) <= allowed_row
-        assert set(item.get("data") or {}) <= allowed_data
+        assert "ontology_id" in item
+        assert "assertion_kind" in item
+        assert "warnings" in item
+        assert "match" not in item
+        if item.get("target_kind") == "statement":
+            assert "subject" in item["data"]
+            assert "object_datatype" in item["data"]
+            assert "object_language" in item["data"]
     facts = [
         item
         for item in compact["related_context"]

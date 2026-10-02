@@ -92,6 +92,13 @@ cd backend
 uv run python ../scripts/sync-interface-docs.py --write
 ```
 
+`query_semantic_context` 的 R4.0-008 合同与 [Context Query REST 说明](api.md) 共用服务：
+可选 `semantic_roles` 只筛已声明的主命中角色，MCP 关联行默认 compact、主命中 full。
+检查 `query.result_scope`、`recall.completeness`、双分页和 `context_page.expansion`；末页或
+complete 的有界展开均不证明业务完整。脚本投影省略由 `projection.omitted_fields` 声明，可沿
+已获准 IRI 以 full 补读。context cursor 独立恢复原匹配页；角色筛选与当前可见集合参与绑定。
+无权与不存在保持同形；平台不执行规则脚本、数据库查询或外部调用。
+
 <!-- BEGIN GENERATED MCP TOOL INVENTORY -->
 
 | Category | Tool | Description | Required parameters | All parameters | Source |
@@ -152,7 +159,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `list_semantic_reasoning_runs` | List existing reasoning runs for one authorized graph set without rerunning them. | graph_set_id | graph_set_id, kind, limit, offset | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_validation_runs` | List existing validation runs for one authorized graph set.  This is deliberately read-only: it never starts validation or reruns a report.  The graph-set argument is required so the MCP authorization layer can bind the child request to its ticket-owned Project scope.  | graph_set_id | graph_set_id, kind, limit, offset | `backend/app/mcp/tools/semantic.py` |
 | semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
-| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, scope_mode | assertion_types, context_cursor, context_detail, context_limit, depth, limit, match_cursor, ontology_ids, project_id, queries, query, resource_types, scope_mode, search_mode | `backend/app/mcp/tools/semantic.py` |
+| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, scope_mode | assertion_types, context_cursor, context_detail, context_limit, depth, limit, match_cursor, ontology_ids, project_id, queries, query, resource_types, scope_mode, search_mode, semantic_roles | `backend/app/mcp/tools/semantic.py` |
 | semantic | `remove_semantic_protection_set_members` | Batch-remove resource IRIs from a protection set. | protection_set_id, resource_iris | actor, protection_set_id, resource_iris | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `rollback_semantic_migration_run` | Roll back a Phase 7 cutover and restore legacy-primary mode. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_next_semantic_migration_batch` | Execute the next pending batch of a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |

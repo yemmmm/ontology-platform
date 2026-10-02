@@ -389,6 +389,10 @@ class ProtocolRetrievalGate:
         if any(field not in arguments for field in _FROZEN_QUERY_FIELDS):
             return None
         values = {field: arguments.get(field) for field in _FROZEN_QUERY_FIELDS}
+        roles = arguments.get("semantic_roles")
+        values["semantic_roles"] = (
+            sorted({role.strip() for role in roles}) if isinstance(roles, list) else roles
+        )
         return _canonical(values).decode("utf-8")
 
     @staticmethod
@@ -863,6 +867,11 @@ class ProtocolRetrievalGate:
             ):
                 raise ProtocolRetrievalGateError("retrieval artifact digest binding is invalid")
             data = self._read_result(record, artifact_path)
+            expansion = (data.get("context_page") or {}).get("expansion")
+            if isinstance(expansion, Mapping) and expansion.get("status") == "partial":
+                warnings_observed.append(
+                    "context expansion is partial; narrow scope or continue from a returned IRI"
+                )
             warnings_observed.extend(
                 self._validate_response_quality(
                     data, search_mode=str(first_arguments["search_mode"])

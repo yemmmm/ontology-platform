@@ -7066,6 +7066,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             or not isinstance(context_page, dict)
             or context_page.get("truncated") is not False
             or context_page.get("next_context_cursor") is not None
+            or (context_page.get("expansion") or {}).get("status") == "partial"
         ):
             return False
         requested = set(requested_ontology_ids)

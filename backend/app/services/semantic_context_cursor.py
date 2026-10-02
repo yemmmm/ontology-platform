@@ -24,7 +24,7 @@ from app.core.config import Settings
 from app.security.auth import AuthPrincipal
 
 
-CURSOR_VERSION = 1
+CURSOR_VERSION = 2
 CURSOR_KIND_MATCH = "match"
 CURSOR_KIND_CONTEXT = "context"
 CURSOR_KINDS = (CURSOR_KIND_MATCH, CURSOR_KIND_CONTEXT)
@@ -75,6 +75,7 @@ class CursorBinding:
     context_limit: int
     workspace_versions: tuple[tuple[str, str], ...]
     source_signatures: tuple[tuple[str, str], ...]
+    semantic_roles: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -87,6 +88,10 @@ class CursorPayload:
     source_signatures: tuple[tuple[str, str], ...]
     resume_key: tuple[Any, ...] = ()
     root_match_ids: tuple[str, ...] = ()
+    match_page_start_key: tuple[Any, ...] = ()
+    root_match_digest: str = ""
+    candidate_digest: str = ""
+    context_digest: str = ""
     issued_at: int = 0
     version: int = CURSOR_VERSION
 
@@ -132,7 +137,10 @@ class ContextCursorCodec:
             "wv": [list(item) for item in payload.workspace_versions],
             "ss": [list(item) for item in payload.source_signatures],
             "r": list(payload.resume_key),
-            "rm": list(payload.root_match_ids),
+            "ms": list(payload.match_page_start_key),
+            "rd": payload.root_match_digest,
+            "cd": payload.candidate_digest,
+            "xd": payload.context_digest,
             "i": int(payload.issued_at or time.time()),
         }
         raw = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -199,6 +207,12 @@ class ContextCursorCodec:
             source_signatures=source_signatures,
             resume_key=tuple(_normalise_resume_key(item) for item in payload.get("r") or []),
             root_match_ids=tuple(str(item) for item in payload.get("rm") or []),
+            match_page_start_key=tuple(
+                _normalise_resume_key(item) for item in payload.get("ms") or []
+            ),
+            root_match_digest=str(payload.get("rd") or ""),
+            candidate_digest=str(payload.get("cd") or ""),
+            context_digest=str(payload.get("xd") or ""),
             issued_at=issued_at,
             version=int(payload.get("v") or CURSOR_VERSION),
         )
@@ -225,6 +239,7 @@ def make_binding(
     context_limit: int,
     workspace_versions: list[tuple[str, str]] | tuple[tuple[str, str], ...],
     source_signatures: list[tuple[str, str]] | tuple[tuple[str, str], ...],
+    semantic_roles: list[str] | None = None,
 ) -> CursorBinding:
     return CursorBinding(
         principal=principal,
@@ -241,6 +256,7 @@ def make_binding(
         context_limit=context_limit,
         workspace_versions=tuple(workspace_versions),
         source_signatures=tuple(source_signatures),
+        semantic_roles=tuple(semantic_roles or ()),
     )
 
 
@@ -265,6 +281,7 @@ def binding_digest(binding: CursorBinding) -> str:
         "normalized_queries": list(binding.normalized_queries),
         "resource_types": list(binding.resource_types),
         "assertion_types": list(binding.assertion_types),
+        "semantic_roles": list(binding.semantic_roles),
         "search_mode": binding.search_mode,
         "depth": binding.depth,
         "limit": binding.limit,

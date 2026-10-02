@@ -2161,8 +2161,10 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "query": {"type": ["string", "null"]}, "queries": {"type": ["array", "null"], "items": {"type": "string"}},
         "ontology_ids": {"type": "array", "items": {"type": "string"}},
         "resource_types": {"type": ["array", "null"], "items": {"type": "string"}},
+        "semantic_roles": {"type": ["array", "null"], "minItems": 1,
+                           "items": {"type": "string", "minLength": 1}},
         "assertion_types": {"type": ["array", "null"], "items": {"type": "string"}}, "search_mode": {"type": "string"},
-        "depth": {"type": "integer", "minimum": 1, "maximum": 1},
+        "depth": {"type": "integer", "minimum": 0, "maximum": 3},
         "limit": {"type": "integer", "minimum": 1, "maximum": 10},
         "context_limit": {"type": "integer", "minimum": 0, "maximum": 3},
         "match_cursor": {"type": "string"}, "context_cursor": {"type": "string"},
@@ -2344,8 +2346,8 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
         # The consumer needs modeled facts, not ontology scaffolding: default the
         # resource filter to instance/relation/fact/rule so concept noise and
         # unrelated class matches stay out of the context.  A caller-supplied
-        # filter must remain within that consumer set.
-        allowed_types = {"instance", "relation", "fact", "rule"}
+        # filter may select any existing platform resource kind.
+        allowed_types = {"concept", "instance", "relation", "fact", "rule", "operation", "mapping", "metric"}
         caller_types = arguments.get("resource_types")
         if caller_types is not None:
             if not isinstance(caller_types, list) or not caller_types or any(
@@ -2353,7 +2355,7 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
             ):
                 raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         else:
-            arguments = {**arguments, "resource_types": sorted(allowed_types)}
+            arguments = {**arguments, "resource_types": ["fact", "instance", "relation", "rule"]}
         # Mechanical small-retrieval defaults.  The prompt prefers small pages,
         # but a missing optional field must not silently fall back to the broad
         # backend defaults (limit 20 / context_limit 100).  The consumer can

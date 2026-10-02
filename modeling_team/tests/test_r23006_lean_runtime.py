@@ -237,11 +237,20 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             {**valid, "extra": True},
             {key: value for key, value in valid.items() if key != "query"},
             {**valid, "depth": "10"},
-            {**valid, "depth": 2},
-            {**valid, "resource_types": ["concept"]},
+            {**valid, "depth": 4},
+            {**valid, "resource_types": ["unknown"]},
         ):
             with self.assertRaises(ChildRuntimeError):
                 validate_examiner_proxy_arguments("query_semantic_context", changed, schema, scope=scope)
+
+        for depth in (0, 2, 3):
+            multiview = validate_examiner_proxy_arguments(
+                "query_semantic_context",
+                {**valid, "depth": depth, "semantic_roles": ["Mapping"], "resource_types": ["mapping"]},
+                schema, scope=scope,
+            )
+            self.assertEqual(multiview["depth"], depth)
+            self.assertEqual(multiview["semantic_roles"], ["Mapping"])
 
         nullable = examiner_proxy_schemas(["query_semantic_context"])["query_semantic_context"]
         nullable_valid = {**scope, "scope_mode": "ontologies", "ontology_ids": ["ontology-1"], "queries": ["a", "b"]}

@@ -544,3 +544,21 @@ def test_context_mcp_defaults_to_compact_related_context():
     # compact related-context projection; REST keeps ``full`` as default.
     assert detail["default"] == "compact"
     assert detail["enum"] == ["full", "compact"]
+
+
+def test_r4008_mcp_roles_are_forwarded_and_discoverable(scoped_mcp, monkeypatch):
+    seen = {}
+    class Service:
+        def query_multi(self, **arguments):
+            seen.update(arguments)
+            return {"result_status": "no_match"}
+    monkeypatch.setattr("app.mcp.tools.semantic._context_query_service", lambda *args: Service())
+    result = asyncio.run(_tool("query_semantic_context").run({
+        "project_id": "p", "scope_mode": "ontologies", "ontology_ids": ["o"],
+        "queries": ["example"], "semantic_roles": ["Action"], "depth": 0,
+    }))
+    assert result["ok"] is True
+    assert seen["semantic_roles"] == ["Action"]
+    assert seen["context_detail"] == "compact"
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    assert "semantic_roles" in tools["query_semantic_context"].inputSchema["properties"]

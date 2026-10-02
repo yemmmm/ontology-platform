@@ -428,6 +428,7 @@ def query_semantic_context(
             queries=request.queries if request.queries is not None else [request.query],
             resource_types=request.resource_types,
             assertion_types=request.assertion_types,
+            semantic_roles=request.semantic_roles,
             search_mode=request.search_mode,
             depth=request.depth,
             limit=request.limit,

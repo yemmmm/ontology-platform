@@ -155,7 +155,7 @@ translation conflict and do not issue a probe or a partial query.
 
 Freeze each competency question's first request as one exact tuple of `query`, `project_id`,
 `scope_mode`, `ontology_ids`, `resource_types`, `assertion_types`, `search_mode`, `depth`, `limit`,
-and `context_limit`. A context continuation preserves that tuple and changes only
+`context_limit`, and the optional normalized `semantic_roles`. A context continuation preserves that tuple and changes only
 `context_cursor`; a match continuation preserves it, changes only `match_cursor`, and starts a
 new context chain for the returned match page. Never carry a cursor across competency questions,
 send both cursors, reuse a context cursor on a later match page, or change any frozen query
@@ -169,6 +169,16 @@ first page. Retrieval is complete only after every question's match/context chai
 non-truncated, non-degraded results and the required semantic rows are present. Entity/fact
 readback can supplement the generic result but cannot replace an incomplete scope, path or page;
 report the concrete retrieval conflict and repair the named request.
+
+Check `query.result_scope`, `recall.completeness`, and `context_page.expansion` separately.
+`expansion.status=partial` remains incomplete even on a terminal page; narrow the scope or
+continue from a returned IRI, then reassess the question. `not_requested` means no expansion
+was requested. A complete bounded expansion covers only the selected scope, depth and match
+page, and does not establish business completeness or execution permission. Missing results
+cannot establish that a rule or constraint is absent. Preserve distinct resource/statement
+identities, literal types and relation direction; `root_paths` gives roots and distances,
+not a complete edge path. For compact script omissions, read `projection.omitted_fields`
+and request full context or resource details from the same authorized scope.
 
 For an ordinary v2/v3 task, use the same generic Ontology-scoped query and pagination contract.
 Do not require assertion matrices, proof-only envelopes, source attachments or a fallback verifier.

@@ -126,6 +126,36 @@ R1.2-004 起 Context Query 支持一次提交一组同主题的相关表达式�
 `truncated` 的逻辑或。配置 `SEMANTIC_CONTEXT_QUERY_CURSOR_SIGNING_SECRET` 时 cursor 可跨进程
 重启继续验证；未配置时后端使用进程私有随机完整性材料并经能力发现声明该限制。
 
+
+R4.0-008 在同一入口增加可选 `semantic_roles`：非空字符串列表，trim、去重，按已声明的
+`data.semantic_definition.semantic_role` 精确且区分大小写匹配，多值 OR；与资源／断言筛选取
+AND，只筛主命中。null／缺省不筛选，未知角色返回正常空匹配，不推断未声明的角色。
+主命中及关联资源投影已有 `semantic_definition`、`action_definition`、`parameter_definition`、
+`rule_definition` 与 description；statement 保留 subject／predicate／object、类型、datatype、
+language、图／Ontology 身份及方向。`root_paths` 仅表示根与距离，逐边路径需从实际 statement 还原。
+
+`context_detail` 仅控制关联行：REST 默认 full，MCP 默认 compact；主命中保持 full。
+compact 保留业务解释与身份，省略已有规则的 `script_source`，用
+`projection.omitted_fields` 标记 `data.rule_definition.script_source`；原始规则 JSON fact
+中的正文同样省略整个 `data.object` 并声明，保留原 statement 的身份与类型。通过获准 IRI
+请求 full 可补读；补读失败不表示正文为空。无效／多值注解给出可定位的读取诊断并保留获准原始 statement。
+平台不执行脚本、SQL 或外部 API，不自动判定业务兼容或说明／脚本一致。
+
+`query.result_scope=authorized_query_scope` 固定声明查询边界。`context_limit`（允许 0）仅控制页
+大小，内部展开另有 5000 个去重可见工作项预算；`context_page.expansion.status` 为
+`complete`／`partial`／`not_requested`。depth 或 context_limit 为 0 时不请求展开；预算不足且
+存在额外可见工作项时 partial，reason 为 `expansion_budget_reached`，同时发出
+`context_expansion_incomplete`。已枚举项仍可分页，末页可能无 cursor 而保持 partial；缩小范围或
+从返回的 IRI 继续。complete 只覆盖当前主命中页、scope、断言选择与 depth，不证明业务完整。
+主命中窗口只计授权并符合筛选的去重候选，原始 RDF／向量块满后稳定补读；额外合格候选确实
+超出窗口时 `recall.completeness=degraded`，warning 为 `candidate_window_incomplete`。
+
+所有授权在计额、遍历和投影前应用，不返回隐藏资源占位、数量或授权缺口提示；缺关联不能推导
+“无规则／允许执行”。cursor 格式现为 v2，旧临时 token 按 invalid 合同失效。context cursor
+独立恢复原匹配页，响应继续提供该页后继的 match cursor；续页绑定角色筛选，并校验当前可见
+候选／上下文摘要。保护成员变化影响可见结果时返回 snapshot_changed，隐藏集合变化不单独
+失效。输出前复核已绑定 Ontology 的 workspace／source 版本，避免混读。
+
 能力发现：`GET /api/mcp/tools` 在响应的 `capabilities.semantic_context_query` 中返回当前部署
 公开的 `queries`/`query`/`limit`/`context_limit`/`depth` 上下限、cursor 种类
 （`match`、`context`）、cursor 生命周期（默认 600 秒），以及是否配置了稳定 cursor 签名密钥。
