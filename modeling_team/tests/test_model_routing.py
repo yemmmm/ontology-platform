@@ -48,6 +48,7 @@ from modeling_team.model_routing import (
     DEEPSEEK_DIRECT_ROUTE,
     GLM_DIRECT_ROUTE,
     MODEL_PROFILE_PACKAGE_IDS,
+    MODEL_PROFILE_ROLE_UNIVERSE,
     OPENAI_CODEX_ROUTE,
     PROVIDER_CATALOG,
     REQUESTED_EFFORT_TIERS,
@@ -215,6 +216,17 @@ def test_openai_profile_binds_all_six_roles_to_luna_medium() -> None:
         uses_external_credential_session(provider_id)
         for provider_id in first.provider_ids()
     )
+
+
+def test_openai_sol_profile_binds_every_role_to_requested_model_and_effort() -> None:
+    profile = load_team_model_profile(ROOT, "openai-sol-medium")
+    assert set(profile.bindings) == set(MODEL_PROFILE_ROLE_UNIVERSE)
+    for binding in profile.bindings.values():
+        assert binding.provider_id == "openai-codex"
+        assert binding.model == "gpt-6.1-sol"
+        assert binding.requested_effort == binding.effective_effort == "medium"
+    assert profile_requires_codex_subscription_auth(profile) is True
+    assert profile.provider_ids() == ("openai-codex",)
 
 
 def test_catalog_effort_capability_mapping_is_closed() -> None:

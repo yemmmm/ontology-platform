@@ -1,0 +1,31 @@
+schema_version: 1
+model_profile_id: openai-sol-medium
+roles:
+  coordinator:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+  modeling:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+  protocol:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+  competency-question:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+  acceptance:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+  source-examiner:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
+  platform-examiner:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium

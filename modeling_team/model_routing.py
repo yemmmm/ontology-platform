@@ -158,7 +158,7 @@ OPENAI_CODEX_ROUTE = ProviderRoute(
     wire_api="responses",
     upstream_url=None,
     credential_env=None,
-    models=frozenset({"gpt-5.6-luna"}),
+    models=frozenset({"gpt-5.6-luna", "gpt-6.1-sol"}),
     effort_effective=MappingProxyType(
         {tier: tier for tier in REQUESTED_EFFORT_TIERS}
     ),
