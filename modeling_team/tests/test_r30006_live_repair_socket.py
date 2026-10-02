@@ -529,7 +529,10 @@ def test_known_no_write_503_repairs_and_resumes_the_same_run_and_thread(tmp_path
             structured = failed["result"]["structuredContent"]
             assert structured["ok"] is False, structured
             assert structured["error"]["reason_code"] == "staged_batch_forward_failed"
-            assert _intent(staged)["status"] == "submitted"
+            # The 503 is a definite pre-write refusal: recorded as a closed
+            # ``rejected`` intent (closed position, not an unsettled write)
+            # while the same key stays retryable after the repair.
+            assert _intent(staged)["status"] == "rejected"
             assert _receipt_names(staged) == []
             assert runner._staged_gate_killed is False
             assert len(dependency.requests) == 1

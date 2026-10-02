@@ -491,6 +491,7 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
                 "stage_atomicity",
                 "receipt_binding",
                 "modeling_exclusions",
+                "value_analysis_boundary",
             },
         )
         self.assertIn("complete, self-contained, immutable semantic object", handoff["candidate_integrity"])
@@ -501,6 +502,10 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         self.assertIn("dry_run", handoff["stage_atomicity"])
         self.assertIn("apply_atomic", handoff["stage_atomicity"])
         self.assertIn("preceding formal receipts", handoff["receipt_binding"])
+        value_boundary = "\n".join(handoff["value_analysis_boundary"])
+        self.assertIn("L1 ordinary literal, L2 enum meaning mapping, or L3 first-class semantic value", value_boundary)
+        self.assertIn("neutral absolute semantic-property URN", value_boundary)
+        self.assertIn("no automatic neutral-URN alias conversion", value_boundary)
         self.assertEqual(
             handoff["modeling_exclusions"],
             [

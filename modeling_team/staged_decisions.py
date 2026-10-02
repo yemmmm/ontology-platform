@@ -98,7 +98,11 @@ CHECKLIST_ITEM_IDS = (
 )
 BATCH_MODES = ("dry_run", "apply_atomic")
 ENUM_COMMAND_KINDS = ("create_enum_meaning", "update_enum_meaning")
-INTENT_STATUSES = ("submitted", "receipted", "unknown")
+# ``rejected`` is a closed terminal state for a definite backend refusal:
+# the platform provably did not write, no receipt can ever exist, and the
+# position needs no adjudication (unlike ``unknown``).  It is distinct from
+# ``submitted``, which means the outcome is not yet known and stays unsettled.
+INTENT_STATUSES = ("submitted", "receipted", "unknown", "rejected")
 
 # R3.0-009 closed value sets: commonality decisions and their translation.
 DECISION_KINDS = ("approved", "rejected", "deferred")

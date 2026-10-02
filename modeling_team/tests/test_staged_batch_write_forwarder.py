@@ -692,9 +692,11 @@ def test_capability_submission_keeps_an_explicit_precondition_rejection_repairab
         assert structured["error"]["reason_code"] == "staged_batch_forward_failed"
         assert "build_session_not_active" in structured["error"]["detail"]
 
-        # Nothing was written, so the intent stays retryable under the same key.
+        # Nothing was written: the definite pre-write refusal is recorded as a
+        # closed ``rejected`` intent (no receipt can ever arrive) and stays
+        # retryable under the same key.
         assert _receipts(staged) == []
-        assert _intent(staged)["status"] == "submitted"
+        assert _intent(staged)["status"] == "rejected"
         assert staged.runner._staged_gate_killed is False
     finally:
         staged.cleanup()

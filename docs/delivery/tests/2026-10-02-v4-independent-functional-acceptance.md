@@ -205,3 +205,61 @@ findings、失败日志与实际测试轮次；没有把修复后的结果覆盖
 本轮真实依赖测试直接导入当前 service，与隔离 PostgreSQL／Oxigraph 往返；本验收没有重启，
 不据此声称正在运行的 HTTP 服务已经加载该修复。服务重启与运行端点验证由交付宿主负责。
 本轮不提交、不回退其他工作者的文件，不修改需求状态或保留运行证据。
+
+## Round 3 — native sleep 与明确零写入拒绝的独立有界运行功能验收
+
+时间：2026-10-03 07:12 +08:00。责任边界：验收方只新增
+`modeling_team/tests/test_v4_independent_runtime_acceptance.py` 并追加本文；修复由另一责任方
+完成于 `modeling_team/runtimes/codex.py`、`modeling_team/runner.py`、
+`modeling_team/staged_decisions.py`。未创建、继续或修复真实建模 run；未读取真实 CQ 内容、
+隐藏题或业务输入；未修改原始运行证据，未调用业务 API／SQL，未重启服务或提交。
+本轮测试没有 LLM 进程。真实 run 的事故原因由交付方报告，本验收不把该报告计为独立复现。
+
+### 实际命令与结果
+
+以下命令在 `backend/` 执行；代码输入在修复方声明 ready 后才开始测试。
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest ../modeling_team/tests/test_v4_independent_runtime_acceptance.py -q > /tmp/v4-independent-runtime-round1.log 2>&1
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest ../modeling_team/tests/test_v4_independent_runtime_acceptance.py -q > /tmp/v4-independent-runtime-round2.log 2>&1
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run ruff format ../modeling_team/tests/test_v4_independent_runtime_acceptance.py
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run ruff check ../modeling_team/tests/test_v4_independent_runtime_acceptance.py
+```
+
+| 实际轮次 | 结果 | 变化及证据 |
+| --- | --- | --- |
+| runtime R1 | 9 passed，1.59s | `/tmp/v4-independent-runtime-round1.log`；当前真实 notification、watchdog 线程、decoder、Runner、checkpoint 文件路径 |
+| runtime R2 | 11 passed，1.90s | `/tmp/v4-independent-runtime-round2.log`；新增同 ID／不同 thread 与 turn 的 completion 边界，其余断言保留 |
+| 格式与静态检查 | PASS | Ruff format 无进一步差异；Ruff check `All checks passed!` |
+
+新文件不修改 backend 可执行代码。本轮没有再次执行整个 Team／backend suite：交付方正在
+另行执行其完整回归，主 Agent 明确要求本验收采用独立新文件 scope，避免重复全套。
+开发方完整回归结果不计入本文的独立 PASS 依据。
+
+### 逐项覆盖与边界
+
+| 功能点 | 独立结果及实际行为 |
+| --- | --- |
+| native sleep 暂停 | bounded PASS：直接输入脱敏实际 native shape，`item/started` 的 `item` 仅含 `type=sleep`、中性 `id`、`durationMs=43200000`，带中性 thread／turn；实际 watchdog 线程在已逾期 1201 秒的时钟下经过多个 tick，未锁存失败。错误 item ID 的 completion 不结束暂停 |
+| matching completion 重计时 | bounded PASS：匹配 `item/completed` 后 `last_output_monotonic` 重置到事件时刻，立即检查仍存活；随后没有模型输出，实际 watchdog 在短测试预算后锁存 `llm-inactivity-timeout`。没有永久关闭 watchdog |
+| sleep 归属 | bounded PASS：其他 thread、其他 turn 的 sleep start，以及普通 `commandExecution` item 均不暂停 timeout；同 ID 的其他 thread／turn completion 不得清除当前暂停，正确 completion 才解除 |
+| 最终 timeout 锁存竞态 | bounded PASS：在真实 `_latch_runtime_failure` 入口启动第二通知线程，其非阻塞获取同一 `state_lock` 失败，通知不能在最终资格检查与 latch 之间完成；timeout 先取得锁时合法失败。另一个真实第二线程先完成 sleep 通知的用例，timeout 返回 False、无失败队列，继续保留 watchdog。没有使用同线程 RLock 重入注入来制造生产中不可达的交错 |
+| typed 明确拒绝后的保存 | bounded PASS：结构化 `ok=false,error_code=batch_limit_exceeded` 经真实 `_decode_tool_result` 分类及 Runner 提交路径，intent 持久化为 `rejected`；没有该 intent 的 receipt。真实 `materialization_progress` checkpoint 保存成功，位置为 `rejected`、batch_id／receipt_ordinal 均为空；检查结果不把它列为 applied 或未决写入 |
+| unknown 仍阻断 | bounded PASS：相同结构化 envelope 改为 `internal_error`，经真实 decoder 进入 unknown 路径，intent 为 `unknown`，保存拒绝 `checkpoint_write_unreconciled` |
+| 普通异常仍阻断 | bounded PASS：普通 RuntimeError 即使文字含 `batch_limit_exceeded` 也不充当零写入证明；intent 仍 `submitted`，checkpoint 保存拒绝 `checkpoint_write_unreconciled` |
+
+checkpoint 测试复用已验收的中性 unified plan／approval fixture，通过临时 Task 参数启用
+checkpoint 合同。测试先创建一条独立的已结算 intent／receipt 作为历史 stand-in；断言
+`completed_operations` 只有该历史 `idem-1`，没有把拒绝或未知结果伪造为完成。平台范围使用
+既有 ScopeClient stand-in，平台快照 capture 使用既有临时 fixture；没有实际业务存储写入。
+这里的保存 PASS 证明 Runner／文件包／检查合同，不能证明真实平台数据快照、恢复重放、
+网络故障或服务端写入结果。
+
+### 当前结论与确切缺口
+
+以上运行功能边界均为 bounded PASS，未发现新的实证 High／Critical 缺陷。本轮没有等待
+真实 12 小时 sleep：仅保留真实 native duration metadata，用实际线程和短计时验证生命周期。
+实际 App Server／模型进程在重启后收到通知、长时间挂起与恢复、真实 silent provider timeout、
+实际 run checkpoint 全链 reconciliation 和随后恢复，均未由本验收执行，保留 PARTIAL。
+本功能证据不得替代语义验收；007／008／010 的已有有界功能结论不变，011 A5／A7 及四项
+A10 仍保持上文的 PARTIAL，不据此宣布真实建模质量或 CQ 语义 PASS。

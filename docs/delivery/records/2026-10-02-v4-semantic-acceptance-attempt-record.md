@@ -87,3 +87,13 @@ public Batch/统一图合同持久修：显式创建id字段保留、缺省才�
 06:49 +08：已完成普通core/flow/governance/mappings定义批次及部分关系，实际写入后均通过正式Attempt/receipt与有界分页读回核对；完整模型尚未handoff，独立CQ尚未执行，整体PARTIAL。128项flow关系dry-run因max_items100在写入前被拒，保留原拒绝并改为两批64项候选计划重新审核；不改语义或容量配置、不消耗freshstart。
 
 Protocol197/198机械启动缺口T0：ProtectionSet实际允许dangling resourceIRI，成本可先dry_run获实际outputs，再preprotect后单独apply；首次L3可由宿主按actual outputs_for/deployedSettings/非空explicit entity_id提供authoritative intendedidentity，仅用于preprotection或samebatch L3 attachment/enum。不是既有资源声明，future identitybinding仍receipt_ref；同批enum的confirmed-L3 trace、materialize unlock、候选/翻译审批及dry-run/application门不变，实际输出漂移则停。纯函数actualprepare/compile及staged/unified校验验证该合法路径，未改守卫、候选、冻挂载或平台数据。权威三合同最窄澄清+机械回归50passed，JSON/Ruff/diff通过；当前run经owner正式指导继续，后续实际L3/成本写入仍待取证。额度累计3/5，余额2，01点限制仍已取消。
+
+## 2026-10-03 06:50—07:25 +08：运行时误杀、窄修与恢复核对
+
+第三轮22:50:05.105413Z因competency-question原生sleep(durationMs43200000)被1200秒LLM无活动守卫误杀，22:50:09.597997Z writer3199345实际退出；不是模型质量失败。CQ已冻结，不重访谈/重冻。最后flow64关系dry-run仅validated，成本普通定义dry-run仅validated未创建RDF。旧128关系dry-run在平台写入前被batch_limit_exceeded拒绝，但提交intent23仍submitted，造成后续checkpointsave拒绝。
+
+T0只修必要边界：observable native sleep在实际当前thread/turn started—completed期间暂停LLM无活动计时，结束重新计时；最终sleep状态复核与超时锁存同RLock，真正模型静默及非sleep工具不豁免。typed StagedBatchForwardError所证明的写入前拒绝闭合为rejected，无伪造receipt；unknown/generic未决仍关闭检查点，公开合同状态同步。GitNexus前置影响HIGH已告知用户；最终detect_changes LOW/30 changed/0flows，旧索引行映射噪声存在，不代替实际diff和测试。
+
+外部Claude sessionc069e606-4f7d-4db9-88e7-89f40b037cc0，deepseek-flash effortmax，仅runtime/Runner/staged状态及必要回归，不代建模；全部进程已退出。开发第一次全量2failed/2173passed；两旧合同test在基线5b37c03独立复现同2failed，分别遗漏已授权4类mappingcreate和value_analysis_boundary。仅同步其exactset，保留原Handler/schema逐字段验证并加强值边界。最终全Team2175passed/1skipped/314subtests，177.64秒；独立runtime11passed，1.90秒，JSON/Ruff/diff通过。没有backend改动，不需服务重启；运行时修复将在新进程加载。真实长时运行/恢复及独立语义仍PARTIAL。
+
+只读全链canonical分页读回source start2+start3：221项已完成命令、11个applied Batch；blocked0、scope_drift0、settled_non_write11；pending_new_dry_run3（未到平台的原128请求、成本validated、flowpart1validated）。旧证据不改，recovery链按已退出chainwriterlock判定，不走settle-source。materialization_progress-0022为有效发布检查点，22:45:08.627398Z，manifestsha256:b3c41586e8f468f62754ae1a764a3f387d434de8b26456f8c84c57028c1e9260。当前余额2，恢复新生产线程将再消耗1；已应用内容不得重放，未应用内容在新Session重新dry-run。01点限制已取消，原授权总量仍5。

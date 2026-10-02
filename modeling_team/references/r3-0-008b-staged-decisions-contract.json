@@ -268,7 +268,7 @@
       "a durable submission intent is written BEFORE the host-side forward; the Runner-supplied idempotency_key and client_batch_id are reused verbatim on retries",
       "the host-side forward is a Runner-injected write path; value_traces and l3_nodes never leave the Runner",
       "an indeterminate forward result marks the intent unknown, rejects every new submission with staged_unreconciled_batch, and fires the kill-switch (manual adjudication via the three deterministic branches: claim the platform-listing hit, retry with the same key, or suspend)",
-      "an authoritative receipt is written after a definite result; the intent transitions submitted -> receipted; a receipted idempotency key is rejected with staged_conclusion_already_materialized",
+      "an authoritative receipt is written only after a definite result that actually returned a real platform Batch; the intent transitions submitted -> receipted; a typed pre-write refusal instead closes the intent as rejected with no receipt and the accurate error evidence preserved, and unknown/unparseable forward results still close the write gate; a receipted idempotency key is rejected with staged_conclusion_already_materialized",
       "every rejection is a typed reason code returned as structured error content; each code names the artifact to repair and the run continues"
     ],
     "submission_intent": {
@@ -285,7 +285,7 @@
         "l3_nodes",
         "status"
       ],
-      "statuses": ["submitted", "receipted", "unknown"]
+      "statuses": ["submitted", "receipted", "unknown", "rejected"]
     },
     "submission_receipt": {
       "schema_version": "r3-0-008b-submission-receipt/v1",

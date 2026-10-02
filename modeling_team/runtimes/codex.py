@@ -787,6 +787,13 @@ class _Agent:
     # for one of these is consumed safely instead of latching a terminal
     # mismatch that would kill a thread recovered onto a newer turn.
     abandoned_turn_ids: list[str] = field(default_factory=list)
+    # Native ``item.type == "sleep"`` items observed ``started`` and not yet
+    # ``completed`` on the current turn.  A supported sleep is a deliberate
+    # long wait, not a hung model endpoint: while this set is non-empty the
+    # inactivity watchdog must not treat the silence as an LLM stall.  Only the
+    # observable App Server sleep lifecycle may add an id; turn boundaries and
+    # the matching completion clear it (see the auth01 start3 false failure).
+    active_sleep_item_ids: set[str] = field(default_factory=set)
     # Last retryable provider error (``willRetry=true``, external variant)
     # observed on the current turn.  Silence after such an error is the
     # wedged-stream signature (auth021 #32): the SDK promised a retry that
@@ -3961,11 +3968,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     last = agent.last_output_monotonic
                     already_failed = getattr(agent, "runtime_failure", None) is not None
                     waiting_provider = getattr(agent, "provider_wait", None) is not None
-                if already_failed or waiting_provider or state != "running" or last <= 0.0:
+                    # A supported native sleep is a deliberate wait, not a hung
+                    # endpoint: its started/completed lifecycle pauses the clock.
+                    sleeping = bool(getattr(agent, "active_sleep_item_ids", None))
+                if (
+                    already_failed
+                    or waiting_provider
+                    or sleeping
+                    or state != "running"
+                    or last <= 0.0
+                ):
                     continue
                 if time.monotonic() - last >= timeout:
-                    self._on_inactivity_timeout(agent, timeout)
-                    return
+                    # ``False`` means the latch aborted because the state moved
+                    # (new activity, a sleep, turn end): keep watching instead
+                    # of exiting with the protection disarmed.
+                    if self._on_inactivity_timeout(agent, timeout):
+                        return
 
         thread = threading.Thread(
             target=watch,
@@ -4073,8 +4092,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._runtime_failures.append((agent.agent_id, dict(safe)))
         return True
 
-    def _on_inactivity_timeout(self, agent: _Agent, timeout: float) -> None:
-        """Latch one inactivity failure, kill the role process, and queue for drain."""
+    def _on_inactivity_timeout(self, agent: _Agent, timeout: float) -> bool:
+        """Latch one inactivity failure, kill the role process, and queue for drain.
+
+        Returns ``True`` when the watchdog has reached a terminal decision (the
+        failure was latched, the role was parked, or it was already settled) and
+        must exit.  Returns ``False`` when the latch aborted because the state
+        moved since the watchdog's unlocked precheck — fresh activity, a native
+        sleep, turn end, or no observed activity at all — so the watch loop must
+        keep running instead of exiting disarmed.
+        """
 
         with agent.state_lock:
             # Re-check at the latch decision, under the same lock the provider
@@ -4086,22 +4113,50 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 or agent.provider_wait is not None
                 or agent.inactivity_watchdog_stop.is_set()
             ):
-                return
+                return True
             now = time.monotonic()
-            idle_seconds = (
-                (now - agent.last_output_monotonic)
-                if agent.last_output_monotonic
-                else timeout
-            )
+            # The same facts the precheck read must still hold under the lock:
+            # a turn that ended, a sleep that started, a clock refreshed after
+            # the precheck, or a role that never produced activity is not a
+            # stall.  Abort this latch and let the loop re-evaluate.
+            if (
+                agent.state != "running"
+                or agent.active_sleep_item_ids
+                or agent.last_output_monotonic <= 0.0
+                or now - agent.last_output_monotonic < timeout
+            ):
+                return False
+            idle_seconds = now - agent.last_output_monotonic
             turn_error = agent.turn_provider_error
-        if isinstance(turn_error, dict) and turn_error.get("variant") in _PROVIDER_WAIT_VARIANTS:
+            parked = isinstance(turn_error, dict) and turn_error.get("variant") in _PROVIDER_WAIT_VARIANTS
+            if not parked:
+                # The final eligibility above and this latch share one lock
+                # hold: the watchdog precheck and the latch are otherwise two
+                # separate acquisitions, and a native sleep started in that gap
+                # was accepted as a pause and then still killed.  With one hold,
+                # either the sleep is visible here (the checks above abort) or
+                # the sleep start arrives after the latch and is dropped.
+                if not self._latch_runtime_failure(
+                    agent,
+                    {
+                        "source": "inactivity-watchdog",
+                        "timeout_seconds": timeout,
+                        "idle_seconds": idle_seconds,
+                        "reason": "llm-inactivity-timeout",
+                    },
+                    evidence_type="llm-inactivity-timeout",
+                    compatibility_inactivity=True,
+                ):
+                    return True
+        if parked:
             # #32 (auth021): the last thing this turn observed was a retryable
             # external provider error whose SDK retry never concluded — the
             # wedged-stream signature.  The identical variant parks when the
             # SDK exhausts (``willRetry=false``); park here too so the host can
             # ``recover_provider`` instead of losing the run to the fatal latch.
-            # ``_enter_provider_wait`` refuses only an already-latched role, in
-            # which case the idempotent latch path below is the correct no-op.
+            # ``_enter_provider_wait`` refuses only an already-latched role; a
+            # latch racing in from another thread is then already terminal, so
+            # this park is correctly a no-op.
             self._enter_provider_wait(
                 agent,
                 {
@@ -4114,24 +4169,12 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "idle_seconds": idle_seconds,
                 },
             )
-            return
-        detail = {
-            "source": "inactivity-watchdog",
-            "timeout_seconds": timeout,
-            "idle_seconds": idle_seconds,
-            "reason": "llm-inactivity-timeout",
-        }
-        if not self._latch_runtime_failure(
-            agent,
-            detail,
-            evidence_type="llm-inactivity-timeout",
-            compatibility_inactivity=True,
-        ):
-            return
+            return True
         # The historical reader remains a compatibility projection for callers
         # that predate the typed runtime queue.  Runner prefers the generic queue.
         with self._inactivity_lock:
             self._inactivity_failures.append((agent.agent_id, dict(agent.inactivity_failure or {})))
+        return True
 
     def consume_runtime_failures(self) -> list[tuple[str, dict[str, Any]]]:
         """Return and clear typed provider/watchdog failures exactly once."""
@@ -6479,6 +6522,41 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._reset_activity_clock(agent)
         return RuntimeDispatchReceipt("start", agent.active_turn_id)
 
+    @staticmethod
+    def _native_sleep_item_id(agent: _Agent, params: Mapping[str, Any]) -> str | None:
+        """Return the id of an observable native ``sleep`` item owned by this turn.
+
+        Only the App Server's explicit ``item.type == "sleep"`` carrying a
+        non-empty string id counts (auth01 start3 evidence shape).  Arbitrary
+        tools and unidentified payloads return ``None``: they must never pause
+        the inactivity watchdog.  Real sleep params also carry explicit
+        ``threadId``/``turnId``: a notification bound to a stale turn or thread
+        must not pause the currently active one.  Absent identity keys stay
+        acceptable — the item itself is then the only observable.
+        """
+
+        item = params.get("item")
+        if not isinstance(item, Mapping) or item.get("type") != "sleep":
+            return None
+        item_id = item.get("id")
+        if not isinstance(item_id, str) or not item_id:
+            return None
+        turn_id = params.get("turnId")
+        if (
+            isinstance(turn_id, str)
+            and agent.active_turn_id is not None
+            and turn_id != agent.active_turn_id
+        ):
+            return None
+        thread_id = params.get("threadId")
+        if (
+            isinstance(thread_id, str)
+            and agent.thread_id is not None
+            and thread_id != agent.thread_id
+        ):
+            return None
+        return item_id
+
     def _notification(self, agent: _Agent, value: dict[str, Any]) -> None:
         if getattr(agent, "runtime_failure", None) is not None:
             return
@@ -6504,6 +6582,18 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if method == "item/completed":
                 self._record_protocol_platform_artifact(agent, params)
                 self._complete_retrieval_gate_item(agent, params)
+            if method == "item/started":
+                sleep_item_id = self._native_sleep_item_id(agent, params)
+                if sleep_item_id is not None:
+                    agent.active_sleep_item_ids.add(sleep_item_id)
+            if method == "item/completed":
+                # A completed native sleep closes its own pause and restarts the
+                # clock (this notification already refreshed it above).  An id
+                # without a matching start is a no-op: it can neither create
+                # nor clear a pause.
+                sleep_item_id = self._native_sleep_item_id(agent, params)
+                if sleep_item_id is not None:
+                    agent.active_sleep_item_ids.discard(sleep_item_id)
             if method == "turn/started":
                 turn = params.get("turn")
                 started_id = turn.get("id") if isinstance(turn, dict) else None
@@ -6525,6 +6615,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         started_id,
                         "running",
                     )
+                    # A new turn owns the clock: a pause from a prior turn is
+                    # stale and must not leak into this turn.
+                    agent.active_sleep_item_ids.clear()
             if method in {"turn/completed", "turn/finished"}:
                 turn = params.get("turn")
                 completed_turn_id = (
@@ -6544,6 +6637,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     return
                 if completed_turn_id is None and agent.active_turn_id is None:
                     agent.active_turn_id, agent.state = None, "idle"
+                    agent.active_sleep_item_ids.clear()
                     return
                 if self._validated_turn_id(completed_turn_id) is None:
                     self._latch_runtime_failure(
@@ -6571,9 +6665,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if isinstance(completed_turn_id, str):
                     agent.last_completed_turn_id = completed_turn_id
                 agent.active_turn_id, agent.state = None, "idle"
+                # The turn ended without the sleep completion: the pause never
+                # outlives its turn.
+                agent.active_sleep_item_ids.clear()
             if method in {"turn/failed", "thread/error"}:
                 # The failed turn is already captured by the pending provider
                 # wait; keep the observable waiting state for that wait.
+                agent.active_sleep_item_ids.clear()
                 if agent.provider_wait is None:
                     agent.state = "failed"
 

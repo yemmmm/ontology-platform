@@ -70,7 +70,8 @@ class R23002Tests(unittest.TestCase):
             (root / "modeling_team/references/modeling-batch-item-contract.json").read_text(encoding="utf-8")
         )
         required_commands = {
-            "create_class", "create_property", "create_relation_type", "create_shape", "create_entity", "create_relation", "create_operation"
+            "create_class", "create_property", "create_relation_type", "create_shape", "create_entity", "create_relation", "create_operation",
+            "create_table_mapping", "create_join_mapping", "create_enum_meaning", "create_metric_definition",
         }
         self.assertEqual(set(reference["create_payloads"]), required_commands)
         self.assertEqual(

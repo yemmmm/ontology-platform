@@ -73,6 +73,7 @@ from modeling_team.staged_decisions import (
     build_submission_intent,
     build_submission_receipt,
     mark_intent_status,
+    staged_decision_artifact_paths,
     write_submission_intent,
     write_submission_receipt,
 )
@@ -503,6 +504,74 @@ def test_m19_classification_table_end_to_end():
         assert result["scope_drift"] == []
         index_keys = {entry.key for entry in result["completed"]}
         assert all(len(key) == 5 for key in index_keys)
+    finally:
+        rmtree(run_root, ignore_errors=True)
+
+
+def test_m19_submitted_and_rejected_dry_runs_without_a_batch_close_without_touching_source():
+    """Old-run compatibility for the closed write tail.
+
+    A reachable, empty session listing plus a batch-less dry-run intent proves
+    the request never materialized anything, so reconciliation closes it into a
+    NEW dry-run.  This holds for the legacy ``submitted`` status (the historical
+    record shape) and for the definite ``rejected`` terminal state, and it never
+    rewrites the old run's evidence: the intent bytes are identical afterwards.
+    """
+    run_root = RUNS_ROOT / f"r3015sub-{os.urandom(4).hex()}"
+    try:
+        _seed_chain_intent(
+            run_root,
+            1,
+            key="idem-submitted-dry",
+            client_batch_id="cb-submitted-dry",
+            session_id="session-1",
+            mode="dry_run",
+            status="submitted",
+            with_receipt=False,
+        )
+        _seed_chain_intent(
+            run_root,
+            2,
+            key="idem-rejected-dry",
+            client_batch_id="cb-rejected-dry",
+            session_id="session-1",
+            mode="dry_run",
+            status="rejected",
+            with_receipt=False,
+        )
+        # A rejected apply without a platform batch stays fail-closed: the
+        # recovery chain trusts platform readback, never the local refusal.
+        _seed_chain_intent(
+            run_root,
+            3,
+            key="idem-rejected-apply",
+            client_batch_id="cb-rejected-apply",
+            session_id="session-1",
+            mode="apply_atomic",
+            status="rejected",
+            with_receipt=False,
+        )
+        intents_dir = staged_decision_artifact_paths(run_root)["intents_dir"]
+        before = {
+            path.name: path.read_bytes() for path in sorted(intents_dir.iterdir())
+        }
+        result = reconcile_write_tail(
+            [run_root],
+            read_write_tail([run_root]),
+            _readback(FakeCursorPlatform(session_batches={"session-1": []})),
+            ontology_ids=["onto-r3015"],
+        )
+        pending = {entry["idempotency_key"] for entry in result["pending_new_dry_run"]}
+        assert pending == {"idem-submitted-dry", "idem-rejected-dry"}
+        blocked = {entry["idempotency_key"] for entry in result["blocked"]}
+        assert blocked == {"idem-rejected-apply"}
+        assert all(entry["reason"] == REASON_WRITE_UNRECONCILED for entry in result["blocked"])
+        # The reconciliation read the source; it never rewrote it.
+        after = {
+            path.name: path.read_bytes() for path in sorted(intents_dir.iterdir())
+        }
+        assert after == before
+        assert not list(staged_decision_artifact_paths(run_root)["receipts_dir"].glob("*.json"))
     finally:
         rmtree(run_root, ignore_errors=True)
 

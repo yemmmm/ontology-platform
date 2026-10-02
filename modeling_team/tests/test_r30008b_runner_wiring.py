@@ -572,8 +572,51 @@ def test_d2_corrupt_intent_json_converges_to_typed_kill_switch_not_crash(tmp_pat
 # --- B6: forward failures, adjudication gating, and the pending-unknown lock ----
 
 
-def test_b6_definite_forward_failure_keeps_intent_submitted(tmp_path):
+def test_b6_definite_forward_failure_records_a_closed_rejected_intent(tmp_path):
     failing = _ForwarderRecorder(exc=StagedBatchForwardError("backend rejected"))
+    staged = _StagedRunner(tmp_path, forwarder=failing)
+    try:
+        staged.prepare()
+        _open_platform_gate(staged)
+        _materialization_valid(staged.run_root)
+        with pytest.raises(StagedSubmissionRejection) as rejection:
+            staged.runner._handle_staged_submit_modeling_batch(_capability_args())
+        assert rejection.value.data["reason_code"] == "staged_batch_forward_failed"
+        intents_dir = staged_decision_artifact_paths(staged.run_root)["intents_dir"]
+        intent = json.loads((intents_dir / "intent-1.json").read_text(encoding="utf-8"))
+        # A definite pre-write refusal is a closed terminal state: the platform
+        # accepted nothing, no receipt can ever arrive, and the intent must not
+        # keep blocking a write-claiming checkpoint as an unsettled write.
+        assert intent["status"] == "rejected"
+        assert staged.runner._staged_gate_killed is False
+        evidence = [
+            json.loads(line)
+            for line in (staged.run_root / "evidence" / "staged-decisions.jsonl")
+            .read_text(encoding="utf-8")
+            .splitlines()
+            if line
+        ]
+        rejected = [
+            record for record in evidence if record.get("event") == "submission-forward-rejected"
+        ]
+        assert len(rejected) == 1
+        assert rejected[0]["intent_ordinal"] == 1
+        assert rejected[0]["detail"] == "backend rejected"
+
+        # A later retry with a healthy forwarder reuses the same ordinal.
+        staged.runner.staged_batch_forwarder = _ForwarderRecorder()
+        result = staged.runner._handle_staged_submit_modeling_batch(_capability_args())
+        assert result["intent_ordinal"] == 1
+        assert result["receipt_ordinal"] == 1
+    finally:
+        staged.cleanup()
+
+
+def test_b6_generic_forward_failure_stays_unsettled(tmp_path):
+    # An untyped failure is not a definite platform "no": the intent must stay
+    # fail-closed (still submitted, never closed as rejected) so the write gate
+    # keeps blocking instead of claiming a write state that was never proven.
+    failing = _ForwarderRecorder(exc=RuntimeError("transport exploded"))
     staged = _StagedRunner(tmp_path, forwarder=failing)
     try:
         staged.prepare()
@@ -586,13 +629,6 @@ def test_b6_definite_forward_failure_keeps_intent_submitted(tmp_path):
         intent = json.loads((intents_dir / "intent-1.json").read_text(encoding="utf-8"))
         assert intent["status"] == "submitted"
         assert staged.runner._staged_gate_killed is False
-        assert staged.runner._staged_gate_killed is False
-
-        # A later retry with a healthy forwarder reuses the same ordinal.
-        staged.runner.staged_batch_forwarder = _ForwarderRecorder()
-        result = staged.runner._handle_staged_submit_modeling_batch(_capability_args())
-        assert result["intent_ordinal"] == 1
-        assert result["receipt_ordinal"] == 1
     finally:
         staged.cleanup()
 

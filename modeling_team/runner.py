@@ -5250,6 +5250,20 @@ class TeamRunner:
             )
             raise StagedSubmissionRejection("staged_batch_forward_unknown", str(exc)) from exc
         except StagedBatchForwardError as exc:
+            # Definite backend refusal (pre-write error / pre-dispatch failure):
+            # the batch was provably never written, so close the intent as
+            # ``rejected`` instead of leaving it ``submitted`` unsettled.  No
+            # receipt is fabricated; the accurate original error is recorded.
+            write_submission_intent(run_root, mark_intent_status(intent, "rejected"))
+            self._append_evidence(
+                "staged-decisions",
+                {
+                    "event": "submission-forward-rejected",
+                    "intent_ordinal": ordinal,
+                    "idempotency_key": idempotency_key,
+                    "detail": str(exc),
+                },
+            )
             raise StagedSubmissionRejection("staged_batch_forward_failed", str(exc)) from exc
         except Exception as exc:  # noqa: BLE001 - typed re-wrap, evidence below
             raise StagedSubmissionRejection("staged_batch_forward_failed", str(exc)) from exc
@@ -10282,6 +10296,10 @@ class TeamRunner:
                     state = (
                         "applied" if intent.get("mode") == "apply" else "validated_not_applied"
                     )
+                elif intent.get("status") == "rejected":
+                    # Definite pre-write refusal: closed without a receipt and
+                    # without being an unsettled (pending/unknown) write.
+                    state = "rejected"
                 else:
                     state = "pending"
                 positions.append(

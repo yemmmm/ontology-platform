@@ -64,6 +64,7 @@ from modeling_team.staged_decisions import (
     build_submission_receipt,
     mark_intent_status,
     staged_decision_artifact_paths,
+    staged_intent_receipt_issues,
     write_submission_intent,
     write_submission_receipt,
 )
@@ -1328,6 +1329,79 @@ def test_m07_write_claiming_save_waits_for_in_flight_and_unknown_writes(monkeypa
         assert "unsettled intents" in unsettled.value.detail
     finally:
         harness.cleanup()
+
+
+def test_m07_definite_rejection_is_a_closed_position_not_an_unsettled_write(
+    checkpoint_data_standin,
+):
+    # A definite (pre-write) forward rejection is closed as ``rejected``: no
+    # receipt can ever arrive, so the write-claiming save must succeed with the
+    # position recorded instead of refusing forever on "1 unsettled intent".
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        runner.scope = _bound_runner_scope()
+        _settled_apply_intent(runner)
+        rejected = build_submission_intent(
+            2,
+            idempotency_key="idem-rejected",
+            client_batch_id="cb-rejected",
+            session_id="session-1",
+            mode="apply",
+            commands=[],
+            value_traces=[],
+            l3_nodes=[],
+        )
+        write_submission_intent(runner.run.root, mark_intent_status(rejected, "rejected"))
+        # The rejected terminal state is not a kill-switch issue: it is a
+        # closed position, not an unreconciled unknown.
+        assert staged_intent_receipt_issues(runner.run.root) == ()
+        result = runner._save_run_checkpoint(
+            CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+        )
+        assert result["status"] == "saved"
+        manifest = _read_manifest(runner.run.root, result["checkpoint_id"])
+        positions = {
+            item["idempotency_key"]: item["state"]
+            for item in manifest["write_positions"]["positions"]
+        }
+        assert positions == {"idem-1": "applied", "idem-rejected": "rejected"}
+        inspection = inspect_checkpoints(runner.run.root, result["checkpoint_id"])
+        reconciliation = inspection["checkpoint"]["write_reconciliation"]
+        assert reconciliation["completed_operations"] == ["idem-1"]
+        assert reconciliation["unreconciled"] == []
+        assert inspection["checkpoint"]["status"] in {"ready", "needs_reconciliation"}
+    finally:
+        harness.cleanup()
+
+
+def test_m07_unknown_and_pending_intents_still_block_the_save():
+    # Guard: only the definite ``rejected`` terminal state closes a position.
+    # ``unknown`` still requires adjudication and a bare ``submitted`` intent
+    # (no receipt) still counts as unsettled — neither may ever be closed.
+    for status in ("unknown", "submitted"):
+        harness = _CheckpointRunner()
+        try:
+            runner = harness.prepare()
+            _settled_apply_intent(runner)
+            pending = build_submission_intent(
+                2,
+                idempotency_key=f"idem-{status}",
+                client_batch_id=f"cb-{status}",
+                session_id="session-1",
+                mode="apply",
+                commands=[],
+                value_traces=[],
+                l3_nodes=[],
+            )
+            write_submission_intent(runner.run.root, mark_intent_status(pending, status))
+            with pytest.raises(CheckpointError) as blocked:
+                runner._save_run_checkpoint(
+                    CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+                )
+            assert blocked.value.reason_code == "checkpoint_write_unreconciled"
+        finally:
+            harness.cleanup()
 
 
 def test_m07_settled_writes_save_with_positions_and_do_not_block_forever(checkpoint_data_standin):
