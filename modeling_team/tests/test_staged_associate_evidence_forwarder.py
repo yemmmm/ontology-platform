@@ -1,21 +1,8 @@
-"""Host-side staged evidence forwarder: real child process, real envelope, real classification.
-
-``forward_staged_associate_evidence`` reuses the staged write forwarder's child discipline
-(one allowlisted stdio MCP child per call) but targets the platform's
-``associate_evidence_reference`` tool.  Every case below runs the real function against a
-real stdio MCP subprocess; the controlled server mirrors the canonical tool signature and
-records exactly what it received, and it never writes an ontology.
-
-The classification contract differs from the batch write in one respect: an evidence
-association is idempotent by ``(ontology, target, reference)``, so a definite rejection is
-only what the platform proves is pre-write, and everything else stays indeterminate so the
-Protocol role can retry the same association instead of guessing.
-"""
+"""R4.0-012 retired staged evidence capability cannot invoke a child process."""
 
 from __future__ import annotations
 
 import functools
-import inspect
 import json
 import os
 import sys
@@ -28,16 +15,9 @@ import pytest
 from modeling_team.capability_mcp import STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION
 from modeling_team.contracts import repository_root
 from modeling_team.monitor_handoff import HANDOFF_ENV
-from modeling_team.protocol_mcp_launch import canonical_protocol_mcp_mode_contract
 from modeling_team.runner import TeamRunner
 from modeling_team.staged_batch_write_forwarder import (
-    ASSOCIATE_DEFINITE_REJECTION_CODES,
-    ASSOCIATE_EVIDENCE_TOOL,
     forward_staged_associate_evidence,
-)
-from modeling_team.staged_decisions import (
-    StagedBatchForwardError,
-    StagedBatchForwardUnknown,
 )
 from modeling_team.tests.test_r30008b_runner_wiring import (
     MULTI_SLICE_SMOKE,
@@ -163,204 +143,19 @@ def _fixture_seam(
     return {"command": sys.executable, "args": args, "record": _record_path(tmp_path)}
 
 
-def _forward(tmp_path: Path, mode: str, *, association=None, code=None, timeout=30.0):
-    """One real forward through a real MCP child; returns (result, record or None)."""
-
-    seam = _fixture_seam(tmp_path, mode, code=code)
-    result = forward_staged_associate_evidence(
-        _association() if association is None else association,
-        repository_root=tmp_path,
-        protocol_key=FIXTURE_KEY,
-        command=seam["command"],
-        args=seam["args"],
-        call_timeout_seconds=timeout,
-    )
-    return result, _read_record(seam["record"])
-
-
 def _read_record(path: Path) -> dict | None:
     if not path.exists():
         return None
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _real_associate_params() -> list[str]:
-    """The canonical ``associate_evidence_reference`` parameter names, from the real module."""
-
-    from app.mcp.tools.evidence import register_evidence
-
-    captured: dict[str, object] = {}
-
-    class _RecorderServer:
-        def tool(self):
-            def decorator(function):
-                captured[function.__name__] = function
-                return function
-
-            return decorator
-
-    register_evidence(_RecorderServer())
-    function = captured.get(ASSOCIATE_EVIDENCE_TOOL)
-    assert function is not None, f"the backend must register {ASSOCIATE_EVIDENCE_TOOL}"
-    return list(inspect.signature(function).parameters)
-
-
 # --- the envelope and the child contract ---------------------------------------
-
-
-def test_evidence_forwarder_reaches_the_real_tool_shape_with_the_verbatim_envelope(tmp_path):
-    association = _association()
-    result, record = _forward(tmp_path, "ok", association=association)
-
-    params = _real_associate_params()
-    assert params == [
-        "project_id",
-        "ontology_id",
-        "target_type",
-        "target_id",
-        "evidence_reference_ids",
-        "evidence",
-        "graph_set_id",
-        "client_item_id",
-        "edit_audit_id",
-        "actor",
-    ]
-    # Byte-for-byte fidelity: every association field arrives verbatim, nothing is added,
-    # renamed, dropped or re-encoded, every optional platform argument stays unset, and the
-    # role's own identity never becomes a platform argument.
-    recorded = record["association"]
-    assert {key: recorded[key] for key in association} == association
-    assert {key: value for key, value in recorded.items() if key not in association} == {
-        key: None for key in params if key not in association
-    }
-    assert recorded["actor"] is None
-
-    # The backend's own payload is returned whole.
-    assert result == {"items": [{"id": "fixture-association-1"}], "total": 1}
-
-
-def test_evidence_forwarder_child_environment_carries_only_the_protocol_key(tmp_path):
-    _, record = _forward(tmp_path, "ok")
-
-    backend = str(tmp_path / "backend")
-    env = record["env"]
-    expected = {
-        "ONTOLOGY_MCP_API_KEY": FIXTURE_KEY,
-        "PYTHONPATH": backend,
-        "SEMANTIC_REASONER_COMMAND": str(tmp_path / "backend" / "scripts" / "dev_owl_reasoner.py"),
-        "PATH": f"{tmp_path / 'backend' / '.venv' / 'bin'}:/usr/bin:/bin",
-        "HOME": backend,
-        "LANG": "C.UTF-8",
-        "LC_ALL": "C.UTF-8",
-        **canonical_protocol_mcp_mode_contract(),
-    }
-    assert {name: env[name] for name in expected} == expected
-    # Nothing the host holds is inherited beyond the stdio client's own POSIX safe list.
-    safe_inherited = {"HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"}
-    assert set(env) - set(expected) <= safe_inherited
-    assert sorted(
-        name for name in env if "KEY" in name or "TOKEN" in name or "PROXY" in name
-    ) == ["ONTOLOGY_MCP_API_KEY"]
-    assert record["cwd"] == backend
 
 
 # --- definite: refusals that provably precede any write ------------------------
 
 
-@pytest.mark.parametrize(
-    "code",
-    ["validation_error", "not_found", "forbidden", "forbidden_scope", "request_too_large"],
-)
-def test_evidence_reference_rejections_stay_definite(tmp_path, code):
-    assert code in ASSOCIATE_DEFINITE_REJECTION_CODES
-    with pytest.raises(StagedBatchForwardError) as failure:
-        _forward(tmp_path, "reject", code=code)
-    assert code in str(failure.value)
-    assert not isinstance(failure.value, StagedBatchForwardUnknown)
-
-
-def test_argument_validation_is_definite_because_the_body_never_ran(tmp_path):
-    payload = _association()
-    del payload["target_id"]
-    with pytest.raises(StagedBatchForwardError) as failure:
-        _forward(tmp_path, "ok", association=payload)
-    assert f"for {ASSOCIATE_EVIDENCE_TOOL}Arguments" in str(failure.value)
-    # The controlled server recorded nothing: the call never reached the tool body.
-    assert _read_record(_record_path(tmp_path)) is None
-
-
-def test_missing_envelope_or_key_refuses_before_spawning(tmp_path):
-    seam = _fixture_seam(tmp_path, "ok")
-    with pytest.raises(StagedBatchForwardError):
-        forward_staged_associate_evidence(
-            "not an envelope",
-            repository_root=tmp_path,
-            protocol_key=FIXTURE_KEY,
-            command=seam["command"],
-            args=seam["args"],
-        )
-    with pytest.raises(StagedBatchForwardError) as failure:
-        forward_staged_associate_evidence(
-            _association(),
-            repository_root=tmp_path,
-            protocol_key=None,
-            command=seam["command"],
-            args=seam["args"],
-        )
-    assert "protocol key" in str(failure.value)
-    assert _read_record(seam["record"]) is None
-
-
-def test_unstartable_child_is_definite_and_writes_nothing(tmp_path):
-    with pytest.raises(StagedBatchForwardError) as failure:
-        forward_staged_associate_evidence(
-            _association(),
-            repository_root=tmp_path,
-            protocol_key=FIXTURE_KEY,
-            command=str(tmp_path / "no-such-python"),
-            args=["-m", "app.mcp.server"],
-        )
-    assert not isinstance(failure.value, StagedBatchForwardUnknown)
-    assert _read_record(_record_path(tmp_path)) is None
-
-
 # --- indeterminate: everything that cannot prove the write did not happen -------
-
-
-@pytest.mark.parametrize("code", ["internal_error", "dependency_error", "never_seen_code"])
-def test_unclassifiable_error_envelopes_stay_unknown(tmp_path, code):
-    assert code not in ASSOCIATE_DEFINITE_REJECTION_CODES
-    with pytest.raises(StagedBatchForwardUnknown) as failure:
-        _forward(tmp_path, "reject", code=code)
-    assert code in str(failure.value)
-    # The association did reach the service; the envelope alone cannot say what happened.
-    assert _read_record(_record_path(tmp_path))["association"]["target_type"] == "modeling_item"
-
-
-@pytest.mark.parametrize("mode", ["garbage", "no_payload", "no_verdict"])
-def test_unreadable_replies_stay_unknown(tmp_path, mode):
-    with pytest.raises(StagedBatchForwardUnknown):
-        _forward(tmp_path, mode)
-    assert _read_record(_record_path(tmp_path)) is not None
-
-
-def test_tool_boundary_failure_that_may_follow_a_write_stays_unknown(tmp_path):
-    with pytest.raises(StagedBatchForwardUnknown):
-        _forward(tmp_path, "raise")
-    assert _read_record(_record_path(tmp_path)) is not None
-
-
-def test_timeout_after_dispatch_stays_unknown(tmp_path):
-    with pytest.raises(StagedBatchForwardUnknown):
-        _forward(tmp_path, "sleep", timeout=1.0)
-    record = _read_record(_record_path(tmp_path))
-    assert record["association"]["target_id"] == _association()["target_id"]
-
-
-def test_disconnect_after_dispatch_stays_unknown(tmp_path):
-    with pytest.raises(StagedBatchForwardUnknown):
-        _forward(tmp_path, "exit")
-    assert _read_record(_record_path(tmp_path)) is not None
 
 
 # --- Runner integration: the real capability endpoint over its AF_UNIX socket ----

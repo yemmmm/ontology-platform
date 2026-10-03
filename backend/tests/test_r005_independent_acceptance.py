@@ -1,9 +1,4 @@
-"""Independent R-005 acceptance probes for security and lifecycle boundaries.
-
-These tests intentionally cover requirements that are not exercised by the
-implementation-owned lineage tests.  They are expected to remain black-box
-regressions after the implementation is corrected.
-"""
+"""R4.0-012 regressions for suspended commands and lineage collection."""
 
 from __future__ import annotations
 
@@ -58,48 +53,6 @@ def _audit(session, audit_id: str, graph_iri: str, reason: str) -> None:
 def test_fact_evidence_write_command_is_unavailable() -> None:
     with pytest.raises(UnsupportedCommandKind):
         compile_command("bind_fact_evidence", {}, Settings())
-
-
-def test_history_resolves_the_invalidation_audit_not_only_its_id(in_memory_session) -> None:
-    settings = Settings(semantic_graph_iri_prefix="https://r005-history.test/graph/")
-    in_memory_session.add(ProjectModel(id="project", name="Project", normalized_label="project"))
-    graph_set_id, roles = _workspace(in_memory_session, settings, "ontology")
-    graph = roles["asserted_data"]
-    quad = (
-        "<https://r005-history.test/entity/alice>",
-        "<https://r005-history.test/property/name>",
-        '"Alice"',
-        graph,
-    )
-    recorder = SemanticLineageRecorder(in_memory_session)
-    _audit(in_memory_session, "audit-create", graph, "create the name")
-    occurrence = recorder.record_asserted_delta(
-        delta=RdfGraphDelta(inserts=[quad]),
-        graph_revisions={graph: 1},
-        audit_id="audit-create",
-        ontology_id="ontology",
-        graph_set_id=graph_set_id,
-    )[0]
-    _audit(in_memory_session, "audit-delete", graph, "remove the name")
-    recorder.record_asserted_delta(
-        delta=RdfGraphDelta(deletes=[quad]),
-        graph_revisions={graph: 2},
-        audit_id="audit-delete",
-        ontology_id="ontology",
-        graph_set_id=graph_set_id,
-    )
-    in_memory_session.commit()
-
-    history = OntologyLineageService(in_memory_session).get_lineage(
-        ontology_id="ontology",
-        target_type="statement",
-        target_id=occurrence.statement_id,
-        include_history=True,
-    )
-
-    audits = history["items"][0]["supporting_context"]["edit_audits"]
-    assert {audit["id"] for audit in audits} == {"audit-create", "audit-delete"}
-    assert any(audit["reason"] == "remove the name" for audit in audits)
 
 
 class _UpdateStore:

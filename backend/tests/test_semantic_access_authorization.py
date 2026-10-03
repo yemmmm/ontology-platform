@@ -10,10 +10,6 @@ from sqlalchemy.exc import SQLAlchemyError
 from app.repositories.models import OntologyModel, ProjectModel
 from app.security.auth import AuthPrincipal, resolve_api_key
 from subject_access_support import create_api_key
-from app.services.evidence_reference import (
-    EvidenceReferenceNotFound,
-    EvidenceReferenceService,
-)
 from app.services.semantic_access import (
     SemanticAccessDependencyError,
     SemanticAccessResolver,
@@ -199,55 +195,6 @@ def test_view_statement_row_and_quad_filtering():
         for graph in filtered.graphs()
         for triple in graph
     )
-
-
-def test_evidence_reference_visibility_by_association_target(in_memory_session):
-    project, ontology = _seed_project(in_memory_session, "P")
-    _add_set(in_memory_session, "P", "s1", ["cost-visibility"], [(COST_IRI, None)])
-
-    service = EvidenceReferenceService(in_memory_session)
-    cost_ref, _ = service.get_or_create(project.id, "cost-doc", "cost excerpt")
-    public_ref, _ = service.get_or_create(project.id, "public-doc", "public excerpt")
-    orphan_ref, _ = service.get_or_create(project.id, "orphan-doc", "no associations")
-    service.associate(
-        project_id=project.id,
-        ontology_id=ontology.id,
-        graph_set_id=None,
-        target_type="entity",
-        target_id=COST_IRI,
-        references=[cost_ref],
-        actor="tester",
-    )
-    service.associate(
-        project_id=project.id,
-        ontology_id=ontology.id,
-        graph_set_id=None,
-        target_type="entity",
-        target_id=PUBLIC_IRI,
-        references=[public_ref],
-        actor="tester",
-    )
-    in_memory_session.commit()
-
-    operator_view = SemanticAccessResolver(in_memory_session).resolve(
-        _principal("P"), project.id
-    )
-    operator_service = EvidenceReferenceService(in_memory_session, access_view=operator_view)
-    rows, total = operator_service.list_references(project.id, limit=10, offset=0)
-    assert {row.id for row in rows} == {public_ref.id, orphan_ref.id}
-    assert total == 2
-    with pytest.raises(EvidenceReferenceNotFound):
-        operator_service.get_visible(cost_ref.id)
-    assert operator_service.visible_association_count(public_ref.id) == 1
-    assert operator_service.visible_association_count(cost_ref.id) == 0
-
-    manager_view = SemanticAccessResolver(in_memory_session).resolve(
-        _principal("P", grants=("cost-visibility",)), project.id
-    )
-    manager_service = EvidenceReferenceService(in_memory_session, access_view=manager_view)
-    rows, total = manager_service.list_references(project.id, limit=10, offset=0)
-    assert total == 3
-    assert manager_service.get_visible(cost_ref.id).id == cost_ref.id
 
 
 def test_created_api_key_resolves_role_grants(in_memory_session):

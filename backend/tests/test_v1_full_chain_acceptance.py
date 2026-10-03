@@ -4,7 +4,8 @@ Run with ``RUN_V1_FULL_CHAIN_ACCEPTANCE=1 uv run pytest
 tests/test_v1_full_chain_acceptance.py``.  This is intentionally a real HTTP
 and stdio-MCP harness, not a TestClient fixture: it changes the user systemd
 manager environment to exercise R-004's ``rdf_primary`` path and restores it
-on every exit path.
+on every exit path. R4.0-012 removes evidence submissions and dedicated
+tracing probes; write, recovery and isolation checks remain.
 """
 
 from __future__ import annotations
@@ -138,7 +139,7 @@ def _operation(suffix: str) -> dict:
 
 
 async def _mcp_probe(
-    key: str, project_id: str, foreign_project_id: str, ontology_id: str, resource_iri: str
+    key: str, project_id: str, foreign_project_id: str
 ) -> None:
     def envelope(result) -> dict:
         assert result.content and hasattr(result.content[0], "text")
@@ -160,11 +161,6 @@ async def _mcp_probe(
                 "get_project_build_context", {"project_id": foreign_project_id}
             )
             assert not foreign.isError and envelope(foreign)["ok"] is False
-            lineage = await session.call_tool(
-                "get_ontology_lineage",
-                {"ontology_id": ontology_id, "target_type": "resource", "target_id": resource_iri},
-            )
-            assert not lineage.isError and envelope(lineage)["ok"] is True
 
 
 def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client, str]) -> None:
@@ -228,18 +224,12 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
                 "client_item_id": "customer",
                 "command_kind": "create_class",
                 "payload": {"name": f"Customer {suffix}"},
-                "evidence": [
-                    {"document_name": f"{suffix}.md", "excerpt": "A customer is modeled."}
-                ],
             },
             {
                 "client_item_id": "operation",
                 "command_kind": "create_operation",
                 "depends_on": ["customer"],
                 "payload": _operation(suffix),
-                "evidence": [
-                    {"document_name": f"{suffix}.md", "excerpt": "Publishing is supported."}
-                ],
             },
         ]
         dry = _request(
@@ -274,25 +264,6 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
             client, "POST", f"/build-sessions/{build['id']}/modeling-batches", json=applied_payload
         )
         assert replay["attempt_id"] == applied["attempt_id"] and replay["created_attempt"] is False
-
-        operation = next(item for item in applied["items"] if item["client_item_id"] == "operation")
-        operation_iri = operation["resource_outputs"]["resource_iri"]
-        references = _request(client, "GET", f"/projects/{p1['id']}/evidence-references")
-        assert references["total"] == 2 and all(
-            row["association_count"] == 1 for row in references["items"]
-        )
-        for reference in references["items"]:
-            associations = _request(
-                client, "GET", f"/evidence-references/{reference['id']}/associations"
-            )
-            assert associations["total"] == 1
-        lineage = _request(
-            client,
-            "GET",
-            f"/ontologies/{o1['id']}/lineage",
-            params={"target_type": "resource", "target_id": operation_iri},
-        )
-        assert lineage["lineage_status"] in {"complete", "partial"}
 
         # R-004 failure fences: stale version and forbidden secret leave no new batch/operation output.
         stale = client.post(
@@ -396,26 +367,17 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
                         "client_item_id": "good",
                         "command_kind": "create_class",
                         "payload": {"name": f"Partial {suffix}"},
-                        "evidence": [
-                            {"document_name": f"partial-{suffix}.md", "excerpt": "Good item."}
-                        ],
                     },
                     {
                         "client_item_id": "bad",
                         "command_kind": "unknown_command",
                         "payload": {},
-                        "evidence": [
-                            {"document_name": f"partial-{suffix}.md", "excerpt": "Bad item."}
-                        ],
                     },
                     {
                         "client_item_id": "blocked",
                         "command_kind": "create_class",
                         "depends_on": ["bad"],
                         "payload": {"name": "Blocked"},
-                        "evidence": [
-                            {"document_name": f"partial-{suffix}.md", "excerpt": "Blocked item."}
-                        ],
                     },
                 ],
             },
@@ -426,30 +388,6 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
             "bad": "failed",
             "blocked": "blocked",
         }
-        partial_refs = _request(client, "GET", f"/projects/{p1['id']}/evidence-references")
-        partial_document_refs = [
-            row for row in partial_refs["items"] if row["document_name"] == f"partial-{suffix}.md"
-        ]
-        assert (
-            len(partial_document_refs) == 1 and partial_document_refs[0]["association_count"] == 1
-        )
-        partial_associations = _request(
-            client,
-            "GET",
-            f"/evidence-references/{partial_document_refs[0]['id']}/associations",
-        )
-        assert partial_associations["total"] == 1
-        partial_statuses = {row["client_item_id"]: row for row in partial["items"]}
-        assert partial_associations["items"][0]["client_item_id"] == "good"
-        good_iri = partial_statuses["good"]["resource_outputs"]["resource_iri"]
-        partial_lineage = _request(
-            client,
-            "GET",
-            f"/ontologies/{o1['id']}/lineage",
-            params={"target_type": "resource", "target_id": good_iri},
-        )
-        assert partial_lineage["lineage_status"] in {"complete", "partial"}
-
         # Scope resolver must retain P1 ownership and must reject a mixed P2 scope.
         query = _request(
             client,
@@ -507,7 +445,7 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
             json={"name": f"accept-{suffix}", "project_id": p1["id"], "scopes": ["admin"]},
         )
         temporary_key_id = temp["id"]
-        asyncio.run(_mcp_probe(temp["plaintext_key"], p1["id"], p2["id"], o1["id"], operation_iri))
+        asyncio.run(_mcp_probe(temp["plaintext_key"], p1["id"], p2["id"]))
         no_key_env = {
             key: value for key, value in os.environ.items() if key != "ONTOLOGY_MCP_API_KEY"
         }

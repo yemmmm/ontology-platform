@@ -11,9 +11,8 @@ Tests:
 * ``test_read_model_owl_consistency_summary`` — spec §11 step 8 (the OWL
   Consistency summary returns ``consistent: True`` and ``is_stale: False``
   for the freshly seeded reasoning run).
-* ``test_fact_audit_queue_evidence_bindings`` — spec §11 step 7 (the fact
-  drawer returns the bound chunk via the ``field_set="evidence"`` composer,
-  populated from the Postgres ``fact_evidence_bindings`` table).
+* ``test_fact_audit_queue_rejects_suspended_evidence_projection`` — R4.0-012
+  rejects the retired evidence field set at the public dispatcher.
 """
 from __future__ import annotations
 
@@ -412,38 +411,8 @@ def test_read_model_owl_consistency_summary(
 
 
 # ---------------------------------------------------------------------------
-# Step 7 — fact-audit-queue evidence bindings
+# R4.0-012 — retired fact-audit-queue evidence projection
 # ---------------------------------------------------------------------------
-
-
-def test_fact_audit_queue_evidence_bindings(
-    in_memory_session, fake_graph_set_with_evidence
-):
-    """When ``field_set="evidence"`` is requested, the fact-audit-queue
-    composer attaches ``evidence_bindings`` to each asserted fact row.
-
-    Phase 3 refactor: bindings are now fetched from the Postgres
-    ``fact_evidence_bindings`` table (the legacy ``prov:wasDerivedFrom``
-    SPARQL lookup was removed). Without any seeded PG rows the composer
-    returns an empty bindings list per row but must not crash, and the
-    SPARQL template it issues is ``fact-audit-queue`` (never a
-    ``prov:wasDerivedFrom`` lookup).
-    """
-    svc, graph_set_id = fake_graph_set_with_evidence
-
-    items, warnings = svc._compose_fact_audit_queue(
-        scope=svc.scope_resolver.resolve(graph_set_id, include="asserted"),
-        kind="asserted",
-        field_set="evidence",
-    )
-    # The Stage 4 FakeStore returns [] for the fact-audit-queue body
-    # (it only knows entity-search queries), so items is empty. The test
-    # asserts the composer does not crash and that the SPARQL it issued
-    # is the unified fact-audit-queue template, not the deleted
-    # prov:wasDerivedFrom lookup.
-    assert isinstance(items, list)
-    last_query = svc.rdf_store.queries[-1] if svc.rdf_store.queries else ""
-    assert "prov:wasDerivedFrom" not in last_query
 
 
 def test_fact_audit_queue_rejects_suspended_evidence_projection(
