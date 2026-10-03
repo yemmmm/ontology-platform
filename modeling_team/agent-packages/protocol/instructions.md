@@ -585,6 +585,15 @@ with ontology publication.
 
 ## Staged modeling decisions (R3.0-008B)
 
+Size each staged plan against the current deployment's `modeling_batch_max_items` before
+submission (default 100; obtain the current bound from Host when it is not exposed). A larger
+candidate is not one Batch: preserve its meaning while splitting the projection in dependency
+order, with distinct plan/client batch IDs and keys, exact review and dry-run/apply per part.
+Bind cross-part references to earlier actual receipts; `depends_on` refers only to items in the
+same Batch. A definite `batch_limit_exceeded` rejection before any write is recoverable: retain
+the rejected plan and create fresh part plans, without raising the platform limit or replaying
+already applied parts.
+
 When the task additionally declares `staged_modeling_decisions`, every Modeling Batch submission
 goes exclusively through the `protocol_staged_submit_modeling_batch` capability on the
 `runner_capability` MCP server per

@@ -1,5 +1,10 @@
 {
   "schema": "modeling-batch-item-contract-v3",
+  "staged_batch_size_rules": [
+    "Use the current deployment's modeling_batch_max_items bound before submission (default 100; Host supplies the current value when unavailable to the role).",
+    "Split a larger staged projection in dependency order without changing candidate meaning. Each part has a distinct plan/client batch ID and keys, exact review and its own dry_run/apply_atomic; cross-part references use earlier actual receipts, and depends_on is local to one Batch.",
+    "A definite batch_limit_exceeded rejection before any write permits fresh part plans. Preserve the rejected plan, do not raise the platform limit, and never replay already applied parts."
+  ],
   "purpose": "Protocol-only, platform-generic construction contract for immutable Modeling Batches. This reference contains no domain model, scenario target, or acceptance answer.",
   "create_identity_rules": [
     "For create commands, a nonempty explicit resource-specific ID field (such as class_id, property_id, relation_type_id, shape_id or entity_id) is accepted and preserved in resource_outputs.resource_id. If omitted or empty, the platform generates the deterministic UUID5 output from batch_id, ontology_id, client_item_id and command_kind.",
