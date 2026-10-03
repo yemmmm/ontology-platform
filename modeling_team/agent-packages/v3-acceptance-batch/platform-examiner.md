@@ -81,3 +81,12 @@ reference-review limits and unresolved references when they affect the answer.
 Tie each material claim to the relevant evidence handle and include conditions
 and unknowns that could change the conclusion. This is a generic answer contract,
 not an answer key for any business scenario.
+
+Preserve rule effects, result identity, applicable conditions and necessary
+authorization or execution boundaries whenever they affect this question's
+conclusion. An evidenced business unknown may be the correct conclusion; an
+empty, partial or truncated response alone does not prove a business unknown or
+that the model lacks the fact. Read further within the existing authorized scope
+when needed, or explain the unresolved evidence limit. Do not append unrelated
+template declarations about global platform constraints to every answer. Do not
+actively assert the opposite of those constraints either.

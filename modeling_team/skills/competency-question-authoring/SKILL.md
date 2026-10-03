@@ -45,6 +45,31 @@ Distinguish semantic support from SQL execution. A question can test whether mea
 metric rules support a query; claims about actual database results require the separately authorized
 execution evidence and must not be inferred from the ontology alone.
 
+## Check every required answer point before review
+
+After generating both public and hidden questions, and before panorama-review or slice-review,
+check every answer point against three criteria: an approved source supports it; the question
+explicitly asks for it or a correct answer necessarily needs it; omitting it changes the business
+judgment or violates the question's stated answer scope. Merely appearing in the source does not
+make a statement required in every answer. Preserve necessary implicit conditions, such as an
+approval prerequisite, even when they are not repeated in the question.
+
+Use the existing draft `note` to record the question ID and one-based answer-point position,
+source locator, question-scope correspondence, and retain/modify/remove-from-this-question
+decision with its reason. Cover every required point; points sharing a basis may be grouped.
+This is a human-readable explanation, not a new field, scoring rule, or machine marker.
+
+Remove unrelated obligations from this question's scoring scope. If an independent aspect still
+needs testing, clarify the question or propose a separate question within the approved coverage;
+do not silently discard required coverage or put the correct answer into the question. Platform
+constraints, such as not executing external APIs, need not be recited in unrelated business
+answers. Keep business effects, conditions, result identity and authorization/execution boundaries
+when they affect the conclusion. An answer that actively contradicts a boundary is still wrong.
+
+Content corrections use the existing review/version lifecycle, not `note` to override frozen
+text. Self-checking does not approve a question. After reordering points, locate them within the
+new content version. Keep all hidden check reasons private with the draft and review records.
+
 ## Check coverage and independence
 
 Before publishing, compare the draft against the scenario or approved slice: which important

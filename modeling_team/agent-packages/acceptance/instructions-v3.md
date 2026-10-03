@@ -20,11 +20,13 @@ fields: `schema_version`, `batch_id`, `question_id`, `verdict`, `failure_layer`,
 * `pass` — the necessary answer points are supported by the modeled semantics
   and the evidence. A declared unknown that the material justifies and that the
   Examiner preserved is a pass. Verbatim wording is not required.
-* `model-recall-insufficient` — the question and answer are valid but the
-  semantic resources, relations, rules, values, or mapping chain are missing or
-  wrong. `failure_layer` must be `modeling-quality`.
+* `model-recall-insufficient` — the question is valid but successful relevant
+  reads and the Consumer answer do not satisfy the end-to-end business question,
+  including Consumer omissions or errors. `failure_layer` must be
+  `modeling-quality`. This coarse state does not itself prove model absence.
 * `question-answer-review` — the question or its answer points conflict with the
-  approved material, are ambiguous, or lack evidence. Keep the question and the
+  approved material, are ambiguous, lack evidence, or impose an obligation outside
+  the question's reasonable scope. Keep necessary implicit conditions, the question and the
   coverage gap; leave `failure_layer` null unless you hold real runtime or model
   evidence. A pure review item is never a modeling failure.
 * `platform-runtime-incomplete` — the platform, agent, or runtime did not
@@ -49,3 +51,43 @@ The failure layer vocabulary is exactly these four (design §4.2):
   never produce a whole-batch or whole-scenario pass.
 * Your output is judgement only. It never rewrites the production run, the
   frozen pool, or existing evidence.
+
+## Existing-evidence diagnosis (R4.0-013 option A)
+
+The approved evidence bundle proves business expectations; the host-validated
+`platform_read_responses` prove what was returned. Consumer answers, IRIs,
+production summaries and collaboration context cannot substitute for those
+responses. Review question scope and source support before grading; never remove
+a frozen point to give pass. Preserve the first actual blocking runtime/routing
+failure. A relevant empty read alone is not a routing failure or outage.
+
+In readable `note`, locate each unmet necessary point by one-based position or
+each false assertion by its text. Record question-scope correspondence,
+source/content_digest/locator, Consumer content and actual response
+question_id/response_digest/artifact_path/result field or IRI. Give the diagnosis
+and evidence limits, keeping multiple causes and unknown causes explicit.
+Correct sufficient content in any of this question's reads but omitted or
+misunderstood supports a Consumer diagnosis. A business contradiction supports
+a specific model-expression error, possibly also Consumer error. Model absence
+needs complete evidence for the bounded semantic scope; no_match, partial,
+pagination/projection omissions and conflicts alone leave the cause undetermined.
+A complete page flag alone does not establish semantic coverage.
+
+Another question's relevant retained response in the same packet may be cited
+explicitly by its original question ID, digest, path and content as corroboration
+for a retrieval/discoverability diagnosis only. It cannot become this question's
+answer evidence, fill its answer or justify pass; misbound answer evidence remains
+a routing failure. Without corroboration the cause stays undetermined. There are
+no original requests or evidence_recheck in the packet: do not infer filters from
+digests or claim stability from a shared model_binding_digest. Model-state
+diagnoses await the host's qualification of this question and all cited questions
+using existing response, recheck and drift records. Never request extra reads.
+
+Equivalent meanings and unknowns supported by approved material and this
+question's responses can pass. Retain effects, conditions, result identity and
+authorization/execution boundaries when they affect the conclusion. Do not
+require unrelated global declarations, but do flag false assertions about them.
+Respecting an authorized denial may answer the question; denial is not
+automatically tool failure and never permits wider reads. End-to-end failure with
+cause undetermined is still a failure. Do not turn note into a DSL, add fields,
+change historical verdicts, or present coarse failures as knowledge coverage.

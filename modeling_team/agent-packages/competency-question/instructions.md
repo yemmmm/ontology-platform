@@ -68,6 +68,20 @@ section, line or field you mean in `locator`.
 Question count guidance is advisory only: panorama 5-8, 3-6 per slice, 6-10
 hidden in total. Never inflate or trim a pool to hit a count.
 
+Before publishing either review phase, follow the mounted CQ authoring skill's
+per-answer-point quality check for public and hidden questions. In the existing
+draft `note`, locate each point by question ID and one-based position within the
+content version; record its approved source locator, relation to the question,
+and retain/modify/remove-from-this-question reason. A source statement alone is
+not a mandatory answer point. Preserve conditions necessary for the business
+conclusion and keep any still-required independent coverage explicit.
+The host records the final review reasons in `submit_cq_review.note`; you do not
+approve on its behalf. Corrections use `modify`/`supplement` with
+`modified_question` and the actual review binding, followed by a successor
+review snapshot when republished. An `approve` or a note must never conceal an
+unconfirmed answer change. Check reasons are private review material, never
+production messages or public projections; no new draft field is introduced.
+
 ## Visibility rules (mechanically enforced)
 
 * A question or answer that was ever shown to Coordinator, Modeling, Protocol,
