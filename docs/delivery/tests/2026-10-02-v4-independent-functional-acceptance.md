@@ -305,3 +305,61 @@ fixture 复用既有 `save_checkpoint` 包装路径，只有测试方合成的�
 恢复进程、源所有权、完整包 digest 防篡改、写入全链对账或恢复后的真实模型质量已通过。
 这些路径没有由本轮执行，继续保留 PARTIAL；真实恢复与语义取证由其独立授权责任方推进。
 011 A5／A7 及四项 A10 的结论仍不变，任何历史批准数量或有界功能 PASS 都不是语义 PASS。
+
+## Round 5 — 25 mapping 受治理精确读取与真实两主体保护合同
+
+本轮只读审查 start4c 的现成生产读证据，并以获准私有 read key 直接执行有界 canonical
+HTTP 查询。未创建、继续或修复真实 run，未修改保留证据、候选、模型或 CQ；未读取题面／
+隐藏答案，没有把 finance 返回交给 ordinary 运行，也未输出 key 或生产事实。只更新本文。
+
+### 现有 25 mapping 读回的独立核对
+
+证据位于 current run 的 `stage3-neutral-graph/materialization-plans/`：
+
+- `host-governed-mapping-readback-start4c.json`，原始文件 SHA-256
+  `f9200ebc5c65e0489e11aa9b6a67c2d51cac9476af89b79acdc067f13bec600b`；
+- `host-governed-join-detail-readback-start4c.json`，SHA-256
+  `7e8fec4258c06a6eb87aebe6c6fa5b5e1cb8e24392921aec5cc6f85c8034dc7d`；
+- `continuation-final-candidate-command-audit-start4c.json` 及其引用的七份实际 apply/readback。
+
+25 条由 Host 生产的 canonical POST `/api/semantic/context:query`，时间为
+2026-10-03T01:16:48.184970Z—01:16:59.668122Z；本验收没有冒充这些查询的执行者。
+独立重算整个文件 hash 及每个 response 的 compact JSON SHA-256，全部与记录一致。
+
+| 核对点 | 实际结果与边界 |
+| --- | --- |
+| actor／scope | bounded PASS（metadata）：finance 主体未 disabled、is_org_admin=false；key metadata scopes=[read]，绑定该 user／Project。Role 有显式 finance grant。请求／响应均为 Project `8f9ccb1a-0a07-4246-a5cc-8a5a2f58efdf`、单 Ontology `ca3a04bd-b2ec-4455-98a1-23c574536934`，不是模型 Agent 的 admin 身份 |
+| workspace／分页 | bounded PASS：25 响应同 workspace `b0e851a0bcebf0e648635967cea7e8cb4948505c028299ca8266b109904b634e`，与身份 audit 相同；scope complete、每次 returned=1、truncated=false、match/context cursor 都为空、related_context=0。depth=0 没请求扩展，不能据此判断邻接完整性 |
+| exactkind／身份 | bounded PASS：25 个请求 IRI 全部唯一，响应 IRI 均精确等于请求，kind=mapping、asserted，recall anchor/exact/complete。25 身份均在候选身份 audit 及七个实际 applied Batch 的 resource_outputs／applied item 中对应：18 enum_meaning、2 join_mapping、5 table_mapping；这不是自然语言发现／语义 recall 证明 |
+| full 可见字段保真 | bounded PASS（已返回字段）：25 mapping_definition／semantic_definition 与相应实际 apply payload 完全相同；schema_source、enum／join／table 关联字段也与命令相同。五个 table 的 15 个缺省 column role 在返回中规范化为 value，符合既有 compiler default；不把规范化当内容丢失 |
+| CQ full 的确切缺口 | PARTIAL：两个 JoinMapping 的 Context Query full data 均没有 join_direction，不能把该 projection 单独称为全部 join 字段完整。该字段实际 RDF 并未被证明缺失 |
+| 现有 detail 补齐 | bounded PASS：同 finance read 主体 canonical GET `/api/semantic/resources/{exactIRI}?graph_set_id=24cc349f-0357-5c31-a1a5-effa9a3aa5bc&include=asserted` 两条都 HTTP200，exactIRI／graph_set一致，properties.join_direction=forward，与两项已 apply payload 一致；join_path 是 JSON literal string，解析后与原 payload 完全相同。schema_source、mapping_definition／semantic_definition 同源，不要求平台为本次运行新增补丁 |
+| 派生状态 | PARTIAL：25 条均含 `derived_result_missing / No current rule result pointer.`，明确当前没有 rule result pointer，不据返回全字段推导推理／规则验证完成 |
+
+### 独立实际 ordinary／finance 对比
+
+执行方式：Python 标准库 urllib，私有 key 只从获准文件加载后放入 Bearer header，不输出、
+不写响应记录；仅 canonical POST Context Query。两主体请求同 Project／Ontology，
+exactIRI、asserted、lexical、depth=0、limit/context_limit=100、context_detail=full。
+保护成员由既有 canonical membership attestation 确认：protected Entity 与 standard-cost
+TableMapping 共两项。原始响应仅在 gitignored 实验目录以 exclusive、0600 新文件保存：
+
+| 实际轮次／文件（均在 `workspaces/v4-acceptance-20261002/`） | 结果与 SHA-256 |
+| --- | --- |
+| `independent-governed-cost-subject-comparison-start4c.json` | 原首轮：Entity 的 resource_types 写成 entity（合同应为 instance），两主体 HTTP422。这是测试参数前提错误，不是产品拒绝缺陷；原轮保留。Mapping 已 ordinary no_match、finance matched。文件 `e5abfe98b021ae0133d2bf46a49d22bb50e91f46d116e553d0a7b3fe968fc709` |
+| `independent-governed-cost-subject-comparison-start4c-round2.json` | 修正合法 instance 后四条 actual HTTP200：ordinary Entity／mapping 都 no_match、primary=0／related=0；finance 都 matched、primary=1／related=0，精确对应请求 IRI。文件 `327220d9a0c1f2e1c037d66c2d42aea0acbe5203ef9947ef928b42ea3240cd84` |
+| `independent-governed-cost-absent-controls-start4c.json` | ordinary 对两个新随机不存在 IRI 的 actual HTTP200 no_match，除请求 query 回显外，与相应受保护资源响应完全相同，包含 scope／warnings／paging／recall；原始 key 不含于记录。文件 `7a30e34b479318719a1675ef83746dfa8be946b29d89a84c0777d192f3929642` |
+
+四条合法保护查询和两条不存在对照的计数、cursor、截断均按实际授权子集：ordinary
+returned=0、truncated=false、无 cursor，无资源／映射／邻接／证据返回；finance returned=1、
+truncated=false、无 cursor。独立受治理读取结果为 **bounded PASS**，没有发现存在性泄漏
+或新实证 High／Critical。这里只验证精确请求，未扩展宽搜索、分页压测或其他 Consumer。
+
+最初宿主提到的 forbidden 预期不适用于当前接口。当前权威 R3.0-004「主体绑定的语义知识
+访问控制」明确要求与不存在同 404／空结果，并明确语义读取面不使用 forbidden（403 是
+存在性信号）；因此本轮 ordinary no_match 正确。没有将预期差异登记成产品缺陷，也没有
+为通过测试改写平台合同。
+
+本轮机械／读合同证据不替代独立 L1 Judge 或 CQ 语义检索：start4c 的最终 CQ 尚未由本验收
+裁决，真实 CQ 是否由 Consumer 准确解答仍无独立证据。011 A5／A7、四项 A10 继续保持
+原有 PARTIAL；不得以精确已知 IRI 的 25 条读回或 finance 阳性冒充盲测／最终语义 PASS。
