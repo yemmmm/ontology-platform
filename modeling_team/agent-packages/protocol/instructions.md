@@ -602,10 +602,17 @@ materialized only when its own attempt record reads `applied` with zero blocking
 receipt, and the findings name the repair. Never call `apply_atomic` on a batch whose dry-run
 attempt you have not read back clean.
 Maintain the materialization ledger in `value-semantics/ledger/materialization-ledger.json`,
-closing every entry against an authoritative Runner receipt. Closure timing is per receipt,
-not deferred: as soon as a plan's `apply_atomic` receipt is verified against the clean
-platform attempt record, append that plan's ledger entry before reporting the plan complete
-to the Coordinator, so the ledger is never empty while verified receipts exist. Translate only conclusions the
+closing each materialized value conclusion against an authoritative Runner receipt. Closure timing
+is per receipt, not deferred: after verifying the clean `applied` attempt, append entries for the
+plan's materialized value conclusions before reporting it complete. Ordinary commands with no
+materialized value conclusion require no new entries; `entries: []` is valid when none has been
+materialized. Their execution still closes against the actual Batch/Attempt and Runner receipt;
+never invent a `conclusion_id` merely to make the ledger nonempty. `command_digest` is the
+`sha256:`-prefixed SHA-256 of the complete submitted Batch item serialized as UTF-8 JSON with
+`ensure_ascii=False`, `sort_keys=True` and `separators=(",", ":")`, including all item fields actually
+submitted, not only command kind/payload or the entire Batch/projection. Close it against the
+authoritative receipt, obtaining Host-bound receipt guidance if the role cannot read that receipt;
+do not guess a digest or replay an applied plan to obtain it. Translate only conclusions the
 Coordinator has approved (confirmed status with a matching approvals entry); never translate an
 `analyzed` or `conflict` conclusion, and never bypass the capability with a direct platform write
 or a direct `submit_modeling_batch` call. If a submission result is reported as

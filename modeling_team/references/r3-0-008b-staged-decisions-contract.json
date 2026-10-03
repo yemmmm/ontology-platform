@@ -192,7 +192,10 @@
     "rules": [
       "each entry must close against an authoritative Runner receipt: the receipt_ordinal names an existing receipt whose batch_id matches, whose mode is apply_atomic, and whose commands list contains command_digest",
       "semantic_value_iri is optional; when present it must be non-empty",
-      "a conclusions entry with status materialized requires a ledger entry naming it"
+      "a conclusions entry with status materialized requires a ledger entry naming it",
+      "the ledger records materialized value conclusions, not every ordinary command or plan; ordinary commands without a materialized value conclusion require no new entries, and entries=[] is valid when none has been materialized; their actual Batch/Attempt and Runner receipt still establish execution, and no conclusion_id may be invented merely to make the ledger nonempty",
+      "command_digest is canonical_command_digest of the complete actual submitted Batch item: SHA-256 of its UTF-8 JSON with ensure_ascii=False, sort_keys=True and separators=(comma,colon), prefixed sha256:; retain every item field actually submitted, not only command_kind/payload and not the entire Batch or projection",
+      "close each materialized value conclusion immediately after its clean applied Attempt is verified; when the role cannot read Runner-private receipts, obtain Host-bound receipt guidance, never guess command digests or replay an applied plan to obtain them"
     ],
     "failure_reason_codes": ["staged_ledger_stale"]
   },
