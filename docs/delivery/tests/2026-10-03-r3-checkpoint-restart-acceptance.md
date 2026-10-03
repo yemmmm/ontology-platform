@@ -9,10 +9,11 @@
 不调用业务 SQL，不读取 CQ 题目／答案。CQ 仅使用 manifest metadata 与不解析内容的文件哈希。
 验收方没有执行本次恢复，也没有生产恢复证据；产品运行与语义验收分别判定。
 
-当前结论：**PARTIAL**。High H-R3-ARCHIVE-01 的捕获缺陷在当前代码已获独立有界功能
-修复复验，旧检查点的缺包及人工补充事实仍保留。start4c 已准备恢复并实际启动，最新已
-核对 `state.json=RUNNING`；Round 1 的 WAITING_REPAIR 是当时状态。尚未取得新 Session
-下 pending plan 实际 dry-run 的独立证据。
+当前结论：**真实接续与安全续写 bounded L0 runtime PASS；旧包自动完整恢复 REVISE**。
+Round 4 已核对新 Session、lease、writer、新 dry-run 和两批实际 apply。High
+H-R3-ARCHIVE-01 的捕获缺陷在当前代码已获独立有界功能修复复验，旧检查点的缺包及人工
+补充事实仍保留。最新已核对 `state.json=RUNNING`；Round 1 的 WAITING_REPAIR 是当时
+状态。没有据此判定语义建模／CQ 质量 PASS。
 
 ## Round 1 — 来源、对账索引与恢复产物只读核对
 
@@ -145,8 +146,39 @@ format／check 通过。定向独立验证已覆盖本次窄改，不重复交�
 人工操作 provenance 和相应时间线全部保留。真实新 Session／sole writer／pending 新
 dry-run／续写仍未由本轮证明，整个实际断点重启验收继续 PARTIAL。
 
+## Round 4 — 真实新 Session、重新 dry-run 与安全续写
+
+只读证据：宿主 canonical API 脱敏 readback
+`workspaces/v4-acceptance-20261002/start4c-session-readback.json`、
+`start4c-session-readback-round2.json`、`start4c-batch-session-readback-round4.json`；
+最后一份 observed_at 为 **2026-10-03T00:17:43.886191Z**，不含题面、commands 或 RDF delta
+内容。另对 current 的 staged-decisions proof metadata、intent／receipt、plan 的普通 command
+身份、Coordinator translation approval 及链 writer 锁只读交叉核对。没有发 API 写请求或
+参与平台重试、真实 issue resolution、模型指导。此轮没有新增代码／测试，只更新本文。
+
+| 范围 | 本轮独立结论及实际证据 |
+| --- | --- |
+| 相同业务平台身份 | bounded PASS：新 Session `6837e6df-5532-4c1d-92fc-598764c1e046` 为 active revision 1，Project 仍 `8f9ccb1a-0a07-4246-a5cc-8a5a2f58efdf`，涉及 Ontology 仍 `ca3a04bd-b2ec-4455-98a1-23c574536934`；三个新 Batch 都绑定该 Session 和相同 Project／Ontology |
+| sole writer／lease | bounded PASS（观测时）：round2 active_sessions 仅该新 Session；round4 lease 为 active revision 9、build_session_id 相同，expires_at `00:18:43.331440Z`，晚于读回时刻。只读 `.recovery-locks/r4009-20261003-solmedium-auth01-start3.lock` holder PID=3606037，root_run_id=start3；独立检查 `/proc/3606037` 存在。旧 start2 锁不是本次恢复 origin 所绑锁；不修改／重新获取 flock，不声称之后永久唯一 |
+| 全链完成索引未重放 | bounded PASS（已观察提交）：旧完成索引继续为 221 command／11 Batch；新 Session 所有新增 intent 与原 completed_client_batch 集合、原 command digest 集合均零交集。进一步对普通 `command_kind＋payload` 作规范 JSON 比较，旧 221 已 apply projection 与新 129 command（128 关系＋1 cost）精确内容零交集，不仅靠换 client ID 判断防重复 |
+| pending 新身份保真 | bounded PASS：source post-checkpoint 的两个 64-item pending 关系计划与 current 两个 r2 计划组成的规范 command 多重集完全相同，128 项全部唯一；历史 r1 的 Session 字段没有作为新授权复用。恢复的新 plan projection 绑定新 Session，Coordinator 对两个新 plan_ref／projection_digest 的 translation decision=approved |
+| 新 dry-run | bounded PASS：flow1 `dff8d819-7008-40f0-8561-73a3eae343d8`（64）、flow2 `da493ca9-bc85-4bf4-ae28-bbab629e4414`（64）、cost `d99eb680-f004-4640-aa31-5f9338cfb70e`（1）均有真实 validated dry-run，全部 item validated，HTTP 200；不把 cost validated 当 applied |
+| workspace 变化后重验 | bounded PASS：flow1 apply 的 after_version 为 `37f344...`；flow2 dry-v2／proof 27 的 before_version 和随后 apply before_version 都是该新 workspace，而非最初 dry-v1 的 `ed1f01...`。flow2 apply 后 `1d937f...`，cost dry-v2／proof29 又按此新 workspace validated，未拿旧 dry-run proof 写入 |
+| 真实安全续写及回执 | bounded PASS：flow1、flow2 各有一个 `apply_atomic/applied` Attempt，全部各 64 item applied；平台 Batch 状态为 applied。两个 apply 均在 validated dry-run 之后、同新 Session 同 Batch、权威 content_hash 不变。平台 readback 到本地 proof／receipt 的 batch_id、attempt_id、mode/status、idempotency_key、content_hash、workspace_before_version、response_digest 逐项交叉一致，0 correlation errors；receipt26／28 分别对应实际两次 apply |
+| 源与冻结连续性 | bounded PASS（当前字节）：旧 manifest 仍 `b3c415...`，160 个原 package artifact hash 无差异；source/current freeze raw hash 仍同 `3004b3...`，沿用 Round2 脱敏冻结 metadata。没有修改旧 run、旧包或 CQ |
+
+上述比较只确认 command 身份和运行合同，未判断业务模型是否正确。没有读取 CQ private／
+模型 rollout 或隐藏答案。live 已继续产生状态，结论以明确 readback 时刻及当次已读 intent
+范围为界；不能推导未来所有计划、授权或写入永久正确。
+
+**限定验收结果：从第三轮断点重新接续、重新挂接作用域、新 Session／writer、新 dry-run
+及实际安全续写，已取得真实证据，bounded L0 runtime PASS。** 旧 checkpoint 的 archive
+依赖缺失和 post-checkpoint pending-plan reference 均曾由生产方显式补充，旧包自动完整
+恢复仍 REVISE；当前代码对未来 archive 捕获的独立功能 PASS 保持 Round3 的范围。真实
+接续成功不覆盖旧失败，不替代 L1 模型质量、CQ 语义检索或最终 A10 验收。
+
 ## 尚待复验
 
-待获准新证据后，只读核对新 Session、唯一 writer、pending 新 dry-run、平台完成索引与
-无重复应用、archive 依赖缺口如何被安全处理，以及 CQ metadata。实际 start4c 仍在运行，
-当前记录不是终态 PASS。模型质量与语义检索未由本验收裁决。
+实际 start4c 仍在运行，本专项已经获得有界 L0 接续证据；后续全部计划完成、语义质量、
+CQ 语义检索、未知写入或新故障不在本轮结论内。旧包自动完整恢复缺口不会随本轮续写成功
+消失；若有新的获准证据再按具体边界复验，不为当前专项扩展平台机制或另起运行。
