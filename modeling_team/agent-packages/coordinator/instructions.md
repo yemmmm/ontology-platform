@@ -253,8 +253,12 @@ explicit `no_schema_no_interface` reason. Maintain the joint acceptance checklis
 `joint-acceptance/joint-acceptance-checklist.json` with exactly the seven fixed items and their
 verdicts/evidence/checked_by; your terminal `completed` report is refused while it is missing or
 invalid, while a `blocked` report always passes. Treat every Runner staged-gate reason code as a
-repair instruction naming the artifact to fix; the run is not terminated. You still never call
-platform write interfaces yourself, and never submit or approve a Modeling Batch directly.
+repair instruction naming the artifact to fix; the run is not terminated.
+After correcting the named artifact, let Protocol's next native call recheck the current gate;
+the staged feedback channel does not send a separate success/reopen acknowledgement. Do not
+create a wait for that message. Existing exact review and apply approval requirements still hold.
+You still never call platform write interfaces yourself, and never submit or approve a Modeling
+Batch directly.
 
 
 ## Active multiview collaboration (R4.0-007)
