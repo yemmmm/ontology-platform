@@ -476,6 +476,22 @@ class TransportTests(unittest.TestCase):
         self.assertIn("A completed terminal report does not answer that candidate", protocol)
         self.assertNotIn("refuses a completed terminal report", protocol)
 
+    def test_coordinator_prompt_uses_runner_dispatch_for_formal_issue_resolution(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("Runner's automatic broker `resume` or `abort`", coordinator)
+        self.assertIn("automatically sends the bound broker `resume` or `abort`", coordinator)
+        self.assertIn("check the actual gates before continuing without a second `resume`", coordinator)
+        self.assertNotIn("your one bound `resume`", coordinator)
+        self.assertNotIn("After the outer resolution is delivered, send exactly one bound", coordinator)
+        self.assertNotIn("send exactly one bound `resume` carrying the exact", coordinator)
+        self.assertNotIn("before sending the next `resume`", coordinator)
+        self.assertIn("Runner's retained control dispatch", coordinator)
+        self.assertIn('immediately call `issue_control` with `action: "pause"`', coordinator)
+        self.assertIn("Reserve `unknown`, `uncertain`, `indeterminate`, and `mismatch`", coordinator)
+
     def test_reply_correlation_rejects_forged_wrong_direction_and_duplicate_replies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(

@@ -98,7 +98,9 @@ the earlier failed call and cannot erase the later successful creation.
 Never keep working the blocker after reporting it, never decide on your own that your issue is
 resolved (not even from artifacts you can now read, projections that appeared, or messages you
 queued), and never send a "blocker resolved" notice while the issue is pending; the issue closes
-only through the persisted outer resolution and your one bound `resume`.
+only through the persisted outer resolution and the Runner's automatic broker `resume` or `abort`
+dispatch; check that dispatch and the actual artifact/platform gates before continuing, and do not
+send a duplicate `resume`.
 
 If a persistent role reports a typed issue, receive the exact structured issue delivery from the
 Runner and do not replace it with a terminal `blocked` report. Use only the native
@@ -107,9 +109,10 @@ Runner and do not replace it with a terminal `blocked` report. Use only the nati
 an optional field set to JSON `null`. If the tool rejects the shape, correct it from the advertised
 schema and retry that same pause once; do not claim that the Runner resolved the issue. Then wait
 for the Runner's structured outer resolution delivery. Do not call Runtime controls, platform
-tools, or invent a business answer. After the outer resolution is delivered, send exactly one bound
-`resume` carrying the exact persisted guidance or repair fields from that resolution; do not
-reconstruct, shorten, or replace them. Use `abort` only when the outer owner explicitly requests
+tools, or invent a business answer. After the formal outer resolution is persisted, the Runner
+automatically sends the bound broker `resume` or `abort`; receive its exact guidance or repair fields,
+wait for dispatch, and check the actual gates before continuing without a second `resume`. Do not
+reconstruct, shorten, or replace the resolution. Use `abort` only when the outer owner explicitly requests
 termination. An `abort` argument object must contain exactly `action`, `issue_id`, `reporter_id`,
 `control_epoch`, and `reason`; `reason` must equal the persisted abort `resolution_text` byte-for-byte.
 Never include `resolution_type`, `resolution_text`, `null`, or any other field in an abort call.
@@ -122,12 +125,12 @@ its pause turn. Wait for dispatch; do not send another resume or persist the res
 
 A `runtime_recovery` issue delivery means the reporting role's model provider is externally
 blocked (rate limit, quota/balance, concurrency, or outage) and the role is parked alive on its
-original thread. Handle it with the same `pause`/`resume` contract: the `pause` needs no action
-from the parked role itself, and after the outer owner confirms the external condition is lifted
-(quota reset, recharge, provider recovered), send exactly one bound `resume` carrying the exact
-persisted resolution; the Runner then starts the role's next turn on the same live thread. A
+original thread. Handle it with the same issue contract: the `pause` needs no action from the parked
+role itself. After the outer owner confirms the external condition is lifted (quota reset, recharge,
+provider recovered) through a formal resolution, the Runner automatically dispatches its bound
+`resume` and starts the role's next turn on the same live thread; do not send another `resume`. A
 `provider_recovery_retry` or `provider_recovery_backoff` notice means the provider was still not
-usable: wait for the notice's retry window before sending the next `resume`; never claim recovery
+usable: wait for the notice's retry window and the Runner's retained control dispatch; never claim recovery
 you cannot dispatch, and never ask the parked role to run tools while it waits.
 
 ## Prompt E acceptance ticket pipeline

@@ -25,6 +25,7 @@ import yaml
 
 import modeling_team.runner as runner_module
 from modeling_team import checkpoints as ck
+from modeling_team.checkpoint_recovery import restore_checkpoint_artifacts
 from modeling_team.checkpoints import (
     CHECKPOINT_ARTIFACTS_DIRECTORY,
     CHECKPOINT_DELIVERY_SEGMENTS,
@@ -62,13 +63,21 @@ from modeling_team.staged_decisions import (
     StagedSubmissionRejection,
     build_submission_intent,
     build_submission_receipt,
+    load_analysis_conclusions,
+    load_conclusion_archive,
     mark_intent_status,
     staged_decision_artifact_paths,
     staged_intent_receipt_issues,
+    validate_analysis_conclusions,
     write_submission_intent,
     write_submission_receipt,
 )
 from modeling_team.tests.test_platform_scope import ScopeClient
+from modeling_team.tests.test_r30008b_staged_decisions import (
+    _conclusion_entry,
+    _conclusions,
+    _confirmed_entry,
+)
 from modeling_team.tests.test_r3011_runner_wiring import _question, _read_evidence
 from modeling_team.tests.test_runner import CapturingAdapter
 
@@ -1221,6 +1230,94 @@ def test_m02_semantic_approved_keeps_undecided_content_pending():
         # The semantic approval package deliberately excludes write positions:
         # it claims no recoverable platform write state.
         assert not any(source.startswith("value-semantics/submission-intents/") for source in sources)
+    finally:
+        harness.cleanup()
+
+
+def test_conclusion_archives_ride_along_with_the_staged_material(tmp_path):
+    """R3.0-015 stage dependencies: the immutable revision archive belongs to the
+    staged conclusions material, so a restored run keeps its revision chain.
+
+    Seven conclusions at current revision 5 with revisions 1-4 archived each;
+    the actual save must package all 28 archive files (owner ``modeling``), the
+    actual restore must recreate their original bytes, and the real revision
+    guard must accept the restored chain.  A symlinked sibling never enters a
+    package.
+    """
+
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        root = runner.run.root
+        _settled_apply_intent(runner)
+        paths = staged_decision_artifact_paths(root, unified=False)
+        archive_dir = paths["conclusions_archive_dir"]
+        conclusion_ids = [f"ac-{index:04d}" for index in range(1, 8)]
+        for conclusion_id in conclusion_ids:
+            for revision in (1, 2, 3, 4):
+                _write_json(
+                    archive_dir / f"{conclusion_id}.r{revision}.json",
+                    _conclusion_entry(
+                        conclusion_id=conclusion_id, revision=revision, status="analyzed"
+                    ),
+                )
+        _write_json(
+            paths["conclusions"],
+            _conclusions(
+                [
+                    _confirmed_entry(conclusion_id=conclusion_id, revision=5)
+                    for conclusion_id in conclusion_ids
+                ]
+            ),
+        )
+        (archive_dir / "ac-0001.r9.json").symlink_to(paths["conclusions"])
+        expected_archives = [
+            f"value-semantics/conclusions-archive/{conclusion_id}.r{revision}.json"
+            for conclusion_id in conclusion_ids
+            for revision in (1, 2, 3, 4)
+        ]
+        staged_sources = [
+            paths["conclusions"].relative_to(root).as_posix(),
+            *expected_archives,
+        ]
+        staged_bytes = {source: (root / source).read_bytes() for source in staged_sources}
+
+        record = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
+        assert record["status"] == "saved"
+        manifest = _read_manifest(root, record["checkpoint_id"])
+        artifacts = {artifact["source"]: artifact for artifact in manifest["artifacts"]}
+        assert sorted(
+            source for source in artifacts if "conclusions-archive/" in source
+        ) == expected_archives
+        for source in expected_archives:
+            artifact = artifacts[source]
+            assert artifact["owner"] == "modeling"
+            assert artifact["digest"] == file_digest(root / source)
+            packaged = (
+                root
+                / CHECKPOINT_DIRECTORY
+                / record["checkpoint_id"]
+                / CHECKPOINT_ARTIFACTS_DIRECTORY
+                / source
+            )
+            assert packaged.read_bytes() == (root / source).read_bytes()
+
+        before_restore = _tree_state(root)
+        restored_root = tmp_path / "restored-run"
+        restore_checkpoint_artifacts(manifest, root, restored_root)
+        for source in expected_archives:
+            assert (restored_root / source).read_bytes() == (root / source).read_bytes()
+        assert validate_analysis_conclusions(
+            load_analysis_conclusions(
+                restored_root / "value-semantics" / "conclusions" / "analysis-conclusions.json"
+            ),
+            archive=load_conclusion_archive(
+                restored_root / "value-semantics" / "conclusions-archive"
+            ),
+        ) == ()
+        # Neither the staged source bytes nor the source run change.
+        assert {source: (root / source).read_bytes() for source in staged_sources} == staged_bytes
+        assert _tree_state(root) == before_restore
     finally:
         harness.cleanup()
 

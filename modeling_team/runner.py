@@ -10439,6 +10439,9 @@ class TeamRunner:
         receipts = self._checkpoint_directory_sources(
             staged_paths["receipts_dir"], "receipt-*.json"
         )
+        conclusion_archives = self._checkpoint_directory_sources(
+            staged_paths["conclusions_archive_dir"], "*.json"
+        )
 
         def add_cq_material() -> None:
             for source in freezes:
@@ -10454,6 +10457,11 @@ class TeamRunner:
 
         def add_staged_material(*, include_intents: bool) -> None:
             for source in candidates + plans:
+                add(source, "modeling")
+            # The immutable conclusion revision archive is part of the staged
+            # conclusions material: a restore rebuilds the same revision chain
+            # the guard verifies (R3.0-015 stage dependencies).
+            for source in conclusion_archives:
                 add(source, "modeling")
             for source in (conclusions, unlock, approvals, ledger, checklist, stage3_slot):
                 if source is not None:
