@@ -48,3 +48,21 @@ def test_inherited_shapes_are_explicit_and_fixable(section, fields):
     empty = deepcopy(example)
     empty[section] = []
     assert validate_scenario_map(empty) == ()
+
+
+@pytest.mark.parametrize("state", ["pending", "modeled", "unknown", "not_applicable"])
+def test_progress_notes_preserve_four_states_and_closed_shape(state):
+    contract = json.loads(CONTRACT.read_text())["scenario_map"]
+    viewpoints = contract["viewpoints"]
+    assert set(viewpoints["status_meanings"]) == set(viewpoints["status"])
+    assert viewpoints["fields"] == ["viewpoint", "status", "note"]
+    example = deepcopy(contract["syntax_example"])
+    entry = deepcopy(viewpoints["note_example"])
+    entry["status"] = state
+    example["slices"][0]["viewpoints"] = [entry]
+    assert validate_scenario_map(example) == ()
+    # Ordinary staleness and incomplete progress remain role feedback, not a hard gate.
+    entry["note"] = "Old candidate location; not yet checked after emergency save."
+    assert validate_scenario_map(example) == ()
+    entry["candidate_refs"] = []
+    assert any(i.reason_code == "map_schema_mismatch" for i in validate_scenario_map(example))

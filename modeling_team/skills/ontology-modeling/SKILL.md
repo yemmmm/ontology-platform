@@ -77,6 +77,25 @@ automatic clones or same-identity version pinning. Stable IRI/version/dry-run is
 Refresh affected review on candidate/resource drift. Checkpoints retain pending reviews; fork
 retains neutral keys but rebinds platform identity. Collaboration records are work, not lineage.
 
+### Report current progress (R4.0-014)
+
+At candidate handoff and content-affecting revision, send Coordinator through the existing message
+channel the slice/viewpoint, current complete candidate_id/revision/key item_id or approved path,
+analyzed/expressed scope, remaining work/unknowns and next role/input. State what survives or is
+invalidated from the old revision, preserving unrelated scope. Final handoff includes remaining
+unknowns and work. Coordinator checks actual content and alone writes the shared map.
+
+Partial current expression is modeled plus its limits; analysis without expression is pending,
+or unknown if unresolved business facts block it. A correctly expressed necessary unknown may be
+modeled but remains unconfirmed. not_applicable requires scoped business grounds, not missing
+sources. Keep real business unknowns consistent in the candidate and map's explicit_unknowns;
+ordinary unstarted work is a progress task, not an invented business unknown. Missing/unverified
+artifacts, pending approval/application/acceptance and absent plans are progress/evidence gaps.
+An unconfirmed proposal alone does not establish semantic ambiguity; identify an actual unresolved
+business meaning before reporting it for explicit_unknowns. Do not infer business
+confirmation, applied state, independent PASS or write permission from modeled. Use actual bound
+execution results and original verdicts for those separate conclusions; never copy hidden material.
+
 ## Author and revise the candidate
 
 Use the mounted candidate-authoring and task-specific semantic contracts for exact output fields.

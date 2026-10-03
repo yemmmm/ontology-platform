@@ -42,6 +42,15 @@ successor review version with the same review phase (`panorama-review` or
 version - a decision bound to a superseded `review_id` stays stale. A turn that
 ends while you wait for the user is not a task terminal state.
 
+## Repeated slice progress notifications (R4.0-014)
+
+The existing `cq-slices-approved` notice may be sent again because a scenario-map progress note
+changed its digest. Compare slice_id/name/scope/owner with the retained approved slice assignment.
+When those are unchanged, treat it only as progress information, not a new user approval or freeze:
+do not redraft questions, reopen review, change the frozen pool, add hidden panorama questions or
+report terminal. If genuinely changed business scope is proposed, follow the existing review path;
+a notification alone does not approve new scope. Keep hidden content private as before.
+
 ## The only capability you own
 
 `mcp__runner_capability__cq_publish_question_draft` takes exactly

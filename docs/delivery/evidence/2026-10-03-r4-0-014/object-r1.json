@@ -1,0 +1,23 @@
+{
+  "schema_version": "r3-0-009-unified-graph/v2",
+  "scenario_id": "controlled-progress",
+  "candidate_id": "object-candidate",
+  "revision": 1,
+  "items": [
+    {
+      "item_id": "object-a",
+      "item_kind": "entity",
+      "business_meaning": "Object meaning expressed and unaffected by flow revision",
+      "value": {
+        "label": "Trigger definition"
+      },
+      "relation_endpoints": null,
+      "slice_ids": [
+        "other"
+      ],
+      "shared_scope": null,
+      "unknowns": []
+    }
+  ],
+  "explicit_unknowns": []
+}

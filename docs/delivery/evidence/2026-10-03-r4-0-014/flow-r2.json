@@ -1,0 +1,27 @@
+{
+  "schema_version": "r3-0-009-unified-graph/v2",
+  "scenario_id": "controlled-progress",
+  "candidate_id": "flow-candidate",
+  "revision": 2,
+  "items": [
+    {
+      "item_id": "rule-unknown",
+      "item_kind": "entity",
+      "business_meaning": "Compensation trigger intentionally unresolved",
+      "value": {
+        "label": "Trigger definition"
+      },
+      "relation_endpoints": null,
+      "slice_ids": [
+        "flow"
+      ],
+      "shared_scope": null,
+      "unknowns": [
+        "Compensation trigger needs business owner confirmation"
+      ]
+    }
+  ],
+  "explicit_unknowns": [
+    "Compensation trigger needs business owner confirmation"
+  ]
+}

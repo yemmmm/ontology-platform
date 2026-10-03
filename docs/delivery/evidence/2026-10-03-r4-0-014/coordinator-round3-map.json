@@ -1,0 +1,138 @@
+{
+  "schema_version": "r4-0-007-scenario-map/v1",
+  "scenario_id": "controlled-progress",
+  "topology_decision_ref": "",
+  "slices": [
+    {
+      "slice_id": "flow",
+      "name": "Flow",
+      "scope": "main route and compensation",
+      "owner": "coordinator",
+      "status": "current r2 is partial: process pending; rule expression retained with unresolved trigger",
+      "viewpoints": [
+        {
+          "viewpoint": "process",
+          "status": "pending",
+          "note": "Verified actual current candidate at workspaces/r4014-controlled-20261003/flow-r2.json: candidate_id flow-candidate, revision 2, item_id rule-unknown. There is no current main-process expression in this full revision; flow-r1.json / revision 1 / main-flow is historical and replaced. The compensation path remains unmodeled. Remaining: author a complete current process expression and obtain business-owner confirmation before asserting the compensation trigger's meaning. Next: Modeling authors the next complete current candidate; the source r1 expression must not be treated as current. Candidate is unapproved and unapplied; no independent semantic PASS."
+        },
+        {
+          "viewpoint": "rule",
+          "status": "modeled",
+          "note": "Verified actual current candidate at workspaces/r4014-controlled-20261003/flow-r2.json: candidate_id flow-candidate, revision 2, item_id rule-unknown. rule-unknown still expresses the unresolved compensation trigger. Unknown: compensation trigger needs business-owner confirmation. Next: Business owner resolves the trigger and Modeling revises the current candidate. Candidate is unapproved and unapplied; no independent semantic PASS."
+        }
+      ]
+    },
+    {
+      "slice_id": "analysis",
+      "name": "Analysis",
+      "scope": "planned process outline",
+      "owner": "coordinator",
+      "status": "analysis complete; candidate pending",
+      "viewpoints": [
+        {
+          "viewpoint": "process",
+          "status": "pending",
+          "note": "No current candidate artifact is available: artifact_path, candidate_id, revision and item_ids are none. Process-outline analysis is complete and no unresolved business fact blocks candidate authoring. Remaining: author a candidate. Next: Modeling authors the candidate; Coordinator checks its actual content when available. Analysis does not prove expression, approval, application or PASS."
+        }
+      ]
+    },
+    {
+      "slice_id": "blocked",
+      "name": "Blocked",
+      "scope": "unconfirmed rule trigger",
+      "owner": "coordinator",
+      "status": "blocked on unresolved trigger fact; no expression",
+      "viewpoints": [
+        {
+          "viewpoint": "rule",
+          "status": "unknown",
+          "note": "No current rule expression is available: artifact_path, candidate_id, revision and item_ids are none. The required rule area is identified, but the actual trigger fact is unresolved. Next: Business owner supplies the trigger fact, then Modeling authors the expression. Do not invent a candidate."
+        }
+      ]
+    },
+    {
+      "slice_id": "na",
+      "name": "NA",
+      "scope": "manual scope with no external interface",
+      "owner": "coordinator",
+      "status": "manual scope excludes external interface; not applicable",
+      "viewpoints": [
+        {
+          "viewpoint": "interface_mapping",
+          "status": "not_applicable",
+          "note": "The approved manual scope explicitly excludes every external interface, so interface_mapping is not applicable within this slice. No artifact is requested. This is a scoped business exclusion, not a missing-source conclusion."
+        }
+      ]
+    },
+    {
+      "slice_id": "oral",
+      "name": "Oral",
+      "scope": "claimed process",
+      "owner": "coordinator",
+      "status": "candidate unavailable; process expression unverified; artifact gap is not a business unknown",
+      "viewpoints": [
+        {
+          "viewpoint": "process",
+          "status": "pending",
+          "note": "The claimed oral-r1.json artifact is still absent, so no current locatable process expression is verified; candidate_id, revision and item_ids remain unverified. This missing artifact is an evidence/progress gap, not a business unknown. Next: Teammate or Coordinator supplies the claimed artifact, then Coordinator checks its actual content. Do not treat the oral claim as expression or completion."
+        }
+      ]
+    },
+    {
+      "slice_id": "other",
+      "name": "Other",
+      "scope": "unchanged object",
+      "owner": "coordinator",
+      "status": "object expression verified; shared definition remains proposed",
+      "viewpoints": [
+        {
+          "viewpoint": "object",
+          "status": "modeled",
+          "note": "Verified actual current candidate at workspaces/r4014-controlled-20261003/object-r1.json: candidate_id object-candidate, revision 1, item_id object-a. object-a remains current and is unaffected by the flow revision. shared-a remains proposed only; the round-2 handoff supplies no business confirmation and says this unconfirmed proposal alone is not a business unknown. Next: preserve this unrelated scope and seek confirmation only if a later business decision requires it. No approval, application or independent semantic PASS is implied."
+        }
+      ]
+    }
+  ],
+  "shared_terms": [
+    {
+      "term": "Shared definition",
+      "used_by_slices": [
+        "flow",
+        "other"
+      ],
+      "owner_slice": "other",
+      "definition_id": "shared-a",
+      "meaning_scope": "proposed only",
+      "status": "proposed",
+      "candidate_refs": []
+    }
+  ],
+  "cross_slice_dependencies": [],
+  "cross_slice_competency_questions": [],
+  "explicit_unknowns": [
+    {
+      "topic": "Compensation trigger for the current flow rule and compensation path is unresolved",
+      "needed_from": "Business owner",
+      "status": "unresolved"
+    },
+    {
+      "topic": "Rule trigger fact for the blocked slice is unresolved",
+      "needed_from": "Business owner",
+      "status": "unresolved"
+    }
+  ],
+  "adjustments": [
+    {
+      "change": "Recorded the initial approved progress after checking the actual flow-r1.json and object-r1.json contents. Verified flow-candidate revision 1 with main-flow and rule-unknown, and object-candidate revision 1 with object-a; retained analysis as pending, the blocked rule as unknown, the scoped interface_mapping exclusion as not_applicable, and the oral process as pending because its claimed artifact is unavailable. Preserved shared-a as proposed and recorded the actual unknown and verification limits. No approval, application, semantic start or independent PASS is implied.",
+      "approved_by_coordinator": "coordinator"
+    },
+    {
+      "change": "Updated the writable progress copy from the verified round-2 handoff and flow-r2.json. flow-candidate revision 2 is the complete current flow candidate and contains only rule-unknown; flow-r1.json / revision 1 / main-flow is retained as historical source progress and is no longer current. Downgraded flow/process to pending and added flow/rule as modeled with the compensation trigger unknown. Preserved object-a and every unrelated scope. Removed shared-a from explicit_unknowns because the current handoff states that an unconfirmed proposal alone is not a business unknown; shared-a remains proposed. Host recovery evidence for source Batch source-b / Attempt source-a / receipt source-receipt is source history only, does not prove flow-r2 applied, and must not be replayed. The new-project identity mapping object-a -> new-object-a has no approved translation or apply plan; restore/reconcile current candidates and the writable scope before next work. No platform call, checkpoint, approval, application or independent PASS is implied.",
+      "approved_by_coordinator": "coordinator"
+    },
+    {
+      "change": "Processed the round-3 oral-artifact-gap supplement against the current writable copy. oral-r1.json remains unavailable, so oral/process stays pending with an explicit evidence/progress-gap note and is not upgraded from the oral claim. Removed the missing-artifact entry from explicit_unknowns because it is not a business unknown; preserved the two genuine unresolved business questions for the flow compensation trigger and blocked rule trigger. Kept flow-r2 current, r1 source progress historical, object-a current, and shared-a proposed. The next authorized recovery/save sequence is described in the round-3 message; no platform call, checkpoint, approval, application or independent PASS occurred.",
+      "approved_by_coordinator": "coordinator"
+    }
+  ]
+}

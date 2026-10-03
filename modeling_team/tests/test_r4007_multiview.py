@@ -510,3 +510,70 @@ def test_ordinary_prepare_cannot_import_fork_membership_authorization(tmp_path):
         assert "fork_created_by_run" not in harness.runner.run.scope
     finally:
         harness.cleanup()
+
+
+def test_progress_note_change_after_handoff_still_rejects_digest_drift(tmp_path):
+    from modeling_team.__main__ import _cq_collaboration_context
+    from modeling_team.contracts import TeamConfigurationError
+
+    _collaboration_run_root(tmp_path)
+    path = tmp_path / "scenario-map/scenario-map.json"
+    original = path.read_bytes()
+    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+    value = json.loads(original)
+    value["slices"][0]["viewpoints"][0]["note"] = "Updated current coverage only"
+    assert validate_scenario_map(value, run_root=tmp_path) == ()
+    write_json(path, value)
+    with pytest.raises(TeamConfigurationError, match="collaboration_binding_changed"):
+        _cq_collaboration_context(tmp_path, {})
+    path.write_bytes(original)
+    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+
+
+def test_emergency_save_restores_stale_progress_and_current_candidate_without_editing_source(tmp_path):
+    from modeling_team.tests.test_r30015_checkpoints import (
+        _CheckpointRunner,
+        _outer_save,
+        _read_manifest,
+    )
+    from modeling_team.checkpoint_recovery import restore_checkpoint_artifacts
+
+    from modeling_team.checkpoints import CHECKPOINT_KIND_SEMANTIC_APPROVED
+    from modeling_team.staged_decisions import staged_decision_artifact_paths
+    from modeling_team.tests.test_r30009_runner_wiring import _unified_approvals
+
+    harness = _CheckpointRunner(TASK)
+    try:
+        runner = harness.prepare()
+        candidate = _candidate()
+        value = multiview_map()
+        value["scenario_id"] = candidate["scenario_id"]
+        value["slices"][0]["viewpoints"][0].update(
+            status="pending", note="Analysis done; candidate r1 historical; current revision unchecked"
+        )
+        candidate_relative = "stage3-neutral-graph/candidates/cand-1-r2.json"
+        map_relative = "scenario-map/scenario-map.json"
+        write_json(runner.run.root / candidate_relative, candidate)
+        write_json(runner.run.root / map_relative, value)
+        original_map = (runner.run.root / map_relative).read_bytes()
+        original_candidate = (runner.run.root / candidate_relative).read_bytes()
+        paths = staged_decision_artifact_paths(runner.run.root, unified=True)
+        write_json(paths["approvals"], _unified_approvals(candidate))
+        record = _outer_save(runner, CHECKPOINT_KIND_SEMANTIC_APPROVED)
+        assert record["status"] == "saved"
+        manifest = _read_manifest(runner.run.root, record["checkpoint_id"])
+        restored_root = tmp_path / "restored"
+        restore_checkpoint_artifacts(manifest, runner.run.root, restored_root)
+        assert (restored_root / map_relative).read_bytes() == original_map
+        assert (restored_root / candidate_relative).read_bytes() == original_candidate
+        # Production can update its working copy; the published source stays immutable.
+        restored = json.loads((restored_root / map_relative).read_text())
+        restored["slices"][0]["viewpoints"][0].update(
+            status="modeled", note="cand-1 revision 2 / item-entity; partial expression; review pending"
+        )
+        write_json(restored_root / map_relative, restored)
+        assert validate_scenario_map(restored, run_root=restored_root) == ()
+        assert (runner.run.root / map_relative).read_bytes() == original_map
+        assert (runner.run.root / candidate_relative).read_bytes() == original_candidate
+    finally:
+        harness.cleanup()

@@ -1,0 +1,28 @@
+{
+  "purpose": "Controlled loaded-instruction Agent behavior and mechanical-contract evidence; not full Team Runtime or A9 semantic acceptance. Earlier failed outputs are retained; final instructions apply to successful final regressions.",
+  "semantic_starts": 0,
+  "final_instruction_sha256": {
+    "modeling_team/agent-packages/coordinator/instructions.md": "0edc5872500047486fa1a9d48f7af930df02364999a1c4cbd77372cf0ce416b7",
+    "modeling_team/agent-packages/modeling/instructions.md": "5089f55cede5d2b6e077b0ce034f539099ec7872ac90622d1f81322f1b5c4876",
+    "modeling_team/agent-packages/competency-question/instructions.md": "5f0463a8f8a952f84514660173a4086fcb4ffd449d0d804e78c8cbebb89e1a82",
+    "modeling_team/skills/ontology-modeling/SKILL.md": "7fb8d6e5db020977f36ef235a6cc870687d2e206bf12182b9f054abbb4aebc66",
+    "modeling_team/references/r4-0-007-scenario-map-contract.json": "3b301e632003ebcf977b8099290b47d3a4b96c01961b70f5c7775552db06a637"
+  },
+  "controlled_files_sha256": {
+    "approved-test-input.md": "7f54c7920ca20c40922c1145c0888628d515475c8e3616bc83ee4730e1239e28",
+    "coordinator-round1-map.json": "13f7fe09dc4ec5a232f7deda36273fcc739e9c3ce9ba9ce44ef7c42241fba921",
+    "coordinator-round1-message.md": "76d16f8154ac2e6f7fa66ed36134cc6e3d4ccff37d9fd6160763f9f5045f3e69",
+    "coordinator-round2-map.json": "7dbc69679511bd83fd9501893bd49210344323539a8a9568d1249915dce7eef5",
+    "coordinator-round2-message.md": "d34aaedb5449cda71e01b47004d4aac8f0e54a27520c89ff3333b9cd498d57aa",
+    "coordinator-round3-map.json": "c9a7b00f1eb53d0cd400be53ec23f9b91c2a6c5452c17d460434f198ab9817ff",
+    "coordinator-round3-message.md": "cd6228e95f7700393bc96e54a1ef005144e55a964e829ed1359814c5da6d0949",
+    "cq-response.md": "ad6d21ce4d718952bc077dedb86f543def0405db6dc8dfc456a540d29b24abea",
+    "flow-r1.json": "8202da6eb20259aecc436f615f199c98266682988e12649305b3acc19e4fc9be",
+    "flow-r2.json": "761313f8946fef206d022549f22458f36a7e013230db979ba7a13b1da6f790c7",
+    "modeling-handoff.md": "e5cff5ed4c85bba24d3731f10180747fb8c613f5494c2d59e8d38d7ac1c8e6e6",
+    "modeling-round2-handoff.md": "0bbdc9db44907e13561a0698cb2f7dd6c1263142b41c3e13e6631e20918c9cce",
+    "modeling-round3-artifact-gap-message.md": "d76fb116428286a1ff1934dd5a4df8cdc68f18e4d6a2f27183a0f9f03765f384",
+    "object-r1.json": "ae69fdaa37d19879f69b303731bba742663b2801cc706e7c5bf722d25adcf2b0",
+    "scenario-map.json": "baae1615053305a7ad8539ed06c294c95eb675e933cc10e4412bf53d77282322"
+  }
+}

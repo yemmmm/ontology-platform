@@ -70,8 +70,22 @@
       ],
       "rules": [
         "An array, possibly empty; no repeated viewpoint per slice; note is nonempty.",
-        "Absent viewpoints are unassessed, never implicitly not_applicable. No mandatory seven-phase sequence or one Agent per viewpoint."
-      ]
+        "Absent viewpoints are unassessed, never implicitly not_applicable. No mandatory seven-phase sequence or one Agent per viewpoint.",
+        "Partial expression takes modeled with remaining work/unknowns in note. An expression that correctly preserves necessary unknowns may also be modeled; it does not confirm those facts.",
+        "Judge current content, not monotonic status upgrades: when a revision invalidates expression, retain only still-valid scope and identify old references as historical. slices[].status remains a textual overview, not a state machine or percentage.",
+        "Note locates the current complete immutable candidate_id/revision/key item_id or approved path, explains analyzed/expressed scope, remaining work/unknowns and next responsible role/input. Note references are semantically checked by Coordinator, not a new structured field or regex gate."
+      ],
+      "status_meanings": {
+        "pending": "Registered but no locatable current model expression, including work needing redo. Explain completed analysis, remaining work and next step; do not hide existing partial expression.",
+        "modeled": "A locatable current model expression exists within approved scope, possibly only part of the viewpoint. Explain current candidate/revision/items, expressed scope, remaining work and unknowns. This is not full completion, business confirmation, application, acceptance PASS or write permission.",
+        "unknown": "No confirmable current expression and progress depends on unresolved business facts or conflicts. Explain the question, affected scope and required respondent/input; work not yet analyzed alone is pending.",
+        "not_applicable": "Business grounds establish that this viewpoint does not apply within the approved slice scope. State scope and reason; missing material or artifacts alone is insufficient."
+      },
+      "note_example": {
+        "viewpoint": "process",
+        "status": "modeled",
+        "note": "Expressed: main and fallback flow, candidate-flow revision 3 / flow-main, flow-fallback. Remaining: compensation path; unknown: compensation trigger needs business-owner confirmation. Next: Modeling revises after confirmation; Coordinator updates progress. Candidate not applied. Syntax illustration only, not business evidence."
+      }
     },
     "shared_terms": {
       "required_fields": [
@@ -248,6 +262,15 @@
         }
       ],
       "adjustments": []
+    },
+    "progress_maintenance": {
+      "owner": "Coordinator alone authors the shared map. Modeling sends coverage and candidate locations through existing handoff/revision messages; Protocol sends bound execution-result summaries without reading the private map.",
+      "when": "Check accessible actual candidate content at candidate handoff, content-affecting revision, before planned handoff/save and after recovery before the next step. Before production terminal, synchronize the map, then bind it through existing handoff digest. Normal order: final facts checked, Coordinator synchronizes and reports production terminal, then host verifies quiescence/write draining and publishes the existing digest-bound handoff; Coordinator never publishes that host handoff.",
+      "evidence": "Oral completion, file existence, item count and structure PASS do not prove expression. If actual content cannot be checked, explicitly retain an unverified note and request the missing artifact. Ordinary stale progress is recoverable feedback, never an all-modeled or view-count gate.",
+      "related_records": "Retain real business unknowns consistently in explicit_unknowns and necessary candidate unknowns/conflicting_meanings. Business shared_terms.status, Batch/Attempt/receipts and independent reports remain separate truths. Append an ordinary adjustment only for a substantive change; shared meaning changes still require the existing review. Missing/unverified artifacts, pending approval/application/acceptance and absent plans are progress/evidence gaps, not business unknowns. An unconfirmed proposal alone does not establish semantic ambiguity; name the actual unresolved meaning before recording explicit_unknowns. During recovery correct existing misplaced progress/evidence entries by moving their gaps into notes, without removing genuinely unresolved business unknowns or resetting unrelated expression.",
+      "after_handoff": "Never overwrite a digest-bound map, source checkpoint or old report to fix stale progress. Host records discrepancies outside Judge business evidence; authorized production recovery updates its writable working copy. Emergency saving preserves current artifacts without waiting for perfect progress.",
+      "recovery": "Verify checkpoint/scope/identity mapping, write reconciliation and actual candidates before updating. pending never proves unapplied; definite writes are not replayed. Fork retains neutral progress but uses new scope/identity_mapping; old receipts are source history, never new apply authority.",
+      "isolation": "No hidden questions, answers or private diagnostics in the map. Same slice_id/name/scope/owner progress notifications do not reapprove scope or reopen frozen CQs. Retained R3/history artifacts keep their original meaning."
     }
   },
   "topology_decision": {

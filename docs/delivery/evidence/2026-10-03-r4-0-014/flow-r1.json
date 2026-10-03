@@ -1,0 +1,41 @@
+{
+  "schema_version": "r3-0-009-unified-graph/v2",
+  "scenario_id": "controlled-progress",
+  "candidate_id": "flow-candidate",
+  "revision": 1,
+  "items": [
+    {
+      "item_id": "main-flow",
+      "item_kind": "entity",
+      "business_meaning": "Main route is expressed; compensation path not yet modeled",
+      "value": {
+        "label": "Main route"
+      },
+      "relation_endpoints": null,
+      "slice_ids": [
+        "flow"
+      ],
+      "shared_scope": null,
+      "unknowns": []
+    },
+    {
+      "item_id": "rule-unknown",
+      "item_kind": "entity",
+      "business_meaning": "Compensation trigger intentionally unresolved",
+      "value": {
+        "label": "Trigger definition"
+      },
+      "relation_endpoints": null,
+      "slice_ids": [
+        "flow"
+      ],
+      "shared_scope": null,
+      "unknowns": [
+        "Compensation trigger needs business owner confirmation"
+      ]
+    }
+  ],
+  "explicit_unknowns": [
+    "Compensation trigger needs business owner confirmation"
+  ]
+}

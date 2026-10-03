@@ -331,6 +331,35 @@ skipped／漂移／读取复核失败按宿主原记录呈现，没有 Judge 的
 结束而提前 `stop`，也不要把 `publish-handoff`（离线交接）当作 run 内的
 `cq_handoff_complete`。
 
+## 场景地图进度：交接、保存与恢复（R4.0-014）
+
+1. 在 Coordinator 生产 terminal 前，核对 Modeling 的最终候选／修订消息是否包含切片、
+   视角、candidate_id/revision/关键 item 或获准路径、实际覆盖、未知／待办和下一步。
+   Coordinator 从可访问候选核对内容后写地图；无实际产物只注明待核对，不以口头完成、
+   文件存在或结构 PASS 升级。Protocol 经已有消息提供确定写入摘要，不读 Coordinator 私图。
+2. 核对受影响 note 能说明当前已表达与未完成范围。部分表达用 modeled；仅分析无表达用
+   pending，真实业务未决阻塞用 unknown，不适用须有业务范围依据。必要未知可已正确表达，
+   同时保留 explicit_unknowns／候选 unknowns。modeled 不升级 shared_terms.confirmed，
+   不证明 applied／独立 PASS。修订只重判失效范围，旧版标历史，语义变化仍做 007 review；
+   实质进度变化记现有 adjustment，无变化不重复追加。不凑齐七视角或计算完成率。
+3. 顺序保持：最终候选和写入结果明确 → Coordinator 同步并结束地图写入 → 生产静默／
+   写入排空 → 原 handoff 绑定 digest → 独立只读验收。普通过期通过既有反馈修正，不新增
+   不可恢复硬门。若 terminal 后才发现过期，不擅自重启角色修备注；在宿主交付记录说明
+   差异、当前候选定位、后续恢复待同步项，不进入本次 Judge 业务证据，不覆盖绑定原件。
+4. 计划 checkpoint 保存前尽量同步已到达的更新；紧急中断、额度／期限到达仍保存实际
+   内容并注明待核对范围，不等语义同步、不改 manifest／stage_facts。恢复先按原机制核对
+   checkpoint、scope／身份映射、全链写状态和候选，再判断下一工作，由 Coordinator 在
+   获准生产的可写副本更新。确定成功写入不重放；pending 不代表未写入；unknown write
+   走现有核实。缺候选／恢复历史如实报告，不从 note 重造产物或批准。
+5. 验收-only 续跑继续保持源地图、checkpoint／报告只读，真正摘要漂移仍报告
+   collaboration_binding_changed。fork 保留中立 candidate/item 进展，但平台身份按
+   fork_scope／identity_mapping 核对；旧平台引用和回执标源历史，不能授权新 apply。
+   旧 R3／保留 run 不批量改图，不把隐藏题、答案或私有诊断写进生产地图。
+6. note 更新可能触发同范围 cq-slices-approved：CQ 对照 slice_id/name/scope/owner，
+   相同内容只作状态通知，不重新出题、批准、冻结或加入隐藏题。真正范围变更走既有审核；
+   不为消除重复通知改变 Runner 算法。
+
+
 ## cq_handoff_complete 之后的独立验收收口（acceptance_pending）
 
 `cq_handoff_complete` 被接受并返回 `acceptance_phase=acceptance_pending` 后，live run 保持

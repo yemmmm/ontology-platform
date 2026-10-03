@@ -1,0 +1,135 @@
+{
+  "schema_version": "r4-0-007-scenario-map/v1",
+  "scenario_id": "controlled-progress",
+  "topology_decision_ref": "",
+  "slices": [
+    {
+      "slice_id": "flow",
+      "name": "Flow",
+      "scope": "main route and compensation",
+      "owner": "coordinator",
+      "status": "partial: main process expression verified; compensation path remains unmodeled",
+      "viewpoints": [
+        {
+          "viewpoint": "process",
+          "status": "modeled",
+          "note": "Verified actual candidate at workspaces/r4014-controlled-20261003/flow-r1.json: candidate_id flow-candidate, revision 1, item_ids main-flow and rule-unknown. The main process is expressed and the unresolved compensation-trigger question is preserved in rule-unknown. Remaining: model the compensation path and obtain business-owner confirmation for the trigger. Next: Modeling revises after the required business input. Candidate is unapproved and unapplied; no independent semantic PASS."
+        }
+      ]
+    },
+    {
+      "slice_id": "analysis",
+      "name": "Analysis",
+      "scope": "planned process outline",
+      "owner": "coordinator",
+      "status": "analysis complete; candidate pending",
+      "viewpoints": [
+        {
+          "viewpoint": "process",
+          "status": "pending",
+          "note": "No current candidate artifact is available: artifact_path, candidate_id, revision and item_ids are none. Process-outline analysis is complete and no unresolved business fact blocks candidate authoring. Remaining: author a candidate. Next: Modeling authors the candidate; Coordinator checks its actual content when available. Analysis does not prove expression, approval, application or PASS."
+        }
+      ]
+    },
+    {
+      "slice_id": "blocked",
+      "name": "Blocked",
+      "scope": "unconfirmed rule trigger",
+      "owner": "coordinator",
+      "status": "blocked on unresolved trigger fact; no expression",
+      "viewpoints": [
+        {
+          "viewpoint": "rule",
+          "status": "unknown",
+          "note": "No current rule expression is available: artifact_path, candidate_id, revision and item_ids are none. The required rule area is identified, but the actual trigger fact is unresolved. Next: Business owner supplies the trigger fact, then Modeling authors the expression. Do not invent a candidate."
+        }
+      ]
+    },
+    {
+      "slice_id": "na",
+      "name": "NA",
+      "scope": "manual scope with no external interface",
+      "owner": "coordinator",
+      "status": "manual scope excludes external interface; not applicable",
+      "viewpoints": [
+        {
+          "viewpoint": "interface_mapping",
+          "status": "not_applicable",
+          "note": "The approved manual scope explicitly excludes every external interface, so interface_mapping is not applicable within this slice. No artifact is requested. This is a scoped business exclusion, not a missing-source conclusion."
+        }
+      ]
+    },
+    {
+      "slice_id": "oral",
+      "name": "Oral",
+      "scope": "claimed process",
+      "owner": "coordinator",
+      "status": "candidate unavailable; process expression unverified",
+      "viewpoints": [
+        {
+          "viewpoint": "process",
+          "status": "pending",
+          "note": "The claimed oral-r1.json artifact is absent, so no current locatable process expression is verified; candidate_id, revision and item_ids remain unverified. Next: Teammate or Coordinator provides the claimed artifact, then Coordinator checks its actual content. Do not treat the oral claim as expression or completion."
+        }
+      ]
+    },
+    {
+      "slice_id": "other",
+      "name": "Other",
+      "scope": "unchanged object",
+      "owner": "coordinator",
+      "status": "object expression verified; shared definition remains proposed",
+      "viewpoints": [
+        {
+          "viewpoint": "object",
+          "status": "modeled",
+          "note": "Verified actual candidate at workspaces/r4014-controlled-20261003/object-r1.json: candidate_id object-candidate, revision 1, item_id object-a. object-a is the current object expression and is unaffected by flow revisions. Shared definition shared-a remains proposed only because no business confirmation is present. Next: Business owner confirms shared-a before it can become confirmed. No approval, application or independent semantic PASS is implied."
+        }
+      ]
+    }
+  ],
+  "shared_terms": [
+    {
+      "term": "Shared definition",
+      "used_by_slices": [
+        "flow",
+        "other"
+      ],
+      "owner_slice": "other",
+      "definition_id": "shared-a",
+      "meaning_scope": "proposed only",
+      "status": "proposed",
+      "candidate_refs": []
+    }
+  ],
+  "cross_slice_dependencies": [],
+  "cross_slice_competency_questions": [],
+  "explicit_unknowns": [
+    {
+      "topic": "Compensation trigger for the flow compensation path is unresolved",
+      "needed_from": "Business owner",
+      "status": "unresolved"
+    },
+    {
+      "topic": "Rule trigger fact for the blocked slice is unresolved",
+      "needed_from": "Business owner",
+      "status": "unresolved"
+    },
+    {
+      "topic": "Actual process expression for the oral slice is unverified because oral-r1.json is absent",
+      "needed_from": "Teammate or Coordinator to provide the claimed artifact",
+      "status": "unverified"
+    },
+    {
+      "topic": "Shared definition shared-a has no business confirmation",
+      "needed_from": "Business owner",
+      "status": "unconfirmed"
+    }
+  ],
+  "adjustments": [
+    {
+      "change": "Recorded the initial approved progress after checking the actual flow-r1.json and object-r1.json contents. Verified flow-candidate revision 1 with main-flow and rule-unknown, and object-candidate revision 1 with object-a; retained analysis as pending, the blocked rule as unknown, the scoped interface_mapping exclusion as not_applicable, and the oral process as pending because its claimed artifact is unavailable. Preserved shared-a as proposed and recorded the actual unknown and verification limits. No approval, application, semantic start or independent PASS is implied.",
+      "approved_by_coordinator": "coordinator"
+    }
+  ]
+}

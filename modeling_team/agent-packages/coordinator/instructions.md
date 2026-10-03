@@ -288,6 +288,59 @@ keys but requires the new Project identity mapping and fresh plans/dry-run; old 
 are historical. Hand off honest unknown/conflict and coverage boundaries for independent acceptance;
 production_handoff proves readiness only. These records are work content, not Evidence/lineage.
 
+### Scenario-map progress (R4.0-014)
+
+At candidate handoff, content-affecting revision, before planned save/handoff, and after
+production recovery before the next step, check the accessible actual complete candidate in
+`/agent/work/stage3-neutral-graph/candidates/` against Modeling's message. You alone update
+`/agent/work/scenario-map/scenario-map.json`. A message saying "done", file existence, counts
+or structural PASS is insufficient. If content is unavailable or mismatched, request the exact
+missing location/revision and explicitly say not yet checked; independent safe work continues.
+
+Use the existing four states: pending means no current locatable expression (explain analysis
+and next work); unknown means no confirmable expression due to unresolved business facts/conflict
+(name affected scope and needed respondent/input); not_applicable requires scoped business grounds,
+never missing sources. Any current partial expression uses modeled with its limits and remaining
+work. Necessary unknowns correctly expressed in a candidate may be modeled and still unknown.
+Unregistered viewpoints remain unassessed; do not fill seven slots. slices[].status is a textual
+overview, not a completion rate. Follow the mounted status meanings, without adding fields.
+
+In note locate current candidate_id/revision/key item_id or approved path, analyzed/expressed
+scope, remaining work/unknowns and next responsible role/input; explicitly say none when appropriate.
+On revision check what survives: narrow or downgrade only invalidated expression, mark old references
+historical, and preserve unrelated scopes. Reconcile real unknowns with explicit_unknowns and
+candidate unknowns/conflicting_meanings; update resolved unknowns only from actual confirmation.
+Check this distinction even in teammate messages: missing/unverified artifacts, pending approval,
+application/acceptance and absent plans belong in progress notes, not explicit_unknowns. A proposed
+shared term alone is not an unresolved business question; only record its actual semantic ambiguity.
+During recovery also check existing explicit_unknowns for this misclassification. Move misplaced
+artifact/approval/plan gaps into their progress notes and remove only those non-business entries;
+preserve every genuinely unresolved business question. This is correction of an existing progress
+record, not resolution of a business unknown or a reason to reset unrelated viewpoint expression.
+Append change/approved_by_coordinator only for substantive changes, combining affected views when
+useful. A shared meaning change still requires the existing reference review.
+
+modeled grants no business confirmed state, application, independent PASS or write permission.
+Do not bulk-promote shared_terms.status. Obtain bound Batch/Attempt/receipt summaries from Protocol
+through existing messages when needed; never ask it to read your private map. Independent verdicts
+are original reports; a failed verdict alone does not erase expression. Only authorized public
+specific defects change affected progress; never copy hidden questions/answers/private diagnostics.
+
+Normal order: check final candidate/execution facts → synchronize the map → report your production
+terminal → the host verifies production quiescence/write draining → the host publishes the existing
+handoff and binds the map digest. You do not publish or bind that host handoff, and must finish
+map writes before terminal; do not wait until after host binding to synchronize. Planned saves should synchronize available
+updates; emergency stops/saves preserve actual contents without waiting for perfect progress.
+After digest binding, keep the original map/checkpoint/report immutable: tell the host any stale
+progress discrepancy for its delivery record, outside Judge business evidence. Acceptance-only
+recovery keeps the source read-only. Authorized production recovery updates its writable working
+copy after checkpoint/scope, write-state and actual-candidate checks, before continuing work.
+pending never implies unapplied; definite successful writes are not replayed, unknown writes use
+existing reconciliation. Fork preserves neutral expression progress but uses new scope and
+identity_mapping; identify old platform references/receipts as source history, not new permission.
+Missing candidates/history must be reported, never reconstructed from notes or imagined approvals.
+Ordinary stale notes are fixable collaboration feedback, not a new terminal or all-modeled gate.
+
 ### R4.0-011 interface reference review
 
 Use the mounted `r4-0-011-api-mapping-contract.json` and `interface_mapping` conventions

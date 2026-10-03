@@ -1,0 +1,73 @@
+{
+  "schema_version": "r4-0-007-scenario-map/v1",
+  "scenario_id": "controlled-progress",
+  "topology_decision_ref": "",
+  "slices": [
+    {
+      "slice_id": "flow",
+      "name": "Flow",
+      "scope": "main route and compensation",
+      "owner": "coordinator",
+      "status": "registered",
+      "viewpoints": []
+    },
+    {
+      "slice_id": "analysis",
+      "name": "Analysis",
+      "scope": "planned process outline",
+      "owner": "coordinator",
+      "status": "registered",
+      "viewpoints": []
+    },
+    {
+      "slice_id": "blocked",
+      "name": "Blocked",
+      "scope": "unconfirmed rule trigger",
+      "owner": "coordinator",
+      "status": "registered",
+      "viewpoints": []
+    },
+    {
+      "slice_id": "na",
+      "name": "NA",
+      "scope": "manual scope with no external interface",
+      "owner": "coordinator",
+      "status": "registered",
+      "viewpoints": []
+    },
+    {
+      "slice_id": "oral",
+      "name": "Oral",
+      "scope": "claimed process",
+      "owner": "coordinator",
+      "status": "registered",
+      "viewpoints": []
+    },
+    {
+      "slice_id": "other",
+      "name": "Other",
+      "scope": "unchanged object",
+      "owner": "coordinator",
+      "status": "registered",
+      "viewpoints": []
+    }
+  ],
+  "shared_terms": [
+    {
+      "term": "Shared definition",
+      "used_by_slices": [
+        "flow",
+        "other"
+      ],
+      "owner_slice": "other",
+      "definition_id": "shared-a",
+      "meaning_scope": "proposed only",
+      "status": "proposed",
+      "candidate_refs": []
+    }
+  ],
+  "cross_slice_dependencies": [],
+  "cross_slice_competency_questions": [],
+  "explicit_unknowns": [],
+  "adjustments": []
+}

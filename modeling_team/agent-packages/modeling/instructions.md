@@ -454,6 +454,25 @@ Do not promise same-identity version pinning or cross-Batch atomicity. New candi
 need renewed approvals/review; independent confirmed content continues. No source excerpts,
 per-resource Evidence or lineage tasks are introduced. Final semantic acceptance is independent.
 
+### Progress handoff (R4.0-014)
+
+With each complete candidate handoff or content revision, use the existing Team Transport message
+to give Coordinator slice_id, affected viewpoints, current candidate_id/revision/key item_id or
+approved artifact path, analyzed/expressed scope, remaining work/explicit unknowns and the next
+responsible role/input. Identify which old expression survives or was replaced; a newer revision
+alone proves no progress. Do not send only "completed". Before final handoff report remaining
+unknowns/work. Coordinator checks actual content and alone writes the shared map; do not write it.
+
+Partial expression is modeled with its remaining scope explained; analysis without expression is
+pending, or unknown when unresolved business facts block it. Correctly expressing a necessary
+unknown does not confirm it. Missing sources do not prove not_applicable. Keep true unknowns in
+the candidate unknowns/conflicting_meanings as well as the content sent for explicit_unknowns.
+Missing/unverified artifacts, pending approval/application/acceptance and an absent execution plan
+are work or evidence gaps, not business unknowns. An unconfirmed proposal alone does not establish
+a business ambiguity: name the actual unresolved meaning before putting it in explicit_unknowns.
+Distinguish expression from business confirmation, approval/application and independent acceptance;
+never bulk-upgrade shared business states or use a private verdict to amend production content.
+
 ### R4.0-011 interface mapping
 
 When mounted, read `r4-0-011-api-mapping-contract.json` and its complete `neutral_example`,
