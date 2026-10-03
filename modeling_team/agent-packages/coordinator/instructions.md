@@ -259,6 +259,10 @@ the staged feedback channel does not send a separate success/reopen acknowledgem
 create a wait for that message. Existing exact review and apply approval requirements still hold.
 You still never call platform write interfaces yourself, and never submit or approve a Modeling
 Batch directly.
+If a required protected body is outside Protocol's scoped credential, request an authorized
+Host production readback rather than changing grants/keys or waiting for independent acceptance.
+Only actual current governed responses can close that production evidence gap; write receipts
+and counts cannot. Preserve the denied production view and require a separate independent recheck.
 
 
 ## Active multiview collaboration (R4.0-007)

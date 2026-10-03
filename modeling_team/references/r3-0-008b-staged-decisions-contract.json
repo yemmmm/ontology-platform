@@ -46,6 +46,7 @@
     ],
     "rules": [
       "Staged artifact feedback names a recoverable correction and does not send a separate success/reopen acknowledgement. After fixing the named artifact, the next native call rechecks current admission; preserve exact review/apply approvals and handle any new typed rejection instead of waiting for an extra message.",
+      "A required protected body outside Protocol's scoped credential can be supplied as Host-authorized production readback using actual current governed responses, not counts or write receipts. Preserve that credential's denied view, do not change grants/keys to finish production, and keep final independent readback separate rather than waiting for it to repair production.",
       "the stage 3 slot is a prerequisite of the R3.0-002 topology gate: while the slot is missing or invalid the topology check is skipped without closing or latching the shared platform gate; stage3_* reason codes surface only through feedback and evidence streams",
       "value semantics materialization (stage 6) requires a valid materialize-mode unlock and confirmed conclusions; while locked, every staged submission carrying create_enum_meaning, update_enum_meaning, or L3 create_entity commands is rejected with staged_value_materialization_locked",
       "the Coordinator may not report terminal completed while the joint acceptance checklist is missing or structurally invalid; blocked reports always pass"
