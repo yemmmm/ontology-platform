@@ -60,9 +60,12 @@ from .checkpoints import CheckpointError
 from .checkpoints import inspect_checkpoints as inspect_checkpoints_readonly
 from .competency_questions import (
     CQ_ACCEPTANCE_COMPLETE_FIELDS,
+    CQ_FREEZE_DIRECTORY,
     CQ_REVIEW_SCHEMA,
+    CQContractError,
     batch_report_acceptance_verdict,
     content_digest,
+    reload_frozen_pool,
 )
 
 # The transport layer's line limit (``OuterInputFifo`` default).  The op layer
@@ -1969,16 +1972,67 @@ def _cq_completion_binding(
     """Derive the current acceptance-completion bindings from the run root."""
 
     freeze = _latest(_evidence_records(run_root, "cq-freeze"))
+    handoffs = _evidence_records(run_root, "cq-handoff-complete")
+    published_handoff: dict[str, Any] | None = None
+    handoff_path = run_root / "acceptance-v3" / "production-handoff.json"
+    if handoff_path.is_file() and not handoff_path.is_symlink():
+        value, _limitation = _read_json_file(handoff_path)
+        if isinstance(value, dict):
+            published_handoff = value
+
+    # A resumed Runner restores the immutable freeze snapshot and published
+    # handoff, but it does not replay the original cq-freeze event into the
+    # new evidence stream.  Rebuild the freeze binding from that retained
+    # source rather than asking the host to fabricate an event or freeze it
+    # again.  The snapshot is still revalidated before it is trusted.
+    if freeze is None and published_handoff is not None:
+        expected_batch = published_handoff.get("freeze_id")
+        expected_digest = published_handoff.get("freeze_digest")
+        freeze_directory = run_root / CQ_FREEZE_DIRECTORY
+        snapshot_binding_mismatch = False
+        for snapshot_path in sorted(freeze_directory.glob("freeze-*.json")):
+            if snapshot_path.is_symlink() or not snapshot_path.is_file():
+                continue
+            raw_snapshot, _limitation = _read_json_file(snapshot_path)
+            if not isinstance(raw_snapshot, dict):
+                continue
+            try:
+                snapshot = reload_frozen_pool(raw_snapshot)
+            except CQContractError:
+                continue
+            if (
+                snapshot.get("batch_id") == expected_batch
+                and snapshot.get("snapshot_digest") == expected_digest
+            ):
+                freeze = {
+                    "batch_id": snapshot["batch_id"],
+                    "snapshot_digest": snapshot["snapshot_digest"],
+                }
+                break
+            snapshot_binding_mismatch = True
+        if snapshot_binding_mismatch and freeze is None:
+            raise HostOpError(
+                "cq_review_stale",
+                "the published production handoff does not match the retained freeze",
+                obj="cq_acceptance_complete",
+                retryable=False,
+                next_action="use the immutable freeze and handoff binding from the same run",
+            )
     if freeze is None:
+        next_action = (
+            "restore or verify the immutable frozen snapshot for this run; do not "
+            "re-freeze the pool or replay a cq-freeze event"
+            if published_handoff is not None
+            else "freeze the question pool before the acceptance handoff"
+        )
         raise HostOpError(
             "cq_freeze_schema_mismatch",
             "no frozen question pool exists for this run",
             obj="cq_acceptance_complete",
             retryable=False,
-            next_action="freeze the question pool before the acceptance handoff",
+            next_action=next_action,
         )
-    handoffs = _evidence_records(run_root, "cq-handoff-complete")
-    if not handoffs:
+    if not handoffs and published_handoff is None:
         raise HostOpError(
             "cq_review_stale",
             "no production handoff exists for this run yet",
@@ -1987,14 +2041,45 @@ def _cq_completion_binding(
             next_action="complete_cq_handoff first; a re-acceptance is requested "
             "as a new handoff",
         )
-    handoff = None
+    if (
+        published_handoff is not None
+        and acceptance_attempt_id is not None
+        and published_handoff.get("acceptance_attempt_id") != acceptance_attempt_id
+    ):
+        raise HostOpError(
+            "cq_review_stale",
+            f"no handoff matches acceptance_attempt_id {acceptance_attempt_id!r}",
+            obj="cq_acceptance_complete",
+            retryable=False,
+            next_action="call get_pending_actions for the current attempt binding",
+        )
+    selected_handoff: dict[str, Any] | None = None
     for record in handoffs:
         if (
             acceptance_attempt_id is not None
             and record.get("acceptance_attempt_id") != acceptance_attempt_id
         ):
             continue
-        handoff = record
+        # Evidence is append-only; keep the newest matching record, as the
+        # pre-recovery path did, before comparing it with the immutable file.
+        selected_handoff = record
+    handoff = selected_handoff or published_handoff
+    if selected_handoff is not None and published_handoff is not None and any(
+            selected_handoff.get(field) != published_handoff.get(field)
+            for field in (
+                "freeze_id",
+                "freeze_digest",
+                "acceptance_attempt_id",
+                "report_directory",
+            )
+    ):
+        raise HostOpError(
+            "cq_review_stale",
+            "the evidence handoff does not match the published production handoff",
+            obj="cq_acceptance_complete",
+            retryable=False,
+            next_action="read the immutable production handoff and use its current attempt",
+        )
     if handoff is None:
         raise HostOpError(
             "cq_review_stale",
@@ -2003,6 +2088,25 @@ def _cq_completion_binding(
             retryable=False,
             next_action="call get_pending_actions for the current attempt binding",
         )
+    if published_handoff is not None:
+        if published_handoff.get("run_id") not in (None, run_root.name):
+            raise HostOpError(
+                "cq_review_stale",
+                "the published production handoff belongs to another run",
+                obj="cq_acceptance_complete",
+                retryable=False,
+                next_action="use the handoff for this run",
+            )
+        if published_handoff.get("freeze_id") != freeze.get("batch_id") or (
+            published_handoff.get("freeze_digest") != freeze.get("snapshot_digest")
+        ):
+            raise HostOpError(
+                "cq_review_stale",
+                "the published production handoff does not match the retained freeze",
+                obj="cq_acceptance_complete",
+                retryable=False,
+                next_action="use the immutable freeze and handoff binding from the same run",
+            )
     report_directory = handoff.get("report_directory")
     if not isinstance(report_directory, str) or not report_directory:
         raise HostOpError(

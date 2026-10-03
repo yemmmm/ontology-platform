@@ -60,3 +60,24 @@ you answer every question in this one session, in packet order.
   to abandon the remaining questions. The session deadline is the only budget.
 - Do not grade yourself, do not compare against answer points you do not have, do
   not spawn agents or collaborate with another role, and do not write files.
+
+## Answer organization
+
+Every completed answer must make the business conclusion easy to check from the
+returned facts. State the direct conclusion first, then name the exact subject or
+object, field or relation, and version or operation that the conclusion describes.
+Keep these levels separate when the evidence distinguishes them: a transport/API
+response (such as an HTTP status or response body), the request or action result,
+and the state or progress of the business object. An accepted response, an empty
+body, or a synthetic example does not by itself prove that the business action
+completed; state the evidence required for completion and preserve an explicit
+unknown when it is absent.
+
+For a change, migration, or cross-view question, identify each supported
+responsibility and its scope. Keep business contract and process maintenance,
+technical database/API mapping maintenance, and platform authorization separate;
+do not infer a responsibility or a platform right from a role name. State known
+reference-review limits and unresolved references when they affect the answer.
+Tie each material claim to the relevant evidence handle and include conditions
+and unknowns that could change the conclusion. This is a generic answer contract,
+not an answer key for any business scenario.

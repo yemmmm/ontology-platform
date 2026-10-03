@@ -1,6 +1,8 @@
-# R4.0-009 core-stage task. Sources remain the existing experimental fixture;
+# R4.0-009 active task. Sources remain the existing experimental fixture;
 # missing business facts require approved interviews. This file is not runtime
-# authorization or a frozen CQ pool. R4.0-010/011 mapping acceptance is deferred.
+# authorization or a frozen CQ pool. The active run may include the explicitly
+# authorized core and mapping scope; selecting this task does not authorize
+# future R4.0-010/011 mapping work.
 # R4.0-012 contracts are reused.  This task reuses the current multi-slice Runner,
 # competency-question profile and role packages while selecting the contracts
 # that no longer require source-tracing publication or lineage completion.
@@ -9,13 +11,18 @@
 schema_version: 2
 task_id: r4-0-009-multiview-semantic-acceptance
 objective: >-
-  Model the core multi-view industrial service scenario from the approved
-  sources and approved interview answers, reusing shared business identity
-  across objects, classifications, Actions, calls, flows, rules and business
-  responsibilities. Missing behavior contracts, scripts, role policies and
-  shared-change facts require business-owner confirmation; neither schema
-  columns nor examples or tester-only expectations establish those facts.
-  Retain mapping gaps explicitly until R4.0-010/011 are delivered and verified.
+  Model the currently authorized multi-view industrial service scenario from
+  the approved sources and approved interview answers, covering the core
+  objects, classifications, Actions, calls, flows, rules and business
+  responsibilities together with any explicitly authorized mapping scope in
+  the active run. Reuse shared business identity across those views. Missing
+  behavior contracts, scripts, role policies, shared-change facts and mapping
+  meaning require business-owner confirmation; neither schema columns nor
+  examples or tester-only expectations establish those facts. Retain mapping
+  work that is unavailable, unapproved or unverified as an explicit gap.
+  Selecting this task or mounting the R4.0-010/011 contracts does not grant
+  authorization for future mapping work, external database/API access or
+  acceptance beyond the active run's approved scope.
   CQ review and hidden-pool freezing precede formal semantic modeling; use only
   the approved public projection. Independent acceptance consumes modeled
   semantic resources, not production context, and does not repair this run.  Use the mounted r4-0-007 scenario-map contract for interleaved

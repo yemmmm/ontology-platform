@@ -49,11 +49,12 @@ NON_SEMANTIC_TOOLS = tuple(sorted(set(PLATFORM_PROXY_READ_TOOLS) - {
 def test_009_task_reuses_current_roles_sources_and_tracing_suspension():
     root = repository_root()
     profile = root / "modeling_team/profiles/r3-0-011-competency-question.yaml"
+    task_path = root / "modeling_team/tasks/r4-0-009-multiview-semantic-acceptance.yaml"
     current = load_multi_slice_team_configuration(
         profile, root / "modeling_team/tasks/r4-0-012-tracing-suspension.yaml",
     )
     prepared = load_multi_slice_team_configuration(
-        profile, root / "modeling_team/tasks/r4-0-009-multiview-semantic-acceptance.yaml",
+        profile, task_path,
     )
     assert prepared.profile == current.profile
     assert prepared.task.parameters == current.task.parameters
@@ -63,6 +64,27 @@ def test_009_task_reuses_current_roles_sources_and_tracing_suspension():
     assert prepared.task.task_id == "r4-0-009-multiview-semantic-acceptance"
     assert "business-owner confirmation" in prepared.task.objective
     assert "R4.0-010/011" in prepared.task.objective
+    assert "explicitly authorized mapping scope" in prepared.task.objective
+    assert "does not grant authorization for future mapping work" in prepared.task.objective
+    task_text = task_path.read_text(encoding="utf-8")
+    assert "core-stage" not in task_text
+    assert "mapping acceptance is deferred" not in task_text
+
+
+def test_host_skill_requires_explicit_cq_handoff_and_acceptance_closeout():
+    root = repository_root()
+    skill = (root / "skills/modeling-dev-loop/SKILL.md").read_text(encoding="utf-8")
+    runbook = (root / "skills/modeling-dev-loop/references/team-runbook.md").read_text(
+        encoding="utf-8"
+    )
+    for body in (skill, runbook):
+        assert "complete_cq_handoff" in body
+        assert "acceptance_phase=acceptance_pending" in body
+        assert "complete_cq_acceptance" in body
+        assert "pending_writes=false" in body
+        assert "unknown_writes=[]" in body
+    assert "生产角色的 terminal 结果不会自动发布 CQ" in skill
+    assert "生产角色都报告 terminal 后，Runner 仍不会自动发布" in runbook
 
 
 def test_loaded_judge_contract_agrees_with_routing_verdict():

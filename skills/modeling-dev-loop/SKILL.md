@@ -75,6 +75,25 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 - **重复错误、相互等待或已退出**：保留第一异常和相关事件，检查具体阻塞与写状态，再进入归因。
 - **收到交付**：核对回执、阶段与产物，按当前验收阶段交给独立验收者；正常结束不是语义 PASS。
 
+### CQ 生产交接必须由宿主显式完成
+
+对 `competency_question_acceptance: true` 且
+`acceptance_target: cq_semantic` 的任务，生产角色的 terminal 结果不会自动发布 CQ
+交接。收到 Modeling、Protocol 和 Coordinator 的当前 run 结果后，宿主先用
+`get_run_status`、`get_run_events` 和 `get_pending_actions` 核对角色已结束、没有待处理
+issue、写入已排空且没有 unknown write；若已有 Runner 发布的 handoff，还要核对其
+`ready=true`、`pending_writes=false`、`write_phase=read-only` 和 `unknown_writes=[]`。
+同时只使用当前待办／事件给出的 `freeze_id`、`freeze_digest` 和可选 delivery binding，
+不从旧记录重建绑定。
+
+确认 readiness 后，宿主通过既有 Host 通道提交 `complete_cq_handoff`（Runner action
+为 `cq_handoff_complete`）。核对返回成功、`acceptance_phase=acceptance_pending`、
+当前 `acceptance_attempt_id` 和 `report_directory`；角色完成、提交被接受或 handoff
+文件生成都不能单独当作语义验收完成。随后用当前 handoff 启动独立 `cq-acceptance`，
+报告落盘后调用 `complete_cq_acceptance`，核对报告 digest、`cq_verdict` 和题目分母，
+并保留 PASS、PARTIAL 或失败结果；交接或收口成功不等于 CQ PASS。具体绑定与收口步骤
+见[运行参考的 CQ 交接与独立验收](references/team-runbook.md#cq-生产交接必须由宿主显式提交)。
+
 ## 阶段成果检查点（R3.0-015 S1+S2+S4）
 
 启动前明确检查点开关与验收目标：默认 `r3-0-006-real-full` Task 未开启检查点，

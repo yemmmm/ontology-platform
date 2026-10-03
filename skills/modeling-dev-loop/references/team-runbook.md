@@ -235,6 +235,33 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
   门重开路径，run 只能按终止处理（保留现场、归因、窄修复、按余额 fresh start）。预防规则已写入
   protocol instructions：改版计划必须换 `client_batch_id`（`-rN` 后缀）。
 
+## CQ 生产交接必须由宿主显式提交
+
+对 `competency_question_acceptance: true` 且 `acceptance_target: cq_semantic` 的任务，
+生产角色都报告 terminal 后，Runner 仍不会自动发布 CQ 生产交接。宿主必须沿当前 run 的
+证据和待办完成以下核对与动作：
+
+1. 读取 `get_run_status`、增量 `get_run_events` 和 `get_pending_actions`，确认当前
+   Modeling、Protocol、Coordinator 结果已收齐，没有待处理 issue，已准入写入已排空，
+   没有 unknown write，且当前冻结／生产结果仍绑定同一 run；若已存在 Runner 发布的
+   handoff，再核对 `ready=true`、`pending_writes=false`、`write_phase=read-only` 和
+   `unknown_writes=[]`。角色 terminal 只表示角色已结束，不表示 handoff 已发布。
+2. 从当前 `complete_cq_handoff` 待办或对应最新事件取得 `freeze_id`、`freeze_digest`
+   及可选 `delivery_binding`；不从历史 run、旧 attempt 或角色自报内容拼接绑定。若
+   readiness 未满足，保留 Runner 的类型化拒绝和第一阻塞，先处理该阻塞。
+3. 通过宿主 Host 通道提交 `complete_cq_handoff`（Runner action 为
+   `cq_handoff_complete`）。核对返回 `ok=true`、`acceptance_phase=acceptance_pending`、
+   当前 `acceptance_attempt_id` 和 `report_directory`；提交成功只说明 Runner 已接受
+   生产交接，不说明 CQ 语义通过。
+4. 用该 handoff 的当前绑定启动独立 `cq-acceptance`。报告落盘后调用
+   `complete_cq_acceptance`，核对当前 attempt、Runner 重算的 `report_digest`、
+   `cq_verdict`、已执行／未执行题目和完整分母；保留 PASS、PARTIAL 或失败报告。验收
+   收口成功也不等于语义 PASS，不能用角色完成或机械 readiness 覆盖语义缺口。
+
+提交前的 readiness 核对、交接回执和独立验收结果都应写入宿主收尾记录；不要因为角色已经
+结束而提前 `stop`，也不要把 `publish-handoff`（离线交接）当作 run 内的
+`cq_handoff_complete`。
+
 ## cq_handoff_complete 之后的独立验收收口（acceptance_pending）
 
 `cq_handoff_complete` 被接受并返回 `acceptance_phase=acceptance_pending` 后，live run 保持

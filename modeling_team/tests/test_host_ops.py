@@ -30,13 +30,13 @@ from modeling_team import host_ops
 from modeling_team.competency_questions import (
     CQ_ACCEPTANCE_COMPLETE_FIELDS,
     content_digest,
+    freeze_question_pool,
 )
 from modeling_team.outer_input import OuterInputFifo
 from modeling_team.tests.test_r3011_runner_wiring import (
     _CQRunner,
     _decision,
     _question,
-    _show_question,
 )
 from modeling_team.tests.test_r3012_completion import (
     BATCH_ID,
@@ -1970,12 +1970,146 @@ def test_a11_stale_attempt_binding_is_rejected_locally(cq_semantic_runner):
     assert error.value.code == "cq_review_stale"
 
 
+def test_a11_recovered_run_uses_published_handoff_without_freeze_event(cq_semantic_runner):
+    runner = cq_semantic_runner
+    run_id = runner.run.run_id
+    frozen = _freeze(runner)
+    runner.transport = _SettledTransport(runner, "completed")
+    assert runner.handle_cq_outer_input(_handoff_message(frozen))["ok"] is True
+
+    # A resumed Runner retains the immutable snapshot and production handoff,
+    # while its new evidence stream has no replayed cq-freeze event.
+    freeze_path = runner.run.root / "competency-questions" / "frozen" / "freeze-0001.json"
+    current_snapshot = json.loads(freeze_path.read_text(encoding="utf-8"))
+    previous_input = {
+        key: value for key, value in current_snapshot.items() if key != "snapshot_digest"
+    }
+    previous_input["batch_id"] = "cq-batch-0000"
+    previous_input["questions"] = [
+        {
+            **{key: value for key, value in question.items() if key != "visibility"},
+            "proposed_visibility": question["visibility"],
+        }
+        for question in current_snapshot["questions"]
+    ]
+    previous_snapshot = freeze_question_pool(previous_input)
+    (freeze_path.parent / "freeze-0000.json").write_text(
+        json.dumps(previous_snapshot), encoding="utf-8"
+    )
+    (runner.run.root / "evidence" / "cq-freeze.jsonl").unlink()
+    _write_report(runner, frozen, verdicts=[_verdict_entry("pass")])
+
+    fifo = OuterInputFifo(runner.run.root / "control" / "outer-input.fifo")
+    fifo.open()
+    try:
+        result = host_ops.complete_cq_acceptance(run_id, request_id="req-recovered")
+        assert result["status"] == "submitted"
+        envelope = _pop_fifo_line(fifo)
+        assert envelope["freeze_id"] == BATCH_ID
+        assert envelope["freeze_digest"] == frozen["snapshot_digest"]
+        assert envelope["acceptance_attempt_id"] == "attempt-0001"
+        completion = runner.handle_cq_outer_input(
+            {key: value for key, value in envelope.items() if key != "request_id"}
+        )
+        assert completion["ok"] is True
+        assert completion["cq_verdict"] == "pass"
+    finally:
+        fifo.close()
+
+
+def test_a11_latest_handoff_attempt_is_selected_before_published_check(cq_semantic_runner):
+    runner = cq_semantic_runner
+    run_id = runner.run.run_id
+    frozen = _freeze(runner)
+    runner.transport = _SettledTransport(runner, "completed")
+    assert runner.handle_cq_outer_input(_handoff_message(frozen))["ok"] is True
+    _write_report(runner, frozen, verdicts=[_verdict_entry("pass")])
+
+    handoff_path = runner.run.root / "evidence" / "cq-handoff-complete.jsonl"
+    current = json.loads(handoff_path.read_text(encoding="utf-8").splitlines()[-1])
+    older_attempt = {
+        **current,
+        "acceptance_attempt_id": "attempt-0000",
+        "report_directory": f"acceptance-v3/reports/{BATCH_ID}/attempt-0000",
+        "recorded_at": "2000-01-01T00:00:00+00:00",
+    }
+    handoff_path.write_text(
+        json.dumps(older_attempt) + "\n" + json.dumps(current) + "\n",
+        encoding="utf-8",
+    )
+
+    fifo = OuterInputFifo(runner.run.root / "control" / "outer-input.fifo")
+    fifo.open()
+    try:
+        result = host_ops.complete_cq_acceptance(run_id)
+        assert result["status"] == "submitted"
+        assert _pop_fifo_line(fifo)["acceptance_attempt_id"] == "attempt-0001"
+    finally:
+        fifo.close()
+
+
+def test_a11_recovered_binding_mismatch_is_rejected_as_stale(cq_semantic_runner):
+    runner = cq_semantic_runner
+    run_id = runner.run.run_id
+    frozen = _freeze(runner)
+    runner.transport = _SettledTransport(runner, "completed")
+    assert runner.handle_cq_outer_input(_handoff_message(frozen))["ok"] is True
+    (runner.run.root / "evidence" / "cq-freeze.jsonl").unlink()
+    (runner.run.root / "evidence" / "cq-handoff-complete.jsonl").unlink()
+    handoff_path = runner.run.root / "acceptance-v3" / "production-handoff.json"
+    handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+    handoff["freeze_digest"] = "sha256:" + "0" * 64
+    handoff_path.chmod(0o644)
+    handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
+    with pytest.raises(host_ops.HostOpError) as error:
+        host_ops.complete_cq_acceptance(run_id)
+    assert error.value.code == "cq_review_stale"
+
+
+@pytest.mark.parametrize("snapshot_state", ["missing", "corrupt_digest"])
+def test_a11_recovered_handoff_still_requires_a_valid_snapshot(
+    cq_semantic_runner, snapshot_state
+):
+    runner = cq_semantic_runner
+    run_id = runner.run.run_id
+    frozen = _freeze(runner)
+    runner.transport = _SettledTransport(runner, "completed")
+    assert runner.handle_cq_outer_input(_handoff_message(frozen))["ok"] is True
+
+    freeze_path = runner.run.root / "competency-questions" / "frozen" / "freeze-0001.json"
+    if snapshot_state == "missing":
+        freeze_path.unlink()
+    else:
+        snapshot = json.loads(freeze_path.read_text(encoding="utf-8"))
+        snapshot["snapshot_digest"] = "sha256:" + "0" * 64
+        freeze_path.chmod(0o644)
+        freeze_path.write_text(json.dumps(snapshot), encoding="utf-8")
+    (runner.run.root / "evidence" / "cq-freeze.jsonl").unlink()
+
+    fifo = OuterInputFifo(runner.run.root / "control" / "outer-input.fifo")
+    fifo.open()
+    try:
+        with pytest.raises(host_ops.HostOpError) as error:
+            host_ops.complete_cq_acceptance(run_id, request_id="req-no-snapshot")
+        assert error.value.code == "cq_freeze_schema_mismatch"
+        next_action = error.value.next_action or ""
+        assert "restore" in next_action
+        assert "re-freeze" in next_action
+        assert "freeze the question pool before" not in next_action
+        fifo.read_ready()
+        assert fifo.pop_line() is None
+        assert not (runner.run.root / "control" / "host-requests.jsonl").exists()
+    finally:
+        fifo.close()
+
+
 def test_a11_acceptance_before_freeze_or_handoff_is_rejected(cq_semantic_runner):
     runner = cq_semantic_runner
     # No freeze yet: the freeze-missing code, not a stale attempt binding.
     with pytest.raises(host_ops.HostOpError) as no_freeze:
         host_ops.complete_cq_acceptance(runner.run.run_id)
     assert no_freeze.value.code == "cq_freeze_schema_mismatch"
+    assert no_freeze.value.next_action == "freeze the question pool before the acceptance handoff"
     # Frozen but no production handoff: the stale-binding code.
     frozen = _freeze(runner)
     assert frozen["batch_id"] == BATCH_ID
