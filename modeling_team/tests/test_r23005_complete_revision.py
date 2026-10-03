@@ -235,7 +235,8 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "return a concrete",
             "candidate-to-Batch translation conflict through the typed or native conflict builder",
             "Before the first query, use only the exact `resource_types` values advertised by the",
-            "`query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, and `operation`",
+            "`query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, `operation`,",
+            "`mapping`, and `metric`",
             "Never probe unsupported aliases such as `entity`, `entities`, or `individual`",
             "Read the entire consumer question and its required",
             "response before freezing the first request",
@@ -323,7 +324,8 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "do not include `reason`",
             "retry that same pause once",
             "do not claim that the Runner resolved the issue",
-            "exact persisted guidance or repair fields",
+            "receive its exact guidance or repair fields",
+            "automatically sends the bound broker `resume` or `abort`",
         ):
             self.assertIn(phrase, coordinator_instructions)
 

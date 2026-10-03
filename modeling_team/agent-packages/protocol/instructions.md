@@ -142,7 +142,13 @@ artifact gate registers the typed ordinary receipt; do not hand-write a receipt 
 answers, source answers, or warning rows as a semantic result.
 
 Before the first query, use only the exact `resource_types` values advertised by the
-`query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, and `operation`.
+`query_semantic_context` contract: `concept`, `instance`, `relation`, `fact`, `rule`, `operation`,
+`mapping`, and `metric`. TableMapping, JoinMapping, and EnumValueMeaning use `mapping`;
+MetricDefinition uses `metric`. A single absolute IRI from a formal receipt/read automatically uses
+the exact anchor path even with `search_mode=lexical`; the requested resource-type filter still
+applies. Excluding `mapping` or `metric` can therefore return `no_match` for an existing resource;
+check the filter and authorized scope before inferring absence. Read mapping/metric anchors with
+their supported kind and `context_detail=full` for the existing structured projection.
 Never probe unsupported aliases such as `entity`, `entities`, or `individual`; an unsupported value is
 a contract error, not a discovery mechanism. Read the entire consumer question and its required
 response before freezing the first request. Classify all semantic result families it needs (for example,
