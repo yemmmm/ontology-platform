@@ -378,6 +378,17 @@ def test_real_judge_assembly_includes_only_authorized_statuses(tmp_path, monkeyp
         projection_digest=projection_digest(projection),
     )
     write_json(root / "stage3-neutral-graph/materialization-plans/plan-1-r1.json", plan)
+    # The plans directory also carries validated read evidence: a read-result
+    # array and a non-plan object here must not abort the attempt before its
+    # batch report is published (independent-CQ attempt regression).
+    write_json(
+        root / "stage3-neutral-graph/materialization-plans/read-evidence-1.json",
+        [dict(question_id="cq-1", result=dict(ok=True, matches=[]))],
+    )
+    write_json(
+        root / "stage3-neutral-graph/materialization-plans/read-evidence-2.json",
+        dict(note="not a materialization plan"),
+    )
     path = root / "scenario-map/scenario-map.json"
     write_json(path, value)
     handoff = _production_handoff(frozen)
@@ -410,6 +421,79 @@ def test_real_judge_assembly_includes_only_authorized_statuses(tmp_path, monkeyp
     path.write_text("{}")
     with pytest.raises(Exception, match="collaboration_binding_changed"):
         _cq_collaboration_context(root, {"cq-1": [{"result": result}]})
+
+
+def _collaboration_run_root(tmp_path):
+    """Minimal handoff-bound run root for ``_cq_collaboration_context``."""
+
+    candidate = _candidate()
+    value = multiview_map()
+    value["scenario_id"] = candidate["scenario_id"]
+    value["shared_terms"][0].update(candidate_refs=[ref(candidate)], status="unknown")
+    write_json(tmp_path / "stage3-neutral-graph/candidates/cand-1-r2.json", candidate)
+    projection = _projection(candidate, _batch_items())
+    projection["identity_bindings"][0]["resource_iri"] = "iri:1"
+    plan = dict(
+        schema_version="r3-0-009-materialization-plan/v2",
+        plan_id="plan-1",
+        revision=1,
+        projection=projection,
+        projection_digest=projection_digest(projection),
+    )
+    write_json(tmp_path / "stage3-neutral-graph/materialization-plans/plan-1-r1.json", plan)
+    path = tmp_path / "scenario-map/scenario-map.json"
+    write_json(path, value)
+    write_json(
+        tmp_path / "acceptance-v3/production-handoff.json",
+        dict(
+            collaboration_artifact=dict(
+                path="scenario-map/scenario-map.json", digest=digest_file(path)
+            )
+        ),
+    )
+    return plan
+
+
+def test_collaboration_context_skips_non_plan_evidence_keeps_work_state(tmp_path):
+    from modeling_team.__main__ import _cq_collaboration_context
+
+    _collaboration_run_root(tmp_path)
+    plans = tmp_path / "stage3-neutral-graph/materialization-plans"
+    write_json(
+        plans / "read-evidence-1.json",
+        [dict(question_id="cq-1", result=dict(ok=True, matches=[dict(iri="iri:9")]))],
+    )
+    write_json(plans / "read-evidence-2.json", dict(note="not a materialization plan"))
+    result = {"ok": True, "matches": [{"id": "resource-1", "iri": "iri:1"}]}
+
+    context = _cq_collaboration_context(tmp_path, {"cq-1": [{"result": result}]})
+    assert context["definitions"] == [
+        dict(definition_id="def-0", resource_iri="iri:1", status="unknown", reviews=[])
+    ]
+    assert "iri:9" not in json.dumps(context)
+    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+
+
+def test_collaboration_context_keeps_plan_parse_and_identity_guards(tmp_path):
+    from modeling_team.__main__ import _cq_collaboration_context
+    from modeling_team.contracts import TeamConfigurationError
+    from modeling_team.staged_decisions import StagedDecisionArtifactError
+
+    plan = _collaboration_run_root(tmp_path)
+    plans = tmp_path / "stage3-neutral-graph/materialization-plans"
+    broken = plans / "broken.json"
+    broken.write_text("{not json", encoding="utf-8")
+    with pytest.raises(StagedDecisionArtifactError, match="missing_candidate_reference"):
+        _cq_collaboration_context(tmp_path, {})
+    broken.unlink()
+    second = deepcopy(plan)
+    second["plan_id"] = "plan-2"
+    second["projection"]["identity_bindings"][0]["resource_iri"] = "iri:2"
+    second["projection_digest"] = projection_digest(second["projection"])
+    write_json(plans / "plan-2-r1.json", second)
+    visible = {"cq-1": [{"result": {"ok": True, "matches": [{"iri": "iri:1"}, {"iri": "iri:2"}]}}]}
+    with pytest.raises(TeamConfigurationError, match="identity conflict"):
+        _cq_collaboration_context(tmp_path, visible)
 
 
 def test_ordinary_prepare_cannot_import_fork_membership_authorization(tmp_path):

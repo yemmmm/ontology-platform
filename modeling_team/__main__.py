@@ -1431,13 +1431,32 @@ def _cq_collaboration_context(
         for entry in entries:
             observe(entry["result"])
     bindings = {}
-    from .staged_decisions import load_materialization_plan, validate_materialization_plan
+    from .staged_decisions import (
+        StagedDecisionArtifactError,
+        load_materialization_plan,
+        validate_materialization_plan,
+    )
     from .protocol_mechanics import _platform_resource_iri
 
     for plan_path in (run_root / "stage3-neutral-graph/materialization-plans").glob("*.json"):
         if plan_path.is_symlink():
             continue
-        plan = load_materialization_plan(plan_path)
+        try:
+            plan = load_materialization_plan(plan_path)
+        except StagedDecisionArtifactError:
+            # The plans directory also carries validated read evidence: a valid
+            # JSON document that is not an object is not a materialization
+            # artifact, so it is skipped instead of failing the report.  An
+            # unreadable or unparsable file is not evidence and keeps the
+            # loader's typed error.
+            try:
+                document = json.loads(plan_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                pass
+            else:
+                if not isinstance(document, dict):
+                    continue
+            raise
         if validate_materialization_plan(plan):
             continue
         projection = plan["projection"]
