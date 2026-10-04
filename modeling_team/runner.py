@@ -7710,10 +7710,15 @@ class TeamRunner:
         """Project identity plus the authorized Ontology set (design §3.1).
 
         The scope object exists only after ``start``; prepared-but-not-started
-        runs fall back to the frozen ``run.scope`` mapping.  The handoff records
-        what the host can see -- checking this set against the model binding and
-        the actual delivery for equality is the ``cq-acceptance`` consumer's
-        job, never a boolean here.
+        runs fall back to the frozen ``run.scope`` mapping.  A single-Ontology
+        scope binds ``ontology_id`` and leaves the R3.0-006 M3 plan list empty
+        (R2.3 create/existing, R3.0-015 checkpoint rebind); that one verified
+        identity is the authorized set, normalized exactly as
+        ``_checkpoint_platform_bindings`` records it -- publishing it empty
+        left the acceptance restart unauthorized (R4.0-009).  The handoff
+        records what the host can see -- checking this set against the model
+        binding and the actual delivery for equality is the ``cq-acceptance``
+        consumer's job, never a boolean here.
         """
 
         scope_object = getattr(self, "scope", None)
@@ -7721,10 +7726,19 @@ class TeamRunner:
         project_id = getattr(scope_object, "project_id", None)
         if not isinstance(ontology_ids, list):
             ontology_ids = None
+        elif not any(isinstance(item, str) and item for item in ontology_ids):
+            single = getattr(scope_object, "ontology_id", None)
+            ontology_ids = [single] if isinstance(single, str) and single else None
         run_scope = getattr(self.run, "scope", None)
         if isinstance(run_scope, Mapping):
             if not ontology_ids and isinstance(run_scope.get("ontology_ids"), list):
                 ontology_ids = list(run_scope["ontology_ids"])
+            if (
+                not ontology_ids
+                and isinstance(run_scope.get("ontology_id"), str)
+                and run_scope["ontology_id"]
+            ):
+                ontology_ids = [run_scope["ontology_id"]]
             if not project_id:
                 project_id = run_scope.get("project_id")
         return {

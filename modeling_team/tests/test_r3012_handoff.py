@@ -18,6 +18,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from shutil import rmtree
 import time as _time_module
+from types import SimpleNamespace
 
 import pytest
 import yaml
@@ -28,6 +29,7 @@ from modeling_team.contracts import (
     ACCEPTANCE_TARGET_PARAMETER,
     repository_root,
 )
+from modeling_team.platform_scope import PlatformScope
 from modeling_team.runner import CQWriteAdmission, TeamRunner
 from modeling_team.staged_batch_write_forwarder import StagedBatchForwardUnknown
 from modeling_team.staged_decisions import (
@@ -39,6 +41,7 @@ from modeling_team.staged_decisions import (
     write_submission_intent,
     write_submission_receipt,
 )
+from modeling_team.tests.test_platform_scope import ScopeClient
 from modeling_team.tests.test_r3011_runner_wiring import _question, _read_evidence
 from modeling_team.tests.test_runner import CapturingAdapter
 
@@ -283,6 +286,92 @@ def test_t1_1_scope_binding_is_recorded_from_the_run_scope():
         ]
     finally:
         harness.cleanup()
+
+
+def _bound_single_ontology_scope() -> PlatformScope:
+    """A real PlatformScope prepared in create mode (project-1/ontology-1)."""
+
+    scope = PlatformScope(
+        "http://example", "r3012-single-ontology", lambda: ("admin", "admin-id"),
+        lambda _: True, ScopeClient(),
+    )
+    scope.prepare({"mode": "create"})
+    return scope
+
+
+def test_t1_1_single_ontology_create_scope_records_the_bound_ontology():
+    """R4.0-009: a create-mode run binds exactly one singular ``ontology_id``
+    while the R3.0-006 M3 plan path leaves ``ontology_ids`` empty; the published
+    handoff must record that verified identity as its authorized set instead of
+    the empty list that blocked the independent CQ acceptance start."""
+
+    harness = _CQRunner()
+    runner = harness.prepare()
+    try:
+        scope = _bound_single_ontology_scope()
+        assert scope.ontology_id == "ontology-1" and scope.ontology_ids == []
+        runner.scope = scope
+        frozen = _freeze(runner)
+        runner.transport = _SettledTransport(runner, "completed")
+        runner.handle_cq_outer_input(_handoff_message(frozen))
+        payload = json.loads(_handoff_path(runner).read_text(encoding="utf-8"))
+        assert payload["scope_binding"] == {
+            "project_id": "project-1",
+            "ontology_ids": ["ontology-1"],
+        }
+    finally:
+        harness.cleanup()
+
+
+def test_t1_1_scope_binding_records_a_frozen_singular_ontology_id():
+    """The host-authored run scope is the same single-Ontology shape for the
+    existing/checkpoint modes; the handoff records that frozen identity too."""
+
+    harness = _CQRunner(
+        scope={
+            "mode": "existing",
+            "project_id": "proj-1",
+            "ontology_id": "https://example.test/ontology/a",
+        }
+    )
+    runner = harness.prepare()
+    try:
+        frozen = _freeze(runner)
+        runner.transport = _SettledTransport(runner, "completed")
+        runner.handle_cq_outer_input(_handoff_message(frozen))
+        payload = json.loads(_handoff_path(runner).read_text(encoding="utf-8"))
+        assert payload["scope_binding"] == {
+            "project_id": "proj-1",
+            "ontology_ids": ["https://example.test/ontology/a"],
+        }
+    finally:
+        harness.cleanup()
+
+
+@pytest.mark.parametrize(
+    "scope, run_scope, expected",
+    [
+        # A live multi-Ontology binding is the authorized set verbatim.
+        (SimpleNamespace(project_id="p", ontology_id="o1", ontology_ids=["o1", "o2"]),
+         {"mode": "checkpoint"}, {"project_id": "p", "ontology_ids": ["o1", "o2"]}),
+        # The single-Ontology live binding is its one verified identity.
+        (SimpleNamespace(project_id="p", ontology_id="o1", ontology_ids=[]),
+         {"mode": "create"}, {"project_id": "p", "ontology_ids": ["o1"]}),
+        # A live list wins over the frozen run scope, never merged.
+        (SimpleNamespace(project_id="p", ontology_id="o1", ontology_ids=["o1", "o2"]),
+         {"mode": "checkpoint", "project_id": "p", "ontology_ids": ["o9"]},
+         {"project_id": "p", "ontology_ids": ["o1", "o2"]}),
+        (None, {"mode": "create", "project_id": "p", "ontology_ids": ["o1", "o2"]},
+         {"project_id": "p", "ontology_ids": ["o1", "o2"]}),
+        (None, {"mode": "existing", "project_id": "p", "ontology_id": "o1"},
+         {"project_id": "p", "ontology_ids": ["o1"]}),
+        # Nothing verified: still the empty record, never a project-wide guess.
+        (None, {"mode": "create"}, {"project_id": "", "ontology_ids": []}),
+    ],
+)
+def test_t1_1_scope_binding_normalizes_singular_and_list_identities(scope, run_scope, expected):
+    runner = SimpleNamespace(scope=scope, run=SimpleNamespace(scope=run_scope))
+    assert TeamRunner._cq_scope_binding(runner) == expected
 
 
 def test_t1_1_cq_semantic_target_flows_into_the_handoff(tmp_path):

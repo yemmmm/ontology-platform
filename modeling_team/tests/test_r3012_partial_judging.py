@@ -17,6 +17,7 @@ receives the sanitized receipt -- without starting a child.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from pathlib import Path
 
@@ -24,8 +25,10 @@ import pytest
 
 from modeling_team.__main__ import (
     _CQ_JUDGE_ROLE_INSTRUCTIONS,
+    _cq_consume_production_handoff,
     _run_cq_acceptance,
 )
+from modeling_team.contracts import TeamConfigurationError
 from modeling_team.acceptance_runtime import (
     PLATFORM_READ_ARTIFACT_SCHEMA,
     V3ProxyCallReceipt,
@@ -374,6 +377,76 @@ def _handoff_file(tmp_path: Path, handoff: dict, name: str = "handoff.json") -> 
     return path
 
 
+def _write_handoff_checkpoint(
+    run_root: Path,
+    handoff: dict,
+    *,
+    checkpoint_id: str = "production_handoff-0001",
+    kind: str = "production_handoff",
+    event_kind: str = "production_handoff",
+    source_run_id: str | None = None,
+    platform_bindings: dict | None = None,
+    scope_refs: dict | None = None,
+    event_scope_refs: dict | None = None,
+    manifest_digest: str | None = None,
+    write_event: bool = True,
+) -> Path:
+    """Write the Runner's automatic production-handoff checkpoint package.
+
+    Mirrors a real save: ``checkpoints/<id>/manifest.json`` plus the
+    ``checkpoint-saved`` evidence line carrying the manifest byte digest and
+    the freeze/attempt scope refs.  ``manifest_digest=""`` writes the event
+    without the digest field; every other override exists for the failing
+    verification cases.
+    """
+
+    refs = {
+        "freeze_id": handoff["freeze_id"],
+        "acceptance_attempt_id": handoff["acceptance_attempt_id"],
+    }
+    manifest = {
+        "kind": kind,
+        "source_run_id": source_run_id if source_run_id is not None else handoff["run_id"],
+        "scope_refs": dict(scope_refs if scope_refs is not None else refs),
+        "platform_bindings": platform_bindings if platform_bindings is not None else {
+            "project_id": "project-1",
+            "ontology_id": "ontology-1",
+            "ontology_ids": ["ontology-1"],
+            "run_scope": {"mode": "create"},
+        },
+    }
+    path = run_root / "checkpoints" / checkpoint_id / "manifest.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    encoded = json.dumps(manifest, ensure_ascii=False, sort_keys=True).encode("utf-8")
+    path.write_bytes(encoded)
+    if write_event:
+        event = {
+            "event": "checkpoint-saved",
+            "kind": event_kind,
+            "checkpoint_id": checkpoint_id,
+            "scope_refs": dict(event_scope_refs if event_scope_refs is not None else refs),
+            "manifest_digest": (
+                f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+                if manifest_digest is None else manifest_digest
+            ),
+        }
+        if manifest_digest == "":
+            event.pop("manifest_digest")
+        evidence = run_root / "evidence" / "checkpoints.jsonl"
+        evidence.parent.mkdir(parents=True, exist_ok=True)
+        with evidence.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(event, ensure_ascii=False, sort_keys=True) + "\n")
+    return path
+
+
+def _consume(run_root: Path, frozen: dict, handoff: dict, **kwargs):
+    contract = json.loads((run_root / "acceptance-v3" / "run-contract.json").read_text())
+    return _cq_consume_production_handoff(
+        run_root, handoff, contract=contract, batch_id=frozen["batch_id"],
+        freeze_digest=frozen["snapshot_digest"], **kwargs,
+    )
+
+
 def _attempt_report(run_root: Path, batch_id: str, attempt: str) -> dict:
     return json.loads(
         (
@@ -632,3 +705,258 @@ def test_a_legacy_batch_level_report_is_neither_reused_nor_overwritten(
     assert again == 2
     assert "cq_handoff_immutable" in capsys.readouterr().err
     assert batch_report.read_bytes() == original
+
+
+# --- R4.0-009: recovering the run's own single-Ontology scope decision ----------
+
+_EMPTY_SCOPE = {"project_id": "project-1", "ontology_ids": []}
+
+
+@pytest.mark.parametrize("continuation", [False, True])
+@pytest.mark.parametrize(
+    "bindings",
+    [
+        # The real save: direct platform bindings carry both shapes.
+        {"project_id": "project-1", "ontology_id": "ontology-1",
+         "ontology_ids": ["ontology-1"], "run_scope": {"mode": "create"}},
+        # A list-only single-Ontology binding is the same verified identity.
+        {"project_id": "project-1", "ontology_ids": ["ontology-1"]},
+        # The recorded run scope is the fallback host-authoritative source.
+        {"run_scope": {"mode": "existing", "project_id": "project-1",
+                       "ontology_id": "ontology-1"}},
+    ],
+)
+def test_an_empty_single_ontology_scope_recovers_from_the_handoff_checkpoint(
+    tmp_path, continuation, bindings
+):
+    """R4.0-009: a handoff whose only defect is the empty authorized list is
+    re-anchored to the run's own verified checkpoint identity -- exactly one
+    Ontology of the same Project -- without touching any published bytes."""
+
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    published = _publish_handoff(run_root, handoff)
+    before = published.read_bytes()
+    # Unrelated checkpoint history is present, as in a real run.
+    _write_handoff_checkpoint(
+        run_root, handoff, checkpoint_id="materialization_progress-0001",
+        kind="materialization_progress", event_kind="materialization_progress",
+        scope_refs={"freeze_id": frozen["batch_id"]},
+    )
+    _write_handoff_checkpoint(run_root, handoff, platform_bindings=bindings)
+    output = tmp_path / "continuation"
+    kwargs = ({"continuation_output": output, "continuation_attempt": "attempt-0002"}
+              if continuation else {})
+    directory, binding = _consume(run_root, frozen, handoff, **kwargs)
+    assert [item["ontology_id"] for item in binding["ontologies"]] == ["ontology-1"]
+    assert all(item["project_id"] == "project-1" for item in binding["ontologies"])
+    # The published record and this attempt's retained copy keep the original
+    # bytes: the recovery lives in this decision, never in rewritten evidence.
+    assert published.read_bytes() == before
+    assert (directory / "production-handoff.json").read_bytes() == before
+    assert directory.is_relative_to(output if continuation else run_root)
+
+
+def test_a_recorded_scope_is_never_merged_with_the_checkpoint_binding(tmp_path):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen),
+               "scope_binding": {"project_id": "project-1", "ontology_ids": ["ontology-7"]}}
+    _publish_handoff(run_root, handoff)
+    _write_handoff_checkpoint(run_root, handoff)
+    _directory, binding = _consume(run_root, frozen, handoff)
+    assert [item["ontology_id"] for item in binding["ontologies"]] == ["ontology-7"]
+
+
+@pytest.mark.parametrize(
+    "defect, overrides",
+    [
+        # A digest that does not match the bytes on disk.
+        ("digest_mismatch", {"manifest_digest": "sha256:" + "0" * 64}),
+        # An event without any digest to verify the manifest with.
+        ("missing_event_digest", {"manifest_digest": ""}),
+        ("event_kind_mismatch", {"event_kind": "materialization_progress"}),
+        ("manifest_kind_mismatch", {"kind": "materialization_progress"}),
+        # Another attempt's or another freeze's checkpoint never authorizes.
+        ("event_refs_mismatch",
+         {"event_scope_refs": {"freeze_id": "cq-batch-9999",
+                               "acceptance_attempt_id": "attempt-0001"}}),
+        ("manifest_refs_mismatch",
+         {"scope_refs": {"freeze_id": "cq-batch-9999",
+                         "acceptance_attempt_id": "attempt-0001"}}),
+        # Another Project's binding, or more than one Ontology: fail closed.
+        ("project_mismatch",
+         {"platform_bindings": {"project_id": "project-other",
+                                "ontology_id": "ontology-1",
+                                "ontology_ids": ["ontology-1"]}}),
+        ("multi_ontology",
+         {"platform_bindings": {"project_id": "project-1",
+                                "ontology_ids": ["ontology-1", "ontology-2"]}}),
+        # The source run is not this handoff's run.
+        ("source_run_mismatch", {"source_run_id": "r-other"}),
+    ],
+)
+def test_an_empty_scope_without_a_verified_checkpoint_is_refused(
+    tmp_path, defect, overrides
+):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    published = _publish_handoff(run_root, handoff)
+    before = published.read_bytes()
+    _write_handoff_checkpoint(run_root, handoff, **overrides)
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)
+    assert published.read_bytes() == before
+    attempt_dir = (
+        run_root / "acceptance-v3" / "reports" / frozen["batch_id"] / "attempt-0001"
+    )
+    assert not (attempt_dir / "batch-report.json").exists()
+
+
+def test_an_empty_scope_without_any_checkpoint_is_refused(tmp_path):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    _publish_handoff(run_root, handoff)
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)
+
+
+def test_an_empty_scope_with_unreadable_or_missing_evidence_is_refused(tmp_path):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    _publish_handoff(run_root, handoff)
+    path = _write_handoff_checkpoint(run_root, handoff)
+    path.unlink()
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)
+    path = _write_handoff_checkpoint(run_root, handoff)
+    path.write_text("{corrupt", encoding="utf-8")
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)
+    (run_root / "evidence" / "checkpoints.jsonl").write_text(
+        "not json\n", encoding="utf-8"
+    )
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)
+
+
+def test_two_matching_handoff_checkpoints_are_ambiguous_and_refused(tmp_path):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    _publish_handoff(run_root, handoff)
+    _write_handoff_checkpoint(run_root, handoff, checkpoint_id="production_handoff-0001")
+    _write_handoff_checkpoint(run_root, handoff, checkpoint_id="production_handoff-0002")
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)
+
+
+def test_the_defective_handoff_completes_the_real_cli_start(tmp_path, capsys, monkeypatch):
+    """The end-to-end R4.0-009 restart: the CLI binds the run's one verified
+    Ontology and publishes its attempt report instead of exiting 2."""
+
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    published = _publish_handoff(run_root, handoff)
+    before = published.read_bytes()
+    _write_handoff_checkpoint(run_root, handoff)
+    forwarder = _DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT])
+    examiner_packets: list = []
+    adapter_class, _state = _batch_adapter(on_examiner_packet=examiner_packets.append)
+    code = _run_cli(
+        tmp_path, run_root, _handoff_file(tmp_path, handoff), forwarder,
+        adapter_class, monkeypatch,
+    )
+    assert code == 0
+    assert "cq_batch_scope_unauthorized" not in capsys.readouterr().err
+    attempt_dir = (
+        run_root / "acceptance-v3" / "reports" / frozen["batch_id"] / "attempt-0001"
+    )
+    assert (attempt_dir / "batch-report.json").is_file()
+    assert published.read_bytes() == before
+    assert (attempt_dir / "production-handoff.json").read_bytes() == before
+    # The examiner child was scoped to exactly the recovered Ontology.
+    payload = examiner_packets[0].to_dict()["payload"]
+    assert payload["authorized_scope"] == ["ontology-1"]
+    assert [
+        item["ontology_id"] for item in payload["model_binding"]["ontologies"]
+    ] == ["ontology-1"]
+
+
+def test_the_cli_still_refuses_an_empty_scope_without_a_verified_checkpoint(
+    tmp_path, capsys, monkeypatch
+):
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    _publish_handoff(run_root, handoff)
+    forwarder = _DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT])
+    adapter_class, _state = _batch_adapter()
+    code = _run_cli(
+        tmp_path, run_root, _handoff_file(tmp_path, handoff), forwarder,
+        adapter_class, monkeypatch,
+    )
+    assert code == 2
+    assert "cq_batch_scope_unauthorized" in capsys.readouterr().err
+    attempt_dir = (
+        run_root / "acceptance-v3" / "reports" / frozen["batch_id"] / "attempt-0001"
+    )
+    assert not (attempt_dir / "batch-report.json").exists()
+
+
+# --- R4.0-009 round 2: recovery serves the recorded empty list and nothing else ---
+
+@pytest.mark.parametrize(
+    "invalid_scope",
+    [
+        {"project_id": "project-1", "ontology_ids": [42]},
+        {"project_id": "project-1", "ontology_ids": [None]},
+        {"project_id": "project-1", "ontology_ids": [True]},
+        {"project_id": "project-1", "ontology_ids": [""]},
+        {"project_id": "project-1", "ontology_ids": ["", None]},
+    ],
+)
+def test_an_invalid_non_empty_scope_never_borrows_the_checkpoint_identity(
+    tmp_path, invalid_scope
+):
+    """Round-2 High: only the recorded ``[]`` may be recovered.  A non-empty
+    list whose entries are not authorized non-empty strings is the original
+    refusal -- it must not be laundered into the checkpoint's Ontology."""
+
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": invalid_scope}
+    published = _publish_handoff(run_root, handoff)
+    before = published.read_bytes()
+    # A perfectly valid checkpoint is on disk: the entry list alone decides.
+    _write_handoff_checkpoint(run_root, handoff)
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)
+    assert published.read_bytes() == before
+
+
+@pytest.mark.parametrize(
+    "bindings",
+    [
+        # production_resume_bindings stringifies list entries: 42 -> "42".
+        {"project_id": "project-1", "ontology_ids": [42]},
+        {"project_id": "project-1", "ontology_ids": [None]},
+        {"project_id": "project-1", "ontology_ids": [True]},
+        {"project_id": "project-1", "ontology_id": 42, "ontology_ids": ["ontology-1"]},
+        {"project_id": "project-1", "ontology_id": None, "ontology_ids": ["ontology-1"]},
+        {"project_id": "project-1", "ontology_id": "", "ontology_ids": ["ontology-1"]},
+        # The run_scope fallback goes through the same stringification.
+        {"run_scope": {"mode": "create", "project_id": "project-1",
+                       "ontology_ids": [42]}},
+        {"run_scope": {"mode": "create", "project_id": "project-1",
+                       "ontology_ids": [None]}},
+        {"run_scope": {"mode": "create", "project_id": "project-1",
+                       "ontology_id": 42}},
+    ],
+)
+def test_a_coerced_manifest_identity_is_never_a_trusted_identity(tmp_path, bindings):
+    """Round-2 High: a manifest identity field must hold an original non-empty
+    string; numbers, booleans and None are never converted into authorization."""
+
+    run_root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    handoff = {**_production_handoff(frozen), "scope_binding": dict(_EMPTY_SCOPE)}
+    _publish_handoff(run_root, handoff)
+    _write_handoff_checkpoint(run_root, handoff, platform_bindings=bindings)
+    with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
+        _consume(run_root, frozen, handoff)

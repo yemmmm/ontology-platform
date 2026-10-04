@@ -67,7 +67,14 @@ from .competency_questions import (
 )
 from .outer_input import OuterInputFifo, OuterInputFramingError
 from .interventions import RecoverableOuterInputError
-from .checkpoints import CheckpointError, inspect_checkpoints
+from .checkpoints import (
+    CHECKPOINT_KIND_PRODUCTION_HANDOFF,
+    CheckpointError,
+    inspect_checkpoints,
+    manifest_digest,
+    manifest_path,
+    production_resume_bindings,
+)
 from .checkpoint_recovery import (
     ACCEPTANCE_CONTINUATION_SCHEMA,
     acquire_root_run_lock,
@@ -1653,6 +1660,112 @@ def _cq_first_examiner_failure(
 _CQ_PRODUCTION_HANDOFF_SCHEMA = "r3-0-012-production-handoff/v1"
 
 
+def _cq_recover_single_ontology_scope(
+    run_root: Path, handoff: Mapping[str, object], project_id: str,
+) -> list[str] | None:
+    """Recover the one verified Ontology an empty v012 scope binding lost.
+
+    R4.0-009: single-Ontology runs published their production handoff with an
+    empty ``scope_binding.ontology_ids`` even though the run's own automatic
+    ``production_handoff`` checkpoint recorded the identity correctly.  The
+    recovery is that recorded identity and nothing else: the checkpoint save
+    event must bind this handoff's freeze and acceptance attempt, its recorded
+    manifest byte digest must still verify, the manifest must be this run's
+    production handoff, and the rebound set must be exactly one Ontology of
+    this handoff's Project -- otherwise ``None`` and the caller keeps refusing
+    the handoff (never a guessed, widened, or name-based authorization).
+    The rebound identity is only trusted as an original non-empty string:
+    stringified numbers, booleans and None are never an Ontology.
+    """
+
+    evidence_path = run_root / "evidence" / "checkpoints.jsonl"
+    if not evidence_path.is_file() or evidence_path.is_symlink():
+        return None
+    try:
+        lines = evidence_path.read_text(encoding="utf-8").splitlines()
+    except OSError:
+        return None
+    freeze_id = handoff.get("freeze_id")
+    acceptance_attempt_id = handoff.get("acceptance_attempt_id")
+    matching: list[Mapping[str, object]] = []
+    for line in lines:
+        if not line.strip():
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            return None
+        if not isinstance(event, Mapping):
+            return None
+        refs = event.get("scope_refs")
+        if (
+            event.get("event") == "checkpoint-saved"
+            and event.get("kind") == CHECKPOINT_KIND_PRODUCTION_HANDOFF
+            and isinstance(refs, Mapping)
+            and refs.get("freeze_id") == freeze_id
+            and refs.get("acceptance_attempt_id") == acceptance_attempt_id
+        ):
+            matching.append(event)
+    if len(matching) != 1:
+        # No bound checkpoint saved, or an ambiguous pair: fail closed.
+        return None
+    checkpoint_id = matching[0].get("checkpoint_id")
+    recorded_digest = matching[0].get("manifest_digest")
+    if not isinstance(checkpoint_id, str) or not isinstance(recorded_digest, str):
+        return None
+    try:
+        path = manifest_path(run_root, checkpoint_id)
+        if not path.is_file() or path.is_symlink():
+            return None
+        if manifest_digest(path) != recorded_digest:
+            return None
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+    except (CheckpointError, OSError, ValueError):
+        return None
+    if not isinstance(manifest, Mapping):
+        return None
+    manifest_refs = manifest.get("scope_refs")
+    if (
+        manifest.get("kind") != CHECKPOINT_KIND_PRODUCTION_HANDOFF
+        or manifest.get("source_run_id") != handoff.get("run_id")
+        or not isinstance(manifest_refs, Mapping)
+        or manifest_refs.get("freeze_id") != freeze_id
+        or manifest_refs.get("acceptance_attempt_id") != acceptance_attempt_id
+    ):
+        return None
+    bindings = production_resume_bindings(manifest)
+    if bindings is None or bindings.get("project_id") != project_id:
+        return None
+    ontology_ids = bindings.get("ontology_ids")
+    if not isinstance(ontology_ids, list) or len(ontology_ids) != 1:
+        return None
+    ontology_id = ontology_ids[0]
+    if not isinstance(ontology_id, str) or not ontology_id:
+        return None
+    platform_bindings = manifest.get("platform_bindings")
+    if not isinstance(platform_bindings, Mapping):
+        return None
+    # ``production_resume_bindings`` stringifies every list entry; an original
+    # number, boolean or None can therefore pose as an Ontology id.  R4.0-009
+    # round 2: the rebound identity must come from raw non-empty strings.
+    run_scope = platform_bindings.get("run_scope")
+    raw_sources = [platform_bindings.get("ontology_ids")]
+    if isinstance(run_scope, Mapping):
+        raw_sources.append(run_scope.get("ontology_ids"))
+    for raw in raw_sources:
+        if raw is None:
+            continue
+        if not isinstance(raw, list) or any(
+            not isinstance(item, str) or not item for item in raw
+        ):
+            return None
+    if "ontology_id" in platform_bindings:
+        singular = platform_bindings["ontology_id"]
+        if not isinstance(singular, str) or not singular or singular != ontology_id:
+            return None
+    return [ontology_id]
+
+
 def _cq_consume_production_handoff(
     run_root: Path,
     handoff: dict[str, object],
@@ -1789,15 +1902,34 @@ def _cq_consume_production_handoff(
         or not isinstance(scope.get("project_id"), str)
         or not scope.get("project_id")
         or not isinstance(ontology_ids, list)
-        or not any(
-            isinstance(item, str) and item for item in ontology_ids
-        )
     ):
         raise TeamConfigurationError(
             "cq_batch_scope_unauthorized: production handoff lists no authorized "
             "Ontology"
         )
     authorized = [item for item in ontology_ids if isinstance(item, str) and item]
+    if not authorized:
+        if ontology_ids:
+            # R4.0-009 round 2: a non-empty list whose entries are not
+            # authorized non-empty strings is the original refusal.  Recovery
+            # serves only the recorded empty list -- a malformed identity is
+            # never laundered into the checkpoint's Ontology.
+            raise TeamConfigurationError(
+                "cq_batch_scope_unauthorized: production handoff lists no "
+                "authorized Ontology"
+            )
+        # R4.0-009: a single-Ontology run's verified identity lives in the
+        # run's own production_handoff checkpoint; only that exact recorded
+        # binding can restore the empty authorization, never a wider guess.
+        recovered = _cq_recover_single_ontology_scope(
+            run_root, handoff, scope["project_id"]
+        )
+        if recovered is None:
+            raise TeamConfigurationError(
+                "cq_batch_scope_unauthorized: production handoff lists no "
+                "authorized Ontology"
+            )
+        authorized = recovered
     # The child receives only semantic reads; host-only state observations do
     # not become a read capability or per-question evidence for the child.
     tools = list(CQ_SEMANTIC_READ_TOOLS)
