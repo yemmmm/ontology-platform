@@ -2172,3 +2172,18 @@ def test_fifo_limit_constant_matches_the_transport_default():
     assert host_ops.FIFO_MAX_LINE_BYTES == OuterInputFifo(
         Path("/tmp/unused")
     ).max_line_bytes
+
+
+def test_public_regression_report_cannot_submit_hidden_completion(cq_semantic_runner):
+    runner = cq_semantic_runner
+    frozen = _freeze(runner)
+    runner.transport = _SettledTransport(runner, "completed")
+    runner.handle_cq_outer_input(_handoff_message(frozen))
+    encoded, _ = _write_report(runner, frozen, verdicts=[_verdict_entry("pass")])
+    report = json.loads(encoded)
+    report["question_selection"] = {"visibility": "public", "question_ids": ["cq-1"]}
+    _write_report(runner, frozen, raw=json.dumps(report).encode())
+    with pytest.raises(host_ops.HostOpError) as rejected:
+        host_ops.complete_cq_acceptance(runner.run.run_id)
+    assert rejected.value.code == "cq_acceptance_report_mismatch"
+    assert not (runner.run.root / "control" / "host-requests.jsonl").exists()

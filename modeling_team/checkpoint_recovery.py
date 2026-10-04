@@ -2615,7 +2615,8 @@ def next_acceptance_attempt(report_roots: list[Path], batch_id: str) -> str:
 
 
 def find_complete_pass_report(
-    report_roots: list[Path], batch_id: str, freeze_digest: str
+    report_roots: list[Path], batch_id: str, freeze_digest: str,
+    *, question_visibility: str = "hidden", question_ids: list[str] | None = None,
 ) -> tuple[dict[str, Any], Path] | None:
     """A complete, usable PASS report for this exact batch and freeze (M34).
 
@@ -2638,6 +2639,21 @@ def find_complete_pass_report(
         if not isinstance(report, dict):
             continue
         if report.get("batch_id") != batch_id or report.get("freeze_digest") != freeze_digest:
+            continue
+        selection = report.get("question_selection", {"visibility": "hidden"})
+        if not isinstance(selection, dict) or selection.get("visibility") != question_visibility:
+            continue
+        selected_ids = selection.get("question_ids", [])
+        if not isinstance(selected_ids, list) or any(
+            not isinstance(item, str) for item in selected_ids
+        ):
+            continue
+        executed = report.get("executed_question_ids", [])
+        if question_ids is not None and (
+            set(executed) != set(question_ids)
+            or (question_visibility == "public"
+                and set(selected_ids) != set(question_ids))
+        ):
             continue
         if report.get("full_pass") is True and batch_report_is_full_pass(report):
             return report, path
@@ -2772,6 +2788,7 @@ def prepare_acceptance_continuation(
     new_run_id: str,
     readback: PlatformReadback,
     authorization_reference: str | None = None,
+    question_visibility: str = "hidden",
 ) -> AcceptanceContinuation:
     """Design §7 paragraph 1: the read-only S4 entry verification.
 
@@ -2941,7 +2958,16 @@ def prepare_acceptance_continuation(
     report_roots = [source_run_root, *prior_output_roots]
     prior_attempts = sorted(attempt_directories(report_roots, batch_id))
     attempt_id = next_acceptance_attempt(report_roots, batch_id)
-    complete = find_complete_pass_report(report_roots, batch_id, freeze_digest)
+    if question_visibility not in {"hidden", "public"}:
+        raise ValueError("question_visibility must be hidden or public")
+    selected_ids = [
+        str(question["question_id"]) for question in freeze["questions"]
+        if question.get("visibility") == question_visibility
+    ]
+    complete = find_complete_pass_report(
+        report_roots, batch_id, freeze_digest,
+        question_visibility=question_visibility, question_ids=selected_ids,
+    )
     complete_report = complete[0] if complete else None
     complete_report_path = complete[1] if complete else None
 
@@ -3017,6 +3043,10 @@ def prepare_acceptance_continuation(
         },
         "delivery_segments": dict(CHECKPOINT_DELIVERY_SEGMENTS),
     }
+    if question_visibility == "public":
+        inspection["question_selection"] = {
+            "visibility": "public", "question_ids": selected_ids,
+        }
     origin = {
         "schema_version": RECOVERY_SCHEMA,
         "kind": "acceptance_continuation",

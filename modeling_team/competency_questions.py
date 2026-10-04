@@ -1495,6 +1495,7 @@ def build_batch_report(
     blind_status: dict[str, Any] | None = None,
     platform_read_responses: dict[str, list[dict[str, Any]]] | None = None,
     evidence_recheck: dict[str, Any] | None = None,
+    question_visibility: str = "hidden",
 ) -> dict[str, Any]:
     """Assemble the host-only v3 acceptance batch report.
 
@@ -1509,6 +1510,8 @@ def build_batch_report(
     the conservative ``blind`` default with no provenance digest.
     """
 
+    if question_visibility not in {"hidden", "public"}:
+        raise ValueError("question_visibility must be hidden or public")
     question_ids = [report["question_id"] for report in examiner_reports]
     scope_by_question = {
         question["question_id"]: question.get("scope", {}) for question in hidden_questions
@@ -1579,6 +1582,16 @@ def build_batch_report(
         },
         "report_digest": "",
     }
+    if question_visibility == "public":
+        report["question_selection"] = {
+            "visibility": "public",
+            "question_ids": [question["question_id"] for question in hidden_questions],
+        }
+        report["blind_status"]["blind_status"] = CQ_BLIND_STATUS_NON_BLIND
+        gaps = report["coverage_gaps"]
+        gaps["empty_public_set"] = gaps.pop("empty_hidden_set")
+        gaps["slices_without_public_question"] = gaps.pop("slices_without_hidden_question")
+        gaps["notes"] = ["public non-blind regression coverage; hidden acceptance is separate"]
     # R3.0-012 design §4.1/§4.2: the retained-response projection and the
     # recheck record land on the report only when this attempt actually
     # produced them; a report without the fields keeps the exact 011 shape
@@ -1624,9 +1637,13 @@ def batch_report_is_full_pass(report: dict[str, Any]) -> bool:
     gaps = report.get("coverage_gaps", {})
     if not isinstance(gaps, dict):
         return False
-    if gaps.get("empty_hidden_set") or gaps.get("cross_slice_projection_gap"):
+    selection = report.get("question_selection")
+    public = isinstance(selection, dict) and selection.get("visibility") == "public"
+    empty_key = "empty_public_set" if public else "empty_hidden_set"
+    slices_key = "slices_without_public_question" if public else "slices_without_hidden_question"
+    if gaps.get(empty_key) or gaps.get("cross_slice_projection_gap"):
         return False
-    if gaps.get("slices_without_hidden_question") or gaps.get("model_state_drift"):
+    if gaps.get(slices_key) or gaps.get("model_state_drift"):
         return False
     if report.get("unexecuted_question_ids"):
         return False
@@ -1643,6 +1660,15 @@ def batch_report_is_full_pass(report: dict[str, Any]) -> bool:
     judged = {
         str(verdict.get("question_id")) for verdict in verdicts if isinstance(verdict, dict)
     }
+    selected_ids = selection.get("question_ids") if public else None
+    if public and (
+        not isinstance(selected_ids, list)
+        or any(not isinstance(item, str) for item in selected_ids)
+        or set(selected_ids) != denominator
+        or judged != denominator
+        or report.get("blind_status", {}).get("blind_status") != CQ_BLIND_STATUS_NON_BLIND
+    ):
+        return False
     if not denominator <= judged:
         # A hidden question without a verdict is not fully accepted, whether it
         # was never executed or its executed report was not judgeable.

@@ -512,11 +512,15 @@ uv run --project backend python -m modeling_team checkpoint resume \
   --new-run-id "$new_run_id" --mode acceptance \
   --authorization-reference "<用户授权引用（记入台账）>" \
   # 可选：--model-profile openai-sol-medium（显式指定 Examiner/Judge 模型）
+  # 可选：--question-visibility public（完整冻结公开集，只读 non-blind-regression）
   # 可选：--session-timeout（重执行路径的子会话超时，默认 300s）、--base-url
 ```
 
 `--model-profile` 仅用于 acceptance 模式；省略沿用既有 CQ 默认模型。Host MCP 的
 `resume_from_checkpoint(model_profile="openai-sol-medium", ...)` 传递同一选择，不改源 run 配置。
+`question_visibility="public"` 传递相同公开选择；默认 hidden。公开报告单列完整分母与
+non-blind-regression，不能关闭 hidden 验收。S4 只复用同选择、同完整 ID 集的 PASS；否则
+在新输出 attempt 调用原 Consumer／独立 Judge，保留源 run 与冻结内容。
 
 入口先做**只读复核**，复用 S2 的 cursor 回读纪律：全链写尾必须闭合干净（unknown/
 未回执写入即拒绝）、原写者必须已停（`source_active` 可重试，经原 run stop channel

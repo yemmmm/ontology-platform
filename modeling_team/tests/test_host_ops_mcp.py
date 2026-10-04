@@ -100,11 +100,13 @@ def test_checkpoint_resume_model_profile_passes_through_mcp(monkeypatch):
             "source_run_id": "source", "checkpoint_id": "production_handoff-0001",
             "new_run_id": "continued", "mode": "acceptance",
             "authorization_reference": "auth-test", "model_profile": "openai-sol-medium",
+            "question_visibility": "public",
         }))
 
     result, = _session([call])
     assert result["ok"] is True
     assert captured[0]["model_profile"] == "openai-sol-medium"
+    assert captured[0]["question_visibility"] == "public"
 
 
 def test_cold_start_exposes_exactly_the_20_s1_plus_s2_tools():

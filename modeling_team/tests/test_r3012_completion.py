@@ -640,3 +640,21 @@ def test_stop_closes_open_windows_and_preserves_the_exclusion_evidence():
         assert closed["merged_windows"], "the accumulated exclusion survives the stop"
     finally:
         harness.cleanup()
+
+
+def test_public_regression_report_cannot_close_hidden_acceptance():
+    harness, frozen = _pending_scene()
+    try:
+        runner = harness.runner
+        encoded, _ = _write_report(runner, frozen, verdicts=[_verdict_entry("pass")])
+        report = json.loads(encoded)
+        report["question_selection"] = {"visibility": "public", "question_ids": ["cq-1"]}
+        _, digest = _write_report(runner, frozen, raw=json.dumps(report).encode())
+        with pytest.raises(CQContractError) as rejected:
+            runner.handle_cq_outer_input(_completion(
+                runner, frozen, report_digest=digest, cq_verdict="pass",
+            ))
+        assert rejected.value.data["reason_code"] == "cq_acceptance_report_mismatch"
+        assert runner._cq_acceptance_phase == "acceptance_pending"
+    finally:
+        harness.cleanup()

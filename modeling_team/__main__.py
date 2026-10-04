@@ -1620,7 +1620,7 @@ def _cq_collaboration_context(
 
 
 _CQ_PLATFORM_ROLE_INSTRUCTIONS = (
-    "Answer every hidden batch question in packet order. For each question use only "
+    "Answer every selected frozen batch question in packet order. For each question use only "
     "the authorized read-only platform reads you need, then call submit_examiner_report "
     "exactly once for that question with schema_version, batch_id, question_id, "
     "question_content_version, answer, evidence_refs, explicit_unknown, status, "
@@ -1895,6 +1895,7 @@ def _cq_consume_production_handoff(
     freeze_digest: str,
     continuation_output: Path | None = None,
     continuation_attempt: str | None = None,
+    question_visibility: str = "hidden",
 ) -> tuple[Path, dict[str, object]]:
     """Consume the Runner's verified v012 production handoff (design §4.5).
 
@@ -2000,6 +2001,8 @@ def _cq_consume_production_handoff(
         report_dir = continuation_output.joinpath(
             *PurePosixPath(f"acceptance-v3/reports/{batch_id}/{continuation_attempt}").parts
         )
+    elif question_visibility == "public":
+        report_dir = run_root / "acceptance-v3" / "public-regression" / batch_id / attempt_id
     else:
         report_dir = run_root.joinpath(*PurePosixPath(expected_directory).parts)
     report_path = report_dir / "batch-report.json"
@@ -2498,6 +2501,7 @@ def _cq_execute_batch(
         # binding only names the authorization scope (D5).
         model_binding_digest=content_digest(pre_binding or binding),
         hidden_questions=hidden,
+        question_visibility=getattr(args, "question_visibility", "hidden"),
         examiner_reports=[dict(report) for report in reports],
         verdicts=[dict(verdict) for verdict in verdicts],
         executed_question_ids=executed,
@@ -2607,7 +2611,7 @@ def _run_cq_acceptance(
     continuation: Mapping[str, object] | None = None,
     interview_checkpoint: AcceptanceContinuation | None = None,
 ) -> int:
-    """Read-only v3 hidden-batch acceptance entry (R3.0-011 design §4.0).
+    """Read-only v3 selected-batch acceptance entry (R3.0-011 design §4.0).
 
     The command is Delivery-invoked and strictly read-only for the platform: it
     writes no StartLedger record, consumes no fresh semantic start, and never
@@ -2667,6 +2671,7 @@ def _run_cq_acceptance(
                 contract=contract,
                 batch_id=batch_id,
                 freeze_digest=freeze_digest,
+                question_visibility=getattr(args, "question_visibility", "hidden"),
                 **(
                     {
                         "continuation_output": Path(continuation["output_root"]),
@@ -2677,7 +2682,11 @@ def _run_cq_acceptance(
                 ),
             )
         else:
-            report_dir = run_root / "acceptance-v3" / "reports" / batch_id
+            report_kind = (
+                "public-regression" if getattr(args, "question_visibility", "hidden") == "public"
+                else "reports"
+            )
+            report_dir = run_root / "acceptance-v3" / report_kind / batch_id
             report_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             # R3.0-012 design §4.3/T3-18: the legacy batch-level path gains the
             # same first-write immutability; a re-acceptance is a new attempt,
@@ -2745,14 +2754,19 @@ def _run_cq_acceptance(
         hidden = [
             dict(question)
             for question in freeze["questions"]
-            if question.get("visibility") == "hidden"
+            if question.get("visibility") == getattr(args, "question_visibility", "hidden")
         ]
         ordered_ids = [str(item) for item in freeze["ordering"]]
         hidden.sort(key=lambda question: ordered_ids.index(str(question["question_id"])))
+        if getattr(args, "question_visibility", "hidden") == "public":
+            blind_status["blind_status"] = "non-blind-regression"
         slices = sorted(
             {
                 slice_id
-                for question in freeze["questions"]
+                for question in (
+                    hidden if getattr(args, "question_visibility", "hidden") == "public"
+                    else freeze["questions"]
+                )
                 if question.get("scope", {}).get("kind") == "slice"
                 for slice_id in question.get("scope", {}).get("slice_ids", [])
             }
@@ -2802,6 +2816,7 @@ def _run_cq_acceptance(
             freeze_digest=freeze_digest,
             model_binding_digest=content_digest(binding),
             hidden_questions=hidden,
+            question_visibility=getattr(args, "question_visibility", "hidden"),
             examiner_reports=[],
             verdicts=[],
             executed_question_ids=[],
@@ -3041,6 +3056,7 @@ def _run_checkpoint_resume_acceptance(
                 new_run_id=args.new_run_id,
                 readback=readback,
                 authorization_reference=args.authorization_reference,
+                question_visibility=getattr(args, "question_visibility", "hidden"),
             )
         except CheckpointError as exc:
             # Typed rejection, host-verbatim; the source run stays untouched.
@@ -3123,6 +3139,7 @@ def _run_checkpoint_resume_acceptance(
             freeze_id=plan.freeze_file.stem,
             model_handoff=source_root / "acceptance-v3" / "production-handoff.json",
             model_profile=getattr(args, "model_profile", None),
+            question_visibility=getattr(args, "question_visibility", "hidden"),
             session_timeout=getattr(args, "session_timeout", None) or 300.0,
             unexecuted_report=False,
         )
@@ -3267,6 +3284,7 @@ def main() -> int:
     cq_acceptance.add_argument("--run-root", required=True, type=Path)
     cq_acceptance.add_argument("--freeze-id", required=True)
     cq_acceptance.add_argument("--model-handoff", required=True, type=Path)
+    cq_acceptance.add_argument("--question-visibility", choices=["hidden", "public"], default="hidden")
     cq_acceptance.add_argument("--model-profile", default=None)
     cq_acceptance.add_argument("--session-timeout", type=float, default=300.0)
     cq_acceptance.add_argument(
@@ -3330,6 +3348,10 @@ def main() -> int:
             "production resume (S2) or acceptance-only continuation of a "
             "production_handoff checkpoint (S4)"
         ),
+    )
+    checkpoint_resume.add_argument(
+        "--question-visibility", choices=["hidden", "public"], default="hidden",
+        help="acceptance mode: whole frozen hidden or public question batch",
     )
     checkpoint_resume.add_argument(
         "--model-profile", default=None,
@@ -3398,6 +3420,9 @@ def main() -> int:
         # Production resume falls through into the shared run flow below with
         # ``resume_requested`` set; the one-process root-run lock is acquired
         # before reconciliation and released when the process exits.
+        if args.question_visibility != "hidden":
+            print("checkpoint failed: --question-visibility requires acceptance mode", file=sys.stderr)
+            return 2
         if args.model_profile is not None:
             print("checkpoint failed: --model-profile requires acceptance mode", file=sys.stderr)
             return 2

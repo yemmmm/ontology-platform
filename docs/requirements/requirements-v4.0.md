@@ -1340,6 +1340,9 @@ A1—A9 已完成开发侧合同／功能验证，包含后端全量回归、Tea
 本轮不授予 semantic modeling start、外部 SQL／API 调用或脚本执行额度。
 开发证据见[测试记录](../delivery/tests/2026-10-02-r4-0-009-multiview-semantic-acceptance-test-record.md)。
 详细设计见[多视角真实建模与独立语义验收设计](../delivery/designs/2026-10-02-r4-0-009-multiview-semantic-acceptance-design.md)。
+以上为 2026-10-02 历史状态。2026-10-04 已获授权执行两次生产 start，hidden10 切片批次
+取得 non-blind-regression PASS；009 整体仍为 PARTIAL，当前验证与保留证据见
+[实际验收记录](../delivery/records/2026-10-04-v4-semantic-acceptance-attempt-record.md)。
 
 **目标与范围**：以获准的有界业务场景，由 Modeling Team 实际完成多视角建模与受治理写入，
 再由独立 Consumer／Platform Examiner 仅凭平台语义回答跨视角业务问题，独立 Judge 对照
@@ -1395,6 +1398,10 @@ A1—A9 已完成开发侧合同／功能验证，包含后端全量回归、Tea
   固定题数。建议题量复用 011，不作为写入合法性门。空隐藏集不能产生 CQ PASS。
 - Examiner 仅接收隐藏题、授权范围、模型状态及只读工具，不接收原始资料、参考答案、生产
   历史或私有场景地图；Judge 接收冻结业务依据和真实查询响应，二者均不参与模型生产或出题。
+- 最终只读补验可显式选择完整冻结公开题集，复用同一 Consumer／独立 Judge 与受治理读取
+  路径；公开结果明确记为 public／non-blind-regression，并单独记录所选完整分母。公开答案
+  与业务依据仍只进入 Judge，不回流 Consumer 或生产。公开补验不替代独立 hidden 完成门，
+  不改冻结内容／可见性，不扩大到 015 前置反馈或外部 SQL／API／脚本执行。
 - 冻结后修订另存新版本并按既有审核流程处理；失败题、原裁决和覆盖缺口保留。生产方若因
   修模获知隐藏题，该题的后续成功只记回归，不再提供盲测泛化证据。
 

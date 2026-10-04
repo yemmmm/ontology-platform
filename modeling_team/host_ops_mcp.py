@@ -467,6 +467,7 @@ def tool_resume_from_checkpoint(
     freeze_started_at: str | None = None,
     session_timeout: float | None = None,
     model_profile: str | None = None,
+    question_visibility: str = "hidden",
     request_id: str | None = None,
     fork_reason: str | None = None,
 ) -> dict[str, Any]:
@@ -491,6 +492,7 @@ def tool_resume_from_checkpoint(
         freeze_started_at=freeze_started_at,
         session_timeout=session_timeout,
         model_profile=model_profile,
+        question_visibility=question_visibility,
         request_id=request_id,
         **({"fork_reason": fork_reason} if fork_reason is not None else {}),
     )

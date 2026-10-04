@@ -175,6 +175,7 @@ CHECKPOINT_RESUME_FLAGS = (
     "--mode",
     "--session-timeout",
     "--model-profile",
+    "--question-visibility",
     "--authorization-reference",
     "--base-url",
     "--freeze-started-at",
@@ -2194,6 +2195,13 @@ def complete_cq_acceptance(
             retryable=False,
             next_action="let the cq-acceptance process rewrite the attempt report",
         )
+    selection = report.get("question_selection", {"visibility": "hidden"})
+    if not isinstance(selection, dict) or selection.get("visibility") != "hidden":
+        raise HostOpError(
+            "cq_acceptance_report_mismatch", "public regression cannot complete hidden acceptance",
+            obj="cq_acceptance_complete", retryable=True,
+            next_action="run the frozen hidden batch and submit its retained report",
+        )
     cq_verdict = batch_report_acceptance_verdict(report)
     envelope = {
         "action": "cq_acceptance_complete",
@@ -3235,6 +3243,7 @@ def resume_from_checkpoint(
     freeze_started_at: str | None = None,
     session_timeout: float | int | None = None,
     model_profile: str | None = None,
+    question_visibility: str = "hidden",
     request_id: str | None = None,
     repository_root: Path | None = None,
     launcher: Callable[..., Any] | None = None,
@@ -3306,6 +3315,15 @@ def resume_from_checkpoint(
     validated_freeze = (
         validate_freeze_started_at(freeze_started_at) if mode == "production" else None
     )
+    if not isinstance(question_visibility, str) or question_visibility not in {"hidden", "public"} or (
+        mode != "acceptance" and question_visibility != "hidden"
+    ):
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "question_visibility requires acceptance mode and hidden or public",
+            obj="question_visibility", retryable=True,
+            next_action="choose hidden or public in acceptance mode",
+        )
     if model_profile is not None and (
         mode != "acceptance" or not isinstance(model_profile, str)
         or re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", model_profile) is None
@@ -3362,6 +3380,8 @@ def resume_from_checkpoint(
         argv.extend(["--fork-reason", fork_reason])
     if session_timeout is not None:
         argv.extend(["--session-timeout", str(session_timeout)])
+    if question_visibility != "hidden":
+        argv.extend(["--question-visibility", question_visibility])
     if model_profile is not None:
         argv.extend(["--model-profile", model_profile])
     argv.append("--enable-outer-input-fifo")

@@ -17,6 +17,16 @@
 本设计交付一个可复用现有 Team 的真实验收方案，重点是业务资料、CQ 覆盖、真实读取和独立
 裁决。009 不创建平台资源、数据库表、业务路由、语义打分器或新的建模／验收调度框架。
 
+### 最终公开只读补验（2026-10-04）
+
+既有 `cq-acceptance` 与 checkpoint S4 接受 `--question-visibility hidden|public`，默认 hidden。
+public 仅执行原冻结池的完整公开集；复用原 Consumer／独立 Judge、模型状态重查和已批准
+checkpoint interview archive。Consumer 只收问题／scope，答点与依据只进 Judge。
+公开报告显式绑定完整题目 ID 与 public／non-blind-regression 分母，不覆盖 hidden 报告；
+hidden 完成入口不接纳公开报告。S4 完整 PASS 缓存仅能复用同选择、同完整 ID 集的报告，
+否则在新输出 attempt 实际执行。源 run 只读、freeze 不变，公开补验不能代替 hidden 完成门，
+也不实现 015 前置反馈或外部执行能力。
+
 ## 2. 主场景、分段和补充资料
 
 ### 2.1 场景选择与来源

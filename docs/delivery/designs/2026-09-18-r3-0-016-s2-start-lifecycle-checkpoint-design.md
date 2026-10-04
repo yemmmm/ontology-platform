@@ -171,6 +171,10 @@ S2 在既有 `modeling-team-host` stdio MCP 服务（`modeling_team/host_ops_mcp
 
 ### 5.5 `resume_from_checkpoint`
 
+- 可选 `question_visibility="hidden"|"public"`（默认 hidden）仅用于 acceptance 模式，public
+  透传 `--question-visibility public` 执行完整冻结公开集并记 non-blind-regression；不接纳为
+  hidden 完成。完整 PASS 缓存须匹配选择与完整题目 ID 集，否则新输出 attempt 实际执行。
+
 - 可选模型选择（2026-10-04）：`model_profile` 仅 acceptance 模式接受，按模型 profile 标识符
   透传为 `--model-profile <值>`，同一次续跑的 Examiner 和 Judge 均使用该选择；省略仍沿用
   既有 CQ 默认模型，不更改源 run 的模型配置。Host 凭据仍只通过环境传递；非法标识符或

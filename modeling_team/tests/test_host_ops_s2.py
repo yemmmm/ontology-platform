@@ -607,6 +607,7 @@ def test_resume_argv_is_exactly_the_real_checkpoint_resume_contract(tmp_path):
         mode="acceptance",
         authorization_reference="auth-r3018-s2/acceptance (user-approved 2026-09-18T09:00:00+00:00)",
         session_timeout=120,
+        question_visibility="public",
         model_profile="openai-sol-medium",
         repository_root=tmp_path,
         launcher=launcher,
@@ -616,6 +617,8 @@ def test_resume_argv_is_exactly_the_real_checkpoint_resume_contract(tmp_path):
     assert "--freeze-started-at" not in argvs[1]
     assert argvs[1][argvs[1].index("--session-timeout") + 1] == "120"
     assert argvs[1][argvs[1].index("--model-profile") + 1] == "openai-sol-medium"
+    assert argvs[1][argvs[1].index("--question-visibility") + 1] == "public"
+    assert "--question-visibility" not in argvs[0]
     assert "consumes 0" in acceptance["semantic_starts_note"]
     assert "015" in acceptance["semantic_starts_note"]
 
@@ -902,6 +905,7 @@ def test_lifecycle_and_checkpoint_consumption_evidence_is_declared():
         "--mode",
         "--session-timeout",
         "--model-profile",
+        "--question-visibility",
         "--authorization-reference",
         "--base-url",
         "--freeze-started-at",
@@ -935,3 +939,18 @@ def test_real_cli_flags_back_the_declared_flag_sets():
     resume_flags = flags_of(["checkpoint", "resume"])
     assert set(host_ops.CHECKPOINT_RESUME_FLAGS) <= resume_flags
     assert "--source-run" not in resume_flags
+
+
+@pytest.mark.parametrize("visibility", ["", "all", "--unexpected", None, []])
+def test_resume_question_visibility_rejects_invalid_values_before_launch(tmp_path, visibility):
+    _make_run(tmp_path, "sourceselection", state="CLEANED")
+    calls = []
+    with pytest.raises(host_ops.HostOpError) as rejected:
+        host_ops.resume_from_checkpoint(
+            source_run_id="sourceselection", checkpoint_id="production_handoff-0001",
+            new_run_id="newselection", mode="acceptance", authorization_reference="auth-test",
+            question_visibility=visibility, repository_root=tmp_path,
+            launcher=lambda *args, **kwargs: calls.append(args),
+        )
+    assert rejected.value.code == "launch_arguments_invalid"
+    assert calls == []

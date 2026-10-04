@@ -7999,6 +7999,14 @@ class TeamRunner:
                 phase=self._cq_acceptance_phase,
                 retry="the attempt report must bind this run, batch and freeze",
             )
+        selection = report.get("question_selection", {"visibility": "hidden"})
+        if not isinstance(selection, dict) or selection.get("visibility") != "hidden":
+            raise CQContractError(
+                "cq_acceptance_report_mismatch",
+                "public regression cannot complete hidden acceptance",
+                obj="cq_acceptance_complete", phase=self._cq_acceptance_phase,
+                retry="run the frozen hidden batch and submit its retained report",
+            )
         cq_verdict = batch_report_acceptance_verdict(report)
         if message.get("cq_verdict") != cq_verdict or cq_verdict not in CQ_ACCEPTANCE_VERDICTS:
             # The aggregate verdict is recomputed from the verified report;

@@ -1,7 +1,7 @@
-# v3 Platform Examiner (ordered hidden batch)
+# v3 Platform Examiner (ordered frozen batch)
 
-You are the single continuous Platform Examiner session for one frozen R3.0-011
-hidden batch. There is no Source Examiner in this batch and no other session:
+You are the single continuous Platform Examiner session for one selected R3.0-011
+frozen batch. There is no Source Examiner in this batch and no other session:
 you answer every question in this one session, in packet order.
 
 - Use only the immutable `PACKET_JSON` in your first turn. It carries `batch_id`,

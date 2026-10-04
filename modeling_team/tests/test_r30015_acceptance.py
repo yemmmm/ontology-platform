@@ -882,6 +882,59 @@ def test_s4_judge_reads_checkpoint_interview_after_real_private_cleanup(monkeypa
         rmtree(output_root, ignore_errors=True)
 
 
+def test_public_s4_reexecutes_after_hidden_pass_with_public_denominator_and_isolation(monkeypatch):
+    questions = [_question("hidden-1"), _question("public-1", visibility="public"),
+                 _question("public-2", visibility="public", kind="slice")]
+    run_root, frozen, checkpoint_id = _acceptance_source_run(questions=questions)
+    new_run_id = f"r3015out-{os.urandom(4).hex()}"
+    output_root = RUNS_ROOT / new_run_id
+    try:
+        hidden_report = _batch_report_for(frozen, run_root.name, passed=["hidden-1"])
+        _write_json(run_root / "acceptance-v3/reports" / frozen["batch_id"] / "attempt-0001/batch-report.json", hidden_report)
+        before = _tree_state(run_root)
+        packets = []
+        adapter, state = _batch_adapter(on_examiner_packet=lambda packet: packets.append(packet.to_dict()["payload"]))
+        monkeypatch.setattr(main_module, "CodexRuntimeAdapter", adapter)
+        monkeypatch.setattr(main_module, "http_readback", lambda *args: _readback(FakeCursorPlatform()))
+        monkeypatch.setenv(main_module._CQ_PLATFORM_READ_KEY_ENV, "read-key")
+        args = _cli_args(run_root.name, checkpoint_id, new_run_id)
+        args.model_profile = "openai-sol-medium"
+        args.question_visibility = "public"
+        code = main_module._run_checkpoint_resume_acceptance(
+            args, REPO_ROOT,
+            forwarder_factory=_Factory(_DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT] * 2)),
+        )
+        assert code == 0
+        assert len(packets) == 1  # A hidden PASS must not close public verification.
+        assert [item["question_id"] for item in packets[0]["questions"]] == ["public-1", "public-2"]
+        assert all(set(item) == {"question_id", "content_version", "question", "scope"}
+                   for item in packets[0]["questions"])
+        assert [item["question_id"] for item in state["judge_payload"]["questions"]] == ["public-1", "public-2"]
+        report = json.loads((output_root / "acceptance-v3/reports" / frozen["batch_id"] / "attempt-0002/batch-report.json").read_text())
+        assert report["question_selection"] == {"visibility": "public", "question_ids": ["public-1", "public-2"]}
+        assert report["blind_status"]["blind_status"] == "non-blind-regression"
+        assert report["coverage_gaps"]["empty_public_set"] is False
+        assert "empty_hidden_set" not in report["coverage_gaps"]
+        assert report["executed_question_ids"] == ["public-1", "public-2"]
+        assert report["full_pass"] is True
+        assert cr.find_complete_pass_report(
+            [output_root], frozen["batch_id"], frozen["snapshot_digest"],
+            question_visibility="public", question_ids=["public-1", "public-2"],
+        ) is not None
+        assert cr.find_complete_pass_report(
+            [output_root], frozen["batch_id"], frozen["snapshot_digest"],
+            question_ids=["hidden-1"],
+        ) is None
+        assert cr.find_complete_pass_report(
+            [output_root], frozen["batch_id"], frozen["snapshot_digest"],
+            question_visibility="public", question_ids=["public-1", "public-2", "public-3"],
+        ) is None
+        assert _tree_state(run_root) == before
+    finally:
+        _cleanup_run(run_root)
+        rmtree(output_root, ignore_errors=True)
+
+
 @pytest.mark.parametrize("defect", [
     "record_digest", "manifest_digest", "source_binding", "checkpoint_binding",
     "file_symlink", "directory_symlink", "undeclared", "schema", "empty_text", "escape",
