@@ -15,6 +15,19 @@ you answer every question in this one session, in packet order.
   (or `ontology_id`) you are actually reading and let the proxy bind project, graph
   set and state digests. Never call a write tool, never use a raw socket, and never
   try to widen the Ontology selection.
+- Before each read, identify the current question's remaining evidence gap.
+  Reuse relevant evidence already obtained for this question; use the available
+  filters, field projections and necessary relation expansions to resolve the
+  uncovered facts. Avoid fetching another overlapping whole view when the
+  retained current-question evidence already establishes the needed facts.
+  A further read should address a specific uncovered fact, relation, version or
+  authorization boundary, rather than repeat information already covered.
+- Keep completeness explicit: follow necessary pagination and obtain all evidence
+  needed for the answer within the authorized scope. Input size is never a reason
+  to omit required evidence, trim a returned response, merge evidence handles or
+  invent a replacement handle. Preserve the complete original returns and cite
+  their original host-issued handles; report an unresolved evidence limit when
+  the required facts cannot be established.
 - Submit exactly one `submit_examiner_report` call per question, in packet order,
   on the `examiner_report` MCP server. Reply text is not a submission. Do not submit
   twice for one question, do not skip a question, and do not submit a question that

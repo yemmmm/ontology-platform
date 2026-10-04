@@ -2109,7 +2109,7 @@ def _cq_read_tools(binding: dict[str, object]) -> list[str]:
     return list(tools)
 
 
-def _cq_judge_input_packets(packet):
+def _cq_judge_input_packets(packet, *, input_failures=None):
     """Partition only an oversized Judge input, preserving ordered full evidence."""
     def size(candidate):
         return len(_v3_acceptance_first_turn_text(candidate, _CQ_JUDGE_ROLE_INSTRUCTIONS))
@@ -2148,13 +2148,17 @@ def _cq_judge_input_packets(packet):
             current = []
             candidate = subset([question])
         if size(candidate) > _CODEX_MAX_INPUT_TEXT_CHARS:
-            raise ExaminerRuntimeBlocked(
-                "runtime-infrastructure", role="acceptance",
-                evidence={"reason_code": "judge-input-too-large",
-                          "question_ids": [question["question_id"]],
-                          "input_chars": size(candidate),
-                          "max_chars": _CODEX_MAX_INPUT_TEXT_CHARS},
-            )
+            failure = {"reason_code": "judge-input-too-large",
+                       "failure_layer": "runtime/infrastructure",
+                       "question_ids": [question["question_id"]],
+                       "input_chars": size(candidate),
+                       "max_chars": _CODEX_MAX_INPUT_TEXT_CHARS}
+            if input_failures is None:
+                raise ExaminerRuntimeBlocked(
+                    "runtime-infrastructure", role="acceptance", evidence=failure,
+                )
+            input_failures[question["question_id"]] = failure
+            continue
         current.append(question)
     if current:
         groups.append(subset(current))
@@ -2459,6 +2463,8 @@ def _cq_execute_batch(
                 if str(question["question_id"]) in judgeable_set
             ]
             teardown_judge: dict[str, object] = {}
+            judge_single_called = False
+            input_failures: dict[str, object] = {}
             # Judge setup (packet build, adapter bind) is guarded by the same
             # handler as the session itself: a setup failure is serialized into
             # the retained report instead of discarding the examiner reports.
@@ -2494,15 +2500,27 @@ def _cq_execute_batch(
                     verdict_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
                     **({"collaboration_context": collaboration} if collaboration is not None else {}),
                 )
-                adapter = CodexRuntimeAdapter(repository_root=root)
-                adapter._run_root = artifacts
-                adapter.bind_acceptance_model_profile(profile)
+                judge_packets = _cq_judge_input_packets(
+                    judge_packet, input_failures=input_failures,
+                )
+                for question_id in input_failures:
+                    judging_skips[question_id] = "judge-input-too-large"
+                judgeable = [qid for qid in judgeable if qid not in input_failures]
+                if judge_packets:
+                    adapter = CodexRuntimeAdapter(repository_root=root)
+                    adapter._run_root = artifacts
+                    adapter.bind_acceptance_model_profile(profile)
                 judge_stage = "acceptance-judge-session"
-                judge_packets = _cq_judge_input_packets(judge_packet)
-                if len(judge_packets) == 1:
+                if not judge_packets:
+                    sessions["acceptance_judge"] = {
+                        "verdicts": 0, "judged_question_ids": [],
+                        "reason": "judge session skipped: all complete question inputs exceed native limit",
+                    }
+                elif len(judge_packets) == 1:
+                    judge_single_called = True
                     verdicts = list(
                         adapter.run_v3_acceptance_child(
-                            judge_packet,
+                            judge_packets[0],
                             role_instructions=_CQ_JUDGE_ROLE_INSTRUCTIONS,
                             reports=verdicts,
                             timeout_seconds=float(
@@ -2579,7 +2597,9 @@ def _cq_execute_batch(
                     }
                 )
             finally:
-                if not sessions.get("acceptance_judge", {}).get("groups"):
+                if input_failures:
+                    sessions["acceptance_judge"]["input_failures"] = input_failures
+                if judge_single_called:
                     child_teardowns.append(teardown_judge)
         else:
             sessions["acceptance_judge"] = {

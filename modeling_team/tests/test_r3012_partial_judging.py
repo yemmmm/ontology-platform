@@ -997,9 +997,12 @@ def test_judge_native_input_partition_preserves_complete_ordered_evidence():
     assert cli._cq_judge_input_packets(small) == [small]
 
 
-@pytest.mark.parametrize("failed_group", [None, 1])
+@pytest.mark.parametrize("oversized,failed_group", [
+    (None, None), (None, 1), ("first", None), ("first", 1),
+    ("all", None), ("all-but-last", None),
+])
 def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
-    tmp_path, capsys, monkeypatch, failed_group,
+    tmp_path, capsys, monkeypatch, oversized, failed_group,
 ):
     from io import StringIO
     from threading import Event
@@ -1009,6 +1012,12 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
     from modeling_team.tests.test_r3011_acceptance_runtime import _submit
 
     questions = [_question(f"cq-{index}") for index in range(11)]
+    oversized_ids = set()
+    for index, question in enumerate(questions):
+        if (oversized == "all" or (oversized == "first" and index == 0)
+                or (oversized == "all-but-last" and index < 10)):
+            question["answer_points"] = ["generic required point " + "y" * 1_100_000]
+            oversized_ids.add(question["question_id"])
     run_root, frozen = _write_run_root(tmp_path, questions)
     content = "generic approved evidence " + "x" * 150_000
     for role in ("coordinator", "modeling", "competency-question"):
@@ -1089,21 +1098,32 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
     )
     output = json.loads(capsys.readouterr().out)
     report = _read_report(run_root, frozen["batch_id"])
-    groups = report["sessions"]["acceptance_judge"]["groups"]
+    groups = report["sessions"]["acceptance_judge"].get("groups", [])
     assert report["sessions"]["acceptance_judge"]["judged_question_ids"] == [
         verdict["question_id"] for verdict in report["verdicts"]
     ]
-    assert len(groups) > 1
-    assert [qid for ids, _ in observed for qid in ids] == [q["question_id"] for q in questions]
-    assert len(sinks) == len(groups)
+    assert len(groups) == 0 if oversized in {"all", "all-but-last"} else len(groups) > 1
+    eligible = [q["question_id"] for q in questions if q["question_id"] not in oversized_ids]
+    assert [qid for ids, _ in observed for qid in ids] == eligible
+    assert len(sinks) == (len(groups) or (1 if eligible else 0))
     assert all(g["teardown"]["child_destroyed"] for g in groups)
-    assert output["full_pass"] is (failed_group is None)
-    assert code == (0 if failed_group is None else 1)
+    complete = failed_group is None and not oversized_ids
+    assert output["full_pass"] is complete
+    assert code == (0 if complete else 1)
+    cleanup = report["sessions"]["cleanup"]
+    assert cleanup["children_destroyed"] is True
+    assert len(cleanup["children"]) == 1 + len(sinks)
+    if oversized_ids:
+        assert set(report["sessions"]["question_judging"]["skipped"]) == oversized_ids
+        failures = report["sessions"]["acceptance_judge"]["input_failures"]
+        assert set(failures) == oversized_ids
+        assert all(f["reason_code"] == "judge-input-too-large" for f in failures.values())
+        assert all(f["failure_layer"] == "runtime/infrastructure" for f in failures.values())
     if failed_group:
         assert groups[0]["status"] == "runtime-incomplete"
-        assert len(report["verdicts"]) == 11 - len(groups[0]["question_ids"])
+        assert len(report["verdicts"]) == len(eligible) - len(groups[0]["question_ids"])
     else:
-        assert len(report["verdicts"]) == 11
+        assert len(report["verdicts"]) == len(eligible)
     assert (run_root / "competency-questions/frozen/freeze-0001.json").read_bytes() == original_freeze
     assert all(sink._thread is None or not sink._thread.is_alive() for sink in sinks)
 

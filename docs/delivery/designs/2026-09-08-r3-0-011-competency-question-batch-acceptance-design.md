@@ -170,7 +170,8 @@ runtime 默认创建一个独立 Acceptance evaluator 会话。完整 Judge 首�
 在同一 attempt 按冻结顺序连续贪心分组，复用完整本题判定 packet 与独立 native child/report sink；
 所有组绑定同一 freeze/model，不传前组裁决或旧 attempt 答案。宿主聚合全部题裁决，分母不变；
 逐组披露 packet digest、输入长度、实际会话结果与 teardown，不称单会话完整证据。
-完整单题仍超限返回 `judge-input-too-large`，不裁剪证据；未超限维持单会话形状。后者只使用冻结判定输入和 report sink，不持有
+完整单题仍超限记录逐题 `judge-input-too-large` 并跳过该题，继续其他合格题；
+原分母不变，不裁剪证据，未创建 Judge 不记为 child 清理失败；未超限维持单会话形状。后者只使用冻结判定输入和 report sink，不持有
 平台写、Team transport、创建/继续生产 run 或子 Agent 的能力。两种 packet、提示和报告都使用显式
 v3 版本，不修改旧 `ExaminerRolePacket/v1` 的 source/platform/acceptance 字段合同；旧角色提示中的
 逐题 fresh/Source report 要求在 v3 package 输入分派处换成 batch 合同，不能只修改调用参数。
