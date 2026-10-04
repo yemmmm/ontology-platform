@@ -3020,3 +3020,72 @@ def test_d1_missing_scope_is_a_typed_rejection_exit_2(monkeypatch, capsys):
         rmtree(RUNS_ROOT / f"{new_run_id}-ledger", ignore_errors=True)
         if lock_file.is_file():
             lock_file.unlink()
+
+
+def test_resumed_cq_appends_review_and_freeze_preserving_prior_approved_pool():
+    """Real saved package/restore and current review; no Agent or live platform."""
+    from modeling_team.tests.test_r3011_runner_wiring import _draft, _decision, _question
+    from modeling_team.competency_questions import CQContractError
+
+    harness = _BoundResumeHarness()
+    parent = None
+    new_run_id = None
+    try:
+        runner = harness.prepare()
+        questions = [_question("cq-public"), _question("cq-hidden", visibility="hidden")]
+        runner.handle_cq_outer_input({"action": "cq_interview", "text": "generic approved interview"})
+        runner._publish_cq_question_draft({"draft": _draft(questions)})
+        for question in questions:
+            runner.handle_cq_outer_input(_decision(runner, question_id=question["question_id"]))
+        frozen = runner.handle_cq_outer_input({"action": "cq_freeze"})
+        _settled_apply_intent(runner, ordinal=1, mode="dry_run")
+        saved = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
+        checkpoint = harness.run_root / "checkpoints" / saved["checkpoint_id"]
+        checkpoint_before = {p.relative_to(checkpoint): p.read_bytes()
+                             for p in checkpoint.rglob("*") if p.is_file()}
+        assert checkpoint_before
+        source_freeze = (harness.run_root / "competency-questions/frozen/freeze-0001.json").read_bytes()
+        runner.cleanup()
+        parent, new_run_id = _resume_later_stage(harness.run_root, saved["checkpoint_id"])
+        root = parent.run.root
+        reviews = root / "competency-questions/reviews"
+        old_review = (reviews / "cq-review-0001.json").read_bytes()
+        old_freeze = (root / "competency-questions/frozen/freeze-0001.json").read_bytes()
+        old_interview = (root / "competency-questions/private/interview-0001.json").read_bytes()
+        assert parent._cq_review_sequence == 1
+        assert parent._cq_draft_order == ["cq-review-0001"]
+        assert len(parent._cq_decisions["cq-review-0001"]) == 2
+        assert parent._cq_interview_sequence == 1
+        changed = _question("cq-public", question="revised generic question?", content_version=2)
+        new_draft = _draft([changed])
+        new_draft["draft_id"] = "cq-draft-0002"
+        new_draft["superseded_draft_id"] = "cq-draft-0001"
+        parent.handle_cq_outer_input({"action": "cq_interview", "text": "generic follow-up"})
+        published = parent._publish_cq_question_draft({"draft": new_draft})
+        assert published["review_id"] == "cq-review-0002"
+        with pytest.raises(CQContractError) as stale:
+            parent.handle_cq_outer_input(_decision(
+                parent, 2, content_digest=json.loads(old_review)["content_digest"],
+            ))
+        assert stale.value.reason_code == "cq_review_stale"
+        parent.handle_cq_outer_input(_decision(
+            parent, 2, decision="modify", modified_question=changed, question_id="cq-public",
+        ))
+        new_freeze = parent.handle_cq_outer_input({"action": "cq_freeze"})
+        assert new_freeze["freeze_id"] == "cq-batch-0002"
+        assert new_freeze["snapshot_digest"] != frozen["snapshot_digest"]
+        pool = parent._cq_freeze["questions"]
+        assert [q["question_id"] for q in pool] == ["cq-public", "cq-hidden"]
+        assert pool[0]["question"] == changed["question"]
+        assert pool[1]["content_version"] == 1
+        assert pool[1]["visibility"] == "hidden"
+        assert (reviews / "cq-review-0001.json").read_bytes() == old_review
+        assert (root / "competency-questions/frozen/freeze-0001.json").read_bytes() == old_freeze
+        assert (root / "competency-questions/private/interview-0001.json").read_bytes() == old_interview
+        assert (root / "competency-questions/private/interview-0002.json").is_file()
+        assert (harness.run_root / "competency-questions/frozen/freeze-0001.json").read_bytes() == source_freeze
+        assert {p.relative_to(checkpoint): p.read_bytes()
+                for p in checkpoint.rglob("*") if p.is_file()} == checkpoint_before
+    finally:
+        _drop_new_run(parent, new_run_id)
+        harness.remove()

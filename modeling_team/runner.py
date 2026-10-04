@@ -11081,6 +11081,46 @@ class TeamRunner:
         if cq_material:
             exposure = merge_exposure_union(plan.chain_roots, root)
             self._cq_merge_exposure_evidence()
+            # Restore the approved pool's replay inputs, not old role threads or
+            # terminal flags. New drafts/reviews may then append a version while
+            # unchanged questions retain their actual recorded approvals.
+            sources = {str(artifact.get("source") or "") for artifact in artifacts}
+            try:
+                for source in sorted(sources):
+                    if source.startswith("competency-questions/reviews/cq-review-"):
+                        snapshot = json.loads(root.joinpath(*source.split("/")).read_text())
+                        draft_ref = snapshot["draft_ref"]
+                        if (draft_ref not in sources
+                                or not draft_ref.startswith("competency-questions/private/draft-")):
+                            raise ValueError("review draft is not in the verified package")
+                        document = json.loads(root.joinpath(*draft_ref.split("/")).read_text())
+                        review_id = snapshot["review_id"]
+                        self._cq_drafts[review_id] = {
+                            **snapshot, "questions": document["questions"],
+                            "draft_path": str(root.joinpath(*draft_ref.split("/"))),
+                        }
+                        self._cq_draft_order.append(review_id)
+                        self._cq_review_sequence = max(
+                            self._cq_review_sequence, int(review_id.rsplit("-", 1)[1]),
+                        )
+                    elif source.startswith("competency-questions/private/interview-"):
+                        self._cq_interview_sequence = max(
+                            self._cq_interview_sequence,
+                            int(Path(source).stem.rsplit("-", 1)[1]),
+                        )
+                for source in sorted(sources):
+                    if source.startswith("competency-questions/reviews/decision-"):
+                        record = json.loads(root.joinpath(*source.split("/")).read_text())
+                        review_id = record["review_id"]
+                        if review_id not in self._cq_drafts:
+                            raise ValueError("decision review is not in the verified package")
+                        self._cq_decisions.setdefault(review_id, []).append(record["decision"])
+            except (OSError, ValueError, KeyError, TypeError) as exc:
+                raise CheckpointError(
+                    "checkpoint_incomplete", "packaged CQ review state cannot be restored",
+                    obj="competency-questions", phase="checkpoint-resume",
+                    retry="re-save the checkpoint with its linked CQ drafts and reviews",
+                ) from exc
 
         freeze_restored = False
         # Every stage kind packages the frozen pool once a freeze exists
