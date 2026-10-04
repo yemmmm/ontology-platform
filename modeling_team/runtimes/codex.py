@@ -1001,6 +1001,7 @@ class _CodexChildResource:
         self._pump_stop = threading.Event()
         self._stdout_pump: threading.Thread | None = None
         self._pump_started = False
+        self._output_failure: dict[str, str] | None = None
         self._output_pump_deferred = bool(self.spec.get("defer_output_pump"))
         self._child_agent: _Agent | None = None
         self._adapter: CodexRuntimeAdapter | None = None
@@ -1086,6 +1087,7 @@ class _CodexChildResource:
         if adapter is None or agent is None:
             return
         while not self._pump_stop.is_set():
+            output_stage = "read"
             try:
                 with agent.io_lock:
                     if self._pump_stop.is_set():
@@ -1102,6 +1104,7 @@ class _CodexChildResource:
                         if not self._watchdog_stop.is_set():
                             self._record_failure("runtime", "child-output-malformed")
                         return
+                    output_stage = "metrics"
                     metrics = getattr(self, "metrics", None)
                     if metrics is not None:
                         try:
@@ -1119,6 +1122,7 @@ class _CodexChildResource:
                     # not leak model-message deltas/completions into the generic
                     # adapter message accumulator; lifecycle, provider-error, and
                     # terminal notifications still use the established dispatcher.
+                    output_stage = "notification"
                     method = value.get("method")
                     params = value.get("params")
                     item = params.get("item") if isinstance(params, Mapping) else None
@@ -1163,19 +1167,27 @@ class _CodexChildResource:
                 if not self._watchdog_stop.is_set() and getattr(agent, "runtime_failure", None) is None:
                     self._record_failure("runtime", "child-output-closed")
                 return
-            except Exception:
+            except Exception as exc:
                 if not self._watchdog_stop.is_set() and getattr(agent, "runtime_failure", None) is None:
-                    self._record_failure("runtime", "child-output-failed")
+                    with self._terminal_lock:
+                        if self._record_failure("runtime", "child-output-failed"):
+                            self._output_failure = {
+                                "exception_class": type(exc).__name__,
+                                "output_stage": output_stage,
+                            }
                 return
 
     def failure_evidence(self) -> dict[str, str] | None:
         """Return only fixed sanitized infrastructure codes for the carrier."""
-        if not self.failure_category or not self.failure_reason:
-            return None
-        evidence: dict[str, Any] = {
-            "failure_category": self.failure_category,
-            "reason_code": self.failure_reason,
-        }
+        with self._terminal_lock:
+            if not self.failure_category or not self.failure_reason:
+                return None
+            evidence: dict[str, Any] = {
+                "failure_category": self.failure_category,
+                "reason_code": self.failure_reason,
+            }
+            if self._output_failure is not None:
+                evidence.update(self._output_failure)
         startup_stage = self.spec.get("_startup_failure_stage")
         if startup_stage in {"initialize", "thread-start", "mcp-preflight", "turn-start"}:
             evidence["startup_stage"] = startup_stage

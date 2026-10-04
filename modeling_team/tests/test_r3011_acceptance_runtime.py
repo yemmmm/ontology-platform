@@ -1250,7 +1250,10 @@ def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
         proxy.stop()
 
 
-@pytest.mark.parametrize("startup_failure", ["plain", "rpc", None, "steps", "large"])
+@pytest.mark.parametrize("startup_failure", [
+    "plain", "rpc", None, "steps", "large",
+    "pump-read", "pump-metrics", "pump-notification", "pump-first",
+])
 def test_native_public_judge_startup_failure_preserves_first_blocker(
     tmp_path, monkeypatch, startup_failure,
 ):
@@ -1259,7 +1262,7 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
     from threading import Event
     import hashlib
 
-    from modeling_team.acceptance_runtime import ExaminerRuntimeBlocked
+    from modeling_team.acceptance_runtime import ExaminerRuntimeBlocked, ExaminerRunMetrics
     from modeling_team.contracts import repository_root
     from modeling_team.model_routing import load_team_model_profile
     from modeling_team.runtimes.codex import (
@@ -1304,11 +1307,27 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
     monkeypatch.setattr(adapter, "preflight_host_auth", lambda: auth)
     monkeypatch.setattr(adapter, "_ensure_standalone_provider_sessions", lambda: None)
     monkeypatch.setattr(adapter, "_seed_models_cache", lambda *args: None)
+    pump_stage = (startup_failure.removeprefix("pump-")
+                  if isinstance(startup_failure, str) and startup_failure.startswith("pump-")
+                  else None)
+    def pump_exception(*args):
+        raise TypeError("private sentinel: fixture credentials and notification body")
+
     def idle_output(agent, timeout):
+        if pump_stage in {"read", "first"}:
+            pump_exception()
+        if pump_stage:
+            return json.dumps({"method": "item/started", "params": {
+                "threadId": "fixture-judge-thread", "item": {"type": "userMessage"},
+            }})
         Event().wait(timeout)
         return None
 
     monkeypatch.setattr(adapter, "_read_output_line", idle_output)
+    if pump_stage == "metrics":
+        monkeypatch.setattr(ExaminerRunMetrics, "observe_notification", pump_exception)
+    elif pump_stage == "notification":
+        monkeypatch.setattr(adapter, "_notification", pump_exception)
     sinks = []
     start = ReportSinkServer.start
 
@@ -1356,7 +1375,7 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
                 assert _packet_canonical(expanded) == original_bytes
                 assert hashlib.sha256(original_bytes).hexdigest() == packet.canonical_digest
                 assert f"PACKET_DIGEST={packet.canonical_digest}" in text
-            if startup_failure == "steps":
+            if startup_failure == "steps" or pump_stage:
                 return {"turn": {"id": "fixture-judge-turn"}}
             for question_id in sinks[0].batch_contract.question_ids:
                 response = _submit(
@@ -1369,6 +1388,14 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
 
     monkeypatch.setattr(adapter, "_rpc", rpc)
     observed_metrics = []
+    if pump_stage == "first":
+        def first_failure_output(resource, adapter, agent):
+            resource._adapter = adapter
+            resource._child_agent = agent
+            assert resource._record_failure("runtime", "fixture-first-failure") is True
+            resource._run_stdout_pump()
+
+        monkeypatch.setattr(_CodexChildResource, "start_stdout_pump", first_failure_output)
     if startup_failure == "steps":
         def batch_output(resource, adapter, agent):
             metrics = resource.metrics
@@ -1389,13 +1416,30 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
 
         monkeypatch.setattr(_CodexChildResource, "start_stdout_pump", batch_output)
     try:
+        teardown = {}
         def run():
             return adapter.run_v3_acceptance_child(
                 packet, role_instructions="judge the selected batch", reports=[],
-                timeout_seconds=1,
+                timeout_seconds=1, teardown=teardown,
             )
 
-        if startup_failure in {"plain", "rpc"}:
+        if pump_stage:
+            with pytest.raises(ExaminerRuntimeBlocked) as blocked:
+                run()
+            if pump_stage == "first":
+                assert blocked.value.evidence["reason_code"] == "fixture-first-failure"
+                assert "exception_class" not in blocked.value.evidence
+                assert "output_stage" not in blocked.value.evidence
+            else:
+                assert blocked.value.evidence["reason_code"] == "child-output-failed"
+                assert blocked.value.evidence["exception_class"] == "TypeError"
+                assert blocked.value.evidence["output_stage"] == pump_stage
+            assert "private sentinel" not in json.dumps(blocked.value.as_dict())
+            assert "message" not in blocked.value.evidence
+            assert teardown["child_destroyed"] is True
+            assert teardown["private_root_removed"] is True
+            assert teardown["socket_root_removed"] is True
+        elif startup_failure in {"plain", "rpc"}:
             with pytest.raises(ExaminerRuntimeBlocked) as blocked:
                 run()
             assert blocked.value.evidence["reason_code"] == "child-start-failed"
