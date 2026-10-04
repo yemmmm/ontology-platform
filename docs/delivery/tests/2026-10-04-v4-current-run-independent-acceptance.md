@@ -719,3 +719,143 @@ v4 总体仍 PARTIAL；L2／L3、外部实际 SQL／API／脚本执行和真实 
 hidden_cq_status 单独记录 10/10 PASS，public_cq_status 单独记录 7/11＋3 insufficient＋1 review，
 消除旧 hidden-only bounded_cq PASS 的范围歧义；2/5 starts、剩余 3、无 active。
 本轮完成的是当前有界验证阶段，不以“完成”要求全部 v4 PASS，也不修改旧冻结／历史结果。
+
+## Round 16：Consumer 逐子句证据规划与提交前复核提示合同 PASS
+
+仅只读检查冻结的实际 v3 Consumer package 和既有 test_v4_consumer_answer_contract.py。
+新增 7 行要求按当前题干各子句规划必要路径、不同结果参与者、条件与未知，并在提交前核对
+本题 retained returns 是否支撑结论；缺口仅以既有授权工具窄补读或明确 unresolved。
+静态对比确认删去这 7 行后原提示逐字不变：必要分页、完整原始返回、原 host handles、
+不扩 scope／不写平台和逐题隔离仍保留，没有业务题 ID、答案或 Judge note 回流。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_v4_consumer_answer_contract.py \
+  --basetemp=/tmp/v4-independent-round16-prompt
+```
+
+结果：**2 passed，0.08 秒**（本模块实际收集 2 项，不冒充宿主转交的 3 项组合结果）。
+两文件最终 hash 分别为 `7f80f9a6ee3965c770dde7ecbb2c4114f0ce092b95539452b49404fa733afc24`
+和 `d896caaa95d805e04899d7ddfabaf47c7a25ef483eaf6fc54be9ad19415219cc`，与交接一致；
+diff 与文档链接／格式检查通过。instruction-only 不重复完整 Team。
+
+**本轮独立提示合同 PASS，0 新 Critical／High。** 只证明通用指导与合同保持，不证明实际
+Consumer 作答改善或未来语义 PASS。未审未冻结的 CQ 恢复代码，未读取实际 corpus／private
+答案／Judge 评语，未实际 run／模型／live／重判，未改代码、源、旧报告或提交。
+现有 public／hidden 结果各自保留；sol/medium／normal、fast 关闭要求不变，未调用 Claude。
+
+## Round 17：已验 checkpoint CQ 评审状态恢复合同 PASS
+
+仅只读检查冻结 runner.py 与 test_r30015_resume.py。恢复局部从已验 package artifacts
+重建 review 对应 draft／题序／decisions，并恢复 review／interview 最高编号；不恢复旧 thread、
+terminal 或生产 handoff，不改源 profile／普通模型写入路径，不新增恢复框架。
+既有 restore_checkpoint_artifacts 的摘要／路径验证先于恢复，CQ host-private material 仍按
+原 artifact 可见性保存；既有 frozen pool 重验证与 exposure union 保持，不把公开题变隐藏。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r30015_resume.py \
+  --basetemp=/tmp/v4-independent-round17-cq-restore
+```
+
+结果：**46 passed，4.27 秒**。通用真实 package save → cleanup → restore → current draft／
+review → modify(v+1) → new interview／freeze，验证新编号追加、原批准与未改题保留完整 public＋hidden
+池，旧 digest 用于新 review 返回 cq_review_stale，源 freeze／旧 review／interview／checkpoint
+字节不变。原后期恢复／冻结验证回归保持；此局部不在 S4 acceptance continuation 读取路径，
+不扩大到 MCP 字符串注解或真实 launch 参数修复。
+另 **3 组独立包引用负控**在临时目录的恢复 seam 检查缺 linked draft、坏 review JSON、
+decision 引用不存在 review：均 checkpoint_incomplete／checkpoint-resume typed 反馈，原文件不改。
+上游实际 package digest/path 验证由原合同负责，负控不伪造可信身份以扩展本轮设计要求。
+证据及两文件 hash 在 `independent-functional/round17-cq-restore-link-probes.json`。
+
+**独立恢复合同 PASS，0 新 Critical／High。** 最终 diff SHA-256 与交接
+`58a10e24b157c5c3cbf1aa5b12ee3c5063132dde462c55a54f9cab7d8a70c5ba` 一致，
+runner／test hash 与冻结交接一致，diff 和文档链接／格式检查通过。未重复父 full Team，
+不将该恢复测试当实际 Start3／新题冻结或语义通过；本轮未读 actual private／问题／答案／Judge body，
+未启动真实 run／模型／live、改 code／源／旧报告、调用 Claude 或提交，sol/medium／normal 不变。
+
+## Round 18：Host CQ 内容替换与最终冻结指南文档合同 PASS
+
+本轮仅核对 team-runbook.md 新增 5 行指南与公开调用合同，不读取任何 workspaces 实际
+CQ／private／Consumer／Judge 正文，不重新语义评分或操作生产 run。
+Runner 的 _cq_effective_freeze_questions 对 slice 草稿已有同 ID 保留原题，只有 recorded
+modify／supplement 的完整 modified_question 才替换；validate_review_decision 要求该字段
+并验证完整题结构。_handle_cq_review 绑定当前 snapshot／version／digest 并持久保存决定。
+因此指南要求显式替换、读取当前 pending review 再批准／final freeze 与实现一致，
+核对有效池／未变题／完整分母和保留中间 freeze 的说明不宣称中间成功或暗改旧原件。
+
+公开 Python Host submit_cq_review 会原样封装 modified_question；其静态字符串注解／MCP
+形状不在这项文档审核范围，不据此宣称任意字符串输入能作为完整题对象通过校验。
+此前 Round 17 的泛化真实 checkpoint／current review／modify(v+1)／new freeze 证据可按
+其原基线复用，本轮不运行新测试或把它当当前 Start3 语义结果。
+
+**本轮文档／Host 流程合同 PASS，0 新 Critical／High。** runbook 相对链接与 diff 格式检查
+通过，本记录链接／格式检查通过；不修改指南、代码、源／旧报告或其他人文件，不提交。
+生产仍运行，当前 Start3 的模型／运行／语义状态等待宿主后续安全元数据，不能由本轮推为 PASS。
+
+## Round 19：字段作用域取值含义通用提示合同 PASS
+
+只读检查实际 v3 Consumer package 与 test_v4_consumer_answer_contract.py 的冻结差异。
+新增 3 行要求区分普通字段定义与具体分类／编码值的含义，按字段作用域读取匹配的 enum／
+value-meaning 和必要嵌套映射细节；资料仍不支持时保留 unknown。
+这是通用语义消费指导，不提供具体代码值、业务答案／题 ID，不增加工具或新的流程硬门。
+静态移除新增 3 行后原提示逐字保持，获准 scope、逐题隔离、完整原始返回与原 handles 不变。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_v4_consumer_answer_contract.py \
+  --basetemp=/tmp/v4-independent-round19-value-meaning
+```
+
+结果：**2 passed，0.08 秒**。prompt SHA-256
+`eb1c016edf86feb94b2e9702d1134225f204927839be9b0e9821bf3697464a8c`、test SHA-256
+`d6a2cd6d47e39f9c8cec944ebb66ee6aa6e648289a0a34580d26c8869d2f6083`
+均与交接一致；focused diff 与本记录链接／格式检查通过。
+
+**本轮独立通用提示合同 PASS，0 新 Critical／High。** 不是当前模型语义验收。
+宿主转交的当前安全汇总为公开 11 题执行／8 pass、隐藏 10 题执行／8 pass，均仍 PARTIAL；
+本审核者没有读取实际题／答案／Judge 正文，也不作新裁决。旧 hidden10/10 PASS 继续作为其
+旧范围／状态历史结果保留，不能覆盖当前 hidden8/10；旧 public 与失败报告亦不回填成功。
+本轮未创建、继续或修复任何实际验收 run，未读取私有 root artifacts，未改 prompt／test／
+代码／旧报告或其他 dirty 文档，未调用模型／Claude、未提交，沿用 sol/medium 要求。
+
+## Round 20：当前最终收口 scope／清理安全元数据审核 PASS；v4 PARTIAL
+
+仅只读核对宿主 authorization.json、start3-test-subject-cleanup.json、
+start3-final-retained-resource-verification.json、start3-final-preservation-verification.json、
+start3-retained-native-config-verification.json 及交付 record 当前头／末尾安全汇总。
+不读取 *.private、raw batch body、实际 QA／Judge 正文或 keys，不运行模型／生产流程。
+本轮只是宿主报告元数据的 scope／一致性审核，不是新语义 Judge。
+
+当前完整 hidden2 执行 10／有效裁决 10、9 pass、H09 question-answer-review；完整 public3
+执行 11／有效裁决 11、9 pass、P01／P06 insufficient，两轮 full_pass=false，均 PARTIAL。
+22／26 合格响应 stable、binding 前后一致、无 drift／runtime error，teardown 全成功为宿主转交
+安全运行汇总；不足与待复核不删题、缩分母或提升为 PASS，旧 hidden10/10 或前轮8pass不覆盖当前结果。
+public2 执行 11 个 Consumer answers／0 Judge 裁决，child-output-failed 的具体异常丢失、
+原因未确定，仍 runtime-blocked；后续 public3 正常裁决不等于修复该异常，也不据运行失败推模型缺失。
+
+authorization 当前 closed-partial，overall_v4／bounded_cq 为 PARTIAL，fresh starts 3/5、剩余 2。
+安全 preservation 清单有 14 managed runs 全 exited、23 文件 all_unchanged=true、所有已记录
+bootstrap 撤销；这里验证安全清单与计数，不打开原件重新读业务内容或回算其语义。
+清理记录 11 HTTP receipts，包括两测试 key 撤销后401、用户停用／membership 与本轮财务角色删除。
+四个保留 project／ontology／workspace／Protection Set 管理 GET 均200、保护成员4/4，
+宿主明确原 grants 保留不变；清理管理凭据亦撤销，不删除模型或历史证据。
+
+四轮 8 retained native configs 全 OpenAI／gpt-6.1-sol／medium、service_tier=fast／fast_mode=true，
+与台账最新 requested_service_tier=fast 一致。旧生产四线程 normal 不能热切换的历史记录不回填。
+这只证明配置事实，不保证提速、响应时间或计费效果，也不把此前 normal 阶段说成 fast。
+代码提交 d1967b9 与前 full Team 2329 passed／2 skipped／314 subtests 为机械交付元数据；
+Round19 独立合同 2 PASS 按原输入复用，本轮不新增 full 测试、产品重启或提示效果裁决。
+Round18 runbook 5 行指南证据亦按原差异复用，不扩大 CQ／Host 流程审核。
+
+**Round20 安全元数据／scope审核 PASS，0 新 Critical／High；当前 v4 总体 PARTIAL。**
+当前阶段诚实收口不要求所有v4 PASS；H09题／参考对齐、P01／P06消费不足和public2原因未定保留。
+L2／L3、外部实际 SQL／API／脚本执行、真实非stub OWL推理无本轮完整验收，不将其前置到静态能力。
+交付 record 与本记录链接／fences／格式／diff检查通过；本轮只改本记录，没有还原其他dirty文件，
+没有调用 Claude、模型或真实查询，没有修改源／旧报告／代码或提交。

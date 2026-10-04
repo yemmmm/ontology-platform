@@ -1,10 +1,13 @@
 # 2026-10-04 v4 真实建模与独立验收记录
 
-当前收口（2026-10-04 14:22 +08）：v4 **PARTIAL**。保留隐藏集10/10 PASS；
-最新完整公开集11/11有效裁决，7 PASS、3语义消费不足、1题目/参考范围待复核。
-两次生产start已用，五次授权余3；验收-only续跑不消耗建模次数。当前无active run，
-fast关闭；临时凭据和身份已清理，源模型、保护集、检查点及原失败报告保留。
-该状态不等于全v4、L2/L3或外部在线执行PASS；以下各时点记录原样保留。
+当前收口（2026-10-04 17:13 +08）：v4 **PARTIAL**。Start3 已完成只读生产交接。
+最新完整隐藏集 9/10 PASS，H09 题目／参考范围待复核；最新完整公开集 9/11 PASS，
+P01/P06 语义消费不足。两轮题目全部执行、有有效裁决且无模型漂移，旧结果原样保留。
+五次生产授权已用 3 次、剩余 2 次；全部 14 个托管运行已退出，当前无 active run。
+临时测试密钥撤销后401、用户停用、成员关系及本轮财务角色删除；模型与保护集保留。
+通用 Consumer 提示修复 d1967b9 已独立合同复核；新8位验收角色实际均 solmedium+fast，
+已启动的旧生产4线程保持normal。公开public2输出处理异常根因未定，重试成功判题不等于修复。
+该结果不等于全 v4、L2/L3、完整 OWL 推理或外部在线执行 PASS；各历史轮次保留如下。
 
 ## 授权与验收边界
 
@@ -741,3 +744,262 @@ source-and-public-reports-digests-final.json保留于host目录；旧final-retai
 修复e994526只修运行失败范围与通用读取指引，最终Team2328/2skip、独立Round14通过。
 当前不扩大平台/验收器或新控制机制；原timing native Modeling窗口100.664min仍保留，
 不从含provider/tools/wait的窗口捏造独占有效比例。
+
+
+## 2026-10-04 14:45 +08 继续原授权流程
+
+用户继续，原五次限额仍2已用/3剩余，solmedium/normal，非新额度。
+前轮hidden10PASS/public11七PASS三不足一review及原报告保持，不从已关闭阶段
+重置余额。当前检查post-freeze正确版本化修题路径；另以通用method补齐Consumer
+题干各子句→本题证据→提交前检查，禁止真实grader评语/答案回流。
+S01不能在原handoff/freeze上暗改；源模型缺失未证实，不为Consumer失误重做物化。
+通过prompt相关检查后优先actual S4 public5，semantic start0，仍原完整11分母。
+
+
+继续后流程判断：terminal源Host写通道已关闭，S4限定原handoff batch/freeze，
+均不能newfreeze修S01。live CQ Runner支持modify/supplement→新draft/review→append freeze，
+但materialization checkpoint恢复只赋freeze/phase，旧CQ draft/order/decisions与review/interview
+sequence未恢复，会使已有记录编号冲突。修复当前真实新版本路径的这个局部恢复缺口，
+不改旧freeze/旧report、不新增mutation/recovery机制，先验证再production Start3，
+会占用原授权1次，复用现model/材料和已成功的写入，不能重放物化。
+Host Python/FIFO modified_question完整对象路径将使用；HostMCP str注解缺口未使用/未修。
+
+Consumer prompt仅7行通用子句→证据→submit前复核，结果参与者/必要路径/条件未知
+仍按本题取证，缺口窄读或明示，不泄露具体题/答案、不引入新工具/硬门。
+owner组合3pass；独立Round16实际模块仅2collected/2pass，另静态保真检查，
+无新增Critical/High。Prompt与test两owned已提交；提示PASS不等于语义改善。
+CQ restore代码在独立worker工作中，最终定向/独立/全Team及实际Start3尚未完成。
+
+
+CQ append恢复最终freeze 2026-10-04T06:57:06Z，两owned runner/test diff
+58a10e24b157c5c3cbf1aa5b12ee3c5063132dde462c55a54f9cab7d8a70c5ba。
+实际包保存→恢复 RED review_sequence=0；局部40行恢复已verified package的draft/order/
+decisions及review/interview最高编号，未恢复旧thread/terminal/handoff。泛化GREEN
+新review/interview/freeze0002，完整原pool/未变approved题保留；旧摘要套到新review
+cq_review_stale；source/freeze/review/interview/checkpoint字节不改。170passed/17.87s，
+Ruff新增0（runner既有4→4）、diffcheck通过，最终父Team和独立Round17进行中。
+真实源包仅metadata核对有5draft/5review/53decision/3interview/1freeze，
+未将任何private业务正文送修复/独立agent。选用现有CQ-private新访谈触发→新draft
+→currentreview审批→appendfreeze，不沿旧review暗改已冻结内容。
+Consumer修订提交2354a66（prompt/test2files）；无需仅instruction重启产品服务。
+
+
+恢复独立Round17 PASS：46passed/4.27s + 缺draft/坏reviewJSON/未知decision review
+三负控typed checkpoint_incomplete，原件不改；无新增Critical/High。父唯一全Team
+2329passed/2skipped/314subtests/178.94s真实exit0；2owned起止diffSHA同
+58a10e24b157c5c3cbf1aa5b12ee3c5063132dde462c55a54f9cab7d8a70c5ba。
+Ruff新增0/diffcheck/格式通过，focused恢复调用检查，旧GitNexus索引未扩展/无graph覆盖宣称。
+没有backend/frontend改动，不restart产品服务。实际Start3将沿原授权/同scope复用模型，
+从Start2 materialization_progress0002新生产thread接续；semanticstart出现才计1。
+
+
+恢复修复提交76eda88。Start3 managed start 2026-10-04T07:01:25.788831Z/PID446177，
+actual semanticstart07:01:54.049810Z，baseline
+75c9c6e6e26efde28e1c86a1fc21595427b45ad30921d5426eecb431b4571675。
+原额度从2→3 consumed、余2，非追加授权；本次用户继续到realstart约16min。
+四生产角色actual native thread与隔离TOML现场核验solmedium/service_tier无fast，
+新CQ-private访谈已消费/审核等待窗口open；新版本/新freeze/最终Judge尚未完成。
+新的只读test subjects/key与setup11HTTPreceipts独立保留start3-*目录证据，
+原public phase revoked keys/旧cleanup/旧报告不改；当前test身份active不冒称已清理。
+
+
+Start3 actual CQ：private新访谈ordinal4、draft/review0006正确追加，未覆盖源3访谈/5review。
+新draft仅S01v2字段及依据改变，另外13个slice/hidden题逐字等于旧freeze，panorama7由
+原批准恢复保留。复用既有CQ代审权复核S01点1/点2题意与批准来源，14个当前绑定批准accepted。
+父第一次直接approve期待existing slice内容替换是Host调用选择错误：pool保留首次ID，
+freeze0002仍完整旧内容，父期望onlyS01变更assert/exit1准确发现；不是恢复平台缺陷。
+纠正用当前review6/version7/digest和完整S01v2对象explicitmodify/revision2，accepted。
+CQ按修改决定重发review0007/version8；中间freeze0003内容已对齐但该review仍pending，
+未用于handoff。随后当前14题批准accepted/无pending review，再发布final freeze0004，
+完整21题ordering/visibility和未变20题逐字保留，only S01v2。旧freeze1/2/3原样保留。
+将该Host流程缺陷的防错说明持久写入权威runbook，不加平台硬门/guard或新编排机制。
+
+最终cq-batch0004 snapshot digest
+sha256:a6d7b910343c8b44a4a170e30c94888fff8eb2aa937bd5f6534fbac94e58c7a2，
+physicalSHA596b1d76302592783616cbba48b242630e0b836280488754c66e39da1d756b4d。
+review绑定cq-review0007/contentversion8，decisiondigest
+sha256:713e90671f05c2fa9b8e06441e85c4ea0808a968978de714cac479e44284e6c1。
+源oldfreezeSHA420b5f770c0e0b96d63ea3b575f0d79334090b06ddb892c5b5b701a929623d99不变。
+final人工定位检查在start3-cq-final-freeze-verification.json；中间v2-verification也保留。
+当前仍RUNNING/production-role交付进行，未发布finalhandoff/未做新语义裁决，不提前PASS。
+
+
+15:16 +08，Modeling/Coordinator/Protocol实际消息确认r5 candidate/675项/11gaps
+及source/workspace摘要不变；原pending193-create aggregate已被三definite clean applied
+parts精确覆盖，uncovered0/payloadmismatches0，12checkpoint Batches均applied/zero findings，
+明确superseded/no create replay/no new mutation approved。native Protocol执行当前
+authorized semantic governed readback，生产terminal尚待，不能据对账直接判质量PASS。
+
+
+15:40–15:43 +08，Protocol当前生产凭据正确隐藏4个受保护成本资源，未当作不存在。
+宿主用本轮现有finance只读测试身份GET四资源200，原SourceSignature/GraphSet一致；
+保护集管理GET只读，4成员及原grant完全不变，短期管理bootstrap已撤销。
+实际protected定义/政策/映射semantic_definition等于批准r5，mapping_definition及
+默认role/ref规范化后的3列完全等于r5。GETresource对standardCost仅投影label，
+宿主误选不支持properties readmodel获400 unsupported_read_model（调用选择错误，非修复点）；
+改用既有generic property-list exact entity查询取得唯一owl:DatatypeProperty/xsd:decimal，
+完整terminal页。原始授权读回独立留private0600宿主文件，不改原冻结材料/报告。
+两组host-chosen question先register再answer正式Owner通道回传当前生产原始读回，
+首组Runner accepted，供Modeling/Coordinator转Protocol完成read-only closure；
+不是独立CQ诊断或语义裁决，不传凭据，不请求新写入或grant。生产仍RUNNING，
+尚未handoff，不把validation conforms或development_stub reasoning当业务语义PASS。
+
+
+15:47–15:49 +08，Protocol本身terminal governed relation链348/352，其余4protected
+关系请求宿主。Host误选statement-list entity参数（该模板未使用该过滤），三响应均
+100项/has_more=true，保留为incomplete raw，不宣称4关系已读回、不作质量结论。
+随后复用既有finance-governed scoped read-only SPARQL，VALUES只列批准plan4个精确
+(s,p,o)；200返回恰好4条、truncated=false/集合等于原plan。新private raw保留，
+保护集原观察时间07:33:21.295450Z一并正式register/answer。Modeling实际核对
+4端点/方向等于r5，无语义修订；生产仍待Protocol lifecycle final。
+
+用户最新明确“建模team全部开启/fast模式”，覆盖此前normal/fast off；模型effort仍
+solmedium，父与repair agents不在该Team模式范围。ledger新增时间化偏好，
+已准备hidden验收launcher现有MODELING_TEAM_CODEX_SERVICE_TIER=fast opt-in。
+当前Start3四生产native已启动回合仍normal，没有即时fast已生效的宣称；
+Codex子agent只读核查既有热切换控制路径及后续实际配置，未重启/耗新start。
+
+
+16:02–16:05 +08，原生MCP三只读调用get_build_session270.837s、
+get_modeling_context145.393s（07:58:54.759Z完成）、get_project_build_context
+143.333s（08:01:18.103Z完成）；相同Host REST modeling-context200/0.237s。
+Codex子agent仅safe meta核查：54elicitation全accept/54resolved，无pending审批或
+error事件；08:05:12Z Protocol started/completed55/55，已有send_team_message完成。
+没有handler入出/Host接收耗时，不能分配DB/stdio/dispatch原因或据此判死锁；
+当前runtime/AppServer↔MCP端到端长延迟，已返回，不追加修复/重启或新start。
+
+16:04:13 +08实际Protocol消息确认bounded production closure ready：公共generic
+关系+当前Host finance授权精确4关系读回覆盖批准352条；ordinary/protected注解与r5一致；
+10个exact mapping/value-property anchor terminal/non-degraded，涉及18enum/6family、
+3public TableMapping及2JoinMapping。generic JoinMapping未投影join_direction，
+方向仅原immutable applied payload/Attempt，明确不冒称新投影。静态mapping，无SQL/
+脚本/API执行；新Session completed revision2，get_build_session lease/batch空，
+project active_sessions空且recent cursorterminal，workspace/source不变，lease/recovering
+inactive，无语义write/replay/unknown。尚待三角色最终report及CQ handoff，仍不语义PASS。
+07:57:33.830337Z materialization_progress0001保存accepted/289artifacts，digest
+sha256:8ac9f8751973e084ce08b5737ee15a2b6ea0bca4dbb7ed6277ad9ad321237750，
+保护当前CQ4/readback成果，不改任何旧freeze/report。
+
+
+16:12:31 +08 final CQ4 handoff Host提交，Runner accepted/cq-handoff-complete。
+实际production-handoff ready=true/pending_writes=false/unknown_writes=[]/write-phase
+read-only，三role_states completed；现mapdigest
+986bb03dfbdafd296d69fa1e1e8a5af796e3dbd4696131b89135e52f5e4e40c8，
+原approvedr5/source/workspace不变。handoff物理SHA
+5494fd9bb5888f9dbd533ede8a6353f495fa91c44d3a38ae401184c293d20eaa，
+acceptance attempt0001/newcq-batch0004，joint008B checklist pending不当cq_semantic前置门。
+16:13 +08 启动newfreeze0004完整hidden10独立cq-acceptance，指定openai-sol-medium
+及现有env opt-in fast；主native角色producer仍旧normal，后续新Examiner/Judge只请求fast，
+当前尚待actual配置/grade。验收start0，五次授权仍consumed3/remaining2。
+
+
+16:20 hidden attempt0001全10已执行/10有效裁决，8pass，H01/H08
+model-recall-insufficient，full_pass=false/退出1语义结果；无skipped/pending。
+17合格replay各qid stable，无unavailable/drift，pre/postmodelbinding相等、
+lifecycle_errors空，2child teardown/forwarder全部true。两fresh native配置实际solmedium
+service_tier=fast/features.fast_mode=true，预退出缓存保留；旧生产4thread仍normal。
+raw report physicalSHA30cb3e51039035539acc558edc43ce3b577b1b8467d03622861900106b23f22c。
+旧hidden10pass不覆盖本批，旧批原报告/新批8pass同时保留。Root-only诊断待资格核对，
+当前不把model-recall-insufficient提升为模型表达缺失或改PASS。
+16:22:15.221416 +08 CQ acceptance partial正式收口accepted，digest绑定本rawreport；
+16:27时旧生产managed仍launched，pending只completed closure，无当前审批。
+收口后受控stop accepted，16:29:12.609840 +08 managed exited/exit0，
+新hidden rawSHA逐字未改，Writer资源完整，不是验收之前stop。
+16:31以本production_handoff0001走S4全公开11，新run start3-public1，
+新Finance只读test身份仍active未清理，modelprofile solmedium + fast，semanticstart0。
+只读Prompt检查显示现有方法未明确字段作用域编码→enum/value-meaning及嵌套mapping
+核对通路；仅候选通用指引缺口，不含实际private题/代码/答案，当前公开轮先不改输入。
+
+
+## 2026-10-04 16:48 +08：Start3 第一对完整验收与通用提示修复
+
+公开 start3-public1 08:31:10.664850Z–08:37:25.730551Z，managed exit1，
+cq-batch-0004/attempt-0002：11回答/11有效裁决，8 PASS，P01/P02/P06
+model-recall-insufficient；全4切片 PASS，S01修订范围复核通过。不裁掉失败题或缩小分母。
+24合格响应 replay stable，无 unavailable/drift，pre/post binding 完全相等、lifecycle_errors空，
+2child teardown/forwarder全部已完成。物理 report SHA256
+5dfecf27a0fa89964320a8f86a27c029d82a306c5be5ba25e010b9d71e0f1a2b。
+公开轮请求 fast，但即时 TOML 未在清理前采到，不把请求当实际配置证据；此前隐藏轮两实际
+fresh native TOML solmedium/service_tier=fast/features.fast_mode=true 已采集保留。
+
+Root-only 既有诊断资格核对：隐藏 H01 的本题原返回已含必要关系，Consumer遗漏；
+H08必要编码义未在原返回中建立，原因未确定，不据有限投影推导模型表达缺失。
+公开 P01/P02/P06 原裁决保留，必要路径/前置步骤/未知项没有完整回答；
+本题及旁证引用均唯一匹配原 response identity/raw canonical digest/stable replay，binding无漂移。
+只读取既有报告/原件，未新增诊断查询、改判或传具体题/答案/编码给修复 Agent。
+资格文件 start3-diagnostic-qualification.json 和 start3-public1-diagnostic-qualification.json
+位于宿主 gitignored 工作目录；模型缺失未被证明，不重建生产模型。
+
+Codex developer 仅在实际挂载的 v3-acceptance-batch/platform-examiner.md 加3行通用方法：
+field-scoped categorical/coded value 不以一般字段定义替代取值义，读取同作用域enum/value-meaning
+及必要nested mapping，仍无支持则保留unknown。既有合同fixture加4片段，未加入题号、具体取值、
+IRI、业务答案、新工具或硬门。developer focused3 PASS、Ruff/diffcheck PASS；
+独立 Round19 focused2 PASS/0.08s、0新Critical/High，两文件冻结SHA精确匹配。
+提交 d1967b9（仅2owned文件；3个docs/runbook脏文件未夹带），不需要服务重启。
+16:48:22.102662 +08 启动 start3-hidden2（UTC 为08:48:22.102662Z），
+从原production_handoff0001进行完整hidden10 S4复验；随后完整public11，semanticstarts均0。
+源approvedr5/模型/CQ4不改，原失败报告及全部题分母保留。
+
+
+17:00 +08 public2 managed退出：11Consumer回答、0Judge有效裁决，
+26响应replay全部stable，pre/postmodelbinding一致且无modeldrift，2children/forwarder
+cleanup全部true。actual原报告cq-batch0004/attempt0004物理SHA
+61546cba8dc4cd848e86116ff08036cadac6daac872e64317952728bb7d112a2。
+第一失败层runtime/infrastructure，BLOCKED/runtime-infrastructure/child-output-failed；
+不据此推导模型质量、不得当公开语义FAIL/PASS或用前轮8PASS覆盖此轮。
+只读Codex诊断定位 runtimes/codex.py _run_stdout_pump generic except Exception：
+宿主stdout读取/metrics/notification处理异常的type/message/traceback未保留，
+原因未确定；不同于native process exit或read closed，不把约5秒后managed退出冒称自然native退出。
+既有入口再执行一次完整public11 S4（start3-public3），0freshstarts，不声称故障已修复。
+Runner保留evidence/child-sessions/*.config.toml可再核验配置，最近public1/hidden2/public2
+六实际native配置全solmedium/service_tier=fast/features.fast_mode=true；修正此前仅即时采样
+错过public1/2Judge的证据缺口，start3-retained-native-config-verification.json保留actual核对。
+
+
+## 2026-10-04 16:53 +08：完整隐藏集复验
+
+start3-hidden2 08:48:22.102662Z–08:53:49.425289Z，managed exit1，
+cq-batch0004/attempt0003：10回答/10有效裁决，9 PASS，H09 question-answer-review，
+full_pass=false。H01/H08本轮PASS，不覆盖前轮原始失败。22合格响应全stable，无unavailable/
+drift，pre/postbinding一致、lifecycle_errors空、2child/forwarder清理全true。
+raw report SHA256 5b15653216e307a3e7ddde5484f8fc7caf56fe045a0d79442a559aac56035bfb。
+H09冻结必答点存在题干合理义务之外的额外字段取值解释；原裁决保留为review，
+不暗删答点、不重算PASS、不据此推导Consumer-only failure或模型表达缺失。
+Root-only两原响应身份/digest/artifact/replay/binding资格通过，未新增诊断查询，
+未给生产/Consumer/修复agent实际题目或参考答案。CQ质量对齐仍有待办，本轮验证PARTIAL。
+
+
+## 2026-10-04 17:13 +08：本次继续流程收口及启动卡点
+
+| 启动 | 实际进度、第一卡点及处理 | fresh start |
+| --- | --- | --- |
+| Start3，15:01 | 原模型与r5/675项复用；12 Batch applied，无新语义写入／重放。CQ恢复review序号缺口由76eda88修复后真实新review/freeze；S01仅新版本收窄切片、原20题不变。保护资源由获准finance读回；原生MCP延迟已返回，未据此判死锁。16:12显式handoff，16:22接受partial收口，16:29受控stop后退出 | 1 |
+| Start3 hidden attempt1，16:13 | 10有效裁决／8PASS，H01/H08不足；17replay全stable，未证模型缺失，通用Consumer方法缺口由d1967b9修正 | 0 |
+| Start3 public1，16:31 | 11有效裁决／8PASS，P01/P02/P06不足；24replay全stable、全4切片PASS；保存原报告 | 0 |
+| Start3 hidden2，16:48 | 10有效裁决／9PASS；H01/H08本轮PASS，H09额外参考义务超出题干，保留review；22replay全stable | 0 |
+| Start3 public2，16:54 | 11回答／0有效裁决，宿主stdout通用异常child-output-failed丢失具体异常信息，原因未确定；26replay全stable，运行失败不能当模型失败，原报告保留 | 0 |
+| Start3 public3，17:03 | 原入口一次完整公开重试；11有效裁决／9PASS，P02本轮PASS，P01/P06仍不足；26replay全stable、无runtime异常，不声称前一故障已修复 | 0 |
+
+public3 09:03:00.621306Z–09:11:42.095519Z，cq-batch0004/attempt0005，managed exit1
+来自PARTIAL语义结果。raw物理SHA256
+6a2c4231c876a1362f70b1c0dad42726565c890291515eda0869400f8dc64eaf。
+P01/P06原note/verdict保留，Root-only本题及旁证各3个引用唯一匹配raw canonical digest，
+原各qid replay stable／binding一致，资格通过；可候选归因为检索可发现性或Consumer，
+但原因未确定、不证明模型表达缺失，不新增诊断查询、不回流具体题／答案。
+H09问题／参考对齐、P01/P06完整消费仍为下一步语义待办；当前不扩展平台/harness或
+用剩余额度重做未证明缺失的模型，不把授权上限误当必须启动次数。
+
+清理11 HTTP receipts证明两新key撤销后401、测试用户停用、项目成员及仅本轮finance role删除。
+14 managed记录全exited，所有已记录bootstrap撤销，新管理只读4个GET均200；
+Project/Ontology/GraphSet/source signature保留，保护集原4成员及原allowed_grants完全不变。
+23份原source、freeze、handoff、旧／新报告物理hash前后完全一致；清理没有删除保留模型或证据。
+宿主证据为start3-test-subject-cleanup.json、start3-final-retained-resource-verification.json、
+start3-final-preservation-verification.json。最新4轮8个retained native TOML全solmedium+fast；
+旧生产线程未热改，修复Codex agents沿用solmedium，不使用ClaudeCode。
+
+运行时间口径：Start3 managed生产窗口约87.78min，包含provider/tool/交接等待，不当独占有效建模时间；
+后四个S4 managed验收窗口分别6.25、5.46、5.82、8.69min，均为真实语义消费/裁决运行窗口，
+包含等待；指令修复与独立review约2min，全Team最终回归178.94s。没有可分离的独占effective
+语义／infra完整计时，不伪造有效时间比例；最后阶段优先实际S4，未追加全平台审计或控制机制。
+全v4仍PARTIAL：001/015注册未实现，004并行／005部分自动化、外部数值A10、真实非stub
+OWL推理和L2/L3无本轮完整证据，不把这些后阶段范围作为当前静态建模前置门。

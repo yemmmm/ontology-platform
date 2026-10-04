@@ -257,6 +257,11 @@ review/version/digest；重发产生新的审核快照。仅记理由不改变�
 覆盖 note，但 `review_decision_digest` 不包含 note，不能把理由称为新增冻结评分内容。
 公开投影不增加字段，隐藏理由不能进入 scenario-map、共享事件正文或生产消息。
 
+已有 slice 题的内容替换须用 `modify`／`supplement` 显式携带完整 `modified_question`；
+仅批准包含同一题 ID 的新草稿不替换池中的既有内容。修改后 CQ 可能重发审核快照，
+先读取当前 pending 的 review/version/digest 并完成该版本批准，再冻结最终版本。
+核对有效池与预期修订一致、未变题及完整分母保留；中间冻结保持原样，不覆盖或作为最终交付。
+
 ### Judge 诊断的交付资格
 
 方案 A 只分析已有 packet／报告，不启动诊断补查或额外角色。业务资料证明预期；本题的真实
