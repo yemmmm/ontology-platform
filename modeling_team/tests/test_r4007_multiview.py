@@ -474,6 +474,88 @@ def test_collaboration_context_skips_non_plan_evidence_keeps_work_state(tmp_path
     assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
 
 
+def _superseded_review_run_root(tmp_path, stale_fields):
+    plan = _collaboration_run_root(tmp_path)
+    path = tmp_path / "scenario-map/scenario-map.json"
+    value = json.loads(path.read_text())
+    candidate = json.loads((tmp_path / "stage3-neutral-graph/candidates/cand-1-r2.json").read_text())
+    candidate["items"][0]["slice_ids"] = [value["slices"][0]["slice_id"]]
+    write_json(tmp_path / "stage3-neutral-graph/candidates/cand-1-r2.json", candidate)
+    historical = review(value, candidate)
+    historical.update(coverage="complete", outcome="ready")
+    historical["references"] = [dict(
+        **ref(candidate), slice_id=candidate["items"][0]["slice_ids"][0],
+        result="unchanged", note="historical reference",
+    )]
+    value["adjustments"] = [dict(
+        change="historical review", approved_by_coordinator="coordinator", review=historical,
+    )]
+    current = deepcopy(candidate)
+    current["revision"] += 1
+    write_json(tmp_path / "stage3-neutral-graph/candidates/cand-1-r3.json", current)
+    value["shared_terms"][0]["candidate_refs"] = [ref(current)]
+    for field in ("after_refs", "references"):
+        if field not in stale_fields:
+            historical[field][0]["revision"] = current["revision"]
+    plan["projection"]["candidate_revision"] = current["revision"]
+    plan["projection_digest"] = projection_digest(plan["projection"])
+    write_json(tmp_path / "stage3-neutral-graph/materialization-plans/plan-1-r1.json", plan)
+    write_json(path, value)
+    write_json(tmp_path / "acceptance-v3/production-handoff.json", dict(
+        collaboration_artifact=dict(path="scenario-map/scenario-map.json", digest=digest_file(path)),
+    ))
+    original = path.read_bytes()
+    handoff = (tmp_path / "acceptance-v3/production-handoff.json").read_bytes()
+    issues = validate_scenario_map(value, run_root=tmp_path)
+    assert len(issues) == len(stale_fields)
+    assert all(issue.detail.endswith(".revision: stale") for issue in issues)
+    return path, value, original, handoff
+
+
+@pytest.mark.parametrize("stale_fields", [("after_refs",), ("references",), ("after_refs", "references")])
+def test_collaboration_context_omits_superseded_reviews_without_editing_bound_map(
+    tmp_path, stale_fields
+):
+    from modeling_team.__main__ import _cq_collaboration_context
+
+    path, value, original, handoff = _superseded_review_run_root(tmp_path, stale_fields)
+
+    context = _cq_collaboration_context(tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]})
+
+    assert context["definitions"] == [dict(
+        definition_id="def-0", resource_iri="iri:1", status="unknown", reviews=[],
+    )]
+    assert "superseded" in context["scope_note"]
+    assert path.read_bytes() == original
+    assert (tmp_path / "acceptance-v3/production-handoff.json").read_bytes() == handoff
+    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+
+
+@pytest.mark.parametrize("defect", ["missing_candidate", "wrong_item", "slice_scope", "schema", "shared_stale"])
+def test_superseded_review_does_not_bypass_other_map_binding_errors(tmp_path, defect):
+    from modeling_team.__main__ import _cq_collaboration_context
+    from modeling_team.contracts import TeamConfigurationError
+
+    path, value, _, _ = _superseded_review_run_root(tmp_path, ("after_refs", "references"))
+    historical = value["adjustments"][0]["review"]
+    if defect == "missing_candidate":
+        historical["after_refs"][0]["candidate_id"] = "missing"
+    elif defect == "wrong_item":
+        historical["after_refs"][0]["item_id"] = "missing"
+    elif defect == "slice_scope":
+        historical["references"][0]["slice_id"] = value["slices"][1]["slice_id"]
+    elif defect == "schema":
+        historical["coverage"] = "invalid"
+    else:
+        value["shared_terms"][0]["candidate_refs"][0]["revision"] = 2
+    write_json(path, value)
+    write_json(tmp_path / "acceptance-v3/production-handoff.json", dict(
+        collaboration_artifact=dict(path="scenario-map/scenario-map.json", digest=digest_file(path)),
+    ))
+    with pytest.raises(TeamConfigurationError, match="invalid scenario map"):
+        _cq_collaboration_context(tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]})
+
+
 def test_collaboration_context_keeps_plan_parse_and_identity_guards(tmp_path):
     from modeling_team.__main__ import _cq_collaboration_context
     from modeling_team.contracts import TeamConfigurationError

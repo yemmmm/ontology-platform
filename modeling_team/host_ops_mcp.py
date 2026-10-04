@@ -466,6 +466,7 @@ def tool_resume_from_checkpoint(
     authorization_reference: str,
     freeze_started_at: str | None = None,
     session_timeout: float | None = None,
+    model_profile: str | None = None,
     request_id: str | None = None,
     fork_reason: str | None = None,
 ) -> dict[str, Any]:
@@ -475,7 +476,8 @@ def tool_resume_from_checkpoint(
     checkpoint id is never auto-selected.  ``mode='production'`` requires
     the NEW run's real ``freeze_started_at`` (never the source run's old
     timepoint); ``mode='acceptance'`` rejects it and may pass
-    ``session_timeout``.  The platform credential must be present in the
+    ``session_timeout`` and an explicit ``model_profile`` for Examiner/Judge.
+    The platform credential must be present in the
     host environment (``ONTOLOGY_PLATFORM_ADMIN_API_KEY``) or the tool
     refuses before starting anything.  The source run is never overwritten.
     """
@@ -488,6 +490,7 @@ def tool_resume_from_checkpoint(
         authorization_reference=authorization_reference,
         freeze_started_at=freeze_started_at,
         session_timeout=session_timeout,
+        model_profile=model_profile,
         request_id=request_id,
         **({"fork_reason": fork_reason} if fork_reason is not None else {}),
     )

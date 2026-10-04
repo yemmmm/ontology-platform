@@ -1475,8 +1475,24 @@ def _cq_collaboration_context(
     if path.is_symlink() or not path.is_file() or digest_file(path) != reference["digest"]:
         raise TeamConfigurationError("collaboration_binding_changed: handoff content changed")
     scenario_map = load_scenario_map(path)
-    if validate_scenario_map(scenario_map, run_root=run_root):
-        raise TeamConfigurationError("collaboration_binding_changed: invalid scenario map")
+    superseded_reviews = set()
+    for issue in validate_scenario_map(scenario_map, run_root=run_root):
+        historical = re.fullmatch(
+            r"adjustments\[(\d+)\]\.review\.(?:after_refs|references)\[\d+\]\.revision: stale",
+            issue.detail,
+        )
+        if issue.reason_code != "map_dangling_reference" or historical is None:
+            raise TeamConfigurationError("collaboration_binding_changed: invalid scenario map")
+        superseded_reviews.add(int(historical[1]))
+    # A handoff-bound map stays immutable. Superseded review progress is not a
+    # binding failure or a current ready/complete claim; omit it only from the
+    # Judge's work-context copy, preserving all other reference validation.
+    if superseded_reviews:
+        scenario_map = {**scenario_map, "adjustments": [
+            {key: value for key, value in adjustment.items() if key != "review"}
+            if index in superseded_reviews else adjustment
+            for index, adjustment in enumerate(scenario_map["adjustments"])
+        ]}
     visible: set[str] = set()
 
     def observe(value: object) -> None:
@@ -1554,7 +1570,12 @@ def _cq_collaboration_context(
                 if key in bindings and bindings[key] != iri:
                     raise TeamConfigurationError("collaboration_binding_changed: identity conflict")
                 bindings[key] = iri
-    return collaboration_projection(scenario_map, bindings=bindings, visible_iris=visible)
+    context = collaboration_projection(scenario_map, bindings=bindings, visible_iris=visible)
+    context["scope_note"] += (
+        " Reviews tied to superseded candidate revisions are omitted; they do not "
+        "establish current readiness or complete coverage."
+    )
+    return context
 
 
 _CQ_PLATFORM_ROLE_INSTRUCTIONS = (
@@ -3057,7 +3078,7 @@ def _run_checkpoint_resume_acceptance(
             # freeze-NNNN; the handoff's freeze_id is the batch id).
             freeze_id=plan.freeze_file.stem,
             model_handoff=source_root / "acceptance-v3" / "production-handoff.json",
-            model_profile=None,
+            model_profile=getattr(args, "model_profile", None),
             session_timeout=getattr(args, "session_timeout", None) or 300.0,
             unexecuted_report=False,
         )
@@ -3266,6 +3287,10 @@ def main() -> int:
         ),
     )
     checkpoint_resume.add_argument(
+        "--model-profile", default=None,
+        help="acceptance-mode continuation: explicit Examiner/Judge model profile",
+    )
+    checkpoint_resume.add_argument(
         "--session-timeout",
         type=float,
         default=300.0,
@@ -3328,6 +3353,9 @@ def main() -> int:
         # Production resume falls through into the shared run flow below with
         # ``resume_requested`` set; the one-process root-run lock is acquired
         # before reconciliation and released when the process exits.
+        if args.model_profile is not None:
+            print("checkpoint failed: --model-profile requires acceptance mode", file=sys.stderr)
+            return 2
     runner = None
     cleaned = False
     root = repository_root()

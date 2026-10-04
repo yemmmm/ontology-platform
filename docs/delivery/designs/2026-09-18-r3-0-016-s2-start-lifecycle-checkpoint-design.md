@@ -171,6 +171,10 @@ S2 在既有 `modeling-team-host` stdio MCP 服务（`modeling_team/host_ops_mcp
 
 ### 5.5 `resume_from_checkpoint`
 
+- 可选模型选择（2026-10-04）：`model_profile` 仅 acceptance 模式接受，按模型 profile 标识符
+  透传为 `--model-profile <值>`，同一次续跑的 Examiner 和 Judge 均使用该选择；省略仍沿用
+  既有 CQ 默认模型，不更改源 run 的模型配置。Host 凭据仍只通过环境传递；非法标识符或
+  production 模式传该参数，在启动前返回 `launch_arguments_invalid`。
 - 输入：`source_run_id`、`checkpoint_id`（**必须显式**，绝不自动选最新）、`new_run_id`（新，单段）、`mode`（`production` | `acceptance`）、`authorization_reference`（宿主台账引用，原样透传 CLI）、`freeze_started_at`（**production 必填**——schema v2 Task 在 `prepare_from_checkpoint` 路径同样硬性要求显式冻结时点（runner.py L866），取**新 run 真实冻结窗口开启的真实记录**（宿主在发起接续时刻记录的真实时点，非编造）；**源 run 旧时点不得复用**——非豁免 run 会被 ledger 20 分钟门拒绝；multi-slice 豁免 run 平台无此门，且豁免 run 的该时点仅做 v2 非空检查、**不入 reservation 或任何记录**（run 内 reservation 行不含时点字段）——错值不会留下任何可事后察觉的痕迹，宿主必须自律拒用（评审 R3 纠错：风险是"错值无痕"，不是"污染 reservation"）；acceptance 模式不接受该参数）、可选 `request_id`、`session_timeout`（仅 acceptance 模式有意义，透传）。
 - 预检（无副作用）：凭据预检（`ONTOLOGY_PLATFORM_ADMIN_API_KEY` 缺失 → `host_credential_missing`，不启动子进程后再失败）；`checkpoint_id` 未显式给 → `checkpoint_id_required`；`new_run_id` 已存在 → `run_id_already_exists`；`mode=production` 且缺 `freeze_started_at` → `launch_arguments_invalid`；`mode=acceptance` 且带了 `freeze_started_at` → `launch_arguments_invalid`；`freeze_started_at` 形状非法 → `freeze_started_at_invalid`。
 - 行为：受管启动 `[sys.executable, -m, modeling_team, checkpoint, resume, --run-id <source_run_id>, --checkpoint-id <checkpoint_id>, --new-run-id <new_run_id>, --mode <mode>, --authorization-reference <authorization_reference>, --enable-outer-input-fifo]`（production 另加 `--freeze-started-at <值>`；acceptance 可另加 `--session-timeout <值>`。**注意 `--run-id` 即源 run**（`__main__.py` L3167 `source_root = runs_root / args.run_id`），不存在 `--source-run` 参数；`--enable-outer-input-fifo` 默认加，使接续 run 可继续被宿主交互），登记同 §6。

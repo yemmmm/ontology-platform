@@ -511,8 +511,12 @@ uv run --project backend python -m modeling_team checkpoint resume \
   --run-id "$source_run_id" --checkpoint-id "$checkpoint_id" \
   --new-run-id "$new_run_id" --mode acceptance \
   --authorization-reference "<用户授权引用（记入台账）>" \
+  # 可选：--model-profile openai-sol-medium（显式指定 Examiner/Judge 模型）
   # 可选：--session-timeout（重执行路径的子会话超时，默认 300s）、--base-url
 ```
+
+`--model-profile` 仅用于 acceptance 模式；省略沿用既有 CQ 默认模型。Host MCP 的
+`resume_from_checkpoint(model_profile="openai-sol-medium", ...)` 传递同一选择，不改源 run 配置。
 
 入口先做**只读复核**，复用 S2 的 cursor 回读纪律：全链写尾必须闭合干净（unknown/
 未回执写入即拒绝）、原写者必须已停（`source_active` 可重试，经原 run stop channel

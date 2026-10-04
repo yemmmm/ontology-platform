@@ -86,6 +86,27 @@ def _session(calls):
     return asyncio.run(scenario())
 
 
+def test_checkpoint_resume_model_profile_passes_through_mcp(monkeypatch):
+    captured = []
+
+    def resume(**kwargs):
+        captured.append(kwargs)
+        return {"launched": True}
+
+    monkeypatch.setattr(host_ops_mcp, "resume_from_checkpoint", resume)
+
+    async def call(client):
+        return _payload(await client.call_tool("resume_from_checkpoint", {
+            "source_run_id": "source", "checkpoint_id": "production_handoff-0001",
+            "new_run_id": "continued", "mode": "acceptance",
+            "authorization_reference": "auth-test", "model_profile": "openai-sol-medium",
+        }))
+
+    result, = _session([call])
+    assert result["ok"] is True
+    assert captured[0]["model_profile"] == "openai-sol-medium"
+
+
 def test_cold_start_exposes_exactly_the_20_s1_plus_s2_tools():
     async def list_names(client):
         listing = await client.list_tools()
@@ -208,6 +229,7 @@ def test_s2_tools_surface_the_design9_error_envelope():
                     "new_run_id": "s2mcpresume",
                     "mode": "acceptance",
                     "authorization_reference": "auth-x/resume (user-approved t)",
+                    "model_profile": "openai-sol-medium",
                 },
             )
         )

@@ -303,6 +303,20 @@ def _cli_args(run_id: str, checkpoint_id: str, new_run_id: str) -> Namespace:
     )
 
 
+def test_checkpoint_cli_passes_explicit_acceptance_model_profile(monkeypatch):
+    captured = []
+    monkeypatch.setenv("ONTOLOGY_PLATFORM_ADMIN_API_KEY", "test-host-key")
+    monkeypatch.setattr(sys, "argv", [
+        "modeling_team", "checkpoint", "resume", "--run-id", "source",
+        "--checkpoint-id", "production_handoff-0001", "--new-run-id", "continued",
+        "--mode", "acceptance", "--model-profile", "openai-sol-medium",
+    ])
+    monkeypatch.setattr(main_module, "_run_checkpoint_resume_acceptance",
+                        lambda args, root: captured.append(args) or 0)
+    assert main_module.main() == 0
+    assert captured[0].model_profile == "openai-sol-medium"
+
+
 def _cleanup_run(run_root: Path) -> None:
     rmtree(run_root, ignore_errors=True)
     rmtree(RUNS_ROOT / f"{run_root.name}-ledger", ignore_errors=True)
@@ -819,16 +833,27 @@ def test_m44_continuation_sessions_bind_runtime_evidence_to_their_output_root(mo
         )
         adapter_class, state = _batch_adapter()
         evidence_adapter, evidence_state = _evidence_root_adapter(adapter_class)
+        model_bindings = []
+        original_bind = evidence_adapter.bind_acceptance_model_profile
+
+        def capture_binding(self, profile):
+            model_bindings.append(profile.profile_id)
+            return original_bind(self, profile)
+
+        monkeypatch.setattr(evidence_adapter, "bind_acceptance_model_profile", capture_binding)
         monkeypatch.setattr(main_module, "CodexRuntimeAdapter", evidence_adapter)
         monkeypatch.setenv(main_module._CQ_PLATFORM_READ_KEY_ENV, "read-key")
+        args = _cli_args(run_root.name, checkpoint_id, new_run_id)
+        args.model_profile = "openai-sol-medium"
         code = main_module._run_checkpoint_resume_acceptance(
-            _cli_args(run_root.name, checkpoint_id, new_run_id),
+            args,
             REPO_ROOT,
             forwarder_factory=_Factory(
                 _DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT] * 2)
             ),
         )
         assert code == 0
+        assert model_bindings == ["openai-sol-medium", "openai-sol-medium"]
         # Both sessions of the re-executed attempt (platform Examiner, then
         # independent judge) write their runtime evidence under the
         # continuation's output root, never the read-only source run.

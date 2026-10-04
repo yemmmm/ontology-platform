@@ -607,6 +607,7 @@ def test_resume_argv_is_exactly_the_real_checkpoint_resume_contract(tmp_path):
         mode="acceptance",
         authorization_reference="auth-r3018-s2/acceptance (user-approved 2026-09-18T09:00:00+00:00)",
         session_timeout=120,
+        model_profile="openai-sol-medium",
         repository_root=tmp_path,
         launcher=launcher,
         run_root_wait_seconds=0.05,
@@ -614,8 +615,24 @@ def test_resume_argv_is_exactly_the_real_checkpoint_resume_contract(tmp_path):
     assert acceptance["mode"] == "acceptance"
     assert "--freeze-started-at" not in argvs[1]
     assert argvs[1][argvs[1].index("--session-timeout") + 1] == "120"
+    assert argvs[1][argvs[1].index("--model-profile") + 1] == "openai-sol-medium"
     assert "consumes 0" in acceptance["semantic_starts_note"]
     assert "015" in acceptance["semantic_starts_note"]
+
+
+@pytest.mark.parametrize("model_profile", ["", "--unexpected", "profile name", 7])
+def test_resume_model_profile_rejects_invalid_argv_values_before_launch(tmp_path, model_profile):
+    _make_run(tmp_path, "sourceprofile", state="CLEANED")
+    calls = []
+    with pytest.raises(host_ops.HostOpError) as rejected:
+        host_ops.resume_from_checkpoint(
+            source_run_id="sourceprofile", checkpoint_id="production_handoff-0001",
+            new_run_id="newprofile", mode="acceptance", authorization_reference="auth-test",
+            model_profile=model_profile, repository_root=tmp_path,
+            launcher=lambda *args, **kwargs: calls.append(args),
+        )
+    assert rejected.value.code == "launch_arguments_invalid"
+    assert calls == []
 
 
 def test_resume_mode_and_freeze_rules_are_pre_checked(tmp_path):
@@ -884,6 +901,7 @@ def test_lifecycle_and_checkpoint_consumption_evidence_is_declared():
         "--new-run-id",
         "--mode",
         "--session-timeout",
+        "--model-profile",
         "--authorization-reference",
         "--base-url",
         "--freeze-started-at",

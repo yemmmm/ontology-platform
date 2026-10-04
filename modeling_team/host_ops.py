@@ -34,6 +34,7 @@ import errno
 import hashlib
 import json
 import os
+import re
 import select
 import stat
 import subprocess
@@ -173,6 +174,7 @@ CHECKPOINT_RESUME_FLAGS = (
     "--new-run-id",
     "--mode",
     "--session-timeout",
+    "--model-profile",
     "--authorization-reference",
     "--base-url",
     "--freeze-started-at",
@@ -3232,6 +3234,7 @@ def resume_from_checkpoint(
     fork_reason: str | None = None,
     freeze_started_at: str | None = None,
     session_timeout: float | int | None = None,
+    model_profile: str | None = None,
     request_id: str | None = None,
     repository_root: Path | None = None,
     launcher: Callable[..., Any] | None = None,
@@ -3303,6 +3306,16 @@ def resume_from_checkpoint(
     validated_freeze = (
         validate_freeze_started_at(freeze_started_at) if mode == "production" else None
     )
+    if model_profile is not None and (
+        mode != "acceptance" or not isinstance(model_profile, str)
+        or re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", model_profile) is None
+    ):
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "model_profile requires acceptance mode and a model profile identifier",
+            obj="model_profile", retryable=True,
+            next_action="pass the explicit acceptance model profile id, or omit it",
+        )
     if not isinstance(authorization_reference, str) or not authorization_reference.strip():
         raise HostOpError(
             "launch_arguments_invalid",
@@ -3349,6 +3362,8 @@ def resume_from_checkpoint(
         argv.extend(["--fork-reason", fork_reason])
     if session_timeout is not None:
         argv.extend(["--session-timeout", str(session_timeout)])
+    if model_profile is not None:
+        argv.extend(["--model-profile", model_profile])
     argv.append("--enable-outer-input-fifo")
     launched = _launch_managed_run(
         run_id=new_run_id,
