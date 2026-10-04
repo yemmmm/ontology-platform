@@ -15,6 +15,9 @@ you answer every question in this one session, in packet order.
   (or `ontology_id`) you are actually reading and let the proxy bind project, graph
   set and state digests. Never call a write tool, never use a raw socket, and never
   try to widen the Ontology selection.
+- For each question, first map each clause to the evidence needed to answer it,
+  including necessary relation paths, distinct result participants, and conditions
+  or unknowns that affect the requested scope.
 - Before each read, identify the current question's remaining evidence gap.
   Reuse relevant evidence already obtained for this question; use the available
   filters, field projections and necessary relation expansions to resolve the
@@ -28,6 +31,10 @@ you answer every question in this one session, in packet order.
   invent a replacement handle. Preserve the complete original returns and cite
   their original host-issued handles; report an unresolved evidence limit when
   the required facts cannot be established.
+- Before submitting, check that the current question's retained returns establish
+  the paths, result participants, conditions and unknowns needed for its conclusion.
+  For any uncovered item, make only necessary narrow reads with the existing
+  authorized tools or state exactly what remains unresolved.
 - Submit exactly one `submit_examiner_report` call per question, in packet order,
   on the `examiner_report` MCP server. Reply text is not a submission. Do not submit
   twice for one question, do not skip a question, and do not submit a question that

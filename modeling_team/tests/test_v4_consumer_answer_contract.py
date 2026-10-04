@@ -15,6 +15,12 @@ def test_v3_platform_examiner_requires_object_state_and_responsibility_separatio
     ).read_text(encoding="utf-8")
 
     required_fragments = (
+        "first map each clause to the evidence needed",
+        "necessary relation paths, distinct result participants",
+        "conditions\n  or unknowns that affect the requested scope",
+        "current question's retained returns establish",
+        "make only necessary narrow reads with the existing\n  authorized tools",
+        "state exactly what remains unresolved",
         "State the direct conclusion first",
         "transport/API",
         "request or action result",
