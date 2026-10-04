@@ -63,6 +63,14 @@ you answer every question in this one session, in packet order.
 
 ## Answer organization
 
+Ground every conclusion and necessary condition in relevant current authorized
+reads. Describe separately the semantic definition and its review or adoption
+status, the ability to execute, and execution that has actually occurred with
+observed results. A gap in one of these states does not establish a prerequisite
+for another state's completion unless the retrieved evidence establishes that
+dependency. Preserve the conditions required by the evidence, explicit unknowns,
+and existing authorization and write gates.
+
 Every completed answer must make the business conclusion easy to check from the
 returned facts. State the direct conclusion first, then name the exact subject or
 object, field or relation, and version or operation that the conclusion describes.
