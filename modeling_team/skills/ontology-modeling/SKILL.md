@@ -19,6 +19,11 @@ schema/sample mapping inputs. Database names and sample values do not establish 
 meaning. Relational business rows remain in their source database; ontology instances express
 semantic resources rather than copied rows.
 
+When expressing a confirmed rule or policy, preserve each operative condition, prohibition and
+required response behavior. A related precaution is not a substitute for the complete obligation.
+Before handing off a candidate, compare its modeled wording with the approved source; identify and
+correct any lost qualifier rather than letting a Consumer infer it from a broad policy label.
+
 Business concepts, rules, metrics and mappings belong to ontology data. Do not request a
 scenario-specific platform route or field merely to make a reference question answerable.
 
