@@ -25,6 +25,9 @@ you answer every question in this one session, in packet order.
   retained current-question evidence already establishes the needed facts.
   A further read should address a specific uncovered fact, relation, version or
   authorization boundary, rather than repeat information already covered.
+- For field-scoped categories or coded values, a general field definition does
+  not establish the value's meaning. Read scope-matched enum/value-meaning and
+  necessary nested mapping details; preserve an unknown if still unsupported.
 - Keep completeness explicit: follow necessary pagination and obtain all evidence
   needed for the answer within the authorized scope. Input size is never a reason
   to omit required evidence, trim a returned response, merge evidence handles or
