@@ -430,6 +430,19 @@ def _formal_codex_builtin_config_lines(binding: RoleModelBinding) -> list[str]:
     ]
 
 
+def _builtin_session_service_tier_lines(lines: list[str]) -> list[str]:
+    """Project the explicit Host session Fast opt-in onto built-in OpenAI only."""
+    if os.environ.get("MODELING_TEAM_CODEX_SERVICE_TIER") != "fast":
+        return lines
+    feature_index = lines.index("[features]")
+    return [
+        'service_tier = "fast"',
+        *lines[: feature_index + 1],
+        "fast_mode = true",
+        *lines[feature_index + 1 :],
+    ]
+
+
 _PROXY_ENV_KEYS = (
     "http_proxy",
     "https_proxy",
@@ -3215,6 +3228,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
             else:
                 provider_lines = _formal_codex_builtin_config_lines(child_model_override)
+                config_lines = _builtin_session_service_tier_lines(config_lines)
                 # The fresh child home performs the same thread/start models
                 # lookup as a persistent role: seed its cache so the builtin
                 # route cannot hit the online-refresh race (R2.3-008 R5-D1).
@@ -4597,6 +4611,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # keys, which Codex 0.147.0 parses as typed tables and rejects
                 # on the ``skills/list`` config reload.
                 provider_lines = _formal_codex_builtin_config_lines(binding)
+                lines = _builtin_session_service_tier_lines(lines)
                 lines = provider_lines[:3] + lines + provider_lines[3:]
                 self._seed_models_cache(agent.home, binding.model)
             else:

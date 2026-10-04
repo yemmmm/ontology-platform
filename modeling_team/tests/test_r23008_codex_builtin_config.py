@@ -11,12 +11,16 @@ tests pin the corrected projection without launching any real binary.
 
 from __future__ import annotations
 
+import hashlib
+import shutil
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from modeling_team.contracts import _load_package, repository_root
-from modeling_team.model_routing import load_team_model_profile
+from modeling_team.model_routing import RoleModelBinding, load_team_model_profile
 from modeling_team.runtimes.codex import CodexRuntimeAdapter, _Agent
 
 ROOT = repository_root()
@@ -34,6 +38,11 @@ _EXPECTED_FEATURE_FLAGS = {
     "skill_search",
     "tool_suggest",
 }
+
+
+@pytest.fixture(autouse=True)
+def _clear_session_service_tier(monkeypatch):
+    monkeypatch.delenv("MODELING_TEAM_CODEX_SERVICE_TIER", raising=False)
 
 
 def _adapter() -> CodexRuntimeAdapter:
@@ -146,5 +155,158 @@ def test_builtin_projection_splices_every_formal_role(tmp_path: Path) -> None:
             # Duplicate-key splices would already fail the tomllib parse above;
             # additionally pin that the model trio appears exactly once.
             assert parsed["model_provider"] == "openai"
+    finally:
+        adapter.stop()
+
+
+@pytest.mark.parametrize("tier", [None, "unknown", "fast"])
+def test_session_fast_projects_all_builtin_production_roles(tmp_path, monkeypatch, tier):
+    if tier is not None:
+        monkeypatch.setenv("MODELING_TEAM_CODEX_SERVICE_TIER", tier)
+    adapter = _adapter()
+    adapter._team_model_profile = load_team_model_profile(ROOT, "openai-sol-medium")
+    host_auth = tmp_path / "host-auth.json"
+    host_auth.write_text("{}", encoding="utf-8")
+    adapter.preflight_host_auth = lambda: host_auth
+    run = _formal_run(tmp_path / "run")
+    try:
+        for role in ("coordinator", "modeling", "protocol", "acceptance"):
+            agent = _agent(tmp_path, role)
+            adapter._write_config(run, agent)
+            parsed = tomllib.loads((agent.home / "config.toml").read_text())
+            assert parsed["model"] == "gpt-6.1-sol"
+            assert parsed["model_reasoning_effort"] == "medium"
+            assert parsed["model_provider"] == "openai"
+            assert "model_providers" not in parsed
+            if tier == "fast":
+                assert parsed["service_tier"] == "fast"
+                assert parsed["features"]["fast_mode"] is True
+            else:
+                assert "service_tier" not in parsed
+                assert "fast_mode" not in parsed["features"]
+    finally:
+        adapter.stop()
+
+
+class _ChildConfigWritten(RuntimeError):
+    pass
+
+
+def _write_child_config(tmp_path: Path, kind: str, provider: str) -> dict:
+    # Same deterministic pre-launch sentinel used by the cache-seed regression:
+    # exercise the actual child config write without starting any app-server.
+    adapter = _adapter()
+    adapter._team_model_profile = load_team_model_profile(ROOT, "openai-sol-medium")
+    if provider != "openai-codex":
+        binding = RoleModelBinding(
+            package_id=f"{kind}-examiner" if kind != "acceptance" else "acceptance",
+            provider_id=provider,
+            model="deepseek-chat" if provider == "deepseek-direct" else "glm-5",
+            requested_effort="medium",
+            effective_effort="medium",
+        )
+        adapter._validated_formal_role_binding = lambda _package: binding
+        adapter._provider_sessions = SimpleNamespace(
+            base_url_for=lambda _provider: "http://127.0.0.1:65535"
+        )
+    host_auth = tmp_path / "host-auth.json"
+    host_auth.write_text("{}", encoding="utf-8")
+    adapter.preflight_host_auth = lambda: host_auth
+
+    def stop_before_process(*_args, **_kwargs):
+        raise _ChildConfigWritten()
+
+    adapter.process_factory = stop_before_process
+    private_root = tmp_path / "private-root"
+    private_root.mkdir(mode=0o700)
+    sources = private_root / "sources"
+    sources.mkdir()
+    (sources / "source.md").write_text("# approved fixture source\n")
+    private_input = tmp_path / "input.json"
+    private_input.write_text("{}")
+    spec = {
+        "kind": kind,
+        "task_id": "r2-3-008-formal-acceptance",
+        "private_root": str(private_root),
+        "private_input": str(private_input),
+        "child_handle_digest": hashlib.sha256(str(tmp_path).encode()).hexdigest(),
+    }
+    if kind == "platform":
+        spec.update(
+            read_key_plaintext="fixture-read-key",
+            platform_read_scope={
+                "project_id": "fixture-project",
+                "ontology_id": "fixture-ontology",
+                "graph_set_id": "fixture-graph",
+            },
+            ticket_digest="a" * 64,
+            model_state_digest="b" * 64,
+            acceptance_round_id="fixture-round",
+            allowed_read_tools=["query_semantic_context"],
+        )
+    try:
+        with pytest.raises(_ChildConfigWritten):
+            adapter._launch_acceptance_child_impl(spec)
+        return tomllib.loads((private_root / "home" / "config.toml").read_text())
+    finally:
+        for key in ("_runtime_report_sink", "_runtime_proxy"):
+            resource = spec.get(key)
+            if resource is not None:
+                resource.stop()
+        socket_root = spec.get("_runtime_socket_root")
+        if isinstance(socket_root, str):
+            shutil.rmtree(socket_root, ignore_errors=True)
+        adapter.stop()
+
+
+@pytest.mark.parametrize("kind", ["source", "platform", "acceptance"])
+@pytest.mark.parametrize("tier", [None, "unknown", "fast"])
+def test_session_fast_projects_builtin_examiner_and_judge(tmp_path, monkeypatch, kind, tier):
+    if tier is not None:
+        monkeypatch.setenv("MODELING_TEAM_CODEX_SERVICE_TIER", tier)
+    parsed = _write_child_config(tmp_path, kind, "openai-codex")
+    assert parsed["model"] == "gpt-6.1-sol"
+    assert parsed["model_reasoning_effort"] == "medium"
+    assert parsed["model_provider"] == "openai"
+    assert "model_providers" not in parsed
+    if tier == "fast":
+        assert parsed["service_tier"] == "fast"
+        assert parsed["features"]["fast_mode"] is True
+    else:
+        assert "service_tier" not in parsed
+        assert "fast_mode" not in parsed["features"]
+
+
+@pytest.mark.parametrize("provider", ["deepseek-direct", "glm-direct"])
+def test_session_fast_does_not_project_external_routes(tmp_path, monkeypatch, provider):
+    monkeypatch.setenv("MODELING_TEAM_CODEX_SERVICE_TIER", "fast")
+    parsed = _write_child_config(tmp_path, "acceptance", provider)
+    assert parsed["model_provider"] == provider
+    assert "service_tier" not in parsed
+    assert "fast_mode" not in parsed["features"]
+
+
+@pytest.mark.parametrize("provider", ["deepseek-direct", "glm-direct"])
+def test_session_fast_does_not_project_external_production_roles(tmp_path, monkeypatch, provider):
+    monkeypatch.setenv("MODELING_TEAM_CODEX_SERVICE_TIER", "fast")
+    adapter = _adapter()
+    binding = RoleModelBinding(
+        package_id="coordinator",
+        provider_id=provider,
+        model="deepseek-chat" if provider == "deepseek-direct" else "glm-5",
+        requested_effort="medium",
+        effective_effort="medium",
+    )
+    adapter._validated_model_override = lambda _package, **_kwargs: binding
+    adapter._provider_sessions = SimpleNamespace(
+        base_url_for=lambda _provider: "http://127.0.0.1:65535"
+    )
+    agent = _agent(tmp_path, "coordinator")
+    try:
+        adapter._write_config(_formal_run(tmp_path / "run"), agent)
+        parsed = tomllib.loads((agent.home / "config.toml").read_text())
+        assert parsed["model_provider"] == provider
+        assert "service_tier" not in parsed
+        assert "fast_mode" not in parsed["features"]
     finally:
         adapter.stop()

@@ -19,6 +19,7 @@ or touches platform credentials.
 from __future__ import annotations
 
 import base64
+import fcntl
 import json
 import os
 import random
@@ -1652,7 +1653,10 @@ def test_a06_5_line_too_large_is_refused_before_any_write(tmp_path):
         fifo.close()
 
 
-def test_a06_5_write_stall_is_typed_without_zero_write_claims(tmp_path, monkeypatch):
+@pytest.mark.parametrize("pipe_capacity", [None, 4096])
+def test_a06_5_write_stall_is_typed_without_zero_write_claims(
+    tmp_path, monkeypatch, pipe_capacity
+):
     repo, run_root = _make_run(tmp_path)
     monkeypatch.setattr(host_ops, "FIFO_WRITE_TIMEOUT_SECONDS", 0.3)
     fifo = _open_fifo(run_root)
@@ -1660,7 +1664,10 @@ def test_a06_5_write_stall_is_typed_without_zero_write_claims(tmp_path, monkeypa
         # Fill the pipe buffer so the envelope write cannot complete.
         filler = os.open(run_root / "control" / "outer-input.fifo", os.O_WRONLY)
         try:
-            os.write(filler, b"f" * (host_ops.FIFO_MAX_LINE_BYTES - 64))
+            if pipe_capacity is not None:
+                fcntl.fcntl(filler, fcntl.F_SETPIPE_SZ, pipe_capacity)
+            capacity = fcntl.fcntl(filler, fcntl.F_GETPIPE_SZ)
+            os.write(filler, b"f" * (capacity - 64))
         finally:
             os.close(filler)
         with pytest.raises(host_ops.HostOpError) as error:
