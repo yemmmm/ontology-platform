@@ -166,7 +166,11 @@ Delivery 根据既有交付回执、在途操作与模型状态检查发起验�
 命令经 `acceptance_runtime.py` 的显式 v3 分派复用现有 child runtime 创建一次 Platform Examiner
 会话，使用版本化 batch packet（有序 `questions[]`、`model_states[]`、授权 scope、只读工具、
 report schema、freeze/batch 绑定）；它完成或不能继续时保留逐题报告。随后通过同一既有 child
-runtime 创建一个独立 Acceptance evaluator 会话。后者只使用冻结判定输入和 report sink，不持有
+runtime 默认创建一个独立 Acceptance evaluator 会话。完整 Judge 首回合超过原生输入上限时，
+在同一 attempt 按冻结顺序连续贪心分组，复用完整本题判定 packet 与独立 native child/report sink；
+所有组绑定同一 freeze/model，不传前组裁决或旧 attempt 答案。宿主聚合全部题裁决，分母不变；
+逐组披露 packet digest、输入长度、实际会话结果与 teardown，不称单会话完整证据。
+完整单题仍超限返回 `judge-input-too-large`，不裁剪证据；未超限维持单会话形状。后者只使用冻结判定输入和 report sink，不持有
 平台写、Team transport、创建/继续生产 run 或子 Agent 的能力。两种 packet、提示和报告都使用显式
 v3 版本，不修改旧 `ExaminerRolePacket/v1` 的 source/platform/acceptance 字段合同；旧角色提示中的
 逐题 fresh/Source report 要求在 v3 package 输入分派处换成 batch 合同，不能只修改调用参数。

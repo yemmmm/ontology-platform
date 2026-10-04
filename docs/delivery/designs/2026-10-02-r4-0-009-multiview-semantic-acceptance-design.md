@@ -20,6 +20,9 @@
 ### 最终公开只读补验（2026-10-04）
 
 既有 `cq-acceptance` 与 checkpoint S4 接受 `--question-visibility hidden|public`，默认 hidden。
+完整 Judge 输入超过原生总量上限时，仅独立 Judge 按冻结顺序作同 attempt 的连续物理分组；
+Consumer 仍是单连续会话。每组读取完整本题获准证据与当前报告，绑定同 freeze/model，
+不读取其他组裁决；报告逐组披露会话与清理，全局公开分母和全部有效裁决完成门不变。
 public 仅执行原冻结池的完整公开集；复用原 Consumer／独立 Judge、模型状态重查和已批准
 checkpoint interview archive。Consumer 只收问题／scope，答点与依据只进 Judge。
 公开报告显式绑定完整题目 ID 与 public／non-blind-regression 分母，不覆盖 hidden 报告；

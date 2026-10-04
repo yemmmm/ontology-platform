@@ -963,7 +963,7 @@ class ExaminerRunMetrics:
     thread_id: str | None = None
     turn_start_count: int = 0
     inference_steps: int = 0
-    max_inference_steps: int = _EXAMINER_MAX_INFERENCE_STEPS
+    max_inference_steps: int | None = _EXAMINER_MAX_INFERENCE_STEPS
     ttft_ms: float | None = None
     terminal_wall_ms: float | None = None
     proxy_time_ms: float = 0.0
@@ -1095,7 +1095,7 @@ class ExaminerRunMetrics:
         self._last_usage.update(current)
         if not positive:
             return False
-        if self.inference_steps >= self.max_inference_steps:
+        if self.max_inference_steps is not None and self.inference_steps >= self.max_inference_steps:
             # Once the terminal report is recorded, later usage notifications
             # (a model that keeps reasoning after submitting) must not turn a
             # successful submission into a budget failure.  Keep appending those
@@ -1201,7 +1201,7 @@ class ExaminerRunMetrics:
     def allow_inference(self) -> None:
         if self.blocked is not None:
             raise self.blocked
-        if self.inference_steps >= self.max_inference_steps:
+        if self.max_inference_steps is not None and self.inference_steps >= self.max_inference_steps:
             self.blocked = ExaminerRuntimeBlocked("runtime-budget", role=self.role, evidence={"steps": self.inference_steps})
             raise self.blocked
 

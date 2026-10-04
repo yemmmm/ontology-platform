@@ -960,3 +960,170 @@ def test_a_coerced_manifest_identity_is_never_a_trusted_identity(tmp_path, bindi
     _write_handoff_checkpoint(run_root, handoff, platform_bindings=bindings)
     with pytest.raises(TeamConfigurationError, match="cq_batch_scope_unauthorized"):
         _consume(run_root, frozen, handoff)
+
+
+def test_judge_native_input_partition_preserves_complete_ordered_evidence():
+    from modeling_team import __main__ as cli
+    from modeling_team.acceptance_runtime import AcceptanceBatchPacket, _unfreeze_packet
+    from modeling_team.tests.test_r3011_acceptance_runtime import _batch_packet, _questions
+    from modeling_team.runtimes.codex import (
+        _CODEX_MAX_INPUT_TEXT_CHARS, _v3_acceptance_first_turn_text,
+    )
+
+    packet = _batch_packet(role="acceptance", questions=_questions(11))
+    payload = _unfreeze_packet(packet.payload)
+    # Each approved full evidence item is generic, distinct and retained intact.
+    for index, entry in enumerate(payload["evidence_bundle"]["entries"]):
+        entry["content"] = str(index) + "x" * 150_000
+        from modeling_team.competency_questions import content_digest
+        entry["content_digest"] = content_digest(entry["content"])
+    payload["evidence_bundle"].pop("bundle_digest", None)
+    packet = AcceptanceBatchPacket.build("acceptance", payload)
+    groups = cli._cq_judge_input_packets(packet)
+    assert len(groups) > 1
+    assert [q["question_id"] for group in groups for q in group.payload["questions"]] == [
+        q["question_id"] for q in packet.payload["questions"]
+    ]
+    for group in groups:
+        assert len(_v3_acceptance_first_turn_text(group, _CQ_JUDGE_ROLE_INSTRUCTIONS)) <= (
+            _CODEX_MAX_INPUT_TEXT_CHARS
+        )
+        ids = {q["question_id"] for q in group.payload["questions"]}
+        assert [dict(e) for e in group.payload["evidence_bundle"]["entries"]] == [
+            dict(e) for e in packet.payload["evidence_bundle"]["entries"]
+            if e["question_id"] in ids
+        ]
+    small = _batch_packet(role="acceptance", questions=_questions(2))
+    assert cli._cq_judge_input_packets(small) == [small]
+
+
+@pytest.mark.parametrize("failed_group", [None, 1])
+def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
+    tmp_path, capsys, monkeypatch, failed_group,
+):
+    from io import StringIO
+    from threading import Event
+    from types import SimpleNamespace
+    from modeling_team.acceptance_runtime import ReportSinkServer, _packet_canonical
+    from modeling_team.runtimes.codex import CodexRuntimeAdapter, CodexRuntimeRPCError
+    from modeling_team.tests.test_r3011_acceptance_runtime import _submit
+
+    questions = [_question(f"cq-{index}") for index in range(11)]
+    run_root, frozen = _write_run_root(tmp_path, questions)
+    content = "generic approved evidence " + "x" * 150_000
+    for role in ("coordinator", "modeling", "competency-question"):
+        (run_root / "sources" / role / "scenario-brief").write_text(content)
+    manifest = json.loads((run_root / "source-manifest.json").read_text())
+    manifest["sources"][0]["sha256"] = hashlib.sha256(content.encode()).hexdigest()
+    (run_root / "source-manifest.json").write_text(json.dumps(manifest))
+    original_freeze = (run_root / "competency-questions/frozen/freeze-0001.json").read_bytes()
+    handoff = _write_handoff(tmp_path, frozen)
+    platform, _ = _batch_adapter()
+    constructions = []
+    sinks = []
+    start = ReportSinkServer.start
+    def capture(sink):
+        sinks.append(sink)
+        start(sink)
+    monkeypatch.setattr(ReportSinkServer, "start", capture)
+    auth = tmp_path / "fixture-auth.json"
+    auth.write_text("{}")
+    observed = []
+
+    def adapter_factory(repository_root):
+        constructions.append(True)
+        if len(constructions) == 1:
+            return platform(repository_root=repository_root)
+        process = SimpleNamespace(
+            stdin=StringIO(), stdout=StringIO(), stderr=StringIO(),
+            poll=lambda: None, terminate=lambda: None, kill=lambda: None,
+            wait=lambda **kwargs: 0,
+        )
+        adapter = CodexRuntimeAdapter(
+            repository_root=repository_root, use_bwrap=False,
+            process_factory=lambda *args, **kwargs: process,
+        )
+        monkeypatch.setattr(adapter, "preflight_host_auth", lambda: auth)
+        monkeypatch.setattr(adapter, "_ensure_standalone_provider_sessions", lambda: None)
+        monkeypatch.setattr(adapter, "_seed_models_cache", lambda *args: None)
+        def idle(agent, timeout):
+            Event().wait(timeout)
+            return None
+        monkeypatch.setattr(adapter, "_read_output_line", idle)
+        def rpc(agent, method, params):
+            if method == "initialize":
+                return {}
+            if method == "thread/start":
+                return {"thread": {"id": f"generic-thread-{len(sinks)}"}}
+            if method == "mcpServerStatus/list":
+                return {"data": [{"name": "examiner_report", "tools": [
+                    {"name": "submit_examiner_report"},
+                ]}]}
+            if method == "turn/start":
+                text = "".join(item["text"] for item in params["input"])
+                if len(text) > 1_048_576:
+                    raise CodexRuntimeRPCError(method, -32602, "rpc_error")
+                payload = json.loads((agent.home / "input.json").read_text())
+                ids = [q["question_id"] for q in payload["questions"]]
+                assert ids == list(sinks[-1].batch_contract.question_ids)
+                assert set(payload["platform_read_responses"]) == set(ids)
+                assert all(e["content"] == content for e in payload["evidence_bundle"]["entries"])
+                assert len(payload["examiner_reports"]) == len(ids)
+                assert "verdicts" not in payload
+                assert _packet_canonical(payload) == (agent.home / "input.json").read_bytes()
+                observed.append((ids, len(text)))
+                if len(observed) == failed_group:
+                    raise CodexRuntimeRPCError(method, -32602, "rpc_error")
+                for question_id in ids:
+                    assert _submit(sinks[-1].socket_path, _passing_verdict(question_id),
+                                   token=sinks[-1].token)["ok"] is True
+                return {"turn": {"id": "generic-turn"}}
+            raise AssertionError(method)
+        monkeypatch.setattr(adapter, "_rpc", rpc)
+        return adapter
+
+    code = _run_cli(
+        tmp_path, run_root, handoff,
+        _DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT, _RETAINED_QUERY_RESULT]),
+        adapter_factory, monkeypatch,
+    )
+    output = json.loads(capsys.readouterr().out)
+    report = _read_report(run_root, frozen["batch_id"])
+    groups = report["sessions"]["acceptance_judge"]["groups"]
+    assert report["sessions"]["acceptance_judge"]["judged_question_ids"] == [
+        verdict["question_id"] for verdict in report["verdicts"]
+    ]
+    assert len(groups) > 1
+    assert [qid for ids, _ in observed for qid in ids] == [q["question_id"] for q in questions]
+    assert len(sinks) == len(groups)
+    assert all(g["teardown"]["child_destroyed"] for g in groups)
+    assert output["full_pass"] is (failed_group is None)
+    assert code == (0 if failed_group is None else 1)
+    if failed_group:
+        assert groups[0]["status"] == "runtime-incomplete"
+        assert len(report["verdicts"]) == 11 - len(groups[0]["question_ids"])
+    else:
+        assert len(report["verdicts"]) == 11
+    assert (run_root / "competency-questions/frozen/freeze-0001.json").read_bytes() == original_freeze
+    assert all(sink._thread is None or not sink._thread.is_alive() for sink in sinks)
+
+
+def test_complete_single_question_over_native_limit_is_typed_not_truncated():
+    from modeling_team import __main__ as cli
+    from modeling_team.acceptance_runtime import (
+        AcceptanceBatchPacket, ExaminerRuntimeBlocked, _unfreeze_packet,
+    )
+    from modeling_team.competency_questions import content_digest
+    from modeling_team.tests.test_r3011_acceptance_runtime import _batch_packet, _questions
+
+    payload = _unfreeze_packet(_batch_packet(role="acceptance", questions=_questions(1)).payload)
+    entry = payload["evidence_bundle"]["entries"][0]
+    entry["content"] = "x" * 1_048_576
+    entry["content_digest"] = content_digest(entry["content"])
+    payload["evidence_bundle"].pop("bundle_digest", None)
+    packet = AcceptanceBatchPacket.build("acceptance", payload)
+    with pytest.raises(ExaminerRuntimeBlocked) as blocked:
+        cli._cq_judge_input_packets(packet)
+    assert blocked.value.evidence["reason_code"] == "judge-input-too-large"
+    assert blocked.value.evidence["input_chars"] > blocked.value.evidence["max_chars"]
+    assert packet.payload["evidence_bundle"]["entries"][0]["content"] == entry["content"]

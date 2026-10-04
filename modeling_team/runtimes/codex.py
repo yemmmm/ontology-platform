@@ -95,6 +95,74 @@ from .base import (
 )
 
 
+# Verified native 0.160.0 turn/start limit across all text input elements.
+_CODEX_MAX_INPUT_TEXT_CHARS = 1_048_576
+
+
+def _v3_judge_lossless_transport(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Encode repeated complete result bodies once, without changing the packet."""
+    projected = _unfreeze_packet(payload)
+    registry: dict[str, Any] = {}
+    for entries in projected.get("platform_read_responses", {}).values():
+        for entry in entries:
+            body = entry.pop("result")
+            digest = hashlib.sha256(_packet_canonical(body)).hexdigest()
+            registry[digest] = body
+            entry["result_ref"] = digest
+    return {
+        "encoding": "lossless-result-body-registry",
+        "packet": projected,
+        "result_body_registry": registry,
+    }
+
+
+def _v3_acceptance_first_turn_text(packet, role_instructions: str) -> str:
+    """Build the actual native input without allocating a child or reading files."""
+    payload = _unfreeze_packet(packet.payload)
+    platform_role = packet.role == CQ_ACCEPTANCE_PLATFORM_ROLE
+    if platform_role:
+        # The Platform Examiner stays blind: no answer, no evidence bundle.
+        isolation = (
+            "One continuous session per batch, questions in packet order, no "
+            "answer text, no source directory, no evidence bundle, no other context."
+        )
+    else:
+        isolation = (
+            "One independent judging session per batch, questions in packet order; "
+            "this packet already carries the frozen answer points, the approved "
+            "evidence material and the Examiner reports, and no platform read is "
+            "available to you."
+        )
+    first_turn_text = (
+        "R3.0-011 v3 hidden-batch acceptance session. Use only this serialized packet "
+        "and submit per-question v3 reports through the report-only acceptance MCP "
+        "server. "
+        + isolation
+        + " PACKET_JSON="
+        + _packet_canonical(payload).decode("utf-8")
+        + " "
+        + role_instructions
+        + f" PACKET_DIGEST={packet.canonical_digest}"
+    )
+    if not platform_role and len(first_turn_text) > _CODEX_MAX_INPUT_TEXT_CHARS:
+        transport = _v3_judge_lossless_transport(packet.payload)
+        # This is explicitly a transport JSON, not the original packet schema.
+        # The native sink and private input remain bound to the full packet.
+        original_input = " PACKET_JSON=" + _packet_canonical(payload).decode("utf-8")
+        transport_input = (
+            " Lossless transport only: TRANSPORT_JSON.packet is the original packet "
+            "with each retained result replaced by result_ref. Resolve every result_ref "
+            "against result_body_registry to use the complete result as that entry's result. "
+            "Body digests are transport indexes only, not business IRIs or new evidence. "
+            "Evidence references still use the original response_digest and artifact_path. "
+            "No evidence is omitted. PACKET_DIGEST binds the expanded original canonical "
+            "packet, not this transport JSON. TRANSPORT_JSON="
+            + _packet_canonical(transport).decode("utf-8")
+        )
+        first_turn_text = first_turn_text.replace(original_input, transport_input, 1)
+    return first_turn_text
+
+
 class CodexRuntimeError(RuntimeError):
     pass
 
@@ -2047,30 +2115,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         os.chmod(private_root, 0o700)
         private_input = private_root / "input.json"
         self._write_child_private(private_input, _packet_canonical(payload), 0o400)
-        if platform_role:
-            # The Platform Examiner stays blind: no answer, no evidence bundle.
-            isolation = (
-                "One continuous session per batch, questions in packet order, no "
-                "answer text, no source directory, no evidence bundle, no other context."
-            )
-        else:
-            isolation = (
-                "One independent judging session per batch, questions in packet order; "
-                "this packet already carries the frozen answer points, the approved "
-                "evidence material and the Examiner reports, and no platform read is "
-                "available to you."
-            )
-        first_turn_text = (
-            "R3.0-011 v3 hidden-batch acceptance session. Use only this serialized packet "
-            "and submit per-question v3 reports through the report-only acceptance MCP "
-            "server. "
-            + isolation
-            + " PACKET_JSON="
-            + _packet_canonical(payload).decode("utf-8")
-            + " "
-            + role_instructions
-            + f" PACKET_DIGEST={packet.canonical_digest}"
-        )
+        first_turn_text = _v3_acceptance_first_turn_text(packet, role_instructions)
         binding = payload.get("model_binding") if isinstance(payload.get("model_binding"), Mapping) else {}
         ontologies = binding.get("ontologies") if isinstance(binding.get("ontologies"), list) else []
         state_digest = "0" * 64
@@ -3443,6 +3488,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             metrics = spec.get("_metrics")
             if not isinstance(metrics, ExaminerRunMetrics) or metrics.role != kind:
                 metrics = ExaminerRunMetrics(kind)
+            if batch_contract is not None:
+                # Whole v3 batches are bounded by the carrier session deadline,
+                # not the legacy single-question inference-step count.
+                metrics.max_inference_steps = None
             metrics.bind_thread(thread_id)
             metrics.record_turn_start()
             packet = spec.get("_packet")

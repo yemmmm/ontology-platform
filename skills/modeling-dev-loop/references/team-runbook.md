@@ -502,6 +502,12 @@ staged 校验器一律重算，布尔 gate-open 状态永不还原；CQ 冻结�
 
 ## 验收续跑（R3.0-015 S4）
 
+Judge 完整首回合超过原生输入上限时，Runner 在同一 attempt 按冻结顺序连续贪心分组，
+每组保留完整本题证据与当前 Consumer 报告，不传前组裁决；Consumer 仍为一个连续会话。
+报告须披露实际 Judge 组数、packet digest、失败与清理；宿主会话统计按 Consumer 加实际
+Judge 组数，不称单会话完整证据。全部所选题都有有效裁决才可完整 PASS；单题仍超限
+返回 `judge-input-too-large`，不得删证据或缩小分母。
+
 宿主对一个 COMPLETE `production_handoff` 检查点做验收-only 续跑（design §7）；
 S3（翻译类计划自动迁移）按设计延后，S4 不依赖它。入口与 S2 相同的宿主凭据通道
 （`ONTOLOGY_PLATFORM_ADMIN_API_KEY`），显式 checkpoint id 与全新 run id 必填：

@@ -40,6 +40,7 @@ from .monitor_handoff import (
 )
 from .acceptance_runtime import (
     ChildRuntimeError,
+    _unfreeze_packet,
     ExaminerRuntimeBlocked,
     McpReadForwarder,
     CQ_SEMANTIC_READ_TOOLS,
@@ -94,7 +95,10 @@ from .preflight import normalize_scope_for_contract
 from .runner import TeamRunner
 from .candidate_publication import validate_candidate_publication
 from .candidate_progress import FormalCandidateProgressTimeout
-from .runtimes.codex import CodexRuntimeAdapter, CodexRuntimeError
+from .runtimes.codex import (
+    CodexRuntimeAdapter, CodexRuntimeError,
+    _CODEX_MAX_INPUT_TEXT_CHARS, _v3_acceptance_first_turn_text,
+)
 from .staged_batch_write_forwarder import (
     forward_staged_modeling_batch,
 )
@@ -2105,6 +2109,58 @@ def _cq_read_tools(binding: dict[str, object]) -> list[str]:
     return list(tools)
 
 
+def _cq_judge_input_packets(packet):
+    """Partition only an oversized Judge input, preserving ordered full evidence."""
+    def size(candidate):
+        return len(_v3_acceptance_first_turn_text(candidate, _CQ_JUDGE_ROLE_INSTRUCTIONS))
+
+    if size(packet) <= _CODEX_MAX_INPUT_TEXT_CHARS:
+        return [packet]
+    payload = _unfreeze_packet(packet.payload)
+
+    def subset(questions):
+        ids = {question["question_id"] for question in questions}
+        selected = dict(payload)
+        selected["questions"] = questions
+        selected["examiner_reports"] = [
+            report for report in payload["examiner_reports"] if report["question_id"] in ids
+        ]
+        selected["platform_read_responses"] = {
+            key: entries for key, entries in payload.get("platform_read_responses", {}).items()
+            if key in ids
+        }
+        selected["evidence_bundle"] = {
+            key: value for key, value in payload["evidence_bundle"].items()
+            if key not in {"entries", "bundle_digest"}
+        }
+        selected["evidence_bundle"]["entries"] = [
+            entry for entry in payload["evidence_bundle"]["entries"]
+            if entry["question_id"] in ids
+        ]
+        return build_acceptance_judge_packet(**selected)
+
+    groups = []
+    current = []
+    for question in payload["questions"]:
+        candidate = subset([*current, question])
+        if size(candidate) > _CODEX_MAX_INPUT_TEXT_CHARS and current:
+            groups.append(subset(current))
+            current = []
+            candidate = subset([question])
+        if size(candidate) > _CODEX_MAX_INPUT_TEXT_CHARS:
+            raise ExaminerRuntimeBlocked(
+                "runtime-infrastructure", role="acceptance",
+                evidence={"reason_code": "judge-input-too-large",
+                          "question_ids": [question["question_id"]],
+                          "input_chars": size(candidate),
+                          "max_chars": _CODEX_MAX_INPUT_TEXT_CHARS},
+            )
+        current.append(question)
+    if current:
+        groups.append(subset(current))
+    return groups
+
+
 def _cq_execute_batch(
     args: argparse.Namespace,
     root: Path,
@@ -2442,21 +2498,67 @@ def _cq_execute_batch(
                 adapter._run_root = artifacts
                 adapter.bind_acceptance_model_profile(profile)
                 judge_stage = "acceptance-judge-session"
-                verdicts = list(
-                    adapter.run_v3_acceptance_child(
-                        judge_packet,
-                        role_instructions=_CQ_JUDGE_ROLE_INSTRUCTIONS,
-                        reports=verdicts,
-                        timeout_seconds=float(
-                            getattr(args, "session_timeout", 300.0) or 300.0
-                        ),
-                        teardown=teardown_judge,
+                judge_packets = _cq_judge_input_packets(judge_packet)
+                if len(judge_packets) == 1:
+                    verdicts = list(
+                        adapter.run_v3_acceptance_child(
+                            judge_packet,
+                            role_instructions=_CQ_JUDGE_ROLE_INSTRUCTIONS,
+                            reports=verdicts,
+                            timeout_seconds=float(
+                                getattr(args, "session_timeout", 300.0) or 300.0
+                            ),
+                            teardown=teardown_judge,
+                        )
                     )
-                )
-                sessions["acceptance_judge"] = {
-                    "verdicts": len(verdicts),
-                    "judged_question_ids": list(judgeable),
-                }
+                    sessions["acceptance_judge"] = {
+                        "verdicts": len(verdicts),
+                        "judged_question_ids": list(judgeable),
+                    }
+                else:
+                    groups = []
+                    sessions["acceptance_judge"] = {
+                        "verdicts": 0, "judged_question_ids": [],
+                        "groups": groups,
+                    }
+                    for ordinal, group_packet in enumerate(judge_packets, 1):
+                        group_reports = []
+                        group_teardown = {}
+                        group = {
+                            "ordinal": ordinal,
+                            "question_ids": [q["question_id"]
+                                             for q in group_packet.payload["questions"]],
+                            "packet_digest": group_packet.canonical_digest,
+                            "input_chars": len(_v3_acceptance_first_turn_text(
+                                group_packet, _CQ_JUDGE_ROLE_INSTRUCTIONS)),
+                        }
+                        groups.append(group)
+                        try:
+                            group_reports[:] = adapter.run_v3_acceptance_child(
+                                group_packet, role_instructions=_CQ_JUDGE_ROLE_INSTRUCTIONS,
+                                reports=group_reports,
+                                timeout_seconds=float(
+                                    getattr(args, "session_timeout", 300.0) or 300.0),
+                                teardown=group_teardown,
+                            )
+                            group["status"] = "complete"
+                        except (ExaminerRuntimeBlocked, ChildRuntimeError,
+                                CodexRuntimeError, TeamConfigurationError) as exc:
+                            failure = _cq_typed_failure(exc)
+                            group.update({"status": "runtime-incomplete", "failure": failure})
+                            lifecycle_errors.append({
+                                "stage": judge_stage, "group_ordinal": ordinal,
+                                "reason": _cq_failure_summary(failure), "failure": failure,
+                            })
+                        finally:
+                            verdicts.extend(group_reports)
+                            group["verdicts"] = len(group_reports)
+                            group["teardown"] = group_teardown
+                            child_teardowns.append(group_teardown)
+                    sessions["acceptance_judge"]["verdicts"] = len(verdicts)
+                    sessions["acceptance_judge"]["judged_question_ids"] = [
+                        verdict["question_id"] for verdict in verdicts
+                    ]
             except (
                 ExaminerRuntimeBlocked,
                 ChildRuntimeError,
@@ -2477,7 +2579,8 @@ def _cq_execute_batch(
                     }
                 )
             finally:
-                child_teardowns.append(teardown_judge)
+                if not sessions.get("acceptance_judge", {}).get("groups"):
+                    child_teardowns.append(teardown_judge)
         else:
             sessions["acceptance_judge"] = {
                 "reason": (

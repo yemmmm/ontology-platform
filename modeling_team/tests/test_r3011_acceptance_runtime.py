@@ -1250,24 +1250,45 @@ def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
         proxy.stop()
 
 
-@pytest.mark.parametrize("startup_failure", ["plain", "rpc", None])
+@pytest.mark.parametrize("startup_failure", ["plain", "rpc", None, "steps", "large"])
 def test_native_public_judge_startup_failure_preserves_first_blocker(
     tmp_path, monkeypatch, startup_failure,
 ):
     """Real factory/sink; only the native process/RPC boundary is controlled."""
     from io import StringIO
     from threading import Event
+    import hashlib
 
     from modeling_team.acceptance_runtime import ExaminerRuntimeBlocked
     from modeling_team.contracts import repository_root
     from modeling_team.model_routing import load_team_model_profile
     from modeling_team.runtimes.codex import (
-        CodexRuntimeAdapter, CodexRuntimeError, CodexRuntimeRPCError,
+        CodexRuntimeAdapter, CodexRuntimeError, CodexRuntimeRPCError, _CodexChildResource,
     )
 
     # Judge packets carry the selected questions, not freeze visibility.
     # Use the same whole-11 projection that public selection supplies.
     packet = _batch_packet(role="acceptance", questions=_questions(11))
+    from modeling_team.acceptance_runtime import (
+        AcceptanceBatchPacket, _packet_canonical, _unfreeze_packet,
+    )
+    if startup_failure == "large":
+        payload = _unfreeze_packet(packet.payload)
+        payload["platform_read_responses"] = {
+            question["question_id"]: [{
+                "tool": "query_semantic_context", "request_digest": "a" * 64,
+                "response_digest": "b" * 64,
+                "artifact_path": f"acceptance/generic/{question['question_id']}.json",
+                "page": {"offset": 0},
+                "result": {"id": "generic-resource", "content": (
+                    "x" if index < 10 else "y"
+                ) * 150_000},
+            }]
+            for index, question in enumerate(_questions(11))
+        }
+        payload["evidence_bundle"].pop("bundle_digest", None)
+        packet = AcceptanceBatchPacket.build("acceptance", payload)
+    original_bytes = _packet_canonical(_unfreeze_packet(packet.payload))
     process = SimpleNamespace(
         stdin=StringIO(), stdout=StringIO(), stderr=StringIO(),
         poll=lambda: None, terminate=lambda: None, kill=lambda: None,
@@ -1303,18 +1324,40 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
         if method == "initialize":
             return {}
         if method == "thread/start":
+            assert (agent.home / "input.json").read_bytes() == original_bytes
             return {"thread": {"id": "fixture-judge-thread"}}
         if method == "mcpServerStatus/list":
             if startup_failure == "rpc":
                 raise CodexRuntimeRPCError(
                     method, -32603, "rpc_error", server_message="private sentinel",
                 )
-            if startup_failure:
+            if startup_failure == "plain":
                 raise CodexRuntimeError("fixture MCP discovery failed; private sentinel")
             return {"data": [{"name": "examiner_report", "tools": [
                 {"name": "submit_examiner_report"},
             ]}]}
         if method == "turn/start":
+            if startup_failure == "large":
+                text = "".join(item["text"] for item in params["input"])
+                if len(text) > 1_048_576:
+                    raise CodexRuntimeRPCError(method, -32602, "rpc_error")
+                assert " PACKET_JSON=" not in text
+                encoded = text.split(" TRANSPORT_JSON=", 1)[1]
+                transport, _ = json.JSONDecoder().raw_decode(encoded)
+                assert transport["encoding"] == "lossless-result-body-registry"
+                expanded = transport["packet"]
+                registry = transport["result_body_registry"]
+                assert len(registry) == 2
+                for entries in expanded["platform_read_responses"].values():
+                    for entry in entries:
+                        digest = entry.pop("result_ref")
+                        assert digest in registry
+                        entry["result"] = registry[digest]
+                assert _packet_canonical(expanded) == original_bytes
+                assert hashlib.sha256(original_bytes).hexdigest() == packet.canonical_digest
+                assert f"PACKET_DIGEST={packet.canonical_digest}" in text
+            if startup_failure == "steps":
+                return {"turn": {"id": "fixture-judge-turn"}}
             for question_id in sinks[0].batch_contract.question_ids:
                 response = _submit(
                     sinks[0].socket_path, _verdict_entry(packet.batch_id, question_id),
@@ -1325,6 +1368,26 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
         raise AssertionError(method)
 
     monkeypatch.setattr(adapter, "_rpc", rpc)
+    observed_metrics = []
+    if startup_failure == "steps":
+        def batch_output(resource, adapter, agent):
+            metrics = resource.metrics
+            for step in range(1, 32):
+                metrics.observe_notification({
+                    "method": "thread/tokenUsage/updated",
+                    "params": {"threadId": "fixture-judge-thread", "tokenUsage": {
+                        "total": {"inputTokens": step, "outputTokens": step},
+                    }},
+                })
+            metrics.allow_inference()
+            observed_metrics.append(metrics)
+            for question_id in sinks[0].batch_contract.question_ids:
+                assert _submit(
+                    sinks[0].socket_path, _verdict_entry(packet.batch_id, question_id),
+                    token=sinks[0].token,
+                )["ok"] is True
+
+        monkeypatch.setattr(_CodexChildResource, "start_stdout_pump", batch_output)
     try:
         def run():
             return adapter.run_v3_acceptance_child(
@@ -1332,7 +1395,7 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
                 timeout_seconds=1,
             )
 
-        if startup_failure:
+        if startup_failure in {"plain", "rpc"}:
             with pytest.raises(ExaminerRuntimeBlocked) as blocked:
                 run()
             assert blocked.value.evidence["reason_code"] == "child-start-failed"
@@ -1350,8 +1413,12 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
                 question["question_id"] for question in _questions(11)
             ]
         assert calls == ["initialize", "thread/start", "mcpServerStatus/list"] + (
-            [] if startup_failure else ["turn/start"]
+            [] if startup_failure in {"plain", "rpc"} else ["turn/start"]
         )
+        if startup_failure == "steps":
+            assert observed_metrics[0].inference_steps == 31
+            assert observed_metrics[0].max_inference_steps is None
+            assert observed_metrics[0].blocked is None
         assert len(sinks) == 1
         assert isinstance(sinks[0].batch_contract, V3BatchReportContract)
         assert len(sinks[0].batch_contract.question_ids) == 11
