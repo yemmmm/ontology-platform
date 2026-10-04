@@ -1248,3 +1248,113 @@ def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
     finally:
         _close_bridge(process)
         proxy.stop()
+
+
+@pytest.mark.parametrize("startup_failure", ["plain", "rpc", None])
+def test_native_public_judge_startup_failure_preserves_first_blocker(
+    tmp_path, monkeypatch, startup_failure,
+):
+    """Real factory/sink; only the native process/RPC boundary is controlled."""
+    from io import StringIO
+    from threading import Event
+
+    from modeling_team.acceptance_runtime import ExaminerRuntimeBlocked
+    from modeling_team.contracts import repository_root
+    from modeling_team.model_routing import load_team_model_profile
+    from modeling_team.runtimes.codex import (
+        CodexRuntimeAdapter, CodexRuntimeError, CodexRuntimeRPCError,
+    )
+
+    # Judge packets carry the selected questions, not freeze visibility.
+    # Use the same whole-11 projection that public selection supplies.
+    packet = _batch_packet(role="acceptance", questions=_questions(11))
+    process = SimpleNamespace(
+        stdin=StringIO(), stdout=StringIO(), stderr=StringIO(),
+        poll=lambda: None, terminate=lambda: None, kill=lambda: None,
+        wait=lambda **kwargs: 0,
+    )
+    adapter = CodexRuntimeAdapter(
+        repository_root=repository_root(), use_bwrap=False,
+        process_factory=lambda *args, **kwargs: process,
+    )
+    adapter._team_model_profile = load_team_model_profile(repository_root(), "openai-sol-medium")
+    auth = tmp_path / "fixture-auth.json"
+    auth.write_text("{}")
+    monkeypatch.setattr(adapter, "preflight_host_auth", lambda: auth)
+    monkeypatch.setattr(adapter, "_ensure_standalone_provider_sessions", lambda: None)
+    monkeypatch.setattr(adapter, "_seed_models_cache", lambda *args: None)
+    def idle_output(agent, timeout):
+        Event().wait(timeout)
+        return None
+
+    monkeypatch.setattr(adapter, "_read_output_line", idle_output)
+    sinks = []
+    start = ReportSinkServer.start
+
+    def capture_start(sink):
+        sinks.append(sink)
+        start(sink)
+
+    monkeypatch.setattr(ReportSinkServer, "start", capture_start)
+    calls = []
+
+    def rpc(agent, method, params):
+        calls.append(method)
+        if method == "initialize":
+            return {}
+        if method == "thread/start":
+            return {"thread": {"id": "fixture-judge-thread"}}
+        if method == "mcpServerStatus/list":
+            if startup_failure == "rpc":
+                raise CodexRuntimeRPCError(
+                    method, -32603, "rpc_error", server_message="private sentinel",
+                )
+            if startup_failure:
+                raise CodexRuntimeError("fixture MCP discovery failed; private sentinel")
+            return {"data": [{"name": "examiner_report", "tools": [
+                {"name": "submit_examiner_report"},
+            ]}]}
+        if method == "turn/start":
+            for question_id in sinks[0].batch_contract.question_ids:
+                response = _submit(
+                    sinks[0].socket_path, _verdict_entry(packet.batch_id, question_id),
+                    token=sinks[0].token,
+                )
+                assert response["ok"] is True
+            return {"turn": {"id": "fixture-judge-turn"}}
+        raise AssertionError(method)
+
+    monkeypatch.setattr(adapter, "_rpc", rpc)
+    try:
+        def run():
+            return adapter.run_v3_acceptance_child(
+                packet, role_instructions="judge the selected batch", reports=[],
+                timeout_seconds=1,
+            )
+
+        if startup_failure:
+            with pytest.raises(ExaminerRuntimeBlocked) as blocked:
+                run()
+            assert blocked.value.evidence["reason_code"] == "child-start-failed"
+            assert blocked.value.evidence["startup_stage"] == "mcp-preflight"
+            assert "private sentinel" not in str(blocked.value.evidence)
+            if startup_failure == "rpc":
+                assert blocked.value.evidence["rpc_error"] == {
+                    "category": "rpc_error", "code": -32603,
+                }
+            else:
+                assert "rpc_error" not in blocked.value.evidence
+        else:
+            verdicts = run()
+            assert [item["question_id"] for item in verdicts] == [
+                question["question_id"] for question in _questions(11)
+            ]
+        assert calls == ["initialize", "thread/start", "mcpServerStatus/list"] + (
+            [] if startup_failure else ["turn/start"]
+        )
+        assert len(sinks) == 1
+        assert isinstance(sinks[0].batch_contract, V3BatchReportContract)
+        assert len(sinks[0].batch_contract.question_ids) == 11
+        assert sinks[0]._thread is None or not sinks[0]._thread.is_alive()
+    finally:
+        adapter.stop()

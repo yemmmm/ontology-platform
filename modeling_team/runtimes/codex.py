@@ -1108,6 +1108,12 @@ class _CodexChildResource:
             "failure_category": self.failure_category,
             "reason_code": self.failure_reason,
         }
+        startup_stage = self.spec.get("_startup_failure_stage")
+        if startup_stage in {"initialize", "thread-start", "mcp-preflight", "turn-start"}:
+            evidence["startup_stage"] = startup_stage
+        rpc_error = self.spec.get("_startup_rpc_error")
+        if isinstance(rpc_error, dict):
+            evidence["rpc_error"] = dict(rpc_error)
         sink = self.report_sink
         rejections = getattr(sink, "_rejections", None)
         if isinstance(rejections, (list, tuple)):
@@ -2172,6 +2178,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             sink = getattr(resource, "report_sink", None)
             contract = getattr(sink, "batch_contract", None)
             if not isinstance(contract, V3BatchReportContract):
+                # Native startup failures return an already-cleaned placeholder.
+                # Preserve its first blocker instead of mistaking teardown for
+                # an absent contract on a successfully launched child.
+                failure = getattr(resource, "failure_evidence", None)
+                failure = failure() if callable(failure) else None
+                if isinstance(failure, Mapping):
+                    raise ExaminerRuntimeBlocked(
+                        "runtime-infrastructure", role=packet.role, evidence=dict(failure)
+                    )
                 raise ExaminerRuntimeBlocked(
                     "runtime-infrastructure",
                     role=packet.role,
@@ -3371,6 +3386,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # initialize/thread failure can stop the drain during unwind.
         resource._adapter = self
         resource._child_agent = child_agent
+        startup_stage = "initialize"
         try:
             self._rpc(child_agent, "initialize", {"clientInfo": {"name": "modeling-team-examiner", "version": "1"}})
             thread_start_params = {
@@ -3386,6 +3402,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # profile-backed TOML written above; non-formal child fixtures keep
                 # their historical request shape.
                 thread_start_params["model"] = child_model_override.model
+            startup_stage = "thread-start"
             thread_result = self._rpc(child_agent, "thread/start", thread_start_params)
             thread = thread_result.get("thread", thread_result) if isinstance(thread_result, dict) else {}
             thread_id = thread.get("id") if isinstance(thread, dict) else None
@@ -3395,6 +3412,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # turn.  This makes a missing/extra wrapper a startup contract failure,
             # rather than an ambiguous semantic report.
             child_agent.thread_id = thread_id
+            startup_stage = "mcp-preflight"
             if bool(spec.get("lean_examiner")):
                 self._require_lean_examiner_mcp_servers(child_agent)
             else:
@@ -3418,6 +3436,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         + source_text_json,
                     }
                 ]
+            startup_stage = "turn-start"
             turn_result = self._rpc(child_agent, "turn/start", {"threadId": thread_id, "input": first_turn_input})
             resource.thread_id = thread_id
             resource.first_turn_input = first_turn_input
@@ -3453,6 +3472,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 resource.start_stdout_pump(self, child_agent)
             return resource
         except Exception as exc:
+            spec["_startup_failure_stage"] = startup_stage
+            if isinstance(exc, CodexRuntimeRPCError):
+                # Reuse only the existing typed category/code; the server's
+                # diagnostic message, data and turn identity stay private.
+                spec["_startup_rpc_error"] = {"category": exc.category, "code": exc.code}
             resource.failure_category = "runtime"
             resource.failure_reason = "child-start-failed"
             resource.destroy()
