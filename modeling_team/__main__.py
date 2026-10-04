@@ -70,6 +70,7 @@ from .interventions import RecoverableOuterInputError
 from .checkpoints import (
     CHECKPOINT_KIND_PRODUCTION_HANDOFF,
     CheckpointError,
+    file_digest,
     inspect_checkpoints,
     manifest_digest,
     manifest_path,
@@ -77,6 +78,7 @@ from .checkpoints import (
 )
 from .checkpoint_recovery import (
     ACCEPTANCE_CONTINUATION_SCHEMA,
+    AcceptanceContinuation,
     acquire_root_run_lock,
     checkpoint_root_run_id,
     http_readback,
@@ -860,7 +862,10 @@ def _cq_resolve_manifest_entry(
     return by_name[0] if by_name else None
 
 
-def _cq_resolve_interview_record(run_root: Path, source_name: str) -> Path | None:
+def _cq_resolve_interview_record(
+    run_root: Path, source_name: str, *,
+    interview_checkpoint: AcceptanceContinuation | None = None,
+) -> Path | None:
     """Resolve one frozen evidence source to the Runner's private interview bytes.
 
     ``TeamRunner._handle_cq_interview`` publishes the run-root-relative
@@ -879,6 +884,39 @@ def _cq_resolve_interview_record(run_root: Path, source_name: str) -> Path | Non
         candidates = [private_root / PurePosixPath(source_name).name]
     else:
         return None
+    if interview_checkpoint is not None:
+        # S4 has already verified this explicit package. Its archived bytes
+        # remain authoritative after normal Runner private-temp cleanup; never
+        # choose between live and packaged records by whichever still exists.
+        plan = interview_checkpoint
+        manifest = plan.manifest
+        if (plan.source_run_root.resolve() != run_root.resolve()
+            or manifest.get("source_run_id") != run_root.name
+            or manifest.get("checkpoint_id") != plan.checkpoint_id
+            or manifest.get("kind") != CHECKPOINT_KIND_PRODUCTION_HANDOFF):
+            raise TeamConfigurationError("cq_evidence_unresolved: interview checkpoint binding mismatch")
+        relative = candidates[0].relative_to(run_root).as_posix()
+        locator = PurePosixPath(relative)
+        if locator.is_absolute() or ".." in locator.parts:
+            raise TeamConfigurationError("cq_evidence_unresolved: unsafe interview checkpoint source")
+        entries = [entry for entry in manifest.get("artifacts", [])
+                   if entry.get("source") == relative and entry.get("host_private") is True]
+        if not entries:
+            return None
+        if len(entries) != 1:
+            raise TeamConfigurationError("cq_evidence_unresolved: ambiguous interview checkpoint source")
+        package = run_root / "checkpoints" / plan.checkpoint_id
+        record = package / "host-private" / relative
+        manifest_file = manifest_path(run_root, plan.checkpoint_id)
+        for target in (manifest_file, record):
+            if (not target.resolve().is_relative_to(run_root.resolve())
+                or any(part.is_symlink() for part in (target, *target.parents)
+                       if part != run_root and part.is_relative_to(run_root))):
+                raise TeamConfigurationError("cq_evidence_unresolved: unsafe interview checkpoint path")
+        if (not manifest_file.is_file() or manifest_digest(manifest_file) != plan.manifest_digest
+            or not record.is_file() or file_digest(record) != entries[0].get("digest")):
+            raise TeamConfigurationError("cq_evidence_unresolved: interview checkpoint bytes changed")
+        return record
     matches = [candidate for candidate in candidates if candidate.is_file()]
     if len(matches) > 1:
         raise TeamConfigurationError(
@@ -1349,7 +1387,8 @@ def _cq_recheck_evidence_responses(
 
 
 def _cq_build_judge_evidence_bundle(
-    run_root: Path, freeze: dict[str, object], hidden: list[dict[str, object]]
+    run_root: Path, freeze: dict[str, object], hidden: list[dict[str, object]], *,
+    interview_checkpoint: AcceptanceContinuation | None = None,
 ) -> tuple[dict[str, object], dict[str, str]]:
     """Assemble the judge evidence bundle from the run's approved bytes.
 
@@ -1399,7 +1438,9 @@ def _cq_build_judge_evidence_bundle(
             source_name = str(ref.get("source") or "")
             try:
                 entry = _cq_resolve_manifest_entry(manifest, source_name)
-                record = _cq_resolve_interview_record(run_root, source_name)
+                record = _cq_resolve_interview_record(
+                    run_root, source_name, interview_checkpoint=interview_checkpoint,
+                )
                 if entry is not None and record is not None:
                     _unresolved(
                         question_id,
@@ -2078,6 +2119,7 @@ def _cq_execute_batch(
     forwarder_factory: object = McpReadForwarder,
     artifact_root: Path | None = None,
     continuation: Mapping[str, object] | None = None,
+    interview_checkpoint: AcceptanceContinuation | None = None,
 ) -> int:
     """Run the real v3 batch lifecycle end to end and write the executed report.
 
@@ -2309,7 +2351,7 @@ def _cq_execute_batch(
         if packet is not None:
             try:
                 evidence_bundle, evidence_failures = _cq_build_judge_evidence_bundle(
-                    run_root, freeze, hidden
+                    run_root, freeze, hidden, interview_checkpoint=interview_checkpoint,
                 )
             except TeamConfigurationError as exc:
                 lifecycle_errors.append(
@@ -2563,6 +2605,7 @@ def _run_cq_acceptance(
     *,
     forwarder_factory: object = McpReadForwarder,
     continuation: Mapping[str, object] | None = None,
+    interview_checkpoint: AcceptanceContinuation | None = None,
 ) -> int:
     """Read-only v3 hidden-batch acceptance entry (R3.0-011 design §4.0).
 
@@ -2735,6 +2778,7 @@ def _run_cq_acceptance(
                 slices=slices,
                 report_dir=report_dir,
                 forwarder_factory=forwarder_factory,
+                interview_checkpoint=interview_checkpoint,
                 **(
                     {
                         "artifact_root": continuation["output_root"],
@@ -3099,6 +3143,7 @@ def _run_checkpoint_resume_acceptance(
                 root,
                 forwarder_factory=forwarder_factory,
                 continuation=continuation,
+                interview_checkpoint=plan,
             )
         finally:
             # The host closing record captures the continuation's final state

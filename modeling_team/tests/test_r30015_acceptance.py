@@ -27,6 +27,7 @@ from argparse import Namespace
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from shutil import rmtree
+from types import SimpleNamespace
 
 import pytest
 
@@ -136,6 +137,7 @@ def _acceptance_source_run(
     handoff_overrides: dict | None = None,
     state: dict | None = None,
     with_sources: bool = True,
+    interviews: dict[str, dict] | None = None,
 ) -> tuple[Path, dict, str]:
     """A source run whose COMPLETE production handoff was checkpointed."""
 
@@ -170,12 +172,20 @@ def _acceptance_source_run(
         _write_sources(run_root)
     if state is not None:
         _write_json(run_root / "state.json", state)
+    for name, record in (interviews or {}).items():
+        _write_json(run_root / "competency-questions/private" / name, record)
     saved = save_checkpoint(
         run_root,
         StagePackage(
             kind=CHECKPOINT_KIND_PRODUCTION_HANDOFF,
             scope_refs={"freeze_id": frozen["batch_id"]},
             artifacts=[
+                *[
+                    CheckpointArtifactSpec(
+                        source=f"competency-questions/private/{name}", owner="host",
+                        visible_to=("host",), host_private=True,
+                    ) for name in (interviews or {})
+                ],
                 CheckpointArtifactSpec(
                     source="acceptance-v3/production-handoff.json",
                     owner="host",
@@ -820,6 +830,114 @@ def _evidence_root_adapter(adapter_class):
 
 
 # --- M44: runtime evidence is bound to this attempt's artifact root -----------------
+
+
+@pytest.mark.parametrize("source", [
+    "competency-questions/private/interview-0001.json",
+    "private/interview-0001.json", "interview-0001.json",
+])
+def test_s4_judge_reads_checkpoint_interview_after_real_private_cleanup(monkeypatch, source):
+    from modeling_team.runner import TeamRunner
+
+    question = _question("cq-1")
+    question["evidence_refs"] = [{
+        "source": source, "locator": "interview 1",
+    }]
+    interview = {"schema_version": "r3-0-011-cq-interview/v1", "ordinal": 1,
+                 "text": "Approved generic interview fixture."}
+    run_root, frozen, checkpoint_id = _acceptance_source_run(
+        questions=[question], interviews={"interview-0001.json": interview},
+    )
+    new_run_id = f"r3015out-{os.urandom(4).hex()}"
+    output_root = RUNS_ROOT / new_run_id
+    try:
+        cleanup = TeamRunner._cleanup_cq_private(SimpleNamespace(
+            run=SimpleNamespace(root=run_root), _append_evidence=lambda *args: None,
+        ))
+        assert cleanup["directory_removed"] is True
+        assert not (run_root / "competency-questions/private").exists()
+        before = _tree_state(run_root)
+        _, unresolved = main_module._cq_build_judge_evidence_bundle(run_root, frozen, [question])
+        assert "cq-1" in unresolved  # The ordinary live path stays fail-closed.
+        examiner_packets = []
+        adapter_class, state = _batch_adapter(
+            on_examiner_packet=lambda packet: examiner_packets.append(packet.to_dict()),
+        )
+        monkeypatch.setattr(main_module, "CodexRuntimeAdapter", adapter_class)
+        monkeypatch.setattr(main_module, "http_readback", lambda *args: _readback(FakeCursorPlatform()))
+        monkeypatch.setenv(main_module._CQ_PLATFORM_READ_KEY_ENV, "read-key")
+        code = main_module._run_checkpoint_resume_acceptance(
+            _cli_args(run_root.name, checkpoint_id, new_run_id), REPO_ROOT,
+            forwarder_factory=_Factory(_DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT])),
+        )
+        assert code == 0
+        entry = state["judge_payload"]["evidence_bundle"]["entries"][0]
+        archived = run_root / "checkpoints" / checkpoint_id / "host-private/competency-questions/private/interview-0001.json"
+        assert entry["content"] == archived.read_text()
+        assert entry["content_digest"] == main_module.content_digest(archived.read_text())
+        assert "Approved generic interview fixture." not in json.dumps(examiner_packets)
+        assert _tree_state(run_root) == before
+    finally:
+        _cleanup_run(run_root)
+        rmtree(output_root, ignore_errors=True)
+
+
+@pytest.mark.parametrize("defect", [
+    "record_digest", "manifest_digest", "source_binding", "checkpoint_binding",
+    "file_symlink", "directory_symlink", "undeclared", "schema", "empty_text", "escape",
+    "missing_archive",
+])
+def test_s4_archived_interview_keeps_binding_digest_path_and_schema_guards(defect):
+    from copy import deepcopy
+
+    question = _question("cq-1")
+    source = "competency-questions/private/interview-0001.json"
+    question["evidence_refs"] = [{"source": source, "locator": "generic interview"}]
+    record = {"schema_version": "r3-0-011-cq-interview/v1", "ordinal": 1, "text": "Generic."}
+    if defect == "schema":
+        record["schema_version"] = "invalid"
+    elif defect == "empty_text":
+        record["text"] = ""
+    run_root, frozen, checkpoint_id = _acceptance_source_run(
+        questions=[question], interviews={"interview-0001.json": record},
+    )
+    try:
+        plan = _prepare(run_root, checkpoint_id)
+        package = run_root / "checkpoints" / checkpoint_id
+        archived = package / "host-private" / source
+        if defect == "record_digest":
+            archived.chmod(0o600)
+            archived.write_text(json.dumps({**record, "text": "Changed."}))
+        elif defect == "missing_archive":
+            archived.unlink()  # The still-present live record must not rescue S4.
+        elif defect == "manifest_digest":
+            manifest_file = package / "manifest.json"
+            manifest_file.chmod(0o600)
+            manifest_file.write_text(manifest_file.read_text() + "\n")
+        elif defect == "source_binding":
+            plan.manifest = {**plan.manifest, "source_run_id": "another-source"}
+        elif defect == "checkpoint_binding":
+            plan.checkpoint_id = "another-checkpoint"
+        elif defect == "file_symlink":
+            archived.unlink()
+            archived.symlink_to(run_root / source)  # Same bytes still reject the link.
+        elif defect == "directory_symlink":
+            directory = archived.parent
+            directory.rename(directory.with_name("saved-private"))
+            directory.symlink_to(directory.with_name("saved-private"), target_is_directory=True)
+        elif defect == "undeclared":
+            plan.manifest = deepcopy(plan.manifest)
+            plan.manifest["artifacts"] = [entry for entry in plan.manifest["artifacts"]
+                                          if entry["source"] != source]
+        elif defect == "escape":
+            question["evidence_refs"][0]["source"] = "competency-questions/private/../interview-0001.json"
+        bundle, failures = main_module._cq_build_judge_evidence_bundle(
+            run_root, frozen, [question], interview_checkpoint=plan,
+        )
+        assert bundle["entries"] == []
+        assert "cq-1" in failures
+    finally:
+        _cleanup_run(run_root)
 
 
 def test_m44_continuation_sessions_bind_runtime_evidence_to_their_output_root(monkeypatch):
