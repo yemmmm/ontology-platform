@@ -944,7 +944,42 @@
     }
   },
   "forbidden_target_fields": ["actor", "graph_iri", "graph_set_id", "ontology_id", "shape_graph_iris", "target_graph_iri"],
+  "property_read_contract": {
+    "availability": "MCP tools below are usable only when advertised in the current role catalog. If absent, request the authorized Host's original scoped HTTP read envelope through the existing Owner channel; do not call an unadvertised tool or widen permissions.",
+    "listing": {
+      "tool": "get_semantic_read_model",
+      "fields": ["graph_set_id", "model_name", "include", "allow_stale_derived", "limit", "entity_iri"],
+      "required": ["graph_set_id", "model_name"],
+      "model_name": "property-list",
+      "include": "asserted",
+      "http": {"method": "GET", "path": "/api/semantic/graph-sets/{graph_set_id}/read-models/property-list", "query_example": {"include": "asserted", "field_set": "detail", "limit": 200}, "identity_filter_parameter": "entity", "identity_filter_note": "HTTP uses entity for the receipt/read-bound property IRI; MCP uses entity_iri."},
+      "rules": ["Bind graph_set_id to the existing authorized workspace/receipt; items[].iri is the returned property identity. Preserve paging/truncation limits. get_ontology_read_model does not accept property-list."]
+    },
+    "exact_definition": {
+      "tool": "semantic_sparql_query",
+      "fields": ["project_id", "scope_mode", "query", "ontology_ids", "timeout_seconds", "result_limit"],
+      "required": ["project_id", "scope_mode", "query"],
+      "scope_mode": "ontologies",
+      "http": {"method": "POST", "path": "/api/semantic/sparql:query", "body": "Use the same project_id, scope_mode, ontology_ids, query and optional timeout_seconds/result_limit fields."},
+      "query_example": "SELECT ?predicate ?value WHERE { <https://example.test/property/existing> ?predicate ?value . }",
+      "rules": ["Use only the authorized project_id and ontology_ids; replace the synthetic example IRI with an existing receipt/read-bound property IRI. This read-only scoped query retrieves the property's current predicates/values without guessing its identity; respect the returned scope, including any inferred graphs.", "A concept/fact no_match or unsupported_read_model response does not establish property absence; use the advertised authorized read tool and preserve unresolved read limits."]
+    }
+  },
   "update_payloads": {
+    "update_property": {
+      "additional_properties": false,
+      "identity": "At least one of property_id or property_iri is required, using the existing authorized identity binding; update preserves that property identity. ontology_id belongs to the Batch envelope, not this payload.",
+      "fields": {
+        "property_id": {"type": "string", "required": false},
+        "property_iri": {"type": "string", "required": false},
+        "name": {"type": ["string", "null"], "required": false},
+        "description": {"type": ["string", "null"], "required": false, "server_behavior": "Omitted or null leaves the comment unchanged; an empty string clears it; a nonempty string replaces it."},
+        "datatype": {"type": ["string", "null"], "required": false},
+        "object_class_id": {"type": ["string", "null"], "required": false},
+        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "Existing R4.0-002 common declaration; retain the candidate's unchanged declaration when supplying an approved correction."}
+      },
+      "rules": ["Supply only approved changed fields and any required unchanged semantic declaration; omitted/null name, description, datatype and object_class_id do not update those fields. A description-only correction does not recreate the property or change its domain/type/range.", "When the approved plan's existing identity binding carries a resource_iri, send property_iri with that exact value, not a short property_id; property_id remains valid where the authorized target contract is ID-based and the ID matches."]
+    },
     "update_entity": {
       "additional_properties": false,
       "identity": "entity_id or entity_iri, using the existing authorized identity binding.",

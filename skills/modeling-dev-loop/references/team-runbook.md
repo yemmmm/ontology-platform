@@ -65,6 +65,14 @@ effort `max`，选用 profile `deepseek-flash-max`。profile ID 不含模型版�
 时选定并适用整个 run：时间跨过时段边界不中断当前 run、不偷偷另开 start，不给已冻结 run
 换模型；新一轮授权才重新判定。
 
+## 同源 checkpoint 只读验收启动
+
+生产 handoff 与角色 terminal 已完成后，仍须通过原 stop 通道让生产 writer 退出，再从
+其 production_handoff checkpoint 启动 acceptance。当前 Runner 对同源 resume 持有进程锁，
+公开／隐藏 acceptance 也依次执行：前一 continuation 的托管进程确认退出后再启动后一轮。
+source_active 的启动拒绝不消耗 fresh semantic start、也不表示题目质量失败；保留启动
+记录，不删除锁或伪改 state 来重试。先核验已有 launch/exit，复用同一冻结模型与题池。
+
 ## 最小准备与启动
 
 在仓库根执行。先核对用户授权和余额、任务允许的源文件/角色输入、依赖健康、已有写入及

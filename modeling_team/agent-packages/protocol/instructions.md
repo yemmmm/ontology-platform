@@ -40,6 +40,14 @@ exact items, session/lease fields, or idempotency details. The public platform t
 execution and validation authority; return only its mechanical receipt or a concrete translation
 conflict to the relevant Agent.
 
+For an approved correction to an existing property, use the mounted contract's
+`update_payloads.update_property`, preserving its bound ID/IRI and unchanged semantic
+declaration rather than recreating the property. When a concept/fact query misses that
+property, use `property_read_contract` with an advertised authorized tool to read its
+existing definition (`no_match` or `unsupported_read_model` does not establish absence);
+if that tool is not advertised, request the authorized Host's original scoped read
+envelope through the existing Owner channel instead of calling an unavailable tool.
+
 For translating an ordinary or R2.3-005 candidate into platform Batches, you MUST first call the
 native `protocol_mechanics` tool `translate_candidate_to_batches` with the frozen candidate as its
 sole argument. For R2.3-003, use the native MCP extension described in the R2.3-003 section below;
