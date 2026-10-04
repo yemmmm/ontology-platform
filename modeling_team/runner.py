@@ -7341,40 +7341,41 @@ class TeamRunner:
         return snapshot
 
     def _cq_pool_questions(self) -> tuple[list[dict[str, Any]], list[str]]:
-        """Effective pool (panorama then slice) with its draft order.
+        """Effective pool by question ID (panorama then slice) with its draft order.
 
         Panorama questions come from ``_cq_effective_panorama_questions``; slice
-        questions are the decided slice drafts in publication order.
+        drafts add new IDs and their decisions modify or delete the same pool.
         """
 
-        panorama = [dict(question) for question in self._cq_effective_panorama_questions()]
-        panorama_ids = [question["question_id"] for question in panorama]
-        slice_questions: dict[str, dict[str, Any]] = {}
-        order = list(panorama_ids)
+        questions = {
+            question["question_id"]: dict(question)
+            for question in self._cq_effective_panorama_questions()
+        }
+        order = list(questions)
         for review_id in self._cq_draft_order:
             draft = self._cq_drafts[review_id]
             if draft.get("phase") != "slice-review":
                 continue
             for question in draft["questions"]:
-                if question["question_id"] in slice_questions:
+                if question["question_id"] in questions:
                     continue
                 if question["question_id"] not in order:
                     order.append(question["question_id"])
-                slice_questions[question["question_id"]] = dict(question)
+                questions[question["question_id"]] = dict(question)
             for decision in self._cq_decisions.get(review_id, []):
                 question_id = decision["question_id"]
                 if decision["decision"] == "delete":
-                    slice_questions.pop(question_id, None)
+                    questions.pop(question_id, None)
                     if question_id in order:
                         order.remove(question_id)
                 elif decision["decision"] in {"modify", "supplement"}:
                     replacement = decision.get("modified_question")
                     if replacement is None:
                         continue
-                    if question_id not in slice_questions and question_id not in order:
+                    if question_id not in questions and question_id not in order:
                         order.append(question_id)
-                    slice_questions[question_id] = dict(replacement)
-        return panorama + [slice_questions[key] for key in order if key in slice_questions], order
+                    questions[question_id] = dict(replacement)
+        return [questions[key] for key in order if key in questions], order
 
     def _cq_undecided_question_ids(self, questions: list[dict[str, Any]]) -> list[str]:
         """Question ids in ``questions`` that no recorded user decision covers."""

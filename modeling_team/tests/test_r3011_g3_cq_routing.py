@@ -203,6 +203,63 @@ def test_t_g3_2_projection_equals_the_pool_filtered_to_public(cq_g3_runner):
 # --- T-G3-3: map-only handoff on the real drain path ---------------------------
 
 
+@pytest.mark.parametrize("decision", ["modify", "supplement", "delete"])
+def test_full_pool_slice_review_keeps_unique_ids_and_applies_later_decisions(
+    cq_g3_runner, decision
+):
+    runner = cq_g3_runner
+    panorama = [_question("cq-1"), _question("cq-2", visibility="hidden")]
+    runner._publish_cq_question_draft(
+        {"cq_id": "competency-question", "draft": _draft(panorama)}
+    )
+    for question in panorama:
+        runner.handle_cq_outer_input(_decision(runner, question_id=question["question_id"]))
+    original_projection = (_public_dir(runner) / "public-projection-0001.json").read_bytes()
+
+    full_pool = [
+        *panorama,
+        _slice_question("cq-3", visibility="public"),
+        _slice_question("cq-4", visibility="hidden"),
+    ]
+    runner._publish_cq_question_draft(
+        {"cq_id": "competency-question", "draft": _slice_draft(full_pool)}
+    )
+    replacement = _question(
+        "cq-1", question="reviewed replacement question?", content_version=2,
+        answer_points=["reviewed replacement point"],
+    )
+    runner.handle_cq_outer_input(
+        _decision(
+            runner, 2, decision=decision,
+            modified_question=None if decision == "delete" else replacement,
+        )
+    )
+    for question in full_pool[1:]:
+        runner.handle_cq_outer_input(_decision(runner, 2, question_id=question["question_id"]))
+    runner.handle_cq_outer_input({"action": "cq_freeze"})
+
+    frozen = runner._cq_freeze
+    expected_order = ["cq-2", "cq-3", "cq-4"] if decision == "delete" else [
+        "cq-1", "cq-2", "cq-3", "cq-4"
+    ]
+    assert frozen["ordering"] == expected_order
+    assert [question["question_id"] for question in frozen["questions"]] == expected_order
+    assert len(frozen["questions"]) == len(set(expected_order))
+    assert {question["question_id"]: question["visibility"] for question in frozen["questions"]} == {
+        question_id: "hidden" if question_id in {"cq-2", "cq-4"} else "public"
+        for question_id in expected_order
+    }
+    if decision != "delete":
+        assert frozen["questions"][0]["question"] == replacement["question"]
+        assert frozen["questions"][0]["answer_points"] == replacement["answer_points"]
+        assert frozen["questions"][0]["content_version"] == 2
+    projection = runner._cq_public_projection()
+    assert [question["question_id"] for question in projection["questions"]] == [
+        question_id for question_id in expected_order if question_id in {"cq-1", "cq-3"}
+    ]
+    assert (_public_dir(runner) / "public-projection-0001.json").read_bytes() == original_projection
+
+
 class _DrainTransport:
     results: dict = {}
     issue_escalation_enabled = False
