@@ -859,3 +859,70 @@ Round18 runbook 5 行指南证据亦按原差异复用，不扩大 CQ／Host 流
 L2／L3、外部实际 SQL／API／脚本执行、真实非stub OWL推理无本轮完整验收，不将其前置到静态能力。
 交付 record 与本记录链接／fences／格式／diff检查通过；本轮只改本记录，没有还原其他dirty文件，
 没有调用 Claude、模型或真实查询，没有修改源／旧报告／代码或提交。
+
+## Round 21：stdout 首失败阶段与异常类安全诊断合同 PASS
+
+只读核对冻结 codex.py 与 test_r3011_acceptance_runtime.py。原 generic stdout exception
+仍记录 child-output-failed，仅当该错误赢得现有 first-failure latch 时附 exception_class 与
+固定 output_stage（read／metrics／notification），经 failure_evidence 交付。
+不输出原 exception text／traceback／stdout／packet／credential；旧 reason、流程、预算和
+cleanup 不变，不新增工具／治理硬门。聚焦检查新增诊断仅 stdout generic except 写入，
+首错记录与读取使用现有 terminal lock；实际 native 分支已有可重入锁合同。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r3011_acceptance_runtime.py \
+  -k native_public_judge_startup_failure_preserves_first_blocker \
+  --basetemp=/tmp/v4-independent-round21-stdout
+```
+
+结果：**9 passed，22 deselected，3.16 秒**。真实 default factory／本地 Unix sink 采用受控
+process／RPC／输出边界，read／metrics／notification 注入 TypeError 保留固定 class／stage，
+private sentinel 不进入 evidence；已有 fixture-first-failure 后的异常不覆盖原 reason、
+不附后错 class／stage。private/socket root 与 child 清理仍 true，旧成功／启动／budget／
+lossless 回归继续通过。没有实际 native 模型调用或真实平台查询。
+
+冻结 codex SHA-256 `c9c602fddb4fbd1e5cafdd9331fdfa96e9433a31903114606ad2909e844d65d0`，
+test SHA-256 `2f0a91f5099e5b10bb659ead5c031b950c0989fc7fa69402d751e3f3375b5d33`，
+两文件 diff SHA-256 `02a561fabca16569142bc67b8a844d228c7671028e3b66f3fcfc6fbbb01a063c`
+均与交接一致；diff 与文档链接／格式检查通过。父完整 Team 不重复。
+
+**本轮窄可观察性合同 PASS，0 新 Critical／High。** 不宣称旧 public2 输出异常根因已修复，
+不根据新诊断代码重新归因或修改旧报告。宿主转交 Start4 已09:20:49Z实际开始、累计4/5余1，
+旧进程加载 c58dc29 不受热改；本轮没有监督／继续／修复它，也不提供 Start4 语义判断。
+Start5 是否使用新提交由宿主管理，不由本合同测试声称实运改善。未读 actual QA／Judge／
+private artifacts、改代码／其他人文档、调用 Claude 或提交；沿用 sol/medium 要求。
+
+## Round 22：CQ 全池统一 ID 投影与冻结合同 PASS
+
+仅只读核对冻结 runner.py 的 _cq_pool_questions 与 test_r3011_g3_cq_routing.py。
+统一 question ID map 从有效 panorama 初始化，slice 草稿仅加入新 ID，首出现顺序保留；
+明确 modify／supplement 决定替换同 ID，delete 同时移除 map／ordering。
+不会把 full-pool slice draft 再追加为 panorama 同题副本，也不会以 approve 暗替已有内容。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r3011_g3_cq_routing.py \
+  modeling_team/tests/test_r3011_runner_wiring.py \
+  --basetemp=/tmp/v4-independent-round22-pool
+```
+
+结果：**49 passed，6.44 秒**。synthetic Runner 主路径发布 panorama→包含重复 panorama ID
+的 full-pool slice→当前 recorded modify／supplement／delete→freeze，验证 ordering、
+唯一完整分母、public／hidden 可见性、具体替换版本和 public projection，旧投影字节保持。
+另 **4 组独立 synthetic pool 探针**覆盖 approve／modify／supplement／delete：approve 保留
+原内容、明确替换生效、删除不残留 ordering、唯一首出现顺序与原 draft／decision 输入不变。
+本轮没有读取 workspaces 实际 CQ 或任何真实题目／答案，通用测试不操作生产 run。
+
+冻结 runner SHA-256 `0fe2791b7b29329f53c268f926777878b6b3321ee73e5c3d7fed434e2ca63ecb`，
+test SHA-256 `3f36eaf0be0fe134d9db75325264aa17beaa5849b248b99228bea14a45d986ac`
+与交接一致；focused diff 与本记录链接／格式检查通过。
+
+**本轮独立池投影／冻结合同 PASS，0 新 Critical／High。** 只证明通用实现，不把此前
+实际 duplicate freeze 被 Host 阻断当作模型质量失败，也不声明当前 Start4 交接或语义 PASS。
+父完整 Team 不重复；未改 code／其他dirty文档、操作真实 run／live、读取实际 private／
+Consumer／Judge 资料、调用模型／Claude 或提交。

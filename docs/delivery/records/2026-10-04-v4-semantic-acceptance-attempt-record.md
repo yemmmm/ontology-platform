@@ -1,5 +1,13 @@
 # 2026-10-04 v4 真实建模与独立验收记录
 
+当前推进（2026-10-04 17:34 +08）：用户要求用完剩余两次生产额度。Start4 已真实启动，
+累计 4/5、剩余 1；有界语义复核与治理读回完成，未增加业务事实或重放写入。
+CQ 全池冻结暴露重复身份的 platform-contract 缺陷，Host 未交接这份无效冻结，
+已保存 reviewed checkpoint 并停止 Start4，准备最窄修复后的最后一次 fresh start。
+v4 仍为 **PARTIAL**；旧独立 verdict 与失败不被本次生产读回覆盖。
+
+以下为上一阶段收口，临时测试主体已为本次续跑重新启用，其旧清理证明不覆盖当前阶段：
+
 当前收口（2026-10-04 17:13 +08）：v4 **PARTIAL**。Start3 已完成只读生产交接。
 最新完整隐藏集 9/10 PASS，H09 题目／参考范围待复核；最新完整公开集 9/11 PASS，
 P01/P06 语义消费不足。两轮题目全部执行、有有效裁决且无模型漂移，旧结果原样保留。
@@ -1003,3 +1011,28 @@ start3-final-preservation-verification.json。最新4轮8个retained native TOML
 语义／infra完整计时，不伪造有效时间比例；最后阶段优先实际S4，未追加全平台审计或控制机制。
 全v4仍PARTIAL：001/015注册未实现，004并行／005部分自动化、外部数值A10、真实非stub
 OWL推理和L2/L3无本轮完整证据，不把这些后阶段范围作为当前静态建模前置门。
+
+
+## Start 4：语义复核完成，CQ 池重复阻断独立交接
+
+- Run：`r4009-20261004-solmedium-auth02-start4`；semantic start `2026-10-04T09:20:49.330672Z`，已用 4、剩余 1。
+- 冻结代码 `c58dc29`，实际四角色均 `gpt-6.1-sol / medium`，`service_tier=fast` 与 `fast_mode=true`。
+- 复用 Start3 `materialization_progress-0001` 与原 r5 候选，不改源语义；新的 Session 已完成，无新 Batch/write/未知写入。
+- 27 个 exact anchor 治理查询完整返回，95 个选定有向关系匹配候选；11 个已披露缺口保留。验证 conforms；reasoning 仅 development_stub。深度1有界读回、join_direction 投影缺失及本轮未测受限正文仍是证据限制。
+- CQ review8 的 21 条明确修改/批准以及与期望池相同的 review9 全部已被 Runner 接受。`freeze-0005` 有28条、21个唯一身份，7条 panorama 被 slice 全池草案再次追加；公开18、隐藏10，不是题目质量失败。
+- 无效快照原样保留，未发布 handoff、未跑该冻结的语义 Judge；最后 reviewed checkpoint 为 `materialization_progress-0002`，用于最后授权 start。
+- 最窄修复目标为按稳定 question_id 合并池并应用明确修改，不能删题或改分母掩盖。修复及最终启动/验收证据继续追加。
+- 首个 Codex stdout 异常类别/阶段诊断已提交 `6a5fa0b`，独立 Round21 PASS；全 Team 2333 passed、2 skipped、314 subtests（180.12s）。仅证明诊断保留，不证明此前输出异常根因已修复。
+
+### CQ 唯一身份投影修复验证
+
+`_cq_pool_questions` 使用同一稳定 ID 池，slice 全池复载不追加旧 panorama；后续明确
+modify/supplement 覆盖同条，明确 delete 移除同条和顺序。仅影响既有 public projection
+与 freeze 两个调用点，不新增守卫、不静默删题、不修改任何冻结文件。GitNexus 未用于本次
+图覆盖；采用定向调用点、diff 与既有主路径 synthetic 测试。
+
+开发 RED 复现 modify/supplement 6条却仅4unique，delete ordering失败；GREEN 49 passed
+（7.32s）。独立 Round22 49 passed（6.44s）及4组反例 PASS，0新Critical/High；审核
+唯一 ID/order、明确替换、公开隐藏分组、delete与旧投影不可变。Ruff 5项均与HEAD既有基线
+完全一致、无新增；diff检查通过。全 Team 回归 2336 passed、2 skipped、314 subtests（180.28s），exit0；
+真实 Start5 freeze 验证结果待追加。
