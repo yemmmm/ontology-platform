@@ -926,3 +926,115 @@ test SHA-256 `3f36eaf0be0fe134d9db75325264aa17beaa5849b248b99228bea14a45d986ac`
 实际 duplicate freeze 被 Host 阻断当作模型质量失败，也不声明当前 Start4 交接或语义 PASS。
 父完整 Team 不重复；未改 code／其他dirty文档、操作真实 run／live、读取实际 private／
 Consumer／Judge 资料、调用模型／Claude 或提交。
+
+
+## Round 23：Property 更新与授权读取提示合同 PASS
+
+只读复核冻结的 [item 合同](../../../modeling_team/references/modeling-batch-item-contract.json)、
+[Protocol 指南](../../../modeling_team/agent-packages/protocol/instructions.md) 与通用合同测试。
+`update_property` 字段集合与现有 handler 一致，identity 由既有 ID／IRI 绑定解析，不分配新资源；
+只修 description 的 delta 不重建 property 或改 domain／type／range。普通四个更新字段
+省略／null 不变，description 空串清除 comment；`semantic_definition` 有独立行为：省略保留、
+显式 null 清除声明、对象替换声明。新指南要求获准修正保留不变声明，未把该字段的 null
+误述为普通字段的保留行为。
+
+property-list 的 MCP 参数、HTTP `entity` 过滤参数与 asserted 模板吻合；scoped SPARQL
+参数和只读 SELECT 合同吻合。Protocol 引用的已枚举 source 路径保持，工具只在当前 catalog
+advertised 时使用；缺工具转交 authorized Host 原始 scoped HTTP read envelope 给 Owner，
+不会假称工具已挂载或扩大读取权限。concept／fact 的 no_match／unsupported 不推导 property 不存在。
+
+实际独立命令（backend 工作目录）：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. .venv/bin/python -m pytest -q \
+  ../modeling_team/tests/test_protocol_identity_contract.py
+```
+
+结果：**14 passed，1.11 秒**。另以现有 handler `prepare` 执行 **3 个 synthetic 探针**：
+semantic_definition 省略／null／对象的 delete／insert 数量分别为 0／0、1／0、1／1，
+输出均不分配资源，annotation subject 保持原 property IRI。仅编译内存 delta，没有平台写入。
+JSON 解析、focused diff whitespace、本文链接／格式检查通过。
+
+三个 SHA-256 与交接一致：item contract
+`73fac456d6090c442f81d553cf8f97bd0f8cdaa3ea9db4d301a1ef4f68006412`；Protocol
+`b408e05fb00aeafdc4394a0e1b56bcf6f963924fd34ac45f03d8979dddd14467`；test
+`7b32c53121ef749045917095d86dc1e71413c5421c3502d8fc0c6763ec6a622f`。
+
+**本轮 instruction／通用合同 PASS，0 新 Critical／High。** 宿主转交的当前 run
+GET／scoped SPARQL 200 与 Owner 接受仅为宿主元数据，不属于本轮亲自取得的 live 证据，
+不证明当前建模或 CQ 语义 PASS。未读取 workspaces／实际业务／CQ／私有正文、操作 run、
+调用模型／Claude、改 code／其他文档或提交；本轮无需 full suite 或服务重启。
+
+
+## Round 24：条件式 Property identity 与同源 S4 串行说明 PASS
+
+在 Round23 基线上只核对新增一条规则、四个文本断言与 runbook 八行。
+既有 unified identity 检查对 update／delete 比较 payload.property_iri 与批准 binding.resource_iri
+的 exact equality；新增条件提示准确要求该 binding 情况使用原 IRI，未把 compiler 合法的
+ID-based property_id 全面禁用。既有 ID／IRI 编译正控都保留。
+
+[同源 checkpoint 说明](../../../skills/modeling-dev-loop/references/team-runbook.md) 与代码一致：
+acceptance continuation 获取与 production resume 同源 RootRunLock，LOCK_EX／LOCK_NB 冲突
+返回 retryable source_active；continuation finally 释放锁，进程死亡由内核释放。
+prepare 另核 source writer 已退出，handoff／角色 terminal 本身不替代 writer settlement。
+所以原 stop 通道确认 writer exit 后，同源公开／隐藏 continuation 按前轮托管进程 exit 串行启动；
+保留拒绝记录，不删锁／伪 state。Host 将 acceptance-only 明确记为零 semantic starts，
+source_active 不解释为题目质量失败。没有提出或实现新 guard／框架。
+
+独立命令（backend 工作目录）：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. .venv/bin/python -m pytest -q \
+  ../modeling_team/tests/test_protocol_identity_contract.py
+```
+
+**14 passed，0.98 秒**；JSON、focused diff whitespace 和新增链接／fence 检查通过。
+新 JSON SHA-256 `75f09b600d6ca9f6261963511c498d874375d0f3446fe25fa951bd290f289932`、
+test `c640315ed49dbb34e9d199fa821fe37833330d9717347b0501fdf21e0bae04bf` 与交接一致；
+Protocol 仍为 `b408e05fb00aeafdc4394a0e1b56bcf6f963924fd34ac45f03d8979dddd14467`。
+
+**tiny instruction／流程合同 PASS，0 新 Critical／High。** 宿主转交 public2 11／11 PASS、
+23 stable replay、无漂移／cleanup true，hidden2 已开始尚无终态、quota 5／5，仅为宿主摘要；
+本轮没有独立读取或语义裁决，不以此改变当前整体 PARTIAL。未访问 workspaces／实际 QA、
+操作平台／run、调用模型、改代码／其他文档或提交；未重复 full suite／重启服务。
+
+
+## Round 25：最终当前范围与安全证据收口审核 PASS；全 v4 PARTIAL
+
+只读取获准的 outcome、freeze、preservation 安全元数据及
+[宿主交付记录](../records/2026-10-04-v4-semantic-acceptance-attempt-record.md)；authorization
+仅抽 status／额度／current counts，清理和资源响应仅抽状态、撤销／停用布尔与签名。
+未读取实际问答、Judge 理由、私有采访或模型正文；原文件只计算 SHA，不向审核输入提供内容。
+
+当前 CQ6／review9／r6 有界场景的独立 native Examiner／Judge 报告元数据：
+
+| 范围 | Attempt | 有效裁决 | 重放 | 报告 SHA-256 |
+| --- | --- | --- | --- | --- |
+| Start5 public2 | 0001 | 11／11 PASS | 23 stable | `62ec67b2cfb6e77aaa9c0394c7a3841e69a7379355aa44d894a8c480b8e5f18a` |
+| Start5 hidden2 | 0002 | 10／10 PASS | 21 stable | `8058fd3726e61295373b265c012b270238e67c77a8702322051c06ea11301673` |
+
+两份安全元数据均 full_pass=true，完整唯一分母与 executed／verdict 数一致，unexecuted、
+unavailable、drift、model_drift、lifecycle_errors 均为空，全部逐题 stable、binding_equal=true，
+children／forwarder 清理成功。冻结安全检查为21 unique、public11／hidden10，顺序与明确审核池
+相符；该 freeze 检查自身声明不建立语义质量。语义裁决来自上述独立 native Judge，
+本审核者只核计数／绑定／范围，不作新 grader 或重判业务。
+
+独立 hash-only 脚本逐份核对 preservation 清单 **37 份文件**，实际 SHA 与 expected／
+recorded actual 全相等；旧 source、freeze、候选、失败报告与新报告未被后续成功覆盖。
+20 managed metadata 均 exited，20 launch bootstrap records 均 revoked。
+11条清理 HTTP receipt 中两密钥实际401、revoked_at非空、两用户disabled_at非空，
+两 membership 与临时 finance role 删除 receipt 为204；cleanup bootstrap撤销。
+四项 management GET 均200、管理 bootstrap 已撤销，保护成员与 grants unchanged=true，
+final source signature `5a92b75989349e537e9a9d02dbc7e000`。这些是只读复核的宿主清理记录，
+本轮没有重新发平台请求。授权 status=closed、consumed=5／limit=5／remaining=0。
+
+依据当前 R4.0-009 F7／F8／F9，当前有界 CQ L0／L1 PASS 不自动关闭其他需求或 L2／L3。
+Parent Start5 为 STOPPED／ready read-only handoff，不冒称 COMPLETED；旧启动拒绝、
+旧不足与 runtime 故障仍保留。R4.0-001／015未实施，004并行同步、005自动物化未覆盖，
+完整非stub OWL／实际外部数值 SQL／API／脚本执行／L2重复性／L3产品化未证明；
+**全 v4 继续 PARTIAL**。当前 instruction-only 提交及既有全量测试不补上述语义缺口。
+
+**本轮 scope／安全元数据审核 PASS，0 新 Critical／High。** 交付记录当前汇总没有缩分母
+或把旧失败覆盖为PASS；链接／fence／diff whitespace检查通过。只追加本owned文档，
+未改其他人的记录／代码／保留证据、创建／继续／修复run、调用模型／Claude、重启或提交；
+不重复full suite。

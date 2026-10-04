@@ -1,10 +1,12 @@
 # 2026-10-04 v4 真实建模与独立验收记录
 
-当前推进（2026-10-04 17:34 +08）：用户要求用完剩余两次生产额度。Start4 已真实启动，
-累计 4/5、剩余 1；有界语义复核与治理读回完成，未增加业务事实或重放写入。
-CQ 全池冻结暴露重复身份的 platform-contract 缺陷，Host 未交接这份无效冻结，
-已保存 reviewed checkpoint 并停止 Start4，准备最窄修复后的最后一次 fresh start。
-v4 仍为 **PARTIAL**；旧独立 verdict 与失败不被本次生产读回覆盖。
+当前收口（2026-10-04 18:14 +08）：五次生产授权 **5/5 已用，剩余0**。
+Start4完成模型复核但CQ全池重复身份阻断交接；最窄修复后Start5完成单属性源忠实
+修订及真实dry-run/apply/读回。当前同一冻结21题的独立Consumer/Judge结果为
+**公开11/11 PASS、隐藏10/10 PASS**；44次证据重放稳定，无模型漂移，验收清理通过。
+全部20个托管运行退出，临时密钥401／主体停用／成员与临时财务角色删除；模型、
+4个保护成员及grants保留，37份关键证据摘要未变。当前CQ有界L1通过；全v4仍为
+**PARTIAL**：未实施项、实际外部执行、完整推理及L2/L3不被此次CQ PASS覆盖。
 
 以下为上一阶段收口，临时测试主体已为本次续跑重新启用，其旧清理证明不覆盖当前阶段：
 
@@ -1036,3 +1038,130 @@ modify/supplement 覆盖同条，明确 delete 移除同条和顺序。仅影响
 唯一 ID/order、明确替换、公开隐藏分组、delete与旧投影不可变。Ruff 5项均与HEAD既有基线
 完全一致、无新增；diff检查通过。全 Team 回归 2336 passed、2 skipped、314 subtests（180.28s），exit0；
 真实 Start5 freeze 验证结果待追加。
+
+
+## Start 5：最后授权生产运行（进行中）
+
+- Run：`r4009-20261004-solmedium-auth02-start5`；semantic start `2026-10-04T09:38:46.973062Z`，5/5、剩余0。
+- 冻结代码 `f9e40b0`，包含输出诊断修复 `6a5fa0b` 与唯一身份池修复 `221c74c`。
+- 来源 Start4 `materialization_progress-0002`；实际四生产角色均 solmedium、service_tier fast、fast_mode true，不以请求配置冒充现场配置。
+- 新冻结 `cq-batch-0006` / `freeze-0006`，snapshot digest `sha256:c03962aabdd85067d9df74563f12eba9b35d18973405c33347bf1e18628bbc78`。
+- 实际21条、21 unique，公开11／隐藏10；题序、题干、逐条答案／来源／unknown／版本与先前明确审核的目标池完全一致；绑定当前 review9/version10。未改分母或抹掉无效freeze5。
+- 这只验证题池合同与确定性恢复，语义质量仍由后续独立Consumer/Judge只读评测，不借旧分数或生产读回宣布PASS。
+
+### Start5 当前有界语义修正与 issue1（17:45 +08）
+
+Team独立检查发现属性说明写pre，但现有repair-then-assess流程和唯一loop fact为post。
+提出完整immutable r6，仅更新同一属性的两处business meaning，其余条目、关系、作用域与
+11显式gap不变；Owner批准、Coordinator完成现有引用重审后更新current slot。
+这是真实模型表达矛盾，未从私有Judge答案或模型absence推导。
+
+Protocol在任何写入前报告 `protocol_guidance` issue1：挂载Batch合同缺既有
+update_property payload/read route。零mutation，仍可恢复；首次阻塞为prompt-contract。
+Codex child从既有compiler/handler/read工具确认 identity-preserving update 与受治理
+property-list/Sparql读取合同；Host issue1/reporter protocol/epoch1 的guidance已accepted，
+同run恢复RUNNING。持久权威合同修复与独立审核继续；正常翻译review/dry-run/apply/读回
+仍由Team完成，不以guidance或r6候选当作实际写入成功。
+
+Protocol实查当前catalog未advertise两个read工具，Host没有扩展角色权限，而使用现有获准
+只读主体的API：property-list exact实体过滤200/1项/complete true；scoped Sparql200、
+同Project/单Ontology/source signature/未截断。原回包及SHA通过Owner答案accepted，
+Protocol已核绑定并发布单项r6翻译计划，等待通常的review/dry-run/apply。原derived rule
+missing warning保留。持久提示明确“平台有接口”不等于“当前角色可调用”，未加新allowlist。
+
+### Start5 单项实际应用与最终读回（17:53 +08）
+
+r1目标短ID与既有IRI binding不匹配，平台调用前被可恢复地拒绝，无Batch或写入。
+Team保留r1，改用精确property_iri的新r2计划/key并重新审核。Batch
+`99b8a7ca-e1c5-423d-a2e9-af837a80b274` 的 dry-run Attempt
+`be34d2ee-a5af-4f48-b689-cc1172b39620` validated；apply Attempt
+`0dba0198-783f-4705-8270-4d79cd067a42` applied，二者content hash
+`5f7b6e9d45b93164c9c031f89138a49cbaa9e11098c09bab2cbb66eb3eb58a31`相同且findings为空。
+
+最终workspace `caa20287b0ca5c53dbfd7719e62d010b578af98ace485e0ce7658ecb6452a7db`，
+source signature `5a92b75989349e537e9a9d02dbc7e000`。Host获准只读主体再次GET/property
+和scoped SPARQL均200、scope complete、无截断，与当前native receipt/context绑定一致。
+前后7条predicate集合不变，仅comment/semanticDefinition两个值改变；新声明与批准r6
+一致，ID/IRI/label/type/string range及其他字段不变。新loop anchor complete depth1/14 rows
+支持post/control links不变；旧27/95读回仅按明确单属性delta复用未变表达，不冒称新source。
+
+当前asserted validation conforms、零findings；reasoning succeeded仍为development_stub，
+persisted reasoning stale与rule missing警告保留。Session `3961f53d-f379-4156-9209-94f8e0b5e50c`
+completed revision2/lease released。Modeling、Protocol已普通terminal完成；不代表独立CQ PASS。
+
+### Start5 独立验收启动边界（17:57 +08）
+
+CQ交接accepted并产生production_handoff-0001。public1在prepare阶段被source_active
+拒绝（生产holder仍活跃），0题/0 verdict、exit2；Host随后stop Start5 accepted，
+生产进程09:56:08.568Z退出0，原handoff/freeze/r6保留。public2恢复只读验收正常开始。
+hidden1同时启动被同源resume锁拒绝，0题/0 verdict、exit2；改为public2退出后启动hidden2。
+两次拒绝均不消耗生产start，属于runtime/infrastructure启动限制，不推出模型质量结论。
+权威宿主runbook补充同源S4先stop生产、公开/隐藏串行，避免重踩；未删除锁或修改state。
+
+### Start5 公开独立 Consumer/Judge 结果
+
+`r4009-20261004-solmedium-auth02-start5-public2`，`cq-batch-0006/attempt-0001`，
+全部11题有有效verdict，**11/11 PASS**、full_pass=true、unexecuted=[]。
+23次actual证据重放全部stable/unavailable=[]/drift=[]；批次模型binding前后相等、
+pre/post model drift为空。两验收子角色清理、private/socket root移除及forwarder停止均true，
+lifecycle_errors=[]；托管进程10:05:55.818Z退出0，bootstrap撤销。报告SHA
+`62ec67b2cfb6e77aaa9c0394c7a3841e69a7379355aa44d894a8c480b8e5f18a`。
+旧public3的9/11与旧QA不足判决、public2输出故障、新public1 source_active拒绝均保留；
+新结果绑定review9明确审核后的题干/版本及当前r6，不覆盖旧冻结。
+
+隐藏评测 `r4009-20261004-solmedium-auth02-start5-hidden2` 从同一handoff正常启动，
+生产预算consumed0；等它终态后记录实际10题判决、重放、binding/漂移与清理。
+
+### 权威提示持久修正与独立合同复核
+
+提交 `16823f2` 补既有update_property精确payload/null行为，保持identity和未改语义声明；
+明确plan binding为resource_iri时使用相符property_iri，而非混短ID，ID-based相符合同仍合法。
+补正确受治理MCP/HTTP读取路径及当前catalog缺工具时的Owner原始envelope路径；
+宿主runbook补生产stop与同源S4串行，未增加API、runtime、allowlist或新守卫。
+开发focused52 passed/18 subtests（2.18s），绑定小修focused14 passed（0.91s）；
+Ruff/JSON/diff/link通过。独立Round23 14 passed和3组null/omitted/object探针，
+Round24 14 passed（0.98s），均0 Critical/High，冻结SHA一致。仅提示合同验证，不当CQ PASS；
+无需backend/frontend suite或service restart。
+
+### Start5 隐藏独立结果与最终收口
+
+`r4009-20261004-solmedium-auth02-start5-hidden2`，`cq-batch-0006/attempt-0002`，
+全部10题有效verdict，**10/10 PASS**、full_pass=true、unexecuted=[]；21次actual
+证据重放全部stable/unavailable=[]/drift=[]，binding前后相等、pre/post model drift为空。
+验收两个子角色及forwarder清理true、lifecycle_errors=[]；10:11:30.914Z托管退出0。
+原报告SHA `8058fd3726e61295373b265c012b270238e67c77a8702322051c06ea11301673`。
+当前独立公开与隐藏共21/21通过，只限review9/CQ6/r6和有界批准场景；不是全v4或L2重复
+fresh建模质量证明。旧9/10、9/11及输出处理故障均原样保留，新结果不覆盖原报告。
+
+授权台账closed、5/5/0；没有新增生产start或重开已结束run。全部20个launch exited，
+20份launch bootstrap cleanup均revoked true；本阶段setup、清理和最终资源核验管理key
+也都撤销。临时测试主体清理11条HTTP receipt：key撤销且实际401、users disabled、
+project memberships和临时finance role删除。最终4个management GET200核Project、
+Ontology、workspace context及ProtectionSet；4个members与原allowed_grants完全不变，
+当前source signature仍为 `5a92b75989349e537e9a9d02dbc7e000`。
+
+37份原Source2/3、Start4无效冻结／审核快照／读回及Start5冻结／r5/r6／handoff／
+checkpoint／执行记录／两份新batch报告的SHA全部未变。宿主记录为
+`start5-final-preservation-verification.json`、`start5-final-retained-resource-verification.json`
+与`start4-test-subject-cleanup.json`。无backend/frontend代码更改，无产品服务重启。
+
+当前CQ的L0运行及有界L1独立消费质量通过；R4.0-001/015登记未实施、004并行同步和005
+自动物化的未覆盖部分、真实外部数值SQL/API/脚本、完整非stub reasoning及L2/L3仍未证明，
+全v4结论保留PARTIAL。此次启动和停止过程不等于这些需求的产品化验收。
+
+### 本次续跑时间边界
+
+按09:18授权续跑到10:14收口的事件窗口估算（并行工作不重复累加）：有界生产语义
+复核/修订约17.5分钟，独立检索回答与Judge约14.5分钟，基础设施/合同修复/回归、评审、
+文档及启动清理约24分钟，总窗口约56分钟。语义与检索质量窗口约32分钟、约57%；
+工具缺口issue等待不计为语义建模。这是阶段墙钟估算，不是精确CPU/token有效耗时。
+已停止扩展平台/harness，只完成真实窄失败修复与本次授权内的语义验证、清理。
+
+### 最终独立范围与安全元数据审核
+
+Round25独立审核PASS、0新Critical/High：核安全metadata的11/11+10/10 Judge结果、
+44 stable replay、两份raw report SHA；独立hash核37份原件未变、20进程退出、20launch
+bootstrap撤销及测试主体清理／资源保留一致。审核者未读取raw题目/答案/私有访谈、
+未重判业务语义、未create/continue/fix run或改保留证据。全v4仍PARTIAL、5/5额度用尽。
+收尾独立元数据复核与最终文档约4分钟，整体续跑约60分钟；上述约56分钟工作窗口与
+约32分钟语义/检索质量时间不变，总计语义相关约53%。最终links/format/diff检查通过。
