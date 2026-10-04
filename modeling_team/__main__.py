@@ -1212,6 +1212,64 @@ def _cq_semantic_projection(value: object) -> object:
     return value
 
 
+# The two documented ``query_semantic_context`` pagination slots and their
+# continuation tokens.  The platform codec signs and re-issues each token per
+# response, so replaying one unchanged page legitimately returns different
+# token bytes: the slots' *presence* is the page state, their spelling is
+# transport state.  Only these exact paths of this one tool are treated this
+# way, within the API envelope's data payload or a bare service payload; a
+# business field that shares a cursor name elsewhere stays compared content.
+_CQ_PAGE_CURSOR_SLOTS = (
+    ("matches_page", "next_match_cursor"),
+    ("context_page", "next_context_cursor"),
+)
+# Comparison-only stand-in for "this page carries a valid opaque continuation
+# string".  Every other value -- None, an empty string, or any wrong type --
+# is left exactly as returned, so appearing/disappearing state and malformed
+# values still compare as they are.
+_CQ_OPAQUE_CURSOR_MARKER = "<opaque-continuation-token>"
+
+
+def _cq_mask_reissued_pagination_cursors(value: object) -> object:
+    """Reduce re-issued continuation tokens to presence for one comparison.
+
+    Returns a shallow comparison copy: the two documented pagination slots of
+    a ``query_semantic_context`` response keep their surrounding
+    returned/truncated/expansion/scope markers, and neither the retained
+    response nor the re-read response is modified.
+    """
+
+    if not isinstance(value, dict):
+        return value
+    # McpReadForwarder retains the API envelope, whereas service-level callers
+    # can supply the bare payload. Select only that one payload level; never
+    # recurse into resource data or other business content.
+    enveloped = isinstance(value.get("data"), dict)
+    payload = value["data"] if enveloped else value
+    masked = dict(payload)
+    for page_key, cursor_key in _CQ_PAGE_CURSOR_SLOTS:
+        page = masked.get(page_key)
+        if not isinstance(page, dict):
+            continue
+        cursor = page.get(cursor_key)
+        if isinstance(cursor, str) and cursor:
+            masked[page_key] = {**page, cursor_key: _CQ_OPAQUE_CURSOR_MARKER}
+    return {**value, "data": masked} if enveloped else masked
+
+
+def _cq_recheck_projection(tool: str, value: object) -> object:
+    """Project one retained or re-read result for the recheck comparison.
+
+    For ``query_semantic_context`` only, the two documented pagination slots
+    compare by continuation presence instead of re-issued token bytes; every
+    other tool and every other field uses the unchanged §4.2 projection.
+    """
+
+    if tool == "query_semantic_context":
+        value = _cq_mask_reissued_pagination_cursors(value)
+    return _cq_semantic_projection(value)
+
+
 # The exact per-question projection fields shared by the judge packet and the
 # host-only report (design §4.1 item 4); the internal collector additionally
 # keeps the scoped ``request`` for the §4.2 replay and never emits it here.
@@ -1267,8 +1325,8 @@ def _cq_recheck_evidence_responses(
                     }
                 )
                 continue
-            if _cq_semantic_projection(entry.get("result")) != _cq_semantic_projection(
-                dict(reread)
+            if _cq_recheck_projection(tool, entry.get("result")) != _cq_recheck_projection(
+                tool, dict(reread)
             ):
                 question_status = "drift"
                 drift.append(

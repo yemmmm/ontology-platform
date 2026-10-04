@@ -525,6 +525,304 @@ def test_an_unavailable_reread_is_platform_runtime_incomplete_and_wins():
     assert recheck["unavailable"][0]["error"].startswith("RuntimeError")
 
 
+# The platform signs each continuation token per issuance (the cursor codec
+# stamps every encoded payload), so two reads of one unchanged page
+# legitimately carry different token bytes.  Only the two documented
+# ``query_semantic_context`` pagination slots are transport state; the
+# surrounding returned/truncated/expansion/scope markers stay semantic.
+_CURSOR_PAGE_RESULT = {
+    "result_status": "matched",
+    "primary_matches": [{"id": "resource-1", "iri": "iri:1"}],
+    "matches_page": {"returned": 1, "truncated": True, "next_match_cursor": "tok-a"},
+    "context_page": {
+        "returned": 0,
+        "truncated": True,
+        "next_context_cursor": "tok-x",
+        "expansion": {"status": "complete"},
+    },
+}
+
+
+def _recheck_status(retained: dict, reread: dict, *, tool: str = "query_semantic_context") -> str:
+    recheck = _cq_recheck_evidence_responses(
+        lambda forward_tool, arguments, key: reread,
+        "read-key",
+        {"cq-1": [_recheck_entry(result=retained, tool=tool)]},
+    )
+    assert recheck["replayed_responses"] == 1
+    assert recheck["unavailable"] == []
+    return recheck["question_status"]["cq-1"]
+
+
+def test_a_reissued_opaque_pagination_cursor_is_not_semantic_drift():
+    retained = json.loads(json.dumps(_CURSOR_PAGE_RESULT))
+    reread = json.loads(json.dumps(_CURSOR_PAGE_RESULT))
+    reread["matches_page"]["next_match_cursor"] = "tok-b"
+    reread["context_page"]["next_context_cursor"] = "tok-y"
+
+    recheck = _cq_recheck_evidence_responses(
+        lambda tool, arguments, key: reread,
+        "read-key",
+        {"cq-1": [_recheck_entry(result=retained)]},
+    )
+    assert recheck["question_status"] == {"cq-1": "stable"}
+    assert recheck["drift"] == []
+    assert recheck["unavailable"] == []
+    # The comparison never rewrites the retained response, the re-read
+    # response, or the retained entry's identity/digest fields.
+    assert retained == _CURSOR_PAGE_RESULT
+    assert retained["matches_page"]["next_match_cursor"] == "tok-a"
+    assert reread["matches_page"]["next_match_cursor"] == "tok-b"
+    assert reread["context_page"]["next_context_cursor"] == "tok-y"
+    entry = _recheck_entry(result=retained)
+    _cq_recheck_evidence_responses(
+        lambda tool, arguments, key: reread, "read-key", {"cq-1": [entry]}
+    )
+    assert entry["result"] == _CURSOR_PAGE_RESULT
+    assert entry["request_digest"] == "a" * 64
+    assert entry["response_digest"] == "b" * 64
+
+
+def test_api_envelope_reissued_pagination_cursors_are_not_semantic_drift():
+    retained = {"status": "matched", "data": json.loads(json.dumps(_CURSOR_PAGE_RESULT))}
+    reread = json.loads(json.dumps(retained))
+    reread["data"]["matches_page"]["next_match_cursor"] = "issued-2"
+    reread["data"]["context_page"]["next_context_cursor"] = "issued-context-2"
+    before_retained = json.loads(json.dumps(retained))
+    before_reread = json.loads(json.dumps(reread))
+    entry = _recheck_entry(result=retained)
+    before_entry = json.loads(json.dumps(entry))
+
+    recheck = _cq_recheck_evidence_responses(
+        lambda tool, arguments, key: reread, "read-key", {"cq-1": [entry]}
+    )
+
+    assert recheck["question_status"] == {"cq-1": "stable"}
+    assert recheck["drift"] == []
+    assert retained == before_retained
+    assert reread == before_reread
+    assert entry == before_entry
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement"),
+    [
+        (("status",), "forbidden"),
+        (("data", "result_status"), "no_match"),
+        (("data", "scope", "ontology_ids"), ["ontology-2"]),
+        (("data", "source"), {"id": "source-2"}),
+        (("data", "workspace_version"), 2),
+        (("data", "primary_matches"), [{"id": "resource-9", "iri": "iri:9"}]),
+        (("data", "primary_matches", 0, "iri"), "iri:changed"),
+        (("data", "matches_page", "returned"), 2),
+        (("data", "matches_page", "truncated"), False),
+        (("data", "context_page", "expansion", "status"), "partial"),
+        (("data", "matches_page", "next_match_cursor"), None),
+        (("data", "matches_page", "next_match_cursor"), ""),
+        (("data", "matches_page", "next_match_cursor"), 7),
+        (("data", "matches_page", "next_match_cursor"), ["token"]),
+        (("data", "context_page", "next_context_cursor"), None),
+        (("data", "context_page", "next_context_cursor"), {"token": "x"}),
+    ],
+)
+def test_api_envelope_semantic_and_pagination_state_drift_is_preserved(path, replacement):
+    payload = json.loads(json.dumps(_CURSOR_PAGE_RESULT))
+    payload.update(
+        scope={"ontology_ids": ["ontology-1"]}, source={"id": "source-1"}, workspace_version=1
+    )
+    retained = {"status": "matched", "data": payload}
+    reread = json.loads(json.dumps(retained))
+    reread["data"]["matches_page"]["next_match_cursor"] = "issued-2"
+    reread["data"]["context_page"]["next_context_cursor"] = "issued-context-2"
+    parent = reread
+    for key in path[:-1]:
+        parent = parent[key]
+    parent[path[-1]] = replacement
+    assert _recheck_status(retained, reread) == "drift"
+
+
+@pytest.mark.parametrize("page_key,cursor_key", [
+    ("matches_page", "next_match_cursor"), ("context_page", "next_context_cursor")
+])
+def test_api_envelope_pagination_state_and_malformed_values_stay_observable(page_key, cursor_key):
+    def envelope(cursor):
+        return {"status": "matched", "data": {page_key: {cursor_key: cursor}}}
+
+    assert _recheck_status(envelope(None), envelope(None)) == "stable"
+    assert _recheck_status(envelope(None), envelope("issued")) == "drift"
+    assert _recheck_status(envelope(7), envelope(["issued"])) == "drift"
+    assert _recheck_status(envelope({"token": "x"}), envelope({"token": "y"})) == "drift"
+
+
+def test_api_envelope_business_data_and_other_tools_are_not_masked():
+    retained = {"status": "matched", "data": json.loads(json.dumps(_CURSOR_PAGE_RESULT))}
+    retained["data"]["primary_matches"][0]["data"] = {
+        "matches_page": {"next_match_cursor": "business-1"}
+    }
+    retained["data"]["other"] = {"data": {"context_page": {"next_context_cursor": "business-1"}}}
+    # Top-level envelope fields are not pagination metadata either.
+    retained["matches_page"] = {"next_match_cursor": "business-1"}
+    reread = json.loads(json.dumps(retained))
+    reread["data"]["matches_page"]["next_match_cursor"] = "issued-2"
+    assert _recheck_status(retained, reread) == "stable"
+    assert _recheck_status(retained, reread, tool="get_ontology_workspace_context") == "drift"
+    for target in (
+        reread["data"]["primary_matches"][0]["data"]["matches_page"],
+        reread["data"]["other"]["data"]["context_page"],
+        reread["matches_page"],
+    ):
+        cursor_key = next(iter(target))
+        target[cursor_key] = "business-2"
+        assert _recheck_status(retained, reread) == "drift"
+        target[cursor_key] = "business-1"
+
+
+def test_a_pagination_cursor_appearing_or_disappearing_is_still_drift():
+    absent_match = {"truncated": False, "next_match_cursor": None}
+    absent_context = {"truncated": False, "next_context_cursor": None}
+    # An unchanged terminal page (no continuation on either side) stays stable.
+    assert (
+        _recheck_status({"matches_page": dict(absent_match)}, {"matches_page": dict(absent_match)})
+        == "stable"
+    )
+    assert (
+        _recheck_status(
+            {"context_page": dict(absent_context)}, {"context_page": dict(absent_context)}
+        )
+        == "stable"
+    )
+    # A token on one side only -- in either direction and either slot -- is a
+    # pagination-state change, never an interchangeable token spelling.
+    assert (
+        _recheck_status(
+            {"matches_page": {"truncated": True, "next_match_cursor": "tok-a"}},
+            {"matches_page": {"truncated": True, "next_match_cursor": None}},
+        )
+        == "drift"
+    )
+    assert (
+        _recheck_status(
+            {"matches_page": {"truncated": True, "next_match_cursor": None}},
+            {"matches_page": {"truncated": True, "next_match_cursor": "tok-b"}},
+        )
+        == "drift"
+    )
+    assert (
+        _recheck_status(
+            {"context_page": {"truncated": True, "next_context_cursor": "tok-x"}},
+            {"context_page": {"truncated": True, "next_context_cursor": None}},
+        )
+        == "drift"
+    )
+    assert (
+        _recheck_status(
+            {"context_page": {"truncated": True, "next_context_cursor": None}},
+            {"context_page": {"truncated": True, "next_context_cursor": "tok-y"}},
+        )
+        == "drift"
+    )
+    # An empty string is not a valid continuation token either.
+    assert (
+        _recheck_status(
+            {"matches_page": {"truncated": True, "next_match_cursor": "tok-a"}},
+            {"matches_page": {"truncated": True, "next_match_cursor": ""}},
+        )
+        == "drift"
+    )
+    # An omitted slot is no continuation, exactly like an explicit None.
+    assert (
+        _recheck_status(
+            {"matches_page": {"truncated": True, "next_match_cursor": "tok-a"}},
+            {"matches_page": {"truncated": True}},
+        )
+        == "drift"
+    )
+
+
+def test_a_malformed_pagination_cursor_stays_observable():
+    # A wrong type is never laundered into "present": a valid token against a
+    # malformed value, and two different malformed values, both stay drift.
+    assert (
+        _recheck_status(
+            {"matches_page": {"truncated": True, "next_match_cursor": "tok-a"}},
+            {"matches_page": {"truncated": True, "next_match_cursor": 7}},
+        )
+        == "drift"
+    )
+    assert (
+        _recheck_status(
+            {"matches_page": {"truncated": True, "next_match_cursor": 7}},
+            {"matches_page": {"truncated": True, "next_match_cursor": ["tok"]}},
+        )
+        == "drift"
+    )
+    assert (
+        _recheck_status(
+            {"context_page": {"truncated": True, "next_context_cursor": {"token": "x"}}},
+            {"context_page": {"truncated": True, "next_context_cursor": {"token": "y"}}},
+        )
+        == "drift"
+    )
+
+
+def test_cursor_named_business_fields_and_other_tools_are_not_masked():
+    # A resource property that happens to share the cursor name is business
+    # content; only the two documented page slots are transport state.
+    assert (
+        _recheck_status(
+            {
+                "primary_matches": [{"id": "r1", "next_match_cursor": "biz-a"}],
+                "matches_page": {"truncated": True, "next_match_cursor": "tok-a"},
+            },
+            {
+                "primary_matches": [{"id": "r1", "next_match_cursor": "biz-b"}],
+                "matches_page": {"truncated": True, "next_match_cursor": "tok-b"},
+            },
+        )
+        == "drift"
+    )
+    # Another tool's response is never cursor-masked, even with the same shape.
+    assert (
+        _recheck_status(
+            {"matches_page": {"truncated": True, "next_match_cursor": "tok-a"}},
+            {"matches_page": {"truncated": True, "next_match_cursor": "tok-b"}},
+            tool="get_ontology_workspace_context",
+        )
+        == "drift"
+    )
+
+
+def test_pagination_flags_scope_and_expansion_drift_still_block():
+    base = json.loads(json.dumps(_CURSOR_PAGE_RESULT))
+    base["scope"] = {"result_scope": "authorized_query_scope", "ontology_ids": ["ontology-1"]}
+    reread = json.loads(json.dumps(base))
+    # The tokens are reissued on every read, so a hidden drift must never rely
+    # on their bytes: each mutation below also changes the token spelling.
+    reread["matches_page"]["next_match_cursor"] = "tok-b"
+    reread["context_page"]["next_context_cursor"] = "tok-y"
+    assert _recheck_status(base, reread) == "stable"
+
+    truncated = json.loads(json.dumps(reread))
+    truncated["matches_page"]["truncated"] = False
+    assert _recheck_status(base, truncated) == "drift"
+
+    returned = json.loads(json.dumps(reread))
+    returned["matches_page"]["returned"] = 2
+    assert _recheck_status(base, returned) == "drift"
+
+    scope = json.loads(json.dumps(reread))
+    scope["scope"]["ontology_ids"] = ["ontology-2"]
+    assert _recheck_status(base, scope) == "drift"
+
+    expansion = json.loads(json.dumps(reread))
+    expansion["context_page"]["expansion"]["status"] = "partial"
+    assert _recheck_status(base, expansion) == "drift"
+
+    substituted = json.loads(json.dumps(reread))
+    substituted["primary_matches"] = [{"id": "resource-9", "iri": "iri:9"}]
+    assert _recheck_status(base, substituted) == "drift"
+
+
 # --- §4.1/§4.2 report and packet boundaries -----------------------------------
 
 
