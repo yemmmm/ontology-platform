@@ -92,3 +92,12 @@ Publish using the exact mounted draft contract with stable question IDs, answer 
 unknowns and scope. Report a concrete coverage gap or unsupported answer to the user. User decisions
 control approval, revision and grouping; elapsed time, a suggested count or this skill is not an
 approval. Correct rejected fields through the existing feedback and preserve version bindings.
+
+## Bind the checked content to its reviewed version (R4.0-013)
+
+Locate your self-check by question ID, current `content_version` and one-based answer-point
+position. After a content correction, redo the check against the corrected question and point
+order; an earlier note does not validate the successor. Publish the actual corrected content
+through the existing review lifecycle. The Delivery host independently compares the final frozen
+question, points, review identity and version against the approved modification; a note alone
+cannot change the frozen answer scope or preserve an unreviewed point.

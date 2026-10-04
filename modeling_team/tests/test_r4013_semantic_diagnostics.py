@@ -287,3 +287,81 @@ def test_real_judge_raw_verdict_collection():
         (evidence_root / "verdicts.json").write_text(json.dumps(reports, ensure_ascii=False, indent=2))
         (evidence_root / "teardown.json").write_text(json.dumps(teardown, ensure_ascii=False, indent=2))
         (evidence_root / "runtime-failures.json").write_text(json.dumps(adapter.consume_runtime_failures(), ensure_ascii=False, indent=2))
+
+
+def controlled_cq_authoring_inputs():
+    """Approved generic material only; no predicted draft, review or verdict.
+
+    The independent tester mounts these bytes as a normal approved source and
+    runs the actual CQ role before independently reviewing the resulting draft.
+    This factory does not decide which points should appear in any question.
+    """
+    return {
+        "source_name": "service-reservation-policy.md",
+        "source_content": (
+            "# Service reservation policy\n"
+            "## 1 Reservation and dispatch\n"
+            "A reservation becomes confirmed only after a supervisor approves the slot.\n"
+            "A confirmed reservation can enter dispatch. A request receipt alone is not confirmation.\n"
+            "## 2 Visitor access\n"
+            "Visitors entering the service area must wear a temporary badge.\n"
+            "## 3 Charges\n"
+            "The surcharge for rescheduling has not been agreed. Do not infer an amount or deadline.\n"
+            "## 4 Semantic platform boundary\n"
+            "The semantic platform describes the service policy and does not dispatch vehicles itself.\n"
+        ),
+        "task": (
+            "From the approved policy, draft business competency questions that test reservation "
+            "readiness and the agreed conditions and unknowns. Use the mounted CQ role, skill, "
+            "and exact draft contract; publish through cq_publish_question_draft and await review. "
+            "Use only the approved source and preserve public/hidden isolation. "
+            "Do not create a reference answer from invented rules or execute a business action."
+        ),
+    }
+
+
+def test_review_successor_freeze_matches_approved_change_and_preserves_old_reports(cq_runner):
+    # Lifecycle proof only; method quality is independently tested with actual
+    # CQ authoring and host review using the approved generic material above.
+    original = cq_question("Q-01", answer_points=["request receipt", "unrelated badge"])
+    draft = _draft([original])
+    cq_runner._publish_cq_question_draft({"cq_id": "competency-question", "draft": draft})
+    root = cq_runner.run.root
+    initial_review = root / "competency-questions/reviews/cq-review-0001.json"
+    initial_bytes = initial_review.read_bytes()
+    cq_runner.handle_cq_outer_input(_review_payload(cq_runner))
+    cq_runner.handle_cq_outer_input({"action": "cq_freeze"})
+    old_freeze = root / "competency-questions/frozen/freeze-0001.json"
+    old_freeze_bytes = old_freeze.read_bytes()
+    report = root / "acceptance-v3/reports/historical/batch-report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text('{"retained":"historical failure"}')
+    historical_bytes = report.read_bytes()
+    # Reopen the normal review with an explicit successor, then apply the host
+    # modification against this review's actual identity rather than old note.
+    draft.update({"draft_id": "cq-draft-0002", "superseded_draft_id": "cq-draft-0001"})
+    cq_runner._publish_cq_question_draft({"cq_id": "competency-question", "draft": draft})
+    replacement = dict(original, question="When is a reservation confirmed?",
+                       answer_points=["supervisor approval"], content_version=2)
+    cq_runner.handle_cq_outer_input(cq_fixtures._decision(
+        cq_runner, 2, decision="modify", modified_question=replacement,
+        note="Q-01 v2 point 1: approved policy §1; approval determines confirmation."))
+    successor = _draft([replacement])
+    successor.update({"draft_id": "cq-draft-0003", "superseded_draft_id": draft["draft_id"]})
+    cq_runner._publish_cq_question_draft({"cq_id": "competency-question", "draft": successor})
+    cq_runner.handle_cq_outer_input(cq_fixtures._decision(
+        cq_runner, 3, note="Q-01 v2 point 1 checked against final question and approved policy §1."))
+    ack = cq_runner.handle_cq_outer_input({"action": "cq_freeze"})
+    freeze_path = root / "competency-questions/frozen/freeze-0002.json"
+    frozen = json.loads(freeze_path.read_text())
+    actual = frozen["questions"][0]
+    assert actual["question_id"] == replacement["question_id"]
+    assert actual["content_version"] == 2
+    assert actual["question"] == replacement["question"]
+    assert actual["answer_points"] == replacement["answer_points"]
+    assert len(frozen["ordering"]) == 1
+    assert frozen["snapshot_digest"] == ack["snapshot_digest"]
+    assert initial_review.read_bytes() == initial_bytes
+    assert old_freeze.read_bytes() == old_freeze_bytes
+    assert report.read_bytes() == historical_bytes
+    assert "checked against final" not in json.dumps(public_projection(frozen))

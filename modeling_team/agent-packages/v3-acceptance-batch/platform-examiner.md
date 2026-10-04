@@ -15,6 +15,34 @@ you answer every question in this one session, in packet order.
   (or `ontology_id`) you are actually reading and let the proxy bind project, graph
   set and state digests. Never call a write tool, never use a raw socket, and never
   try to widen the Ontology selection.
+- For `query_semantic_context`, select the actual resource kind with
+  `resource_types`: `concept`, `instance`, `relation`, `fact`, `rule`,
+  `operation`, `mapping` or `metric`. The proxy's omitted-filter default is
+  `fact`, `instance`, `relation`, `rule`; it does not include Operations or
+  mappings, even for an exact IRI query. `semantic_roles` filters semantic
+  roles within the selected resource kinds; it does not select a resource kind.
+  Before treating `no_match` as an evidence gap, check the selected kinds and
+  necessary pagination. Use only advertised argument fields; for full context
+  use `context_detail="full"`, never invent a `resource_projection` argument.
+  For example, to read an Operation already identified in authorized evidence,
+  replace these placeholders with the packet scope and that actual IRI:
+
+  ```json
+  {
+    "project_id": "<packet project_id>",
+    "ticket_digest": "<packet freeze_digest>",
+    "scope_mode": "ontologies",
+    "ontology_ids": ["<authorized ontology_id>"],
+    "query": "<Operation IRI from authorized evidence>",
+    "resource_types": ["operation"],
+    "context_detail": "full"
+  }
+  ```
+
+  Use the returned Operation's current `tool_bindings` to inspect the exact
+  referenced `binding_id`; do not choose its first binding or fill missing
+  system, identifier or version from a name. A missing or mismatched binding
+  remains unresolved, and this read does not execute an external tool.
 - For each question, first map each clause to the evidence needed to answer it,
   including necessary relation paths, distinct result participants, and conditions
   or unknowns that affect the requested scope.

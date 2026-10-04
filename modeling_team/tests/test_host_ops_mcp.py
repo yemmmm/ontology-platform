@@ -101,12 +101,30 @@ def test_checkpoint_resume_model_profile_passes_through_mcp(monkeypatch):
             "new_run_id": "continued", "mode": "acceptance",
             "authorization_reference": "auth-test", "model_profile": "openai-sol-medium",
             "question_visibility": "public",
+            "service_tier": "default",
         }))
 
     result, = _session([call])
     assert result["ok"] is True
     assert captured[0]["model_profile"] == "openai-sol-medium"
     assert captured[0]["question_visibility"] == "public"
+    assert captured[0]["service_tier"] == "default"
+
+
+def test_start_service_tier_passes_through_mcp(monkeypatch):
+    captured = []
+    monkeypatch.setattr(host_ops_mcp, "start_run", lambda **kwargs: captured.append(kwargs) or {})
+
+    async def call(client):
+        return _payload(await client.call_tool("start_run", {
+            "run_id": "fixture", "task": "task.yaml", "profile": "profile.yaml",
+            "model_profile": "openai-sol-medium", "scope": "scope.yaml",
+            "freeze_started_at": "2026-10-04T00:00:00+00:00", "service_tier": "fast",
+        }))
+
+    result, = _session([call])
+    assert result["ok"] is True
+    assert captured[0]["service_tier"] == "fast"
 
 
 def test_cold_start_exposes_exactly_the_20_s1_plus_s2_tools():

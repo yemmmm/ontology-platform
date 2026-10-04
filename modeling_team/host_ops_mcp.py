@@ -344,6 +344,7 @@ def tool_start_run(
     task_overlay: str | None = None,
     base_url: str | None = None,
     request_id: str | None = None,
+    service_tier: str = "unset",
 ) -> dict[str, Any]:
     """Start exactly one managed modeling Team run (design §5.1).
 
@@ -356,6 +357,8 @@ def tool_start_run(
     already exists, a live registration or a dead one is reported instead of
     silently reusing it, and no old run is ever stopped implicitly.  Launch
     accepted is not a semantic start: read ``get_run_status``.
+    ``service_tier`` is unset (inherit), fast, or default (explicit off),
+    affecting only the new child environment, never existing threads.
     """
     return _call(
         start_run,
@@ -368,6 +371,7 @@ def tool_start_run(
         task_overlay=task_overlay,
         base_url=base_url,
         request_id=request_id,
+        service_tier=service_tier,
     )
 
 
@@ -470,6 +474,7 @@ def tool_resume_from_checkpoint(
     question_visibility: str = "hidden",
     request_id: str | None = None,
     fork_reason: str | None = None,
+    service_tier: str = "unset",
 ) -> dict[str, Any]:
     """Resume one explicit published checkpoint as a fresh managed run (§5.5).
 
@@ -481,6 +486,9 @@ def tool_resume_from_checkpoint(
     The platform credential must be present in the
     host environment (``ONTOLOGY_PLATFORM_ADMIN_API_KEY``) or the tool
     refuses before starting anything.  The source run is never overwritten.
+    ``service_tier`` has the same per-child unset/fast/default semantics as
+    start_run. Production resumes keep the source model profile; only
+    acceptance mode supports an explicit model_profile override.
     """
     return _call(
         resume_from_checkpoint,
@@ -494,6 +502,7 @@ def tool_resume_from_checkpoint(
         model_profile=model_profile,
         question_visibility=question_visibility,
         request_id=request_id,
+        service_tier=service_tier,
         **({"fork_reason": fork_reason} if fork_reason is not None else {}),
     )
 

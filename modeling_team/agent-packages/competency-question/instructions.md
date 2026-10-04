@@ -112,3 +112,12 @@ namespace `mcp__team_transport` together with the member name
 rejected as unsupported before it reaches Team Transport. When it is accepted,
 report exactly once and include only the delivery ID, digest, and state - never
 hidden question or answer text.
+
+## Review successor and freeze binding (R4.0-013)
+
+Identify every point in the private self-check by the current question `content_version` as well
+as its question ID and one-based position. If a review asks for correction, publish the actual
+successor content and redo the check on its new order and wording. Do not claim the change took
+effect because a note says so: the final frozen question, points, review identity and version
+must reflect the approved correction. The host checks this binding through the existing lifecycle;
+this remains a recoverable review task and adds no note parser or freeze guard.

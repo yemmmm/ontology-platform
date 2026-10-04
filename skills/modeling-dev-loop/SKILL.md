@@ -20,12 +20,20 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
    接续时先读该记录、实际进程和事件，避免重复启动。用户中途补充要求不抹去原目标。
 3. 复用会话已有授权。没有真实建模授权时，完成可独立开展的工作并申请；安装或调用本 Skill
    本身不授予 semantic start。每次授权默认三次 fresh starts，用户指定数量时以用户为准。
-4. 获得新的建模次数授权时，先按 [授权时的模型调度](#授权时的模型调度) 取真实时间、判定
-   高峰/非高峰并记录选定模型与 effort，再进入启动检查。
+4. 从已有台账读取最新适用用户指令；明确的执行者、模型、effort、service tier 和角色/范围
+   优先于下节默认调度，接续或跨时段不使该选择失效。仅未指定部分按
+   [授权时的模型调度](#授权时的模型调度) 选定并记录，不重复询问已确认选择。
 5. 按 [运行参考](references/team-runbook.md) 做安全启动所必需的最小检查。授权后通常须在
    20 分钟内开始第一次真实建模；超时即报告耗时来源并缩短通路，不能继续扩展预检。
 
 ## 授权时的模型调度
+
+以下是未被最新适用用户指令覆盖时的默认安排。每次新启动或接续先从现有 session 台账核对
+执行者、model/profile、effort、service tier（`unset`/`fast`/`default` off）、适用角色/范围、
+更新时间和授权引用；分别保留请求、启动传递与实际配置证据。角色可有不同获准配置。
+三态仅影响新 child，不热切换旧线程，不改旧冻结或历史报告；无法核实时写 `unverified`，
+不支持时写 `unsupported` 和下一动作，不能静默换模型或为统一显示重开 start。具体传递及
+production checkpoint profile 限制见[运行参考](references/team-runbook.md#session-配置传递与核对r40-019)。
 
 高峰与非高峰对应不同的模型档位，这是用户在授权时给出的约定；宿主的职责是如实判定、记录
 并执行，不替用户重新定价，也不把该表说成已核实的官方价格。每次获得新的建模次数授权，先
@@ -119,7 +127,11 @@ issue、写入已排空且没有 unknown write；若已有 Runner 发布的 hand
 确认 readiness 后，宿主通过既有 Host 通道提交 `complete_cq_handoff`（Runner action
 为 `cq_handoff_complete`）。核对返回成功、`acceptance_phase=acceptance_pending`、
 当前 `acceptance_attempt_id` 和 `report_directory`；角色完成、提交被接受或 handoff
-文件生成都不能单独当作语义验收完成。随后用当前 handoff 启动独立 `cq-acceptance`，
+文件生成都不能单独当作语义验收完成。生产角色 terminal、handoff ready 和 managed process
+退出分别核对；需要同源 checkpoint 验收时按
+[同源启动顺序](references/team-runbook.md#同源-checkpoint-只读验收启动) 经 stop/receipt/exit
+释放 writer，再接续独立验收；同 root 的公开/隐藏批次等前一托管进程退出，顺序由获准任务
+安排。unknown write 先对账，不能靠停止或删锁掩盖。随后用当前 handoff 启动独立 `cq-acceptance`，
 报告落盘后调用 `complete_cq_acceptance`，核对报告 digest、`cq_verdict` 和题目分母，
 并保留 PASS、PARTIAL 或失败结果；交接或收口成功不等于 CQ PASS。具体绑定与收口步骤
 见[运行参考的 CQ 交接与独立验收](references/team-runbook.md#cq-生产交接必须由宿主显式提交)。
@@ -229,8 +241,22 @@ live Runner、原 Agent thread 和已完成产物。用户告知“接口已经�
 
 ## 额度、进展与收口
 
+每次阶段汇报在已有记录顶部更新[最新摘要](references/progress-report.md#最新摘要r40-021)，
+列 `completed/remaining/next/authorization/wait/resource/handoff`。仍有授权内明确待办且条件
+满足时，汇报后继续：生产 stop 是进入独立验收的内部切换，隐藏完成且公开仍待办也继续，
+不等待用户反复说“继续”。缺业务定义、权限、兼容性决定或新 start 额度时，只等待受影响
+动作，完成独立可做项；不扩权、不把余额当必须耗尽的目标。
+
+只有原获准目标完成、用户暂停/取消、到期或无安全可继续动作时才收尾。结束进程的临时密钥
+及时撤销；连续任务资源按已有生命周期保留，已撤销密钥不复活，必要重新准备记录真实时点
+及授权。监督必须结束时交接 run/process/checkpoint、待办、余额和下一观察责任；未安排
+接手则如实写未安排，不声称存在后台监控。细节见[阶段继续与收尾](references/team-runbook.md#阶段继续等待与收尾r40-020)。
+
 每轮终态及时用简洁中文说明进展、第一阻塞、修改和余额。分别记录语义建模及基础设施/修复、
 评审、文档的有效时间；语义建模不足一半时暂停扩展平台/harness，报告原因并提出更短通路。
+按[分类计时](references/progress-report.md#分类耗时r40-021) 区分生产语义、独立消费、等待、
+修复测试、评审文档、启动清理；UTC 区间保留来源及 unknown/estimate，墙钟按 union，累计
+Agent 时间另列，不能把进程存活或重叠分类相加当有效语义时间，也不把局部比例外推全 session。
 
 额度耗尽后停止新 start，继续完成已授权且安全的现场核查、窄修复与证据整理。按
 [额度申请模板](references/progress-report.md) 先把本轮工作讲清楚，再提出具体额度申请；

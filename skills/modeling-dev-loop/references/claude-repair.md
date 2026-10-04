@@ -1,7 +1,9 @@
 # Claude Code 修复交接
 
 只在当前已授权目标的实际阻塞需要代码、配置或权威提示修复时读取。主智能体负责设计裁决和
-运行生命周期，Claude Code 负责明确任务内的开发与自测。高开发权限不扩大任务或业务授权。
+运行生命周期，修复 Agent 负责明确任务内的开发与自测。最新适用用户指令若指定 Codex 子
+Agent 等执行者，沿用该选择；本文件的 Claude Code 命令只是未覆盖时的入口，不因此反复
+请示或退回默认。高开发权限不扩大任务或业务授权。
 
 ## 发出可验收的任务
 
@@ -19,6 +21,8 @@
 实际行为 / 预期行为：[可观察差异]
 归属：[你负责的文件或模块；其他人的改动与依赖]
 权限：[可编辑、执行的测试与本地操作；服务切换由主智能体协调]
+配置：[既有 session 台账引用、更新时间/授权；执行者、model/profile、effort、
+       service_tier unset/fast/default off、适用角色/范围；请求/传递/实际生效分别核对]
 边界：你不是唯一开发者，保留其他人的改动；不修改保留运行证据、冻结候选或隐藏题基线，
       不代做语义建模，不自行启动 Team、platform apply 或独立语义验收。
 验证：[先复现原失败；针对性验证；适用 AGENTS.md 的必需检查]
@@ -32,6 +36,16 @@ impact/detect_changes、测试和提交规则；不能因高权限跳过环境�
 不以“外部 Agent 会自己看懂”为由省略需求、证据和验证目标。
 
 ## 启动与观察
+
+先读取配置台账最新适用项；用户覆盖优先于以下默认模型调度，跨时段与交接不让已确认配置
+失效。通过所选执行者的真实参数/profile/child env 显式传递并核对安全字段；不打印密钥、
+auth cache、完整环境或隐藏材料。不支持写 unsupported 与 next action，无法核实写 unverified，
+不静默降档或改全局 provider；新线程配置与旧存活线程分别报告，不假称热切换。
+Team 的 child service tier 和 production checkpoint profile 限制见
+[运行参考](team-runbook.md#session-配置传递与核对r40-019)。
+
+以下 Claude CLI/provider 命令仅用于台账选定的 Claude Code 执行者；选定 Codex 子 Agent 时
+使用其已有派发入口并显式附上获准 model/effort/service tier，不执行下列 Claude 调度命令。
 
 先检查本机 `claude --version`、`claude --help`。模型/effort 按本轮授权已记录的模型调度
 执行：高峰实际模型 `glm-5.3-flash`、effort `max`；非高峰实际模型 `deepseek-flash`、
@@ -75,3 +89,9 @@ Skill 时做相关加载、格式、链接和合同校验。其他 `modeling_tea
 
 返回主循环时注明：当前 run 是否能安全接收反馈、变更是否已生效、是否必须 fresh start，
 以及原始失败步骤接下来要观察的证据。不能把“修复自测 PASS”写成“真实建模已恢复”。
+同时交接 completed/remaining/next/authorization/wait/resource/handoff：修复完成后仍有
+原目标获准待办且条件满足，宿主汇报后继续，不等待用户重复授权。缺决定仅阻塞相关动作，
+独立工作继续；无未知写入且可恢复时沿原 issue/live thread，已停按 checkpoint 合同，
+production 接续计 fresh start，acceptance continuation 为 0。余额不是消耗目标。
+最终停止/暂停/到期按实际生命周期清理，不复活已撤销密钥；没有下一观察者时写未安排，
+不声称后台持续监控。进度/分类时间记录见[进度参考](progress-report.md)。

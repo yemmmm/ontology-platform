@@ -217,3 +217,22 @@ resource kind／id／IRI 与读证据绑定。`translate_candidate_to_batches` �
 | semantic | `update_semantic_protection_set` | Update a protection set name, description, or allowed_grants. | protection_set_id | actor, allowed_grants, description, name, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
 
 <!-- END GENERATED MCP TOOL INVENTORY -->
+
+## 宿主 Team 启动配置（R4.0-019）
+
+独立 `modeling-team-host` stdio 服务的 [host_ops_mcp](../../modeling_team/host_ops_mcp.py)
+不属于上表平台 MCP，也不挂载给生产角色。现有 `start_run` 和 `resume_from_checkpoint`
+新增可选 `service_tier: str = "unset"`：`unset` 保留 child 继承环境，`fast` 在本次 child
+环境副本设置 `MODELING_TEAM_CODEX_SERVICE_TIER=fast`，`default` 表示明确 normal/off，
+仅从该副本移除此变量。宿主环境、其他存活进程和旧线程配置不变；非法值沿既有
+`launch_arguments_invalid` 返回可重试错误，未启动 child。
+
+请求保存在现有 `.host-launches/<new-run-id>.json` 的 `service_tier` 字段，不保存完整环境
+或凭据；此字段仅证明启动传递请求，实际配置须核对角色隔离 TOML。未传值记录为 `unset`，
+不能把继承导致的实际 fast 冒充用户明确请求。`start_run` 继续显式 `model_profile`；
+`resume_from_checkpoint(mode="acceptance")` 可覆盖该 profile，production resume 仍使用
+source profile，不支持覆盖。production/acceptance 计数仍分别按原合同为 1/0。
+
+直接 Team CLI 不新增 `--service-tier` 旗标，沿已有 per-command env 路径处理；详细命令、
+角色 model/requested/effective effort、实际 config 白名单及 unsupported/unverified 边界见
+[Session 配置运行参考](../../skills/modeling-dev-loop/references/team-runbook.md#session-配置传递与核对r40-019)。

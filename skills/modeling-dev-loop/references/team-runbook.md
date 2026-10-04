@@ -31,6 +31,10 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 
 ## 授权时的模型调度
 
+先引用已有 session 台账中的最新适用指令：执行者、model/profile、effort、service tier、
+角色/范围、更新时间和授权引用。用户明确覆盖优先于本节默认安排；未修改的约束继续有效，
+跨调度时段或接续不重选已确认配置，不重复询问。仅未指定部分使用下表，角色可分别配置。
+
 下列命令于 2026-09-10 对本机核实：`cc-switch --help`、`cc-switch -a claude provider list`、
 `cc-switch -a claude provider switch <ID>`；`claude --help` 支持 `--model` 与 `--effort max`。
 高峰/非高峰划分是用户指定调度表，不代表已核实官方价格。
@@ -65,13 +69,88 @@ effort `max`，选用 profile `deepseek-flash-max`。profile ID 不含模型版�
 时选定并适用整个 run：时间跨过时段边界不中断当前 run、不偷偷另开 start，不给已冻结 run
 换模型；新一轮授权才重新判定。
 
+## Session 配置传递与核对（R4.0-019）
+
+沿现有 `model_profile`/`TeamModelProfile`/角色 binding 读取 model、requested/effective effort；
+请求、启动传递和实际生效分开记录，不把 profile load 当作实际 thread 已生效。
+host-only MCP [start_run/resume_from_checkpoint](../../../modeling_team/host_ops_mcp.py) 新增
+可选 `service_tier`，默认 `unset`，在现有 `.host-launches/<new-run-id>.json` 同名字段记录请求。
+
+| service_tier | 本次 child 环境处理 | 实际 Codex built-in TOML 核对 |
+| --- | --- | --- |
+| `unset` | 不覆盖继承的 `MODELING_TEAM_CODEX_SERVICE_TIER` | 请求未指定；ambient 可能使实际 fast，分开写 |
+| `fast` | 在环境副本设置该变量为 `fast` | `service_tier = "fast"` 且 `features.fast_mode = true` |
+| `default`（明确 normal/off） | 仅从环境副本移除该变量 | 不含 `service_tier`、不含 `features.fast_mode` |
+
+两个 host 入口共同使用此边界，包含 production start、production checkpoint resume 和
+public/hidden acceptance resume；不更改宿主 ambient、其他进程或旧线程 TOML。
+production checkpoint resume **不支持 model_profile 覆盖**，仍用 source 已绑定 profile；
+记录最新请求与 effective source profile 差异和 `unsupported`，不把 acceptance override
+冒充生产已生效。acceptance resume 可显式 `model_profile`；public/hidden 显式选择获准批次。
+
+直接 `run`、`checkpoint resume`、`cq-acceptance` CLI 没有新 `--service-tier` 旗标：沿已有
+环境入口处理。按当前 CLI `--help` 使用 `--model-profile`；production checkpoint 的限制如上。
+只对这次命令设 fast 或清除继承值，例如（省略号应换成已有获准的真实参数）：
+
+```bash
+env MODELING_TEAM_CODEX_SERVICE_TIER=fast uv run --project backend python -m modeling_team cq-acceptance ...
+env -u MODELING_TEAM_CODEX_SERVICE_TIER uv run --project backend python -m modeling_team cq-acceptance ...
+# unset：不加上面的 env 覆盖，保留既有继承语义。
+```
+
+核对实际生成的生产四角色及 Source/Platform Examiner/Judge 隔离 TOML，只读取 model、provider、
+effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`。无法读取写 `unverified`
+及下一核对入口，不输出密钥、auth cache、完整环境或隐藏内容，不由 fast 推导性能/计费/质量。
+修复 Agent 按[修复交接](claude-repair.md) 引用同一台账适用项，不自行改全局 provider。
+
 ## 同源 checkpoint 只读验收启动
 
-生产 handoff 与角色 terminal 已完成后，仍须通过原 stop 通道让生产 writer 退出，再从
-其 production_handoff checkpoint 启动 acceptance。当前 Runner 对同源 resume 持有进程锁，
-公开／隐藏 acceptance 也依次执行：前一 continuation 的托管进程确认退出后再启动后一轮。
-source_active 的启动拒绝不消耗 fresh semantic start、也不表示题目质量失败；保留启动
-记录，不删除锁或伪改 state 来重试。先核验已有 launch/exit，复用同一冻结模型与题池。
+对应 [R4.0-018](../../../docs/requirements/requirements-v4.0.md#r40-018-生产交接与同源检查点验收的启动衔接)。
+按以下顺序沿现有工具接续，不用 launch 探测可预见的未就绪状态：
+
+1. 读 `get_run_status/get_run_events/get_pending_actions`，分别定位生产角色 terminal、handoff
+   `ready=true/pending_writes=false/write_phase=read-only/unknown_writes=[]` 和实际 managed
+   process 状态。三者不是同一事实；进程退出不单独证明写入完整，角色完成不证明 writer 退出。
+2. unknown write 保留原件并按 Batch/Attempt/receipt 对账；已排空且 handoff ready 时经原
+   `stop_run` 通道提交 stop，保存 request、Runner receipt、launch/exit 证据。
+   `submitted` 或 stop receipt 不等于退出，继续观察 PID/进程会话和 `.host-launches` exited
+   记录，单次等待 ≤60s；仍活动不因无日志判死，缺证据保持 unknown。
+3. 确认 managed process 已退出后用 `inspect_checkpoints` 复核显式 COMPLETE
+   `production_handoff` 包，按现有 S4 启动新输出根的 acceptance continuation。源 run、冻结、
+   checkpoint、失败报告只读保留；不要向已死 FIFO 补投收口消息。
+4. 同一 root run 当前共用进程锁，公开/隐藏须等前一 continuation 托管进程退出后启动另一批；
+   哪批先执行由获准任务安排，不固定公开优先，也不外推独立来源全局串行。
+
+`source_active` 是可恢复启动拒绝，保留第一错误、原件和 next action，重新核对实际状态；
+不删锁、伪改 state、盲重试或重放不确定 apply。分别记录启动拒绝、实际执行题数、有效裁决
+数及完整冻结分母。acceptance continuation `semantic_starts=0`，production resume 仍按原
+合同计 1 次；停止、成功启动、退出或 0 start 都不是模型质量结论。
+
+## 阶段继续、等待与收尾（R4.0-020）
+
+阶段报告写 `completed/remaining/next/authorization/wait/resource/handoff`，格式见
+[进度参考](progress-report.md)。读取实际 status/events/pending 与产物后，逐项核对原目标待办、
+依赖、授权及写入状态。条件满足即沿现有入口继续，不把阶段收口当整体完成：live thread 用
+`resume_live_run`，已停用显式 checkpoint，production handoff 按上节 stop/exit 后接 acceptance；
+隐藏完成而获准公开仍待办时继续公开，窄修复后回原失败步骤。
+
+新业务定义、权限扩大、兼容性决定或新 start 额度实质缺失时，只等待依赖该决定的动作，
+写明原因、影响范围、独立可做项和恢复入口。额度上限不必耗尽；耗尽不再新开 production，
+已有授权内安全核查、只读验收和收尾仍可做。用户暂停/取消、到期、原目标完成或确无安全
+动作时停止并按生命周期清理，保留模型/证据。进程已结束临时 key 及时撤销，仍服务连续任务
+的资源按已有授权保留；已撤销 key 不复活，必要重新签发/资源恢复记录新时点和范围。
+
+监督交接先报告真实进程、run/checkpoint、首阻塞、待办/下一动作、授权余额、资源状态和
+下一观察者；没有安排接手写“未安排，需后续宿主观察”，不能声称后台持续监控。
+
+## 快速接续摘要（R4.0-021）
+
+先看既有记录顶部[最新摘要](progress-report.md#最新摘要r40-021) 的核实时间/范围与证据链接，
+再用 `get_run_status` 复核实际进程、语义成果、首阻塞/限制，用 events 的原行号/偏移和 pending
+核对下一动作。摘要与新事实不一致时更新顶部时点并保留差异、旧阶段记录及原报告/清理证据；
+状态不明写 unknown，不从 RUNNING、handoff ready、工具数猜成果或授权余额。
+记录六类 UTC 时间区间/来源，墙钟 union、累计 Agent 时间、重叠和 estimate 分开，详见
+[分类耗时](progress-report.md#分类耗时r40-021)。只需现有证据，不新增预检/监控/计时服务。
 
 ## 最小准备与启动
 
@@ -779,3 +858,90 @@ fresh run 无恢复来源时进程观察为 unknown。S2 启动类工具在 run 
 
 现有 outer 原通道（`pause`/`resume`/`stop`/`checkpoint`）行为不变，只是由本工具面封装；
 `start_run`/`resume_from_checkpoint` 封装的 CLI 子命令合同不变，CLI 仍是保留入口。
+
+## R4.0-013／015／016／017：公开反馈、验收范围与失败交接
+
+### CQ 起草和宿主逐点审核（013 补充）
+
+CQ 角色按活动 `competency-question-authoring` Skill 起草后，宿主只在获准代审范围内，
+经 `submit_cq_review`／`handle_cq_outer_input` 的既有 review 入口复核每一必答点。在私有
+`note` 中以 question ID、当前 content version 和一基位置，记下来源定位、题干直接要求或
+结论必需的关系，以及遗漏／保留对业务判断的影响。资料有依据但题意不要求的点不能仅因
+有来源成为必答；必要隐含条件不能机械删除；无依据或未确认部分保留待确认。理由可读，
+不增字段、解析器或冻结硬门。
+
+内容变化使用显式 `modify`／`supplement` 和 `modified_question`，再发布与审核 successor。
+宿主在冻结后比对实际题干、答案点、review identity、content version、唯一 question ID、
+freeze digest 和公开投影与获批修改，不能用 note 冒充生效。原冻结和报告只读；隐藏理由
+只留私有审核记录，生产角色只接收获批公开投影。受控生命周期测试不证明实际逐点判断
+质量；A11 由独立测试者实际执行起草—宿主审核，A13 等另行获准真实 CQ 运行。
+
+### 已安全写入小链的早期公开反馈（015）
+
+当前入口仅支持已启用 `modeling_checkpoints`／CQ selector 且有完整、已发布
+`materialization_progress` 检查点的任务。按已有 `save_checkpoint` 请求及其回执／
+`inspect_checkpoints` 确认包就绪；提交成功、角色自述和 exact IRI 匹配均不证明可消费。
+已有满足条件的包可复用，不必为反馈重复保存。不满足能力条件时记录未执行和准确原因，
+继续原生产目标，不改 Task、phase 或正式 attempt。
+
+从 manifest 的真实 project／ontology identity、run_scope、已核验 CQ artifacts、staged
+intents／receipts 与 write_positions 取得交接前绑定；model_profile_digest 只是配置摘要。
+检查 checkpoint 后写尾没有 pending／unknown，并通过现有平台模型观察确定安全读回。
+不重放或猜测未知写入。可选一至少量覆盖当前完整小链的已冻结公开 question ID：
+
+```bash
+cd backend
+env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run python -m modeling_team public-feedback \
+  --run-root <production-run-root> --checkpoint-id <published-materialization-checkpoint-id> \
+  --freeze-id <frozen-artifact-id> --question-id <approved-public-question-id> \
+  --model-profile <authorized-model-profile> --session-timeout <bounded-seconds>
+```
+
+重复 `--question-id` 选择多题；平台凭据沿现有 `R3011_ACCEPTANCE_PLATFORM_READ_KEY` 宿主环境通道，
+不写 argv。入口复用 v3 Platform Examiner／只读 proxy／report sink，只发送公开题干、内容
+版本和获准读取 scope，不发送隐藏资料、答案点或私有审核理由，不启动 Judge、发布 handoff、
+消费正式 attempt 或切换生产／验收 phase。反馈存于
+`<run-root>/early-feedback/<invocation-id>/feedback.json` 及该目录下 retained platform-read
+artifacts；每次新目录、旧件不覆盖。标准 per-question reports 保留答案、引用、显式未知与
+首失败；宿主按公开题意审核覆盖、缺口和可见证据，不自动给业务 PASS。
+
+前后再次观察平台模型、冻结／公开 projection digest、manifest／scope 与写尾。变化时反馈
+为 `superseded`，不拼接前后响应；运行／受限／未知／partial 保留不足。`observed` 仅表示
+此次公开诊断已取得稳定作答与引用，不是正式验收。宿主将可定位问题沿既有 Coordinator／
+Modeling／Protocol 通道交回，内容修正仍走审核、dry-run/apply 和回读；证据不足保留原因未
+确定。正式交接记下已执行／未执行、曝光和未闭合项，隐藏验收维持原独立路径。
+
+### 启动／接续范围与入口对账（016）
+
+在既有 host run record／handoff 或 run-owned `evidence/` 的 append-only artifact 中记录
+下表，不建立第二套状态机。冻结前填写覆盖目标和预期入口；冻结后绑定实际 question IDs、
+content versions／digests、visibility、exposure／blind eligibility 和有效分母。覆盖维度与
+public／hidden 正交，同一维度可以由两个题集验证；不固定题量或 Ontology／Agent 数。
+
+| 目标维度／专项 | 授权及获准材料 | 题集、visibility、曝光 | 实际入口／selector | 输出与完成依据 | 当前状态／未覆盖及下一动作 |
+| --- | --- | --- | --- | --- | --- |
+| 当前全景／跨切片范围 | 当前需求与授权引用 | 审核冻结前 planned；冻结后实际 ID／version／digest | `cq-acceptance --question-visibility public` 或 `checkpoint resume --mode acceptance --question-visibility public` | 当前 attempt／public-regression 报告；实际分母、已执行、有效裁决、通过、待复核、未完成 | 未执行保持 pending；公开题用于生产后为非盲回归 |
+| 当前切片／治理范围 | 当前需求与授权引用 | 实际 hidden pool 绑定；隐藏内容始终私有 | 显式 `--question-visibility hidden` | 当前冻结／model binding 与独立报告、完整分母 | hidden PASS 不代替 public pending |
+| 外部执行／完整推理等专项 | 记录获准或未授权 | 无适用 CQ 时写专项证据，不虚造题集 | 已有专项验证入口或入口未就绪 | 对应专项实际运行证据 | 局部 CQ／静态映射不能证明此项；保留下一动作 |
+
+同时保留 source run、Task／Profile／代码、production／acceptance-only 模式、handoff／checkpoint
+和读回／安全前置定位。只做安全开始所需检查，不把台账扩成全面审计或全量题池前置，不影响
+授权后 20 分钟首次真实 semantic start。执行／收口追加实际开始、选择、attempt／report、数量、
+第一失败层和状态绑定；按“目标—入口—报告—完成证据”逐项对账。未授权、未冻结、未执行和
+当前阶段不能证明的范围保持 pending／partial，不能静默记为不适用或全 v4／L2／L3 PASS。
+恢复输出属于新目录；原 checkpoint／freeze／报告只读。漂移使对应项 superseded／需重验，
+不跨状态拼接。
+
+### Examiner→证据→Judge→报告故障交接（017）
+
+按实际边界定位首错误：Examiner 真实 answer／read receipt → retained artifact／完整分页 →
+packet 与 digest → native 输入及题／组 → 每题 verdict → report／handoff close。保留阶段、
+question／group、异常类型、退出／受控 stderr 与 stdout、输入／输出路径、清理和是否有未知
+写入；开发／修复输入不带凭据或隐藏正文。后续成功和清理不能覆盖原始第一异常。
+
+现有 `_cq_judge_input_packets` 按题／组无损分割，仅输送当前题完整已保留证据，不截断或造引用，
+不因诊断新增平台查询。超限题和失败组明确未完成，其他独立题继续；完整冻结分母保持，局部
+verdict 不收口整批 PASS。当前原生限制、部分判题、stdout 和故障观察合同已有回归，不为修复
+新建调度或恢复框架。修复前按 T0 判断必要不变量，最窄修复并回归／独立故障复测后沿既有安全
+同 run 或 acceptance-only 接续，输出新目录。source_active、scope drift、锁和 unknown write
+沿既有反馈处理，不删锁、伪改 state、拼旧报告或隐式增加 fresh start。

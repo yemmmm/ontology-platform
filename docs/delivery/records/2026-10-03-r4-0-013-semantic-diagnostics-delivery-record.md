@@ -66,3 +66,37 @@ fresh semantic starts；实际模型结果仍须独立逐点核对，不由脚�
   旁证、不误报模型缺失或 outage。teardown 六项 true，runtime-failures 为空。
 - 最终功能验收 PASS；两次成功真实调用共验证 16 题加 1 个去旁证变体，原始端到端 verdict
   分布是合成反例预期结果，不用于提高真实业务通过率或估计知识覆盖率。失败首轮仍保留。
+
+## 2026-10-04 补充范围启动
+
+用户授权子 Agent 完成 v4 除 001 外未完成需求的细化设计、方案评审、开发和测试。
+本轮基线 `c2593c4`，工作树初始干净；沿用原 A1—A10 证据，细化本条第 6 节及 A11—A13，
+修订方案后独立评审，再开发和独立功能测试。原真实建模授权已关闭且 5/5 用尽，
+本轮不据开发测试授权重开生产；保留真实运行验证缺口，不修改原冻结或失败报告。
+当前正在由设计子 Agent 核对现有合同与最小改动，未宣称新增范围通过。
+
+## 本轮设计交接与方案评审 Round 1
+
+- [设计](../designs/2026-10-03-r4-0-013-semantic-diagnostics-design.md)与[共享计划](../test-plans/2026-10-04-r4-0-013-015-016-017-design-test-plan.md)已形成；设计方检查链接及 diff 通过，未运行模型或代码测试。
+- `/root/review_acceptance` 正独立核对实际入口、最小改动与测试证据层级；主Agent不以设计自查替代方案评审。
+
+独立 Round 1：REVISE（组合 0 Critical/2 High）。H013-01 accepted-high：原方案用预填note存取与最终Judge测试替代前置审核效果；必须由实际CQ起草/宿主审核提示对泛化案例产生逐点理由，再独立检查。 设计方修订后交原 reviewer 复审。
+
+Round 2：独立 reviewer 确认 H013-01 FIXED；实际起草—审核链已明确，不预填结论。原note/Judge测试保持各自层级。本条设计无剩余High。
+
+## 方案复审 Round 3 与开发交接
+
+原 reviewer `/root/review_acceptance` PASS（0 Critical/High），H013-01/H015-01已关闭；无待定关键假设。015检查点启用条件已同步权威需求，未宣称所有Task支持。
+`/root/develop_acceptance` 接手已审阅设计，独占本组CLI/必要helper/测试及对应提示章节；保留018—021与011变更。方案PASS仅设计层，独立功能测试待development-ready。
+
+## 开发就绪与独立功能交接
+
+- `/root/develop_acceptance` 已停写。本组013补活动CQ审核指令与无预填结论输入/生命周期测试；015新增public-feedback入口、薄checkpoint/write-tail绑定并提取共享平台阶段；016/017复用已有公开题选择/局部失败/首错实现，补runbook。
+- 最终Team全量 `2411 passed, 3 skipped, 314 subtests passed`，209.39秒；015定向14 passed；Ruff、diff、CLI help通过。影响分析`_cq_execute_batch` LOW；不改backend、不重启resident、不新开真实业务production start。
+- 独立测试交由 `/root/test_operations`：新增独立013起草审核和015公开消费用例，分别记录实际角色行为、生命周期及真实业务运行未覆盖；不得用开发预填note/Judge裁决替代013 A11，也不得用mock回答替代015消费。
+
+## 2026-10-05 本轮独立功能结论
+
+实际 CQ 角色基于新输入起草4题，独立宿主逐点审核；明确标记的负向变体保留必要隐含条件、移出无关点、未知待确认。审核 envelope 首错保留，在新 synthetic Runner 中按原稿及原 note 重放冻结，digest/version及题目身份保持；不冒称原 native run 接受审核。新增 A11 受控方法及 A12 生命周期验证 PASS，A13 后续真实业务验收未执行。
+
+证据与首错详见[共享测试计划 Round 1](../test-plans/2026-10-04-r4-0-013-015-016-017-design-test-plan.md#7-独立测试-round-12026-10-04)。相邻回归118 passed / 1 skipped；真实业务 production starts=0。实现输入八文件摘要未变，复用开发全量2411 passed / 3 skipped / 314 subtests。受控证据不证明真实业务语义或最终整体 PASS。

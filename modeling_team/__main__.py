@@ -2165,6 +2165,41 @@ def _cq_judge_input_packets(packet, *, input_failures=None):
     return groups
 
 
+def _cq_platform_packet(contract, questions, binding, observed, read_tools):
+    """Shared blind platform input; answer points and private notes never cross it."""
+    if not questions:
+        return None
+    return build_platform_batch_packet(
+        run_id=str(contract["run_id"]), batch_id=binding["batch_id"],
+        freeze_digest=binding["freeze_digest"],
+        questions=[{key: question[key] for key in
+                    ("question_id", "content_version", "question", "scope")}
+                   for question in questions],
+        authorized_scope=[str(entry["ontology_id"]) for entry in binding["ontologies"]],
+        model_binding=observed or binding, authorized_read_tools=read_tools,
+        report_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
+        session={"mode": "single-continuous-batch", "ordered": True},
+    )
+
+
+def _cq_run_platform_session(
+    args, root, artifacts, profile, packet, reports, read_key,
+    forwarder, observables, graph_set_ids, teardown,
+):
+    """Reuse the v3 Examiner runtime and persistence for formal or early reads."""
+    adapter = CodexRuntimeAdapter(repository_root=root)
+    adapter._run_root = artifacts
+    adapter.bind_acceptance_model_profile(profile)
+    return list(adapter.run_v3_acceptance_child(
+        packet, role_instructions=_CQ_PLATFORM_ROLE_INSTRUCTIONS, reports=reports,
+        read_key=read_key, platform_forwarder=forwarder.forward,
+        response_persistence=_cq_platform_read_persistence(artifacts),
+        examiner_observables=observables,
+        timeout_seconds=float(getattr(args, "session_timeout", 300.0) or 300.0),
+        graph_set_ids=graph_set_ids, teardown=teardown,
+    ))
+
+
 def _cq_execute_batch(
     args: argparse.Namespace,
     root: Path,
@@ -2250,54 +2285,14 @@ def _cq_execute_batch(
         # proxy scope entries, the retained ``batch_model_binding`` and the
         # Judge's binding digest all describe the same state.  The handoff still
         # rules: its authorized project/Ontology/tool set bounds ``pre_binding``.
-        packet = None
-        if hidden:
-            packet = build_platform_batch_packet(
-                run_id=str(contract["run_id"]),
-                batch_id=batch_id,
-                freeze_digest=freeze_digest,
-                questions=[
-                    {
-                        "question_id": question["question_id"],
-                        "content_version": question["content_version"],
-                        "question": question["question"],
-                        "scope": dict(question["scope"]),
-                    }
-                    for question in hidden
-                ],
-                authorized_scope=[
-                    str(entry["ontology_id"]) for entry in binding["ontologies"]
-                ],
-                model_binding=pre_binding or binding,
-                authorized_read_tools=read_tools,
-                report_schema={"schema_version": CQ_BATCH_REPORT_SCHEMA},
-                session={"mode": "single-continuous-batch", "ordered": True},
-            )
+        packet = _cq_platform_packet(contract, hidden, binding, pre_binding, read_tools)
         if packet is not None and hidden:
-            adapter = CodexRuntimeAdapter(repository_root=root)
-            # R3.0-015 S4: the attempt's runtime evidence (elicitation decisions,
-            # retained child sessions) belongs beside this attempt's artifacts;
-            # ``run_root`` is the read-only source evidence root.
-            adapter._run_root = artifacts
-            adapter.bind_acceptance_model_profile(profile)
             teardown_platform: dict[str, object] = {}
             typed_failure: dict[str, object] | None = None
             try:
-                reports = list(
-                    adapter.run_v3_acceptance_child(
-                        packet,
-                        role_instructions=_CQ_PLATFORM_ROLE_INSTRUCTIONS,
-                        reports=reports,
-                        read_key=read_key,
-                        platform_forwarder=forwarder.forward,
-                        response_persistence=_cq_platform_read_persistence(artifacts),
-                        examiner_observables=examiner_observables,
-                        timeout_seconds=float(
-                            getattr(args, "session_timeout", 300.0) or 300.0
-                        ),
-                        graph_set_ids=graph_set_ids,
-                        teardown=teardown_platform,
-                    )
+                reports = _cq_run_platform_session(
+                    args, root, artifacts, profile, packet, reports,
+                    read_key, forwarder, examiner_observables, graph_set_ids, teardown_platform,
                 )
             except (ExaminerRuntimeBlocked, ChildRuntimeError, CodexRuntimeError) as exc:
                 typed_failure = _cq_typed_failure(exc)
@@ -3024,6 +3019,127 @@ def _write_host_only_json(path: Path, value: dict[str, object], *, immutable: bo
         temporary.unlink(missing_ok=True)
 
 
+def _run_public_feedback(args, root, *, forwarder_factory=McpReadForwarder):
+    """Production-time public diagnostics, without handoff, Judge or attempt."""
+    from uuid import uuid4
+    from .public_feedback import load_feedback_checkpoint
+
+    run_root = Path(args.run_root)
+    if not run_root.is_dir():
+        print("public-feedback unavailable: --run-root is not a directory", file=sys.stderr)
+        return 2
+    output_root = run_root / "early-feedback" / uuid4().hex
+    output_root.mkdir(parents=True, mode=0o700)
+    record = {"run_id": run_root.name, "checkpoint_id": args.checkpoint_id,
+              "freeze_id": args.freeze_id, "question_ids": list(args.question_id),
+              "purpose": "public-nonblind-production-feedback", "status": "not-executed",
+              "formal_acceptance": False, "reports": [], "first_failure": None}
+    forwarder = None
+    teardown = {}
+    reports = []
+    observables = {}
+    stage = "checkpoint-binding"
+    try:
+        captured = load_feedback_checkpoint(
+            run_root, args.checkpoint_id, args.freeze_id, list(args.question_id))
+        freeze = captured["freeze"]
+        identities = captured["platform_bindings"]
+        record.update({"run_id": captured["manifest"]["source_run_id"],
+                       "manifest_digest": captured["manifest_digest"],
+                       "projection_digest": captured["projection_digest"],
+                       "freeze_digest": freeze["snapshot_digest"],
+                       "public_questions": [{key: q[key] for key in
+                                            ("question_id", "content_version", "question", "scope")}
+                                            for q in captured["questions"]],
+                       "question_bindings": [{"question_id": q["question_id"],
+                                              "content_version": q["content_version"],
+                                              "content_digest": content_digest(q)}
+                                             for q in captured["questions"]],
+                       "run_scope": identities["run_scope"],
+                       "model_profile_digest": identities.get("model_profile_digest"),
+                       "pre_write_tail": captured["write_tail"]})
+        read_key = os.environ.get(_CQ_PLATFORM_READ_KEY_ENV)
+        if not read_key:
+            raise TeamConfigurationError("public_feedback_credentials_missing: " + _CQ_PLATFORM_READ_KEY_ENV)
+        profile = load_team_model_profile(root, getattr(args, "model_profile", None)
+                                          or _CQ_DEFAULT_MODEL_PROFILE_ID)
+        record["effective_model_profile_digest"] = profile.digest
+        binding = {"schema_version": "r3-0-011-model-binding/v1",
+                   "batch_id": freeze["batch_id"], "freeze_digest": freeze["snapshot_digest"],
+                   "bound_at": datetime.now(UTC).isoformat(),
+                   "ontologies": [{"project_id": identities["project_id"], "ontology_id": oid,
+                                   "authorized_read_tools": list(CQ_SEMANTIC_READ_TOOLS)}
+                                  for oid in identities["ontology_ids"]]}
+        tools = _cq_read_tools(binding)
+        forwarder = forwarder_factory(repository_root=root, read_key=read_key,
+                                      expected_tools=tuple(tools) + CQ_HOST_STATE_READ_TOOLS)
+        stage = "pre-feedback-state"
+        forwarder.start()
+        before, graph_sets = _cq_observe_model_binding(forwarder.forward, read_key, binding)
+        record["pre_model_binding"] = before
+        packet = _cq_platform_packet({"run_id": record["run_id"]}, captured["questions"],
+                                     binding, before, tools)
+        record["packet_digest"] = packet.canonical_digest
+        stage = "platform-examiner-session"
+        record["executed"] = True
+        try:
+            reports = _cq_run_platform_session(
+                args, root, output_root, profile, packet, reports,
+                read_key, forwarder, observables, graph_sets, teardown)
+        except (ExaminerRuntimeBlocked, ChildRuntimeError, CodexRuntimeError,
+                TeamConfigurationError) as exc:
+            record["first_failure"] = {"stage": stage, "failure": _cq_typed_failure(exc)}
+        # Retain the actual response binding before post-state checks, so a
+        # failed observation never discards answers or their receipt locators.
+        responses, rejected = _cq_collect_platform_read_responses(
+            reports, observables.get("receipts") or [], output_root, tools)
+        record["platform_read_responses"] = responses
+        record["rejected_evidence_refs"] = rejected
+        stage = "post-feedback-state"
+        after, _ = _cq_observe_model_binding(forwarder.forward, read_key, binding)
+        record["post_model_binding"] = after
+        try:
+            current = load_feedback_checkpoint(
+                run_root, args.checkpoint_id, args.freeze_id, list(args.question_id))
+            record["post_write_tail"] = current["write_tail"]
+            changed = (current["manifest_digest"] != captured["manifest_digest"]
+                       or current["projection_digest"] != captured["projection_digest"]
+                       or current["platform_bindings"] != identities
+                       or current["write_tail"] != captured["write_tail"])
+        except (TeamConfigurationError, CheckpointError, CQContractError) as exc:
+            changed = True
+            record["post_binding_unavailable"] = str(exc)
+        record["model_drift"] = model_binding_drift(before, after)
+        missing = set(args.question_id) - {item["question_id"] for item in reports}
+        record["missing_question_ids"] = sorted(missing)
+        incomplete = (record["first_failure"] is not None or missing or rejected
+                      or any(item.get("status") != "completed" or item.get("explicit_unknown")
+                             or not responses.get(item["question_id"]) for item in reports))
+        record["status"] = ("superseded" if changed or record["model_drift"]
+                            else "partial" if incomplete else "observed")
+        record["review_status"] = "pending-host-public-scope-review"
+        record["feedback_summary"] = "公开作答与读取已保留；覆盖/缺口由宿主按公开题意审核，原因不足保留未确定。"
+        record["next_route"] = "Coordinator/Modeling/Protocol: existing review, dry-run/apply and readback"
+    except (TeamConfigurationError, CheckpointError, CQContractError, ChildRuntimeError,
+            CodexRuntimeError, ExaminerRuntimeBlocked, OSError, ValueError) as exc:
+        if record["first_failure"] is None:
+            record["first_failure"] = {"stage": stage, "failure": _cq_typed_failure(exc)}
+        if record.get("executed"):
+            record["status"] = "partial"
+    finally:
+        record["reports"] = [dict(item) for item in reports]
+        record["examiner_first_failure"] = _cq_first_examiner_failure(reports, None)
+        record["cleanup"] = _cq_cleanup_acceptance_resources(
+            forwarder, [teardown] if teardown else [])
+        if not record["cleanup"]["forwarder_stopped"] or not record["cleanup"]["children_destroyed"]:
+            if record["status"] == "observed":
+                record["status"] = "partial"
+        _write_host_only_json(output_root / "feedback.json", record, immutable=True)
+    print(json.dumps({"status": record["status"], "feedback_path": str(output_root / "feedback.json"),
+                      "formal_acceptance": False}, ensure_ascii=False))
+    return 0 if record["status"] == "observed" else 1
+
+
 def _run_checkpoint_inspect(args: argparse.Namespace, root: Path) -> int:
     """R3.0-015 S1 host-only ``checkpoint inspect`` (design §4.1, test plan M08).
 
@@ -3415,6 +3531,13 @@ def main() -> int:
         action="store_true",
         help="write the all-unexecuted evidence report without starting any session",
     )
+    feedback = subparsers.add_parser("public-feedback")
+    feedback.add_argument("--run-root", required=True, type=Path)
+    feedback.add_argument("--checkpoint-id", required=True)
+    feedback.add_argument("--freeze-id", required=True)
+    feedback.add_argument("--question-id", required=True, action="append")
+    feedback.add_argument("--model-profile", default=None)
+    feedback.add_argument("--session-timeout", type=float, default=300.0)
     checkpoint = subparsers.add_parser("checkpoint")
     checkpoint_subparsers = checkpoint.add_subparsers(dest="checkpoint_command", required=True)
     checkpoint_inspect = checkpoint_subparsers.add_parser(
@@ -3509,6 +3632,8 @@ def main() -> int:
         # loader entirely; it never constructs a TeamRunner and never touches
         # the StartLedger.
         return _run_cq_acceptance(args, repository_root())
+    if args.command == "public-feedback":
+        return _run_public_feedback(args, repository_root())
     if args.command == "checkpoint":
         # R3.0-015 S1+S2 (design §4.1): the host-only checkpoint entry.  It
         # shares ``run``'s host credential channel

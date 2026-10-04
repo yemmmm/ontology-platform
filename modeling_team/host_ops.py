@@ -2840,6 +2840,7 @@ def _launch_managed_run(
     run_id: str,
     kind: str,
     argv: list[str],
+    service_tier: str = "unset",
     repository_root: Path | None = None,
     launcher: Callable[..., Any] | None = None,
     host_session_ref: str | None = None,
@@ -2862,6 +2863,19 @@ def _launch_managed_run(
             retryable=False,
             next_action="report this as an implementation defect",
         )
+    if service_tier not in {"unset", "fast", "default"}:
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "service_tier must be 'unset', 'fast', or 'default' (explicit off)",
+            obj="service_tier",
+            retryable=True,
+            next_action="pass the latest applicable session choice; omit for unset",
+        )
+    child_env = dict(os.environ)
+    if service_tier == "fast":
+        child_env["MODELING_TEAM_CODEX_SERVICE_TIER"] = "fast"
+    elif service_tier == "default":
+        child_env.pop("MODELING_TEAM_CODEX_SERVICE_TIER", None)
     run_root, runs_root = _validated_run_root(run_id, repository_root=repository_root)
     repository = (
         Path(repository_root).resolve()
@@ -2887,6 +2901,9 @@ def _launch_managed_run(
         "run_id": run_id,
         "kind": kind,
         "argv": list(argv),
+        "service_tier": service_tier,
+        "service_tier_note": "requested child environment override only; verify "
+        "actual role config separately; existing threads are unchanged",
         "argv_note": "credential-free by construction: the platform credential "
         "travels only in the process environment, never in argv or this record",
         "pid": None,
@@ -2910,7 +2927,7 @@ def _launch_managed_run(
             process = launch(
                 list(argv),
                 cwd=str(repository),
-                env=dict(os.environ),
+                env=child_env,
                 stdout=out_handle.fileno(),
                 stderr=err_handle.fileno(),
             )
@@ -3004,6 +3021,7 @@ def start_run(
     model_profile: str,
     scope: str,
     freeze_started_at: str,
+    service_tier: str = "unset",
     task_overlay: str | None = None,
     base_url: str | None = None,
     request_id: str | None = None,
@@ -3070,6 +3088,7 @@ def start_run(
         run_id=run_id,
         kind="run",
         argv=argv,
+        service_tier=service_tier,
         repository_root=repository_root,
         launcher=launcher,
         host_session_ref=host_session_ref,
@@ -3239,6 +3258,7 @@ def resume_from_checkpoint(
     new_run_id: str,
     mode: str,
     authorization_reference: str,
+    service_tier: str = "unset",
     fork_reason: str | None = None,
     freeze_started_at: str | None = None,
     session_timeout: float | int | None = None,
@@ -3389,6 +3409,7 @@ def resume_from_checkpoint(
         run_id=new_run_id,
         kind="checkpoint_resume",
         argv=argv,
+        service_tier=service_tier,
         repository_root=repository_root,
         launcher=launcher,
         host_session_ref=host_session_ref,

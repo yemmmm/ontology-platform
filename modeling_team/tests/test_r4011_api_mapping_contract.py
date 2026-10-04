@@ -7,6 +7,10 @@ from types import SimpleNamespace
 
 import pytest
 
+from modeling_team.acceptance_runtime import (
+    v3_examiner_proxy_schemas,
+    validate_examiner_proxy_arguments,
+)
 from modeling_team.contracts import load_multi_slice_team_configuration
 from modeling_team.protocol_mechanics import (
     build_candidate_receipt,
@@ -14,6 +18,7 @@ from modeling_team.protocol_mechanics import (
     translate_candidate_to_batches,
 )
 from modeling_team.runner import TeamRunner
+from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.staged_decisions import (
     build_approval_projection,
     candidate_item_digest,
@@ -99,6 +104,46 @@ def test_active_roles_mount_interface_contract():
         )
         package = next(a.package for a in config.profile.agents if a.agent_id == name)
         assert CONTRACT.name in package.instructions_path.read_text()
+
+
+def test_active_consumer_operation_read_example_matches_actual_v3_schema():
+    _, instructions, _ = CodexRuntimeAdapter._child_package_assets(
+        "platform", ROOT, v3_batch=True
+    )
+    assert instructions == (
+        ROOT / "modeling_team/agent-packages/v3-acceptance-batch/platform-examiner.md"
+    )
+    text = instructions.read_text()
+    example = json.loads(text.split("```json\n", 1)[1].split("```", 1)[0])
+    scope = {"project_id": "example-project", "ticket_digest": "a" * 64}
+    replacements = {
+        "<packet project_id>": scope["project_id"],
+        "<packet freeze_digest>": scope["ticket_digest"],
+        "<authorized ontology_id>": "example-ontology",
+        "<Operation IRI from authorized evidence>": "https://example.org/operation/example",
+    }
+    arguments = json.loads(json.dumps(example))
+    for key, value in arguments.items():
+        arguments[key] = (
+            [replacements.get(item, item) for item in value]
+            if isinstance(value, list)
+            else replacements.get(value, value)
+        )
+    schema = v3_examiner_proxy_schemas(["query_semantic_context"])[
+        "query_semantic_context"
+    ]
+    normalized = validate_examiner_proxy_arguments(
+        "query_semantic_context", arguments, schema, scope=scope
+    )
+    assert normalized["resource_types"] == ["operation"]
+    assert normalized["context_detail"] == "full"
+    assert normalized["ontology_ids"] == ["example-ontology"]
+    # The documented filter must opt in to Operations; exact IRI alone does not.
+    omitted = {key: value for key, value in arguments.items() if key != "resource_types"}
+    defaulted = validate_examiner_proxy_arguments(
+        "query_semantic_context", omitted, schema, scope=scope
+    )
+    assert "operation" not in defaulted["resource_types"]
 
 
 @pytest.mark.parametrize("form", ["neutral", "unified"])
