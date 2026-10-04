@@ -436,3 +436,286 @@ project／ontology／workspace／Protection Set 管理 GET 仍 200，四个保�
 宿主转交的最终回归元数据不覆盖外部 SQL／API 实际执行、OWL 真实推理或 L2／L3，
 也不抹去历史失败、depth=3 超时与未覆盖范围。本次只追加交付元数据，未重新审代码或测试、
 未改其他文件、未提交。
+
+## Round 10：完整冻结公开集选择与 S4 缓存隔离合同复审 PASS
+
+只读核对开发者 16 文件最终差异（不将宿主交付 record 算入开发范围）：既有 CQ／S4 CLI、
+Host Ops／MCP、checkpoint acceptance plan、报告／完成守卫、Consumer package 及对应测试，
+以及 009 权威需求／设计、Host S2 设计与 runbook。显式 `--question-visibility hidden|public`
+默认 hidden，public 选择整个原冻结公开集，不提供任意单题／子集参数。
+不改 visibility、冻结、生产权限或外部执行边界，不实现 015。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r30015_acceptance.py \
+  modeling_team/tests/test_r3012_completion.py \
+  modeling_team/tests/test_host_ops.py \
+  modeling_team/tests/test_host_ops_s2.py \
+  modeling_team/tests/test_host_ops_mcp.py \
+  --basetemp=/tmp/v4-independent-round10-public
+```
+
+结果：**157 passed，11.36 秒**。仅运行通用 fixture、fake adapter／forwarder／launcher，
+没有真实 semantic run／模型／live 查询。默认 hidden 路径与原完成行为继续通过；
+public S4 在已有 hidden PASS 后仍启动受控批次，按冻结 ordering 收到完整公开分母，
+Consumer question 字段仅 question_id／content_version／question／scope，不含答点和依据；
+Judge 同时收到对应所选题及既有核验响应／批准资料路径。
+原 archive 读取校验和 source 树逐字不变测试继续通过。
+
+公开报告显式 `question_selection`／`non-blind-regression`，使用 public coverage 字段；
+直 CQ 输出隔离到 public-regression，S4 写入新的 output attempt。
+hidden Host／Runner completion guard 拒绝 public 报告，不能以其关闭生产 hidden 完成门。
+S4 缓存绑定 freeze、选择及完整 ID 集，hidden 完成缓存不会跳过 public，反向也不复用。
+生产模式传 public 被拒绝，scope/profile 与既有读代理合同不扩大。
+
+另 **10 组独立泛化负控**验证所选 ID 缺失／错误类型／数字、Judge 缺项／额外项、未执行题、
+错误 blind 标记、空公开集及模型漂移均无完整 PASS 且不可作为缓存；仅精确完整 public 集
+可命中 public 缓存，默认 hidden 与子集请求不能复用。证据及开发者 16 文件 SHA-256 基线
+保存在 `independent-functional/round10-public-selection-probes.json`。
+初读期间两报告 helper 追加所选 ID 类型校验，已告知宿主并以追加后的最终源码运行负控、封存基线；
+若之后再变更，需要对新差异复核。本记录不宣称早先输入与最终输入完全一致。
+
+**本轮独立合同 PASS，0 Critical／0 High，可提交本范围。**
+冻结基线、diff 与本记录链接／格式检查通过；完整 Team 回归由开发者持有，不在此重复。
+此处只证明公开只读验收入口与隔离／缓存／分母合同，不证明实际公开 11 题的语义结果。
+未读取实际 hidden、业务私有访谈／答案，未修复 run 或回写源报告，未调用 Claude，未提交。
+既有 hidden10 slice 非盲 PASS、公开／全景及映射消费缺口仍按原范围记录，v4 总体仍 PARTIAL。
+
+## Round 11：native startup 首阻塞证据保留合同复审 PASS
+
+只读检查冻结的 `modeling_team/runtimes/codex.py` 与 `test_r3011_acceptance_runtime.py`。
+本次只修可观察性：native startup 已产生并清理资源的固定 failure_evidence，不再被
+`batch-contract-unavailable` 次级错误覆盖。启动 stage 限为 initialize／thread-start／
+mcp-preflight／turn-start；原 RPC、MCP 发现、模型、超时与启动策略不变。
+宿主说明旧日志没有可回溯底层异常，因此真实启动原因仍未确定，不能称已修复真实启动问题。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r3011_acceptance_runtime.py \
+  --basetemp=/tmp/v4-independent-round11-startup
+```
+
+结果：**24 passed，4.75 秒**。受控 native process／RPC 与真实本地 Unix report sink
+覆盖启动 MCP discovery 失败保留 first blocker，以及 11 题全量实际 sink 提交成功与清理。
+未启动真实模型／验收；其余既有 batch 合同、授权与 runtime fixture 回归保持。
+另 **7 组独立泛化探针**确认四个 allowlisted stage 只输出固定安全 meta，任意私有 sentinel
+stage 被省略；spec 中 raw-packet sentinel 不进入 evidence；已有 startup failure 保留，
+没有 failure_evidence 且缺真实 batch contract 仍 typed 阻塞、不产生 PASS，资源仍销毁。
+证据及最终两文件 SHA-256 基线保存在 `independent-functional/round11-startup-blocker-probes.json`。
+
+**固定 stage 中间版本独立可观察性合同 PASS，0 Critical／0 High；最终结论见下方 typed RPC 补充。**
+最终冻结基线、diff 与本记录链接／格式检查通过；后续若加入新的 typed code 需单独复核差异。
+不由该 PASS 推断旧 public Judge 可启动、公开题通过或模型质量失败；第一层实际原因仍待新运行证据。
+本轮保持 sol/medium／normal 要求，未切模型、未读旧宿主日志或实际 private／hidden 答案，
+未改 run／证据或代码，未调用 Claude，未提交。
+
+### Round 11 最终差异：既有 typed RPC 安全元数据 PASS
+
+开发冻结后仅复核新增差异：startup catch 只对既有 `CodexRuntimeRPCError` 保存
+其已归一化的闭集 category 与 integer／null code；原 server_message、data、method、
+active turn ID 不进入 failure_evidence。普通错误无细码，仅保留固定 code／stage。
+该 typed error 构造器原有类别闭集与排除 bool／非整数 code 的合同保持，未新增诊断文字。
+内部 spec 字段仅由该 catch 构建，未新增外部 packet 字段或凭据渠道。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r3011_acceptance_runtime.py \
+  -k native_public_judge_startup_failure_preserves_first_blocker \
+  --basetemp=/tmp/v4-independent-round11-final-rpc
+```
+
+结果：**3 passed，22 deselected，1.22 秒**，覆盖 plain startup failure、typed RPC -32603
+和 11 题完整真实本地 sink 提交。另 **6 组独立负控**验证两种整数、None、bool、字符串 code
+经既有 typed 合同处理，以及普通错误没有 rpc_error；任意 category 降为闭集 rpc_error，
+message／method／turn／data 私有 sentinel 均未进入固定 evidence。
+结果与最终两文件 SHA-256 基线在 `independent-functional/round11-final-typed-rpc-probes.json`。
+之前 24 项／7 组只属固定 stage 中间版本证据；本最终差异测试不冒充整模块或完整 Team 回归。
+宿主转交补码前 full 中断 exit 2／494 passed／66 subtests／38.96 秒，只记中间未完成运行，不能称 PASS。
+
+**Round 11 最终可观察性合同独立 PASS，0 Critical／0 High。**
+最终冻结 hash、diff 与文档链接／格式检查通过。真实 startup 原因仍不可回溯，
+本改动不修启动机制、不证明新 public 批次可运行或语义通过；完整回归由宿主唯一执行。
+本补充仍无实际模型／验收、live、hidden／私有答案、运行或证据修改、Claude 或 commit。
+
+## Round 12：V3 预算与超限 Judge 无损输送合同复审 PASS
+
+只读审核最终冻结的 acceptance_runtime.py／runtimes/codex.py／test_r3011_acceptance_runtime.py。
+V3 batch metrics 的 max_inference_steps 为 None，保留步数与 token 记账、session deadline、
+report sink 整批合同和失败保留；legacy 默认 30 不变。
+仅超过原生 text aggregate 上限的 V3 Judge first-turn 使用 lossless result-body registry：
+完整 canonical result 以摘要索引去重，每一条原 retained response 保留自己的 metadata／ref。
+原 packet、_packet、sink、private input、freeze 和证据身份不改，索引不成为业务 IRI 或新证据。
+未超限 Judge 保持原首轮字节，Consumer 不走该 Judge 输送分支。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r3011_acceptance_runtime.py \
+  modeling_team/tests/test_r23009_examiner_step_budget.py \
+  --basetemp=/tmp/v4-independent-round12-native
+```
+
+结果：**31 passed，6.05 秒**。受控 factory／RPC／真实本地 Unix sink 验证 11 条报告完整提交，
+超限正文有两种完整 unique result，逐条展开 canonical bytes 与原 packet 完全相同、digest 一致，
+private input 仍为原 canonical bytes；V3 第 31 步不阻断且继续记账，legacy30 相关合同通过。
+首次命令误用了不存在的 test_r3011_step_budget.py，exit 4、无测试运行；已更正为上方既有路径。
+
+另 **4 组独立泛化探针**覆盖重复 body 的键顺序、Unicode、null、逐条不同 response_digest／
+artifact_path／page metadata 的无损保留；冻结原 packet 不变、registry digest 正确、展开逐字相同；
+legacy30 与 None31 的预算差别；未超限首轮文本逐字兼容、原 private input／packet／timeout 保持。
+初始探针传普通可变 list，不符合 helper 唯一生产调用传入的已冻结 packet 合同，断言失败；
+已改用既有 _freeze_packet 验证真实输入不变量，不将该探针失配推断为生产缺陷。
+结果与三文件 SHA-256 基线在 `independent-functional/round12-lossless-budget-probes.json`。
+
+**本轮独立合同 PASS，0 Critical／0 High。** 最终 diff SHA-256 与开发交接
+`bdd12866e3e23ea15264b4e6844f9e9e7a0228f67eba21d4572546f56ef959ab` 一致，
+冻结基线、diff 和文档链接／格式检查通过。原生 loopback 输入边界探针和更广回归为开发侧证据，
+本轮未自行执行原生探针或完整 Team，不把其结果作为语义裁决。
+该输送只消除完整正文重复，仍不能保证任意唯一大内容低于原生上限；没有截断或分段绕过。
+未启动真实模型／验收／live、读取 actual private／hidden 或作语义 Judge，未改生产证据、
+代码／测试、模型档位，未调用 Claude，未提交；实际公开结果仍需后续独立真实执行。
+
+### Round 12 实际完整公开输入完成门：REVISE／High
+
+宿主后续转交纯大小元数据 `retained-judge-transport-size-verification.json`：
+public1 完整 11 题 actual first-turn 经 whole-body registry 后仍为 **1,607,354 chars**，
+超过已验证 native aggregate cap **1,048,576 chars**；unique body 总量 **1,434,719 chars**。
+public2 只有 9 题，输送 **574,823 chars** 在门内，不能以删题／不完整分母代替整批完成。
+两次检查的逐字重建、digest 与原 packet 不变均为 true，但它们只证明无损性，不证明可启动。
+独立审核者仅接收上述纯 meta，没有读取 actual 私有 packet、题目答案或发起真实运行。
+
+**High：当前完整公开 11 题 native Judge 启动仍被输入上限阻断；实际 whole11 readiness 为 REVISE。**
+三文件未变，前述独立 generic 合同 PASS 继续成立，但不能称完整公开输送已解决。
+宿主最终 full 结果 2320 passed／2 skipped／314 subtests／172.21 秒／exit 0 仅为合同回归证据，
+不覆盖该 actual cap 缺口或提供语义 PASS。
+宿主正在按 T0 评估是否在同一完整分母下作有序 Judge 分组，每题冻结资料与读取结果仍完整；
+此处仅记录评估状态，没有代码变更、新运行或对该后续方案的审核／批准。
+
+## Round 13：超限 Judge 物理分组合同复审 PASS；实际运行待证
+
+独立核对开发者冻结九文件（排除宿主 record 与本记录）：main、acceptance_runtime、codex、
+两个相关测试、v3 011 需求与设计、009 设计及 runbook。按获准 T0 结论，单 Consumer 仍连续
+处理完整批次；仅 Judge 完整 first-turn 超限时，按冻结顺序贪心连续分组，在同一 attempt
+逐组披露，不宣称单 Judge 会话。全局所选 11 题分母与完成门不变，单题完整输入超限仍 typed 拒绝。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r3011_acceptance_runtime.py \
+  modeling_team/tests/test_r3012_partial_judging.py \
+  --basetemp=/tmp/v4-independent-round13-groups
+```
+
+结果：**80 passed，8.36 秒**。真实本地 Unix sink／default factory 采用受控 process／RPC，
+验证整 11 题聚合、首组失败后后续组继续且整体不 PASS、每组独立报告列表与 teardown、
+冻结原件不变、无前组 verdict 进入新输入；未启动真实模型或平台查询。
+组 packet 复用原 builder／sink，按 question_id 选取本题完整 frozen 资料、Examiner report 和
+retained responses，保持同 freeze/model binding；报告披露 ordinal、题 ID、packet digest、
+实际 input chars、有效裁决数、失败和清理。原未超限路径保持原 packet 与单组 shape。
+
+另 **4 组独立泛化探针**验证完整有序连续题集不漏／不重、每组实际序列化门内与逐字段资料保真，
+确定性 group digest／原 packet 不变／无旧 verdict，未超限原 packet identity，以及单题超限拒绝。
+证据与九文件 hash 在 `independent-functional/round13-physical-judge-group-probes.json`。
+最终 diff SHA-256 与交接 `928d0c259e4160e810cd771db39bb5b795046600e9c9fa2b36d37ef2d27c5b39`
+一致，冻结 hash、diff 与文档链接／格式检查通过。
+
+宿主转交纯统计 `retained-judge-grouped-input-verification.json`：实际 public1 whole11 计划为
+P01–P03／565,640 chars，P04–P05／1,012,708，P06–P07 与 S01–S04／289,930，
+三组均低于 1,048,576；本题 frozen／完整 entries／results 保真、同 freeze/model binding，
+real children／platform queries 为 0。独立审核者没有读取 actual 私有 packet。
+宿主统计初先错误要求未分组的 9 题原 bundle 从 31 entries 过滤为 25，改按原 single packet
+保持后通过；这是统计断言失配，不据此判平台 fidelity 故障。
+
+**独立分组合同 PASS，0 新 Critical／High；actual whole11 runtime readiness 仍待真实运行。**
+Round 12 的旧 1,607,354 chars 超限 High 原证据保留，新计划大小已门内不等于实际 child 能启动、
+完整裁决或语义通过，因此本次不提前关闭实运完成门 blocker，也不称最终公开 PASS。
+未重复父完整 Team，不读取 hidden／实际私有访谈或答案、不改 run／证据或代码、
+不实际模型／live／语义 Judge／Claude，不提交；sol/medium／normal 要求不变。
+
+## Round 14：逐题超限局部失败与通用窄读取指导合同 PASS
+
+只读核对最终冻结七文件：main、partial-judging test、实际 v3 Consumer package、011 需求／
+设计、009 设计与 runbook。完整单题超 native cap 时记录本题 `judge-input-too-large` 与
+`runtime/infrastructure`、input_chars／max_chars，只跳过该题，完整全局所选分母不改。
+其他完整合格题按原冻结顺序继续；单个剩余组传筛后的完整 packet，全部超限不启动 Judge，
+cleanup 只列实际调用的 child。默认未超限路径保留，不压缩业务含义或修改 frozen 资料。
+
+实际独立命令：
+
+```bash
+env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m pytest -q \
+  modeling_team/tests/test_r3012_partial_judging.py \
+  modeling_team/tests/test_v4_consumer_answer_contract.py \
+  --basetemp=/tmp/v4-independent-round14-local-skip
+```
+
+结果：**59 passed，6.84 秒**。真实本地 Unix sink／default factory 使用受控 process／RPC，
+覆盖单题超限、全部超限、只剩单个 eligible、分组启动失败后继续及 normal 分组兼容；
+全局 11 题缺任一有效裁决均不完整 PASS，无 Judge 时无虚构 cleanup child，冻结原件不变。
+另 **5 组独立泛化负控**覆盖中间题超限、首尾超限、全部超限、仅末题可判和提示合同：
+每题 typed failure 正确，余下题有序完整，原 packet 不变；通用提示保留逐题 evidence gap、
+必要分页、完整原始返回及原 host handles，没有题 ID、答点或具体业务答案。
+结果与七文件最终 hash 在 `independent-functional/round14-local-input-failure-probes.json`。
+
+新增 13 行指导限制重复宽读而不限制必要读取：复用仅限当前题相关证据，不从旧题／旧 attempt
+补齐答案，不因输入大小省略证据、裁剪返回、合并／伪造 handles；不足时报告 unresolved。
+并未在平台压缩／删改结果或扩权，也不改变独立 Judge 裁决责任。
+
+**本轮合同独立 PASS，0 新 Critical／High。** 最终 diff SHA-256 与交接
+`53ce7109d0aa7a0a49ccc9d4901e0a5f7a1b84adc63cc1ca6046bbc228976f42` 一致，
+冻结 hash、diff 与文档链接／格式检查通过。父完整 Team 不重复；不以开发测试或这次合同 PASS
+宣称 actual 11 题可裁决／语义通过，先前真实启动／单题超限证据继续保留，actual 完成门不提前关闭。
+本轮无真实 run／模型／live，无实际 private corpus／hidden 答案读取，未改 code／源／旧报告，
+未调用 Claude 或提交；sol/medium／normal、fast 关闭要求保持。
+
+## Round 15：最终宿主安全元数据与证据边界审查 PASS；公开实际阶段 PARTIAL
+
+本轮只读取宿主安全文件 outcome、diagnostic-qualification、配置／native-thread observations、
+public test-subject cleanup、final retained-resource verification 和 source/report digests final。
+只检查分母、状态、摘要、引用身份资格、白名单配置／资源 labels／status 与保护成员数；
+没有打开 actual result/body、私有 corpus、隐藏答案或业务访谈，也没有新模型调用／真实查询。
+这里的语义结论是独立 native Judge 已有结果的元数据，不是本审核者新增裁决。
+
+public4 `r4009-20261004-solmedium-auth02-start2-public4`／`attempt-0008`：
+`2026-10-04T06:03:20.896734Z` → `06:16:01.898748Z`，managed exit 1。
+完整有序公开分母 11，执行 11／有效裁决 11／unexecuted 0；宿主转交 skip 0。
+**7 pass；P01／P02／P06 为 model-recall-insufficient；S01 为 question-answer-review；full_pass=false。**
+报告 SHA-256 为 `960b098b405b66dd04672aab2524eff001348f5d578521735e4a855a679bc6b6`，
+outcome、diagnostic qualification 与最终 digest 清单绑定一致，旧报告不变。
+
+27 次 replays、全 11 个 question status stable，无 unavailable／drift，前后 binding 一致，
+lifecycle_errors 空。实际 Consumer／Judge 两 child，生成配置与 native thread 均
+OpenAI／gpt-6.1-sol／medium、service_tier 与 fast_mode 无启用；child 销毁与 forwarder 停止
+均成功，bootstrap revoked=true。当前批次已取得真实全裁决运行证据；旧 startup／input-cap
+失败原件和诊断保留，不以当前运行回填旧版本成功。
+
+P01／P02／P06／S01 的宿主诊断引用资格均 true，unique_match／raw_artifact_matches／stable
+及 original_verdict_preserved 均 true。本轮只核对这些已有身份资格，不读 root_cause 正文，
+不据旁证补成本题作答或提高通过率，不以粗粒度 modeling-quality／insufficient 宣称模型知识不存在。
+S01 新版本 proposal 由宿主负责，本轮未评审业务含义或改冻结／旧判定。
+
+清理安全记录有 11 HTTP receipts：测试两密钥撤销后 401，用户停用、membership 和临时角色
+移除；保留 project／ontology／workspace／Protection Set 管理读取均 200，保护成员 4／4，
+最终管理凭据也撤销。source 四原件、public1–public4 四报告 final digest all_unchanged=true。
+本轮依据清理记录核对，不重新清理／发请求，不展开业务字段。
+
+**本轮元数据一致性／证据边界审查 PASS，0 新 Critical／High；实际公开阶段 PARTIAL。**
+旧 hidden10 slice 非盲 PASS 与 public7/11 分别保留，不能合并为整体验收 PASS。
+宿主转交最终 full 2328 passed／2 skipped／314 subtests／177.71 秒／exit 0，以及代码提交
+`e994526`，均只作为机械／交付元数据；本轮没有重复测试或把它当语义通过证据。
+fresh starts 仍 2/5、剩余 3，不为重复已正确模型新开 start、不暗改 freeze 重算。
+v4 总体仍 PARTIAL；L2／L3、外部实际 SQL／API／脚本执行和真实 OWL 推理未验收。
+本次只追加本记录，链接／格式检查通过，没有修改源／报告／代码、调用 Claude 或提交。
+
+宿主最终台账补充：当前阶段为 `bounded-validation-finished`，overall／bounded_cq 均 PARTIAL，
+hidden_cq_status 单独记录 10/10 PASS，public_cq_status 单独记录 7/11＋3 insufficient＋1 review，
+消除旧 hidden-only bounded_cq PASS 的范围歧义；2/5 starts、剩余 3、无 active。
+本轮完成的是当前有界验证阶段，不以“完成”要求全部 v4 PASS，也不修改旧冻结／历史结果。
