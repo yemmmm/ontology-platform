@@ -696,6 +696,26 @@ do not add roles or formal Classes. Protocol carries `semantic_definition` uncha
 the canonical command and verifies the governed readback. No evidence-tracing duties,
 permission grants, new resource kinds or external execution are implied.
 
+A `property` item's platform translation is sourced from that same approved property item
+alone. The `create_property` semantic description and trace `rationale` carry the item's own
+top-level `business_meaning` and, when its `semantic_definition` is present, that definition's
+`business_meaning`; when the two differ, both are preserved faithfully and never merged into
+one. The definition's `unknowns`, `not_applicable`/`conflicting_meanings` and `applicability`
+ride along through their existing supported payload fields. Never fill a property's description
+or rationale from its predicate label, a generic template phrase, or an aggregation over the
+relation items that use the predicate: a meaning absent from the property item is an explicit
+unknown or a Coordinator clarification request, never material sourced from elsewhere or
+invented; follow the mounted platform payload contract and add no new fields or business facts.
+
+Each `relation` item's own `business_meaning` is the meaning of that one edge expression. It
+stays in that edge's translation and lineage exactly as approved; it never redefines,
+overwrites or "informs" the predicate's definition meaning on the property command. A predicate
+shared by many relation items has exactly the one definition meaning its property item
+declares: an edge-instance meaning is never aggregated, averaged or promoted into it, and a
+property definition is never reconstructed from its usage. Modeling still authors the business
+content; never ask Modeling to write platform Items, and keep the existing faithful pre-write
+validation unchanged.
+
 ## R4.0-003 reusable Action translation
 
 Apply `reusable_action_semantics` from the mounted contracts. Preserve approved

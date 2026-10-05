@@ -549,6 +549,76 @@ class TransportTests(unittest.TestCase):
         self.assertIn("A completed terminal report does not answer that candidate", protocol)
         self.assertNotIn("refuses a completed terminal report", protocol)
 
+    def test_protocol_prompt_sources_property_meaning_from_the_property_item(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        # Synthetic generic unified-graph nodes: one property item whose
+        # top-level business_meaning is distinct from its
+        # semantic_definition.business_meaning (with an explicit unknown and
+        # applicability), and two relation items using the same predicate,
+        # each with its own per-edge business_meaning.  The first field
+        # defect filled the property description from generic predicate
+        # labels; the second aggregated the relation edges' meanings into the
+        # predicate definition.  Both translations were rejected before the
+        # dry-run with zero writes; the prompt must pin the correct source
+        # for each node kind so the next translation starts correct.
+        property_item = {
+            "item_id": "prop-1",
+            "item_kind": "property",
+            "business_meaning": "confirmed definition meaning of the predicate",
+            "unknowns": ["applicability to one subcase unconfirmed"],
+            "semantic_definition": {
+                "semantic_role": "object",
+                "business_meaning": "distinct declared meaning of the definition",
+                "applicability": "the scope the definition declares",
+                "unknowns": ["one declared unknown"],
+            },
+        }
+        relation_items = [
+            {
+                "item_id": "rel-1",
+                "item_kind": "relation",
+                "business_meaning": "meaning of this edge expression",
+            },
+            {
+                "item_id": "rel-2",
+                "item_kind": "relation",
+                "business_meaning": "meaning of that other edge expression",
+            },
+        ]
+        assert property_item["business_meaning"] != (
+            property_item["semantic_definition"]["business_meaning"]
+        )
+        assert len({item["business_meaning"] for item in relation_items}) == len(relation_items)
+
+        # create_property reads only the property item: both distinct
+        # meanings are preserved, and the supported fields carry the rest.
+        self.assertIn(
+            "A `property` item's platform translation is sourced from that same approved property item",
+            protocol,
+        )
+        self.assertIn("when its `semantic_definition` is present, that definition's", protocol)
+        self.assertIn("both are preserved faithfully and never merged into", protocol)
+        self.assertIn("`unknowns`, `not_applicable`/`conflicting_meanings` and `applicability`", protocol)
+        self.assertIn("ride along through their existing supported payload fields", protocol)
+        # Never the predicate label, a generic template, or an aggregation
+        # over the edges that use the predicate.
+        self.assertIn("from its predicate label, a generic template phrase, or an aggregation over the", protocol)
+        self.assertIn("a meaning absent from the property item is an explicit", protocol)
+        self.assertIn("never material sourced from elsewhere or", protocol)
+        self.assertIn("add no new fields or business facts", protocol)
+        # Each relation edge's meaning stays on that edge's translation and
+        # lineage; it never redefines the predicate definition.
+        self.assertIn("the meaning of that one edge expression", protocol)
+        self.assertIn("stays in that edge's translation and lineage exactly as approved", protocol)
+        self.assertIn("an edge-instance meaning is never aggregated, averaged or promoted into it", protocol)
+        self.assertIn("property definition is never reconstructed from its usage", protocol)
+        # Role boundary and unchanged validation.
+        self.assertIn("never ask Modeling to write platform Items", protocol)
+        self.assertIn("keep the existing faithful pre-write", protocol)
+
     def test_transport_budget_splits_route_through_the_coordinator_not_new_tools(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
