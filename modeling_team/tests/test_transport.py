@@ -619,6 +619,54 @@ class TransportTests(unittest.TestCase):
         self.assertIn("never ask Modeling to write platform Items", protocol)
         self.assertIn("keep the existing faithful pre-write", protocol)
 
+    def test_protocol_prompt_reads_relation_triples_through_the_facts_read_model(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        # The repeated field defect: after R1/R2 relation Batches applied,
+        # get_ontology_read_model was called with model_name=relations and
+        # then relation-list, each returning unsupported_read_model, and the
+        # guesses kept coming instead of reading the mounted contract.  The
+        # adapter (backend READ_MODEL_NAMES) offers no relations model: the
+        # asserted data triples are facts -> statement-list.  The readback
+        # also must verify rows, not counts: the baseline runs differ by
+        # projection (one run's relation projection counts 32 triples over
+        # 12 sources where another's core counts 29 over 17), so no listing
+        # count proves a triple count.
+        self.assertIn(
+            "The read-model interface takes only the parameter and model names its mounted contract",
+            protocol,
+        )
+        self.assertIn("read that contract first and never guess a spelling", protocol)
+        self.assertIn(
+            "rejection means the name sent is not offered by this adapter; it is not a hint that a sibling",
+            protocol,
+        )
+        self.assertIn("`relations` or `relation-list` exists to discover by retrying", protocol)
+        self.assertIn(
+            "`model_name=facts` (the statement-list model), `include=asserted` and `field_set=detail`",
+            protocol,
+        )
+        self.assertIn("(`field_set=evidence` is rejected)", protocol)
+        # Verified against the mounted adapter: the request-level limit range
+        # is 1..2000 and the model caps one page at its own ceiling with no
+        # offset or cursor — no unverified unbounded-read convention.
+        self.assertIn("`limit` accepts 1..2000", protocol)
+        self.assertIn("the interface offers no offset or cursor", protocol)
+        self.assertIn("(`returned`/`visible_count`/`has_more`/`truncated`/`complete`) says", protocol)
+        self.assertIn(
+            "never report it as complete coverage and never invent an offset, cursor,", protocol
+        )
+        self.assertIn("larger-limit or repeated-call continuation the contract does not offer", protocol)
+        self.assertIn("`subject`/`predicate`/`object` rows themselves", protocol)
+        self.assertIn("or projection row count is never the asserted triple count", protocol)
+        self.assertIn("no count substitutes for the row-level check", protocol)
+        # The data graph is not schema description; descriptions stay on the
+        # governed query interfaces.
+        self.assertIn("not a schema description", protocol)
+        self.assertIn("existing governed interfaces such as", protocol)
+
     def test_transport_budget_splits_route_through_the_coordinator_not_new_tools(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(

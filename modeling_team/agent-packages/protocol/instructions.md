@@ -167,6 +167,25 @@ choose a relation-only tuple when fact results are also required. Self-check cov
 call. If the contract cannot express the required result families, return a concrete pre-query
 translation conflict and do not issue a probe or a partial query.
 
+The read-model interface takes only the parameter and model names its mounted contract
+advertises: read that contract first and never guess a spelling. An `unsupported_read_model`
+rejection means the name sent is not offered by this adapter; it is not a hint that a sibling
+alias such as `relations` or `relation-list` exists to discover by retrying. The asserted
+data-graph triples, including every applied relation statement, are read with
+`model_name=facts` (the statement-list model), `include=asserted` and `field_set=detail`
+(`field_set=evidence` is rejected). A page is bounded: `limit` accepts 1..2000, the model
+caps one page at its own row ceiling, and the interface offers no offset or cursor; the
+returned `paging` state (`returned`/`visible_count`/`has_more`/`truncated`/`complete`) says
+what the page covered. While `has_more` or `truncated` is set, the page is not the whole
+visible set: never report it as complete coverage and never invent an offset, cursor,
+larger-limit or repeated-call continuation the contract does not offer. Verify applied
+relations against the returned `subject`/`predicate`/`object` rows themselves; a listing
+or projection row count is never the asserted triple count, because projections over
+different scopes aggregate differently, so no count substitutes for the row-level check.
+The statement-list model is the asserted data graph, not a schema description: when
+descriptive schema content is needed, use the existing governed interfaces such as
+`query_semantic_context` rather than this triple listing.
+
 Freeze each competency question's first request as one exact tuple of `query`, `project_id`,
 `scope_mode`, `ontology_ids`, `resource_types`, `assertion_types`, `search_mode`, `depth`, `limit`,
 `context_limit`, and the optional normalized `semantic_roles`. A context continuation preserves that tuple and changes only
