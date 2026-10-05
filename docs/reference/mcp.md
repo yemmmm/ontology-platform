@@ -236,3 +236,11 @@ source profile，不支持覆盖。production/acceptance 计数仍分别按原�
 直接 Team CLI 不新增 `--service-tier` 旗标，沿已有 per-command env 路径处理；详细命令、
 角色 model/requested/effective effort、实际 config 白名单及 unsupported/unverified 边界见
 [Session 配置运行参考](../../skills/modeling-dev-loop/references/team-runbook.md#session-配置传递与核对r40-019)。
+
+`resume_from_checkpoint` 另有可选 `write_tail_run_id: str | null`（R3.0-015 双源生产接续，
+仅 `mode="production"`）：当检查点包来自 `source_run_id`、但包保存之后存在一个已死继任
+run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail-run-id`）。包来源与摘要
+不变；写尾 run 必须位于源 run 恢复链上且其 origin 绑定的 checkpoint 与所选包一致，并按
+同一写者证据结算，否则返回 `write_tail_unrelated`/`write_tail_checkpoint_binding`/
+`source_active`/`write_unreconciled` 等类型化拒绝。acceptance 模式或非法 run id 在启动前
+即拒绝（`launch_arguments_invalid`）；未传时单源行为不变。

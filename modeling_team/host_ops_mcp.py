@@ -474,6 +474,7 @@ def tool_resume_from_checkpoint(
     question_visibility: str = "hidden",
     request_id: str | None = None,
     fork_reason: str | None = None,
+    write_tail_run_id: str | None = None,
     service_tier: str = "unset",
 ) -> dict[str, Any]:
     """Resume one explicit published checkpoint as a fresh managed run (§5.5).
@@ -483,6 +484,9 @@ def tool_resume_from_checkpoint(
     the NEW run's real ``freeze_started_at`` (never the source run's old
     timepoint); ``mode='acceptance'`` rejects it and may pass
     ``session_timeout`` and an explicit ``model_profile`` for Examiner/Judge.
+    ``write_tail_run_id`` (production-only) names the dead continuation run
+    whose post-checkpoint writes a dual-source resume must reconcile; the
+    package still comes from ``source_run_id``/``checkpoint_id``.
     The platform credential must be present in the
     host environment (``ONTOLOGY_PLATFORM_ADMIN_API_KEY``) or the tool
     refuses before starting anything.  The source run is never overwritten.
@@ -504,6 +508,8 @@ def tool_resume_from_checkpoint(
         request_id=request_id,
         service_tier=service_tier,
         **({"fork_reason": fork_reason} if fork_reason is not None else {}),
+        **({"write_tail_run_id": write_tail_run_id}
+           if write_tail_run_id is not None else {}),
     )
 
 

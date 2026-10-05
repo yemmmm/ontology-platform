@@ -105,6 +105,9 @@ REASON_KIND_MODE_MISMATCH = "checkpoint_kind_mode_mismatch"
 REASON_ACCEPTANCE_BINDING_CHANGED = "acceptance_binding_changed"
 # settle-source command refusals (fresh-run stale-state path, design §5.2).
 REASON_SETTLEMENT_REFUSED = "source_settlement_refused"
+# explicit dual-source resume refusals (the --write-tail-run-id channel).
+REASON_WRITE_TAIL_UNRELATED = "write_tail_unrelated"
+REASON_WRITE_TAIL_CHECKPOINT_BINDING = "write_tail_checkpoint_binding"
 
 # state.json values that mean the original process may still be a live writer
 # (every value TeamRunner._state writes before a terminal FAILED/CLEANED).
@@ -904,6 +907,93 @@ def load_origin_record(run_root: Path) -> dict[str, Any] | None:
     except (OSError, json.JSONDecodeError):
         return None
     return value if isinstance(value, dict) else None
+
+
+def load_recovery_imports(run_root: Path) -> dict[str, Any] | None:
+    """This run's completion index, or None when it is not a trusted source.
+
+    Strict loader for ``recovery/imports.json`` (what ``write_recovery_files``
+    publishes at resume time): the schema must match, the completed operations
+    must be a list, the completed client batches a mapping, and the record must
+    sit next to this run's own recovery origin bound to the same checkpoint.
+    Anything else keeps the caller's fail-closed classification.
+    """
+
+    origin = load_origin_record(run_root)
+    if origin is None:
+        return None
+    try:
+        value = json.loads(
+            (Path(run_root) / RECOVERY_DIRECTORY / "imports.json").read_text("utf-8")
+        )
+    except (OSError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, dict):
+        return None
+    if value.get("schema_version") != RECOVERY_SCHEMA:
+        return None
+    if origin.get("checkpoint_id") != value.get("checkpoint_id"):
+        return None
+    if not isinstance(value.get("completed_operations"), list):
+        return None
+    if not isinstance(value.get("completed_client_batches"), dict):
+        return None
+    return value
+
+
+def recovery_index_settled_entry(
+    imports: Mapping[str, Any] | None,
+    intent: Mapping[str, Any],
+    receipt: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """The completion-index entry proving ``intent`` already applied, or None.
+
+    The index was proven over the full recovery chain by the resume-time
+    platform readback; this binds one durable intent to its entry on the
+    complete operation identity the existing fields can confirm — never on the
+    key or client batch name alone, never on a partial item completion
+    (whole-batch proof additionally requires the client batch in
+    ``completed_client_batches`` mapped to this receipt's platform batch).
+    Every miss keeps the caller's fail-closed unknown.
+    """
+
+    if not imports or receipt is None:
+        return None
+    idempotency_key = intent.get("idempotency_key")
+    client_batch_id = intent.get("client_batch_id")
+    applied_batches = imports.get("completed_client_batches") or {}
+    for entry in imports.get("completed_operations") or []:
+        if not isinstance(entry, Mapping):
+            continue
+        key = entry.get("key")
+        if not isinstance(key, list) or len(key) < 5:
+            continue
+        if entry.get("idempotency_key") != idempotency_key:
+            continue
+        if entry.get("client_batch_id") != client_batch_id:
+            continue
+        if key[1] != intent.get("session_id"):
+            continue
+        if key[2] != receipt.get("batch_id"):
+            continue
+        if entry.get("receipt_ordinal") != receipt.get("ordinal"):
+            continue
+        if entry.get("mode") != intent.get("mode"):
+            continue
+        # A projection bound on one side only is a different operation.
+        if (entry.get("projection_digest") or None) != (
+            intent.get("projection_digest") or None
+        ):
+            continue
+        entry_commands = entry.get("command_digests")
+        if entry_commands and list(entry_commands) != list(
+            intent.get("commands") or []
+        ):
+            continue
+        if applied_batches.get(client_batch_id) != receipt.get("batch_id"):
+            continue
+        return entry
+    return None
 
 
 def origin_chain_roots(source_run_root: Path, runs_root: Path) -> list[Path]:
@@ -2383,6 +2473,67 @@ class RecoveryPlan:
     prep_finished_at: float = 0.0
 
 
+def _resolve_write_tail_run(
+    source_run_root: Path,
+    checkpoint_id: str,
+    package_digest: str,
+    write_tail_run_root: Path | None,
+    runs_root: Path,
+) -> Path | None:
+    """Resolve the host's explicit dual-source write-tail run, fail-closed.
+
+    Returns ``None`` for the ordinary single-source resume (the default
+    behavior never changes).  The named tail must itself be a recovery
+    continuation whose origin chain contains the package source, and the run
+    immediately after the package source must have resumed EXACTLY the
+    requested package -- its origin records the same checkpoint id and digest.
+    The explicit parameter only extends the reconciled chain; it never
+    discovers branches, substitutes a different package, or rewrites a dead
+    source.
+    """
+
+    if write_tail_run_root is None:
+        return None
+    tail = Path(write_tail_run_root)
+    if not tail.is_dir() or tail.resolve() == Path(source_run_root).resolve():
+        raise _reject(
+            REASON_WRITE_TAIL_UNRELATED,
+            f"the write-tail run {tail.name!r} is not a distinct continuation "
+            "run directory under the same runs root",
+            obj=tail.name,
+            retryable=False,
+            retry="pass the dead continuation run that resumed the package, or "
+            "omit --write-tail-run-id for an ordinary single-source resume",
+        )
+    chain = origin_chain_roots(tail, runs_root)
+    names = [run.name for run in chain]
+    if source_run_root.name not in names or names[-1] != tail.name:
+        raise _reject(
+            REASON_WRITE_TAIL_UNRELATED,
+            f"the write-tail run {tail.name!r} does not sit on the package "
+            f"source {source_run_root.name!r}'s recovery chain",
+            obj=tail.name,
+            retryable=False,
+            retry="name the latest run of the package source's own chain",
+        )
+    successor = load_origin_record(chain[names.index(source_run_root.name) + 1])
+    if (
+        not isinstance(successor, Mapping)
+        or successor.get("checkpoint_id") != checkpoint_id
+        or successor.get("checkpoint_digest") != package_digest
+    ):
+        raise _reject(
+            REASON_WRITE_TAIL_CHECKPOINT_BINDING,
+            f"the run after the package source did not verifiably resume "
+            f"checkpoint {checkpoint_id!r} of {source_run_root.name!r}",
+            obj=tail.name,
+            retryable=False,
+            retry="resume the package the chain actually bound, or name a "
+            "tail whose chain binds this exact package",
+        )
+    return chain[-1]
+
+
 def prepare_recovery_plan(
     *,
     source_run_root: Path,
@@ -2391,6 +2542,7 @@ def prepare_recovery_plan(
     repository_root: Path,
     readback: PlatformReadback,
     authorization_reference: str | None = None,
+    write_tail_run_root: Path | None = None,
 ) -> RecoveryPlan:
     """The complete read-only reconciliation; raises typed rejections only.
 
@@ -2398,6 +2550,11 @@ def prepare_recovery_plan(
     writer state -> write tail + platform readback -> classification ->
     approval channel -> plan mapping/packets.  Nothing here creates the new
     run root, writes the source run, or starts anything.
+
+    ``write_tail_run_root`` names the dead continuation run whose post-
+    checkpoint writes a dual-source resume must reconcile (the package still
+    comes from ``source_run_root``); omitting it keeps the ordinary
+    single-source behavior byte-for-byte.
     """
 
     prep_started_at = time.monotonic()
@@ -2440,7 +2597,11 @@ def prepare_recovery_plan(
     )
 
     runs_root = source_run_root.parent
-    chain_roots = origin_chain_roots(source_run_root, runs_root)
+    package_digest = manifest_digest(manifest_path(source_run_root, checkpoint_id))
+    tail_run = _resolve_write_tail_run(
+        source_run_root, checkpoint_id, package_digest, write_tail_run_root, runs_root
+    )
+    chain_roots = origin_chain_roots(tail_run or source_run_root, runs_root)
     if (runs_root / new_run_id).exists():
         raise _reject(
             "resume_new_run_exists",
@@ -2483,6 +2644,34 @@ def prepare_recovery_plan(
             retryable=True,
             retry=retry,
         )
+
+    tail_writer: dict[str, Any] | None = None
+    if tail_run is not None:
+        # The same §5.2 writer-death evidence, applied to the named tail run:
+        # a possibly-live continuation writer keeps the resume refused, so an
+        # explicit tail never widens the writer gate.
+        tail_writer = source_writer_report(tail_run, readback, sorted(session_ids))
+        tail_writer["chain_writer_lock"] = chain_writer_lock_report(
+            tail_run, manifest, runs_root
+        )
+        if tail_writer["chain_writer_lock"]["verdict"] == "writer_process_exited":
+            tail_writer["verdict"] = "writer_process_exited"
+        tail_writer["source_settlement"] = source_settlement_report(
+            tail_run, runs_root, readback, sorted(session_ids)
+        )
+        if tail_writer["source_settlement"]["verdict"] == "writer_process_exited":
+            tail_writer["verdict"] = "writer_process_exited"
+        if not source_writer_settles_recovery(tail_writer):
+            obj, retry = source_active_evidence(tail_writer, tail_run)
+            raise _reject(
+                REASON_SOURCE_ACTIVE,
+                f"the write-tail run {tail_run.name!r} still reports a "
+                "possibly-live writer; resume does not run alongside the "
+                "continuation that owns the unreconciled writes",
+                obj=obj,
+                retryable=True,
+                retry=retry,
+            )
 
     bindings = production_resume_bindings(manifest)
     if bindings is None:
@@ -2557,7 +2746,7 @@ def prepare_recovery_plan(
         "source_run_id": manifest.get("source_run_id"),
         "root_run_id": manifest.get("root_run_id") or manifest.get("source_run_id"),
         "kind": kind,
-        "manifest_digest": manifest_digest(manifest_path(source_run_root, checkpoint_id)),
+        "manifest_digest": package_digest,
         "reconciliation": {
             "chain_runs": [str(path.name) for path in chain_roots],
             "completed_operations": len(reconciliation["completed"]),
@@ -2603,9 +2792,21 @@ def prepare_recovery_plan(
         },
         "delivery_segments": dict(CHECKPOINT_DELIVERY_SEGMENTS),
     }
+    if tail_run is not None:
+        inspection["write_tail"] = {
+            "run_id": tail_run.name,
+            "checkpoint_source_run_id": source_run_root.name,
+            "writer": tail_writer,
+            "note": "explicit dual-source resume: the package identity comes "
+            "from checkpoint_source_run_id, while the write chain, completion "
+            "index and writer-death gates follow this tail run through the "
+            "full origin chain",
+        }
     origin = {
         "schema_version": RECOVERY_SCHEMA,
-        "source_run_id": manifest.get("source_run_id"),
+        "source_run_id": (
+            tail_run.name if tail_run is not None else manifest.get("source_run_id")
+        ),
         "root_run_id": manifest.get("root_run_id") or manifest.get("source_run_id"),
         "checkpoint_id": checkpoint_id,
         "checkpoint_kind": kind,
@@ -2631,6 +2832,11 @@ def prepare_recovery_plan(
             "platform_sessions": writer["platform_sessions"],
         },
     }
+    if tail_run is not None:
+        # Dual-source provenance: the write chain's latest tail is the run the
+        # next resume continues from, while the package source stays recorded
+        # separately so the chain and the package identity never blur.
+        origin["checkpoint_source_run_id"] = source_run_root.name
     imports = {
         "schema_version": RECOVERY_SCHEMA,
         "checkpoint_id": checkpoint_id,
@@ -3328,6 +3534,7 @@ __all__ = [
     "checkpoint_root_run_id",
     "find_complete_pass_report",
     "http_readback",
+    "load_recovery_imports",
     "merge_exposure_union",
     "next_acceptance_attempt",
     "origin_chain_roots",
@@ -3336,6 +3543,7 @@ __all__ = [
     "prior_continuation_roots",
     "read_run_state",
     "read_write_tail",
+    "recovery_index_settled_entry",
     "restore_checkpoint_artifacts",
     "safe_new_run_id",
     "session_lease_report",

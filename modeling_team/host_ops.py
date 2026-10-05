@@ -179,6 +179,7 @@ CHECKPOINT_RESUME_FLAGS = (
     "--authorization-reference",
     "--base-url",
     "--freeze-started-at",
+    "--write-tail-run-id",
     "--enable-outer-input-fifo",
 )
 
@@ -3260,6 +3261,7 @@ def resume_from_checkpoint(
     authorization_reference: str,
     service_tier: str = "unset",
     fork_reason: str | None = None,
+    write_tail_run_id: str | None = None,
     freeze_started_at: str | None = None,
     session_timeout: float | int | None = None,
     model_profile: str | None = None,
@@ -3311,6 +3313,18 @@ def resume_from_checkpoint(
             "launch_arguments_invalid", "fork_reason requires production mode and a nonempty reason",
             obj="fork_reason", retryable=True,
             next_action="use production mode and name the reason for an explicit fork",
+        )
+    if write_tail_run_id is not None and (
+        mode != "production"
+        or not isinstance(write_tail_run_id, str)
+        or re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9._-]*", write_tail_run_id) is None
+    ):
+        raise HostOpError(
+            "launch_arguments_invalid",
+            "write_tail_run_id requires production mode and a run id",
+            obj="write_tail_run_id", retryable=True,
+            next_action="name the dead continuation run whose post-checkpoint "
+            "writes the production resume must reconcile, or omit it",
         )
     if mode == "production" and freeze_started_at is None:
         raise HostOpError(
@@ -3398,6 +3412,8 @@ def resume_from_checkpoint(
         argv.extend(["--freeze-started-at", validated_freeze])
     if fork_reason is not None:
         argv.extend(["--fork-reason", fork_reason])
+    if write_tail_run_id is not None:
+        argv.extend(["--write-tail-run-id", write_tail_run_id])
     if session_timeout is not None:
         argv.extend(["--session-timeout", str(session_timeout)])
     if question_visibility != "hidden":
@@ -3421,6 +3437,7 @@ def resume_from_checkpoint(
         "run_id": new_run_id,
         "source_run_id": source_run_id,
         "checkpoint_id": checkpoint_id,
+        "write_tail_run_id": write_tail_run_id,
         "mode": mode,
         "semantic_starts_note": (
             "production resume consumes 1 semantic start and an acceptance-only "

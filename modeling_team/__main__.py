@@ -3621,6 +3621,12 @@ def main() -> int:
         help="fresh CQ freeze timepoint for the new run; the old run's "
         "deadline is never inherited (design §4.2)",
     )
+    checkpoint_resume.add_argument(
+        "--write-tail-run-id",
+        help="production-only dual-source resume: the dead continuation run "
+        "whose post-checkpoint writes must be reconciled; the package still "
+        "comes from --run-id/--checkpoint-id (never auto-selected)",
+    )
     checkpoint_resume.add_argument("--enable-outer-input-fifo", action="store_true")
     checkpoint_resume.add_argument(
         "--fork-reason", help="Explicitly restore saved data into a new Project; record why",
@@ -3658,6 +3664,12 @@ def main() -> int:
         if args.mode == "acceptance":
             if args.fork_reason is not None:
                 print("checkpoint failed: fork requires production mode", file=sys.stderr)
+                return 2
+            if args.write_tail_run_id is not None:
+                print(
+                    "checkpoint failed: --write-tail-run-id requires production mode",
+                    file=sys.stderr,
+                )
                 return 2
             # R3.0-015 S4 (design §7): acceptance-only continuation of a
             # production_handoff checkpoint.  It stays outside the run loader
@@ -3915,6 +3927,11 @@ def main() -> int:
                     new_run_id=args.new_run_id,
                     authorization_reference=args.authorization_reference,
                     **({"fork_reason": args.fork_reason} if args.fork_reason is not None else {}),
+                    **(
+                        {"write_tail_run_root": runs_root / args.write_tail_run_id}
+                        if args.write_tail_run_id is not None
+                        else {}
+                    ),
                 )
                 if args.fork_reason is not None:
                     resume_lock.release()

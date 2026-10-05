@@ -25,7 +25,11 @@ import yaml
 
 import modeling_team.runner as runner_module
 from modeling_team import checkpoints as ck
-from modeling_team.checkpoint_recovery import restore_checkpoint_artifacts
+from modeling_team.checkpoint_recovery import (
+    RECOVERY_DIRECTORY,
+    RECOVERY_SCHEMA,
+    restore_checkpoint_artifacts,
+)
 from modeling_team.checkpoints import (
     CHECKPOINT_ARTIFACTS_DIRECTORY,
     CHECKPOINT_DELIVERY_SEGMENTS,
@@ -1661,6 +1665,347 @@ def test_m07_settled_writes_save_with_positions_and_do_not_block_forever(checkpo
         assert inspection["checkpoint"]["status"] in {"ready", "needs_reconciliation"}
     finally:
         harness.cleanup()
+
+
+# --- runner tier: inherited applied positions settle through the completion index --
+# The 2026-10-05 start2 incident: a resumed run inherits receipted apply
+# intents whose attempt proofs stayed in the origin run's journal (the package
+# never carries evidence/*), so the local-proof classifier read every inherited
+# applied intent as ``unknown`` and no save could ever pass the M07 gate.  The
+# host-owned completion index -- platform-readback-proven over the full chain
+# at resume time and already the check_resume_submission dedupe source -- is
+# the designed carrier for "operations the origin chain already completed".
+
+
+def _completed_operation_entry(**overrides) -> dict:
+    """An index entry matching the ``_settled_apply_intent(1)`` identity."""
+
+    entry = {
+        "key": ["r3015-unit", "session-1", "platform-batch-1", "attempt-1", "item-1"],
+        "client_batch_id": "cb-1",
+        "idempotency_key": "idem-1",
+        "mode": "apply_atomic",
+        "content_hash": "sha256:" + "2" * 64,
+        "projection_digest": None,
+        "command_digests": [],
+        "resource_ids": ["res://item-1"],
+        "evidence_association_ids": ["ev-1"],
+        "receipt_ordinal": 1,
+        "receipt_missing_readback_proved": False,
+    }
+    entry.update(overrides)
+    return entry
+
+
+def _write_recovery_imports(
+    run_root: Path,
+    *,
+    operations: list[dict] | None = None,
+    client_batches: dict[str, str] | None = None,
+    checkpoint_id: str = "materialization_progress-0001",
+    imports_schema: str | None = RECOVERY_SCHEMA,
+    with_origin: bool = True,
+    origin_checkpoint_id: str | None = None,
+) -> None:
+    """The host-owned recovery records a resumed run carries on disk."""
+
+    if with_origin:
+        _write_json(
+            run_root / RECOVERY_DIRECTORY / "origin.json",
+            {
+                "schema_version": RECOVERY_SCHEMA,
+                "source_run_id": "r3015-unit",
+                "root_run_id": "r3015-unit",
+                "checkpoint_id": origin_checkpoint_id or checkpoint_id,
+                "new_run_id": run_root.name,
+            },
+        )
+    _write_json(
+        run_root / RECOVERY_DIRECTORY / "imports.json",
+        {
+            "schema_version": imports_schema or RECOVERY_SCHEMA,
+            "checkpoint_id": checkpoint_id,
+            "completed_operations": (
+                operations if operations is not None else [_completed_operation_entry()]
+            ),
+            "completed_client_batches": (
+                client_batches
+                if client_batches is not None
+                else {"cb-1": "platform-batch-1"}
+            ),
+        },
+    )
+
+
+def test_m07_inherited_receipted_apply_settles_via_the_recovery_completion_index(
+    checkpoint_data_standin,
+):
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        runner.scope = _bound_runner_scope()
+        # A receipted apply whose attempt proof stayed in the origin run: the
+        # exact inherited shape of the start2 continuation run.
+        _settled_apply_intent(runner, proof=False)
+        with pytest.raises(CheckpointError) as blocked:
+            runner._save_run_checkpoint(
+                CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+            )
+        assert blocked.value.reason_code == "checkpoint_write_unreconciled"
+        assert "1 unsettled" in blocked.value.detail
+
+        _write_recovery_imports(runner.run.root)
+        result = runner._save_run_checkpoint(
+            CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+        )
+        assert result["status"] == "saved"
+        manifest = _read_manifest(runner.run.root, result["checkpoint_id"])
+        position = manifest["write_positions"]["positions"][0]
+        assert position["state"] == "applied"
+        assert position["settled_via"] == "recovery_completion_index"
+        reconciliation = inspect_checkpoints(
+            runner.run.root, result["checkpoint_id"]
+        )["checkpoint"]["write_reconciliation"]
+        assert reconciliation["completed_operations"] == ["idem-1"]
+        assert reconciliation["unreconciled"] == []
+    finally:
+        harness.cleanup()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        pytest.param(lambda e: {**e, "idempotency_key": "idem-other"}, id="key"),
+        pytest.param(lambda e: {**e, "client_batch_id": "cb-other"}, id="client_batch"),
+        pytest.param(lambda e: {**e, "mode": "apply"}, id="mode"),
+        pytest.param(lambda e: {**e, "receipt_ordinal": 2}, id="receipt_ordinal"),
+        pytest.param(
+            lambda e: {
+                **e,
+                "key": ["r3015-unit", "session-9", "platform-batch-1", "attempt-1", "item-1"],
+            },
+            id="session",
+        ),
+        pytest.param(
+            lambda e: {
+                **e,
+                "key": ["r3015-unit", "session-1", "platform-batch-9", "attempt-1", "item-1"],
+            },
+            id="batch",
+        ),
+        pytest.param(
+            lambda e: {**e, "projection_digest": "sha256:" + "f" * 64}, id="projection"
+        ),
+        pytest.param(
+            lambda e: {**e, "command_digests": ["sha256:" + "d" * 64]}, id="commands"
+        ),
+    ],
+)
+def test_m07_index_identity_mismatch_keeps_the_position_unknown(
+    checkpoint_data_standin, mutation
+):
+    # Only the exact operation identity settles; every mutated dimension of
+    # the entry (key/session/batch/ordinal/mode/projection/commands) leaves
+    # the position unknown and the save gate closed.
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        runner.scope = _bound_runner_scope()
+        _settled_apply_intent(runner, proof=False)
+        _write_recovery_imports(
+            runner.run.root,
+            operations=[mutation(_completed_operation_entry())],
+            client_batches={"cb-1": "platform-batch-1"},
+        )
+        with pytest.raises(CheckpointError) as blocked:
+            runner._save_run_checkpoint(
+                CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+            )
+        assert blocked.value.reason_code == "checkpoint_write_unreconciled"
+    finally:
+        harness.cleanup()
+
+
+@pytest.mark.parametrize(
+    "client_batches",
+    [
+        pytest.param({}, id="no_batch_mapping"),
+        pytest.param({"cb-1": "platform-batch-other"}, id="maps_a_different_batch"),
+    ],
+)
+def test_m07_partial_item_completions_never_settle_the_whole_intent(
+    checkpoint_data_standin, client_batches
+):
+    # ``completed_client_batches`` is the whole-batch fully-applied mapping; an
+    # item-level entry without it (or bound to a different platform batch)
+    # must never promote a receipted intent to applied.
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        runner.scope = _bound_runner_scope()
+        _settled_apply_intent(runner, proof=False)
+        _write_recovery_imports(
+            runner.run.root, client_batches=client_batches
+        )
+        with pytest.raises(CheckpointError) as blocked:
+            runner._save_run_checkpoint(
+                CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+            )
+        assert blocked.value.reason_code == "checkpoint_write_unreconciled"
+    finally:
+        harness.cleanup()
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        pytest.param({"with_origin": False}, id="no_resume_origin"),
+        pytest.param(
+            {"origin_checkpoint_id": "materialization_progress-0009"},
+            id="origin_bound_to_another_checkpoint",
+        ),
+        pytest.param(
+            {"imports_schema": "not-the-recovery-schema"}, id="imports_schema_unknown"
+        ),
+        pytest.param(
+            {"operations": [], "client_batches": {}}, id="index_does_not_cover_it"
+        ),
+    ],
+)
+def test_m07_recovery_index_channel_requires_a_trusted_resume_source(
+    checkpoint_data_standin, kwargs
+):
+    # A stray imports.json without this run's own bound recovery origin, an
+    # origin bound to a different checkpoint, an unknown schema or an index
+    # that simply does not cover the operation: all keep the hard gate closed.
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        runner.scope = _bound_runner_scope()
+        _settled_apply_intent(runner, proof=False)
+        _write_recovery_imports(runner.run.root, **kwargs)
+        with pytest.raises(CheckpointError) as blocked:
+            runner._save_run_checkpoint(
+                CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+            )
+        assert blocked.value.reason_code == "checkpoint_write_unreconciled"
+    finally:
+        harness.cleanup()
+
+
+def test_s2_resumed_run_saves_its_first_checkpoint_over_inherited_intents(
+    checkpoint_data_standin,
+):
+    """End-to-end minimal reproduction of the 2026-10-05 start2 blocker.
+
+    A production resume from a package that carries a receipted apply intent
+    (no evidence/* is ever packaged) restores the intent, reconciles the chain
+    into the completion index and then the continuation's OWN first save must
+    publish instead of refusing forever on an inherited applied position.
+    """
+
+    from modeling_team.tests.test_r30015_resume import (
+        FakeCursorPlatform,
+        _attempt,
+        _batch,
+        _readback,
+    )
+
+    runs_root = RUNS_ROOT / f"r3015e2e-{os.urandom(4).hex()}"
+    source = runs_root / "o1"
+    target_id = f"r3015e2e-new-{os.urandom(4).hex()}"
+    target = None
+    try:
+        _write_json(source / "evidence" / "stage.json", {"stage": "resume-fixture"})
+        intent = build_submission_intent(
+            1,
+            idempotency_key="idem-inherited",
+            client_batch_id="cb-inherited",
+            session_id="session-1",
+            mode="apply_atomic",
+            commands=[{"kind": "create_class", "payload": {"name": "Customer"}}],
+            value_traces=[],
+            l3_nodes=[],
+        )
+        write_submission_intent(source, mark_intent_status(intent, "receipted"))
+        write_submission_receipt(
+            source,
+            build_submission_receipt(
+                1, intent, batch_id="platform-batch-1", response_digest="sha256:" + "1" * 64
+            ),
+        )
+        saved = save_checkpoint(
+            source,
+            StagePackage(
+                kind=CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
+                scope_refs={"slice_id": "slice-0001"},
+                artifacts=[
+                    CheckpointArtifactSpec(
+                        source="evidence/stage.json", owner="coordinator",
+                        visible_to=("coordinator", "modeling", "protocol"), host_private=False,
+                    ),
+                    CheckpointArtifactSpec(
+                        source="value-semantics/submission-intents/intent-1.json",
+                        owner="protocol",
+                        visible_to=("coordinator", "modeling", "protocol"), host_private=False,
+                    ),
+                    CheckpointArtifactSpec(
+                        source="value-semantics/submission-receipts/receipt-1.json",
+                        owner="protocol",
+                        visible_to=("coordinator", "modeling", "protocol"), host_private=False,
+                    ),
+                ],
+                stage_facts={},
+                platform_bindings={"project_id": "proj-r3015", "ontology_ids": ["onto-r3015"]},
+                write_positions={},
+            ),
+            source_run_id="o1",
+            configuration=dict(CONFIGURATION),
+        )
+        platform = FakeCursorPlatform(
+            session_batches={
+                "session-1": [
+                    _batch(
+                        "platform-batch-1",
+                        client_batch_id="cb-inherited",
+                        session_id="session-1",
+                        attempts=[_attempt("attempt-1")],
+                    )
+                ]
+            }
+        )
+        target = TeamRunner(
+            repository_root=REPO_ROOT,
+            adapter=CapturingAdapter(),
+            ledger_root=runs_root / f"{target_id}-ledger",
+            freeze_started_at=datetime.now(UTC).isoformat(),
+            canonical_admin_key="test-host-key",
+        )
+        target.prepare_from_checkpoint(
+            source_run_root=source,
+            checkpoint_id=saved["checkpoint_id"],
+            new_run_id=target_id,
+            readback=_readback(platform),
+            authorization_reference="test",
+        )
+        imports = json.loads(
+            (target.run.root / RECOVERY_DIRECTORY / "imports.json").read_text("utf-8")
+        )
+        assert imports["completed_client_batches"] == {"cb-inherited": "platform-batch-1"}
+        result = target._save_run_checkpoint(
+            CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+        )
+        assert result["status"] == "saved"
+        manifest = _read_manifest(target.run.root, result["checkpoint_id"])
+        position = manifest["write_positions"]["positions"][0]
+        assert position["idempotency_key"] == "idem-inherited"
+        assert position["state"] == "applied"
+        assert position["settled_via"] == "recovery_completion_index"
+    finally:
+        if target is not None and target.run is not None:
+            target.cleanup()
+        rmtree(runs_root, ignore_errors=True)
+        rmtree(runs_root.parent / f"{target_id}-ledger", ignore_errors=True)
 
 
 def test_m04_production_handoff_save_binds_evidence_not_a_ready_boolean():

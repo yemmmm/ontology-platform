@@ -197,8 +197,10 @@ from .checkpoint_recovery import (
     RecoveryPlan,
     check_resume_submission,
     http_readback,
+    load_recovery_imports,
     merge_exposure_union,
     prepare_recovery_plan,
+    recovery_index_settled_entry,
     restore_checkpoint_artifacts,
     write_recovery_files,
 )
@@ -10310,9 +10312,18 @@ class TeamRunner:
                 for receipt in receipts
                 if receipt.get("idempotency_key")
             }
+            # A resumed run inherits receipted intents whose attempt proofs
+            # stayed in the origin run's journal (evidence/* is never
+            # packaged); the host-owned completion index — proven over the
+            # full chain by the resume-time platform readback — is the only
+            # additional settle channel, read from disk so a restarted
+            # process keeps it.  Loaded lazily: runs without it never touch it.
+            recovery_imports: Mapping[str, Any] | None = None
+            recovery_imports_loaded = False
             for intent in intents:
                 key = intent.get("idempotency_key")
                 receipt = receipt_by_key.get(key)
+                settled_via: str | None = None
                 if intent.get("status") == "unknown":
                     state = "unknown"
                 elif receipt is not None or intent.get("status") == "receipted":
@@ -10336,7 +10347,19 @@ class TeamRunner:
                             self.run.root, intent=intent, receipt=receipt
                         )
                         if proof is None:
-                            state = "unknown"
+                            if not recovery_imports_loaded:
+                                recovery_imports_loaded = True
+                                recovery_imports = load_recovery_imports(
+                                    self.run.root
+                                )
+                            settled = recovery_index_settled_entry(
+                                recovery_imports, intent=intent, receipt=receipt
+                            )
+                            if settled is not None:
+                                state = "applied"
+                                settled_via = "recovery_completion_index"
+                            else:
+                                state = "unknown"
                         elif proof.get("attempt_status") == "applied":
                             state = "applied"
                         elif proof.get("attempt_status") in {
@@ -10353,18 +10376,19 @@ class TeamRunner:
                     state = "rejected"
                 else:
                     state = "pending"
-                positions.append(
-                    {
-                        "ordinal": intent.get("ordinal"),
-                        "idempotency_key": key,
-                        "client_batch_id": intent.get("client_batch_id"),
-                        "session_id": intent.get("session_id"),
-                        "mode": intent.get("mode"),
-                        "state": state,
-                        "receipt_ordinal": receipt.get("ordinal") if receipt else None,
-                        "batch_id": receipt.get("batch_id") if receipt else None,
-                    }
-                )
+                position = {
+                    "ordinal": intent.get("ordinal"),
+                    "idempotency_key": key,
+                    "client_batch_id": intent.get("client_batch_id"),
+                    "session_id": intent.get("session_id"),
+                    "mode": intent.get("mode"),
+                    "state": state,
+                    "receipt_ordinal": receipt.get("ordinal") if receipt else None,
+                    "batch_id": receipt.get("batch_id") if receipt else None,
+                }
+                if settled_via is not None:
+                    position["settled_via"] = settled_via
+                positions.append(position)
         snapshot = admission_snapshot or {}
         return {
             "positions": positions,
@@ -10967,6 +10991,7 @@ class TeamRunner:
         readback: PlatformReadback | None = None,
         authorization_reference: str | None = None,
         fork_reason: str | None = None,
+        write_tail_run_root: Path | None = None,
     ) -> TeamRun:
         """Resume production from a published checkpoint (design §4.2).
 
@@ -10978,8 +11003,20 @@ class TeamRunner:
         index.  Transport/terminal/deadline stay fresh: nothing replays the
         old delivery queue or imports old completed reports as new terminal
         reports.
+
+        ``write_tail_run_root`` names the dead continuation run whose
+        post-checkpoint writes the dual-source resume reconciles; the package
+        still comes from ``source_run_root``.
         """
 
+        if fork_reason is not None and write_tail_run_root is not None:
+            raise CheckpointError(
+                "checkpoint_flags_incompatible",
+                "a fork continuation and an explicit write-tail run cannot be "
+                "combined: a fork does not adopt another run's write chain",
+                obj="write_tail_run_root",
+                phase="checkpoint-resume",
+            )
         if self.run is not None or not self._safe_run_id(new_run_id):
             raise TeamConfigurationError("unsafe or already attached run ID")
         if fork_reason is not None and not self.canonical_admin_key:
@@ -11005,6 +11042,8 @@ class TeamRunner:
             readback=readback,
             authorization_reference=authorization_reference,
         )
+        if write_tail_run_root is not None:
+            plan_arguments["write_tail_run_root"] = write_tail_run_root
         if fork_reason is not None:
             from .checkpoint_data import prepare_fork_plan
 

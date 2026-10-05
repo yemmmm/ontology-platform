@@ -224,6 +224,17 @@ scope/cleanup 证据，并读回相关平台 Session、每个 Batch 的全部必
 继承源历史与本轮新 intent 分别绑定到原/新 Session，现有 staged reconciliation 必须使用
 这个已验证基线，不能把继承 Batch 判成“无本 run intent 的越权写入”，也不能忽略新出现的外部 Batch。
 
+检查点包来源与其写尾属于不同 run 时（源 run 的已发布检查点之后存在一个已死继任写者），
+生产恢复以显式 `--write-tail-run-id`（仅 production，CLI/host/MCP 同名传递）声明双源：
+包仍取 `--run-id` 的明确 checkpoint，写尾 run 必须位于源 run 的 origin 链上、其 origin
+绑定的 checkpoint 与该包完全一致，并按 §5.2 的写者停止/settlement 与 chain writer lock
+同一证据标准结算。写尾无关
+（`write_tail_unrelated`）、绑定不匹配（`write_tail_checkpoint_binding`）、写尾存活
+（`source_active`）、未知写入（`write_unreconciled`）、外分支漂移（`scope_drift`）或
+acceptance 模式传写尾都拒绝；不传该参数时单源对账行为不变。新 run 的
+`origin.source_run_id` 记实际最新写尾，`checkpoint_source_run_id` 单独记包来源，后续
+普通 resume 沿该链回溯保持完整。
+
 完成索引至少按 `(origin_run_id, session_id, batch_id, attempt_id, client_item_id)` 定位，
 并保留 command/content/projection digest、结果资源 ID 和 Evidence 关联引用；它只是既有
 命令的执行事实，不是新的语义对象 ID。只做同一操作的复用，不能因命令文本相同就把两项

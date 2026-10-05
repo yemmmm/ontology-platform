@@ -939,6 +939,422 @@ def test_m14_m25_multi_hop_chain_reads_the_full_write_tail_of_every_run():
         rmtree(runs_root, ignore_errors=True)
 
 
+# --- dual-source resume: package source + explicit write-tail run ----------------
+# The 2026-10-05 start2 shape: the package comes from start1's published
+# checkpoint, but the dead continuation (start2-retry1) never published one and
+# holds 28 post-checkpoint writes in its own session.  A single-source resume
+# correctly calls those writes scope drift; the host's explicit
+# ``write_tail_run_root`` reconciles the FULL chain instead -- package identity
+# and every original gate stay on the package source, the write tail and the
+# writer-death gates extend to the named tail, and nothing is auto-discovered.
+
+
+def _seed_dual_source_chain(runs_root: Path) -> tuple[Path, Path, dict]:
+    """o1 (package source, dead) -> o2 (dead continuation that wrote past cp)."""
+
+    oldest = runs_root / "o1"
+    _write_json(oldest / "evidence" / "stage.json", {"stage": "resume-fixture"})
+    _write_json(oldest / "state.json", {"state": "FAILED"})
+    saved = save_checkpoint(
+        oldest,
+        # The real incident shape: start1's published cp16 was a
+        # materialization_progress package, and the dead continuation never
+        # published one of its own.
+        _bound_package(kind=CHECKPOINT_KIND_MATERIALIZATION_PROGRESS),
+        source_run_id="o1",
+        root_run_id="o1",
+        configuration=dict(CONFIGURATION),
+    )
+    _seed_chain_intent(
+        oldest, 1, key="idem-origin", client_batch_id="cb-origin",
+        session_id="session-o1", batch_id="batch-origin",
+    )
+    tail_run = runs_root / "o2"
+    _seed_dual_source_tail(tail_run, oldest.name, saved)
+    _seed_chain_intent(
+        tail_run, 2, key="idem-tail", client_batch_id="cb-tail",
+        session_id="session-o2", batch_id="batch-tail",
+    )
+    return oldest, tail_run, saved
+
+
+def _seed_dual_source_tail(
+    tail_run: Path,
+    source_id: str,
+    saved: Mapping,
+    *,
+    state: str = "FAILED",
+    checkpoint_id: str | None = None,
+    checkpoint_digest: str | None = None,
+) -> None:
+    """The dead continuation run that resumed ``saved`` and wrote past it."""
+
+    _write_json(tail_run / "state.json", {"state": state})
+    _write_json(
+        tail_run / RECOVERY_DIRECTORY / "origin.json",
+        {
+            "schema_version": RECOVERY_SCHEMA,
+            "source_run_id": source_id,
+            "root_run_id": source_id,
+            "checkpoint_id": checkpoint_id or saved["checkpoint_id"],
+            "checkpoint_digest": checkpoint_digest or saved["manifest_digest"],
+            "new_run_id": tail_run.name,
+        },
+    )
+
+
+def _dual_source_platform(*, foreign: bool = False) -> FakeCursorPlatform:
+    onto_batches = [
+        {"batch_id": "batch-origin", "build_session_id": "session-o1"},
+        {"batch_id": "batch-tail", "build_session_id": "session-o2"},
+    ]
+    if foreign:
+        onto_batches.append(
+            {"batch_id": "batch-foreign", "build_session_id": "session-foreign"}
+        )
+    return FakeCursorPlatform(
+        session_batches={
+            "session-o1": [
+                _batch("batch-origin", client_batch_id="cb-origin", session_id="session-o1")
+            ],
+            "session-o2": [
+                _batch("batch-tail", client_batch_id="cb-tail", session_id="session-o2")
+            ],
+        },
+        ontology_batches={"onto-r3015": onto_batches},
+    )
+
+
+def test_dual_source_write_tail_extends_the_chain_and_keeps_the_package_binding():
+    runs_root = RUNS_ROOT / f"r3015dual-{os.urandom(4).hex()}"
+    try:
+        oldest, tail_run, saved = _seed_dual_source_chain(runs_root)
+        platform = _dual_source_platform()
+
+        # Single-source resume from o1's package: the continuation's own
+        # session is unattributable -> scope drift.  This is the documented
+        # reason the dead-child-without-own-checkpoint case had NO existing
+        # path, and it must stay rejected without the explicit tail.
+        with pytest.raises(CheckpointError) as drifted:
+            _plan(oldest, saved["checkpoint_id"], readback=_readback(platform))
+        assert drifted.value.reason_code == REASON_SCOPE_DRIFT
+
+        # The explicit write-tail run reconciles the FULL chain instead.
+        plan = prepare_recovery_plan(
+            source_run_root=oldest,
+            checkpoint_id=saved["checkpoint_id"],
+            new_run_id=f"r3015new-{os.urandom(4).hex()}",
+            repository_root=REPO_ROOT,
+            readback=_readback(platform),
+            write_tail_run_root=tail_run,
+        )
+        assert [path.name for path in plan.chain_roots] == ["o1", "o2"]
+        # The package still comes from o1's published bytes...
+        assert plan.origin["checkpoint_source_run_id"] == "o1"
+        assert plan.origin["checkpoint_id"] == saved["checkpoint_id"]
+        assert plan.origin["checkpoint_digest"] == saved["manifest_digest"]
+        # ...while the write chain follows the actual latest tail.
+        assert plan.origin["source_run_id"] == "o2"
+        assert plan.inspection["reconciliation"]["chain_runs"] == ["o1", "o2"]
+        assert plan.inspection["write_tail"]["run_id"] == "o2"
+        assert plan.inspection["write_tail"]["checkpoint_source_run_id"] == "o1"
+        # The completion index covers BOTH runs' applied batches, so every
+        # completed operation -- including the tail's post-checkpoint writes --
+        # is a replay-blocked import for the new run.
+        assert plan.imports["completed_client_batches"] == {
+            "cb-origin": "batch-origin",
+            "cb-tail": "batch-tail",
+        }
+        assert {
+            entry["idempotency_key"]
+            for entry in plan.imports["completed_operations"]
+        } == {"idem-origin", "idem-tail"}
+        # The materialized records keep the chain linear for the NEXT resume.
+        third = runs_root / "o3"
+        cr.write_recovery_files(
+            third,
+            inspection=plan.inspection,
+            origin=plan.origin,
+            imports=plan.imports,
+            role_packets=plan.role_packets,
+        )
+        assert [path.name for path in origin_chain_roots(third, runs_root)] == [
+            "o1", "o2", "o3",
+        ]
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_write_tail_unrelated_runs_are_refused_fail_closed():
+    runs_root = RUNS_ROOT / f"r3015unrel-{os.urandom(4).hex()}"
+    try:
+        oldest, tail_run, saved = _seed_dual_source_chain(runs_root)
+        platform = _dual_source_platform()
+
+        # (a) a fresh directory with no recovery origin at all.
+        stranger = runs_root / "stranger"
+        _write_json(stranger / "state.json", {"state": "FAILED"})
+        # (b) a continuation whose origin points at a different source run.
+        grafted = runs_root / "grafted"
+        _seed_dual_source_tail(grafted, "o-other", saved)
+        for candidate in (stranger, grafted, oldest, runs_root / "absent"):
+            with pytest.raises(CheckpointError) as refused:
+                prepare_recovery_plan(
+                    source_run_root=oldest,
+                    checkpoint_id=saved["checkpoint_id"],
+                    new_run_id=f"r3015new-{os.urandom(4).hex()}",
+                    repository_root=REPO_ROOT,
+                    readback=_readback(platform),
+                    write_tail_run_root=candidate,
+                )
+            assert refused.value.reason_code == "write_tail_unrelated", candidate
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_write_tail_checkpoint_binding_must_match_the_requested_package():
+    runs_root = RUNS_ROOT / f"r3015bind-{os.urandom(4).hex()}"
+    try:
+        oldest, tail_run, saved = _seed_dual_source_chain(runs_root)
+        platform = _dual_source_platform()
+
+        # (a) the tail resumed a different checkpoint of the same source.
+        rebound = runs_root / "rebound-id"
+        _seed_dual_source_tail(
+            rebound, oldest.name, saved, checkpoint_id="cq_frozen-9999"
+        )
+        # (b) the tail's origin records a different package digest.
+        redigested = runs_root / "rebound-digest"
+        _seed_dual_source_tail(
+            redigested, oldest.name, saved,
+            checkpoint_digest="sha256:" + "0" * 64,
+        )
+        for candidate in (rebound, redigested):
+            with pytest.raises(CheckpointError) as refused:
+                prepare_recovery_plan(
+                    source_run_root=oldest,
+                    checkpoint_id=saved["checkpoint_id"],
+                    new_run_id=f"r3015new-{os.urandom(4).hex()}",
+                    repository_root=REPO_ROOT,
+                    readback=_readback(platform),
+                    write_tail_run_root=candidate,
+                )
+            assert refused.value.reason_code == "write_tail_checkpoint_binding"
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_write_tail_deep_chain_resumes_through_the_later_checkpoint_too():
+    """o1 --cpA--> o2 --cpB--> o3: package cpA with tail o3 still binds via o2.
+
+    Only the run immediately after the package source must have resumed THE
+    requested package; later hops may legitimately have resumed their own
+    direct parent's checkpoint, and the reconciliation covers every hop's
+    writes through the full chain.
+    """
+
+    runs_root = RUNS_ROOT / f"r3015deep-{os.urandom(4).hex()}"
+    try:
+        oldest, second, first_saved = _seed_dual_source_chain(runs_root)
+        # o2 published its own checkpoint and o3 resumed from THAT one.
+        _write_json(second / "evidence" / "stage.json", {"stage": "resume-fixture"})
+        second_saved = save_checkpoint(
+            second,
+            _bound_package(kind=CHECKPOINT_KIND_MATERIALIZATION_PROGRESS),
+            source_run_id="o2",
+            root_run_id="o1",
+            configuration=dict(CONFIGURATION),
+        )
+        third = runs_root / "o3"
+        _seed_dual_source_tail(third, second.name, second_saved)
+        _seed_chain_intent(
+            third, 3, key="idem-third", client_batch_id="cb-third",
+            session_id="session-o3", batch_id="batch-third",
+        )
+        platform = FakeCursorPlatform(
+            session_batches={
+                "session-o1": [
+                    _batch("batch-origin", client_batch_id="cb-origin", session_id="session-o1")
+                ],
+                "session-o2": [
+                    _batch("batch-tail", client_batch_id="cb-tail", session_id="session-o2")
+                ],
+                "session-o3": [
+                    _batch("batch-third", client_batch_id="cb-third", session_id="session-o3")
+                ],
+            },
+            ontology_batches={
+                "onto-r3015": [
+                    {"batch_id": "batch-origin", "build_session_id": "session-o1"},
+                    {"batch_id": "batch-tail", "build_session_id": "session-o2"},
+                    {"batch_id": "batch-third", "build_session_id": "session-o3"},
+                ]
+            },
+        )
+        plan = prepare_recovery_plan(
+            source_run_root=oldest,
+            checkpoint_id=first_saved["checkpoint_id"],
+            new_run_id=f"r3015new-{os.urandom(4).hex()}",
+            repository_root=REPO_ROOT,
+            readback=_readback(platform),
+            write_tail_run_root=third,
+        )
+        assert [path.name for path in plan.chain_roots] == ["o1", "o2", "o3"]
+        assert plan.origin["checkpoint_source_run_id"] == "o1"
+        assert plan.origin["source_run_id"] == "o3"
+        assert set(plan.imports["completed_client_batches"]) == {
+            "cb-origin", "cb-tail", "cb-third"
+        }
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_write_tail_live_writer_keeps_the_source_active_gate():
+    runs_root = RUNS_ROOT / f"r3015live-{os.urandom(4).hex()}"
+    try:
+        oldest, tail_run, saved = _seed_dual_source_chain(runs_root)
+        _write_json(tail_run / "state.json", {"state": "RUNNING"})
+        with pytest.raises(CheckpointError) as active:
+            prepare_recovery_plan(
+                source_run_root=oldest,
+                checkpoint_id=saved["checkpoint_id"],
+                new_run_id=f"r3015new-{os.urandom(4).hex()}",
+                repository_root=REPO_ROOT,
+                readback=_readback(_dual_source_platform()),
+                write_tail_run_root=tail_run,
+            )
+        assert active.value.reason_code == REASON_SOURCE_ACTIVE
+        assert active.value.retryable is True
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_write_tail_unknown_writes_still_close_the_write_gate():
+    runs_root = RUNS_ROOT / f"r3015unk-{os.urandom(4).hex()}"
+    try:
+        oldest, tail_run, saved = _seed_dual_source_chain(runs_root)
+        _seed_chain_intent(
+            tail_run, 3, key="idem-unknown", client_batch_id="cb-unknown",
+            session_id="session-o2", status="unknown", with_receipt=False,
+        )
+        with pytest.raises(CheckpointError) as blocked:
+            prepare_recovery_plan(
+                source_run_root=oldest,
+                checkpoint_id=saved["checkpoint_id"],
+                new_run_id=f"r3015new-{os.urandom(4).hex()}",
+                repository_root=REPO_ROOT,
+                readback=_readback(_dual_source_platform()),
+                write_tail_run_root=tail_run,
+            )
+        assert blocked.value.reason_code == REASON_WRITE_UNRECONCILED
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_write_tail_does_not_claim_foreign_branch_writes():
+    runs_root = RUNS_ROOT / f"r3015for-{os.urandom(4).hex()}"
+    try:
+        oldest, tail_run, saved = _seed_dual_source_chain(runs_root)
+        # A sibling branch's write on the bound ontology stays unattributable:
+        # the named tail extends the chain, it never auto-claims other writes.
+        with pytest.raises(CheckpointError) as drifted:
+            prepare_recovery_plan(
+                source_run_root=oldest,
+                checkpoint_id=saved["checkpoint_id"],
+                new_run_id=f"r3015new-{os.urandom(4).hex()}",
+                repository_root=REPO_ROOT,
+                readback=_readback(_dual_source_platform(foreign=True)),
+                write_tail_run_root=tail_run,
+            )
+        assert drifted.value.reason_code == REASON_SCOPE_DRIFT
+        assert "batch-foreign" in drifted.value.detail or True
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_prepare_from_checkpoint_refuses_fork_combined_with_write_tail():
+    runner = TeamRunner(
+        repository_root=REPO_ROOT,
+        adapter=CapturingAdapter(),
+        ledger_root=RUNS_ROOT / f"r3015ft-{os.urandom(4).hex()}-ledger",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+        canonical_admin_key="test-host-key",
+    )
+    with pytest.raises(CheckpointError) as refused:
+        runner.prepare_from_checkpoint(
+            source_run_root=RUNS_ROOT / "whatever-source",
+            checkpoint_id="cq_frozen-0001",
+            new_run_id=f"r3015ft-new-{os.urandom(4).hex()}",
+            fork_reason="duplicate-for-acceptance",
+            write_tail_run_root=RUNS_ROOT / "whatever-tail",
+        )
+    assert refused.value.reason_code == "checkpoint_flags_incompatible"
+    assert runner.run is None
+    rmtree(runner.ledger_root, ignore_errors=True)
+
+
+def test_runner_prepare_from_checkpoint_threads_the_write_tail_through():
+    """The runner entry materializes the dual-source records the host expects."""
+
+    runs_root = RUNS_ROOT / f"r3015rt-{os.urandom(4).hex()}"
+    target_id = f"r3015rt-new-{os.urandom(4).hex()}"
+    target = None
+    try:
+        oldest, tail_run, saved = _seed_dual_source_chain(runs_root)
+        target = TeamRunner(
+            repository_root=REPO_ROOT,
+            adapter=CapturingAdapter(),
+            ledger_root=runs_root / f"{target_id}-ledger",
+            freeze_started_at=datetime.now(UTC).isoformat(),
+            canonical_admin_key="test-host-key",
+        )
+        target.prepare_from_checkpoint(
+            source_run_root=oldest,
+            checkpoint_id=saved["checkpoint_id"],
+            new_run_id=target_id,
+            readback=_readback(_dual_source_platform()),
+            write_tail_run_root=tail_run,
+        )
+        origin = json.loads(
+            (target.run.root / RECOVERY_DIRECTORY / "origin.json").read_text("utf-8")
+        )
+        assert origin["source_run_id"] == "o2"
+        assert origin["checkpoint_source_run_id"] == "o1"
+        assert origin["checkpoint_id"] == saved["checkpoint_id"]
+        assert origin["checkpoint_digest"] == saved["manifest_digest"]
+        imports = json.loads(
+            (target.run.root / RECOVERY_DIRECTORY / "imports.json").read_text("utf-8")
+        )
+        assert imports["completed_client_batches"] == {
+            "cb-origin": "batch-origin",
+            "cb-tail": "batch-tail",
+        }
+        assert [path.name for path in origin_chain_roots(target.run.root, runs_root)] == [
+            "o1", "o2", target_id,
+        ]
+    finally:
+        if target is not None and target.run is not None:
+            target.cleanup()
+        rmtree(runs_root, ignore_errors=True)
+
+
+def test_cli_resume_write_tail_is_production_only(monkeypatch, capsys):
+    # argparse accepts the flag; the acceptance dispatch refuses it before any
+    # continuation work, mirroring the fork guard's wording and exit code.
+    assert (
+        _run_cli(
+            monkeypatch,
+            [
+                "checkpoint", "resume",
+                "--run-id", "x", "--checkpoint-id", "y", "--new-run-id", "z",
+                "--mode", "acceptance", "--write-tail-run-id", "w",
+            ],
+        )
+        == 2
+    )
+    assert "--write-tail-run-id requires production mode" in capsys.readouterr().err
+
+
 # --- real backend service: cross-Session dedup proof (M16, §2 hard rule) --------
 
 

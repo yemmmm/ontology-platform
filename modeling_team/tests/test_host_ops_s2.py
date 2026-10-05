@@ -623,6 +623,62 @@ def test_resume_argv_is_exactly_the_real_checkpoint_resume_contract(tmp_path):
     assert "015" in acceptance["semantic_starts_note"]
 
 
+def test_resume_write_tail_run_id_reaches_the_cli_only_in_production(tmp_path):
+    """The explicit dual-source write tail is a production-only host argument.
+
+    The package source stays ``--run-id``; ``--write-tail-run-id`` names the
+    dead continuation whose post-checkpoint writes the resume must reconcile.
+    Acceptance mode and malformed values are refused before any launch.
+    """
+
+    _make_run(tmp_path, "s2source", state="CLEANED")
+    _make_run(tmp_path, "s2tail", state="FAILED")
+    argvs: list[list[str]] = []
+
+    def launcher(argv, **kwargs):
+        argvs.append(list(argv))
+        return _FakeProcess(525253)
+
+    result = host_ops.resume_from_checkpoint(
+        source_run_id="s2source",
+        checkpoint_id="materialization_progress-0001",
+        new_run_id="s2resume3",
+        mode="production",
+        authorization_reference="auth-r3018-s2/write-tail (user-approved 2026-10-05)",
+        freeze_started_at="2026-10-05T09:30:00+00:00",
+        write_tail_run_id="s2tail",
+        repository_root=tmp_path,
+        launcher=launcher,
+        run_root_wait_seconds=0.05,
+    )
+    assert argvs[0][argvs[0].index("--write-tail-run-id") + 1] == "s2tail"
+    assert argvs[0].count("--write-tail-run-id") == 1
+    assert result["write_tail_run_id"] == "s2tail"
+    assert result["source_run_id"] == "s2source"
+
+    # Acceptance mode never receives a write tail, and malformed values never
+    # launch at all.
+    calls: list = []
+    for mode, tail in (
+        ("acceptance", "s2tail"),
+        ("production", ""),
+        ("production", "spaces in id"),
+    ):
+        with pytest.raises(host_ops.HostOpError) as rejected:
+            host_ops.resume_from_checkpoint(
+                source_run_id="s2source",
+                checkpoint_id="materialization_progress-0001",
+                new_run_id="s2resume4",
+                mode=mode,
+                authorization_reference="auth-test",
+                write_tail_run_id=tail,
+                repository_root=tmp_path,
+                launcher=lambda *args, **kwargs: calls.append(args),
+            )
+        assert rejected.value.code == "launch_arguments_invalid"
+    assert calls == []
+
+
 @pytest.mark.parametrize("model_profile", ["", "--unexpected", "profile name", 7])
 def test_resume_model_profile_rejects_invalid_argv_values_before_launch(tmp_path, model_profile):
     _make_run(tmp_path, "sourceprofile", state="CLEANED")
@@ -909,6 +965,7 @@ def test_lifecycle_and_checkpoint_consumption_evidence_is_declared():
         "--authorization-reference",
         "--base-url",
         "--freeze-started-at",
+        "--write-tail-run-id",
         "--enable-outer-input-fifo",
     }
 

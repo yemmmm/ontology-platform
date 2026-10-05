@@ -555,12 +555,23 @@ uv run --project backend python -m modeling_team checkpoint resume \
   --new-run-id "$new_run_id" --mode production \
   --authorization-reference "<用户授权引用（记入台账）>" \
   # 可选：--base-url（默认 http://127.0.0.1:8001）、--freeze-started-at（全新冻结时点，
-  # 旧 run 的 deadline 不继承）、--enable-outer-input-fifo
+  # 旧 run 的 deadline 不继承）、--enable-outer-input-fifo、--write-tail-run-id（双源，见下段）
 ```
 
 `--mode acceptance` 不走生产续跑路径，见下节
 [验收续跑](#验收续跑r30-015-s4)：非 `production_handoff` 检查点得到
 `checkpoint_kind_mode_mismatch` 类型化拒绝（exit 2），不会静默落到生产续跑。
+
+双源续跑（包来源 ≠ 写尾来源，仅 production）：所选检查点来自源 run，但源 run 之后还有
+一个**已死**继任 run 写过检查点之后的尾部时，必须显式加
+`--write-tail-run-id "$tail_run_id"`（host/MCP 同名参数 `write_tail_run_id`）。包来源与
+摘要不变；写尾 run 必须在源 run 的恢复链上，且其 `recovery/origin.json` 绑定的
+checkpoint 与所选包完全一致，并按与源写者相同的 writer 证据标准结算。写尾无关
+（`write_tail_unrelated`）、绑定不匹配（`write_tail_checkpoint_binding`）、写尾仍存活
+（`source_active`，可重试）、未知写入或外分支漂移均类型化拒绝——不静默选别的包、不回填
+死源、不删锁、不认领外来写入。新 run 的 `origin.source_run_id` 记实际最新写尾，
+`checkpoint_source_run_id` 单独记包来源，之后的普通 resume 沿完整链回溯。不带该参数时
+单源行为完全不变；acceptance 模式传写尾在启动前即拒绝。
 
 恢复时**重新核对全部状态**，不信任保存时的任何布尔结论：
 
