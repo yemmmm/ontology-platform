@@ -278,6 +278,13 @@ repair instruction naming the artifact to fix; the run is not terminated.
 After correcting the named artifact, let Protocol's next native call recheck the current gate;
 the staged feedback channel does not send a separate success/reopen acknowledgement. Do not
 create a wait for that message. Existing exact review and apply approval requirements still hold.
+A Protocol report that the current transport cannot safely carry a saved plan's full item set
+in one call (platform item bound, dependency order, or the current model's call output budget)
+is a recoverable coordination question, not a tool gap: you may approve new plan versions that
+execute the saved projection as bounded parts — distinct plan/client batch ids and keys, each
+part's items copied exactly from the saved projection, each with its own review, dry-run,
+apply and readback — without requesting a new batch tool or treating one-call completeness
+as a gate.
 You still never call platform write interfaces yourself, and never submit or approve a Modeling
 Batch directly.
 If a required protected body is outside Protocol's scoped credential, request an authorized

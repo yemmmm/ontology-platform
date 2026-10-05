@@ -476,6 +476,35 @@ class TransportTests(unittest.TestCase):
         self.assertIn("A completed terminal report does not answer that candidate", protocol)
         self.assertNotIn("refuses a completed terminal report", protocol)
 
+    def test_transport_budget_splits_route_through_the_coordinator_not_new_tools(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        # The exact-copy rule stays and is refined, not replaced, by the split rule.
+        self.assertIn("complete `projection.items` copied exactly", protocol)
+        self.assertIn("not a one-call completeness gate", protocol)
+        self.assertIn(
+            "request a new file-backed or reference-based batch tool", protocol
+        )
+        self.assertIn("do not treat submitting every item in a single call as a hard gate", protocol)
+        self.assertIn("recoverable issue to the Coordinator and propose the split", protocol)
+        self.assertIn("copied verbatim from the saved plan", protocol)
+        self.assertIn("an arbitrary fixed chunk", protocol)
+        self.assertIn("Old plan evidence is never overwritten", protocol)
+        self.assertIn("already applied part is never", protocol)
+        self.assertIn(
+            "staged failure handling above before proposing any split", protocol
+        )
+        self.assertIn("not a tool gap", coordinator)
+        self.assertIn("execute the saved projection as bounded parts", coordinator)
+        self.assertIn("part's items copied exactly from the saved projection", coordinator)
+        # The split approval never becomes direct batch submission authority.
+        self.assertIn("never submit or approve a Modeling\nBatch directly", coordinator)
+
     def test_coordinator_prompt_uses_runner_dispatch_for_formal_issue_resolution(self) -> None:
         root = Path(__file__).resolve().parents[2]
         coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(

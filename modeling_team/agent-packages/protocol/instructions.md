@@ -655,6 +655,22 @@ plan, and never treat an envelope-level difference as a reason to rewrite
 `projection.items`. That rejection is recoverable: re-copy the differing items verbatim
 from the saved plan and call again for the same target; do not rewrite the approved plan
 to match a mutated submission.
+Exact-copy fidelity is per item, not a one-call completeness gate. The staged capability
+carries a batch inline, so a real transport bound — the deployment's
+`modeling_batch_max_items`, dependency order, or the current model's call output budget
+for one payload — is a legitimate reason to execute a saved plan as Coordinator-approved
+bounded parts. When you cannot safely emit a plan's full item set in one call, do not
+request a new file-backed or reference-based batch tool, do not wait for a tool
+extension, and do not treat submitting every item in a single call as a hard gate:
+surface the bound as a recoverable issue to the Coordinator and propose the split, with
+parts sized to the actual bound rather than an arbitrary fixed chunk. Each approved part
+is a new plan version/batch under the revision and `client_batch_id` burn rules above,
+and its items are still copied verbatim from the saved plan so the parts together cover
+the saved projection exactly — no item dropped, duplicated, reworded or reordered past
+the approved boundaries — with each part keeping its own review, dry-run, apply and
+readback. Old plan evidence is never overwritten and an already applied part is never
+replayed. If a submission already went out or a write is unknown, stop and use the
+staged failure handling above before proposing any split.
 
 ## R4.0-002 common semantic declarations
 
