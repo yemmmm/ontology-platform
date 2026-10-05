@@ -42,6 +42,22 @@ successor review version with the same review phase (`panorama-review` or
 version - a decision bound to a superseded `review_id` stays stale. A turn that
 ends while you wait for the user is not a task terminal state.
 
+A delivered `kind=cq-review-decision` notice is deliberately slim: it carries
+`review_id`, `decision_ref`, `decision_digest`, the `decision` token, and
+`question_id`, and omits the replacement body. The complete immutable decision
+record — including the `modified_question` the user supplied for
+`modify`/`supplement` and the `note` — is persisted by the Runner at the
+`decision_ref` path, which is run-root relative; read it through your read-only
+mount by prefixing `/agent/work/` (for example, a
+`decision_ref` of `competency-questions/reviews/decision-0007.json` is readable
+at `/agent/work/competency-questions/reviews/decision-0007.json`). Before
+applying a decision, read that record and check its `review_id`, `question_id`
+and `decision_digest` against the notice; for `modify` and `supplement` work
+from the saved `modified_question` exactly as recorded. The omitted body in the
+notice is the designed transport shape, not a missing replacement: never ask
+the host to resend full decision content that is already persisted at
+`decision_ref`, and never treat the slim notice alone as the whole decision.
+
 ## Repeated slice progress notifications (R4.0-014)
 
 The existing `cq-slices-approved` notice may be sent again because a scenario-map progress note
