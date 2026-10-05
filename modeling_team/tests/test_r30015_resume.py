@@ -2167,14 +2167,20 @@ def test_pending_items_next_steps_stay_inside_each_existing_role_contract(tmp_pa
     """Field regression: the 2026-10-05 start2 role-handoff defect.
 
     Broadcasting the host-level pending step to every packet made Protocol
-    open a Build Session without a candidate receipt (the zero-write
-    ``candidate_receipt_required`` rejection) and handed rebind/dry-run/apply
-    duties to the competency-question role.  pending_items stays shared
-    recovery state in every packet, but each role's next_step now restates
-    only its own agent-package contract's slice; the host keeps the
-    orchestration summary.  The CQ branch is stage-true: a restored frozen
-    pool is maintained as-is, and with no pool restored the normal CQ
-    lifecycle still runs -- never a blanket "do nothing".
+    open a Build Session while the Task's candidate gate was still closed
+    (the zero-write ``candidate_receipt_required`` rejection) and handed
+    rebind/dry-run/apply duties to the competency-question role.
+    pending_items stays shared recovery state in every packet, but each
+    role's next_step now restates only its own agent-package contract's
+    slice; the host keeps the orchestration summary.  The Protocol step is
+    bound to the gate the selected Task's Runner actually validates: only a
+    Task that formally advertises the legacy candidate-receipt contract uses
+    that path, and the unified-graph route's validated slot, source-grounded
+    approvals and topology decision with Modeling's direct candidate handoff
+    are the gate -- no invented legacy-receipt wait.  The CQ branch is
+    stage-true: a restored frozen pool is maintained as-is, and with no pool
+    restored the normal CQ lifecycle still runs -- never a blanket "do
+    nothing".
     """
 
     def pending_reconciliation():
@@ -2227,17 +2233,31 @@ def test_pending_items_next_steps_stay_inside_each_existing_role_contract(tmp_pa
     assert "direct candidate delivery" in modeling
     assert "never call a platform Build Session or Modeling Batch interface" in modeling
 
-    # Protocol: the platform continuation runs behind the existing candidate
-    # receipt barrier -- without a registered candidate receipt there is no
-    # platform write, so a producer can never bypass the receipt gate.
+    # Protocol: the platform continuation runs behind the candidate/topology
+    # gate the selected Task's Runner validates for the run.  The step is
+    # Task-bound -- a formally advertised legacy candidate-receipt contract
+    # keeps its path, while the unified-graph route needs no R2.3 receipt --
+    # and the closed gate never opens through host confirmation alone, so a
+    # producer can never bypass it.
     protocol = packets["protocol"]["next_step"]
-    assert "candidate receipt barrier" in protocol
+    assert "candidate/topology gate the selected Task's Runner validates" in protocol
+    assert "formally advertises the legacy candidate-receipt contract" in protocol
+    assert "unified-graph" in protocol
+    assert "no extra R2.3 receipt exists to wait for" in protocol
     assert "candidate_receipt_required" in protocol
+    assert "never invent a legacy receipt" in protocol
+    assert "never treat the gate as open or substitute host confirmation" in protocol
     assert "you make no platform write" in protocol
+    # The unconditional receipt-barrier phrasing that produced the issue3
+    # dead wait (waiting to register a receipt no unified-graph Task has)
+    # is gone.
+    assert "candidate receipt barrier" not in protocol
 
-    # Coordinator: coordinates the contracts, never submits itself.
+    # Coordinator: coordinates the contracts behind the same Task-bound gate,
+    # never submits itself.
     coordinator = packets["coordinator"]["next_step"]
     assert "Protocol alone performs" in coordinator
+    assert "candidate/topology gate the selected Task's Runner validates" in coordinator
     assert "never call a platform write interface or submit a Modeling" in coordinator
 
     # CQ with no restored frozen pool: the normal lifecycle still runs, and

@@ -1920,21 +1920,27 @@ def next_step_with_pending(
 
 
 # The start2 handoff defect (2026-10-05): broadcasting the host-level pending
-# text above to every role made Protocol open a Build Session without a
-# candidate receipt and handed rebind/dry-run/apply duties to the
-# competency-question role.  Each production role instead gets only its own
-# agent-package contract's slice of the same continuation; pending_items
-# stays shared team state that grants no role a capability.
+# text above to every role made Protocol open a Build Session while the
+# Task's candidate gate was still closed (the zero-write
+# candidate_receipt_required rejection) and handed rebind/dry-run/apply
+# duties to the competency-question role.  Each production role instead gets
+# only its own agent-package contract's slice of the same continuation;
+# pending_items stays shared team state that grants no role a capability.
+# Follow-up correction: the gate is whatever the selected Task's Runner
+# actually validates.  On the unified-graph route a legacy R2.3 candidate
+# receipt does not exist (the Runner forbids the old builder on 009
+# candidates), so these texts stay Task-bound and never invent a receipt
+# wait from the generic closed-gate rejection.
 _PENDING_NEXT_STEP_BY_ROLE = {
     "coordinator": (
         "coordinate the outstanding pending_items inside the existing role "
         "contracts: Modeling continues the work through its direct candidate "
         "delivery, Protocol alone performs the platform rebind, NEW dry-run "
         "and apply through its authorized mechanical calls behind the "
-        "candidate receipt barrier, and competency-question continues its "
-        "stage-appropriate CQ lifecycle; you coordinate and adjudicate, and "
-        "still never call a platform write interface or submit a Modeling "
-        "Batch yourself"
+        "candidate/topology gate the selected Task's Runner validates for "
+        "this run, and competency-question continues its stage-appropriate "
+        "CQ lifecycle; you coordinate and adjudicate, and still never call "
+        "a platform write interface or submit a Modeling Batch yourself"
     ),
     "modeling": (
         "continue the outstanding work through your existing candidate "
@@ -1947,10 +1953,19 @@ _PENDING_NEXT_STEP_BY_ROLE = {
         "the platform continuation of pending_items -- Build Session "
         "creation, plan/client_batch_id/idempotency-key rebind, a NEW "
         "dry-run, then apply -- runs only through your authorized "
-        "mechanical translation calls and only after the current-run "
-        "candidate receipt barrier has registered the Modeling candidate; "
-        "while the platform reports candidate_receipt_required the barrier "
-        "is still closed and you make no platform write"
+        "mechanical translation calls and only behind the candidate/"
+        "topology gate the selected Task's Runner validates for this run: "
+        "only a Task that formally advertises the legacy candidate-receipt "
+        "contract uses its registered-receipt path, while the unified-graph "
+        "route's Runner-validated slot, source-grounded approvals and "
+        "topology decision together with Modeling's direct candidate "
+        "handoff are that gate, and no extra R2.3 receipt exists to wait "
+        "for. A candidate_receipt_required rejection only reports the "
+        "Task's gate still closed: follow the Task's advertised contract "
+        "for the real opening path, never invent a legacy receipt, never "
+        "treat the gate as open or substitute host confirmation for the "
+        "Runner gate, and you make no platform write while the gate is "
+        "closed"
     ),
 }
 
