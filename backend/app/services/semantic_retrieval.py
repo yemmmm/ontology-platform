@@ -382,6 +382,12 @@ class SemanticRetrievalProjectionService:
     ) -> list[dict[str, Any]]:
         dataset = Dataset()
         for graph_iri in scope.source_graph_iris:
+            if not self.rdf_store.graph_exists(graph_iri):
+                # A registered source member whose store graph was never
+                # created yet (the asserted data graph before the first
+                # instance write) projects as an empty input, not a failed
+                # rebuild: Oxigraph answers 404 for a missing named graph.
+                continue
             content = self.rdf_store.get_graph(graph_iri, RdfFormat.TRIG.value)
             if content:
                 dataset.parse(data=content, format=RdfFormat.TRIG.value)

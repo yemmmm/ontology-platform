@@ -14,6 +14,7 @@ from app.repositories.models import (
     SemanticProjectionManifestModel,
     SemanticRetrievalDocumentModel,
 )
+from app.repositories.rdf_store import RdfStoreUnavailable
 from app.services.modeling_workspace import ModelingWorkspaceVersionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_projection_job import SemanticProjectionJobService
@@ -34,6 +35,9 @@ from app.services.semantic_read_scope import SemanticReadScopeResolver
 
 
 class _NoopStore:
+    def graph_exists(self, graph_iri):  # noqa: ARG002
+        return False
+
     def get_graph(self, graph_iri, format):  # noqa: ARG002
         return ""
 
@@ -139,6 +143,9 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     )
 
     class PersistentFixtureStore:
+        def graph_exists(self, graph_iri):
+            return graph_iri == data_graph_iri
+
         def get_graph(self, graph_iri, _format):
             if graph_iri != data_graph_iri:
                 return ""
@@ -348,6 +355,82 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     assert current_manifest is not None
     assert current_manifest.active_job_id == retry.id
     assert manifest.status == "stale"
+
+
+def test_rebuild_treats_never_created_data_graph_as_empty_input(in_memory_session) -> None:
+    """A schema-only workspace has no store data graph yet; rebuild still succeeds."""
+
+    settings = Settings(
+        semantic_graph_iri_prefix="https://retrieval-empty-data.test/graphs",
+        embedding_dimensions=256,
+    )
+    in_memory_session.add(
+        ProjectModel(id="project-retrieval-empty-data", name="Retrieval", normalized_label="retrieval")
+    )
+    ontology = OntologyModel(
+        id="ontology-retrieval-empty-data",
+        project_id="project-retrieval-empty-data",
+        name="Retrieval ontology",
+    )
+    in_memory_session.add(ontology)
+    in_memory_session.flush()
+    workspace_service = OntologyWorkspaceService(in_memory_session, settings)
+    workspace_service.ensure(ontology)
+    in_memory_session.commit()
+    workspace = workspace_service.context(ontology.id)
+    graph_set_id = workspace["default_graph_set_id"]
+    ontology_graph_iri = next(
+        item["graph_iri"] for item in workspace["members"] if item["role"] == "asserted_ontology"
+    )
+    data_graph_iri = next(
+        item["graph_iri"] for item in workspace["members"] if item["role"] == "asserted_data"
+    )
+
+    class MissingDataGraphStore:
+        """Mimics Oxigraph: reading a never-created named graph raises, ASK is false."""
+
+        def graph_exists(self, graph_iri):
+            return graph_iri == ontology_graph_iri
+
+        def get_graph(self, graph_iri, _format):
+            if graph_iri == data_graph_iri:
+                raise RdfStoreUnavailable(f"The graph <{data_graph_iri}> does not exists")
+            return f'''
+                @prefix owl: <http://www.w3.org/2002/07/owl#> .
+                @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+                <{ontology_graph_iri}> {{
+                  <https://example.test/ServiceTicket>
+                    a owl:Class ;
+                    rdfs:label "Service ticket"@en .
+                }}
+            '''
+
+    projection = SemanticRetrievalProjectionService(
+        in_memory_session,
+        MissingDataGraphStore(),
+        _FixedEmbedding(settings.embedding_dimensions),
+        settings,
+    )
+    jobs = SemanticProjectionJobService(
+        in_memory_session,
+        writers={RETRIEVAL_KIND: projection},
+        scope_resolver_builder=SemanticReadScopeResolver,
+    )
+    job = jobs.create_job(
+        graph_set_id=graph_set_id,
+        projection_kind=RETRIEVAL_KIND,
+        projection_version=settings.semantic_retrieval_projection_version,
+    )
+    job = jobs.run_job(job.id)
+
+    document = in_memory_session.scalar(
+        select(SemanticRetrievalDocumentModel).where(
+            SemanticRetrievalDocumentModel.build_job_id == job.id
+        )
+    )
+    assert job.status == "succeeded"
+    assert document is not None
+    assert document.label == "Service ticket"
 
 
 def test_fusion_preserves_exact_lexical_evidence_and_exposes_candidate_summary() -> None:
