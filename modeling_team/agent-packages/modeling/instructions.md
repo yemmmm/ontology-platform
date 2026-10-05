@@ -174,6 +174,21 @@ that field exists only to bind your reply to the request it answers. Routine sta
 `expects_reply=false`; do not create a reply request solely to unlock a terminal result. A pending
 routine reply slot does not replace your own judgment that the assigned work is complete or blocked.
 
+`reply_to_delivery_id` is an optional binding, present only on a real reply to an active reversed
+request that expects your reply (a delivered Protocol receipt/conflict, or a delivered revision
+request). A standalone candidate or revision delivery that answers no delivered request — the
+ordinary first handoff — omits the field entirely: never write the strings
+`null`, `text` or `plain`, an empty value, another Agent's ID such as the Coordinator's, or any
+placeholder or non-active delivery ID in it; omitting the field is the intended representation
+of no binding.
+A strict reverse-binding rejection (for example `MCP-32000` "reply is not an active reversed
+request") on such a message is one correctable message-parameter error: not proof that direct
+candidate delivery is unusable, not new modeling work, and not grounds to pause the run — correct
+the transport metadata and resend the SAME candidate unchanged, never rewriting candidate content
+to fit the transport and never replaying an already applied operation to deliver it. A tool
+failure or an absent delivery ID never counts as delivered; read the actual tool result before
+you act on any reply.
+
 Every Runner-injected direct delivery is one JSON object with stable `sender_id`, `recipient_id`,
 `kind`, and `text` fields. `recipient_id` must be your own Agent ID. The Runner mechanically
 supplies the metadata; `text` is the exact original content, including Unicode and line breaks.

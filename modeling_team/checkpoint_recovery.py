@@ -1955,46 +1955,52 @@ _PENDING_NEXT_STEP_BY_ROLE = {
 }
 
 
-def _pending_role_next_step(
+def _role_next_step(
     role: str,
     base_next_step: Any,
     pending: list[dict[str, Any]],
     *,
     frozen_pool_restored: bool | None = None,
 ) -> Any:
-    """Role-scoped continuation step once reconciliation found pending work.
+    """Role-scoped next step; the global stage step is never a role duty.
 
-    The host-level :func:`next_step_with_pending` text stays the host
-    packet's own orchestration summary.  Every production role gets only its
-    own contract's slice of the same continuation, and the
-    competency-question role gets a stage-true statement: an already-restored
-    frozen pool is maintained as-is; with none restored its normal CQ
-    lifecycle -- ending in the freeze this scope still needs -- still runs.
-    With no pending work every packet keeps the checkpoint's own stage next
-    step unchanged.
+    The start2 follow-up (2026-10-05): a checkpoint's
+    ``stage_facts.next_step`` is a whole-team materialization sentence (the
+    real cp16 says "continue the remaining dry-run correction, translation
+    review or apply operations").  Appending it after the correct role
+    guidance -- or returning it alone to every role when nothing is pending
+    -- re-assigned dry-run/translation/apply duties to Modeling and the
+    competency-question role.  Only the host packet keeps the global step as
+    its own orchestration summary.  A role's step is its own contract's
+    slice when reconciliation found pending work and nothing role-specific
+    otherwise; when the global step is a string it rides along only as
+    clearly labeled shared team context, never as an instruction the role
+    executes.
     """
 
-    if not pending:
-        return base_next_step
-    if role == "competency-question":
-        step = (
-            "the frozen pool for this scope is already restored: own the "
-            "normal CQ lifecycle and maintain it without re-interviewing, "
-            "re-reviewing or re-freezing"
-            if frozen_pool_restored
-            else "continue your actual CQ stage for this continuation: no "
-            "frozen pool is restored for this scope yet, so the normal CQ "
-            "lifecycle -- ending in the freeze this scope still needs -- "
-            "still runs"
-        )
-        step += (
-            "; pending_items is shared team state and never assigns you "
-            "platform rebind, dry-run or apply work"
-        )
+    if pending:
+        if role == "competency-question":
+            step = (
+                "the frozen pool for this scope is already restored: own the "
+                "normal CQ lifecycle and maintain it without re-interviewing, "
+                "re-reviewing or re-freezing"
+                if frozen_pool_restored
+                else "continue your actual CQ stage for this continuation: no "
+                "frozen pool is restored for this scope yet, so the normal CQ "
+                "lifecycle -- ending in the freeze this scope still needs -- "
+                "still runs"
+            )
+            step += (
+                "; pending_items is shared team state and never assigns you "
+                "platform rebind, dry-run or apply work"
+            )
+        else:
+            step = _PENDING_NEXT_STEP_BY_ROLE[role]
     else:
-        step = _PENDING_NEXT_STEP_BY_ROLE[role]
+        step = None
     if isinstance(base_next_step, str) and base_next_step:
-        step += f"; then {base_next_step}"
+        context = f"shared stage context, not a per-role duty: {base_next_step}"
+        step = context if step is None else f"{step}; {context}"
     return step
 
 
@@ -2063,7 +2069,7 @@ def build_role_packets(
         packets[role] = {
             **base,
             "role": role,
-            "next_step": _pending_role_next_step(
+            "next_step": _role_next_step(
                 role, stage_facts.get("next_step"), pending
             ),
             "readable_artifacts": public_artifacts,
@@ -2091,7 +2097,7 @@ def build_role_packets(
     packets["competency-question"] = {
         **base,
         "role": "competency-question",
-        "next_step": _pending_role_next_step(
+        "next_step": _role_next_step(
             "competency-question",
             stage_facts.get("next_step"),
             pending,

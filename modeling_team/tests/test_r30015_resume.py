@@ -2287,6 +2287,132 @@ def test_pending_items_next_steps_stay_inside_each_existing_role_contract(tmp_pa
     assert "execute pending_items first" not in frozen_cq
 
 
+def test_global_stage_next_step_is_shared_context_not_a_role_duty(tmp_path):
+    """Field follow-up: the checkpoint's stage next_step is a whole-team sentence.
+
+    The real cp16 materialization step is "continue the remaining dry-run
+    correction, translation review or apply operations".  Appending it after
+    each role's correct guidance (or returning it alone when nothing is
+    pending) handed dry-run/translation/apply duties back to Modeling and the
+    competency-question role.  Only the host keeps the global step as its own
+    orchestration summary; a role sees it only as clearly labeled shared
+    team context that never reassigns duties, in both the pending and the
+    empty-pending cases.
+    """
+
+    global_step = (
+        "continue the remaining dry-run correction, translation review or "
+        "apply operations"
+    )
+    frozen_source = "competency-questions/frozen/freeze-0001.json"
+    run_root = tmp_path / "global-step-run"
+    _write_json(run_root / "evidence" / "stage.json", {"stage": "resume-fixture"})
+    _write_json(run_root / frozen_source, {"source": frozen_source})
+    saved = save_checkpoint(
+        run_root,
+        StagePackage(
+            kind=CHECKPOINT_KIND_CQ_FROZEN,
+            scope_refs={"freeze_id": "f-resume"},
+            artifacts=[
+                CheckpointArtifactSpec(
+                    source="evidence/stage.json",
+                    owner="coordinator",
+                    visible_to=("coordinator", "modeling", "protocol"),
+                    host_private=False,
+                ),
+                CheckpointArtifactSpec(
+                    source=frozen_source,
+                    owner="host",
+                    visible_to=("host",),
+                    host_private=True,
+                ),
+            ],
+            stage_facts={"next_step": global_step},
+            platform_bindings={
+                "project_id": "proj-r3015", "ontology_ids": ["onto-r3015"]
+            },
+            write_positions={},
+        ),
+        source_run_id="r3015-gs",
+        configuration=dict(CONFIGURATION),
+    )
+    manifest_file = run_root / "checkpoints" / saved["checkpoint_id"] / "manifest.json"
+    source_bytes = manifest_file.read_bytes()
+    manifest = json.loads(source_bytes)
+    assert manifest["stage_facts"]["next_step"] == global_step
+    approvals = {"present": False, "valid": [], "invalidated": []}
+
+    pending = {
+        "completed": [],
+        "completed_client_batches": {},
+        "pending_new_dry_run": [
+            {
+                "origin_run_id": "r3015-gs",
+                "ordinal": 16,
+                "client_batch_id": "cb-b016",
+                "idempotency_key": "key-b016",
+                "mode": "dry_run",
+                "detail": "dry-run validated, never applied",
+            }
+        ],
+        "recoverable_new_batch": [],
+    }
+    packets = build_role_packets(manifest, pending, [], approvals, dict(CONFIGURATION))
+
+    # The host alone keeps the global stage step as its own summary.
+    assert "execute pending_items first" in packets["host"]["next_step"]
+    assert global_step in packets["host"]["next_step"]
+
+    # Every role keeps its own contract's duty first; the global sentence
+    # rides along only as clearly labeled shared context -- never appended as
+    # a "then ..." instruction the role executes.
+    for role in ("coordinator", "modeling", "protocol", "competency-question"):
+        step = packets[role]["next_step"]
+        assert "shared stage context, not a per-role duty" in step
+        assert global_step in step
+        assert "; then " not in step
+        assert step.index("shared stage context") > 0
+    modeling = packets["modeling"]["next_step"]
+    assert modeling.index("direct candidate delivery") < modeling.index(
+        "shared stage context"
+    )
+    assert "never call a platform Build Session or Modeling Batch interface" in modeling
+    cq = packets["competency-question"]["next_step"]
+    assert "already restored" in cq
+    assert "never assigns you platform rebind, dry-run or apply work" in cq
+
+    # Empty reconciliation: no role receives the global sentence as its own
+    # next step -- only the labeled shared context, and the host keeps the
+    # sentence unchanged.
+    empty = {
+        "completed": [],
+        "completed_client_batches": {},
+        "pending_new_dry_run": [],
+        "recoverable_new_batch": [],
+    }
+    empty_packets = build_role_packets(
+        manifest, empty, [], approvals, dict(CONFIGURATION)
+    )
+    assert empty_packets["host"]["next_step"] == global_step
+    for role in ("coordinator", "modeling", "protocol", "competency-question"):
+        assert empty_packets[role]["next_step"] == (
+            f"shared stage context, not a per-role duty: {global_step}"
+        )
+        assert "grants no role any capability" not in "".join(
+            empty_packets[role]["instructions"]
+        )
+
+    # Public/private isolation is unchanged: the host-only frozen artifact
+    # never reaches a production role or the CQ packet's readable list.
+    assert frozen_source in empty_packets["host"]["readable_artifacts"]
+    for role in ("modeling", "competency-question"):
+        assert frozen_source not in empty_packets[role]["readable_artifacts"]
+    assert "evidence/stage.json" in empty_packets["modeling"]["readable_artifacts"]
+
+    # Packet building never touched the packaged source.
+    assert manifest_file.read_bytes() == source_bytes
+
+
 # --- exposure union (M32) ----------------------------------------------------------
 
 

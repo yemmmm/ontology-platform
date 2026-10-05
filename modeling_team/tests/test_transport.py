@@ -518,6 +518,29 @@ class TransportTests(unittest.TestCase):
         self.assertIn("lost to a Team Transport delivery-parameter", coordinator)
         self.assertIn("never commissions re-modeling, replay or re-apply", coordinator)
 
+    def test_modeling_prompt_omits_unused_reply_binding_instead_of_placeholders(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        # The start2 issue: Modeling sent reply_to_delivery_id as the string
+        # "null" on standalone candidate handoffs, and every send was rejected
+        # with MCP-32000 "reply is not an active reversed request" (zero real
+        # delivery).  The prompt must carry the same omit-don't-placeholder
+        # contract Protocol already has, adapted to direct candidate delivery.
+        self.assertIn("`reply_to_delivery_id` is an optional binding", modeling)
+        self.assertIn("omits the field entirely: never write the strings", modeling)
+        self.assertIn("`null`, `text` or `plain`", modeling)
+        self.assertIn("another Agent's ID such as the Coordinator's", modeling)
+        self.assertIn("omitting the field is the intended representation", modeling)
+        self.assertIn("one correctable message-parameter error:", modeling)
+        self.assertIn("not grounds to pause the run", modeling)
+        self.assertIn("the transport metadata and resend the SAME candidate unchanged", modeling)
+        self.assertIn("never replaying an already applied operation to deliver it", modeling)
+        self.assertIn("never counts as delivered; read the actual tool result", modeling)
+        # No ambiguous null-style notation in the handoff section.
+        self.assertNotIn("`reply_to_delivery_id=null`", modeling)
+
     def test_protocol_prompt_does_not_claim_a_completed_report_is_refused(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
