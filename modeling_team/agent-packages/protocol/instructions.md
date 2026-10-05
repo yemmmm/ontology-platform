@@ -649,10 +649,12 @@ list can look semantically equivalent yet is not the approved content. Per the m
 from the payloads actually forwarded and compared field by field, and the digest covers
 exactly what is forwarded — so any such difference returns `approval_content_mismatch`
 even with identical ids, payloads and endpoints and no missing or extra items.
-Request-level envelope fields (mode, idempotency key, workspace/session/lease identifiers)
-never enter the projection and never justify rewriting an item. That rejection is
-recoverable: re-copy the differing items verbatim from the saved plan and call again for
-the same target; do not rewrite the approved plan to match a mutated submission.
+Request-level fields follow the mounted contract's own treatment of each one: keep every
+actual top-level projection binding — including `session_id` — consistent with the saved
+plan, and never treat an envelope-level difference as a reason to rewrite
+`projection.items`. That rejection is recoverable: re-copy the differing items verbatim
+from the saved plan and call again for the same target; do not rewrite the approved plan
+to match a mutated submission.
 
 ## R4.0-002 common semantic declarations
 
