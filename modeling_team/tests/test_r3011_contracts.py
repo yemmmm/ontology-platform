@@ -1,9 +1,9 @@
-"""R3.0-011 contract/loader fixtures (test plan M1-M4, M10).
+"""R3.0-011 contract/loader fixtures (test plan M1-M4, M10-M11).
 
 Every expected reason code is written independently here; fixtures stay in the
 placeholder/example.test namespace.  No Agent is started and no platform call is
-made: these tests cover the mechanical selector, roster, role-source and
-advisory-count contracts only.
+made: these tests cover the mechanical selector, roster, role-source,
+advisory-count and mounted-contract example contracts only.
 """
 
 from __future__ import annotations
@@ -188,6 +188,41 @@ def test_m10_counts_outside_the_range_are_feedback_not_rejections():
     # The same document still freezes: the count is never a validity gate.
     frozen = _freeze_from_questions(single)
     assert frozen["panorama_question_ids"] == ["cq-1"]
+
+
+# --- M11: the mounted contract states the validator-enforced question shapes --
+
+
+def test_m11_contract_question_types_and_example_match_the_validator():
+    import json
+
+    from modeling_team.competency_questions import validate_cq_question
+
+    contract = json.loads(
+        (
+            REPO_ROOT
+            / "modeling_team/references/r3-0-011-competency-question-contract.json"
+        ).read_text(encoding="utf-8")
+    )
+    question = contract["schemas"]["question"]
+    assert question["schema_version"] == "r3-0-011-cq-question/v1"
+    assert set(question["field_types"]) == set(question["fields"]) == {
+        "question_id",
+        "scope",
+        "question",
+        "answer_points",
+        "evidence_refs",
+        "unknown",
+        "proposed_visibility",
+        "content_version",
+    }
+    # The published example must stay exactly the shape the real validator
+    # accepts, so a role reading the contract never has to rediscover the
+    # types through rejections.
+    assert (
+        validate_cq_question(question["minimal_example"], obj="contract.minimal_example")
+        == question["minimal_example"]
+    )
 
 
 def _freeze_from_questions(questions: list[dict]) -> dict:

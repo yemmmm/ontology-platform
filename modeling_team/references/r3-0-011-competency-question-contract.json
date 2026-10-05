@@ -31,6 +31,7 @@
       "transport": "Runner-private capability cq_publish_question_draft only; drafts are never written into a shared directory by the agent."
     },
     "question": {
+      "schema_version": "r3-0-011-cq-question/v1",
       "fields": [
         "question_id",
         "scope",
@@ -41,6 +42,31 @@
         "proposed_visibility",
         "content_version"
       ],
+      "field_types": {
+        "question_id": "non-empty string",
+        "question": "non-empty string",
+        "scope": "object with exactly the keys kind and slice_ids; see scope below",
+        "answer_points": "list of strings",
+        "evidence_refs": "list of objects, each exactly {source, locator} with non-empty string values",
+        "unknown": "list of strings; use [] when nothing is explicitly unknown; never a plain string, null, or object",
+        "proposed_visibility": "one of \"public\" or \"hidden\"",
+        "content_version": "integer >= 1 (JSON number; never a string, float, or boolean)"
+      },
+      "minimal_example": {
+        "question_id": "cq-panorama-001",
+        "scope": { "kind": "panorama", "slice_ids": [] },
+        "question": "<one concrete business question about the approved material>",
+        "answer_points": ["<one independently checkable answer point>"],
+        "evidence_refs": [
+          {
+            "source": "<exact relative path under sources/ or exact interview_ref>",
+            "locator": "<section, line, or field>"
+          }
+        ],
+        "unknown": ["<one explicitly unknown point, if any>"],
+        "proposed_visibility": "public",
+        "content_version": 1
+      },
       "optional_runner_fields": {
         "_exposed_to": "Runner-owned list of roles that ever saw this question or answer; non-empty forces permanent public visibility at freeze time."
       },
