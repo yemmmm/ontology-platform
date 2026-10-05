@@ -324,8 +324,14 @@ instead of silently overwriting an earlier hypothesis. You also produce the mini
 `candidate_contract: r3-0-009-unified-graph/v2`. Do not write a deferred contract on this route.
 Publish every neutral candidate artifact listed in the slot's `candidate_artifacts` at the exact relative path
 `stage3-neutral-graph/candidates/{candidate_id}-r{revision}.json`, with the filename values equal
-to the artifact's `candidate_id` and integer `revision`. Never rename, replace or delete anything
-under `stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.
+to the artifact's `candidate_id` and integer `revision`. Each `candidate_artifacts` entry is that
+full run-root-relative path itself — the Runner resolves every entry against the run root, so
+`stage3-neutral-graph/candidates/example-candidate-r1.json` reaches the published file while a
+slot-directory-relative spelling such as `candidates/example-candidate-r1.json` does not, and an
+absolute `/agent/work` path is rejected outright; an unreachable entry returns
+`stage3_candidate_artifact_unavailable` as a fixable input error on the slot.
+Never rename, replace or delete anything under
+`stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.
 
 When you author these candidate JSON files locally, compose them instead of
 sending one oversized command: the operating system rejects a single argument

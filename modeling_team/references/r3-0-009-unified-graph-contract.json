@@ -52,7 +52,7 @@
     "fields": ["schema_version", "scenario_id", "produced_by", "approved_by", "candidate_artifacts", "candidate_contract", "slot_note"],
     "rules": [
       "candidate_contract replaces the 008B deferred_contract and must name r3-0-009-unified-graph/v2",
-      "candidate_artifacts lists the published candidate files this slot approves",
+      "candidate_artifacts lists the published candidate files this slot approves: each entry is one run-root-relative path in the artifact_locations form, for example stage3-neutral-graph/candidates/<candidate_id>-r<revision>.json - never a path relative to the slot's own directory such as candidates/<candidate_id>-r<revision>.json, never an absolute /agent/work path, and never a ../ escape; the Runner resolves every entry against the run root and reports an unreachable entry as the fixable input error stage3_candidate_artifact_unavailable",
       "Modeling writes the slot; the Coordinator confirms it inside the approvals artifact"
     ]
   },
