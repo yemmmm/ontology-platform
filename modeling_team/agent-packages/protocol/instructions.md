@@ -714,6 +714,19 @@ readback. Old plan evidence is never overwritten and an already applied part is 
 replayed. If a submission already went out or a write is unknown, stop and use the
 staged failure handling above before proposing any split.
 
+The v2 materialization plan root is closed: exactly `schema_version`, `plan_id`, `revision`,
+`projection` and `projection_digest`, as the mounted contract's materialization-plan fields list
+defines. Never add a custom root field for verification-only evidence, planning notes, status or
+any other extension — an extra root key is schema drift the staged capability rejects before
+any forwarding (`unified_schema_mismatch`), regardless of business approval. Verification-only
+checks of already-applied facts (for example existing relation triple verifications) are not plan
+payload: keep them as a separate immutable companion artifact or existing approved message,
+explicitly bound to the plan's `plan_id`/`projection_digest`, with their full content preserved
+for Team review — never folded into the plan root, never dropped, and never a fabricated
+relation resource IRI. Their existence never skips an approval or validation step, the
+exact-copy projection forwarding below is unchanged, and field names are verified against the
+authoritative mounted schema, never inferred from what a runtime tool happens to accept.
+
 ## R4.0-002 common semantic declarations
 
 Use `multiview_semantic_definition` in the mounted

@@ -728,6 +728,45 @@ class TransportTests(unittest.TestCase):
         # The split approval never becomes direct batch submission authority.
         self.assertIn("never submit or approve a Modeling\nBatch directly", coordinator)
 
+    def test_protocol_prompt_keeps_materialization_plan_root_closed(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        contract = json.loads(
+            (root / "modeling_team/references/r3-0-009-unified-graph-contract.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        # The p028 defect: the plan root carried a custom
+        # existing_relation_triple_verifications key beyond the five canonical
+        # fields; the Coordinator approved the business content, but the staged
+        # capability still rejected the drift (unified_schema_mismatch) before
+        # any forwarding — no Batch, Attempt or write.  The prompt must pin
+        # the closed root and route verification-only evidence to a bound
+        # companion artifact instead of a new root key.
+        fields = contract["materialization_plan"]["fields"]
+        self.assertEqual(
+            fields,
+            ["schema_version", "plan_id", "revision", "projection", "projection_digest"],
+        )
+        self.assertIn("The v2 materialization plan root is closed: exactly `schema_version`, `plan_id`, `revision`,", protocol)
+        self.assertIn("`projection` and `projection_digest`, as the mounted contract's materialization-plan fields list", protocol)
+        self.assertIn("Never add a custom root field for verification-only evidence, planning notes, status or", protocol)
+        self.assertIn("an extra root key is schema drift the staged capability rejects before", protocol)
+        self.assertIn("(`unified_schema_mismatch`), regardless of business approval", protocol)
+        # Verification-only existing-fact checks ride outside the plan root,
+        # digest-bound, full-content, and never a fabricated IRI.
+        self.assertIn("checks of already-applied facts (for example existing relation triple verifications) are not plan", protocol)
+        self.assertIn("keep them as a separate immutable companion artifact or existing approved message,", protocol)
+        self.assertIn("explicitly bound to the plan's `plan_id`/`projection_digest`, with their full content preserved", protocol)
+        self.assertIn("never folded into the plan root, never dropped, and never a fabricated", protocol)
+        self.assertIn("relation resource IRI. Their existence never skips an approval or validation step, the", protocol)
+        # Exact-copy forwarding unchanged; names verified against the schema,
+        # not against runtime tolerance.
+        self.assertIn("exact-copy projection forwarding below is unchanged, and field names are verified against the", protocol)
+        self.assertIn("authoritative mounted schema, never inferred from what a runtime tool happens to accept.", protocol)
+
     def test_coordinator_prompt_uses_runner_dispatch_for_formal_issue_resolution(self) -> None:
         root = Path(__file__).resolve().parents[2]
         coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
