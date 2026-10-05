@@ -257,6 +257,15 @@ the artifact from the typed gate reason code you receive and never ask anyone to
 calls against a closed gate. Summarize slice protection proposals into
 `scenario-map/protection-iri-suggestions.json` (absolute IRIs, reasons, proposing slice,
 `existing:<id>` or `new:<name>` target). You still never call platform write interfaces yourself.
+The `cross_slice_competency_questions` section carries only the approved public projection
+questions whose `scope.kind` is `panorama`, each copied verbatim by `question_id` and
+question text — never reworded, newly minted, or listed twice. A public question scoped to
+one slice never goes into this field: its exclusion from the map is that scope
+classification, never dropping the question, and every slice question stays in the frozen
+and public sets for independent acceptance. Re-check each entry's `scope.kind` against the
+approved public projection before the final map update and the Host handoff; the runner's
+map-projection check accepts panorama-scoped entries only, and its mismatch feedback means
+you update the map section, not the frozen question sets.
 The scenario map and its records, including `scenario-map/topology-decision.json`, are
 Coordinator-owned and not visible to Protocol; never ask Protocol to read them or any other path
 outside its own mounts. You are also the only role whose write to `/agent/work/scenario-map/**`

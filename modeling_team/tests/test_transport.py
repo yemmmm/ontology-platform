@@ -883,6 +883,23 @@ class TransportTests(unittest.TestCase):
         self.assertIn("The formal ticket-based Tasks that genuinely include Acceptance keep", coordinator)
         self.assertIn("the Host-owned CQ acceptance route never waives actual", coordinator)
         self.assertIn("production validation and readback", coordinator)
+        # The third-start handoff defect: the Coordinator listed all 18 public
+        # questions in cross_slice_competency_questions and the runner rejected
+        # the map (cq_projection_scenario_map_mismatch) because the check accepts
+        # only panorama-scoped public projection entries -- 5 panorama vs 13
+        # slice.  The prompt must pin that scope classification without touching
+        # the frozen/public question sets: slice questions stay frozen and public
+        # for independent acceptance, and map exclusion never drops a question.
+        self.assertIn("`cross_slice_competency_questions` section carries only the approved public projection", coordinator)
+        self.assertIn("questions whose `scope.kind` is `panorama`", coordinator)
+        self.assertIn("each copied verbatim by `question_id` and", coordinator)
+        self.assertIn("A public question scoped to", coordinator)
+        self.assertIn("one slice never goes into this field", coordinator)
+        self.assertIn("never dropping the question", coordinator)
+        self.assertIn("and public sets for independent acceptance", coordinator)
+        self.assertIn("before the final map update and the Host handoff", coordinator)
+        self.assertIn("panorama-scoped entries only", coordinator)
+        self.assertIn("you update the map section, not the frozen question sets", coordinator)
 
     def test_reply_correlation_rejects_forged_wrong_direction_and_duplicate_replies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
