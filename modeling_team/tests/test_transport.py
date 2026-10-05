@@ -744,6 +744,39 @@ class TransportTests(unittest.TestCase):
         self.assertIn('immediately call `issue_control` with `action: "pause"`', coordinator)
         self.assertIn("Reserve `unknown`, `uncertain`, `indeterminate`, and `mismatch`", coordinator)
 
+    def test_coordinator_prompt_dispatches_only_to_the_frozen_profiles_enabled_peers(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        # The live defect: on the 4-role CQ Task the Coordinator sent
+        # recipient_id=acceptance a hold-ticket/verdict message, the frozen
+        # Profile rejected it (no delivery), and the prompt's hard-coded
+        # "modeling, protocol, and acceptance" dispatch list kept the missing
+        # role looking like an outstanding obligation.  The initial dispatch
+        # must follow the Profile's actually-enabled peers; Acceptance exists
+        # only when the current Profile enables it.
+        self.assertIn("assign initial bounded work over Team Transport to each production peer the", coordinator)
+        self.assertIn("current frozen Profile actually enables and gives a communication edge for this run", coordinator)
+        self.assertIn("never requiring a role this Task's roster does not include", coordinator)
+        self.assertIn("A role the current Profile does not enable — for example an acceptance role", coordinator)
+        self.assertIn("that a CQ Task leaves to the Host's own Examiner handoff — has no communication edge", coordinator)
+        self.assertIn("never send a hold, ticket, verdict or any other", coordinator)
+        self.assertIn("message to a role the roster does not advertise", coordinator)
+        self.assertIn("Profile-rejected send as an outstanding obligation to wait for or retry", coordinator)
+        # No probing for names, no adding roles, no blanket gate-skipping.
+        self.assertIn("probe alternative names,", coordinator)
+        self.assertIn("or add the role yourself", coordinator)
+        self.assertIn("Never skip Modeling or Protocol completion or their", coordinator)
+        self.assertIn("review/dry-run/apply gates because a role is absent", coordinator)
+        # The hard-coded roster list is gone; legacy typed-ticket Tasks with a
+        # real Acceptance role keep their pipeline, and the Host-owned CQ
+        # route never waives production validation/readback.
+        self.assertNotIn("(modeling, protocol,", coordinator)
+        self.assertIn("The formal ticket-based Tasks that genuinely include Acceptance keep", coordinator)
+        self.assertIn("the Host-owned CQ acceptance route never waives actual", coordinator)
+        self.assertIn("production validation and readback", coordinator)
+
     def test_reply_correlation_rejects_forged_wrong_direction_and_duplicate_replies(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             broker = TeamTransportBroker(
