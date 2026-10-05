@@ -327,6 +327,31 @@ Publish every neutral candidate artifact listed in the slot's `candidate_artifac
 to the artifact's `candidate_id` and integer `revision`. Never rename, replace or delete anything
 under `stage3-neutral-graph/materialization-plans/`; that directory belongs to Protocol.
 
+When you author these candidate JSON files locally, compose them instead of
+sending one oversized command: the operating system rejects a single argument
+longer than about 131072 characters, so one huge shell argument fails with
+`Argument list too long` (os error 7) and writes nothing. Write bounded chunks
+— separate segment files in your private workspace, or sequential bounded
+appends — and assemble the complete document from them. When you use `jq` to
+augment a working file, keep the document root: a pipe through `.items[]` (or
+any item-level filter) makes a single item the output context and can silently
+replace the whole graph with one item while jq still exits 0. Update the whole
+object instead, for example:
+
+    jq --slurpfile add new-items.json '.items += $add[0].items' working.json > tmp.json
+
+jq's exit status proves only that the filter ran, never that the result kept
+its shape. Before replacing any working file, check the temporary output
+against the mounted contract's own fields — for the unified candidate,
+`schema_version`, `scenario_id`, `candidate_id`, `revision`, the complete
+`items` list with the expected count and every `item_id`, and
+`explicit_unknowns` — and only then move it into place. A revision already
+published under `stage3-neutral-graph/candidates/` is immutable: correct a
+defective artifact by publishing the next revision, never by rewriting it.
+Your workspace is not a git repository and shell history is not a recovery
+source; your kept segments and the checked working file are the recovery
+input, so do not attempt git or history restoration.
+
 ## R4.0-002 common semantic declarations
 
 Use `multiview_semantic_definition` in the mounted
