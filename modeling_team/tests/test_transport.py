@@ -728,12 +728,23 @@ class TransportTests(unittest.TestCase):
         self.assertIn("processed command inserts from new unique RDF statements in the set", protocol)
         self.assertIn("do not announce full-set counts or", protocol)
         self.assertIn("blindly expect before + command count", protocol)
-        # Post-apply: every approved SPO present under full paging; only a
-        # genuinely missing SPO is a real inconsistency; duplicates explain a
-        # count difference without inventing unknown writes or compensations —
-        # and count mismatch alone is never blanket-safe either.
+        # Post-apply: every approved SPO present under full paging; a missing
+        # approved SPO is one concrete inconsistency, never the only kind —
+        # unexplained extra content, deletions and binding differences are
+        # write-integrity issues on the unknown-write gate, "no missing" is
+        # never generalized into "no inconsistency", and only a fully-explained
+        # pure count discrepancy reconciles; duplicates explain a count
+        # difference without inventing unknown writes or compensations — and
+        # count mismatch alone is never blanket-safe either.
         self.assertIn("check each approved SPO is present with full", protocol)
-        self.assertIn("paging eligibility; only a genuinely missing approved SPO is a real inconsistency to investigate.", protocol)
+        self.assertIn("a genuinely missing approved SPO is one concrete inconsistency to", protocol)
+        self.assertIn("investigate, not the only kind: unexplained extra content beyond the approved projection,", protocol)
+        self.assertIn("a binding difference on an approved statement are equally real", protocol)
+        self.assertIn("write-integrity inconsistencies that follow the existing unknown-write gate and recovery", protocol)
+        self.assertIn('Never generalize "every approved SPO is present" into "no inconsistency exists".', protocol)
+        self.assertIn("a pure count discrepancy that a complete readback and proven preexisting duplicates fully", protocol)
+        self.assertIn("explain may be reconciled and continued.", protocol)
+        self.assertNotIn("only a genuinely missing approved SPO", protocol)
         self.assertIn("keep the original expected and actual", protocol)
         self.assertIn("never infer an unknown write or make compensating writes from a", protocol)
         self.assertIn("never generalize the opposite rule that every count mismatch is safely", protocol)

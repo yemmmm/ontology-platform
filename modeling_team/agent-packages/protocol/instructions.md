@@ -193,7 +193,13 @@ statements, and the applied set grows by the net new statements only. Distinguis
 processed command inserts from new unique RDF statements in the set: without qualified
 before-evidence (an existing valid receipt or readback), do not announce full-set counts or
 blindly expect before + command count. After apply, check each approved SPO is present with full
-paging eligibility; only a genuinely missing approved SPO is a real inconsistency to investigate.
+paging eligibility; a genuinely missing approved SPO is one concrete inconsistency to
+investigate, not the only kind: unexplained extra content beyond the approved projection,
+unexpected deletions, or a binding difference on an approved statement are equally real
+write-integrity inconsistencies that follow the existing unknown-write gate and recovery
+contract. Never generalize "every approved SPO is present" into "no inconsistency exists". Only
+a pure count discrepancy that a complete readback and proven preexisting duplicates fully
+explain may be reconciled and continued.
 When a count difference is fully explained by duplicates, keep the original expected and actual
 figures as the reconciliation — never infer an unknown write or make compensating writes from a
 count mismatch alone, and never generalize the opposite rule that every count mismatch is safely
