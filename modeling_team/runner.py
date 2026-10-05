@@ -136,7 +136,7 @@ from .staged_decisions import (
     staged_intent_receipt_issues,
     staged_stage3_issue,
     UNIFIED_SUBMISSION_RECEIPT_SCHEMA,
-    applied_attempt_proof,
+    bound_attempt_proof,
     build_attempt_proof,
     unified_approval_issue,
     unified_candidate_issue,
@@ -10316,20 +10316,37 @@ class TeamRunner:
                 if intent.get("status") == "unknown":
                     state = "unknown"
                 elif receipt is not None or intent.get("status") == "receipted":
-                    # dry-run validated is NOT applied (requirement §阶段 4),
-                    # and the lean staged receipt never carries the platform
-                    # Attempt status: only a Runner-recorded applied attempt
-                    # proof bound to this intent/receipt identity closes the
-                    # write as applied (a failed or rejected apply also leaves
-                    # a receipt, so mode alone never decides).
-                    state = (
-                        "applied"
-                        if applied_attempt_proof(
+                    # The lean staged receipt never carries the platform
+                    # Attempt status, so the state comes from the Runner-
+                    # recorded proof bound to this intent/receipt identity.
+                    # A dry run never writes (requirement §阶段 4); an apply
+                    # closes as applied only on a bound ``applied`` proof and
+                    # closes as validated-not-applied only on terminals the
+                    # real platform attempt contract guarantees wrote nothing
+                    # (validated / validation_failed pre-write, failed which
+                    # only enters as failed_without_side_effects).  A missing
+                    # or mismatch-bound proof — or partially_applied and other
+                    # statuses — has no credible terminal state and is never
+                    # dressed up as a dry-run validated: it stays ``unknown``
+                    # for the existing write reconciliation gate below.
+                    if intent.get("mode") == "dry_run":
+                        state = "validated_not_applied"
+                    else:
+                        proof = bound_attempt_proof(
                             self.run.root, intent=intent, receipt=receipt
                         )
-                        is not None
-                        else "validated_not_applied"
-                    )
+                        if proof is None:
+                            state = "unknown"
+                        elif proof.get("attempt_status") == "applied":
+                            state = "applied"
+                        elif proof.get("attempt_status") in {
+                            "validated",
+                            "validation_failed",
+                            "failed",
+                        }:
+                            state = "validated_not_applied"
+                        else:
+                            state = "unknown"
                 elif intent.get("status") == "rejected":
                     # Definite pre-write refusal: closed without a receipt and
                     # without being an unsettled (pending/unknown) write.

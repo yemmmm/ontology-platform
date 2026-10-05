@@ -1397,42 +1397,66 @@ def test_m03_apply_and_dry_run_receipts_are_distinguishable_states():
             harness.cleanup()
 
 
-def test_m03_applied_state_requires_a_bound_applied_attempt_proof():
-    # The lean receipt never carries the Attempt status, so a missing proof —
-    # or one whose status is validated/failed, or whose bindings (response
-    # digest, ordinals, batch) point at another write — leaves the position
-    # unclosed; mode apply_atomic plus a receipt alone must not read applied.
+def test_m03_no_bound_proof_is_reconciled_not_dressed_up_as_validated():
+    # The lean receipt never carries the Attempt status, so a receipted apply
+    # without a bound proof — or one whose bindings (response digest, ordinals,
+    # batch) point at another write — has no credible terminal state.  It must
+    # not be silently recorded as dry-run validated: the write-claiming save
+    # refuses through the existing typed reconciliation rejection and no
+    # package is published.
     cases = [
         ("no-proof", dict(proof=False)),
-        ("validated-apply", dict(attempt_status="validated")),
-        ("validation-failed-apply", dict(attempt_status="validation_failed")),
-        ("failed-apply", dict(attempt_status="failed")),
         ("wrong-response-digest", dict(response_digest="sha256:" + "3" * 64)),
         ("wrong-intent-ordinal", dict(intent_ordinal=7)),
         ("wrong-batch-id", dict(batch_id="platform-batch-9")),
+        ("partially-applied", dict(attempt_status="partially_applied")),
     ]
     for name, kwargs in cases:
         harness = _CheckpointRunner()
         try:
             runner = harness.prepare()
             _settled_apply_intent(runner, ordinal=1, mode="apply_atomic", **kwargs)
+            with pytest.raises(CheckpointError) as refused:
+                runner._save_run_checkpoint(
+                    CHECKPOINT_KIND_MATERIALIZATION_PROGRESS, trigger="outer-request"
+                )
+            assert refused.value.reason_code == "checkpoint_write_unreconciled", name
+            assert refused.value.retry.startswith("let the staged writes settle"), name
+            assert list_checkpoints(runner.run.root) == [], name
+        finally:
+            harness.cleanup()
+
+
+def test_m03_pre_write_and_no_side_effect_terminals_close_not_applied():
+    # Per the real platform attempt contract these terminals guarantee the
+    # attempt wrote nothing: validated / validation_failed stop before any
+    # write, and a terminal ``failed`` only enters through
+    # failed_without_side_effects (deterministic pre-write rejection or a
+    # not_applied recovery exit).  They close as validated_not_applied.
+    for status in ("validated", "validation_failed", "failed"):
+        harness = _CheckpointRunner()
+        try:
+            runner = harness.prepare()
+            _settled_apply_intent(runner, ordinal=1, mode="apply_atomic",
+                                  attempt_status=status)
             record = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
-            assert record["status"] == "saved", name
+            assert record["status"] == "saved", status
             position = _read_manifest(runner.run.root, record["checkpoint_id"])[
                 "write_positions"
             ]["positions"][0]
-            assert position["state"] == "validated_not_applied", name
+            assert position["state"] == "validated_not_applied", status
         finally:
             harness.cleanup()
 
 
 def test_m03_proof_written_after_a_save_never_flips_that_checkpoint():
     # A checkpoint is a point-in-time record: a proof appended after the save
-    # cannot rewrite the saved manifest, and only a later save observes it.
+    # cannot rewrite the saved manifest, and only a later save observes it
+    # (the new save legitimately uses the earlier-closed proof).
     harness = _CheckpointRunner()
     try:
         runner = harness.prepare()
-        _settled_apply_intent(runner, proof=False)
+        _settled_apply_intent(runner, attempt_status="validated")
         first = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
         first_manifest = _read_manifest(runner.run.root, first["checkpoint_id"])
         assert first_manifest["write_positions"]["positions"][0]["state"] == (

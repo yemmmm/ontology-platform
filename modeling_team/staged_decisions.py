@@ -2898,6 +2898,30 @@ def applied_attempt_proof(
     from any role claim.
     """
 
+    proof = bound_attempt_proof(run_root, intent=intent, receipt=receipt)
+    if proof is not None and proof.get("attempt_status") == "applied":
+        return proof
+    return None
+
+
+def bound_attempt_proof(
+    run_root: Path,
+    *,
+    intent: Mapping[str, Any],
+    receipt: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """The Runner-recorded proof bound to this exact intent/receipt identity.
+
+    The binding covers both ordinals, the idempotency key, the platform batch,
+    the response digest and — when the receipt carries them — the plan
+    reference and projection digest.  The evidence file is an append-only host
+    journal, so when several records bind to the same identity the last one is
+    the current platform truth (a replay under the same key returns the same
+    attempt); it is returned regardless of ``attempt_status`` so callers
+    classify the terminal state themselves.  No bound record means the write
+    has no credible terminal evidence at all.
+    """
+
     if intent.get("mode") != "apply_atomic" or receipt is None:
         return None
     key = intent.get("idempotency_key")
@@ -2915,15 +2939,16 @@ def applied_attempt_proof(
         for field in ("plan_ref", "projection_digest")
         if receipt.get(field) is not None
     }
+    bound: Mapping[str, Any] | None = None
     for proof in read_attempt_proofs(run_root):
-        if proof.get("attempt_status") != "applied" or proof.get("mode") != "apply_atomic":
+        if proof.get("mode") != "apply_atomic":
             continue
         if any(proof.get(field) != value for field, value in bindings.items()):
             continue
         if any(proof.get(field) != value for field, value in optional.items()):
             continue
-        return proof
-    return None
+        bound = proof
+    return bound
 
 
 def unified_dry_run_proof_issue(
@@ -3222,6 +3247,7 @@ __all__ = [
     "adjudicate_unknown_intent",
     "build_approval_projection",
     "applied_attempt_proof",
+    "bound_attempt_proof",
     "build_attempt_proof",
     "build_batch_projection",
     "build_decision_binding",
