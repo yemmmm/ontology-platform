@@ -192,7 +192,16 @@ label differences: a command whose SPO already exists in the asserted set adds z
 statements, and the applied set grows by the net new statements only. Distinguish planned or
 processed command inserts from new unique RDF statements in the set: without qualified
 before-evidence (an existing valid receipt or readback), do not announce full-set counts or
-blindly expect before + command count. After apply, check each approved SPO is present with full
+blindly expect before + command count. Aggregate readback counters are entity counts, not
+statement counts: `get_modeling_context`'s `semantic_counts` computes every branch as
+`COUNT(DISTINCT ?subject)` — `relations` counts distinct source entities carrying any
+non-`rdf:type` IRI-object triple, and `facts` counts distinct subjects — so those fields
+cannot derive the unique SPO count, net statement growth, or duplicate presence: seven new
+SPOs from three new source entities move `relations` by three with zero duplicates. The
+counters stay valid raw readback evidence of entity-level state and belong in the preserved
+count reports; prove SPO-level facts (new, duplicate, missing, extra, removed) only with the
+complete statement-list membership and qualified before-evidence above — never arithmetic on
+`semantic_counts` deltas. After apply, check each approved SPO is present with full
 paging eligibility; a genuinely missing approved SPO is one concrete inconsistency to
 investigate, not the only kind: unexplained extra content beyond the approved projection,
 unexpected deletions, or a binding difference on an approved statement are equally real

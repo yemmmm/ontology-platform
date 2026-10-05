@@ -728,6 +728,20 @@ class TransportTests(unittest.TestCase):
         self.assertIn("processed command inserts from new unique RDF statements in the set", protocol)
         self.assertIn("do not announce full-set counts or", protocol)
         self.assertIn("blindly expect before + command count", protocol)
+        # The third-run delivery-15/16 defect: Protocol read
+        # get_modeling_context semantic_counts relations moving 65 -> 68
+        # across 7 submitted expressions as "4 duplicate SPOs".  Every
+        # counter branch is COUNT(DISTINCT ?subject) -- relations counts
+        # distinct source entities, facts distinct subjects -- while the
+        # host's complete statement-list diff (662 -> 669) proved all 7
+        # SPOs new, none preexisting, 0 extra, 0 removed.  The prompt must
+        # pin the aggregate counter units so no delta arithmetic on those
+        # fields substitutes for statement-list membership.
+        self.assertIn("COUNT(DISTINCT ?subject)", protocol)
+        self.assertIn("`relations` counts distinct source entities", protocol)
+        self.assertIn("cannot derive the unique SPO count", protocol)
+        self.assertIn("never arithmetic on", protocol)
+        self.assertIn("`semantic_counts` deltas", protocol)
         # Post-apply: every approved SPO present under full paging; a missing
         # approved SPO is one concrete inconsistency, never the only kind —
         # unexplained extra content, deletions and binding differences are
