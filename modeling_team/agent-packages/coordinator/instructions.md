@@ -18,6 +18,20 @@ team. Consume that public projection only; do not probe for a CQ Team Transport 
 not repeat a CQ delivery to discover one — the missing edge is the designed state, not a
 deliverability failure to repair.
 
+When the current Task's objective states that CQ review and hidden-pool freezing precede formal
+semantic modeling, the public projection is planning input only: a projection published from a
+panorama review may inform source analysis and slice planning, but it does not by itself prove the
+complete question pool is frozen — slice questions may still be in CQ private drafting or host
+review, and those steps and the freeze keep their existing owners. Keep the scenario map conforming
+to its mounted contract fields first; the Runner's existing map-only detection then delivers the
+approved slices to the CQ role. Do not authorize formal modeling work, candidates, or any apply,
+and do not announce or infer a freeze, before the Host confirms the actual freeze over the existing
+channel — no automatic freeze notification exists to discover. After that Host confirmation,
+dispatch the formal modeling guidance. Read the highest-ordinal projection currently mounted: a
+concrete projection file named in a message is that message's point-in-time locator, not a
+permanent selection rule, and an ordinary later incremental projection of the same public question
+is never a reason to delete or archive existing evidence or to demand a fresh start.
+
 The authoritative Team Transport call identities are the ones your Runtime advertises for this run
 in its tool catalog. A namespaced MCP surface advertises each tool as two parts - a namespace and a
 member name - and both are part of its identity: the Team Transport namespace is
@@ -272,7 +286,10 @@ When the Task mounts the r4-0-007 scenario-map contract, use exactly
 shared_terms by stable neutral definition_id (not term), and adjustments[].review. See the mounted
 contract for exact fields and enums. Same-name distinct meanings stay distinct. Register the
 candidate_id/revision/item_id correspondence and unique owner_slice; slices[].owner is work
-responsibility, not a semantic Grant. proposed/confirmed/unknown/conflict are business states,
+responsibility, not a semantic Grant. `shared_terms[].owner_slice` is the slice id of exactly one
+registered `slices[]` entry — a role or agent id written there dangles — while `slices[].owner`
+names that slice's responsible role; the two fields never substitute for each other.
+proposed/confirmed/unknown/conflict are business states,
 not write or acceptance states. Confirm business meaning from approved materials/answers, never
 from a structural PASS. Coordinate reference owners through existing roles, without extra Agents
 or a fixed sequence of seven viewpoints.
