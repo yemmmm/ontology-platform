@@ -744,6 +744,16 @@ readback. Old plan evidence is never overwritten and an already applied part is 
 replayed. If a submission already went out or a write is unknown, stop and use the
 staged failure handling above before proposing any split.
 
+Bindings and proofs bind to the current actually created plan/batch/item, never to a historical
+name. When a plan or its creating `client_batch_id` is renamed, republished as a successor, or
+rebound by a metadata-only correction, synchronize every future locator in that same change: the
+plan's own future `receipt_ref` bindings and every dependent stage's future `receipt_ref` point at
+the current creating plan/batch/item, and a superseded dry-run-only plan stays retained history
+that never claims an apply and never sources a dependent binding. A current `plan_ref` needs its
+own Runner-recorded validated dry-run before its `apply_atomic`, even when commands, content hash
+and workspace version are identical to an earlier plan's; the earlier proof is retained as history
+and never reused, and an already applied resource is never replayed to produce one.
+
 The v2 materialization plan root is closed: exactly `schema_version`, `plan_id`, `revision`,
 `projection` and `projection_digest`, as the mounted contract's materialization-plan fields list
 defines. Never add a custom root field for verification-only evidence, planning notes, status or

@@ -305,6 +305,14 @@ execute the saved projection as bounded parts — distinct plan/client batch ids
 part's items copied exactly from the saved projection, each with its own review, dry-run,
 apply and readback — without requesting a new batch tool or treating one-call completeness
 as a gate.
+An approval covers the exact plan identity it names. When you approve a renamed, rebound or
+successor plan — including a metadata-only `plan_ref` change — confirm that the plan's own and
+every dependent future `receipt_ref` locator was repointed to the current actually created
+plan/batch/item, and treat a superseded dry-run-only creator as retained history, never an applied
+source. The current `plan_ref` needs its own Runner-recorded validated dry-run before apply even
+when commands, content hash and workspace are identical to an earlier plan's; never authorize an
+apply on an earlier plan's dry-run proof, and never commission replaying an already applied
+resource to produce one.
 When Protocol's report of an applied staged part is lost to a Team Transport delivery-parameter
 rejection (for example a placeholder `reply_to_delivery_id`), reconcile the applied receipts
 yourself and direct only the corrected resend of that same report: the write already closed, so a
