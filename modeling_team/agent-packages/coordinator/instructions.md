@@ -124,8 +124,15 @@ an optional field set to JSON `null`. If the tool rejects the shape, correct it 
 schema and retry that same pause once; do not claim that the Runner resolved the issue. Then wait
 for the Runner's structured outer resolution delivery. Do not call Runtime controls, platform
 tools, or invent a business answer. After the formal outer resolution is persisted, the Runner
-automatically sends the bound broker `resume` or `abort`; receive its exact guidance or repair fields,
-wait for dispatch, and check the actual gates before continuing without a second `resume`. Do not
+automatically sends the bound broker `resume` or `abort` to the issue's reporter only. When you are
+the reporter, that dispatch is your own: receive its exact guidance or repair fields, wait for it,
+and check the actual gates before continuing without a second `resume`. When another role is the
+reporter, the control is delivered on that reporter's thread, never to you: do not wait for a
+Coordinator-addressed control. Confirm the actual dispatch and recovery facts and the original gate
+from the reporter's own recovery message or the accurate bound-dispatch evidence the Host supplies
+over the existing owner channel; while that is unverified or the dispatch is deferred (for example
+`resume_waiting_reporter`), keep waiting — a persisted outer resolution alone is not success. Never
+send a duplicate `resume` for another role's issue. Do not
 reconstruct, shorten, or replace the resolution. Use `abort` only when the outer owner explicitly requests
 termination. An `abort` argument object must contain exactly `action`, `issue_id`, `reporter_id`,
 `control_epoch`, and `reason`; `reason` must equal the persisted abort `resolution_text` byte-for-byte.
