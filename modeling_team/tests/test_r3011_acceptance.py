@@ -1014,17 +1014,17 @@ def test_the_v3_sink_repeats_only_the_canonical_verdict_states():
 #
 # glm-5.3-flash/high burned 49 v3 judge submissions against PAN-002: a pass must
 # carry ``failure_layer`` empty, but the wire advertised it as required+nullable
-# and rejected both alternate spellings the provider tool path produced (the
-# dropped key and the string "None").  Literal JSON null never arrived, so the
-# only legal spelling was unreachable.  The fix keeps every Host-side verdict
-# guard and makes the wire accept an omitted empty layer for exactly the states
-# whose canonical layer is empty.
+# and rejected both alternate spellings those submissions produced (the dropped
+# key and the string "None").  No submission carried the literal JSON null, so
+# the session never delivered a legal empty layer.  The fix keeps every
+# Host-side verdict guard and makes the wire accept an omitted empty layer for
+# exactly the states whose canonical layer is empty.
 
 
 def test_the_v3_judge_wire_allows_omitting_the_empty_failure_layer():
     """The bridge must canonicalize an omitted ``failure_layer`` to ``None`` for
-    exactly the empty-legal verdicts, so a provider that drops null arguments
-    can still submit a legal pass or question review."""
+    exactly the empty-legal verdicts, so a submission that drops the null
+    argument still delivers a legal pass or question review."""
     from modeling_team import report_sink_mcp
 
     advertised = report_sink_mcp._v3_batch_report_schema(platform=False)
@@ -1117,8 +1117,18 @@ def test_the_v3_wire_rejection_names_the_legal_empty_layer_spellings():
 
 def test_the_judge_instructions_name_the_empty_layer_submission_spelling():
     """The authoritative judge instructions must say how to submit an empty
-    layer: JSON null or an omitted field for pass/question-answer-review."""
+    layer: JSON null or an omitted field for pass/question-answer-review, and
+    which verdicts must name a layer."""
     from modeling_team.__main__ import _CQ_JUDGE_ROLE_INSTRUCTIONS
 
     assert "JSON null" in _CQ_JUDGE_ROLE_INSTRUCTIONS
     assert "omit" in _CQ_JUDGE_ROLE_INSTRUCTIONS
+    # The layer-naming duty belongs to exactly the two required-layer states
+    # (CQ_REQUIRED_FAILURE_LAYERS); question-answer-review keeps its legal
+    # empty layer, so a blanket "every non-pass" clause would contradict the
+    # empty-layer rule the same instructions state.
+    assert (
+        "model-recall-insufficient and platform-runtime-incomplete"
+        in _CQ_JUDGE_ROLE_INSTRUCTIONS
+    )
+    assert "every non-pass" not in _CQ_JUDGE_ROLE_INSTRUCTIONS

@@ -61,10 +61,11 @@ CQ_FAILURE_LAYERS = (
 # an omitted ``failure_layer`` for exactly these verdicts (and for every
 # Platform Examiner status, where ``None`` is always legal) and normalizes it
 # to ``None``; every other state still has to name one of ``CQ_FAILURE_LAYERS``.
-# 2026-10-05 public judge report-contract failure: the provider tool path never
-# produced the one advertised empty spelling (literal JSON null in a required
-# property) in 49 submissions -- it dropped the key or sent the string "None" --
-# so the unreachable contract, not the verdict, ended the session.
+# 2026-10-05 public judge report-contract failure: across 49 submissions the
+# then-only advertised empty spelling (literal JSON null in a required
+# property) never appeared -- the key was dropped or the string "None" was
+# sent -- so the session ended on an unsubmitted empty spelling, not on the
+# verdict.
 CQ_EMPTY_LAYER_VERDICTS = ("pass", "question-answer-review")
 BATCH_EXAMINER_FIELDS = [
     "schema_version",
@@ -351,15 +352,17 @@ def _v3_batch_report_schema(*, platform: bool) -> dict[str, Any]:
             "description": (
                 "Failure layer, or an empty layer as the JSON null value or an "
                 "omitted field (judge: only verdict pass and question-answer-review "
-                "may be empty; non-pass verdicts name one of the enum layers). "
+                "may be empty; model-recall-insufficient and "
+                "platform-runtime-incomplete name one of the enum layers). "
                 "Never send a string such as \"None\" or \"\"."
             ),
         },
     }
-    # ``failure_layer`` stays deliberately out of ``required``: the only legal
-    # empty spelling must stay reachable for provider tool paths that cannot
-    # emit an explicit JSON null (2026-10-05 public judge contract failure);
-    # the sink canonicalizes an omitted empty layer to ``None``.
+    # ``failure_layer`` stays deliberately out of ``required``: the omitted
+    # spelling keeps an empty layer submittable on tool paths where the
+    # explicit null spelling did not arrive (2026-10-05: no literal null in
+    # the observed 49 submissions); the sink canonicalizes an omitted empty
+    # layer to ``None``.
     required = ["schema_version", "batch_id", "question_id"]
     if platform:
         properties.update(

@@ -882,8 +882,8 @@ class V3BatchReportContract:
         except ValueError as exc:
             # Surface the typed ``retry`` guidance too: the 2026-10-05 public
             # judge session iterated 49 rejections whose repair hint was dropped
-            # here, leaving "must keep failure_layer empty" without a submittable
-            # spelling.
+            # here, leaving "must keep failure_layer empty" guidance whose named
+            # null spelling never arrived in those submissions.
             retry = getattr(exc, "retry", "")
             detail = f"v3 acceptance batch report is invalid: {exc}"
             if retry:

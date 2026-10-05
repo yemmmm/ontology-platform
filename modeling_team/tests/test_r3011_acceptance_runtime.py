@@ -228,8 +228,8 @@ def test_v3_judge_sink_latches_the_same_way_without_a_platform_read(tmp_path):
 def test_v3_verdict_rejection_detail_carries_the_retry_spelling():
     """2026-10-05 public judge failure: the typed ``retry`` guidance was dropped
     when the contract wrapped the validator error, so the judge only ever saw
-    "pass must keep failure_layer empty" without a submittable spelling.  The
-    wrap must surface the retry text."""
+    "pass must keep failure_layer empty" and no submission carried its named
+    null spelling.  The wrap must surface the retry text."""
     packet = _batch_packet(role="acceptance")
     contract = _batch_contract("acceptance", packet)
     attributed = _verdict_entry(packet.batch_id, "cq-1")
