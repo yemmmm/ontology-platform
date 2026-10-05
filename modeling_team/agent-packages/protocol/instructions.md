@@ -636,6 +636,24 @@ or a direct `submit_modeling_batch` call. If a submission result is reported as
 `staged_batch_forward_unknown` or `staged_unreconciled_batch`, stop submitting and surface it:
 manual adjudication is required before anything else can be submitted.
 
+Once you have saved a materialization plan under
+`stage3-neutral-graph/materialization-plans/`, the items you forward when calling the
+capability for it are that saved plan's complete `projection.items` copied exactly — field
+by field and text by text, including `rationale`, `depends_on`,
+`competency_question_ids` and every optional field, in the same order. Regenerating the
+items by hand at call time is where drift enters: rewording a `rationale` as a synonym
+(for example saving "A service contract is held by a customer." but submitting "A service
+contract belongs to a customer."), adding or dropping default fields, or abbreviating a
+list can look semantically equivalent yet is not the approved content. Per the mounted
+`modeling_team/references/r3-0-009-unified-graph-contract.json`, the projection is rebuilt
+from the payloads actually forwarded and compared field by field, and the digest covers
+exactly what is forwarded — so any such difference returns `approval_content_mismatch`
+even with identical ids, payloads and endpoints and no missing or extra items.
+Request-level envelope fields (mode, idempotency key, workspace/session/lease identifiers)
+never enter the projection and never justify rewriting an item. That rejection is
+recoverable: re-copy the differing items verbatim from the saved plan and call again for
+the same target; do not rewrite the approved plan to match a mutated submission.
+
 ## R4.0-002 common semantic declarations
 
 Use `multiview_semantic_definition` in the mounted
