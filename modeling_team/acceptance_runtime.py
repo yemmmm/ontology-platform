@@ -3357,6 +3357,24 @@ class ReportSinkServer:
         self._thread = threading.Thread(target=self._serve, name="acceptance-report-sink", daemon=True)
         self._thread.start()
 
+    def _rejection_response(self, code: str, detail: str) -> dict[str, Any]:
+        """Build one typed rejection response for the active branch.
+
+        The legacy single-report budget counts down ``attempts_remaining``
+        toward its hard gate.  The v3 batch branch has no attempt budget (the
+        session deadline is the only bound), so it must not present that
+        countdown: the 2026-10-05 public judge read ``attempts_remaining=0``
+        on a fixable rejection and abandoned a session whose resubmission
+        was still legal.
+        """
+
+        response: dict[str, Any] = {"ok": False, "code": code, "detail": detail}
+        if self.batch_contract is None:
+            response["attempts_remaining"] = max(
+                0, self.max_attempts - len(self._rejections)
+            )
+        return response
+
     def _serve(self) -> None:
         server = self._server
         if server is None:
@@ -3421,13 +3439,9 @@ class ReportSinkServer:
                         except (ChildRuntimeError, ExaminerRuntimeBlocked) as exc:
                             detail = str(exc)
                             self._rejections.append(detail)
-                            attempts_remaining = max(0, self.max_attempts - len(self._rejections))
-                            response = {
-                                "ok": False,
-                                "code": "report-binding-rejected",
-                                "detail": detail,
-                                "attempts_remaining": attempts_remaining,
-                            }
+                            response = self._rejection_response(
+                                "report-binding-rejected", detail
+                            )
                         except Exception as exc:
                             # Preserve the validator's own reason (exception
                             # type plus message) instead of a bare
@@ -3436,13 +3450,7 @@ class ReportSinkServer:
                             # this way, leaving the failure undiagnosable.
                             detail = f"{type(exc).__name__}: {exc}".strip()
                             self._rejections.append(detail)
-                            attempts_remaining = max(0, self.max_attempts - len(self._rejections))
-                            response = {
-                                "ok": False,
-                                "code": "report-rejected",
-                                "detail": detail,
-                                "attempts_remaining": attempts_remaining,
-                            }
+                            response = self._rejection_response("report-rejected", detail)
                         else:
                             try:
                                 self._submit(report)
@@ -3459,15 +3467,9 @@ class ReportSinkServer:
                                 # same detail and attempts accounting.
                                 detail = f"{type(exc).__name__}: {exc}".strip()
                                 self._rejections.append(detail)
-                                attempts_remaining = max(
-                                    0, self.max_attempts - len(self._rejections)
+                                response = self._rejection_response(
+                                    "report-submit-rejected", detail
                                 )
-                                response = {
-                                    "ok": False,
-                                    "code": "report-submit-rejected",
-                                    "detail": detail,
-                                    "attempts_remaining": attempts_remaining,
-                                }
                             else:
                                 if self.batch_contract is not None:
                                     self.batch_contract.record(report)

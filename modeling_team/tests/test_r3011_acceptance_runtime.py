@@ -238,6 +238,69 @@ def test_v3_verdict_rejection_detail_carries_the_retry_spelling():
         contract.validate(attributed)
 
 
+def test_v3_rejections_do_not_carry_the_legacy_attempt_count(tmp_path):
+    """2026-10-05 public judge failure: the v3 branch has no attempt budget
+    (the session deadline is the only bound), yet its typed rejections echoed
+    the legacy ``attempts_remaining`` countdown.  Once that countdown read 0
+    the judge abandoned a session whose resubmission was still legal.  The
+    v3 rejection feedback must keep the typed code and retry detail without
+    the inapplicable legacy count."""
+
+    packet = _batch_packet(role="acceptance")
+    contract = _batch_contract("acceptance", packet)
+    server, submit = _start_sink(tmp_path, contract=contract, kind="acceptance")
+    try:
+        # Four attributed rejections: one more than the legacy budget of 3.
+        for _ in range(4):
+            attributed = _verdict_entry(packet.batch_id, "cq-1")
+            attributed["failure_layer"] = "modeling-quality"
+            response = _submit(tmp_path / "report.sock", attributed)
+            assert response["ok"] is False
+            assert response["code"] == "report-binding-rejected"
+            assert "attempts_remaining" not in response
+            assert "JSON null" in response["detail"]
+        accepted = _submit(tmp_path / "report.sock", _verdict_entry(packet.batch_id, "cq-1"))
+        assert accepted["ok"] is True and accepted["batch_complete"] is False
+        assert [report["question_id"] for report in submit.calls] == ["cq-1"]
+    finally:
+        server.stop()
+
+
+def test_v3_submit_rejections_do_not_carry_the_legacy_attempt_count(tmp_path):
+    """A failing Host submit callback is another recoverable v3 rejection;
+    it must not present the legacy countdown either, and the same sink must
+    accept the corrected resubmission."""
+
+    packet = _batch_packet(role="acceptance")
+    contract = _batch_contract("acceptance", packet)
+    attempts = {"count": 0}
+
+    def flaky_submit(report: dict) -> None:
+        attempts["count"] += 1
+        if attempts["count"] == 1:
+            raise RuntimeError("receipt binding unavailable")
+
+    server = ReportSinkServer(
+        tmp_path / "report.sock",
+        TOKEN,
+        flaky_submit,
+        kind="acceptance",
+        validator=lambda report: None,
+        max_attempts=3,
+        batch_contract=contract,
+    )
+    server.start()
+    try:
+        first = _submit(tmp_path / "report.sock", _verdict_entry(packet.batch_id, "cq-1"))
+        assert first["ok"] is False and first["code"] == "report-submit-rejected"
+        assert "attempts_remaining" not in first
+        assert "receipt binding unavailable" in first["detail"]
+        second = _submit(tmp_path / "report.sock", _verdict_entry(packet.batch_id, "cq-1"))
+        assert second["ok"] is True
+    finally:
+        server.stop()
+
+
 def test_legacy_sink_attempt_budget_is_retained(tmp_path):
     """The v3 recoverability change must not relax the legacy single report."""
 
