@@ -61,6 +61,7 @@ from modeling_team.platform_scope import PlatformScope
 from modeling_team.runner import CQWriteAdmission, TeamRunner
 from modeling_team.staged_decisions import (
     StagedSubmissionRejection,
+    build_attempt_proof,
     build_submission_intent,
     build_submission_receipt,
     load_analysis_conclusions,
@@ -821,7 +822,15 @@ def _checkpoint_events(runner: TeamRunner) -> list[dict]:
     return _read_evidence(runner, "checkpoints")
 
 
-def _settled_apply_intent(runner: TeamRunner, ordinal: int = 1, mode: str = "apply") -> None:
+def _settled_apply_intent(
+    runner: TeamRunner,
+    ordinal: int = 1,
+    mode: str = "apply_atomic",
+    *,
+    proof: bool = True,
+    attempt_status: str | None = None,
+    **proof_overrides,
+) -> None:
     intent = build_submission_intent(
         ordinal,
         idempotency_key=f"idem-{ordinal}",
@@ -839,6 +848,55 @@ def _settled_apply_intent(runner: TeamRunner, ordinal: int = 1, mode: str = "app
             ordinal, intent, batch_id=f"platform-batch-{ordinal}", response_digest="sha256:" + "1" * 64
         ),
     )
+    # The real flow leaves a Runner-written attempt proof in host evidence;
+    # the lean receipt alone never carries the platform Attempt status.
+    if proof:
+        _append_intent_proof(
+            runner.run.root,
+            ordinal,
+            mode=mode,
+            attempt_status=attempt_status
+            or ("applied" if mode == "apply_atomic" else "validated"),
+            **proof_overrides,
+        )
+
+
+def _append_intent_proof(
+    run_root,
+    ordinal: int,
+    *,
+    mode: str = "apply_atomic",
+    attempt_status: str = "applied",
+    **overrides,
+) -> None:
+    """Append one Runner-shaped attempt-proof record to the host evidence."""
+
+    proof = build_attempt_proof(
+        intent_ordinal=ordinal,
+        receipt_ordinal=ordinal,
+        plan_ref=None,
+        projection_digest=None,
+        batch={
+            "client_batch_id": f"cb-{ordinal}",
+            "mode": mode,
+            "idempotency_key": f"idem-{ordinal}",
+        },
+        result={
+            "batch_id": f"platform-batch-{ordinal}",
+            "attempt_id": f"attempt-{ordinal}",
+            "mode": mode,
+            "attempt_status": attempt_status,
+            "content_hash": "sha256:" + "2" * 64,
+            "idempotency_key": f"idem-{ordinal}",
+        },
+        response_digest="sha256:" + "1" * 64,
+    )
+    assert proof is not None, f"fixture proof must satisfy the proof contract (mode={mode})"
+    proof.update(overrides)
+    path = run_root / "evidence" / "staged-decisions.jsonl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps({**proof, "recorded_at": "2026-10-05T03:32:12.701068Z"}) + "\n")
 
 
 class _SettledTransport:
@@ -1323,7 +1381,7 @@ def test_conclusion_archives_ride_along_with_the_staged_material(tmp_path):
 
 
 def test_m03_apply_and_dry_run_receipts_are_distinguishable_states():
-    for mode, expected in (("apply", "applied"), ("dry_run", "validated_not_applied")):
+    for mode, expected in (("apply_atomic", "applied"), ("dry_run", "validated_not_applied")):
         harness = _CheckpointRunner()
         try:
             runner = harness.prepare()
@@ -1337,6 +1395,60 @@ def test_m03_apply_and_dry_run_receipts_are_distinguishable_states():
             assert position["batch_id"] == "platform-batch-1"
         finally:
             harness.cleanup()
+
+
+def test_m03_applied_state_requires_a_bound_applied_attempt_proof():
+    # The lean receipt never carries the Attempt status, so a missing proof —
+    # or one whose status is validated/failed, or whose bindings (response
+    # digest, ordinals, batch) point at another write — leaves the position
+    # unclosed; mode apply_atomic plus a receipt alone must not read applied.
+    cases = [
+        ("no-proof", dict(proof=False)),
+        ("validated-apply", dict(attempt_status="validated")),
+        ("validation-failed-apply", dict(attempt_status="validation_failed")),
+        ("failed-apply", dict(attempt_status="failed")),
+        ("wrong-response-digest", dict(response_digest="sha256:" + "3" * 64)),
+        ("wrong-intent-ordinal", dict(intent_ordinal=7)),
+        ("wrong-batch-id", dict(batch_id="platform-batch-9")),
+    ]
+    for name, kwargs in cases:
+        harness = _CheckpointRunner()
+        try:
+            runner = harness.prepare()
+            _settled_apply_intent(runner, ordinal=1, mode="apply_atomic", **kwargs)
+            record = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
+            assert record["status"] == "saved", name
+            position = _read_manifest(runner.run.root, record["checkpoint_id"])[
+                "write_positions"
+            ]["positions"][0]
+            assert position["state"] == "validated_not_applied", name
+        finally:
+            harness.cleanup()
+
+
+def test_m03_proof_written_after_a_save_never_flips_that_checkpoint():
+    # A checkpoint is a point-in-time record: a proof appended after the save
+    # cannot rewrite the saved manifest, and only a later save observes it.
+    harness = _CheckpointRunner()
+    try:
+        runner = harness.prepare()
+        _settled_apply_intent(runner, proof=False)
+        first = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
+        first_manifest = _read_manifest(runner.run.root, first["checkpoint_id"])
+        assert first_manifest["write_positions"]["positions"][0]["state"] == (
+            "validated_not_applied"
+        )
+        _append_intent_proof(runner.run.root, 1)
+        second = _outer_save(runner, CHECKPOINT_KIND_MATERIALIZATION_PROGRESS)
+        assert _read_manifest(runner.run.root, first["checkpoint_id"])[
+            "write_positions"
+        ]["positions"][0]["state"] == ("validated_not_applied")
+        assert second["checkpoint_id"] != first["checkpoint_id"]
+        assert _read_manifest(runner.run.root, second["checkpoint_id"])[
+            "write_positions"
+        ]["positions"][0]["state"] == "applied"
+    finally:
+        harness.cleanup()
 
 
 def test_m07_write_claiming_save_waits_for_in_flight_and_unknown_writes(monkeypatch):

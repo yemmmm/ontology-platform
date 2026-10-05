@@ -28,8 +28,9 @@ from modeling_team.competency_questions import content_digest
 from modeling_team.contracts import repository_root
 from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.staged_decisions import (
-    build_submission_intent, build_submission_receipt, mark_intent_status,
-    staged_decision_artifact_paths, write_submission_intent, write_submission_receipt,
+    build_attempt_proof, build_submission_intent, build_submission_receipt,
+    mark_intent_status, staged_decision_artifact_paths, write_submission_intent,
+    write_submission_receipt,
 )
 from modeling_team.tests.test_r3011_acceptance import _freeze, _question
 
@@ -176,10 +177,33 @@ def test_real_early_consumer_without_handoff_attempt_or_production_transition(mo
                 (run / 'state.json').write_text('{"state":"RUNNING"}')
                 intent = build_submission_intent(1,
                     idempotency_key=token+'-apply-initial',client_batch_id=token+'-initial',
-                    session_id=build['id'],mode='apply',commands=items,value_traces=[],l3_nodes=[])
+                    session_id=build['id'],mode='apply_atomic',commands=items,value_traces=[],l3_nodes=[])
                 write_submission_intent(run,mark_intent_status(intent,'receipted'))
                 write_submission_receipt(run,build_submission_receipt(1,intent,
                     batch_id=applied['batch_id'],response_digest=content_digest(applied)))
+                # The lean receipt alone never proves the write applied: seed
+                # the Runner-shaped applied attempt proof bound to it. The
+                # proof needs the read-back content hash, which the attempt
+                # response itself never carries — read the batch detail like
+                # the forwarder's verification pass does.
+                readback = client.get(
+                    f"/api/modeling-batches/{applied['batch_id']}")
+                assert readback.status_code == 200, readback.text
+                proof = build_attempt_proof(
+                    intent_ordinal=1, receipt_ordinal=1, plan_ref=None,
+                    projection_digest=None,
+                    batch={'client_batch_id':token+'-initial','mode':'apply_atomic',
+                           'idempotency_key':token+'-apply-initial'},
+                    result={'batch_id':applied['batch_id'],'attempt_id':applied['attempt_id'],
+                            'mode':'apply_atomic','attempt_status':'applied',
+                            'content_hash':readback.json()['content_hash'],
+                            'idempotency_key':token+'-apply-initial'},
+                    response_digest=content_digest(applied))
+                assert proof is not None
+                (run / 'evidence').mkdir(exist_ok=True)
+                with (run / 'evidence/staged-decisions.jsonl').open('a', encoding='utf-8') as handle:
+                    handle.write(json.dumps({**proof,
+                        'recorded_at':'2026-10-05T03:32:12.701068Z'})+'\n')
                 staged = staged_decision_artifact_paths(run)
                 paths = [source]+[p.relative_to(run).as_posix() for name in
                     ('intents_dir','receipts_dir') for p in staged[name].glob('*.json')]

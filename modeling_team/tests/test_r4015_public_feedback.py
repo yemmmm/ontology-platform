@@ -193,7 +193,7 @@ def test_missing_checkpoint_or_dry_run_has_accurate_unexecuted_feedback(tmp_path
             artifact = next((run_root / "checkpoints" / checkpoint / "host-private" / "value-semantics/submission-receipts").glob("*.json"))
             artifact.unlink()
         else:
-            _settled_apply_intent(SimpleNamespace(run=SimpleNamespace(root=run_root)), mode="dry-run")
+            _settled_apply_intent(SimpleNamespace(run=SimpleNamespace(root=run_root)), mode="dry_run")
     code, record, run_root, _, captured, _, forwarder = execute_feedback(
         tmp_path, monkeypatch, checkpoint_mutator=unavailable)
     assert code == 1 and record["status"] == "not-executed"

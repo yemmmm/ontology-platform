@@ -2879,6 +2879,53 @@ def read_attempt_proofs(run_root: Path) -> list[dict[str, Any]]:
     return proofs
 
 
+def applied_attempt_proof(
+    run_root: Path,
+    *,
+    intent: Mapping[str, Any],
+    receipt: Mapping[str, Any] | None,
+) -> Mapping[str, Any] | None:
+    """The Runner-recorded proof that this receipted apply intent applied.
+
+    A staged receipt is lean by contract and never carries the platform
+    Attempt status, so ``apply_atomic`` plus a receipt is not an applied
+    write (a failed or validation-rejected attempt also leaves a receipt).
+    The only closing evidence is a Runner-written attempt proof bound to
+    this exact intent/receipt identity — ordinals, idempotency key, batch,
+    plan digests and the response digest — whose ``attempt_status`` reads
+    ``applied``.  A validated, failed, missing or mismatched proof leaves
+    the write unclosed (``None``); nothing is inferred from the mode or
+    from any role claim.
+    """
+
+    if intent.get("mode") != "apply_atomic" or receipt is None:
+        return None
+    key = intent.get("idempotency_key")
+    if not _nonempty(key) or receipt.get("idempotency_key") != key:
+        return None
+    bindings = {
+        "intent_ordinal": intent.get("ordinal"),
+        "receipt_ordinal": receipt.get("ordinal"),
+        "idempotency_key": key,
+        "batch_id": receipt.get("batch_id"),
+        "response_digest": receipt.get("response_digest"),
+    }
+    optional = {
+        field: receipt.get(field)
+        for field in ("plan_ref", "projection_digest")
+        if receipt.get(field) is not None
+    }
+    for proof in read_attempt_proofs(run_root):
+        if proof.get("attempt_status") != "applied" or proof.get("mode") != "apply_atomic":
+            continue
+        if any(proof.get(field) != value for field, value in bindings.items()):
+            continue
+        if any(proof.get(field) != value for field, value in optional.items()):
+            continue
+        return proof
+    return None
+
+
 def unified_dry_run_proof_issue(
     run_root: Path,
     batch: Mapping[str, Any],
@@ -3174,6 +3221,7 @@ __all__ = [
     "StagedSubmissionRejection",
     "adjudicate_unknown_intent",
     "build_approval_projection",
+    "applied_attempt_proof",
     "build_attempt_proof",
     "build_batch_projection",
     "build_decision_binding",

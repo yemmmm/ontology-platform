@@ -16,8 +16,8 @@ from .checkpoints import (
 from .competency_questions import content_digest, public_projection, reload_frozen_pool
 from .contracts import TeamConfigurationError
 from .staged_decisions import (
-    StagedDecisionArtifactError, read_submission_intents, read_submission_receipts,
-    staged_decision_artifact_paths, staged_intent_receipt_issues,
+    StagedDecisionArtifactError, applied_attempt_proof, read_submission_intents,
+    read_submission_receipts, staged_decision_artifact_paths, staged_intent_receipt_issues,
 )
 
 
@@ -35,11 +35,12 @@ def observe_write_tail(run_root: Path) -> dict:
         _unavailable("staged artifact unreadable; use the existing reconciliation path: " + str(exc))
     if issues:
         _unavailable("staged write reconciliation required: " + issues[0].reason_code)
-    receipt_ordinals = {item.get("intent_ordinal") for item in receipts}
+    receipt_by_intent = {item.get("intent_ordinal"): item for item in receipts}
     if any(item.get("status") not in {"receipted", "rejected"} for item in intents):
         _unavailable("pending or unknown write; settle through the existing write path")
-    if not any(item.get("mode") == "apply" and item.get("status") == "receipted"
-               and item.get("ordinal") in receipt_ordinals for item in intents):
+    if not any(applied_attempt_proof(run_root, intent=item,
+                                     receipt=receipt_by_intent.get(item.get("ordinal")))
+               is not None for item in intents):
         _unavailable("no confirmed applied write; dry-run alone is not a consumable chain")
     return {"digest": content_digest({"intents": intents, "receipts": receipts}),
             "intent_count": len(intents), "receipt_count": len(receipts)}

@@ -136,6 +136,7 @@ from .staged_decisions import (
     staged_intent_receipt_issues,
     staged_stage3_issue,
     UNIFIED_SUBMISSION_RECEIPT_SCHEMA,
+    applied_attempt_proof,
     build_attempt_proof,
     unified_approval_issue,
     unified_candidate_issue,
@@ -10315,9 +10316,19 @@ class TeamRunner:
                 if intent.get("status") == "unknown":
                     state = "unknown"
                 elif receipt is not None or intent.get("status") == "receipted":
-                    # dry-run validated is NOT applied (requirement §阶段 4).
+                    # dry-run validated is NOT applied (requirement §阶段 4),
+                    # and the lean staged receipt never carries the platform
+                    # Attempt status: only a Runner-recorded applied attempt
+                    # proof bound to this intent/receipt identity closes the
+                    # write as applied (a failed or rejected apply also leaves
+                    # a receipt, so mode alone never decides).
                     state = (
-                        "applied" if intent.get("mode") == "apply" else "validated_not_applied"
+                        "applied"
+                        if applied_attempt_proof(
+                            self.run.root, intent=intent, receipt=receipt
+                        )
+                        is not None
+                        else "validated_not_applied"
                     )
                 elif intent.get("status") == "rejected":
                     # Definite pre-write refusal: closed without a receipt and
