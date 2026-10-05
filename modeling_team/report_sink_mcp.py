@@ -57,6 +57,15 @@ CQ_FAILURE_LAYERS = (
     "collaboration/routing",
     "runtime/infrastructure",
 )
+# Judge verdicts whose canonical ``failure_layer`` is empty.  The wire accepts
+# an omitted ``failure_layer`` for exactly these verdicts (and for every
+# Platform Examiner status, where ``None`` is always legal) and normalizes it
+# to ``None``; every other state still has to name one of ``CQ_FAILURE_LAYERS``.
+# 2026-10-05 public judge report-contract failure: the provider tool path never
+# produced the one advertised empty spelling (literal JSON null in a required
+# property) in 49 submissions -- it dropped the key or sent the string "None" --
+# so the unreachable contract, not the verdict, ended the session.
+CQ_EMPTY_LAYER_VERDICTS = ("pass", "question-answer-review")
 BATCH_EXAMINER_FIELDS = [
     "schema_version",
     "batch_id",
@@ -92,8 +101,24 @@ def _validate_batch_payload(
     if (kind == "platform") is not expected_platform:
         raise ValueError("v3 batch report role does not match the sink kind")
     fields = BATCH_EXAMINER_FIELDS if expected_platform else BATCH_VERDICT_FIELDS
-    if not isinstance(value, Mapping) or set(value) != set(fields):
+    if not isinstance(value, Mapping):
         raise ValueError("v3 batch report fields drift")
+    # The wire accepts an omitted ``failure_layer`` only where the canonical
+    # value is empty (judge pass/question-answer-review, any examiner status)
+    # and normalizes it to ``None``: the Host-side verdict semantics stay the
+    # sole enforcement of which state may carry an empty layer.
+    layer_optional = expected_platform or value.get("verdict") in CQ_EMPTY_LAYER_VERDICTS
+    optional_fields = set(fields) - {"failure_layer"} if layer_optional else set(fields)
+    if set(value) not in (set(fields), optional_fields):
+        missing = set(fields) - set(value)
+        if missing == {"failure_layer"}:
+            raise ValueError(
+                "v3 batch report failure_layer is required for verdict "
+                f"{value.get('verdict')!r}: set it to one of {list(CQ_FAILURE_LAYERS)}"
+            )
+        raise ValueError("v3 batch report fields drift")
+    if "failure_layer" not in value:
+        value = {**value, "failure_layer": None}
     if value["schema_version"] != CQ_BATCH_REPORT_SCHEMA:
         raise ValueError("v3 batch report schema is invalid")
     if not isinstance(value["batch_id"], str) or not value["batch_id"]:
@@ -127,7 +152,12 @@ def _validate_batch_payload(
             raise ValueError("v3 batch report note is invalid")
     layer = value["failure_layer"]
     if layer is not None and layer not in CQ_FAILURE_LAYERS:
-        raise ValueError("v3 batch report failure_layer is invalid")
+        raise ValueError(
+            "v3 batch report failure_layer is invalid: use JSON null or omit "
+            "the field when the layer is empty (pass/question-answer-review), "
+            f"never a string such as {layer!r}; otherwise one of "
+            f"{list(CQ_FAILURE_LAYERS)}"
+        )
     return dict(value)
 
 
@@ -318,9 +348,19 @@ def _v3_batch_report_schema(*, platform: bool) -> dict[str, Any]:
         "failure_layer": {
             "type": ["string", "null"],
             "enum": [*CQ_FAILURE_LAYERS, None],
+            "description": (
+                "Failure layer, or an empty layer as the JSON null value or an "
+                "omitted field (judge: only verdict pass and question-answer-review "
+                "may be empty; non-pass verdicts name one of the enum layers). "
+                "Never send a string such as \"None\" or \"\"."
+            ),
         },
     }
-    required = ["schema_version", "batch_id", "question_id", "failure_layer"]
+    # ``failure_layer`` stays deliberately out of ``required``: the only legal
+    # empty spelling must stay reachable for provider tool paths that cannot
+    # emit an explicit JSON null (2026-10-05 public judge contract failure);
+    # the sink canonicalizes an omitted empty layer to ``None``.
+    required = ["schema_version", "batch_id", "question_id"]
     if platform:
         properties.update(
             {

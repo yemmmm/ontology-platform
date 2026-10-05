@@ -1390,7 +1390,11 @@ def validate_examiner_report(payload: Any, *, question_ids: list[str]) -> dict[s
             "cq_freeze_schema_mismatch",
             f"{obj}.failure_layer is invalid",
             obj=obj,
-            retry=f"use null or one of {list(CQ_FAILURE_LAYERS)}",
+            retry=(
+                "use the JSON null value or omit the field for an empty layer, "
+                f"never a string such as {report['failure_layer']!r}; otherwise "
+                f"one of {list(CQ_FAILURE_LAYERS)}"
+            ),
         )
     return dict(report)
 
@@ -1442,7 +1446,11 @@ def validate_acceptance_verdict(payload: Any, *, question_ids: list[str]) -> dic
             "cq_freeze_schema_mismatch",
             f"{obj}.failure_layer is invalid",
             obj=obj,
-            retry=f"use null or one of {list(CQ_FAILURE_LAYERS)}",
+            retry=(
+                "use the JSON null value or omit the field for an empty layer "
+                f"(pass/question-answer-review), never a string such as {layer!r}; "
+                f"otherwise one of {list(CQ_FAILURE_LAYERS)}"
+            ),
         )
     # A pure question/answer review keeps the layer empty and must not be
     # mis-attributed to modeling quality (D7 / M14).
@@ -1472,7 +1480,7 @@ def validate_acceptance_verdict(payload: Any, *, question_ids: list[str]) -> dic
             "cq_freeze_schema_mismatch",
             f"{obj} verdict pass must keep failure_layer empty",
             obj=obj,
-            retry="set failure_layer to null for a pass verdict",
+            retry="set failure_layer to the JSON null value or omit it for a pass verdict",
         )
     return dict(verdict)
 

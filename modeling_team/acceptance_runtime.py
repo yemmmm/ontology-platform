@@ -880,7 +880,15 @@ class V3BatchReportContract:
         try:
             validated = validator(report, question_ids=self.question_ids)
         except ValueError as exc:
-            raise ChildRuntimeError(f"v3 acceptance batch report is invalid: {exc}") from exc
+            # Surface the typed ``retry`` guidance too: the 2026-10-05 public
+            # judge session iterated 49 rejections whose repair hint was dropped
+            # here, leaving "must keep failure_layer empty" without a submittable
+            # spelling.
+            retry = getattr(exc, "retry", "")
+            detail = f"v3 acceptance batch report is invalid: {exc}"
+            if retry:
+                detail += f"; retry: {retry}"
+            raise ChildRuntimeError(detail) from exc
         if self.role == CQ_ACCEPTANCE_PLATFORM_ROLE and validated.get(
             "question_content_version"
         ) != self.content_versions.get(question_id):

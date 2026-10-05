@@ -1008,3 +1008,117 @@ def test_the_v3_sink_repeats_only_the_canonical_verdict_states():
                 question_ids=["cq-1"],
                 role="acceptance-judge",
             )
+
+
+# --- 2026-10-05 public judge report-contract failure: reachable empty layer ----
+#
+# glm-5.3-flash/high burned 49 v3 judge submissions against PAN-002: a pass must
+# carry ``failure_layer`` empty, but the wire advertised it as required+nullable
+# and rejected both alternate spellings the provider tool path produced (the
+# dropped key and the string "None").  Literal JSON null never arrived, so the
+# only legal spelling was unreachable.  The fix keeps every Host-side verdict
+# guard and makes the wire accept an omitted empty layer for exactly the states
+# whose canonical layer is empty.
+
+
+def test_the_v3_judge_wire_allows_omitting_the_empty_failure_layer():
+    """The bridge must canonicalize an omitted ``failure_layer`` to ``None`` for
+    exactly the empty-legal verdicts, so a provider that drops null arguments
+    can still submit a legal pass or question review."""
+    from modeling_team import report_sink_mcp
+
+    advertised = report_sink_mcp._v3_batch_report_schema(platform=False)
+    assert "failure_layer" not in advertised["required"]
+    assert "failure_layer" in advertised["properties"]
+    for verdict in ("pass", "question-answer-review"):
+        payload = _judge_verdict(verdict, "modeling-quality")
+        del payload["failure_layer"]
+        accepted = report_sink_mcp._validate_batch_payload(
+            payload,
+            kind="acceptance",
+            batch_id="batch-r3011",
+            question_ids=["cq-1"],
+            role="acceptance",
+        )
+        assert accepted["failure_layer"] is None
+        assert set(accepted) == set(report_sink_mcp.BATCH_VERDICT_FIELDS)
+
+
+def test_the_v3_platform_wire_allows_omitting_the_empty_failure_layer():
+    """``None`` is legal for every examiner status host-side, so an omitted
+    layer canonicalizes to ``None`` there too."""
+    from modeling_team import report_sink_mcp
+
+    advertised = report_sink_mcp._v3_batch_report_schema(platform=True)
+    assert "failure_layer" not in advertised["required"]
+    payload = {
+        "schema_version": CQ_BATCH_REPORT_SCHEMA,
+        "batch_id": "batch-r3011",
+        "question_id": "cq-1",
+        "question_content_version": 1,
+        "answer": "the retained response states it",
+        "evidence_refs": ["resource-1"],
+        "explicit_unknown": [],
+        "status": "completed",
+        "reason": "answered from the retained read",
+    }
+    accepted = report_sink_mcp._validate_batch_payload(
+        payload,
+        kind="platform",
+        batch_id="batch-r3011",
+        question_ids=["cq-1"],
+        role="platform-examiner",
+    )
+    assert accepted["failure_layer"] is None
+    assert set(accepted) == set(report_sink_mcp.BATCH_EXAMINER_FIELDS)
+
+
+def test_the_v3_judge_wire_still_requires_a_layer_for_non_pass_verdicts():
+    """An omitted layer on a verdict that must name its layer is rejected with
+    the required layers spelled out, never silently emptied."""
+    from modeling_team import report_sink_mcp
+
+    for verdict in CQ_REQUIRED_FAILURE_LAYERS:
+        payload = _judge_verdict(verdict, "modeling-quality")
+        del payload["failure_layer"]
+        with pytest.raises(ValueError, match="failure_layer is required"):
+            report_sink_mcp._validate_batch_payload(
+                payload,
+                kind="acceptance",
+                batch_id="batch-r3011",
+                question_ids=["cq-1"],
+                role="acceptance",
+            )
+
+
+def test_the_v3_wire_rejection_names_the_legal_empty_layer_spellings():
+    """The string "None" (and any other non-layer string) stays invalid, and
+    the rejection now names both legal empty spellings so the next submission
+    is a repair, not another guess."""
+    from modeling_team import report_sink_mcp
+
+    with pytest.raises(ValueError, match="JSON null"):
+        report_sink_mcp._validate_batch_payload(
+            _judge_verdict("pass", "None"),
+            kind="acceptance",
+            batch_id="batch-r3011",
+            question_ids=["cq-1"],
+            role="acceptance",
+        )
+    with pytest.raises(ValueError, match="JSON null"):
+        report_sink_mcp._validate_batch_payload(
+            _judge_verdict("pass", ""),
+            kind="acceptance",
+            batch_id="batch-r3011",
+            question_ids=["cq-1"],
+            role="acceptance",
+        )
+
+
+def test_the_judge_instructions_name_the_empty_layer_submission_spelling():
+    """The authoritative judge instructions must say how to submit an empty
+    layer: JSON null or an omitted field for pass/question-answer-review."""
+    from modeling_team.__main__ import _CQ_JUDGE_ROLE_INSTRUCTIONS
+
+    assert "JSON null" in _CQ_JUDGE_ROLE_INSTRUCTIONS
+    assert "omit" in _CQ_JUDGE_ROLE_INSTRUCTIONS

@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,6 +18,7 @@ import pytest
 
 from modeling_team.acceptance_runtime import (
     PLATFORM_PROXY_READ_TOOLS,
+    ChildRuntimeError,
     ReportSinkServer,
     ScopedReadProxy,
     V3BatchReportContract,
@@ -221,6 +223,19 @@ def test_v3_judge_sink_latches_the_same_way_without_a_platform_read(tmp_path):
         assert [report["question_id"] for report in submit.calls] == ["cq-1", "cq-2"]
     finally:
         server.stop()
+
+
+def test_v3_verdict_rejection_detail_carries_the_retry_spelling():
+    """2026-10-05 public judge failure: the typed ``retry`` guidance was dropped
+    when the contract wrapped the validator error, so the judge only ever saw
+    "pass must keep failure_layer empty" without a submittable spelling.  The
+    wrap must surface the retry text."""
+    packet = _batch_packet(role="acceptance")
+    contract = _batch_contract("acceptance", packet)
+    attributed = _verdict_entry(packet.batch_id, "cq-1")
+    attributed["failure_layer"] = "modeling-quality"
+    with pytest.raises(ChildRuntimeError, match="JSON null"):
+        contract.validate(attributed)
 
 
 def test_legacy_sink_attempt_budget_is_retained(tmp_path):
@@ -722,6 +737,55 @@ def test_v3_partial_reports_survive_the_shared_list_teardown(tmp_path):
     assert [report["question_id"] for report in reports] == ["cq-1"]
     # The shared legacy teardown still removed the private tree it owned.
     assert owned_roots and not Path(owned_roots[0]).exists()
+
+
+def test_v3_wait_ends_promptly_when_the_turn_ends_before_the_batch_completes(tmp_path):
+    """2026-10-05 public judge failure: the judge turn went terminal with an
+    incomplete batch, and the wait loop could only burn the full session
+    deadline over a live-but-idle child.  The child's single turn is the only
+    turn it will ever get, so the existing ``terminal_event`` latch must end
+    the wait with the same ``batch-incomplete`` outcome (partial reports kept)
+    after a short settle, long before the deadline."""
+    from modeling_team.runtimes.codex import (
+        CodexRuntimeAdapter,
+        ExaminerRuntimeBlocked,
+        _CodexChildResource,
+    )
+    from modeling_team.contracts import repository_root
+
+    packet = _batch_packet(role="acceptance")
+    contract = _batch_contract("acceptance", packet)
+    sink, _ = _start_sink(tmp_path, contract=contract, kind="acceptance")
+
+    def factory(spec: dict):
+        resource = _CodexChildResource(spec, None, report_sink=sink)
+        resource.submitted_reports = spec["_submitted_reports"]
+        resource.submitted_reports.extend([_verdict_entry(packet.batch_id, "cq-1")])
+        resource.process = _IdleProcess()
+        # The stdout pump latches this on turn/completed; the turn is over and
+        # no second turn is ever started for a v3 child.
+        resource.terminal_event = True
+        return resource
+
+    adapter = CodexRuntimeAdapter(
+        repository_root=repository_root(), acceptance_child_factory=factory
+    )
+    verdicts: list[dict] = []
+    started = time.monotonic()
+    with pytest.raises(ExaminerRuntimeBlocked) as blocked:
+        adapter.run_v3_acceptance_child(
+            packet,
+            role_instructions="judge the batch in order",
+            reports=verdicts,
+            timeout_seconds=12.0,
+        )
+    elapsed = time.monotonic() - started
+    assert blocked.value.evidence["reason_code"] == "batch-incomplete"
+    assert blocked.value.evidence["turn_terminal"] is True
+    # The partial verdict survived: the batch report can still name what did
+    # land instead of discarding the session.
+    assert [report["question_id"] for report in verdicts] == ["cq-1"]
+    assert elapsed < 8.0
 
 
 def test_v3_child_reports_its_own_teardown_outcome(tmp_path):

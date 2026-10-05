@@ -98,6 +98,13 @@ from .base import (
 # Verified native 0.160.0 turn/start limit across all text input elements.
 _CODEX_MAX_INPUT_TEXT_CHARS = 1_048_576
 
+# A v3 batch child owns exactly one turn, so once its terminal event is latched
+# no further report can arrive (in-flight submits land within this settle
+# window; the legacy accounting grace uses the same bound).  2026-10-05 public
+# judge contract failure: the session waited the full deadline over a live but
+# finished child whose batch could never complete.
+_V3_TERMINAL_SETTLE_SECONDS = 3.0
+
 
 def _v3_judge_lossless_transport(payload: Mapping[str, Any]) -> dict[str, Any]:
     """Encode repeated complete result bodies once, without changing the packet."""
@@ -2251,6 +2258,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
             expected = len(contract.question_ids)
             deadline = time.monotonic() + max(0.1, float(timeout_seconds))
+            terminal_seen_at: float | None = None
             while time.monotonic() < deadline:
                 blocked = getattr(resource, "blocked", None)
                 if isinstance(blocked, ExaminerRuntimeBlocked):
@@ -2279,6 +2287,26 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         role=packet.role,
                         evidence={"reason_code": "child-exited", "reports": count},
                     )
+                # The child's single turn is over and the batch is still
+                # incomplete: after the settle window no further report can
+                # arrive, so end with the same outcome the deadline would
+                # produce (partial reports stay preserved by the ``finally``
+                # below) instead of waiting out the session over a finished
+                # child (2026-10-05 public judge contract failure).
+                if bool(getattr(resource, "terminal_event", False)):
+                    now = time.monotonic()
+                    if terminal_seen_at is None:
+                        terminal_seen_at = now
+                    elif now - terminal_seen_at >= _V3_TERMINAL_SETTLE_SECONDS:
+                        raise ExaminerRuntimeBlocked(
+                            "runtime-infrastructure",
+                            role=packet.role,
+                            evidence={
+                                "reason_code": "batch-incomplete",
+                                "turn_terminal": True,
+                                "reports": len(reports),
+                            },
+                        )
                 time.sleep(0.05)
             raise ExaminerRuntimeBlocked(
                 "runtime-infrastructure",
