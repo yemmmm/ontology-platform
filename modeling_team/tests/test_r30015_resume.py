@@ -2163,6 +2163,130 @@ def test_m31_cq_packet_excludes_host_only_frozen_and_keeps_own_projection(tmp_pa
     assert cq["frozen_pool"]["restored"] is True
 
 
+def test_pending_items_next_steps_stay_inside_each_existing_role_contract(tmp_path):
+    """Field regression: the 2026-10-05 start2 role-handoff defect.
+
+    Broadcasting the host-level pending step to every packet made Protocol
+    open a Build Session without a candidate receipt (the zero-write
+    ``candidate_receipt_required`` rejection) and handed rebind/dry-run/apply
+    duties to the competency-question role.  pending_items stays shared
+    recovery state in every packet, but each role's next_step now restates
+    only its own agent-package contract's slice; the host keeps the
+    orchestration summary.  The CQ branch is stage-true: a restored frozen
+    pool is maintained as-is, and with no pool restored the normal CQ
+    lifecycle still runs -- never a blanket "do nothing".
+    """
+
+    def pending_reconciliation():
+        return {
+            "completed": [],
+            "completed_client_batches": {},
+            "pending_new_dry_run": [
+                {
+                    "origin_run_id": "r3015-src",
+                    "ordinal": 11,
+                    "client_batch_id": "cb-b010",
+                    "idempotency_key": "key-b010",
+                    "mode": "dry_run",
+                    "detail": "dry-run validated, never applied; reuse the "
+                    "plan/semantic approvals and enter a NEW dry-run",
+                }
+            ],
+            "recoverable_new_batch": [],
+        }
+
+    package, run_root = _plan_mapping_manifest(tmp_path)
+    saved = save_checkpoint(
+        run_root, package, source_run_id="r3015-pd", configuration=dict(CONFIGURATION)
+    )
+    manifest = _manifest_of(run_root, saved["checkpoint_id"])
+    packets = build_role_packets(
+        manifest,
+        pending_reconciliation(),
+        [],
+        {"present": False, "valid": [], "invalidated": []},
+        dict(CONFIGURATION),
+    )
+
+    # The pending facts survive in every packet, and the shared-state note
+    # says they grant no capability.
+    for packet in packets.values():
+        ids = {item.get("client_batch_id") for item in packet["pending_items"]}
+        assert "cb-b010" in ids
+        assert any(
+            "grants no role any capability" in line for line in packet["instructions"]
+        )
+    # Only the host packet carries the host-level execution summary.
+    assert "execute pending_items first" in packets["host"]["next_step"]
+    for role in ("coordinator", "modeling", "protocol", "competency-question"):
+        assert "execute pending_items first" not in packets[role]["next_step"]
+        assert "rebind each plan" not in packets[role]["next_step"]
+
+    # Modeling: candidate channel only, never a platform write interface.
+    modeling = packets["modeling"]["next_step"]
+    assert "direct candidate delivery" in modeling
+    assert "never call a platform Build Session or Modeling Batch interface" in modeling
+
+    # Protocol: the platform continuation runs behind the existing candidate
+    # receipt barrier -- without a registered candidate receipt there is no
+    # platform write, so a producer can never bypass the receipt gate.
+    protocol = packets["protocol"]["next_step"]
+    assert "candidate receipt barrier" in protocol
+    assert "candidate_receipt_required" in protocol
+    assert "you make no platform write" in protocol
+
+    # Coordinator: coordinates the contracts, never submits itself.
+    coordinator = packets["coordinator"]["next_step"]
+    assert "Protocol alone performs" in coordinator
+    assert "never call a platform write interface or submit a Modeling" in coordinator
+
+    # CQ with no restored frozen pool: the normal lifecycle still runs, and
+    # pending_items never assigns platform rebind/dry-run/apply to it.
+    cq = packets["competency-question"]["next_step"]
+    assert "continue your actual CQ stage" in cq
+    assert "never assigns you platform rebind, dry-run or apply work" in cq
+
+    # A restored frozen pool flips only the CQ branch: maintain as-is, still
+    # no platform duties and no re-interview/review/freeze.
+    frozen_root = tmp_path / "frozen-packet-run"
+    frozen_source = "competency-questions/frozen/freeze-0001.json"
+    _write_json(frozen_root / frozen_source, {"source": frozen_source})
+    frozen_saved = save_checkpoint(
+        frozen_root,
+        StagePackage(
+            kind=CHECKPOINT_KIND_CQ_FROZEN,
+            scope_refs={"freeze_id": "f-resume"},
+            artifacts=[
+                CheckpointArtifactSpec(
+                    source=frozen_source,
+                    owner="host",
+                    visible_to=("host",),
+                    host_private=True,
+                )
+            ],
+            stage_facts={},
+            platform_bindings={
+                "project_id": "proj-r3015", "ontology_ids": ["onto-r3015"]
+            },
+            write_positions={},
+        ),
+        source_run_id="r3015-pdf",
+        configuration=dict(CONFIGURATION),
+    )
+    frozen_packets = build_role_packets(
+        _manifest_of(frozen_root, frozen_saved["checkpoint_id"]),
+        pending_reconciliation(),
+        [],
+        {"present": False, "valid": [], "invalidated": []},
+        dict(CONFIGURATION),
+    )
+    frozen_cq = frozen_packets["competency-question"]["next_step"]
+    assert "already restored" in frozen_cq
+    assert "without re-interviewing, re-reviewing or re-freezing" in frozen_cq
+    assert "never assigns you platform rebind, dry-run or apply work" in frozen_cq
+    assert "execute pending_items first" not in frozen_cq
+
+
 # --- exposure union (M32) ----------------------------------------------------------
 
 

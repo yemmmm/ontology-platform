@@ -1919,6 +1919,85 @@ def next_step_with_pending(
     )
 
 
+# The start2 handoff defect (2026-10-05): broadcasting the host-level pending
+# text above to every role made Protocol open a Build Session without a
+# candidate receipt and handed rebind/dry-run/apply duties to the
+# competency-question role.  Each production role instead gets only its own
+# agent-package contract's slice of the same continuation; pending_items
+# stays shared team state that grants no role a capability.
+_PENDING_NEXT_STEP_BY_ROLE = {
+    "coordinator": (
+        "coordinate the outstanding pending_items inside the existing role "
+        "contracts: Modeling continues the work through its direct candidate "
+        "delivery, Protocol alone performs the platform rebind, NEW dry-run "
+        "and apply through its authorized mechanical calls behind the "
+        "candidate receipt barrier, and competency-question continues its "
+        "stage-appropriate CQ lifecycle; you coordinate and adjudicate, and "
+        "still never call a platform write interface or submit a Modeling "
+        "Batch yourself"
+    ),
+    "modeling": (
+        "continue the outstanding work through your existing candidate "
+        "channel only: check this packet's completed scope and pending facts, "
+        "then hand the continuation or corrected candidate to Protocol "
+        "through direct candidate delivery; never call a platform Build "
+        "Session or Modeling Batch interface yourself"
+    ),
+    "protocol": (
+        "the platform continuation of pending_items -- Build Session "
+        "creation, plan/client_batch_id/idempotency-key rebind, a NEW "
+        "dry-run, then apply -- runs only through your authorized "
+        "mechanical translation calls and only after the current-run "
+        "candidate receipt barrier has registered the Modeling candidate; "
+        "while the platform reports candidate_receipt_required the barrier "
+        "is still closed and you make no platform write"
+    ),
+}
+
+
+def _pending_role_next_step(
+    role: str,
+    base_next_step: Any,
+    pending: list[dict[str, Any]],
+    *,
+    frozen_pool_restored: bool | None = None,
+) -> Any:
+    """Role-scoped continuation step once reconciliation found pending work.
+
+    The host-level :func:`next_step_with_pending` text stays the host
+    packet's own orchestration summary.  Every production role gets only its
+    own contract's slice of the same continuation, and the
+    competency-question role gets a stage-true statement: an already-restored
+    frozen pool is maintained as-is; with none restored its normal CQ
+    lifecycle -- ending in the freeze this scope still needs -- still runs.
+    With no pending work every packet keeps the checkpoint's own stage next
+    step unchanged.
+    """
+
+    if not pending:
+        return base_next_step
+    if role == "competency-question":
+        step = (
+            "the frozen pool for this scope is already restored: own the "
+            "normal CQ lifecycle and maintain it without re-interviewing, "
+            "re-reviewing or re-freezing"
+            if frozen_pool_restored
+            else "continue your actual CQ stage for this continuation: no "
+            "frozen pool is restored for this scope yet, so the normal CQ "
+            "lifecycle -- ending in the freeze this scope still needs -- "
+            "still runs"
+        )
+        step += (
+            "; pending_items is shared team state and never assigns you "
+            "platform rebind, dry-run or apply work"
+        )
+    else:
+        step = _PENDING_NEXT_STEP_BY_ROLE[role]
+    if isinstance(base_next_step, str) and base_next_step:
+        step += f"; then {base_next_step}"
+    return step
+
+
 def build_role_packets(
     manifest: Mapping[str, Any],
     reconciliation: Mapping[str, Any],
@@ -1950,6 +2029,7 @@ def build_role_packets(
         for artifact in manifest.get("artifacts") or []
         if isinstance(artifact, Mapping) and artifact.get("host_private")
     ]
+    pending = unfinished_items(reconciliation)
     base = {
         "resume_kind": str(manifest.get("kind")),
         "checkpoint_id": str(manifest.get("checkpoint_id")),
@@ -1958,7 +2038,7 @@ def build_role_packets(
             "completed_operations": len(reconciliation.get("completed") or []),
             "completed_client_batch_ids": forbidden,
         },
-        "pending_items": list(stage_facts.get("pending") or []) + unfinished_items(reconciliation),
+        "pending_items": list(stage_facts.get("pending") or []) + pending,
         "forbidden_resubmissions": forbidden,
         "next_step": next_step_with_pending(stage_facts.get("next_step"), reconciliation),
         "instructions": [
@@ -1966,6 +2046,16 @@ def build_role_packets(
             "completed results referenced above",
             "report reused results as part of your own handoff; do not re-interview "
             "or re-review already frozen/approved material",
+            *(
+                [
+                    "pending_items is shared recovery state naming outstanding "
+                    "work for the whole team; it grants no role any capability "
+                    "beyond its existing contract, and each role acts only "
+                    "inside its own contract"
+                ]
+                if pending
+                else []
+            ),
         ],
     }
     packets: dict[str, dict[str, Any]] = {}
@@ -1973,6 +2063,9 @@ def build_role_packets(
         packets[role] = {
             **base,
             "role": role,
+            "next_step": _pending_role_next_step(
+                role, stage_facts.get("next_step"), pending
+            ),
             "readable_artifacts": public_artifacts,
             "plan_mappings": plan_mappings if role in {"coordinator", "modeling", "protocol"} else [],
             "translation_review": {
@@ -1998,6 +2091,12 @@ def build_role_packets(
     packets["competency-question"] = {
         **base,
         "role": "competency-question",
+        "next_step": _pending_role_next_step(
+            "competency-question",
+            stage_facts.get("next_step"),
+            pending,
+            frozen_pool_restored=bool(frozen_pool_refs),
+        ),
         "readable_artifacts": public_artifacts
         + [
             source
