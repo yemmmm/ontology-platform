@@ -1112,6 +1112,46 @@ def test_write_tail_unrelated_runs_are_refused_fail_closed():
         rmtree(runs_root, ignore_errors=True)
 
 
+def test_write_tail_outside_the_runs_root_is_refused_even_with_a_valid_origin():
+    """The tail must BE a run directory under the runs root, not just claim one.
+
+    The CLI composes ``runs_root / args.write_tail_run_id`` without the host
+    API's run-name regex, so ``../<dir>`` reaches this function as a path
+    outside ``workspaces/modeling-runs``.  A directory there with an otherwise
+    exact valid origin must not be adopted as the write tail: the boundary is
+    the first refusal condition, not the origin's own claims.
+    """
+
+    runs_root = RUNS_ROOT / f"r3015outside-{os.urandom(4).hex()}"
+    outside_root = runs_root.parent / f"r3015outside-tail-{os.urandom(4).hex()}"
+    try:
+        oldest, _tail_run, saved = _seed_dual_source_chain(runs_root)
+        platform = _dual_source_platform()
+
+        # The outside tail is otherwise EXACTLY the accepted shape: dead
+        # state, origin binding o1's real checkpoint id and digest, and the
+        # chain intent the platform readback reconciles.
+        outside_tail = outside_root / "o2"
+        _seed_dual_source_tail(outside_tail, oldest.name, saved)
+        _seed_chain_intent(
+            outside_tail, 2, key="idem-tail", client_batch_id="cb-tail",
+            session_id="session-o2", batch_id="batch-tail",
+        )
+        with pytest.raises(CheckpointError) as refused:
+            prepare_recovery_plan(
+                source_run_root=oldest,
+                checkpoint_id=saved["checkpoint_id"],
+                new_run_id=f"r3015new-{os.urandom(4).hex()}",
+                repository_root=REPO_ROOT,
+                readback=_readback(platform),
+                write_tail_run_root=outside_tail,
+            )
+        assert refused.value.reason_code == "write_tail_unrelated"
+    finally:
+        rmtree(runs_root, ignore_errors=True)
+        rmtree(outside_root, ignore_errors=True)
+
+
 def test_write_tail_checkpoint_binding_must_match_the_requested_package():
     runs_root = RUNS_ROOT / f"r3015bind-{os.urandom(4).hex()}"
     try:

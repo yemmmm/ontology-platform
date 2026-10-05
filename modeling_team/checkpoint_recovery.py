@@ -2495,7 +2495,14 @@ def _resolve_write_tail_run(
     if write_tail_run_root is None:
         return None
     tail = Path(write_tail_run_root)
-    if not tail.is_dir() or tail.resolve() == Path(source_run_root).resolve():
+    if (
+        not tail.is_dir()
+        or tail.resolve() == Path(source_run_root).resolve()
+        # The tail must BE a run directory of this runs root -- the CLI
+        # composes runs_root / <id> without the host API's run-name regex, so
+        # a ../-escaped directory's own origin claims are not boundary proof.
+        or tail.resolve().parent != Path(runs_root).resolve()
+    ):
         raise _reject(
             REASON_WRITE_TAIL_UNRELATED,
             f"the write-tail run {tail.name!r} is not a distinct continuation "
