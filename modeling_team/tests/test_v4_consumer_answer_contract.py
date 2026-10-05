@@ -52,3 +52,20 @@ def test_v3_platform_examiner_contract_has_no_scenario_answer_key():
         "customerConfirmationReference",
     ):
         assert scenario_detail not in prompt
+
+
+def test_v3_platform_examiner_reads_shared_expressions_for_question_relevant_conditions():
+    root = repository_root()
+    prompt = (
+        root / "modeling_team/agent-packages/v3-acceptance-batch/platform-examiner.md"
+    ).read_text(encoding="utf-8")
+
+    required_fragments = (
+        "not bounded by what one returned slice",
+        "expressed as a shared resource outside the current",
+        "absence from the retained returns is not evidence that no",
+        "make only the necessary narrow reads for its shared expression",
+        "question-driven; it never asks for unrelated",
+    )
+    for fragment in required_fragments:
+        assert fragment in prompt

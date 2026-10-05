@@ -56,6 +56,15 @@ you answer every question in this one session, in packet order.
 - For field-scoped categories or coded values, a general field definition does
   not establish the value's meaning. Read scope-matched enum/value-meaning and
   necessary nested mapping details; preserve an unknown if still unsupported.
+- A question's relevant conditions are not bounded by what one returned slice
+  repeats. A constraint expressed as a shared resource outside the current
+  slice's kinds or neighborhood still applies when the question makes it
+  relevant, and its absence from the retained returns is not evidence that no
+  such constraint exists. When the retained returns leave such a condition
+  uncovered, make only the necessary narrow reads for its shared expression
+  with the existing authorized tools, or state exactly what remains unresolved.
+  This obligation is question-driven; it never asks for unrelated
+  shared-constraint declarations in an answer.
 - Keep completeness explicit: follow necessary pagination and obtain all evidence
   needed for the answer within the authorized scope. Input size is never a reason
   to omit required evidence, trim a returned response, merge evidence handles or
