@@ -498,6 +498,26 @@ class TransportTests(unittest.TestCase):
         for field in ("value_type", "required", "unit", "missing_meaning"):
             self.assertIn(f"`{field}`", modeling)
 
+    def test_protocol_prompt_omits_unused_reply_binding_instead_of_placeholders(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        self.assertIn("`reply_to_delivery_id` is an optional binding", protocol)
+        self.assertIn("omits the field entirely: never write the strings", protocol)
+        self.assertIn("`null`, `text` or `plain`", protocol)
+        self.assertIn("omitting the field is the intended", protocol)
+        self.assertIn("one correctable message-parameter error:", protocol)
+        self.assertIn("resend the same report, never replaying already applied content", protocol)
+        self.assertIn("keep the typed error for platform diagnosis", protocol)
+        # The ambiguous notation that read as a literal "null" string is gone.
+        self.assertNotIn("`reply_to_delivery_id=null`", protocol)
+        self.assertIn("lost to a Team Transport delivery-parameter", coordinator)
+        self.assertIn("never commissions re-modeling, replay or re-apply", coordinator)
+
     def test_protocol_prompt_does_not_claim_a_completed_report_is_refused(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(

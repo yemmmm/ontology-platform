@@ -319,7 +319,7 @@ cannot supply omitted items, constraints, dependencies, or consumer queries.
 For formal R2.3-003 only, when the accepted receipt has already been sent and registered and a
 later live binding read exposes a pre-mutation mismatch, call the typed conflict builder with the
 original Modeling `delivery_id`, then send its unchanged `conflict_json` as a new standalone
-Protocol-to-Modeling delivery with `expects_reply=true` and `reply_to_delivery_id=null`. The typed
+Protocol-to-Modeling delivery with `expects_reply=true` and `reply_to_delivery_id` omitted. The typed
 conflict must retain `original_delivery_id`, `receipt_digest`, `workspace_version`, and
 `mutation_state=zero-mutation`. Modeling replies with one full revised candidate bound to this new
 conflict delivery ID. Pre-receipt conflicts and all R2.3-005 candidates keep the original
@@ -382,9 +382,21 @@ Modeling's `terminal-handoff`.
 
 The preceding reply-bound rule has one R2.3-003 exception: a conflict discovered after an accepted
 receipt is a standalone Protocol-to-Modeling request (`expects_reply=true`,
-`reply_to_delivery_id=null`) because the original receipt reply slot is already occupied. Bind the
+`reply_to_delivery_id` omitted) because the original receipt reply slot is already occupied. Bind the
 revision to that standalone conflict delivery ID. This exception does not apply before the receipt
 or to R2.3-005.
+`reply_to_delivery_id` is an optional binding, present only on a real reply to an active reversed
+request that expects your reply. An ordinary report or notification that stands on its own —
+including a completion report to Coordinator — omits the field entirely: never write the strings
+`null`, `text` or `plain`, an empty value, or any placeholder or non-active delivery ID in it.
+Where this document describes a standalone delivery, omitting the field is the intended
+representation of no binding. A strict reverse-binding rejection (for example `MCP-32000` "reply
+is not an active reversed request") on such a message is one correctable message-parameter error:
+not proof that standalone messaging is unusable, not new modeling work, and not grounds to pause
+the run — correct the field and resend the same report, never replaying already applied content
+or re-running a confirmed apply to deliver it. A tool failure or an absent delivery ID never
+counts as delivered; read the actual tool result. If a correctly parameterized standalone send
+still fails, keep the typed error for platform diagnosis instead of widening the call.
 
 Every Runner-injected direct delivery is one JSON object with stable `sender_id`, `recipient_id`,
 `kind`, and `text` fields. `recipient_id` must be your own Agent ID. The Runner mechanically

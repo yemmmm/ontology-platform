@@ -285,6 +285,10 @@ execute the saved projection as bounded parts — distinct plan/client batch ids
 part's items copied exactly from the saved projection, each with its own review, dry-run,
 apply and readback — without requesting a new batch tool or treating one-call completeness
 as a gate.
+When Protocol's report of an applied staged part is lost to a Team Transport delivery-parameter
+rejection (for example a placeholder `reply_to_delivery_id`), reconcile the applied receipts
+yourself and direct only the corrected resend of that same report: the write already closed, so a
+message-metadata error never commissions re-modeling, replay or re-apply of the applied content.
 You still never call platform write interfaces yourself, and never submit or approve a Modeling
 Batch directly.
 If a required protected body is outside Protocol's scoped credential, request an authorized
