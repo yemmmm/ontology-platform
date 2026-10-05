@@ -680,6 +680,174 @@ def test_m19_settled_historical_dry_run_is_not_an_unknown_write():
         rmtree(run_root, ignore_errors=True)
 
 
+def test_dry_run_terminal_validation_failed_is_a_settled_non_write():
+    """Field regression: the 2026-10-05 start2 S2 ``write_unreconciled`` blocker.
+
+    The platform validates a dry-run BEFORE any mutation, so a Batch whose
+    final attempt terminally reads back ``validation_failed`` is a precise
+    platform proof that nothing was written (the real chain: one dry-run
+    attempt, ``recovery.state=not_required``, no applied/in-flight/partial
+    attempt).  That dry-run operation is settled history: it must not keep
+    the write gate closed, must not be queued as a new dry-run or a
+    recoverable batch (a corrected revision through the normal submission
+    path is the repair, and in the real chain it already applied under later
+    client_batch_ids), and a validation_failed attempt inside a Batch that a
+    later apply attempt DID apply stays superseded history with no replay.
+    Every apply-family gate keeps refusing: an apply intent over a
+    validation_failed-only Batch stays blocked, and in-flight/partial
+    attempts still block regardless of intent mode.
+    """
+
+    run_root = RUNS_ROOT / f"r3015vf-{os.urandom(4).hex()}"
+    try:
+        # (a) the real blocker shape: one dry-run operation, one Batch, whose
+        # single attempt terminally failed validation (nothing materialized).
+        _seed_chain_intent(
+            run_root, 1, key="dry-rejected-v1", client_batch_id="cb-rejected-dry",
+            session_id="session-1", mode="dry_run", batch_id="batch-rejected",
+        )
+        # (b) mixed Batch: a rejected dry-run attempt followed by an applied
+        # apply attempt, with the chain's own apply operation over the same
+        # client_batch_id -- the applied result is reused, never replayed.
+        _seed_chain_intent(
+            run_root, 2, key="stage2-dry-v1", client_batch_id="cb-stage2",
+            session_id="session-1", mode="dry_run", batch_id="batch-stage2",
+        )
+        _seed_chain_intent(
+            run_root, 3, key="stage2-apply-v1", client_batch_id="cb-stage2",
+            session_id="session-1", batch_id="batch-stage2",
+        )
+        # (c) the hard gates that must keep refusing.
+        _seed_chain_intent(
+            run_root, 4, key="dry-validating", client_batch_id="cb-validating",
+            session_id="session-1", mode="dry_run", batch_id="batch-validating",
+        )
+        _seed_chain_intent(
+            run_root, 5, key="apply-over-rejected", client_batch_id="cb-apply-rejected",
+            session_id="session-1", batch_id="batch-apply-rejected",
+        )
+        _seed_chain_intent(
+            run_root, 6, key="apply-partial-batch", client_batch_id="cb-partial-apply",
+            session_id="session-1", batch_id="batch-partial-apply",
+        )
+        intents_dir = staged_decision_artifact_paths(run_root)["intents_dir"]
+        before = {
+            path.name: path.read_bytes() for path in sorted(intents_dir.iterdir())
+        }
+        not_required = {"state": "not_required", "safe_to_retry": False}
+        platform = FakeCursorPlatform(
+            session_batches={
+                "session-1": [
+                    _batch(
+                        "batch-rejected",
+                        client_batch_id="cb-rejected-dry",
+                        batch_status="open",
+                        attempts=[
+                            _attempt(
+                                "attempt-rejected",
+                                mode="dry_run",
+                                status="validation_failed",
+                                recovery=not_required,
+                            )
+                        ],
+                    ),
+                    _batch(
+                        "batch-stage2",
+                        client_batch_id="cb-stage2",
+                        attempts=[
+                            _attempt(
+                                "attempt-dry-1",
+                                mode="dry_run",
+                                status="validation_failed",
+                                recovery=not_required,
+                            ),
+                            _attempt(
+                                "attempt-apply-1", mode="apply_atomic", status="applied"
+                            ),
+                        ],
+                    ),
+                    _batch(
+                        "batch-validating",
+                        client_batch_id="cb-validating",
+                        batch_status="open",
+                        attempts=[
+                            _attempt("attempt-validating", mode="dry_run",
+                                     status="validating")
+                        ],
+                    ),
+                    _batch(
+                        "batch-apply-rejected",
+                        client_batch_id="cb-apply-rejected",
+                        batch_status="open",
+                        attempts=[
+                            _attempt(
+                                "attempt-apply-rejected",
+                                mode="apply_atomic",
+                                status="validation_failed",
+                                recovery=not_required,
+                            )
+                        ],
+                    ),
+                    _batch(
+                        "batch-partial-apply",
+                        client_batch_id="cb-partial-apply",
+                        batch_status="partially_applied",
+                        attempts=[
+                            _attempt(
+                                "attempt-partial", mode="apply_atomic",
+                                status="partially_applied"
+                            )
+                        ],
+                    ),
+                ]
+            }
+        )
+        result = reconcile_write_tail(
+            [run_root], read_write_tail([run_root]), _readback(platform),
+            ontology_ids=["onto-r3015"],
+        )
+
+        # (a)+(b): settled non-writing history, never a gate blocker and never
+        # queued for any resubmission.
+        settled = {entry["idempotency_key"] for entry in result["settled_non_write"]}
+        assert settled == {"dry-rejected-v1", "stage2-dry-v1"}
+        rejected = next(
+            entry
+            for entry in result["settled_non_write"]
+            if entry["idempotency_key"] == "dry-rejected-v1"
+        )
+        assert "terminally failed validation before any write" in rejected["detail"]
+        assert "never a resubmission of this batch" in rejected["detail"]
+        assert result["pending_new_dry_run"] == []
+        assert result["recoverable_new_batch"] == []
+        # Settled history creates no unfinished item, so no role packet can be
+        # pushed into replaying the rejected content.
+        assert cr.unfinished_items(result) == []
+
+        # (b): the completion index still comes from the apply operation alone
+        # and still guards the client_batch_id against resubmission.
+        assert {entry.idempotency_key for entry in result["completed"]} == {
+            "stage2-apply-v1"
+        }
+        assert result["completed_client_batches"] == {"cb-stage2": "batch-stage2"}
+
+        # (c): in-flight, apply-over-rejected and partial all keep the gate
+        # closed with the same typed reason.
+        blocked = {entry["idempotency_key"] for entry in result["blocked"]}
+        assert blocked == {"dry-validating", "apply-over-rejected", "apply-partial-batch"}
+        assert all(
+            entry["reason"] == REASON_WRITE_UNRECONCILED for entry in result["blocked"]
+        )
+        assert result["scope_drift"] == []
+        # The reconciliation read the source; it never rewrote it.
+        after = {
+            path.name: path.read_bytes() for path in sorted(intents_dir.iterdir())
+        }
+        assert after == before
+    finally:
+        rmtree(run_root, ignore_errors=True)
+
+
 def test_m21_m26_unattributable_write_is_scope_drift_but_chain_writes_are_not():
     run_root = RUNS_ROOT / f"r3015drift-{os.urandom(4).hex()}"
     try:
@@ -2129,6 +2297,10 @@ def test_m40_contract_writer_and_write_gates_at_the_plan_level():
             _plan(run_root, saved["checkpoint_id"])
         assert unreconciled.value.reason_code == REASON_WRITE_UNRECONCILED
         assert "cannot release it" in unreconciled.value.detail
+        # The first blocked operation is interpolated, never the literal
+        # placeholder ``{first.get('idempotency_key')}``.
+        assert "idem-late" in unreconciled.value.detail
+        assert "{first.get" not in unreconciled.value.detail
     finally:
         rmtree(run_root, ignore_errors=True)
 

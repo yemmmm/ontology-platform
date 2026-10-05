@@ -1448,6 +1448,38 @@ def reconcile_write_tail(
                         }
                     )
                 continue
+            if (
+                intent_mode == "dry_run"
+                and not applied
+                and attempts
+                and attempts[-1].get("attempt_status") == "validation_failed"
+            ):
+                # Field defect (the 2026-10-05 start2 S2 blocker): a dry-run
+                # Batch whose final attempt terminally read back
+                # ``validation_failed`` matched no §5.1 row and fell into the
+                # catch-all blocked refusal.  The platform validates BEFORE
+                # any mutation, so this terminal state is a precise platform
+                # fact that nothing was written -- the same proof class as the
+                # failed_without_side_effects row, never a role claim.  The
+                # rejected content is settled history: its repair is a
+                # corrected revision through the normal submission path
+                # (which already applies under later client_batch_ids), so it
+                # neither keeps the gate closed nor queues a replay of this
+                # batch.  Apply-family intents keep the existing rows: an
+                # apply over a validation_failed Batch stays blocked.
+                settled_non_write.append(
+                    {
+                        **base,
+                        "batch_id": batch.get("batch_id"),
+                        "detail": "historical non-write: the dry-run attempt "
+                        "terminally failed validation before any write "
+                        "(nothing materialized); the rejected content is "
+                        "settled history -- its repair is a corrected "
+                        "revision through the normal submission path, never "
+                        "a resubmission of this batch",
+                    }
+                )
+                continue
             if intent_mode == "dry_run" or (not intent_is_apply and not applied):
                 validated = [
                     attempt
@@ -2367,7 +2399,7 @@ def prepare_recovery_plan(
         raise _reject(
             REASON_WRITE_UNRECONCILED,
             f"{len(reconciliation['blocked'])} chain operation(s) are unknown or "
-            "still in flight (first: {first.get('idempotency_key')}); the write "
+            f"still in flight (first: {first.get('idempotency_key')}); the write "
             "gate stays closed and unknown adjudication hints cannot release it",
             obj=str(first.get("idempotency_key")),
             retryable=True,
