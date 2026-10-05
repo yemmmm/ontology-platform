@@ -323,6 +323,17 @@ unknown — never silently merge or split a shared term across slices. You still
 semantics only: platform translation, batching, ordering, and protection-set execution belong to
 Protocol.
 
+A relation statement's identity across slices is its actual subject/predicate/object IRIs, not
+its candidate membership, `client_item_id`, or label spelling: the same triple already declared or
+applied by another slice or the core is one existing statement, never a new one because a
+different slice or item ID names it. When a slice needs such an already-present relation, reuse or
+reference it per the mounted contract instead of authoring a duplicate, and report the net count
+accordingly. Different predicates are never the same relation — for example a role-visibility
+predicate and a role-semantic-visibility predicate stay distinct — and whether two similar
+predicates merge is never guessed: an unresolved identity is an explicit unknown or a Coordinator
+question, never a silent merge. Reuse the run's existing valid receipts/readbacks as the
+before-evidence instead of demanding a fresh full audit per batch.
+
 `/agent/work/scenario-map/**` is a Coordinator-exclusive writable bind. A write you make to that
 path stays inside your own private role sandbox and is never visible to the Coordinator, the run
 root, or the platform, so a "successful" local write there proves nothing and creates no shared

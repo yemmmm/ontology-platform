@@ -699,6 +699,49 @@ class TransportTests(unittest.TestCase):
         self.assertIn("not a schema description", protocol)
         self.assertIn("existing governed interfaces such as", protocol)
 
+    def test_prompts_adjudicate_cross_slice_relations_by_actual_triples(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        # Issue4: the parts R1 plan was approved with 8 create_relation commands
+        # and expected 656+8=664, but the complete asserted readback settled at
+        # 662/662 — 2 of the 8 SPOs already existed from the immutable core and
+        # the earlier R1 readback, so net new was 6 and every approved SPO was
+        # present with no missing triple and no unknown write.  The defect
+        # treated different client_item_ids as novel relations and command /
+        # normalized-insert counts as the novel statement count.
+        self.assertIn("A relation statement's identity across slices is its actual subject/predicate/object IRIs, not", modeling)
+        self.assertIn("its candidate membership, `client_item_id`, or label spelling", modeling)
+        self.assertIn("never a new one because a", modeling)
+        self.assertIn("reference it per the mounted contract instead of authoring a duplicate", modeling)
+        self.assertIn("Different predicates are never the same relation", modeling)
+        self.assertIn("an unresolved identity is an explicit unknown or a Coordinator", modeling)
+        self.assertIn("before-evidence instead of demanding a fresh full audit per batch.", modeling)
+        self.assertIn("Cross-slice relation reuse and collision are adjudicated on the receipt-backed actual triple", protocol)
+        self.assertIn("a command whose SPO already exists in the asserted set adds zero new unique", protocol)
+        # Command insert counts are not set-growth counts; expected arithmetic
+        # needs qualified before-evidence.
+        self.assertIn("processed command inserts from new unique RDF statements in the set", protocol)
+        self.assertIn("do not announce full-set counts or", protocol)
+        self.assertIn("blindly expect before + command count", protocol)
+        # Post-apply: every approved SPO present under full paging; only a
+        # genuinely missing SPO is a real inconsistency; duplicates explain a
+        # count difference without inventing unknown writes or compensations —
+        # and count mismatch alone is never blanket-safe either.
+        self.assertIn("check each approved SPO is present with full", protocol)
+        self.assertIn("paging eligibility; only a genuinely missing approved SPO is a real inconsistency to investigate.", protocol)
+        self.assertIn("keep the original expected and actual", protocol)
+        self.assertIn("never infer an unknown write or make compensating writes from a", protocol)
+        self.assertIn("never generalize the opposite rule that every count mismatch is safely", protocol)
+        self.assertIn("a real unknown write keeps its existing closed write gate and recovery contract", protocol)
+        # No new audit gate, no replay/delete/payload change.
+        self.assertIn("no new per-batch full-audit gate", protocol)
+        self.assertIn("is created, and no replay, delete or payload change is implied.", protocol)
+
     def test_transport_budget_splits_route_through_the_coordinator_not_new_tools(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(

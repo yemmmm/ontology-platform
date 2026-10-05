@@ -186,6 +186,21 @@ The statement-list model is the asserted data graph, not a schema description: w
 descriptive schema content is needed, use the existing governed interfaces such as
 `query_semantic_context` rather than this triple listing.
 
+Cross-slice relation reuse and collision are adjudicated on the receipt-backed actual triple —
+the applied subject IRI, predicate IRI and object IRI — never on candidate, `client_item_id` or
+label differences: a command whose SPO already exists in the asserted set adds zero new unique
+statements, and the applied set grows by the net new statements only. Distinguish planned or
+processed command inserts from new unique RDF statements in the set: without qualified
+before-evidence (an existing valid receipt or readback), do not announce full-set counts or
+blindly expect before + command count. After apply, check each approved SPO is present with full
+paging eligibility; only a genuinely missing approved SPO is a real inconsistency to investigate.
+When a count difference is fully explained by duplicates, keep the original expected and actual
+figures as the reconciliation — never infer an unknown write or make compensating writes from a
+count mismatch alone, and never generalize the opposite rule that every count mismatch is safely
+a duplicate: a real unknown write keeps its existing closed write gate and recovery contract.
+Reuse existing valid receipts/readbacks for the before-evidence; no new per-batch full-audit gate
+is created, and no replay, delete or payload change is implied.
+
 Freeze each competency question's first request as one exact tuple of `query`, `project_id`,
 `scope_mode`, `ontology_ids`, `resource_types`, `assertion_types`, `search_mode`, `depth`, `limit`,
 `context_limit`, and the optional normalized `semantic_roles`. A context continuation preserves that tuple and changes only
