@@ -868,6 +868,16 @@ fresh run 无恢复来源时进程观察为 unknown。S2 启动类工具在 run 
   每步以 `get_run_status`/`get_run_events`/`get_request_result` 核验 → 同一存活 run 上按需
   `pause_run` → `resume_live_run` → `save_checkpoint` → `inspect_checkpoints` → `stop_run` →
   需要时 `settle_source_run`。启动不等待首个 semantic start，也不自动重试/换新 ID。
+- 启动返回不等于 FIFO 就绪：`resume_from_checkpoint`/`start_run` 返回只证明登记与 run 根出现，
+  `control/outer-input.fifo` 由子进程在 prepare 阶段稍后创建。首次 `register_question`/
+  `answer_question` 等变更动作前，先在托管进程存活期间短轮询 FIFO 出现（同时观察
+  `.host-launches` 的 `status`/pid 探测）；仅真实退出证据或有界超时结束等待，轻微时序
+  不得用 kill/重启处理。FIFO 缺失的 `outer_input_channel_unavailable` 在写入与落账之前
+  抛出，同 `request_id` 重发受幂等保护。
+- 启动器异常不得在 `finally` 中无条件撤销仍被存活 Runner 继承的临时 bootstrap 凭据
+  （否则后续自动检查点采集会 401）：仅在确认从未实际启动或托管进程真实退出后才撤销；
+  存活或不可核实（`pid_is_alive` 为 `None` 不算退出）时保留凭据，落一份不含明文 key 的
+  pending 状态（key_id 与生命周期）交宿主对账后再清理；已撤销 key 不复活。
 
 ### 证据位置
 

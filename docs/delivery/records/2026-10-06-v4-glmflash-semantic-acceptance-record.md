@@ -1,5 +1,44 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
+## 最新结果：SCO-001 v2 已批准，最终24/26，REVISE
+
+用户回复“同意”后，新增授权的第3次生产接续为 `r4009-20261006-glmflashhigh-add03-start3`，
+真实 semantic start 于 **2026-10-05 22:00:34.424206 UTC**（Asia/Singapore 次日06:00）确认。
+新增3/3、累计6/6已用，余额0；独立只读验收不额外消耗启动次数。
+
+- 通过既有 `cq_review modify` 处理 SCO-001 v2，CQ 角色后续 `cq-review-0008` 与批准草案逐字一致，经审核冻结最终 `freeze-0003` / `cq-batch-0003`。
+- 完整26题逐项核对：只变 SCO-001 的 question 与 content_version，其四必答点、unknown、evidence_refs、scope及其他25题完全不变。原 freeze-0001、过程 freeze-0002、旧 FAIL 均保留。
+- 最终冻结摘要：`sha256:4e491c729e36361376ba23d9beb7685da7c20ace35344ab74628d5df35846651`。
+- 15份候选与源 run 逐字节一致；本轮零新 apply。Protocol 对空 Session 零提交/零写入取消，三生产角色完成，handoff ready、read-only、无 pending/unknown writes。
+- **公开18/18、隐藏6/8，同轮24/26，REVISE**。26题均执行且具有有效独立 Judge 裁决，未拼接旧轮通过题。
+- 公开71条、隐藏40条读取响应复核稳定，工具/请求/响应/文件/分页绑定核对通过，验收前后无模型漂移。Consumer 与 Judge 的实际配置均为 `glm-5.3-flash` / `high`。
+- 隐藏2题为 `model-recall-insufficient`，具体原因尚未定位；有效读取绑定不证明模型缺失或 Consumer 过错。其内容、评分依据和原裁决仅保存在私有证据中，不回流生产或修复者。
+- 空 failure_layer 格式错误曾被类型化拒收，角色同线程修正后完成完整报告；没有放宽报告合同或使用非法裁决。
+- `complete_cq_acceptance` 与 stop 回执 accepted；Runner **CLEANED**、PID不存在，全部验收子进程/私有根目录已清理，3个临时验收身份密钥已撤销，模型与治理资源保留。未安排后台观察。
+
+### 本轮检查点与宿主缺陷
+
+宿主原 launcher 在异步 launch 返回后立即投递 guidance，FIFO 尚未创建而异常进入 finally，
+提前撤销了 Runner 继承的 bootstrap。Host 同 run 修正投递后正常推进，不增加一次 start；
+但两次 `cq_frozen` 及 `production_handoff` 自动检查点捕获返回 **HTTP401 / invalid_authentication**。
+本 run 没有新发布的有效检查点，不能将角色完成或 handoff ready 称为当前 checkpoint 保存成功。
+源 run 的 `materialization_progress-0002` 再次检查 ready、0 issues，当前候选/模型未变；
+新 CQ 冻结与独立报告保留在本 run，不假称包含于源检查点。
+此宿主生命周期失败与隐藏2题语义未满足分别记录，不能互相归因。
+
+退出监控线程随原 launcher 异常丢失，旧 managed record 仍为 launched；实际 stop/CLEANED/PID消失证据已另存，
+退出码无法核实，不倒改旧记录。宿主路径窄修复由 Claude Code `glm-5.3` / `high` 执行，
+仅修复版 launcher 与权威运行指引；不重新启动 Team、不改旧冻结/报告、不覆盖原401。
+修复版等待FIFO并窄重发，将存活或无PID等不可核实状态的凭据保留待对账，只在确切退出后撤销。
+最终隔离验证19/19、重试分支3/3及py_compile通过；原脚本保留，新版在宿主目录 `launch-start6-safe.py`。
+权威运行指引补充10行；未真实重跑该路径，因此尚不证明下一次真实启动的检查点捕获已恢复。
+
+后续生产修订需先定位剩余失败，并取得新的 semantic-start 授权。V4整体仍为 PARTIAL；
+该结果不能代替全部 A1—A12、映射执行、L2/L3或真实DL推理证据，`development_stub` 限制保持。
+详细凭据清理、资格核对、回执和检查点限制见宿主目录的 `start6-*`、`final-acceptance-resource-cleanup.json`。
+
+## 以下为用户批准v2之前的历史中间态
+
 截至 2026-10-06 03:55（Asia/Singapore），R4.0-009 本轮结论为 **REVISE**；V4 整体仍为 **PARTIAL**。
 范围为 `industrial-service-v3` 四切片、冻结公开18题与隐藏8题的核心 CQ L0/L1，未覆盖全部 A1—A12、数据库/API 映射执行、L2 或 L3。
 
