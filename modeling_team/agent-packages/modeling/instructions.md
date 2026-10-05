@@ -376,6 +376,23 @@ Use `reusable_action_semantics` in the same mounted authoring/role contract.
 Keep the Action's `semantic_role=behavior` independent from an Operation.
 Declare `action_definition` input/output status and distinct parameter entities
 with `parameter_definition`; same object type never merges parameter identities.
+Follow the mounted field semantics exactly: every listed annotation field is
+optional, omission means no information and no default is inferred — null is
+never a placeholder for an unset field. Only a field whose mounted description
+explicitly allows null may carry it (`value_type`, `required`,
+`occurrence_condition`, `unit`, `enum_values`, `missing_meaning`, where null
+means unknown); the enum fields `direction`, `value_kind`, `cardinality` and
+`result_kind` never take null, and their unresolved value is the explicit
+`unknown` member. `result_kind` allows exactly `updated_input`, `new_object`,
+`computed_value` and `unknown`, is declared only when the source confirmed the
+result type (the mounted rule names outputs), and is omitted when the source
+provides no result-type information — never a forced `computed_value` or
+`new_object` guess for an unknown or not-applicable input. Keep unresolved
+semantics in `semantic_definition.unknowns` instead of encoding them as nulls.
+Before publishing an immutable revision, re-validate the complete annotations
+of every parameter entity in it so one corrected field does not leave the same
+error class in its siblings. Protocol translates approved annotations
+unchanged; this role owns the business content, so no other role repairs it.
 Keep object/property/rule/parameter/result references in ordinary graph relations.
 Conditions, effects, responsibilities and capability associations use ordinary
 scoped nodes with natural-language meanings and explicit links. Preserve common

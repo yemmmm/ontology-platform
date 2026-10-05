@@ -468,6 +468,36 @@ class TransportTests(unittest.TestCase):
         self.assertNotIn("completion-confirmation request", modeling)
         self.assertIn("do not create a reply request solely to unlock a terminal result", modeling)
 
+    def test_modeling_prompt_separates_annotation_omission_null_and_unknown(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        contract = json.loads(
+            (
+                root / "modeling_team/references/platform-neutral-candidate-authoring.json"
+            ).read_text(encoding="utf-8")
+        )
+        parameter = contract["reusable_action_semantics"]["annotations"][
+            "parameter_definition"
+        ]
+        self.assertEqual(
+            parameter["result_kind"],
+            ["updated_input", "new_object", "computed_value", "unknown"],
+        )
+        self.assertIn("omission means no information and no default is inferred", modeling)
+        self.assertIn("never a placeholder for an unset field", modeling)
+        self.assertIn("`result_kind` never take null", modeling)
+        self.assertIn("`result_kind` allows exactly `updated_input`, `new_object`,", modeling)
+        self.assertIn("`new_object` guess for an unknown or not-applicable input", modeling)
+        self.assertIn("instead of encoding them as nulls", modeling)
+        self.assertIn("re-validate the complete annotations", modeling)
+        self.assertIn("Protocol translates approved annotations", modeling)
+        for value in parameter["result_kind"]:
+            self.assertIn(f"`{value}`", modeling)
+        for field in ("value_type", "required", "unit", "missing_meaning"):
+            self.assertIn(f"`{field}`", modeling)
+
     def test_protocol_prompt_does_not_claim_a_completed_report_is_refused(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
