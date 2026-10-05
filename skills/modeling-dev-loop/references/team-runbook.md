@@ -5,7 +5,13 @@
 
 ## 选择入口
 
-当前完整 v3 链覆盖 R3.0-006/008B/009/011，使用：
+先定位当前版本需求、获准范围及 Task，再核对 Profile、检查点开关和验收目标。
+现成 v4 入口为 [r4-0-009-multiview-semantic-acceptance.yaml](../../../modeling_team/tasks/r4-0-009-multiview-semantic-acceptance.yaml)，
+对应 [requirements-v4.0.md](../../../docs/requirements/requirements-v4.0.md)，当前 Task 已启用
+`modeling_checkpoints: true`、`acceptance_target: cq_semantic`；沿用已选 Profile/model-profile
+并核对适用授权。它不自行授权未来映射、外部执行或扩展验收范围。
+
+历史完整 v3 链覆盖 R3.0-006/008B/009/011；仅本轮需求明确选择 v3 时使用：
 
 - Task：[r3-0-006-real-full.yaml](../../../modeling_team/tasks/r3-0-006-real-full.yaml)。
 - Profile：[r3-0-011-competency-question.yaml](../../../modeling_team/profiles/r3-0-011-competency-question.yaml)。
@@ -35,7 +41,10 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 角色/范围、更新时间和授权引用。用户明确覆盖优先于本节默认安排；未修改的约束继续有效，
 跨调度时段或接续不重选已确认配置，不重复询问。仅未指定部分使用下表，角色可分别配置。
 
-下列命令于 2026-09-10 对本机核实：`cc-switch --help`、`cc-switch -a claude provider list`、
+只有台账选择 Claude Code 修复者时才读取和执行本节 Claude CLI/provider 步骤；
+选择 Codex 子 Agent 等执行者时沿其既有入口传递获准配置，不运行 cc-switch。
+未被用户覆盖的修复默认执行者仍为 Claude Code，未指定的 Team 模型调度仍沿下表。
+下列 Claude 命令于 2026-09-10 对本机核实：`cc-switch --help`、`cc-switch -a claude provider list`、
 `cc-switch -a claude provider switch <ID>`；`claude --help` 支持 `--model` 与 `--effort max`。
 高峰/非高峰划分是用户指定调度表，不代表已核实官方价格。
 
@@ -44,7 +53,7 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 把取时、时区、是否高峰、选定模型/effort 和授权 ID 写入本轮宿主记录，之后按该记录核对，
 不逐个任务重新判定。
 
-ClaudeCode 侧（外部 Claude Code 开发/修复进程；主智能体自身是 Codex，不在切换范围）：
+Claude Code 修复者的按需步骤（仅已选 Claude 时适用；主智能体自身不在切换范围）：
 
 1. 用 `cc-switch -a claude provider list` 的当前标记现场发现 provider，不把机器特定
    provider ID 写进提示或脚本。`provider current` 原样输出带 API Key 片段，不直接原样
@@ -106,16 +115,20 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 ## 同源 checkpoint 只读验收启动
 
 对应 [R4.0-018](../../../docs/requirements/requirements-v4.0.md#r40-018-生产交接与同源检查点验收的启动衔接)。
-按以下顺序沿现有工具接续，不用 launch 探测可预见的未就绪状态：
+本节仅用于 S4 checkpoint acceptance continuation；live `cq-acceptance` 保持源 Runner
+存活、生产静默，报告回源 `complete_cq_acceptance`，见[当前 live 验收收口](#cq_handoff_complete-之后的独立验收收口acceptance_pending)。
+选择 S4 时按以下顺序沿现有工具接续，不用 launch 探测可预见的未就绪状态：
 
 1. 读 `get_run_status/get_run_events/get_pending_actions`，分别定位生产角色 terminal、handoff
    `ready=true/pending_writes=false/write_phase=read-only/unknown_writes=[]` 和实际 managed
    process 状态。三者不是同一事实；进程退出不单独证明写入完整，角色完成不证明 writer 退出。
-2. unknown write 保留原件并按 Batch/Attempt/receipt 对账；已排空且 handoff ready 时经原
-   `stop_run` 通道提交 stop，保存 request、Runner receipt、launch/exit 证据。
+2. unknown write 保留原件并按 Batch/Attempt/receipt 对账。已排空且 handoff ready 时，
+   **停止前**用 `inspect_checkpoints` 确认显式、有效且 COMPLETE 的 `production_handoff` 包
+   已发布，所需资源可按已有授权安全保留；缺包或保留条件不满足先处理，不能先 stop 再找包。
+   条件满足后经原 `stop_run` 通道提交 stop，保存 request、Runner receipt、launch/exit 证据。
    `submitted` 或 stop receipt 不等于退出，继续观察 PID/进程会话和 `.host-launches` exited
    记录，单次等待 ≤60s；仍活动不因无日志判死，缺证据保持 unknown。
-3. 确认 managed process 已退出后用 `inspect_checkpoints` 复核显式 COMPLETE
+3. 确认 managed process 已退出后用 `inspect_checkpoints` 再复核已选 COMPLETE
    `production_handoff` 包，按现有 S4 启动新输出根的 acceptance continuation。源 run、冻结、
    checkpoint、失败报告只读保留；不要向已死 FIFO 补投收口消息。
 4. 同一 root run 当前共用进程锁，公开/隐藏须等前一 continuation 托管进程退出后启动另一批；
@@ -131,7 +144,8 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 阶段报告写 `completed/remaining/next/authorization/wait/resource/handoff`，格式见
 [进度参考](progress-report.md)。读取实际 status/events/pending 与产物后，逐项核对原目标待办、
 依赖、授权及写入状态。条件满足即沿现有入口继续，不把阶段收口当整体完成：live thread 用
-`resume_live_run`，已停用显式 checkpoint，production handoff 按上节 stop/exit 后接 acceptance；
+`resume_live_run`，已停用显式 checkpoint；production handoff 按实际入口分流：live 验收
+保持源 Runner 存活，S4 先核对有效 COMPLETE checkpoint 与安全保留，再 stop/exit 接续；
 隐藏完成而获准公开仍待办时继续公开，窄修复后回原失败步骤。
 
 新业务定义、权限扩大、兼容性决定或新 start 额度实质缺失时，只等待依赖该决定的动作，
@@ -149,6 +163,8 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 再用 `get_run_status` 复核实际进程、语义成果、首阻塞/限制，用 events 的原行号/偏移和 pending
 核对下一动作。摘要与新事实不一致时更新顶部时点并保留差异、旧阶段记录及原报告/清理证据；
 状态不明写 unknown，不从 RUNNING、handoff ready、工具数猜成果或授权余额。
+阶段变化、新阻塞、配置/授权变化或接续交接才更新摘要；日常巡检仅追加增量事件与待办，
+无变化不重填摘要字段，也不为每个字段重新取时。用户短进度和详细台账分开。
 记录六类 UTC 时间区间/来源，墙钟 union、累计 Agent 时间、重叠和 estimate 分开，详见
 [分类耗时](progress-report.md#分类耗时r40-021)。只需现有证据，不新增预检/监控/计时服务。
 
@@ -414,10 +430,13 @@ skipped／漂移／读取复核失败按宿主原记录呈现，没有 Judge 的
    `cq_handoff_complete`）。核对返回 `ok=true`、`acceptance_phase=acceptance_pending`、
    当前 `acceptance_attempt_id` 和 `report_directory`；提交成功只说明 Runner 已接受
    生产交接，不说明 CQ 语义通过。
-4. 用该 handoff 的当前绑定启动独立 `cq-acceptance`。报告落盘后调用
-   `complete_cq_acceptance`，核对当前 attempt、Runner 重算的 `report_digest`、
-   `cq_verdict`、已执行／未执行题目和完整分母；保留 PASS、PARTIAL 或失败报告。验收
-   收口成功也不等于语义 PASS，不能用角色完成或机械 readiness 覆盖语义缺口。
+4. 按实际入口分流：live `cq-acceptance` 保持源 Runner 存活、生产静默，用该 handoff
+   的当前绑定启动独立验收，报告落盘后向源 run 调用 `complete_cq_acceptance`；选择 S4
+   则先确认有效 COMPLETE `production_handoff` checkpoint 与安全资源保留，再经
+   stop/receipt/exit，在全新输出目录验收，见[同源启动顺序](#同源-checkpoint-只读验收启动)。
+   S4 不向已死源 FIFO 投递收口。两条路径都核对实际 attempt、`report_digest`、`cq_verdict`、
+   已执行／未执行题目和完整分母，保留 PASS、PARTIAL 或失败报告；收口成功不等于语义 PASS，
+   不能用角色完成或机械 readiness 覆盖语义缺口。
 
 提交前的 readiness 核对、交接回执和独立验收结果都应写入宿主收尾记录；不要因为角色已经
 结束而提前 `stop`，也不要把 `publish-handoff`（离线交接）当作 run 内的
@@ -461,15 +480,18 @@ pending：coordinator 已 terminal 不代表完成，Runner 在等宿主完成�
 `production_handoff` 检查点另起独立验收尝试；旧尝试的 abort 记录仍保留。
 原 run 存活且继续当前验收时，按以下步骤收口：
 
-1. 保持 live run，避免因“生产已完成”而提前发送 `stop`。若按授权决定结束原进程后再验收，
-   先确认有效 `production_handoff` 检查点已发布、所需资源可保留，再受控停止并走
+1. 保持源 Runner 存活、生产静默和写入排空，避免因“生产已完成”而提前发送 `stop`。
+   若按授权决定结束原进程后再验收，
+   先确认显式、有效且 COMPLETE 的 `production_handoff` 检查点已发布、所需资源可安全
+   保留，再受控停止并确认 receipt/managed exit，走
    [S4 验收续跑](#验收续跑r30-015-s4)。原进程已经退出时先检查保留成果，不能假定有
    检查点，也不能从历史目录补造检查点。
 2. 用当前权威入口启动独立验收会话：
    `uv run --project backend python -m modeling_team cq-acceptance --run-root ... --freeze-id ... --model-handoff ...`
    （参数先读 `--help`；独立验收者不得参与生产或修复）。
-3. 验收进程退出后，把 digest-and-verdict 摘要经 FIFO 发送 `cq_acceptance_complete`
-   envelope（字段见 Runner 合同 `CQ_ACCEPTANCE_COMPLETE_FIELDS`）；Runner 自行复读
+3. 验收进程退出后调用 `complete_cq_acceptance`；若直接使用 FIFO，则向仍存活源 Runner
+   发送 `cq_acceptance_complete` digest-and-verdict envelope（字段见 Runner 合同
+   `CQ_ACCEPTANCE_COMPLETE_FIELDS`）。Runner 自行复读
    batch-report 并复核 digest/verdict 后才释放 terminal report。
 4. 全部/部分/失败报告都同样完成收口；验收不需要全绿才算 run 正常结束。
 
@@ -585,8 +607,10 @@ Session 并由当前 Coordinator 按既有 014 路径审核（S3 自动迁移按
 staged 校验器一律重算，布尔 gate-open 状态永不还原；CQ 冻结池重新校验后采纳。
 
 记账：续跑记 1 次 fresh semantic start（host 记录 `authorization_reference`），
-平台侧没有硬计数门（`platform_hard_gate: false`）；准备（含对账）时间计入自用户
-授权起的 20 分钟预算，超时只报告阻塞并请求更长准备窗口，不放宽任何门。
+平台侧没有硬计数门（`platform_hard_gate: false`）。每次授权后的第一次真实 semantic start
+若恰为本次 production resume，除非用户明确允许更长准备期，仍须在授权后 20 分钟内开始；
+超时报告耗时来源并缩短通路。后续恢复记录实际对账/准备耗时和阻塞，不从最初授权时点
+重复套用此期限或自动请求新授权；余额与写入安全条件不变。
 
 同机同一 root run 同时只允许一个续跑进程（root-run 文件锁，进程死亡由内核释放）。
 手工清理源 run/检查点前先确认没有 active 恢复引用（新 run 的 `recovery/origin.json`
@@ -602,6 +626,8 @@ Judge 组数，不称单会话完整证据。全部所选题都有有效裁决�
 所有题均超限时不创建 Judge，cleanup 仅记录实际调用的 child。
 
 宿主对一个 COMPLETE `production_handoff` 检查点做验收-only 续跑（design §7）；
+源进程仍存活时，先确认有效完整检查点已发布和安全资源保留，再按
+[同源启动顺序](#同源-checkpoint-只读验收启动) stop/receipt/managed exit，不先停止再寻找检查点。
 S3（翻译类计划自动迁移）按设计延后，S4 不依赖它。入口与 S2 相同的宿主凭据通道
 （`ONTOLOGY_PLATFORM_ADMIN_API_KEY`），显式 checkpoint id 与全新 run id 必填：
 
@@ -646,8 +672,10 @@ PASS；attempt id 在全链上分配，永不复用已发布尝试目录。重�
 一样需要 `R3011_ACCEPTANCE_PLATFORM_READ_KEY`（核验收尾路径不需要）。
 
 记账：`semantic_starts: 0`（`consumes_semantic_start: false`）——验收续跑是挂靠
-源 run 的独立尝试，不消耗建模开始；准备（复核）时间计入自用户授权起的 20 分钟
-预算，执行时间在收尾记录单列。同机同一 root run 的生产续跑与验收续跑共用一把
+源 run 的独立尝试，不消耗建模开始；准备（复核）和执行耗时、阻塞在收尾记录单列。
+20 分钟规则仅约束每次授权后的第一次真实 semantic start，不是只读验收从初次授权
+计时的硬门，也不因后续恢复耗时自动重复请求授权。同机同一 root run 的生产续跑与
+验收续跑共用一把
 root-run 锁，互斥不并发。手工清理时同样先核对 `recovery/origin.json` 链。
 
 ## 接口修复后继续同一 run
@@ -920,8 +948,8 @@ public／hidden 正交，同一维度可以由两个题集验证；不固定题�
 
 | 目标维度／专项 | 授权及获准材料 | 题集、visibility、曝光 | 实际入口／selector | 输出与完成依据 | 当前状态／未覆盖及下一动作 |
 | --- | --- | --- | --- | --- | --- |
-| 当前全景／跨切片范围 | 当前需求与授权引用 | 审核冻结前 planned；冻结后实际 ID／version／digest | `cq-acceptance --question-visibility public` 或 `checkpoint resume --mode acceptance --question-visibility public` | 当前 attempt／public-regression 报告；实际分母、已执行、有效裁决、通过、待复核、未完成 | 未执行保持 pending；公开题用于生产后为非盲回归 |
-| 当前切片／治理范围 | 当前需求与授权引用 | 实际 hidden pool 绑定；隐藏内容始终私有 | 显式 `--question-visibility hidden` | 当前冻结／model binding 与独立报告、完整分母 | hidden PASS 不代替 public pending |
+| 当前全景／跨切片范围 | 当前需求与授权引用 | 审核冻结前 planned；冻结后获批 public／hidden 集的实际 ID／version／digest | 按获批集合显式 `--question-visibility public` 或 `hidden`（live cq-acceptance／S4） | 对应集合的 attempt／报告；实际分母、已执行、有效裁决、通过、待复核、未完成 | 未执行保持 pending；已向生产暴露的题仅为非盲回归 |
+| 当前切片／治理范围 | 当前需求与授权引用 | 获批 public／hidden 集的实际绑定；隐藏内容始终私有 | 按获批集合显式 `--question-visibility public` 或 `hidden`（live cq-acceptance／S4） | 当前所选冻结／model binding 与独立报告、完整分母 | 任一集合 PASS 不代替另一获准集合的 pending |
 | 外部执行／完整推理等专项 | 记录获准或未授权 | 无适用 CQ 时写专项证据，不虚造题集 | 已有专项验证入口或入口未就绪 | 对应专项实际运行证据 | 局部 CQ／静态映射不能证明此项；保留下一动作 |
 
 同时保留 source run、Task／Profile／代码、production／acceptance-only 模式、handoff／checkpoint

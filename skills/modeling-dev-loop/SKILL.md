@@ -1,6 +1,6 @@
 ---
 name: modeling-dev-loop
-description: "Use when developing ontology-platform through real Modeling Team runs, supervising modeling progress, coordinating external Claude Code repairs, applying the per-authorization model schedule (cc-switch provider and Team model profile), or requesting another semantic-start budget. For the host delivery agent, not the isolated role authoring ontology payloads."
+description: "Use when developing ontology-platform through real Modeling Team runs, supervising modeling progress, coordinating repairs by the agent selected in the current session ledger, applying authorized executor and Team model configurations, or requesting another semantic-start budget. For the host delivery agent, not the isolated role authoring ontology payloads."
 ---
 
 # 建模开发推进
@@ -21,42 +21,35 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 3. 复用会话已有授权。没有真实建模授权时，完成可独立开展的工作并申请；安装或调用本 Skill
    本身不授予 semantic start。每次授权默认三次 fresh starts，用户指定数量时以用户为准。
 4. 从已有台账读取最新适用用户指令；明确的执行者、模型、effort、service tier 和角色/范围
-   优先于下节默认调度，接续或跨时段不使该选择失效。仅未指定部分按
-   [授权时的模型调度](#授权时的模型调度) 选定并记录，不重复询问已确认选择。
-5. 按 [运行参考](references/team-runbook.md) 做安全启动所必需的最小检查。授权后通常须在
-   20 分钟内开始第一次真实建模；超时即报告耗时来源并缩短通路，不能继续扩展预检。
+   优先于默认调度，接续或跨时段不使该选择失效。仅未指定部分按
+   [运行参考的默认调度](references/team-runbook.md#授权时的模型调度) 选定并记录，不重复询问已确认选择。
+5. 按 [运行参考](references/team-runbook.md) 做安全启动所必需的最小检查。每次授权后，除非
+   用户明确允许更长准备期，须在 20 分钟内开始该授权后的第一次真实 semantic start；
+   首次 start 若为 production checkpoint resume 也适用。后续恢复与只读验收记录实际耗时和
+   阻塞，不从最初授权时点反复套用此期限或请求新授权；写入安全和 start 余额仍须核对。
+   首次超时即报告耗时来源并缩短通路，不能继续扩展预检。
 
 ## 授权时的模型调度
 
-以下是未被最新适用用户指令覆盖时的默认安排。每次新启动或接续先从现有 session 台账核对
-执行者、model/profile、effort、service tier（`unset`/`fast`/`default` off）、适用角色/范围、
-更新时间和授权引用；分别保留请求、启动传递与实际配置证据。角色可有不同获准配置。
-三态仅影响新 child，不热切换旧线程，不改旧冻结或历史报告；无法核实时写 `unverified`，
-不支持时写 `unsupported` 和下一动作，不能静默换模型或为统一显示重开 start。具体传递及
-production checkpoint profile 限制见[运行参考](references/team-runbook.md#session-配置传递与核对r40-019)。
+最新适用用户指令优先，未指定部分沿用[运行参考的默认调度](references/team-runbook.md#授权时的模型调度)。
+接续与跨时段不重选已确认配置，不为统一显示重开 start；详细传递与核对按需读运行参考。
 
-高峰与非高峰对应不同的模型档位，这是用户在授权时给出的约定；宿主的职责是如实判定、记录
-并执行，不替用户重新定价，也不把该表说成已核实的官方价格。每次获得新的建模次数授权，先
-调用当前时间工具取得真实时间并转换为 Asia/Shanghai 北京时间：周一至周五 09:00<=t<12:00
-或 14:00<=t<18:00 为高峰；12:00、18:00 边界及周末为非高峰。把取时、时区、是否高峰、选定
-模型/effort 和授权 ID 写入本轮宿主记录，后续启动、修复与交接按该记录核对。
+## 按需导航
 
-- ClaudeCode（外部 Claude Code 开发/修复进程）：高峰经 cc-switch 把 provider 切至 glm，
-  实际模型 `glm-5.3-flash`、effort `max`；非高峰且当前 provider 非 deepseek 时切回 deepseek，
-  实际模型 `deepseek-flash`、effort `max`。目标 provider 已匹配时不做无意义切换，但仍
-  核验 model/effort 与记录一致。主智能体自身是 Codex，不在 cc-switch 切换范围。
-- Team：模型绑定写在 Team 独立 model-profile，不经 cc-switch。高峰 `glm-5.3-flash`、
-  effort `max`，选用 profile `glm-flash-max`（经 `glm-direct` 路由；凭据只由宿主的
-  loopback session 持有，角色不接触密钥）；非高峰 `deepseek-flash`、effort `max`，选用
-  profile `deepseek-flash-max`。validate、baseline、run 及角色实际模型证据须与该选择一致。
-- provider 用 `cc-switch -a claude provider list` 的当前标记现场发现（`provider current`
-  原样输出带 API Key 片段，不直接原样输出或粘贴），不把机器特定 provider ID 写死；启动前
-  清除会覆盖切换结果的旧 ambient `ANTHROPIC_MODEL`、`ANTHROPIC_BASE_URL` 等模型变量，只
-  核验白名单字段，不打印密钥或整份 settings。命令与核验步骤见
-  [运行参考](references/team-runbook.md)。
-- 当前环境不支持所需模型/effort 时，如实反馈能力缺口并请用户决定，不悄悄替换成可用模型。
-- 调度在授权时选定并适用整个 run：时间跨过时段边界不中断当前 run、不偷偷另开 start，
-  也不给已冻结 run 更换模型；只有新一轮授权才重新判定。
+入口先按当前版本需求和获准 Task 定位，不把历史 v3 入口当通用默认。现成 v4 Task 为
+[r4-0-009-multiview-semantic-acceptance.yaml](../../modeling_team/tasks/r4-0-009-multiview-semantic-acceptance.yaml)，
+其适用范围、检查点和验收目标仍以本轮授权为准；选择入口见[运行参考](references/team-runbook.md#选择入口)。
+
+- 配置与授权变化：先核对 session 台账的执行者、model/profile、effort、service tier 和适用范围，
+  请求、启动传递和实际生效分开记录，无法核实写 `unverified`，不支持写 `unsupported`。
+  用户未覆盖的[默认调度](references/team-runbook.md#授权时的模型调度)及
+  [配置传递](references/team-runbook.md#session-配置传递与核对r40-019)按需读取；
+  仅选定 Claude Code 修复者时读取 Claude CLI/provider 步骤，不为 Codex 子 Agent 切换 provider。
+- 已安全写入的小链需要早期公开反馈：读[公开反馈（015）](references/team-runbook.md#已安全写入小链的早期公开反馈015)。
+- 启动、接续或阶段范围变化：读[范围与入口核对（016）](references/team-runbook.md#启动接续范围与入口对账016)。
+- Examiner、证据、Judge 或报告发生故障：读[故障交接（017）](references/team-runbook.md#examiner证据judge报告故障交接017)。
+- 生产交接后选择当前 live 验收或 S4：读[下节交接分流](#cq-生产交接必须由宿主显式完成)，
+  仅 S4 需要[同源停止与验收启动顺序](references/team-runbook.md#同源-checkpoint-只读验收启动)。
 
 ## 保持观察和推进
 
@@ -65,8 +58,8 @@ production checkpoint profile 限制见[运行参考](references/team-runbook.md
 长工具调用尽可能每 60 秒内返回一次控制权。Skill 不提供后台调度能力，会话结束后不能声称
 仍在监控；必须交接真实进程、日志位置、待办与下一次观察责任。
 
-每次观察（含周期巡检）先取一次真实时间（Asia/Shanghai）并写入观察/简报的开头，与证据
-`recorded_at`（UTC）对齐核对，便于判断事件时点与滞后。观察比较：进程/工具活动、当前阶段、
+观察记录沿用事件 `recorded_at`（UTC）或本次核实时间，显示时声明时区；不逐字段取时。
+日常巡检只追加新增事件与待办，无实质变化不重填顶部摘要。观察比较：进程/工具活动、当前阶段、
 最新有效产物或交接、待回答问题、第一阻塞点。
 有效进展是问题得到回答、候选推进、交接完成、写入回执或检索证据增加；重复失败日志不是进展。
 按可见证据检查获批范围、阶段及输入/写入边界，发现业务语义疑点交给建模 Team 澄清，
@@ -128,20 +121,26 @@ issue、写入已排空且没有 unknown write；若已有 Runner 发布的 hand
 为 `cq_handoff_complete`）。核对返回成功、`acceptance_phase=acceptance_pending`、
 当前 `acceptance_attempt_id` 和 `report_directory`；角色完成、提交被接受或 handoff
 文件生成都不能单独当作语义验收完成。生产角色 terminal、handoff ready 和 managed process
-退出分别核对；需要同源 checkpoint 验收时按
-[同源启动顺序](references/team-runbook.md#同源-checkpoint-只读验收启动) 经 stop/receipt/exit
-释放 writer，再接续独立验收；同 root 的公开/隐藏批次等前一托管进程退出，顺序由获准任务
-安排。unknown write 先对账，不能靠停止或删锁掩盖。随后用当前 handoff 启动独立 `cq-acceptance`，
-报告落盘后调用 `complete_cq_acceptance`，核对报告 digest、`cq_verdict` 和题目分母，
-并保留 PASS、PARTIAL 或失败结果；交接或收口成功不等于 CQ PASS。具体绑定与收口步骤
-见[运行参考的 CQ 交接与独立验收](references/team-runbook.md#cq-生产交接必须由宿主显式提交)。
+退出分别核对，再按实际入口分流：
+
+- **live `cq-acceptance`**：源 Runner 保持存活，生产静默、写入已排空，用当前 handoff 启动
+  独立验收。报告落盘后向存活源 run 调用 `complete_cq_acceptance`，核对报告 digest、
+  `cq_verdict` 和完整题目分母；不要为“生产已完成”提前 stop。
+- **S4 checkpoint acceptance continuation**：先用 `inspect_checkpoints` 确认显式、有效且
+  COMPLETE 的 `production_handoff` 检查点和所需资源可安全保留，再经 stop/receipt/managed
+  exit 释放源 writer，随后复核绑定并在全新输出目录启动只读验收。不要先 stop 后才发现
+  没有可用检查点，也不向已死源 FIFO 投递验收收口消息。同 root 的公开/隐藏 continuation
+  等前一托管进程退出，顺序由获准任务安排。
+
+unknown write 先对账，不能靠停止或删锁掩盖。两条路径均保留 PASS、PARTIAL 或失败结果；
+交接或收口成功不等于 CQ PASS。具体绑定与收口步骤见
+[运行参考的 CQ 交接与独立验收](references/team-runbook.md#cq-生产交接必须由宿主显式提交)。
 
 ## 阶段成果检查点（R3.0-015 S1+S2+S4）
 
-启动前明确检查点开关与验收目标：默认 `r3-0-006-real-full` Task 未开启检查点，
-验收目标为 `cq_semantic`；`r3-0-015-checkpoint-recovery` 开启检查点，但默认目标为
-`full_joint`。按本轮获准范围选择或配置 Task，validate、baseline、run 使用同一文件；
-不能为启用检查点而悄悄改变验收范围。具体见运行参考的“选择入口”。
+启动前按当前版本需求、Task 和授权明确检查点开关与验收目标，validate、baseline、run
+使用同一文件；不能为启用检查点而悄悄改变验收范围。现成 v4 Task 已开启检查点并使用
+`cq_semantic`；历史 v3 Task 的区别按需见[选择入口](references/team-runbook.md#选择入口)。
 
 启用 `modeling_checkpoints` 的 run 会在访谈成果落盘、CQ 冻结、每个 staged 回执和
 production handoff 后自动保存阶段检查点；需要保存场景决定或已批准语义决定时由宿主
@@ -163,7 +162,8 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 `production_handoff` 检查点做验收-only 续跑（S3 按设计延后，S4 不依赖 S3）：
 `production_handoff` 只是把当前已验证状态和已知缺口交给独立验收，不是业务 Class，也不表示
 未完成的值语义已自动完成或应挪到验收之后；正常阶段顺序仍由当前 Task/需求决定。
-入口先做只读复核（沿用 S2 的 cursor 回读纪律：全链写尾闭合、原写者已停、冻结池按
+先确认完整可用的交接检查点与安全资源保留，再停止源 writer 并确认退出；入口继续做只读
+复核（沿用 S2 的 cursor 回读纪律：全链写尾闭合、原写者已停、冻结池按
 快照摘要重校验、打包与已发布 handoff 一致），漂移得到类型化拒绝
 （`acceptance_binding_changed` 等），绝不改模型或源 run。输入/输出分离：证据根
 永远是原 run（旧 run_id、handoff 尝试字段与旧报告一字不动），新尝试、新报告与宿主
@@ -178,7 +178,7 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 | 失败层 | 证据特征 | 下一动作 |
 | --- | --- | --- |
 | `modeling-quality` | 建模或端到端语义消费未满足；单凭 CQ 粗粒度字段不能证明模型缺失 | 按逐点证据区分模型、检索、Consumer 和原因未确定，再交对应环节 |
-| `platform-contract` | 合法请求被错误拒绝，读写、校验或授权实现偏离合同 | 派发 Claude Code 修复最窄实现层 |
+| `platform-contract` | 合法请求被错误拒绝，读写、校验或授权实现偏离合同 | 派发当前台账指定的修复 Agent 修复最窄实现层 |
 | `collaboration/routing` | 消息丢失、交接错位、角色互等 | 核查路由与任务/提示合同，再反馈或委派修复 |
 | `runtime/infrastructure` | 模型服务、进程、挂载、网络或本地依赖失效 | 对实际失败依赖做有界诊断和修复 |
 
@@ -195,7 +195,7 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 设计变动的大小本身不决定是否提问。符合 AGENTS.md 和用户授权，有具体证据支持收益，且对
 相关语义、兼容性、权限、资源与验收影响有足够把握不会产生负面影响时，主智能体可自主决定，
 包括较大的流程设计变化。记录“问题证据 → 变化 → 预期收益 → 影响判断与验证方式”，
-更新归属需求/设计或权威提示面，再将具体开发任务交给 Claude Code。
+更新归属需求/设计或权威提示面，再将具体开发任务交给当前台账指定的修复 Agent。
 
 不能仅凭“信心很高”绕过明确合同。会实质改变未经确认的业务含义/范围、破坏兼容性、削弱
 授权/源忠实度/写入完整性/隐藏题隔离/独立验收，或存在关键影响未知时，先完成可独立进行的
@@ -206,7 +206,7 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 
 ## 委派修复并核验
 
-使用 [Claude Code 修复交接](references/claude-repair.md) 提供明确的目标、范围、输入、证据、
+使用 [当前台账指定修复 Agent 的交接](references/claude-repair.md) 提供明确的目标、范围、输入、证据、
 权限、文件归属和完成标准。平台实现缺陷交外部 Agent 修复；流程设计问题由主智能体完成设计
 判断，更新权威合同后再交其开发。仅需当前 Team 纠正输入时，通过既有反馈通道处理。
 
@@ -233,17 +233,18 @@ live Runner、原 Agent thread 和已完成产物。用户告知“接口已经�
    原进程已退出且有有效检查点时，按上节 `checkpoint resume` 选择生产或验收接续；
    生产接续使用新 run/线程并消耗一次 fresh start，验收接续不消耗建模 start。
    仅有相同 run ID 不足以免计数：没有经当前合同证实、保留同一语义会话上下文的恢复机制时，
-   重启建模 child 或另起建模 Agent 重做目标属于 fresh start。不能另起 Claude 会话替换
-   Team 的 Modeling 角色后声称仍是原轮；外部 Claude 修复进程与建模子进程是不同职责。
+   重启建模 child 或另起建模 Agent 重做目标属于 fresh start。不能另起修复 Agent 会话替换
+   Team 的 Modeling 角色后声称仍是原轮；修复进程与建模子进程是不同职责。
 4. 必须 fresh start 时先登记旧轮结果、修复版本、生效方式和安全清理/保留状态，再检查余额。
    更换 run ID 或模型会话不能规避计数；同 run 的安全续跑和机械修复不额外计 semantic start。
    prompt-contract 缺陷必须在下一次 start 前持久修复，不能只靠临时提醒。
 
 ## 额度、进展与收口
 
-每次阶段汇报在已有记录顶部更新[最新摘要](references/progress-report.md#最新摘要r40-021)，
+阶段变化、新阻塞、配置/授权变化或接续交接时，在已有记录顶部更新[最新摘要](references/progress-report.md#最新摘要r40-021)，
 列 `completed/remaining/next/authorization/wait/resource/handoff`。仍有授权内明确待办且条件
-满足时，汇报后继续：生产 stop 是进入独立验收的内部切换，隐藏完成且公开仍待办也继续，
+满足时，汇报后继续：live 验收保持源 Runner 存活，S4 按安全 checkpoint→stop/exit→新目录
+验收切换；隐藏完成且公开仍待办也继续，
 不等待用户反复说“继续”。缺业务定义、权限、兼容性决定或新 start 额度时，只等待受影响
 动作，完成独立可做项；不扩权、不把余额当必须耗尽的目标。
 
@@ -252,6 +253,7 @@ live Runner、原 Agent thread 和已完成产物。用户告知“接口已经�
 及授权。监督必须结束时交接 run/process/checkpoint、待办、余额和下一观察责任；未安排
 接手则如实写未安排，不声称存在后台监控。细节见[阶段继续与收尾](references/team-runbook.md#阶段继续等待与收尾r40-020)。
 
+用户短进度说明实际成果、第一阻塞与下一动作，详细字段保留在运行记录；无变化不重复全表。
 每轮终态及时用简洁中文说明进展、第一阻塞、修改和余额。分别记录语义建模及基础设施/修复、
 评审、文档的有效时间；语义建模不足一半时暂停扩展平台/harness，报告原因并提出更短通路。
 按[分类计时](references/progress-report.md#分类耗时r40-021) 区分生产语义、独立消费、等待、
