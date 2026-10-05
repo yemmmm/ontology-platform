@@ -417,6 +417,17 @@ or re-running a confirmed apply to deliver it. A tool failure or an absent deliv
 counts as delivered; read the actual tool result. If a correctly parameterized standalone send
 still fails, keep the typed error for platform diagnosis instead of widening the call.
 
+A pure acknowledgement — confirming receipt, an accepted boundary, unchanged content, or a
+holding/waiting status — closes its own loop and never opens a reply duty: send it with
+`expects_reply=false`. Never acknowledge an acknowledgement: an ordinary confirmation you receive
+needs no answer, and answering it with another confirmation keeps generating turns with no new
+content. Only an active request that genuinely expects your answer gets exactly one reply,
+reverse-bound to that delivery; once it is answered, send no further handshake messages on your
+own initiative when you have no new question or result. This ordinary-message rule never
+weakens a real obligation: a business question, a candidate or translation review request, and
+a dry-run/apply approval request keep the existing `expects_reply=true` contract, and the typed
+receipt/conflict builder requirements keep their priority.
+
 Every Runner-injected direct delivery is one JSON object with stable `sender_id`, `recipient_id`,
 `kind`, and `text` fields. `recipient_id` must be your own Agent ID. The Runner mechanically
 supplies the metadata; `text` is the exact original content, including Unicode and line breaks.

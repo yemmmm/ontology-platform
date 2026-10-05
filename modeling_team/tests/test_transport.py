@@ -541,6 +541,38 @@ class TransportTests(unittest.TestCase):
         # No ambiguous null-style notation in the handoff section.
         self.assertNotIn("`reply_to_delivery_id=null`", modeling)
 
+    def test_prompts_do_not_open_reply_duties_with_pure_acknowledgements(self) -> None:
+        root = Path(__file__).resolve().parents[2]
+        modeling = (root / "modeling_team/agent-packages/modeling/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
+            encoding="utf-8"
+        )
+        # The repeated defect: two roles kept exchanging pure confirmations
+        # ("boundary accepted, content unchanged, holding") with
+        # expects_reply=true, so every acknowledgement generated another
+        # acknowledgement turn with no new content.  The ordinary-message
+        # contract: a pure acknowledgement closes its own loop and never
+        # opens a reply duty; a real request still gets exactly one reply.
+        for prompt in (modeling, protocol):
+            self.assertIn("confirming receipt, an accepted boundary, unchanged content, or a", prompt)
+            self.assertIn("never opens a reply duty: send it with", prompt)
+            self.assertIn("Never acknowledge an acknowledgement: an ordinary confirmation you receive", prompt)
+            self.assertIn("keeps generating turns with no new", prompt)
+            self.assertIn("gets exactly one reply,", prompt)
+            self.assertIn("send no further handshake messages on your", prompt)
+            self.assertIn("when you have no new question or result", prompt)
+        # The rule never generalizes into bypassing real obligations: review
+        # and approval requests keep expects_reply=true, and the typed
+        # builder / candidate delivery contracts keep priority.
+        self.assertIn("a candidate or translation review request, and", protocol)
+        self.assertIn("keep the existing `expects_reply=true` contract, and the typed", protocol)
+        self.assertIn("receipt/conflict builder requirements keep their priority", protocol)
+        self.assertIn("a candidate review or revision request, and", modeling)
+        self.assertIn("keep the existing `expects_reply=true` contract; the candidate", modeling)
+        self.assertIn("delivery and revision contracts above keep their priority", modeling)
+
     def test_protocol_prompt_does_not_claim_a_completed_report_is_refused(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
