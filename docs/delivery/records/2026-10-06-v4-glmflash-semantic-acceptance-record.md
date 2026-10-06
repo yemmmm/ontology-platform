@@ -1,6 +1,6 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 最新source10：共享修订与必要物化生产接续已开始
+## 最新：source10完整20/26 REVISE已收口；source11恢复前阻塞，余额2次
 
 用户于本轮明确“再授权三次”；2026-10-06 05:24:24 UTC 登记新 grant `auth-additional-03-20261006-shared-materialization`。累计12次、已消耗9次、剩余3次；截至真实start，新授权已用1/3、剩2次，累计10/12。生产/Consumer/Judge继续GLM5.3Flash/high，问题定位与修复由Claude Code GLM5.3/high执行，service tier未设置。目标沿用R4.0-009四个获准切片及公开18/隐藏8的CQ L0/L1范围；先完成source9保留的共享一致性修订和必要dry-run/apply/readback，再完整独立验收。SCO-001/PAN-001 v2批准及其余24题内容保持。
 
@@ -13,6 +13,18 @@ source9已安全停止、无新增写入，原候选r5仍保留且未物化；�
 Protocol按p034执行四条既有身份更新（两实体、两属性），Batch `00a586e5-60f8-4b8d-a805-324f1c2b19bf`：fresh dry-run Attempt `28208940-0acf-4903-b2f7-926560ca8697` validated/零发现，apply Attempt `9ecd4a2f-37ae-41c6-8677-c4d16431aa24` applied/零发现，新增intent/receipt ordinal38/39已闭合；workspace从b00a…推进到 `b758e22e955327203b15e67db9388d8de90a613984f8768944fa7eeaf15d101d`。Protocol与Coordinator核对回读、未重复关系、未重放旧成功apply，租约释放；Modeling/Protocol/Coordinator本轮completed，均在所需审核与处置完成后终态。CQ角色早期一次report拒绝记录仍保留，不覆盖；不新增角色数量硬门。
 
 Host显式complete_cq_handoff accepted，ready=true/pending_writes=false/write_phase=read-only/unknown_writes=[]；report_directory绑定 `acceptance-v3/reports/cq-batch-0003/attempt-0001`。完整公开18题独立Consumer/Judge已启动，随后隐藏8题；实际模型配置按现成observer核对，使用既有非管理员finance普通read-only主体的新临时密钥。生产Runner保持存活供验收收口；存在production_handoff-0001，未提前stop或撤销其bootstrap。当前没有新语义成绩；最后完整成绩仍source8的22/26 REVISE，V4整体PARTIAL。
+
+### source10最终与source11未扣额度的恢复拒绝
+
+完整独立公开18题16/18（pan4/5、slice12/13）、隐藏8题4/8（pan3/3、slice1/5），同source10/freeze合计20/26 REVISE；26题均执行、有效Judge裁决，不拼接历史通过。公开70次读取/77引用重放、隐藏93次读取/64引用重放；共141引用绑定资格通过、页完整、重放stable、无漂移。隐藏Consumer有7次query参数拒绝/1次报告拒绝，Judge有2次报告拒绝，均保留并继续产生完整有效报告，未把基础设施错误等同模型缺失。实际Consumer/Judge四个隔离runtime均GLMFlash/high；诊断与准备Claude Code GLM5.3/high。
+
+公开失败PAN-001/CFB-001；SCO-001/PRT-001本次通过。CFB-001所需完整流程/逐项/空集合证据本题已返回、答案遗漏；现有覆盖合同已明确，未追加提示。PAN原Judge误将PAN-002旁证说成本题14.json；原note/verdict不改。Claude报告只证object-role过滤范围未返回Technician定义，其他role存在性未核实，Host收窄为模型状态原因未确定，不能声称整个模型缺失；别题旁证不成为本题答案证据。源对齐核对由Modeling自主决定，不传评分点/旧Judge/Consumer答案/隐藏材料。
+
+参数机械诊断仅剥离业务值：前三次query limit50超过已暴露maximum10，代理拒绝正确；search_mode semantic与canonical服务hybrid/lexical不符，schema枚举缺口非当次拒绝根因。错误反馈不定位字段已记录；当前Reader可继续，未新增硬门/平台框架或实施可选合同改造。
+
+Host complete_cq_acceptance accepted；stop accepted、managed exit0、bootstrap撤销。production_handoff-0001与materialization_progress-0002停止前后均ready/issues[]，后者production_resume.available=true。普通finance只读密钥仍保留供当前已授权下一轮验收，未恢复旧撤销密钥；无独立QA子进程继续运行。
+
+source11 `r4009-20261006-glmflashhigh-confirmed-role-start2` 于06:44:06 UTC managed启动、06:44:10 exit2，恢复materialization_progress-0002时被 `existing scope has active Session, Lease, or Attempt` 拒绝；无semantic-start、budget_consumed=0，最新grant仍1/3已用、剩2，累计10/12。bootstrap安全撤销，失败run/日志保留。第一层platform-contract/恢复阻塞，不能推出模型质量失败。交Claude Code窄诊断具体活动项，并按T0核对必要不变量、历史active位与更高层写入对账；恢复原业务源对齐目标，尚无代码或资源状态修改。
 
 ## 保留source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
 

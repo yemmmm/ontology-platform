@@ -152,7 +152,7 @@
 | R4.0-006 | 业务角色与主体语义访问控制 | 功能已实现；后端全量验证通过；A1—A10 独立功能／运行验收 PASS；A11 未授权／未执行，整体 PARTIAL |
 | R4.0-007 | 多视角建模协同与既有流程适配 | 已实现；A1—A9 有界独立功能 PASS；A10 完整语义仍待验证，整体 PARTIAL |
 | R4.0-008 | 跨视角语义检索与上下文组织 | 已实现；A1—A9 有界独立功能 PASS；当前真实场景宽读覆盖缺口另记，整体 PARTIAL |
-| R4.0-009 | 多视角真实建模与独立语义验收 | 历史 Start5 有界21题 PASS 保留；2026-10-06 GLMFlash source8采用已批准PAN-001 v2，source8完整公开16/18、隐藏6/8，同轮22/26 REVISE；source9生产BLOCKED并安全停止；新增三次后source10于05:29:42 UTC生产接续，core r6/parts r4共享修订及四条更新apply/readback已完成，交接ready、完整独立QA运行中；本次1/3、剩2，整体PARTIAL |
+| R4.0-009 | 多视角真实建模与独立语义验收 | 历史 Start5 有界21题 PASS 保留；2026-10-06 GLMFlash source8采用已批准PAN-001 v2，source8完整公开16/18、隐藏6/8，同轮22/26 REVISE；source9生产BLOCKED并安全停止；新增三次后source10于05:29:42 UTC生产接续，core r6/parts r4共享修订及四条更新apply/readback已完成，交接ready、完整独立公开16/18、隐藏4/8，同source10/freeze 20/26 REVISE已收口；source11恢复前平台活动守卫拒绝未扣额度，本次1/3、剩2，整体PARTIAL |
 | R4.0-010 | 数据映射视角与外部数据库关联 | 已实现；A1—A9 有界独立功能 PASS；A10 完整映射语义仍待验证，整体 PARTIAL |
 | R4.0-011 | 接口映射视角与外部 API 关联 | 已实现；A1—A9 有界独立功能 PASS（A5/A7 本轮实际角色补验通过）；A10 待完整验证，整体 PARTIAL |
 | R4.0-012 | 证据追溯能力阶段性停用与多视角建模解耦 | 已实现；A1—A7 独立 PASS，A8 未执行，整体 PARTIAL |
@@ -1404,6 +1404,8 @@ production start。009整体保持 PARTIAL，当前验证、非盲属性和保�
 随后用户新增三次授权，先定位失败后生产接续一次；最新同轮公开12/18、隐藏7/8，19/26 REVISE，
 97条引用响应复核稳定且无漂移。公开证据显示检索选择范围及已返回证据使用不足；模型侧未读项存在性仍未确定。
 Claude Code 完成通用Consumer提示修复（c983fed），首次真实只读公开复验15/18 REVISE，64条引用响应稳定且无漂移；
+最新完成CQ为source10完整同轮20/26 REVISE（公开16/18、隐藏4/8），141引用稳定无漂移，原裁决保留；SCO/PRT公开本次通过。CFB公开为已返证据综合遗漏，PAN仅object-role枚举未返回角色定义、其他分类存在性未确定，不以单过滤推断整个模型缺失。source10收口/安全停止、bootstrap撤销，S2/handoff检查点ready。source11从最新S2恢复在semantic start前被existing scope has active Session/Lease/Attempt拒绝，managed exit2、凭据撤销，无扣额；累计10/12、最新1/3、剩2。Claude Code按T0窄诊断与恢复；尚无新模型质量证据，V4整体PARTIAL。
+
 source10当前（2026-10-06 06:03 UTC）：同轮完成core r6/parts r4共享修订及p034四条既有身份更新，fresh dry-run validated/apply applied均零发现，intent/receipt38/39闭合，workspace b758…；回读确认、租约释放，无旧成功apply重放。三生产角色在必要审核/应用完成后completed，Host交接accepted且ready/read-only/零pending与unknown writes；完整公开18题独立验收已启动，随后隐藏8题。尚无新完整CQ成绩，不将生产完成或机械零发现等同质量PASS。
 
 最新新增授权（2026-10-06 05:24 UTC登记）：用户明确“再授权三次”，累计12次、已用9次、剩3次。继续GLM5.3Flash/high生产与独立验收、Claude Code GLM5.3/high问题修复。接续目标为source9遗留的共享一致性修订、必要物化，再完整公开18/隐藏8独立验收；source10于05:29:42 UTC确认semantic start，本次已用1/3、剩2，累计10/12；四角色实际GLMFlash/high，生产仍运行，尚无新QA，上一完整22/26 REVISE不变，V4整体PARTIAL。
