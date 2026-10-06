@@ -161,15 +161,18 @@ def register_modeling_batches(server: FastMCP) -> None:
     def get_entity_statement_context(
         ontology_id: str,
         entity_iri: str,
-        workspace_version: str,
+        workspace_version: str | None = None,
         page_size: int = 100,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """Read the complete incident statement set for one exact live entity IRI.
 
-        This is intentionally a generic read projection.  The opaque cursor binds
-        Project/Ontology, exact entity IRI, workspace version, and a snapshot digest;
-        callers must consume every page through ``complete=true`` before using the
+        This is intentionally a generic read projection.  Omitting
+        ``workspace_version`` binds the authoritative current version, which the
+        response and every opaque cursor carry; an explicit version must still
+        equal the current version.  The opaque cursor binds Project/Ontology,
+        exact entity IRI, workspace version, and a snapshot digest; callers
+        must consume every page through ``complete=true`` before using the
         response as delete-impact evidence.
         """
 
@@ -188,7 +191,11 @@ def register_modeling_batches(server: FastMCP) -> None:
             if workspace.get("state") != "ready" or not workspace.get("default_graph_set_id"):
                 raise ValueError("ontology workspace is incomplete")
             current_version = ModelingWorkspaceVersionService(session, Settings()).version_for(ontology_id)
-            if workspace_version != current_version:
+            # Read-only first pages bind the authoritative current version when
+            # the caller omits it; explicit delete-impact callers keep the
+            # strict drift check below.
+            bound_version = workspace_version if workspace_version is not None else current_version
+            if bound_version != current_version:
                 raise ValueError("entity statement workspace version drifted")
             data_graphs = [
                 member["graph_iri"]
@@ -269,7 +276,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                     "project_id": ontology.project_id,
                     "ontology_id": ontology_id,
                     "entity_iri": entity_iri,
-                    "workspace_version": workspace_version,
+                    "workspace_version": bound_version,
                     "snapshot_digest": snapshot_digest,
                 }
                 if any(token.get(key) != value for key, value in expected.items()):
@@ -289,7 +296,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                         "project_id": ontology.project_id,
                         "ontology_id": ontology_id,
                         "entity_iri": entity_iri,
-                        "workspace_version": workspace_version,
+                        "workspace_version": bound_version,
                         "snapshot_digest": snapshot_digest,
                         "offset": next_offset,
                     }
@@ -298,7 +305,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                 "project_id": ontology.project_id,
                 "ontology_id": ontology_id,
                 "entity_iri": entity_iri,
-                "workspace_version": workspace_version,
+                "workspace_version": bound_version,
                 "cursor": cursor,
                 "statements": page,
                 "page_digest": _canonical_json_digest(page),

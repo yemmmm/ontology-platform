@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 from sqlalchemy.orm import sessionmaker
 
@@ -276,3 +277,167 @@ def test_mcp_ontology_read_model_forwards_r4010_exact_detail_name(
     assert result["ok"] is True, result
     assert captured["model_name"] == "metric-detail"
     assert captured["entity_iri"] == resource_iri
+
+
+# --- get_entity_statement_context: optional version binds current -------------
+#
+# Read-only first pages bind the authoritative current workspace version when
+# the caller omits it; an explicit version stays strictly drift-checked so the
+# production delete-impact callers keep their exact snapshot binding.
+
+
+class _StatementRows:
+    """RdfStoreRepository stand-in serving canned statement bindings."""
+
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+
+    def query_read_model(self, **_kwargs):
+        return SimpleNamespace(bindings=list(self.rows))
+
+
+def _entity_statement_rows(
+    entity_iri: str = "https://esc.test/entity/live-1",
+) -> list[dict[str, object]]:
+    return [
+        {
+            "subject": {"value": entity_iri, "type": "uri"},
+            "predicate": {"value": "https://esc.test/p/label", "type": "uri"},
+            "object": {"value": "Live one", "type": "literal"},
+            "graph": {"value": "https://esc.test/g/asserted", "type": "uri"},
+        },
+        {
+            "subject": {"value": entity_iri, "type": "uri"},
+            "predicate": {"value": "https://esc.test/p/code", "type": "uri"},
+            "object": {"value": "L1", "type": "literal"},
+            "graph": {"value": "https://esc.test/g/asserted", "type": "uri"},
+        },
+        {
+            "subject": {"value": "https://esc.test/entity/other", "type": "uri"},
+            "predicate": {"value": "https://esc.test/p/linked", "type": "uri"},
+            "object": {"value": entity_iri, "type": "uri"},
+            "graph": {"value": "https://esc.test/g/asserted", "type": "uri"},
+        },
+    ]
+
+
+def _entity_statement_tool(in_memory_session, mcp_principal_factory, monkeypatch):
+    """Bind one ready workspace and a canned RDF store for statement reads."""
+    from app.services.modeling_workspace import ModelingWorkspaceVersionService
+    from app.services.ontology_workspace import OntologyWorkspaceService
+
+    in_memory_session.add_all(
+        [
+            ProjectModel(id="p-esc", name="ESC", normalized_label="esc"),
+            OntologyModel(id="o-esc", project_id="p-esc", name="ESC ontology"),
+        ]
+    )
+    in_memory_session.commit()
+    OntologyWorkspaceService(in_memory_session, Settings()).ensure(
+        in_memory_session.get(OntologyModel, "o-esc")
+    )
+    in_memory_session.commit()
+    mcp_principal_factory(in_memory_session, project_id="p-esc", scopes=["read"])
+    factory = sessionmaker(
+        bind=in_memory_session.get_bind(), autoflush=False, autocommit=False
+    )
+    monkeypatch.setattr("app.mcp.runtime.get_resources", lambda: (factory, None, None))
+    store = _StatementRows(_entity_statement_rows())
+    monkeypatch.setattr(
+        "app.mcp.tools.modeling_batches.RdfStoreRepository", lambda _url: store
+    )
+    version = ModelingWorkspaceVersionService(in_memory_session, Settings()).version_for(
+        "o-esc"
+    )
+    tool = mcp._tool_manager.get_tool("get_entity_statement_context")  # noqa: SLF001
+    assert tool is not None
+    return tool.fn, version, store
+
+
+def test_get_entity_statement_context_workspace_version_is_optional() -> None:
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    schema = tools["get_entity_statement_context"].inputSchema or {}
+    assert set(schema.get("required", [])) == {"ontology_id", "entity_iri"}
+    version = schema["properties"]["workspace_version"]
+    assert version.get("default") is None
+    assert {"type": "string"} in version.get("anyOf", [])
+
+
+def test_entity_statement_context_omitted_version_binds_current(
+    in_memory_session, monkeypatch, mcp_principal_factory
+) -> None:
+    invoke, version, _store = _entity_statement_tool(
+        in_memory_session, mcp_principal_factory, monkeypatch
+    )
+    result = invoke(ontology_id="o-esc", entity_iri="https://esc.test/entity/live-1")
+    assert result["ok"] is True, result
+    data = result["data"]
+    assert data["workspace_version"] == version
+    assert data["complete"] is True
+    assert len(data["statements"]) == 3
+
+
+def test_entity_statement_context_explicit_version_stays_strict(
+    in_memory_session, monkeypatch, mcp_principal_factory
+) -> None:
+    invoke, version, _store = _entity_statement_tool(
+        in_memory_session, mcp_principal_factory, monkeypatch
+    )
+    entity = "https://esc.test/entity/live-1"
+    current = invoke(ontology_id="o-esc", entity_iri=entity, workspace_version=version)
+    assert current["ok"] is True, current
+    stale = invoke(ontology_id="o-esc", entity_iri=entity, workspace_version="0" * 64)
+    assert stale["ok"] is False
+    assert "drifted" in stale["error"]
+
+
+def test_entity_statement_context_cursor_binds_version_entity_and_snapshot(
+    in_memory_session, monkeypatch, mcp_principal_factory
+) -> None:
+    invoke, version, store = _entity_statement_tool(
+        in_memory_session, mcp_principal_factory, monkeypatch
+    )
+    entity = "https://esc.test/entity/live-1"
+    first = invoke(ontology_id="o-esc", entity_iri=entity, page_size=2)
+    assert first["ok"] is True, first
+    assert first["data"]["complete"] is False
+    cursor = first["data"]["next_cursor"]
+    assert cursor
+    # The bound version stays authoritative through pagination even when the
+    # caller never restates it.
+    second = invoke(ontology_id="o-esc", entity_iri=entity, page_size=2, cursor=cursor)
+    assert second["ok"] is True, second
+    assert second["data"]["complete"] is True
+    assert len(second["data"]["statements"]) == 1
+    assert second["data"]["workspace_version"] == version
+    # An explicit restatement must stay strict mid-pagination.
+    stale = invoke(
+        ontology_id="o-esc",
+        entity_iri=entity,
+        page_size=2,
+        cursor=cursor,
+        workspace_version="0" * 64,
+    )
+    assert stale["ok"] is False
+    assert "drifted" in stale["error"]
+    # The cursor never crosses to another entity.
+    cross = invoke(
+        ontology_id="o-esc",
+        entity_iri="https://esc.test/entity/other",
+        page_size=2,
+        cursor=cursor,
+    )
+    assert cross["ok"] is False
+    assert "drifted" in cross["error"]
+    # A mutated snapshot invalidates the cursor through its digest binding.
+    store.rows = _entity_statement_rows() + [
+        {
+            "subject": {"value": entity, "type": "uri"},
+            "predicate": {"value": "https://esc.test/p/extra", "type": "uri"},
+            "object": {"value": "late", "type": "literal"},
+            "graph": {"value": "https://esc.test/g/asserted", "type": "uri"},
+        }
+    ]
+    mutated = invoke(ontology_id="o-esc", entity_iri=entity, page_size=2, cursor=cursor)
+    assert mutated["ok"] is False
+    assert "drifted" in mutated["error"]

@@ -2171,7 +2171,12 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "entity_iri": {"type": "string"}, "class_iri": {"type": "string"},
         "kind": {"type": "string"}, "q": {"type": "string"},
     },
-    "get_entity_statement_context": {"entity_iri": {"type": "string"}},
+    "get_entity_statement_context": {
+        "entity_iri": {"type": "string"},
+        "workspace_version": {"type": ["string", "null"]},
+        "page_size": {"type": "integer", "minimum": 1, "maximum": 1000},
+        "cursor": {"type": ["string", "null"]},
+    },
     "get_semantic_read_model": {
         "model_name": {"type": "string"},
         "include": {"type": "string"},

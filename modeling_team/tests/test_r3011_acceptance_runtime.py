@@ -488,6 +488,89 @@ def test_v3_proxy_refuses_unauthorized_and_cross_project_selections(tmp_path):
         proxy.stop()
 
 
+def test_v3_proxy_entity_statement_read_matches_canonical_pagination_contract(tmp_path):
+    """The proxy exposes the canonical entity-statement read contract.
+
+    The canonical tool accepts an optional ``workspace_version`` (omission binds
+    the platform's authoritative current version), a bounded ``page_size``, and
+    the opaque ``cursor``.  Before those fields existed here every legal child
+    read failed as ``platform-forward-failed`` because the backend required a
+    version the exact proxy schema never carried.
+    """
+    forwarded: list[tuple[str, dict, str]] = []
+
+    def forward(tool: str, arguments: dict, key: str) -> dict:
+        forwarded.append((tool, dict(arguments), key))
+        return {"ok": True, "data": {"complete": True}}
+
+    proxy, _packet_ = _proxy(
+        tmp_path, tools=("get_entity_statement_context",), forward=forward
+    )
+    try:
+        schema = v3_examiner_proxy_schemas(("get_entity_statement_context",))[
+            "get_entity_statement_context"
+        ]
+        assert schema["required"] == ["project_id", "ticket_digest", "entity_iri"]
+        for field in ("workspace_version", "page_size", "cursor"):
+            assert field in schema["properties"], field
+        assert schema["properties"]["page_size"] == {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+        }
+        assert schema["properties"]["workspace_version"] == {"type": ["string", "null"]}
+        assert schema["properties"]["cursor"] == {"type": ["string", "null"]}
+
+        first = proxy.handle(
+            {
+                "token": "proxy-token",
+                "operation": "tools/call",
+                "tool": "get_entity_statement_context",
+                "arguments": {"entity_iri": "https://r3011.test/entity/live-1"},
+            }
+        )
+        assert first["ok"] is True, first
+        # The proxy injects the frozen scope but never invents a workspace
+        # version: the canonical first page binds the current version itself.
+        assert "workspace_version" not in forwarded[-1][1]
+        assert forwarded[-1][1]["entity_iri"] == "https://r3011.test/entity/live-1"
+
+        second = proxy.handle(
+            {
+                "token": "proxy-token",
+                "operation": "tools/call",
+                "tool": "get_entity_statement_context",
+                "arguments": {
+                    "entity_iri": "https://r3011.test/entity/live-1",
+                    "workspace_version": "v-bound",
+                    "page_size": 2,
+                    "cursor": "esc1.cGFnZQ",
+                },
+            }
+        )
+        assert second["ok"] is True, second
+        assert forwarded[-1][1]["workspace_version"] == "v-bound"
+        assert forwarded[-1][1]["page_size"] == 2
+        assert forwarded[-1][1]["cursor"] == "esc1.cGFnZQ"
+
+        rejected = proxy.handle(
+            {
+                "token": "proxy-token",
+                "operation": "tools/call",
+                "tool": "get_entity_statement_context",
+                "arguments": {
+                    "entity_iri": "https://r3011.test/entity/live-1",
+                    "limit": 5,
+                },
+            }
+        )
+        assert rejected["ok"] is False
+        assert rejected["code"] == "read-arguments-schema"
+        assert len(forwarded) == 2
+    finally:
+        proxy.stop()
+
+
 def test_v3_proxy_default_selection_is_the_first_authorized_ontology(tmp_path):
     forwarded: list[tuple[str, dict, str]] = []
 
