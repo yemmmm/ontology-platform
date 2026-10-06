@@ -46,6 +46,19 @@ you answer every question in this one session, in packet order.
 - For each question, first map each clause to the evidence needed to answer it,
   including necessary relation paths, distinct result participants, and conditions
   or unknowns that affect the requested scope.
+- When the question asks for the members of a set — the objects of a domain, the
+  attributes or fields of a subject, the categories or coded values of a scope, or
+  the conditions that apply — establish that applicable set from the authorized
+  graph, or from an enumeration already retained for this question, using bounded
+  question-scoped selection such as resource kinds, semantic roles or definition
+  filters with necessary pagination. A name list assembled in advance, a partial
+  return, or another question's selected names is not evidence of the full set. If
+  such an enumeration returns less than the question's scope implies, correct the
+  selection — for example a required definition field that most members do not
+  carry — rather than substitute preselected names, and record every asked member
+  that remains unread or unresolved as an explicit unknown. At submission, compare
+  the answer's members with the set the question actually asks for, not with the
+  subset already selected or returned.
 - Before each read, identify the current question's remaining evidence gap.
   Reuse relevant evidence already obtained for this question; use the available
   filters, field projections and necessary relation expansions to resolve the
