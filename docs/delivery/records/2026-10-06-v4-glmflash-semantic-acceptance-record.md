@@ -6,7 +6,15 @@
 
 source9已安全停止、无新增写入，原候选r5仍保留且未物化；其scenario_mapped检查点不含候选。新生产复用source5 `materialization_progress-0002` 的既有候选、资料与已成功回执，由Modeling自主完成遗留的窄修订，不重放成功apply，不注入隐藏题或旧Judge答案。Claude Code已适配现有安全入口，关键FIFO/liveness/bootstrap安全函数AST不变、py_compile与无副作用plan检查通过。source10 `r4009-20261006-glmflashhigh-shared-materialization-start1` 于2026-10-06 05:29:42.905 UTC确认semantic start，距授权登记约5分钟；managed PID216483存活，生产观察仍由宿主承担。四角色实际配置均glm-5.3-flash/high，未修改service tier。PAN/SCO获批v2恢复请求均accepted，待当前freeze与后续生产证据。这不是质量PASS。
 
-## 最新source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
+### source10已完成生产修订，live独立验收运行中
+
+截至2026-10-06 06:03 UTC：Coordinator完成共享一致性审核；core r5/parts r3因非关系项shared_scope不合法被准确拒绝，原版保留，Modeling在同轮发布core r6/parts r4修正并通过审核，没有新增start。新slot为closure r5/core r6/parts r4/static r4；当前地图绑定freeze-0003，26题内容/顺序与source9批准逐项相等，digest `sha256:b90dbc5261d0172880eab44cf5f1c22e913890ca528bb58904a7fc6b023f1089`。
+
+Protocol按p034执行四条既有身份更新（两实体、两属性），Batch `00a586e5-60f8-4b8d-a805-324f1c2b19bf`：fresh dry-run Attempt `28208940-0acf-4903-b2f7-926560ca8697` validated/零发现，apply Attempt `9ecd4a2f-37ae-41c6-8677-c4d16431aa24` applied/零发现，新增intent/receipt ordinal38/39已闭合；workspace从b00a…推进到 `b758e22e955327203b15e67db9388d8de90a613984f8768944fa7eeaf15d101d`。Protocol与Coordinator核对回读、未重复关系、未重放旧成功apply，租约释放；Modeling/Protocol/Coordinator本轮completed，均在所需审核与处置完成后终态。CQ角色早期一次report拒绝记录仍保留，不覆盖；不新增角色数量硬门。
+
+Host显式complete_cq_handoff accepted，ready=true/pending_writes=false/write_phase=read-only/unknown_writes=[]；report_directory绑定 `acceptance-v3/reports/cq-batch-0003/attempt-0001`。完整公开18题独立Consumer/Judge已启动，随后隐藏8题；实际模型配置按现成observer核对，使用既有非管理员finance普通read-only主体的新临时密钥。生产Runner保持存活供验收收口；存在production_handoff-0001，未提前stop或撤销其bootstrap。当前没有新语义成绩；最后完整成绩仍source8的22/26 REVISE，V4整体PARTIAL。
+
+## 保留source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
 
 `r4009-20261006-glmflashhigh-source-locator-start3` 于2026-10-06
 **04:34:53.557973 UTC**真实开始，仍从source5 `materialization_progress-0002`生产检查点接续。
