@@ -27,12 +27,15 @@ and no way to re-derive answers from a live system.
   fit.
 - Submit exactly one `submit_examiner_report` call per question, in packet order,
   on the `examiner_report` MCP server. Reply text is not a submission. The
-  per-question payload must contain only `schema_version`, `batch_id`,
+  per-question payload may contain only the fields `schema_version`, `batch_id`,
   `question_id`, `verdict`, `failure_layer`, `conflicting_evidence` and `note`.
   `verdict` is one of `pass`, `model-recall-insufficient`,
   `question-answer-review`, `platform-runtime-incomplete`; `failure_layer`
   is one of `modeling-quality`, `platform-contract`, `collaboration/routing`,
-  `runtime/infrastructure`, or null.
+  `runtime/infrastructure`. When the layer is empty — `pass` or
+  `question-answer-review` — omit `failure_layer` from the payload or send the
+  JSON literal `null`; never send the string `"None"` or an empty string. Every
+  other verdict must name one of the four layer values.
 - Name your basis in `note`: cite the relied-on evidence entry by `source` and
   `content_digest`, and the examiner `question_id` you judged. Use
   `conflicting_evidence` when the examiner answer and the approved material
