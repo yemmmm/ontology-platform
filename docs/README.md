@@ -5,7 +5,7 @@ delivery evidence. Use the following locations for new documentation.
 
 | Location | Purpose |
 | --- | --- |
-| [`requirements/`](requirements/) | Versioned product requirements. `requirements-v1.0.md` remains the authoritative global target-state reference. |
+| [`requirements/`](requirements/) | Versioned product requirements. Select the version that owns the task; older versions apply through its declared baseline links. |
 | [`reference/`](reference/) | Current public interface and terminology references: HTTP API, MCP tools, and glossary. |
 | [`guides/`](guides/) | Operator and UI usage guides. |
 | [`architecture/`](architecture/) | Current architecture overview, ADRs, and semantic-platform architecture history. |
@@ -14,6 +14,14 @@ delivery evidence. Use the following locations for new documentation.
 | [`delivery/test-plans/`](delivery/test-plans/) | Shared and independent test plans, including their recorded rounds. |
 | [`delivery/records/`](delivery/records/) | Append-only requirement delivery records. |
 | [`delivery/modeling-retrospectives/`](delivery/modeling-retrospectives/) | Modeling-workflow retrospectives. |
+
+## Current requirement entry points
+
+- [v4.1 frontend workbench adaptation](requirements/requirements-v4.1.md): registered page structure,
+  model browsing, modeling progress, retrieval, acceptance, and administration requirements; pending
+  detailed design and implementation.
+- [v4.0 semantic modeling requirements](requirements/requirements-v4.0.md): the business-semantic,
+  collaboration, authorization, and acceptance baseline inherited by v4.1.
 
 ## Placement rules
 
