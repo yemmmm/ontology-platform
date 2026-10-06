@@ -1,6 +1,6 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 最新：source10完整20/26 REVISE已收口；source11恢复前阻塞，余额2次
+## 最新：source10完整20/26 REVISE；source11排障后真实接续，余额1次
 
 用户于本轮明确“再授权三次”；2026-10-06 05:24:24 UTC 登记新 grant `auth-additional-03-20261006-shared-materialization`。累计12次、已消耗9次、剩余3次；截至真实start，新授权已用1/3、剩2次，累计10/12。生产/Consumer/Judge继续GLM5.3Flash/high，问题定位与修复由Claude Code GLM5.3/high执行，service tier未设置。目标沿用R4.0-009四个获准切片及公开18/隐藏8的CQ L0/L1范围；先完成source9保留的共享一致性修订和必要dry-run/apply/readback，再完整独立验收。SCO-001/PAN-001 v2批准及其余24题内容保持。
 
@@ -25,6 +25,12 @@ Host显式complete_cq_handoff accepted，ready=true/pending_writes=false/write_p
 Host complete_cq_acceptance accepted；stop accepted、managed exit0、bootstrap撤销。production_handoff-0001与materialization_progress-0002停止前后均ready/issues[]，后者production_resume.available=true。普通finance只读密钥仍保留供当前已授权下一轮验收，未恢复旧撤销密钥；无独立QA子进程继续运行。
 
 source11 `r4009-20261006-glmflashhigh-confirmed-role-start2` 于06:44:06 UTC managed启动、06:44:10 exit2，恢复materialization_progress-0002时被 `existing scope has active Session, Lease, or Attempt` 拒绝；无semantic-start、budget_consumed=0，最新grant仍1/3已用、剩2，累计10/12。bootstrap安全撤销，失败run/日志保留。第一层platform-contract/恢复阻塞，不能推出模型质量失败。交Claude Code窄诊断具体活动项，并按T0核对必要不变量、历史active位与更高层写入对账；恢复原业务源对齐目标，尚无代码或资源状态修改。
+
+### source11窄恢复与实际语义开始
+
+Claude Code GLM5.3/high定位唯一活动项为source10自建Session `ae7aef1a-686d-411c-ad30-09247f79f368`：写入已applied、lease已释放、无in-flight Attempt，历史active状态仍触发恢复拒绝。T0复核保留；通过既有cancel接口于06:58:47 UTC收为cancelled/revision2，仅处理本轮自有Session，不删除模型或回执。build context确认active Session/Lease/Attempt均空，S2仍ready且production resume可用。随后Claude Code补齐本轮公开交接合同中的自建Session终态化或准确Host交接职责，相关工具/格式/泄漏检查通过，未改平台代码或新建治理机制。
+
+使用新run `r4009-20261006-glmflashhigh-confirmed-role-start2-retry1`，从source10 `materialization_progress-0002`接续，07:05:51.616 UTC实际semantic start确认。最新grant已用2/3、剩1，累计11/12；此前预语义拒绝仍零扣额、日志保留。四个生产角色实际GLM5.3Flash/high，继承当前批准26题逐项相同。目标仅由Modeling按原批准材料核对工程师/派工相关真实定义及必要修订，完整时只读交付依据，不按单一object-role过滤缺项强行物化；之后仍需本轮完整独立验收。目前RUNNING不代表质量通过，最新完成成绩仍source10的20/26 REVISE。
 
 ## 保留source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
 
