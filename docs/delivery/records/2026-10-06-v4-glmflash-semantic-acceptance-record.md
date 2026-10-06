@@ -1,5 +1,11 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
+## 最新source10：共享修订与必要物化生产接续已开始
+
+用户于本轮明确“再授权三次”；2026-10-06 05:24:24 UTC 登记新 grant `auth-additional-03-20261006-shared-materialization`。累计12次、已消耗9次、剩余3次；截至真实start，新授权已用1/3、剩2次，累计10/12。生产/Consumer/Judge继续GLM5.3Flash/high，问题定位与修复由Claude Code GLM5.3/high执行，service tier未设置。目标沿用R4.0-009四个获准切片及公开18/隐藏8的CQ L0/L1范围；先完成source9保留的共享一致性修订和必要dry-run/apply/readback，再完整独立验收。SCO-001/PAN-001 v2批准及其余24题内容保持。
+
+source9已安全停止、无新增写入，原候选r5仍保留且未物化；其scenario_mapped检查点不含候选。新生产复用source5 `materialization_progress-0002` 的既有候选、资料与已成功回执，由Modeling自主完成遗留的窄修订，不重放成功apply，不注入隐藏题或旧Judge答案。Claude Code已适配现有安全入口，关键FIFO/liveness/bootstrap安全函数AST不变、py_compile与无副作用plan检查通过。source10 `r4009-20261006-glmflashhigh-shared-materialization-start1` 于2026-10-06 05:29:42.905 UTC确认semantic start，距授权登记约5分钟；managed PID216483存活，生产观察仍由宿主承担。四角色实际配置均glm-5.3-flash/high，未修改service tier。PAN/SCO获批v2恢复请求均accepted，待当前freeze与后续生产证据。这不是质量PASS。
+
 ## 最新source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
 
 `r4009-20261006-glmflashhigh-source-locator-start3` 于2026-10-06
