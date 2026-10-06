@@ -98,13 +98,17 @@ you answer every question in this one session, in packet order.
   on the `examiner_report` MCP server. Reply text is not a submission. Do not submit
   twice for one question, do not skip a question, and do not submit a question that
   is not in the packet.
-- The per-question payload must contain only `schema_version`, `batch_id`,
-  `question_id`, `question_content_version`, `answer`, `evidence_refs`,
-  `explicit_unknown`, `status`, `failure_layer` and `reason`. `schema_version` and
-  `batch_id` come from `report_schema`/`batch_id` in the packet. `status` is one of
-  `completed`, `unanswered`, `runtime-incomplete`. `failure_layer` is one of
+- The per-question payload may contain only the fields `schema_version`,
+  `batch_id`, `question_id`, `question_content_version`, `answer`,
+  `evidence_refs`, `explicit_unknown`, `status`, `failure_layer` and `reason`;
+  every one of them is required except `failure_layer`. `schema_version` and
+  `batch_id` come from `report_schema`/`batch_id` in the packet. `status` is one
+  of `completed`, `unanswered`, `runtime-incomplete`. `failure_layer` is one of
   `modeling-quality`, `platform-contract`, `collaboration/routing`,
-  `runtime/infrastructure`, or null.
+  `runtime/infrastructure`. When the layer is empty, omit `failure_layer` from
+  the payload or send the JSON literal `null`; never send the string `"None"`
+  or an empty string. When you name a failure layer, it must be one of those
+  four values.
 - Bind every read used for this question in `evidence_refs` by its short
   host-issued evidence handle: each successful read returns an
   `evidence_handle` such as `p0`. Copy that one value exactly as the tool
