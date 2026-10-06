@@ -4,6 +4,8 @@
 
 用户随后明确“收回剩余次数”：剩余1次fresh semantic start授权已撤销，当前可用0次；累计原授权12次、实际已用11次、撤销1次，最新grant已用2/3、撤销1次。Host台账状态改为revoked，不再启动新的建模。已完成模型、验收结果、历史证据和未验收范围不变；下文余额1次为收回前的历史状态。
 
+用户另授权清除除最终建模以外的全部测试项目。通过现有项目DELETE接口清理37个历史测试项目，均HTTP204；项目列表由38个降为1个。保留最终生产绑定项目`d50aa592-150d-4f73-afd8-84d267cd2405`及本体`dbef2380-21c1-40ac-85c5-1c4013d8b7e9`；项目名称仍为首次创建时的`R2.3 team r4009-20261005-glmflashhigh-auth03-start1`，后续生产接续复用此项目，不以名称误删。最终项目build-context除generated_at外清理前后完全相等，本体元数据不变；临时清理bootstrap已撤销。清单、逐项目删除结果和前后核对保存在`workspaces/v4-acceptance-20261005/test-project-cleanup-result.json`及对应inventory/context文件。历史本地运行日志和验收证据保留；已删除项目的历史检查点不再代表可恢复的在线资源。
+
 截至2026-10-06 09:46 UTC，Consumer提示修复49471e9后的两批**全新完整独立验收**均PASS：公开18/18、隐藏8/8。这是一份Host覆盖汇总，底层仍是两份独立完整batch报告，不是单一合并报告。两批同source11生产状态、同freeze-0003摘要、同前后模型绑定，题目集合互斥且并集等于全部冻结26题；没有拼接旧隐藏PASS。公开/隐藏分别51/106条引用通过原响应、请求/结果摘要与分页复核，157条重放stable、零漂移、零unavailable、零未执行题。四个实际Consumer/Judge隔离配置均GLM5.3Flash/high，两个新Consumer实际会话均已核实加载修复提示。source11原25/26 REVISE及所有失败证据保持不变。
 
 | 新独立批次 | 输出run / attempt | 实际结果与退出 |
