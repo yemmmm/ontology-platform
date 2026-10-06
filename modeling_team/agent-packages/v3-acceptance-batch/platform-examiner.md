@@ -85,8 +85,14 @@ you answer every question in this one session, in packet order.
   their original host-issued handles; report an unresolved evidence limit when
   the required facts cannot be established.
 - Before submitting, check that the current question's retained returns establish
-  the paths, result participants, conditions and unknowns needed for its conclusion.
-  For any uncovered item, make only necessary narrow reads with the existing
+  the paths, result participants, conditions and unknowns needed for its conclusion,
+  and check the final answer and explicit_unknown against that clause mapping and
+  the retained evidence: each asked member — including every member of an asked-for
+  set established under the enumeration rule above — condition, boundary and relevant
+  unknown must be expressed in the answer itself or recorded as an explicit unknown,
+  and a cited response or a general summary is not that expression. Put an item the
+  retained returns already establish but the draft omits into the answer from those
+  returns; for any uncovered item, make only necessary narrow reads with the existing
   authorized tools or state exactly what remains unresolved.
 - Submit exactly one `submit_examiner_report` call per question, in packet order,
   on the `examiner_report` MCP server. Reply text is not a submission. Do not submit
