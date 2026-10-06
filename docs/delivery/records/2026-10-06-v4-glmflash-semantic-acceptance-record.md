@@ -1,6 +1,6 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 最新：source10完整20/26 REVISE；source11排障后真实接续，余额1次
+## 最新：source11有界生产收口并启动完整独立验收，余额1次
 
 用户于本轮明确“再授权三次”；2026-10-06 05:24:24 UTC 登记新 grant `auth-additional-03-20261006-shared-materialization`。累计12次、已消耗9次、剩余3次；截至真实start，新授权已用1/3、剩2次，累计10/12。生产/Consumer/Judge继续GLM5.3Flash/high，问题定位与修复由Claude Code GLM5.3/high执行，service tier未设置。目标沿用R4.0-009四个获准切片及公开18/隐藏8的CQ L0/L1范围；先完成source9保留的共享一致性修订和必要dry-run/apply/readback，再完整独立验收。SCO-001/PAN-001 v2批准及其余24题内容保持。
 
@@ -31,6 +31,18 @@ source11 `r4009-20261006-glmflashhigh-confirmed-role-start2` 于06:44:06 UTC man
 Claude Code GLM5.3/high定位唯一活动项为source10自建Session `ae7aef1a-686d-411c-ad30-09247f79f368`：写入已applied、lease已释放、无in-flight Attempt，历史active状态仍触发恢复拒绝。T0复核保留；通过既有cancel接口于06:58:47 UTC收为cancelled/revision2，仅处理本轮自有Session，不删除模型或回执。build context确认active Session/Lease/Attempt均空，S2仍ready且production resume可用。随后Claude Code补齐本轮公开交接合同中的自建Session终态化或准确Host交接职责，相关工具/格式/泄漏检查通过，未改平台代码或新建治理机制。
 
 使用新run `r4009-20261006-glmflashhigh-confirmed-role-start2-retry1`，从source10 `materialization_progress-0002`接续，07:05:51.616 UTC实际semantic start确认。最新grant已用2/3、剩1，累计11/12；此前预语义拒绝仍零扣额、日志保留。四个生产角色实际GLM5.3Flash/high，继承当前批准26题逐项相同。目标仅由Modeling按原批准材料核对工程师/派工相关真实定义及必要修订，完整时只读交付依据，不按单一object-role过滤缺项强行物化；之后仍需本轮完整独立验收。目前RUNNING不代表质量通过，最新完成成绩仍source10的20/26 REVISE。
+
+### source11生产收口与独立验收（08:11 UTC）
+
+旧b010-r2回执缺挂载由Claude Code只读定位：原始成功run `r4009-20261005-glmflashhigh-auth03-start2-retry1` intent/receipt17、18存在；Batch1283e987与Attempt1c6d03d6、内容摘要、幂等键及16条命令摘要匹配当前recovery/imports。第一跳恢复只装载旧CP回执1..16；post-CP回执仍在源run，后续ordinal复用不能跨run误认。Host正式issue-1 guidance accepted、resume记录持久化，原issue/回执不改、无成功apply重放。Coordinator曾等待自身重复resume消息，Host核实RUNNING后既有user通道解锁；Claude Code持久澄清self_resumed现行合同，不改代码或引入机制。
+
+Modeling实际源核对与Protocol回读发现共享候选表述/可见性身份差异，同轮发布closure r6，再按dry-run反馈发布r7。r7为243items/14unknowns，core r6/parts r4/static r4保留；相对r6仅移除两条closure-local冗余关系，核心共享SPO仍存在。Coordinator完成跨切片引用检查/slot revision6与场景地图同步。本轮p035-r1九命令dry-run Batch `ac718023-93bd-4fbb-9e8d-0cde01088a51` / Attempt `d36a1b91-a7d8-4cde-ad58-d4476f4bb5e7` 因冗余关系与角色更新conflicting_item_effects失败关闭；无apply、workspace仍b758…，失败证据保留。
+
+后续七项精确等价核对六项verified-match，一项restricted-cost-scope为unsupported-read且保留核心成功回执；不由degraded/fuzzy/no_match或截断输出推导图缺失/不一致。协议未提供安全属性/关系删除，旧重复visibility predicate/statements明确保留为gap。Host收窄重复全图/历史核对，Claude Code只读读取通路诊断仍在完成，不阻塞原授权独立QA。本轮自建Session `c974ac28-81c0-4e02-9e0b-c53ae2157fff` 经现有complete接口及回读completed/revision2，租约released；没有遗留活动自有Session。
+
+08:09 UTC三生产角色终态completed；Host绑定当前resume-prepared的cq_freeze_restored=true与本轮恢复、重校验的freeze-0003（原批准26题内容/顺序逐项相等），不是重新出题/审批或旧成绩复用。08:10 UTC complete_cq_handoff accepted，ready=true/pending_writes=false/write_phase=read-only/unknown_writes=[]，报告目录 `acceptance-v3/reports/cq-batch-0003/attempt-0001`。完整公开18题Consumer/Judge启动，随后隐藏8题；GLMFlash/high，普通finance只读主体，生产Runner保留存活供最终收口。尚无本轮成绩，最新完成成绩仍source10的20/26 REVISE，009及V4整体PARTIAL。累计11/12、当前grant2/3、剩1；核对/保存/验收未扣start。
+
+计时仅报告可观察墙钟：本轮semantic start07:05:51至交接约08:10，内含初始读材料、旧回执issue暂停、模型压缩及读取循环，不能把整段算有效语义时间；独立QA从08:10起。Claude只读回执核查约07:21—07:29、读取通路核查约07:57起；重叠不相加为session有效耗时，细分类仍unknown。不继续扩大平台/harness，优先完成当前完整语义消费证据。
 
 ## 保留source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
 
