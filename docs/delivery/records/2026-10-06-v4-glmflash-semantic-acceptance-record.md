@@ -1,6 +1,45 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 最新接续：原始19/26 REVISE；只读复验公开17/18、隐藏7/8，仍为REVISE
+## 当前接续：PAN-001 v2 已批准；source8 完整22/26 REVISE
+
+截至2026-10-06 04:29 UTC，最新授权三次已使用2次、剩余1次，累计8/9。
+当前run `r4009-20261006-glmflashhigh-approved-panv2-start2` 于03:12:12.016972 UTC
+真实开始，从source5的`materialization_progress-0002`生产检查点接续。
+用户明确批准PAN-001 v2，只把题干范围明确为四个获准切片的完整已确认业务域；
+三个评分点、未知、来源与范围不变。SCO-001 v2沿用既有批准。
+当前26题逐项核对后冻结为`freeze-0003` / `cq-batch-0003`，digest
+`sha256:38637dc7d833283b6cf167d4f6ab8519335fd24b175256ed3605e1a24beba492`。
+与source7相比，只有PAN-001题干与内容版本改变；所有评分点、未知、来源、范围、可见性与顺序不变。
+
+- 三个生产角色完成源复核，没有新候选修订、计划或apply；模型绑定保持不变。
+  handoff ready/read-only，无pending或unknown writes；`production_handoff-0001`检查ready、issues为空。
+  live验收收口与stop回执均accepted；managed Runner于04:29:05.129803 UTC退出、exit0，bootstrap已撤销。
+- 当前完整公开18题已执行、独立判定：**16/18 REVISE**，全景5/5 PASS；
+  SCO-001与PRT-001未通过。143次成功读取、117条引用响应重放稳定，
+  工具/请求/响应/文件/分页及前后模型绑定核对通过，无漂移。
+  PAN-001 v2本次PASS不覆盖旧题干的失败。完整隐藏8题执行并取得有效裁决，**6/8 REVISE**，113次成功读取、108条引用响应重放稳定。
+  本轮同source/freeze公开16/18与隐藏6/8合计**22/26 REVISE**，未拼接旧轮；225条引用响应均稳定。
+  隐藏诊断资格核对通过、模型绑定一致，无漂移；私有内容不回流生产或修复者。
+- Claude Code GLM5.3/high仅使用获准公开来源及留存读取完成诊断：两题必要范围未读全，
+  Judge所称“已读未用”与本题返回不相符；原note/verdict保留。
+  序列号、请求数量有同图/同包已有表达旁证；安装日期与request→shipment多重性在所查返回中
+  未出现，不能据此判模型缺失。Consumer现行合同已要求完整枚举/提交前覆盖核对，
+  当前证据没有证明新提示缺陷，不再添加可选硬化。
+  下一次生产复核只交原获准源位置及中立核对问题，由Modeling判断已确认含义和实际表达缺口。
+  数据库列/无唯一约束仍仅为映射证据，不能独自升级为确认的业务语义。
+- source7的新读合同隐藏只读复验`start7-s4-hidden2`完整8题仍为7/8，
+  84次成功读取、72条引用响应重放稳定、资格核对通过、无漂移；
+  45次实体语句上下文读取成功，原转发参数缺陷未复现。该结果不拼接source8公开结果。
+- Claude Code提交`c351d36`、`557aaab`，仅明确Judge/Consumer空failure_layer
+  应省略或使用JSON null，禁止字符串None；既有102项/130项相关合同分别通过。
+  不改评分、字段校验或检索策略；当前已启动子会话不宣称热加载。
+  文档/提示变动不要求服务重启，机械通过不代表语义质量通过。
+
+V4整体仍为PARTIAL；目标仍仅为获批核心CQ L0/L1。生产零写入复核不等于独立验收通过；
+本轮未新增真实DL证据（已有推理为development_stub），不关闭全部A1—A12、映射执行或L2/L3。
+详细证据保留于宿主目录`start8-*`、`diagnose-start8-public-slice-failures.md`与当前run的`acceptance-v3/`。
+
+## 历史source7接续：原始19/26 REVISE；只读复验公开17/18、隐藏7/8，仍为REVISE
 
 用户新增授权三次，并要求先定位失败原因再继续。当前授权1/3已用、剩余2次；
 累计7/9已用。新 run 为 `r4009-20261006-glmflashhigh-diagnosed-start1`，真实 semantic
