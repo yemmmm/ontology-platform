@@ -1,6 +1,6 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 最新：source11有界生产收口并启动完整独立验收，余额1次
+## 最新：source11完整25/26 REVISE；消费提示窄修后只读复验，余额1次
 
 用户于本轮明确“再授权三次”；2026-10-06 05:24:24 UTC 登记新 grant `auth-additional-03-20261006-shared-materialization`。累计12次、已消耗9次、剩余3次；截至真实start，新授权已用1/3、剩2次，累计10/12。生产/Consumer/Judge继续GLM5.3Flash/high，问题定位与修复由Claude Code GLM5.3/high执行，service tier未设置。目标沿用R4.0-009四个获准切片及公开18/隐藏8的CQ L0/L1范围；先完成source9保留的共享一致性修订和必要dry-run/apply/readback，再完整独立验收。SCO-001/PAN-001 v2批准及其余24题内容保持。
 
@@ -43,6 +43,16 @@ Modeling实际源核对与Protocol回读发现共享候选表述/可见性身份
 08:09 UTC三生产角色终态completed；Host绑定当前resume-prepared的cq_freeze_restored=true与本轮恢复、重校验的freeze-0003（原批准26题内容/顺序逐项相等），不是重新出题/审批或旧成绩复用。08:10 UTC complete_cq_handoff accepted，ready=true/pending_writes=false/write_phase=read-only/unknown_writes=[]，报告目录 `acceptance-v3/reports/cq-batch-0003/attempt-0001`。完整公开18题Consumer/Judge启动，随后隐藏8题；GLMFlash/high，普通finance只读主体，生产Runner保留存活供最终收口。尚无本轮成绩，最新完成成绩仍source10的20/26 REVISE，009及V4整体PARTIAL。累计11/12、当前grant2/3、剩1；核对/保存/验收未扣start。
 
 计时仅报告可观察墙钟：本轮semantic start07:05:51至交接约08:10，内含初始读材料、旧回执issue暂停、模型压缩及读取循环，不能把整段算有效语义时间；独立QA从08:10起。Claude只读回执核查约07:21—07:29、读取通路核查约07:57起；重叠不相加为session有效耗时，细分类仍unknown。不继续扩大平台/harness，优先完成当前完整语义消费证据。
+
+### source11完整25/26与消费提示窄修后的S4复验
+
+08:34 UTC完整公开18题17/18 REVISE（pan5/5、slice12/13），仅PRT-001未过；51次读取/86引用稳定、页完整、无漂移。Consumer2次参数拒绝后继续；Judge先提交PASS带非空failure_layer被拒，后续顺序级联共18拒绝，自行修正并完成18有效裁决。原拒绝/note/verdict不改。08:53 UTC隐藏8/8 PASS（pan3/3、slice5/5），142次读取/119引用稳定、页完整、无漂移；Consumer3次参数拒绝、Judge3次报告fields drift，均自纠正后完整有效。205引用的当前绑定/原始响应/前后模型状态资格通过。两批同源本轮freeze，Host全26目标为25/26 REVISE；Runner注册报告是隐藏8题，其PASS/收口accepted不能称全26通过。
+
+Claude Code GLM5.3/high定向核对PRT-001原批准note明确“允许多记录为结构约束”；数据库技术关联许可与业务履约/次数政策未知可并存。实际本题已返非唯一映射信息，Consumer将结构结论也并入unknown；有效定位为消费综合表达缺口，无证据支持重建本体。未改题/三个必答点/未知/来源/范围，不把CQ批准当额外业务真相，不将评分/答案注入Producer。读取循环诊断中“授权过滤为高置信主因”因具体保护激活/grant未核实，被Host收窄为原因未确定；原Claude报告保留，未扩权或加旁路查询。
+
+Claude Code在实际Consumer包补12行通用技术/映射结构与业务意义分层合同，只用当前授权读回，不含场景/实体/题号/评分/答案示例；相关实际加载与既有检查11项通过，diff/格式检查通过，提交 `49471e9`。无backend/frontend代码改动或全套测试/服务重启；这不是质量PASS。旧隐藏会话08:34已加载旧提示，原样完成，未热修改。
+
+Source11 complete_cq_acceptance accepted，08:54:34 UTC managed exit0，bootstrap撤销；其自有Session已completed、租约released，production_handoff-0001停止后ready/issues[]。复用现成S4安全入口，仅更新source/grant标签，关键liveness/credential函数AST保持、py_compile通过；08:55 UTC新只读输出run `r4009-20261006-glmflashhigh-layer-separated-s4-public1` 启动完整公开18复验，然后顺序执行完整隐藏8。均GLMFlash/high、普通finance只读主体，fresh Consumer/Judge；不拼接旧轮通过题，源报告与数据只读保留。当前S4无成绩，不宣称重新建模或全26 PASS；累计11/12、当前2/3、剩1，S4记semantic_starts0。finance临时读密钥按连续授权验收保留，待最终收尾撤销。
 
 ## 保留source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
 

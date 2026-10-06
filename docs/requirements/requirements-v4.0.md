@@ -152,7 +152,7 @@
 | R4.0-006 | 业务角色与主体语义访问控制 | 功能已实现；后端全量验证通过；A1—A10 独立功能／运行验收 PASS；A11 未授权／未执行，整体 PARTIAL |
 | R4.0-007 | 多视角建模协同与既有流程适配 | 已实现；A1—A9 有界独立功能 PASS；A10 完整语义仍待验证，整体 PARTIAL |
 | R4.0-008 | 跨视角语义检索与上下文组织 | 已实现；A1—A9 有界独立功能 PASS；当前真实场景宽读覆盖缺口另记，整体 PARTIAL |
-| R4.0-009 | 多视角真实建模与独立语义验收 | 历史 Start5 有界21题 PASS 保留；2026-10-06 GLMFlash source8采用已批准PAN-001 v2，source8完整公开16/18、隐藏6/8，同轮22/26 REVISE；source9生产BLOCKED并安全停止；新增三次后source10于05:29:42 UTC生产接续，core r6/parts r4共享修订及四条更新apply/readback已完成，交接ready、完整独立公开16/18、隐藏4/8，同source10/freeze 20/26 REVISE已收口；source11预语义拒绝未扣额，Claude Code安全关闭source10自有残留Session并修补交接合同；retry1于07:05:51 UTC真实接续，同轮closure r7一致性修订及只读处置完成（旧重复关系/一项读取限制披露，无apply），Session正常收口，08:10 UTC当前交接accepted并启动完整26题验收，本次2/3、剩1，整体PARTIAL |
+| R4.0-009 | 多视角真实建模与独立语义验收 | 历史 Start5 有界21题 PASS 保留；2026-10-06 GLMFlash source8采用已批准PAN-001 v2，source8完整公开16/18、隐藏6/8，同轮22/26 REVISE；source9生产BLOCKED并安全停止；新增三次后source10于05:29:42 UTC生产接续，core r6/parts r4共享修订及四条更新apply/readback已完成，交接ready、完整独立公开16/18、隐藏4/8，同source10/freeze 20/26 REVISE已收口；source11预语义拒绝未扣额，Claude Code安全关闭source10自有残留Session并修补交接合同；retry1于07:05:51 UTC真实接续，同轮closure r7一致性修订及只读处置完成（旧重复关系/一项读取限制披露，无apply），Session正常收口，08:10 UTC交接accepted，完整公开17/18及隐藏8/8，同source11全26为25/26 REVISE；PRT消费分层缺口经Claude修复49471e9/11检查通过，源安全停止、S4完整只读复验启动，本次2/3、剩1，整体PARTIAL |
 | R4.0-010 | 数据映射视角与外部数据库关联 | 已实现；A1—A9 有界独立功能 PASS；A10 完整映射语义仍待验证，整体 PARTIAL |
 | R4.0-011 | 接口映射视角与外部 API 关联 | 已实现；A1—A9 有界独立功能 PASS（A5/A7 本轮实际角色补验通过）；A10 待完整验证，整体 PARTIAL |
 | R4.0-012 | 证据追溯能力阶段性停用与多视角建模解耦 | 已实现；A1—A7 独立 PASS，A8 未执行，整体 PARTIAL |
