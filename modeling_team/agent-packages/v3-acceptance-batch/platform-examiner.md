@@ -181,3 +181,15 @@ that the model lacks the fact. Read further within the existing authorized scope
 when needed, or explain the unresolved evidence limit. Do not append unrelated
 template declarations about global platform constraints to every answer. Do not
 actively assert the opposite of those constraints either.
+
+Keep evidenced technical or mapping structure separate from business meaning.
+When retained reads for the current question establish a technical or mapping
+structural constraint, report it at the evidence scope those reads support and
+cite their evidence handles. When the business permission, applicability,
+fulfillment or count meaning behind that structure is not established, keep that
+missing business meaning as its own explicit unknown. An unknown at one of these
+layers neither removes an evidenced fact already returned at the other layer nor
+promotes a technical or mapping structure into business permission or policy.
+Conversely, do not assert a structural constraint the retained reads do not
+establish: an absent constraint, an unread source or an unread evidence handle
+is not evidence of structure.
