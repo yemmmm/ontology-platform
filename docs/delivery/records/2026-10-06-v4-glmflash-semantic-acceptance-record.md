@@ -1,13 +1,13 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 当前source9：最后一次授权生产复核，候选交接校正中
+## 最新source9：BLOCKED，安全停止；最后完整CQ仍为source8的22/26 REVISE
 
 `r4009-20261006-glmflashhigh-source-locator-start3` 于2026-10-06
 **04:34:53.557973 UTC**真实开始，仍从source5 `materialization_progress-0002`生产检查点接续。
 最新授权3/3、累计9/9，剩余0次；本轮可以完成生产和独立验收，未经新授权不再开始下一次生产。
 四个生产角色实际配置均为GLM5.3Flash/high；Claude Code修复/指令工作保持GLM5.3/high。
 
-截至04:53 UTC，当前获准26题与source8最终冻结逐项相同、顺序相同；继任review8/9的26条
+本轮当前获准26题与source8最终冻结逐项相同、顺序相同；继任review8/9的26条
 批准回执accepted，最终`freeze-0003` / `cq-batch-0003`摘要
 `sha256:ea06343add50b02dea3296e8b22c47b0b659f212412539ae8ff2aba84f42feba`。
 首次恢复v2时Host误把完整question对象传成题干字符串，输入被拒绝、无内容变更；
@@ -29,9 +29,49 @@
   plan-only确认前驱实际退出、完整报告存在且零副作用，再由Host启动。
   安全FIFO等待与存活保留bootstrap函数保持不变；准备错误未消耗start。
 
-源Runner保持存活，当前生产未终态，新独立公开18+隐藏8验收尚未开始。
-验收门与隐藏隔离保持；source8完整22/26 REVISE及全部旧尝试均保留。V4整体仍PARTIAL。
-本轮进度证据在宿主目录`start9-*`、`launch-start9.log`与当前run的evidence/。
+Modeling与Protocol分别在04:55 UTC报告completed；Coordinator之后发现parts-support r2仍保留
+与core r5不一致的发运多重性表述，要求Modeling给最小共享修订/依据，并明确r5尚未物化。
+这项已知候选一致性与应用待办不能被称为质量修复完成。
+
+Claude Code对代码与当前事件完成有界诊断：Broker终态结果不可变，Runner丢弃发给已有终态
+角色的后续消息；`terminal-delivery-blocked.jsonl`留存三次阻止。发送调用accepted只是Broker
+受理，消息没有进入Modeling/Protocol线程；两者最终turn已完成，没有已交付的同run续醒入口。
+Coordinator所称已同步与实际delivery不符，原消息和结果保持不变。
+第一阻塞层为**collaboration/routing**，修改对象为prompt-contract；不以无回复推导模型缺失。
+宿主另保留T0复核：终态封存和静默丢消息分开，删一处守卫不能恢复不可变Broker结果与角色合同；
+当前不增加恢复框架或手工复活线程。Claude Code最窄补充本轮权威指引的阶段/终态条件：
+只读定位是阶段，必需共享审核和必要应用处置未完成时保持可回复，或明确blocked交pending；
+不等待Coordinator自身terminal、不新增平台硬门/角色/固定次数/额外审批，不宣称热加载恢复。
+文本diff与引用检查通过；该预防修复尚未经后续真实生产验证。
+
+Coordinator最终**BLOCKED**并保存实际partial场景地图。新独立QA没有启动，CQ没有完成生产handoff，
+无新的plan/dry-run/apply/readback；当前应用图保持旧绑定。本轮不重复跑旧图来掩盖未完成生产，
+不生成新的验收PASS或拼接历史成绩。清理时预建验收载体记录aborted/未settled，原因
+`runner-cleanup-before-settlement`，active_handles=0、credentials_destroyed=true、zero_child_residue=true；
+这是未进入QA的收尾，不覆盖第一终态路由阻塞。
+
+Host保存`scenario_mapped-0001`工作检查点，manifest摘要
+`sha256:31c9dfc79fb9af2d5c13feec76dad0b70e74157b4da675180fda6aaf3fe6d3c8`。
+检查结果为**needs_reconciliation、issues为空**；在途、未知、未对账写入均为空。
+该kind保留地图/CQ，**不打包stage3待审候选r5**，不是完整production_handoff，也不声称resume-ready。
+原r5候选保留在当前run的`stage3-neutral-graph/candidates/`；下一轮交接另给出文件摘要和定位，
+仍须获准隔离输入转交及新鲜资源/写尾核对，不能手工补造旧checkpoint。
+
+stop回执accepted，managed Runner于**2026-10-06 05:08:58.061457 UTC**退出、exit0；
+实际状态CLEANED。bootstrap与普通只读临时密钥均已撤销，源模型、角色原始事件、候选与报告保留。
+初次普通密钥清理使用缺MCP依赖的系统Python而未执行；改用既有backend虚拟环境后撤销成功。
+授权台账已exhausted，累计9/9、最新3/3，剩余0；无存活producer/QA、无后台观察安排。
+继续生产须新授权：先解决共享候选一致性，完成真实需要的新物化，再做完整独立公开18+隐藏8验收。
+**V4整体PARTIAL；最新生产BLOCKED；最新完整独立成绩仅为source8的22/26 REVISE。**
+
+本轮阶段墙钟约为：最小启动准备8分钟（含实际脚本路径修复），生产源复核/资源回执定位20分钟，
+终态后的协作排查与收尾约14分钟；独立QA为0。部分工作重叠，这不是有效工时或LLM等待剖析，
+不将墙钟当纯语义建模时间。当前未新增平台/harness机制；后续更短通路限定为已定位的共享修订与
+必要物化，不重复全面源审查或旧成功apply，然后独立验证当前实际模型。
+
+本轮证据在宿主目录`start9-*`、`diagnose-start9-terminal-routing.md`、
+`start9-terminal-defense-T0-review.md`、`fix-start9-production-terminal-contract-report.md`、
+`start9-next-production-handoff.json`以及当前run的evidence/。
 
 ## 已收口source8：PAN-001 v2 已批准；source8 完整22/26 REVISE
 

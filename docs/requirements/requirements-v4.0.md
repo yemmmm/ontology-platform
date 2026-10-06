@@ -152,7 +152,7 @@
 | R4.0-006 | 业务角色与主体语义访问控制 | 功能已实现；后端全量验证通过；A1—A10 独立功能／运行验收 PASS；A11 未授权／未执行，整体 PARTIAL |
 | R4.0-007 | 多视角建模协同与既有流程适配 | 已实现；A1—A9 有界独立功能 PASS；A10 完整语义仍待验证，整体 PARTIAL |
 | R4.0-008 | 跨视角语义检索与上下文组织 | 已实现；A1—A9 有界独立功能 PASS；当前真实场景宽读覆盖缺口另记，整体 PARTIAL |
-| R4.0-009 | 多视角真实建模与独立语义验收 | 历史 Start5 有界21题 PASS 保留；2026-10-06 GLMFlash source8采用已批准PAN-001 v2，source8完整公开16/18、隐藏6/8，同轮22/26 REVISE；source9最后授权生产复核运行中，候选身份摘要待校正、尚无新apply/QA；仍为PARTIAL |
+| R4.0-009 | 多视角真实建模与独立语义验收 | 历史 Start5 有界21题 PASS 保留；2026-10-06 GLMFlash source8采用已批准PAN-001 v2，source8完整公开16/18、隐藏6/8，同轮22/26 REVISE；source9最后授权生产BLOCKED并安全停止，未物化候选/shared一致性待续，无新QA；3/3额度耗尽，整体PARTIAL |
 | R4.0-010 | 数据映射视角与外部数据库关联 | 已实现；A1—A9 有界独立功能 PASS；A10 完整映射语义仍待验证，整体 PARTIAL |
 | R4.0-011 | 接口映射视角与外部 API 关联 | 已实现；A1—A9 有界独立功能 PASS（A5/A7 本轮实际角色补验通过）；A10 待完整验证，整体 PARTIAL |
 | R4.0-012 | 证据追溯能力阶段性停用与多视角建模解耦 | 已实现；A1—A7 独立 PASS，A8 未执行，整体 PARTIAL |
@@ -1404,7 +1404,7 @@ production start。009整体保持 PARTIAL，当前验证、非盲属性和保�
 随后用户新增三次授权，先定位失败后生产接续一次；最新同轮公开12/18、隐藏7/8，19/26 REVISE，
 97条引用响应复核稳定且无漂移。公开证据显示检索选择范围及已返回证据使用不足；模型侧未读项存在性仍未确定。
 Claude Code 完成通用Consumer提示修复（c983fed），首次真实只读公开复验15/18 REVISE，64条引用响应稳定且无漂移；
-当前source9（2026-10-06 04:53 UTC）：最后授权生产续跑在04:34:53 UTC真实开始，累计9/9、最新3/3、剩0；26题内容与顺序保持批准。Modeling仅提出part-shipment未确认发运数保留未知的core-objects r5修订；Protocol已受治理读到安装日期/序列号/请求数量与既有成功回执，但候选摘要交接待规范校正，尚无新apply或独立QA。源/未知语义由Modeling判断、Protocol仅做确定性核对；两者角色分工歧义已定向澄清并由Claude Code持久修复指引，不扩大输入权限。保持当前run继续，未经新授权不再fresh start；独立验收结果未产出，整体PARTIAL。
+最新source9（2026-10-06）：最后授权生产续跑04:34:53 UTC开始，累计9/9、最新3/3、剩0。生产核对已定位安装日期/序列号/请求数量及成功回执；core r5仅修订候选的未确认发运次数，尚未物化，parts-support r2的共享一致性仍待处理。Modeling/Protocol过早终态后，Coordinator后续请求在Runner被阻止，Broker发送accepted不代表实际delivery；同run无已交付恢复入口，第一阻塞collaboration/routing，Coordinator最终BLOCKED。Claude Code已持久明确只读定位阶段与整轮终态的区别、必需共享审核/应用处置及真实送达证据；无新角色/平台硬门/恢复框架，预防修复未取得后续真实运行证明。没有新plan/dryrun/apply或独立QA，未虚构新成绩。工作checkpoint scenario_mapped-0001为needs_reconciliation/issues[]、无在途/未知/未对账写入；它不打包未物化r5，原候选单独保留，不称完整handoff或resume-ready。stop accepted、05:08:58 UTC managed exit0、CLEANED；bootstrap和普通只读临时密钥均撤销，无后台观察安排。新生产须用户新增授权，先共享修订/必要物化再完整独立验收。V4整体PARTIAL，最新生产BLOCKED；最新完整成绩仍是source8同轮22/26 REVISE。
 
 已收口source8：最新接续（2026-10-06 04:29 UTC）：用户已批准PAN-001 v2，source8在03:12:12 UTC真实开始；三生产角色只读复核完成、零新apply，当前完整公开16/18（全景5/5 PASS），117条引用响应稳定且无漂移，完整隐藏6/8、108条引用响应稳定，合计同source/freeze 22/26 REVISE，资格核对通过且无漂移。公开失败诊断区分未读范围与已有表达旁证，安装日期/发运多重性的图上表达尚未确定；未从无返回推定模型缺失，原裁决保留。现有Consumer枚举合同已覆盖观察到的行为，不追加提示硬化；下一次生产按原始源位置中立复核，数据库结构不自行提升为业务真相。source7修复读接口后完整隐藏只读复验7/8，72条引用响应稳定；该结果不拼接source8。GLMFlash/high生产与验收、Claude Code GLM5.3/high修复选择保持。当前累计8/9、最新授权2/3、剩1次；source8收口及stop accepted、managed exit0、bootstrap已撤销；普通验收密钥仅保留供后续已授权流程。整体PARTIAL。
 
