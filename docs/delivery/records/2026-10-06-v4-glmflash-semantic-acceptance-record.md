@@ -1,6 +1,39 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 当前接续：PAN-001 v2 已批准；source8 完整22/26 REVISE
+## 当前source9：最后一次授权生产复核，候选交接校正中
+
+`r4009-20261006-glmflashhigh-source-locator-start3` 于2026-10-06
+**04:34:53.557973 UTC**真实开始，仍从source5 `materialization_progress-0002`生产检查点接续。
+最新授权3/3、累计9/9，剩余0次；本轮可以完成生产和独立验收，未经新授权不再开始下一次生产。
+四个生产角色实际配置均为GLM5.3Flash/high；Claude Code修复/指令工作保持GLM5.3/high。
+
+截至04:53 UTC，当前获准26题与source8最终冻结逐项相同、顺序相同；继任review8/9的26条
+批准回执accepted，最终`freeze-0003` / `cq-batch-0003`摘要
+`sha256:ea06343add50b02dea3296e8b22c47b0b659f212412539ae8ff2aba84f42feba`。
+首次恢复v2时Host误把完整question对象传成题干字符串，输入被拒绝、无内容变更；
+改用完整对象后两项接受，原拒绝证据保留。这是Host输入错误，不是模型质量失败。
+
+- Modeling完成三处获准schema源位置整体核对，提出core-objects r5：112 items不增不减，
+  仅part-shipment的未确认发运数语义改为明确未知，explicit_unknowns由10增至11。
+  不从外键非唯一性推出业务许可；没有为了QA得分新增事实。
+- Protocol的生产核对已通过受治理读取确认安装日期、序列号、请求数量及相关发运关系资源
+  在当前图存在，并定位既有apply成功回执；不需要重放这些写入。
+  这是生产期核对证据，不倒改source8独立裁决，也不等于新的独立CQ PASS。
+- r5身份摘要与规范canonical计算不同，Protocol已返回准确值及纠正要求；
+  尚未创建新plan/dry-run/apply，Modeling可在同run修正交接后继续。
+  原始源及候选语义归Modeling，Protocol仅做确定性资源/回执/身份核对。
+- 局部指令曾未清楚区分两者源核对责任，Protocol正确报告其业务源未挂载。
+  Host通过既有user通道澄清，Coordinator原文转发；Claude Code持久补一段角色分工，
+  不扩大role_sources、工具或权限，不宣称当前线程热加载。
+- 最小接续脚本曾误猜hidden-batch目录；Claude Code修正到source8实际handoff报告路径，
+  plan-only确认前驱实际退出、完整报告存在且零副作用，再由Host启动。
+  安全FIFO等待与存活保留bootstrap函数保持不变；准备错误未消耗start。
+
+源Runner保持存活，当前生产未终态，新独立公开18+隐藏8验收尚未开始。
+验收门与隐藏隔离保持；source8完整22/26 REVISE及全部旧尝试均保留。V4整体仍PARTIAL。
+本轮进度证据在宿主目录`start9-*`、`launch-start9.log`与当前run的evidence/。
+
+## 已收口source8：PAN-001 v2 已批准；source8 完整22/26 REVISE
 
 截至2026-10-06 04:29 UTC，最新授权三次已使用2次、剩余1次，累计8/9。
 当前run `r4009-20261006-glmflashhigh-approved-panv2-start2` 于03:12:12.016972 UTC
