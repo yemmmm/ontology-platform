@@ -152,7 +152,7 @@
 | R4.0-006 | 业务角色与主体语义访问控制 | 功能已实现；后端全量验证通过；A1—A10 独立功能／运行验收 PASS；A11 未授权／未执行，整体 PARTIAL |
 | R4.0-007 | 多视角建模协同与既有流程适配 | 已实现；A1—A9 有界独立功能 PASS；A10 完整语义仍待验证，整体 PARTIAL |
 | R4.0-008 | 跨视角语义检索与上下文组织 | 已实现；A1—A9 有界独立功能 PASS；当前真实场景宽读覆盖缺口另记，整体 PARTIAL |
-| R4.0-009 | 多视角真实建模与独立语义验收 | 历史 Start5 有界21题 PASS 保留；2026-10-06 GLMFlash source8采用已批准PAN-001 v2，source8完整公开16/18、隐藏6/8，同轮22/26 REVISE；source9生产BLOCKED并安全停止；新增三次后source10于05:29:42 UTC生产接续，core r6/parts r4共享修订及四条更新apply/readback已完成，交接ready、完整独立公开16/18、隐藏4/8，同source10/freeze 20/26 REVISE已收口；source11预语义拒绝未扣额，Claude Code安全关闭source10自有残留Session并修补交接合同；retry1于07:05:51 UTC真实接续，同轮closure r7一致性修订及只读处置完成（旧重复关系/一项读取限制披露，无apply），Session正常收口，08:10 UTC交接accepted，完整公开17/18及隐藏8/8，同source11全26为25/26 REVISE；PRT消费分层缺口经Claude修复49471e9/11检查通过，源安全停止、S4完整只读复验启动，本次2/3、剩1，整体PARTIAL |
+| R4.0-009 | 多视角真实建模与独立语义验收 | 2026-10-06 source11及Consumer提示修复49471e9后，全新完整公开18/18、隐藏8/8独立CQ PASS；两报告同生产状态/freeze、完整覆盖26题，157引用资格通过且重放稳定、零漂移，不拼接旧PASS。旧25/26 REVISE保留；S4隐藏旧PASS仅核验记录另列，后续显式全隐藏新回归已完成。生产/验收GLMFlash/high，诊断/修复Claude GLM5.3/high；资源与密钥已安全收尾，本次2/3、剩1。仅四切片CQ L0/L1；旧重复图资源/一项读取限制披露，真实DL、全部A1—A12、SQL/API及L2/L3仍未验收，整体PARTIAL |
 | R4.0-010 | 数据映射视角与外部数据库关联 | 已实现；A1—A9 有界独立功能 PASS；A10 完整映射语义仍待验证，整体 PARTIAL |
 | R4.0-011 | 接口映射视角与外部 API 关联 | 已实现；A1—A9 有界独立功能 PASS（A5/A7 本轮实际角色补验通过）；A10 待完整验证，整体 PARTIAL |
 | R4.0-012 | 证据追溯能力阶段性停用与多视角建模解耦 | 已实现；A1—A7 独立 PASS，A8 未执行，整体 PARTIAL |
@@ -1382,6 +1382,8 @@ A1—A9 已完成开发侧合同／功能验证，包含后端全量回归、Tea
 文档自查或独立方案审阅替代。当前不声明真实业务语义 PASS，整体 PARTIAL。
 
 ### R4.0-009 多视角真实建模与独立语义验收
+
+**当前有界真实结果（2026-10-06 09:46 UTC）**：source11生产模型及Consumer提示修复49471e9后，新的完整公开18/18、完整隐藏8/8独立PASS。两份新报告同源生产状态、同冻结摘要、同前后模型绑定，互斥题集并集等于全部26题；157条引用资格通过、重放stable且无漂移，不拼接源run旧隐藏PASS。公开S4 `layer-separated-s4-public1` attempt-0002；S4 hidden1只核验旧PASS（会话0），不算新回归；Claude适配Host现成只读continuation执行入口后，`layer-separated-fresh-hidden2` attempt-0003全新隐藏回归已完成。原source11 25/26 REVISE、失败记录和源证据不改。全部新子会话/进程/代理结束，临时Finance read与bootstrap密钥撤销；本次新增授权2/3、剩1，累计11/12，验收0 start。该结果仅四获准切片CQ L0/L1；旧重复图资源及一项unsupported读取仍披露，development_stub非真实DL推理PASS，全部A1—A12、SQL/API与L2/L3未完成，整体PARTIAL。详见[实际验收记录](../delivery/records/2026-10-06-v4-glmflash-semantic-acceptance-record.md)。以下保留历史阶段状态。
 
 状态：需求细化与设计完成（2026-10-02）；用户确认 D1 沿用工业设备售后场景、D2 核心语义与
 映射分段验收，并授权独立方案审阅及修订至 PASS。Round 1 的 H009-01／02 已完成方案修订，

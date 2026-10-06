@@ -1,6 +1,23 @@
 # V4 GLM5.3Flash 建模与有界语义验收记录
 
-## 最新：source11完整25/26 REVISE；消费提示窄修后只读复验，余额1次
+## 最新：新提示下公开18/18、隐藏8/8 PASS；有界CQ完成，V4整体PARTIAL，余额1次
+
+截至2026-10-06 09:46 UTC，Consumer提示修复49471e9后的两批**全新完整独立验收**均PASS：公开18/18、隐藏8/8。这是一份Host覆盖汇总，底层仍是两份独立完整batch报告，不是单一合并报告。两批同source11生产状态、同freeze-0003摘要、同前后模型绑定，题目集合互斥且并集等于全部冻结26题；没有拼接旧隐藏PASS。公开/隐藏分别51/106条引用通过原响应、请求/结果摘要与分页复核，157条重放stable、零漂移、零unavailable、零未执行题。四个实际Consumer/Judge隔离配置均GLM5.3Flash/high，两个新Consumer实际会话均已核实加载修复提示。source11原25/26 REVISE及所有失败证据保持不变。
+
+| 新独立批次 | 输出run / attempt | 实际结果与退出 |
+| --- | --- | --- |
+| 完整公开18题 | `r4009-20261006-glmflashhigh-layer-separated-s4-public1` / `attempt-0002` | 18/18 PASS（pan5/5、slice13/13）；82成功读取，Consumer/Judge各1次拒绝后继续；managed exit0，bootstrap撤销 |
+| 完整隐藏8题 | `r4009-20261006-glmflashhigh-layer-separated-fresh-hidden2` / `attempt-0003` | 8/8 PASS（pan3/3、slice5/5）；112成功读取，Consumer/Judge各1次拒绝后继续；Host同步进程exit0，bootstrap撤销 |
+
+S4 `layer-separated-s4-hidden1`仅复核源run已有完整隐藏PASS，`verification-only-closing`、模型会话0，正常exit0；保留此记录，**不计作新提示下的回归**。Claude Code GLM5.3/high随后适配Host只读启动脚本，复用原root锁、检查点/写尾/冻结/交接复核及既有`_run_cq_acceptance` continuation执行路径，在新目录显式做提示变更后的全隐藏回归；未改平台M34合同、评分、题目或源证据，未添加force/retest产品机制。启动脚本py_compile、现成安全API调用形状检查通过，实际执行结果以上述新报告为准。证据资格脚本另由Claude补可选artifact_root，防止S4报告保留源run_id时误读旧响应；默认/显式同根结果一致，未增加查询或改裁决。
+
+公开报告位于新run的`acceptance-v3/reports/cq-batch-0003/attempt-0002/batch-report.json`，隐藏报告位于各自新run的同目录`attempt-0003/batch-report.json`；Host资格/覆盖汇总为`workspaces/v4-acceptance-20261005/start11-s4-regression-host-summary.json`。freeze摘要仍`sha256:b90dbc5261d0172880eab44cf5f1c22e913890ca528bb58904a7fc6b023f1089`，模型绑定摘要`sha256:2216e09007e619f59a28cf4a669c51415b9a1fe92a1c215a0a75324aebf30aef`。新验收无生产apply。全部子会话、代理、forwarder及临时目录正常关闭；Finance临时read密钥和清理用bootstrap撤销、Finance明文从私有文件移除，模型/检查点/历史证据保留。本次新增授权实际2/3，累计11/12，剩1次；只读验收消耗0，不为耗尽余额再建模。
+
+该PASS仅覆盖获准四切片的冻结CQ L0/L1，**不等于V4或全部A1—A12完成**。已披露旧重复predicate/statements仍在图中（当前挂载Batch无安全删除合同），restricted-cost-scope读取unsupported且未推断不存在；真实DL推理未执行，`development_stub`不算真实推理PASS；L2/L3及实际SQL/API验收仍未执行。整体V4继续PARTIAL。
+
+本段可观察阶段墙钟：公开新验收08:55:16—09:15:16约20分钟；旧隐藏仅核验09:16:15—09:16:18约3秒；显式回归入口定位/Claude适配约09:16—09:29共13分钟；新隐藏09:29:25—09:45:31约16分钟；最后资格/密钥/记录收尾约2分钟。语义消费/评分/重放阶段与Host/脚本阶段分列；这些不是剥离LLM等待后的有效工时，未测有效语义占比，不伪造计时。已停止扩展平台/harness，本次最短后续通路是保留上述完整证据并按未验收范围另行安排。
+
+### 以下为按阶段保留的历史记录
 
 用户于本轮明确“再授权三次”；2026-10-06 05:24:24 UTC 登记新 grant `auth-additional-03-20261006-shared-materialization`。累计12次、已消耗9次、剩余3次；截至真实start，新授权已用1/3、剩2次，累计10/12。生产/Consumer/Judge继续GLM5.3Flash/high，问题定位与修复由Claude Code GLM5.3/high执行，service tier未设置。目标沿用R4.0-009四个获准切片及公开18/隐藏8的CQ L0/L1范围；先完成source9保留的共享一致性修订和必要dry-run/apply/readback，再完整独立验收。SCO-001/PAN-001 v2批准及其余24题内容保持。
 
