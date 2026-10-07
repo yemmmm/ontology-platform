@@ -158,3 +158,11 @@
 - 唯一fixture清理退出0并再次只读核验：2项目HTTP404、3Key及1User行不存在、自有图ASK=false、test-only run目录不存在；`/tmp/v41-independent-round3-cleanup.log`和`cleanup-verify.log`。原有项目/运行/材料未处理。
 - 设计、开发验证、独立功能验收及本地运行健康分别通过；所有此前失败与修复保留。需求状态同步完成。当前功能PASS不改写v4.0原L1质量/SQL/API/DL/L2/L3缺口；本轮无新的semantic start或外部业务执行。
 - 最终提交仅纳入本次拥有的代码、测试、合同与文档；不包含凭据、临时fixture、日志截图或生成dist。提交标识以实际git提交结果为准。
+
+## 交付后提示展示修正（2026-10-07）
+
+- 用户反馈首页直接显示 `unbound_or_conflicting_runs_are_not_assigned_to_a_project` 与 `current_run_requires_one_explicit_nonterminal_binding`。核对 list_runs：两项是始终返回的归属/当前记录判定规则，不能据此判断项目绑定异常。
+- 最窄前端修复：这两个已知规则改为折叠“运行归属与当前记录的判定说明”，展开显示中文及原始代码；其他限制仍保留警告，运行枚举不完整和无当前运行的真实状态保留。未改后端、绑定或运行产物。
+- 新增真实响应形状回归：已知规则不进入Alert，未知读取问题/枚举不完整仍可见，说明默认折叠且展开内容/原代码完整。修前用例失败（不存在说明入口），修后build PASS、完整59 Playwright passed/47.3s，`/tmp/v41-policy-build.log`、`/tmp/v41-policy-playwright.log`；此前失败保留`/tmp/v41-policy-red.log`。
+- focused call-site仅App→ProjectWorkbenchPage，未变调用合同。GitNexus detect_changes报告LOW/0indexed symbols/2files，索引未覆盖此页，不以0误称无影响。后端及Team未改，复用已有全量证据。本次为展示修复开发验证，不新增独立语义裁决。
+- 按要求重启服务后active、8001 health ok、5173 HTTP200；重启后的同一回归1 passed/3.3s，`/tmp/v41-policy-postrestart.log`。最终diff check PASS，提交仅含本页/测试/本记录。

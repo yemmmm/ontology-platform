@@ -15,7 +15,7 @@ const artifacts={
   host:[artifact("run_lifecycle",{state:"RUNNING",run_id:"run-fixture",scope:{project_id:project.id,ontology_ids:[ontology.id]},runtime:{processes_stopped:false,locks_released:false},acceptance:{status:"pending"},terminal_results:{},process_liveness:"unknown"}),artifact("role_configuration",{roles:{modeling:{model:"model-a",requested_effort:"high",effective_effort:"medium"}},hot_switch_verified:false,configuration_status:"frozen_run_configuration"})],
   handoff:[artifact("handoff",{ready:false,pending_writes:true,unknown_writes:true,scope_binding:{project_id:project.id,ontology_ids:[ontology.id]}})],
 };
-async function fixture(page:Page,options:{noOntology?:boolean;scopeAdmin?:boolean;forbiddenWorkbench?:boolean}={}){
+async function fixture(page:Page,options:{noOntology?:boolean;scopeAdmin?:boolean;forbiddenWorkbench?:boolean;indexLimitations?:string[]}={}){
   await page.addInitScript(()=>localStorage.setItem("ontology-platform-ui-lang","en"));
   const requests:{path:string;method:string;body:Record<string,unknown>|null}[]=[];
   let users=[{id:"u1",username:"业务用户",disabled_at:null as string|null,is_org_admin:false}];
@@ -30,7 +30,7 @@ async function fixture(page:Page,options:{noOntology?:boolean;scopeAdmin?:boolea
     if(path==="/auth/me")result={actor:"user:admin",project_id:options.scopeAdmin?project.id:null,scopes:["admin"],subject_type:options.scopeAdmin?"api_key":"user"};
     else if(path==="/projects")result=[project];
     else if(path.endsWith("/ontologies"))result=options.noOntology?[]:[ontology];
-    else if(path.endsWith("/workbench")){if(options.forbiddenWorkbench){status=403;result={detail:{code:"forbidden_scope"}};}else result={project_id:project.id,observed_at:"2026-10-07T00:01:00Z",current_run_id:"run-fixture",runs:[{run_id:"run-fixture",state:"RUNNING",source_updated_at:"2026-10-07T00:00:00Z",platform_binding:{project_id:project.id,ontology_ids:[ontology.id]},limitations:["recorded_state_is_not_process_liveness"]},{run_id:"old-run",state:"COMPLETED",source_updated_at:"2026-10-06T00:00:00Z",platform_binding:{project_id:project.id,ontology_ids:[ontology.id]},limitations:[]}],completeness:{complete:false,limit:1000},limitations:[]};}
+    else if(path.endsWith("/workbench")){if(options.forbiddenWorkbench){status=403;result={detail:{code:"forbidden_scope"}};}else result={project_id:project.id,observed_at:"2026-10-07T00:01:00Z",current_run_id:"run-fixture",runs:[{run_id:"run-fixture",state:"RUNNING",source_updated_at:"2026-10-07T00:00:00Z",platform_binding:{project_id:project.id,ontology_ids:[ontology.id]},limitations:["recorded_state_is_not_process_liveness"]},{run_id:"old-run",state:"COMPLETED",source_updated_at:"2026-10-06T00:00:00Z",platform_binding:{project_id:project.id,ontology_ids:[ontology.id]},limitations:[]}],completeness:{complete:false,limit:1000},limitations:options.indexLimitations??[]};}
     else if(path.includes("/workbench/runs/"))result={project_id:project.id,run_id:path.endsWith("old-run")?"old-run":"run-fixture",state:path.endsWith("old-run")?"COMPLETED":"RUNNING",platform_binding:{project_id:project.id,ontology_ids:[ontology.id]},observed_at:"2026-10-07T00:01:00Z",artifacts,limitations:["classified_effective_time_not_recorded_in_a_structured_run_artifact"]};
     else if(path.endsWith("/brief"))result={id:"brief1",project_id:project.id,fields:{domain_name:"维修",competency_questions:["旧Brief问题"]},field_states:{domain_name:"confirmed",scope:"unknown",identity_rules:"conflict",business_goal:"unconfirmed"},field_sources:{},missing_fields:["core_concepts"],clarification_items:[{field:"core_concepts",question:"范围缺失？",reason:"missing"},{field:"business_goal",question:"请确认含义",reason:"unconfirmed"}],completeness:0.9};
     else if(path.endsWith("/workspace-context"))result={default_graph_set_id:gs.id};
@@ -54,6 +54,20 @@ async function fixture(page:Page,options:{noOntology?:boolean;scopeAdmin?:boolea
   });return requests;
 }
 const url=(tab:string)=>`/?project=${project.id}&tab=${tab}`;
+test("T01 run selection policies are explanations, while actual index warnings stay visible",async({page})=>{
+  const policies=["unbound_or_conflicting_runs_are_not_assigned_to_a_project","current_run_requires_one_explicit_nonterminal_binding"];
+  await fixture(page,{indexLimitations:[...policies,"actual_reading_issue"]});await page.goto(url("brief"));
+  await expect(page.locator(".ant-alert").filter({hasText:"actual_reading_issue"})).toBeVisible();
+  await expect(page.locator(".ant-alert").filter({hasText:policies[0]})).toHaveCount(0);
+  await expect(page.locator(".ant-alert").filter({hasText:policies[1]})).toHaveCount(0);
+  await expect(page.getByText("运行枚举不完整，上限 1000")).toBeVisible();
+  const explanation=page.getByLabel("运行归属说明");
+  await expect(explanation.getByText(policies[0],{exact:true})).not.toBeVisible();
+  await explanation.locator("summary").click();
+  await expect(explanation.getByText("未明确绑定项目或绑定信息冲突的运行，不会显示在本项目中。",{exact:true})).toBeVisible();
+  await expect(explanation.getByText("仅当本项目有一个明确绑定且尚未结束的运行时，才自动选为当前记录；否则可手动选择历史记录。",{exact:true})).toBeVisible();
+  for(const code of policies)await expect(explanation.getByText(code,{exact:true})).toBeVisible();
+});
 test("T01 real host envelope without task fields opens four states and explicit unknown work/actions",async({page})=>{
   const requests=await fixture(page,{noOntology:true});await page.goto(url("brief"));
   for(const state of ["业务确认","建模表达","平台应用","独立验收"])await expect(page.getByText(state,{exact:true})).toBeVisible();

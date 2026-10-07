@@ -13,6 +13,10 @@ export type WorkbenchArtifact = {
 export type WorkbenchRunSummary = {run_id:string;state:Record<string,unknown>|string;source_updated_at:string;platform_binding:Record<string,unknown>;limitations:string[]};
 export type WorkbenchIndex = {project_id:string;observed_at:string;current_run_id:string|null;runs:WorkbenchRunSummary[];completeness:{complete:boolean;limit:number};limitations:string[]};
 export type WorkbenchRun = {project_id:string;run_id:string;observed_at:string;state:Record<string,unknown>|string;platform_binding:Record<string,unknown>;artifacts:Record<string,WorkbenchArtifact[]>;limitations:string[]};
+const runSelectionPolicies:Record<string,string> = {
+  unbound_or_conflicting_runs_are_not_assigned_to_a_project:"未明确绑定项目或绑定信息冲突的运行，不会显示在本项目中。",
+  current_run_requires_one_explicit_nonterminal_binding:"仅当本项目有一个明确绑定且尚未结束的运行时，才自动选为当前记录；否则可手动选择历史记录。",
+};
 export function ArtifactSource({artifact}: {artifact:WorkbenchArtifact}) {
   return <details className="v41Source"><summary>来源 · {artifact.source.path??artifact.artifact_id} · {artifact.source.updated_at??"源时点未知"}</summary><FieldTable value={{artifact_id:artifact.artifact_id,kind:artifact.kind,version:artifact.version,schema_version:artifact.schema_version,source:artifact.source,observed_at:artifact.observed_at,scope:artifact.scope}}/></details>;
 }
@@ -90,7 +94,8 @@ export function ProjectWorkbenchPage({project,request,page,navigate,onDirtyChang
   useEffect(()=>{let cancelled=false;setRun(null);if(!runId)return;setError("");setBusy(true);request<WorkbenchRun>(`/projects/${project.id}/workbench/runs/${encodeURIComponent(runId)}`).then(value=>{if(!cancelled)setRun(value);}).catch(cause=>{if(!cancelled)setError(String(cause));}).finally(()=>{if(!cancelled)setBusy(false);});return()=>{cancelled=true;};},[project.id,request,runId,revision]);
   return <section aria-label="project-workbench-page" className="v41Page"><Card title={project.name} extra={<Button loading={busy} onClick={()=>setRevision(v=>v+1)}>核实最新产物</Button>}>
     <p>{project.description??"场景目标尚未记录"}</p><div className="v41Form"><label>Team 运行<Select aria-label="Team 运行" allowClear placeholder="选择已绑定运行；不自动采用历史运行" value={runId||undefined} onChange={v=>setRunId(v??"")} options={index?.runs.map(r=>({value:r.run_id,label:`${r.run_id}${r.run_id===index.current_run_id?" · 当前":" · 历史"}`}))??[]}/></label><span>最近核实：{index?.observed_at??"尚未核实"}</span></div>
-    {index&&!index.completeness.complete&&<Alert type="warning" message={`运行枚举不完整，上限 ${index.completeness.limit}`}/>}{index?.limitations.map((l,i)=><Alert key={i} type="warning" message={l}/>)}
+    {index&&!index.completeness.complete&&<Alert type="warning" message={`运行枚举不完整，上限 ${index.completeness.limit}`}/>}{index?.limitations.filter(l=>!runSelectionPolicies[l]).map((l,i)=><Alert key={i} type="warning" message={l}/>)}
+    {index?.limitations.some(l=>runSelectionPolicies[l])&&<details className="v41StateDetails" aria-label="运行归属说明"><summary>运行归属与当前记录的判定说明</summary>{index.limitations.filter(l=>runSelectionPolicies[l]).map(l=><p key={l}>{runSelectionPolicies[l]}</p>)}<FieldTable value={{limitations:index.limitations.filter(l=>runSelectionPolicies[l])}}/></details>}
     {!runId&&!busy&&<p>尚无已核实的当前运行；可选择历史记录查看其原始范围。没有 Ontology 仍可进行业务澄清与获准 CQ 阅读。</p>}
     {run&&<><Tag>{run.run_id===index?.current_run_id?"当前记录":"历史记录"}</Tag><details className="v41StateDetails" aria-label="运行技术记录"><summary>运行身份、原始状态与读取限制</summary><FieldTable value={{state:run.state,platform_binding:run.platform_binding,observed_at:run.observed_at,limitations:run.limitations}}/></details></>}
     </Card>{error&&<Alert type="error" message={error} description="未接入、禁止访问、缺少内容和读取失败按接口原合同显示。"/>}
