@@ -10,6 +10,7 @@ counting, or truncation.
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 import json
 from typing import Any, Protocol
 
@@ -146,12 +147,18 @@ class SemanticReadModelService:
             template = get_template(model_name)
         except KeyError as exc:
             raise ReadModelError(f"Unknown read model: {model_name}") from exc
+        if template.name == "resource-relations" and include != "asserted":
+            raise ReadModelError("resource-relations requires include=asserted")
         scope = self.scope_resolver.resolve(
             graph_set_id=graph_set_id,
             include=include,
             allow_stale_derived=allow_stale_derived,
         )
         graph_iris = self._graph_iris_for_scope(scope, template)
+        if template.name == "resource-relations":
+            return self._compose_resource_relations(
+                template, scope, min(limit or template.default_limit, template.default_limit)
+            )
         if template.name == "resource-list":
             # Reuse each family's authorization and nested-reference checks;
             # never merge raw RDF before filtering or infer a business role.
@@ -404,6 +411,90 @@ class SemanticReadModelService:
             items=items,
             warnings=warnings,
             paging=paging,
+        )
+
+    def _compose_resource_relations(
+        self, template: ReadModelTemplate, scope: ScopeResolution, limit: int
+    ) -> dict[str, Any]:
+        resources = self.read_model(
+            scope.graph_set_id, "resource-list", include="asserted", limit=500,
+            field_set="detail",
+        )
+        if resources["source_signature"] != scope.source_signature:
+            raise ReadModelError("Resource scope changed during reading; refresh the graph")
+        endpoints = {item["iri"] for item in resources["items"]}
+        warnings = list(resources["warnings"])
+        endpoint_incomplete = not resources["paging"]["complete"]
+        rows = []
+        fetch_incomplete = False
+        if endpoints and scope.source_graph_iris:
+            # Bind the governed node window before the RDF fetch ceiling. Edges
+            # elsewhere in the GraphSet must not consume this window's budget.
+            values = ", ".join(f"<{_sparql_iri_value(iri)}>" for iri in sorted(endpoints))
+            # The frozen view already resolved all project protection sets.
+            # Exclude denied predicates before LIMIT just as endpoints above;
+            # hidden edges must not consume the relation fetch budget.
+            denied_predicates = sorted(self.access_view._unauthorized_iris)
+            predicate_filter = ""
+            if denied_predicates:
+                denied_values = ", ".join(
+                    f"<{_sparql_iri_value(iri)}>" for iri in denied_predicates
+                )
+                predicate_filter = f"FILTER(?relation NOT IN ({denied_values}))"
+            query = self._compile_template_query(
+                template, scope.source_graph_iris, _FILTERED_FETCH_LIMIT
+            ).replace("{resource_iris}", values).replace(
+                "{relation_access_filter}", predicate_filter
+            )
+            result = self.rdf_store.query_read_model(
+                query=query, graph_iris=scope.source_graph_iris,
+                timeout_seconds=self.timeout_seconds, limit=_FILTERED_FETCH_LIMIT,
+            )
+            rows = self._rows(result)
+            fetch_incomplete = len(rows) >= _FILTERED_FETCH_LIMIT or bool(
+                getattr(result, "truncated", False)
+            )
+        by_triple: dict[tuple[str, str, str], dict[str, Any]] = {}
+        for row in rows:
+            item = self._decorate_row(row, scope, template)
+            if item.get("source") not in endpoints or item.get("target") not in endpoints:
+                continue
+            if self.access_view.any_unauthorized([item.get("label")]):
+                item["label"] = None
+            if not self.access_view.filter_items([item]):
+                continue
+            triple = (item["source"], item["relation"], item["target"])
+            # Identity is the actual triple, independent of graph or label.
+            item["id"] = hashlib.sha256(
+                json.dumps(triple, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+            ).hexdigest()
+            previous = by_triple.get(triple)
+            if previous is None or (
+                item["source_graph_iri"], item.get("label") or ""
+            ) < (previous["source_graph_iri"], previous.get("label") or ""):
+                by_triple[triple] = item
+        items = [by_triple[key] for key in sorted(by_triple)]
+        paging = self._paging_state(
+            limit=limit, returned=min(len(items), limit), visible_count=len(items),
+            ceiling_reached=endpoint_incomplete or fetch_incomplete,
+        )
+        if endpoint_incomplete:
+            warnings.append({
+                "code": "resource_relations_endpoint_window_incomplete",
+                "message": "Relations cover a partial loaded resource window.",
+            })
+        if fetch_incomplete:
+            warnings.append({
+                "code": "read_model_rows_truncated",
+                "message": "Resource relation fetch is incomplete; this page may omit relations.",
+            })
+        if paging["has_more"]:
+            warnings.append({
+                "code": "resource_relations_window_incomplete",
+                "message": "The authorized relation window has more items than this page.",
+            })
+        return self._envelope(
+            template=template, scope=scope, items=items[:limit], warnings=warnings, paging=paging,
         )
 
     def _envelope(

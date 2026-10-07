@@ -100,6 +100,32 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         assertion_kind="asserted",
         body="# template: resource-list (composer over governed semantic projections)",
     ),
+    "resource-relations": ReadModelTemplate(
+        name="resource-relations",
+        projection_version="semantic-resource-relations-v1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=False,
+        default_limit=1000,
+        assertion_kind="asserted",
+        primary_iri_variable="source",
+        body="""# template: resource-relations
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?source ?relation ?target (MIN(?relation_label) AS ?label) ?graph WHERE {
+          VALUES ?graph { {graph_iris} }
+          GRAPH ?graph { ?source ?relation ?target . }
+          {relation_access_filter}
+          FILTER(isIRI(?source) && isIRI(?target))
+          FILTER(?source IN ({resource_iris}) && ?target IN ({resource_iris}))
+          OPTIONAL {
+            VALUES ?label_graph { {graph_iris} }
+            GRAPH ?label_graph { ?relation rdfs:label ?relation_label . }
+          }
+        }
+        GROUP BY ?source ?relation ?target ?graph
+        ORDER BY ?source ?relation ?target ?graph
+        LIMIT {limit}
+        """,
+    ),
     "ontology-schema-summary": ReadModelTemplate(
         name="ontology-schema-summary",
         projection_version="semantic-read-v1",

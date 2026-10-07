@@ -1,6 +1,7 @@
 # UI
 
-frontend 是 `frontend/` 下的 React/Vite 本地操作工作区。
+frontend 是 `frontend/` 下的 React/Vite 项目阅读工作区，当前范围为
+[v4.2 五 Tab](../requirements/requirements-v4.2.md)。
 
 ```bash
 cd frontend
@@ -8,44 +9,55 @@ npm install
 npm run dev
 ```
 
-frontend 默认请求同源 `/api`。一键启动使用 preview `http://127.0.0.1:5173/` 并把 `/api` 代理到
-backend `8001`；单独运行 dev server 时可用 `VITE_API_BASE_URL` 指定 backend（手动 uvicorn 默认
-为 `http://127.0.0.1:8000/api`）。
+默认请求同源 `/api`。一键启动使用 preview `http://127.0.0.1:5173/`，将 `/api` 代理到
+backend `8001`；单独运行 dev server 可使用 `VITE_API_BASE_URL` 指定后端地址。
 
-UI 启动后先调用 `/api/auth/me`；无有效 session 时显示登录页。登录成功后使用 HttpOnly session，
-写请求自动发送 double-submit CSRF header。运行期 401 会清空 UI 主体并回到登录页，logout 清除
-session/CSRF cookie；用户名、密码和 API key 都不会写入 localStorage/sessionStorage。
+UI 先调用 `/api/auth/me`；没有有效 session 时显示管理员登录。登录使用 HttpOnly session，
+退出沿用现有会话合同。运行期 401 回到登录页；用户名、密码、API Key 和接口响应不写入
+localStorage/sessionStorage。普通用户的 Key 访问方式没有因前端重写而改变。
 
-## 当前页面
+## 五个页面
 
-- Home：Project 与 Ontology 的创建、选择和删除。
-- Overview：Project Brief、结构化需求问题和 Project 级 Evidence Reference。
-- Modeling：Classes、Entities、Rules 和 Facts 的当前 RDF 读模型视图。
-- Debug：语义治理/运行状态、Build Context、Recall、MCP Tools 和 Graph Sets。
-- Settings：编辑锁与 `/api/health/dependencies` 的 PostgreSQL/Oxigraph 状态。
+| 页面 | 内容与交互 |
+| --- | --- |
+| 概览 | 项目介绍、一句话进度、获准 CQ、正式验收进度；可刷新或选择已有版本／报告 |
+| 模型浏览 | 图谱画布、已加载节点搜索、全部／七视角过滤、节点基本信息、缩放与拖动 |
+| 召回测试 | 输入 query，通过项目范围的受治理 Context Query 返回节点主命中，支持加载更多 |
+| 成员权限 | 只读已有权限角色、说明及 Grant 原值 |
+| 设置 | 语言偏好、当前账号、退出登录 |
 
-Evidence 页面只保存文档名和原文片段，不上传或解析完整文档。Build Context 页面只读显示
-workspace version、lease/fence/recovery、最近 Modeling Batch、Attempt、Item 和 Finding；它不会
-触发 apply 或恢复。
+顶部项目选择只读取可访问项目，不创建或管理项目／Ontology。没有 Ontology 的项目仍可
+进入概览、成员权限和设置；没有可访问项目时设置中的账号和语言仍可用。
+导航为五个同级入口。旧页面链接或旧浏览器 Tab 状态回到概览，Class 不再有专页、
+专属列表、导航或管理界面；已有分类信息参与统一模型阅读。
 
-legacy 页面组件已经移除，仅保留旧 URL tab 到 Overview 或 Debug 的兼容重定向。它们不表示旧
-Evidence Artifact、Proposal/Review、Version/Publication、Catalog/Connector 或 Neo4j 写入 API
-仍受支持。
+概览只显示已绑定项目的公开产物。运行生命周期不证明业务已完成；无可核实业务进度时
+显示未知。最近终态记录标为历史，CQ 冻结版本与正式报告保持各自绑定；局部 PASS、
+公开回归或旧报告均不合并成当前全项目 PASS。隐藏题、参考答案、答案点与私有诊断不展示。
 
-## Agent 查询边界
+模型浏览有界读取当前项目各 Ontology 默认 GraphSet：节点来自 `resource-list`，关系来自
+`resource-relations`，同一 IRI 保留一个节点及其读取位置。搜索只定位已加载节点，
+视角根据真实语义声明过滤；部分加载、工作空间未就绪、空模型与无匹配分别说明。
+前端不把图谱中未显示当作项目没有该知识。
 
-旧 `POST /api/agent-test/run` 和 Agent Test 页面已移除。当前面向外部 Agent 的查询入口是
-Context Query 与 scoped SPARQL；平台返回结构化事实和诊断状态，最终自然语言答案由外部 Agent 生成。
+召回只呈现节点主命中，固定使用已有 hybrid 召回、已断言内容和 depth=0；不生成答案、
+展示复杂检索参数、运行 SQL／API 或自动验收。修改 query 或切换项目会清除旧结果与游标，
+召回降级、未取完、空结果与错误按实际接口说明。
 
-## 数据流与安全
+## 退役与访问边界
+
+旧 Brief／访谈编辑、CQ 工作区、场景地图、运行记录、独立 Class／Entity 页、规则与 Facts
+专页、图管理、校验／推理操作、Build Context、MCP Tools、Key／保护集／成员配置管理、
+编辑锁、健康诊断及其专属前端代码退役。设置或节点详情不承接这些功能。
+这次退役不删除后端／MCP 能力、模型、历史报告或建模运行证据。
 
 ```text
 React UI -> FastAPI /api -> PostgreSQL + RDF Dataset/Oxigraph
 ```
 
-UI 不直接连接数据库。backend 从 session 解析全组织 admin 主体，并使用显式
-`ONTOLOGY_UI_ORIGINS` allowlist 校验 session 写请求的浏览器 Origin；Vite `changeOrigin` 改写后的
-backend Host 不参与信任判断。
+UI 不直接连接数据库；模型、查询和角色读取由后端按现有合同授权。
+成员身份、业务角色和权限 Grant 分别表达，浏览器不自报或推断有效授权。
+Context Query 与 scoped SPARQL 仍是外部 Agent 的现有读取入口。
 
 ## 验证
 
@@ -55,9 +67,9 @@ npm run build
 npx playwright test
 ```
 
-其中三个真实 backend/Oxigraph contract 用例需要通过 `ONTOLOGY_PLAYWRIGHT_API_KEY` 注入专用的
-全组织 admin 测试 key；未配置时仅跳过这三个会写入真实运行时的用例，其余 UI 用例仍执行。
-
-手工验证应覆盖 Project/Ontology 选择、Overview、Evidence、Classes/Entities/Rules/Facts、Debug、
-Build Context、Recall、MCP Tools、Graph Sets 和 Settings 的 loading/empty/error 状态，并确认
-依赖健康显示 PostgreSQL 与 Oxigraph。
+页面测试与真实 backend／Oxigraph contract 测试分别记录；真实 contract 用例通过已有
+受保护本地凭据或 `ONTOLOGY_PLAYWRIGHT_API_KEY` 接入，凭据不输出到日志或页面。
+桌面和 390px 小屏检查五 Tab、图谱操作空间、键盘／focus、加载／缺内容／部分读取／错误，
+并以实际截图核对现有浅色、白面板、紫色强调和控件风格。
+本版本的具体开发与独立验收证据见
+[交付记录](../delivery/records/2026-10-07-v4-2-five-tab-frontend-delivery-record.md)。

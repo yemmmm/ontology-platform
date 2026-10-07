@@ -1,0 +1,273 @@
+import { expect, test } from "@playwright/test";
+import { readFileSync, existsSync } from "node:fs";
+import { artifact, envelope, index, match, mockWorkspace, recall, relations, report, resources, run } from "./v42-fixtures";
+
+test("T01 five sibling links normalize retired URL and storage, with history navigation", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.addInitScript(() => {
+    localStorage.setItem("ontology-platform-ui-workspace-tab-v4", "classes");
+    localStorage.setItem("ontology-platform-ui-selected-ontology", "secret");
+    localStorage.setItem("ontology-platform-ui-workspace-lock:o1", "locked");
+    localStorage.setItem("topology:layout:secret:force", "SENSITIVE_OLD_LAYOUT");
+    localStorage.setItem("unrelated", "keep");
+  });
+  await page.goto("/?project=forbidden&ontology=secret&tab=classes&batch=b1&graph=g1");
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  expect(new URL(page.url()).search).toBe("?project=p1&tab=overview");
+  expect(await page.getByRole("navigation").getByRole("link").allTextContents()).toEqual(["Overview", "Model browser", "Recall test", "Member permissions", "Settings"]);
+  expect(await page.evaluate(() => Object.keys(localStorage).sort())).toEqual(["ontology-platform-ui-selected-project", "ontology-platform-ui-workspace-tab-v4.2", "unrelated"]);
+  await page.getByRole("link", { name: "Model browser" }).click();
+  await page.getByRole("link", { name: "Recall test" }).click();
+  await page.goBack();
+  await expect(page.getByRole("heading", { name: "Model browser", exact: true })).toBeVisible();
+  await page.goForward();
+  await expect(page.getByRole("heading", { name: "Recall test", exact: true })).toBeVisible();
+});
+test("T01 settings works without a project or ontology; ontology-only links fall back", async ({ page }) => {
+  await mockWorkspace(page, { projects: [] });
+  await page.goto("/?ontology=retired");
+  await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
+  await expect(page.getByText("No accessible projects", { exact: true })).toHaveCount(2);
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByText("user:test-admin")).toBeVisible();
+  await expect(page.getByLabel("Language preference")).toBeVisible();
+});
+test("T02 four overview blocks do not infer business progress from RUNNING", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/");
+  for (const name of ["Project introduction", "Project progress", "Competency questions", "Acceptance progress"]) await expect(page.getByRole("region", { name, exact: true })).toBeVisible();
+  await expect(page.getByText("The latest record is running; business progress is unverified")).toBeVisible();
+  await expect(page.getByText("维修业务与外部接口的语义范围。")).toBeVisible();
+  await expect(page.getByText("Current frozen version", { exact: true })).toBeVisible();
+});
+test("T02 latest all-terminal history stays historical; events choose timestamp not artifact order", async ({ page }) => {
+  const value = run();
+  value.artifacts.host.push(artifact("new-stage", { records: [{ stage: "latest-explicit", recorded_at: "2026-10-07T11:00:00Z" }] }), artifact("old-stage", { records: [{ stage: "older-explicit", recorded_at: "2026-10-07T09:00:00Z" }] }));
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  await expect(page.getByText("Recorded phase: latest-explicit", { exact: true })).toBeVisible();
+  await page.route("**/workbench", route => route.fulfill({ json: index([{ run_id: "r1", state: "FAILED", source_updated_at: "2026-10-07T10:00:00Z" }], null) }));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("The latest run ended; current project progress needs verification")).toBeVisible();
+  await expect(page.getByText("Historical questions", { exact: true })).toBeVisible();
+  await expect(page.getByText("Current frozen version", { exact: true })).toHaveCount(0);
+});
+for (const [name, data] of [
+  ["incomplete", index(undefined, "r1", false)],
+  ["ambiguous", index([{ run_id: "r1", state: "RUNNING", source_updated_at: "a" }, { run_id: "r2", state: "RUNNING", source_updated_at: "b" }], null)],
+  ["empty", index([], null)],
+] as const) test(`T02 ${name} enumeration never guesses a current run`, async ({ page }) => {
+  const calls: string[] = [];
+  await mockWorkspace(page, { index: data, handler: async (path) => { calls.push(path); return false; } });
+  await page.goto("/");
+  await expect(page.getByText("Current progress is unverified", { exact: true })).toBeVisible();
+  await expect(page.getByText("Current questions cannot be determined")).toBeVisible();
+  expect(calls.some(path => path.includes("/workbench/runs/"))).toBe(false);
+});
+test("T03 snapshot plus batch selects a unique CQ version; no answer DOM or storage", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/");
+  await expect(page.getByText("复查工单如何保持独立？")).toBeVisible();
+  await expect(page.getByText("谁可以关闭工单？")).toHaveCount(0);
+  await expect(page.getByText(/Status not recorded/)).toBeVisible();
+  await page.getByLabel("Question version").selectOption("batch1 · digest1");
+  await expect(page.getByText("Version applicability unverified", { exact: true })).toBeVisible();
+  await expect(page.getByText("谁可以关闭工单？")).toBeVisible();
+  expect(await page.locator("body").textContent()).not.toContain("ANSWER_SENTINEL");
+  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain("ANSWER_SENTINEL");
+});
+test("T03 no freeze and ambiguous duplicate projection never claims current frozen", async ({ page }) => {
+  const value = run(); value.artifacts.competency_questions.push({ ...value.artifacts.competency_questions[1], artifact_id: "duplicate" });
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  await expect(page.getByText("Version applicability unverified", { exact: true })).toBeVisible();
+  await expect(page.getByText("Current frozen version", { exact: true })).toHaveCount(0);
+});
+test("T04 formal records remain separate, deduplicate verdicts and preserve scope statistics", async ({ page }) => {
+  const value = run(); value.artifacts.reports.push(report("report-stale", "stale"));
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  await expect(page.getByLabel("Acceptance record")).toHaveValue("report-current");
+  await expect(page.getByText("pass: 1", { exact: true })).toBeVisible();
+  await expect(page.getByText("slice: pass: 1 · not-executed: 1", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Original full_pass: false/)).toBeVisible();
+  await expect(page.getByText("Progress data is incomplete")).toHaveCount(0);
+  await page.getByLabel("Acceptance record").selectOption("report-stale");
+  await expect(page.getByText("Applicability: stale", { exact: true })).toBeVisible();
+});
+test("T04 public regression cannot replace a formal report; missing denominator is incomplete", async ({ page }) => {
+  const value = run(); value.artifacts.reports = [artifact("public_regression_report", { full_pass: true })];
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  await expect(page.getByText("No formal acceptance results yet")).toBeVisible();
+  const broken = run(); delete (broken.artifacts.reports[0].data as Record<string, unknown>).denominator;
+  await page.route("**/workbench/runs/*", route => route.fulfill({ json: broken }));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Progress data is incomplete")).toBeVisible();
+});
+test("T05 unified IRI canvas includes all resource kinds, actual edges, multiple locations", async ({ page }) => {
+  const requests: string[] = [];
+  await mockWorkspace(page, { handler: async (path, route) => { requests.push(route.request().url()); return false; } });
+  await page.goto("/?tab=model");
+  const graph = page.getByRole("img", { name: "Model graph" });
+  await expect(graph).toHaveAttribute("data-node-count", "13");
+  await expect(graph).toHaveAttribute("data-edge-count", "1");
+  expect(requests.filter(url => url.includes("resource-list")).every(url => url.includes("field_set=detail&limit=500"))).toBe(true);
+  expect(requests.filter(url => url.includes("resource-relations")).every(url => url.includes("limit=1000"))).toBe(true);
+  await page.getByLabel("Search loaded model").fill("urn:work");
+  await page.getByRole("button", { name: "工单", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "Node details" })).toBeVisible();
+  await expect(page.getByLabel("Read location").locator("option")).toHaveCount(2);
+  await page.getByLabel("Read location").selectOption("1");
+  await expect(page.getByText("integration meaning", { exact: true })).toBeVisible();
+  await expect(page.getByText("Work order", { exact: true })).toBeVisible();
+});
+test("T06 seven explicit views and loaded search intersect without removing other view nodes", async ({ page }) => {
+  await mockWorkspace(page); await page.goto("/?tab=model");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  await expect(page.getByLabel("Viewpoint").locator("option")).toHaveCount(8);
+  await page.getByLabel("Viewpoint").selectOption("process");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "2");
+  await page.getByLabel("Search loaded model").fill("integration meaning");
+  await expect(page.getByText("Matches in loaded viewpoint: 1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "2");
+  await page.getByLabel("Search loaded model").fill("no match");
+  await expect(page.getByText("No matches in the loaded viewpoint")).toBeVisible();
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  const nodeButton = page.getByRole("button", { name: "Select node 无分类节点", exact: true });
+  await nodeButton.focus(); await page.keyboard.press("Enter");
+  await expect(page.getByRole("heading", { name: "无分类节点", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  await page.getByRole("button", { name: "Zoom out" }).click();
+  await page.getByRole("button", { name: "Fit graph" }).click();
+});
+test("T07 bounded partial data, failed scope and mismatched signatures retain successful nodes", async ({ page }) => {
+  await mockWorkspace(page, { handler: async (path, route) => {
+    if (path.includes("o2/workspace-context")) { await route.fulfill({ status: 403, json: { detail: { code: "forbidden" } } }); return true; }
+    if (path.endsWith("resource-list")) { await route.fulfill({ json: envelope(resources, "sig1", false) }); return true; }
+    if (path.endsWith("resource-relations")) { await route.fulfill({ json: envelope(relations, "sig2", false) }); return true; }
+    return false;
+  } });
+  await page.goto("/?tab=model");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-edge-count", "0");
+  await expect(page.getByText(/Source versions differ/)).toBeVisible();
+  await expect(page.getByText(/Integration: Scope not loaded/)).toBeVisible();
+  await expect(page.getByText(/Resource window is incomplete/)).toBeVisible();
+});
+test("T07 no ontology and missing default workspace distinguish unloaded from an empty model", async ({ page }) => {
+  await mockWorkspace(page, { ontologies: [] });
+  await page.goto("/?tab=model");
+  await expect(page.getByText("No Ontologies in this project", { exact: true })).toBeVisible();
+  await page.route("**/projects/p1/ontologies", route => route.fulfill({ json: [{ id: "o1", name: "Service" }] }));
+  await page.route("**/workspace-context", route => route.fulfill({ json: { default_graph_set_id: null } }));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Model scopes have not been loaded", { exact: true })).toBeVisible();
+});
+test("T10 fixed governed node query rejects whitespace and overlong query without requests", async ({ page }) => {
+  const bodies: Record<string, unknown>[] = [];
+  await mockWorkspace(page, { handler: async (path, route) => {
+    if (path !== "/semantic/context:query") return false;
+    bodies.push(route.request().postDataJSON());
+    await route.fulfill({ json: recall([match("b", "Second"), match("a", "First"), { ...match("triple", "TRIPLE_SENTINEL"), kind: "fact" }]) }); return true;
+  } });
+  await page.goto("/?tab=recall");
+  await page.getByLabel("Query", { exact: true }).fill("  ");
+  await expect(page.getByRole("button", { name: "Find related nodes" })).toBeDisabled();
+  await page.getByLabel("Query", { exact: true }).fill("x".repeat(2001));
+  await expect(page.getByRole("button", { name: "Find related nodes" })).toBeDisabled();
+  expect(bodies).toHaveLength(0);
+  await page.getByLabel("Query", { exact: true }).fill("  closing work orders  ");
+  await page.getByRole("button", { name: "Find related nodes" }).click();
+  await expect(page.locator(".recallNode h2")).toHaveText(["Second", "First"]);
+  expect(bodies[0]).toEqual({ project_id: "p1", scope_mode: "project", query: "closing work orders", resource_types: ["concept", "instance", "operation", "mapping", "metric"], assertion_types: ["asserted"], search_mode: "hybrid", depth: 0, limit: 20, context_limit: 0, context_detail: "compact" });
+  expect(await page.locator("body").textContent()).not.toContain("TRIPLE_SENTINEL");
+  expect(await page.locator("body").textContent()).not.toContain("FACT_SENTINEL");
+});
+test("T11 main cursor appends ordered nodes once, editor clears and discards a late result", async ({ page }) => {
+  const bodies: Record<string, unknown>[] = [];
+  await mockWorkspace(page, { handler: async (path, route) => {
+    if (path !== "/semantic/context:query") return false;
+    const body = route.request().postDataJSON(); bodies.push(body);
+    if (body.query === "late") await new Promise(resolve => setTimeout(resolve, 350));
+    await route.fulfill({ json: body.match_cursor ? recall([match("b"), match("c")]) : recall([match("a"), match("b")], "cursor1") }); return true;
+  } });
+  await page.goto("/?tab=recall"); await page.getByLabel("Query", { exact: true }).fill("first"); await page.getByRole("button", { name: "Find related nodes" }).click();
+  await page.getByRole("button", { name: "Load more related nodes" }).click();
+  await expect(page.locator(".recallNode h2")).toHaveText(["a", "b", "c"]);
+  expect(bodies[1]).toEqual({ ...bodies[0], match_cursor: "cursor1" });
+  await page.getByLabel("Query", { exact: true }).fill("late");
+  await expect(page.locator(".recallNode")).toHaveCount(0);
+  await page.getByRole("button", { name: "Find related nodes" }).click();
+  await page.getByLabel("Query", { exact: true }).fill("edited");
+  await page.waitForTimeout(500);
+  await expect(page.locator(".recallNode")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Load more related nodes" })).toHaveCount(0);
+});
+test("T11 cursor error preserves explicit failure, no more cursor, and permits fresh query", async ({ page }) => {
+  await mockWorkspace(page, { handler: async (path, route) => {
+    if (path !== "/semantic/context:query") return false;
+    const body = route.request().postDataJSON();
+    if (body.match_cursor) await route.fulfill({ status: 409, json: { detail: { code: "cursor_signature_changed" } } });
+    else await route.fulfill({ json: { ...recall([match("a")], "cursor1"), recall: { completeness: "degraded" }, warnings: [{ code: "embedding_unavailable", message: "Lexical fallback" }] } });
+    return true;
+  } });
+  await page.goto("/?tab=recall"); await page.getByLabel("Query", { exact: true }).fill("first"); await page.getByRole("button", { name: "Find related nodes" }).click();
+  await expect(page.getByText("Recall is degraded")).toBeVisible();
+  await page.getByRole("button", { name: "Load more related nodes" }).click();
+  await expect(page.getByRole("alert")).toContainText("cursor_signature_changed");
+  await expect(page.getByRole("button", { name: "Load more related nodes" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Query again" }).click();
+  await expect(page.getByRole("button", { name: "Load more related nodes" })).toBeVisible();
+});
+test("T12 roles and grants use only the read contract; project switch never leaks old grants", async ({ page }) => {
+  const requests: string[] = [];
+  await mockWorkspace(page, { handler: async (path, route) => {
+    requests.push(`${route.request().method()} ${path}`);
+    if (path === "/projects/p2/semantic-access-roles") { await route.fulfill({ status: 403, json: { detail: { code: "forbidden" } } }); return true; }
+    return false;
+  } });
+  await page.goto("/?tab=access");
+  await expect(page.getByText("context:query", { exact: true })).toBeVisible();
+  await expect(page.getByText("No Grant configured")).toBeVisible();
+  expect(requests.every(path => path === "GET /auth/me" || path === "GET /projects" || path === "GET /projects/p1/semantic-access-roles")).toBe(true);
+  await page.getByLabel("Project", { exact: true }).selectOption("p2");
+  await expect(page.getByRole("alert")).toContainText("403");
+  await expect(page.getByText("context:query", { exact: true })).toHaveCount(0);
+});
+test("T12 empty roles and T13 minimal settings without any model requests", async ({ page }) => {
+  const requests: string[] = [];
+  await mockWorkspace(page, { roles: [], handler: async path => { requests.push(path); return false; } });
+  await page.goto("/?tab=access");
+  await expect(page.getByText("No permission roles")).toBeVisible();
+  await page.getByRole("link", { name: "Settings" }).click();
+  await expect(page.getByText("user:test-admin")).toBeVisible();
+  expect(requests.some(path => /ontologies|keys|members|users|health|protection/.test(path))).toBe(false);
+  expect(await page.locator(".settingsPanel button").allTextContents()).toEqual(["Sign out"]);
+});
+test("T14 retired source files, CRUD API and class-specific pages are physically absent", async () => {
+  for (const filename of ["ClassesPage", "EntitiesPage", "ProjectWorkbenchPage", "SemanticModelPage", "ContextQueryPage", "ProjectAccessPage", "BuildContextDebugPage", "McpToolsPage", "GraphSetPage", "GraphGovernancePage", "FactAuditPage", "ProjectBriefPage", "RequirementQuestionsPage", "EntitiesSearchPage"]) expect(existsSync(`src/pages/${filename}.tsx`)).toBe(false);
+  for (const filename of ["src/semanticApi.ts", "src/types.ts", "src/utils.ts", "src/hooks/useWorkspaceLocation.ts", "src/pages/workbenchTypes.ts", "src/components/semantic", "src/components/workbench"]) expect(existsSync(filename)).toBe(false);
+  const api = readFileSync("src/workspaceApi.ts", "utf8");
+  expect(api).not.toMatch(/validation-runs|reasoning-runs|exports|datasets:load|method: "(?:PUT|PATCH|DELETE)"/);
+});
+test("T15 desktop and 390px preserve brand, keyboard focus and no document overflow", async ({ page }) => {
+  await mockWorkspace(page); await page.setViewportSize({ width: 1440, height: 1000 });
+  await page.goto("/"); await expect(page.getByText("Current frozen version", { exact: true })).toBeVisible();
+  await page.screenshot({ path: "/tmp/v42-development-overview-desktop.png", fullPage: true });
+  await page.getByRole("link", { name: "Model browser" }).click();
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  await page.screenshot({ path: "/tmp/v42-development-model-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByLabel("Search loaded model").fill("urn:work"); await page.getByRole("button", { name: "工单", exact: true }).click();
+  await expect(page.getByRole("complementary", { name: "Node details" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  const height = await page.getByRole("img", { name: "Model graph" }).evaluate(element => element.getBoundingClientRect().height);
+  expect(height).toBeGreaterThanOrEqual(420);
+  await page.screenshot({ path: "/tmp/v42-development-model-mobile.png", fullPage: true });
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await expect(page.getByText("Current frozen version", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await page.screenshot({ path: "/tmp/v42-development-overview-mobile.png", fullPage: true });
+});

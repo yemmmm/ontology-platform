@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import { apiRequest } from "./api";
+import { useT } from "./i18n";
 
 type Principal = {
   actor: string;
@@ -31,6 +32,7 @@ export function useAuth() {
 }
 
 export function AuthGate({ children }: { children: React.ReactNode }) {
+  const t = useT();
   const [principal, setPrincipal] = useState<Principal | null>(null);
   const [loading, setLoading] = useState(true);
   const [username, setUsername] = useState("");
@@ -81,24 +83,24 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     }
   }
 
-  if (loading) return <div className="auth-loading">Checking authentication…</div>;
+  if (loading) return <div className="auth-loading">{t("Checking authentication…")}</div>;
   if (!principal) {
     return (
       <main className="auth-page">
         <form className="auth-card" onSubmit={login}>
           <div className="auth-eyebrow">Ontology Platform</div>
-          <h1>Sign in</h1>
-          <p>Use the bootstrap administrator account configured for this deployment.</p>
+          <h1>{t("Sign in")}</h1>
+          <p>{t("Use the administrator account configured for this deployment.")}</p>
           <label>
-            Username
+            {t("Username")}
             <input autoComplete="username" value={username} onChange={(e) => setUsername(e.target.value)} required />
           </label>
           <label>
-            Password
+            {t("Password")}
             <input type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} required />
           </label>
-          {error ? <div className="auth-error" role="alert">Authentication failed.</div> : null}
-          <button type="submit">Sign in</button>
+          {error ? <div className="auth-error" role="alert">{t("Authentication failed.")}</div> : null}
+          <button type="submit">{t("Sign in")}</button>
         </form>
       </main>
     );

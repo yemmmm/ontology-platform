@@ -19,7 +19,7 @@ delivery evidence. Use the following locations for new documentation.
 
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
-  refined; detailed design and independent design review PASS, implementation pending. Supersedes
+  implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
   the v4.1 frontend scope.
 - [v4.1 frontend workbench adaptation](requirements/requirements-v4.1.md): previous frontend scope
   and its delivery evidence, retained for history.

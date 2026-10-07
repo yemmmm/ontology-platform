@@ -150,6 +150,9 @@ source.updated_at 选最近的可读正式报告并标历史／适用性未知�
 - 必须复用 scope resolver、access_view 及已有嵌套引用授权机制。subject、predicate、object
   和展示字段授权先于窗口计数与 LIMIT；不能拿原始 RDF 后在浏览器隐藏受限资源。
   内部固定 fetch 上限命中时返回不完整提示，沿用现有先授权、后截取策略。
+- 实施细化（2026-10-07）：受限 predicate 在 RDF 查询端排除，不能用原始隐藏边挤占窗口；
+  可选 label 若含受限引用，经现有 access_view 检查后省略，以 predicate IRI 回退，
+  不改变已获准 s/p/o 的真实关系。新投影不修改共享授权和旧投影的过滤行为。
 - 限定关系端点窗口在真实 RDF 查询之前；稳定排序与去重后再截取获准边，不能先截取整个
   GraphSet 的任意边再与节点相交，否则会把可见节点间关系无声丢失。
 - source_signature 与资源列表必须同义；paging.complete 只有端点窗口、关系窗口与底层
@@ -241,3 +244,14 @@ auth-required 通道，403 不回填旧数据。无需后台轮询、自动恢�
 全 Playwright、backend 全 pytest、相关接口文档同步；稳定后按仓库规则重启服务和核对
 health、前端、resource-relations 与受治理 query。新测试 fixture 只证明功能，不启真实建模。
 独立功能验收需另行按开发后实际证据完成，本轮仅交付可实施设计。
+
+## 2026-10-07 实施结果补记
+
+上述设计轮结束后，用户授权完成开发与测试；现已实现 R4.2-001—007，独立功能
+Round 1 PASS。五页及导航／状态组织重写，旧页和专属依赖实际删除；通用受治理
+resource-relations 增量按 D5 实施，旧 entity-relations 行为保留，无存储迁移。
+最终前端 build、30 项 Playwright、后端全量 1141 passed／54 skipped、接口同步和
+重启健康检查通过；独立真实 PostgreSQL／Oxigraph／HTTP、浏览器与截图证据及隔离资源
+清理见 [共享测试记录](../test-plans/2026-10-07-v4-2-five-tab-frontend-test-plan.md) 和
+[交付记录](../records/2026-10-07-v4-2-five-tab-frontend-delivery-record.md)。
+只接受五 Tab 的功能实现，不升级为真实语义建模或模型质量验收结论。

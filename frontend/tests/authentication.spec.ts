@@ -42,7 +42,7 @@ test("unauthenticated users can sign in and sign out", async ({ page }) => {
     await route.fulfill({ json: [] });
   });
 
-  await page.goto("/?project=project-1&ontology=ontology-1&tab=setting");
+  await page.goto("/?project=project-1&ontology=ontology-1&tab=settings");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
   await page.getByLabel("Username").fill("test-admin");

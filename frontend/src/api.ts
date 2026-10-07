@@ -1,5 +1,3 @@
-import type { Notice } from "./types";
-
 declare global {
   interface ImportMetaEnv {
     readonly VITE_API_BASE_URL?: string;
@@ -58,8 +56,4 @@ export async function apiRequest<T>(path: string, options: RequestInit = {}): Pr
   }
 
   return payload as T;
-}
-
-export function errorNotice(error: unknown): Notice {
-  return { kind: "error", message: error instanceof Error ? error.message : String(error) };
 }

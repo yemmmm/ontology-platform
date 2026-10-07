@@ -647,3 +647,21 @@ Ontology plan 后同步原 state 的绑定并保留状态和额外字段，历�
 幂等性、全部精确 tool bindings 和凭据需求类别，沿用既有 Operation schema/秘密检测和语义授权；
 不选择首个 binding，不执行外部能力。`GET /api/semantic/resources/{resource_iri}?graph_set_id=...`
 也支持 Operation 精确下钻，与列表使用相同授权范围。
+
+## v4.2 通用资源关系图谱读取
+
+沿用 `GET /api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}`，
+`model_name=resource-relations`、`include=asserted`，关系请求上限为 1000。
+此模板与旧 `entity-relations` 分开：端点使用同一 GraphSet 的 `resource-list` 获准
+资源窗口（最多 500），支持 Class／属性／关系类型、无 Class 实体、Operation、映射及
+指标之间的真实 IRI 三元组，不要求两端为 NamedIndividual。
+
+返回既有 SemanticReadModelEnvelope；items 包含稳定三元组 id、source、target、relation
+（predicate IRI）、可选 label、source_graph_iri、assertion_kind。同一三元组跨图只返回
+一个稳定身份及一处真实图位置；不从注解 JSON 字符串或名称推断额外边，字面量不是节点。
+端点窗口在实际 RDF 查询前限定；受限 predicate 在查询端排除，可选 label 经过原有嵌套
+引用授权检查，不能公开的标签省略而保留已获准关系，客户端可用 predicate IRI 显示。
+
+`source_signature` 与该 GraphSet 资源读取范围保持一致。`paging.complete` 必须同时满足
+端点窗口、关系窗口和底层读取完整；部分结果及相关 warnings 不能被解释为全项目没有
+其他模型内容。本接口只读，不增加图写入、推理、业务执行或 Evidence／lineage 功能。
