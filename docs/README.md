@@ -17,11 +17,13 @@ delivery evidence. Use the following locations for new documentation.
 
 ## Current requirement entry points
 
-- [v4.1 frontend workbench adaptation](requirements/requirements-v4.1.md): registered page structure,
-  model browsing, modeling progress, retrieval, acceptance, and administration requirements; pending
-  detailed design and implementation.
+- [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
+  overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
+  registered; design and implementation pending. Supersedes the v4.1 frontend scope.
+- [v4.1 frontend workbench adaptation](requirements/requirements-v4.1.md): previous frontend scope
+  and its delivery evidence, retained for history.
 - [v4.0 semantic modeling requirements](requirements/requirements-v4.0.md): the business-semantic,
-  collaboration, authorization, and acceptance baseline inherited by v4.1.
+  collaboration, authorization, and acceptance baseline inherited by the frontend versions.
 
 ## Placement rules
 
