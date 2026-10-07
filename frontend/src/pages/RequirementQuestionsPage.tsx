@@ -81,9 +81,11 @@ export function RequirementQuestionsPage({
           <strong>{questionCountByReason.unconfirmed ?? 0}</strong>
         </div>
         <div className="questionSummaryTile">
-          <span>{t("Completeness")}</span>
+          <span>{t("Brief field completeness")}</span>
           <strong>{brief ? `${completeness}%` : "-"}</strong>
         </div>
+        <div className="questionSummaryTile"><span>{t("Explicit unknown")}</span><strong>{Object.values(brief?.field_states??{}).filter(s=>s==="unknown").length}</strong></div>
+        <div className="questionSummaryTile"><span>{t("Conflict")}</span><strong>{Object.values(brief?.field_states??{}).filter(s=>s==="conflict").length}</strong></div>
       </div>
 
       <Card title={t("Requirement clarification questions")} size="small">

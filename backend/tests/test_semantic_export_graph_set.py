@@ -36,7 +36,6 @@ def _resolution(source_iris, reasoning=None, rule=None):
         shape_graph_iris=[],
         governance_graph_iris=[],
         reasoning_result_graph_iri=reasoning,
-        rule_result_graph_iri=rule,
         derived_state={},
         warnings=[],
     )

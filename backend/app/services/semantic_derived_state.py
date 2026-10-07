@@ -95,7 +95,6 @@ class SemanticDerivedStateService:
     ) -> SemanticDerivedResultPointerModel:
         return self._promote(
             graph_set_id=graph_set_id,
-            result_kind="reasoning",
             run_id=run_id,
             result_graph_iri=result_graph_iri,
             source_signature=source_signature,
@@ -105,28 +104,6 @@ class SemanticDerivedStateService:
             metadata=metadata,
         )
 
-    def promote_rule_pointer(
-        self,
-        graph_set_id: str,
-        run_id: str,
-        result_graph_iri: str,
-        source_signature: str,
-        engine_name: str | None = None,
-        engine_version: str | None = None,
-        rule_version: str | None = None,
-        metadata: dict[str, Any] | None = None,
-    ) -> SemanticDerivedResultPointerModel:
-        return self._promote(
-            graph_set_id=graph_set_id,
-            result_kind="rule",
-            run_id=run_id,
-            result_graph_iri=result_graph_iri,
-            source_signature=source_signature,
-            engine_name=engine_name,
-            engine_version=engine_version,
-            rule_version=rule_version,
-            metadata=metadata,
-        )
 
     def mark_stale_after_edit(
         self,
@@ -172,7 +149,7 @@ class SemanticDerivedStateService:
         graph_set_id: str,
         *,
         audit_id: str | None = None,
-        reason: str = "workspace_rule_changed",
+        reason: str = "workspace_changed",
         commit: bool = True,
     ) -> list[SemanticDerivedResultPointerModel]:
         rows = list(
@@ -239,6 +216,7 @@ class SemanticDerivedStateService:
                 select(SemanticDerivedResultPointerModel)
                 .where(SemanticDerivedResultPointerModel.graph_set_id == graph_set.id)
                 .where(SemanticDerivedResultPointerModel.status != "superseded")
+                .where(SemanticDerivedResultPointerModel.result_kind == "reasoning")
             )
             for pointer in pointers:
                 if pointer.source_signature and pointer.source_signature != current_signature:
@@ -266,6 +244,8 @@ class SemanticDerivedStateService:
         graph_set_id: str,
         result_kind: str,
     ) -> SemanticDerivedResultPointerModel | None:
+        if result_kind != "reasoning":
+            raise DerivedStateError(f"Unsupported result kind: {result_kind}")
         return self.session.scalar(
             select(SemanticDerivedResultPointerModel)
             .where(SemanticDerivedResultPointerModel.graph_set_id == graph_set_id)
@@ -279,7 +259,11 @@ class SemanticDerivedStateService:
         result_kind: str | None = None,
         status: str | None = None,
     ) -> list[SemanticDerivedResultPointerModel]:
-        statement = select(SemanticDerivedResultPointerModel).order_by(
+        if result_kind not in (None, "reasoning"):
+            raise DerivedStateError(f"Unsupported result kind: {result_kind}")
+        statement = select(SemanticDerivedResultPointerModel).where(
+            SemanticDerivedResultPointerModel.result_kind == "reasoning"
+        ).order_by(
             SemanticDerivedResultPointerModel.created_at.desc()
         )
         if graph_set_id:
@@ -306,29 +290,25 @@ class SemanticDerivedStateService:
         return {
             "derived_pointer_counts": by_kind_status,
             "stale_reasoning_results": by_kind_status.get("reasoning", {}).get("stale", 0),
-            "stale_rule_results": by_kind_status.get("rule", {}).get("stale", 0),
             "stale_derived_count": stale_derived_count,
             "current_reasoning_results": by_kind_status.get("reasoning", {}).get("current", 0),
-            "current_rule_results": by_kind_status.get("rule", {}).get("current", 0),
         }
 
     def _promote(
         self,
         graph_set_id: str,
-        result_kind: str,
         run_id: str,
         result_graph_iri: str,
         source_signature: str,
         engine_name: str | None,
         engine_version: str | None,
-        rule_version: str | None = None,
         shape_version: str | None = None,
         metadata: dict[str, Any] | None = None,
     ) -> SemanticDerivedResultPointerModel:
         prior_current = self.session.scalars(
             select(SemanticDerivedResultPointerModel)
             .where(SemanticDerivedResultPointerModel.graph_set_id == graph_set_id)
-            .where(SemanticDerivedResultPointerModel.result_kind == result_kind)
+            .where(SemanticDerivedResultPointerModel.result_kind == "reasoning")
             .where(SemanticDerivedResultPointerModel.status == "current")
         )
         now = datetime.now(UTC)
@@ -342,13 +322,12 @@ class SemanticDerivedStateService:
         pointer = SemanticDerivedResultPointerModel(
             id=str(uuid4()),
             graph_set_id=graph_set_id,
-            result_kind=result_kind,
+            result_kind="reasoning",
             run_id=run_id,
             result_graph_iri=result_graph_iri,
             source_signature=source_signature,
             engine_name=engine_name,
             engine_version=engine_version,
-            rule_version=rule_version,
             shape_version=shape_version,
             status="current",
             became_current_at=now,

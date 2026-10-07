@@ -110,7 +110,7 @@ v4 R4.0-012 阶段性停用 Evidence／完整 lineage。Agent 读取业务资料
 - 授权范围发现：`GET /api/semantic/scopes:discover`
 - Context Query：`POST /api/semantic/context:query`
 - scoped SPARQL：`POST /api/semantic/sparql:query`
-- Ontology read model、SHACL validation、reasoning 和 rule
+- Ontology read model、SHACL validation 和 OWL reasoning
   execution 均以清单中的当前操作为准。
 
 Context Query 返回结构化资源、事实、关系、操作、约束和真实完整性状态，不生成最终自然语言答案。
@@ -310,6 +310,8 @@ uv run python ../scripts/sync-interface-docs.py --write
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/modeling-context` | Get Modeling Context |
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/semantic-read-models/{model_name}` | Get Ontology Read Model |
 | modeling batches | `POST` | `/api/build-sessions/{session_id}/modeling-batches` | Submit Modeling Batch |
+| modeling workbench | `GET` | `/api/projects/{project_id}/workbench` | Workbench |
+| modeling workbench | `GET` | `/api/projects/{project_id}/workbench/runs/{team_run_id}` | Workbench Run |
 | modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-execution-events` | List Modeling Execution Events |
 | modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-workflow-artifacts` | List Modeling Workflow Artifacts |
 | modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-workflow:export` | Export Modeling Workflow Record |
@@ -357,10 +359,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `GET` | `/api/semantic/reasoning-runs` | List Reasoning Runs |
 | semantic | `GET` | `/api/semantic/reasoning-runs/{run_id}` | Get Reasoning Run |
 | semantic | `GET` | `/api/semantic/resources/{resource_iri}` | Read Resource |
-| semantic | `GET` | `/api/semantic/rule-definitions` | List Rule Definitions |
-| semantic | `GET` | `/api/semantic/rule-definitions/{rule_id}` | Get Rule Definition |
-| semantic | `GET` | `/api/semantic/rule-runs` | List Rule Runs |
-| semantic | `GET` | `/api/semantic/rule-runs/{run_id}` | Get Rule Run |
 | semantic | `GET` | `/api/semantic/scopes:discover` | Discover Semantic Scopes |
 | semantic | `GET` | `/api/semantic/statements` | List Statements |
 | semantic | `GET` | `/api/semantic/status` | Get Governance Status |
@@ -373,10 +371,8 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/derived-results:reconcile` | Reconcile Derived Results |
 | semantic | `POST` | `/api/semantic/edits` | Create Semantic Edit |
 | semantic | `POST` | `/api/semantic/graph-sets` | Create Graph Set |
-| semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/construct-runs` | Create Graph Set Construct Run |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/projection-jobs` | Create Projection Job For Set |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/reasoning-runs` | Create Graph Set Reasoning Run |
-| semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/rule-runs` | Create Graph Set Rule Run |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/validation-runs` | Create Graph Set Validation Run |
 | semantic | `POST` | `/api/semantic/graphs` | Register Graph |
 | semantic | `POST` | `/api/semantic/migrations` | Create Migration Run |
@@ -390,13 +386,10 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/projection-jobs/{job_id}:run` | Run Projection Job |
 | semantic | `POST` | `/api/semantic/projections:reconcile` | Reconcile Projections |
 | semantic | `POST` | `/api/semantic/reasoning-runs` | Create Reasoning Run |
-| semantic | `POST` | `/api/semantic/rule-definitions` | Create Rule Definition |
 | semantic | `POST` | `/api/semantic/sparql:query` | Query Sparql |
 | semantic | `POST` | `/api/semantic/validation-runs` | Create Validation Run |
 | semantic | `PUT` | `/api/semantic/graph-sets/{graph_set_id}/members` | Update Graph Set Members |
 | semantic | `PATCH` | `/api/semantic/graphs/{graph_iri}/editability` | Update Graph Editability |
-| semantic | `PATCH` | `/api/semantic/rule-definitions/{rule_id}` | Update Rule Definition |
-| semantic | `DELETE` | `/api/semantic/rule-definitions/{rule_id}` | Delete Rule Definition |
 | semantic-protection-sets | `GET` | `/api/projects/{project_id}/protection-sets` | List Protection Sets |
 | semantic-protection-sets | `GET` | `/api/protection-sets/{protection_set_id}` | Get Protection Set |
 | semantic-protection-sets | `POST` | `/api/projects/{project_id}/protection-sets` | Create Protection Set |
@@ -576,8 +569,81 @@ Batch `_compile`／`prepare` 校验后写入 `op:ruleDefinition` JSON 字面量�
 `properties.rule_definition`。授权过滤仍先于分页／计数／排序，隐藏与不存在精确读取同形。
 
 平台只保存和读取脚本，不求值、不调用外部能力、不自动生成派生关系／节点；显式受治理
-建模仍可提交已确认定义。Shape、OWL、平台 `rule-result` 和外部业务判断保持原边界。
+建模仍可显式提交已确认定义。Shape 与 OWL 保留为平台通用能力；业务规则的判断和推导只由外部 Consumer／业务系统执行。旧可执行 Rule Definition CRUD、Rule Run、CONSTRUCT 物化和 rule-result 专用入口已退役（直接 REST 为 404，MCP 不再注册），不提供替代执行器。
 脚本、说明、合同和范围共同维护，已知冲突和共同变更说明保留；平台不自动判断自由文本冲突
 或敏感信息，IRI 过滤不保护复制出的正文。未返回关系不能解释为无输入或无约束。
 不新增表、规则专用资源／路由、执行器或 Evidence／lineage。完整合同见
 [规则声明](../../modeling_team/references/platform-neutral-candidate-authoring.json)的 `business_rule_semantics`。
+
+
+R4.0-022／R4.1-009 退役边界：业务规则以 `resource_types: ["instance"]` 与
+`semantic_roles: ["rule"]` 查询，普通实体 `rule_definition` 注解继续读写。旧
+`resource_types: ["rule"]`、`include=asserted-plus-rules`、fact-audit `kind=rule_derived`
+明确报不支持；`full-working-view` 仅组合获准 asserted 与 OWL 结果。旧规则数据库模型、
+迁移及检查点归档保留，但不再作为当前规则候选、工作空间版本或检索投影来源。
+
+OWL run 的 `implementation_mode`、`engine_name` 来源于实际引擎声明，缺失为 null；
+`profile=owl2_dl` 仅为请求的推理 profile，不能据此声明真实 DL 已通过。
+`development_stub` 实现及原 warning 会在创建响应、列表和详情读回，不代表真实 DL 推理。
+
+## v4.1 项目建模工作台只读投影
+
+`GET /api/projects/{project_id}/workbench` 和
+`GET /api/projects/{project_id}/workbench/runs/{team_run_id}` 为组织管理员或对应项目管理员
+提供 Team/宿主产物的只读投影。普通 read/model Key 不可读取；跨项目访问沿用现有
+`forbidden_scope` 合同。响应设置 `Cache-Control: no-store`，不创建/继续 run、不运行模型、不写产物。
+Team run ID 与平台 Session、旧数据库 Run ID 相互独立。
+
+列表封套：`schema_version=v4.1-workbench/v1`、`project_id`、`observed_at`、`current_run_id`、
+`runs[]`、`completeness {complete,limit}`、`limitations[]`。run 摘要包含 `run_id`、记录的 `state`、
+`source_updated_at`、`platform_binding {project_id,ontology_ids}`。只有唯一明确非终态 run 时
+提供 `current_run_id`；记录状态不是进程存活证明。枚举上限 1000；有界结果不保证全部历史。
+
+run 详情封套：`schema_version=v4.1-workbench-run/v1`，在上述身份/范围/时点外，包含
+`artifacts {competency_questions,scenario_map,candidates,materialization,public_feedback,reports,host,handoff}`。
+每组是 Artifact 数组；Artifact 包括 `artifact_id`、`kind`、`availability`（available/missing/error）、
+`schema_version`、`version`、`source {path,updated_at,sha256}`、`observed_at`、
+`scope {project_id,run_id,ontology_ids}`、`limitations[]`、`data`。产物按明确 schema 投影，
+不提供任意路径、原始 JSON、私有题集、隐藏回答/诊断、运行日志或凭据。固定文件组枚举上限 500；
+无法读取、schema 异常及源文件缺少分别记录。文件及其父目录的符号链接不读取。
+
+固定事实根为源码定位的 `workspaces/modeling-runs`，不依赖服务 cwd。项目关联只接受
+`state.platform_binding`、历史 `state.cleanup.scope` 和 `acceptance-v3/production-handoff.json`
+的 `scope_binding`；无绑定、身份/范围冲突的 run 不挂到项目，不能从目录名猜测项目。
+新 Runner 的 state 绑定仅来自已 prepare 的 PlatformScope 实际项目/Ontology 身份；成功扩展
+Ontology plan 后同步原 state 的绑定并保留状态和额外字段，历史产物不改写。
+
+- CQ 仅公开投影的题干、批准必答点、未知、范围、题版本和公开审核绑定；Brief CQ 不等于冻结题集。
+- 地图保留切片/视角原状态和 note、candidate refs、共享维护者/引用、依赖、跨切片覆盖、显式未知和调整。
+  未登记视角保持未登记；modeled 不提升为已应用或验收通过。
+- 候选保留 revision/item、业务含义、未物化 value、脚本注解、映射表达及 neutral definition refs。
+  物化投影读取 plan/intents/receipts/approvals 和 Runner 实际 Attempt proofs；apply 模式或普通回执
+  本身不证明已应用。原报告/文件版本保留，不合并历史 PASS。
+- 正式报告和 `public-regression` 作为不同 kind 保留原 verdict、公开 note/回答、批准必答点、完整分母、
+  scope 计数和隐藏获准聚合。原合同没有结构化逐点 verdict 时标 `structured_point_verdicts=not_recorded`，
+  不解析自由文本造裁决。`blind_status` 原标签保留；已曝光 ID 仅显示精确绑定的公开 ID。
+  公开内容必须匹配报告/反馈的 freeze digest、batch 及题版本；旧公开题 ID 不解封另 freeze 的隐藏内容。
+- 报告 `applicability` 与原 verdict 分离：`verified_current` 需要最新真实 freeze 记录、报告摘要、
+  model binding 摘要、项目/范围、报告前后模型状态及当前只读 workspace 状态相符；漂移、摘要冲突或
+  在线资源删除为 `stale`，缺少绑定/观察证据为 `binding_unknown`。不进行重新评分或真实业务执行。
+  `report_digest_scope=complete_record|batch_report_core|mismatch` 明确摘要覆盖范围；现有 CLI 在
+  核心报告摘要生成后追加 `sessions` 和 `full_pass`，`batch_report_core` 按该生产者前像验证，
+  并记录 `sessions_and_full_pass_outside_report_digest`。`full_pass_verification=recorded_only_not_rescored`
+  表示展示原报告最终值；摘要匹配与当前绑定核实均不产生新的 PASS 或独立语义验收结论。
+- host 读取实际基线角色配置、存在的隔离 runtime config、固定启动记录、生命周期/交接/第一阻塞事件
+  及独立验收 continuation 的已记录时间；请求值、冻结值、观察配置文件和未核实热切换分别表达。
+  无绑定余额记录或结构化有效分类计时则保留未知，不从 start 事件数量或进程存活时间推算。
+
+## 通用资源列表及外部能力定义阅读
+
+`GET /api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}`，使用
+`model_name=resource-list`、`field_set=full` 和 `limit=500`，
+组合既有实体/分类/属性/关系/映射/指标及 Operation 受治理投影。先在每个真实资源族服务端授权，
+再按 IRI 合并和分页；同 IRI 保留同一共享身份、实体完整可见分类和语义注解。无正式 Class 的实体
+可阅读。`paging` 的 complete/has_more/truncated 只针对授权且有界的可见集合，不证明业务知识完整。
+此入口不从名称或类型推断七视角；业务角色来自真实 `semantic_definition.semantic_role`。
+
+`operation-list`/`operation-detail` 读取 ontology 图中的 Operation 定义、参数、前提、效果、失败、
+幂等性、全部精确 tool bindings 和凭据需求类别，沿用既有 Operation schema/秘密检测和语义授权；
+不选择首个 binding，不执行外部能力。`GET /api/semantic/resources/{resource_iri}?graph_set_id=...`
+也支持 Operation 精确下钻，与列表使用相同授权范围。

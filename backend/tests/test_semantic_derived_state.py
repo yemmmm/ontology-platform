@@ -167,13 +167,8 @@ def test_status_summary_counts_by_kind_and_status(
         result_graph_iri=f"{PREFIX}reasoning-result/r1",
         source_signature=graph_set_service.source_signature_for(graph_set.id),
     )
-    derived_service.promote_rule_pointer(
-        graph_set_id=graph_set.id,
-        run_id="rr1",
-        result_graph_iri=f"{PREFIX}rule-result/rr1",
-        source_signature=graph_set_service.source_signature_for(graph_set.id),
-    )
     summary = derived_service.status_summary()
     assert summary["current_reasoning_results"] == 1
-    assert summary["current_rule_results"] == 1
+    assert "current_rule_results" not in summary
+    assert "rule" not in summary["derived_pointer_counts"]
     assert summary["stale_reasoning_results"] == 0

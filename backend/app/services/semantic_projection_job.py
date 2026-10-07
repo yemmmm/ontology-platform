@@ -89,7 +89,6 @@ class SemanticProjectionJobService:
             projection_scope=include,
             source_graph_iris=scope.source_graph_iris,
             reasoning_result_graph_iri=scope.reasoning_result_graph_iri,
-            rule_result_graph_iri=scope.rule_result_graph_iri,
             source_signature=graph_set.source_signature,
             input_graph_revisions=revisions,
             input_derived_pointers=pointers,
@@ -281,7 +280,8 @@ class SemanticProjectionJobService:
     def _derived_pointers(self, graph_set_id: str) -> dict[str, dict[str, Any]]:
         rows = self.session.scalars(
             select(SemanticDerivedResultPointerModel).where(
-                SemanticDerivedResultPointerModel.graph_set_id == graph_set_id
+                SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
+                SemanticDerivedResultPointerModel.result_kind == "reasoning",
             )
         )
         return {

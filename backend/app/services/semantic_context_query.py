@@ -13,10 +13,9 @@ from typing import Any, Iterable, Mapping
 
 from rdflib import Literal, URIRef
 from rdflib.namespace import RDF
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.repositories.models import OntologyModel, SemanticRuleDefinitionModel, SemanticRuleModel
+from app.repositories.models import OntologyModel
 from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
 from app.security.auth import AuthPrincipal
 from app.services.semantic_access import SemanticAccessView
@@ -67,7 +66,6 @@ RESOURCE_TYPE_ORDER = (
     "instance",
     "relation",
     "fact",
-    "rule",
     "operation",
     "mapping",
     "metric",
@@ -367,7 +365,6 @@ class SemanticContextQueryService:
                 scope, expression.text, expression.terms, candidate_limit,
                 selected_resource_types, selected_assertion_types,
             )
-            candidates.extend(self._rule_candidates(scope, expression.text, expression.terms))
             if "operation" in selected_resource_types:
                 candidates.extend(self._operation_candidates(scope, expression.text, expression.terms))
             if "mapping" in selected_resource_types:
@@ -2038,61 +2035,6 @@ LIMIT 5000
                         return items
         return items
 
-    def _rule_candidates(
-        self, scope: SemanticQueryScope, text: str, terms: list[str]
-    ) -> list[dict[str, Any]]:
-        ontology_ids = [item.ontology_id for item in scope.ontologies]
-        if not ontology_ids:
-            return []
-        rows = self.session.execute(
-            select(SemanticRuleModel, SemanticRuleDefinitionModel)
-            .join(
-                SemanticRuleDefinitionModel,
-                SemanticRuleDefinitionModel.id == SemanticRuleModel.current_definition_id,
-            )
-            .where(
-                SemanticRuleModel.ontology_id.in_(ontology_ids),
-                SemanticRuleModel.status == "active",
-                SemanticRuleDefinitionModel.status == "active",
-            )
-            .order_by(SemanticRuleModel.ontology_id, SemanticRuleModel.rule_iri)
-        )
-        candidates: list[dict[str, Any]] = []
-        for rule, definition in rows:
-            description = (definition.rule_metadata or {}).get("description")
-            match = _best_match(
-                text,
-                terms,
-                [
-                    ("label", definition.name, 1000, "exact_label"),
-                    ("identifier", rule.rule_iri, 600, "identifier"),
-                    ("description", description, 450, "description"),
-                ],
-            )
-            if not match:
-                continue
-            candidates.append(
-                {
-                    "id": rule.rule_iri,
-                    "kind": "rule",
-                    "ontology_id": rule.ontology_id,
-                    "iri": rule.rule_iri,
-                    "label": definition.name,
-                    "aliases": [],
-                    "description": description,
-                    "data": {
-                        "definition_id": definition.id,
-                        "version": definition.version,
-                        "language": definition.language,
-                        "input_roles": definition.input_roles,
-                        "output_kind": definition.output_kind,
-                    },
-                    "distance": 0,
-                    "assertion_kind": "asserted",
-                    "match": match,
-                }
-            )
-        return candidates
 
     def _expand_neighborhood(
         self, primary, scope, *, depth, limit, resource_types, assertion_types,
@@ -2317,7 +2259,7 @@ LIMIT 5000
             ontology = next(
                 entry for entry in scope.ontologies if entry.ontology_id == item["ontology_id"]
             )
-            derived_kind = "reasoning" if item["assertion_kind"] == "owl_inferred" else "rule"
+            derived_kind = "reasoning"
             descriptor = ontology.derived_state.get(derived_kind, {})
             derived_state = {
                 "kind": derived_kind,
@@ -2809,7 +2751,7 @@ def _item_is_stale(item: dict[str, Any], scope: SemanticQueryScope) -> bool:
     if item["assertion_kind"] == "asserted":
         return False
     ontology = next(entry for entry in scope.ontologies if entry.ontology_id == item["ontology_id"])
-    kind = "reasoning" if item["assertion_kind"] == "owl_inferred" else "rule"
+    kind = "reasoning"
     return ontology.derived_state.get(kind, {}).get("status") == "stale"
 
 

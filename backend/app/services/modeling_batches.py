@@ -35,8 +35,6 @@ from app.repositories.models import (
     SemanticGraphSetModel,
     SemanticGraphRevisionModel,
     SemanticProjectionManifestModel,
-    SemanticRuleDefinitionModel,
-    SemanticRuleModel,
 )
 from app.repositories.rdf_store import RdfGraphDelta, RdfStoreRepository
 from app.services.build_sessions import BuildSessionError, BuildSessionService
@@ -61,16 +59,6 @@ from app.services.semantic_command_compiler import (
     CommandCompilerError,
     CompiledCommand,
     InvalidCommandPayload,
-)
-from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_rule_definition import (
-    ALLOWED_INPUT_ROLES,
-    ALLOWED_LANGUAGES,
-    ALLOWED_OUTPUT_KINDS,
-    RuleDefinitionError,
-    validate_construct_template,
-    validate_platform_dsl,
-    validate_workflow_state_machine,
 )
 
 
@@ -607,21 +595,13 @@ class ModelingBatchService:
         active_lease = bool(
             lease and lease.released_at is None and self._aware(lease.expires_at) > now
         )
-        rules = int(
-            self.session.scalar(
-                select(func.count(SemanticRuleModel.id)).where(
-                    SemanticRuleModel.ontology_id == ontology_id,
-                    SemanticRuleModel.status == "active",
-                )
-            )
-            or 0
-        )
         stale_pointers = int(
             self.session.scalar(
                 select(func.count(SemanticDerivedResultPointerModel.id)).where(
                     SemanticDerivedResultPointerModel.graph_set_id
                     == workspace.get("default_graph_set_id"),
                     SemanticDerivedResultPointerModel.status == "stale",
+                    SemanticDerivedResultPointerModel.result_kind == "reasoning",
                 )
             )
             or 0
@@ -652,7 +632,7 @@ class ModelingBatchService:
                     "model_name": name,
                 },
             }
-            for name in ("classes", "entities", "facts", "history", "delta", "rules")
+            for name in ("classes", "entities", "facts", "history", "delta")
         }
         rdf_counts, counts_warning = self._rdf_resource_counts(workspace)
         return {
@@ -668,7 +648,6 @@ class ModelingBatchService:
             },
             "resource_counts": {
                 **rdf_counts,
-                "rule_definitions": rules,
             },
             "resource_counts_warning": counts_warning,
             "derived_state": {
@@ -856,7 +835,6 @@ class ModelingBatchService:
                     )
                 )
                 continue
-            self._validate_rule_command(batch, item.client_item_id, command, findings)
             self._validate_competency_questions(batch, item, findings)
             if not item.rationale:
                 findings.append(
@@ -1233,90 +1211,6 @@ class ModelingBatchService:
             )
         return findings
 
-    def _validate_rule_command(
-        self,
-        batch: ModelingBatchModel,
-        client_item_id: str,
-        command: PreparedModelingCommand,
-        findings: list[dict[str, Any]],
-    ) -> None:
-        if command.storage != "postgres":
-            return
-        payload = command.payload
-        rule_id = payload.get("rule_id")
-        rule_iri = payload.get("rule_iri") or command.outputs.get("resource_iri")
-        rule = self.session.get(SemanticRuleModel, rule_id) if rule_id else None
-        if rule is None and rule_iri:
-            rule = self.session.scalar(
-                select(SemanticRuleModel).where(
-                    SemanticRuleModel.ontology_id == batch.ontology_id,
-                    SemanticRuleModel.rule_iri == rule_iri,
-                )
-            )
-        if command.command_kind == "create_rule_definition" and rule is not None:
-            findings.append(
-                _finding(
-                    "resource_already_exists",
-                    "error",
-                    "Rule already exists; use update_rule_definition to create a new version",
-                    item_ids=[client_item_id],
-                    path=["payload", "rule_id"],
-                )
-            )
-            return
-        if command.command_kind != "create_rule_definition" and (
-            rule is None or rule.ontology_id != batch.ontology_id
-        ):
-            findings.append(
-                _finding(
-                    "invalid_resource_reference",
-                    "error",
-                    "Rule was not found in the target Ontology",
-                    item_ids=[client_item_id],
-                    path=["payload", "rule_id"],
-                )
-            )
-            return
-        if command.command_kind == "delete_rule_definition":
-            return
-        current = (
-            self.session.get(SemanticRuleDefinitionModel, rule.current_definition_id)
-            if rule and rule.current_definition_id
-            else None
-        )
-        definition = {
-            "language": payload.get("language", current.language if current else None),
-            "body": payload.get("body", current.body if current else None),
-            "input_roles": payload.get("input_roles", current.input_roles if current else []),
-            "output_kind": payload.get(
-                "output_kind", current.output_kind if current else "assertion"
-            ),
-        }
-        try:
-            if definition["language"] not in ALLOWED_LANGUAGES:
-                raise RuleDefinitionError("Unsupported Rule language")
-            if definition["output_kind"] not in ALLOWED_OUTPUT_KINDS:
-                raise RuleDefinitionError("Unsupported Rule output kind")
-            if not definition["input_roles"] or (
-                set(definition["input_roles"]) - ALLOWED_INPUT_ROLES
-            ):
-                raise RuleDefinitionError("Invalid Rule input roles")
-            if definition["language"] == "sparql_construct":
-                validate_construct_template(definition["body"])
-            elif definition["language"] == "platform_dsl":
-                validate_platform_dsl(definition["body"])
-            else:
-                validate_workflow_state_machine(definition["body"])
-        except RuleDefinitionError as exc:
-            findings.append(
-                _finding(
-                    "invalid_command_payload",
-                    "error",
-                    str(exc),
-                    item_ids=[client_item_id],
-                    path=["payload", "body"],
-                )
-            )
 
     @staticmethod
     def _effects_overlap(left, right) -> bool:
@@ -1647,18 +1541,6 @@ class ModelingBatchService:
                         self.session.commit()
                         return self._attempt_response(current, created_batch, created_attempt)
                     attempt.audit_id = result["audit_id"]
-            else:
-                self._ensure_rule_only_audit(attempt, auth.actor)
-            for item_id, command in commands.items():
-                if command.storage == "postgres":
-                    self._apply_rule(
-                        batch,
-                        item_id,
-                        command,
-                        auth.actor,
-                        attempt.audit_id,
-                    )
-            self._mark_rule_derived_stale(attempt.graph_set_id)
             self.session.flush()
             locked = self.session.scalar(
                 select(ModelingBatchAttemptModel)
@@ -2179,141 +2061,6 @@ class ModelingBatchService:
             )
         return commands
 
-    def _apply_rule(self, batch, item_id, command, actor, audit_id):
-        payload = command.payload
-        rule_id = payload.get("rule_id")
-        rule_iri = payload.get("rule_iri") or command.outputs.get("resource_iri")
-        rule = self.session.get(SemanticRuleModel, rule_id) if rule_id else None
-        if rule is None and rule_iri:
-            rule = self.session.scalar(
-                select(SemanticRuleModel).where(
-                    SemanticRuleModel.ontology_id == batch.ontology_id,
-                    SemanticRuleModel.rule_iri == rule_iri,
-                )
-            )
-        if command.command_kind == "create_rule_definition":
-            if rule is None:
-                rule = SemanticRuleModel(
-                    id=rule_id or command.outputs["resource_id"],
-                    ontology_id=batch.ontology_id,
-                    rule_iri=rule_iri,
-                    status="active",
-                )
-                self.session.add(rule)
-                self.session.flush()
-            elif rule.ontology_id != batch.ontology_id:
-                raise RuntimeError("Rule belongs to another Ontology")
-        elif rule is None or rule.ontology_id != batch.ontology_id:
-            raise RuntimeError("Rule was not found in target Ontology")
-        if command.command_kind == "delete_rule_definition":
-            rule.status = "inactive"
-            if rule.current_definition_id:
-                current = self.session.get(SemanticRuleDefinitionModel, rule.current_definition_id)
-                if current:
-                    current.status = "inactive"
-            return
-        required = {"name", "language", "body", "input_roles"}
-        if command.command_kind == "create_rule_definition" and not required.issubset(payload):
-            raise RuntimeError(f"Rule payload missing: {sorted(required - set(payload))}")
-        current = (
-            self.session.get(SemanticRuleDefinitionModel, rule.current_definition_id)
-            if rule.current_definition_id
-            else None
-        )
-        definition_data = {
-            "name": payload.get("name", current.name if current else None),
-            "language": payload.get("language", current.language if current else None),
-            "body": payload.get("body", current.body if current else None),
-            "input_roles": payload.get("input_roles", current.input_roles if current else []),
-            "output_kind": payload.get(
-                "output_kind", current.output_kind if current else "assertion"
-            ),
-            "uses_inferred_facts": payload.get(
-                "uses_inferred_facts", current.uses_inferred_facts if current else False
-            ),
-            "requires_review": payload.get(
-                "requires_review", current.requires_review if current else False
-            ),
-            "priority": payload.get("priority", current.priority if current else 0),
-            "safety_profile": payload.get(
-                "safety_profile", current.safety_profile if current else {}
-            ),
-            "metadata": payload.get("metadata", current.rule_metadata if current else {}),
-        }
-        if (
-            definition_data["language"] not in ALLOWED_LANGUAGES
-            or definition_data["output_kind"] not in ALLOWED_OUTPUT_KINDS
-        ):
-            raise RuntimeError("Invalid Rule language or output kind")
-        if (
-            not definition_data["input_roles"]
-            or set(definition_data["input_roles"]) - ALLOWED_INPUT_ROLES
-        ):
-            raise RuntimeError("Invalid Rule input roles")
-        definition_hash = _hash(definition_data)
-        version = "sha256:" + definition_hash[:16]
-        existing = self.session.scalar(
-            select(SemanticRuleDefinitionModel).where(
-                SemanticRuleDefinitionModel.semantic_rule_id == rule.id,
-                SemanticRuleDefinitionModel.version == version,
-            )
-        )
-        if existing is None:
-            existing = SemanticRuleDefinitionModel(
-                id=str(uuid5(NAMESPACE_URL, f"modeling-rule:{rule.id}:{version}")),
-                semantic_rule_id=rule.id,
-                rule_iri=rule.rule_iri,
-                version=version,
-                status="active",
-                created_by=actor,
-                definition_hash=definition_hash,
-                rule_metadata=definition_data.pop("metadata"),
-                **definition_data,
-            )
-            self.session.add(existing)
-            self.session.flush()
-        if current and current.id != existing.id:
-            current.status = "superseded"
-        modeling_item = next(item for item in batch.items if item.client_item_id == item_id)
-        existing.rule_metadata = {
-            **(existing.rule_metadata or {}),
-            "modeling_item_id": modeling_item.id,
-            "edit_audit_id": audit_id,
-            "modeling_batch_id": batch.id,
-        }
-        existing.status = "active"
-        rule.status = "active"
-        rule.current_definition_id = existing.id
-
-    def _ensure_rule_only_audit(self, attempt, actor):
-        if self.session.get(SemanticEditAuditModel, attempt.audit_id) is None:
-            self.session.add(
-                SemanticEditAuditModel(
-                    id=attempt.audit_id,
-                    actor=actor,
-                    reason=f"Modeling Batch {attempt.batch_id}",
-                    input_format="modeling-batch",
-                    target_graph_iri=None,
-                    affected_graph_iris=[],
-                    validation_result={"conforms": True},
-                    graph_delta=attempt.normalized_delta,
-                    warning_state={
-                        "findings": attempt.findings,
-                        "graph_set_id": attempt.graph_set_id,
-                    },
-                    applied=True,
-                )
-            )
-            self.session.flush()
-
-    def _mark_rule_derived_stale(self, graph_set_id):
-        if not graph_set_id:
-            return
-        SemanticDerivedStateService(self.session, self.settings).mark_graph_set_stale(
-            graph_set_id,
-            reason="workspace_rule_changed",
-            commit=False,
-        )
 
     def _fail_attempt_without_side_effects(
         self, attempt, *, code: str, message: str, violations: list[dict[str, Any]]

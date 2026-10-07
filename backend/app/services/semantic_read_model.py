@@ -13,7 +13,11 @@ from datetime import datetime
 import json
 from typing import Any, Protocol
 
+from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreRepository
+from app.services.operation_semantics import (
+    OperationValidationError, operation_vocabulary, validate_operation_payload,
+)
 from app.services.fact_id import canonical_object_term, compute_fact_id
 from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_read_scope import (
@@ -22,7 +26,7 @@ from app.services.semantic_read_scope import (
     SemanticReadScopeResolver,
 )
 from app.services.semantic_shape_merge import ShapeGuidanceConflict
-from app.services.semantic_sparql_templates import ReadModelTemplate, get_template
+from app.services.semantic_sparql_templates import OP_VOCAB_PREFIX, ReadModelTemplate, get_template
 from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
     fuse_context_candidates,
@@ -148,6 +152,45 @@ class SemanticReadModelService:
             allow_stale_derived=allow_stale_derived,
         )
         graph_iris = self._graph_iris_for_scope(scope, template)
+        if template.name == "resource-list":
+            # Reuse each family's authorization and nested-reference checks;
+            # never merge raw RDF before filtering or infer a business role.
+            bounded_limit = min(limit or template.default_limit, template.default_limit)
+            by_iri: dict[str, dict[str, Any]] = {}
+            warnings = list(scope.warnings)
+            incomplete = False
+            for family in (
+                "entity-list", "ontology-schema-summary", "property-list", "relation-type-list",
+                "table-mapping-list", "join-mapping-list", "enum-meaning-list", "metric-list",
+                "operation-list",
+            ):
+                envelope = self.read_model(
+                    graph_set_id=graph_set_id, model_name=family, include=include,
+                    allow_stale_derived=allow_stale_derived, limit=bounded_limit,
+                    field_set=field_set,
+                )
+                warnings.extend(envelope.get("warnings", []))
+                incomplete |= not envelope.get("paging", {}).get("complete", True)
+                for item in envelope["items"]:
+                    if entity_iri and item["iri"] != entity_iri:
+                        continue
+                    if q and q.casefold() not in str(item.get("label") or item["iri"]).casefold():
+                        continue
+                    if item["iri"] in by_iri:
+                        existing = by_iri[item["iri"]]
+                        existing["detail_fields"] = {
+                            **existing.get("detail_fields", {}), **item.get("detail_fields", {})
+                        }
+                    else:
+                        by_iri[item["iri"]] = dict(item)
+            items = sorted(by_iri.values(), key=lambda item: (item.get("label") or "", item["iri"]))
+            return self._envelope(
+                template=template, scope=scope, items=items[:bounded_limit], warnings=warnings,
+                paging=self._paging_state(
+                    limit=bounded_limit, returned=min(len(items), bounded_limit),
+                    visible_count=len(items), ceiling_reached=incomplete,
+                ),
+            )
         if template.name == "graph-set-staleness":
             items = [self._compose_graph_set_staleness(scope, field_set)]
             return self._envelope(
@@ -271,6 +314,9 @@ class SemanticReadModelService:
             fetch_limit,
             entity_iri=entity_iri,
         )
+        if template.name in {"operation-list", "operation-detail"}:
+            settings = getattr(self.scope_resolver, "settings", None) or Settings()
+            query = query.replace(OP_VOCAB_PREFIX, operation_vocabulary(settings)["id"][:-2])
         result = self.rdf_store.query_read_model(
             query=query,
             graph_iris=graph_iris,
@@ -296,6 +342,20 @@ class SemanticReadModelService:
             )
         for row in rows:
             decorated = self._decorate_row(row, scope, template)
+            if template.name in {"operation-list", "operation-detail"}:
+                if not self.access_view.filter_items([decorated]):
+                    continue
+                try:
+                    operation = validate_operation_payload(
+                        {"operation_iri": decorated["iri"], "name": decorated.get("label"),
+                         **decorated.get("detail_fields", {})},
+                        settings=getattr(self.scope_resolver, "settings", None) or Settings(),
+                    )
+                except (OperationValidationError, ValueError, TypeError):
+                    # Invalid or secret-bearing external capability data never
+                    # becomes a second unchecked read surface.
+                    continue
+                decorated["detail_fields"] = operation
             items.append(decorated)
         if template.name == "entity-list":
             # R3.0-009 §9.3: aggregate before pagination so a multi-class
@@ -522,12 +582,6 @@ class SemanticReadModelService:
             and scope.reasoning_result_graph_iri not in iris
         ):
             iris.append(scope.reasoning_result_graph_iri)
-        if (
-            scope.include in {"asserted-plus-rules", "full-working-view"}
-            and scope.rule_result_graph_iri
-            and scope.rule_result_graph_iri not in iris
-        ):
-            iris.append(scope.rule_result_graph_iri)
         return iris
 
     def _rows(self, result: Any) -> list[dict[str, str]]:
@@ -590,6 +644,9 @@ class SemanticReadModelService:
                 if variable in {
                     "semantic_definition", "mapping_definition", "action_definition",
                     "parameter_definition", "rule_definition",
+                } or template.name in {"operation-list", "operation-detail"} and variable in {
+                    "parameters", "preconditions", "effects", "possible_failures", "idempotency",
+                    "tool_bindings", "credential_requirements",
                 }:
                     try:
                         value = json.loads(value)
@@ -718,13 +775,8 @@ class SemanticReadModelService:
             and source_graph_iri == scope.reasoning_result_graph_iri
         ):
             return "owl_inferred"
-        if (
-            scope.rule_result_graph_iri
-            and source_graph_iri == scope.rule_result_graph_iri
-        ):
-            return "rule_derived"
         # Entity search declares assertion_kind="any" because the SPARQL may match rows from the
-        # asserted, reasoning, or rule graph depending on the include scope.
+        # asserted or reasoning graph depending on the include scope.
         # When the row actually came from an asserted source graph, "any"
         # resolves to "asserted" so the AssertionKind chip on the UI carries
         # the meaningful value (matches spec §4.1 decorator contract).
@@ -735,8 +787,6 @@ class SemanticReadModelService:
     def _is_stale(self, source_graph_iri: str, scope: ScopeResolution) -> bool:
         if source_graph_iri == scope.reasoning_result_graph_iri:
             return scope.derived_state.get("reasoning", {}).get("status") == "stale"
-        if source_graph_iri == scope.rule_result_graph_iri:
-            return scope.derived_state.get("rule", {}).get("status") == "stale"
         return False
 
     def _staleness_reason(
@@ -837,7 +887,6 @@ class SemanticReadModelService:
                 "editable": member.editable,
                 "validation_stale": self._member_stale(member, "validation"),
                 "reasoning_stale": self._member_stale(member, "reasoning"),
-                "rule_stale": self._member_stale(member, "rule"),
                 "last_semantic_edit_at": (
                     member.last_edit_at.isoformat() if member.last_edit_at else None
                 ),
@@ -863,7 +912,7 @@ class SemanticReadModelService:
     def _derived_pointers_for_member(member: ScopeMember) -> dict[str, Any]:
         derived = member.derived_state or {}
         out: dict[str, Any] = {}
-        for kind in ("validation", "reasoning", "rule"):
+        for kind in ("validation", "reasoning"):
             state = derived.get(kind)
             if state:
                 out[kind] = {
@@ -875,7 +924,6 @@ class SemanticReadModelService:
                     ),
                     "engine_name": state.get("engine_name"),
                     "engine_version": state.get("engine_version"),
-                    "rule_version": state.get("rule_version"),
                     "shape_version": state.get("shape_version"),
                 }
         return out
@@ -1031,7 +1079,7 @@ class SemanticReadModelService:
         ``GateStatus`` shape."""
         gates: list[dict[str, Any]] = []
         members = staleness_row.get("members", []) if staleness_row else []
-        for kind in ("validation", "reasoning", "rule"):
+        for kind in ("validation", "reasoning"):
             # Each member of a graph set shares the same derived pointer; we
             # pick the first member whose derived_state carries this kind.
             state: Any = None
@@ -1286,7 +1334,7 @@ class SemanticReadModelService:
     # fact-audit-queue composer (Stage 2 §6.3)
     # ------------------------------------------------------------------
 
-    _FACT_KINDS = ("asserted", "inferred", "rule_derived")
+    _FACT_KINDS = ("asserted", "inferred")
 
     def _compose_fact_audit_queue(
         self,
@@ -1300,7 +1348,6 @@ class SemanticReadModelService:
 
         - ``asserted`` → asserted_data members of the active graph set.
         - ``inferred`` → effective reasoning-result graph.
-        - ``rule_derived`` → effective rule-result graph.
 
         Each row is decorated into the unified FactRow shape (spec §6.3):
         id, assertion_kind, subject_iri, subject_label, predicate_iri,
@@ -1375,43 +1422,6 @@ class SemanticReadModelService:
                 for row in rows
             ]
             return items, warnings
-
-        # rule_derived
-        rule_iri = scope.rule_result_graph_iri
-        if not rule_iri:
-            if any(w.get("code") == "missing_rule_result" for w in warnings):
-                return [], warnings
-            return [], warnings + [
-                {
-                    "code": "fact_audit_no_rule_pointer",
-                    "message": (
-                        "No effective rule-result pointer. Click Run rules "
-                        "to execute rule definitions."
-                    ),
-                }
-            ]
-        rows = self._fetch_fact_rows(
-            [rule_iri], template_name="fact-audit-queue-with-types"
-        )
-        stale = self._is_stale(rule_iri, scope)
-        stale_reason = self._staleness_reason(rule_iri, scope)
-        run_id = (
-            scope.derived_state.get("rule", {}).get("run_id")
-            if scope.derived_state
-            else None
-        )
-        items = [
-            self._decorate_fact_row(
-                row,
-                assertion_kind="rule_derived",
-                scope=scope,
-                derived_run_id=run_id,
-                stale=stale,
-                stale_reason=stale_reason,
-            )
-            for row in rows
-        ]
-        return items, warnings
 
     def _compose_entity_literal_facts(
         self,

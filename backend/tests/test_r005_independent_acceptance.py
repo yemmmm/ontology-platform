@@ -12,14 +12,10 @@ from app.repositories.models import (
     SemanticEditAuditModel,
     SemanticStatementOccurrenceModel,
 )
-from app.repositories.rdf_store import RdfGraphDelta, SparqlResult, UpdateResult
-from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
+from app.repositories.rdf_store import RdfGraphDelta, UpdateResult
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic import SemanticService
-from app.services.semantic_lineage_identity import statement_id_for_quad
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
-from app.services.semantic_rule_definition import SemanticRuleDefinitionService
-from app.services.semantic_rule_execution import SemanticRuleExecutionService
 from app.services.semantic_command_compiler import UnsupportedCommandKind, compile_command
 
 
@@ -178,133 +174,3 @@ def test_restricted_where_snapshot_does_not_collect_inserted_lineage(
     assert old.status == "active"
     assert inserted is None
     assert result["graph_revisions"][graph] >= 1
-
-
-class _RuleGroupStore:
-    def __init__(self, graph_iri: str) -> None:
-        self.graph_iri = graph_iri
-        self.updates: list[str] = []
-
-    def query_sparql(self, _query, timeout_seconds, limit):
-        return SparqlResult(
-            result={
-                "head": {"vars": ["g", "student", "score"]},
-                "results": {
-                    "bindings": [
-                        {
-                            "g": {"type": "uri", "value": self.graph_iri},
-                            "student": {
-                                "type": "uri",
-                                "value": "https://r005-rule-group.test/entity/alice",
-                            },
-                            "score": {
-                                "type": "literal",
-                                "value": "95",
-                                "datatype": "http://www.w3.org/2001/XMLSchema#integer",
-                            },
-                        }
-                    ]
-                },
-            }
-        )
-
-    def update_sparql(self, update):
-        self.updates.append(update)
-        return UpdateResult()
-
-
-def _rule_group_setup(session):
-    settings = Settings(
-        semantic_graph_iri_prefix="https://r005-rule-group.test/graph/",
-        semantic_base_iri="https://r005-rule-group.test/resource/",
-    )
-    session.add(ProjectModel(id="project", name="Project", normalized_label="project"))
-    graph_set_id, roles = _workspace(session, settings, "ontology")
-    graph = roles["asserted_data"]
-    _audit(session, "audit-premise", graph, "seed exact group premise")
-    premise_quad = (
-        "<https://r005-rule-group.test/entity/alice>",
-        "<https://r005-rule-group.test/property/score>",
-        '"95"^^<http://www.w3.org/2001/XMLSchema#integer>',
-        graph,
-    )
-    SemanticLineageRecorder(session).record_asserted_delta(
-        delta=RdfGraphDelta(inserts=[premise_quad]),
-        graph_revisions={graph: 1},
-        audit_id="audit-premise",
-        ontology_id="ontology",
-        graph_set_id=graph_set_id,
-    )
-    body = {
-        "when": [
-            {
-                "s": "?student",
-                "p": "<https://r005-rule-group.test/property/score>",
-                "o": "?score",
-            }
-        ],
-        "then": [
-            {
-                "s": "?student",
-                "p": "<https://r005-rule-group.test/property/eligible>",
-                "o": '"yes"',
-            }
-        ],
-    }
-    service = SemanticRuleDefinitionService(session, settings)
-    first = service.create_rule(
-        rule_iri="https://r005-rule-group.test/rule/first",
-        name="First",
-        language="platform_dsl",
-        body=body,
-        input_roles=["asserted_data"],
-    )
-    second = service.create_rule(
-        rule_iri="https://r005-rule-group.test/rule/second",
-        name="Second",
-        language="platform_dsl",
-        body=body,
-        input_roles=["asserted_data"],
-    )
-    return settings, graph_set_id, graph, first, second
-
-
-def test_rule_group_dsl_does_not_collect_lineage(in_memory_session) -> None:
-    settings, graph_set_id, graph, first, _second = _rule_group_setup(in_memory_session)
-    result = SemanticRuleExecutionService(
-        in_memory_session, _RuleGroupStore(graph), settings
-    ).execute_rule_group(graph_set_id=graph_set_id, rule_definition_ids=[first.id])
-    assert result["status"] == "succeeded", result
-    with pytest.raises(LineageTargetNotFound):
-        OntologyLineageService(in_memory_session).get_lineage(
-            ontology_id="ontology",
-            target_type="statement",
-            target_id=statement_id_for_quad(
-                "https://r005-rule-group.test/entity/alice",
-                "https://r005-rule-group.test/property/eligible",
-                '"yes"',
-                result["result_graph_iri"],
-            ),
-        )
-
-
-def test_rule_group_duplicate_output_does_not_collect_lineage(in_memory_session) -> None:
-    settings, graph_set_id, graph, first, second = _rule_group_setup(in_memory_session)
-    result = SemanticRuleExecutionService(
-        in_memory_session, _RuleGroupStore(graph), settings
-    ).execute_rule_group(
-        graph_set_id=graph_set_id,
-        rule_definition_ids=[first.id, second.id],
-    )
-    assert result["status"] == "succeeded", result
-    with pytest.raises(LineageTargetNotFound):
-        OntologyLineageService(in_memory_session).get_lineage(
-            ontology_id="ontology",
-            target_type="statement",
-            target_id=statement_id_for_quad(
-                "https://r005-rule-group.test/entity/alice",
-                "https://r005-rule-group.test/property/eligible",
-                '"yes"',
-                result["result_graph_iri"],
-            ),
-        )

@@ -384,7 +384,7 @@ function relationVisibleInInclude(assertionKind: string, include: string | null)
     return include === "asserted-plus-reasoning" || include === "full-working-view";
   }
   if (assertionKind === "rule_derived") {
-    return include === "asserted-plus-rules" || include === "full-working-view";
+    return false;
   }
   return false;
 }
@@ -392,7 +392,7 @@ function relationVisibleInInclude(assertionKind: string, include: string | null)
 function entityVisibleInInclude(assertionKind: string, include: string | null) {
   if (assertionKind === "asserted") return true;
   if (assertionKind === "rule_derived") {
-    return include === "asserted-plus-rules" || include === "full-working-view";
+    return false;
   }
   return include === "asserted-plus-reasoning" || include === "full-working-view";
 }
@@ -503,31 +503,9 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
   await expect(details.getByText("Reasoning", { exact: true })).toBeVisible();
   await details.getByRole("button", { name: "Close details" }).click();
 
-  await Promise.all([
-    page.waitForRequest((request) => (
-      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-list`) &&
-      new URL(request.url()).searchParams.get("include") === "asserted-plus-rules"
-    )),
-    page.waitForRequest((request) => (
-      request.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-relations`) &&
-      new URL(request.url()).searchParams.get("include") === "asserted-plus-rules"
-    )),
-    page.locator("section.entitiesPage.stage2").getByText("Rule graph", { exact: true }).click(),
-  ]);
-  await expect(page.getByText("Facts plus currently available rule results.")).toBeVisible();
-  await expect(page.getByText(/Entity force graph · 3 nodes · 2 edges/)).toBeVisible();
-  await expect(page.locator('button[aria-label="Select node Rule Classified Entity"]')).toHaveAttribute(
-    "data-node-kind",
-    "rule_derived",
-  );
-  await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-kind", "rule_derived");
-  await expect(page.locator('button[aria-label="Select edge qualifies"]')).toHaveAttribute("data-edge-stale", "true");
-  await expect(page.locator("section.entitiesPage.stage2").getByText("Focus")).not.toBeVisible();
-  await page.locator('button[aria-label="Select edge qualifies"]').dispatchEvent("click");
-  details = page.getByLabel("Graph item details");
-  await expect(details.getByText("Relation", { exact: true })).toBeVisible();
-  await expect(details.getByText("Rule", { exact: true })).toBeVisible();
-  await details.getByRole("button", { name: "Close details" }).click();
+  await expect(page.getByText("Rule graph", {exact:true})).toHaveCount(0);
+  await expect(page.getByText("Rules", {exact:true})).toHaveCount(0);
+  expect(readModelRequests.some(r=>r.include==="asserted-plus-rules")).toBe(false);
 
   await Promise.all([
     page.waitForRequest((request) => (
@@ -540,7 +518,7 @@ test("EntitiesPage graph-derived path renders entity topology only", async ({ pa
     )),
     page.locator("section.entitiesPage.stage2").getByText("Complete view", { exact: true }).click(),
   ]);
-  await expect(page.getByText(/Entity force graph · 3 nodes · 3 edges/)).toBeVisible();
+  await expect(page.getByText(/Entity force graph · 2 nodes · 2 edges/)).toBeVisible();
   await expect(page.locator("section.entitiesPage.stage2").getByText("Focus", { exact: true })).toBeVisible();
   await page.locator("section.entitiesPage.stage2").getByText("Reasoning", { exact: true }).click();
   await expect(page.locator("section.entitiesPage.stage2").getByRole("radio", { name: "Reasoning", exact: true })).toBeChecked();
@@ -650,12 +628,11 @@ test("FactAuditPage graph-derived path renders asserted rows and kind tabs", asy
   await expect(page.locator("section.factAuditPage.stage2").getByRole("heading", { name: "Facts" })).toBeVisible();
   // Asserted tab default-selected with one row.
   await expect(page.getByText("Entity One").first()).toBeVisible();
-  // All 4 kind tabs present (Antd Segmented renders the radio input as
-  // visually-hidden — assert against the visible labels instead).
   await expect(page.locator("section.factAuditPage.stage2").getByText("Asserted", { exact: true })).toBeVisible();
   await expect(page.locator("section.factAuditPage.stage2").getByText("Inferred", { exact: true })).toBeVisible();
-  await expect(page.locator("section.factAuditPage.stage2").getByText("Rule-derived", { exact: true })).toBeVisible();
-  await page.locator("section.factAuditPage.stage2").getByText("Rule-derived", { exact: true }).click();
-  await expect(page.getByText("Rule Classified Entity").first()).toBeVisible();
-  await expect(page.getByText("Rule Class").first()).toBeVisible();
+  await expect(page.getByText("Rule-derived", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", {name:"Run rules"})).toHaveCount(0);
+  await page.locator("section.factAuditPage.stage2").getByText("Inferred", {exact:true}).click();
+  await expect(page.getByText("No facts in this kind. Run reasoning or switch tabs.")).toBeVisible();
+
 });

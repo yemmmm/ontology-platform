@@ -19,7 +19,6 @@ from app.repositories.postgres import create_session_factory
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
 from app.services.semantic_graph_set import SemanticGraphSetService
-from app.services.semantic_rule_definition import SemanticRuleDefinitionService
 
 
 PROJECT_NAME = "Reasoning Graph Test Data"
@@ -960,152 +959,8 @@ def _literal(value: Any) -> str:
     return ttl_value(value)
 
 
-def build_rule_definitions(settings: Settings) -> list[dict[str, Any]]:
-    def relation(relation_type: str) -> str:
-        return _term(iri_for_relation(settings, relation_type))
-
-    def prop(property_name: str) -> str:
-        return _term(iri_for_data_property(settings, property_name))
-
-    fixture = f"?fixture {prop('rule_test_fixture')} {_literal(True)} ."
-    return [
-        {
-            "rule_id": "R1",
-            "name": "High-risk product component",
-            "priority": 10,
-            "language": "sparql_construct",
-            "body": {
-                "template": f"""
-CONSTRUCT {{
-  ?product {relation("DERIVED_RISK")} ?component .
-}}
-WHERE {{
-  GRAPH ?g {{
-    ?product {relation("CONTAINS")} ?component .
-    ?component {prop("criticality")} {_literal("high")} .
-    ?component {prop("single_source")} {_literal(True)} .
-    ?issue {relation("USES_COMPONENT")} ?component .
-    ?issue {prop("status")} {_literal("open")} .
-    {fixture.replace("?fixture", "?product")}
-  }}
-}}
-"""
-            },
-        },
-        {
-            "rule_id": "R2",
-            "name": "Batch requires quality review",
-            "priority": 20,
-            "language": "sparql_construct",
-            "body": {
-                "template": f"""
-CONSTRUCT {{
-  ?batch {relation("DERIVED_REVIEW_REQUIRED")} ?inspection .
-}}
-WHERE {{
-  GRAPH ?g {{
-    ?batch {relation("INSPECTED_BY")} ?inspection .
-    ?batch {prop("scrap_rate")} ?scrap_rate .
-    {fixture.replace("?fixture", "?batch")}
-    FILTER(?scrap_rate > 0.04)
-  }}
-}}
-"""
-            },
-        },
-        {
-            "rule_id": "R3",
-            "name": "Critical supplier",
-            "priority": 30,
-            "language": "sparql_construct",
-            "body": {
-                "template": f"""
-CONSTRUCT {{
-  ?supplier {relation("DERIVED_CRITICAL_SUPPLIER")} ?product .
-}}
-WHERE {{
-  GRAPH ?g {{
-    ?supplier {relation("SUPPLIES")} ?component .
-    ?component {prop("criticality")} {_literal("high")} .
-    ?product {relation("CONTAINS")} ?component .
-    {fixture.replace("?fixture", "?supplier")}
-  }}
-}}
-"""
-            },
-        },
-        {
-            "rule_id": "R4A",
-            "name": "Model candidate for high-scrap batch",
-            "priority": 40,
-            "language": "sparql_construct",
-            "body": {
-                "template": f"""
-CONSTRUCT {{
-  ?model {relation("DERIVED_MODEL_CANDIDATE")} ?batch .
-}}
-WHERE {{
-  GRAPH ?g {{
-    ?model {relation("MONITORS")} ?batch .
-    ?batch {prop("scrap_rate")} ?scrap_rate .
-    {fixture.replace("?fixture", "?model")}
-    FILTER(?scrap_rate > 0.04)
-  }}
-}}
-"""
-            },
-        },
-        {
-            "rule_id": "R4B",
-            "name": "Model candidate for low-score supplier",
-            "priority": 41,
-            "language": "sparql_construct",
-            "body": {
-                "template": f"""
-CONSTRUCT {{
-  ?model {relation("DERIVED_MODEL_CANDIDATE")} ?supplier .
-}}
-WHERE {{
-  GRAPH ?g {{
-    ?model {relation("MONITORS")} ?supplier .
-    ?supplier {prop("supplier_score")} ?score .
-    {fixture.replace("?fixture", "?model")}
-    FILTER(?score < 70)
-  }}
-}}
-"""
-            },
-        },
-    ]
 
 
-def create_rule_definitions(session: Any, settings: Settings, graph_set_id: str) -> list[str]:
-    service = SemanticRuleDefinitionService(session, settings)
-    rule_ids: list[str] = []
-    for spec in build_rule_definitions(settings):
-        rule = service.create_rule(
-            rule_iri=iri_for_rule(settings, spec["rule_id"]),
-            name=f"{ONTOLOGY_NAME}: {spec['name']}",
-            language=spec["language"],
-            body=spec["body"],
-            input_roles=["asserted_data"],
-            output_kind="assertion",
-            requires_review=False,
-            priority=spec["priority"],
-            safety_profile={
-                "max_generated_statements": 1000,
-                "timeout_seconds": 10,
-            },
-            status="active",
-            created_by="seed:reasoning-graph-test-data",
-            metadata={
-                "seed": "reasoning_graph_test_data",
-                "graph_set_id": graph_set_id,
-                "rule_id": spec["rule_id"],
-            },
-        )
-        rule_ids.append(rule.id)
-    return rule_ids
 
 
 def main() -> None:
@@ -1122,12 +977,10 @@ def main() -> None:
         graph_set_id, graph_iris = create_semantic_workspace(
             session, rdf_store, settings, ontology
         )
-        rule_definition_ids = create_rule_definitions(session, settings, graph_set_id)
 
         print(f"Seeded project: {project.name} ({project.id})")
         print(f"Seeded ontology: {ontology.name} ({ontology.id})")
         print(f"Seeded graph set: {graph_set_id}")
-        print(f"Active semantic rules: {len(rule_definition_ids)}")
         print(f"Ontology graph: {graph_iris['ontology']}")
         print(f"Data graph: {graph_iris['data']}")
         print("Rule hints:")

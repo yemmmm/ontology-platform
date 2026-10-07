@@ -25,7 +25,7 @@ export type ForceGraphEdge = {
   stale?: boolean | null;
 };
 
-type DerivedFocus = "reasoning" | "rules" | null;
+type DerivedFocus = "reasoning" | null;
 
 type ForceGraphCanvasProps = {
   nodes: ForceGraphNode[];
@@ -267,10 +267,7 @@ function applyVisualState(
 
   const query = searchQuery.trim().toLowerCase();
   if (!query && derivedFocus) {
-    const targetKinds =
-      derivedFocus === "reasoning"
-        ? new Set(["owl_inferred", "inferred"])
-        : new Set(["rule_derived"]);
+    const targetKinds = new Set(["owl_inferred", "inferred"]);
     const highlightedNodes = new Set<string>();
     cy.nodes().forEach((node) => {
       const kind = String(node.data("kind") || "").toLowerCase();
@@ -383,14 +380,6 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
     },
   },
   {
-    selector: 'edge[kind = "rule_derived"]',
-    style: {
-      "line-color": "#2f8f75",
-      "target-arrow-color": "#2f8f75",
-      color: "#257561",
-    },
-  },
-  {
     selector: 'edge[stale = "true"]',
     style: {
       "line-style": "dashed",
@@ -423,12 +412,6 @@ const CYTO_STYLE: cytoscape.StylesheetStyle[] = [
       "border-width": 2,
       "border-color": "#5668d9",
       "border-opacity": 0.72,
-    },
-  },
-  {
-    selector: 'node[kind = "rule_derived"].focus-highlighted',
-    style: {
-      "border-color": "#2f8f75",
     },
   },
   {

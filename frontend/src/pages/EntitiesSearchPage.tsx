@@ -18,7 +18,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useT } from "../i18n";
 import { readEntitySearch, readModel, type SemanticRequester } from "../semanticApi";
 
-type AssertionKindFilter = "all" | "asserted" | "owl_inferred" | "rule_derived";
+type AssertionKindFilter = "all" | "asserted" | "owl_inferred";
 
 type EntitySearchRow = {
   iri: string;
@@ -26,7 +26,7 @@ type EntitySearchRow = {
   comment: string | null;
   class_iri: string | null;
   class_label: string | null;
-  assertion_kind: "asserted" | "owl_inferred" | "rule_derived";
+  assertion_kind: "asserted" | "owl_inferred";
   source_graph_iri: string;
   source_signature: string | null;
   is_stale: boolean;
@@ -219,7 +219,6 @@ export function EntitiesSearchPage({
               { value: "all", label: t("All scopes") },
               { value: "asserted", label: t("Asserted") },
               { value: "owl_inferred", label: t("OWL inferred") },
-              { value: "rule_derived", label: t("Rule derived") },
             ]}
             style={{ minWidth: 160 }}
             aria-label="entities-search-scope"
@@ -405,7 +404,7 @@ function EntityDetailPanel({
 function AssertionKindTag({
   kind,
 }: {
-  kind: "asserted" | "owl_inferred" | "rule_derived";
+  kind: "asserted" | "owl_inferred";
 }) {
   const t = useT();
   const color = kind === "asserted" ? "green" : kind === "owl_inferred" ? "geekblue" : "purple";
@@ -414,7 +413,7 @@ function AssertionKindTag({
       ? t("Asserted")
       : kind === "owl_inferred"
         ? t("OWL inferred")
-        : t("Rule derived");
+        : t("unknown");
   return (
     <Tag color={color} aria-label={`entity-search-assertion-${kind}`}>
       {label}
@@ -433,7 +432,6 @@ function assertionKindLabel(kind: string, t: ReturnType<typeof useT>) {
   const normalized = (kind || "asserted").toLowerCase().replace(/[-\s]/g, "_");
   if (normalized === "asserted") return t("Asserted");
   if (normalized === "owl_inferred" || normalized === "inferred") return t("OWL inferred");
-  if (normalized === "rule_derived") return t("Rule derived");
   return t("Asserted");
 }
 

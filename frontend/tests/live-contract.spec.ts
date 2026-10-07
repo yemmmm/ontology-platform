@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 /**
  * Live-contract smoke: drives the running backend at :8001 (no mocks).
  * Verifies the integration test plan's runtime spine + governance +
- * rule derivation actually work end-to-end against real Oxigraph.
+ * SHACL/OWL and retired rule contracts work end-to-end against real Oxigraph.
  *
  * Pre-conditions:
  *   - backend up at http://127.0.0.1:8001
@@ -67,6 +67,7 @@ function registerCleanup(projectId?: string, scope?: GraphScope) {
 function seedTrig(s: GraphScope): string {
   return `
 @prefix ex: <http://example.test/> .
+@prefix vocab: <http://ontology-platform.local/vocab/> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
 @prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
@@ -81,8 +82,8 @@ function seedTrig(s: GraphScope): string {
 }
 
 <${s.data}> {
-  ex:acme a ex:Organization ; ex:name "Acme" .
-  ex:alice a ex:Person ; ex:name "Alice" ; ex:age 30 ; ex:worksFor ex:acme .
+  ex:acme a owl:NamedIndividual, ex:Organization ; vocab:id "acme" ; rdfs:label "Acme" ; ex:name "Acme" .
+  ex:alice a owl:NamedIndividual, ex:Person ; vocab:id "alice" ; rdfs:label "Alice" ; ex:name "Alice" ; ex:age 30 ; ex:worksFor ex:acme .
 }
 
 <${s.shapes}> {
@@ -199,9 +200,16 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
     expect(context.status, JSON.stringify(context.json)).toBe(200);
     expect(context.json.result_status).toBe("matched");
     expect(context.json.primary_matches.length).toBeGreaterThan(0);
-    expect(JSON.stringify(context.json)).not.toContain("graph_iri");
-    expect(JSON.stringify(context.json)).not.toContain("graph_set");
-    expect(JSON.stringify(context.json)).not.toContain("excerpt");
+    // Resource/graph positions remain readable; dedicated tracing fields are retired.
+    const serializedContext = JSON.stringify(context.json);
+    for (const field of ["evidence_reference_ids", "evidence_status", "dependency_evidence_status", "lineage", "lineage_status", "_lineage_target", "excerpt"]) {
+      expect(serializedContext).not.toContain(`"${field}":`);
+    }
+    const locatedResources = [...context.json.primary_matches, ...context.json.related_context]
+      .filter((resource: { data?: { graph_iri?: string } }) => resource.data?.graph_iri);
+    expect(locatedResources.length).toBeGreaterThan(0);
+    expect(locatedResources.every((resource: { data: { graph_iri: string } }) =>
+      Object.values(s).includes(resource.data.graph_iri))).toBe(true);
 
     const write = await apiPost(page, "/semantic/sparql:query", {
       project_id: project.json.id,
@@ -249,7 +257,7 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
     expect(detail).toContain("RDF parse error");
   });
 
-  test("graph-set validation + CONSTRUCT rule (no LIMIT) succeed against Oxigraph", async ({ page }) => {
+  test("graph-set SHACL/OWL and generic reading remain while rule execution is retired", async ({ page }) => {
     requireLiveApiKey();
     const suffix = `${Date.now()}-${counter += 1}`;
     const project = await apiPost(page, "/projects", { name: `R006 Rules ${suffix}` });
@@ -284,30 +292,21 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
     expect(sh.json.status).toBe("succeeded");
     expect(sh.json.conforms).toBe(true);
 
-    const rule = await apiPost(page, "/semantic/rule-definitions", {
-      ontology_id: ontology.json.id,
-      rule_iri: `http://ontology-platform.local/semantic/rule/live-${Date.now()}`,
-      name: "Derive employment label",
-      language: "sparql_construct",
-      body: {
-        template: `PREFIX ex: <http://example.test/> CONSTRUCT { ?person ex:employmentLabel "active" } WHERE { GRAPH <${s.data}> { ?person ex:worksFor ?org } }`,
-      },
-      input_roles: ["asserted_data"],
-      output_kind: "assertion",
-      status: "active",
-      created_by: "live-contract",
-    });
-    expect(rule.status).toBe(200);
+    const reasoning=await apiPost(page, `/semantic/graph-sets/${gsId}/reasoning-runs`,{tasks:["consistency"]});
+    expect(reasoning.status).toBe(200);
+    expect(["succeeded","failed"]).toContain(reasoning.json.status);
+    const rule=await apiPost(page,"/semantic/rule-definitions",{ontology_id:ontology.json.id,name:"retired",language:"sparql_construct",body:{template:"CONSTRUCT {?s ?p ?o} WHERE {?s ?p ?o}"}});
+    expect([404,410]).toContain(rule.status);
+    const run=await apiPost(page,`/semantic/graph-sets/${gsId}/rule-runs`,{});
+    expect([404,410]).toContain(run.status);
+    const results=await apiGet(page,"/semantic/rule-runs");
+    expect([404,410]).toContain(results.status);
+    const definitions=await apiGet(page,"/semantic/rule-definitions");
+    expect([404,410]).toContain(definitions.status);
+    const model=await apiGet(page,`/semantic/graph-sets/${gsId}/read-models/resource-list?include=asserted&field_set=detail`);
+    expect(model.status,JSON.stringify(model.json)).toBe(200);
+    expect(model.json.items.some((r:{iri:string})=>r.iri==="http://example.test/alice")).toBe(true);
 
-    const run = await apiPost(page, `/semantic/graph-sets/${gsId}/rule-runs`, {
-      rule_definition_id: rule.json.id,
-      promote_pointer: true,
-      actor: "live-contract",
-    });
-    expect(run.status).toBe(200);
-    expect(run.json.status).toBe("succeeded");
-    expect(run.json.generated_statement_count).toBeGreaterThan(0);
-    expect(run.json.derived_pointer?.status).toBe("current");
   });
 
   test("frontend dev server renders home page", async ({ page }) => {

@@ -1,4 +1,4 @@
-import { Card, Tag } from "antd";
+import { Alert, Card, Tag } from "antd";
 import { CheckCircle2, XCircle, Network } from "lucide-react";
 import type { SemanticReasoningRunRead } from "../../types";
 import { useT } from "../../i18n";
@@ -13,7 +13,9 @@ export function ReasoningResultPanel({ run }: { run: SemanticReasoningRunRead | 
       </Card>
     );
   }
-  const consistent = run.consistent === true;
+  const declaredMode = run.implementation_mode ?? (typeof run.classification.mode === "string" ? run.classification.mode : null);
+  const stub = declaredMode === "development_stub";
+  const consistent = run.consistent === true && !stub && declaredMode !== null;
   const inconsistent = run.consistent === false;
   const entailmentCount = Array.isArray(run.entailments) ? run.entailments.length : 0;
   return (
@@ -38,6 +40,7 @@ export function ReasoningResultPanel({ run }: { run: SemanticReasoningRunRead | 
         </div>
       }
     >
+      <Alert type={stub?"warning":"info"} message={`实际推理实现：${declaredMode??"未知／未声明"}`} description={stub?"development_stub 未执行真实 OWL DL 推理；不能据此声称 DL 验收通过。":"实现模式与结果适用范围以引擎声明为准；局部一致性结果不代表全模型验收。"}/>
       <ReasoningSummary run={run} entailmentCount={entailmentCount} />
       {run.warnings.length > 0 && <SemanticWarningList warnings={run.warnings} />}
       {run.error && <div className="inlineError">{run.error}</div>}
@@ -55,6 +58,9 @@ function ReasoningSummary({ run, entailmentCount }: { run: SemanticReasoningRunR
         <dt>{t("Run ID")}</dt>
         <dd><code>{run.run_id}</code></dd>
       </div>
+      <div><dt>引擎名称</dt><dd>{run.engine_name??"未知／未声明"}</dd></div>
+      <div><dt>一致性原始结果</dt><dd>{run.consistent===null?"未知":String(run.consistent)}</dd></div>
+      <div><dt>源版本与有效性</dt><dd><code>{run.source_signature}</code> · {run.derived_pointer?.stale===true||run.derived_pointer?.status==="stale"?"已过期":run.derived_pointer?.status==="current"?"指针声明 current":"有效性未知／未记录"}</dd></div>
       {run.profile && (
         <div>
           <dt>{t("Profile")}</dt>

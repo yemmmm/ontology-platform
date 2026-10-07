@@ -41,10 +41,12 @@ import type {
 import { classNames, compactId, formatDate, prettyJson } from "./utils";
 import { ClassesPage } from "./pages/ClassesPage";
 import { EntitiesPage } from "./pages/EntitiesPage";
-import { RulesPage } from "./pages/RulesPage";
-import { EntitiesSearchPage } from "./pages/EntitiesSearchPage";
 import { RequirementQuestionsPage } from "./pages/RequirementQuestionsPage";
 import { McpToolsPage } from "./pages/McpToolsPage";
+import { ProjectWorkbenchPage } from "./pages/ProjectWorkbenchPage";
+import { SemanticModelPage } from "./pages/SemanticModelPage";
+import { ContextQueryPage } from "./pages/ContextQueryPage";
+import { ProjectAccessPage } from "./pages/ProjectAccessPage";
 import { FactAuditPage } from "./pages/FactAuditPage";
 import { GraphSetPage } from "./pages/GraphSetPage";
 import { BuildContextDebugPage } from "./pages/BuildContextDebugPage";
@@ -57,7 +59,6 @@ import {
   getProjectionStatus,
   listGraphSets,
   listReasoningRuns,
-  listRuleRuns,
   listValidationRuns,
 } from "./semanticApi";
 import type {
@@ -65,7 +66,6 @@ import type {
   SemanticGraphSetListResponse,
   SemanticProjectionStatusResponse,
   SemanticReasoningRunListResponse,
-  SemanticRuleRunListResponse,
   SemanticValidationRunListResponse,
 } from "./types";
 
@@ -79,6 +79,12 @@ type LegacyWorkspaceTab =
   | "semantic-import-export";
 type CurrentWorkspaceTab =
   | "brief"
+  | "capability-questions"
+  | "scenario-map"
+  | "semantic-model"
+  | "acceptance"
+  | "run-records"
+  | "project-access"
   | "questions"
   | "facts"
   | "classes"
@@ -91,7 +97,7 @@ type CurrentWorkspaceTab =
   | "build-context"
   | "graph-sets";
 type WorkspaceTab = CurrentWorkspaceTab | LegacyWorkspaceTab;
-type VisibleWorkspaceStage = "overview" | "modeling" | "debug" | "settings";
+type VisibleWorkspaceStage = "overview" | "modeling" | "models" | "retrieval" | "settings";
 type Requester = <T,>(path: string, options?: RequestInit) => Promise<T>;
 
 const UI_KEYS = {
@@ -100,44 +106,35 @@ const UI_KEYS = {
   workspaceTab: "ontology-platform-ui-workspace-tab-v4",
 } as const;
 
-const stageMeta: Array<{
-  id: VisibleWorkspaceStage;
-  label: string;
-  detail: string;
-  icon: typeof Network;
-}> = [
-  { id: "overview", label: "Overview", detail: "Brief · questions", icon: BookOpen },
-  { id: "modeling", label: "Modeling", detail: "Classes · entities · facts", icon: GitBranch },
-  { id: "debug", label: "Debug", detail: "Agent · recall · runtime", icon: ShieldCheck },
-  { id: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
+const stageMeta: Array<{id: VisibleWorkspaceStage;label:string;detail:string;icon:typeof Network}> = [
+  {id:"overview",label:"Project overview",detail:"Scope · next action",icon:BookOpen},
+  {id:"modeling",label:"Modeling work",detail:"Brief · CQ · scenario map",icon:GitBranch},
+  {id:"models",label:"Semantic model",detail:"Seven views · shared definitions",icon:Network},
+  {id:"retrieval",label:"Retrieval and verification",detail:"Context · reports · SHACL · OWL",icon:ShieldCheck},
+  {id:"settings",label:"Project management",detail:"Access · graphs · diagnostics",icon:Settings},
 ];
-
 const stageDefaultTab: Record<VisibleWorkspaceStage, CurrentWorkspaceTab> = {
-  overview: "brief",
-  modeling: "classes",
-  debug: "graph-governance",
-  settings: "setting",
+  overview:"brief",modeling:"questions",models:"semantic-model",retrieval:"search",settings:"project-access",
 };
-
-const workspaceTabs: Array<{
-  id: CurrentWorkspaceTab;
-  stage: VisibleWorkspaceStage;
-  label: string;
-  detail: string;
-  icon: typeof Network;
-}> = [
-  { id: "brief", stage: "overview", label: "Overview", detail: "Brief · status", icon: BookOpen },
-  { id: "questions", stage: "overview", label: "Structured Requirements", detail: "Requirement clarification", icon: Check },
-  { id: "classes", stage: "modeling", label: "Classes", detail: "Class diagram", icon: Layers },
-  { id: "entities", stage: "modeling", label: "Entities", detail: "Entity diagram", icon: Database },
-  { id: "rules", stage: "modeling", label: "Rules", detail: "Rule definitions", icon: Workflow },
-  { id: "facts", stage: "modeling", label: "Facts", detail: "Fact list", icon: ShieldCheck },
-  { id: "graph-governance", stage: "debug", label: "Debug", detail: "Validation · projection · runtime", icon: Wrench },
-  { id: "build-context", stage: "debug", label: "Build Context", detail: "Platform facts · Agent reports", icon: ServerCog },
-  { id: "search", stage: "debug", label: "Recall", detail: "Entity search", icon: Search },
-  { id: "mcp-tools", stage: "debug", label: "MCP Tools", detail: "Tool catalog", icon: Wrench },
-  { id: "graph-sets", stage: "debug", label: "Graph Sets", detail: "Members · runs", icon: Layers },
-  { id: "setting", stage: "settings", label: "Settings", detail: "Edit lock · platform", icon: Settings },
+const workspaceTabs: Array<{id:CurrentWorkspaceTab;stage:VisibleWorkspaceStage;label:string;detail:string;icon:typeof Network}> = [
+  {id:"brief",stage:"overview",label:"Overview",detail:"Project scope and state",icon:BookOpen},
+  {id:"questions",stage:"modeling",label:"Business clarification",detail:"Brief and interview",icon:Check},
+  {id:"capability-questions",stage:"modeling",label:"Capability questions",detail:"Approved public questions",icon:BookOpen},
+  {id:"scenario-map",stage:"modeling",label:"Scenario map",detail:"Slices and seven views",icon:Layers},
+  {id:"run-records",stage:"modeling",label:"Run records",detail:"Run and handoff",icon:History},
+  {id:"semantic-model",stage:"models",label:"Model browser",detail:"Definitions and relations",icon:Network},
+  {id:"rules",stage:"models",label:"Business rules",detail:"Read semantic rule definitions",icon:Workflow},
+  {id:"facts",stage:"models",label:"Facts",detail:"Assertions and OWL results",icon:ShieldCheck},
+  {id:"search",stage:"retrieval",label:"Context Query",detail:"Authorized semantic context",icon:Search},
+  {id:"acceptance",stage:"retrieval",label:"Feedback and acceptance",detail:"Original verdict and scope",icon:Check},
+  {id:"graph-sets",stage:"retrieval",label:"Validation and reasoning",detail:"SHACL and OWL",icon:Layers},
+  {id:"project-access",stage:"settings",label:"Members and permissions",detail:"Roles, protection sets and Keys",icon:User2},
+  {id:"classes",stage:"settings",label:"Classes",detail:"Technical class diagram",icon:Layers},
+  {id:"entities",stage:"settings",label:"Entities",detail:"Technical entity diagram",icon:Database},
+  {id:"graph-governance",stage:"settings",label:"Debug",detail:"Technical diagnostics",icon:Wrench},
+  {id:"build-context",stage:"settings",label:"Build Context",detail:"Session and Batch diagnostics",icon:ServerCog},
+  {id:"mcp-tools",stage:"settings",label:"MCP Tools",detail:"Tool catalog",icon:Wrench},
+  {id:"setting",stage:"settings",label:"Settings",detail:"Account and platform",icon:Settings},
 ];
 
 const legacyWorkspaceTabs: LegacyWorkspaceTab[] = [
@@ -222,7 +219,7 @@ export function App() {
   const t = useT();
   const { principal, logout } = useAuth();
   const [view, setView] = useState<AppView>(() =>
-    queryValue("ontology") || (queryValue("project") && queryValue("tab") === "build-context")
+    queryValue("ontology") || queryValue("project")
       ? "workspace"
       : "home",
   );
@@ -239,6 +236,9 @@ export function App() {
   const [notice, setNotice] = useState<Notice>(null);
   const [loading, setLoading] = useState(false);
   const [pageDirty, setPageDirty] = useState(false);
+  const [projectLocks,setProjectLocks]=useState<Record<string,string>>({});
+  const projectLock=projectLocks[selectedProjectId]??(()=>{try{return localStorage.getItem(`ontology-platform-ui-project-lock:${selectedProjectId}`)??"unlocked";}catch{return "unlocked";}})();
+  const setProjectLock=(value:string)=>{setProjectLocks(current=>({...current,[selectedProjectId]:value}));try{localStorage.setItem(`ontology-platform-ui-project-lock:${selectedProjectId}`,value);}catch{/* Browser storage is optional. */}};
 
   const selectedProject = projects.find((project) => project.id === selectedProjectId) ?? null;
   const selectedOntology = ontologies.find((ontology) => ontology.id === selectedOntologyId) ?? null;
@@ -271,7 +271,7 @@ export function App() {
   }, [setSelectedOntologyId, setSelectedProjectId, setWorkspaceTab]);
 
   useEffect(() => {
-    if (view !== "workspace" || !selectedProjectId || (workspaceTab !== "build-context" && !selectedOntologyId)) return;
+    if (view !== "workspace" || !selectedProjectId) return;
     const params = new URLSearchParams(window.location.search);
     params.set("project", selectedProjectId);
     if (selectedOntologyId) params.set("ontology", selectedOntologyId);
@@ -297,7 +297,7 @@ export function App() {
       }
       const data = await request<Ontology[]>(`/projects/${projectId}/ontologies`);
       setOntologies(data);
-      setSelectedOntologyId((current) => current || "");
+      setSelectedOntologyId((current) => data.some(ontology => ontology.id === current) ? current : "");
     },
     [request, selectedProjectId, setSelectedOntologyId],
   );
@@ -363,7 +363,7 @@ export function App() {
           <header className="homeTopBar">
             <div>
               <span className="eyebrow">{t("Ontology workspace")}</span>
-              <h1>{t("Ontologies")}</h1>
+              <h1>{t("Projects")}</h1>
               <div className="crumbTrail">
                 <span>{selectedProject?.name ?? t("No project")}</span>
                 <ChevronRight size={13} />
@@ -384,6 +384,7 @@ export function App() {
             loading={loading}
             mutate={mutate}
             onOpenOntology={openOntology}
+            onOpenProject={() => {setWorkspaceTab("brief");setView("workspace");}}
             ontologies={ontologies}
             projects={projects}
             reloadOntologies={loadOntologies}
@@ -499,6 +500,14 @@ export function App() {
                   icon={<Waypoints size={22} />}
                   title={t("The linked project and ontology context is not available")}
                 />
+              ) : ["brief","questions","capability-questions","scenario-map","acceptance","run-records"].includes(workspaceTab) ? (
+                <ProjectWorkbenchPage key={selectedProject.id} project={selectedProject} request={request} page={workspaceTab} navigate={navigateWorkspace} onDirtyChange={setPageDirty} readOnly={projectLock==="locked"} />
+              ) : workspaceTab === "semantic-model" || workspaceTab === "rules" ? (
+                <SemanticModelPage key={selectedProject.id} projectId={selectedProject.id} ontologies={ontologies} request={request} initialView={workspaceTab==="rules"?"rule":""} />
+              ) : workspaceTab === "search" ? (
+                <ContextQueryPage key={selectedProject.id} projectId={selectedProject.id} ontologies={ontologies} request={request} />
+              ) : workspaceTab === "project-access" ? (
+                <ProjectAccessPage key={selectedProject.id} projectId={selectedProject.id} request={request} locked={projectLock==="locked"} onLock={value=>setProjectLock(value?"locked":"unlocked")} />
               ) : workspaceTab === "build-context" ? (
                 <BuildContextDebugPage projectId={selectedProject.id} request={request} />
               ) : !selectedOntology ? (
@@ -539,6 +548,7 @@ function OntologyHomePage(props: {
   setSelectedProjectId: (id: string) => void;
   setSelectedOntologyId: (id: string) => void;
   onOpenOntology: (ontology: Ontology) => void;
+  onOpenProject: () => void;
   request: Requester;
   mutate: (action: () => Promise<void>, success: string) => Promise<void>;
   reloadProjects: () => Promise<void>;
@@ -630,6 +640,7 @@ function OntologyHomePage(props: {
             </select>
           </label>
           <div className="homeFilterActions">
+            <button className="secondaryButton" disabled={!selectedProject} onClick={props.onOpenProject} type="button">{t("Open project workspace")}</button>
             <button
               className="primaryButton"
               onClick={() => setCreateProjectOpen(true)}
@@ -927,30 +938,6 @@ function WorkspaceContent(props: {
     );
   }
 
-  if (props.tab === "rules") {
-    return (
-      <RulesPage
-        ontologyId={props.ontology.id}
-        readOnly={readOnly}
-        request={governedRequest}
-      />
-    );
-  }
-
-  if (props.tab === "search") {
-    if (!graphSetId) {
-      return graphSetGate(t("Workspace data is not ready yet"));
-    }
-    return (
-      <EntitiesSearchPage
-        graphSetId={graphSetId}
-        ontologyId={props.ontology.id}
-        readOnly={readOnly}
-        request={governedRequest}
-      />
-    );
-  }
-
   if (props.tab === "mcp-tools") {
     return <McpToolsPage request={governedRequest} />;
   }
@@ -1028,7 +1015,7 @@ function SettingsPage(props: {
             <strong>{props.locked ? t("Workspace locked") : t("Workspace unlocked")}</strong>
             <p>
               {props.locked
-                ? t("Modeling changes are paused. Unlock the workspace to create, edit, or delete classes, entities, relationships, and facts.")
+                ? t("This browser prevents accidental edits. The lock does not pause Agents or change backend permissions.")
                 : t("Modeling changes take effect after backend validation. Lock the workspace to prevent accidental edits.")}
             </p>
           </div>
@@ -1169,23 +1156,20 @@ function OverviewDiagnostics(props: {
   const [projection, setProjection] = useState<SemanticProjectionStatusResponse | null>(null);
   const [validationRuns, setValidationRuns] = useState<SemanticValidationRunListResponse | null>(null);
   const [reasoningRuns, setReasoningRuns] = useState<SemanticReasoningRunListResponse | null>(null);
-  const [ruleRuns, setRuleRuns] = useState<SemanticRuleRunListResponse | null>(null);
 
   async function loadDebugState() {
     setLoading(true);
     try {
-      const [statusData, projectionData, validationData, reasoningData, ruleData] = await Promise.all([
+      const [statusData, projectionData, validationData, reasoningData] = await Promise.all([
         getGovernanceStatus(props.request).catch(() => null),
         getProjectionStatus(props.request).catch(() => null),
         listValidationRuns(props.request, { limit: 5 }).catch(() => null),
         listReasoningRuns(props.request, { limit: 5 }).catch(() => null),
-        listRuleRuns(props.request, { limit: 5 }).catch(() => null),
       ]);
       setStatus(statusData);
       setProjection(projectionData);
       setValidationRuns(validationData);
       setReasoningRuns(reasoningData);
-      setRuleRuns(ruleData);
     } catch (error) {
       props.notify(errorNotice(error));
     } finally {
@@ -1202,9 +1186,8 @@ function OverviewDiagnostics(props: {
     () => [
       { label: t("Validation"), count: validationRuns?.summary?.total ?? validationRuns?.items?.length ?? 0 },
       { label: t("Reasoning"), count: reasoningRuns?.summary?.total ?? reasoningRuns?.items?.length ?? 0 },
-      { label: t("Rule"), count: ruleRuns?.summary?.total ?? ruleRuns?.items?.length ?? 0 },
     ],
-    [reasoningRuns, ruleRuns, t, validationRuns],
+    [reasoningRuns, t, validationRuns],
   );
   const graphCount = numericJsonValue(status?.graphs, "total");
   const staleDerivedCount =

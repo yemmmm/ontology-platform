@@ -193,10 +193,9 @@ resource kind／id／IRI 与读证据绑定。`translate_candidate_to_batches` �
 | semantic | `get_semantic_governance_status` | Return a governance status summary: graph counts, editability, derived staleness. | - | - | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_read_model` | Read a compact graph-derived business JSON read model for a graph set. | graph_set_id, model_name | allow_stale_derived, entity_iri, graph_set_id, include, limit, model_name | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_reasoning_run` | Read one existing reasoning run, bound to an authorized graph set. | graph_set_id, reasoning_run_id | graph_set_id, reasoning_run_id | `backend/app/mcp/tools/semantic.py` |
-| semantic | `get_semantic_rule_definition` | Read the current stored body and metadata of one Rule Definition by ID. | rule_definition_id | rule_definition_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_validation_run` | Read one existing validation run, bound to an authorized graph set. | graph_set_id, validation_run_id | graph_set_id, validation_run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `inspect_semantic_projection_status` | Inspect projection freshness by graph set and projection kind. | - | graph_set_id | `backend/app/mcp/tools/semantic.py` |
-| semantic | `list_semantic_derived_pointers` | List derived-result pointers for reasoning/rule results. | - | graph_set_id, result_kind, status | `backend/app/mcp/tools/semantic.py` |
+| semantic | `list_semantic_derived_pointers` | List derived-result pointers for reasoning results. | - | graph_set_id, result_kind, status | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_edit_audits` | List recent governed semantic edit audit records. | - | limit | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_protection_sets` | List the protection sets of one authorized Project. | project_id | project_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `list_semantic_reasoning_runs` | List existing reasoning runs for one authorized graph set without rerunning them. | graph_set_id | graph_set_id, kind, limit, offset | `backend/app/mcp/tools/semantic.py` |
@@ -208,12 +207,10 @@ resource kind／id／IRI 与读证据绑定。`translate_candidate_to_batches` �
 | semantic | `run_next_semantic_migration_batch` | Execute the next pending batch of a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_semantic_migration_parity_check` | Run parity checks for a Phase 7 migration run. | run_id | check_name, run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_semantic_reasoning` | Run OWL reasoning over a graph set and persist the result graph. | graph_set_id | engine_version, graph_set_id, persist_result_graph, shape_version, tasks | `backend/app/mcp/tools/semantic.py` |
-| semantic | `run_semantic_rule` | Run a single rule, a named group, or all rules for a graph set. | graph_set_id | actor, engine_version, graph_set_id, promote_pointer, rule_definition_id, rule_definition_ids, rule_iri | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_semantic_validation` | Run SHACL validation over a graph set, persisting the report graph and run metadata. | graph_set_id | actor, graph_set_id, persist_report_graph, reasoning_result_graph_iri, shape_graph_iris, shape_version, validation_scope | `backend/app/mcp/tools/semantic.py` |
 | semantic | `semantic_sparql_query` | Run scoped read-only SPARQL against current Ontology semantic state. | project_id, query, scope_mode | ontology_ids, project_id, query, result_limit, scope_mode, timeout_seconds | `backend/app/mcp/tools/semantic.py` |
 | semantic | `start_semantic_projection_job` | Request a projection rebuild job and (for non-dry-run modes) execute it. | graph_set_id, projection_kind, projection_version | allow_stale_derived, graph_set_id, include, mode, projection_kind, projection_version | `backend/app/mcp/tools/semantic.py` |
 | semantic | `submit_semantic_edit` | Submit a governed RDF/SPARQL Update semantic edit with audit metadata. | content, format | actor, content, format, reason, shape_graph_iris, target_graph_iri, validate, warning_state | `backend/app/mcp/tools/semantic.py` |
-| semantic | `submit_semantic_rule_definition` | Create or reuse an immediately executable platform rule definition. | body, language, name, ontology_id, rule_iri | body, created_by, input_roles, language, name, ontology_id, output_kind, priority, requires_review, rule_iri, uses_inferred_facts | `backend/app/mcp/tools/semantic.py` |
 | semantic | `update_semantic_protection_set` | Update a protection set name, description, or allowed_grants. | protection_set_id | actor, allowed_grants, description, name, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
 
 <!-- END GENERATED MCP TOOL INVENTORY -->

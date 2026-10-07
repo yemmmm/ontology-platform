@@ -28,7 +28,7 @@ def test_publication_readiness_template_registered() -> None:
     assert "asserted_ontology" in t.required_roles
     assert "asserted_data" in t.required_roles
     assert t.needs_reasoning is True
-    assert t.needs_rules is True
+    assert not hasattr(t, "needs_rules")
     assert t.default_limit == 1
 
 
@@ -76,7 +76,6 @@ def test_publication_readiness_returns_gate_set(fake_graph_set_with_members):
     assert gate_names == {
         "validation_stale",
         "reasoning_stale",
-        "rule_stale",
         "open_edits",
         "projection_freshness",
     }

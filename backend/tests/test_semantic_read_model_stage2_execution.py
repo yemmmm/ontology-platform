@@ -511,7 +511,7 @@ def test_entity_list_surfaces_inferred_class_memberships(in_memory_session) -> N
 
 def test_entity_relations_executes_against_derived_graphs(in_memory_session) -> None:
     # entity-relations needs_reasoning or needs_rules. We include
-    # asserted-plus-rules so the rule-result graph is appended.
+    # asserted-plus-reasoning so the rule-result graph is appended.
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore(
         rows_by_marker={
@@ -528,7 +528,7 @@ def test_entity_relations_executes_against_derived_graphs(in_memory_session) -> 
     client = _client(store, in_memory_session)
     response = client.get(
         "/api/semantic/graph-sets/gs-1/read-models/entity-relations",
-        params={"include": "asserted-plus-rules"},
+        params={"include": "asserted-plus-reasoning"},
     )
     assert response.status_code == 200, response.text
     body = response.json()
@@ -540,11 +540,11 @@ def test_entity_relations_executes_against_derived_graphs(in_memory_session) -> 
     assert item["relation"] == f"{PREFIX}ns/relation-type/knows"
 
 
-def test_entity_relations_decorates_rule_result_edges(in_memory_session) -> None:
+def test_entity_relations_decorates_reasoning_result_edges(in_memory_session) -> None:
     _seed_graph_set(
         in_memory_session,
         [(DATA_GRAPH, "asserted_data")],
-        rule_graph=RULE_RESULT_GRAPH,
+        reasoning_graph=REASONING_RESULT_GRAPH,
     )
     store = FakeStore(
         rows_by_marker={
@@ -554,7 +554,7 @@ def test_entity_relations_decorates_rule_result_edges(in_memory_session) -> None
                     "target": f"{PREFIX}ns/entity/bob",
                     "relation": f"{PREFIX}ns/relation-type/eligibleFor",
                     "label": "eligible for",
-                    "graph": RULE_RESULT_GRAPH,
+                    "graph": REASONING_RESULT_GRAPH,
                 }
             ]
         }
@@ -562,24 +562,24 @@ def test_entity_relations_decorates_rule_result_edges(in_memory_session) -> None
     client = _client(store, in_memory_session)
     response = client.get(
         "/api/semantic/graph-sets/gs-1/read-models/entity-relations",
-        params={"include": "asserted-plus-rules"},
+        params={"include": "asserted-plus-reasoning"},
     )
     assert response.status_code == 200, response.text
-    assert store.last_graph_iris == [DATA_GRAPH, RULE_RESULT_GRAPH]
+    assert store.last_graph_iris == [DATA_GRAPH, REASONING_RESULT_GRAPH]
     assert store.last_query is not None
     assert "SELECT DISTINCT ?source ?relation ?target ?label ?graph" in store.last_query
     assert "BIND(?g AS ?graph)" in store.last_query
     item = response.json()["items"][0]
     assert item["source"] == f"{PREFIX}ns/entity/alice"
     assert item["target"] == f"{PREFIX}ns/entity/bob"
-    assert item["assertion_kind"] == "rule_derived"
+    assert item["assertion_kind"] == "owl_inferred"
 
 
-def test_entity_literal_facts_filters_by_entity_and_decorates_rule_rows(in_memory_session) -> None:
+def test_entity_literal_facts_filters_by_entity_and_decorates_reasoning_rows(in_memory_session) -> None:
     _seed_graph_set(
         in_memory_session,
         [(DATA_GRAPH, "asserted_data")],
-        rule_graph=RULE_RESULT_GRAPH,
+        reasoning_graph=REASONING_RESULT_GRAPH,
     )
     store = FakeStore(
         rows_by_marker={
@@ -591,7 +591,7 @@ def test_entity_literal_facts_filters_by_entity_and_decorates_rule_rows(in_memor
                     "predicate_label": "status",
                     "object": "active",
                     "object_label": "active",
-                    "graph": RULE_RESULT_GRAPH,
+                    "graph": REASONING_RESULT_GRAPH,
                 }
             ]
         }
@@ -600,7 +600,7 @@ def test_entity_literal_facts_filters_by_entity_and_decorates_rule_rows(in_memor
     response = client.get(
         "/api/semantic/graph-sets/gs-1/read-models/entity-literal-facts",
         params={
-            "include": "asserted-plus-rules",
+            "include": "asserted-plus-reasoning",
             "entity": f"{PREFIX}ns/entity/alice",
         },
     )
@@ -611,7 +611,7 @@ def test_entity_literal_facts_filters_by_entity_and_decorates_rule_rows(in_memor
     assert item["predicate_label"] == "status"
     assert item["object_value"] == "active"
     assert item["object_is_iri"] is False
-    assert item["assertion_kind"] == "rule_derived"
+    assert item["assertion_kind"] == "owl_inferred"
 
 
 def test_entity_literal_facts_requires_entity_param(in_memory_session) -> None:
@@ -739,10 +739,9 @@ def test_fact_audit_queue_kind_rule_derived_without_pointer_returns_empty_with_w
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore()
     client = _client(store, in_memory_session)
-    body = _read_model(client, "fact-audit-queue", kind="rule_derived")
-    assert body["items"] == []
-    codes = [w.get("code") for w in body["warnings"]]
-    assert "fact_audit_no_rule_pointer" in codes
+    response = client.get("/api/semantic/graph-sets/gs-1/read-models/fact-audit-queue", params={"kind": "rule_derived"})
+    assert response.status_code == 400
+    assert "Unsupported fact-audit-queue kind" in response.json()["detail"]
 
 
 def test_fact_audit_queue_rule_derived_dedupes_missing_pointer_warning(
@@ -753,15 +752,9 @@ def test_fact_audit_queue_rule_derived_dedupes_missing_pointer_warning(
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore()
     client = _client(store, in_memory_session)
-    body = _read_model(
-        client,
-        "fact-audit-queue",
-        include="asserted-plus-rules",
-        kind="rule_derived",
-    )
-    assert body["items"] == []
-    codes = [w.get("code") for w in body["warnings"]]
-    assert codes == ["missing_rule_result"]
+    response = client.get("/api/semantic/graph-sets/gs-1/read-models/fact-audit-queue", params={"kind": "rule_derived"})
+    assert response.status_code == 400
+    assert "Unsupported fact-audit-queue kind" in response.json()["detail"]
 
 
 def test_fact_audit_queue_invalid_kind_returns_400(in_memory_session) -> None:

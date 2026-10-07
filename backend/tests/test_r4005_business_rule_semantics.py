@@ -215,3 +215,35 @@ def test_hidden_rule_script_and_endpoints_filtered_before_paging(in_memory_sessi
         assert row["subject"] not in hidden
         assert row.get("object") not in hidden
     assert "must never execute" not in json.dumps(full)
+
+
+def test_retirement_preserves_business_rule_context_query_and_rejects_old_kind(in_memory_session):
+    from app.core.config import Settings
+    from app.services.semantic_context_query import (
+        SemanticContextQueryError, SemanticContextQueryService,
+    )
+    from app.services.semantic_query_scope import SemanticQueryScopeResolver
+    from test_semantic_context_query import DatasetStore, _principal, _ready_ontology
+
+    settings = Settings()
+    _ready_ontology(in_memory_session, settings, project_id="rule-project", ontology_id=ONTOLOGY_ID)
+    value = candidate()
+    _, store = _materialize(value)
+    service = SemanticContextQueryService(
+        in_memory_session, DatasetStore(store.dataset), SemanticQueryScopeResolver(in_memory_session, settings),
+    )
+    args = dict(project_id="rule-project", scope_mode="ontologies", ontology_ids=[ONTOLOGY_ID],
+                query="金额规则", search_mode="lexical", semantic_roles=["rule"],
+                depth=0, principal=_principal())
+    result = service.query(**args, resource_types=["instance"])
+    matches = result["primary_matches"]
+    assert {m["iri"] for m in matches} == {NS + "entity/allow-close", NS + "entity/risk"}
+    for match in matches:
+        assert match["kind"] == "instance"
+        assert match["data"]["semantic_definition"]["semantic_role"] == "rule"
+        definition = match["data"]["rule_definition"]
+        assert definition["script_source"]
+        assert definition["execution_environment"].startswith("External Consumer only")
+    with pytest.raises(SemanticContextQueryError, match="resource_types contains an unsupported value"):
+        service.query(**args, resource_types=["rule"])
+    assert not any("rule-result" in str(q[3]) for q in store.dataset.quads())

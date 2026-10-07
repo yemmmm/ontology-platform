@@ -2149,7 +2149,6 @@ def test_r3003_resource_type_order_places_mapping_and_metric_last():
         "instance",
         "relation",
         "fact",
-        "rule",
         "operation",
         "mapping",
         "metric",

@@ -13,7 +13,6 @@ import {
 import type {
   SemanticGraphSetRead,
   SemanticJsonObject,
-  SemanticRuleDefinitionListResponse,
 } from "../types";
 import { useT } from "../i18n";
 import { errorNotice } from "../api";
@@ -23,9 +22,7 @@ import {
   createGraphSet,
   getGraphSet,
   listGraphSets,
-  listRuleDefinitions,
   runGraphSetReasoning,
-  runGraphSetRules,
   runGraphSetValidation,
   updateGraphSetMembers,
   type SemanticRequester,
@@ -35,12 +32,11 @@ import {
   GraphIriLabel,
   GraphSetSelector,
   ReasoningResultPanel,
-  RuleResultPanel,
   StalenessBadge,
   ValidationReportPanel,
 } from "../components/semantic";
 import { RefreshButton, SemanticEmpty, SemanticPanel, SemanticTag } from "../components/semantic/primitives";
-import type { SemanticRuleRunRead, SemanticReasoningRunRead, SemanticValidationRunRead } from "../types";
+import type { SemanticReasoningRunRead, SemanticValidationRunRead } from "../types";
 
 export function GraphSetPage({
   request,
@@ -57,7 +53,6 @@ export function GraphSetPage({
   const [graphSets, setGraphSets] = useState<SemanticGraphSetRead[]>([]);
   const [selectedId, setSelectedId] = useState(initialGraphSetId ?? "");
   const [graphSet, setGraphSet] = useState<SemanticGraphSetRead | null>(null);
-  const [rules, setRules] = useState<SemanticRuleDefinitionListResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
@@ -66,7 +61,6 @@ export function GraphSetPage({
   const [draftDataIri, setDraftDataIri] = useState("");
   const [validation, setValidation] = useState<SemanticValidationRunRead | null>(null);
   const [reasoning, setReasoning] = useState<SemanticReasoningRunRead | null>(null);
-  const [ruleRun, setRuleRun] = useState<SemanticRuleRunRead | null>(null);
 
   async function loadGraphSets() {
     try {
@@ -87,12 +81,8 @@ export function GraphSetPage({
     }
     setLoading(true);
     try {
-      const [detail, ruleList] = await Promise.all([
-        getGraphSet(request, id),
-        listRuleDefinitions(request, { limit: 50 }).catch(() => ({ rules: [] })),
-      ]);
+      const detail = await getGraphSet(request, id);
       setGraphSet(detail);
-      setRules(ruleList);
     } catch (error) {
       notify(errorNotice(error));
     } finally {
@@ -114,7 +104,7 @@ export function GraphSetPage({
   }, [selectedId]);
 
   const groupedMembers = useMemo(() => groupMembersByRole(graphSet?.members ?? []), [graphSet]);
-  const currentPointers = graphSet?.current_pointers ?? [];
+  const currentPointers = (graphSet?.current_pointers ?? []).filter(pointer => (pointer as Record<string, unknown>).kind !== "rule_result");
   const stalePointers = currentPointers.filter((pointer) => isStalePointer(pointer));
 
   async function runValidation() {
@@ -154,20 +144,6 @@ export function GraphSetPage({
       } catch (error) {
         notify(errorNotice(error));
       }
-    } catch (error) {
-      notify(errorNotice(error));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function runRules() {
-    if (!graphSet) return;
-    setBusy(true);
-    try {
-      const result = await runGraphSetRules(request, graphSet.id, {});
-      notify({ kind: "ok", message: t("Rule run {id} status: {status}", { id: result.run_id, status: result.status }) });
-      setRuleRun(result);
     } catch (error) {
       notify(errorNotice(error));
     } finally {
@@ -271,7 +247,7 @@ export function GraphSetPage({
               actions={<StalenessBadge stale={stalePointers.length > 0} detail={t("{count} stale", { count: stalePointers.length })} />}
             >
               {currentPointers.length === 0 ? (
-                <SemanticEmpty title={t("No current pointers")} hint={t("Run validation, reasoning, or rules to populate pointers.")} />
+                <SemanticEmpty title={t("No current pointers")} hint={t("Run validation or reasoning to populate pointers.")} />
               ) : (
                 <ul className="pointerList">
                   {currentPointers.map((pointer, idx) => {
@@ -295,7 +271,6 @@ export function GraphSetPage({
               <div className="headerActions">
                 <button className="secondaryButton" disabled={busy} onClick={() => void runValidation()} type="button"><CheckCircle2 size={14} /> {t("Validate")}</button>
                 <button className="secondaryButton" disabled={busy} onClick={() => void runReasoning()} type="button"><Network size={14} /> {t("Run reasoning")}</button>
-                <button className="secondaryButton" disabled={busy} onClick={() => void runRules()} type="button"><Workflow size={14} /> {t("Run rules")}</button>
               </div>
             }
           >
@@ -329,7 +304,6 @@ export function GraphSetPage({
           <section className="graphSetResultsRow" aria-label="graph-set-results">
             <ValidationReportPanel run={validation} />
             <ReasoningResultPanel run={reasoning} />
-            <RuleResultPanel run={ruleRun} />
           </section>
 
           <SemanticPanel title={t("Export")} icon={<Download size={15} />}>
@@ -361,24 +335,10 @@ export function GraphSetPage({
         </SemanticPanel>
       )}
 
-      {rules && rules.rules.length > 0 && (
-        <SemanticPanel title={t("Rule definitions")} icon={<Workflow size={15} />}>
-          <ul className="ruleDefinitionList">
-            {rules.rules.map((rule) => (
-              <li key={rule.id}>
-                <strong>{rule.name}</strong>
-                <code>{rule.rule_iri}</code>
-                <small>{rule.language} · v{rule.version}</small>
-              </li>
-            ))}
-          </ul>
-        </SemanticPanel>
-      )}
-
       <section className="graphSetPageFooter">
         <EditabilityBadge editable={null} />
         <Play size={14} />
-        <small>{t("Membership changes are governance events: validation, reasoning, and rule results may become stale.")}</small>
+        <small>{t("Membership changes are governance events: validation and reasoning results may become stale.")}</small>
       </section>
     </section>
   );
@@ -387,7 +347,7 @@ export function GraphSetPage({
 function ExportControls({ graphSet }: { graphSet: SemanticGraphSetRead }) {
   const t = useT();
   const [format, setFormat] = useState<"trig" | "turtle" | "json-ld">("trig");
-  const [include, setInclude] = useState<"asserted" | "asserted-plus-reasoning" | "asserted-plus-rules" | "full-working-view">("asserted");
+  const [include, setInclude] = useState<"asserted" | "asserted-plus-reasoning" | "full-working-view">("asserted");
   const [stale, setStale] = useState(false);
   const url = buildGraphSetExportUrl(graphSet.id, {
     format,
@@ -410,10 +370,9 @@ function ExportControls({ graphSet }: { graphSet: SemanticGraphSetRead }) {
         </label>
         <label>
           <span>{t("Include")}</span>
-          <select onChange={(event) => setInclude(event.target.value as "asserted" | "asserted-plus-reasoning" | "asserted-plus-rules" | "full-working-view")} value={include}>
+          <select onChange={(event) => setInclude(event.target.value as "asserted" | "asserted-plus-reasoning" | "full-working-view")} value={include}>
             <option value="asserted">{t("Asserted only")}</option>
             <option value="asserted-plus-reasoning">{t("Asserted + reasoning")}</option>
-            <option value="asserted-plus-rules">{t("Asserted + rules")}</option>
             <option value="full-working-view">{t("Full working view")}</option>
           </select>
         </label>
@@ -431,7 +390,7 @@ function ExportControls({ graphSet }: { graphSet: SemanticGraphSetRead }) {
 
 function groupMembersByRole(members: SemanticGraphSetRead["members"]): Array<{ role: string; members: SemanticGraphSetRead["members"] }> {
   const map = new Map<string, SemanticGraphSetRead["members"]>();
-  for (const member of members) {
+  for (const member of members.filter(item => item.role !== "rule_result")) {
     const list = map.get(member.role) ?? [];
     list.push(member);
     map.set(member.role, list);

@@ -34,7 +34,7 @@ def test_graph_set_staleness_template_registered():
     assert template.projection_version == "semantic-read-v1"
     assert template.required_roles == ("asserted_ontology", "asserted_data")
     assert template.needs_reasoning is True
-    assert template.needs_rules is True
+    assert not hasattr(template, "needs_rules")
     assert template.default_limit == 1
     assert "missing-evidence" not in template.body
 
@@ -52,7 +52,7 @@ def test_class_topology_template_registered():
     assert template.projection_version == "semantic-read-v1"
     assert template.required_roles == ("asserted_ontology",)
     assert template.needs_reasoning is False
-    assert template.needs_rules is False
+    assert not hasattr(template, "needs_rules")
     assert "owl:Class" in template.body or "rdfs:Class" in template.body
 
 
@@ -90,7 +90,7 @@ def test_entity_list_template_registered():
     # entity-list reads from asserted_data and optionally decorates with derived.
     assert "asserted_data" in template.required_roles
     assert template.needs_reasoning is True
-    assert template.needs_rules is True
+    assert not hasattr(template, "needs_rules")
     assert "owl:NamedIndividual" in template.body or "NamedIndividual" in template.body
     # Should project the class IRI so the frontend can group by class.
     assert "?class" in template.body
@@ -103,7 +103,7 @@ def test_entity_relations_template_registered():
     template = get_template("entity-relations")
     assert template.projection_version == "semantic-read-v1"
     # entity-relations needs derived graphs to surface inferred / rule-derived edges.
-    assert template.needs_reasoning is True or template.needs_rules is True
+    assert template.needs_reasoning is True
     assert "?source" in template.body
     assert "?target" in template.body
     assert "?relation" in template.body or "?predicate" in template.body
@@ -124,7 +124,7 @@ def test_entity_literal_facts_template_registered():
     template = get_template("entity-literal-facts")
     assert template.projection_version == "semantic-read-v1"
     assert template.needs_reasoning is True
-    assert template.needs_rules is True
+    assert not hasattr(template, "needs_rules")
     assert "VALUES ?subject" in template.body
     assert "isLiteral(?object)" in template.body
     assert "{entity_iri}" in template.body
@@ -138,7 +138,7 @@ def test_mapping_list_template_registered():
     assert template.projection_version == "semantic-read-v1"
     assert template.required_roles == ("asserted_ontology",)
     assert template.needs_reasoning is False
-    assert template.needs_rules is False
+    assert not hasattr(template, "needs_rules")
     # SPARQL must look for op:SemanticMapping instances.
     assert "SemanticMapping" in template.body
 
@@ -148,7 +148,7 @@ def test_import_graph_mappings_template_registered():
     assert template.projection_version == "semantic-read-v1"
     assert template.required_roles == ("import_graph",)
     assert template.needs_reasoning is False
-    assert template.needs_rules is False
+    assert not hasattr(template, "needs_rules")
     assert "SemanticMapping" in template.body
 
 
@@ -172,12 +172,10 @@ def test_fact_audit_queue_template_needs_reasoning_and_rules():
     rule-derived facts."""
     template = get_template("fact-audit-queue")
     assert template.needs_reasoning is True
-    assert template.needs_rules is True
+    assert not hasattr(template, "needs_rules")
 
 
-def test_rule_derived_fact_template_keeps_type_classifications():
-    template = get_template("fact-audit-queue-with-types")
-
-    assert "?subject ?predicate ?object" in template.body
-    assert "FILTER(?predicate != rdf:type)" not in template.body
-    assert template.assertion_kind == "rule_derived"
+def test_rule_derived_fact_template_is_retired():
+    import pytest
+    with pytest.raises(KeyError):
+        get_template("fact-audit-queue-with-types")

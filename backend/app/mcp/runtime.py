@@ -149,13 +149,6 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     "submit_semantic_edit": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "run_semantic_validation": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "run_semantic_reasoning": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
-    "submit_semantic_rule_definition": _policy(
-        "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
-    ),
-    "run_semantic_rule": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
-    "get_semantic_rule_definition": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
     "start_semantic_projection_job": _policy(
         "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
     ),

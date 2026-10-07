@@ -1,3 +1,5 @@
+from sqlalchemy import func, select
+import pytest
 from collections.abc import Generator
 from datetime import UTC, datetime
 from typing import Any
@@ -426,191 +428,6 @@ def _create_graph_set(client, members=None) -> str:
     return response.json()["id"]
 
 
-def test_rule_definition_endpoint_creates_active_dsl_rule(in_memory_session) -> None:
-    client = _client(FakeStore(), in_memory_session)
-
-    response = client.post(
-        "/api/semantic/rule-definitions",
-        json={
-            "ontology_id": TEST_ONTOLOGY_ID,
-            "rule_iri": f"{PREFIX}rule/test",
-            "name": "test rule",
-            "language": "platform_dsl",
-            "body": {
-                "when": [
-                    {"s": "?s", "p": "<http://example.test/score>", "o": "?score"},
-                    {"filter": {"gte": ["?score", 90]}},
-                ],
-                "then": [
-                    {
-                        "s": "?s",
-                        "p": "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-                        "o": "<http://example.test/ExcellentStudent>",
-                    }
-                ],
-            },
-            "input_roles": ["asserted_data"],
-            "priority": 10,
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["language"] == "platform_dsl"
-    assert body["status"] == "active"
-    assert body["version"].startswith("sha256:")
-
-
-def test_rule_definition_endpoint_rejects_unsafe_construct_template(
-    in_memory_session,
-) -> None:
-    client = _client(FakeStore(), in_memory_session)
-
-    response = client.post(
-        "/api/semantic/rule-definitions",
-        json={
-            "ontology_id": TEST_ONTOLOGY_ID,
-            "rule_iri": f"{PREFIX}rule/bad",
-            "name": "bad",
-            "language": "sparql_construct",
-            "body": {
-                "template": (
-                    "CONSTRUCT { ?s ?p ?o } WHERE { SERVICE <http://example.test/> { ?s ?p ?o } }"
-                )
-            },
-            "input_roles": ["asserted_data"],
-        },
-    )
-    assert response.status_code == 400
-    assert "SERVICE" in response.json()["detail"]
-
-
-def test_list_rule_definitions_returns_immediately_active_rules(in_memory_session) -> None:
-    client = _client(FakeStore(), in_memory_session)
-
-    for suffix in ("one", "two"):
-        client.post(
-            "/api/semantic/rule-definitions",
-            json={
-                "ontology_id": TEST_ONTOLOGY_ID,
-                "rule_iri": f"{PREFIX}rule/{suffix}",
-                "name": suffix,
-                "language": "platform_dsl",
-                "body": {
-                    "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
-                    "then": [
-                        {
-                            "s": "?s",
-                            "p": "<http://example.test/derived>",
-                            "o": "?o",
-                        }
-                    ],
-                },
-                "input_roles": ["asserted_data"],
-            },
-        )
-    response = client.get("/api/semantic/rule-definitions")
-    assert response.status_code == 200
-    body = response.json()
-    assert len(body["rules"]) == 2
-    assert {rule["status"] for rule in body["rules"]} == {"active"}
-
-
-def test_list_rule_definitions_filters_to_current_ontology_versions(
-    in_memory_session,
-) -> None:
-    client = _client(FakeStore(), in_memory_session)
-    other_ontology_id = "semantic-api-other-ontology"
-    in_memory_session.add(
-        OntologyModel(
-            id=other_ontology_id,
-            project_id=TEST_PROJECT_ID,
-            name="Other ontology",
-            description=None,
-        )
-    )
-    in_memory_session.commit()
-
-    def create_rule(ontology_id: str, predicate: str):
-        return client.post(
-            "/api/semantic/rule-definitions",
-            json={
-                "ontology_id": ontology_id,
-                "rule_iri": f"{PREFIX}rule/scoped",
-                "name": f"scoped-{predicate}",
-                "language": "platform_dsl",
-                "body": {
-                    "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
-                    "then": [
-                        {
-                            "s": "?s",
-                            "p": f"<http://example.test/{predicate}>",
-                            "o": "?o",
-                        }
-                    ],
-                },
-                "input_roles": ["asserted_data"],
-            },
-        )
-
-    first = create_rule(TEST_ONTOLOGY_ID, "derived-v1")
-    current = create_rule(TEST_ONTOLOGY_ID, "derived-v2")
-    other = create_rule(other_ontology_id, "derived-other")
-    assert first.status_code == current.status_code == other.status_code == 200
-
-    response = client.get(
-        "/api/semantic/rule-definitions",
-        params={"ontology_id": TEST_ONTOLOGY_ID, "current_only": "true"},
-    )
-
-    assert response.status_code == 200
-    rules = response.json()["rules"]
-    assert [rule["id"] for rule in rules] == [current.json()["id"]]
-    assert rules[0]["ontology_id"] == TEST_ONTOLOGY_ID
-
-
-def test_rule_definition_endpoint_updates_and_deletes_rule(in_memory_session) -> None:
-    client = _client(FakeStore(), in_memory_session)
-
-    create_response = client.post(
-        "/api/semantic/rule-definitions",
-        json={
-            "ontology_id": TEST_ONTOLOGY_ID,
-            "rule_iri": f"{PREFIX}rule/editable",
-            "name": "editable",
-            "language": "platform_dsl",
-            "body": {
-                "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
-                "then": [
-                    {
-                        "s": "?s",
-                        "p": "<http://example.test/derived>",
-                        "o": "?o",
-                    }
-                ],
-            },
-            "input_roles": ["asserted_data"],
-        },
-    )
-    assert create_response.status_code == 200
-    rule_id = create_response.json()["id"]
-
-    update_response = client.patch(
-        f"/api/semantic/rule-definitions/{rule_id}",
-        json={"name": "renamed", "priority": 5},
-    )
-    assert update_response.status_code == 200
-    updated = update_response.json()
-    assert updated["name"] == "renamed"
-    assert updated["priority"] == 5
-    assert updated["status"] == "active"
-
-    delete_response = client.delete(f"/api/semantic/rule-definitions/{rule_id}")
-    assert delete_response.status_code == 204
-
-    get_response = client.get(f"/api/semantic/rule-definitions/{rule_id}")
-    assert get_response.status_code == 404
-
-
 def test_graph_set_validation_endpoint_records_engine_version(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
@@ -628,184 +445,6 @@ def test_graph_set_validation_endpoint_records_engine_version(in_memory_session)
     body = response.json()
     assert body["status"] == "succeeded"
     assert body["run_id"]
-
-
-def test_graph_set_construct_run_writes_only_to_rule_result(in_memory_session) -> None:
-    store = FakeStore(
-        construct_result="@prefix ex: <http://example.test/> . ex:alice a ex:ExcellentStudent ."
-    )
-    client = _client(store, in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    response = client.post(
-        f"/api/semantic/graph-sets/{graph_set_id}/construct-runs",
-        json={
-            "template": (
-                f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{PREFIX}data/demo> {{ ?s ?p ?o }} }}"
-            ),
-            "promote_pointer": True,
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["result_graph_iri"].startswith(f"{PREFIX}rule-result/")
-    assert body["derived_pointer"]["status"] == "current"
-    assert not any(f"INSERT DATA {{ GRAPH <{PREFIX}data/demo>" in u for u in store.updates)
-
-
-def test_graph_set_rule_run_endpoint_executes_active_rule(in_memory_session) -> None:
-    store = FakeStore(
-        select_result={
-            "head": {"vars": ["s"]},
-            "results": {"bindings": [{"s": {"value": "<http://example.test/alice>"}}]},
-        }
-    )
-    client = _client(store, in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    create_response = client.post(
-        "/api/semantic/rule-definitions",
-        json={
-            "ontology_id": TEST_ONTOLOGY_ID,
-            "rule_iri": f"{PREFIX}rule/dsl",
-            "name": "dsl",
-            "language": "platform_dsl",
-            "body": {
-                "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
-                "then": [
-                    {
-                        "s": "?s",
-                        "p": "<http://example.test/derived>",
-                        "o": "?o",
-                    }
-                ],
-            },
-            "input_roles": ["asserted_data"],
-        },
-    )
-    rule_id = create_response.json()["id"]
-
-    response = client.post(
-        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
-        json={"rule_definition_id": rule_id},
-    )
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["generated_statement_count"] >= 1
-
-
-def test_graph_set_rule_run_endpoint_executes_all_rules_when_no_rule_selected(
-    in_memory_session,
-) -> None:
-    store = FakeStore(
-        select_result={
-            "head": {"vars": ["s"]},
-            "results": {"bindings": [{"s": {"value": "<http://example.test/alice>"}}]},
-        }
-    )
-    client = _client(store, in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    create_response = client.post(
-        "/api/semantic/rule-definitions",
-        json={
-            "ontology_id": TEST_ONTOLOGY_ID,
-            "rule_iri": f"{PREFIX}rule/dsl-all",
-            "name": "dsl all",
-            "language": "platform_dsl",
-            "body": {
-                "when": [{"s": "?s", "p": "<http://example.test/p>", "o": "?o"}],
-                "then": [
-                    {
-                        "s": "?s",
-                        "p": "<http://example.test/derived>",
-                        "o": "?o",
-                    }
-                ],
-            },
-            "input_roles": ["asserted_data"],
-        },
-    )
-    assert create_response.status_code == 200
-
-    response = client.post(
-        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
-        json={},
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["engine_name"] == "rule_group"
-    assert body["rule_definition_id"] is None
-    assert body["generated_statement_count"] >= 1
-
-
-def test_graph_set_rule_run_endpoint_noops_when_no_rules(
-    in_memory_session,
-) -> None:
-    client = _client(FakeStore(), in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    response = client.post(
-        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
-        json={},
-    )
-
-    assert response.status_code == 200, response.text
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["engine_name"] == "rule_group"
-    assert body["rule_definition_id"] is None
-    assert body["rule_count"] == 0
-    assert body["generated_statement_count"] == 0
-    assert "No executable rules matched the request" in body["warnings"]
-    assert body["derived_pointer"]["status"] == "current"
-
-
-def test_graph_set_rule_run_endpoint_skips_construct_rules_for_other_graph_sets(
-    in_memory_session,
-) -> None:
-    store = FakeStore(
-        construct_result='@prefix ex: <http://example.test/> . ex:alice ex:employmentLabel "active" .'
-    )
-    client = _client(store, in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    for suffix in ("demo", "other"):
-        response = client.post(
-            "/api/semantic/rule-definitions",
-            json={
-                "ontology_id": TEST_ONTOLOGY_ID,
-                "rule_iri": f"{PREFIX}rule/construct-{suffix}",
-                "name": f"construct {suffix}",
-                "language": "sparql_construct",
-                "body": {
-                    "template": (
-                        "PREFIX ex: <http://example.test/> "
-                        'CONSTRUCT { ?person ex:employmentLabel "active" } '
-                        f"WHERE {{ GRAPH <{PREFIX}data/{suffix}> "
-                        "{ ?person ex:worksFor ?org } }}"
-                    )
-                },
-                "input_roles": ["asserted_data"],
-            },
-        )
-        assert response.status_code == 200
-
-    response = client.post(
-        f"/api/semantic/graph-sets/{graph_set_id}/rule-runs",
-        json={},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["rule_count"] == 1
-    assert body["explanations"][0]["rule_iri"] == f"{PREFIX}rule/construct-demo"
-    assert all(f"{PREFIX}data/other" not in query for query in store.queries)
 
 
 def test_get_validation_run_returns_staleness(in_memory_session) -> None:
@@ -919,9 +558,9 @@ def test_stage5_reasoning_and_rule_run_list_endpoints_filter(
     assert reasoning_response.status_code == 200
     assert reasoning_response.json()["items"][0]["run_id"] == "reasoning-1"
     assert reasoning_response.json()["summary"]["total"] == 1
-    assert rule_response.status_code == 200
-    assert rule_response.json()["items"][0]["run_id"] == "rule-1"
-    assert rule_response.json()["summary"]["total"] == 1
+    assert rule_response.status_code == 404
+
+    assert in_memory_session.get(SemanticRuleRunModel, "rule-1") is not None
 
 
 def test_stage5_projection_status_exposes_stale_projection_count(
@@ -1074,3 +713,19 @@ def test_project_build_context_replaces_legacy_route_without_deprecation(
         "platform_state",
         "agent_state",
     }
+
+
+@pytest.mark.parametrize("path,payload", [
+    ("/rule-definitions", {"rule_iri": "urn:retired:dsl", "name": "Old DSL", "language": "platform_dsl", "input_roles": ["asserted_data"], "body": {"when": [{"s": "?s", "p": "urn:p", "o": "x"}], "then": [{"s": "?s", "p": "urn:result", "o": True}]}}),
+    ("/rule-definitions", {"rule_iri": "urn:retired:construct", "language": "sparql_construct", "body": {"template": "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"}}),
+    ("/graph-sets/gs-stage5/construct-runs", {"template": "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"}),
+    ("/graph-sets/gs-stage5/rule-runs", {}),
+    ("/graph-sets/gs-stage5/rule-runs", {"rule_definition_ids": ["legacy"]}),
+])
+def test_retired_rule_requests_do_not_write_even_with_original_payloads(in_memory_session, path, payload):
+    store = FakeStore()
+    client = _client(store, in_memory_session)
+    response = client.post("/api/semantic" + path, json=payload)
+    assert response.status_code == 404, response.text
+    assert store.updates == []
+    assert in_memory_session.scalar(select(func.count()).select_from(SemanticRuleRunModel)) == 0

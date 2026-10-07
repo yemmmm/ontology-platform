@@ -258,6 +258,7 @@ class SemanticGraphSetService:
         rows = self.session.scalars(
             select(SemanticDerivedResultPointerModel)
             .where(SemanticDerivedResultPointerModel.graph_set_id == graph_set_id)
+            .where(SemanticDerivedResultPointerModel.result_kind == "reasoning")
             .order_by(SemanticDerivedResultPointerModel.result_kind)
         )
         return [
@@ -268,7 +269,6 @@ class SemanticGraphSetService:
                 "status": row.status,
                 "engine_name": row.engine_name,
                 "engine_version": row.engine_version,
-                "rule_version": row.rule_version,
                 "shape_version": row.shape_version,
                 "became_current_at": row.became_current_at,
             }

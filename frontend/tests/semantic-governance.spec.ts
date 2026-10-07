@@ -188,6 +188,7 @@ async function mockApi(page: Page) {
     let body: unknown = [];
     if (path === "/projects") body = [project];
     else if (path === `/projects/${project.id}/ontologies`) body = [ontology];
+    else if(path.endsWith("/workspace-context"))body={default_graph_set_id:graphSet.id};
     // `ontologies/{id}/versions` endpoint was removed in Phase B (legacy
     // governance hard-cut). The mock is kept as a defensive `[]` in case a
     // future caller fetches it through OntologyHomePage.
@@ -306,7 +307,8 @@ test("graph set detail shows members, pointers, and triggers reasoning run", asy
   await page.goto(`/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=graph-sets`);
   await expect(page.getByRole("heading", { name: "Graph Set Detail" })).toBeVisible();
   await expect(page.getByText("asserted_ontology").first()).toBeVisible();
-  await expect(page.getByText("Stale derived").first()).toBeVisible();
+  await expect(page.getByText("Current derived pointers").first()).toBeVisible();
+  await expect(page.getByText("rule_result",{exact:true})).toHaveCount(0);
   const runRequest = page.waitForRequest(
     (request) => request.url().includes(`/semantic/graph-sets/${graphSet.id}/reasoning-runs`) && request.method() === "POST",
   );
@@ -316,29 +318,24 @@ test("graph set detail shows members, pointers, and triggers reasoning run", asy
   expect(requests.some((path) => /evidence|lineage|provenance/.test(path))).toBe(false);
 });
 
-test("rules page scopes listing and creation to the active ontology", async ({ page }) => {
+test("legacy rules route reads ordinary semantic entities without CRUD or execution requests", async ({ page }) => {
   await mockApi(page);
-  const listRequest = page.waitForRequest((request) => {
-    const url = new URL(request.url());
-    return url.pathname.endsWith("/semantic/rule-definitions") && request.method() === "GET";
-  });
+  const requests:string[]=[];
+  page.on("request", req=>requests.push(req.url()));
+  await page.route("**/read-models/resource-list?**", route=>route.fulfill({json:{items:[{iri:"https://example.test/business-rule",label:"Business closure rule",detail_fields:{semantic_definition:{semantic_role:"rule",business_meaning:"Closure eligibility"},rule_definition:{script_source:"return eligible",script_language:"python",script_version:"v1"}}}]}}));
+  await page.route("**/read-models/entity-relations?**",route=>route.fulfill({json:{items:[]}}));
+  await page.route("**/semantic/resources/**",route=>route.fulfill({json:{iri:"https://example.test/business-rule",label:"Business closure rule",properties:{rule_definition:{script_source:"return eligible"}}}}));
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&tab=rules`);
+  await expect(page.getByLabel("semantic-model-page")).toBeVisible();
+  await expect(page.getByRole("button", {name:"Business closure rule"})).toBeVisible();
+  await page.getByRole("button", {name:"Business closure rule"}).click();
+  await expect(page.getByText("return eligible",{exact:true})).toBeVisible();
+  await expect(page.getByRole("button", {name:"New rule"})).toHaveCount(0);
+  await expect(page.getByRole("button", {name:"Run rules"})).toHaveCount(0);
+  expect(requests.some(path=>/rule-definitions|rule-runs/.test(path))).toBe(false);
+});
 
-  await page.goto(
-    `/?project=${project.id}&ontology=${ontology.id}&version=${version.id}&tab=rules`,
-  );
-
-  const listUrl = new URL((await listRequest).url());
-  expect(listUrl.searchParams.get("ontology_id")).toBe(ontology.id);
-  expect(listUrl.searchParams.get("current_only")).toBe("true");
-  await expect(page.getByLabel("rules-page").getByRole("heading", { name: "Rules" })).toBeVisible();
-
-  await page.getByRole("button", { name: "New rule" }).click();
-  const modal = page.getByRole("dialog", { name: "Create rule" });
-  await modal.getByLabel("Name").fill("Scoped rule");
-  const createRequest = page.waitForRequest(
-    (request) => request.url().includes("/semantic/rule-definitions") && request.method() === "POST",
-  );
-  await modal.getByRole("button", { name: "Create rule" }).click();
-
-  expect((await createRequest).postDataJSON().ontology_id).toBe(ontology.id);
+test("development_stub cannot display real OWL DL completion",async({page})=>{
+  await mockApi(page);const stub={...reasoningRun,implementation_mode:"development_stub",engine_name:"development-stub",consistent:true,classification:{mode:"development_stub",classified_classes:0}};await page.route("**/graph-sets/*/reasoning-runs",route=>route.fulfill({json:stub}));await page.route("**/semantic/reasoning-runs/reasoning-1",route=>route.fulfill({json:stub}));
+  await page.goto(`/?project=${project.id}&ontology=${ontology.id}&tab=graph-sets`);await page.getByRole("button",{name:"Run reasoning"}).click();const panel=page.getByLabel("reasoning-result-panel");await expect(panel.getByText(/development_stub 未执行真实 OWL DL 推理/)).toBeVisible();await expect(panel.getByText("Consistent",{exact:true})).toHaveCount(0);await expect(panel.getByText("development-stub",{exact:true})).toBeVisible();
 });

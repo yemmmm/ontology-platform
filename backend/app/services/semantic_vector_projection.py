@@ -12,7 +12,7 @@ import hashlib
 from typing import Any, Protocol
 
 from rdflib import Dataset, URIRef
-from rdflib.namespace import RDF, RDFS
+from rdflib.namespace import RDFS
 
 from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
 from app.services.semantic_projection_job import ProjectionWriter
@@ -140,9 +140,4 @@ class SemanticVectorProjectionService(ProjectionWriter):
             and graph_iri == scope.reasoning_result_graph_iri
         ):
             return "owl_inferred"
-        if (
-            scope.rule_result_graph_iri
-            and graph_iri == scope.rule_result_graph_iri
-        ):
-            return "rule_derived"
         return "asserted"

@@ -318,7 +318,6 @@ function ValidationReasoningSummary({ status }: { status: SemanticGovernanceStat
       <div><dt>{t("Graphs by category")}</dt><dd>{prettyJson(graphs.by_category ?? graphs.categories ?? {})}</dd></div>
       <div><dt>{t("Editable vs locked")}</dt><dd>{prettyJson(graphs.editability ?? graphs.editability_state ?? {})}</dd></div>
       <div><dt>{t("Reasoning pointers")}</dt><dd>{prettyJson(derived.reasoning ?? derived.reasoning_pointers ?? {})}</dd></div>
-      <div><dt>{t("Rule pointers")}</dt><dd>{prettyJson(derived.rules ?? derived.rule_pointers ?? {})}</dd></div>
     </dl>
   );
 }

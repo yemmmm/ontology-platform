@@ -28,8 +28,6 @@ from app.repositories.models import (
     SemanticProjectionManifestModel,
     SemanticRetrievalDocumentModel,
     SemanticMappingModel,
-    SemanticRuleDefinitionModel,
-    SemanticRuleModel,
 )
 from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
 from app.services.embedding import EmbeddingClient, EmbeddingServiceError
@@ -111,35 +109,8 @@ def normalize_retrieval_text(value: str) -> str:
 
 
 def rule_set_signature(session: Session, ontology_id: str) -> str:
-    """Hash exactly the active Rule fields that can appear in a document."""
-    rows = session.execute(
-        select(SemanticRuleModel, SemanticRuleDefinitionModel)
-        .join(
-            SemanticRuleDefinitionModel,
-            SemanticRuleDefinitionModel.id == SemanticRuleModel.current_definition_id,
-        )
-        .where(
-            SemanticRuleModel.ontology_id == ontology_id,
-            SemanticRuleModel.status == "active",
-            SemanticRuleDefinitionModel.status == "active",
-        )
-        .order_by(SemanticRuleModel.id, SemanticRuleDefinitionModel.id)
-    )
-    payload = [
-        {
-            "rule_id": rule.id,
-            "rule_iri": rule.rule_iri,
-            "definition_id": definition.id,
-            "name": definition.name,
-            "language": definition.language,
-            "version": definition.version,
-            "metadata": definition.rule_metadata or {},
-        }
-        for rule, definition in rows
-    ]
-    return hashlib.sha256(
-        json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
-    ).hexdigest()
+    """Compatibility identity for persisted projection rows; executable rules are retired."""
+    return hashlib.sha256(b"[]").hexdigest()
 
 
 def retrieval_workspace_version(session: Session, settings: Settings, ontology_id: str) -> str:
@@ -423,17 +394,6 @@ class SemanticRetrievalProjectionService:
             )
             for _, value in sorted(metadata.items())
         ]
-        documents.extend(
-            self._rule_documents(
-                ontology_id=ontology_id,
-                graph_set_id=graph_set_id,
-                workspace_version=workspace_version,
-                source_signature=source_signature,
-                rule_signature=rule_signature,
-                job_id=job_id,
-                partition=partition,
-            )
-        )
         return [item for item in documents if item is not None]
 
     def _mappings_by_resource(self, ontology_id: str) -> dict[str, list[dict[str, str]]]:
@@ -503,52 +463,6 @@ class SemanticRetrievalProjectionService:
             **identity,
         )
 
-    def _rule_documents(self, *, ontology_id: str, **identity: Any) -> list[dict[str, Any]]:
-        rows = self.session.execute(
-            select(SemanticRuleModel, SemanticRuleDefinitionModel)
-            .join(
-                SemanticRuleDefinitionModel,
-                SemanticRuleDefinitionModel.id == SemanticRuleModel.current_definition_id,
-            )
-            .where(
-                SemanticRuleModel.ontology_id == ontology_id,
-                SemanticRuleModel.status == "active",
-                SemanticRuleDefinitionModel.status == "active",
-            )
-            .order_by(SemanticRuleModel.rule_iri)
-        )
-        result = []
-        for rule, definition in rows:
-            descriptions = []
-            raw_description = (definition.rule_metadata or {}).get("description")
-            if isinstance(raw_description, str) and raw_description.strip():
-                descriptions = [{"predicate": DCTERMS_DESCRIPTION, "value": raw_description.strip(), "language": ""}]
-            document_text = _document_text(
-                iri=rule.rule_iri,
-                label=definition.name,
-                labels=[],
-                aliases=[],
-                descriptions=descriptions,
-                rdf_types=[definition.language, definition.output_kind],
-                mappings=[],
-            )
-            result.append(
-                _document_record(
-                    resource_iri=rule.rule_iri,
-                    resource_kind="rule",
-                    label=definition.name,
-                    labels=[],
-                    aliases=[],
-                    descriptions=descriptions,
-                    mapping_evidence=[],
-                    rdf_types=[definition.language, definition.output_kind],
-                    document_text=document_text,
-                    config=self.config,
-                    ontology_id=ontology_id,
-                    **identity,
-                )
-            )
-        return result
 
     def _embed_documents(self, documents: list[dict[str, Any]]) -> None:
         reusable = {
@@ -1432,7 +1346,7 @@ def _sanitise_label_evidence(
                 "language": language if isinstance(language, str) else "",
             }
         )
-    if not records and resource_kind != "rule" and isinstance(fallback, str) and fallback.strip():
+    if not records and isinstance(fallback, str) and fallback.strip():
         records.append(
             {"predicate": str(RDFS.label), "value": fallback, "language": ""}
         )
@@ -1491,7 +1405,6 @@ def _mapping_target_kind(target_type: str) -> str:
         "relation": "relation",
         "entity": "instance",
         "instance": "instance",
-        "rule": "rule",
         "operation": "operation",
     }.get(target_type, "instance")
 

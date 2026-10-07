@@ -95,12 +95,11 @@ type EntityLiteralFactsEnvelope = {
   items: EntityLiteralFactRow[];
 };
 
-type EntityGraphLayer = "facts" | "reasoning" | "rules" | "full";
-type EntityGraphFocus = "context" | "reasoning" | "rules";
+type EntityGraphLayer = "facts" | "reasoning" | "full";
+type EntityGraphFocus = "context" | "reasoning";
 type SemanticReadModelInclude =
   | "asserted"
   | "asserted-plus-reasoning"
-  | "asserted-plus-rules"
   | "full-working-view";
 
 /** R3.0-009 §4.3: formal Class membership is the rdf:type relation, so the
@@ -126,16 +125,10 @@ const GRAPH_LAYER_OPTIONS: Array<{
     description: "Facts plus currently available reasoning results.",
   },
   {
-    value: "rules",
-    label: "Rule graph",
-    include: "asserted-plus-rules",
-    description: "Facts plus currently available rule results.",
-  },
-  {
     value: "full",
     label: "Complete view",
     include: "full-working-view",
-    description: "Facts, reasoning results, and rule results together.",
+    description: "Facts and reasoning results together.",
   },
 ];
 
@@ -153,11 +146,6 @@ const GRAPH_FOCUS_OPTIONS: Array<{
     value: "reasoning",
     label: "Reasoning",
     description: "Highlight reasoning edges and fade the surrounding context.",
-  },
-  {
-    value: "rules",
-    label: "Rules",
-    description: "Highlight rule-derived edges and fade the surrounding context.",
   },
 ];
 
@@ -220,7 +208,6 @@ export function EntitiesPage({
   );
   const derivedFocus = useMemo(() => {
     if (selectedLayer === "reasoning") return "reasoning";
-    if (selectedLayer === "rules") return "rules";
     if (selectedLayer === "full" && selectedFocus !== "context") return selectedFocus;
     return null;
   }, [selectedFocus, selectedLayer]);
@@ -1076,7 +1063,6 @@ function assertionKindLabel(kind: string, t: ReturnType<typeof useT>) {
   const normalized = normalizeAssertionKind(kind);
   if (normalized === "asserted") return t("Fact");
   if (normalized === "owl_inferred" || normalized === "inferred") return t("Reasoning");
-  if (normalized === "rule_derived") return t("Rule");
   return t("Fact");
 }
 
@@ -1088,12 +1074,8 @@ function friendlyGraphLayerWarning(code: string, t: ReturnType<typeof useT>) {
   switch (code) {
     case "missing_reasoning_result":
       return t("No reasoning result is available yet.");
-    case "missing_rule_result":
-      return t("No rule result is available yet.");
     case "stale_reasoning_result":
       return t("Reasoning results may be out of date.");
-    case "stale_rule_result":
-      return t("Rule results may be out of date.");
     default:
       return "";
   }

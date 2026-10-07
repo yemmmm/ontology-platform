@@ -35,7 +35,6 @@ class ReadModelTemplate:
     projection_version: str
     required_roles: tuple[str, ...]
     needs_reasoning: bool
-    needs_rules: bool
     default_limit: int
     assertion_kind: str
     body: str
@@ -53,12 +52,59 @@ class ReadModelTemplate:
 
 
 _TEMPLATES: dict[str, ReadModelTemplate] = {
+    "operation-list": ReadModelTemplate(
+        name="operation-list",
+        projection_version="semantic-operation-read-v1",
+        required_roles=("asserted_ontology",),
+        needs_reasoning=False,
+        default_limit=500,
+        assertion_kind="asserted",
+        primary_iri_variable="operation",
+        detail_variables=("operation_id", "target_resource_type_iri", "parameters", "preconditions",
+                          "effects", "possible_failures", "idempotency", "risk_level", "tool_bindings",
+                          "credential_requirements", "status", "schema_version", "description"),
+        body=_op_body("""# template: operation-list
+        PREFIX op: <{op_prefix}>
+        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
+        SELECT ?operation ?operation_id ?label ?target_resource_type_iri ?parameters ?preconditions
+               ?effects ?possible_failures ?idempotency ?risk_level ?tool_bindings
+               ?credential_requirements ?status ?schema_version ?description ?graph WHERE {
+          VALUES ?graph { {graph_iris} }
+          GRAPH ?graph {
+            ?operation a op:Operation ; op:id ?operation_id .
+            OPTIONAL { ?operation rdfs:label ?label . }
+            OPTIONAL { ?operation rdfs:comment ?description . }
+            OPTIONAL { ?operation op:targetResourceType ?target_resource_type_iri . }
+            OPTIONAL { ?operation op:parameters ?parameters . }
+            OPTIONAL { ?operation op:preconditions ?preconditions . }
+            OPTIONAL { ?operation op:effects ?effects . }
+            OPTIONAL { ?operation op:possibleFailures ?possible_failures . }
+            OPTIONAL { ?operation op:idempotency ?idempotency . }
+            OPTIONAL { ?operation op:riskLevel ?risk_level . }
+            OPTIONAL { ?operation op:toolBindings ?tool_bindings . }
+            OPTIONAL { ?operation op:credentialRequirements ?credential_requirements . }
+            OPTIONAL { ?operation op:status ?status . }
+            OPTIONAL { ?operation op:schemaVersion ?schema_version . }
+          }
+        }
+        ORDER BY ?operation
+        LIMIT {limit}
+        """),
+    ),
+    "resource-list": ReadModelTemplate(
+        name="resource-list",
+        projection_version="semantic-resource-read-v1",
+        required_roles=("asserted_ontology", "asserted_data"),
+        needs_reasoning=False,
+        default_limit=500,
+        assertion_kind="asserted",
+        body="# template: resource-list (composer over governed semantic projections)",
+    ),
     "ontology-schema-summary": ReadModelTemplate(
         name="ontology-schema-summary",
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
         primary_iri_variable="class",
@@ -83,7 +129,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="class",
@@ -107,7 +152,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_data",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
         primary_iri_variable="entity",
@@ -125,7 +169,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_data",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=1000,
         assertion_kind="asserted",
         primary_iri_variable="subject",
@@ -142,7 +185,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=True,
-        needs_rules=True,
         default_limit=1,
         assertion_kind="asserted",
         body="""# template: graph-set-staleness
@@ -155,7 +197,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
         primary_iri_variable="class",
@@ -181,7 +222,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="property",
@@ -216,7 +256,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="relation",
@@ -242,7 +281,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("shape_graph_generated",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="shape",
@@ -284,7 +322,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("shape_graph_custom",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="shape",
@@ -321,7 +358,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_data",),
         needs_reasoning=True,
-        needs_rules=True,
         default_limit=500,
         assertion_kind="asserted",
         primary_iri_variable="entity",
@@ -382,7 +418,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_data",),
         needs_reasoning=True,
-        needs_rules=True,
         default_limit=1000,
         assertion_kind="asserted",
         primary_iri_variable="source",
@@ -391,7 +426,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         # NamedIndividuals, with the identity check anchored in any graph in
         # scope so derived graphs only need to carry the relation triple.
         # The read-model service decorates each row's provenance from the
-        # source graph (asserted vs reasoning-result vs rule-result).
+        # source graph (asserted vs reasoning-result).
         PREFIX owl: <http://www.w3.org/2002/07/owl#>
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -423,14 +458,13 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_data",),
         needs_reasoning=True,
-        needs_rules=True,
         default_limit=200,
         assertion_kind="any",
         primary_iri_variable="subject",
         body="""# template: entity-literal-facts
         # Lists literal-valued facts for one entity. The entity IRI is bound
         # by the read-model service via {entity_iri}; include controls whether
-        # asserted, reasoning-result, rule-result, or full working graphs are
+        # asserted, reasoning-result, or full working graphs are
         # in scope.
         PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -465,7 +499,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology", "shape_graph_generated", "shape_graph_custom"),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=1,
         assertion_kind="asserted",
         body="""# template: entity-shape
@@ -480,7 +513,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
         primary_iri_variable="mapping",
@@ -507,7 +539,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("import_graph",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=500,
         assertion_kind="asserted",
         primary_iri_variable="mapping",
@@ -535,13 +566,12 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_data",),
         needs_reasoning=True,
-        needs_rules=True,
         default_limit=500,
         assertion_kind="asserted",
         body="""# template: fact-audit-queue
         # COMPOSER. The SemanticReadModelService detects this template name
         # and delegates to ``_compose_fact_audit_queue``. The composer uses
-        # the ``?kind=`` query parameter (asserted / inferred / rule_derived)
+        # the ``?kind=`` query parameter (asserted / inferred)
         # to select source graphs and decorates each row into the unified
         # FactRow shape.
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
@@ -563,41 +593,11 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         LIMIT {limit}
         """,
     ),
-    "fact-audit-queue-with-types": ReadModelTemplate(
-        name="fact-audit-queue-with-types",
-        projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
-        needs_reasoning=True,
-        needs_rules=True,
-        default_limit=500,
-        assertion_kind="rule_derived",
-        body="""# template: fact-audit-queue-with-types
-        # Rule results may classify existing entities exclusively through
-        # rdf:type. Keep those classifications visible in the rule-derived
-        # fact view while the asserted/inferred queue retains its historical
-        # filtering contract.
-        PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT DISTINCT ?subject ?subject_label ?predicate ?predicate_label
-                        ?object ?object_label ?graph WHERE {
-          VALUES ?g { {graph_iris} }
-          GRAPH ?g {
-            ?subject ?predicate ?object .
-            FILTER(?predicate != rdfs:label)
-            OPTIONAL { ?subject rdfs:label ?subject_label . }
-            OPTIONAL { ?predicate rdfs:label ?predicate_label . }
-            OPTIONAL { ?object rdfs:label ?object_label . }
-          }
-          BIND(?g AS ?graph)
-        }
-        LIMIT {limit}
-        """,
-    ),
     "publication-readiness": ReadModelTemplate(
         name="publication-readiness",
         projection_version="1",
         required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=True,
-        needs_rules=True,
         default_limit=1,
         assertion_kind="asserted",
         body="""# template: publication-readiness
@@ -611,7 +611,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="1",
         required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=50,
         assertion_kind="asserted",
         body="""# template: graph-set-history-list
@@ -625,7 +624,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="1",
         required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         body="""# template: graph-set-delta
@@ -639,7 +637,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="1",
         required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=50,
         assertion_kind="any",
         primary_iri_variable="entity",
@@ -693,7 +690,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="1",
         required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=True,
-        needs_rules=False,
         default_limit=1,
         assertion_kind="owl_inferred",
         primary_iri_variable="run",
@@ -715,7 +711,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="table_mapping",
@@ -754,7 +749,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=1,
         assertion_kind="asserted",
         primary_iri_variable="table_mapping",
@@ -795,7 +789,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="join_mapping",
@@ -832,7 +825,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=1,
         assertion_kind="asserted",
         primary_iri_variable="join_mapping",
@@ -869,7 +861,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="enum_meaning",
@@ -912,7 +903,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=1,
         assertion_kind="asserted",
         primary_iri_variable="enum_meaning",
@@ -955,7 +945,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=200,
         assertion_kind="asserted",
         primary_iri_variable="metric",
@@ -1003,7 +992,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         projection_version="semantic-read-v1",
         required_roles=("asserted_ontology",),
         needs_reasoning=False,
-        needs_rules=False,
         default_limit=1,
         assertion_kind="asserted",
         primary_iri_variable="metric",
@@ -1047,6 +1035,13 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         """),
     ),
 }
+
+_TEMPLATES["operation-detail"] = replace(
+    _TEMPLATES["operation-list"], name="operation-detail",
+    body=_TEMPLATES["operation-list"].body.replace(
+        "# template: operation-list", "# template: operation-detail"
+    ).replace("WHERE {", "WHERE { VALUES ?operation { <{entity_iri}> }", 1),
+)
 
 
 # R4.0-002 common business declaration, over the same governed graph scope.

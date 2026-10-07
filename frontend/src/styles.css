@@ -5804,3 +5804,47 @@ textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* v4.1: project work, semantic reading and governed management. */
+.v41Page { display: grid; gap: 18px; min-width: 0; }
+.v41Split { display: grid; grid-template-columns: minmax(260px, 1fr) minmax(300px, 1.35fr); gap: 18px; align-items: start; }
+.v41StateGrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+.v41Form { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; margin-bottom: 14px; }
+.v41Form label { display: grid; gap: 6px; min-width: 190px; flex: 1; font-size: 13px; color: #52576a; }
+.v41Form .ant-select { width: 100%; min-width: 190px; }
+.v41Form input[type="number"], .v41Form select { padding: 7px 10px; border: 1px solid #d9dce5; border-radius: 6px; min-height: 32px; }
+.v41Fields { margin: 6px 0; display: grid; gap: 8px; }
+.v41Fields > div { display: grid; grid-template-columns: minmax(100px, 0.33fr) minmax(0, 1fr); gap: 12px; padding-bottom: 6px; border-bottom: 1px solid #edf0f5; }
+.v41Fields dt { font-size: 12px; color: #74798b; overflow-wrap: anywhere; }
+.v41Fields dd { margin: 0; min-width: 0; font-size: 13px; overflow-wrap: anywhere; }
+.v41Text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.v41Values { padding-left: 20px; margin: 6px 0; }
+.v41Values li { margin-bottom: 8px; }
+.v41Resource { padding: 12px 0; border-bottom: 1px solid #edf0f5; }
+.v41Resource h3 { font-size: 15px; margin: 0 0 8px; }
+.v41Resource details { margin-top: 12px; }
+.v41Source { margin: 6px 0 12px; font-size: 12px; color: #74798b; overflow-wrap: anywhere; }
+.v41ResourceList, .v41AdminList { padding: 0; margin: 0; list-style: none; }
+.v41ResourceList button { display: flex; flex-direction: column; text-align: left; gap: 5px; padding: 12px; border: 1px solid #e7e9ef; width: 100%; margin: 6px 0; border-radius: 6px; background: white; overflow-wrap: anywhere; }
+.v41ResourceList button[aria-pressed="true"] { border-color: #6c4df6; background: #f6f3ff; }
+.v41ResourceList small { color: #74798b; }
+.v41AdminList li { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; padding: 12px 0; border-bottom: 1px solid #edf0f5; }
+.v41AdminList .ant-select { min-width: 200px; }
+.v41TableScroll { overflow: auto; }
+.v41TableScroll table { min-width: 850px; }
+.v41TableScroll th small { display: block; font-weight: normal; max-width: 220px; }
+.v41Page .ant-card { min-width: 0; }
+.v41Page button:focus-visible { outline: 2px solid #6c4df6; outline-offset: 3px; }
+@media (max-width: 900px) { .v41Split { grid-template-columns: minmax(0,1fr); } .v41Fields > div { grid-template-columns: minmax(80px,0.3fr) minmax(0,1fr); } }
+@media (max-width: 600px) { .v41Fields > div { grid-template-columns: 1fr; gap: 4px; } .v41Form label { min-width: 100%; } .v41Page .ant-card-body { padding: 14px; } }
+
+.v41Graph { height: 420px; min-height: 280px; position: relative; }
+.v41StateGrid { align-items: start; }
+.v41StateGrid .v41Fields > div, .v41Fields .v41Fields > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+.v41StateRecord h3 { font-size: 14px; margin: 12px 0 8px; }
+.v41StateRecord p { margin: 8px 0; line-height: 1.65; }
+.v41StateRecord + .v41StateRecord { border-top: 1px solid #edf0f5; margin-top: 14px; }
+.v41StateDetails { margin-top: 12px; min-width: 0; }
+.v41StateDetails > summary { cursor: pointer; color: #5d50a5; padding: 6px 0; font-size: 13px; overflow-wrap: anywhere; }
+.v41LocationChoice { display: grid; gap: 6px; margin-top: 12px; font-size: 13px; }
+.v41LocationChoice select { max-width: 100%; min-width: 0; border: 1px solid #d9dce5; border-radius: 6px; padding: 7px 10px; }

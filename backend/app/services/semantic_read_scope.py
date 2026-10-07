@@ -1,8 +1,7 @@
 """Resolve a graph set + include parameter into concrete graph IRIs and derived state.
 
 Phase 6 read APIs and projections use this resolver to turn an `include`
-parameter (`asserted`, `asserted-plus-reasoning`, `asserted-plus-rules`,
-`full-working-view`) into the source-graph IRIs, governance IRIs, derived-result
+parameter (`asserted`, `asserted-plus-reasoning`, `full-working-view`) into the source-graph IRIs, governance IRIs, derived-result
 graph IRIs, derived-state descriptor, and warnings for a single graph set.
 """
 
@@ -31,7 +30,6 @@ class ReadScopeError(RuntimeError):
 _VALID_INCLUDES = {
     "asserted",
     "asserted-plus-reasoning",
-    "asserted-plus-rules",
     "full-working-view",
 }
 
@@ -59,7 +57,6 @@ class ScopeResolution:
     shape_graph_iris: list[str]
     governance_graph_iris: list[str]
     reasoning_result_graph_iri: str | None
-    rule_result_graph_iri: str | None
     derived_state: dict[str, Any]
     warnings: list[dict[str, str]] = field(default_factory=list)
     members: list[ScopeMember] = field(default_factory=list)
@@ -90,7 +87,6 @@ class SemanticReadScopeResolver:
         pointers = self._current_pointers(graph_set_id)
         warnings: list[dict[str, str]] = []
         reasoning_iri: str | None = None
-        rule_iri: str | None = None
 
         if include in {"asserted-plus-reasoning", "full-working-view"}:
             reasoning_iri, warning = self._resolve_pointer(
@@ -99,16 +95,8 @@ class SemanticReadScopeResolver:
             if warning:
                 warnings.append(warning)
 
-        if include in {"asserted-plus-rules", "full-working-view"}:
-            rule_iri, warning = self._resolve_pointer(
-                pointers, "rule", allow_stale_derived
-            )
-            if warning:
-                warnings.append(warning)
-
         derived_state = {
             "reasoning": self._derived_descriptor(pointers.get("reasoning")),
-            "rule": self._derived_descriptor(pointers.get("rule")),
         }
 
         member_entries = self._build_members(members, pointers)
@@ -121,7 +109,6 @@ class SemanticReadScopeResolver:
             shape_graph_iris=shape_iris,
             governance_graph_iris=governance_iris,
             reasoning_result_graph_iri=reasoning_iri,
-            rule_result_graph_iri=rule_iri,
             derived_state=derived_state,
             warnings=warnings,
             members=member_entries,
@@ -153,6 +140,7 @@ class SemanticReadScopeResolver:
             select(SemanticDerivedResultPointerModel)
             .where(
                 SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
+                SemanticDerivedResultPointerModel.result_kind == "reasoning",
                 SemanticDerivedResultPointerModel.status.in_(("current", "stale")),
             )
             .order_by(
@@ -226,7 +214,6 @@ class SemanticReadScopeResolver:
                 "became_current_at": pointer.became_current_at,
                 "engine_name": pointer.engine_name,
                 "engine_version": pointer.engine_version,
-                "rule_version": pointer.rule_version,
                 "shape_version": pointer.shape_version,
             }
 

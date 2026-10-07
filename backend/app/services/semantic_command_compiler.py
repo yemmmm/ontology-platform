@@ -2059,16 +2059,15 @@ def compile_review_assertion(
 
     - ``asserted`` → ``graph/data/{ontology_id}``
     - ``inferred`` → ``result_graph_iri`` (caller-supplied reasoning-result)
-    - ``rule_derived`` → ``result_graph_iri`` (caller-supplied rule-result)
 
     The ``fact_id`` carried in ``metadata`` is the SHA-256 over the
     canonical N-Triples form of the reviewed triple.
     """
     ontology_id = _required(payload, "ontology_id")
     assertion_kind = payload.get("assertion_kind", "asserted")
-    if assertion_kind not in {"asserted", "inferred", "rule_derived"}:
+    if assertion_kind not in {"asserted", "inferred"}:
         raise InvalidCommandPayload(
-            "assertion_kind must be one of: asserted, inferred, rule_derived"
+            "assertion_kind must be one of: asserted, inferred"
         )
     subject_iri = _required(payload, "subject_iri")
     predicate_iri = _required(payload, "predicate_iri")
@@ -2094,13 +2093,6 @@ def compile_review_assertion(
                 "inferred review requires result_graph_iri (reasoning-result graph)"
             )
         graph_iri = result_graph_iri
-    else:  # rule_derived
-        if not result_graph_iri:
-            raise InvalidCommandPayload(
-                "rule_derived review requires result_graph_iri (rule-result graph)"
-            )
-        graph_iri = result_graph_iri
-
     object_term = _object_term_for_review(object_value)
     quoted = _quoted_triple_term(subject_iri, predicate_iri, object_term)
     fact_id = compute_fact_id(subject_iri, predicate_iri, object_term, graph_iri)

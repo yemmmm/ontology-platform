@@ -210,8 +210,6 @@ class SemanticQueryScopeResolver:
         }
         if read_scope.reasoning_result_graph_iri:
             graph_assertion_kinds[read_scope.reasoning_result_graph_iri] = "owl_inferred"
-        if read_scope.rule_result_graph_iri:
-            graph_assertion_kinds[read_scope.rule_result_graph_iri] = "rule_derived"
         derived_state = {
             kind: {
                 "status": value.get("status"),

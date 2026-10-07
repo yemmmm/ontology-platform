@@ -59,15 +59,15 @@ test("language switcher toggles between Chinese and English", async ({ page }) =
   await page.goto("/");
 
   // Default in Playwright (en-US) is English. The home header should show English strings.
-  await expect(page.locator("h1").filter({ hasText: "Ontologies" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "Projects" })).toBeVisible();
 
   // Click language switcher to flip to Chinese.
   await page.getByRole("button", { name: "Switch language" }).click();
-  await expect(page.locator("h1").filter({ hasText: "本体" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "项目" })).toBeVisible();
 
   // Click again to flip back to English.
   await page.getByRole("button", { name: "切换语言" }).click();
-  await expect(page.locator("h1").filter({ hasText: "Ontologies" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "Projects" })).toBeVisible();
 });
 
 test("language choice persists across reloads", async ({ page }) => {
@@ -77,9 +77,9 @@ test("language choice persists across reloads", async ({ page }) => {
   await page.evaluate(() => window.localStorage.removeItem("ontology-platform-ui-lang"));
   await page.reload();
   await page.getByRole("button", { name: "Switch language" }).click();
-  await expect(page.locator("h1").filter({ hasText: "本体" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "项目" })).toBeVisible();
 
   await page.reload();
   // Should stay in Chinese after reload.
-  await expect(page.locator("h1").filter({ hasText: "本体" })).toBeVisible();
+  await expect(page.locator("h1").filter({ hasText: "项目" })).toBeVisible();
 });

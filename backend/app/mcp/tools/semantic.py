@@ -4,11 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from sqlalchemy import select
 
 from mcp.server.fastmcp import FastMCP
 
-from app.api.semantic import _ensure_rule_access, _rule_definition_read  # noqa: PLC2701
 from app.core.config import Settings
 from app.mcp.runtime import (
     _run_tool,
@@ -17,11 +15,6 @@ from app.mcp.runtime import (
     runtime_principal,
 )
 from app.repositories.rdf_store import RdfStoreRepository
-from app.repositories.models import (
-    SemanticGraphSetModel,
-    SemanticRuleDefinitionModel,
-    SemanticRuleModel,
-)
 from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.authorized_scope_discovery import AuthorizedScopeDiscoveryService
 from app.services.semantic import SemanticService
@@ -33,8 +26,6 @@ from app.services.semantic_graph_registry import SemanticGraphRegistryService
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
 from app.services.semantic_reasoning import SemanticReasoningService
-from app.services.semantic_rule_definition import SemanticRuleDefinitionService
-from app.services.semantic_rule_execution import SemanticRuleExecutionService
 from app.services.semantic_validation import SemanticValidationService
 from app.services.semantic_graph_set_export import SemanticExportService
 from app.services.semantic_projection_job import (
@@ -150,15 +141,6 @@ def _reasoning_service(session) -> SemanticReasoningService:
         settings=settings,
         reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
     )
-
-
-def _rule_definition_service(session) -> SemanticRuleDefinitionService:
-    return SemanticRuleDefinitionService(session, Settings())
-
-
-def _rule_execution_service(session) -> SemanticRuleExecutionService:
-    settings = Settings()
-    return SemanticRuleExecutionService(session, _rdf_store(), settings)
 
 
 def _list_scoped_run_records(
@@ -318,7 +300,7 @@ def register_semantic(server: FastMCP) -> None:
         result_kind: str | None = None,
         status: str | None = None,
     ) -> dict[str, Any]:
-        """List derived-result pointers for reasoning/rule results."""
+        """List derived-result pointers for reasoning results."""
         return _run_tool(
             lambda session, _driver, _embedding_client: {
                 "pointers": [
@@ -477,76 +459,6 @@ def register_semantic(server: FastMCP) -> None:
             )
         )
 
-    @server.tool()
-    def submit_semantic_rule_definition(
-        ontology_id: str,
-        rule_iri: str,
-        name: str,
-        language: str,
-        body: dict[str, Any],
-        input_roles: list[str] | None = None,
-        output_kind: str = "assertion",
-        uses_inferred_facts: bool = False,
-        requires_review: bool = False,
-        priority: int = 0,
-        created_by: str | None = None,
-    ) -> dict[str, Any]:
-        """Create or reuse an immediately executable platform rule definition."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: (
-                _rule_definition_service(session)
-                .create_rule(
-                    rule_iri=rule_iri,
-                    name=name,
-                    language=language,
-                    body=body,
-                    input_roles=input_roles or [],
-                    output_kind=output_kind,
-                    uses_inferred_facts=uses_inferred_facts,
-                    requires_review=requires_review,
-                    priority=priority,
-                    created_by=runtime_actor(),
-                    ontology_id=ontology_id,
-                )
-                .__dict__
-            )
-        )
-
-    @server.tool()
-    def run_semantic_rule(
-        graph_set_id: str,
-        rule_definition_id: str | None = None,
-        rule_iri: str | None = None,
-        rule_definition_ids: list[str] | None = None,
-        promote_pointer: bool = True,
-        engine_version: str | None = None,
-        actor: str | None = None,
-    ) -> dict[str, Any]:
-        """Run a single rule, a named group, or all rules for a graph set."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _run_scoped_rule(
-                session,
-                graph_set_id=graph_set_id,
-                rule_definition_id=rule_definition_id,
-                rule_iri=rule_iri,
-                rule_definition_ids=rule_definition_ids,
-                promote_pointer=promote_pointer,
-                actor=runtime_actor(),
-                engine_version=engine_version,
-            )
-        )
-
-    @server.tool()
-    def get_semantic_rule_definition(rule_definition_id: str) -> dict[str, Any]:
-        """Read the current stored body and metadata of one Rule Definition by ID."""
-        def _handle(session, _driver, _embedding_client):
-            principal = runtime_principal()
-            service = _rule_definition_service(session)
-            rule = service.get_rule(rule_definition_id)
-            _ensure_rule_access(session, rule, principal)
-            return _rule_definition_read(rule, session).model_dump(mode="json")
-
-        return _run_tool(_handle)
 
     @server.tool()
     def get_semantic_read_model(
@@ -896,69 +808,3 @@ def _start_projection_job(
         "relationship_count": refreshed.relationship_count,
         "document_count": refreshed.document_count,
     }
-
-
-def _run_scoped_rule(
-    session,
-    *,
-    graph_set_id: str,
-    rule_definition_id: str | None,
-    rule_iri: str | None,
-    rule_definition_ids: list[str] | None,
-    promote_pointer: bool,
-    actor: str,
-    engine_version: str | None,
-):
-    graph_set = session.get(SemanticGraphSetModel, graph_set_id)
-    if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
-        raise PermissionError("Rule execution requires an Ontology-scoped Graph Set")
-    ontology_id = graph_set.scope_id
-    ids = list(rule_definition_ids or [])
-    if rule_definition_id:
-        ids.append(rule_definition_id)
-    if rule_iri:
-        semantic_rule = session.scalar(
-            select(SemanticRuleModel).where(
-                SemanticRuleModel.ontology_id == ontology_id,
-                SemanticRuleModel.rule_iri == rule_iri,
-            )
-        )
-        if semantic_rule is None or semantic_rule.current_definition_id is None:
-            raise ValueError("Rule definition not found")
-        ids.append(semantic_rule.current_definition_id)
-    if not ids:
-        ids = [
-            item.current_definition_id
-            for item in session.scalars(
-                select(SemanticRuleModel).where(
-                    SemanticRuleModel.ontology_id == ontology_id,
-                    SemanticRuleModel.current_definition_id.is_not(None),
-                )
-            )
-            if item.current_definition_id is not None
-        ]
-    for definition_id in ids:
-        definition = session.get(SemanticRuleDefinitionModel, definition_id)
-        semantic_rule = (
-            session.get(SemanticRuleModel, definition.semantic_rule_id)
-            if definition and definition.semantic_rule_id
-            else None
-        )
-        if semantic_rule is None or semantic_rule.ontology_id != ontology_id:
-            raise PermissionError("Rule definition is outside the Graph Set Ontology")
-    service = _rule_execution_service(session)
-    if rule_definition_ids is not None or (not rule_definition_id and not rule_iri):
-        return service.execute_rule_group(
-            graph_set_id=graph_set_id,
-            rule_definition_ids=ids,
-            promote_pointer=promote_pointer,
-            actor=actor,
-            engine_version=engine_version,
-        )
-    return service.execute_rule(
-        graph_set_id=graph_set_id,
-        rule_definition_id=ids[0],
-        promote_pointer=promote_pointer,
-        actor=actor,
-        engine_version=engine_version,
-    )

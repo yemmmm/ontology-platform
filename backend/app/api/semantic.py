@@ -12,7 +12,6 @@ from app.api.deps import (
 )
 from app.api.schemas import (
     ReasoningRunListResponse,
-    RuleRunListResponse,
     SemanticCanonicalModeRead,
     SemanticCanonicalProductWriteRequest,
     SemanticCanonicalProductWriteResponse,
@@ -31,13 +30,11 @@ from app.api.schemas import (
     SemanticGraphRegistryCreate,
     SemanticGraphRegistryListResponse,
     SemanticGraphRegistryRead,
-    SemanticGraphSetConstructRunRequest,
     SemanticGraphSetCreate,
     SemanticGraphSetListResponse,
     SemanticGraphSetMembershipUpdate,
     SemanticGraphSetRead,
     SemanticGraphSetReasoningRunRequest,
-    SemanticGraphSetRuleRunRequest,
     SemanticGraphSetValidationRunRequest,
     SemanticGovernanceStatusResponse,
     SemanticMigrationBatchRunResponse,
@@ -59,11 +56,6 @@ from app.api.schemas import (
     SemanticReasoningRunRequest,
     SemanticReasoningRunResponse,
     SemanticResourceRead,
-    SemanticRuleDefinitionCreate,
-    SemanticRuleDefinitionListResponse,
-    SemanticRuleDefinitionRead,
-    SemanticRuleDefinitionUpdate,
-    SemanticRuleRunRead,
     SemanticScopeDiscoveryResponse,
     SemanticSparqlQueryRequest,
     SemanticSparqlQueryResponse,
@@ -78,8 +70,6 @@ from app.repositories.models import (
     OntologyModel,
     SemanticGraphRegistryModel,
     SemanticGraphSetModel,
-    SemanticRuleDefinitionModel,
-    SemanticRuleModel,
 )
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
@@ -130,7 +120,6 @@ from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
     SemanticRetrievalCoordinator,
     SemanticRetrievalProjectionService,
-    mark_retrieval_stale,
 )
 from app.services.embedding import EmbeddingClient
 from app.services.semantic_access import (
@@ -141,15 +130,6 @@ from app.services.semantic_access import (
     project_id_for_graph_set,
 )
 from app.services.semantic_reasoning import SemanticReasoningService
-from app.services.semantic_rule_definition import (
-    RuleDefinitionError,
-    RuleDefinitionNotFound,
-    SemanticRuleDefinitionService,
-)
-from app.services.semantic_rule_execution import (
-    RuleExecutionError,
-    SemanticRuleExecutionService,
-)
 from app.services.semantic_validation import SemanticValidationService
 from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteError,
@@ -220,16 +200,6 @@ def _reasoning_service(
         settings=settings,
         reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
     )
-
-
-def _rule_definition_service(session: Session, settings: Settings) -> SemanticRuleDefinitionService:
-    return SemanticRuleDefinitionService(session, settings)
-
-
-def _rule_execution_service(
-    session: Session, rdf_store: RdfStoreRepository, settings: Settings
-) -> SemanticRuleExecutionService:
-    return SemanticRuleExecutionService(session, rdf_store, settings)
 
 
 def _scope_resolver(session: Session) -> SemanticReadScopeResolver:
@@ -945,140 +915,6 @@ def get_reasoning_run(
     return SemanticReasoningRunRead(**result)
 
 
-@router.get("/rule-definitions", response_model=SemanticRuleDefinitionListResponse)
-def list_rule_definitions(
-    language: Annotated[str | None, Query()] = None,
-    rule_iri: Annotated[str | None, Query()] = None,
-    ontology_id: Annotated[str | None, Query(min_length=1, max_length=36)] = None,
-    current_only: Annotated[bool, Query()] = False,
-    limit: Annotated[int, Query(ge=1, le=500)] = 100,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-) -> SemanticRuleDefinitionListResponse:
-    service = _rule_definition_service(session, settings)
-    rules = service.list_rules(
-        language=language,
-        rule_iri=rule_iri,
-        limit=limit,
-        project_id=principal.project_id,
-        ontology_id=ontology_id,
-        current_only=current_only,
-    )
-    return SemanticRuleDefinitionListResponse(
-        rules=[_rule_definition_read(rule, session) for rule in rules]
-    )
-
-
-@router.post("/rule-definitions", response_model=SemanticRuleDefinitionRead)
-def create_rule_definition(
-    request: SemanticRuleDefinitionCreate,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-    response: Response = None,
-) -> SemanticRuleDefinitionRead:
-    service = _rule_definition_service(session, settings)
-    try:
-        rule = service.create_rule(
-            rule_iri=request.rule_iri,
-            name=request.name,
-            language=request.language,
-            body=request.body,
-            input_roles=request.input_roles,
-            output_kind=request.output_kind,
-            uses_inferred_facts=request.uses_inferred_facts,
-            requires_review=request.requires_review,
-            priority=request.priority,
-            safety_profile=request.safety_profile,
-            metadata=request.metadata,
-            ontology_id=request.ontology_id,
-            created_by=principal.actor,
-        )
-    except RuleDefinitionError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    retrieval_index = _rebuild_retrieval_for_ontology(session, rdf_store, settings, rule)
-    _set_retrieval_headers(response, retrieval_index)
-    return _rule_definition_read(rule, session, retrieval_index=retrieval_index)
-
-
-@router.get("/rule-definitions/{rule_id}", response_model=SemanticRuleDefinitionRead)
-def get_rule_definition(
-    rule_id: str,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-) -> SemanticRuleDefinitionRead:
-    service = _rule_definition_service(session, settings)
-    try:
-        rule = service.get_rule(rule_id)
-        _ensure_rule_access(session, rule, principal)
-    except RuleDefinitionNotFound as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    return _rule_definition_read(rule, session)
-
-
-@router.patch("/rule-definitions/{rule_id}", response_model=SemanticRuleDefinitionRead)
-def update_rule_definition(
-    rule_id: str,
-    request: SemanticRuleDefinitionUpdate,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-    response: Response = None,
-) -> SemanticRuleDefinitionRead:
-    service = _rule_definition_service(session, settings)
-    try:
-        rule = service.get_rule(rule_id)
-        _ensure_rule_access(session, rule, principal)
-        if request.name is not None or request.priority is not None or request.metadata is not None:
-            if request.name is not None:
-                rule.name = request.name
-            if request.priority is not None:
-                rule.priority = request.priority
-            if request.metadata is not None:
-                rule.rule_metadata = {**(rule.rule_metadata or {}), **request.metadata}
-            ontology_id = _rule_ontology_id(session, rule)
-            if ontology_id:
-                mark_retrieval_stale(session, ontology_id)
-            session.commit()
-            session.refresh(rule)
-    except RuleDefinitionNotFound as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    except RuleDefinitionError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    retrieval_index = _rebuild_retrieval_for_ontology(session, rdf_store, settings, rule)
-    _set_retrieval_headers(response, retrieval_index)
-    return _rule_definition_read(rule, session, retrieval_index=retrieval_index)
-
-
-@router.delete("/rule-definitions/{rule_id}", status_code=204)
-def delete_rule_definition(
-    rule_id: str,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> Response:
-    service = _rule_definition_service(session, settings)
-    try:
-        rule = service.get_rule(rule_id)
-        _ensure_rule_access(session, rule, principal)
-        ontology_id = _rule_ontology_id(session, rule)
-        service.delete_rule(rule_id)
-    except RuleDefinitionNotFound as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    retrieval_index = _rebuild_retrieval_for_ontology_id(
-        session, rdf_store, settings, ontology_id
-    )
-    headers = _retrieval_headers(retrieval_index)
-    if principal.is_org_admin and ontology_id:
-        headers["Link"] = f'</api/semantic/ontologies/{ontology_id}/retrieval:rebuild>; rel="rebuild"'
-    return Response(status_code=204, headers=headers)
-
-
 @router.post("/ontologies/{ontology_id}/retrieval:rebuild")
 def rebuild_ontology_retrieval(
     ontology_id: str,
@@ -1096,119 +932,6 @@ def rebuild_ontology_retrieval(
     if not principal.is_org_admin:
         raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
     return _rebuild_retrieval_for_ontology_id(session, rdf_store, settings, ontology_id)
-
-
-@router.post(
-    "/graph-sets/{graph_set_id}/construct-runs",
-    response_model=SemanticRuleRunRead,
-)
-def create_graph_set_construct_run(
-    graph_set_id: str,
-    request: SemanticGraphSetConstructRunRequest,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticRuleRunRead:
-    if request.rule_definition_id is None and not principal.is_org_admin:
-        raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
-    _require_rule_graph_scope(session, graph_set_id, [request.rule_definition_id])
-    service = _rule_execution_service(session, rdf_store, settings)
-    try:
-        result = service.execute_construct_template(
-            graph_set_id=graph_set_id,
-            template=request.template,
-            rule_definition_id=request.rule_definition_id,
-            rule_version=request.rule_version,
-            promote_pointer=request.promote_pointer,
-            actor=principal.actor,
-            engine_version=request.engine_version,
-        )
-    except RuleExecutionError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return SemanticRuleRunRead(**_rule_run_response(result))
-
-
-@router.post(
-    "/graph-sets/{graph_set_id}/rule-runs",
-    response_model=SemanticRuleRunRead,
-)
-def create_graph_set_rule_run(
-    graph_set_id: str,
-    request: SemanticGraphSetRuleRunRequest,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticRuleRunRead:
-    definition_ids = list(request.rule_definition_ids or [])
-    if request.rule_definition_id:
-        definition_ids.append(request.rule_definition_id)
-    definition_ids = _resolve_rule_ids_for_graph_set(
-        session,
-        graph_set_id,
-        definition_ids,
-        request.rule_iri,
-    )
-    _require_rule_graph_scope(session, graph_set_id, definition_ids)
-    service = _rule_execution_service(session, rdf_store, settings)
-    try:
-        if request.rule_definition_ids is not None or (
-            not request.rule_definition_id and not request.rule_iri
-        ):
-            result = service.execute_rule_group(
-                graph_set_id=graph_set_id,
-                rule_definition_ids=definition_ids,
-                promote_pointer=request.promote_pointer,
-                actor=principal.actor,
-                engine_version=request.engine_version,
-            )
-        else:
-            result = service.execute_rule(
-                graph_set_id=graph_set_id,
-                rule_definition_id=definition_ids[0] if definition_ids else None,
-                rule_iri=None,
-                promote_pointer=request.promote_pointer,
-                actor=principal.actor,
-                engine_version=request.engine_version,
-            )
-    except RuleExecutionError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return SemanticRuleRunRead(**_rule_run_response(result))
-
-
-@router.get("/rule-runs", response_model=RuleRunListResponse)
-def list_rule_runs(
-    graph_set_id: Annotated[str | None, Query()] = None,
-    kind: Annotated[str | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> RuleRunListResponse:
-    items, total = _rule_execution_service(session, rdf_store, settings).list_rule_runs(
-        limit=limit,
-        offset=offset,
-        graph_set_id=graph_set_id,
-        kind=kind,
-    )
-    return RuleRunListResponse(items=items, summary=_run_list_summary(items, total))
-
-
-@router.get("/rule-runs/{run_id}", response_model=SemanticRuleRunRead)
-def get_rule_run(
-    run_id: str,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticRuleRunRead:
-    service = _rule_execution_service(session, rdf_store, settings)
-    try:
-        result = service.get_rule_run(run_id)
-    except RuleExecutionError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    return SemanticRuleRunRead(**_rule_run_response(result))
 
 
 @router.post(
@@ -1610,6 +1333,7 @@ def read_resource(
     # the resource endpoint so REST callers do not need to know which
     # projection family owns a resource before requesting it.
     for model_name in (
+        "operation-detail",
         "table-mapping-detail",
         "join-mapping-detail",
         "enum-meaning-detail",
@@ -1875,13 +1599,6 @@ def _statement_count(rdf_store: RdfStoreRepository, graph_iri: str) -> int | Non
         return None
 
 
-def _rule_ontology_id(session: Session, rule: SemanticRuleDefinitionModel) -> str | None:
-    if rule.semantic_rule_id is None:
-        return None
-    semantic_rule = session.get(SemanticRuleModel, rule.semantic_rule_id)
-    return semantic_rule.ontology_id if semantic_rule else None
-
-
 def _graph_set_ontology_id(session: Session, graph_set_id: str) -> str:
     graph_set = session.get(SemanticGraphSetModel, graph_set_id)
     if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
@@ -1890,98 +1607,6 @@ def _graph_set_ontology_id(session: Session, graph_set_id: str) -> str:
             detail={"code": "forbidden_scope", "message": "Ontology-scoped Graph Set required"},
         )
     return graph_set.scope_id
-
-
-def _resolve_rule_ids_for_graph_set(
-    session: Session,
-    graph_set_id: str,
-    rule_definition_ids: list[str],
-    rule_iri: str | None,
-) -> list[str]:
-    ontology_id = _graph_set_ontology_id(session, graph_set_id)
-    if rule_definition_ids:
-        return list(dict.fromkeys(rule_definition_ids))
-    statement = select(SemanticRuleModel).where(
-        SemanticRuleModel.ontology_id == ontology_id,
-        SemanticRuleModel.current_definition_id.is_not(None),
-    )
-    if rule_iri:
-        statement = statement.where(SemanticRuleModel.rule_iri == rule_iri)
-    return [
-        item.current_definition_id
-        for item in session.scalars(statement)
-        if item.current_definition_id is not None
-    ]
-
-
-def _require_rule_graph_scope(
-    session: Session,
-    graph_set_id: str,
-    rule_definition_ids: list[str | None],
-) -> None:
-    ontology_id = _graph_set_ontology_id(session, graph_set_id)
-    for definition_id in rule_definition_ids:
-        if definition_id is None:
-            continue
-        definition = session.get(SemanticRuleDefinitionModel, definition_id)
-        if definition is None:
-            raise HTTPException(status_code=404, detail="Rule definition not found")
-        if _rule_ontology_id(session, definition) != ontology_id:
-            raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
-
-
-def _ensure_rule_access(
-    session: Session,
-    rule: SemanticRuleDefinitionModel,
-    principal: AuthPrincipal,
-) -> None:
-    ontology_id = _rule_ontology_id(session, rule)
-    if ontology_id is None:
-        if not principal.is_org_admin:
-            raise HTTPException(status_code=404, detail="Rule definition not found")
-        return
-    ontology = session.get(OntologyModel, ontology_id)
-    if ontology is None or (
-        principal.project_id is not None and ontology.project_id != principal.project_id
-    ):
-        raise HTTPException(status_code=404, detail="Rule definition not found")
-
-
-def _rule_definition_read(
-    rule, session: Session, retrieval_index: dict[str, Any] | None = None
-) -> SemanticRuleDefinitionRead:
-    return SemanticRuleDefinitionRead(
-        id=rule.id,
-        ontology_id=_rule_ontology_id(session, rule),
-        rule_iri=rule.rule_iri,
-        name=rule.name,
-        language=rule.language,
-        version=rule.version,
-        status=rule.status,
-        body=rule.body,
-        input_roles=list(rule.input_roles or []),
-        output_kind=rule.output_kind,
-        uses_inferred_facts=bool(rule.uses_inferred_facts),
-        requires_review=bool(rule.requires_review),
-        priority=int(rule.priority or 0),
-        safety_profile=dict(rule.safety_profile or {}),
-        created_by=rule.created_by,
-        created_at=rule.created_at,
-        updated_at=rule.updated_at,
-        metadata=dict(rule.rule_metadata or {}),
-        retrieval_index=retrieval_index,
-    )
-
-
-def _rebuild_retrieval_for_ontology(
-    session: Session,
-    rdf_store: RdfStoreRepository,
-    settings: Settings,
-    rule: SemanticRuleDefinitionModel,
-) -> dict[str, Any]:
-    return _rebuild_retrieval_for_ontology_id(
-        session, rdf_store, settings, _rule_ontology_id(session, rule)
-    )
 
 
 def _rebuild_retrieval_for_ontology_id(
@@ -2008,20 +1633,3 @@ def _retrieval_headers(retrieval_index: dict[str, Any]) -> dict[str, str]:
 def _set_retrieval_headers(response: Response | None, retrieval_index: dict[str, Any]) -> None:
     if response is not None:
         response.headers.update(_retrieval_headers(retrieval_index))
-
-
-def _rule_run_response(result: dict) -> dict:
-    """Normalise a rule-run service result for the SemanticRuleRunRead schema."""
-    response = dict(result)
-    response.setdefault("statements", [])
-    response.setdefault("bindings", [])
-    response.setdefault("warnings", [])
-    response.setdefault("explanations", [])
-    response.setdefault("audit_status", "system_accepted")
-    response.setdefault("truncated", False)
-    response.setdefault("generated_statement_count", 0)
-    response.setdefault("engine_name", "rule")
-    response["run_id"] = response.get("run_id", "")
-    response["status"] = response.get("status", "pending")
-    response["graph_set_id"] = response.get("graph_set_id", "")
-    return response

@@ -39,3 +39,13 @@ def test_active_instructions_expose_rule_contract_without_execution():
         instructions = (ROOT / f"modeling_team/agent-packages/{role}/instructions.md").read_text()
         assert "business_rule_semantics" in instructions
         assert "rule_definition" in instructions
+
+
+def test_current_rule_contract_declares_platform_retirement_and_external_execution():
+    for filename in ("platform-neutral-candidate-authoring.json", "r4-0-012-modeling-contract.json"):
+        contract = json.loads((ROOT / "modeling_team/references" / filename).read_text())
+        section = json.dumps(contract["business_rule_semantics"])
+        assert "ordinary entity rule_definition annotations" in section
+        assert "never runs or materializes business rules" in section
+        assert "Rule Definitions, Rule Runs and rule-result generation are retired" in section
+        assert "platform semantic_rule_definition/Rule Run" not in section

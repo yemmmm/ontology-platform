@@ -12,10 +12,6 @@ import type {
   SemanticProjectionStatusResponse,
   SemanticReadModelEnvelope,
   SemanticReasoningRunListResponse,
-  SemanticRuleDefinitionListResponse,
-  SemanticRuleDefinitionRead,
-  SemanticRuleRunListResponse,
-  SemanticRuleRunRead,
   SemanticValidationRunListResponse,
   SemanticReasoningRunRead,
 } from "./types";
@@ -191,23 +187,6 @@ export function runGraphSetReasoning(
   );
 }
 
-export function runGraphSetRules(
-  request: SemanticRequester,
-  graphSetId: string,
-  payload: { ruleDefinitionIds?: string[]; ruleDefinitionId?: string; ruleIri?: string; engineVersion?: string; promotePointer?: boolean; actor?: string } = {},
-) {
-  return request<SemanticRuleRunRead>(`${SEMANTIC_BASE}/graph-sets/${graphSetId}/rule-runs`, {
-    method: "POST",
-    body: JSON.stringify({
-      rule_definition_ids: payload.ruleDefinitionIds,
-      rule_definition_id: payload.ruleDefinitionId,
-      rule_iri: payload.ruleIri,
-      engine_version: payload.engineVersion,
-      promote_pointer: payload.promotePointer ?? true,
-      actor: payload.actor,
-    }),
-  });
-}
 
 export function listValidationRuns(
   request: SemanticRequester,
@@ -239,105 +218,11 @@ export function listReasoningRuns(
   return request<SemanticReasoningRunListResponse>(path);
 }
 
-export function getRuleRun(request: SemanticRequester, runId: string) {
-  return request<SemanticRuleRunRead>(`${SEMANTIC_BASE}/rule-runs/${runId}`);
-}
 
-export function listRuleRuns(
-  request: SemanticRequester,
-  filters: { graphSetId?: string; kind?: string; limit?: number; offset?: number } = {},
-) {
-  const path = withParams(`${SEMANTIC_BASE}/rule-runs`, {
-    graph_set_id: filters.graphSetId,
-    kind: filters.kind,
-    limit: filters.limit,
-    offset: filters.offset,
-  });
-  return request<SemanticRuleRunListResponse>(path);
-}
 
-export function listRuleDefinitions(
-  request: SemanticRequester,
-  filters: {
-    language?: string;
-    ruleIri?: string;
-    ontologyId?: string;
-    currentOnly?: boolean;
-    limit?: number;
-  } = {},
-) {
-  const path = withParams(`${SEMANTIC_BASE}/rule-definitions`, {
-    language: filters.language,
-    rule_iri: filters.ruleIri,
-    ontology_id: filters.ontologyId,
-    current_only: filters.currentOnly,
-    limit: filters.limit,
-  });
-  return request<SemanticRuleDefinitionListResponse>(path);
-}
 
-export function createRuleDefinition(
-  request: SemanticRequester,
-  payload: {
-    ontologyId: string;
-    ruleIri: string;
-    name: string;
-    language: "sparql_construct" | "platform_dsl" | "workflow_state_machine";
-    body: SemanticJsonObject;
-    inputRoles?: string[];
-    outputKind?: "assertion" | "validation" | "workflow" | "annotation";
-    usesInferredFacts?: boolean;
-    requiresReview?: boolean;
-    priority?: number;
-    safetyProfile?: SemanticJsonObject;
-    createdBy?: string;
-    metadata?: SemanticJsonObject;
-  },
-) {
-  return request<SemanticRuleDefinitionRead>(`${SEMANTIC_BASE}/rule-definitions`, {
-    method: "POST",
-    body: JSON.stringify({
-      ontology_id: payload.ontologyId,
-      rule_iri: payload.ruleIri,
-      name: payload.name,
-      language: payload.language,
-      body: payload.body,
-      input_roles: payload.inputRoles ?? [],
-      output_kind: payload.outputKind ?? "assertion",
-      uses_inferred_facts: payload.usesInferredFacts ?? false,
-      requires_review: payload.requiresReview ?? false,
-      priority: payload.priority ?? 0,
-      safety_profile: payload.safetyProfile ?? {},
-      created_by: payload.createdBy,
-      metadata: payload.metadata ?? {},
-    }),
-  });
-}
 
-export function updateRuleDefinition(
-  request: SemanticRequester,
-  ruleId: string,
-  payload: {
-    name?: string;
-    priority?: number;
-    metadata?: SemanticJsonObject;
-  },
-) {
-  return request<SemanticRuleDefinitionRead>(`${SEMANTIC_BASE}/rule-definitions/${ruleId}`, {
-    method: "PATCH",
-    body: JSON.stringify({
-      name: payload.name,
-      priority: payload.priority,
-      metadata: payload.metadata,
-    }),
-  });
-}
 
-export function deleteRuleDefinition(request: SemanticRequester, ruleId: string) {
-  return request<void>(`${SEMANTIC_BASE}/rule-definitions/${ruleId}`, {
-    method: "DELETE",
-  });
-}
 
 export function reconcileDerivedResults(request: SemanticRequester) {
   return request<SemanticDerivedResultReconcileResponse>(`${SEMANTIC_BASE}/derived-results:reconcile`, {
@@ -356,7 +241,7 @@ export function readModel<T = SemanticReadModelEnvelope>(
     fieldSet?: string;
     limit?: number;
     /** Stage 2 §6.3 fact-audit-queue composer: drives source-graph selection
-     * (asserted / inferred / rule_derived). */
+     * (asserted / inferred). */
     kind?: string;
     /** Stage 3 §4.3 graph-set-delta composer: the other graph set id to
      * diff against (passed as the `target` query param). */

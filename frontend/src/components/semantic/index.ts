@@ -5,6 +5,5 @@ export * from "./GraphSetSelector";
 export * from "./GraphEditabilityToggle";
 export * from "./ValidationReportPanel";
 export * from "./ReasoningResultPanel";
-export * from "./RuleResultPanel";
 export * from "./ProvenanceTimeline";
 export * from "./ShaclFormRenderer";

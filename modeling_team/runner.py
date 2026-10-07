@@ -5606,6 +5606,7 @@ class TeamRunner:
                 },
             )
             return
+        self._refresh_platform_binding()
         self._append_evidence(
             "multi-slice-gate",
             {
@@ -10121,10 +10122,40 @@ class TeamRunner:
 
     def _state(self, value: str, **extra: Any) -> None:
         if self.run:
+            # Public identity comes only from the prepared platform scope. In
+            # create mode the requested scope has no authoritative identity yet.
+            scope = getattr(self, "scope", None)
+            project_id = getattr(scope, "project_id", None)
+            ontology_ids = list(getattr(scope, "ontology_ids", []) or [])
+            ontology_id = getattr(scope, "ontology_id", None)
+            if not ontology_ids and ontology_id:
+                ontology_ids = [ontology_id]
+            binding = (
+                {"platform_binding": {"project_id": project_id, "ontology_ids": ontology_ids}}
+                if project_id
+                else {}
+            )
             self._atomic_json(
                 self.run.root / "state.json",
-                {"state": value, "run_id": self.run.run_id, **extra},
+                {"state": value, "run_id": self.run.run_id, **extra, **binding},
             )
+
+    def _refresh_platform_binding(self) -> None:
+        """Keep public range current after the prepared scope expands its topology."""
+        if not self.run:
+            return
+        path = self.run.root / "state.json"
+        if not path.is_file():
+            return
+        try:
+            current = json.loads(path.read_text())
+        except (OSError, ValueError):
+            return
+        if isinstance(current, dict) and isinstance(current.get("state"), str):
+            self._state(current["state"], **{
+                k: v for k, v in current.items()
+                if k not in {"state", "run_id", "platform_binding"}
+            })
 
     def _write_retained_handoff_evidence(self, scope: dict[str, Any]) -> None:
         """Freeze the non-semantic offline-handoff inputs exactly once after cleanup."""

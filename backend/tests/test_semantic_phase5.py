@@ -3,39 +3,19 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from pathlib import Path
+
 from typing import Any
-from uuid import uuid4
 
 import pytest
 
 from app.core.config import Settings
 from app.repositories.models import (
     SemanticDerivedResultPointerModel,
-    SemanticRuleDefinitionModel,
 )
 from app.repositories.rdf_store import SparqlResult, UpdateResult
-from app.services.semantic_construct import (
-    ConstructTemplateError,
-    execute_construct_template,
-    validate_approved_construct,
-)
 from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_dsl import (
-    ConstructTemplateError as DslConstructTemplateError,
-    compile_dsl_to_select,
-    execute_dsl,
-)
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_reasoning import SemanticReasoningService
-from app.services.semantic_rule_definition import (
-    RuleDefinitionError,
-    SemanticRuleDefinitionService,
-)
-from app.services.semantic_rule_execution import (
-    RuleExecutionError,
-    SemanticRuleExecutionService,
-)
 from app.services.semantic_validation import SemanticValidationService
 from app.services.owl_reasoner import OwlReasonerResult, OwlReasonerRunner
 
@@ -247,7 +227,7 @@ def test_reasoning_does_not_promote_pointer_on_failure(
     assert store.updates == []  # no result graph written
 
 
-def test_reasoning_records_input_revisions_and_marks_rule_pointers_stale(
+def test_reasoning_records_input_revisions_and_preserves_archived_rule_pointers(
     in_memory_session, graph_set_service, derived_service
 ) -> None:
     graph_set = _seed_graph_set(
@@ -265,12 +245,13 @@ def test_reasoning_records_input_revisions_and_marks_rule_pointers_stale(
         graph_set_service=graph_set_service,
         derived_state_service=derived_service,
     )
-    derived_service.promote_rule_pointer(
-        graph_set_id=graph_set.id,
-        run_id="rule-pre-existing",
-        result_graph_iri=f"{PREFIX}rule-result/rule-pre-existing",
-        source_signature=graph_set_service.source_signature_for(graph_set.id),
+    archive = SemanticDerivedResultPointerModel(
+        id="archive-rule-pointer", graph_set_id=graph_set.id, result_kind="rule",
+        run_id="rule-pre-existing", result_graph_iri=f"{PREFIX}rule-result/archive",
+        source_signature=graph_set.source_signature, status="current",
     )
+    in_memory_session.add(archive)
+    in_memory_session.commit()
     result = service.run_reasoning(
         [f"{PREFIX}ontology/demo"],
         ["consistency"],
@@ -281,9 +262,8 @@ def test_reasoning_records_input_revisions_and_marks_rule_pointers_stale(
     assert result["status"] == "succeeded"
     assert result["input_graph_revisions"] == {}
     assert result["engine_version"] == "hermit:1.4"
-    pointers = derived_service.list_pointers(graph_set_id=graph_set.id, result_kind="rule")
-    assert pointers
-    assert pointers[0].status == "stale"
+    assert in_memory_session.get(SemanticDerivedResultPointerModel, archive.id).status == "current"
+    assert {p.result_kind for p in derived_service.list_pointers(graph_set_id=graph_set.id)} == {"reasoning"}
 
 
 # ---------------------------------------------------------------------------
@@ -291,179 +271,9 @@ def test_reasoning_records_input_revisions_and_marks_rule_pointers_stale(
 # ---------------------------------------------------------------------------
 
 
-def test_validate_approved_construct_rejects_service_clause() -> None:
-    template = (
-        "CONSTRUCT { ?s ?p ?o } WHERE { SERVICE <http://example.test/> { ?s ?p ?o } }"
-    )
-    with pytest.raises(ConstructTemplateError):
-        validate_approved_construct(template)
-
-
-def test_validate_approved_construct_rejects_property_paths() -> None:
-    template = (
-        "CONSTRUCT { ?s ?p ?o } WHERE { ?s a/rdfs:subClassOf ?o . }"
-    )
-    with pytest.raises(ConstructTemplateError):
-        validate_approved_construct(template)
-
-
-def test_validate_approved_construct_rejects_unknown_graph_iris() -> None:
-    template = (
-        "CONSTRUCT { ?s ?p ?o } "
-        "WHERE { GRAPH <http://ontology-platform.local/semantic/graph/data/unknown> "
-        "{ ?s ?p ?o } }"
-    )
-    with pytest.raises(ConstructTemplateError):
-        validate_approved_construct(
-            template,
-            graph_set_iris=["http://ontology-platform.local/semantic/graph/data/known"],
-        )
-
-
-def test_validate_approved_construct_accepts_template_within_graph_set() -> None:
-    template = (
-        "CONSTRUCT { ?s ?p ?o } "
-        "WHERE { GRAPH <http://ontology-platform.local/semantic/graph/data/known> "
-        "{ ?s ?p ?o } }"
-    )
-    result = validate_approved_construct(
-        template,
-        graph_set_iris=["http://ontology-platform.local/semantic/graph/data/known"],
-    )
-    assert "CONSTRUCT" in result
-
-
-def test_execute_construct_template_injects_limit_with_space() -> None:
-    """Regression: Oxigraph rejects ``}\\nLIMIT`` — the helper must use a space."""
-    store = FakeStore(
-        construct_result=(
-            "@prefix ex: <http://example.test/> . ex:alice a ex:Person ."
-        )
-    )
-    execute_construct_template(
-        store,
-        "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }",
-        graph_set_iris=["http://example.test/"],
-        timeout_seconds=5,
-        statement_limit=42,
-    )
-    assert store.queries, "execute_construct_template should issue a SPARQL query"
-    sent_query = store.queries[0]
-    assert "LIMIT 42" in sent_query
-    assert "\nLIMIT" not in sent_query
-    assert sent_query.endswith(" LIMIT 42")
-
-
-def test_execute_construct_writes_only_to_result_graph(
-    in_memory_session, graph_set_service
-) -> None:
-    graph_set = _seed_graph_set(
-        in_memory_session, graph_set_service,
-        [(f"{PREFIX}data/demo", "asserted_data")],
-    )
-    settings = Settings()
-    store = FakeStore(
-        construct_result=(
-            "@prefix ex: <http://example.test/> . ex:alice a ex:ExcellentStudent ."
-        )
-    )
-    service = SemanticRuleExecutionService(
-        in_memory_session,
-        store,
-        settings,
-        graph_set_service=graph_set_service,
-    )
-    result = service.execute_construct_template(
-        graph_set_id=graph_set.id,
-        template=(
-            f"CONSTRUCT {{ ?s ?p ?o }} WHERE {{ GRAPH <{PREFIX}data/demo> {{ ?s ?p ?o }} }}"
-        ),
-        promote_pointer=True,
-    )
-    if result["status"] != "succeeded":
-        raise AssertionError(f"Expected succeeded, got: {result}")
-    assert result["status"] == "succeeded"
-    assert result["result_graph_iri"].startswith(f"{PREFIX}rule-result/")
-    assert result["derived_pointer"]["status"] == "current"
-    assert f"INSERT DATA {{ GRAPH <{PREFIX}data/demo>" not in "\n".join(store.updates)
-    assert any(f"INSERT DATA {{ GRAPH <{PREFIX}rule-result/" in u for u in store.updates)
-
-
 # ---------------------------------------------------------------------------
 # DSL
 # ---------------------------------------------------------------------------
-
-
-def test_dsl_compile_rejects_unsupported_filter_operator() -> None:
-    body = {
-        "when": [
-            {"s": "?s", "p": "?p", "o": "?o"},
-            {"filter": {"regex": ["?s", "ex:Student"]}},
-        ],
-        "then": [{"s": "?s", "p": "ex:label", "o": '"hi"'}],
-    }
-    with pytest.raises(ConstructTemplateError):
-        compile_dsl_to_select(
-            body,
-            graph_set_iris=[f"{PREFIX}data/demo"],
-            statement_limit=10,
-        )
-
-
-def test_dsl_compile_rejects_unknown_output_predicate_when_no_graph_set() -> None:
-    body = {
-        "when": [{"s": "?s", "p": "?p", "o": "?o"}],
-        "then": [{"s": "?s", "p": "?p", "o": "?o"}],
-    }
-    with pytest.raises(ConstructTemplateError):
-        compile_dsl_to_select(body, graph_set_iris=[], statement_limit=10)
-
-
-def test_dsl_execute_returns_deterministic_statements(in_memory_session) -> None:
-    body = {
-        "when": [
-            {"s": "?student", "p": "<http://example.test/score>", "o": "?score"},
-            {"filter": {"gte": ["?score", 90]}},
-        ],
-        "then": [
-            {
-                "s": "?student",
-                "p": "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-                "o": "<http://example.test/ExcellentStudent>",
-            }
-        ],
-        "explain": "Excellent student threshold reached",
-    }
-
-    class _Stub:
-        def query_sparql(self, query: str, timeout_seconds: float, limit: int):
-            return SparqlResult(
-                result={
-                    "head": {"vars": ["student", "score"]},
-                    "results": {
-                        "bindings": [
-                            {
-                                "student": {"value": "<http://example.test/alice>"},
-                                "score": {"value": "95"},
-                            }
-                        ]
-                    },
-                }
-            )
-
-    execution = execute_dsl(
-        _Stub(),
-        body,
-        graph_set_iris=[f"{PREFIX}data/demo"],
-        timeout_seconds=5,
-        statement_limit=10,
-    )
-    assert len(execution.statements) == 1
-    assert execution.statements[0]["s"] == "<http://example.test/alice>"
-    assert (
-        execution.statements[0]["o"] == "<http://example.test/ExcellentStudent>"
-    )
-    assert execution.statements[0]["explanation"] == "Excellent student threshold reached"
 
 
 # ---------------------------------------------------------------------------
@@ -471,187 +281,9 @@ def test_dsl_execute_returns_deterministic_statements(in_memory_session) -> None
 # ---------------------------------------------------------------------------
 
 
-def test_rule_definition_validates_construct_template(in_memory_session) -> None:
-    settings = Settings()
-    service = SemanticRuleDefinitionService(in_memory_session, settings)
-    with pytest.raises(RuleDefinitionError):
-        service.create_rule(
-            rule_iri=f"{PREFIX}rule/bad",
-            name="bad",
-            language="sparql_construct",
-            body={"template": "SELECT * WHERE { ?s ?p ?o }"},
-            input_roles=["asserted_data"],
-        )
-
-
-def test_rule_definition_validates_platform_dsl_filter(in_memory_session) -> None:
-    settings = Settings()
-    service = SemanticRuleDefinitionService(in_memory_session, settings)
-    with pytest.raises(RuleDefinitionError):
-        service.create_rule(
-            rule_iri=f"{PREFIX}rule/dsl-bad",
-            name="dsl-bad",
-            language="platform_dsl",
-            body={
-                "when": [{"filter": {"regex": ["?s", "x"]}}],
-                "then": [],
-            },
-            input_roles=["asserted_data"],
-        )
-
-
-def test_rule_definition_creates_new_version_for_new_body(
-    in_memory_session, graph_set_service
-) -> None:
-    settings = Settings()
-    service = SemanticRuleDefinitionService(in_memory_session, settings)
-    rule = service.create_rule(
-        rule_iri=f"{PREFIX}rule/dsl",
-        name="dsl",
-        language="platform_dsl",
-        body={
-            "when": [
-                {"s": "?s", "p": "<http://example.test/p>", "o": "?o"},
-            ],
-            "then": [
-                {
-                    "s": "?s",
-                    "p": "<http://example.test/derived>",
-                    "o": "?o",
-                }
-            ],
-        },
-        input_roles=["asserted_data"],
-    )
-    second = service.create_rule(
-        rule_iri=f"{PREFIX}rule/dsl",
-        name="dsl",
-        language="platform_dsl",
-        body={
-            "when": [
-                {"s": "?s", "p": "<http://example.test/p>", "o": "?o"},
-            ],
-            "then": [
-                {
-                    "s": "?s",
-                    "p": "<http://example.test/derived>",
-                    "o": "?o",
-                }
-            ],
-            "explain": "updated",
-        },
-        input_roles=["asserted_data"],
-    )
-    assert second.version != rule.version
-    assert second.id != rule.id
-
-
 # ---------------------------------------------------------------------------
 # Rule execution flow + pointer promotion + staleness
 # ---------------------------------------------------------------------------
-
-
-def test_rule_execution_promotes_pointer_and_supersedes_previous(
-    in_memory_session, graph_set_service, derived_service
-) -> None:
-    graph_set = _seed_graph_set(
-        in_memory_session, graph_set_service,
-        [(f"{PREFIX}data/demo", "asserted_data")],
-    )
-    settings = Settings()
-    rule_service = SemanticRuleDefinitionService(in_memory_session, settings)
-    rule = rule_service.create_rule(
-        rule_iri=f"{PREFIX}rule/excellent",
-        name="excellent",
-        language="platform_dsl",
-        body={
-            "when": [
-                {"s": "?s", "p": "<http://example.test/score>", "o": "?score"},
-                {"filter": {"gte": ["?score", 90]}},
-            ],
-            "then": [
-                {
-                    "s": "?s",
-                    "p": "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-                    "o": "<http://example.test/ExcellentStudent>",
-                }
-            ],
-        },
-        input_roles=["asserted_data"],
-    )
-    derived_service.promote_rule_pointer(
-        graph_set_id=graph_set.id,
-        run_id="prior-rule-run",
-        result_graph_iri=f"{PREFIX}rule-result/prior",
-        source_signature=graph_set_service.source_signature_for(graph_set.id),
-    )
-    store = FakeStore(
-        select_result={
-            "head": {"vars": ["student", "score"]},
-            "results": {
-                "bindings": [
-                    {
-                        "student": {"value": "<http://example.test/alice>"},
-                        "score": {"value": "95"},
-                    }
-                ]
-            },
-        }
-    )
-    service = SemanticRuleExecutionService(
-        in_memory_session,
-        store,
-        settings,
-        graph_set_service=graph_set_service,
-        derived_state_service=derived_service,
-    )
-    result = service.execute_rule(
-        graph_set_id=graph_set.id,
-        rule_definition_id=rule.id,
-        promote_pointer=True,
-    )
-    assert result["status"] == "succeeded"
-    assert result["derived_pointer"]["status"] == "current"
-    pointers = derived_service.list_pointers(graph_set_id=graph_set.id, result_kind="rule")
-    assert len(pointers) == 2
-    statuses = {pointer.status for pointer in pointers}
-    assert statuses == {"current", "superseded"}
-
-
-def test_rule_pointer_becomes_stale_when_reasoning_pointer_promoted(
-    in_memory_session, graph_set_service, derived_service
-) -> None:
-    graph_set = _seed_graph_set(
-        in_memory_session, graph_set_service,
-        [(f"{PREFIX}ontology/demo", "asserted_ontology")],
-    )
-    settings = Settings()
-    derived_service.promote_rule_pointer(
-        graph_set_id=graph_set.id,
-        run_id="rr1",
-        result_graph_iri=f"{PREFIX}rule-result/rr1",
-        source_signature=graph_set_service.source_signature_for(graph_set.id),
-    )
-    reasoning = SemanticReasoningService(
-        in_memory_session,
-        FakeStore(),
-        settings,
-        reasoner=StubReasoner(),
-        graph_set_service=graph_set_service,
-        derived_state_service=derived_service,
-    )
-    reasoning.run_reasoning(
-        [f"{PREFIX}ontology/demo"],
-        ["consistency"],
-        persist_result_graph=True,
-        graph_set_id=graph_set.id,
-    )
-    rule_pointer = derived_service.list_pointers(
-        graph_set_id=graph_set.id, result_kind="rule"
-    )
-    assert rule_pointer
-    assert rule_pointer[0].status == "stale"
-    assert rule_pointer[0].pointer_metadata["stale_reason"] == "upstream_reasoning_pointer_changed"
 
 
 # ---------------------------------------------------------------------------
@@ -659,25 +291,59 @@ def test_rule_pointer_becomes_stale_when_reasoning_pointer_promoted(
 # ---------------------------------------------------------------------------
 
 
-def test_construct_rejects_template_referencing_graphs_outside_graph_set(
-    in_memory_session, graph_set_service
-) -> None:
-    graph_set = _seed_graph_set(
-        in_memory_session, graph_set_service,
-        [(f"{PREFIX}data/demo", "asserted_data")],
+def test_reasoning_stub_identity_and_warning_are_preserved_in_response_and_reads(
+    in_memory_session, graph_set_service, derived_service,
+):
+    class DeclaredStub(StubReasoner):
+        def run(self, source_documents, tasks, timeout_seconds):
+            result = super().run(source_documents, tasks, timeout_seconds)
+            result.classification["mode"] = "development_stub"
+            result.metadata = {
+                "engine_name": "development_stub", "engine_version": "dev",
+                "warning": "Development stub only; no OWL DL reasoning was performed.",
+            }
+            return result
+
+    graph_set = _seed_graph_set(in_memory_session, graph_set_service, [(f"{PREFIX}data/demo", "asserted_data")])
+    service = SemanticReasoningService(
+        in_memory_session, FakeStore(), Settings(), reasoner=DeclaredStub(),
+        graph_set_service=graph_set_service, derived_state_service=derived_service,
     )
-    settings = Settings()
-    service = SemanticRuleExecutionService(
-        in_memory_session,
-        FakeStore(),
-        settings,
-        graph_set_service=graph_set_service,
+    result = service.run_reasoning([f"{PREFIX}data/demo"], ["consistency"], graph_set_id=graph_set.id)
+    stored = service.get_reasoning_run(result["run_id"])
+    listed, total = service.list_reasoning_runs()
+    assert total == 1
+    for view in (result, stored, listed[0]):
+        assert view["status"] == "succeeded"
+        assert view["profile"] == "owl2_dl"
+        assert view["implementation_mode"] == "development_stub"
+        assert view["engine_name"] == "development_stub"
+        assert view["engine_version"] == "dev"
+        assert view["warnings"] == ["Development stub only; no OWL DL reasoning was performed."]
+
+
+@pytest.mark.parametrize("classification,mode,warning", [
+    ({"mode": "development_stub"}, "development_stub", "No OWL DL reasoning was performed."),
+    ({}, None, None),
+])
+def test_historical_reasoning_read_keeps_declared_mode_or_unknown(
+    in_memory_session, classification, mode, warning,
+):
+    from app.api.schemas import SemanticReasoningRunRead
+    from app.repositories.models import SemanticReasoningRunModel
+
+    metadata = {"profile": "owl2_dl", "classification": classification, "warnings": []}
+    if warning:
+        metadata["warning"] = warning
+    run = SemanticReasoningRunModel(
+        id="historical-reasoning", source_graph_iris=[], reasoner="historic-command",
+        status="succeeded", consistent=True, started_at=datetime(2026, 7, 6, tzinfo=UTC),
+        run_metadata=metadata,
     )
-    with pytest.raises(RuleExecutionError):
-        service.execute_construct_template(
-            graph_set_id=graph_set.id,
-            template=(
-                "CONSTRUCT { ?s ?p ?o } WHERE { "
-                f"GRAPH <{PREFIX}data/other> {{ ?s ?p ?o }} }}"
-            ),
-        )
+    in_memory_session.add(run)
+    in_memory_session.commit()
+    view = SemanticReasoningService(in_memory_session, FakeStore(), Settings()).get_reasoning_run(run.id)
+    response = SemanticReasoningRunRead(**view).model_dump()
+    assert response["implementation_mode"] == mode
+    assert response["engine_name"] is None
+    assert response["warnings"] == ([warning] if warning else [])

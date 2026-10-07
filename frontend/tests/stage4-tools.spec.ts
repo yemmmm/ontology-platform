@@ -225,8 +225,14 @@ async function mockStage4(page: Page, mode: Stage4MockMode = "success") {
     let status = 200;
 
     // --- Workspace scaffolding (shared with stage2/stage3 specs) ---
-    if (path === "/projects") body = [project];
+    if(path === "/semantic/context:query") {
+      const q=route.request().postDataJSON();
+      body={query:{queries:[q.query]},result_status:q.assertion_types?.includes("derived")?"no_match":"matched",scope:{project_id:project.id},primary_matches:q.assertion_types?.includes("derived")?[]:entitySearchItems.map(r=>({...r,kind:"instance",ontology_id:ontology.id,data:{semantic_definition:{semantic_role:"object",business_meaning:r.comment}}})),related_context:[],matches_page:{},context_page:{},recall:{completeness:"complete"},warnings:[],truncated:false};
+    }
+    else if(path.startsWith("/semantic/resources/"))body={iri:entitySearchItems[0].iri,label:"Acme Corp",properties:{class_label:"Organization",Founded:"1985"},source_graph_iri:DATA_GRAPH};
+    else if (path === "/projects") body = [project];
     else if (path === `/projects/${project.id}/ontologies`) body = [ontology];
+    else if(path.endsWith("/workspace-context"))body={default_graph_set_id:GRAPH_SET_ID};
     else if (path === `/projects/${project.id}/build-context`) {
       body = {
         project,
@@ -327,181 +333,46 @@ function workspaceUrl(tab: string) {
 //          [asserted] chip.
 // ---------------------------------------------------------------------------
 
-test("entity search returns the Acme Corp row with [asserted] chip", async ({
-  page,
-}) => {
-  await mockStage4(page);
-  await page.goto(workspaceUrl("search"));
-
-  // Search input + section present.
-  await expect(page.locator('[aria-label="entities-search-page"]')).toBeVisible();
-  // Antd `Input` forwards aria-label onto the underlying <input> element.
-  const input = page.locator('input[aria-label="entities-search-input"]');
-  await expect(input).toBeVisible();
-
-  // Type and wait for the debounced read-model request.
-  const searchRequest = page.waitForRequest(
-    (req) =>
-      req.method() === "GET" &&
-      req.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-search`) &&
-      req.url().includes("q=acme"),
-  );
-  await input.fill("acme");
-  await searchRequest;
-
-  // Result row + assertion chip render.
-  const row = page.locator(
-    '[aria-label="entity-search-row-http://op.local/entity/acme-corp"]',
-  );
-  await expect(row).toBeVisible();
-  await expect(page.locator('[aria-label="entity-search-assertion-asserted"]')).toBeVisible();
+test("Context Query returns Acme Corp with its asserted business semantics", async ({page})=>{
+  await mockStage4(page); await page.goto(workspaceUrl("search"));
+  await expect(page.getByLabel("context-query-page")).toBeVisible();
+  await page.getByLabel("查询表达式",{exact:true}).fill("acme");await page.getByRole("button",{name:"查询",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Acme Corp",exact:true})).toBeVisible();
+  await expect(page.getByText("Acme is a manufacturer of widgets.",{exact:true})).toBeVisible();
 });
-
-test("entity search explicitly uses the default hybrid retrieval mode", async ({ page }) => {
-  await mockStage4(page);
-  await page.goto(workspaceUrl("search"));
-
-  const searchRequest = page.waitForRequest(
-    (req) =>
-      req.method() === "GET" &&
-      req.url().includes(`/semantic/graph-sets/${GRAPH_SET_ID}/read-models/entity-search`) &&
-      req.url().includes("q=acme") &&
-      new URL(req.url()).searchParams.get("search_mode") === "hybrid",
-  );
-  await page.locator('input[aria-label="entities-search-input"]').fill("acme");
-  await searchRequest;
+test("Context Query explicitly uses default hybrid retrieval",async ({page})=>{
+  await mockStage4(page);await page.goto(workspaceUrl("search"));
+  const requested=page.waitForRequest(r=>r.url().endsWith("/semantic/context:query")&&r.method()==="POST");
+  await page.getByLabel("查询表达式",{exact:true}).fill("acme");await page.getByRole("button",{name:"查询",exact:true}).click();
+  expect((await requested).postDataJSON().search_mode).toBe("hybrid");
 });
-
-// ---------------------------------------------------------------------------
-// Step 2 — Asserted scope filter keeps the row count unchanged.
-// ---------------------------------------------------------------------------
-
-test("entity search asserted scope filter preserves the asserted row", async ({
-  page,
-}) => {
-  await mockStage4(page);
-  await page.goto(workspaceUrl("search"));
-
-  // Trigger an initial result set so the row count assertion has a baseline.
-  await page.locator('input[aria-label="entities-search-input"]').fill("acme");
-  await expect(
-    page.locator('[aria-label="entity-search-row-http://op.local/entity/acme-corp"]'),
-  ).toBeVisible();
-  await expect(page.locator('[aria-label="entities-search-results"] li')).toHaveCount(1);
-
-  // Open the scope Select and choose Asserted.
-  await page.locator('[aria-label="entities-search-scope"]').click();
-  // Antd Select dropdown items render as `.ant-select-item-option` with a
-  // `title` attribute mirroring the option label. Match on the title to
-  // stay locale-resilient (the value `asserted` is the actual data).
-  await page
-    .locator('.ant-select-item[title="Asserted"]')
-    .click();
-
-  // Row count stays at 1 — the only row is `asserted`.
-  await expect(page.locator('[aria-label="entities-search-results"] li')).toHaveCount(1);
+test("Context Query asserted filter retains fixture semantics",async ({page})=>{
+  await mockStage4(page);await page.goto(workspaceUrl("search"));
+  await page.getByLabel("查询表达式",{exact:true}).fill("acme");
+  await page.getByLabel("陈述类型",{exact:true}).click();await page.locator('.ant-select-item-option[title="已断言"]').click();
+  await page.getByRole("button",{name:"查询",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Acme Corp",exact:true})).toBeVisible();
 });
-
-// ---------------------------------------------------------------------------
-// Step 3 — owl_inferred scope filter drops the row count to 0.
-// ---------------------------------------------------------------------------
-
-test("entity search owl_inferred scope filter drops results to zero", async ({
-  page,
-}) => {
-  await mockStage4(page);
-  await page.goto(workspaceUrl("search"));
-
-  await page.locator('input[aria-label="entities-search-input"]').fill("acme");
-  await expect(
-    page.locator('[aria-label="entity-search-row-http://op.local/entity/acme-corp"]'),
-  ).toBeVisible();
-
-  // Switch scope to owl_inferred — fixture has none.
-  await page.locator('[aria-label="entities-search-scope"]').click();
-  await page
-    .locator('.ant-select-item[title="OWL inferred"]')
-    .click();
-
-  // The empty-state block renders (no <li> rows).
-  await expect(page.locator('[aria-label="entities-search-empty"]')).toBeVisible();
-  await expect(page.locator('[aria-label="entities-search-results"] li')).toHaveCount(0);
+test("Context Query OWL derived filter returns bounded no-match",async ({page})=>{
+  await mockStage4(page);await page.goto(workspaceUrl("search"));
+  await page.getByLabel("查询表达式",{exact:true}).fill("acme");
+  await page.getByLabel("陈述类型",{exact:true}).click();await page.locator('.ant-select-item-option[title="OWL 派生"]').click();
+  await page.getByRole("button",{name:"查询",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Acme Corp",exact:true})).toHaveCount(0);
+  await expect(page.getByText("空结果或读完当前页不能证明业务知识不存在或已经完整。",{exact:false})).toBeVisible();
 });
-
-// ---------------------------------------------------------------------------
-// Step 3b — Empty input never fires entity-search (no recall without a query).
-// ---------------------------------------------------------------------------
-
-test("entity search does not recall entities before the user types", async ({
-  page,
-}) => {
-  await mockStage4(page);
-  const searchRequests: string[] = [];
-  page.on("request", (req) => {
-    if (req.url().includes("/read-models/entity-search")) {
-      searchRequests.push(req.url());
-    }
-  });
-
-  await page.goto(workspaceUrl("search"));
-
-  // Empty-state prompt is visible and no search request was fired.
-  await expect(page.locator('[aria-label="entities-search-empty"]')).toBeVisible();
-  await expect(page.locator('[aria-label="entities-search-results"] li')).toHaveCount(0);
-  expect(searchRequests).toHaveLength(0);
+test("Context Query never recalls before an explicit query",async ({page})=>{
+  await mockStage4(page);const calls:string[]=[];page.on("request",r=>{if(r.url().includes("context:query"))calls.push(r.url());});
+  await page.goto(workspaceUrl("search"));await expect(page.getByText("输入查询取得受授权的语义上下文。")).toBeVisible();expect(calls).toHaveLength(0);
 });
-
-// ---------------------------------------------------------------------------
-// Step 3c — Clicking a row expands an inline detail panel (no navigation),
-//           surfacing IRI, class, source graph, and literal facts.
-// ---------------------------------------------------------------------------
-
-test("entity search row click expands inline detail panel with facts", async ({
-  page,
-}) => {
-  await mockStage4(page);
-  await page.goto(workspaceUrl("search"));
-
-  await page.locator('input[aria-label="entities-search-input"]').fill("acme");
-  const row = page.locator(
-    '[aria-label="entity-search-row-http://op.local/entity/acme-corp"]',
-  );
-  await expect(row).toBeVisible();
-
-  // Detail panel is absent before expand.
-  await expect(
-    page.locator('[aria-label="entity-search-detail-http://op.local/entity/acme-corp"]'),
-  ).toHaveCount(0);
-
-  // Click the row — expect a literal-facts fetch, not a navigation.
-  const factsRequest = page.waitForRequest(
-    (req) =>
-      req.method() === "GET" &&
-      req.url().includes(`/read-models/entity-literal-facts`) &&
-      req.url().includes("entity=http%3A%2F%2Fop.local%2Fentity%2Facme-corp"),
-  );
-  await row.click();
-  await factsRequest;
-
-  // Detail panel renders with business info + the literal fact.
-  const detail = page.locator(
-    '[aria-label="entity-search-detail-http://op.local/entity/acme-corp"]',
-  );
-  await expect(detail).toBeVisible();
-  await expect(detail).toContainText("http://op.local/entity/acme-corp");
-  await expect(detail).toContainText("Organization");
-  await expect(detail).toContainText(DATA_GRAPH);
-  await expect(detail).toContainText("Founded");
-  await expect(detail).toContainText("1985");
-
-  // URL still on the search tab — no navigation away.
+test("Context Query exact resource detail reads governed fields and facts",async ({page})=>{
+  await mockStage4(page);await page.goto(workspaceUrl("search"));
+  await page.getByLabel("查询表达式",{exact:true}).fill("acme");await page.getByRole("button",{name:"查询",exact:true}).click();
+  const detailRequest=page.waitForRequest(r=>r.url().includes("/semantic/resources/"));
+  await page.getByRole("button",{name:"Acme Corp",exact:true}).click();await detailRequest;
+  const dialog=page.getByRole("dialog",{name:"精确资源详情"});await expect(dialog.getByText("Organization",{exact:true})).toBeVisible();await expect(dialog.getByText("Founded",{exact:true})).toBeVisible();await expect(dialog.getByText("1985",{exact:true})).toBeVisible();
   await expect(page).toHaveURL(/tab=search/);
 });
-
-// ---------------------------------------------------------------------------
-// Step 4 — Tools → MCP tools: ≥ 30 tools and includes
-//          `compile_and_apply_canonical_command`.
-// ---------------------------------------------------------------------------
 
 test("MCP tools catalog lists ≥ 30 tools including canonical command", async ({
   page,

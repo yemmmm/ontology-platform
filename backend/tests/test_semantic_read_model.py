@@ -79,7 +79,6 @@ def _resolution(
         shape_graph_iris=[],
         governance_graph_iris=[],
         reasoning_result_graph_iri=reasoning_iri,
-        rule_result_graph_iri=rule_iri,
         derived_state=derived_state,
         warnings=[],
         members=list(members),
@@ -149,7 +148,7 @@ def test_unknown_model_raises():
         assert "no-such-model" in str(exc)
 
 
-def test_full_working_view_includes_reasoning_and_rule_graphs():
+def test_full_working_view_includes_reasoning_and_excludes_archived_rule_graphs():
     resolver = FakeScopeResolver(
         _resolution(
             ["http://op/s/graph/data/ov-1"],
@@ -170,7 +169,7 @@ def test_full_working_view_includes_reasoning_and_rule_graphs():
     service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
     service.read_model("gs-1", "entity-detail", include="full-working-view")
     assert "http://op/s/graph/reasoning-result/run-1" in store.last_graph_iris
-    assert "http://op/s/graph/rule-result/run-2" in store.last_graph_iris
+    assert "http://op/s/graph/rule-result/run-2" not in store.last_graph_iris
 
 
 def test_entity_list_exposes_explicit_canonical_identity_projection():
@@ -290,11 +289,11 @@ def test_graph_set_staleness_summary_assembles_members_and_count():
     for m in item["members"]:
         if m["role"] == "asserted_ontology":
             assert m["reasoning_stale"] is True
-            assert m["rule_stale"] is False
+            assert "rule_stale" not in m
             assert m["validation_stale"] is None
         elif m["role"] == "asserted_data":
             assert m["reasoning_stale"] is True
-            assert m["rule_stale"] is False
+            assert "rule_stale" not in m
 
 
 def test_graph_set_staleness_summary_handles_no_derived_pointers():
@@ -491,7 +490,7 @@ def test_fact_audit_queue_kind_inferred_queries_reasoning_result_graph():
     assert row["derived_from"]["run_id"] == "run-1"
 
 
-def test_fact_audit_queue_kind_rule_derived_queries_rule_result_graph():
+def test_fact_audit_queue_kind_rule_derived_is_retired():
     """kind=rule_derived restricts the SPARQL to the effective rule-result
     graph."""
     data_iri = "http://op.local/graph/data/ont-1"
@@ -525,18 +524,9 @@ def test_fact_audit_queue_kind_rule_derived_queries_rule_result_graph():
         timeout_seconds=10,
         default_limit=500,
     )
-    envelope = service.read_model(
-        graph_set_id="gs-1",
-        model_name="fact-audit-queue",
-        kind="rule_derived",
-        include="asserted-plus-rules",
-    )
-    assert store.last_graph_iris == [rule_iri]
-    assert "template: fact-audit-queue-with-types" in (store.last_query or "")
-    assert "FILTER(?predicate != rdf:type)" not in (store.last_query or "")
-    row = envelope["items"][0]
-    assert row["assertion_kind"] == "rule_derived"
-    assert row["derived_from"]["run_id"] == "run-9"
+    with pytest.raises(ReadModelError, match="Unsupported fact-audit-queue kind"):
+        service.read_model(graph_set_id="gs-1", model_name="fact-audit-queue", kind="rule_derived")
+    assert store.last_query is None
 
 
 def test_fact_audit_queue_rejects_missing_evidence_kind():
@@ -738,7 +728,7 @@ def test_entity_detail_full_working_view_compiles_derived_graphs_into_values():
     assert "{graph_iris}" not in store.last_query
     expected_values = (
         f"VALUES ?graph {{ <{R307_DATA_GRAPH}> "
-        f"<{R307_REASONING_GRAPH}> <{R307_RULE_GRAPH}> }}"
+        f"<{R307_REASONING_GRAPH}> }}"
     )
     assert expected_values in store.last_query
 

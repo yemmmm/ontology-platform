@@ -625,7 +625,7 @@ def test_conflicting_same_single_value_slot_is_not_last_write_wins(modeling):
     assert "conflicting_item_effects" in {finding["code"] for finding in result["findings"]}
 
 
-def test_rule_only_apply_versions_logical_rule_and_changes_workspace_version(modeling):
+def test_rule_only_apply_is_retired_without_side_effects(modeling):
     service, db, _rdf, session_id, lease, version = modeling
     rule = ModelingItemInput(
         client_item_id="rule",
@@ -646,40 +646,11 @@ def test_rule_only_apply_versions_logical_rule_and_changes_workspace_version(mod
         session_id,
         _request(version, [rule], mode="apply_atomic", token=lease["lease_token"]),
     )
-    assert result["attempt_status"] == "applied"
-    assert db.scalar(select(func.count(SemanticRuleModel.id))) == 1
-    assert db.scalar(select(func.count(SemanticRuleDefinitionModel.id))) == 1
-    assert result["items"][0]["resource_outputs"]["resource_iri"] == (
-        "https://rules.test/customer-rule"
-    )
-    assert db.scalar(select(SemanticRuleModel.rule_iri)) == "https://rules.test/customer-rule"
-    assert result["workspace"]["after_version"] != version
-    lineage = OntologyLineageService(db).get_lineage(
-        ontology_id=ONTOLOGY_ID,
-        target_type="rule",
-        target_id="https://rules.test/customer-rule",
-    )
-    assert lineage["items"][0]["definition"]["version"].startswith("sha256:")
-    assert lineage["items"][0]["supporting_context"]["rationales"] == [
-        {
-            "modeling_item_id": result["items"][0]["item_id"],
-            "text": "Derive customer state",
-        }
-    ]
-    assert lineage["items"][0]["supporting_context"]["edit_audits"]
-    assert lineage["evidence_status"] == "missing"
-
-    duplicate = service.submit(
-        session_id,
-        _request(
-            result["workspace"]["after_version"],
-            [rule],
-            key="attempt-2",
-            batch="batch-2",
-        ),
-    )
-    assert duplicate["attempt_status"] == "validation_failed"
-    assert "resource_already_exists" in {finding["code"] for finding in duplicate["findings"]}
+    assert result["attempt_status"] == "validation_failed"
+    assert any("Unsupported Modeling command" in str(f) for f in result["findings"])
+    assert db.scalar(select(func.count(SemanticRuleModel.id))) == 0
+    assert db.scalar(select(func.count(SemanticRuleDefinitionModel.id))) == 0
+    assert ModelingWorkspaceVersionService(db, service.settings).version_for(ONTOLOGY_ID) == version
 
 
 def test_modeling_context_and_cross_session_history_hide_internal_targets(modeling):
@@ -1128,7 +1099,7 @@ def test_missing_rule_update_fails_validation_without_leaving_a_fence(modeling):
     )
 
     assert result["attempt_status"] == "validation_failed"
-    assert "invalid_resource_reference" in {finding["code"] for finding in result["findings"]}
+    assert "unsupported_command_kind" in {finding["code"] for finding in result["findings"]}
     assert rdf.deltas == []
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
 
@@ -1719,14 +1690,14 @@ def test_recovery_stops_for_rdf_state_outside_the_persisted_plan(modeling):
     ],
 )
 def test_first_version_handler_registry_covers_frozen_command_scope(kind, payload):
-    prepared = ModelingCommandHandlerRegistry(_settings()).prepare(
-        batch_id="batch",
-        ontology_id=ONTOLOGY_ID,
-        client_item_id=kind,
-        command_kind=kind,
-        payload=payload,
-    )
-    assert prepared.command_kind == kind
+    registry = ModelingCommandHandlerRegistry(_settings())
+    if kind.endswith("rule_definition"):
+        with pytest.raises(InvalidCommandPayload, match="Unsupported Modeling command"):
+            registry.prepare(batch_id="batch", ontology_id=ONTOLOGY_ID, client_item_id=kind, command_kind=kind, payload=payload)
+        assert kind not in registry.command_kinds
+    else:
+        prepared = registry.prepare(batch_id="batch", ontology_id=ONTOLOGY_ID, client_item_id=kind, command_kind=kind, payload=payload)
+        assert prepared.command_kind == kind
 
 
 

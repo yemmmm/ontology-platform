@@ -16,8 +16,6 @@ from app.core.config import Settings
 from app.repositories.models import (
     OntologyModel,
     SemanticGraphSetModel,
-    SemanticRuleDefinitionModel,
-    SemanticRuleModel,
 )
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_batches import (
@@ -171,33 +169,6 @@ def get_ontology_read_model(
                 "message": "Ontology workspace is incomplete",
             },
         )
-    if model_name == "rules":
-        rows = session.execute(
-            select(SemanticRuleModel, SemanticRuleDefinitionModel)
-            .outerjoin(
-                SemanticRuleDefinitionModel,
-                SemanticRuleDefinitionModel.id == SemanticRuleModel.current_definition_id,
-            )
-            .where(SemanticRuleModel.ontology_id == ontology_id)
-            .order_by(SemanticRuleModel.rule_iri)
-            .limit(limit or 500)
-        )
-        return {
-            "model_name": "rules",
-            "ontology_id": ontology_id,
-            "items": [
-                {
-                    "rule_id": rule.id,
-                    "rule_iri": rule.rule_iri,
-                    "status": rule.status,
-                    "current_definition_id": definition.id if definition else None,
-                    "version": definition.version if definition else None,
-                    "name": definition.name if definition else None,
-                }
-                for rule, definition in rows
-            ],
-            "warnings": [],
-        }
     canonical_name = READ_MODEL_NAMES.get(model_name)
     if canonical_name is None:
         raise HTTPException(

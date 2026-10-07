@@ -770,7 +770,7 @@ def test_review_assertion_inferred_kind_targets_reasoning_result_graph():
     assert compiled.target_graph_iris == [reasoning_iri]
 
 
-def test_review_assertion_rule_derived_kind_targets_rule_result_graph():
+def test_review_assertion_rule_derived_kind_is_retired():
     """For assertion_kind=rule_derived the reification is written to the
     rule-result graph passed in via ``result_graph_iri``."""
     rule_iri = _rule_result_graph_iri("run-9")
@@ -787,20 +787,8 @@ def test_review_assertion_rule_derived_kind_targets_rule_result_graph():
         "result_graph_iri": rule_iri,
     }
 
-    compiled = compile_command("review_assertion", payload, _settings())
-    assert compiled.target_graph_iris == [rule_iri]
-    op = "http://op.local/ns/vocab/"
-    quoted = (
-        f"<<<http://op.local/ns/entity/alice> "
-        f"<http://op.local/ns/property/category> "
-        f'"vip">>'
-    )
-    # linkedFixProposal is only written when the decision is rejected and
-    # the caller supplied a fix proposal id.
-    assert (
-        quoted, f"<{op}linkedFixProposal>",
-        f"<http://op.local/ns/fix-proposal/fix-prop-1>", rule_iri
-    ) in compiled.delta.inserts
+    with pytest.raises(InvalidCommandPayload, match="assertion_kind must be one of"):
+        compile_command("review_assertion", payload, _settings())
 
 
 def test_review_assertion_fact_id_is_stable_sha256_over_canonical_ntriples():

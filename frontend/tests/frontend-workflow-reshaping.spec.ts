@@ -82,6 +82,7 @@ async function mockApi(page: Page) {
 
     if (path === "/projects") body = [project];
     else if (path === `/projects/${project.id}/ontologies`) body = [ontology];
+    else if (path === `/projects/${project.id}/workbench`) body = {project_id:project.id,observed_at:"2026-10-07T00:00:00Z",current_run_id:null,runs:[],completeness:{complete:true,limit:1000},limitations:[]};
     else if (path === `/projects/${project.id}/brief`) body = {
       id: "brief-1",
       project_id: project.id,
@@ -168,7 +169,7 @@ test("settings lock disables modeling mutation controls", async ({ page }) => {
   await page.getByRole("button", { name: "Lock workspace" }).click();
   await expect(page.getByText("Workspace locked")).toBeVisible();
 
-  await page.getByRole("button", { name: "Modeling" }).click();
+  await page.locator(".mainNav").getByRole("button", { name: "Classes", exact: true }).click();
   await expect(page.getByRole("button", { name: "New class" })).toBeDisabled();
   await expect(page.getByText("Workspace is locked. Unlock in Settings to edit modeling data.")).toBeVisible();
 });
@@ -179,25 +180,24 @@ test("main navigation separates overview questions and debug tools", async ({ pa
 
   const nav = page.locator(".mainNav");
   await expect(nav.getByRole("button", { name: /^Overview/ }).first()).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Structured Requirements", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Business clarification", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Modeling/ }).first()).toBeVisible();
-  await expect(nav.getByRole("button", { name: /^Debug/ }).first()).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Recall", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Debug", exact:true }).first()).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Context Query", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: "MCP Tools", exact: true })).toBeVisible();
-  await expect(nav.getByRole("button", { name: "Graph Sets", exact: true })).toBeVisible();
+  await expect(nav.getByRole("button", { name: "Validation and reasoning", exact: true })).toBeVisible();
   await expect(nav.getByRole("button", { name: /^Settings/ }).first()).toBeVisible();
   await expect(nav).not.toContainText(/Named Graph|Named Graphs|RDF/i);
 });
 
-test("overview only summarizes structured requirement completion", async ({ page }) => {
+test("overview separates project states without guessing completion from Brief", async ({ page }) => {
   await mockApi(page);
   await page.goto(workspaceUrl("brief"));
-
-  await expect(page.locator("section[aria-label='overview-diagnostics']")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Structured Requirements" })).toBeVisible();
-  await expect(page.getByText("Open questions")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Open Structured Requirements" })).toBeVisible();
-  await expect(page.getByText("What is the domain name?")).toHaveCount(0);
+  for(const state of ["业务确认","建模表达","平台应用","独立验收"])await expect(page.getByText(state,{exact:true})).toBeVisible();
+  await expect(page.getByText("未知／未接入",{exact:true})).toHaveCount(3);
+  await expect(page.getByRole("button", { name: "业务澄清",exact:true })).toBeVisible();
+  await expect(page.getByText("仅说明 Brief 字段记录，不代表完整业务确认。",{exact:true})).toBeVisible();
+  await expect(page.locator("section[aria-label='overview-diagnostics']")).toHaveCount(0);
 });
 
 test("questions deep link opens standalone requirement questions tab", async ({ page }) => {
@@ -221,5 +221,5 @@ test("graph-set deep link opens the debug graph sets tool", async ({ page }) => 
 
   await expect(page).toHaveURL(/tab=graph-sets/);
   await expect(page.locator("section[aria-label='graph-set-page']")).toBeVisible();
-  await expect(page.locator(".mainNav")).toContainText("Graph Sets");
+  await expect(page.locator(".mainNav")).toContainText("Validation and reasoning");
 });

@@ -1761,7 +1761,7 @@
       "Use R4.0-004 sourceKind: process_input, call_output, object_property, constant, iteration_item. Bind toParameter/fromValue/refersToDefinition; retain object/property direction, producing call/output parameter and iteration scope. Names/text paths never replace identities.",
       "Use ordinary relations for applicability, inputs, conditions, results, existing target identity and effective scope. Neutral definition_ref resolves only current-candidate items; existing identities require authorized receipt bindings. Never hide references in annotation JSON.",
       "Judgment outputs are not objects or occurred Actions. Derivation describes confirmed attributes/relations/classifications/conversions/semantic definitions; no automatic node or relation materialization. Explicit governed modeling remains allowed. Never use run IDs or relational rows as semantic identities.",
-      "Shape structural checks, OWL entailments, platform semantic_rule_definition/Rule Run rule-result and external judgments remain distinct. Explicit platform execution adaptation never adds Python/JS execution or Action effects.",
+      "Shape structural checks and OWL entailments remain platform capabilities. Business rule judgments and derivations are evaluated only by external Consumers or business systems; the platform stores ordinary entity rule_definition annotations and never runs or materializes business rules. Legacy executable Rule Definitions, Rule Runs and rule-result generation are retired.",
       "Reference protected rules rather than copying sensitive text into visible declarations. IRI filtering does not detect sensitive text. No Evidence/lineage, credentials, runtime arguments or rows."
     ],
     "protocol_checks": [

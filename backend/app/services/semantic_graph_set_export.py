@@ -69,10 +69,6 @@ class SemanticExportService:
             "reasoning", {}
         ).get("status") != "missing":
             graph_iris.append(scope.reasoning_result_graph_iri)
-        if scope.rule_result_graph_iri and scope.derived_state.get(
-            "rule", {}
-        ).get("status") != "missing":
-            graph_iris.append(scope.rule_result_graph_iri)
 
         warnings = list(scope.warnings)
 

@@ -7,7 +7,7 @@ import { useT } from "../../i18n";
 export type AssertionKind =
   | "asserted"
   | "owl_inferred"
-  | "rule_derived"
+  | "unknown"
   | "imported"
   | "review_metadata"
   | "policy_metadata";
@@ -15,7 +15,7 @@ export type AssertionKind =
 const ASSERTION_KIND_META: Record<AssertionKind, { color: string; label: string; zh: string }> = {
   asserted: { color: "blue", label: "Asserted", zh: "已断言" },
   owl_inferred: { color: "purple", label: "OWL inferred", zh: "OWL 推理" },
-  rule_derived: { color: "magenta", label: "Rule derived", zh: "规则派生" },
+  unknown: { color: "default", label: "unknown", zh: "未知" },
   imported: { color: "cyan", label: "Imported", zh: "外部导入" },
   review_metadata: { color: "gold", label: "Review metadata", zh: "评审元数据" },
   policy_metadata: { color: "volcano", label: "Policy metadata", zh: "策略元数据" },
@@ -26,11 +26,10 @@ export function normalizeAssertionKind(kind: string): AssertionKind {
   if (lower in ASSERTION_KIND_META) return lower as AssertionKind;
   if (lower.includes("assert")) return "asserted";
   if (lower.includes("inferred") || lower.includes("owl")) return "owl_inferred";
-  if (lower.includes("rule")) return "rule_derived";
   if (lower.includes("import")) return "imported";
   if (lower.includes("review")) return "review_metadata";
   if (lower.includes("policy")) return "policy_metadata";
-  return "asserted";
+  return "unknown";
 }
 
 export function AssertionKindBadge({ kind, stale }: { kind: string; stale?: boolean }) {

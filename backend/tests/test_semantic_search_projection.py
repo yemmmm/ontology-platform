@@ -26,7 +26,6 @@ def _scope(iris, derived_state=None):
         shape_graph_iris=[],
         governance_graph_iris=[],
         reasoning_result_graph_iri=None,
-        rule_result_graph_iri=None,
         derived_state=derived_state or {},
         warnings=[],
     )

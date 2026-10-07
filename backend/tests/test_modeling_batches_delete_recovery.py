@@ -298,18 +298,18 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
         lease_token=lease["lease_token"],
         items=[item],
     )
-    original_mark_stale = service._mark_rule_derived_stale
+    original_finalize = service._finalize_success
 
     def fail_after_rdf(*_args, **_kwargs):
         raise RuntimeError("injected post-RDF/pre-SQL failure")
 
-    monkeypatch.setattr(service, "_mark_rule_derived_stale", fail_after_rdf)
+    monkeypatch.setattr(service, "_finalize_success", fail_after_rdf)
     first = service.submit(session_id, request)
     assert first["attempt_status"] == "recovering"
     assert first["recovery"]["state"] == "pending"
     assert len(store.graph) == 0
 
-    monkeypatch.setattr(service, "_mark_rule_derived_stale", original_mark_stale)
+    monkeypatch.setattr(service, "_finalize_success", original_finalize)
     second = service.submit(session_id, request)
     assert second["attempt_status"] == "applied"
     assert second["recovery"]["state"] == "converged"

@@ -187,10 +187,7 @@ def test_modeling_create_rule_candidate_collection_is_limited_to_top_level_items
     _collect_modeling_batch_resource_ids(payload, modeling_resources)
 
     assert default_resources == [("rule_id", "new-rule"), ("rule_id", "nested-rule")]
-    assert modeling_resources == [
-        ("modeling_create_rule_id", "new-rule"),
-        ("rule_id", "nested-rule"),
-    ]
+    assert modeling_resources == default_resources
 
 
 def _project_modeling_rule_context(r008_client):
@@ -269,7 +266,7 @@ def _rule_batch_payload(context, command_kind: str, rule_id: str, suffix: str):
     }
 
 
-def test_project_model_key_can_dry_run_create_rule_with_explicit_new_id(r008_client):
+def test_project_model_key_cannot_dry_run_retired_rule_with_new_id(r008_client):
     context = _project_modeling_rule_context(r008_client)
     new_rule_id = str(uuid4())
 
@@ -279,9 +276,8 @@ def test_project_model_key_can_dry_run_create_rule_with_explicit_new_id(r008_cli
         json=_rule_batch_payload(context, "create_rule_definition", new_rule_id, "create-new"),
     )
 
-    assert response.status_code == 200, response.text
-    assert response.json()["attempt_status"] == "validated"
-    assert response.json()["items"][0]["resource_outputs"]["resource_id"] == new_rule_id
+    assert response.status_code == 403, response.text
+    assert response.json()["detail"]["code"] == "forbidden_scope"
 
 
 def test_project_model_key_rejects_nested_create_rule_lookalike(r008_client):
@@ -329,5 +325,5 @@ def test_project_model_key_keeps_non_candidate_rule_ids_fail_closed(
         json=_rule_batch_payload(context, command_kind, rule_id, suffix),
     )
 
-    expected_status = 404 if command_kind == "create_rule_definition" else 403
+    expected_status = 403
     assert response.status_code == expected_status

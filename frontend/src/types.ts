@@ -846,6 +846,8 @@ export type SemanticValidationRunRead = {
 };
 
 export type SemanticReasoningRunRead = {
+  implementation_mode?: string | null;
+  engine_name?: string | null;
   run_id: string;
   status: string;
   consistent: boolean | null;

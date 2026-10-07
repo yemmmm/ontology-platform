@@ -42,7 +42,7 @@ def _assert_no_trace_fields(value):
 
 
 @pytest.mark.skipif(os.getenv("RUN_TRACING_SUSPENSION_LIVE") != "1", reason="opt-in live stores")
-def test_live_writes_reads_and_rule_identity_without_trace_collection():
+def test_live_writes_reads_and_rule_retirement_without_trace_collection():
     """Verify public contracts, SQL boundaries and real RDF results together."""
     settings = Settings()
     factory = create_session_factory(settings)
@@ -200,49 +200,12 @@ def test_live_writes_reads_and_rule_identity_without_trace_collection():
         assert facts["items"]
         _assert_no_trace_fields(facts)
 
-        rule = post(
-            "/semantic/rule-definitions",
-            {
-                "ontology_id": ontology_id,
-                "rule_iri": f"urn:r4012:rule:{suffix}",
-                "name": "Contract derivation",
-                "language": "sparql_construct",
-                "body": {
-                    "template": (
-                        'CONSTRUCT { ?entity <urn:r4012:operational> "yes" } WHERE { GRAPH '
-                        f"<{members['asserted_data']}> {{ ?entity a "
-                        "<http://www.w3.org/2002/07/owl#NamedIndividual> } }"
-                    )
-                },
-                "input_roles": ["asserted_data"],
-                "output_kind": "assertion",
-            },
-        )
-        rule_definition_ids.append(rule["id"])
-        run = post(
-            f"/semantic/graph-sets/{graph_set_id}/rule-runs",
-            {
-                "rule_definition_ids": [rule["id"]],
-                "promote_pointer": True,
-            },
-        )
-        assert run["status"] == "succeeded"
-        assert run["generated_statement_count"] > 0
-        graphs.update([run["result_graph_iri"], run["rule_run_graph_iri"]])
-        _assert_no_trace_fields(run)
-        assert all(
-            row["rule_id"] == rule["id"] and row["rule_version"] == rule["version"]
-            for row in run["statements"]
-        )
-        persisted = get(f"/semantic/rule-runs/{run['run_id']}")
-        _assert_no_trace_fields(persisted)
-        derived = get(
-            f"/semantic/graph-sets/{graph_set_id}/read-models/fact-audit-queue"
-            "?kind=rule_derived&include=asserted-plus-rules"
-        )
-        assert derived["items"]
-        assert all(row["derived_from"]["run_id"] == run["run_id"] for row in derived["items"])
-        _assert_no_trace_fields(derived)
+        for method, path in [("POST", "/semantic/rule-definitions"),
+                             ("POST", f"/semantic/graph-sets/{graph_set_id}/rule-runs"),
+                             ("POST", f"/semantic/graph-sets/{graph_set_id}/construct-runs"),
+                             ("GET", "/semantic/rule-runs")]:
+            response = client.request(method, "/api" + path, json={})
+            assert response.status_code == 404, response.text
         reasoning = post(
             f"/semantic/graph-sets/{graph_set_id}/reasoning-runs",
             {
@@ -268,8 +231,6 @@ def test_live_writes_reads_and_rule_identity_without_trace_collection():
                 assert (
                     session.scalar(select(func.count()).select_from(model).where(predicate)) == 0
                 ), model.__tablename__
-            stored_run = session.get(m.SemanticRuleRunModel, run["run_id"])
-            _assert_no_trace_fields(stored_run.run_metadata)
             assert session.scalar(
                 select(func.count())
                 .select_from(m.SemanticEditAuditModel)

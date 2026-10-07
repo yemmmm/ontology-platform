@@ -96,6 +96,8 @@ _ADMIN_PATHS = (
 
 
 def required_scope(method: str, path: str) -> str:
+    if re.fullmatch(r"/api/projects/[^/]+/workbench(/.*)?", path):
+        return "admin"
     if any(path.startswith(prefix) for prefix in _ADMIN_PATHS):
         return "admin"
     if re.fullmatch(r"/api/projects/[^/]+/(members|semantic-access-roles)(/.*)?", path):
@@ -419,26 +421,7 @@ def _collect_modeling_batch_resource_ids(value: Any, output: list[tuple[str, str
         return
     for raw_item in items:
         item = raw_item.model_dump() if hasattr(raw_item, "model_dump") else raw_item
-        if not (
-            isinstance(item, dict)
-            and item.get("command_kind") == "create_rule_definition"
-            and isinstance(item.get("payload"), dict)
-        ):
-            _collect_resource_ids(item, output)
-            continue
-        item_without_payload = dict(item)
-        rule_payload = dict(item_without_payload.pop("payload"))
-        _collect_resource_ids(item_without_payload, output)
-        candidate_rule_id = rule_payload.pop("rule_id", None)
-        if isinstance(candidate_rule_id, str) and candidate_rule_id:
-            output.append(("modeling_create_rule_id", candidate_rule_id))
-        _collect_resource_ids(rule_payload, output)
-
-
-def _project_for_modeling_rule_candidate(session: Session, value: str) -> str | None:
-    rule = session.get(SemanticRuleModel, value)
-    ontology = session.get(OntologyModel, rule.ontology_id) if rule else None
-    return ontology.project_id if ontology else None
+        _collect_resource_ids(item, output)
 
 
 async def authorize_api_request(request: Request) -> None:
@@ -551,15 +534,8 @@ async def authorize_api_request(request: Request) -> None:
         raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
     with request.app.state.session_factory() as session:
         for kind, value in ids:
-            modeling_rule_candidate = kind == "modeling_create_rule_id"
-            target_project = (
-                _project_for_modeling_rule_candidate(session, value)
-                if modeling_rule_candidate
-                else _project_for_resource(session, kind, value)
-            )
-            if modeling_rule_candidate and target_project is None:
-                continue
-            resource_kind = "rule_id" if modeling_rule_candidate else kind
+            target_project = _project_for_resource(session, kind, value)
+            resource_kind = kind
             if target_project is None:
                 audit_security_event(
                     request.app.state.session_factory,

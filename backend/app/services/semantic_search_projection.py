@@ -126,9 +126,4 @@ class SemanticSearchProjectionService(ProjectionWriter):
             and graph_iri == scope.reasoning_result_graph_iri
         ):
             return "owl_inferred"
-        if (
-            scope.rule_result_graph_iri
-            and graph_iri == scope.rule_result_graph_iri
-        ):
-            return "rule_derived"
         return "asserted"

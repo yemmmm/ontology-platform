@@ -618,7 +618,6 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
                 "instance",
                 "relation",
                 "fact",
-                "rule",
                 "operation",
                 "mapping",
                 "metric",
@@ -716,6 +715,9 @@ class SemanticReasoningRunRequest(BaseModel):
 
 
 class SemanticReasoningRunResponse(BaseModel):
+    warnings: list[str] = Field(default_factory=list)
+    implementation_mode: str | None = None
+    engine_name: str | None = None
     run_id: str
     status: str
     consistent: bool | None = None
@@ -931,55 +933,8 @@ class SemanticGovernanceStatusResponse(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Phase 5: rule definitions, rule runs, graph-set validation, missing evidence
+# Phase 5: graph-set validation and reasoning
 # ---------------------------------------------------------------------------
-
-
-class SemanticRuleDefinitionCreate(BaseModel):
-    ontology_id: str = Field(min_length=1, max_length=36)
-    rule_iri: str = Field(min_length=1, max_length=1024)
-    name: str = Field(min_length=1, max_length=255)
-    language: Literal["sparql_construct", "platform_dsl", "workflow_state_machine"]
-    body: dict[str, Any]
-    input_roles: list[str] = Field(default_factory=list)
-    output_kind: Literal["assertion", "validation", "workflow", "annotation"] = "assertion"
-    uses_inferred_facts: bool = False
-    requires_review: bool = False
-    priority: int = 0
-    safety_profile: dict[str, Any] = Field(default_factory=dict)
-    created_by: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
-
-
-class SemanticRuleDefinitionUpdate(BaseModel):
-    name: str | None = Field(default=None, min_length=1, max_length=255)
-    priority: int | None = None
-    metadata: dict[str, Any] | None = None
-
-
-class SemanticRuleDefinitionRead(BaseModel):
-    id: str
-    ontology_id: str | None = None
-    rule_iri: str
-    name: str
-    language: str
-    version: str
-    status: str
-    body: dict[str, Any]
-    input_roles: list[str]
-    output_kind: str
-    uses_inferred_facts: bool
-    requires_review: bool
-    priority: int
-    safety_profile: dict[str, Any]
-    created_by: str | None
-    created_at: datetime
-    updated_at: datetime
-    metadata: dict[str, Any]
-
-
-class SemanticRuleDefinitionListResponse(BaseModel):
-    rules: list[SemanticRuleDefinitionRead]
 
 
 class SemanticGraphSetValidationRunRequest(BaseModel):
@@ -1013,49 +968,9 @@ class SemanticValidationRunRead(BaseModel):
     error: str | None = None
 
 
-class SemanticGraphSetConstructRunRequest(BaseModel):
-    template: str
-    rule_definition_id: str | None = None
-    rule_version: str | None = None
-    engine_version: str | None = None
-    promote_pointer: bool = True
-    actor: str | None = None
-
-
-class SemanticGraphSetRuleRunRequest(BaseModel):
-    rule_definition_id: str | None = None
-    rule_iri: str | None = None
-    rule_definition_ids: list[str] | None = None
-    engine_version: str | None = None
-    promote_pointer: bool = True
-    actor: str | None = None
-
-
-class SemanticRuleRunRead(BaseModel):
-    run_id: str
-    status: str
-    engine_name: str
-    engine_version: str | None = None
-    graph_set_id: str
-    rule_definition_id: str | None = None
-    rule_version: str | None = None
-    result_graph_iri: str | None = None
-    rule_run_graph_iri: str | None = None
-    generated_statement_count: int = 0
-    statements: list[dict[str, Any]] = Field(default_factory=list)
-    bindings: list[dict[str, Any]] = Field(default_factory=list)
-    warnings: list[str] = Field(default_factory=list)
-    truncated: bool = False
-    audit_status: str = "system_accepted"
-    explanations: list[dict[str, Any]] = Field(default_factory=list)
-    rule_count: int | None = None
-    derived_pointer: dict[str, Any] | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    error: str | None = None
-
-
 class SemanticReasoningRunRead(BaseModel):
+    implementation_mode: str | None = None
+    engine_name: str | None = None
     run_id: str
     status: str
     consistent: bool | None = None
@@ -1092,11 +1007,6 @@ class ValidationRunListResponse(BaseModel):
 
 class ReasoningRunListResponse(BaseModel):
     items: list[SemanticReasoningRunRead]
-    summary: RunListSummary
-
-
-class RuleRunListResponse(BaseModel):
-    items: list[SemanticRuleRunRead]
     summary: RunListSummary
 
 
@@ -1137,7 +1047,6 @@ class SemanticExportRequest(BaseModel):
     include: Literal[
         "asserted",
         "asserted-plus-reasoning",
-        "asserted-plus-rules",
         "full-working-view",
     ] = "asserted"
     include_shapes: bool = False
@@ -1153,7 +1062,6 @@ class SemanticProjectionJobCreate(BaseModel):
     include: Literal[
         "asserted",
         "asserted-plus-reasoning",
-        "asserted-plus-rules",
         "full-working-view",
     ] = "asserted"
     allow_stale_derived: bool = False

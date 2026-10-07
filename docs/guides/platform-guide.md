@@ -53,7 +53,7 @@ cd backend && uv run python -m app.mcp.server
 ```
 
 frontend 默认请求同源 `/api`；手动跨源运行时可设置 `VITE_API_BASE_URL`。完整配置以
-[README](../README.md) 和 [`.env.example`](../.env.example) 为准。
+[README](../../README.md) 和 [`.env.example`](../../.env.example) 为准。
 
 ## 安全边界
 
@@ -119,8 +119,8 @@ apply；独立 reviewer 必须看到原资料清单/关键证据、Pack/Matrix�
 4. 网络中断后用原 idempotency key 重试或查询原 batch，不创建新 batch 猜测结果。
 5. 遇到 stale workspace、lease/fence 冲突或 recovering 时停止写入，重新读取上下文并按返回状态恢复。
 
-dry-run 后保存 review report。只有业务、语义、覆盖、证据、平台与独立评审六个门禁全部通过，主
-Agent 才能获取 lease 并 apply exact reviewed batch。Finding 以 Attempt ID + `finding_fingerprint`
+dry-run 后按当前获准 Task、候选批准和翻译审阅合同保存 review report，获取有效 lease 后
+apply exact reviewed batch。v4 不增加 Evidence／lineage 完整度门禁。Finding 以 Attempt ID + `finding_fingerprint`
 引用；相同 code/path 不能代替唯一身份。REVISE/BLOCKED 必须追加返工/阻塞事件并保留失败轮次。
 
 Modeling Batch 是当前写入协议，不经过旧 Proposal/Review/Publish 队列。人工确认只决定 Agent 是否
@@ -132,8 +132,9 @@ Modeling Batch 是当前写入协议，不经过旧 Proposal/Review/Publish 队�
 `discover_semantic_scopes`，分页读取当前身份的授权目录并显式选择 Project/Ontology。不要因为候选
 唯一而静默选择，也不要把发现时的 `workspace_version` 当成锁；后续查询会重新校验当前状态。
 
-用 Ontology read model、Context Query、scoped SPARQL、SHACL validation、reasoning/rule 结果和
-lineage 验证建模结果。普通 Agent 使用 Project/Ontology 范围，不需要读取或回传 Graph Set ID 和
+用 Ontology read model、Context Query、scoped SPARQL、SHACL validation 和 OWL reasoning
+结果验证建模结果。旧 Rule Run／rule-result 专用入口按 R4.0-022 退役，Evidence／完整 lineage
+按 R4.0-012 停用。普通 Agent 使用 Project/Ontology 范围，不需要读取或回传 Graph Set ID 和
 graph IRI。完成后保存 checkpoint 并 complete/cancel Build Session。
 同时保存 verification report 和事件，并可导出 JSON 或 Markdown 执行记录供另一个已授权 Agent
 恢复。平台 validation 通过不能单独代表业务质量通过。
@@ -143,19 +144,24 @@ Context Query 返回结构化语义上下文，不生成最终答案。平台不
 
 ## 当前 UI 工作区
 
-当前主导航按 Overview、Modeling、Debug、Settings 分组：
+v4.1 以项目为主工作空间；业务澄清、公开 CQ、地图和运行阅读不要求先创建 Ontology。
+主导航按项目总览、建模工作、语义模型、检索与验证、项目管理分组：
 
-- Overview：Project Brief、Structured Requirements、Evidence Reference；
-- Modeling：Classes、Entities、Rules、Facts；
-- Debug：governance/runtime diagnostics、Build Context、Recall、MCP Tools、Graph Sets；
-- Settings：编辑锁与平台依赖健康。
+- 项目总览：分别呈现业务确认、建模表达、平台应用与独立验收；缺少任务记录时剩余工作和下一动作保持未知。
+- 建模工作：Brief／访谈、获准公开能力问题、切片 × 七视角地图、候选、运行和交接记录。
+- 语义模型：统一模型浏览、普通业务规则语义、陈述及 OWL 结果；脚本只读，不提供旧规则执行器。
+- 检索与验证：Context Query 双游标、公开反馈及原验收报告、SHACL／OWL 校验与推理。
+- 项目管理：成员／权限角色／Grant、保护集、Key、技术 Class／Entity 图、Build Context、MCP 和运行诊断。
+
+Team／宿主读取为已绑定项目管理员的受授权只读投影，普通 read/model Key 不因页面存在而获得权限。
+浏览器防误操作锁仅限制本浏览器控件，不暂停 Agent 或改变服务端权限。
 
 历史页面组件已经移除，仅保留旧 URL tab 到当前工作区的轻量兼容跳转；这些跳转不代表旧 Version、
 Proposal、Catalog、Connector 或 Publication HTTP/MCP 协议仍然存在。
 
 ## HTTP 与 MCP
 
-HTTP 完整 operation 清单见 [api.md](api.md)，MCP 完整工具清单见 [mcp.md](mcp.md)。两个清单都
+HTTP 完整 operation 清单见 [api.md](../reference/api.md)，MCP 完整工具清单见 [mcp.md](../reference/mcp.md)。两个清单都
 从当前运行时 registry 生成，不应根据旧文档猜测 endpoint 或工具名。
 
 常用 MCP 流程由以下能力组成：
@@ -163,10 +169,9 @@ HTTP 完整 operation 清单见 [api.md](api.md)，MCP 完整工具清单见 [mc
 - health、Project/Build Context、Ontology workspace；
 - Brief、Interview Answer、Competency Question；
 - Build Session、Checkpoint、Ontology Lease；
-- Evidence Reference；
 - Modeling Context、Modeling Batch、read model；
 - Modeling Workflow Artifact/Event、question current state 和执行记录 export；
-- Context Query、scoped SPARQL、lineage 和语义验证。
+- Context Query、scoped SPARQL 和语义验证。
 - 授权范围发现 `discover_semantic_scopes`。
 
 当前不存在受支持的完整文件上传、Proposal/Review/Publish、Catalog/Connector、Neo4j Entity/Fact
@@ -175,7 +180,7 @@ MCP 流程。
 ## 存储与一致性
 
 - PostgreSQL：Project/Ontology 元数据、访谈状态、Evidence Reference、Build Session、lease、
-  Modeling Batch、Modeling Workflow Artifact/Event、rule、审计与 lineage 辅助状态。
+  Modeling Batch、Modeling Workflow Artifact/Event、审计，以及保留历史含义的旧 rule／lineage 辅助状态。
 - RDF Dataset / Oxigraph：当前本体结构、实例事实、Graph Registry/Graph Set、shape/policy 与语义
   statement。
 - Search/Vector writer 当前仍为 fake/in-memory 边界，不是持久召回索引。
@@ -190,4 +195,6 @@ fence 隔离并发，并在原 attempt 下向前恢复不确定结果。
   集成重跑；可重复的业务质量改善、任务集与指标报告仍由 R1.1-001 后续验收。
 - P1：持久 Search/Vector、模块依赖、不可变 release、异步任务、完整构建工作台等仍未闭环。
 
-需求目标与最新状态以 [requirements-v1.0.md](requirements-v1.0.md) 为准。
+以上为历史缺口摘要；当前任务的目标与状态以对应版本的权威需求为准。
+工作台范围见 [v4.1 需求](../requirements/requirements-v4.1.md)，其继承的语义与治理边界见
+[v4.0 需求](../requirements/requirements-v4.0.md)，不以旧版缺口覆盖当前验收结论。

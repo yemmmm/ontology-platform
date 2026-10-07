@@ -64,9 +64,6 @@ ALLOWED_TOOLS = {
     "run_semantic_reasoning",
     "list_semantic_reasoning_runs",
     "get_semantic_reasoning_run",
-    "submit_semantic_rule_definition",
-    "run_semantic_rule",
-    "get_semantic_rule_definition",
     "get_semantic_read_model",
     "export_semantic_graph_set",
     "inspect_semantic_projection_status",
@@ -90,6 +87,9 @@ ALLOWED_TOOLS = {
 # Tools that must never come back: legacy governance/publication/catalog/
 # graph/documents/facts machinery is gone for good post-B2.
 FORBIDDEN_TOOLS = {
+    "submit_semantic_rule_definition",
+    "run_semantic_rule",
+    "get_semantic_rule_definition",
     "get_ontology_lineage",
     "create_evidence_reference",
     "list_evidence_references",

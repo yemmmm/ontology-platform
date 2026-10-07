@@ -1,24 +1,3 @@
-/**
- * Stage 2 §6 — graph-derived FactAuditPage.
- *
- * The fact queue is sourced from the fact-audit-queue read-model composer
- * (backend/app/services/semantic_read_model.py::_compose_fact_audit_queue).
- * The composer routes by ``?kind=`` query parameter:
- *
- *   - asserted         → graph/data/{ontology_id}
- *   - inferred         → effective reasoning-result graph
- *   - rule_derived     → effective rule-result graph
- *
- * Toolbar actions:
- *   - Generate  → POST /graph-sets/{gs}/reasoning-runs + /rule-runs (async,
- *                 polled until both settle, then refetch)
- *   - Run rules → POST /graph-sets/{gs}/rule-runs only
- *   - Refresh   → invalidate local cache and refetch
- *
- * Selected facts can be edited/deleted through the canonical-write command
- * path.
- */
-
 import {
   Alert,
   Button,
@@ -32,23 +11,21 @@ import {
   Spin,
   Tag,
 } from "antd";
-import { Edit3, Play, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
+import { Edit3, Plus, RefreshCw, Sparkles, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 import { useT } from "../i18n";
 import {
   compileAndApplyProductCommand,
   getReasoningRun,
-  getRuleRun,
   readModel,
   runGraphSetReasoning,
-  runGraphSetRules,
 } from "../semanticApi";
 import type { WorkbenchRequest } from "./workbenchTypes";
 
-type AssertionKind = "asserted" | "inferred" | "rule_derived";
+type AssertionKind = "asserted" | "inferred";
 
-const REASONED_KINDS: ReadonlySet<AssertionKind> = new Set(["inferred", "rule_derived"]);
+const REASONED_KINDS: ReadonlySet<AssertionKind> = new Set(["inferred"]);
 
 /**
  * Local envelope type for FactAuditPage rendering. The backend
@@ -97,13 +74,11 @@ type FactAuditPageProps = {
 const KIND_OPTIONS: Array<{ label: string; value: AssertionKind }> = [
   { label: "Asserted", value: "asserted" },
   { label: "Inferred", value: "inferred" },
-  { label: "Rule-derived", value: "rule_derived" },
 ];
 
 const INCLUDE_FOR_KIND: Record<AssertionKind, string> = {
   asserted: "asserted",
   inferred: "asserted-plus-reasoning",
-  rule_derived: "asserted-plus-rules",
 };
 
 const POLL_INTERVAL_MS = 1500;
@@ -237,14 +212,11 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
 
   async function pollRun(
     runId: string,
-    isReasoning: boolean,
   ): Promise<{ status: string; error: string | null }> {
     const deadline = Date.now() + POLL_TIMEOUT_MS;
     while (Date.now() < deadline) {
       try {
-        const run = isReasoning
-          ? await getReasoningRun(request, runId)
-          : await getRuleRun(request, runId);
+        const run = await getReasoningRun(request, runId);
         const status = (run as { status?: string }).status ?? "running";
         if (status === "succeeded" || status === "completed" || status === "failed" || status === "error") {
           return { status, error: (run as { error?: string | null }).error ?? null };
@@ -265,11 +237,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         tasks: ["consistency", "classification"],
         persistResultGraph: true,
       });
-      const ruleRun = await runGraphSetRules(request, graphSetId, {
-        promotePointer: true,
-      });
-      const reasoningId = (reasoningRun as { run_id?: string }).run_id;
-      const ruleId = (ruleRun as { run_id?: string }).run_id;
+      const reasoningId = reasoningRun.run_id;
       const polled: Array<{
         label: string;
         runId: string;
@@ -280,14 +248,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
         polled.push({
           label: "reasoning",
           runId: reasoningId,
-          ...(await pollRun(reasoningId, true)),
-        });
-      }
-      if (ruleId) {
-        polled.push({
-          label: "rule",
-          runId: ruleId,
-          ...(await pollRun(ruleId, false)),
+          ...(await pollRun(reasoningId)),
         });
       }
       const failures = polled.filter((p) => p.status === "failed" || p.status === "error" || p.status === "timeout");
@@ -302,31 +263,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
           }),
         );
       } else {
-        setSuccess(t("Generate complete. Reasoning and rule runs finished."));
-      }
-      await load();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function runRules() {
-    setBusy(true);
-    setError("");
-    try {
-      const ruleRun = await runGraphSetRules(request, graphSetId, {
-        promotePointer: true,
-      });
-      const ruleId = (ruleRun as { run_id?: string }).run_id;
-      if (ruleId) {
-        const result = await pollRun(ruleId, false);
-        if (result.status === "failed" || result.status === "error" || result.status === "timeout") {
-          setError(t("Rule run {status}: {error}", { status: result.status, error: result.error ?? "?" }));
-        } else {
-          setSuccess(t("Rule run finished."));
-        }
+        setSuccess(t("OWL reasoning request finished. Check implementation mode and result validity."));
       }
       await load();
     } catch (cause) {
@@ -359,9 +296,6 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
           <Button icon={<RefreshCw size={15} />} onClick={() => void load()} disabled={busy}>
             {t("Refresh")}
           </Button>
-          <Button icon={<Play size={15} />} onClick={() => void runRules()} disabled={busy || readOnly}>
-            {t("Run rules")}
-          </Button>
           <Button
             type="primary"
             icon={<Sparkles size={15} />}
@@ -369,7 +303,7 @@ export function FactAuditPage({ graphSetId, ontologyId, readOnly, request }: Fac
             disabled={busy || readOnly}
             title={readOnly ? t("Workspace is locked. Unlock in Settings to edit modeling data.") : undefined}
           >
-            {t("Generate")}
+            {t("Run reasoning")}
           </Button>
           <Button
             icon={<Plus size={15} />}
@@ -536,7 +470,7 @@ function FactQueue({
 }) {
   const t = useT();
   if (rows.length === 0) {
-    return <Empty description={t("No facts in this kind. Run Generate or switch tabs.")} />;
+    return <Empty description={t("No facts in this kind. Run reasoning or switch tabs.")} />;
   }
   return (
     <Space direction="vertical" size={6} style={{ width: "100%" }}>

@@ -121,6 +121,8 @@ class SemanticReasoningService:
                     _insert_data_update(result_graph_iri, result.inferred_rdf)
                 )
             warnings: list[str] = []
+            if isinstance((result.metadata or {}).get("warning"), str):
+                warnings.append(result.metadata["warning"])
             run.status = "succeeded"
             run.consistent = result.consistent
             run.finished_at = datetime.now(UTC)
@@ -154,7 +156,6 @@ class SemanticReasoningService:
                     "status": pointer.status,
                     "became_current_at": pointer.became_current_at,
                 }
-                self._mark_rule_pointers_stale_after_reasoning(graph_set_id)
             self.session.commit()
             response = _reasoning_response(run, result, result_graph_iri, warnings)
             if promoted_pointer:
@@ -226,6 +227,10 @@ class SemanticReasoningService:
 
     def _serialize_run(self, run: SemanticReasoningRunModel) -> dict[str, Any]:
         metadata = run.run_metadata or {}
+        warnings = list(metadata.get("warnings", []))
+        warning = metadata.get("warning")
+        if isinstance(warning, str) and warning not in warnings:
+            warnings.append(warning)
         return {
             "run_id": run.id,
             "status": run.status,
@@ -238,10 +243,12 @@ class SemanticReasoningService:
             "input_graph_revisions": metadata.get("input_graph_revisions", {}),
             "input_derived_pointers": metadata.get("input_derived_pointers", {}),
             "engine_version": metadata.get("engine_version"),
+            "engine_name": metadata.get("engine_name"),
+            "implementation_mode": metadata.get("implementation_mode") or metadata.get("classification", {}).get("mode"),
             "shape_version": metadata.get("shape_version"),
             "tasks": metadata.get("tasks", []),
             "profile": metadata.get("profile", "owl2_dl"),
-            "warnings": metadata.get("warnings", []),
+            "warnings": warnings,
             "started_at": run.started_at,
             "finished_at": run.finished_at,
             "error": run.error,
@@ -262,33 +269,18 @@ class SemanticReasoningService:
             select(SemanticDerivedResultPointerModel)
             .where(SemanticDerivedResultPointerModel.graph_set_id == graph_set_id)
             .where(SemanticDerivedResultPointerModel.status == "current")
+            .where(SemanticDerivedResultPointerModel.result_kind == "reasoning")
         )
         return {
             row.result_kind: {
                 "run_id": row.run_id,
                 "result_graph_iri": row.result_graph_iri,
                 "engine_version": row.engine_version,
-                "rule_version": row.rule_version,
                 "shape_version": row.shape_version,
             }
             for row in rows
         }
 
-    def _mark_rule_pointers_stale_after_reasoning(self, graph_set_id: str) -> None:
-        rows = self.session.scalars(
-            select(SemanticDerivedResultPointerModel)
-            .where(SemanticDerivedResultPointerModel.graph_set_id == graph_set_id)
-            .where(SemanticDerivedResultPointerModel.result_kind == "rule")
-            .where(SemanticDerivedResultPointerModel.status == "current")
-        )
-        now = datetime.now(UTC).isoformat()
-        for row in rows:
-            row.status = "stale"
-            row.pointer_metadata = {
-                **(row.pointer_metadata or {}),
-                "stale_reason": "upstream_reasoning_pointer_changed",
-                "stale_at": now,
-            }
 
 
 def _insert_data_update(graph_iri: str, inferred_rdf: str) -> str:
@@ -323,5 +315,7 @@ def _reasoning_response(
         "tasks": metadata.get("tasks", []),
         "profile": metadata.get("profile", "owl2_dl"),
         "engine_version": metadata.get("engine_version"),
+        "engine_name": metadata.get("engine_name"),
+        "implementation_mode": metadata.get("implementation_mode") or metadata.get("classification", {}).get("mode"),
         "shape_version": metadata.get("shape_version"),
     }
