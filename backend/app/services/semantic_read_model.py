@@ -9,6 +9,7 @@ counting, or truncation.
 
 from __future__ import annotations
 
+import ast
 from datetime import datetime
 import hashlib
 import json
@@ -423,6 +424,10 @@ class SemanticReadModelService:
         if resources["source_signature"] != scope.source_signature:
             raise ReadModelError("Resource scope changed during reading; refresh the graph")
         endpoints = {item["iri"] for item in resources["items"]}
+        definitions: dict[str, set[str]] = {}
+        for resource in resources["items"]:
+            if resource.get("semantic_id"):
+                definitions.setdefault(resource["semantic_id"], set()).add(resource["iri"])
         warnings = list(resources["warnings"])
         endpoint_incomplete = not resources["paging"]["complete"]
         rows = []
@@ -446,6 +451,19 @@ class SemanticReadModelService:
             ).replace("{resource_iris}", values).replace(
                 "{relation_access_filter}", predicate_filter
             )
+            settings = getattr(self.scope_resolver, "settings", None) or Settings()
+            base = settings.semantic_base_iri.rstrip("/")
+            reference_predicates = [
+                f"{base}/vocab/{name}" for name in (
+                    "columnMappings", "joinPath", "mappingDefinition", "actionDefinition",
+                    "parameterDefinition", "ruleDefinition", "parameters", "preconditions",
+                    "effects",
+                )
+            ] + [f"{base}/property/mapping_payload"]
+            query = query.replace(
+                "{reference_predicates}",
+                ", ".join(f"<{_sparql_iri_value(iri)}>" for iri in reference_predicates),
+            )
             result = self.rdf_store.query_read_model(
                 query=query, graph_iris=scope.source_graph_iris,
                 timeout_seconds=self.timeout_seconds, limit=_FILTERED_FETCH_LIMIT,
@@ -454,25 +472,51 @@ class SemanticReadModelService:
             fetch_incomplete = len(rows) >= _FILTERED_FETCH_LIMIT or bool(
                 getattr(result, "truncated", False)
             )
-        by_triple: dict[tuple[str, str, str], dict[str, Any]] = {}
+        by_triple: dict[tuple[str, ...], dict[str, Any]] = {}
+        expanded_rows = []
         for row in rows:
+            payload = self._cell(row, "reference_payload")
+            if payload is None:
+                expanded_rows.append((row, ""))
+                continue
+            try:
+                structured = json.loads(payload)
+            except (ValueError, TypeError, RecursionError):
+                # Neutral mapping annotations in existing models were stored
+                # as Python dictionary literals. Read them without execution.
+                if not str(self._cell(row, "relation")).endswith("/property/mapping_payload"):
+                    continue
+                try:
+                    structured = ast.literal_eval(payload)
+                except (ValueError, SyntaxError, TypeError, RecursionError):
+                    continue
+            if self.access_view.any_unauthorized([structured]):
+                continue
+            for target, field_path in _explicit_resource_references(structured, definitions):
+                expanded_rows.append(({**row, "target": target}, field_path))
+        for row, field_path in expanded_rows:
             item = self._decorate_row(row, scope, template)
             if item.get("source") not in endpoints or item.get("target") not in endpoints:
                 continue
             if self.access_view.any_unauthorized([item.get("label")]):
                 item["label"] = None
+            triple = (item["source"], item["relation"], item["target"])
+            identity = (*triple, field_path) if field_path else triple
+            item["edge_kind"] = "structured_reference" if field_path else "rdf_relation"
+            if field_path:
+                item["field_path"] = field_path
+                item["label"] = field_path
             if not self.access_view.filter_items([item]):
                 continue
-            triple = (item["source"], item["relation"], item["target"])
-            # Identity is the actual triple, independent of graph or label.
+            # Structured references also retain their exact field position.
             item["id"] = hashlib.sha256(
-                json.dumps(triple, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+                json.dumps(identity, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
             ).hexdigest()
-            previous = by_triple.get(triple)
+            previous = by_triple.get(identity)
             if previous is None or (
                 item["source_graph_iri"], item.get("label") or ""
             ) < (previous["source_graph_iri"], previous.get("label") or ""):
-                by_triple[triple] = item
+                by_triple[identity] = item
         items = [by_triple[key] for key in sorted(by_triple)]
         paging = self._paging_state(
             limit=limit, returned=min(len(items), limit), visible_count=len(items),
@@ -2115,6 +2159,35 @@ class SemanticReadModelService:
             ),
             "is_stale": is_stale,
         }
+
+
+def _explicit_resource_references(
+    value: Any, definitions: dict[str, set[str]], path: str = ""
+) -> list[tuple[str, str]]:
+    """Read explicit reference slots only; never interpret descriptions or names."""
+    references = []
+    if isinstance(value, dict):
+        for key, child in value.items():
+            if not isinstance(key, str):
+                continue
+            field_path = f"{path}.{key}" if path else key
+            if key == "definition_ref" and isinstance(child, str):
+                targets = definitions.get(child, set())
+                if len(targets) == 1:
+                    references.append((next(iter(targets)), field_path))
+            elif key.endswith("_iri") and isinstance(child, str):
+                references.append((child, field_path))
+            elif key.endswith("_iris") and isinstance(child, list):
+                references.extend(
+                    (target, f"{field_path}[{index}]")
+                    for index, target in enumerate(child) if isinstance(target, str)
+                )
+            elif isinstance(child, (dict, list)):
+                references.extend(_explicit_resource_references(child, definitions, field_path))
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            references.extend(_explicit_resource_references(child, definitions, f"{path}[{index}]"))
+    return references
 
 
 def _sparql_iri_value(value: str) -> str:

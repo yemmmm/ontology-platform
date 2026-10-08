@@ -157,3 +157,38 @@
 - 核对工作树，只有本轮拥有的后端服务／新测试、前端源码／测试及文档；按明确路径
   暂存并以 `Rewrite frontend as five-tab workspace` 完成提交闭环。提交不包含凭据、
   生成 dist、测试模型或原始数据库内容，不重复无变化的产品测试。
+
+
+### 2026-10-08 — 结构引用展示补齐与后续检查需求登记
+
+- 用户授权两项工作：补齐模型浏览的结构引用展示；仅登记建模完成后的游离节点检查，
+  后者为 [R4.0-024](../../requirements/requirements-v4.0.md#r40-024-建模完成后的模型检查首项游离节点)。
+  未启动真实建模、改写现有模型或实施未来检查流程。
+- resource-relations v2 同时读取实际 IRI 三元组和既有结构定义中的明确引用；
+  definition_ref 按获准窗口内唯一 semantic_id 解析，精确 *_iri／*_iris 指向获准端点。
+  兼容当前模型 mapping_payload 的 JSON／安全字典字面量，保留谓词、图位置、字段路径。
+  实线与虚线分别展示两类边；不按名称／自由说明猜边，也不向 RDF 补造断言。
+- GitNexus context／impact 无当前 composer 符号，使用实际调用点和 diff；detect_changes
+  给出 low 但索引陈旧，不宣称图覆盖。变更仅触及指定关系投影、模型画布和相关测试。
+- 定向真实 RDF 回归 **16 passed**；前端 build PASS；全 Playwright **31 passed**；
+  接口文档生成器 --check PASS；变更文档未引入新坏链接，需求编号／索引唯一，diff 格式通过。
+- 开发失败轮保留：授权反例 fixture 的自由说明包含受限 IRI，按已有治理规则正确屏蔽整个
+  payload，修正 fixture 后通过；视角反例原选 process，而共享节点在另一读取位置也声明
+  process，改为 object 验证真实过滤后通过。均为测试前置错误，未降低产品授权或过滤要求。
+- 全后端初轮因 backend 工作目录缺少根目录导入路径，7 个 modeling_team 收集错误；
+  按现有运行方式运行 `env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest`，
+  最终 **1145 passed／54 skipped（225.42s）**；未将跳过用例报告为通过。
+- 新代码在现有 PostgreSQL／Oxigraph 上只读验证：当前 GraphSet
+  ec8b5ce0-113f-5c6a-8a03-8d05bf0a54df 返回 **225 边 = 203 真实关系 + 22 结构引用**；
+  156 个画布节点，游离节点 **20 → 7**，paging.complete=true、warnings=[]。
+  剩余 7 项为无响应体、3 个后续故障／工单定义、SLA target、关闭原因／客户确认引用来源，
+  不因展示补齐自动判错、补关系或删除。本证据是只读展示功能回读，不是模型质量验收。
+- 本轮独立功能验收及真实语义验收未执行，不继承原五 Tab 独立 PASS 为本轮增量结论。
+
+- 10:12:09+08 服务重启完成，启动就绪后 systemd active、后端 health ok、前端 HTTP 200。
+  重启后的真实 HTTP／中文浏览器读取均为 156 节点、225 边，其中 22 条结构引用；
+  工单—故障 Join 准确连接工单表与故障表，来源字段两项可定位，page errors=[]。
+  首轮浏览器探针未设置中文而断言中文文案，纠正探针语言后通过，产品无变更。
+- 实际查看截图 `/tmp/v42-structured-references-live-mapping.png`：Join 两端虚线可见、
+  来源字段标签与说明存在，选中节点详情和既有风格正常；完整页面截图及无凭据响应
+  保留于 `/tmp/v42-structured-references-live.{png,json}`。以上为开发侧真实功能验证。

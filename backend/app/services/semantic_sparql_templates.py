@@ -102,7 +102,7 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     ),
     "resource-relations": ReadModelTemplate(
         name="resource-relations",
-        projection_version="semantic-resource-relations-v1",
+        projection_version="semantic-resource-relations-v2",
         required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=False,
         default_limit=1000,
@@ -110,19 +110,26 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         primary_iri_variable="source",
         body="""# template: resource-relations
         PREFIX rdfs: <http://www.w3.org/2000/01/rdf-schema#>
-        SELECT ?source ?relation ?target (MIN(?relation_label) AS ?label) ?graph WHERE {
+        SELECT ?source ?relation ?target ?reference_payload
+               (MIN(?relation_label) AS ?label) ?graph WHERE {
           VALUES ?graph { {graph_iris} }
-          GRAPH ?graph { ?source ?relation ?target . }
+          {
+            GRAPH ?graph { ?source ?relation ?target . }
+            FILTER(isIRI(?source) && isIRI(?target))
+            FILTER(?source IN ({resource_iris}) && ?target IN ({resource_iris}))
+          } UNION {
+            GRAPH ?graph { ?source ?relation ?reference_payload . }
+            FILTER(?source IN ({resource_iris}) && isLiteral(?reference_payload))
+            FILTER(?relation IN ({reference_predicates}))
+          }
           {relation_access_filter}
-          FILTER(isIRI(?source) && isIRI(?target))
-          FILTER(?source IN ({resource_iris}) && ?target IN ({resource_iris}))
           OPTIONAL {
             VALUES ?label_graph { {graph_iris} }
             GRAPH ?label_graph { ?relation rdfs:label ?relation_label . }
           }
         }
-        GROUP BY ?source ?relation ?target ?graph
-        ORDER BY ?source ?relation ?target ?graph
+        GROUP BY ?source ?relation ?target ?reference_payload ?graph
+        ORDER BY ?source ?relation ?target ?reference_payload ?graph
         LIMIT {limit}
         """,
     ),

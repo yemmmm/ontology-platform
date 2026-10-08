@@ -658,7 +658,16 @@ Ontology plan 后同步原 state 的绑定并保留状态和额外字段，历�
 
 返回既有 SemanticReadModelEnvelope；items 包含稳定三元组 id、source、target、relation
 （predicate IRI）、可选 label、source_graph_iri、assertion_kind。同一三元组跨图只返回
-一个稳定身份及一处真实图位置；不从注解 JSON 字符串或名称推断额外边，字面量不是节点。
+一个稳定身份及一处真实图位置；不从自由文本或名称推断额外边，字面量不是节点。
+
+2026-10-08 投影升级为 `semantic-resource-relations-v2`：`edge_kind=rdf_relation` 表示
+真实 IRI 三元组，`edge_kind=structured_reference` 表示已有结构字段中的明确资源引用。
+后者另含 `field_path`，label 为该字段路径，relation 仍为原结构字段谓词，
+source_graph_iri 为原字面量所在图。稳定 id 纳入字段路径，避免同一资源在不同位置的引用被合并。
+只读取既有映射／语义定义字段中的 `definition_ref`、`*_iri`、`*_iris`；
+definition_ref 按同一获准 resource-list 窗口内唯一的 semantic_id 解析，精确 IRI
+也必须落在该窗口内。兼容旧中性 mapping_payload 的 JSON 或安全字典字面量读取，
+不执行代码、不按名称猜测、不写入额外 RDF 关系。源、目标、谓词和引用授权仍先于计数／分页。
 端点窗口在实际 RDF 查询前限定；受限 predicate 在查询端排除，可选 label 经过原有嵌套
 引用授权检查，不能公开的标签省略而保留已获准关系，客户端可用 predicate IRI 显示。
 

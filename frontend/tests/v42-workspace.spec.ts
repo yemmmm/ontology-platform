@@ -147,6 +147,23 @@ test("T06 seven explicit views and loaded search intersect without removing othe
   await page.getByRole("button", { name: "Zoom out" }).click();
   await page.getByRole("button", { name: "Fit graph" }).click();
 });
+test("T05 structured references remain separate from asserted edges and follow viewpoint filters", async ({ page }) => {
+  await mockWorkspace(page, { handler: async (path, route) => {
+    if (!path.includes("g1") || !path.endsWith("resource-relations")) return false;
+    const reference = { ...relations[0], id: "reference", edge_kind: "structured_reference", field_path: "mapped_definition.definition_ref", label: "mapped_definition.definition_ref" };
+    await route.fulfill({ json: envelope([...relations, reference]) });
+    return true;
+  } });
+  await page.goto("/?tab=model");
+  const graph = page.getByRole("img", { name: "Model graph" });
+  await expect(graph).toHaveAttribute("data-edge-count", "2");
+  await expect(graph).toHaveAttribute("data-reference-count", "1");
+  await expect(page.getByText("Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.")).toBeVisible();
+  await page.getByLabel("Viewpoint").selectOption("object");
+  await expect(graph).toHaveAttribute("data-edge-count", "0");
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(graph).toHaveAttribute("data-reference-count", "1");
+});
 test("T07 bounded partial data, failed scope and mismatched signatures retain successful nodes", async ({ page }) => {
   await mockWorkspace(page, { handler: async (path, route) => {
     if (path.includes("o2/workspace-context")) { await route.fulfill({ status: 403, json: { detail: { code: "forbidden" } } }); return true; }

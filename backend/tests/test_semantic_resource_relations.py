@@ -291,3 +291,85 @@ def test_resource_window_signature_change_rejects_mixed_scope():
     )
     with pytest.raises(ReadModelError, match="Resource scope changed"):
         reader.read_model("gs-1", "resource-relations")
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+def test_mapping_reference_fields_connect_loaded_definitions_without_guessing(legacy):
+    store = DatasetStore()
+    data = store.dataset.graph(URIRef(DATA))
+    for name in ("mapping", "table", "value"):
+        iri = URIRef(EX + name)
+        data.add((iri, RDF.type, OWL.NamedIndividual))
+        data.add((iri, URIRef(OP_VOCAB_PREFIX + "id"), Literal(name)))
+    predicate = URIRef(OP_VOCAB_PREFIX.replace("/vocab/", "/property/") + "mapping_payload")
+    payload = {
+        "left_table_mapping": {"definition_ref": "table"},
+        "semantic_value_ref": {"definition_ref": "value"},
+        "business_meaning": EX + "table",
+        "example": {"target": EX + "table"},
+        "unknown_ref": {"definition_ref": "not-loaded"},
+    }
+    data.add((URIRef(EX + "mapping"), predicate, Literal(str(payload) if legacy else json.dumps(payload))))
+    result = service(store).read_model("gs-1", "resource-relations")
+    assert {(item["target"], item["field_path"]) for item in result["items"]} == {
+        (EX + "table", "left_table_mapping.definition_ref"),
+        (EX + "value", "semantic_value_ref.definition_ref"),
+    }
+    assert all(item["edge_kind"] == "structured_reference" for item in result["items"])
+    assert all(item["relation"] == str(predicate) for item in result["items"])
+    assert all(item["source_graph_iri"] == DATA for item in result["items"])
+    assert result["paging"]["complete"]
+    # Authorization is applied before resolving references and counting edges.
+    hidden_result = service(store, [EX + "value"]).read_model("gs-1", "resource-relations")
+    assert len(hidden_result["items"]) == 1
+    assert hidden_result["items"][0]["target"] == EX + "table"
+    assert hidden_result["paging"]["visible_count"] == 1
+    assert EX + "value" not in json.dumps(hidden_result)
+    assert service(store, [str(predicate)]).read_model("gs-1", "resource-relations")["items"] == []
+    data.set((URIRef(EX + "mapping"), predicate, Literal(json.dumps({
+        "left_table_mapping": {"definition_ref": "table"},
+        "nested": {"target_iri": EX + "value"},
+    }))))
+    assert service(store, [EX + "value"]).read_model("gs-1", "resource-relations")["items"] == []
+
+
+def test_structured_iri_references_keep_positions_and_do_not_replace_rdf_edges():
+    store = DatasetStore()
+    data = store.dataset.graph(URIRef(DATA))
+    for name in ("source", "target"):
+        data.add((URIRef(EX + name), RDF.type, OWL.NamedIndividual))
+        data.add((URIRef(EX + name), URIRef(OP_VOCAB_PREFIX + "id"), Literal(name)))
+    source, target = URIRef(EX + "source"), URIRef(EX + "target")
+    predicate = URIRef(OP_VOCAB_PREFIX + "parameterDefinition")
+    payload = {"first_iri": str(target), "nested": [{"second_iri": str(target)}]}
+    data.add((source, predicate, Literal(json.dumps(payload))))
+    data.add((source, predicate, target))
+    result = service(store).read_model("gs-1", "resource-relations")
+    assert len(result["items"]) == 3
+    assert len({item["id"] for item in result["items"]}) == 3
+    assert {item.get("field_path") for item in result["items"]} == {
+        None, "first_iri", "nested[0].second_iri",
+    }
+    assert {item["edge_kind"] for item in result["items"]} == {
+        "rdf_relation", "structured_reference",
+    }
+    bounded = service(store).read_model("gs-1", "resource-relations", limit=1)
+    assert bounded["paging"]["visible_count"] == 3
+    assert bounded["paging"]["has_more"] and not bounded["paging"]["complete"]
+    assert service(store, [str(target)]).read_model("gs-1", "resource-relations")["items"] == []
+
+
+def test_ambiguous_definition_ids_and_malformed_literals_never_invent_edges():
+    store = DatasetStore()
+    data = store.dataset.graph(URIRef(DATA))
+    for name in ("source", "target1", "target2"):
+        data.add((URIRef(EX + name), RDF.type, OWL.NamedIndividual))
+        data.add((URIRef(EX + name), URIRef(OP_VOCAB_PREFIX + "id"),
+                  Literal("same" if name.startswith("target") else name)))
+    source = URIRef(EX + "source")
+    predicate = URIRef(OP_VOCAB_PREFIX.replace("/vocab/", "/property/") + "mapping_payload")
+    data.add((source, predicate, Literal("{'mapped_definition': {'definition_ref': 'same'}}")))
+    data.add((source, predicate, Literal("__import__('os').getcwd()")))
+    data.add((source, URIRef(OP_VOCAB_PREFIX + "parameterDefinition"), Literal("{invalid")))
+    result = service(store).read_model("gs-1", "resource-relations")
+    assert result["items"] == []

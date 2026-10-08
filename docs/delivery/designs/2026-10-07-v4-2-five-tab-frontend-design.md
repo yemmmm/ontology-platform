@@ -8,6 +8,10 @@
 状态：需求细化与详细设计完成，独立设计审阅 Round 1 PASS（0 Critical／0 High，
 无待确认关键假设）；未开发，功能用例均未执行。
 
+2026-10-08 用户补充授权结构引用展示，D5 与模型浏览合同随本轮增量更新。
+本轮开发及运行验证见[交付记录](../records/2026-10-07-v4-2-five-tab-frontend-delivery-record.md)；
+上述独立设计审阅是原设计的历史结论，不自动覆盖本轮补充。
+
 例如用户进入“设备维修”项目，先读项目介绍、当前进度、CQ 与验收摘要；在模型浏览画布
 搜索“工单”、切到“流程”视角，再输入“关闭工单需要什么条件”测试相关节点召回。
 这条阅读路径只使用五个 Tab，旧运行控制和管理功能不被迁回新页面。
@@ -28,7 +32,7 @@
 | D2 | 左侧单层导航、顶部项目选择，保留浅色、白面板、紫色强调；小屏改为横向可滚动导航 | 延续实际样式，消除旧多分组结构；明确超过 85% | 按设计授权采用 |
 | D3 | 概览基于当前绑定 run；缺少当前 run 时展示明确标为历史的最近记录，进度保留未知；不合并历史 PASS | workbench 现有当前绑定、公开投影、适用性合同；明确超过 85% | 按设计授权采用 |
 | D4 | 图谱按项目各 Ontology 默认 GraphSet 有界加载；视角过滤节点，搜索定位已加载节点，显示部分加载限制 | 现有 resource-list 无续页合同；避免无界全图或假完整；明确超过 85% | 按设计授权采用 |
-| D5 | 增加一个通用 resource-relations read-model，连接同一范围内真实 RDF IRI 关系，覆盖非 NamedIndividual 节点 | entity-relations 模板排除 Class 等资源，直接影响画布需求；明确超过 85% | 按设计授权采用，登记必要平台增量 |
+| D5 | 通用 resource-relations 读取同一范围内真实 RDF IRI 关系，并按 2026-10-08 用户授权增补明确结构引用；两类边分别展示 | 真实数据中的映射引用保存在结构字面量中，原画布无法连线 | 原设计及用户本轮补充授权 |
 | D6 | 召回固定项目范围、hybrid、depth=0，只显示节点主命中与“加载更多” | 用户要求 query 到节点；复用 Context Query 主命中游标；明确超过 85% | 按设计授权采用 |
 | D7 | 成员权限只读已有权限角色及 Grant；不请求用户、成员、保护集、Key 列表 | 权威需求已限定展示范围 | 沿用用户确认 |
 | D8 | 设置仅语言偏好、当前账号、退出；无健康检查、编辑锁或其他旧设置项 | 用户本轮回答“采用最小清单：语言、账号、退出” | 用户本轮确认，已关闭 |
@@ -116,8 +120,9 @@ source.updated_at 选最近的可读正式报告并标历史／适用性未知�
    节点，保存各 Ontology／GraphSet 位置及其真实字段，不按名称或 Class 合并。跨位置字段
    不同不覆盖，节点详情可选择已有位置读取，不创建新的 Ontology 页。定义仍保留在读取
    接口中，谓词继续作为边标签，关系仅在两端均为画布节点时绘制。
-4. 关系仅来自同一位置已返回的真实 RDF 三元组，按 source／predicate／target 去重绘制并
-   保留各位置；两端必须是已加载节点。不能从名称、画布距离或 JSON 文本猜边。
+4. 边来自同一位置已返回的真实 RDF 三元组或明确结构引用，保留各位置；两端必须是已加载
+   节点。真实关系按 source／predicate／target 去重，结构引用另保留 field_path 身份；
+   实线／虚线及文案说明区分两类边，引用标签显示来源字段。不能从名称、距离或自由文本猜边。
 5. 七视角读取 detail_fields.semantic_definition.semantic_role；角色为
    object／behavior／rule／business_role／process／data_mapping／interface_mapping。
    过滤保留具有该显式声明的节点及两端均保留的边；未声明／未知角色只在“全部”显示。
@@ -149,7 +154,16 @@ source.updated_at 选最近的可读正式报告并标历史／适用性未知�
 - 合法端点来自同一 GraphSet 现有 resource-list 的受治理资源身份，包括 Class、属性、
   关系类型、无 Class 实体、Operation、映射和指标。端点窗口沿用 500；关系返回上限 1000。
   查询匹配真实 IRI 三元组，可包含 rdf:type、rdfs:subClassOf 等实际 schema 关系，
-  不再要求 NamedIndividual；字面量不是图谱节点，不将注解 JSON 的字符串解析成关系。
+  不再要求 NamedIndividual；字面量不是图谱节点，不从自由文本推断关系。
+- 2026-10-08 展示补齐：projection_version 升为 semantic-resource-relations-v2，增加
+  edge_kind（rdf_relation／structured_reference），结构引用另含 field_path；relation
+  保留原字段谓词、source_graph_iri 保留原字面量图位置，不冒充新断言。
+  只读取既有 columnMappings／joinPath／mappingDefinition／actionDefinition／
+  parameterDefinition／ruleDefinition／parameters／preconditions／effects 与中性
+  mapping_payload 字段；递归读取明确的 definition_ref、*_iri、*_iris 槽位。
+  definition_ref 只按已加载获准 semantic_id 唯一解析；IRI 只允许获准窗口内的精确端点。
+  JSON 优先；仅旧 mapping_payload 兼容安全字典字面量解析。无法解析的内容不猜边。
+  授权、去重和结构引用展开均在最终计数／分页前完成，不修改 RDF 或既有模型。
 - 必须复用 scope resolver、access_view 及已有嵌套引用授权机制。subject、predicate、object
   和展示字段授权先于窗口计数与 LIMIT；不能拿原始 RDF 后在浏览器隐藏受限资源。
   内部固定 fetch 上限命中时返回不完整提示，沿用现有先授权、后截取策略。
