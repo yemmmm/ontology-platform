@@ -85,7 +85,7 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   verbatim from the report and completes each page chain by group), `checks`
   (a flat map of exactly these eight keys to PASS/FAIL/BLOCKED:
   competency_questions, evidence_lineage, explicit_unknowns, governed_retrieval,
-  ontology_structure, scope, source_fidelity, validation_reasoning),
+  ontology_structure, scope, source_fidelity, deterministic_write_readback),
   `competency_question_results` (a list with exactly one item containing ONLY
   `status`, `answer`, and `evidence_ref_ids`; `status` is exactly one of
   `PASS`, `FAIL`, or `BLOCKED`, and a positive answer uses `PASS`),

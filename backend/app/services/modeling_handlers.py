@@ -7,14 +7,13 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
 from app.core.config import Settings
+from app.services.semantic_export import namespace_from_settings
 from app.repositories.rdf_store import RdfGraphDelta
 from app.services.semantic_command_compiler import (
     CompiledCommand,
     InvalidCommandPayload,
-    ShapeTargetConflict,
     compile_command,
 )
-from app.services.semantic_export import namespace_from_settings
 
 
 FORBIDDEN_TARGET_FIELDS = {
@@ -30,7 +29,6 @@ CREATE_RESOURCES: dict[str, tuple[str, str]] = {
     "create_class": ("class_id", "class"),
     "create_property": ("property_id", "property"),
     "create_relation_type": ("relation_type_id", "relation-type"),
-    "create_shape": ("shape_id", "shape"),
     "create_entity": ("entity_id", "entity"),
     "create_mapping": ("mapping_id", "mapping"),
     "create_operation": ("operation_id", "operation"),
@@ -50,9 +48,6 @@ RDF_COMMANDS = {
     "create_relation_type",
     "update_relation_type",
     "delete_relation_type",
-    "create_shape",
-    "update_shape",
-    "delete_shape",
     "create_entity",
     "update_entity",
     "delete_entity",
@@ -131,22 +126,6 @@ ALLOWED_FIELDS: dict[str, set[str]] = {
         "inverse_name",
     },
     "delete_relation_type": {"relation_type_id", "relation_type_iri"},
-    "create_shape": {
-        "shape_id",
-        "target_class_id",
-        "target_node_iri",
-        "target_subjects_of_iri",
-        "constraints",
-    },
-    "update_shape": {
-        "shape_id",
-        "shape_iri",
-        "target_class_id",
-        "target_node_iri",
-        "target_subjects_of_iri",
-        "constraints",
-    },
-    "delete_shape": {"shape_id", "shape_iri"},
     "create_entity": {
         "entity_id",
         "class_iri_or_legacy_id",
@@ -359,7 +338,7 @@ for _kind in (
 
 for _verb in ("create", "update"):
     ALLOWED_FIELDS[f"{_verb}_entity"].update({
-        "action_definition", "parameter_definition", "rule_definition",
+        "action_definition", "parameter_definition",
     })
 
 
@@ -418,10 +397,6 @@ class ModelingCommandHandlerRegistry:
             compiled = compile_command(
                 command_kind, {"ontology_id": ontology_id, **normalized}, self.settings
             )
-            # Shape commands keep the compiler's target graph: the custom
-            # shapes sub-graph is the single write/read location for
-            # caller-authored shapes (R3.0-009 §6.1), so the shape endpoint can
-            # project them without a second copy in the parent shapes graph.
             return PreparedModelingCommand(command_kind, normalized, outputs, compiled, "rdf")
         raise InvalidCommandPayload(f"Unsupported Modeling command: {command_kind}")
 
@@ -448,23 +423,6 @@ class ModelingCommandHandlerRegistry:
                 raise InvalidCommandPayload(
                     "create_entity.class_iris must be an array of class ids or absolute IRIs"
                 )
-        if command_kind in {"create_shape", "update_shape"}:
-            targets = [
-                field
-                for field in ("target_class_id", "target_node_iri", "target_subjects_of_iri")
-                if payload.get(field) not in (None, "")
-            ]
-            if len(targets) > 1:
-                raise ShapeTargetConflict(
-                    "shape_target_conflict: combine "
-                    + ", ".join(targets)
-                    + " into separate shapes; one target per shape",
-                    fields=tuple(targets),
-                )
-            for field in ("target_node_iri", "target_subjects_of_iri"):
-                value = payload.get(field)
-                if value is not None and value != "" and not isinstance(value, str):
-                    raise InvalidCommandPayload(f"{command_kind}.{field} must be an absolute RDF IRI")
         if command_kind.endswith("mapping") and ({"source_id", "run_id"} & set(payload)):
             raise InvalidCommandPayload(
                 "unsupported_batch_variant: import-run Mapping commands are not accepted"

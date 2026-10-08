@@ -3,7 +3,7 @@
 After Phase 7 cutover, both direct semantic edits and structured product command
 compilers route through this service so that:
 
-  * graph deltas are validated by SHACL and platform checks once,
+  * graph deltas pass the necessary platform contract checks once,
   * editability is enforced before mutation,
   * audit metadata is recorded in one place,
   * graph revisions bump on every committed change,
@@ -19,10 +19,6 @@ from __future__ import annotations
 from typing import Any
 from uuid import uuid4
 
-from pyshacl import validate as pyshacl_validate
-from rdflib import Graph
-from rdflib.namespace import RDF, SH
-from rdflib.term import Node, URIRef
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -35,7 +31,6 @@ from app.repositories.models import (
 )
 from app.repositories.rdf_store import (
     GraphWriteResult,
-    RdfFormat,
     RdfGraphDelta,
     RdfStoreRepository,
 )
@@ -49,7 +44,6 @@ from app.services.semantic_derived_state import (
 )
 from app.services.semantic_graph_registry import (
     DirectEditCategoryDenied,
-    GraphCategory,
     GraphRegistryError,
     SemanticGraphRegistryService,
 )
@@ -73,15 +67,7 @@ class LockedCanonicalGraph(CanonicalSemanticWriteError):
     status_code = 409
 
 
-class ShapeNotFound(CanonicalSemanticWriteError):
-    """R3.0-009 / D11: update_shape must not silently upsert a missing shape."""
-
-    code = "shape_not_found"
-    status_code = 404
-    path: tuple[str, ...] = ("payload", "shape_id")
-
-
-class CanonicalShaclViolation(CanonicalSemanticWriteError):
+class CanonicalValidationError(CanonicalSemanticWriteError):
     status_code = 422
 
     def __init__(self, message: str, validation_result: dict[str, Any] | None = None) -> None:
@@ -158,36 +144,17 @@ class CanonicalSemanticWriteService:
         graph_set_id: str | None = None,
         actor: str | None = None,
         reason: str | None = None,
-        validate: bool = True,
-        shape_graph_iris: list[str] | None = None,
-        candidate_graph_iris: list[str] | None = None,
-        created_shape_iris: list[str] | None = None,
         commit: bool = True,
         audit_id: str | None = None,
         fence_attempt_id: str | None = None,
         write_rdf: bool = True,
         modeling_item_effects: dict[tuple[str, str, str, str], list[str]] | None = None,
     ) -> dict[str, Any]:
-        """Apply a compiled product command through the canonical pipeline.
-
-        ``candidate_graph_iris`` is the data scope the SHACL candidate is read
-        from and must match the caller's pre-check scope (R3.0-009 §6.1 / D2):
-        Shape commands do not touch the data graph, so falling back to the
-        delta's own graphs would validate the shapes graph against itself and
-        reject every satisfied ``sh:targetNode`` constraint at apply time.
-        ``created_shape_iris`` mirrors the pre-check (D11 / D15): a shape a
-        sibling item of the same batch creates is legal to update, because the
-        merged delta lands in one write.
-        """
-        compiled = self._with_shape_cascade(compiled)
+        """Apply a compiled command with contract guards, revisions and atomic writes."""
         warnings: list[str] = []
 
         validation_result = self.validate_compiled_command(
             compiled,
-            validate_shacl=validate,
-            shape_graph_iris=shape_graph_iris,
-            candidate_graph_iris=candidate_graph_iris,
-            created_shape_iris=created_shape_iris,
             fence_attempt_id=fence_attempt_id,
         )
         if fence_attempt_id is None:
@@ -208,8 +175,6 @@ class CanonicalSemanticWriteService:
                 error = CanonicalWriteBlocked(str(exc))
                 error.code = exc.code
                 raise error from exc
-        if not validate:
-            warnings.append("SHACL validation skipped by request")
 
         affected = compiled.delta.affected_graph_iris()
         write_result = (
@@ -284,8 +249,6 @@ class CanonicalSemanticWriteService:
         graph_set_id: str | None = None,
         actor: str | None = None,
         reason: str | None = None,
-        validate: bool = True,
-        shape_graph_iris: list[str] | None = None,
         commit: bool = True,
         audit_id: str | None = None,
         fence_attempt_id: str | None = None,
@@ -297,8 +260,6 @@ class CanonicalSemanticWriteService:
             graph_set_id=graph_set_id,
             actor=actor,
             reason=reason,
-            validate=validate,
-            shape_graph_iris=shape_graph_iris,
             commit=commit,
             audit_id=audit_id,
             fence_attempt_id=fence_attempt_id,
@@ -320,21 +281,9 @@ class CanonicalSemanticWriteService:
         self,
         compiled: CompiledCommand,
         *,
-        validate_shacl: bool = True,
-        shape_graph_iris: list[str] | None = None,
-        candidate_graph_iris: list[str] | None = None,
         fence_attempt_id: str | None = None,
-        created_shape_iris: list[str] | None = None,
-        updated_shape_iris: list[str] | None = None,
     ) -> dict[str, Any] | None:
-        """Run every deterministic canonical guard without mutating RDF or SQL.
-
-        A merged batch candidate carries no per-item command kind, so the
-        caller reports the shapes its ``create_shape`` / ``update_shape`` items
-        touch (R3.0-009 / D11): a shape created by a sibling item is legal to
-        update, an unknown shape id fails loudly instead of upserting.
-        """
-        compiled = self._with_shape_cascade(compiled)
+        """Run the necessary deterministic contract guards before mutation."""
         self._require_writer_enabled()
         self._lock_ontology(compiled)
         self._require_fence_access(compiled, fence_attempt_id)
@@ -363,7 +312,7 @@ class CanonicalSemanticWriteService:
                 self.session, self.rdf_store, self.settings, compiled.delta, ontology_id
             )
             if findings:
-                error = CanonicalShaclViolation(
+                error = CanonicalValidationError(
                     findings[0]["message"], {"conforms": False, "violations": findings}
                 )
                 error.code = findings[0]["code"]
@@ -378,22 +327,6 @@ class CanonicalSemanticWriteService:
             error = CanonicalSemanticWriteError(f"{exc.code}: {exc}")
             error.code = exc.code
             raise error from exc
-        shape_iri = compiled.metadata.get("shape_iri")
-        if compiled.command_kind == "update_shape" and shape_iri:
-            updated_shape_iris = [*(updated_shape_iris or []), str(shape_iri)]
-        for update_iri in dict.fromkeys(updated_shape_iris or []):
-            if update_iri in set(created_shape_iris or ()):
-                continue
-            self._require_existing_shape(compiled, update_iri)
-        if validate_shacl and shape_graph_iris:
-            result = self._validate_candidate(
-                compiled.delta, shape_graph_iris, candidate_graph_iris
-            )
-            if result["conforms"] is False:
-                raise CanonicalShaclViolation(
-                    "Canonical write does not conform to SHACL shapes", result
-                )
-            return result
         return None
 
     def _lock_ontology(self, compiled: CompiledCommand) -> None:
@@ -420,78 +353,6 @@ class CanonicalSemanticWriteService:
         """Expose the compiler for parity checks without mutating the store."""
         return compile_command(command_kind, payload, self.settings)
 
-    def _with_shape_cascade(self, compiled: CompiledCommand) -> CompiledCommand:
-        """Extend Shape deletions to the ``sh:property`` subtrees they own.
-
-        ``update_shape`` / ``delete_shape`` delete ``<shape> ?p ?o``; the
-        property-shape nodes and their ``sh:in`` list nodes are separate
-        subjects, so they must be resolved from the graph before the shape
-        itself disappears (R3.0-009 §9.1). The expansion is idempotent: it
-        only triggers for IRI subjects deleted through a wildcard predicate
-        in a managed shapes graph.
-        """
-        targets: dict[tuple[str, str], None] = {}
-        for subject, predicate, _obj, graph_iri in compiled.delta.deletes:
-            if not (subject.startswith("<") and subject.endswith(">")):
-                continue
-            if not predicate.startswith("?"):
-                continue
-            if self.graph_registry.classify(graph_iri) != GraphCategory.SHAPES:
-                continue
-            targets.setdefault((graph_iri, subject[1:-1]), None)
-        if not targets:
-            return compiled
-        extra: list[tuple[str, str, str, str]] = []
-        for graph_iri, shape_iri in sorted(targets):
-            if not hasattr(self.rdf_store, "graph_exists") or not self.rdf_store.graph_exists(
-                graph_iri
-            ):
-                continue
-            graph = Graph()
-            content = self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value)
-            if not content.strip():
-                continue
-            graph.parse(data=content, format=RdfFormat.TURTLE.value)
-            for property_node in graph.objects(URIRef(shape_iri), SH.property):
-                extra.append((property_node.n3(), "?p", "?o", graph_iri))
-                extra.extend(_list_node_deletes(graph, property_node, graph_iri))
-        if not extra:
-            return compiled
-        return CompiledCommand(
-            command_kind=compiled.command_kind,
-            delta=RdfGraphDelta(
-                inserts=compiled.delta.inserts,
-                deletes=sorted({*compiled.delta.deletes, *extra}),
-                clear_graphs=compiled.delta.clear_graphs,
-                drop_graphs=compiled.delta.drop_graphs,
-            ),
-            object_kind=compiled.object_kind,
-            source_ids=compiled.source_ids,
-            target_graph_iris=compiled.target_graph_iris,
-            metadata={
-                **compiled.metadata,
-                "cascaded_property_nodes": sorted({node for node, *_ in extra}),
-            },
-        )
-
-    def _require_existing_shape(self, compiled: CompiledCommand, shape_iri: str) -> None:
-        """``update_shape`` replaces an existing shape, it never creates one (D11)."""
-        graph_iri = compiled.metadata.get("graph_iri") or (
-            compiled.delta.affected_graph_iris()[0] if compiled.delta.affected_graph_iris() else ""
-        )
-        exists = getattr(self.rdf_store, "graph_exists", None)
-        content = ""
-        if exists is None or exists(graph_iri):
-            content = self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value)
-        if content.strip():
-            graph = Graph()
-            graph.parse(data=content, format=RdfFormat.TURTLE.value)
-            if (URIRef(shape_iri), None, None) in graph:
-                return
-        raise ShapeNotFound(
-            f"shape_not_found: {shape_iri} is not present in {graph_iri}; "
-            "update_shape replaces an existing shape, use create_shape to define one"
-        )
 
     def _require_writer_enabled(self) -> None:
         mode = self.settings.semantic_product_write_mode
@@ -521,82 +382,6 @@ class CanonicalSemanticWriteService:
         except GraphRegistryError as exc:
             raise CanonicalSemanticWriteError(str(exc)) from exc
 
-    def _validate_candidate(
-        self,
-        delta: RdfGraphDelta,
-        shape_graph_iris: list[str],
-        candidate_graph_iris: list[str] | None = None,
-    ) -> dict[str, Any]:
-        """Validate the post-write candidate against the shape graphs.
-
-        ``candidate_graph_iris`` names the graphs the candidate is read from;
-        it defaults to the delta's own affected graphs. Shape commands do not
-        touch the data graph, so the Modeling batch passes its workspace data
-        scope here and SHACL sees real entities instead of the shapes graph
-        (R3.0-009 §6.1).
-        """
-        candidate = Graph()
-        candidate_graphs = list(dict.fromkeys([*(candidate_graph_iris or [])]))
-        for graph_iri in (*candidate_graphs, *delta.affected_graph_iris()):
-            if hasattr(self.rdf_store, "graph_exists") and not self.rdf_store.graph_exists(
-                graph_iri
-            ):
-                continue
-            candidate.parse(
-                data=self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value),
-                format=RdfFormat.TURTLE.value,
-            )
-        shape_graph = Graph()
-        shape_targets = set(shape_graph_iris)
-        for graph_iri in shape_graph_iris:
-            if hasattr(self.rdf_store, "graph_exists") and not self.rdf_store.graph_exists(
-                graph_iri
-            ):
-                continue
-            shape_graph.parse(
-                data=self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value),
-                format=RdfFormat.TURTLE.value,
-            )
-        for subject, predicate, obj, graph_iri in delta.deletes:
-            parsed = _triple_from_terms(subject, predicate, obj)
-            if parsed is not None:
-                candidate.remove(parsed)
-                if graph_iri in shape_targets:
-                    shape_graph.remove(parsed)
-                continue
-            subject_term = None if subject.startswith("?") else _term_from_n3(subject)
-            predicate_term = None if predicate.startswith("?") else _term_from_n3(predicate)
-            object_term = None if obj.startswith("?") else _term_from_n3(obj)
-            candidate.remove((subject_term, predicate_term, object_term))
-            if graph_iri in shape_targets:
-                shape_graph.remove((subject_term, predicate_term, object_term))
-        inserts_by_graph: dict[str, list[str]] = {}
-        for subject, predicate, obj, graph_iri in delta.inserts:
-            inserts_by_graph.setdefault(graph_iri, []).append(f"{subject} {predicate} {obj} .")
-        for graph_iri, statements in inserts_by_graph.items():
-            inserted = Graph()
-            inserted.parse(data="\n".join(statements), format=RdfFormat.TURTLE.value)
-            for triple in inserted:
-                candidate.add(triple)
-                if graph_iri in shape_targets:
-                    shape_graph.add(triple)
-        conforms, report_graph, report_text = pyshacl_validate(
-            candidate,
-            shacl_graph=shape_graph,
-            inference=self.settings.semantic_shacl_inference,
-        )
-        violations = _projection_violations(report_graph)
-        return {
-            "conforms": bool(conforms),
-            "report_text": report_text.decode("utf-8")
-            if isinstance(report_text, bytes)
-            else report_text,
-            "summary": {"conforms": bool(conforms), "violation_count": len(violations)},
-            # R3.0-009 §8: every violation carries the focus node and the
-            # result path so callers can repair the offending write.
-            "violations": violations,
-            "candidate": True,
-        }
 
     def _record_audit(
         self,
@@ -639,79 +424,13 @@ class CanonicalSemanticWriteService:
         return audit
 
 
-def _triple_from_terms(subject: str, predicate: str, obj: str):
-    """Best-effort N3-term parse into an rdflib triple for SHACL candidate build."""
-    text = f"{subject} {predicate} {obj} ."
-    graph = Graph()
-    try:
-        graph.parse(data=text, format=RdfFormat.TURTLE.value)
-    except Exception:
-        return None
-    iterator = iter(graph)
-    return next(iterator, None)
-
-
-def _term_from_n3(value: str):
-    from rdflib.util import from_n3
-
-    try:
-        return from_n3(value)
-    except Exception:
-        return None
-
-
-def _list_node_deletes(graph: Graph, head: Node, graph_iri: str):
-    """Wildcard deletes for the RDF list nodes of one ``sh:in`` value list."""
-    deletes: list[tuple[str, str, str, str]] = []
-    node = graph.value(head, SH["in"])
-    seen: set[Node] = set()
-    while node is not None and node not in seen and node != RDF.nil:
-        seen.add(node)
-        deletes.append((node.n3(), "?p", "?o", graph_iri))
-        node = graph.value(node, RDF.rest)
-    return deletes
-
-
 _VIOLATION_LIMIT = 20
-
-
-def _projection_violations(report_graph: Graph | None) -> list[dict[str, Any]]:
-    """Project SHACL validation results into locatable findings (R3.0-009 §8).
-
-    pySHACL already produced the full report; this keeps the first
-    ``_VIOLATION_LIMIT`` results and projects the fields a caller needs to
-    repair the write: focus node, result path, source shape and constraint
-    component.
-    """
-    if report_graph is None:
-        return []
-    violations: list[dict[str, Any]] = []
-    for result in report_graph.subjects(RDF.type, SH.ValidationResult):
-        if len(violations) >= _VIOLATION_LIMIT:
-            break
-        violations.append(
-            {
-                "focus_node": _node_text(report_graph.value(result, SH.focusNode)),
-                "result_path": _node_text(report_graph.value(result, SH.resultPath)),
-                "value": _node_text(report_graph.value(result, SH.value)),
-                "source_shape": _node_text(report_graph.value(result, SH.sourceShape)),
-                "constraint": _node_text(report_graph.value(result, SH.sourceConstraintComponent)),
-                "severity": _node_text(report_graph.value(result, SH.resultSeverity)),
-                "message": _node_text(report_graph.value(result, SH.resultMessage)),
-            }
-        )
-    return violations
-
-
-def _node_text(node: Any) -> str | None:
-    return None if node is None else str(node)
 
 
 __all__ = [
     "CanonicalSemanticWriteError",
     "CanonicalSemanticWriteService",
     "CanonicalWriteBlocked",
-    "CanonicalShaclViolation",
+    "CanonicalValidationError",
     "LockedCanonicalGraph",
-    "ShapeNotFound",
 ]

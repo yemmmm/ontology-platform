@@ -273,7 +273,7 @@ def test_dangling_proposing_slice_is_reported_only_with_slice_ids():
 
 
 def test_safe_protocol_tools_are_byte_unchanged():
-    assert SAFE_PROTOCOL_TOOLS == HISTORICAL_SAFE_PROTOCOL_TOOLS
+    assert SAFE_PROTOCOL_TOOLS == HISTORICAL_SAFE_PROTOCOL_TOOLS - {"run_semantic_validation", "run_semantic_reasoning"}
 
 
 def test_multi_slice_tool_superset_adds_only_protection_and_governed_scan_read():

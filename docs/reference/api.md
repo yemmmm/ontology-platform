@@ -110,8 +110,7 @@ v4 R4.0-012 阶段性停用 Evidence／完整 lineage。Agent 读取业务资料
 - 授权范围发现：`GET /api/semantic/scopes:discover`
 - Context Query：`POST /api/semantic/context:query`
 - scoped SPARQL：`POST /api/semantic/sparql:query`
-- Ontology read model、SHACL validation 和 OWL reasoning
-  execution 均以清单中的当前操作为准。
+- Ontology read model 以清单中的当前操作为准。SHACL、OWL 自动推理及其运行／结果读取入口按 R4.0-025 退役。
 
 Context Query 返回结构化资源、事实、关系、操作、约束和真实完整性状态，不生成最终自然语言答案。
 旧 Agent Test API 已移除；外部 Agent 负责组合结构化结果并生成最终答案。
@@ -136,14 +135,12 @@ R4.0-008 在同一入口增加可选 `semantic_roles`：非空字符串列表，
 `data.semantic_definition.semantic_role` 精确且区分大小写匹配，多值 OR；与资源／断言筛选取
 AND，只筛主命中。null／缺省不筛选，未知角色返回正常空匹配，不推断未声明的角色。
 主命中及关联资源投影已有 `semantic_definition`、`action_definition`、`parameter_definition`、
-`rule_definition` 与 description；statement 保留 subject／predicate／object、类型、datatype、
+与 description；statement 保留 subject／predicate／object、类型、datatype、
 language、图／Ontology 身份及方向。`root_paths` 仅表示根与距离，逐边路径需从实际 statement 还原。
 
 `context_detail` 仅控制关联行：REST 默认 full，MCP 默认 compact；主命中保持 full。
-compact 保留业务解释与身份，省略已有规则的 `script_source`，用
-`projection.omitted_fields` 标记 `data.rule_definition.script_source`；原始规则 JSON fact
-中的正文同样省略整个 `data.object` 并声明，保留原 statement 的身份与类型。通过获准 IRI
-请求 full 可补读；补读失败不表示正文为空。无效／多值注解给出可定位的读取诊断并保留获准原始 statement。
+compact 保留普通业务解释、身份和 statement 信息；R4.0-025 不再投影专用规则注解，也不维护专用脚本省略合同。
+无效／多值现有普通注解给出可定位读取诊断并保留获准原始 statement。
 平台不执行脚本、SQL 或外部 API，不自动判定业务兼容或说明／脚本一致。
 
 `query.result_scope=authorized_query_scope` 固定声明查询边界。`context_limit`（允许 0）仅控制页
@@ -349,7 +346,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}` | Get Graph Set |
 | semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/export` | Export Graph Set |
 | semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}` | Read Model |
-| semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/shapes/classes/{class_iri}` | Read Class Shape Guidance |
 | semantic | `GET` | `/api/semantic/graphs` | List Graph Registry |
 | semantic | `GET` | `/api/semantic/graphs/{graph_iri}` | Get Graph Registry |
 | semantic | `GET` | `/api/semantic/migrations` | List Migration Runs |
@@ -357,24 +353,17 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `GET` | `/api/semantic/projection-jobs` | List Projection Jobs |
 | semantic | `GET` | `/api/semantic/projection-jobs/{job_id}` | Get Projection Job |
 | semantic | `GET` | `/api/semantic/projections/status` | Projection Status |
-| semantic | `GET` | `/api/semantic/reasoning-runs` | List Reasoning Runs |
-| semantic | `GET` | `/api/semantic/reasoning-runs/{run_id}` | Get Reasoning Run |
 | semantic | `GET` | `/api/semantic/resources/{resource_iri}` | Read Resource |
 | semantic | `GET` | `/api/semantic/scopes:discover` | Discover Semantic Scopes |
 | semantic | `GET` | `/api/semantic/statements` | List Statements |
 | semantic | `GET` | `/api/semantic/status` | Get Governance Status |
-| semantic | `GET` | `/api/semantic/validation-runs` | List Validation Runs |
-| semantic | `GET` | `/api/semantic/validation-runs/{run_id}` | Get Validation Run |
 | semantic | `POST` | `/api/semantic/canonical-writes:compile-and-apply` | Compile And Apply Product Command |
 | semantic | `POST` | `/api/semantic/context:query` | Query Semantic Context |
 | semantic | `POST` | `/api/semantic/datasets:load` | Load Dataset |
 | semantic | `POST` | `/api/semantic/derived-results:gc` | Run Derived Results Gc |
-| semantic | `POST` | `/api/semantic/derived-results:reconcile` | Reconcile Derived Results |
 | semantic | `POST` | `/api/semantic/edits` | Create Semantic Edit |
 | semantic | `POST` | `/api/semantic/graph-sets` | Create Graph Set |
 | semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/projection-jobs` | Create Projection Job For Set |
-| semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/reasoning-runs` | Create Graph Set Reasoning Run |
-| semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/validation-runs` | Create Graph Set Validation Run |
 | semantic | `POST` | `/api/semantic/graphs` | Register Graph |
 | semantic | `POST` | `/api/semantic/migrations` | Create Migration Run |
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:cutover` | Cutover Migration Run |
@@ -386,9 +375,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/ontologies/{ontology_id}/retrieval:rebuild` | Rebuild Ontology Retrieval |
 | semantic | `POST` | `/api/semantic/projection-jobs/{job_id}:run` | Run Projection Job |
 | semantic | `POST` | `/api/semantic/projections:reconcile` | Reconcile Projections |
-| semantic | `POST` | `/api/semantic/reasoning-runs` | Create Reasoning Run |
 | semantic | `POST` | `/api/semantic/sparql:query` | Query Sparql |
-| semantic | `POST` | `/api/semantic/validation-runs` | Create Validation Run |
 | semantic | `PUT` | `/api/semantic/graph-sets/{graph_set_id}/members` | Update Graph Set Members |
 | semantic | `PATCH` | `/api/semantic/graphs/{graph_iri}/editability` | Update Graph Editability |
 | semantic-protection-sets | `GET` | `/api/projects/{project_id}/protection-sets` | List Protection Sets |
@@ -528,64 +515,35 @@ Class／Operation 的关系，不要求两端是 NamedIndividual。Class 层次�
 过滤不自动保护复制到可见正文中的敏感文本。本增量不增加 Evidence／lineage、条件判定、
 能力选择、外部调用或流程编排。详细中立表达见[候选合同](../../modeling_team/references/platform-neutral-candidate-authoring.json)。
 
-### R4.0-005 业务规则与脚本声明
+### R4.0-025 校验、推理与专用规则合同退役
 
-规则仍为普通 Entity，使用 `semantic_definition.semantic_role: "rule"` 保存名称、业务含义、
-适用范围、未知和 `conflicting_meanings`。`create_entity`／`update_entity` 的可选
-`rule_definition` 保存业务规则合同，不是 `semantic_rule_definition`／Rule Run 的执行正文：
+SHACL Shape CRUD／指导、SHACL 验证、OWL 自动一致性／分类／蕴含及其运行列表、
+详情、结果状态读取已退役。直接 REST `/api/semantic/validation-runs`、`reasoning-runs`、
+GraphSet 下的对应运行入口、`shapes/classes/*` 与 `derived-results:reconcile` 为 404；
+对应 MCP 工具不再注册或出现在授权目录中。`create_shape`／`update_shape`／`delete_shape`
+不在 Batch／canonical 命令集合中。Shape 专用图不能通过原始编辑或 dataset 导入进行维护。
+通用 RDF 的 `owl`／`rule`／`shape` 词汇本身仍可用，不按名称删除普通知识。
 
-```json
-{
-  "rule_definition": {
-    "kind": "judgment_constraint",
-    "script_language": "Python",
-    "script_version": "3.11",
-    "script_source": "amount >= 100000",
-    "execution_environment": "外部 Consumer 按普通输入关系绑定 amount，输出资格判断；失败返回 error；不允许副作用",
-    "input_status": "defined",
-    "output_status": "defined",
-    "missing_policy": "unknown 保持未知；not_applicable 不适用；empty 是已知空；rejected/error 不产生成功结果",
-    "change_note": "脚本、说明、输入输出与范围共同修订；阈值边界冲突保留并交业务复核"
-  }
-}
-```
+普通规则使用已有 `semantic_definition.semantic_role: "rule"`、业务说明和普通关系保存
+已确认条件、阈值、计算口径、适用范围、例外、冲突和未知。仍可用
+`resource_types: ["instance"]`、`semantic_roles: ["rule"]` 及 statements／relations 受治理读取；
+缺少专用注解或未返回关系不表示没有业务约束。源脚本可作为普通说明材料，不要求语言、
+版本、执行环境、程序化输入输出或求值合同。`rule_definition` 不再作为可选写入／投影字段，
+提交该字段返回可定位、可修复的 payload 错误；不会静默丢弃内容。
 
-`kind` 仅允许 `judgment_constraint`／`derivation`；输入／输出状态仅允许
-`defined`／`none`／`unknown`。其余六个字段为非空文本或 `null`（未知）。注解是非空对象或
-`null`：创建省略不产生声明；更新对象完整替换、`null` 清除、省略保持。各字段可省略，
-表示没有信息；部分声明允许保存，不证明规则完整或可执行。已确认规则应按业务资料补齐逐条
-语言、版本、正文、执行环境及输入绑定、输出形式、失败／副作用约定。语言不限定为 Python。
-未知字段、非法对象／字段类型／枚举值返回可定位到 item 和字段的可修复 payload 错误。
+Context Query 的 `assertion_types` 仅支持 `asserted`；`asserted-plus-reasoning`、
+`asserted-plus-rules` 和 fact-audit 的 `inferred`／`rule_derived` 不再支持。
+`full-working-view` 不消费历史推理结果，专用 Shape 不进入业务检索范围。
+普通显式分类、子类和关系照常保存读取，不产生未表达的推导事实。
 
-输入／输出使用现有独立参数 Entity 及原 `parameter_definition`，结果含义使用输出的
-`semantic_definition`；005 不扩展参数字段。规则与对象、Action、流程、参数、条件、结果
-通过普通关系连接。来源沿用 004 的 `sourceKind` 五类值及 `toParameter`、`fromValue`、
-`refersToDefinition` 等模型声明关系，保留对象方向、调用／输出参数和迭代作用域，
-不将端点身份藏在 JSON 或文本路径中。关系读取使用既有受治理 statements／relations。
+写入不再带 SHACL 开关或 Shape 图参数。必要字段、类型格式、批次引用、授权、
+图版本、原子 dry-run/apply、实际读回与未知写入恢复继续有效。Protocol 当前交接合同为
+`r2-3-005-acceptance-stage-handoff/v2`，只绑定 dry-run、apply、readback 三个真实阶段；
+不伪造 validation／reasoning 回执。关联完整性生产自查沿用 R4.0-024 的普通图扫描。
 
-中立候选的 `semantic.rule_definition` 由 Protocol 复制到实体创建 payload；unified 候选
-接纳同名可选 item 字段，创建／更新复用原批准物化计划及授权身份绑定，不增加中立更新语法。
-Batch `_compile`／`prepare` 校验后写入 `op:ruleDefinition` JSON 字面量。
-`entity-list`／`entity-detail` 返回 `detail_fields.rule_definition`；精确 resource 读取返回
-`properties.rule_definition`。授权过滤仍先于分页／计数／排序，隐藏与不存在精确读取同形。
-
-平台只保存和读取脚本，不求值、不调用外部能力、不自动生成派生关系／节点；显式受治理
-建模仍可显式提交已确认定义。Shape 与 OWL 保留为平台通用能力；业务规则的判断和推导只由外部 Consumer／业务系统执行。旧可执行 Rule Definition CRUD、Rule Run、CONSTRUCT 物化和 rule-result 专用入口已退役（直接 REST 为 404，MCP 不再注册），不提供替代执行器。
-脚本、说明、合同和范围共同维护，已知冲突和共同变更说明保留；平台不自动判断自由文本冲突
-或敏感信息，IRI 过滤不保护复制出的正文。未返回关系不能解释为无输入或无约束。
-不新增表、规则专用资源／路由、执行器或 Evidence／lineage。完整合同见
-[规则声明](../../modeling_team/references/platform-neutral-candidate-authoring.json)的 `business_rule_semantics`。
-
-
-R4.0-022／R4.1-009 退役边界：业务规则以 `resource_types: ["instance"]` 与
-`semantic_roles: ["rule"]` 查询，普通实体 `rule_definition` 注解继续读写。旧
-`resource_types: ["rule"]`、`include=asserted-plus-rules`、fact-audit `kind=rule_derived`
-明确报不支持；`full-working-view` 仅组合获准 asserted 与 OWL 结果。旧规则数据库模型、
-迁移及检查点归档保留，但不再作为当前规则候选、工作空间版本或检索投影来源。
-
-OWL run 的 `implementation_mode`、`engine_name` 来源于实际引擎声明，缺失为 null；
-`profile=owl2_dl` 仅为请求的推理 profile，不能据此声明真实 DL 已通过。
-`development_stub` 实现及原 warning 会在创建响应、列表和详情读回，不代表真实 DL 推理。
+历史运行表、结果图、规则注解、共享图登记、版本和检查点数据保留，支持历史证据与资源恢复；
+不进行批量迁移或删除，不重新计算历史 PASS／PARTIAL／REVISE。旧执行器退役仍有效，
+没有替代规则执行器、SHACL 替代能力或推理兼容模式。
 
 ## v4.1 项目建模工作台只读投影
 

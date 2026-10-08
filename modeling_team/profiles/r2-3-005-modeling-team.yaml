@@ -21,7 +21,7 @@ communication:
     to: [coordinator]
 parameters:
   formal_contract: r2-3-005-formal-create
-  acceptance_standard: modeling_team/references/r2-3-005-acceptance-standard.json
+  acceptance_standard: modeling_team/references/r2-3-005-acceptance-standard-v2.json
   child_kinds: [source_examiner, platform_examiner]
   generic_multi_agent: false
   candidate_progress_timeout_seconds: 300

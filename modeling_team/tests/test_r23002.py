@@ -70,7 +70,7 @@ class R23002Tests(unittest.TestCase):
             (root / "modeling_team/references/modeling-batch-item-contract.json").read_text(encoding="utf-8")
         )
         required_commands = {
-            "create_class", "create_property", "create_relation_type", "create_shape", "create_entity", "create_relation", "create_operation",
+            "create_class", "create_property", "create_relation_type", "create_entity", "create_relation", "create_operation",
             "create_table_mapping", "create_join_mapping", "create_enum_meaning", "create_metric_definition",
         }
         self.assertEqual(set(reference["create_payloads"]), required_commands)
@@ -92,13 +92,6 @@ class R23002Tests(unittest.TestCase):
         self.assertEqual(property_contract["at_most_one_required"], ["datatype", "object_class_id"])
         self.assertEqual(property_contract["fields"]["datatype"]["type"], "string")
         self.assertIn("mutually exclusive", property_contract["fields"]["object_class_id"]["branch"])
-        shape_contract = reference["create_payloads"]["create_shape"]
-        self.assertEqual(shape_contract["fields"]["constraints"]["type"], "array")
-        constraint = reference["shape_constraint"]
-        self.assertEqual(constraint["required"], ["path_id"])
-        self.assertEqual(constraint["additional_properties"], "accepted-and-ignored-by-current-compiler")
-        self.assertEqual(constraint["fields"]["min_count"]["type"], "integer")
-        self.assertEqual(constraint["fields"]["enum_values"]["type"], "array")
         self.assertEqual(reference["create_payloads"]["create_entity"]["fields"]["properties"]["type"], "object")
         self.assertTrue(all(
             field["format"] == "absolute-rdf-iri"
@@ -134,29 +127,13 @@ class R23002Tests(unittest.TestCase):
                 batch_id="batch", ontology_id="ontology", client_item_id="relation", command_kind="create_relation",
                 payload={"source_entity_iri": "relative", "relation_type_iri": "https://example.test/relation", "target_entity_iri": "https://example.test/target"},
             )
-        with self.assertRaisesRegex(InvalidCommandPayload, "Missing required field: path_id"):
-            registry.prepare(
-                batch_id="batch", ontology_id="ontology", client_item_id="shape", command_kind="create_shape",
-                payload={"target_class_id": "class", "constraints": [{}]},
-            )
-        accepted_unknown = registry.prepare(
-            batch_id="batch", ontology_id="ontology", client_item_id="shape-known", command_kind="create_shape",
-            payload={"target_class_id": "class", "constraints": [{"path_id": "property", "future_constraint": "ignored"}]},
-        )
-        self.assertTrue(accepted_unknown.compiled and accepted_unknown.compiled.delta.inserts)
         self.assertIn("MUST send a string", property_contract["fields"]["name"]["server_current_acceptance"])
-        self.assertIn("numeric strings are currently accepted", constraint["fields"]["min_count"]["compiler_behavior"])
         self.assertTrue(
             registry.prepare(
                 batch_id="batch", ontology_id="ontology", client_item_id="class-number", command_kind="create_class",
                 payload={"name": 7},
             ).compiled
         )
-        numeric_constraint = registry.prepare(
-            batch_id="batch", ontology_id="ontology", client_item_id="shape-number", command_kind="create_shape",
-            payload={"target_class_id": "class", "constraints": [{"path_id": "property", "min_count": "2"}]},
-        )
-        self.assertTrue(numeric_constraint.compiled)
 
         class Session:
             def __init__(self) -> None:
@@ -187,111 +164,19 @@ class R23002Tests(unittest.TestCase):
         self.assertEqual(lease_invariants["dry_run"], "MUST be omitted or null")
         self.assertIn("non-empty string", lease_invariants["apply_atomic"])
 
-    def test_object_property_relation_and_shape_path_binding_is_protocol_explicit(self) -> None:
+
+    def test_property_identity_stays_receipt_bound_without_shape_contract(self) -> None:
         from app.core.config import Settings
         from app.services.modeling_handlers import ModelingCommandHandlerRegistry
-
-        root = repository_root()
-        reference = json.loads(
-            (root / "modeling_team/references/modeling-batch-item-contract.json").read_text(
-                encoding="utf-8"
-            )
-        )
-        binding = reference["cross_batch_application_contract"][
-            "object_property_shape_relation_binding"
-        ]
-        self.assertIn("create_property and object_class_id", binding["object_predicate_rule"])
-        self.assertIn("formal create_property resource_iri", binding["relation_binding"])
-        self.assertIn("formal create_property resource_id", binding["shape_path_resolution"])
-        self.assertIn("create_relation_type for the same predicate", binding["forbidden"][0])
-        self.assertIn("concrete translation conflict", binding["binding_conflict"])
-
-        fallback = reference["semantic_retrieval_completion_contract"]["fallback"]
-        self.assertIn("ordinary scoped readback path", fallback["allowed"])
-        self.assertIn("exact predicate/value and scope checks", fallback["readback"])
-
-        instructions = (
-            root / "modeling_team/agent-packages/protocol/instructions.md"
-        ).read_text(encoding="utf-8")
-        for phrase in (
-            "create_property` and `object_class_id`",
-            "create-property formal `resource_iri`",
-            "Shape `path_id` to the same formal create-property `resource_id`",
-            "Do not create `create_relation_type` for the same predicate",
-            "concrete pre-write translation\nconflict",
-            "Do not require assertion matrices, proof-only envelopes, source attachments or a fallback verifier.",
-        ):
-            self.assertIn(phrase, instructions)
-
+        reference = json.loads((repository_root() / "modeling_team/references/modeling-batch-item-contract.json").read_text())
+        self.assertNotIn("object_property_shape_relation_binding", reference)
         registry = ModelingCommandHandlerRegistry(Settings())
-        property_command = registry.prepare(
-            batch_id="binding-batch",
-            ontology_id="ontology",
-            client_item_id="object-predicate",
-            command_kind="create_property",
-            payload={
-                "property_id": "same-id",
-                "class_id": "source-class",
-                "name": "links to",
-                "object_class_id": "target-class",
-            },
-        )
-        property_iri = property_command.outputs["resource_iri"]
-        shape_command = registry.prepare(
-            batch_id="binding-batch",
-            ontology_id="ontology",
-            client_item_id="required-link",
-            command_kind="create_shape",
-            payload={
-                "target_class_id": "source-class",
-                "constraints": [{"path_id": property_command.outputs["resource_id"], "min_count": 1}],
-            },
-        )
-        relation_command = registry.prepare(
-            batch_id="binding-batch",
-            ontology_id="ontology",
-            client_item_id="bound-relation",
-            command_kind="create_relation",
-            payload={
-                "source_entity_iri": "https://example.test/entity/source",
-                "relation_type_iri": property_iri,
-                "target_entity_iri": "https://example.test/entity/target",
-            },
-        )
-        shape_path = next(
-            object_
-            for _subject, predicate, object_, _graph in shape_command.compiled.delta.inserts
-            if predicate == "<http://www.w3.org/ns/shacl#path>"
-        )
-        relation_predicate = relation_command.compiled.delta.inserts[0][1]
-        self.assertEqual(shape_path, f"<{property_iri}>")
-        self.assertEqual(relation_predicate, shape_path)
+        prepared = registry.prepare(batch_id="b", ontology_id="o", client_item_id="p",
+                                    command_kind="create_property",
+                                    payload={"property_id": "hasObject", "name": "hasObject", "object_class_id": "Object"})
+        self.assertTrue(prepared.compiled.metadata["is_object_property"])
+        self.assertEqual(prepared.outputs["resource_id"], "hasObject")
 
-        forbidden_relation_type = registry.prepare(
-            batch_id="binding-batch",
-            ontology_id="ontology",
-            client_item_id="forbidden-relation-type",
-            command_kind="create_relation_type",
-            payload={
-                "relation_type_id": property_command.outputs["resource_id"],
-                "name": "links to",
-                "source_class_id": "source-class",
-                "target_class_id": "target-class",
-            },
-        )
-        forbidden_relation = registry.prepare(
-            batch_id="binding-batch",
-            ontology_id="ontology",
-            client_item_id="forbidden-relation",
-            command_kind="create_relation",
-            payload={
-                "source_entity_iri": "https://example.test/entity/source",
-                "relation_type_iri": forbidden_relation_type.outputs["resource_iri"],
-                "target_entity_iri": "https://example.test/entity/target",
-            },
-        )
-        self.assertNotEqual(forbidden_relation_type.outputs["resource_iri"], property_iri)
-        self.assertNotEqual(forbidden_relation.compiled.delta.inserts[0][1], shape_path)
 
     def test_protocol_task_text_gets_scope_context_but_other_roles_do_not(self) -> None:
         root = repository_root()
@@ -379,7 +264,7 @@ class R23002Tests(unittest.TestCase):
             root / "modeling_team/agent-packages/modeling/instructions.md"
         ).read_text(encoding="utf-8")
         self.assertIn("structured platform-neutral semantic candidate", modeling_instructions)
-        self.assertIn("classes,\nproperties, relations, Shapes, entities, explicit unknowns, and dependencies", modeling_instructions)
+        self.assertIn("classes,\nproperties, relations, entities, explicit unknowns, and dependencies", modeling_instructions)
         self.assertIn("do not author exact platform\nitems", modeling_instructions)
         self.assertIn("Protocol mechanically translates", modeling_instructions)
         self.assertIn("expects_reply=true", modeling_instructions)
@@ -407,13 +292,12 @@ class R23002Tests(unittest.TestCase):
                 "entity",
                 "receipt_or_read_bind_generated_identifiers",
                 "relation",
-                "dependency_safe_shape",
             ],
         )
         self.assertEqual(
             contract["ordered_schedule"],
             "class -> property/relation type -> entity -> receipt/read bind generated IDs/IRIs -> "
-            "relation -> only dependency-safe Shape",
+            "relation",
         )
         self.assertEqual(
             contract["applied_stages"]["class"]["command_kinds"], ["create_class"]
@@ -428,9 +312,6 @@ class R23002Tests(unittest.TestCase):
         self.assertEqual(
             contract["applied_stages"]["relation"]["command_kinds"], ["create_relation"]
         )
-        self.assertEqual(
-            contract["applied_stages"]["dependency_safe_shape"]["command_kinds"], ["create_shape"]
-        )
         self.assertTrue(
             all(
                 stage["execution"] == "independent dry_run then apply_atomic"
@@ -439,15 +320,12 @@ class R23002Tests(unittest.TestCase):
         )
         self.assertIn("formal apply receipt or required platform read", contract["formal_binding"]["workspace_version"])
         self.assertIn("never guess, synthesize, or forward-reference", contract["formal_binding"]["generated_identifiers"])
-        self.assertIn("immediately validates later Batches", contract["shape_activation"])
         self.assertIn("must not mutate candidate meaning or reorder candidate semantics", contract["candidate_invariant"])
         self.assertEqual(
             contract["forbidden"],
             [
-                "Shape-first application",
                 "unbound forward reference",
                 "semantic candidate mutation or reordering",
-                "delete or deactivate an applied Shape",
                 "weaken validation",
                 "delegate exact Batch Items to Modeling",
             ],
@@ -480,9 +358,7 @@ class R23002Tests(unittest.TestCase):
             "with the plan's `apply_idempotency_key`",
             "trailing `-vN` incremented (`v1` -> `v2`)",
             "must not mutate or reorder candidate meaning",
-            "immediately validates later Batches",
             "unbound forward reference",
-            "Never delete or deactivate an applied Shape\nor weaken validation",
             "delegate exact Batch Items back to Modeling",
         ):
             self.assertIn(phrase, protocol_instructions)
@@ -504,71 +380,11 @@ class R23002Tests(unittest.TestCase):
         v1 = load_task(root / "modeling_team/tasks/base-capability-smoke.yaml", root=root)
         self.assertNotIn(reference_path, v1.allowed_sources)
 
-    def test_semantic_validation_contract_is_protocol_private_and_baseline_bound(self) -> None:
-        root = repository_root()
-        reference_path = root / "modeling_team/references/modeling-batch-item-contract.json"
-        reference = json.loads(reference_path.read_text(encoding="utf-8"))
-        contract = reference["semantic_validation_invocation_contract"]
-        self.assertIn("no business semantics, scenario target, or acceptance answer", contract["purpose"])
-        validation_scope = contract["validation_scope"]
-        self.assertEqual(validation_scope["allowed"], ["asserted_only", "asserted_plus_reasoning"])
-        self.assertIn("concrete pre-call translation conflict", validation_scope["other_scope_conflict"])
-        separated_flow = contract["separated_validation_and_reasoning_flow"]
-        self.assertEqual(separated_flow["validation_scope"], "asserted_only")
-        self.assertIn("R2.3-002 separated validation and reasoning flow", separated_flow["rule"])
-        reasoning_scope = contract["asserted_plus_reasoning"]
-        self.assertIn("intended validation includes the reasoning result graph", reasoning_scope["permitted_only_when"])
-        self.assertIn("formal reasoning receipt", reasoning_scope["permitted_only_when"])
-        self.assertIn("reasoning_result_graph_iri", reasoning_scope["reasoning_result_graph_iri"])
-        self.assertIn("never guess, synthesize, or use an unbound graph IRI", reasoning_scope["reasoning_result_graph_iri"])
-        self.assertIn("concrete pre-call translation conflict", reasoning_scope["missing_graph_conflict"])
+    def test_retired_semantic_validation_contract_is_not_mounted(self) -> None:
+        reference = json.loads((repository_root() / "modeling_team/references/modeling-batch-item-contract.json").read_text())
+        self.assertNotIn("semantic_validation_invocation_contract", reference)
+        self.assertNotIn("shape_constraint", reference)
 
-        configuration = load_team_configuration(
-            root / "modeling_team/profiles/base-three-agent.yaml",
-            root / "modeling_team/tasks/new-scope-business-slice.yaml",
-            root=root,
-        )
-        contract_source = next(
-            source
-            for source in configuration.task.role_sources
-            if source.path == reference_path
-        )
-        self.assertEqual(contract_source.roles, frozenset({"protocol"}))
-        runner = TeamRunner(repository_root=root, adapter=SimpleNamespace())
-        runner.run = SimpleNamespace(configuration=configuration, protocol_context=None)
-        staged_path = "/agent/home/sources/modeling_team/references/modeling-batch-item-contract.json"
-        self.assertIn(staged_path, runner._task_text("protocol"))
-        self.assertNotIn(staged_path, runner._task_text("coordinator"))
-        self.assertNotIn(staged_path, runner._task_text("modeling"))
-        protocol_instructions = (
-            root / "modeling_team/agent-packages/protocol/instructions.md"
-        ).read_text(encoding="utf-8")
-        for phrase in (
-            "only `asserted_only` or `asserted_plus_reasoning`",
-            "any other scope is a concrete pre-call translation conflict",
-            "separated validation and reasoning flow explicitly uses `asserted_only`",
-            "formal reasoning receipt binds `reasoning_result_graph_iri`",
-            "unbound reasoning graph IRI",
-            "conflict instead of invoking validation",
-        ):
-            self.assertIn(phrase, protocol_instructions)
-        modeling_instructions = (
-            root / "modeling_team/agent-packages/modeling/instructions.md"
-        ).read_text(encoding="utf-8")
-        self.assertNotIn("asserted_plus_reasoning", modeling_instructions)
-
-        baseline, _baseline_hash = TeamRunner.preview_baseline(
-            repository_root=root,
-            run_id=f"r23002-validation-scope-{uuid4().hex}",
-            profile_path=root / "modeling_team/profiles/base-three-agent.yaml",
-            task_path=root / "modeling_team/tasks/new-scope-business-slice.yaml",
-        )
-        self.assertEqual(
-            baseline["files"]["source:modeling_team/references/modeling-batch-item-contract.json"],
-            digest_file(reference_path),
-        )
-        v1 = load_task(root / "modeling_team/tasks/base-capability-smoke.yaml", root=root)
-        self.assertNotIn(reference_path, v1.allowed_sources)
 
     def test_attempt_fourteen_material_gap_and_retrieval_fallback_contract(self) -> None:
         root = repository_root()
@@ -791,22 +607,11 @@ class R23002Tests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(
-                    baseline["files"]["protocol_reasoner_script"],
-                    digest_file(root / "backend/scripts/dev_owl_reasoner.py"),
-                )
-                self.assertEqual(
                     baseline["runtime_contract"]["protocol_mcp_mode_env"],
                     {
                         "SEMANTIC_CANONICAL_STORE": "rdf",
                         "SEMANTIC_PRODUCT_WRITE_MODE": "rdf_primary",
                         "SEMANTIC_READ_MODE": "canonical",
-                    },
-                )
-                self.assertEqual(
-                    baseline["runtime_contract"]["protocol_mcp_reasoner_env"],
-                    {
-                        "SEMANTIC_REASONER_COMMAND": "/backend/scripts/dev_owl_reasoner.py",
-                        "PATH": "/backend/.venv/bin:/usr/bin:/bin",
                     },
                 )
                 self.assertIsNotNone(run.baseline_hash)
@@ -1508,40 +1313,8 @@ class R23002Tests(unittest.TestCase):
         self.assertNotEqual(changed_contract_manifest["runtime_contract"], manifest["runtime_contract"])
         self.assertNotEqual(changed_contract_hash, baseline_hash)
 
-        reasoner = root / "backend/scripts/dev_owl_reasoner.py"
-
-        def changed_reasoner_digest(path: Path) -> str:
-            return "e" * 64 if path == reasoner else original_digest(path)
-
-        with patch("modeling_team.runner.digest_file", side_effect=changed_reasoner_digest):
-            changed_reasoner_manifest, changed_reasoner_hash = TeamRunner.preview_baseline(
-                repository_root=root,
-                run_id=manifest["run_id"],
-                profile_path=profile,
-                task_path=task,
-            )
-        self.assertNotEqual(
-            changed_reasoner_manifest["files"]["protocol_reasoner_script"],
-            manifest["files"]["protocol_reasoner_script"],
-        )
-        self.assertNotEqual(changed_reasoner_hash, baseline_hash)
-
-        with patch(
-            "modeling_team.runner.protocol_mcp_reasoner_contract",
-            return_value={
-                "SEMANTIC_REASONER_COMMAND": "/backend/scripts/other.py",
-                "PATH": "/backend/.venv/bin:/usr/bin:/bin",
-            },
-        ):
-            changed_reasoner_contract_manifest, changed_reasoner_contract_hash = TeamRunner.preview_baseline(
-                repository_root=root,
-                run_id=manifest["run_id"],
-                profile_path=profile,
-                task_path=task,
-            )
-        self.assertNotEqual(changed_reasoner_contract_manifest["runtime_contract"], manifest["runtime_contract"])
-        self.assertNotEqual(changed_reasoner_contract_hash, baseline_hash)
-
+        self.assertNotIn("protocol_reasoner_script", manifest["files"])
+        self.assertNotIn("protocol_mcp_reasoner_env", manifest["runtime_contract"])
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory)
             (run_root / "evidence").mkdir()

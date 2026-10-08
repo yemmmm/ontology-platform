@@ -50,7 +50,7 @@ def test_retired_mcp_tools_are_not_registered_or_authorized():
         assert name not in names
         assert name not in MCP_TOOL_POLICIES
         assert mcp._tool_manager.get_tool(name) is None
-    assert {"query_semantic_context", "run_semantic_validation", "run_semantic_reasoning"} <= names
+    assert {"query_semantic_context", "submit_modeling_batch", "get_modeling_context"} <= names
 
 
 @pytest.mark.parametrize("command", ["create_rule_definition", "update_rule_definition", "delete_rule_definition"])
@@ -77,7 +77,7 @@ def test_legacy_executor_implementations_have_been_removed(module):
 
 
 def test_archived_rule_pointers_are_not_live_scopes_counts_or_projection_inputs(in_memory_session):
-    from app.services.semantic_derived_state import DerivedStateError, SemanticDerivedStateService
+    from app.services.semantic_derived_state import SemanticDerivedStateService
     from app.services.semantic_graph_set import SemanticGraphSetService
     from app.services.semantic_projection_job import SemanticProjectionJobService
     from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
@@ -90,21 +90,18 @@ def test_archived_rule_pointers_are_not_live_scopes_counts_or_projection_inputs(
     archived = in_memory_session.get(SemanticDerivedResultPointerModel, "ptr-rule")
     resolver = SemanticReadScopeResolver(in_memory_session)
     scope = resolver.resolve("gs-1", include="full-working-view")
-    assert set(scope.derived_state) == {"reasoning"}
+    assert scope.derived_state == {}
     assert not hasattr(scope, "rule_result_graph_iri")
     with pytest.raises(ReadScopeError, match="Unsupported include value"):
         resolver.resolve("gs-1", include="asserted-plus-rules")
     derived = SemanticDerivedStateService(in_memory_session, Settings())
-    assert {p.result_kind for p in derived.list_pointers("gs-1")} == {"reasoning"}
-    with pytest.raises(DerivedStateError, match="Unsupported result kind"):
-        derived.list_pointers("gs-1", result_kind="rule")
-    summary = derived.status_summary()
-    assert set(summary["derived_pointer_counts"]) == {"reasoning"}
+    assert not hasattr(derived, "list_pointers")
+    assert not hasattr(derived, "reconcile")
     described = SemanticGraphSetService(in_memory_session, Settings()).describe("gs-1")
-    assert {p["result_kind"] for p in described["current_pointers"]} == {"reasoning"}
+    assert {p["result_kind"] for p in described["current_pointers"]} == set()
     projection = SemanticProjectionJobService(in_memory_session, writers={}, scope_resolver_builder=SemanticReadScopeResolver)
     job = projection.create_job("gs-1", "search", "retirement-v1", include="full-working-view")
-    assert set(job.input_derived_pointers) == {"reasoning"}
+    assert job.input_derived_pointers == {}
     assert job.rule_result_graph_iri is None
     assert in_memory_session.get(SemanticDerivedResultPointerModel, "ptr-rule") is archived
     assert archived.status == "current"

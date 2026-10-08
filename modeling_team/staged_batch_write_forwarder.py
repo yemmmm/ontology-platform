@@ -279,12 +279,6 @@ def _child_environment(*, backend_root: Path, protocol_key: str) -> dict[str, st
     environment = {
         "ONTOLOGY_MCP_API_KEY": protocol_key,
         "PYTHONPATH": str(backend_root),
-        # The child runs with ``cwd=backend_root`` and therefore reads ``backend/.env``,
-        # whose reasoner command is a stale absolute path on this host.  Pin both the
-        # reasoner script and the executable path here, as the canonical protocol launch
-        # contract does for the sandbox (``protocol_mcp_launch._REASONER_ENV``), so the
-        # canonical server never resolves a reasoner that does not exist.
-        "SEMANTIC_REASONER_COMMAND": str(backend_root / "scripts" / "dev_owl_reasoner.py"),
         "PATH": f"{backend_root / '.venv' / 'bin'}:/usr/bin:/bin",
         "HOME": str(backend_root),
         "LANG": "C.UTF-8",

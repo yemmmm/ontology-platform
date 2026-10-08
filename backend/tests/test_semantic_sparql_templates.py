@@ -68,18 +68,6 @@ def test_relation_type_list_template_registered():
     assert "owl:ObjectProperty" in template.body
 
 
-def test_class_shape_generated_template_targets_generated_subgraph():
-    template = get_template("class-shape-generated")
-    assert template.required_roles == ("shape_graph_generated",)
-    assert "sh:" in template.body or "shacl" in template.body
-
-
-def test_class_shape_custom_template_targets_custom_subgraph():
-    template = get_template("class-shape-custom")
-    assert template.required_roles == ("shape_graph_custom",)
-    assert "sh:" in template.body or "shacl" in template.body
-
-
 # Stage 2 §5.3 — EntitiesPage read-model templates ---------------------------------------
 
 
@@ -109,15 +97,6 @@ def test_entity_relations_template_registered():
     assert "?relation" in template.body or "?predicate" in template.body
     assert "VALUES ?sg" in template.body
     assert "VALUES ?tg" in template.body
-
-
-def test_entity_shape_template_registered_as_composer():
-    template = get_template("entity-shape")
-    assert template.projection_version == "semantic-read-v1"
-    # entity-shape delegates to class-shape-merged; the composer branch in
-    # SemanticReadModelService detects this name and short-circuits to the
-    # shape endpoint service. Required roles mirror class-shape-merged.
-    assert "asserted_ontology" in template.required_roles
 
 
 def test_entity_literal_facts_template_registered():

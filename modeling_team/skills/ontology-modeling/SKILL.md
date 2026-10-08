@@ -48,7 +48,7 @@ Keep a project-level view of logical slices, shared terms, dependencies and cros
 Use the approved slice/public-question projection and coordinate ownership differences through the
 existing role channel. A slice or source table does not determine an Ontology boundary.
 
-Choose nodes, predicates, rules, Shapes and any Class roles from the supported meaning and the loaded
+Choose nodes, predicates, rules and any Class roles from the supported meaning and the loaded
 representation contract. In the unified graph workflow, concrete business nodes can remain without
 a Class. Propose commonality or classification only when the source supports a stable shared
 meaning; repeated fields, similar names and sample values alone do not prove a class, membership,
@@ -128,9 +128,9 @@ See [prompts.md](references/prompts.md) for a bounded semantic handoff and clari
 ## Assess returned execution results
 
 A candidate receipt proves only what that receipt states. Use Protocol's bound dry-run/application,
-readback, validation, reasoning and governed-retrieval results to identify remaining semantic gaps.
-For a negative Shape test, propose an invalid example tied to an actual constraint and require
-that it remain unapplied. Do not weaken a constraint merely to make a test pass.
+readback and governed-retrieval results to identify remaining semantic gaps.
+Preserve source-supported business constraints as ordinary semantic knowledge; do not require
+SHACL/OWL runs, specialized rule annotations, scripts or their receipts (R4.0-025).
 
 Distinguish absent semantics from incomplete retrieval, a protocol rejection or infrastructure
 failure. Return a concrete semantic correction when supported; otherwise preserve the exact blocker

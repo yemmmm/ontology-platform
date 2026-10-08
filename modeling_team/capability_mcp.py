@@ -106,7 +106,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "properties": {
             "protocol_id": {"type": "string"},
             # stage_calls is intentionally optional: when omitted, the carrier
-            # auto-selects the five canonical final-state observed calls.  When
+            # auto-selects the three canonical final-state observed calls.  When
             # supplied, each stage must still exact-match one observed call.
             "stage_calls": {
                 "type": "object",
@@ -121,9 +121,9 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                         "required": ["tool", "arguments", "artifact_path"],
                         "additionalProperties": False,
                     }
-                    for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+                    for stage in ("dry-run", "apply", "readback")
                 },
-                "required": ["dry-run", "apply", "readback", "validation", "reasoning"],
+                "required": ["dry-run", "apply", "readback"],
                 "additionalProperties": False,
             },
         },

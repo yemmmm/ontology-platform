@@ -7,8 +7,7 @@ objective: >-
   immutable dry_run then apply_atomic, records inline Evidence, reads receipts, lineage and all
   pagination, runs validation/reasoning, and completes the native v2 retrieval verifier. Do not
   invent unavailable facts or infer a concrete Tool version without a grounded owner answer.
-  Preserve explicit unknowns and retain every rejected Shape dry-run receipt without workspace
-  movement. The candidate must use the frozen 48-row assertion matrix IDs and citations exactly.
+  Preserve explicit unknowns and the necessary deterministic dry-run/application receipts. The candidate must use the frozen 48-row assertion matrix IDs and citations exactly.
 role_sources:
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
@@ -53,14 +52,11 @@ protocol_tools:
   - get_modeling_context
   - get_ontology_read_model
   - query_semantic_context
-  - run_semantic_validation
-  - run_semantic_reasoning
   - get_ontology_lineage
   - inspect_semantic_statement_provenance
 expected_terminal_evidence:
   - direct Modeling-to-Protocol semantic delivery and Protocol receipt or conflict feedback
   - immutable Modeling Batch dry_run and apply_atomic receipts
-  - rejected Shape-negative dry_run receipt with unchanged workspace
   - completed or blocked result from every Agent
   - complete native v2 retrieval verifier proof
 retain_nonempty: true

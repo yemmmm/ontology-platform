@@ -22,8 +22,8 @@ def _scope(iris, derived_state=None):
         graph_set_id="gs-1",
         source_signature="sig-1",
         include="asserted",
-        source_graph_iris=iris,
-        shape_graph_iris=[],
+        source_graph_iris=iris, shape_graph_iris=[],
+
         governance_graph_iris=[],
         reasoning_result_graph_iri=None,
         derived_state=derived_state or {},
@@ -49,7 +49,7 @@ def test_search_documents_include_label_assertion_kind_and_signature():
     assert "Alice" in doc["text"]
 
 
-def test_search_documents_record_staleness_when_reasoning_is_stale():
+def test_search_documents_ignore_historical_reasoning_staleness():
     writer = FakeSearchWriter()
     service = SemanticSearchProjectionService(rdf_store=FakeStore(), writer=writer)
     scope = _scope(["http://op/s/graph/data/ov-1"])
@@ -59,7 +59,7 @@ def test_search_documents_record_staleness_when_reasoning_is_stale():
         scope=scope,
         partition="gs-1/search/search-v1",
     )
-    assert writer.docs[0]["is_stale"] is True
+    assert writer.docs[0]["is_stale"] is False
 
 
 def test_search_writer_clear_called_before_write():

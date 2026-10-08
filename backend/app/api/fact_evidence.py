@@ -34,9 +34,6 @@ from app.services.evidence_reference import EvidenceReferenceError, EvidenceRefe
 from app.services.semantic_export import namespace_from_settings
 from app.services.semantic_read_model import SemanticReadModelService
 from app.services.semantic_read_scope import SemanticReadScopeResolver
-from app.services.semantic_shape_endpoint_service import (
-    SemanticShapeEndpointService,
-)
 from app.services.semantic_access import (
     SemanticAccessDependencyError,
     SemanticAccessResolver,
@@ -247,7 +244,6 @@ def _build_read_model_service(
         rdf_store=rdf_store,
         scope_resolver=SemanticReadScopeResolver(session),
         access_view=access_view,
-        shape_endpoint=SemanticShapeEndpointService(session, rdf_store, settings),
         session=session,
     )
 

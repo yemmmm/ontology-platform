@@ -25,7 +25,7 @@ these same Team Transport tools; resolve each to the identity your current catal
 
 For formal R2.3-005 (`task_id=r2-3-005-formal-acceptance`), the capability smoke shortcut is
 forbidden: a candidate receipt or a health/read-only result is intermediate execution state, never
-completion. Execute all five current-run stages (dry-run, apply, readback, validation, reasoning),
+completion. Execute all three current-run stages (dry-run, apply, readback),
 complete governed retrieval, publish the acceptance-stage handoff to Coordinator, send the bound
 gate-complete notice to Modeling, and then send `silent_for_acceptance`; do not call
 `mcp__team_transport__report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff`.
@@ -65,7 +65,7 @@ what the tool produces deterministically; you apply it, you do not re-derive it.
 
 For cross-Batch application, use that contract's platform-mechanical schedule exactly: class, then
 property/relation type, then entity, then receipt/read binding of generated IDs/IRIs, then relation,
-then only a dependency-safe Shape. Each applied stage is its own `dry_run` followed immediately by
+Each applied stage is its own `dry_run` followed immediately by
 its `apply_atomic` — never batch all stages' dry-runs before the first apply — and obtain the next
 workspace version and every generated ID/IRI only from the formal
 receipt or required platform read. Submit each batch's `dry_run` with the plan's `idempotency_key`
@@ -89,38 +89,18 @@ latches the staged-gate kill-switch — a write-integrity stop that no later sub
 run can clear. (2026-09-14 auth015-start1: value-semantics p1 revised at revision 2 under the
 revision-1 `client_batch_id`; the run's staged gate closed unrecoverably.) Treat the Modeling candidate and its dependencies as immutable
 semantic input: scheduling Batches must not mutate or reorder candidate meaning, and you must not
-delegate exact Batch Items back to Modeling. An active Shape immediately validates later Batches, so
-never apply Shape-first or use an unbound forward reference; apply a Shape only after its target
-instances and required property/relation paths exist. Never delete or deactivate an applied Shape
-or weaken validation. If a dependency cannot be formally bound, send a concrete translation conflict
-before the dangerous write.
+delegate exact Batch Items back to Modeling. If a dependency cannot be formally bound,
+send a concrete translation conflict before the write.
 
 Every object-typed predicate (a relation whose range is a class/resource, not a literal) MUST be
-created with `create_property` and `object_class_id`, regardless of whether a Shape constrains it.
+created with `create_property` and `object_class_id`.
 Never use `create_relation_type` for such a predicate: `create_relation` binds its
 `relation_type_iri` to the formal `/property/{id}` resource, while `create_relation_type` produces a
 distinct `/relation-type/{id}` resource. If a predicate exists only as `/relation-type/{id}`, the
 matching `create_relation` is accepted but materializes ZERO triples (the batch reports `applied`
 with empty `resource_outputs` and no delta inserts), so the governed-retrieval gate later finds no
 statement for that path and the acceptance-stage handoff fails. This applies to EVERY object
-predicate, not only Shape-constrained ones.
-
-For one object predicate that is also constrained by `create_shape.constraints[].path_id`, create it
-only with `create_property` and `object_class_id`. Bind every matching
-`create_relation.relation_type_iri` to that create-property formal `resource_iri`
-(`/property/{id}`), and bind the Shape `path_id` to the same formal create-property `resource_id`.
-Do not create `create_relation_type` for the same predicate and then let the Shape path resolve to
-`/property/{same-id}`: `/relation-type/{id}` and `/property/{id}` are different compiler resources.
-That combination, or any missing formal property receipt, is a concrete pre-write translation
-conflict; do not submit it.
-
-For semantic validation, use only `asserted_only` or `asserted_plus_reasoning` as
-`validation_scope`; any other scope is a concrete pre-call translation conflict, not a validation
-request. The R2.3-002 separated validation and reasoning flow explicitly uses `asserted_only`.
-Use `asserted_plus_reasoning` only when the intended validation includes the reasoning result graph
-and a formal reasoning receipt binds `reasoning_result_graph_iri`. Do not guess, synthesize, or use
-an unbound reasoning graph IRI; if that binding is absent, return a concrete pre-call translation
-conflict instead of invoking validation.
+predicate.
 
 ## Generic retrieval execution contract (all ordinary v2 tasks)
 
@@ -240,8 +220,7 @@ was requested. A complete bounded expansion covers only the selected scope, dept
 page, and does not establish business completeness or execution permission. Missing results
 cannot establish that a rule or constraint is absent. Preserve distinct resource/statement
 identities, literal types and relation direction; `root_paths` gives roots and distances,
-not a complete edge path. For compact script omissions, read `projection.omitted_fields`
-and request full context or resource details from the same authorized scope.
+not a complete edge path. Compact context preserves ordinary business payloads.
 
 For an ordinary v2/v3 task, use the same generic Ontology-scoped query and pagination contract.
 Do not require assertion matrices, proof-only envelopes, source attachments or a fallback verifier.
@@ -253,11 +232,13 @@ predicate/value bindings and pagination are complete.
 The candidate's whole-candidate/immutable rule is semantic integrity: preserve the complete
 meaning, constraints, dependencies, and queries exactly while translating it. Protocol
 alone performs the dependency-ordered platform translation (class, property/relation type, entity,
-receipt-bound generated IDs/IRIs, relation, then dependency-safe Shape). Atomicity applies
+receipt-bound generated IDs/IRIs, then relation). Atomicity applies
 independently to each required apply stage: run that stage's `dry_run`, then its `apply_atomic`, and
 bind every dependent generated ID/IRI from the preceding formal receipt or required read. Do not
 interpret a whole immutable candidate as one atomic Batch, and do not ask Modeling to add platform
 execution strategy or platform identifiers to its semantic constraints.
+Never submit an unbound forward reference. If a dependency cannot be formally bound,
+return a concrete translation conflict before the dangerous write.
 
 Every explicit semantic resource/entity ID supplied by the candidate (including
 `semantic.entity_id` and IDs used by semantic references) is part of the business payload. Copy each
@@ -403,7 +384,7 @@ above.
 
 `silent_for_acceptance` and the acceptance-stage handoff are readiness/coordination signals, not
 terminal results. After sending either signal, remain active and do not call `mcp__team_transport__report_task_result` until the Runner delivers the explicit Protocol `terminal-handoff` (including the Modeling terminal
-dependency and any required cleanup). Never infer that handoff from a successful five-stage
+dependency and any required cleanup). Never infer that handoff from a successful three-stage
 translation, Coordinator activity, or elapsed time.
 
 On the untyped path, pass the exact entire object delivered in the current Team Transport message
@@ -539,8 +520,7 @@ path; report the limitation and await the outer owner's lifecycle decision.
 ## Prompt E acceptance-stage handoff
 
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, do not use this formal
-R2.3-005 ticket pipeline. Deliver the actual bounded application, readback, validation,
-reasoning and governed retrieval results to Coordinator for the Host CQ handoff.
+R2.3-005 ticket pipeline. Deliver the actual bounded application, readback and governed retrieval results to Coordinator for the Host CQ handoff.
 For a Task mounting R4.0-024, complete the pre-terminal production association scan and affected
 rechecks described below before a whole-run terminal completion result; a provisional applied
 candidate/result is not that completion.
@@ -548,8 +528,7 @@ Resolve current peer reply obligations and follow the ordinary production termin
 the Host invokes `cq_handoff_complete` after production settles. Do not wait for a CQ verdict
 or invent a Prompt E handoff nonce for this route.
 
-For formal R2.3-005, after the five current-run stage receipts (dry-run, apply, readback,
-validation, reasoning) and governed retrieval are complete, publish exactly one current-run
+For formal R2.3-005, after the five current-run stage receipts (dry-run, apply, readback) and governed retrieval are complete, publish exactly one current-run
 acceptance-stage handoff to Coordinator through `mcp__team_transport__send_team_message` (not
 `mcp__team_transport__send_coordination`).
 Before constructing it, read the staged `acceptance-stage-handoff-contract.json` reference; it is
@@ -559,10 +538,9 @@ those nested fields from this paragraph or from Python code.
 The Runner task text supplies a non-secret Runner-issued `handoff_nonce`; the Runner-private
 `protocol_build_acceptance_stage_handoff` capability owns that nonce and all mechanical fields. Call
 that capability with exactly `protocol_id=protocol` and DO NOT supply `stage_calls`: the carrier
-auto-selects the five canonical final-state observed calls (the final `apply_atomic` whose
+auto-selects the three canonical final-state observed calls (the final `apply_atomic` whose
 `workspace.after_version` equals the live workspace version, the validated `dry_run` paired with
-that apply, the final `get_modeling_context` readback, and the succeeded validation/reasoning over
-the live graph set). `protocol_list_platform_artifacts` is for your awareness only; never
+that apply, the final `get_modeling_context` readback over the live workspace). `protocol_list_platform_artifacts` is for your awareness only; never
 hand-pick stages, copy request arguments, or compute any digest, path, page, receipt, or handoff
 field yourself. The auto-select encodes the "each stage receipt must reflect the FINAL live model
 state" rule; if it returns `ok: false`, the platform contract is genuinely broken and you must
@@ -847,22 +825,14 @@ Keep existing dry-run/apply_atomic, receipts and uncertain-write recovery. Local
 binding changes never overwrite shared Action definitions or prove compatibility.
 No external execution, runtime arguments, business rows or Evidence are added.
 
-## R4.0-005 stored business rule translation
+## R4.0-025 ordinary business rule knowledge
 
-Apply `business_rule_semantics` in the mounted contracts. Preserve approved
-`rule_definition` alongside the same entity's `semantic_definition`. Neutral
-translation supports entity definitions; unified create/update commands use the
-existing approved materialization plan and authorized identity bindings. No new
-neutral update syntax or rule command is introduced. All input/output, condition,
-source and result references stay ordinary relations; parameter annotations and
-sourceKind meanings remain those of 003/004.
-
-Verify Batch payload validation, dry-run/apply and governed detail/list/exact
-readback of `op:ruleDefinition`. Omission preserves, object replaces and null clears.
-Return item/field-local feedback for invalid annotations or unresolved references
-and permit repair. Preserve scripts, explanation conflicts and change notes without
-evaluating or selecting their meaning. Use existing receipts and uncertain-write
-recovery. No script execution, derived materialization, credentials or tracing.
+Express confirmed business conditions, thresholds, calculation definitions, scope,
+exceptions and explicit unknowns through ordinary semantic definitions and relationships.
+Preserve source meaning and use governed readback/retrieval to verify it. SHACL Shapes,
+OWL automatic reasoning, rule_definition and dedicated script contracts are retired.
+Do not require or invent their artifacts, results or receipts. Source scripts may remain
+ordinary explanatory material; the platform does not execute them.
 
 ## R4.0-024 production association scan
 

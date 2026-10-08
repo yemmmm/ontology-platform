@@ -94,28 +94,12 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     "describe_semantic_graph_set": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
-    "list_semantic_derived_pointers": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
-    "check_semantic_staleness": _policy("admin", McpOwnership.ORG_ONLY, mutates_state=True),
     "get_semantic_governance_status": _policy("read", McpOwnership.ORG_ONLY, mutates_state=False),
     "get_semantic_read_model": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "export_semantic_graph_set": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
     "inspect_semantic_projection_status": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
-    "list_semantic_validation_runs": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
-    "get_semantic_validation_run": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
-    "list_semantic_reasoning_runs": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
-    "get_semantic_reasoning_run": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
     "get_project_build_context": _policy(
@@ -147,8 +131,6 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
         "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
     ),
     "submit_semantic_edit": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
-    "run_semantic_validation": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
-    "run_semantic_reasoning": _policy("model", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "start_semantic_projection_job": _policy(
         "model", McpOwnership.PROJECT_RESOURCE, mutates_state=True
     ),

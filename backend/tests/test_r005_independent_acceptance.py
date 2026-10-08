@@ -118,7 +118,7 @@ def test_restricted_where_update_does_not_collect_new_lineage(
         INSERT {{ GRAPH <{graph}> {{ ?s <https://r005-update.test/property/new> ?old }} }}
         WHERE  {{ GRAPH <{graph}> {{ ?s <https://r005-update.test/property/old> ?old }} }}
         """,
-        validate=False,
+
         actor="agent:test",
         reason="rename predicate",
     )
@@ -159,7 +159,7 @@ def test_restricted_where_snapshot_does_not_collect_inserted_lineage(
         INSERT {{ GRAPH <{graph}> {{ ?s <https://r005-update.test/property/new> ?old }} }}
         WHERE  {{ GRAPH <{graph}> {{ ?s <https://r005-update.test/property/old> ?old }} }}
         """,
-        validate=False,
+
         actor="agent:test",
         reason="rename predicate",
     )

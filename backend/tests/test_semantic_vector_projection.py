@@ -22,8 +22,8 @@ def _scope(iris):
         graph_set_id="gs-1",
         source_signature="sig-1",
         include="asserted",
-        source_graph_iris=iris,
-        shape_graph_iris=[],
+        source_graph_iris=iris, shape_graph_iris=[],
+
         governance_graph_iris=[],
         reasoning_result_graph_iri=None,
         derived_state={},

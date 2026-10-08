@@ -185,7 +185,7 @@ def _apply(
             "command_kind": command_kind,
             "graph_set_id": graph_set_id,
             "payload": payload,
-            "validate_edit": False,
+
         },
     )
     assert response.status_code == 200, response.text
@@ -408,86 +408,6 @@ def test_delete_relation_type_apply_emits_subject_wildcard_delete(
         store,
         _ontology_graph_iri(),
         ["/ns/relation-type/rel-1>", "?p", "?o"],
-    )
-
-
-def test_create_shape_apply_writes_node_shape_into_custom_subgraph(
-    in_memory_session,
-) -> None:
-    store = FakeStore()
-    client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
-
-    body = _apply(
-        client,
-        graph_set_id,
-        "create_shape",
-        {
-            "ontology_id": "ont-1",
-            "target_class_id": "class-1",
-            "shape_id": "shape-1",
-            "constraints": [{"path_id": "prop-1", "min_count": 1}],
-        },
-    )
-    _assert_apply_payload(
-        body,
-        store,
-        _shapes_custom_graph_iri(),
-        [
-            "/ns/shape/shape-1>",
-            "#NodeShape",
-            "#targetClass",
-            "#minCount",
-        ],
-    )
-
-
-def test_update_shape_apply_replaces_constraints(in_memory_session) -> None:
-    store = FakeStore()
-    client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
-    # D11: update_shape replaces an existing shape, so the target must exist.
-    store.set_graph(
-        _shapes_custom_graph_iri(),
-        "@prefix sh: <http://www.w3.org/ns/shacl#> .\n"
-        "<http://op.local/semantic/ns/shape/shape-1> a sh:NodeShape .\n",
-    )
-
-    body = _apply(
-        client,
-        graph_set_id,
-        "update_shape",
-        {
-            "ontology_id": "ont-1",
-            "target_class_id": "class-1",
-            "shape_id": "shape-1",
-            "constraints": [{"path_id": "prop-2", "max_count": 1}],
-        },
-    )
-    _assert_apply_payload(
-        body,
-        store,
-        _shapes_custom_graph_iri(),
-        ["/ns/shape/shape-1>", "#maxCount"],
-    )
-
-
-def test_delete_shape_apply_emits_subject_wildcard_delete(in_memory_session) -> None:
-    store = FakeStore()
-    client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
-
-    body = _apply(
-        client,
-        graph_set_id,
-        "delete_shape",
-        {"ontology_id": "ont-1", "shape_id": "shape-1"},
-    )
-    _assert_apply_payload(
-        body,
-        store,
-        _shapes_custom_graph_iri(),
-        ["/ns/shape/shape-1>", "?p", "?o"],
     )
 
 
@@ -780,7 +700,7 @@ def test_review_assertion_rejected_decision_without_fix_proposal_returns_400(
                 "reason": "nope",
                 "reviewed_by": "user:alice",
             },
-            "validate_edit": False,
+
         },
     )
     assert response.status_code == 400
@@ -814,7 +734,7 @@ def test_canonical_writer_blocked_when_in_legacy_only_mode(in_memory_session) ->
                 "class_id": "class-1",
                 "name": "X",
             },
-            "validate_edit": False,
+
         },
     )
     assert response.status_code == 409

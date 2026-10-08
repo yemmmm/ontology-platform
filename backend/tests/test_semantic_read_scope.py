@@ -76,20 +76,8 @@ def test_asserted_scope_returns_only_source_graphs(in_memory_session):
         "http://op/s/graph/ontology/ov-1",
         "http://op/s/graph/data/ov-1",
     }
-    assert result.shape_graph_iris == ["http://op/s/graph/shapes/ov-1"]
+    assert result.shape_graph_iris == []
     assert result.reasoning_result_graph_iri is None
-    assert not hasattr(result, "rule_result_graph_iri")
-
-
-def test_asserted_plus_reasoning_includes_current_pointer(in_memory_session):
-    _make_graph_set(
-        in_memory_session,
-        [("http://op/s/graph/ontology/ov-1", "asserted_ontology")],
-    )
-    _add_pointer(in_memory_session, "reasoning")
-    resolver = SemanticReadScopeResolver(in_memory_session)
-    result = resolver.resolve("gs-1", include="asserted-plus-reasoning")
-    assert result.reasoning_result_graph_iri == "http://op/s/graph/reasoning-result/run-1"
     assert not hasattr(result, "rule_result_graph_iri")
 
 
@@ -102,143 +90,8 @@ def test_full_working_view_includes_all_current_pointers(in_memory_session):
     _add_pointer(in_memory_session, "rule")
     resolver = SemanticReadScopeResolver(in_memory_session)
     result = resolver.resolve("gs-1", include="full-working-view")
-    assert result.reasoning_result_graph_iri == "http://op/s/graph/reasoning-result/run-1"
-    assert "rule" not in result.derived_state
-
-
-def test_scope_prefers_current_pointers_over_superseded_rows(in_memory_session):
-    _make_graph_set(
-        in_memory_session,
-        [("http://op/s/graph/data/ov-1", "asserted_data")],
-    )
-    _add_pointer(
-        in_memory_session,
-        "reasoning",
-        pointer_id="ptr-reasoning-current",
-        run_id="run-reasoning-current",
-        iri="http://op/s/graph/reasoning-result/current",
-        status="current",
-        became_current_at=datetime(2026, 1, 2, tzinfo=UTC),
-    )
-    _add_pointer(
-        in_memory_session,
-        "reasoning",
-        pointer_id="ptr-reasoning-superseded",
-        run_id="run-reasoning-superseded",
-        iri="http://op/s/graph/reasoning-result/superseded",
-        status="superseded",
-        became_current_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
-    _add_pointer(
-        in_memory_session,
-        "rule",
-        pointer_id="ptr-rule-current",
-        run_id="run-rule-current",
-        iri="http://op/s/graph/rule-result/current",
-        status="current",
-        became_current_at=datetime(2026, 1, 2, tzinfo=UTC),
-    )
-    _add_pointer(
-        in_memory_session,
-        "rule",
-        pointer_id="ptr-rule-superseded",
-        run_id="run-rule-superseded",
-        iri="http://op/s/graph/rule-result/superseded",
-        status="superseded",
-        became_current_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
-
-    resolver = SemanticReadScopeResolver(in_memory_session)
-    result = resolver.resolve("gs-1", include="full-working-view")
-
-    assert result.reasoning_result_graph_iri == "http://op/s/graph/reasoning-result/current"
-    assert "rule" not in result.derived_state
-    assert result.derived_state["reasoning"] == {
-        "status": "current",
-        "run_id": "run-reasoning-current",
-        "result_graph_iri": "http://op/s/graph/reasoning-result/current",
-    }
-    assert "rule" not in result.members[0].derived_state
-
-
-def test_scope_uses_latest_current_pointer_when_duplicate_current_rows_exist(
-    in_memory_session,
-):
-    _make_graph_set(
-        in_memory_session,
-        [("http://op/s/graph/data/ov-1", "asserted_data")],
-    )
-    _add_pointer(
-        in_memory_session,
-        "reasoning",
-        pointer_id="ptr-reasoning-new",
-        run_id="run-reasoning-new",
-        iri="http://op/s/graph/reasoning-result/new",
-        status="current",
-        became_current_at=datetime(2026, 1, 2, tzinfo=UTC),
-    )
-    _add_pointer(
-        in_memory_session,
-        "reasoning",
-        pointer_id="ptr-reasoning-old",
-        run_id="run-reasoning-old",
-        iri="http://op/s/graph/reasoning-result/old",
-        status="current",
-        became_current_at=datetime(2026, 1, 1, tzinfo=UTC),
-    )
-
-    resolver = SemanticReadScopeResolver(in_memory_session)
-    result = resolver.resolve("gs-1", include="asserted-plus-reasoning")
-
-    assert result.reasoning_result_graph_iri == "http://op/s/graph/reasoning-result/new"
-    assert result.derived_state["reasoning"] == {
-        "status": "current",
-        "run_id": "run-reasoning-new",
-        "result_graph_iri": "http://op/s/graph/reasoning-result/new",
-    }
-
-
-def test_stale_pointer_with_allow_stale_false_raises(in_memory_session):
-    _make_graph_set(
-        in_memory_session,
-        [("http://op/s/graph/data/ov-1", "asserted_data")],
-    )
-    _add_pointer(in_memory_session, "reasoning", status="stale")
-    resolver = SemanticReadScopeResolver(in_memory_session)
-    try:
-        resolver.resolve(
-            "gs-1", include="asserted-plus-reasoning", allow_stale_derived=False
-        )
-        raise AssertionError("expected ReadScopeError")
-    except ReadScopeError as exc:
-        assert "stale" in str(exc).lower()
-
-
-def test_stale_pointer_with_allow_stale_true_produces_warning(in_memory_session):
-    _make_graph_set(
-        in_memory_session,
-        [("http://op/s/graph/data/ov-1", "asserted_data")],
-    )
-    _add_pointer(in_memory_session, "reasoning", status="stale")
-    resolver = SemanticReadScopeResolver(in_memory_session)
-    result = resolver.resolve(
-        "gs-1", include="asserted-plus-reasoning", allow_stale_derived=True
-    )
-    assert result.reasoning_result_graph_iri == "http://op/s/graph/reasoning-result/run-1"
-    assert any(w["code"] == "stale_reasoning_result" for w in result.warnings)
-
-
-def test_missing_pointer_for_required_scope_warns(in_memory_session):
-    _make_graph_set(
-        in_memory_session,
-        [("http://op/s/graph/data/ov-1", "asserted_data")],
-    )
-    resolver = SemanticReadScopeResolver(in_memory_session)
-    result = resolver.resolve(
-        "gs-1", include="asserted-plus-reasoning", allow_stale_derived=True
-    )
     assert result.reasoning_result_graph_iri is None
-    assert any(w["code"] == "missing_reasoning_result" for w in result.warnings)
+    assert "rule" not in result.derived_state
 
 
 def test_unknown_include_raises(in_memory_session):

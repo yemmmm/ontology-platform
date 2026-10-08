@@ -92,20 +92,12 @@ CHECK_KEYS: tuple[str, ...] = (
     "scope",
     "ontology_structure",
     "explicit_unknowns",
-    "validation_reasoning",
+    "deterministic_write_readback",
     "governed_retrieval",
     "evidence_lineage",
     "competency_questions",
 )
-MODELING_STAGES: tuple[str, ...] = ("dry-run", "apply", "readback", "validation", "reasoning")
-READ_ONLY_VALIDATION_TOOLS: frozenset[str] = frozenset(
-    {
-        "list_semantic_validation_runs",
-        "get_semantic_validation_run",
-        "list_semantic_reasoning_runs",
-        "get_semantic_reasoning_run",
-    }
-)
+MODELING_STAGES: tuple[str, ...] = ("dry-run", "apply", "readback")
 MODEL_STATE_FIELDS: tuple[str, ...] = (
     "project_id",
     "ontology_id",
@@ -124,8 +116,6 @@ STAGE_TOOL_BINDINGS: dict[str, tuple[frozenset[str], str | None]] = {
     "dry-run": (frozenset({"submit_modeling_batch"}), "dry_run"),
     "apply": (frozenset({"submit_modeling_batch"}), "apply_atomic"),
     "readback": (frozenset({"get_modeling_context"}), None),
-    "validation": (frozenset({"run_semantic_validation"}), None),
-    "reasoning": (frozenset({"run_semantic_reasoning"}), None),
 }
 
 # Prompt E keeps the Protocol-to-Coordinator boundary a typed, Runner-bound
@@ -134,7 +124,7 @@ STAGE_TOOL_BINDINGS: dict[str, tuple[frozenset[str], str | None]] = {
 # Runner-owned draft builder adds the approved source manifest, frozen CQ
 # policy, read allowlist, and live model state before the existing strict
 # ticket validator is invoked.
-STAGE_HANDOFF_SCHEMA = "r2-3-005-acceptance-stage-handoff/v1"
+STAGE_HANDOFF_SCHEMA = "r2-3-005-acceptance-stage-handoff/v2"
 
 # Examiner children submit only semantic content.  Every task/round/session,
 # source-bundle, and model-state binding is added by the Runner after this
@@ -520,9 +510,6 @@ def validate_child_input(kind: str, value: Any) -> dict[str, Any]:
             _error("Platform projection allowlist is empty")
         if any(tool not in set(canonical_platform_allowlist()) for tool in data["allowed_read_tools"]):
             _error("Platform projection allowlist contains a non-read-only tool")
-        if any(tool not in set(data["allowed_read_tools"]) for tool in READ_ONLY_VALIDATION_TOOLS):
-            # The four generic result readers are mandatory for the formal contract.
-            _error("Platform projection omits a generic validation/reasoning read wrapper")
         if any(not isinstance(tool, str) for tool in data["allowed_read_tools"]):
             _error("Platform projection allowlist contains invalid tool")
         return data
@@ -680,9 +667,9 @@ def validate_modeling_receipt(value: Any, *, run_id: str, project_id: str, ontol
         _receipt_error(
             "modeling receipt stage is invalid",
             "modeling-receipt-stage-invalid",
-            "Use one of the five modeling stages: dry-run, apply, readback, validation, reasoning.",
+            "Use one of the three modeling stages: dry-run, apply, readback.",
         )
-    required_status = {"dry-run": "validated", "apply": "applied", "readback": "complete", "validation": "succeeded", "reasoning": "succeeded"}[data["stage"]]
+    required_status = {"dry-run": "validated", "apply": "applied", "readback": "complete"}[data["stage"]]
     if data["status"] != required_status:
         _receipt_error(
             "modeling receipt status is not successful for its stage",
@@ -838,7 +825,7 @@ def validate_stage_handoff(
 
     receipts = data["modeling_receipts"]
     if not isinstance(receipts, list) or len(receipts) != len(MODELING_STAGES):
-        _error("stage handoff must contain exactly five modeling receipts")
+        _error("stage handoff must contain exactly three modeling receipts")
     seen_stages: set[str] = set()
     for receipt in receipts:
         if not isinstance(receipt, Mapping):
@@ -954,8 +941,6 @@ def validate_ticket(ticket: Any, *, expected_owner_revision: str | None = None) 
     canonical_tools = set(canonical_platform_allowlist())
     if any(tool not in canonical_tools for tool in tools):
         _error("ticket allowed_read_tools contains a non-read-only tool")
-    if not READ_ONLY_VALIDATION_TOOLS.issubset(tools):
-        _error("ticket omits generic validation/reasoning read wrappers")
     receipts = data["modeling_receipts"]
     if not isinstance(receipts, list) or not receipts:
         _error("ticket modeling_receipts is empty")
@@ -974,7 +959,7 @@ def validate_ticket(ticket: Any, *, expected_owner_revision: str | None = None) 
             _error("ticket modeling_receipts duplicates a stage")
         seen_stages.add(normalized["stage"])
     if seen_stages != set(MODELING_STAGES):
-        _error("ticket modeling_receipts must contain all five current-run stages")
+        _error("ticket modeling_receipts must contain all three current-run stages")
     if not isinstance(data["timeout_seconds"], int) or isinstance(data["timeout_seconds"], bool) or data["timeout_seconds"] <= 0:
         _error("ticket timeout_seconds must be positive")
     _safe_digest(data["quality_standard_digest"], "ticket quality_standard_digest")
@@ -2865,7 +2850,7 @@ class RunnerAcceptanceCarrier:
             _error("stage receipt observed request arguments are unavailable")
         if required_mode is not None and arguments.get("mode") != required_mode:
             _error("stage receipt request mode does not match its stage")
-        if required_mode is None and stage in {"readback", "validation", "reasoning"} and "mode" in arguments:
+        if required_mode is None and stage == "readback" and "mode" in arguments:
             _error("stage receipt read request carries an unexpected mode")
         target = self.root.parent / artifact_path
         try:
@@ -2931,9 +2916,6 @@ class RunnerAcceptanceCarrier:
                 or workspace.get("workspace_version") != live_state["workspace_version"]
             ):
                 _error("stage receipt readback ontology binding is invalid")
-        elif stage in {"validation", "reasoning"}:
-            if data.get("status") != "succeeded" or data.get("graph_set_id") != live_state["graph_set_id"]:
-                _error("stage receipt result status or graph scope is invalid")
         if stage in {"dry-run", "apply"}:
             if (
                 arguments.get("ontology_id") != live_state["ontology_id"]
@@ -2943,9 +2925,6 @@ class RunnerAcceptanceCarrier:
         elif stage == "readback":
             if arguments.get("ontology_id") != live_state["ontology_id"]:
                 _error("stage receipt readback request scope is invalid")
-        elif stage in {"validation", "reasoning"}:
-            if arguments.get("graph_set_id") != live_state["graph_set_id"]:
-                _error("stage receipt request graph scope is invalid")
 
     def coordinator_ticket_draft_from_delivery(
         self,
@@ -3246,18 +3225,18 @@ class RunnerAcceptanceCarrier:
         self,
         stage_calls: Mapping[str, Mapping[str, Any]],
     ) -> dict[str, Mapping[str, Any]]:
-        """Validate a Protocol-supplied five-stage mapping shape.
+        """Validate a Protocol-supplied three-stage mapping shape.
 
         Keeps the backward-compatible exact-match path: Protocol may still pass
-        the complete five observed stage calls, and each entry must carry exactly
+        the complete three observed stage calls, and each entry must carry exactly
         ``tool``/``arguments``/``artifact_path``.  The exact one-observed-call
         match itself happens in the shared receipts loop after this returns.
         """
 
         if not isinstance(stage_calls, Mapping) or len(stage_calls) != len(MODELING_STAGES):
             _error(
-                "stage handoff builder requires exactly five stage calls",
-                data={"reason": "stage_handoff_requires_five_stages"},
+                "stage handoff builder requires exactly three stage calls",
+                data={"reason": "stage_handoff_requires_three_stages"},
             )
         by_stage: dict[str, Mapping[str, Any]] = {}
         for stage, entry in stage_calls.items():
@@ -3299,13 +3278,13 @@ class RunnerAcceptanceCarrier:
         self,
         state: Mapping[str, Any],
     ) -> dict[str, Mapping[str, Any]]:
-        """Deterministically select the five canonical final-state stage calls.
+        """Deterministically select the three canonical final-state stage calls.
 
         Each observed platform call's persisted response artifact (the same
         files :meth:`_validate_observed_stage_evidence` reads) is inspected to
         pick, per stage, the unique observed call that reflects the live model
         state.  This keeps the final-state stage selection in the tool layer
-        instead of asking the Protocol role to hand-pick five observed calls.
+        instead of asking the Protocol role to hand-pick three observed calls.
         A stage with zero or more than one candidate raises a structured
         :class:`AcceptanceContractError` so the failure is observable and is
         never silently guessed.
@@ -3466,57 +3445,6 @@ class RunnerAcceptanceCarrier:
             selector="get_modeling_context workspace.workspace_version==live",
         )
 
-        # validation / reasoning: the succeeded run whose graph_set_id is the
-        # live graph_set_id.
-        validation_candidates: list[Mapping[str, Any]] = []
-        for record in records:
-            if record["tool"] != "run_semantic_validation":
-                continue
-            data = _data(record)
-            if (
-                isinstance(data, Mapping)
-                and data.get("status") == "succeeded"
-                and data.get("graph_set_id") == live_graph_set
-            ):
-                validation_candidates.append(record)
-        # A post-receipt revision re-validates on the same live graph set
-        # (R2.3-009 start19): the rejected revision's validation succeeds
-        # operationally with conforms=False and matches the selector together
-        # with the revision's conformant validation.  The conformant run is
-        # the deterministic final validation evidence; a unique conformant
-        # match wins.
-        if len(validation_candidates) > 1:
-            conformant = [
-                record
-                for record in validation_candidates
-                if isinstance(_data(record), Mapping)
-                and _data(record).get("conforms") is True
-            ]
-            if len(conformant) == 1:
-                validation_candidates = conformant
-        validation_record = _select(
-            "validation",
-            validation_candidates,
-            selector="run_semantic_validation status=succeeded graph_set_id==live",
-        )
-
-        reasoning_candidates: list[Mapping[str, Any]] = []
-        for record in records:
-            if record["tool"] != "run_semantic_reasoning":
-                continue
-            data = _data(record)
-            if (
-                isinstance(data, Mapping)
-                and data.get("status") == "succeeded"
-                and data.get("graph_set_id") == live_graph_set
-            ):
-                reasoning_candidates.append(record)
-        reasoning_record = _select(
-            "reasoning",
-            reasoning_candidates,
-            selector="run_semantic_reasoning status=succeeded graph_set_id==live",
-        )
-
         def _triple(record: Mapping[str, Any]) -> dict[str, Any]:
             return {
                 "tool": record["tool"],
@@ -3528,8 +3456,6 @@ class RunnerAcceptanceCarrier:
             "dry-run": _triple(dry_record),
             "apply": _triple(apply_record),
             "readback": _triple(readback_record),
-            "validation": _triple(validation_record),
-            "reasoning": _triple(reasoning_record),
         }
 
     def protocol_build_acceptance_stage_handoff(
@@ -3542,13 +3468,12 @@ class RunnerAcceptanceCarrier:
         """Build the canonical handoff from Runner-observed stage calls.
 
         Protocol may omit ``stage_calls`` to let the carrier auto-select the
-        five canonical final-state calls (the final ``apply_atomic`` whose
+        three canonical final-state calls (the final ``apply_atomic`` whose
         ``workspace.after_version`` matches the live workspace version, the
         validated ``dry_run`` paired with that apply via a shared
         ``before_version``, the final ``get_modeling_context`` readback over
-        the live workspace version, and the succeeded validation/reasoning over
-        the live graph set).  Supplying ``stage_calls`` is still accepted for
-        backward compatibility: it must then be the complete five-stage mapping
+        the live workspace version).  Supplying ``stage_calls`` is still accepted for
+        backward compatibility: it must then be the complete three-stage mapping
         and each entry must exact-match one observed platform call.  In both
         paths the Runner resolves the selection against its immutable
         MCP-result registry and computes every digest, page, receipt, nonce,
@@ -3606,8 +3531,6 @@ class RunnerAcceptanceCarrier:
                     "dry-run": "validated",
                     "apply": "applied",
                     "readback": "complete",
-                    "validation": "succeeded",
-                    "reasoning": "succeeded",
                 }[stage],
                 "receipt_digest": None,
                 "run_id": run_id,
@@ -6674,12 +6597,10 @@ class PlatformScopeShim:
         return validate_typed_evidence_ref(ref, expected_ticket=self.ticket["ticket_digest"], expected_state=self.ticket["model_state_digest"])
 
 
-def canonical_platform_allowlist(*, include_validation_reasoning: bool = True) -> tuple[str, ...]:
+def canonical_platform_allowlist() -> tuple[str, ...]:
     base = [
-        "check_platform_health", "get_project_build_context", "get_build_session", "get_modeling_context", "get_ontology_workspace_context", "get_ontology_read_model", "get_semantic_read_model", "query_semantic_context", "semantic_sparql_query", "describe_semantic_graph_set", "list_semantic_derived_pointers", "inspect_semantic_projection_status", "list_evidence_references", "get_evidence_reference", "get_ontology_lineage", "inspect_semantic_statement_provenance",
+        "check_platform_health", "get_project_build_context", "get_build_session", "get_modeling_context", "get_ontology_workspace_context", "get_ontology_read_model", "get_semantic_read_model", "query_semantic_context", "semantic_sparql_query", "describe_semantic_graph_set", "inspect_semantic_projection_status", "list_evidence_references", "get_evidence_reference", "get_ontology_lineage", "inspect_semantic_statement_provenance",
     ]
-    if include_validation_reasoning:
-        base.extend(sorted(READ_ONLY_VALIDATION_TOOLS))
     return tuple(base)
 
 
@@ -6752,5 +6673,5 @@ def classify_comparison(*, source: Mapping[str, Any], platform: Mapping[str, Any
 
 
 __all__ = [
-    "AcceptanceContractError", "AcceptancePhase", "PERSISTENT_ROLES", "EXAMINER_KINDS", "READ_ONLY_VALIDATION_TOOLS", "canonical_digest", "model_state_digest", "modeling_receipt_digest", "stage_handoff_digest", "stage_handoff_no_match_diagnostic", "ticket_digest", "verdict_digest", "report_digest", "validate_profile_roster", "validate_child_descriptor", "validate_child_input", "validate_model_state", "validate_platform_read_scope", "validate_typed_evidence_ref", "validate_page_chain", "validate_modeling_receipt", "validate_stage_handoff", "validate_ticket", "validate_report", "validate_verdict", "ChildHandle", "CleanupReceipt", "InfrastructureFailure", "VerdictReceipt", "RunnerAcceptanceCarrier", "CoordinatorPhaseController", "ModelStateBoundary", "SettlementCAS", "ReadOnlyKeyLifecycle", "PlatformApiReadKeyLifecycle", "canonical_platform_allowlist", "validate_platform_read_request", "canonical_mode_preflight", "validate_location_hint", "classify_comparison",
+    "AcceptanceContractError", "AcceptancePhase", "PERSISTENT_ROLES", "EXAMINER_KINDS", "canonical_digest", "model_state_digest", "modeling_receipt_digest", "stage_handoff_digest", "stage_handoff_no_match_diagnostic", "ticket_digest", "verdict_digest", "report_digest", "validate_profile_roster", "validate_child_descriptor", "validate_child_input", "validate_model_state", "validate_platform_read_scope", "validate_typed_evidence_ref", "validate_page_chain", "validate_modeling_receipt", "validate_stage_handoff", "validate_ticket", "validate_report", "validate_verdict", "ChildHandle", "CleanupReceipt", "InfrastructureFailure", "VerdictReceipt", "RunnerAcceptanceCarrier", "CoordinatorPhaseController", "ModelStateBoundary", "SettlementCAS", "ReadOnlyKeyLifecycle", "PlatformApiReadKeyLifecycle", "canonical_platform_allowlist", "validate_platform_read_request", "canonical_mode_preflight", "validate_location_hint", "classify_comparison",
 ]

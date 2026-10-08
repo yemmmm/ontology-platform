@@ -74,8 +74,6 @@ def test_publication_readiness_returns_gate_set(fake_graph_set_with_members):
     assert item["graph_set_id"] == graph_set_id
     gate_names = {g["gate"] for g in item["gates"]}
     assert gate_names == {
-        "validation_stale",
-        "reasoning_stale",
         "open_edits",
         "projection_freshness",
     }
@@ -262,5 +260,3 @@ def test_graph_set_delta_counts_independent_of_display_cap(
     assert len(ad["added"]) <= 10
     # Truncation flag set.
     assert rows["truncated"] is True
-
-

@@ -1,11 +1,11 @@
 """Projection job lifecycle: create, snapshot inputs, run, manifest promotion, reconcile.
 
 Phase 6 graph-set-aware projection jobs. Each job snapshots the source
-signature, input graph revisions, and input derived pointers; writers
+signature, input graph revisions, and an empty historical-pointer slot; writers
 implement the ``ProjectionWriter`` protocol. Successful rebuilds promote
 a manifest for ``(graph_set_id, projection_kind, target_partition)`` to
 ``current``. Reconcile compares each manifest to the current graph-set
-signature and derived-pointer statuses and marks stale when they diverge.
+signature and retired-input presence and marks stale when they diverge.
 """
 
 from __future__ import annotations
@@ -18,7 +18,6 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.repositories.models import (
-    SemanticDerivedResultPointerModel,
     SemanticGraphRevisionModel,
     SemanticGraphSetModel,
     SemanticProjectionJobModel,
@@ -76,7 +75,7 @@ class SemanticProjectionJobService:
             allow_stale_derived=allow_stale_derived,
         )
         revisions = self._revisions_for(scope.source_graph_iris)
-        pointers = self._derived_pointers(graph_set_id)
+        pointers = {}
         job_id = str(uuid4())
         partition = target_partition or self._default_partition(
             graph_set_id, projection_kind, projection_version, job_id
@@ -149,7 +148,7 @@ class SemanticProjectionJobService:
                 current_graph_set.source_signature != job.source_signature
                 or current_scope.source_signature != job.source_signature
                 or self._revisions_for(current_scope.source_graph_iris) != job.input_graph_revisions
-                or self._derived_pointers(job.graph_set_id) != (job.input_derived_pointers or {})
+                or {} != (job.input_derived_pointers or {})
             ):
                 job.status = "stale"
                 job.finished_at = datetime.now(UTC)
@@ -186,15 +185,9 @@ class SemanticProjectionJobService:
                 manifest.status = "stale"
                 marked.append(manifest.id)
                 continue
-            pointers = self._derived_pointers(manifest.graph_set_id)
-            for kind, payload in (
-                manifest.manifest_metadata or {}
-            ).get("input_derived_pointers", {}).items():
-                current = pointers.get(kind, {})
-                if payload.get("status") != current.get("status"):
-                    manifest.status = "stale"
-                    marked.append(manifest.id)
-                    break
+            if (manifest.manifest_metadata or {}).get("input_derived_pointers"):
+                manifest.status = "stale"
+                marked.append(manifest.id)
         self.session.commit()
         return {
             "reconciled": reconciled,
@@ -277,21 +270,6 @@ class SemanticProjectionJobService:
         )
         return {row.graph_iri: row.revision for row in rows}
 
-    def _derived_pointers(self, graph_set_id: str) -> dict[str, dict[str, Any]]:
-        rows = self.session.scalars(
-            select(SemanticDerivedResultPointerModel).where(
-                SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
-                SemanticDerivedResultPointerModel.result_kind == "reasoning",
-            )
-        )
-        return {
-            row.result_kind: {
-                "run_id": row.run_id,
-                "result_graph_iri": row.result_graph_iri,
-                "status": row.status,
-            }
-            for row in rows
-        }
 
     def _promote_manifest(self, job: SemanticProjectionJobModel) -> None:
         graph_set = self._get_graph_set(job.graph_set_id)

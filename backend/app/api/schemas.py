@@ -690,50 +690,10 @@ class SemanticSparqlQueryResponse(BaseModel):
     warnings: list[dict[str, str]] = Field(default_factory=list)
 
 
-class SemanticValidationRunRequest(BaseModel):
-    data_graph_iris: list[str]
-    shape_graph_iris: list[str]
-    inference: str | None = None
-
-
-class SemanticValidationRunResponse(BaseModel):
-    run_id: str
-    status: str
-    conforms: bool | None = None
-    report_text: str | None = None
-    summary: dict[str, Any] = Field(default_factory=dict)
-    error: str | None = None
-
-
-class SemanticReasoningRunRequest(BaseModel):
-    source_graph_iris: list[str]
-    tasks: list[str] = Field(default_factory=lambda: ["consistency"])
-    persist_result_graph: bool = False
-    graph_set_id: str | None = None
-    engine_version: str | None = None
-    shape_version: str | None = None
-
-
-class SemanticReasoningRunResponse(BaseModel):
-    warnings: list[str] = Field(default_factory=list)
-    implementation_mode: str | None = None
-    engine_name: str | None = None
-    run_id: str
-    status: str
-    consistent: bool | None = None
-    classification: dict[str, Any] = Field(default_factory=dict)
-    entailments: list[dict[str, Any]] = Field(default_factory=list)
-    result_graph_iri: str | None = None
-    error: str | None = None
-    derived_pointer: dict[str, Any] | None = None
-
-
 class SemanticEditRequest(BaseModel):
     format: Literal["trig", "turtle", "json-ld", "sparql-update"]
     content: str
     target_graph_iri: str | None = None
-    validate_edit: bool = Field(default=True, alias="validate")
-    shape_graph_iris: list[str] = Field(default_factory=list)
     actor: str | None = None
     reason: str | None = None
     warning_state: dict[str, Any] = Field(default_factory=dict)
@@ -897,19 +857,6 @@ class SemanticGraphSetListResponse(BaseModel):
     graph_sets: list[SemanticGraphSetRead]
 
 
-class SemanticGraphSetReasoningRunRequest(BaseModel):
-    tasks: list[str] = Field(default_factory=lambda: ["consistency"])
-    persist_result_graph: bool = True
-    engine_version: str | None = None
-    shape_version: str | None = None
-
-
-class SemanticDerivedResultReconcileResponse(BaseModel):
-    graph_sets_inspected: int
-    pointers_marked_current: int
-    pointers_marked_stale: int
-
-
 class SemanticGraphGcRequest(BaseModel):
     target_kind: Literal["reasoning_result"] = "reasoning_result"
     dry_run: bool = False
@@ -935,79 +882,6 @@ class SemanticGovernanceStatusResponse(BaseModel):
 # ---------------------------------------------------------------------------
 # Phase 5: graph-set validation and reasoning
 # ---------------------------------------------------------------------------
-
-
-class SemanticGraphSetValidationRunRequest(BaseModel):
-    shape_graph_iris: list[str] = Field(default_factory=list)
-    inference: str | None = None
-    validation_scope: Literal["asserted_only", "asserted_plus_reasoning"] = "asserted_only"
-    reasoning_result_graph_iri: str | None = None
-    shape_version: str | None = None
-    engine_version: str | None = None
-    persist_report_graph: bool = True
-    actor: str | None = None
-
-
-class SemanticValidationRunRead(BaseModel):
-    run_id: str
-    status: str
-    conforms: bool | None = None
-    report_graph_iri: str | None = None
-    summary: dict[str, Any] = Field(default_factory=dict)
-    guidance: dict[str, Any] = Field(default_factory=dict)
-    warnings: list[str] = Field(default_factory=list)
-    graph_set_id: str | None = None
-    source_signature: str = ""
-    input_graph_revisions: dict[str, int] = Field(default_factory=dict)
-    shape_version: str | None = None
-    engine_version: str | None = None
-    validation_scope: str = "asserted_only"
-    staleness: dict[str, Any] = Field(default_factory=dict)
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    error: str | None = None
-
-
-class SemanticReasoningRunRead(BaseModel):
-    implementation_mode: str | None = None
-    engine_name: str | None = None
-    run_id: str
-    status: str
-    consistent: bool | None = None
-    classification: dict[str, Any] = Field(default_factory=dict)
-    entailments: list[dict[str, Any]] = Field(default_factory=list)
-    result_graph_iri: str | None = None
-    graph_set_id: str | None = None
-    source_signature: str = ""
-    input_graph_revisions: dict[str, int] = Field(default_factory=dict)
-    input_derived_pointers: dict[str, Any] = Field(default_factory=dict)
-    engine_version: str | None = None
-    shape_version: str | None = None
-    tasks: list[str] = Field(default_factory=list)
-    profile: str = "owl2_dl"
-    warnings: list[str] = Field(default_factory=list)
-    derived_pointer: dict[str, Any] | None = None
-    started_at: datetime | None = None
-    finished_at: datetime | None = None
-    error: str | None = None
-
-
-class RunListSummary(BaseModel):
-    """Stage 5 §4.1 — common summary block for ``*-runs`` list endpoints."""
-
-    total: int = 0
-    stale_count: int = 0
-    superseded_count: int = 0
-
-
-class ValidationRunListResponse(BaseModel):
-    items: list[SemanticValidationRunRead]
-    summary: RunListSummary
-
-
-class ReasoningRunListResponse(BaseModel):
-    items: list[SemanticReasoningRunRead]
-    summary: RunListSummary
 
 
 # ----------------------------------------------------------------------------
@@ -1046,10 +920,8 @@ class SemanticExportRequest(BaseModel):
     format: Literal["trig", "turtle", "json-ld"] = "trig"
     include: Literal[
         "asserted",
-        "asserted-plus-reasoning",
         "full-working-view",
     ] = "asserted"
-    include_shapes: bool = False
     include_policy: bool = False
     include_metadata: bool = False
     allow_stale_derived: bool = False
@@ -1061,7 +933,6 @@ class SemanticProjectionJobCreate(BaseModel):
     projection_version: str
     include: Literal[
         "asserted",
-        "asserted-plus-reasoning",
         "full-working-view",
     ] = "asserted"
     allow_stale_derived: bool = False
@@ -1294,8 +1165,6 @@ class SemanticCanonicalProductWriteRequest(BaseModel):
     payload: dict[str, Any]
     actor: str | None = None
     reason: str | None = None
-    validate_edit: bool = True
-    shape_graph_iris: list[str] = Field(default_factory=list)
     client_item_id: str | None = None
 
 

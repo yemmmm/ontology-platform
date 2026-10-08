@@ -256,7 +256,7 @@ def test_direct_edits_and_shacl_false_cannot_bypass_mapping_contract(mapping_app
     )
     canonical = CanonicalSemanticWriteService(f["session"], f["store"], f["settings"])
     with pytest.raises(CanonicalSemanticWriteError) as caught:
-        canonical.apply_compiled_command(command, validate=False)
+        canonical.apply_compiled_command(command)
     assert caught.value.code == "mapping_batch_required"
     f["session"].rollback()
     assert submit(f, a, [table(f, "left", "a")])["attempt_status"] == "applied"
@@ -266,7 +266,7 @@ def test_direct_edits_and_shacl_false_cannot_bypass_mapping_contract(mapping_app
             "sparql-update",
             f"DELETE DATA {{ GRAPH <{graph}> {{ <{f['base']}property/key> "
             "a <http://www.w3.org/2002/07/owl#DatatypeProperty> } }",
-            validate=False,
+
         )
     assert caught.value.code == "mapping_batch_required"
     assert "columnMappings" in f["store"].get_graph(graph, "turtle")

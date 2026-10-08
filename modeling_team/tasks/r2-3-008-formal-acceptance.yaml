@@ -101,7 +101,7 @@ role_sources:
   - path: docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/public-protocol.md
     classification: protocol
     roles: [protocol]
-  - path: modeling_team/references/r2-3-008-acceptance-standard.json
+  - path: modeling_team/references/r2-3-008-acceptance-standard-v2.json
     classification: coordination
     roles: [acceptance]
 protocol_tools:
@@ -123,8 +123,6 @@ protocol_tools:
   - get_modeling_context
   - get_ontology_read_model
   - query_semantic_context
-  - run_semantic_validation
-  - run_semantic_reasoning
   - get_ontology_lineage
   - inspect_semantic_statement_provenance
 expected_terminal_evidence:

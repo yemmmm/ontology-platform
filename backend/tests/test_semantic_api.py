@@ -143,7 +143,7 @@ def test_semantic_edit_endpoint_applies_turtle_insert(in_memory_session) -> None
             "format": "turtle",
             "content": '@prefix ex: <http://example.test/> . ex:alice ex:name "Alice" .',
             "target_graph_iri": GRAPH,
-            "validate": False,
+
         },
     )
 
@@ -164,7 +164,7 @@ def test_semantic_edit_endpoint_rejects_reasoning_result_graph(in_memory_session
             "format": "turtle",
             "content": '@prefix ex: <http://example.test/> . ex:alice ex:name "Alice" .',
             "target_graph_iri": RESULT_GRAPH,
-            "validate": False,
+
         },
     )
 
@@ -184,7 +184,7 @@ def test_semantic_edit_endpoint_returns_400_for_malformed_rdf(in_memory_session)
             "format": "turtle",
             "content": "GARBAGE not valid turtle",
             "target_graph_iri": GRAPH,
-            "validate": False,
+
         },
     )
 
@@ -347,16 +347,6 @@ def test_graph_set_membership_update_marks_pointers_stale(in_memory_session) -> 
     assert len(body["members"]) == 2
 
 
-def test_reconcile_endpoint_returns_summary(in_memory_session) -> None:
-    client = _client(FakeStore(), in_memory_session)
-    response = client.post("/api/semantic/derived-results:reconcile")
-    assert response.status_code == 200
-    body = response.json()
-    assert "graph_sets_inspected" in body
-    assert "pointers_marked_current" in body
-    assert "pointers_marked_stale" in body
-
-
 def test_gc_endpoint_dry_run_does_not_call_clear(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
@@ -426,141 +416,6 @@ def _create_graph_set(client, members=None) -> str:
     )
     assert response.status_code == 200
     return response.json()["id"]
-
-
-def test_graph_set_validation_endpoint_records_engine_version(in_memory_session) -> None:
-    store = FakeStore()
-    client = _client(store, in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    response = client.post(
-        f"/api/semantic/graph-sets/{graph_set_id}/validation-runs",
-        json={
-            "shape_graph_iris": [],
-            "shape_version": "sha256:abc",
-            "persist_report_graph": True,
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["status"] == "succeeded"
-    assert body["run_id"]
-
-
-def test_get_validation_run_returns_staleness(in_memory_session) -> None:
-    client = _client(FakeStore(), in_memory_session)
-    graph_set_id = _create_graph_set(client)
-
-    run_response = client.post(
-        f"/api/semantic/graph-sets/{graph_set_id}/validation-runs",
-        json={"shape_version": "sha256:abc"},
-    )
-    run_id = run_response.json()["run_id"]
-    response = client.get(f"/api/semantic/validation-runs/{run_id}")
-    assert response.status_code == 200
-    body = response.json()
-    assert body["staleness"]["stale"] is False
-
-
-def test_stage5_validation_runs_list_endpoint_filters_and_summarizes(
-    in_memory_session,
-) -> None:
-    client = _client(FakeStore(), in_memory_session)
-    older = datetime(2026, 7, 6, 10, tzinfo=UTC)
-    newer = datetime(2026, 7, 6, 11, tzinfo=UTC)
-    in_memory_session.add_all(
-        [
-            SemanticValidationRunModel(
-                id="validation-old",
-                data_graph_iris=[GRAPH],
-                shape_graph_iris=[],
-                status="succeeded",
-                conforms=True,
-                started_at=older,
-                finished_at=older,
-                run_metadata={
-                    "graph_set_id": "gs-stage5",
-                    "validation_scope": "asserted_only",
-                    "source_signature": "old",
-                    "input_graph_revisions": {},
-                },
-            ),
-            SemanticValidationRunModel(
-                id="validation-new",
-                data_graph_iris=[GRAPH],
-                shape_graph_iris=[],
-                status="succeeded",
-                conforms=True,
-                started_at=newer,
-                finished_at=newer,
-                run_metadata={
-                    "graph_set_id": "gs-stage5",
-                    "validation_scope": "asserted_only",
-                    "source_signature": "new",
-                    "input_graph_revisions": {},
-                },
-            ),
-        ]
-    )
-    in_memory_session.commit()
-
-    response = client.get(
-        "/api/semantic/validation-runs",
-        params={"graph_set_id": "gs-stage5", "kind": "asserted_only", "limit": 1},
-    )
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["items"][0]["run_id"] == "validation-new"
-    assert body["summary"]["total"] == 2
-    assert set(body["summary"]) == {"total", "stale_count", "superseded_count"}
-
-
-def test_stage5_reasoning_and_rule_run_list_endpoints_filter(
-    in_memory_session,
-) -> None:
-    client = _client(FakeStore(), in_memory_session)
-    in_memory_session.add_all(
-        [
-            SemanticReasoningRunModel(
-                id="reasoning-1",
-                source_graph_iris=[GRAPH],
-                result_graph_iri=RESULT_GRAPH,
-                reasoner="command",
-                status="succeeded",
-                consistent=True,
-                started_at=datetime(2026, 7, 6, 11, tzinfo=UTC),
-                run_metadata={"graph_set_id": "gs-stage5", "tasks": ["consistency"]},
-            ),
-            SemanticRuleRunModel(
-                id="rule-1",
-                graph_set_id="gs-stage5",
-                engine_name="platform_dsl",
-                source_signature="sig",
-                status="succeeded",
-                generated_statement_count=2,
-                started_at=datetime(2026, 7, 6, 12, tzinfo=UTC),
-                run_metadata={},
-            ),
-        ]
-    )
-    in_memory_session.commit()
-
-    reasoning_response = client.get(
-        "/api/semantic/reasoning-runs",
-        params={"graph_set_id": "gs-stage5", "kind": "consistency"},
-    )
-    rule_response = client.get(
-        "/api/semantic/rule-runs",
-        params={"graph_set_id": "gs-stage5", "kind": "platform_dsl"},
-    )
-
-    assert reasoning_response.status_code == 200
-    assert reasoning_response.json()["items"][0]["run_id"] == "reasoning-1"
-    assert reasoning_response.json()["summary"]["total"] == 1
-    assert rule_response.status_code == 404
-
-    assert in_memory_session.get(SemanticRuleRunModel, "rule-1") is not None
 
 
 def test_stage5_projection_status_exposes_stale_projection_count(

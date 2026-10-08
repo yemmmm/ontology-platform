@@ -345,7 +345,7 @@ def test_canonical_write_endpoint_compiles_and_applies(in_memory_session) -> Non
                     "class_id": "class-api-1",
                     "name": "ApiClass",
                 },
-                "validate_edit": False,
+
             },
         )
     assert response.status_code == 200, response.text
@@ -375,7 +375,7 @@ def test_canonical_write_blocked_when_legacy_only(in_memory_session) -> None:
                     "class_id": "class-api-2",
                     "name": "ApiClass",
                 },
-                "validate_edit": False,
+
             },
         )
     assert response.status_code == 409

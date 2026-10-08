@@ -60,8 +60,16 @@
     "schema_version": "r3-0-009-unified-graph/v2",
     "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
     "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
-    "item_optional_fields": ["semantic_definition", "action_definition", "parameter_definition", "rule_definition"],
-    "item_kinds": ["entity", "relation", "property", "shape"],
+    "item_optional_fields": [
+      "semantic_definition",
+      "action_definition",
+      "parameter_definition"
+    ],
+    "item_kinds": [
+      "entity",
+      "relation",
+      "property"
+    ],
     "rules": [
       "items are neutral: no guessed platform IRI, semantic ID, or receipt reference",
       "candidate_id plus revision is immutable once published; a change publishes a new revision file and requires new approvals",

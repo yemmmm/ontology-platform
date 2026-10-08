@@ -182,7 +182,7 @@ Coordinator `tools/list` result: pass exactly `coordinator_id`, the original
 `handoff_delivery_id`, the frozen `question_id`, and a positive `ticket_revision`. Do not parse,
 copy, shorten, reconstruct, or resend handoff JSON, and do not provide `handoff_digest`, model state,
 stage receipts, source paths, recipient, or transport fields. The Runner resolves the exact
-registered Protocol delivery and verifies the current run, role/nonce, five stage receipts, live
+registered Protocol delivery and verifies the current run, role/nonce, three stage receipts, live
 model state, canonical read allowlist, staged source digests, and frozen acceptance policy.
 Do not call either typed draft operation when only the handoff, only Modeling
 `ready_for_acceptance`, or only Protocol `silent_for_acceptance` has arrived. Wait until both

@@ -113,20 +113,13 @@ class R23005BRuntimeTests(unittest.TestCase):
             source_projection, source_digest = carrier.project_child_input(
                 round_id=round_id, kind="source"
             )
-            platform_projection, platform_digest = carrier.project_child_input(
-                round_id=round_id, kind="platform"
-            )
+            with self.assertRaisesRegex(AcceptanceContractError, "non-read-only tool"):
+                carrier.project_child_input(round_id=round_id, kind="platform")
             self.assertEqual(source_digest, fixture["expected"]["source_input_digest"])
-            self.assertEqual(platform_digest, fixture["expected"]["platform_input_digest"])
             self.assertEqual(
                 set(source_projection), {"question", "approved_sources", "source_bundle_digest"}
             )
-            self.assertEqual(
-                set(platform_projection),
-                {"question", "model_state", "platform_read_scope", "allowed_read_tools"},
-            )
             self.assertEqual(source_projection["question"], ticket["question"])
-            self.assertEqual(platform_projection["model_state"], ticket["model_state"])
             carrier.cleanup()
 
     def test_capability_child_start_derives_host_projection_when_input_fields_are_omitted(self) -> None:
@@ -677,18 +670,19 @@ class R23005BRuntimeTests(unittest.TestCase):
                 "ticket_digest": "a" * 64,
                 "model_state_digest": "b" * 64,
                 "cursor": "cursor-1",
-                "limit": 10,
+                "page_size": 10,
+                "entity_iri": "https://example.test/rule",
             }
             result = proxy.handle(
                 {
                     "token": "proxy-token",
                     "operation": "tools/call",
-                    "tool": "list_semantic_validation_runs",
+                    "tool": "get_entity_statement_context",
                     "arguments": arguments,
                 }
             )
             self.assertTrue(result["ok"])
-            self.assertEqual(captured, [("list_semantic_validation_runs", arguments, "temporary-read-key")])
+            self.assertEqual(captured, [("get_entity_statement_context", arguments, "temporary-read-key")])
             self.assertEqual(result["result"]["next_cursor"], "cursor-2")
             self.assertEqual(len(result["response_digest"]), 64)
 

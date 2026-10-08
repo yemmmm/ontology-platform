@@ -47,7 +47,7 @@ R2_3_005_CONTRACT = FormalRunContract(
     task_id="r2-3-005-formal-acceptance",
     scope_mode="create",
     default_model_profile_id="deepseek-v4-flash-max",
-    acceptance_standard_path="modeling_team/references/r2-3-005-acceptance-standard.json",
+    acceptance_standard_path="modeling_team/references/r2-3-005-acceptance-standard-v2.json",
     ledger_requirement_id="R2.3-005",
 )
 
@@ -58,7 +58,7 @@ R2_3_003_CONTRACT = FormalRunContract(
     task_id="r2-3-003-existing-scope-incremental",
     scope_mode="existing",
     default_model_profile_id="deepseek-v4-flash-max",
-    acceptance_standard_path="modeling_team/references/r2-3-003-acceptance-standard.json",
+    acceptance_standard_path="modeling_team/references/r2-3-003-acceptance-standard-v2.json",
     scope_config_path="modeling_team/scopes/r2-3-003-existing.yaml",
     source_manifest_path="docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json",
     ledger_requirement_id="R2.3-003",
@@ -72,7 +72,7 @@ R2_3_008_CONTRACT = FormalRunContract(
     task_id="r2-3-008-formal-acceptance",
     scope_mode="create",
     default_model_profile_id="openai-luna-medium",
-    acceptance_standard_path="modeling_team/references/r2-3-008-acceptance-standard.json",
+    acceptance_standard_path="modeling_team/references/r2-3-008-acceptance-standard-v2.json",
     ledger_requirement_id="R2.3-008",
 )
 
@@ -83,7 +83,7 @@ R2_3_009_CONTRACT = FormalRunContract(
     task_id="r2-3-009-formal-acceptance",
     scope_mode="create",
     default_model_profile_id="openai-luna-medium",
-    acceptance_standard_path="modeling_team/references/r2-3-008-acceptance-standard.json",
+    acceptance_standard_path="modeling_team/references/r2-3-008-acceptance-standard-v2.json",
     ledger_requirement_id="R2.3-009",
 )
 

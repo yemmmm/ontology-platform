@@ -99,7 +99,6 @@ from .interventions import (
 )
 from .protocol_mcp_launch import (
     canonical_protocol_mcp_mode_contract,
-    protocol_mcp_reasoner_contract,
 )
 from .scenario_map import (
     TOPOLOGY_ONTOLOGY_PLAN_FIELD,
@@ -1441,7 +1440,6 @@ class TeamRunner:
             "p2a_protocol_driver_contract": self.repository_root / "modeling_team/references/p2a-protocol-driver-contract.json",
             "p2_monitor_adverse_order_profile": self.repository_root / "modeling_team/profiles/p2-adverse-order-smoke.yaml",
             "p2_monitor_adverse_order_task": self.repository_root / "modeling_team/tasks/p2-adverse-order-smoke.yaml",
-            "protocol_reasoner_script": self.repository_root / "backend/scripts/dev_owl_reasoner.py",
             "start_ledger": self.repository_root / "modeling_team/start_ledger.py",
             "profile": profile_path,
             "task": task_path,
@@ -1490,9 +1488,6 @@ class TeamRunner:
         if platform.is_dir():
             for source in sorted(platform.rglob("*.py")):
                 files[f"mcp:{source.relative_to(self.repository_root).as_posix()}"] = source
-        reasoner = files["protocol_reasoner_script"]
-        if reasoner.is_symlink() or not reasoner.is_file():
-            raise TeamConfigurationError("Protocol reasoner script is unavailable for baseline")
         if configuration.task.schema_version == 2 and expected_binding is not None:
             matrix = self.repository_root / _PROOF_MATRIX_RELATIVE
             p2a = self.repository_root / _P2A_PASS_RELATIVE
@@ -1665,7 +1660,6 @@ class TeamRunner:
                     },
                 },
                 "protocol_mcp_mode_env": canonical_protocol_mcp_mode_contract(),
-                "protocol_mcp_reasoner_env": protocol_mcp_reasoner_contract(),
                 "protocol_retrieval_mcp": {
                     "server": "protocol_mechanics",
                     "command": "/usr/bin/python3",
@@ -3579,19 +3573,18 @@ class TeamRunner:
                 if self._formal_coordination_enabled() and self.acceptance is not None:
                     text += (
                         f" For the formal {formal_requirement_label} acceptance gate, the Runner has issued the exact non-secret "
-                        f"stage-handoff nonce {self.acceptance.stage_handoff_nonce}. After all five current-run "
-                        "stages (dry-run, apply, readback, validation, reasoning) and governed retrieval are "
+                        f"stage-handoff nonce {self.acceptance.stage_handoff_nonce}. After all three current-run "
+                        "stages (dry-run, apply, readback) and governed retrieval are "
                         "complete, send one canonical compact JSON object directly to Coordinator with "
                         "`send_team_message` (not `send_coordination`), using schema "
-                        "r2-3-005-acceptance-stage-handoff/v1 and exact fields "
+                        "r2-3-005-acceptance-stage-handoff/v2 and exact fields "
                         "schema_version,handoff_id,handoff_nonce,task_id,producer_run_id,slice_id,slice_revision, "
                         "model_state,model_state_digest,candidate_digest,modeling_receipts,handoff_digest. "
                         "The capability supplies the nonce, receipt bindings, and canonical digest; include no source "
                         "bytes, expected answers, or ticket fields. Call protocol_build_acceptance_stage_handoff with "
                         "exactly protocol_id=protocol and DO NOT supply stage_calls: the carrier auto-selects the "
-                        "five canonical final-state observed calls (the final apply_atomic over the live workspace "
-                        "version, its paired validated dry_run, the final get_modeling_context readback, and the "
-                        "succeeded validation/reasoning over the live graph set). protocol_list_platform_artifacts "
+                        "three canonical final-state observed calls (the final apply_atomic over the live workspace "
+                        "version, its paired validated dry_run and the final get_modeling_context readback). protocol_list_platform_artifacts "
                         "is for your awareness only; never hand-pick stages or compute receipts, pages, digests, or "
                         "artifact paths in model reasoning. "
                         "Send the returned handoff_json unchanged once. The "
@@ -3738,7 +3731,7 @@ class TeamRunner:
                         "passing the delivery_id from the direct Team Transport envelope, the unchanged "
                         "handoff object and digest, the frozen question_id, and the positive ticket_revision. "
                         "The capability owns staged source digests, authenticated live model_state, canonical "
-                        "read allowlist, standard fields, and all five receipt checks. Publish only the returned "
+                        "read allowlist, standard fields, and all three receipt checks. Publish only the returned "
                         "complete draft exactly once through coordinator_publish_acceptance_ticket, passing the "
                         "same object/digest/requirement reference; never hand-author, shorten, replace, or mutate "
                         "it. `{}`/shorthand, changed run/project/ontology/state/slice/digest, or any second draft "

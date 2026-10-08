@@ -42,8 +42,7 @@ else:
 
 _TERMINAL_ROLE_ID = re.compile(r"[a-z][a-z0-9_-]{0,63}")
 # R3.0-016 protocol gate: the bare "retry" sentence hid why fresh evidence was
-# required — every successful stateful call (apply_atomic submit,
-# run_semantic_validation, run_semantic_reasoning) resets retrieval_state to
+# required — every successful apply_atomic submit resets retrieval_state to
 # query_required, so evidence gathered before the last write never counts.  The
 # extension names the reset cause and both accepted exits while staying a fixed
 # value-free literal within the 200-char broker relay bound.  Like the legacy

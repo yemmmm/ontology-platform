@@ -203,6 +203,8 @@ class Start53GoldenAutoSelectTests(unittest.TestCase):
         by_stage = {r["stage"]: r for r in handoff["modeling_receipts"]}
         self.assertEqual(set(by_stage), set(MODELING_STAGES))
         for stage, expected in golden.items():
+            if stage not in MODELING_STAGES:
+                continue
             evidence = by_stage[stage]["evidence_ref"]
             self.assertEqual(evidence["tool"], expected["tool"], msg=f"stage={stage}")
             self.assertEqual(
@@ -394,8 +396,6 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                 self.assertEqual(evidence["dry-run"]["artifact_path"], paired_dry["artifact_path"])
                 self.assertNotEqual(evidence["dry-run"]["artifact_path"], stale_dry["artifact_path"])
                 self.assertEqual(evidence["readback"]["artifact_path"], live_readback["artifact_path"])
-                self.assertEqual(evidence["validation"]["artifact_path"], validation["artifact_path"])
-                self.assertEqual(evidence["reasoning"]["artifact_path"], reasoning["artifact_path"])
             finally:
                 carrier.cleanup()
 
@@ -442,8 +442,6 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     "dry-run": by_path[paired_dry["artifact_path"]],
                     "apply": by_path[final_apply["artifact_path"]],
                     "readback": by_path[readback["artifact_path"]],
-                    "validation": by_path[validation["artifact_path"]],
-                    "reasoning": by_path[reasoning["artifact_path"]],
                 }
                 supplied_calls = {
                     stage: {
@@ -529,73 +527,6 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
             finally:
                 carrier.cleanup()
 
-    def test_auto_select_prefers_conformant_validation_when_two_live_validations_observed(self) -> None:
-        """R2.3-009 start19: a revised candidate re-validates on the same graph.
-
-        After a post-receipt conflict the revised candidate re-runs the stage
-        sequence on the same workspace: the revision-1 validation (operational
-        success, ``conforms=False``) and the revision-2 validation
-        (``conforms=True``) share status, graph_set_id, and request digest, so
-        the validation selector sees two live matches.  The conformant read
-        is the final validation evidence and auto-select must resolve to it
-        instead of raising ``stage_auto_select_ambiguous``.
-        """
-
-        def _validation_result(conforms: bool) -> dict:
-            result = _graph_result("succeeded", "graph-syn", kind="validation")
-            result["structuredContent"]["data"]["conforms"] = conforms
-            return result
-
-        with tempfile.TemporaryDirectory() as directory:
-            carrier = _synthetic_carrier(Path(directory))
-            try:
-                carrier.register_platform_tool_result(
-                    tool="submit_modeling_batch",
-                    arguments=_submit_args(mode="apply_atomic"),
-                    result=_submit_result(
-                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
-                    ),
-                )
-                carrier.register_platform_tool_result(
-                    tool="submit_modeling_batch",
-                    arguments=_submit_args(mode="dry_run"),
-                    result=_submit_result(
-                        mode="dry_run", attempt_status="validated", before="ws-prev", after=None
-                    ),
-                )
-                carrier.register_platform_tool_result(
-                    tool="get_modeling_context",
-                    arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-live"),
-                )
-                # Revision-1 validation: operationally succeeded, nonconformant.
-                carrier.register_platform_tool_result(
-                    tool="run_semantic_validation",
-                    arguments={"graph_set_id": "graph-syn"},
-                    result=_validation_result(conforms=False),
-                )
-                conformant_validation = carrier.register_platform_tool_result(
-                    tool="run_semantic_validation",
-                    arguments={"graph_set_id": "graph-syn"},
-                    result=_validation_result(conforms=True),
-                )
-                carrier.register_platform_tool_result(
-                    tool="run_semantic_reasoning",
-                    arguments={"graph_set_id": "graph-syn"},
-                    result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
-                )
-
-                built = carrier.protocol_build_acceptance_stage_handoff(
-                    protocol_id="protocol",
-                    capability=carrier.capability_token("protocol"),
-                )
-                by_stage = {r["stage"]: r for r in built["handoff_json"]["modeling_receipts"]}
-                self.assertEqual(
-                    by_stage["validation"]["evidence_ref"]["artifact_path"],
-                    conformant_validation["artifact_path"],
-                )
-            finally:
-                carrier.cleanup()
 
     def test_auto_select_raises_structured_ambiguous_when_two_applies_match_live(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -623,7 +554,7 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
             finally:
                 carrier.cleanup()
 
-    def test_auto_select_raises_structured_missing_when_no_validation(self) -> None:
+    def test_auto_select_completes_without_validation_or_reasoning(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             carrier = _synthetic_carrier(Path(directory))
             try:
@@ -651,13 +582,11 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     arguments={"graph_set_id": "graph-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
                 )
-                with self.assertRaises(AcceptanceContractError) as ctx:
-                    carrier.protocol_build_acceptance_stage_handoff(
-                        protocol_id="protocol",
-                        capability=carrier.capability_token("protocol"),
-                    )
-                self.assertEqual(ctx.exception.data["reason"], "stage_auto_select_missing")
-                self.assertEqual(ctx.exception.data["stage"], "validation")
+                built = carrier.protocol_build_acceptance_stage_handoff(
+                    protocol_id="protocol", capability=carrier.capability_token("protocol"),
+                )
+                self.assertEqual({r["stage"] for r in built["handoff_json"]["modeling_receipts"]},
+                                 {"dry-run", "apply", "readback"})
             finally:
                 carrier.cleanup()
 

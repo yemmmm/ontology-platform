@@ -101,14 +101,14 @@ def test_locked_graph_rejects_edit_without_mutation(in_memory_session, settings)
 
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
     with pytest.raises(LockedSemanticGraph):
-        service.apply_edit("turtle", turtle, target_graph_iri=GRAPH, validate=False)
+        service.apply_edit("turtle", turtle, target_graph_iri=GRAPH)
 
     assert store.updates == []
 
 
 def test_turtle_edit_builds_insert_data_update(service, in_memory_session) -> None:
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
-    result = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH, validate=False)
+    result = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH)
 
     assert result["applied"] is True
     assert result["audit_id"]
@@ -147,7 +147,7 @@ def test_edit_keeps_committed_fact_when_retrieval_rebuild_fails(
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
 
     result = SemanticService(in_memory_session, store, settings).apply_edit(
-        "turtle", turtle, target_graph_iri=GRAPH, validate=False
+        "turtle", turtle, target_graph_iri=GRAPH
     )
 
     assert result["applied"] is True
@@ -163,7 +163,7 @@ def test_edit_records_audit_metadata(service, in_memory_session) -> None:
         "turtle",
         turtle,
         target_graph_iri=GRAPH,
-        validate=False,
+
         actor="agent:test",
         reason="phase3 coverage",
     )
@@ -175,7 +175,7 @@ def test_edit_records_audit_metadata(service, in_memory_session) -> None:
     assert audit.target_graph_iri == GRAPH
     assert audit.affected_graph_iris == [GRAPH]
     assert audit.graph_delta["inserted_statements"]
-    assert "SHACL validation skipped by request" in audit.warning_state["warnings"]
+    assert audit.warning_state["warnings"] == []
 
 
 def test_edit_auto_registers_managed_graph_in_registry(service, in_memory_session) -> None:
@@ -184,7 +184,7 @@ def test_edit_auto_registers_managed_graph_in_registry(service, in_memory_sessio
         "turtle",
         turtle,
         target_graph_iri=GRAPH,
-        validate=False,
+
         actor="agent:test",
     )
 
@@ -204,15 +204,15 @@ def test_edit_rejects_non_direct_editable_category(service) -> None:
             "turtle",
             turtle,
             target_graph_iri=RESULT_GRAPH,
-            validate=False,
+
         )
     assert service.rdf_store.updates == []
 
 
 def test_edit_increments_revision_per_affected_graph(service, in_memory_session) -> None:
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
-    first = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH, validate=False)
-    second = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH, validate=False)
+    first = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH)
+    second = service.apply_edit("turtle", turtle, target_graph_iri=GRAPH)
 
     assert first["graph_revisions"][GRAPH] == 1
     assert second["graph_revisions"][GRAPH] == 2
@@ -232,7 +232,7 @@ def test_restricted_delete_insert_where_is_allowed_with_explicit_graphs(service)
     WHERE  {{ GRAPH <{GRAPH}> {{ ?s <http://example.test/old> ?old }} }}
     """
 
-    result = service.apply_edit("sparql-update", update, validate=False)
+    result = service.apply_edit("sparql-update", update)
 
     assert result["applied"] is True
     assert result["delta"]["operation"] == "delete_insert_where"
@@ -248,7 +248,7 @@ def test_restricted_delete_insert_where_rejects_variable_graphs(service) -> None
     """
 
     with pytest.raises(UnsupportedSemanticEdit):
-        service.apply_edit("sparql-update", update, validate=False)
+        service.apply_edit("sparql-update", update)
 
 
 def test_operation_invariant_cannot_be_bypassed_with_validate_false(
@@ -296,7 +296,7 @@ def test_operation_invariant_cannot_be_bypassed_with_validate_false(
     direct = SemanticService(in_memory_session, store, settings)
 
     with pytest.raises(Exception) as rejected:
-        direct.apply_edit("turtle", turtle, target_graph_iri=graph_iri, validate=False)
+        direct.apply_edit("turtle", turtle, target_graph_iri=graph_iri)
 
     assert "operation_secret_forbidden" in str(rejected.value)
     assert "leak" not in str(rejected.value)
@@ -319,7 +319,7 @@ def test_operation_where_edit_fails_closed_before_mutation(in_memory_session, se
 
     with pytest.raises(Exception) as rejected:
         SemanticService(in_memory_session, store, settings).apply_edit(
-            "sparql-update", update, validate=False
+            "sparql-update", update
         )
 
     assert "operation_edit_not_deterministic" in str(rejected.value)
@@ -338,7 +338,7 @@ def test_non_operation_where_edit_on_ontology_graph_remains_allowed(
     store = FakeRdfStore()
 
     result = SemanticService(in_memory_session, store, settings).apply_edit(
-        "sparql-update", update, validate=False
+        "sparql-update", update
     )
 
     assert result["applied"] is True
@@ -391,7 +391,7 @@ def test_generic_where_fails_closed_when_current_graph_contains_operation(
 
     with pytest.raises(Exception) as rejected:
         SemanticService(in_memory_session, store, settings).apply_edit(
-            "sparql-update", update, validate=False
+            "sparql-update", update
         )
 
     assert "operation_edit_not_deterministic" in str(rejected.value)
@@ -415,7 +415,7 @@ def test_restricted_where_fails_closed_when_current_graph_cannot_be_inspected(
     store = InspectionFailureStore()
     with pytest.raises(Exception) as rejected:
         SemanticService(in_memory_session, store, settings).apply_edit(
-            "sparql-update", update, validate=False
+            "sparql-update", update
         )
 
     assert "operation_edit_not_deterministic" in str(rejected.value)
@@ -459,7 +459,7 @@ def test_operation_unknown_secret_predicate_is_rejected_before_direct_rdf_write(
 
     with pytest.raises(Exception) as rejected:
         SemanticService(in_memory_session, store, settings).apply_edit(
-            "turtle", turtle, target_graph_iri=graph_iri, validate=False
+            "turtle", turtle, target_graph_iri=graph_iri
         )
 
     assert "operation_secret_forbidden" in str(rejected.value)

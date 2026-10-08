@@ -54,8 +54,8 @@ class _StaticResolver:
             graph_set_id=graph_set_id,
             source_signature="sig-1",
             include=include,
-            source_graph_iris=["http://op/s/graph/data/ov-1"],
-            shape_graph_iris=[],
+            source_graph_iris=["http://op/s/graph/data/ov-1"], shape_graph_iris=[],
+
             governance_graph_iris=[],
             reasoning_result_graph_iri=None,
             derived_state={},

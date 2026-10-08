@@ -7,9 +7,7 @@ objective: >-
   semantics and sends candidates directly to Protocol. Protocol alone translates the
   agreed candidate into immutable dry_run then apply_atomic Modeling Batches, performs
   the required generic reads, validation and reasoning, and returns mechanical receipts
-  or semantic conflicts directly to the relevant Agent. Protocol must submit one separate
-  invalid Shape instance as dry_run only and retain its rejected receipt without workspace
-  movement. For a Tool identity with published/latest state but no deployment binding, Modeling
+  or semantic conflicts directly to the relevant Agent. For a Tool identity with published/latest state but no deployment binding, Modeling
   must not infer a concrete version: first ask one grounded Tool-binding question and wait for
   an outer answer; otherwise retain explicit_unknown. Do not invent unavailable facts or infer
   tester-only acceptance answers. Before freezing a candidate, Modeling closes only visible-source
@@ -63,14 +61,11 @@ protocol_tools:
   - get_modeling_context
   - get_ontology_read_model
   - query_semantic_context
-  - run_semantic_validation
-  - run_semantic_reasoning
   - get_ontology_lineage
   - inspect_semantic_statement_provenance
 expected_terminal_evidence:
   - direct Modeling-to-Protocol semantic delivery and Protocol receipt or conflict feedback
   - immutable Modeling Batch dry_run and apply_atomic receipts
-  - rejected Shape-negative dry_run receipt with unchanged workspace
   - completed or blocked result from every Agent
 retain_nonempty: true
 semantic_start_evidence:

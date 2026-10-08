@@ -11,11 +11,9 @@ from app.repositories.models import (
     SemanticEditAuditModel,
 )
 from app.repositories.rdf_store import SparqlResult, UpdateResult
-from app.services.owl_reasoner import OwlReasonerResult, OwlReasonerRunner
 from app.services.ontology_lineage import LineageTargetNotFound, OntologyLineageService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_lineage_identity import occurrence_id_for, statement_id_for_quad
-from app.services.semantic_reasoning import SemanticReasoningService
 
 
 def _workspace(session):
@@ -114,50 +112,9 @@ class _DerivedStore:
         return ""
 
 
-class _Reasoner(OwlReasonerRunner):
-    def run(self, source_documents, tasks, timeout_seconds):
-        return OwlReasonerResult(
-            consistent=True,
-            inferred_rdf=(
-                "<https://lineage.test/entity/alice> "
-                "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type> "
-                "<https://lineage.test/class/Person> ."
-            ),
-        )
-
-
 class _FailingLineageRecorder:
     def ontology_id_for_graph_set(self, _graph_set_id):
         return "ontology"
 
     def record_derived_statements(self, **_kwargs):
         raise RuntimeError("lineage persistence failed")
-
-
-def test_owl_outputs_do_not_record_suspended_lineage(in_memory_session) -> None:
-    settings, ontology, graph_set_id, roles = _workspace(in_memory_session)
-    reasoning_store = _DerivedStore()
-    reasoning = SemanticReasoningService(
-        in_memory_session,
-        reasoning_store,
-        settings,
-        reasoner=_Reasoner(),
-    ).run_reasoning(
-        [roles["asserted_ontology"], roles["asserted_data"]],
-        ["classification"],
-        persist_result_graph=True,
-        graph_set_id=graph_set_id,
-        engine_version="reasoner:test",
-    )
-    reasoning_id = statement_id_for_quad(
-        "https://lineage.test/entity/alice",
-        "http://www.w3.org/1999/02/22-rdf-syntax-ns#type",
-        "<https://lineage.test/class/Person>",
-        reasoning["result_graph_iri"],
-    )
-    with pytest.raises(LineageTargetNotFound):
-        OntologyLineageService(in_memory_session).get_lineage(
-            ontology_id=ontology.id,
-            target_type="statement",
-            target_id=reasoning_id,
-        )

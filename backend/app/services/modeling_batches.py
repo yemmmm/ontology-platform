@@ -30,7 +30,6 @@ from app.repositories.models import (
     OntologyLeaseModel,
     OntologyModel,
     OntologyWriteFenceModel,
-    SemanticDerivedResultPointerModel,
     SemanticEditAuditModel,
     SemanticGraphSetModel,
     SemanticGraphRevisionModel,
@@ -53,7 +52,7 @@ from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteError,
     CanonicalSemanticWriteService,
-    CanonicalShaclViolation,
+    CanonicalValidationError,
 )
 from app.services.semantic_command_compiler import (
     CommandCompilerError,
@@ -595,17 +594,7 @@ class ModelingBatchService:
         active_lease = bool(
             lease and lease.released_at is None and self._aware(lease.expires_at) > now
         )
-        stale_pointers = int(
-            self.session.scalar(
-                select(func.count(SemanticDerivedResultPointerModel.id)).where(
-                    SemanticDerivedResultPointerModel.graph_set_id
-                    == workspace.get("default_graph_set_id"),
-                    SemanticDerivedResultPointerModel.status == "stale",
-                    SemanticDerivedResultPointerModel.result_kind == "reasoning",
-                )
-            )
-            or 0
-        )
+        stale_pointers = 0
         stale_projections = int(
             self.session.scalar(
                 select(func.count(SemanticProjectionManifestModel.id)).where(
@@ -674,7 +663,6 @@ class ModelingBatchService:
             "classes",
             "properties",
             "relation_types",
-            "shapes",
             "entities",
             "relations",
             "facts",
@@ -688,15 +676,13 @@ class ModelingBatchService:
         roles = {member["role"]: member["graph_iri"] for member in workspace.get("members", [])}
         ontology_graph = roles.get("asserted_ontology")
         data_graph = roles.get("asserted_data")
-        shapes_graph = roles.get("shapes")
-        if not ontology_graph or not data_graph or not shapes_graph:
+        if not ontology_graph or not data_graph:
             return empty, "semantic_workspace_incomplete"
         op = self.settings.semantic_base_iri.rstrip("/") + "/vocab/"
         branches = {
             "classes": f"GRAPH <{ontology_graph}> {{ ?s a <http://www.w3.org/2002/07/owl#Class> }}",
             "properties": f"GRAPH <{ontology_graph}> {{ ?s a <http://www.w3.org/2002/07/owl#DatatypeProperty> }}",
             "relation_types": f"GRAPH <{ontology_graph}> {{ ?s a <http://www.w3.org/2002/07/owl#ObjectProperty> }}",
-            "shapes": f"GRAPH ?g {{ ?s a <http://www.w3.org/ns/shacl#NodeShape> }} FILTER(STRSTARTS(STR(?g), STR(<{shapes_graph}>)))",
             "entities": f"GRAPH <{data_graph}> {{ ?s a <http://www.w3.org/2002/07/owl#NamedIndividual> }}",
             "relations": f"GRAPH <{data_graph}> {{ ?s ?p ?o FILTER(isIRI(?o) && ?p != <http://www.w3.org/1999/02/22-rdf-syntax-ns#type>) }}",
             "facts": f"GRAPH <{data_graph}> {{ ?s ?p ?o }}",
@@ -874,10 +860,6 @@ class ModelingBatchService:
                     or left.operation == "delete"
                     or right.operation == "delete"
                 ):
-                    if self._ordered_shape_refinement(left, right, prepared, dependency_map):
-                        # D15: defining and refining one Shape inside a batch is
-                        # a declared sequence, not two writers racing one target.
-                        continue
                     if self._multi_valued_statement_replacement(left, right):
                         # R4.0-007 F5/A6: switching a reference deletes the old
                         # statement and adds the new one in one atomic Batch.
@@ -920,35 +902,6 @@ class ModelingBatchService:
             or right.cascade_footprint
         )
 
-    def _ordered_shape_refinement(
-        self, left, right, prepared: dict[str, PreparedModelingCommand], dependency_map
-    ) -> bool:
-        """True for a dependency-ordered ``create_shape`` → ``update_shape`` pair.
-
-        Both items address the same Shape IRI and the create is a (transitive)
-        dependency of the update, so the update's cascade delete plus its own
-        constraints describe the final state (R3.0-009 / D15). Without the
-        declared ordering the pair stays a conflict: an ``update_shape`` that
-        precedes its own ``create_shape`` is still rejected.
-        """
-        left_command = prepared.get(left.item_id)
-        right_command = prepared.get(right.item_id)
-        if left_command is None or right_command is None:
-            return False
-        kinds = {left_command.command_kind, right_command.command_kind}
-        if kinds != {"create_shape", "update_shape"}:
-            return False
-        create = left_command if left_command.command_kind == "create_shape" else right_command
-        update = right_command if create is left_command else left_command
-        if create.compiled is None or update.compiled is None:
-            return False
-        create_shape_iri = str(create.compiled.metadata.get("shape_iri") or "")
-        update_shape_iri = str(update.compiled.metadata.get("shape_iri") or "")
-        if not create_shape_iri or create_shape_iri != update_shape_iri:
-            return False
-        return self._depends_transitively(left.item_id, right.item_id, dependency_map) or (
-            self._depends_transitively(right.item_id, left.item_id, dependency_map)
-        )
 
     @staticmethod
     def _depends_transitively(
@@ -1039,48 +992,8 @@ class ModelingBatchService:
                 self.session, self.rdf_store, self.settings
             ).validate_compiled_command(
                 compiled,
-                validate_shacl=True,
-                shape_graph_iris=self._shape_graphs(batch.ontology_id),
-                # Shape commands leave the data graph untouched, so the SHACL
-                # candidate is the workspace data scope (R3.0-009 §6.1).
-                candidate_graph_iris=self._data_graphs(batch.ontology_id),
-                # A merged candidate carries no per-item kind, so the batch
-                # reports the shapes its items create/update (D11): a sibling
-                # create makes the update legal, an unknown id fails loudly.
-                created_shape_iris=self._selected_shape_iris(
-                    batch, prepared, selected, "create_shape"
-                ),
-                updated_shape_iris=self._selected_shape_iris(
-                    batch, prepared, selected, "update_shape"
-                ),
+
             )
-        except CanonicalShaclViolation as exc:
-            report_text = str(exc.validation_result.get("report_text") or "")
-            item_ids = []
-            for item_id in sorted(selected):
-                command = prepared.get(item_id)
-                if command is None:
-                    continue
-                terms = set(command.outputs.values())
-                if command.compiled is not None:
-                    for subject, _predicate, obj, _graph_iri in (
-                        *command.compiled.delta.inserts,
-                        *command.compiled.delta.deletes,
-                    ):
-                        terms.update({subject.strip("<>"), obj.strip("<>")})
-                if any(term and term in report_text for term in terms):
-                    item_ids.append(item_id)
-            return [
-                _finding(
-                    "shacl_violation",
-                    "error",
-                    str(exc),
-                    item_ids=item_ids,
-                    scope="item" if item_ids else "batch",
-                    report_summary=exc.validation_result.get("summary"),
-                    violations=exc.validation_result.get("violations") or [],
-                )
-            ]
         except CanonicalSemanticWriteError as exc:
             code = getattr(exc, "code", "candidate_validation_failed")
             item_ids = []
@@ -1094,14 +1007,6 @@ class ModelingBatchService:
                     if prepared.get(item_id)
                     and prepared[item_id].command_kind.endswith("_operation")
                 )
-            elif code == "shape_not_found":
-                item_ids = [
-                    item_id
-                    for item_id in sorted(selected)
-                    if prepared.get(item_id)
-                    and prepared[item_id].command_kind in {"update_shape", "delete_shape"}
-                    and str(prepared[item_id].compiled.metadata.get("shape_iri") or "") in str(exc)
-                ]
             return [
                 _finding(
                     code,
@@ -1497,17 +1402,13 @@ class ModelingBatchService:
                             graph_set_id=attempt.graph_set_id,
                             actor=auth.actor,
                             reason=f"Modeling Batch {batch.id}",
-                            validate=True,
-                            shape_graph_iris=self._shape_graphs(batch.ontology_id),
-                            candidate_graph_iris=self._data_graphs(batch.ontology_id),
-                            created_shape_iris=self._batch_created_shape_iris(commands),
                             commit=False,
                             audit_id=attempt.audit_id,
                             fence_attempt_id=attempt.id,
                             write_rdf=not rdf_already_applied,
                             modeling_item_effects=modeling_item_effects,
                         )
-                    except (CanonicalShaclViolation, CanonicalSemanticWriteError) as exc:
+                    except (CanonicalValidationError, CanonicalSemanticWriteError) as exc:
                         if rdf_already_applied:
                             # A recovery failure cannot erase evidence of an existing write.
                             raise
@@ -2442,43 +2343,6 @@ class ModelingBatchService:
             ],
         }
 
-    def _shape_graphs(self, ontology_id):
-        """Shape graphs that govern candidate validation (R3.0-009 §6.1).
-
-        Both the workspace shapes role graph and the custom sub-graph written
-        by Modeling ``create_shape``/``update_shape`` commands constrain the
-        data graph, so both are passed to SHACL validation.
-        """
-        workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
-        prefix = self.settings.semantic_graph_iri_prefix.rstrip("/")
-        graphs: list[str] = []
-        for member in workspace["members"]:
-            if member["role"] != "shapes":
-                continue
-            graphs.append(member["graph_iri"])
-            custom = f"{prefix}/shapes/{ontology_id}/custom"
-            if member["graph_iri"] == f"{prefix}/shapes/{ontology_id}" and custom not in graphs:
-                graphs.append(custom)
-        return graphs
-
-    @staticmethod
-    def _batch_created_shape_iris(commands) -> list[str]:
-        """Shape IRIs this batch's own ``create_shape`` items define (D15).
-
-        The apply phase validates the merged delta in one shot, so an
-        ``update_shape`` addressing a shape a sibling item creates must be
-        treated exactly like the pre-check: the definition exists in the same
-        write and must not fail the ``shape_not_found`` existence guard.
-        """
-        iris: list[str] = []
-        for command in commands.values():
-            compiled = command.compiled
-            if compiled is None or compiled.command_kind != "create_shape":
-                continue
-            shape_iri = compiled.metadata.get("shape_iri")
-            if shape_iri:
-                iris.append(str(shape_iri))
-        return iris
 
     def _data_graphs(self, ontology_id):
         """Workspace graphs holding asserted instances (R3.0-009 §6.1)."""
@@ -2489,23 +2353,6 @@ class ModelingBatchService:
             if member["role"] == "asserted_data"
         ]
 
-    def _selected_shape_iris(self, batch, prepared, selected, command_kind):
-        """Shape IRIs the candidate's ``create_shape``/``update_shape`` items touch.
-
-        The merged candidate command has no per-item command kind, so the
-        existence guard for ``update_shape`` (D11) is driven from here.
-        """
-        iris: list[str] = []
-        for item in sorted(batch.items, key=lambda entry: entry.ordinal):
-            if item.client_item_id not in selected or item.client_item_id not in prepared:
-                continue
-            command = prepared[item.client_item_id]
-            if command.command_kind != command_kind or command.compiled is None:
-                continue
-            shape_iri = command.compiled.metadata.get("shape_iri")
-            if shape_iri:
-                iris.append(str(shape_iri))
-        return iris
 
     @staticmethod
     def _delta_dict(delta):

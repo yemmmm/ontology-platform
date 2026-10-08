@@ -10,10 +10,9 @@ counting, or truncation.
 from __future__ import annotations
 
 import ast
-from datetime import datetime
 import hashlib
 import json
-from typing import Any, Protocol
+from typing import Any
 
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreRepository
@@ -23,11 +22,9 @@ from app.services.operation_semantics import (
 from app.services.fact_id import canonical_object_term, compute_fact_id
 from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_read_scope import (
-    ScopeMember,
     ScopeResolution,
     SemanticReadScopeResolver,
 )
-from app.services.semantic_shape_merge import ShapeGuidanceConflict
 from app.services.semantic_sparql_templates import OP_VOCAB_PREFIX, ReadModelTemplate, get_template
 from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
@@ -43,13 +40,6 @@ class ReadModelError(RuntimeError):
     status_code = 400
 
 
-class ShapeGuidanceReadError(ReadModelError):
-    """Entity-shape guidance merged from conflicting shapes (R3.0-009)."""
-
-    status_code = 409
-    code = "shape_conflict"
-
-
 # When row-level access filtering is active, templates over-fetch beyond the
 # caller's bounded limit so filtering happens before pagination; the caller's
 # limit is applied to the authorized subset afterwards.
@@ -59,14 +49,6 @@ _FILTERED_FETCH_LIMIT = 10_000
 # (entity-list class aggregation, property-list domain filtering).
 _ROW_POST_PROCESS_FETCH_MULTIPLIER = 8
 _ROW_POST_PROCESS_FETCH_FLOOR = 200
-
-
-class _ShapeEndpointProtocol(Protocol):
-    """Minimal interface SemanticShapeEndpointService satisfies."""
-
-    def read_merged_guidance(self, graph_set_id: str, class_iri: str) -> dict[str, Any]: ...
-
-    def read_entity_guidance(self, graph_set_id: str, entity_iri: str) -> dict[str, Any]: ...
 
 
 _READ_MODEL_FIELD_ALIASES = {
@@ -107,7 +89,6 @@ class SemanticReadModelService:
         timeout_seconds: float = 5.0,
         default_limit: int = 500,
         access_view: SemanticAccessView | None = None,
-        shape_endpoint: _ShapeEndpointProtocol | None = None,
         session: Any = None,
         retrieval_service: SemanticResourceRetrievalService | None = None,
     ) -> None:
@@ -116,14 +97,7 @@ class SemanticReadModelService:
         self.timeout_seconds = timeout_seconds
         self.default_limit = default_limit
         self.access_view = access_view or SemanticAccessView.all_visible()
-        # shape_endpoint is injected by the API layer (which owns the SQLAlchemy
-        # session); unit tests can pass a fake. When None, entity-shape raises
-        # a ReadModelError at call time.
-        self.shape_endpoint = shape_endpoint
-        # Stage 3 composers (publication-readiness, graph-set-history-list,
-        # graph-set-delta) need direct Postgres access. The API layer passes
-        # the request-scoped session here; older composers (graph-set-staleness,
-        # entity-shape, fact-audit-queue) keep using ``scope_resolver`` only.
+        # Publication and graph-set history composers use the request-scoped session.
         self.session = session
         self.retrieval_service = retrieval_service
 
@@ -233,14 +207,6 @@ class SemanticReadModelService:
                 items=[item],
                 warnings=list(scope.warnings),
             )
-        if template.name == "entity-shape":
-            items = [self._compose_entity_shape(graph_set_id, entity_iri, class_iri)]
-            return self._envelope(
-                template=template,
-                scope=scope,
-                items=items,
-                warnings=list(scope.warnings),
-            )
         if template.name == "fact-audit-queue":
             items, warnings = self._compose_fact_audit_queue(scope, kind, field_set)
             return self._envelope(
@@ -256,14 +222,6 @@ class SemanticReadModelService:
                 entity_iri,
                 limit or template.default_limit,
             )
-            return self._envelope(
-                template=template,
-                scope=scope,
-                items=items,
-                warnings=list(scope.warnings),
-            )
-        if template.name == "owl-consistency-summary":
-            items = [self._compose_owl_consistency_summary(scope, field_set)]
             return self._envelope(
                 template=template,
                 scope=scope,
@@ -711,12 +669,6 @@ class SemanticReadModelService:
         if template.name == "statement-list":
             return [member.graph_iri for member in scope.members if member.role == "asserted_data"]
         iris = list(scope.source_graph_iris)
-        if (
-            scope.include in {"asserted-plus-reasoning", "full-working-view"}
-            and scope.reasoning_result_graph_iri
-            and scope.reasoning_result_graph_iri not in iris
-        ):
-            iris.append(scope.reasoning_result_graph_iri)
         return iris
 
     def _rows(self, result: Any) -> list[dict[str, str]]:
@@ -778,7 +730,7 @@ class SemanticReadModelService:
             if value is not None:
                 if variable in {
                     "semantic_definition", "mapping_definition", "action_definition",
-                    "parameter_definition", "rule_definition",
+                    "parameter_definition",
                 } or template.name in {"operation-list", "operation-detail"} and variable in {
                     "parameters", "preconditions", "effects", "possible_failures", "idempotency",
                     "tool_bindings", "credential_requirements",
@@ -899,113 +851,10 @@ class SemanticReadModelService:
                 return value
         return ""
 
-    def _assertion_kind_for(
-        self,
-        source_graph_iri: str,
-        scope: ScopeResolution,
-        template: ReadModelTemplate,
-    ) -> str:
-        if (
-            scope.reasoning_result_graph_iri
-            and source_graph_iri == scope.reasoning_result_graph_iri
-        ):
-            return "owl_inferred"
-        # Entity search declares assertion_kind="any" because the SPARQL may match rows from the
-        # asserted or reasoning graph depending on the include scope.
-        # When the row actually came from an asserted source graph, "any"
-        # resolves to "asserted" so the AssertionKind chip on the UI carries
-        # the meaningful value (matches spec §4.1 decorator contract).
-        if template.assertion_kind == "any":
-            return "asserted"
-        return template.assertion_kind
-
-    def _is_stale(self, source_graph_iri: str, scope: ScopeResolution) -> bool:
-        if source_graph_iri == scope.reasoning_result_graph_iri:
-            return scope.derived_state.get("reasoning", {}).get("status") == "stale"
-        return False
-
-    def _staleness_reason(
-        self, source_graph_iri: str, scope: ScopeResolution
-    ) -> str | None:
-        if self._is_stale(source_graph_iri, scope):
-            return "derived_pointer_stale"
-        return None
 
     # ------------------------------------------------------------------
-    # entity-shape composer (Stage 2 §5.3)
     # ------------------------------------------------------------------
 
-    def _compose_entity_shape(
-        self,
-        graph_set_id: str,
-        entity_iri: str | None,
-        class_iri: str | None,
-    ) -> dict[str, Any]:
-        """Delegate to SemanticShapeEndpointService for merged shape guidance.
-
-        With ``class_iri`` the legacy class-only entry is used unchanged. With
-        ``entity_iri`` (R3.0-009 §6.1) the guidance is collected from the
-        entity's full formal class set, its node targets and the subjects-of
-        shapes of the predicates it actually uses — zero-class entities are
-        supported and no class-target shape is invented.
-        """
-        if self.shape_endpoint is None:
-            raise ReadModelError(
-                "entity-shape read model requires a shape endpoint service"
-            )
-        if class_iri is None:
-            if entity_iri is None:
-                raise ReadModelError(
-                    "entity-shape read model requires either class_iri or entity_iri"
-                )
-            if not self.access_view.is_member_visible(entity_iri):
-                # R3.0-004: a protected entity gets exactly the unknown-probe
-                # response (empty fields, echoed target) — never a hint that it
-                # exists or which shapes would apply.
-                merged = self.shape_endpoint.read_merged_guidance(
-                    graph_set_id=graph_set_id,
-                    class_iri="urn:ontology-platform:unknown-class-probe",
-                )
-                merged["entity_iri"] = entity_iri
-                return merged
-            try:
-                merged = self.shape_endpoint.read_entity_guidance(
-                    graph_set_id=graph_set_id,
-                    entity_iri=entity_iri,
-                )
-            except ShapeGuidanceConflict as exc:
-                raise ShapeGuidanceReadError(
-                    f"shape_conflict: {exc}"
-                ) from exc
-            if self.access_view.any_unauthorized(list(merged.values())):
-                # A matched shape or class references a protected member: hide
-                # the whole guidance instead of leaking which constraint hit.
-                empty = self.shape_endpoint.read_merged_guidance(
-                    graph_set_id=graph_set_id,
-                    class_iri="urn:ontology-platform:unknown-class-probe",
-                )
-                empty["entity_iri"] = entity_iri
-                return empty
-            return merged
-        target = class_iri
-        if not self.access_view.is_member_visible(target):
-            # R3.0-004: a protected class returns exactly the same response as
-            # an unknown class (empty fields, echoed target_class).
-            merged = self.shape_endpoint.read_merged_guidance(
-                graph_set_id=graph_set_id,
-                class_iri="urn:ontology-platform:unknown-class-probe",
-            )
-            merged["target_class"] = target
-            return merged
-        try:
-            return self.shape_endpoint.read_merged_guidance(
-                graph_set_id=graph_set_id,
-                class_iri=target,
-            )
-        except ShapeGuidanceConflict as exc:
-            # F08: class-targeted shapes can conflict just like entity-targeted
-            # ones; the class branch must surface the same locatable 409.
-            raise ShapeGuidanceReadError(f"shape_conflict: {exc}") from exc
 
     # ------------------------------------------------------------------
     # graph-set-staleness composer
@@ -1020,14 +869,10 @@ class SemanticReadModelService:
                 "iri": member.graph_iri,
                 "role": member.role,
                 "editable": member.editable,
-                "validation_stale": self._member_stale(member, "validation"),
-                "reasoning_stale": self._member_stale(member, "reasoning"),
                 "last_semantic_edit_at": (
                     member.last_edit_at.isoformat() if member.last_edit_at else None
                 ),
             }
-            if field_set == "detail":
-                entry["derived_pointers"] = self._derived_pointers_for_member(member)
             members.append(entry)
         return {
             "graph_set_id": scope.graph_set_id,
@@ -1035,33 +880,6 @@ class SemanticReadModelService:
             "last_semantic_edit_at": self._latest_member_edit_at(scope),
         }
 
-    @staticmethod
-    def _member_stale(member: ScopeMember, kind: str) -> bool | None:
-        derived = member.derived_state or {}
-        state = derived.get(kind)
-        if not state:
-            return None
-        return state.get("status") == "stale"
-
-    @staticmethod
-    def _derived_pointers_for_member(member: ScopeMember) -> dict[str, Any]:
-        derived = member.derived_state or {}
-        out: dict[str, Any] = {}
-        for kind in ("validation", "reasoning"):
-            state = derived.get(kind)
-            if state:
-                out[kind] = {
-                    "result_graph_iri": state.get("result_graph_iri"),
-                    "became_current_at": (
-                        state["became_current_at"].isoformat()
-                        if isinstance(state.get("became_current_at"), datetime)
-                        else state.get("became_current_at")
-                    ),
-                    "engine_name": state.get("engine_name"),
-                    "engine_version": state.get("engine_version"),
-                    "shape_version": state.get("shape_version"),
-                }
-        return out
 
     @staticmethod
     def _latest_member_edit_at(scope: ScopeResolution) -> str | None:
@@ -1213,43 +1031,6 @@ class SemanticReadModelService:
         """Map staleness, open edits, and projection signals to the
         ``GateStatus`` shape."""
         gates: list[dict[str, Any]] = []
-        members = staleness_row.get("members", []) if staleness_row else []
-        for kind in ("validation", "reasoning"):
-            # Each member of a graph set shares the same derived pointer; we
-            # pick the first member whose derived_state carries this kind.
-            state: Any = None
-            for member in members:
-                derived = member.get("derived_state") or {}
-                if kind in derived:
-                    state = derived[kind]
-                    break
-            # Fall back to the per-member boolean flag (e.g. ``validation_stale``).
-            stale_flag = None
-            for member in members:
-                key = f"{kind}_stale"
-                if key in member and member[key] is not None:
-                    stale_flag = member[key]
-                    break
-            if state is None and stale_flag is None:
-                gate_status = "blocked"
-                label_state = "unknown"
-            elif (isinstance(state, dict) and state.get("status") == "stale") or stale_flag:
-                gate_status = "warning"
-                label_state = "stale"
-            else:
-                gate_status = "passed"
-                label_state = "fresh"
-            gates.append({
-                "gate": f"{kind}_stale",
-                "status": gate_status,
-                "details": {
-                    "staleness_state": label_state,
-                    "latest_run_id": (
-                        state.get("run_id") if isinstance(state, dict) else None
-                    ),
-                },
-                "label": f"{kind} is {label_state}",
-            })
         # open_edits is intentionally a warning (not a blocker): pending edits
         # are recoverable — publication can proceed, but the user is alerted.
         gates.append({
@@ -1469,7 +1250,7 @@ class SemanticReadModelService:
     # fact-audit-queue composer (Stage 2 §6.3)
     # ------------------------------------------------------------------
 
-    _FACT_KINDS = ("asserted", "inferred")
+    _FACT_KINDS = ("asserted",)
 
     def _compose_fact_audit_queue(
         self,
@@ -1482,7 +1263,6 @@ class SemanticReadModelService:
         kind selects the source graph(s):
 
         - ``asserted`` → asserted_data members of the active graph set.
-        - ``inferred`` → effective reasoning-result graph.
 
         Each row is decorated into the unified FactRow shape (spec §6.3):
         id, assertion_kind, subject_iri, subject_label, predicate_iri,
@@ -1516,43 +1296,6 @@ class SemanticReadModelService:
                     row,
                     assertion_kind=resolved_kind,
                     scope=scope,
-                )
-                for row in rows
-            ]
-            return items, warnings
-
-        if resolved_kind == "inferred":
-            reasoning_iri = scope.reasoning_result_graph_iri
-            if not reasoning_iri:
-                if any(w.get("code") == "missing_reasoning_result" for w in warnings):
-                    return [], warnings
-                return [], warnings + [
-                    {
-                        "code": "fact_audit_no_inferred_pointer",
-                        "message": (
-                            "No effective reasoning-result pointer. Click "
-                            "Generate to run reasoning."
-                        ),
-                    }
-                ]
-            rows = self._fetch_fact_rows(
-                [reasoning_iri], template_name="fact-audit-queue"
-            )
-            stale = self._is_stale(reasoning_iri, scope)
-            stale_reason = self._staleness_reason(reasoning_iri, scope)
-            run_id = (
-                scope.derived_state.get("reasoning", {}).get("run_id")
-                if scope.derived_state
-                else None
-            )
-            items = [
-                self._decorate_fact_row(
-                    row,
-                    assertion_kind="inferred",
-                    scope=scope,
-                    derived_run_id=run_id,
-                    stale=stale,
-                    stale_reason=stale_reason,
                 )
                 for row in rows
             ]
@@ -2048,117 +1791,17 @@ class SemanticReadModelService:
         }
 
     # ------------------------------------------------------------------
-    # owl-consistency-summary composer (Stage 4 §4.3)
     # ------------------------------------------------------------------
 
-    def _compose_owl_consistency_summary(
-        self, scope: ScopeResolution, field_set: str
-    ) -> dict[str, Any]:
-        """Project the latest consistency-classified reasoning run for the
-        graph set into the spec §4.3 summary row."""
-        if self.session is None:
-            return {
-                "graph_set_id": scope.graph_set_id,
-                "run_id": None,
-                "consistent": None,
-                "classification": {},
-                "entailment_count": 0,
-                "unsatisfiable_classes": [],
-                "result_graph_iri": None,
-                "started_at": None,
-                "finished_at": None,
-                "is_stale": False,
-            }
-        from sqlalchemy import select
 
-        from app.repositories.models import SemanticReasoningRunModel
+    def _assertion_kind_for(self, source_graph_iri, scope, template) -> str:
+        return "asserted" if template.assertion_kind == "any" else template.assertion_kind
 
-        # Find the latest reasoning run whose run_metadata['tasks'] contains
-        # "consistency" and whose result graph (or source graphs) overlaps
-        # the active graph set members. We filter in Python because the JSONB
-        # containment operator is dialect-specific; the run table is small
-        # per graph set.
-        member_iris = {m.graph_iri for m in scope.members}
-        rows = list(
-            self.session.scalars(
-                select(SemanticReasoningRunModel)
-                .order_by(SemanticReasoningRunModel.started_at.desc())
-            )
-        )
-        run: SemanticReasoningRunModel | None = None
-        for r in rows:
-            metadata = r.run_metadata or {}
-            tasks = metadata.get("tasks") or []
-            if "consistency" not in tasks:
-                continue
-            source_set = set(r.source_graph_iris or [])
-            if r.result_graph_iri:
-                source_set.add(r.result_graph_iri)
-            if not member_iris or (source_set & member_iris):
-                run = r
-                break
-        if run is None:
-            return {
-                "graph_set_id": scope.graph_set_id,
-                "run_id": None,
-                "consistent": None,
-                "classification": {},
-                "entailment_count": 0,
-                "unsatisfiable_classes": [],
-                "result_graph_iri": None,
-                "started_at": None,
-                "finished_at": None,
-                "is_stale": False,
-            }
-        metadata = run.run_metadata or {}
-        entailments = metadata.get("entailments") or []
-        unsatisfiable = [
-            e.get("subject") or e.get("iri") or ""
-            for e in entailments
-            if isinstance(e, dict)
-            and (
-                "unsatisfiable" in str(e.get("predicate", "")).lower()
-                or "unsatisfiable" in str(e.get("classification", "")).lower()
-            )
-        ]
-        # Staleness: reuse the graph-set staleness helper. A run is stale if
-        # any member graph has been edited since the run finished.
-        staleness_row = self._compose_graph_set_staleness(scope, "summary")
-        latest_edit_raw = staleness_row.get("last_semantic_edit_at")
-        is_stale = False
-        if run.finished_at is not None and latest_edit_raw is not None:
-            try:
-                from datetime import datetime
+    def _is_stale(self, source_graph_iri, scope) -> bool:
+        return False
 
-                edited_at = datetime.fromisoformat(latest_edit_raw)
-                if edited_at.tzinfo is None:
-                    from datetime import timezone
-
-                    edited_at = edited_at.replace(tzinfo=timezone.utc)
-                run_finished = run.finished_at
-                if run_finished.tzinfo is None:
-                    from datetime import timezone
-
-                    run_finished = run_finished.replace(tzinfo=timezone.utc)
-                is_stale = edited_at > run_finished
-            except (ValueError, TypeError):
-                is_stale = False
-        return {
-            "graph_set_id": scope.graph_set_id,
-            "run_id": run.id,
-            "consistent": run.consistent,
-            "classification": metadata.get("classification") or {},
-            "entailment_count": len(entailments),
-            "unsatisfiable_classes": unsatisfiable,
-            "result_graph_iri": run.result_graph_iri,
-            "started_at": (
-                run.started_at.isoformat() if run.started_at else None
-            ),
-            "finished_at": (
-                run.finished_at.isoformat() if run.finished_at else None
-            ),
-            "is_stale": is_stale,
-        }
+    def _staleness_reason(self, source_graph_iri, scope) -> None:
+        return None
 
 
 def _explicit_resource_references(

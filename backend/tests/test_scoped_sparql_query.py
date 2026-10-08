@@ -192,8 +192,8 @@ def test_scoped_service_passes_only_resolved_current_graphs(in_memory_session):
     assert result["query_type"] == "select"
     assert result["scope"]["ontologies"][0]["ontology_id"] == "o"
     executed_query = store.calls[0][0]
-    assert executed_query.count("FROM <https://graphs.test/") == 3
-    assert executed_query.count("FROM NAMED <https://graphs.test/") == 3
+    assert executed_query.count("FROM <https://graphs.test/") == 2
+    assert executed_query.count("FROM NAMED <https://graphs.test/") == 2
     assert "graph_iri" not in str(result)
 
 

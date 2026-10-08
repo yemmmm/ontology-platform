@@ -51,7 +51,7 @@ def context_query_capabilities(settings: Settings) -> dict[str, Any]:
         "context_detail": {
             "rest_default": "full", "mcp_default": "compact",
             "applies_to": "related_context", "primary_matches": "full",
-            "compact_omits": ["data.rule_definition.script_source", "data.object"],
+            "compact_omits": [],
             "omission_marker": "projection.omitted_fields",
         },
         "depth": {

@@ -309,83 +309,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         LIMIT {limit}
         """,
     ),
-    "class-shape-generated": ReadModelTemplate(
-        name="class-shape-generated",
-        projection_version="semantic-read-v1",
-        required_roles=("shape_graph_generated",),
-        needs_reasoning=False,
-        default_limit=200,
-        assertion_kind="asserted",
-        primary_iri_variable="shape",
-        # R3.0-009 §6.1: rows are one per (shape, target) pair across all three
-        # supported targets; target_kind/target_value are projected through
-        # detail_fields so a node/subjects-of target is never mislabelled as a
-        # class target.
-        detail_variables=("target_kind", "target_value"),
-        body="""# template: class-shape-generated
-        # Reads SHACL NodeShapes from the derived generated sub-graph. Each
-        # row is one (shape, target) pair; PropertyShape rows are
-        # joined separately by the read-model service.
-        PREFIX sh: <http://www.w3.org/ns/shacl#>
-        SELECT ?shape ?target_class ?target_kind ?target_value ?graph WHERE {
-          VALUES ?g { {graph_iris} }
-          GRAPH ?g {
-            ?shape a sh:NodeShape .
-            {
-              ?shape sh:targetClass ?target_class .
-              BIND("class" AS ?target_kind)
-              BIND(?target_class AS ?target_value)
-            } UNION {
-              ?shape sh:targetNode ?target_node .
-              BIND("node" AS ?target_kind)
-              BIND(?target_node AS ?target_value)
-            } UNION {
-              ?shape sh:targetSubjectsOf ?target_predicate .
-              BIND("subjects_of" AS ?target_kind)
-              BIND(?target_predicate AS ?target_value)
-            }
-          }
-          BIND(?g AS ?graph)
-        }
-        LIMIT {limit}
-        """,
-    ),
-    "class-shape-custom": ReadModelTemplate(
-        name="class-shape-custom",
-        projection_version="semantic-read-v1",
-        required_roles=("shape_graph_custom",),
-        needs_reasoning=False,
-        default_limit=200,
-        assertion_kind="asserted",
-        primary_iri_variable="shape",
-        detail_variables=("target_kind", "target_value"),
-        body="""# template: class-shape-custom
-        # Reads SHACL NodeShapes from the editable custom sub-graph, one row
-        # per (shape, target) pair across the three supported targets.
-        PREFIX sh: <http://www.w3.org/ns/shacl#>
-        SELECT ?shape ?target_class ?target_kind ?target_value ?graph WHERE {
-          VALUES ?g { {graph_iris} }
-          GRAPH ?g {
-            ?shape a sh:NodeShape .
-            {
-              ?shape sh:targetClass ?target_class .
-              BIND("class" AS ?target_kind)
-              BIND(?target_class AS ?target_value)
-            } UNION {
-              ?shape sh:targetNode ?target_node .
-              BIND("node" AS ?target_kind)
-              BIND(?target_node AS ?target_value)
-            } UNION {
-              ?shape sh:targetSubjectsOf ?target_predicate .
-              BIND("subjects_of" AS ?target_kind)
-              BIND(?target_predicate AS ?target_value)
-            }
-          }
-          BIND(?g AS ?graph)
-        }
-        LIMIT {limit}
-        """,
-    ),
     "entity-list": ReadModelTemplate(
         name="entity-list",
         projection_version="semantic-read-v1",
@@ -525,20 +448,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         }
         ORDER BY ?predicate_label ?predicate ?object
         LIMIT {limit}
-        """,
-    ),
-    "entity-shape": ReadModelTemplate(
-        name="entity-shape",
-        projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology", "shape_graph_generated", "shape_graph_custom"),
-        needs_reasoning=False,
-        default_limit=1,
-        assertion_kind="asserted",
-        body="""# template: entity-shape
-        # COMPOSER. The SemanticReadModelService recognizes this template name
-        # and delegates to SemanticShapeEndpointService.read_merged_guidance
-        # with the entity's class IRI (resolved by the caller via the entity
-        # param). The body is not executed directly.
         """,
     ),
     "mapping-list": ReadModelTemplate(
@@ -716,21 +625,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         }
         ORDER BY LCASE(?label)
         LIMIT {limit}
-        """,
-    ),
-    "owl-consistency-summary": ReadModelTemplate(
-        name="owl-consistency-summary",
-        projection_version="1",
-        required_roles=("asserted_ontology", "asserted_data"),
-        needs_reasoning=True,
-        default_limit=1,
-        assertion_kind="owl_inferred",
-        primary_iri_variable="run",
-        body="""# template: owl-consistency-summary
-        # Composer-driven. The SemanticReadModelService reads the latest
-        # SemanticReasoningRunModel row whose run_metadata.tasks contains
-        # ``consistency`` and projects spec §4.3 fields. The body is a
-        # placeholder; the composer never executes it directly.
         """,
     ),
     # ------------------------------------------------------------------
@@ -1099,7 +993,6 @@ for _name in (
         _annotations.update({
             "action_definition": "actionDefinition",
             "parameter_definition": "parameterDefinition",
-            "rule_definition": "ruleDefinition",
         })
     _body = _template.body.replace(
         " WHERE {", " " + " ".join(f"?{field}" for field in _annotations) + " WHERE {", 1

@@ -10,9 +10,6 @@ class GraphSetMemberStaleness:
     iri: str
     role: str
     editable: bool
-    validation_stale: bool | None
-    reasoning_stale: bool | None
-    rule_stale: bool | None
     last_semantic_edit_at: str | None
 
 
@@ -82,9 +79,6 @@ class BuildOverviewService:
                 iri=m["iri"],
                 role=m["role"],
                 editable=m.get("editable", True),
-                validation_stale=m.get("validation_stale"),
-                reasoning_stale=m.get("reasoning_stale"),
-                rule_stale=m.get("rule_stale"),
                 last_semantic_edit_at=m.get("last_semantic_edit_at"),
             )
             for m in payload.get("members", [])
@@ -112,19 +106,5 @@ class BuildOverviewService:
                 label="批准能力问题",
                 detail=f"{draft_count} 个草稿待批准",
                 tab="questions",
-            ))
-        if any(m.validation_stale for m in graph_set.members):
-            candidates.append(NextAction(
-                key="recompute_validation",
-                label="重新运行 SHACL 验证",
-                detail="验证结果已过期",
-                tab="governance",
-            ))
-        if any(m.reasoning_stale or m.rule_stale for m in graph_set.members):
-            candidates.append(NextAction(
-                key="recompute_derived",
-                label="重新运行推理 / 规则",
-                detail="派生结果已过期",
-                tab="governance",
             ))
         return candidates[:3]

@@ -718,7 +718,6 @@ class SemanticMigrationService:
                 graph_set_id=run.target_graph_set_id,
                 actor=run.created_by,
                 reason=f"migration run {run.id} batch {batch.batch_index}",
-                validate=False,
             )
             affected_graphs.update(result["affected_graph_iris"])
             inserted += result["delta"]["inserted_quad_count"]

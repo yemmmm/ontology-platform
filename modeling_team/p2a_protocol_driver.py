@@ -247,7 +247,6 @@ def load_contract(path: Path) -> dict[str, Any]:
         or any(tool not in SAFE_PROTOCOL_TOOLS for tool in tools)
         or "submit_modeling_batch" not in tools
         or "query_semantic_context" not in tools
-        or "run_semantic_reasoning" not in tools
     ):
         raise P2AProtocolDriverError("P2a Protocol tool contract is invalid")
     maximum = value.get("max_runtime_seconds")
@@ -1167,7 +1166,7 @@ def _task_text(run: _DriverRun, candidate: dict[str, Any], matrix: dict[str, Any
         "with the exact same four items, then read the applied detail and call the same overlay verifier "
         "with postapply_evidence_bindings so every EvidenceReference ID back-references the same dry-run "
         "dedupe ID for its client item. (6) Personally read formal batch/workspace/Evidence/lineage data, "
-        "run validation and reasoning, and consume every independent match/context page. The live "
+        "perform governed readback, and consume every independent match/context page. The live "
         "publicationStatus write is the plain literal published. The candidate's full XSD string IRI is "
         "proof normalization only and is never a typed-write claim. (7) Call "
         "protocol_mechanics/verify_scoped_retrieval_fallback with exactly the v2 15-field proof envelope, "

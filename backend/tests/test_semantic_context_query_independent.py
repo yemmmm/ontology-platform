@@ -202,7 +202,7 @@ def _service(session, settings, store, monkeypatch=None, recall_multi=None):
         store,
         SemanticQueryScopeResolver(session, settings),
         lineage_service=_FakeLineage(),
-        shape_endpoint=_FakeShapes(),
+
     )
 
 
@@ -258,7 +258,7 @@ def test_sc02_same_project_different_principal_cursor_fails_closed(
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=_FakeLineage(),
-        shape_endpoint=_FakeShapes(),
+
     )
     from app.services.semantic_context_query import (
         SemanticContextCursorInvalid,
@@ -341,7 +341,7 @@ def test_sc08_ephemeral_signer_rotation_returns_invalid(in_memory_session, monke
         store,
         SemanticQueryScopeResolver(in_memory_session, settings_second),
         lineage_service=_FakeLineage(),
-        shape_endpoint=_FakeShapes(),
+
     )
     from app.services.semantic_context_query import SemanticContextCursorInvalid
 
@@ -449,7 +449,7 @@ def test_fu05_expression_order_does_not_affect_results(
             _FakeStore([]),
             SemanticQueryScopeResolver(in_memory_session, settings),
             lineage_service=_FakeLineage(),
-            shape_endpoint=_FakeShapes(),
+
         )
         result = service.query_multi(
             project_id="project-1",
@@ -523,7 +523,7 @@ def test_fu06_normalized_duplicates_do_not_boost_support_or_rank(
         _FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=_FakeLineage(),
-        shape_endpoint=_FakeShapes(),
+
     )
 
     distinct = service.query_multi(
@@ -663,7 +663,7 @@ def test_pf01_multi_expression_uses_one_scope_resolution_and_one_batch(
         _FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=_FakeLineage(),
-        shape_endpoint=_FakeShapes(),
+
     )
     service.query_multi(
         project_id="project-1",
@@ -716,7 +716,7 @@ def test_cx07_context_limit_zero_with_positive_depth_keeps_matches(
         _FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=_FakeLineage(),
-        shape_endpoint=_FakeShapes(),
+
     )
     result = service.query_multi(
         project_id="project-1",
@@ -763,7 +763,7 @@ def test_depth_zero_yields_empty_context_and_no_context_cursor(
         _FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=_FakeLineage(),
-        shape_endpoint=_FakeShapes(),
+
     )
     result = service.query_multi(
         project_id="project-1",

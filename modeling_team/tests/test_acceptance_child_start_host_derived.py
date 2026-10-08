@@ -58,8 +58,6 @@ def _ticket_with_platform_project_id(project_id: str, round_suffix: str = "1") -
         ("dry-run", "validated"),
         ("apply", "applied"),
         ("readback", "complete"),
-        ("validation", "succeeded"),
-        ("reasoning", "succeeded"),
     ):
         ref = {
             "type": "platform_read",
@@ -115,10 +113,6 @@ def _ticket_with_platform_project_id(project_id: str, round_suffix: str = "1") -
         "allowed_read_tools": sorted(
             {
                 "get_modeling_context",
-                "list_semantic_validation_runs",
-                "get_semantic_validation_run",
-                "list_semantic_reasoning_runs",
-                "get_semantic_reasoning_run",
             }
         ),
         "modeling_receipts": receipts,

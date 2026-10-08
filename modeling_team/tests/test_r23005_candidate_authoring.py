@@ -547,7 +547,6 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         checklist_text = "\n".join(reference["closure_checklist"])
         for phrase in (
             "semantic.values.label",
-            "semantic.invalid_instance",
             "never derives or invents",
         ):
             self.assertIn(phrase, checklist_text)
@@ -624,7 +623,6 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             "Never put platform execution strategy",
             "whole-candidate atomic-apply instruction",
             "semantic.values.label",
-            "semantic.invalid_instance",
             "derive or invent labels",
         ):
             self.assertIn(phrase, modeling_instructions)
@@ -636,7 +634,6 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             "dependency-ordered platform translation",
             "preceding formal receipt or required read",
             "semantic.values.label",
-            "semantic.invalid_instance",
             "derive or invent one",
         ):
             self.assertIn(phrase, protocol_instructions)
@@ -685,7 +682,6 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
             "must never appear in Modeling's semantic constraints",
             "source-grounded semantic invariants only",
             "semantic.values.label",
-            "semantic.invalid_instance",
             "never derives or invents them",
         ):
             self.assertIn(phrase, configuration.task.objective)
@@ -730,7 +726,6 @@ class R23005CandidateAuthoringTests(unittest.TestCase):
         cases = (
             ("entity", "semantic.values.label"),
             ("explicit_unknown", "semantic.values.label"),
-            ("negative_probe", "semantic.invalid_instance.label"),
         )
         for item_kind, path in cases:
             candidate = copy.deepcopy(baseline)

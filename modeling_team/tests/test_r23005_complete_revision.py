@@ -293,7 +293,7 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "For formal R2.3-005 (`task_id=r2-3-005-formal-acceptance`)",
             "the capability smoke shortcut is forbidden",
             "a candidate receipt or a health/read-only result is intermediate execution state, never",
-            "Execute all five current-run stages (dry-run, apply, readback, validation, reasoning)",
+            "Execute all three current-run stages (dry-run, apply, readback)",
             "complete governed retrieval",
             "publish the acceptance-stage handoff to Coordinator",
             "send the bound gate-complete notice to Modeling",

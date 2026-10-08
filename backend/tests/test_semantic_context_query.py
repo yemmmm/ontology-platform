@@ -286,7 +286,7 @@ def test_unified_query_returns_primary_related_without_trace_fields(in_memory_se
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
 
     result = service.query(
@@ -301,12 +301,6 @@ def test_unified_query_returns_primary_related_without_trace_fields(in_memory_se
 
     assert result["result_status"] == "matched"
     assert result["primary_matches"][0]["kind"] == "concept"
-    shape_item = next(
-        item
-        for item in result["related_context"]
-        if item["match"]["reasons"] == ["shape_constraint"]
-    )
-    assert shape_item["data"]["constraint"]["required"] is True
     facts = [item for item in result["related_context"] if item["data"].get("object")]
     assert next(item for item in facts if item["data"]["object"] == "datasetId")["data"][
         "object_datatype"
@@ -413,7 +407,7 @@ def test_small_context_page_keeps_asserted_facts_when_shapes_are_present(
         FakeStore(candidate_rows, neighbors=neighbor_rows),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=CrowdedShapes(),
+
     )
 
     result = service.query(
@@ -428,16 +422,16 @@ def test_small_context_page_keeps_asserted_facts_when_shapes_are_present(
     )
 
     related = result["related_context"]
-    assert len(related) == 3
+    assert len(related) == 2
     asserted_facts = [item for item in related if item.get("data", {}).get("object") is not None]
     shape_facts = [
         item for item in related if item.get("match", {}).get("reasons") == ["shape_constraint"]
     ]
     assert asserted_facts, "asserted literal facts must remain visible on a small context page"
-    assert shape_facts, "shape constraints must still share the small context page"
+    assert not shape_facts
     assert related[0]["data"]["object"] == "alpha-value"
     assert related[0]["origin"] == "asserted_literal"
-    assert any(item["origin"] == "shape_constraint" for item in related)
+    assert all(item["origin"] != "shape_constraint" for item in related)
 
 
 def test_absolute_iri_query_uses_exact_anchor_mode(in_memory_session):
@@ -481,7 +475,7 @@ def test_absolute_iri_query_uses_exact_anchor_mode(in_memory_session):
         FakeStore([], neighbors=rows),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
 
     result = service.query(
@@ -520,7 +514,7 @@ def test_absolute_iri_anchor_not_found_is_no_match(in_memory_session):
         FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
 
     result = service.query(
@@ -540,178 +534,6 @@ def test_absolute_iri_anchor_not_found_is_no_match(in_memory_session):
     assert any(warning["code"] == "anchor_not_found" for warning in result["warnings"])
 
 
-def test_generated_shape_constraint_projects_property_lineage_target(
-    in_memory_session,
-):
-    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
-    _ready_ontology(in_memory_session, settings)
-    lineage_result = {
-        "lineage_status": "complete",
-        "evidence_status": "supported",
-        "items": [
-            {
-                "supporting_context": {
-                    "evidence_references": [{"id": "property-evidence"}]
-                }
-            }
-        ],
-        "warnings": [],
-    }
-
-    class EvidenceLineage(RecordingLineage):
-        def get_lineage(self, **kwargs):
-            self.calls.append(kwargs)
-            return lineage_result
-
-    evidence_lineage = EvidenceLineage()
-    service = SemanticContextQueryService(
-        in_memory_session,
-        FakeStore([]),
-        SemanticQueryScopeResolver(in_memory_session, settings),
-        lineage_service=evidence_lineage,
-        shape_endpoint=FakeShapes(),
-    )
-    scope = service.scope_resolver.resolve(
-        project_id="project-1",
-        scope_mode="ontologies",
-        ontology_ids=["ontology-1"],
-    )
-    primary = [
-        {
-            "id": "https://example.test/Workflow",
-            "kind": "concept",
-            "ontology_id": "ontology-1",
-            "iri": "https://example.test/Workflow",
-            "data": {},
-        }
-    ]
-
-    items = service._shape_constraint_items(primary, scope, limit=10)
-    assert len(items) == 1
-    shape_item = items[0]
-    property_iri = "https://example.test/datasetId"
-    expected_id = hashlib.sha256(
-        f"ontology-1:https://example.test/Workflow:{property_iri}".encode("utf-8")
-    ).hexdigest()
-    assert shape_item["id"] == expected_id
-    assert shape_item["kind"] == "fact"
-    assert shape_item["data"]["constraint"]["provenance"] == "generated"
-    assert shape_item["target_kind"] == "resource"
-    assert "_lineage_target" not in shape_item
-
-    decorated = service._decorate(shape_item, scope)
-    assert "_lineage_target" not in decorated
-    assert "lineage" not in decorated
-    assert "evidence_reference_ids" not in decorated
-    assert decorated["warnings"] == []
-    assert evidence_lineage.calls == []
-
-
-@pytest.mark.parametrize(
-    "field",
-    [
-        {"path": "https://example.test/custom", "provenance": "custom"},
-        {"path": "https://example.test/merged", "provenance": "merged"},
-        {"path": "_:blank", "provenance": "generated"},
-        {"path": "relative/property", "provenance": "generated"},
-    ],
-)
-def test_shape_constraint_without_generated_canonical_property_fails_closed(
-    in_memory_session, field
-):
-    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
-    _ready_ontology(in_memory_session, settings)
-
-    class ShapeEndpoint:
-        def read_merged_guidance(self, graph_set_id, class_iri):  # noqa: ARG002
-            return {"fields": [field]}
-
-    lineage = RecordingLineage()
-    service = SemanticContextQueryService(
-        in_memory_session,
-        FakeStore([]),
-        SemanticQueryScopeResolver(in_memory_session, settings),
-        lineage_service=lineage,
-        shape_endpoint=ShapeEndpoint(),
-    )
-    scope = service.scope_resolver.resolve(
-        project_id="project-1",
-        scope_mode="ontologies",
-        ontology_ids=["ontology-1"],
-    )
-    primary = [
-        {
-            "id": "https://example.test/Workflow",
-            "kind": "concept",
-            "ontology_id": "ontology-1",
-            "iri": "https://example.test/Workflow",
-            "data": {},
-        }
-    ]
-
-    shape_item = service._shape_constraint_items(primary, scope, limit=10)[0]
-    assert "_lineage_target" not in shape_item
-    assert "target_kind" not in shape_item
-    decorated = service._decorate(shape_item, scope)
-    assert "_lineage_target" not in decorated
-    assert "lineage" not in decorated
-    assert decorated["warnings"] == []
-    assert lineage.calls == []
-
-
-def test_shape_constraint_unknown_internal_lineage_marker_is_stripped(
-    in_memory_session,
-):
-    settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
-    _ready_ontology(in_memory_session, settings)
-    lineage = RecordingLineage()
-    service = SemanticContextQueryService(
-        in_memory_session,
-        FakeStore([]),
-        SemanticQueryScopeResolver(in_memory_session, settings),
-        lineage_service=lineage,
-        shape_endpoint=FakeShapes(),
-    )
-    scope = service.scope_resolver.resolve(
-        project_id="project-1",
-        scope_mode="ontologies",
-        ontology_ids=["ontology-1"],
-    )
-    shape_item = {
-        "id": "synthetic-shape-id",
-        "kind": "fact",
-        "ontology_id": "ontology-1",
-        "iri": None,
-        "label": "custom",
-        "aliases": [],
-        "description": None,
-        "data": {
-            "target_class": "https://example.test/Workflow",
-            "constraint": {"path": "relative/property", "provenance": "custom"},
-        },
-        "distance": 1,
-        "assertion_kind": "asserted",
-        "match": {
-            "score": 275,
-            "matched_terms": [],
-            "matched_fields": ["constraint"],
-            "reasons": ["shape_constraint"],
-        },
-        "_lineage_target": {
-            "target_type": "synthetic",
-            "target_id": "synthetic-shape-id",
-        },
-    }
-
-    decorated = service._decorate(shape_item, scope)
-
-    assert "_lineage_target" not in decorated
-    assert "target_kind" not in decorated
-    assert "lineage" not in decorated
-    assert decorated["warnings"] == []
-    assert lineage.calls == []
-
-
 def test_no_match_is_not_reported_as_unsupported(in_memory_session):
     settings = Settings(semantic_graph_iri_prefix="https://graphs.test/")
     _ready_ontology(in_memory_session, settings)
@@ -720,7 +542,7 @@ def test_no_match_is_not_reported_as_unsupported(in_memory_session):
         FakeStore(_candidate_rows(settings, "ontology-1")),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
 
     result = service.query(
@@ -788,7 +610,7 @@ def test_exact_mapping_evidence_precedes_higher_scoring_semantic_candidate(
         FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -860,7 +682,7 @@ def test_exact_alias_precedes_higher_scoring_semantic_candidate(
         FakeStore(_candidate_rows(settings, "ontology-1")[:1]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -937,7 +759,7 @@ def test_scoped_semantic_chinese_label_recovers_exact_label_when_lexical_scan_is
         FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -986,7 +808,7 @@ def test_bilingual_rdf_label_match_uses_matched_value_not_sampled_display_label(
         ),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -1035,7 +857,7 @@ def test_mapping_evidence_stays_with_its_same_ontology_target(in_memory_session,
         FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -1134,7 +956,7 @@ def test_candidate_query_filters_terms_before_limit(in_memory_session):
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
 
     result = service.query(
@@ -1185,7 +1007,7 @@ def test_object_property_resource_and_relation_fact_use_distinct_lineage_targets
         FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=lineage,
-        shape_endpoint=FakeShapes(),
+
     )
     scope = service.scope_resolver.resolve(
         project_id="project-1",
@@ -1238,7 +1060,7 @@ def test_property_label_matches_facts_only_within_the_same_ontology(in_memory_se
         DatasetStore(dataset),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -1274,7 +1096,7 @@ def test_same_property_label_keeps_each_fact_in_its_own_ontology(in_memory_sessi
         DatasetStore(dataset),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -1321,7 +1143,7 @@ def test_direct_matches_use_the_full_response_limit_without_false_truncation(
         FakeStore(rows),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
 
     twelve = service.query(
@@ -1339,7 +1161,7 @@ def test_direct_matches_use_the_full_response_limit_without_false_truncation(
         FakeStore(rows[:1]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -1367,7 +1189,7 @@ def test_scoped_sparql_excludes_non_member_shape_views(in_memory_session):
         ontology_ids=["ontology-1"],
     )
 
-    assert "https://graphs.test/shapes/ontology-1" in scope.graph_iris
+    assert "https://graphs.test/shapes/ontology-1" not in scope.graph_iris
     assert "https://graphs.test/shapes/ontology-1/custom" not in scope.graph_iris
     assert "https://graphs.test/shapes/ontology-1/generated" not in scope.graph_iris
 
@@ -1465,7 +1287,7 @@ def _multi_service(in_memory_session, settings, store, recall_multi=None, monkey
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
 
 
@@ -1826,7 +1648,7 @@ def test_multi_expression_rejects_missing_principal(in_memory_session):
         FakeStore([]),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
     with pytest.raises(SemanticContextQueryError):
         service.query_multi(
@@ -1848,7 +1670,7 @@ def test_compact_context_detail_projects_related_rows_to_essentials(in_memory_se
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     )
     kwargs = dict(
         project_id="project-1",
@@ -2001,7 +1823,7 @@ def test_r3003_mapping_candidates_returned_for_mapping_resource_type(
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -2035,7 +1857,7 @@ def test_r3003_metric_candidates_returned_for_metric_resource_type(
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",
@@ -2072,7 +1894,7 @@ def test_r3003_mapping_and_metric_kinds_excluded_from_old_resource_types(
         store,
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=FakeLineage(),
-        shape_endpoint=FakeShapes(),
+
     ).query(
         project_id="project-1",
         scope_mode="ontologies",

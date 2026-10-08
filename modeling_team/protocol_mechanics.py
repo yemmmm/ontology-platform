@@ -602,7 +602,7 @@ def protocol_mechanics_contract(run_id: str) -> dict[str, Any]:
                 "create_session_without_nested_checkpoint",
                 "save_initial_checkpoint",
                 "acquire_lease_using_initial_checkpoint_revision",
-                "semantic_batch_application_validation_reasoning_and_query",
+                "semantic_batch_application_readback_and_query",
                 "refresh_session_before_final_checkpoint",
                 "save_final_checkpoint",
                 "complete_using_final_checkpoint_revision",
@@ -625,7 +625,7 @@ def protocol_mechanics_contract(run_id: str) -> dict[str, Any]:
                     "expected_revision": "create_receipt.session.revision",
                     "phase": "modeling",
                     "current_step": "schema_and_instance_modeling",
-                    "next_step": "validation_and_reasoning",
+                    "next_step": "readback_and_governed_query",
                     "ontology_id": "scope.ontology_id",
                     "blockers": [],
                 },
@@ -644,8 +644,7 @@ def protocol_mechanics_contract(run_id: str) -> dict[str, Any]:
             "pre_final_session_refresh": {
                 "after": [
                     "semantic_batch_application",
-                    "semantic_validation",
-                    "semantic_reasoning",
+                    "semantic_readback",
                     "governed_query",
                 ],
                 "tool": "get_build_session",
@@ -956,7 +955,6 @@ _RECEIPT_RESOURCE_COUNTS = {
     "create_class": "classes",
     "create_property": "properties",
     "create_relation_type": "relation_types",
-    "create_shape": "shapes",
     "create_entity": "entities",
 }
 
@@ -1212,7 +1210,6 @@ _FALLBACK_COMMAND_ROLES = {
     "create_class": "asserted_ontology",
     "create_property": "asserted_ontology",
     "create_relation_type": "asserted_ontology",
-    "create_shape": "shapes",
     "create_entity": "asserted_data",
     "create_relation": "asserted_data",
 }
@@ -1273,7 +1270,7 @@ def _fallback_workspace_graphs(workspace: dict[str, Any], ontology_id: str) -> d
         if not isinstance(member, dict):
             raise ProtocolRetrievalFallbackError("workspace member is invalid")
         role = member.get("role")
-        if role not in {"asserted_ontology", "asserted_data", "shapes"}:
+        if role not in {"asserted_ontology", "asserted_data"}:
             continue
         if (
             role in roles
@@ -1283,7 +1280,7 @@ def _fallback_workspace_graphs(workspace: dict[str, Any], ontology_id: str) -> d
         ):
             raise ProtocolRetrievalFallbackError("workspace graph role is invalid")
         roles[role] = member["graph_iri"]
-    if set(roles) != {"asserted_ontology", "asserted_data", "shapes"}:
+    if set(roles) != {"asserted_ontology", "asserted_data"}:
         raise ProtocolRetrievalFallbackError("workspace graph roles are incomplete")
     return roles
 
@@ -1730,7 +1727,7 @@ def _existing_refs(value: Any) -> list[dict[str, str]]:
 
 _RESOURCE_REF_FIELDS = {"semantic_id", "resource_kind"}
 _RESOURCE_REF_KINDS = frozenset(
-    {"class", "property", "entity", "shape", "operation", "table_mapping", "join_mapping", "enum_meaning", "metric"}
+    {"class", "property", "entity", "operation", "table_mapping", "join_mapping", "enum_meaning", "metric"}
 )
 
 
@@ -2744,15 +2741,15 @@ def _translate_candidate_to_batches_impl(
     candidate-bound, so the plan is fully reproducible at translation time.
 
     The plan follows the cross-batch dependency order
-    ``class -> property -> entity -> relation -> shape`` and binds the
+    ``class -> property -> entity -> relation`` and binds the
     candidate's own IDs onto every create_* payload so the platform produces
     readable, deterministic resource IRIs (``/class/{id}``, ``/property/{id}``,
-    ``/entity/{id}``, ``/shape/{id}``) instead of UUID IRIs.  Object-valued
+    ``/entity/{id}``) instead of UUID IRIs.  Object-valued
     predicates always go through ``create_property`` with ``object_class_id``;
     ``create_relation_type`` is never emitted for candidate predicates.
 
     Items that are not platform create resources (``consumer_query`` is retrieval
-    metadata, ``negative_probe`` is a validation probe) are skipped silently.  Any
+    metadata) are skipped; retired capabilities return a local conflict.  Any
     item that cannot be translated is omitted and recorded in ``conflicts``.
     """
     normalized = _validate_translate_candidate(candidate)
@@ -2875,6 +2872,12 @@ def _translate_candidate_to_batches_impl(
                 item_id, "duplicate_semantic_identity",
                 f"Identity already declared by {duplicate_identities[item_id]}; "
                 "reuse that definition or supply a distinct semantic identity",
+            ))
+            continue
+        if kind in {"shape", "negative_probe"} or "rule_definition" in semantic:
+            conflicts.append(_conflict(
+                item_id, "retired_modeling_capability",
+                "SHACL Shapes, Shape probes and rule_definition are retired; express business meaning as ordinary concepts, conditions and relationships",
             ))
             continue
         handler = _TRANSLATE_ITEM_HANDLERS.get(kind)
@@ -3007,12 +3010,11 @@ def _translate_candidate_to_batches_impl(
                         "predicate and context references; do not annotate an anonymous edge",
                     )
                 payload["semantic_definition"] = semantic["semantic_definition"]
-            for field in ("action_definition", "parameter_definition", "rule_definition"):
+            for field in ("action_definition", "parameter_definition"):
                 if field in semantic:
                     if command_kind != "create_entity":
                         raise _TranslateConflict(
-                            ("invalid_rule_annotation_target" if field == "rule_definition"
-                             else "invalid_action_annotation_target"),
+                            "invalid_action_annotation_target",
                             f"{field} belongs on an entity definition"
                         )
                     payload[field] = semantic[field]
@@ -3181,7 +3183,7 @@ class _TranslateConflict(Exception):
 
 
 _TRANSLATE_PLATFORM_IRI_BASE = "http://ontology-platform.local/semantic"
-_TRANSLATE_STAGE_ORDER = ("class", "property", "entity", "relation", "shape")
+_TRANSLATE_STAGE_ORDER = ("class", "property", "entity", "relation")
 # R4.0-010 extends the existing dependency plan without changing the legacy
 # five-stage plan for non-mapping candidates.  Definitions (class/property/
 # entity/operation) precede mappings; ordinary relations are always last.
@@ -3194,7 +3196,6 @@ _MAPPING_TRANSLATE_STAGE_ORDER = (
     "enum_meaning",
     "metric_definition",
     "relation",
-    "shape",
 )
 _TRANSLATE_STAGE_FOR_COMMAND = {
     "create_class": "class",
@@ -3202,7 +3203,6 @@ _TRANSLATE_STAGE_FOR_COMMAND = {
     "create_entity": "entity",
     "create_operation": "entity",
     "create_relation": "relation",
-    "create_shape": "shape",
     "create_table_mapping": "table_mapping",
     "create_join_mapping": "join_mapping",
     "create_enum_meaning": "enum_meaning",
@@ -3767,36 +3767,6 @@ def _translate_existing_relation(
     }
 
 
-def _translate_shape(
-    semantic: dict[str, Any], _entities: set[str], _predicates: dict[str, dict[str, Any]]
-) -> tuple[str, dict[str, Any]]:
-    shape_id = _require_semantic_string(semantic, "shape_id")
-    target_class = _require_semantic_string(semantic, "target_class")
-    paths = semantic.get("paths")
-    if not isinstance(paths, list) or not paths:
-        raise _TranslateConflict("missing_paths", "semantic.paths is not bound")
-    constraints: list[dict[str, Any]] = []
-    for path in paths:
-        if not isinstance(path, dict):
-            raise _TranslateConflict("invalid_path", "a shape path is not an object")
-        predicate = path.get("predicate")
-        if not _is_nonempty_string(predicate):
-            raise _TranslateConflict("missing_path_predicate", "a shape path predicate is not bound")
-        constraint: dict[str, Any] = {"path_id": predicate}
-        for field, target in (("min_count", "min_count"), ("max_count", "max_count")):
-            if path.get(field) is not None:
-                constraint[target] = path[field]
-        if _is_nonempty_string(path.get("datatype")):
-            constraint["datatype"] = path["datatype"]
-        if _is_nonempty_string(path.get("pattern")):
-            constraint["pattern"] = path["pattern"]
-        if _is_nonempty_string(path.get("description")):
-            constraint["description"] = path["description"]
-        constraints.append(constraint)
-    payload = {"shape_id": shape_id, "target_class_id": target_class, "constraints": constraints}
-    return "create_shape", payload
-
-
 _TRANSLATE_ITEM_HANDLERS = {
     "class": _translate_class,
     "predicate": _translate_predicate,
@@ -3804,7 +3774,6 @@ _TRANSLATE_ITEM_HANDLERS = {
     "explicit_unknown": _translate_entity,
     "operation": _translate_operation,
     "relation": _translate_relation,
-    "shape": _translate_shape,
     "table_mapping": _translate_table_mapping,
     "join_mapping": _translate_join_mapping,
     "enum_meaning": _translate_enum_meaning,

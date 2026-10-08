@@ -143,7 +143,7 @@ class CodexIsolationTests(unittest.TestCase):
         acceptance_script = scripts["acceptance"][-1]
         self.assertIn("test -z \"$(find /agent/home/sources -type f -print -quit)\"", acceptance_script)
         self.assertNotIn(
-            "/agent/home/sources/modeling_team/references/r2-3-005-acceptance-standard.json",
+            "/agent/home/sources/modeling_team/references/r2-3-005-acceptance-standard-v2.json",
             acceptance_script,
         )
         self.assertIn("/agent/home/sources/../../protocol/home", acceptance_script)
@@ -271,7 +271,7 @@ class CodexIsolationTests(unittest.TestCase):
                 "create_session_without_nested_checkpoint",
                 "save_initial_checkpoint",
                 "acquire_lease_using_initial_checkpoint_revision",
-                "semantic_batch_application_validation_reasoning_and_query",
+                "semantic_batch_application_readback_and_query",
                 "refresh_session_before_final_checkpoint",
                 "save_final_checkpoint",
                 "complete_using_final_checkpoint_revision",
@@ -294,7 +294,7 @@ class CodexIsolationTests(unittest.TestCase):
                     "expected_revision": "create_receipt.session.revision",
                     "phase": "modeling",
                     "current_step": "schema_and_instance_modeling",
-                    "next_step": "validation_and_reasoning",
+                    "next_step": "readback_and_governed_query",
                     "ontology_id": "scope.ontology_id",
                     "blockers": [],
                 },
@@ -313,8 +313,7 @@ class CodexIsolationTests(unittest.TestCase):
             "pre_final_session_refresh": {
                 "after": [
                     "semantic_batch_application",
-                    "semantic_validation",
-                    "semantic_reasoning",
+                    "semantic_readback",
                     "governed_query",
                 ],
                 "tool": "get_build_session",
@@ -1692,10 +1691,7 @@ class CodexIsolationTests(unittest.TestCase):
             self.assertEqual(spec.cwd, "/backend")
             self.assertEqual(spec.args, ("-m", "app.mcp.server"))
             self.assertEqual(spec.tools, ("check_platform_health", "submit_modeling_batch"))
-            self.assertEqual(dict(spec.reasoner_env), {
-                "SEMANTIC_REASONER_COMMAND": "/backend/scripts/dev_owl_reasoner.py",
-                "PATH": "/backend/.venv/bin:/usr/bin:/bin",
-            })
+            self.assertFalse(hasattr(spec, "reasoner_env"))
             self.assertEqual(canonical_protocol_mcp_mode_contract(), {
                 "SEMANTIC_CANONICAL_STORE": "rdf",
                 "SEMANTIC_PRODUCT_WRITE_MODE": "rdf_primary",
@@ -1721,10 +1717,7 @@ class CodexIsolationTests(unittest.TestCase):
                 self.assertIn(f'{name} = "{value}"', configs["protocol"])
                 self.assertNotIn(name, configs["coordinator"])
                 self.assertNotIn(name, configs["modeling"])
-            for name, value in spec.reasoner_env:
-                self.assertIn(f'{name} = "{value}"', configs["protocol"])
-                self.assertNotIn(name, configs["coordinator"])
-                self.assertNotIn(name, configs["modeling"])
+            self.assertNotIn("SEMANTIC_REASONER_COMMAND =", configs["protocol"])
             for role in ("coordinator", "modeling"):
                 self.assertNotIn("ontology_platform", configs[role])
                 self.assertNotIn("protocol_mechanics", configs[role])
@@ -1752,8 +1745,7 @@ class CodexIsolationTests(unittest.TestCase):
                     v1_agent,
                 )
             v1_config = (v1_agent.home / "config.toml").read_text(encoding="utf-8")
-            for name in dict(spec.reasoner_env):
-                self.assertNotIn(f"\n{name} = ", v1_config)
+            self.assertNotIn("SEMANTIC_REASONER_COMMAND =", v1_config)
             self.assertNotIn("protocol_mechanics", v1_config)
             self.assertNotIn("PROTOCOL_RUNTIME_RUN_ID", v1_config)
 
@@ -1782,7 +1774,7 @@ class CodexIsolationTests(unittest.TestCase):
                 agent,
             )
 
-    def test_v2_protocol_reasoner_mount_is_exact_read_only_and_fail_closed(self) -> None:
+    def test_v2_protocol_namespace_has_no_reasoner_dependency(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory)
@@ -1826,46 +1818,18 @@ class CodexIsolationTests(unittest.TestCase):
             for agent in (protocol, coordinator, modeling, v1_protocol):
                 (base / "transport" / "broker" / f"{agent.agent_id}.sock").touch()
             adapter._run_root = base
-            script = root / "backend/scripts/dev_owl_reasoner.py"
-            script_digest = __import__("hashlib").sha256(script.read_bytes()).hexdigest()
+            self.assertFalse((root / "backend/scripts/dev_owl_reasoner.py").exists())
+            self.assertFalse(hasattr(adapter, "_protocol_reasoner_script"))
+            for agent in (protocol, coordinator, modeling, v1_protocol):
+                command = adapter.namespace_command(agent)
+                self.assertNotIn("/backend/scripts/dev_owl_reasoner.py", command)
+                self.assertNotIn("SEMANTIC_REASONER_COMMAND", command)
             command = adapter.namespace_command(protocol)
-            self.assertIn(
-                ["--ro-bind", str(script), "/backend/scripts/dev_owl_reasoner.py"],
-                [command[index:index + 3] for index in range(len(command) - 2)],
-            )
-            self.assertNotIn(["--ro-bind", str(script.parent), "/backend/scripts"], [command[index:index + 3] for index in range(len(command) - 2)])
-            self.assertNotIn("SEMANTIC_REASONER_COMMAND", command)
-            self.assertNotIn("PATH", command)
-            for agent in (coordinator, modeling, v1_protocol):
-                self.assertNotIn("/backend/scripts/dev_owl_reasoner.py", adapter.namespace_command(agent))
             separator = command.index("--")
-            command[separator:] = [
-                "--",
-                "/bin/sh",
-                "-c",
-                "set -eu; test -r /backend/scripts/dev_owl_reasoner.py; "
-                "test ! -e /backend/scripts/not-mounted.py; "
-                "if chmod u+w /backend/scripts/dev_owl_reasoner.py; then exit 1; fi; "
-                "if printf changed >> /backend/scripts/dev_owl_reasoner.py; then exit 1; fi",
-            ]
+            command[separator:] = ["--", "/bin/sh", "-c",
+                "test ! -e /backend/scripts/dev_owl_reasoner.py"]
             completed = subprocess.run(command, text=True, capture_output=True, check=False)
             self.assertEqual(completed.returncode, 0, completed.stderr)
-            self.assertEqual(__import__("hashlib").sha256(script.read_bytes()).hexdigest(), script_digest)
-
-            for case in ("missing", "directory", "symlink"):
-                with self.subTest(case=case), tempfile.TemporaryDirectory() as invalid_directory:
-                    invalid_root = Path(invalid_directory)
-                    invalid_script = invalid_root / "backend/scripts/dev_owl_reasoner.py"
-                    invalid_script.parent.mkdir(parents=True)
-                    if case == "directory":
-                        invalid_script.mkdir()
-                    elif case == "symlink":
-                        target = invalid_root / "reasoner.py"
-                        target.write_text("#!/bin/sh\n", encoding="utf-8")
-                        invalid_script.symlink_to(target)
-                    invalid_adapter = CodexRuntimeAdapter(repository_root=invalid_root)
-                    with self.assertRaisesRegex(CodexRuntimeError, "reasoner script is unavailable"):
-                        invalid_adapter._protocol_reasoner_script()
 
     def test_dynamic_transport_callback_writes_sanitized_result_evidence(self) -> None:
         root = repository_root()
@@ -2917,6 +2881,8 @@ class CodexIsolationTests(unittest.TestCase):
             self.assertEqual((agent.retrieval_episode, agent.retrieval_state), (1, "complete"))
 
             completed("run_semantic_validation", result=success)
+            self.assertEqual(agent.retrieval_state, "complete")
+            completed("submit_modeling_batch", arguments={"mode": "apply_atomic"}, result=success)
             self.assertEqual(agent.retrieval_state, "query_required")
             completed("submit_modeling_batch", arguments={"mode": "dry_run"}, result=success)
             completed("run_semantic_reasoning", result=success, status="failed")

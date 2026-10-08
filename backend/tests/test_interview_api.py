@@ -68,8 +68,7 @@ def test_build_overview_returns_200_with_valid_graph_set(
                 graph_set_id=graph_set_id,
                 members=[GraphSetMemberStaleness(
                     iri="http://x/g", role="asserted_data",
-                    editable=True, validation_stale=False,
-                    reasoning_stale=False, rule_stale=False,
+                    editable=True,
                     last_semantic_edit_at=None,
                 )],
                 last_semantic_edit_at=None,

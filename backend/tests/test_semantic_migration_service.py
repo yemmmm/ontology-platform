@@ -368,7 +368,7 @@ def test_canonical_write_rejects_locked_graph(in_memory_session) -> None:
             "create_class",
             {"ontology_id": "ont-1", "class_id": "class-1", "name": "Person"},
             graph_set_id=None,
-            validate=False,
+
         )
 
 
@@ -547,7 +547,7 @@ def test_command_compiler_and_canonical_writer_share_delta_shape(
         "name": "Person",
     }
     compiled = writer.compile_only("create_class", payload)
-    result = writer.apply_compiled_command(compiled, validate=False)
+    result = writer.apply_compiled_command(compiled)
     assert result["delta"]["operation"] == "insert_delete"
     assert result["delta"]["inserted_quad_count"] == compiled.delta.inserts.__len__()
     assert store.applied_deltas[0] is compiled.delta

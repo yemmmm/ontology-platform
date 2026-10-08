@@ -52,7 +52,6 @@ class SemanticExportService:
         graph_set_id: str,
         format: str,
         include: str = "asserted",
-        include_shapes: bool = False,
         include_policy: bool = False,
         include_metadata: bool = False,
         allow_stale_derived: bool = False,
@@ -63,13 +62,6 @@ class SemanticExportService:
             allow_stale_derived=allow_stale_derived,
         )
         graph_iris = list(scope.source_graph_iris)
-        if include_shapes:
-            graph_iris.extend(scope.shape_graph_iris)
-        if scope.reasoning_result_graph_iri and scope.derived_state.get(
-            "reasoning", {}
-        ).get("status") != "missing":
-            graph_iris.append(scope.reasoning_result_graph_iri)
-
         warnings = list(scope.warnings)
 
         dataset = self._load_dataset(graph_iris)

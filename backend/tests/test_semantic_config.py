@@ -7,4 +7,5 @@ def test_semantic_settings_have_safe_defaults() -> None:
     assert settings.oxigraph_url == "http://localhost:7878"
     assert settings.semantic_graph_iri_prefix.endswith("/graph/")
     assert settings.semantic_query_result_limit == 1000
-    assert settings.semantic_shacl_inference == "none"
+    assert not hasattr(settings, "semantic_shacl_inference")
+    assert not hasattr(settings, "semantic_reasoner_command")

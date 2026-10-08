@@ -204,7 +204,6 @@ def test_mapping_candidate_translation_is_recursive_and_topologically_ordered():
         "enum_meaning",
         "metric_definition",
         "relation",
-        "shape",
     ]
     stages = [batch["stage_kind"] for batch in plan["batches"]]
     assert stages.index("table_mapping") < stages.index("join_mapping")

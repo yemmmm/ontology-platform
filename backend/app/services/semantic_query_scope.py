@@ -206,10 +206,8 @@ class SemanticQueryScopeResolver:
             raise SemanticQueryScopeNotReady("Ontology workspace is not ready")
         graph_assertion_kinds = {
             graph: "asserted"
-            for graph in [*read_scope.source_graph_iris, *read_scope.shape_graph_iris]
+            for graph in read_scope.source_graph_iris
         }
-        if read_scope.reasoning_result_graph_iri:
-            graph_assertion_kinds[read_scope.reasoning_result_graph_iri] = "owl_inferred"
         derived_state = {
             kind: {
                 "status": value.get("status"),

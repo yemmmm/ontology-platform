@@ -21,7 +21,7 @@ communication:
     to: [coordinator]
 parameters:
   formal_contract: r2-3-003-existing-incremental
-  acceptance_standard: modeling_team/references/r2-3-003-acceptance-standard.json
+  acceptance_standard: modeling_team/references/r2-3-003-acceptance-standard-v2.json
   scope_config: modeling_team/scopes/r2-3-003-existing.yaml
   source_manifest: docs/evaluation-scenarios/ontology-modeling-team-r2-3-003/agent-input/manifest.json
   child_kinds: [source_examiner, platform_examiner]

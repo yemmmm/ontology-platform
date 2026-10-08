@@ -6,17 +6,13 @@ from uuid import uuid4
 from rdflib import Dataset, Graph, URIRef
 from rdflib.compare import to_isomorphic
 from rdflib.namespace import RDF
-from pyshacl import validate as pyshacl_validate
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import (
     SemanticEditAuditModel,
-    SemanticGraphRevisionModel,
     SemanticGraphStateModel,
-    SemanticReasoningRunModel,
-    SemanticValidationRunModel,
 )
 from app.repositories.rdf_store import (
     DatasetLoadResult,
@@ -24,11 +20,6 @@ from app.repositories.rdf_store import (
     RdfGraphDelta,
     RdfStoreRepository,
     SparqlResult,
-)
-from app.services.owl_reasoner import (
-    OwlReasonerResult,
-    OwlReasonerRunner,
-    ReasonerInputDocument,
 )
 from app.services.semantic_graph_registry import (
     DirectEditCategoryDenied,
@@ -95,7 +86,6 @@ class SemanticService:
         session: Session,
         rdf_store: RdfStoreRepository,
         settings: Settings,
-        reasoner: OwlReasonerRunner | None = None,
         graph_registry: SemanticGraphRegistryService | None = None,
         graph_set_service: SemanticGraphSetService | None = None,
         revision_service: SemanticRevisionService | None = None,
@@ -105,7 +95,6 @@ class SemanticService:
         self.session = session
         self.rdf_store = rdf_store
         self.settings = settings
-        self.reasoner = reasoner
         self.graph_registry = graph_registry or SemanticGraphRegistryService(session, settings)
         self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
         self.revision_service = revision_service or SemanticRevisionService(session)
@@ -136,6 +125,10 @@ class SemanticService:
                 MappingWriteError,
                 require_batch_mapping_write,
             )
+
+            for graph_iri in graph_iris:
+                if self.graph_registry.classify(graph_iri).value == "shapes":
+                    raise SemanticGraphPolicyViolation("SHACL Shape maintenance is retired")
 
             delta = RdfGraphDelta(
                 inserts=[
@@ -194,8 +187,6 @@ class SemanticService:
         format: str,
         content: str,
         target_graph_iri: str | None = None,
-        validate: bool = True,
-        shape_graph_iris: list[str] | None = None,
         actor: str | None = None,
         reason: str | None = None,
         warning_state: dict[str, Any] | None = None,
@@ -276,20 +267,6 @@ class SemanticService:
         warnings: list[str] = []
         warning_state = warning_state or {}
         validation_result: dict[str, Any] | None = None
-        if validate and shape_graph_iris:
-            validation_result = self._validate_candidate_graphs(
-                affected_graphs,
-                shape_graph_iris,
-                delta,
-                inference=self.settings.semantic_shacl_inference,
-            )
-            if validation_result["conforms"] is False:
-                raise SemanticServiceError(
-                    "Semantic edit candidate does not conform to SHACL shapes"
-                )
-        elif not validate:
-            warnings.append("SHACL validation skipped by request")
-
         update_result = self.rdf_store.update_sparql(update)
         all_warnings = [*warnings, *update_result.warnings]
         audit = SemanticEditAuditModel(
@@ -392,170 +369,6 @@ class SemanticService:
     def export_dataset(self, format: str, graph_iris: list[str] | None = None) -> str:
         return self.rdf_store.export_dataset(format, graph_iris)
 
-    def run_validation(
-        self,
-        data_graph_iris: list[str],
-        shape_graph_iris: list[str],
-        inference: str | None = None,
-    ) -> dict[str, Any]:
-        run = SemanticValidationRunModel(
-            id=str(uuid4()),
-            data_graph_iris=data_graph_iris,
-            shape_graph_iris=shape_graph_iris,
-            status="running",
-            started_at=datetime.now(UTC),
-            run_metadata={"inference": inference or self.settings.semantic_shacl_inference},
-        )
-        self.session.add(run)
-        self.session.commit()
-        try:
-            data_graph = _combined_graph(self.rdf_store, data_graph_iris)
-            shape_graph = _combined_graph(self.rdf_store, shape_graph_iris)
-            conforms, report_graph, report_text = pyshacl_validate(
-                data_graph,
-                shacl_graph=shape_graph,
-                inference=inference or self.settings.semantic_shacl_inference,
-            )
-            summary = _shacl_summary(report_graph)
-            run.status = "succeeded"
-            run.conforms = bool(conforms)
-            run.finished_at = datetime.now(UTC)
-            run.run_metadata = {**(run.run_metadata or {}), "summary": summary}
-            self.session.commit()
-            return {
-                "run_id": run.id,
-                "status": run.status,
-                "conforms": run.conforms,
-                "report_text": report_text.decode("utf-8")
-                if isinstance(report_text, bytes)
-                else report_text,
-                "summary": summary,
-                "error": None,
-            }
-        except Exception as exc:
-            run.status = "failed"
-            run.error = str(exc)
-            run.finished_at = datetime.now(UTC)
-            self.session.commit()
-            return {
-                "run_id": run.id,
-                "status": run.status,
-                "conforms": None,
-                "report_text": None,
-                "summary": {},
-                "error": run.error,
-            }
-
-    def run_reasoning(
-        self,
-        source_graph_iris: list[str],
-        tasks: list[str],
-        persist_result_graph: bool = False,
-        graph_set_id: str | None = None,
-        engine_version: str | None = None,
-        shape_version: str | None = None,
-    ) -> dict[str, Any]:
-        run_id = str(uuid4())
-        result_graph_iri = (
-            f"{self.settings.semantic_graph_iri_prefix}reasoning-result/{run_id}"
-            if persist_result_graph
-            else None
-        )
-        run = SemanticReasoningRunModel(
-            id=run_id,
-            source_graph_iris=source_graph_iris,
-            result_graph_iri=result_graph_iri,
-            reasoner=self.settings.semantic_reasoner_command or "unconfigured-command-runner",
-            status="running",
-            started_at=datetime.now(UTC),
-        )
-        self.session.add(run)
-        self.session.commit()
-        try:
-            if self.reasoner is None:
-                raise RuntimeError("OWL reasoner runner is not configured")
-            documents = [
-                ReasonerInputDocument(
-                    graph_iri=graph_iri,
-                    content=self.rdf_store.get_graph(graph_iri, RdfFormat.TRIG.value),
-                )
-                for graph_iri in source_graph_iris
-            ]
-            result = self.reasoner.run(
-                documents,
-                tasks=tasks,
-                timeout_seconds=self.settings.semantic_reasoner_timeout_seconds,
-            )
-            if persist_result_graph and result.inferred_rdf:
-                self.rdf_store.update_sparql(
-                    _insert_data_update(result_graph_iri, result.inferred_rdf)
-                )
-            run.status = "succeeded"
-            run.consistent = result.consistent
-            run.run_metadata = {
-                "classification": result.classification,
-                "entailments": result.entailments,
-                **result.metadata,
-            }
-            run.finished_at = datetime.now(UTC)
-            promoted_pointer: dict[str, Any] | None = None
-            if persist_result_graph and graph_set_id:
-                source_signature = self._graph_set_source_signature(graph_set_id)
-                input_graph_revisions = {
-                    row.graph_iri: int(row.revision or 0)
-                    for row in self.session.scalars(
-                        select(SemanticGraphRevisionModel).where(
-                            SemanticGraphRevisionModel.graph_iri.in_(source_graph_iris)
-                        )
-                    )
-                }
-                pointer = self.derived_state_service.promote_reasoning_pointer(
-                    graph_set_id=graph_set_id,
-                    run_id=run_id,
-                    result_graph_iri=result_graph_iri or "",
-                    source_signature=source_signature,
-                    engine_name=self.settings.semantic_reasoner_command or "command",
-                    engine_version=engine_version,
-                    shape_version=shape_version,
-                    metadata={
-                        "tasks": tasks,
-                        "consistent": result.consistent,
-                    },
-                )
-                promoted_pointer = {
-                    "graph_set_id": pointer.graph_set_id,
-                    "result_kind": pointer.result_kind,
-                    "result_graph_iri": pointer.result_graph_iri,
-                    "status": pointer.status,
-                    "became_current_at": pointer.became_current_at,
-                }
-                run.run_metadata["graph_set_id"] = graph_set_id
-                run.run_metadata["source_signature"] = source_signature
-                run.run_metadata["input_graph_revisions"] = input_graph_revisions
-                run.run_metadata["engine_version"] = engine_version
-            self.session.commit()
-            response = _reasoning_response(run, result, result_graph_iri)
-            if promoted_pointer:
-                response["derived_pointer"] = promoted_pointer
-            return response
-        except Exception as exc:
-            self.session.rollback()
-            run = self.session.get(SemanticReasoningRunModel, run_id)
-            if run is None:
-                raise
-            run.status = "failed"
-            run.error = str(exc)
-            run.finished_at = datetime.now(UTC)
-            self.session.commit()
-            return {
-                "run_id": run.id,
-                "status": run.status,
-                "consistent": None,
-                "classification": {},
-                "entailments": [],
-                "result_graph_iri": result_graph_iri,
-                "error": run.error,
-            }
 
     def _graph_set_source_signature(self, graph_set_id: str) -> str:
         try:
@@ -565,7 +378,7 @@ class SemanticService:
 
     def governance_status(self) -> dict[str, Any]:
         registry_summary = self.graph_registry.status_summary()
-        derived_summary = self.derived_state_service.status_summary()
+        derived_summary = {}
         return {
             "graphs": registry_summary,
             "derived": derived_summary,
@@ -627,44 +440,6 @@ class SemanticService:
             raise UnsupportedSemanticEdit("SPARQL Update must use explicit GRAPH <iri> blocks")
         return graph_iris, update, {"operation": operation, "graph_iris": graph_iris}
 
-    def _validate_candidate_graphs(
-        self,
-        affected_graphs: list[str],
-        shape_graph_iris: list[str],
-        delta: dict[str, Any],
-        inference: str | None,
-    ) -> dict[str, Any]:
-        if delta.get("operation") != "insert" or not delta.get("inserted_statements"):
-            return self.run_validation(affected_graphs, shape_graph_iris, inference)
-        data_graph = Graph()
-        for graph_iri in affected_graphs:
-            if hasattr(self.rdf_store, "graph_exists") and not self.rdf_store.graph_exists(
-                graph_iri
-            ):
-                continue
-            data_graph.parse(
-                data=self.rdf_store.get_graph(graph_iri, RdfFormat.TURTLE.value),
-                format=RdfFormat.TURTLE.value,
-            )
-        for statement in delta["inserted_statements"]:
-            data_graph.add(_statement_from_n3(statement))
-        shape_graph = _combined_graph(self.rdf_store, shape_graph_iris)
-        conforms, report_graph, report_text = pyshacl_validate(
-            data_graph,
-            shacl_graph=shape_graph,
-            inference=inference or self.settings.semantic_shacl_inference,
-        )
-        return {
-            "run_id": None,
-            "status": "succeeded",
-            "conforms": bool(conforms),
-            "report_text": report_text.decode("utf-8")
-            if isinstance(report_text, bytes)
-            else report_text,
-            "summary": _shacl_summary(report_graph),
-            "error": None,
-            "candidate": True,
-        }
 
     def _graph_state(self, graph_iri: str) -> SemanticGraphStateModel | None:
         return self.session.scalar(
@@ -964,34 +739,3 @@ def _is_restricted_delete_insert_where(update: str) -> bool:
 
 def _strip_sparql_comments(query: str) -> str:
     return re.sub(r"(?m)^\s*#.*$", "", query).strip()
-
-
-def _shacl_summary(report_graph: Graph) -> dict[str, int]:
-    from rdflib.namespace import SH
-
-    counts = {"violations": 0, "warnings": 0, "info": 0}
-    for result in report_graph.subjects(predicate=RDF.type, object=SH.ValidationResult):
-        severities = list(report_graph.objects(result, SH.resultSeverity))
-        if SH.Violation in severities:
-            counts["violations"] += 1
-        elif SH.Warning in severities:
-            counts["warnings"] += 1
-        elif SH.Info in severities:
-            counts["info"] += 1
-    return counts
-
-
-def _reasoning_response(
-    run: SemanticReasoningRunModel,
-    result: OwlReasonerResult,
-    result_graph_iri: str | None,
-) -> dict[str, Any]:
-    return {
-        "run_id": run.id,
-        "status": run.status,
-        "consistent": result.consistent,
-        "classification": result.classification,
-        "entailments": result.entailments,
-        "result_graph_iri": result_graph_iri,
-        "error": None,
-    }

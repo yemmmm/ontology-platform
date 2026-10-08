@@ -208,7 +208,7 @@ def test_context_query_returns_structured_operation_and_hides_raw_json(in_memory
         _DatasetStore(dataset),
         SemanticQueryScopeResolver(in_memory_session, settings),
         lineage_service=_Lineage(),
-        shape_endpoint=_Shapes(),
+
     )
 
     result = service.query(

@@ -145,7 +145,6 @@ def test_future_locator_is_a_string_and_candidate_id_need_not_equal_payload_id()
         ("create_class", "class_id", {"name": "Example class"}),
         ("create_property", "property_id", {"name": "Example property", "datatype": "string"}),
         ("create_relation_type", "relation_type_id", {"name": "Example relation"}),
-        ("create_shape", "shape_id", {}),
         ("create_entity", "entity_id", {"label": "Example entity"}),
     ],
 )

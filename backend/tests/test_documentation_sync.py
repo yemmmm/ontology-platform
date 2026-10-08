@@ -212,6 +212,7 @@ def test_ontology_builder_dependency_contract_uses_registry() -> None:
         "get_evidence_reference",
         "get_ontology_lineage",
         "inspect_semantic_statement_provenance",
+        "run_semantic_validation",
     }
     assert retired.isdisjoint(registry)
     required -= retired

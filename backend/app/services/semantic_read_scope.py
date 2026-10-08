@@ -1,8 +1,8 @@
 """Resolve a graph set + include parameter into concrete graph IRIs and derived state.
 
 Phase 6 read APIs and projections use this resolver to turn an `include`
-parameter (`asserted`, `asserted-plus-reasoning`, `full-working-view`) into the source-graph IRIs, governance IRIs, derived-result
-graph IRIs, derived-state descriptor, and warnings for a single graph set.
+parameter (`asserted`, `full-working-view`) into source and governance graphs.
+Historical Shape and derived-result graphs never become effective read scope.
 """
 
 from __future__ import annotations
@@ -11,11 +11,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import case, func, select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.repositories.models import (
-    SemanticDerivedResultPointerModel,
     SemanticEditAuditModel,
     SemanticGraphRegistryModel,
     SemanticGraphSetMemberModel,
@@ -29,7 +28,6 @@ class ReadScopeError(RuntimeError):
 
 _VALID_INCLUDES = {
     "asserted",
-    "asserted-plus-reasoning",
     "full-working-view",
 }
 
@@ -77,29 +75,15 @@ class SemanticReadScopeResolver:
         graph_set = self._get_graph_set(graph_set_id)
         members = self._members(graph_set_id)
         source_iris = [m.graph_iri for m in members if m.role in _SOURCE_ROLES]
-        # ``shapes`` is the R-001 canonical role. ``shape`` remains readable
-        # for graph sets created before the default-workspace contract.
-        shape_iris = [m.graph_iri for m in members if m.role in {"shapes", "shape"}]
+        shape_iris = []
         governance_iris = [
             m.graph_iri for m in members if m.role in _GOVERNANCE_ROLES
         ]
 
-        pointers = self._current_pointers(graph_set_id)
         warnings: list[dict[str, str]] = []
-        reasoning_iri: str | None = None
-
-        if include in {"asserted-plus-reasoning", "full-working-view"}:
-            reasoning_iri, warning = self._resolve_pointer(
-                pointers, "reasoning", allow_stale_derived
-            )
-            if warning:
-                warnings.append(warning)
-
-        derived_state = {
-            "reasoning": self._derived_descriptor(pointers.get("reasoning")),
-        }
-
-        member_entries = self._build_members(members, pointers)
+        reasoning_iri = None
+        derived_state = {}
+        member_entries = self._build_members(members)
 
         return ScopeResolution(
             graph_set_id=graph_set_id,
@@ -133,89 +117,15 @@ class SemanticReadScopeResolver:
             )
         )
 
-    def _current_pointers(
-        self, graph_set_id: str
-    ) -> dict[str, SemanticDerivedResultPointerModel]:
-        rows = self.session.scalars(
-            select(SemanticDerivedResultPointerModel)
-            .where(
-                SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
-                SemanticDerivedResultPointerModel.result_kind == "reasoning",
-                SemanticDerivedResultPointerModel.status.in_(("current", "stale")),
-            )
-            .order_by(
-                SemanticDerivedResultPointerModel.result_kind,
-                case(
-                    (SemanticDerivedResultPointerModel.status == "current", 0),
-                    (SemanticDerivedResultPointerModel.status == "stale", 1),
-                    else_=2,
-                ),
-                SemanticDerivedResultPointerModel.became_current_at.desc(),
-                SemanticDerivedResultPointerModel.created_at.desc(),
-                SemanticDerivedResultPointerModel.id.desc(),
-            )
-        )
-        pointers: dict[str, SemanticDerivedResultPointerModel] = {}
-        for row in rows:
-            pointers.setdefault(row.result_kind, row)
-        return pointers
-
-    def _resolve_pointer(
-        self,
-        pointers: dict[str, SemanticDerivedResultPointerModel],
-        kind: str,
-        allow_stale: bool,
-    ) -> tuple[str | None, dict[str, str] | None]:
-        pointer = pointers.get(kind)
-        if pointer is None:
-            return None, {
-                "code": f"missing_{kind}_result",
-                "message": f"No current {kind} result pointer.",
-            }
-        if pointer.status == "stale":
-            if not allow_stale:
-                raise ReadScopeError(
-                    f"{kind} result pointer is stale for this graph set"
-                )
-            return pointer.result_graph_iri, {
-                "code": f"stale_{kind}_result",
-                "message": f"{kind.capitalize()}-derived statements are stale for this graph set.",
-            }
-        return pointer.result_graph_iri, None
-
-    def _derived_descriptor(
-        self, pointer: SemanticDerivedResultPointerModel | None
-    ) -> dict[str, Any]:
-        if pointer is None:
-            return {"status": "missing", "run_id": None, "result_graph_iri": None}
-        return {
-            "status": pointer.status,
-            "run_id": pointer.run_id,
-            "result_graph_iri": pointer.result_graph_iri,
-        }
 
     def _build_members(
         self,
         members: list[SemanticGraphSetMemberModel],
-        pointers: dict[str, SemanticDerivedResultPointerModel],
     ) -> list[ScopeMember]:
         if not members:
             return []
 
         member_iris = [m.graph_iri for m in members]
-
-        # Derive per-member derived_state from graph-set-level pointers.
-        # All members of the same graph set share the same derived pointers.
-        member_derived: dict[str, Any] = {}
-        for kind, pointer in pointers.items():
-            member_derived[kind] = {
-                "status": pointer.status,
-                "result_graph_iri": pointer.result_graph_iri,
-                "became_current_at": pointer.became_current_at,
-                "engine_name": pointer.engine_name,
-                "engine_version": pointer.engine_version,
-                "shape_version": pointer.shape_version,
-            }
 
         # Query registry for editable state.
         registry_rows = self.session.scalars(
@@ -260,7 +170,7 @@ class SemanticReadScopeResolver:
                     role=m.role,
                     editable=editable,
                     last_edit_at=last_edit_at,
-                    derived_state=dict(member_derived),
+                    derived_state={},
                 )
             )
         return result

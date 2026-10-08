@@ -71,9 +71,7 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
     assert discovery_policy.required_scope == "read"
     assert discovery_policy.ownership is McpOwnership.GLOBAL_SAFE
     assert discovery_policy.mutates_state is False
-    assert MCP_TOOL_POLICIES["check_semantic_staleness"].required_scope == "admin"
-    assert MCP_TOOL_POLICIES["check_semantic_staleness"].ownership is McpOwnership.ORG_ONLY
-    assert MCP_TOOL_POLICIES["check_semantic_staleness"].mutates_state is True
+    assert "check_semantic_staleness" not in MCP_TOOL_POLICIES
 
 
 def test_mcp_startup_requires_environment_key(monkeypatch):
@@ -167,7 +165,7 @@ def test_project_mcp_denies_ad_hoc_graph_set_and_allows_owned_graph_set(
     )
 
 
-def test_resource_less_global_mutation_denies_all_project_principals_and_allows_org_admin(
+def test_unregistered_global_mutation_denies_all_principals(
     in_memory_session, mcp_principal_factory, monkeypatch
 ):
     project = ProjectModel(id="policy-p1", name="Policy P1", normalized_label="Policy P1")
@@ -182,7 +180,7 @@ def test_resource_less_global_mutation_denies_all_project_principals_and_allows_
     monkeypatch.setattr(mcp_runtime, "get_resources", lambda: (factory, None, None))
     effects: list[str] = []
 
-    def check_semantic_staleness():
+    def garbage_collect_semantic_resources():
         return _run_tool(
             lambda _session, _driver, _embedding_client: (
                 effects.append("reconciled") or {"changed": True}
@@ -191,13 +189,13 @@ def test_resource_less_global_mutation_denies_all_project_principals_and_allows_
 
     for principal in project_principals:
         set_runtime_principal(principal)
-        result = check_semantic_staleness()
+        result = garbage_collect_semantic_resources()
         assert result["ok"] is False
         assert effects == []
 
     set_runtime_principal(org_admin)
-    assert check_semantic_staleness() == {"ok": True, "data": {"changed": True}}
-    assert effects == ["reconciled"]
+    assert garbage_collect_semantic_resources()["ok"] is False
+    assert effects == []
 
     def check_platform_health():
         return _run_tool(
@@ -206,4 +204,4 @@ def test_resource_less_global_mutation_denies_all_project_principals_and_allows_
 
     set_runtime_principal(project_principals[0])
     assert check_platform_health()["ok"] is True
-    assert effects == ["reconciled"]
+    assert effects == []

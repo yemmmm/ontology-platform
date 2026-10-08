@@ -32,8 +32,8 @@ def _resolution(source_iris, reasoning=None, rule=None):
         graph_set_id="gs-1",
         source_signature="sig-1",
         include="asserted",
-        source_graph_iris=source_iris,
-        shape_graph_iris=[],
+        source_graph_iris=source_iris, shape_graph_iris=[],
+
         governance_graph_iris=[],
         reasoning_result_graph_iri=reasoning,
         derived_state={},
@@ -108,31 +108,6 @@ def test_json_ld_export_compacts_with_projection_terms():
     parsed = json.loads(payload)
     assert "@context" in parsed
     assert "assertionKind" in parsed["@context"]
-
-
-def test_warns_on_stale_reasoning_when_requested():
-    store = FakeStore({"http://op/s/graph/rr/run-1": "@prefix ex: <http://example.test/> . ex:x ex:y ex:z ."})
-    scope = _resolution(
-        ["http://op/s/graph/data/ov-1"],
-        reasoning="http://op/s/graph/rr/run-1",
-    )
-    scope.derived_state["reasoning"] = {
-        "status": "stale",
-        "run_id": "run-1",
-        "result_graph_iri": "http://op/s/graph/rr/run-1",
-    }
-    scope.warnings = [
-        {"code": "stale_reasoning_result", "message": "stale"}
-    ]
-    resolver = FakeScopeResolver(scope)
-    service = SemanticExportService(rdf_store=store, scope_resolver=resolver, settings=None)
-    payload, warnings = service.export(
-        "gs-1",
-        format="trig",
-        include="asserted-plus-reasoning",
-        allow_stale_derived=True,
-    )
-    assert any(w["code"] == "stale_reasoning_result" for w in warnings)
 
 
 def test_export_drops_quads_referencing_unauthorized_members():

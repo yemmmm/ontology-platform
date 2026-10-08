@@ -38,7 +38,7 @@ def context(in_memory_session):
         in_memory_session,
         DatasetStore(dataset),
         SemanticQueryScopeResolver(in_memory_session, settings),
-        shape_endpoint=NoShapes(),
+
         cursor_codec=codec,
     )
     vocab = str(namespace_from_settings(settings).vocab)
@@ -90,7 +90,7 @@ def drain(query, queries, **kwargs):
 def test_roles_are_explicit_case_sensitive_primary_only(context):
     service, graph, declare, query, vocab = context
     action = declare("perform", "Action", actionDefinition={"purpose": "perform task"})
-    rule = declare("policy", "Rule", ruleDefinition={"rule_category": "constraint"})
+    rule = declare("policy", "Rule")
     parameter = declare("argument", "Parameter", parameterDefinition={"direction": "input"})
     graph.add((action, URIRef("https://business.test/constrainedBy"), rule))
     graph.add((action, URIRef("https://business.test/hasParameter"), parameter))
@@ -102,7 +102,8 @@ def test_roles_are_explicit_case_sensitive_primary_only(context):
     related = {
         row["iri"]: row for row in result["related_context"] if row.get("target_kind") == "resource"
     }
-    assert related[str(rule)]["data"]["rule_definition"]["rule_category"] == "constraint"
+    assert related[str(rule)]["data"]["semantic_definition"]["semantic_role"] == "Rule"
+    assert "action_definition" not in related[str(rule)]["data"]
     assert related[str(parameter)]["data"]["parameter_definition"]["direction"] == "input"
     assert query([str(action)], semantic_roles=["action"])["result_status"] == "no_match"
     assert query(["perform"], semantic_roles=["unknown"])["result_status"] == "no_match"
@@ -147,46 +148,12 @@ def test_shared_action_keeps_distinct_calls_bindings_and_typed_facts(context):
     assert all(row["data"]["subject"] for row in facts)
 
 
-def test_compact_scripts_no_raw_literal_bypass_and_full_anchor_supplement(context):
-    _, graph, declare, query, vocab = context
-    action = declare("dispatch", "Action")
-    definition = {
-        "script_source": "return input.amount > 10",
-        "script_language": "javascript",
-        "version": "v1",
-        "unknowns": ["currency"],
-        "conflicting_meanings": ["threshold"],
-    }
-    rule = declare("threshold", "Rule", ruleDefinition=definition)
-    graph.add((action, URIRef("https://business.test/policy"), rule))
-    full = query([str(action)], depth=1)
-    compact = query([str(action)], depth=1, context_detail="compact")
-    assert {identity(row) for row in full["related_context"]} == {
-        identity(row) for row in compact["related_context"]
-    }
-    # At depth two the raw annotation fact is explicitly included and stripped.
-    compact = query([str(action)], depth=2, context_detail="compact")
-    assert "return input.amount" not in json.dumps(compact)
-    resource = next(row for row in compact["related_context"] if row["iri"] == str(rule))
-    assert resource["projection"]["omitted_fields"] == ["data.rule_definition.script_source"]
-    assert resource["data"]["rule_definition"]["unknowns"] == ["currency"]
-    raw = next(
-        row
-        for row in compact["related_context"]
-        if row["data"].get("predicate") == vocab + "ruleDefinition"
-    )
-    assert "object" not in raw["data"]
-    assert raw["projection"]["omitted_fields"] == ["data.object"]
-    supplement = query([str(rule)], context_detail="compact", depth=0)
-    assert supplement["primary_matches"][0]["data"]["rule_definition"] == definition
-
-
 def test_hidden_bridge_and_nested_script_references_cannot_disclose_or_traverse(context):
     service, graph, declare, query, vocab = context
     start = declare("start", "Process")
     hidden = declare("hidden", "Binding")
     public = declare("public", "Object")
-    script = declare("script", "Rule", ruleDefinition={"script_source": "x", "refs": [str(hidden)]})
+    script = declare("script", "Rule", actionDefinition={"meaning": "x", "refs": [str(hidden)]})
     graph.add((start, URIRef("https://business.test/next"), hidden))
     graph.add((hidden, URIRef("https://business.test/next"), public))
     graph.add((start, URIRef("https://business.test/next"), script))
@@ -336,12 +303,12 @@ def test_lexical_raw_chunks_filter_and_dedupe_before_candidate_window(context, m
 def test_annotation_ambiguity_and_invalid_json_remain_unconfirmed(context):
     _, graph, declare, query, vocab = context
     root = declare("root", "Action")
-    graph.add((root, URIRef(vocab + "ruleDefinition"), Literal("broken JSON")))
+    graph.add((root, URIRef(vocab + "actionDefinition"), Literal("broken JSON")))
     graph.add((root, URIRef(vocab + "parameterDefinition"), Literal('{"direction":"in"}')))
     graph.add((root, URIRef(vocab + "parameterDefinition"), Literal('{"direction":"out"}')))
     result = query([str(root)])
     data = result["primary_matches"][0]["data"]
-    assert "rule_definition" not in data
+    assert "action_definition" not in data
     assert "parameter_definition" not in data
     assert {d["code"] for d in data["annotation_read_diagnostics"]} == {
         "invalid_annotation",
@@ -412,7 +379,7 @@ def test_cross_ontology_visible_definition_and_hidden_definition_bridge(context,
     # Hide by a reference in the target's definition in its actual Ontology.
     secret = "https://business.test/secret"
     other.add(
-        (target, URIRef(vocab + "ruleDefinition"), Literal(json.dumps({"reference": secret})))
+        (target, URIRef(vocab + "actionDefinition"), Literal(json.dumps({"reference": secret})))
     )
     service.access_view = SemanticAccessView(
         requires_filtering=True, _unauthorized_iris=frozenset({secret})
@@ -607,20 +574,35 @@ def test_r4010_nested_mapping_references_are_directional_derived_edges(context):
 def test_equal_annotation_text_in_distinct_rdf_terms_is_ambiguous(context):
     _, graph, declare, query, vocab = context
     root = declare("root", "Action")
-    value = '{"script_source":"return true"}'
-    graph.add((root, URIRef(vocab + "ruleDefinition"), Literal(value, lang="en")))
-    graph.add((root, URIRef(vocab + "ruleDefinition"), Literal(value, lang="zh")))
+    value = '{"meaning":"return true"}'
+    graph.add((root, URIRef(vocab + "actionDefinition"), Literal(value, lang="en")))
+    graph.add((root, URIRef(vocab + "actionDefinition"), Literal(value, lang="zh")))
     result = query([str(root)], context_detail="compact")
     data = result["primary_matches"][0]["data"]
-    assert "rule_definition" not in data
-    assert {"field": "rule_definition", "code": "ambiguous_annotation"} in data[
+    assert "action_definition" not in data
+    assert {"field": "action_definition", "code": "ambiguous_annotation"} in data[
         "annotation_read_diagnostics"
     ]
     statements = [
         row
         for row in result["related_context"]
-        if row["data"].get("predicate") == vocab + "ruleDefinition"
+        if row["data"].get("predicate") == vocab + "actionDefinition"
     ]
     assert len(statements) == 2
     assert len({row["id"] for row in statements}) == 2
-    assert all(row["projection"]["omitted_fields"] == ["data.object"] for row in statements)
+    assert all(row["data"]["object"] == value for row in statements)
+    assert all("projection" not in row for row in statements)
+
+
+def test_compact_preserves_plain_source_script_json_without_rule_contract(context):
+    _, graph, declare, query, vocab = context
+    rule = declare("source-script", "Rule")
+    source = json.dumps({"script_source": "raise RuntimeError('source material only')"})
+    graph.add((rule, URIRef(vocab + "ruleDefinition"), Literal(source)))
+    result = query([str(rule)], depth=1, context_detail="compact")
+    assert "rule_definition" not in result["primary_matches"][0]["data"]
+    statements = [row for row in result["related_context"]
+                  if row["data"].get("predicate") == vocab + "ruleDefinition"]
+    assert len(statements) == 1
+    assert statements[0]["data"]["object"] == source
+    assert "projection" not in statements[0]

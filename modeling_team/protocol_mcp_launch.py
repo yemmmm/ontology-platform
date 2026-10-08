@@ -23,10 +23,6 @@ _CONNECTION_ENV = (
     ("PYTHONPATH", "/agent/home/platform"),
     ("ONTOLOGY_MCP_BASE_URL", "http://127.0.0.1:8001"),
 )
-_REASONER_ENV = (
-    ("SEMANTIC_REASONER_COMMAND", "/backend/scripts/dev_owl_reasoner.py"),
-    ("PATH", "/backend/.venv/bin:/usr/bin:/bin"),
-)
 
 
 @dataclass(frozen=True)
@@ -39,7 +35,6 @@ class ProtocolMcpLaunchSpec:
     cwd: str = "/backend"
     canonical_mode_env: tuple[tuple[str, str], ...] = _CANONICAL_MODE_ENV
     hardening_env: tuple[tuple[str, str], ...] = _HARDENING_ENV
-    reasoner_env: tuple[tuple[str, str], ...] = ()
     connection_env: tuple[tuple[str, str], ...] = _CONNECTION_ENV
     secret_env_name: str = "ONTOLOGY_MCP_API_KEY"
     candidate_gate_path: str | None = None
@@ -49,7 +44,6 @@ class ProtocolMcpLaunchSpec:
         environment = (
             *self.canonical_mode_env,
             *self.hardening_env,
-            *self.reasoner_env,
             *self.connection_env,
             (self.secret_env_name, api_key),
             *(((CANDIDATE_PLATFORM_GATE_ENV, self.candidate_gate_path),) if self.candidate_gate_path else ()),
@@ -72,7 +66,6 @@ def protocol_mcp_launch_spec(
     """Build the stable launch specification from the frozen Protocol tool surface."""
     return ProtocolMcpLaunchSpec(
         tools=tuple(sorted(tools)),
-        reasoner_env=_REASONER_ENV if schema_version == 2 else (),
         candidate_gate_path=candidate_gate_path if schema_version == 2 else None,
     )
 
@@ -80,8 +73,3 @@ def protocol_mcp_launch_spec(
 def canonical_protocol_mcp_mode_contract() -> dict[str, str]:
     """The baseline-bound, non-secret runtime portion of the MCP launch contract."""
     return dict(_CANONICAL_MODE_ENV)
-
-
-def protocol_mcp_reasoner_contract() -> dict[str, str]:
-    """The v2 Protocol-only non-secret reasoner child-environment contract."""
-    return dict(_REASONER_ENV)

@@ -11,7 +11,6 @@ from app.api.deps import (
     get_settings,
 )
 from app.api.schemas import (
-    ReasoningRunListResponse,
     SemanticCanonicalModeRead,
     SemanticCanonicalProductWriteRequest,
     SemanticCanonicalProductWriteResponse,
@@ -19,7 +18,6 @@ from app.api.schemas import (
     SemanticContextQueryResponse,
     SemanticDatasetLoadRequest,
     SemanticDatasetLoadResponse,
-    SemanticDerivedResultReconcileResponse,
     SemanticEditAuditRead,
     SemanticEditRequest,
     SemanticEditResponse,
@@ -34,8 +32,6 @@ from app.api.schemas import (
     SemanticGraphSetListResponse,
     SemanticGraphSetMembershipUpdate,
     SemanticGraphSetRead,
-    SemanticGraphSetReasoningRunRequest,
-    SemanticGraphSetValidationRunRequest,
     SemanticGovernanceStatusResponse,
     SemanticMigrationBatchRunResponse,
     SemanticMigrationCreateRequest,
@@ -52,17 +48,10 @@ from app.api.schemas import (
     SemanticProjectionReconcileResponse,
     SemanticProjectionStatusResponse,
     SemanticReadModelEnvelope,
-    SemanticReasoningRunRead,
-    SemanticReasoningRunRequest,
-    SemanticReasoningRunResponse,
     SemanticResourceRead,
     SemanticScopeDiscoveryResponse,
     SemanticSparqlQueryRequest,
     SemanticSparqlQueryResponse,
-    SemanticValidationRunRead,
-    SemanticValidationRunRequest,
-    SemanticValidationRunResponse,
-    ValidationRunListResponse,
 )
 from app.core.config import Settings
 from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
@@ -73,7 +62,6 @@ from app.repositories.models import (
 )
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
-from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.semantic import SemanticService, SemanticServiceError
 from app.services.semantic_context_query import (
     SemanticContextQueryError,
@@ -129,8 +117,6 @@ from app.services.semantic_access import (
     project_id_for_graph_iri,
     project_id_for_graph_set,
 )
-from app.services.semantic_reasoning import SemanticReasoningService
-from app.services.semantic_validation import SemanticValidationService
 from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteError,
     CanonicalSemanticWriteService,
@@ -155,7 +141,6 @@ def _service(
         session=session,
         rdf_store=rdf_store,
         settings=settings,
-        reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
     )
 
 
@@ -185,23 +170,6 @@ def _derived_state_service(session: Session, settings: Settings) -> SemanticDeri
     return SemanticDerivedStateService(session, settings)
 
 
-def _validation_service(
-    session: Session, rdf_store: RdfStoreRepository, settings: Settings
-) -> SemanticValidationService:
-    return SemanticValidationService(session, rdf_store, settings)
-
-
-def _reasoning_service(
-    session: Session, rdf_store: RdfStoreRepository, settings: Settings
-) -> SemanticReasoningService:
-    return SemanticReasoningService(
-        session=session,
-        rdf_store=rdf_store,
-        settings=settings,
-        reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
-    )
-
-
 def _scope_resolver(session: Session) -> SemanticReadScopeResolver:
     return SemanticReadScopeResolver(session)
 
@@ -227,15 +195,11 @@ def _read_model_service(
     settings: Settings,
     access_view: SemanticAccessView | None = None,
 ) -> SemanticReadModelService:
-    from app.services.semantic_shape_endpoint_service import (
-        SemanticShapeEndpointService,
-    )
 
     return SemanticReadModelService(
         rdf_store=rdf_store,
         scope_resolver=_scope_resolver(session),
         access_view=access_view,
-        shape_endpoint=SemanticShapeEndpointService(session, rdf_store, settings),
         session=session,
         retrieval_service=SemanticResourceRetrievalService(session, settings),
     )
@@ -441,39 +405,6 @@ def query_sparql(
         raise _semantic_query_http_exception(exc) from exc
 
 
-@router.post("/validation-runs", response_model=SemanticValidationRunResponse)
-def create_validation_run(
-    request: SemanticValidationRunRequest,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticValidationRunResponse:
-    result = _service(session, rdf_store, settings).run_validation(
-        request.data_graph_iris,
-        request.shape_graph_iris,
-        request.inference,
-    )
-    return SemanticValidationRunResponse(**result)
-
-
-@router.post("/reasoning-runs", response_model=SemanticReasoningRunResponse)
-def create_reasoning_run(
-    request: SemanticReasoningRunRequest,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticReasoningRunResponse:
-    result = _service(session, rdf_store, settings).run_reasoning(
-        request.source_graph_iris,
-        request.tasks,
-        request.persist_result_graph,
-        graph_set_id=request.graph_set_id,
-        engine_version=request.engine_version,
-        shape_version=request.shape_version,
-    )
-    return SemanticReasoningRunResponse(**result)
-
-
 @router.post("/edits", response_model=SemanticEditResponse)
 def create_semantic_edit(
     request: SemanticEditRequest,
@@ -487,8 +418,6 @@ def create_semantic_edit(
             request.format,
             request.content,
             request.target_graph_iri,
-            request.validate_edit,
-            request.shape_graph_iris,
             principal.actor,
             request.reason,
             request.warning_state,
@@ -496,44 +425,6 @@ def create_semantic_edit(
         return SemanticEditResponse(**result)
     except (SemanticServiceError, RdfStoreError) as exc:
         raise _semantic_http_exception(exc) from exc
-
-
-@router.get("/validation-runs", response_model=ValidationRunListResponse)
-def list_validation_runs(
-    graph_set_id: Annotated[str | None, Query()] = None,
-    kind: Annotated[str | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> ValidationRunListResponse:
-    items, total = _validation_service(session, rdf_store, settings).list_validation_runs(
-        limit=limit,
-        offset=offset,
-        graph_set_id=graph_set_id,
-        kind=kind,
-    )
-    return ValidationRunListResponse(items=items, summary=_run_list_summary(items, total))
-
-
-@router.get("/reasoning-runs", response_model=ReasoningRunListResponse)
-def list_reasoning_runs(
-    graph_set_id: Annotated[str | None, Query()] = None,
-    kind: Annotated[str | None, Query()] = None,
-    limit: Annotated[int, Query(ge=1, le=200)] = 50,
-    offset: Annotated[int, Query(ge=0)] = 0,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> ReasoningRunListResponse:
-    items, total = _reasoning_service(session, rdf_store, settings).list_reasoning_runs(
-        limit=limit,
-        offset=offset,
-        graph_set_id=graph_set_id,
-        kind=kind,
-    )
-    return ReasoningRunListResponse(items=items, summary=_run_list_summary(items, total))
 
 
 @router.get("/edits/audits", response_model=list[SemanticEditAuditRead])
@@ -805,116 +696,6 @@ def update_graph_set_members(
     return SemanticGraphSetRead(**service.describe(graph_set.id))
 
 
-@router.post(
-    "/graph-sets/{graph_set_id}/reasoning-runs",
-    response_model=SemanticReasoningRunResponse,
-)
-def create_graph_set_reasoning_run(
-    graph_set_id: str,
-    request: SemanticGraphSetReasoningRunRequest,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticReasoningRunResponse:
-    graph_set_service = _graph_set_service(session, settings)
-    try:
-        description = graph_set_service.describe(graph_set_id)
-    except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    source_graph_iris = [
-        member["graph_iri"]
-        for member in description["members"]
-        if member["role"] in {"asserted_ontology", "asserted_data"}
-    ]
-    result = _reasoning_service(session, rdf_store, settings).run_reasoning(
-        source_graph_iris,
-        request.tasks,
-        request.persist_result_graph,
-        graph_set_id=graph_set_id,
-        engine_version=request.engine_version,
-        shape_version=request.shape_version,
-    )
-    return SemanticReasoningRunResponse(**result)
-
-
-@router.post(
-    "/graph-sets/{graph_set_id}/validation-runs",
-    response_model=SemanticValidationRunResponse,
-)
-def create_graph_set_validation_run(
-    graph_set_id: str,
-    request: SemanticGraphSetValidationRunRequest,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticValidationRunResponse:
-    graph_set_service = _graph_set_service(session, settings)
-    try:
-        description = graph_set_service.describe(graph_set_id)
-    except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    data_graph_iris = [
-        member["graph_iri"]
-        for member in description["members"]
-        if member["role"] in {"asserted_data"}
-    ]
-    shape_graph_iris = list(request.shape_graph_iris) or [
-        member["graph_iri"] for member in description["members"] if member["role"] == "shape"
-    ]
-    try:
-        result = _validation_service(session, rdf_store, settings).run_validation(
-            data_graph_iris=data_graph_iris,
-            shape_graph_iris=shape_graph_iris,
-            inference=request.inference,
-            graph_set_id=graph_set_id,
-            validation_scope=request.validation_scope,
-            persist_report_graph=request.persist_report_graph,
-            shape_version=request.shape_version,
-            engine_version=request.engine_version,
-            reasoning_result_graph_iri=request.reasoning_result_graph_iri,
-            actor=principal.actor,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    return SemanticValidationRunResponse(
-        run_id=result["run_id"],
-        status=result["status"],
-        conforms=result["conforms"],
-        report_text=result["report_text"],
-        summary=result["summary"],
-        error=result["error"],
-    )
-
-
-@router.get("/validation-runs/{run_id}", response_model=SemanticValidationRunRead)
-def get_validation_run(
-    run_id: str,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticValidationRunRead:
-    try:
-        result = _validation_service(session, rdf_store, settings).get_validation_run(run_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return SemanticValidationRunRead(**result)
-
-
-@router.get("/reasoning-runs/{run_id}", response_model=SemanticReasoningRunRead)
-def get_reasoning_run(
-    run_id: str,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticReasoningRunRead:
-    try:
-        result = _reasoning_service(session, rdf_store, settings).get_reasoning_run(run_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return SemanticReasoningRunRead(**result)
-
-
 @router.post("/ontologies/{ontology_id}/retrieval:rebuild")
 def rebuild_ontology_retrieval(
     ontology_id: str,
@@ -932,19 +713,6 @@ def rebuild_ontology_retrieval(
     if not principal.is_org_admin:
         raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
     return _rebuild_retrieval_for_ontology_id(session, rdf_store, settings, ontology_id)
-
-
-@router.post(
-    "/derived-results:reconcile",
-    response_model=SemanticDerivedResultReconcileResponse,
-)
-def reconcile_derived_results(
-    session: Session = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-) -> SemanticDerivedResultReconcileResponse:
-    service = _derived_state_service(session, settings)
-    summary = service.reconcile()
-    return SemanticDerivedResultReconcileResponse(**summary)
 
 
 @router.post("/derived-results:gc", response_model=SemanticGraphGcResponse)
@@ -1179,8 +947,6 @@ def compile_and_apply_product_command(
             graph_set_id=request.graph_set_id,
             actor=principal.actor,
             reason=request.reason,
-            validate=request.validate_edit,
-            shape_graph_iris=request.shape_graph_iris,
             commit=True,
         )
     except CanonicalSemanticWriteError as exc:
@@ -1262,56 +1028,7 @@ def read_model(
 
 
 # ----------------------------------------------------------------------------
-# Stage 2 — per-class SHACL form guidance (merged from generated + custom)
 # ----------------------------------------------------------------------------
-
-
-@router.get("/graph-sets/{graph_set_id}/shapes/classes/{class_iri:path}")
-def read_class_shape_guidance(
-    graph_set_id: str,
-    class_iri: str,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> dict:
-    from app.services.semantic_shape_endpoint_service import (
-        GraphSetNotFound,
-        OntologyGraphMissing,
-        SemanticShapeEndpointService,
-        ShapeEndpointError,
-    )
-    from app.services.semantic_shape_merge import ShapeGuidanceConflict
-
-    access_view = _access_view(
-        session, principal, project_id_for_graph_set(session, graph_set_id)
-    )
-    service = SemanticShapeEndpointService(session, rdf_store, settings)
-    try:
-        if access_view.is_member_visible(class_iri):
-            return service.read_merged_guidance(
-                graph_set_id=graph_set_id,
-                class_iri=class_iri,
-            )
-        # R3.0-004 row 9: a protected class returns exactly the unknown-class
-        # response: same envelope, no fields, requested class echoed.
-        merged = service.read_merged_guidance(
-            graph_set_id=graph_set_id,
-            class_iri="urn:ontology-platform:unknown-class-probe",
-        )
-        merged["target_class"] = class_iri
-        merged.pop("target_class_label", None)
-        return merged
-    except GraphSetNotFound as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except OntologyGraphMissing as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except ShapeGuidanceConflict as exc:
-        # R3.0-009 §6.1 / F08: conflicting still-effective shapes are a
-        # locatable client error, not a silent last-writer-wins projection.
-        raise HTTPException(status_code=409, detail=f"shape_conflict: {exc}") from exc
-    except ShapeEndpointError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
 
 
 @router.get("/resources/{resource_iri:path}", response_model=SemanticResourceRead)
@@ -1396,7 +1113,6 @@ def export_graph_set(
     request: Request,
     format: Annotated[str, Query()] = "trig",
     include: Annotated[str, Query()] = "asserted",
-    include_shapes: Annotated[bool, Query()] = False,
     include_policy: Annotated[bool, Query()] = False,
     include_metadata: Annotated[bool, Query()] = False,
     allow_stale_derived: Annotated[bool, Query()] = False,
@@ -1422,7 +1138,6 @@ def export_graph_set(
             graph_set_id=graph_set_id,
             format=format,
             include=include,
-            include_shapes=include_shapes,
             include_policy=include_policy,
             include_metadata=include_metadata,
             allow_stale_derived=allow_stale_derived,

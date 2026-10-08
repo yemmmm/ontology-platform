@@ -387,13 +387,11 @@ def test_forwarder_child_environment_is_the_allowlisted_canonical_contract(tmp_p
     _, record = _forward(tmp_path, "ok", batch=_capability_args()["batch"])
 
     backend = str(tmp_path / "backend")
-    reasoner = str(tmp_path / "backend" / "scripts" / "dev_owl_reasoner.py")
     expected = {
         "ONTOLOGY_MCP_API_KEY": FIXTURE_KEY,
         "PYTHONPATH": backend,
         # A concrete existing host reasoner path and its interpreter directory, never the
         # stale absolute path the child would otherwise read from ``backend/.env``.
-        "SEMANTIC_REASONER_COMMAND": reasoner,
         "PATH": f"{tmp_path / 'backend' / '.venv' / 'bin'}:/usr/bin:/bin",
         "HOME": backend,
         "LANG": "C.UTF-8",
@@ -406,6 +404,7 @@ def test_forwarder_child_environment_is_the_allowlisted_canonical_contract(tmp_p
     # plugin or Codex credential reaches the canonical server.  The canonical semantic mode
     # matches the Protocol agent's.
     env = record["env"]
+    assert "SEMANTIC_REASONER_COMMAND" not in env
     assert {name: env[name] for name in expected} == expected
     safe_inherited = {"HOME", "LOGNAME", "PATH", "SHELL", "TERM", "USER"}
     assert set(env) - set(expected) <= safe_inherited
@@ -414,7 +413,7 @@ def test_forwarder_child_environment_is_the_allowlisted_canonical_contract(tmp_p
     ) == ["ONTOLOGY_MCP_API_KEY"]
     # The pin names a file that really exists in the host checkout: the forwarder's default
     # root produces the same existing path, unlike the stale value in ``backend/.env``.
-    assert (REPO_ROOT / "backend" / "scripts" / "dev_owl_reasoner.py").is_file()
+    assert not (REPO_ROOT / "backend" / "scripts" / "dev_owl_reasoner.py").exists()
     assert record["cwd"] == backend
     assert record["argv"][1:] == _fixture_seam(tmp_path, "ok")["args"][1:]
 

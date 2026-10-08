@@ -61,8 +61,6 @@ class SemanticSearchProjectionService(ProjectionWriter):
     def _load_dataset(self, scope: ScopeResolution) -> Dataset:
         dataset = Dataset()
         iris = list(scope.source_graph_iris)
-        if scope.reasoning_result_graph_iri:
-            iris.append(scope.reasoning_result_graph_iri)
         for iri in iris:
             content = self.rdf_store.get_graph(iri, RdfFormat.TRIG.value)
             if content:
@@ -72,10 +70,7 @@ class SemanticSearchProjectionService(ProjectionWriter):
     def _build_documents(
         self, dataset: Dataset, scope: ScopeResolution
     ) -> list[dict[str, Any]]:
-        is_stale = any(
-            scope.derived_state.get(kind, {}).get("status") == "stale"
-            for kind in ("reasoning", "rule")
-        )
+        is_stale = False
         documents: list[dict[str, Any]] = []
         seen: set[str] = set()
         for subject, _, _, graph in dataset.quads((None, None, None, None)):
@@ -120,10 +115,6 @@ class SemanticSearchProjectionService(ProjectionWriter):
             return str(obj)
         return "resource"
 
+
     def _assertion_kind(self, graph_iri: str, scope: ScopeResolution) -> str:
-        if (
-            scope.reasoning_result_graph_iri
-            and graph_iri == scope.reasoning_result_graph_iri
-        ):
-            return "owl_inferred"
         return "asserted"

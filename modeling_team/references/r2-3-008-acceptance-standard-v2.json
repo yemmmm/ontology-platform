@@ -1,0 +1,43 @@
+{
+  "schema_version": "r2-3-008-acceptance-standard/v2",
+  "requirement_ref": "docs/requirements/requirements-v2.3.md#R2.3-008",
+  "checks": [
+    "source_fidelity",
+    "scope",
+    "ontology_structure",
+    "explicit_unknowns",
+    "deterministic_write_readback",
+    "governed_retrieval",
+    "evidence_lineage",
+    "competency_questions"
+  ],
+  "unknown_policy": "preserve-explicit-unknown",
+  "verdicts": ["PASS", "FAIL", "BLOCKED"],
+  "competency_questions": [
+    {
+      "id": "cq-001",
+      "question": "在 B 调用 C 作为 Tool 的关系中，当前能够确认的最新发布版本是什么，B 消费的是哪个输出？",
+      "approved_source_paths": [
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/official/tools.mdx",
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/release-register.md",
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/workflow-landscape.md"
+      ]
+    },
+    {
+      "id": "cq-002",
+      "question": "当 C 因 classifier dependency 不可用而没有返回 numeric score 时，B 会采取什么处理动作？",
+      "approved_source_paths": [
+        "docs/evaluation-scenarios/ontology-modeling-team-l3/agent-input/sources/exception-handling.md"
+      ]
+    }
+  ],
+  "failure_layers": ["modeling-quality", "interview", "protocol-delivery", "platform", "runtime"],
+  "blocked_reasons": ["acceptance-evidence", "acceptance-input", "runtime-infrastructure", "source-missing", "state-invalidated"],
+  "question_policy": "two-sequential-cqs-same-final-model-state",
+  "child_policy": {
+    "source": "approved-source-only",
+    "platform": "ticket-scoped-read-only",
+    "retry_attempts": [0, 1],
+    "second_infrastructure_failure": "BLOCKED/runtime-infrastructure"
+  }
+}

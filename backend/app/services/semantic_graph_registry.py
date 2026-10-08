@@ -38,7 +38,7 @@ class GraphCategory(StrEnum):
 
 
 DIRECT_EDITABLE_CATEGORIES: frozenset[GraphCategory] = frozenset(
-    {GraphCategory.ONTOLOGY, GraphCategory.DATA, GraphCategory.SHAPES}
+    {GraphCategory.ONTOLOGY, GraphCategory.DATA}
 )
 
 DERIVED_RESULT_CATEGORIES: frozenset[GraphCategory] = frozenset(

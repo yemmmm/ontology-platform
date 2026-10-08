@@ -45,7 +45,7 @@ class R23009RunContractTests(unittest.TestCase):
         # the carrier reuses the same acceptance standard and slice contract.
         self.assertEqual(
             contract.acceptance_standard_path,
-            "modeling_team/references/r2-3-008-acceptance-standard.json",
+            "modeling_team/references/r2-3-008-acceptance-standard-v2.json",
         )
         validate_formal_run_contract_assets(R2_3_009_CONTRACT)
 

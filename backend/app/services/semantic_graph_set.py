@@ -227,7 +227,7 @@ class SemanticGraphSetService:
                 }
                 for member in graph_set.members
             ],
-            "current_pointers": self._current_pointers(graph_set_id),
+            "current_pointers": [],
             "metadata": graph_set.graph_set_metadata or {},
         }
 
@@ -254,26 +254,6 @@ class SemanticGraphSetService:
         )
         return {row.graph_iri: row.revision for row in rows}
 
-    def _current_pointers(self, graph_set_id: str) -> list[dict[str, Any]]:
-        rows = self.session.scalars(
-            select(SemanticDerivedResultPointerModel)
-            .where(SemanticDerivedResultPointerModel.graph_set_id == graph_set_id)
-            .where(SemanticDerivedResultPointerModel.result_kind == "reasoning")
-            .order_by(SemanticDerivedResultPointerModel.result_kind)
-        )
-        return [
-            {
-                "result_kind": row.result_kind,
-                "run_id": row.run_id,
-                "result_graph_iri": row.result_graph_iri,
-                "status": row.status,
-                "engine_name": row.engine_name,
-                "engine_version": row.engine_version,
-                "shape_version": row.shape_version,
-                "became_current_at": row.became_current_at,
-            }
-            for row in rows
-        ]
 
     def _mark_dependent_pointers_stale(self, graph_set_id: str) -> None:
         rows = self.session.scalars(

@@ -5261,14 +5261,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         str(gate_directory),
                         CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
                     ]
-                reasoner = self._protocol_reasoner_script()
-                command[command.index("--chdir") : command.index("--chdir")] = [
-                    "--dir",
-                    "/backend/scripts",
-                    "--ro-bind",
-                    str(reasoner),
-                    "/backend/scripts/dev_owl_reasoner.py",
-                ]
         companion_mounts: list[str] = []
         # R2.3-008 start6: Codex 0.147.0 resolves its tool-execution companion
         # relative to the mounted binary's directory; without the bind every
@@ -5290,15 +5282,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ]
         return command + ["--", "/agent/bin/codex", *app_server_command]
 
-    def _protocol_reasoner_script(self) -> Path:
-        script = self.root / "backend" / "scripts" / "dev_owl_reasoner.py"
-        try:
-            metadata = os.lstat(script)
-        except OSError as exc:
-            raise CodexRuntimeError("Protocol reasoner script is unavailable") from exc
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-            raise CodexRuntimeError("Protocol reasoner script is unavailable")
-        return script
 
     def _transport_root(self) -> Path:
         if self._run_root is None:
@@ -7096,8 +7079,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             return
         if server == "ontology_platform" and tool in {
             "submit_modeling_batch",
-            "run_semantic_validation",
-            "run_semantic_reasoning",
         }:
             self._complete_retrieval_mutation(agent, item)
 

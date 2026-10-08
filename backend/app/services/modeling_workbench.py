@@ -209,7 +209,6 @@ def neutral_value(value: Any) -> Any:
         "semantic_definition",
         "action_definition",
         "parameter_definition",
-        "rule_definition",
     ):
         if key in value:
             result[key] = object_field(
@@ -245,8 +244,7 @@ def neutral_value(value: Any) -> Any:
             "semantic_definition",
             "action_definition",
             "parameter_definition",
-            "rule_definition",
-            "mapping_payload",
+                "mapping_payload",
         ):
             if isinstance(values.get(key), dict):
                 result["values"][key] = (

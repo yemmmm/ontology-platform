@@ -15,7 +15,6 @@ from app.mcp.runtime import (
     runtime_principal,
 )
 from app.repositories.rdf_store import RdfStoreRepository
-from app.services.owl_reasoner import CommandOwlReasonerRunner
 from app.services.authorized_scope_discovery import AuthorizedScopeDiscoveryService
 from app.services.semantic import SemanticService
 from app.services.semantic_context_query import (
@@ -25,8 +24,6 @@ from app.services.semantic_context_query import (
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
 from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_reasoning import SemanticReasoningService
-from app.services.semantic_validation import SemanticValidationService
 from app.services.semantic_graph_set_export import SemanticExportService
 from app.services.semantic_projection_job import (
     ProjectionJobError,
@@ -128,44 +125,6 @@ def _registry_service(session) -> SemanticGraphRegistryService:
     return SemanticGraphRegistryService(session, settings)
 
 
-def _validation_service(session) -> SemanticValidationService:
-    settings = Settings()
-    return SemanticValidationService(session, _rdf_store(), settings)
-
-
-def _reasoning_service(session) -> SemanticReasoningService:
-    settings = Settings()
-    return SemanticReasoningService(
-        session=session,
-        rdf_store=_rdf_store(),
-        settings=settings,
-        reasoner=CommandOwlReasonerRunner(settings.semantic_reasoner_command),
-    )
-
-
-def _list_scoped_run_records(
-    result: tuple[list[dict[str, Any]], int], *, graph_set_id: str
-) -> dict[str, Any]:
-    """Normalize a read-service list result and enforce the requested scope."""
-    if not isinstance(graph_set_id, str) or not graph_set_id:
-        raise ValueError("graph_set_id is required for semantic run reads")
-    items, total = result
-    if any(item.get("graph_set_id") != graph_set_id for item in items):
-        raise PermissionError("semantic run is outside the requested graph set")
-    return {"graph_set_id": graph_set_id, "items": items, "total": int(total)}
-
-
-def _get_scoped_run_record(
-    item: dict[str, Any], *, graph_set_id: str, run_kind: str
-) -> dict[str, Any]:
-    """Bind a read-by-id result to the graph set supplied by the caller."""
-    if not isinstance(graph_set_id, str) or not graph_set_id:
-        raise ValueError("graph_set_id is required for semantic run reads")
-    if item.get("graph_set_id") != graph_set_id:
-        raise PermissionError(f"{run_kind} run is outside the requested graph set")
-    return item
-
-
 def register_semantic(server: FastMCP) -> None:
     @server.tool()
     def discover_semantic_scopes(
@@ -256,8 +215,6 @@ def register_semantic(server: FastMCP) -> None:
         format: str,
         content: str,
         target_graph_iri: str | None = None,
-        validate: bool = True,
-        shape_graph_iris: list[str] | None = None,
         actor: str | None = None,
         reason: str | None = None,
         warning_state: dict[str, Any] | None = None,
@@ -268,8 +225,6 @@ def register_semantic(server: FastMCP) -> None:
                 format=format,
                 content=content,
                 target_graph_iri=target_graph_iri,
-                validate=validate,
-                shape_graph_iris=shape_graph_iris or [],
                 actor=runtime_actor(),
                 reason=reason,
                 warning_state=warning_state or {},
@@ -294,42 +249,6 @@ def register_semantic(server: FastMCP) -> None:
             )
         )
 
-    @server.tool()
-    def list_semantic_derived_pointers(
-        graph_set_id: str | None = None,
-        result_kind: str | None = None,
-        status: str | None = None,
-    ) -> dict[str, Any]:
-        """List derived-result pointers for reasoning results."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: {
-                "pointers": [
-                    {
-                        "id": row.id,
-                        "graph_set_id": row.graph_set_id,
-                        "result_kind": row.result_kind,
-                        "run_id": row.run_id,
-                        "result_graph_iri": row.result_graph_iri,
-                        "status": row.status,
-                        "engine_name": row.engine_name,
-                        "engine_version": row.engine_version,
-                        "became_current_at": row.became_current_at,
-                    }
-                    for row in _derived_state_service(session).list_pointers(
-                        graph_set_id=graph_set_id,
-                        result_kind=result_kind,
-                        status=status,
-                    )
-                ]
-            }
-        )
-
-    @server.tool()
-    def check_semantic_staleness() -> dict[str, Any]:
-        """Reconcile derived-result staleness and return current/stale counts."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _derived_state_service(session).reconcile()
-        )
 
     @server.tool()
     def get_semantic_governance_status() -> dict[str, Any]:
@@ -337,126 +256,8 @@ def register_semantic(server: FastMCP) -> None:
         return _run_tool(
             lambda session, _driver, _embedding_client: {
                 "graphs": _registry_service(session).status_summary(),
-                "derived": _derived_state_service(session).status_summary(),
+                "derived": {},
             }
-        )
-
-    @server.tool()
-    def run_semantic_validation(
-        graph_set_id: str,
-        shape_graph_iris: list[str] | None = None,
-        validation_scope: str = "asserted_only",
-        reasoning_result_graph_iri: str | None = None,
-        shape_version: str | None = None,
-        persist_report_graph: bool = True,
-        actor: str | None = None,
-    ) -> dict[str, Any]:
-        """Run SHACL validation over a graph set, persisting the report graph and run metadata."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _validation_service(session).run_validation(
-                data_graph_iris=_resolve_data_graphs(session, graph_set_id),
-                shape_graph_iris=shape_graph_iris
-                or _resolve_role_graphs(session, graph_set_id, "shape"),
-                graph_set_id=graph_set_id,
-                validation_scope=validation_scope,
-                reasoning_result_graph_iri=reasoning_result_graph_iri,
-                shape_version=shape_version,
-                persist_report_graph=persist_report_graph,
-                actor=runtime_actor(),
-            )
-        )
-
-    @server.tool()
-    def run_semantic_reasoning(
-        graph_set_id: str,
-        tasks: list[str] | None = None,
-        persist_result_graph: bool = True,
-        engine_version: str | None = None,
-        shape_version: str | None = None,
-    ) -> dict[str, Any]:
-        """Run OWL reasoning over a graph set and persist the result graph."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _reasoning_service(session).run_reasoning(
-                source_graph_iris=_resolve_data_graphs(
-                    session, graph_set_id, roles=("asserted_ontology", "asserted_data")
-                ),
-                tasks=tasks or ["consistency"],
-                persist_result_graph=persist_result_graph,
-                graph_set_id=graph_set_id,
-                engine_version=engine_version,
-                shape_version=shape_version,
-            )
-        )
-
-    @server.tool()
-    def list_semantic_validation_runs(
-        graph_set_id: str,
-        limit: int = 50,
-        offset: int = 0,
-        kind: str | None = None,
-    ) -> dict[str, Any]:
-        """List existing validation runs for one authorized graph set.
-
-        This is deliberately read-only: it never starts validation or reruns a
-        report.  The graph-set argument is required so the MCP authorization
-        layer can bind the child request to its ticket-owned Project scope.
-        """
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _list_scoped_run_records(
-                _validation_service(session).list_validation_runs(
-                    limit=limit,
-                    offset=offset,
-                    graph_set_id=graph_set_id,
-                    kind=kind,
-                ),
-                graph_set_id=graph_set_id,
-            )
-        )
-
-    @server.tool()
-    def get_semantic_validation_run(
-        validation_run_id: str, graph_set_id: str
-    ) -> dict[str, Any]:
-        """Read one existing validation run, bound to an authorized graph set."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _get_scoped_run_record(
-                _validation_service(session).get_validation_run(validation_run_id),
-                graph_set_id=graph_set_id,
-                run_kind="validation",
-            )
-        )
-
-    @server.tool()
-    def list_semantic_reasoning_runs(
-        graph_set_id: str,
-        limit: int = 50,
-        offset: int = 0,
-        kind: str | None = None,
-    ) -> dict[str, Any]:
-        """List existing reasoning runs for one authorized graph set without rerunning them."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _list_scoped_run_records(
-                _reasoning_service(session).list_reasoning_runs(
-                    limit=limit,
-                    offset=offset,
-                    graph_set_id=graph_set_id,
-                    kind=kind,
-                ),
-                graph_set_id=graph_set_id,
-            )
-        )
-
-    @server.tool()
-    def get_semantic_reasoning_run(
-        reasoning_run_id: str, graph_set_id: str
-    ) -> dict[str, Any]:
-        """Read one existing reasoning run, bound to an authorized graph set."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _get_scoped_run_record(
-                _reasoning_service(session).get_reasoning_run(reasoning_run_id),
-                graph_set_id=graph_set_id,
-                run_kind="reasoning",
-            )
         )
 
 
@@ -611,7 +412,6 @@ def register_semantic(server: FastMCP) -> None:
         payload: dict[str, Any],
         actor: str | None = None,
         reason: str | None = None,
-        shape_graph_iris: list[str] | None = None,
     ) -> dict[str, Any]:
         """Compile and apply a structured product command through the Phase 7 canonical writer."""
         return _run_tool(
@@ -623,7 +423,6 @@ def register_semantic(server: FastMCP) -> None:
                 graph_set_id=graph_set_id,
                 actor=runtime_actor(),
                 reason=reason,
-                shape_graph_iris=shape_graph_iris or [],
             )
         )
 

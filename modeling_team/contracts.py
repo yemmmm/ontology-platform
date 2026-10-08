@@ -60,8 +60,6 @@ SAFE_PROTOCOL_TOOLS = frozenset(
         "get_modeling_context",
         "get_ontology_read_model",
         "query_semantic_context",
-        "run_semantic_validation",
-        "run_semantic_reasoning",
         "get_ontology_lineage",
         "inspect_semantic_statement_provenance",
     }

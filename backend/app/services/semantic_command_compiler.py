@@ -9,7 +9,6 @@ pipeline.
 
 from __future__ import annotations
 
-import hashlib
 import json
 import re
 import uuid
@@ -21,7 +20,6 @@ from rdflib.namespace import RDFS, SKOS
 
 from app.core.config import Settings
 from app.services.action_semantics import validate_action_annotation
-from app.services.business_rule_semantics import validate_rule_annotation
 from app.repositories.rdf_store import RdfGraphDelta
 from app.services.fact_id import compute_fact_id
 from app.services.semantic_export import SemanticNamespace, namespace_from_settings
@@ -58,22 +56,6 @@ class ClassMembershipConflict(CommandCompilerError):
     """
 
     code = "class_membership_conflict"
-    fields: tuple[str, ...] = ()
-
-    def __init__(self, message: str, fields: tuple[str, ...] = ()) -> None:
-        super().__init__(message)
-        self.fields = fields
-
-
-class ShapeTargetConflict(CommandCompilerError):
-    """R3.0-009: zero or several Shape target selectors were supplied.
-
-    ``create_shape`` / ``update_shape`` accept exactly one non-empty target
-    field; compound targets must be modelled as separate shapes. ``fields``
-    names the payload fields the finding points at (R3.0-009 §8).
-    """
-
-    code = "shape_target_conflict"
     fields: tuple[str, ...] = ()
 
     def __init__(self, message: str, fields: tuple[str, ...] = ()) -> None:
@@ -196,14 +178,6 @@ def _ontology_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
 
 def _data_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
     return str(ns.graph("data", ontology_id))
-
-
-def _shapes_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
-    return str(ns.graph("shapes", ontology_id))
-
-
-def _shapes_custom_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
-    return f"{_shapes_graph_iri(ns, ontology_id)}/custom"
 
 
 _NAMED_INDIVIDUAL_IRI = "http://www.w3.org/2002/07/owl#NamedIndividual"
@@ -976,328 +950,6 @@ def compile_update_relation_type(
                 if payload.get(k) is not None
             ],
         },
-    )
-
-
-_SHAPE_TARGET_FIELDS = (
-    "target_class_id",
-    "target_node_iri",
-    "target_subjects_of_iri",
-)
-
-
-def _shape_target_quads(
-    payload: dict[str, Any], ns: SemanticNamespace
-) -> list[tuple[str, str, str]]:
-    """Resolve the single R3.0-009 §6.1 Shape target selector.
-
-    ``target_class_id`` (legacy), ``target_node_iri`` and
-    ``target_subjects_of_iri`` are mutually exclusive and exactly one must be
-    non-empty.  Returns ``(predicate, object)`` pairs to attach to the
-    ``sh:NodeShape``.
-    """
-    target_class_id = payload.get("target_class_id")
-    target_node_iri = payload.get("target_node_iri")
-    target_subjects_of_iri = payload.get("target_subjects_of_iri")
-    supplied = [
-        (field, value)
-        for field, value in (
-            ("target_class_id", target_class_id),
-            ("target_node_iri", target_node_iri),
-            ("target_subjects_of_iri", target_subjects_of_iri),
-        )
-        if value is not None and value != ""
-    ]
-    if not supplied:
-        raise ShapeTargetConflict(
-            "shape_target_conflict: exactly one of target_class_id, "
-            "target_node_iri or target_subjects_of_iri is required",
-            fields=_SHAPE_TARGET_FIELDS,
-        )
-    if len(supplied) > 1:
-        raise ShapeTargetConflict(
-            "shape_target_conflict: combine "
-            + ", ".join(field for field, _value in supplied)
-            + " into separate shapes; one target per shape",
-            fields=tuple(field for field, _value in supplied),
-        )
-    field, value = supplied[0]
-    if field == "target_class_id":
-        if not isinstance(value, str) or not value.strip():
-            raise InvalidCommandPayload("target_class_id must be a non-empty class id")
-        return [
-            (
-                "<http://www.w3.org/ns/shacl#targetClass>",
-                f"<{ns.resource('class', value)}>",
-            )
-        ]
-    # Node and subjects-of targets must be caller-supplied absolute IRIs; the
-    # platform never guesses an IRI from a name (R3.0-009 §6.1).
-    if not isinstance(value, str):
-        raise InvalidCommandPayload(f"{field} must be an absolute RDF IRI")
-    try:
-        resolved = canonical_iri(value)
-    except InvalidLineageStatement as exc:
-        raise InvalidCommandPayload(f"{field} must be an absolute RDF IRI") from exc
-    predicate = (
-        "<http://www.w3.org/ns/shacl#targetNode>"
-        if field == "target_node_iri"
-        else "<http://www.w3.org/ns/shacl#targetSubjectsOf>"
-    )
-    return [(predicate, f"<{resolved}>")]
-
-
-def _shape_path_iri(path_id: str, ns: SemanticNamespace) -> str:
-    """Resolve a ``sh:path`` reference to the predicate it constrains.
-
-    An absolute IRI is used verbatim — it must never be re-prefixed or
-    percent-encoded (R3.0-009 §6.1); a bare local id resolves to the
-    platform property resource, matching ``_property_iri``.
-    """
-    if not isinstance(path_id, str) or not path_id.strip():
-        raise InvalidCommandPayload("constraints[].path_id must be a non-empty predicate id")
-    candidate = path_id.strip()
-    if ":" in candidate:
-        try:
-            return canonical_iri(candidate)
-        except InvalidLineageStatement as exc:
-            raise InvalidCommandPayload(
-                "constraints[].path_id must be an absolute RDF IRI or a property id"
-            ) from exc
-    return str(ns.resource("property", candidate))
-
-
-def _compile_shape_node(
-    payload: dict[str, Any], ns: SemanticNamespace, ontology_id: str, shape_iri: str
-) -> list[tuple[str, str, str, str]]:
-    """Build insert quads for a sh:NodeShape with constraints. Target graph
-    is the custom shapes sub-graph; caller is responsible for any deletes."""
-    constraints = payload.get("constraints") or []
-    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
-    shape_term = f"<{shape_iri}>"
-    quads: list[tuple[str, str, str, str]] = [
-        (
-            shape_term,
-            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>",
-            "<http://www.w3.org/ns/shacl#NodeShape>",
-            graph_iri,
-        ),
-    ]
-    for target_predicate, target_object in _shape_target_quads(payload, ns):
-        quads.append((shape_term, target_predicate, target_object, graph_iri))
-    for index, constraint in enumerate(constraints):
-        path_id = _required(constraint, "path_id")
-        identity = json.dumps(
-            {"constraint_index": index, "path_id": path_id, "shape_iri": shape_iri},
-            sort_keys=True,
-            separators=(",", ":"),
-        )
-        property_term = f"<{shape_iri}#property-{_shape_node_digest(identity)}>"
-        quads.append(
-            (shape_term, "<http://www.w3.org/ns/shacl#property>", property_term, graph_iri)
-        )
-        quads.append(
-            (
-                property_term,
-                "<http://www.w3.org/ns/shacl#path>",
-                _iri_term(_shape_path_iri(path_id, ns)),
-                graph_iri,
-            )
-        )
-        if "min_count" in constraint:
-            quads.append(
-                (
-                    property_term,
-                    "<http://www.w3.org/ns/shacl#minCount>",
-                    _literal_term(int(constraint["min_count"])),
-                    graph_iri,
-                )
-            )
-        if "max_count" in constraint:
-            quads.append(
-                (
-                    property_term,
-                    "<http://www.w3.org/ns/shacl#maxCount>",
-                    _literal_term(int(constraint["max_count"])),
-                    graph_iri,
-                )
-            )
-        if "datatype" in constraint:
-            quads.append(
-                (
-                    property_term,
-                    "<http://www.w3.org/ns/shacl#datatype>",
-                    f"<{_datatype_iri(constraint['datatype'])}>",
-                    graph_iri,
-                )
-            )
-        if "pattern" in constraint:
-            quads.append(
-                (
-                    property_term,
-                    "<http://www.w3.org/ns/shacl#pattern>",
-                    _literal_term(constraint["pattern"]),
-                    graph_iri,
-                )
-            )
-        if "description" in constraint:
-            quads.append(
-                (
-                    property_term,
-                    "<http://www.w3.org/2000/01/rdf-schema#comment>",
-                    _literal_term(constraint["description"]),
-                    graph_iri,
-                )
-            )
-        if "enum_values" in constraint:
-            enum_values = constraint["enum_values"]
-            list_nodes = [
-                f"<{shape_iri}#property-{_shape_node_digest(identity)}/list-{position}>"
-                for position in range(len(enum_values))
-            ]
-            quads.append(
-                (
-                    property_term,
-                    "<http://www.w3.org/ns/shacl#in>",
-                    list_nodes[0] if list_nodes else "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>",
-                    graph_iri,
-                )
-            )
-            for position, value in enumerate(enum_values):
-                next_node = (
-                    list_nodes[position + 1]
-                    if position + 1 < len(list_nodes)
-                    else "<http://www.w3.org/1999/02/22-rdf-syntax-ns#nil>"
-                )
-                quads.extend(
-                    [
-                        (
-                            list_nodes[position],
-                            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#first>",
-                            _literal_term(value),
-                            graph_iri,
-                        ),
-                        (
-                            list_nodes[position],
-                            "<http://www.w3.org/1999/02/22-rdf-syntax-ns#rest>",
-                            next_node,
-                            graph_iri,
-                        ),
-                    ]
-                )
-    return quads
-
-
-def _shape_node_digest(identity: str) -> str:
-    """Stable digest naming one shape-owned constraint node (R3.0-009 §9.1).
-
-    Constraint nodes are IRIs under the shape IRI rather than blank nodes so
-    ``update_shape``/``delete_shape`` can address them in the store's wildcard
-    deletes (D9) and guidance can reference the source shape.
-    """
-    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
-
-
-def _shape_target_metadata(payload: dict[str, Any], ns: SemanticNamespace) -> dict[str, Any]:
-    """Project the resolved shape target into command metadata for audit."""
-    for field, predicate in (
-        ("target_class_id", "targetClass"),
-        ("target_node_iri", "targetNode"),
-        ("target_subjects_of_iri", "targetSubjectsOf"),
-    ):
-        value = payload.get(field)
-        if value in (None, ""):
-            continue
-        if field == "target_class_id":
-            return {"target_kind": "class", "target_value": str(ns.resource("class", value))}
-        return {"target_kind": field[len("target_"):-4], "target_value": str(value)}
-    return {}
-
-
-def compile_create_shape(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    ontology_id = _required(payload, "ontology_id")
-    shape_id = payload.get("shape_id") or str(uuid.uuid4())
-    shape_iri = str(ns.resource("shape", shape_id))
-    insert_quads = _compile_shape_node(payload, ns, ontology_id, shape_iri)
-    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
-    delta = RdfGraphDelta(inserts=insert_quads)
-    metadata = {
-        "ontology_id": ontology_id,
-        "shape_id": shape_id,
-        "shape_iri": shape_iri,
-        **_shape_target_metadata(payload, ns),
-    }
-    return CompiledCommand(
-        command_kind="create_shape",
-        delta=delta,
-        object_kind="shape",
-        source_ids=[shape_id],
-        target_graph_iris=[graph_iri],
-        metadata=metadata,
-    )
-
-
-def compile_update_shape(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    ontology_id = _required(payload, "ontology_id")
-    if "shape_id" not in payload and "shape_iri" not in payload:
-        raise InvalidCommandPayload("update_shape requires shape_id or shape_iri")
-    shape_id = payload.get("shape_id")
-    shape_iri = payload.get("shape_iri") or (
-        str(ns.resource("shape", shape_id)) if shape_id else None
-    )
-    if shape_iri is None:
-        raise InvalidCommandPayload("update_shape requires shape_id or shape_iri")
-    insert_quads = _compile_shape_node(payload, ns, ontology_id, shape_iri)
-    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
-    shape_term = f"<{shape_iri}>"
-    deletes = [(shape_term, "?p", "?o", graph_iri)]
-    delta = RdfGraphDelta(inserts=insert_quads, deletes=deletes)
-    source_ids = [shape_id] if shape_id else [shape_iri]
-    return CompiledCommand(
-        command_kind="update_shape",
-        delta=delta,
-        object_kind="shape",
-        source_ids=source_ids,
-        target_graph_iris=[graph_iri],
-        metadata={
-            "ontology_id": ontology_id,
-            "shape_id": shape_id,
-            "shape_iri": shape_iri,
-            # Full-definition replacement: the previous target selector is
-            # deleted with the rest of the shape and never unioned (§6.1).
-            **_shape_target_metadata(payload, ns),
-        },
-    )
-
-
-def compile_delete_shape(
-    payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
-) -> CompiledCommand:
-    ontology_id = _required(payload, "ontology_id")
-    if "shape_id" not in payload and "shape_iri" not in payload:
-        raise InvalidCommandPayload("delete_shape requires shape_id or shape_iri")
-    shape_id = payload.get("shape_id")
-    shape_iri = payload.get("shape_iri") or (
-        str(ns.resource("shape", shape_id)) if shape_id else None
-    )
-    if shape_iri is None:
-        raise InvalidCommandPayload("delete_shape requires shape_id or shape_iri")
-    graph_iri = _shapes_custom_graph_iri(ns, ontology_id)
-    shape_term = f"<{shape_iri}>"
-    deletes = [(shape_term, "?p", "?o", graph_iri)]
-    delta = RdfGraphDelta(inserts=[], deletes=deletes)
-    source_ids = [shape_id] if shape_id else [shape_iri]
-    return CompiledCommand(
-        command_kind="delete_shape",
-        delta=delta,
-        object_kind="shape",
-        source_ids=source_ids,
-        target_graph_iris=[graph_iri],
-        metadata={"ontology_id": ontology_id, "shape_id": shape_id, "shape_iri": shape_iri},
     )
 
 
@@ -3514,9 +3166,6 @@ _COMPILERS: dict[str, Compiler] = {
     "delete_property": compile_delete_property,
     "update_relation_type": compile_update_relation_type,
     "delete_relation_type": compile_delete_relation_type,
-    "create_shape": compile_create_shape,
-    "update_shape": compile_update_shape,
-    "delete_shape": compile_delete_shape,
     "create_entity": compile_create_entity,
     "update_entity": compile_update_entity,
     "delete_entity": compile_delete_entity,
@@ -3550,6 +3199,10 @@ def compile_command(
     payload: dict[str, Any],
     settings: Settings,
 ) -> CompiledCommand:
+    if "rule_definition" in payload:
+        raise InvalidCommandPayload(
+            "rule_definition is retired; express business rules as ordinary semantic knowledge"
+        )
     compiler = _COMPILERS.get(command_kind)
     if compiler is None:
         raise UnsupportedCommandKind(
@@ -3567,7 +3220,6 @@ def compile_command(
     for field, predicate in (
         ("action_definition", "actionDefinition"),
         ("parameter_definition", "parameterDefinition"),
-        ("rule_definition", "ruleDefinition"),
     ):
         if field in payload:
             _compile_action_annotation(compiled, payload, ns, field, predicate)
@@ -3582,10 +3234,7 @@ def _compile_action_annotation(
         raise InvalidCommandPayload(f"{field} is only supported by create/update_entity")
     value = payload[field]
     try:
-        if field == "rule_definition":
-            validate_rule_annotation(value)
-        else:
-            validate_action_annotation(field, value)
+        validate_action_annotation(field, value)
     except ValueError as exc:
         raise InvalidCommandPayload(str(exc)) from exc
     subject = compiled.metadata["entity_iri"]

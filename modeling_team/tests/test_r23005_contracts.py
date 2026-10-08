@@ -81,8 +81,6 @@ def _ticket(round_suffix: str = "1") -> dict:
         ("dry-run", "validated"),
         ("apply", "applied"),
         ("readback", "complete"),
-        ("validation", "succeeded"),
-        ("reasoning", "succeeded"),
     ):
         ref = {
             "type": "platform_read",
@@ -138,10 +136,6 @@ def _ticket(round_suffix: str = "1") -> dict:
         "allowed_read_tools": sorted(
             {
                 "get_modeling_context",
-                "list_semantic_validation_runs",
-                "get_semantic_validation_run",
-                "list_semantic_reasoning_runs",
-                "get_semantic_reasoning_run",
             }
         ),
         "modeling_receipts": receipts,
@@ -237,7 +231,7 @@ def _pass_verdict(ticket: dict, source: dict, platform: dict) -> dict:
         "failure_layer": None,
         "blocked_reason": None,
         "evidence_refs": evidence_refs,
-        "checks": {key: "PASS" for key in ("source_fidelity", "scope", "ontology_structure", "explicit_unknowns", "validation_reasoning", "governed_retrieval", "evidence_lineage", "competency_questions")},
+        "checks": {key: "PASS" for key in ("source_fidelity", "scope", "ontology_structure", "explicit_unknowns", "deterministic_write_readback", "governed_retrieval", "evidence_lineage", "competency_questions")},
         "competency_question_results": [{
             "id": ticket["question_id"],
             "status": "PASS",
@@ -285,13 +279,13 @@ def _blocked_verdict(
         "blocked_reason": "runtime-infrastructure",
         "evidence_refs": [],
         "checks": {
-            key: ("BLOCKED" if key == "validation_reasoning" else "PASS")
+            key: ("BLOCKED" if key == "deterministic_write_readback" else "PASS")
             for key in (
                 "source_fidelity",
                 "scope",
                 "ontology_structure",
                 "explicit_unknowns",
-                "validation_reasoning",
+                "deterministic_write_readback",
                 "governed_retrieval",
                 "evidence_lineage",
                 "competency_questions",
@@ -1568,7 +1562,7 @@ class R23005ContractTests(unittest.TestCase):
         ticket = _ticket()
         with self.assertRaises(AcceptanceContractError):
             validate_ticket({**ticket, "round_id": ticket["acceptance_round_id"]})
-        self.assertEqual({receipt["stage"] for receipt in ticket["modeling_receipts"]}, {"dry-run", "apply", "readback", "validation", "reasoning"})
+        self.assertEqual({receipt["stage"] for receipt in ticket["modeling_receipts"]}, {"dry-run", "apply", "readback"})
 
         source_handle = SimpleNamespace(digest="a" * 64, session_id="source-session", input_digest="b" * 64)
         platform_handle = SimpleNamespace(digest="c" * 64, session_id="platform-session", input_digest="d" * 64)

@@ -96,8 +96,9 @@ def test_update_membership_marks_dependent_pointers_stale(service, in_memory_ses
         [_member(f"{PREFIX}data/demo", "asserted_data"), _member(f"{PREFIX}data/extra", "asserted_data")],
     )
 
-    rows = service._current_pointers(graph_set.id)  # noqa: SLF001
-    assert rows[0]["status"] == "stale"
+    row = in_memory_session.get(SemanticDerivedResultPointerModel, "ptr-1")
+    assert row.status == "stale"
+    assert service.describe(graph_set.id)["current_pointers"] == []
 
 
 def test_create_requires_members(service) -> None:

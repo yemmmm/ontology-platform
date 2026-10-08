@@ -108,8 +108,6 @@ protocol_tools:
   - get_ontology_read_model
   - query_semantic_context
   - semantic_sparql_query
-  - run_semantic_validation
-  - run_semantic_reasoning
   - list_semantic_protection_sets
   - create_semantic_protection_set
   - update_semantic_protection_set

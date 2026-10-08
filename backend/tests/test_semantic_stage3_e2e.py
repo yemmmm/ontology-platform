@@ -111,36 +111,6 @@ def test_step3_seed_data(
 # ---------------------------------------------------------------------------
 
 
-def test_step4_trigger_validation_and_reasoning(
-    in_memory_session, fake_graph_set_with_members
-):
-    """Stub: insert a reasoning-result pointer row so the scope resolver
-    reports a non-missing reasoning pointer. The Stage 3 readiness gate reads
-    derived_state to compute the staleness gate."""
-    from datetime import datetime, timezone
-
-    from app.repositories.models import SemanticDerivedResultPointerModel
-
-    svc, graph_set_id = fake_graph_set_with_members
-    reasoning_graph = f"{GRAPH_PREFIX}reasoning-result/run-stage3"
-    in_memory_session.add(
-        SemanticDerivedResultPointerModel(
-            id="dr-stage3-reasoning",
-            graph_set_id=graph_set_id,
-            result_kind="reasoning",
-            run_id="r-stage3-1",
-            result_graph_iri=reasoning_graph,
-            status="current",
-            became_current_at=datetime.now(timezone.utc),
-        )
-    )
-    in_memory_session.commit()
-    scope = svc.scope_resolver.resolve(
-        graph_set_id, include="asserted-plus-reasoning", allow_stale_derived=True
-    )
-    assert scope.reasoning_result_graph_iri == reasoning_graph
-
-
 # ---------------------------------------------------------------------------
 # Step 5 — readiness: ready=False due to gates (validation/reasoning/rule all
 # default to ``fresh`` because no derived pointer rows exist for the base

@@ -32,7 +32,7 @@ def _policy() -> dict:
         "quality_standard_ref": "docs/requirements/requirements-v2.3.md#R2.3-005",
         "quality_standard_digest": "a" * 64,
         "quality_standard_artifact": {
-            "path": "modeling_team/references/r2-3-005-acceptance-standard.json",
+            "path": "modeling_team/references/r2-3-005-acceptance-standard-v2.json",
             "digest": "b" * 64,
         },
         "unknown_policy": "preserve-explicit-unknown",
@@ -70,8 +70,6 @@ def _handoff(
         ("dry-run", "validated"),
         ("apply", "applied"),
         ("readback", "complete"),
-        ("validation", "succeeded"),
-        ("reasoning", "succeeded"),
     ):
         artifact = artifact_records.get(stage) if artifact_records else None
         if artifact is None:
@@ -111,7 +109,7 @@ def _handoff(
         receipt["receipt_digest"] = modeling_receipt_digest(receipt)
         receipts.append(receipt)
     handoff = {
-        "schema_version": "r2-3-005-acceptance-stage-handoff/v1",
+        "schema_version": "r2-3-005-acceptance-stage-handoff/v2",
         "handoff_id": "handoff-r23005-e",
         "handoff_nonce": nonce,
         "task_id": task_id,
@@ -204,16 +202,6 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
                 "workspace": {"workspace_version": "workspace-e-1"},
             },
         ),
-        "validation": (
-            "run_semantic_validation",
-            {"graph_set_id": state["graph_set_id"]},
-            {"status": "succeeded", "graph_set_id": state["graph_set_id"]},
-        ),
-        "reasoning": (
-            "run_semantic_reasoning",
-            {"graph_set_id": state["graph_set_id"]},
-            {"status": "succeeded", "graph_set_id": state["graph_set_id"]},
-        ),
     }
     records: dict[str, dict[str, str]] = {}
     for stage, (tool, arguments, data) in calls.items():
@@ -294,7 +282,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 )
                 self.assertEqual(draft["question_id"], "cq-001")
                 self.assertEqual(draft["slice_revision"], "revision-1")
-                self.assertEqual(len(draft["modeling_receipts"]), 5)
+                self.assertEqual(len(draft["modeling_receipts"]), 3)
                 published = carrier.coordinator_publish_acceptance_ticket(
                     draft,
                     owner_revision=draft["quality_standard_ref"],
@@ -607,7 +595,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     },
                 )
                 self.assertEqual(draft["question_id"], "cq-001")
-                self.assertEqual(len(draft["modeling_receipts"]), 5)
+                self.assertEqual(len(draft["modeling_receipts"]), 3)
             finally:
                 carrier.cleanup()
 
@@ -1022,7 +1010,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                 self.assertNotEqual(stale_read["artifact_path"], artifacts["readback"]["artifact_path"])
                 self.assertEqual(
                     len(carrier.protocol_list_platform_artifacts(protocol_id="protocol", capability=carrier.capability_token("protocol"))["artifacts"]),
-                    6,
+                    4,
                 )
                 bad_mode = carrier.register_platform_tool_result(
                     tool="submit_modeling_batch",
@@ -1240,7 +1228,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     )
 
                 wrong_scope_artifact = carrier.register_platform_tool_result(
-                    tool="run_semantic_validation",
+                    tool="get_modeling_context",
                     arguments={"graph_set_id": "graph-other"},
                     result={
                         "structuredContent": {
@@ -1250,7 +1238,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     },
                 )
                 wrong_scope = dict(artifacts)
-                wrong_scope["validation"] = wrong_scope_artifact
+                wrong_scope["readback"] = wrong_scope_artifact
                 scope_handoff = _handoff(carrier.stage_handoff_nonce, artifact_records=wrong_scope)
                 scope_text = json.dumps(scope_handoff, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
                 carrier.register_stage_handoff_delivery(
@@ -1259,7 +1247,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     sender_role="protocol",
                     recipient_role="coordinator",
                 )
-                with self.assertRaisesRegex(AcceptanceContractError, "graph scope"):
+                with self.assertRaisesRegex(AcceptanceContractError, "ontology binding"):
                     carrier.coordinator_ticket_draft(
                         scope_handoff,
                         handoff_delivery_id="delivery-stage-scope",

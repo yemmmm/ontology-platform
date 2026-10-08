@@ -16,7 +16,7 @@ from rdflib.namespace import RDF
 from sqlalchemy.orm import Session
 
 from app.repositories.models import OntologyModel
-from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
+from app.repositories.rdf_store import RdfStoreRepository
 from app.security.auth import AuthPrincipal
 from app.services.semantic_access import SemanticAccessView
 from app.services.semantic_context_cursor import (
@@ -33,12 +33,9 @@ from app.services.semantic_context_cursor import (
 )
 from app.services.semantic_export import namespace_from_settings
 from app.services.semantic_lineage_identity import (
-    InvalidLineageStatement,
-    canonical_iri,
     statement_id_for_quad,
 )
 from app.services.semantic_query_scope import SemanticQueryScope, SemanticQueryScopeResolver
-from app.services.semantic_shape_endpoint_service import SemanticShapeEndpointService
 from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
     fuse_context_candidates,
@@ -78,9 +75,8 @@ _ANNOTATION_NAMES = {
     "mapping_definition": "mappingDefinition",
     "action_definition": "actionDefinition",
     "parameter_definition": "parameterDefinition",
-    "rule_definition": "ruleDefinition",
 }
-ASSERTION_TYPES = {"asserted", "derived"}
+ASSERTION_TYPES = {"asserted"}
 _KIND_ORDER = {kind: index for index, kind in enumerate(RESOURCE_TYPE_ORDER)}
 _CLASS_TYPES = {
     "http://www.w3.org/2002/07/owl#Class",
@@ -117,7 +113,6 @@ _CONTEXT_ORIGIN_RANK = {
     "resource": 2,
     "derived_reference": 2,
     "derived_statement": 3,
-    "shape_constraint": 4,
     "tbox_statement": 5,
 }
 
@@ -153,7 +148,6 @@ class SemanticContextQueryService:
         # Kept as an ignored compatibility slot for older dependency wiring.
         # Context Query no longer performs a lineage lookup for any result.
         lineage_service: Any | None = None,
-        shape_endpoint: SemanticShapeEndpointService | None = None,
         cursor_codec: ContextCursorCodec | None = None,
         access_view: SemanticAccessView | None = None,
     ) -> None:
@@ -161,9 +155,6 @@ class SemanticContextQueryService:
         self.rdf_store = rdf_store
         self.scope_resolver = scope_resolver
         self.access_view = access_view or SemanticAccessView.all_visible()
-        self.shape_endpoint = shape_endpoint or SemanticShapeEndpointService(
-            session, rdf_store, scope_resolver.settings
-        )
         self.operation_vocab = operation_vocabulary(scope_resolver.settings)
         self.operation_predicates = operation_predicates(scope_resolver.settings)
         self.operation_type = self.operation_vocab["type"]
@@ -1205,12 +1196,6 @@ class SemanticContextQueryService:
             return related
         # All producers share the visible work budget; the page size is applied
         # only after their complete visible union has been sorted.
-        if "asserted" in selected_assertion_types:
-            for item in self._shape_constraint_items([root], scope, limit=None):
-                if self._accept_work(item) and item["kind"] in selected_resource_types:
-                    related.append(item)
-                if self._work_stopped:
-                    return related
         for item in self._operation_target_context([root], scope, limit=None, enabled=True):
             self._hydrate_candidates([item], scope)
             if self._accept_work(item) and item["kind"] in selected_resource_types:
@@ -1392,9 +1377,8 @@ class SemanticContextQueryService:
             item_copy["root_paths"] = list(root_paths_by_item.get(key, []))
             decorated_related.append(item_copy)
         if context_detail == "compact":
-            rule_predicate = str(namespace_from_settings(self.settings).vocab) + "ruleDefinition"
             decorated_related = [
-                _compact_related_row(row, rule_predicate=rule_predicate) for row in decorated_related
+                _compact_related_row(row) for row in decorated_related
             ]
         if self._expansion["status"] == "partial":
             warnings.append({
@@ -1927,114 +1911,6 @@ LIMIT 5000
                 break
         return result
 
-    def _shape_constraint_items(
-        self,
-        primary: list[dict[str, Any]],
-        scope: SemanticQueryScope,
-        *,
-        limit: int,
-    ) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-        seen: set[str] = set()
-        scope_by_ontology = {item.ontology_id: item for item in scope.ontologies}
-        for match in primary:
-            if match["kind"] not in {"concept", "instance"}:
-                continue
-            target_classes = (
-                [match["iri"]]
-                if match["kind"] == "concept"
-                else list(match.get("data", {}).get("rdf_types", []))
-            )
-            ontology_scope = scope_by_ontology[match["ontology_id"]]
-            for target_class in target_classes:
-                if not self.access_view.is_member_visible(target_class):
-                    continue
-                try:
-                    guidance = self.shape_endpoint.read_merged_guidance(
-                        ontology_scope.graph_set_id, target_class
-                    )
-                except RdfStoreError:
-                    raise
-                except Exception:
-                    continue
-                for field in guidance.get("fields", []):
-                    if not isinstance(field, dict):
-                        continue
-                    path = str(field.get("path") or field.get("name") or "constraint")
-                    canonical_path: str | None = None
-                    if field.get("provenance") == "generated":
-                        try:
-                            canonical_path = canonical_iri(path)
-                        except (InvalidLineageStatement, ValueError):
-                            # Shape guidance may contain a blank-node,
-                            # relative, or otherwise non-RDF path.  Keep the
-                            # visible constraint, but never turn its
-                            # synthetic identity into a statement target.
-                            canonical_path = None
-                    item_id = hashlib.sha256(
-                        f"{match['ontology_id']}:{target_class}:{path}".encode("utf-8")
-                    ).hexdigest()
-                    if item_id in seen:
-                        continue
-                    seen.add(item_id)
-                    public_constraint = {
-                        key: value
-                        for key, value in field.items()
-                        if key
-                        in {
-                            "path",
-                            "name",
-                            "label",
-                            "datatype",
-                            "class_iri",
-                            "min_count",
-                            "max_count",
-                            "pattern",
-                            "enumeration",
-                            "description",
-                            "required",
-                            "provenance",
-                        }
-                    }
-                    item = {
-                        "id": item_id,
-                        "kind": "fact",
-                        "ontology_id": match["ontology_id"],
-                        "iri": canonical_path
-                        or (
-                            path
-                            if path.startswith(("http://", "https://", "urn:"))
-                            else None
-                        ),
-                        "label": str(
-                            field.get("label") or field.get("name") or _local_name(path)
-                        ),
-                        "aliases": [],
-                        "description": field.get("description"),
-                        "data": {
-                            "target_class": target_class,
-                            "constraint": public_constraint,
-                        },
-                        "distance": 1,
-                        "assertion_kind": "asserted",
-                        "match": {
-                            "score": 275,
-                            "matched_terms": [],
-                            "matched_fields": ["constraint"],
-                            "reasons": ["shape_constraint"],
-                        },
-                    }
-                    if canonical_path is not None:
-                        item["target_kind"] = "resource"
-                        item["_shape_resource_target"] = {
-                            "target_type": "resource",
-                            "target_id": canonical_path,
-                        }
-                    items.append(item)
-                    if limit is not None and len(items) >= limit:
-                        return items
-        return items
-
 
     def _expand_neighborhood(
         self, primary, scope, *, depth, limit, resource_types, assertion_types,
@@ -2191,53 +2067,9 @@ LIMIT 5000
     def _decorate(self, item: dict[str, Any], scope: SemanticQueryScope) -> dict[str, Any]:
         item = dict(item)
         item.pop("_target_label", None)
-        is_shape_constraint = item.get("match", {}).get("reasons") == ["shape_constraint"]
-        constraint = (item.get("data") or {}).get("constraint")
-        is_generated_shape_constraint = (
-            is_shape_constraint
-            and isinstance(constraint, dict)
-            and constraint.get("provenance") == "generated"
-        )
-        # ``_shape_resource_target`` is an internal hand-off from generated
-        # shape guidance. Only the resource/property projection emitted by
-        # this service is trusted; all other markers fail closed and must
-        # never become a public resource identity.
-        raw_shape_target = item.pop("_shape_resource_target", None)
-        # Drop the pre-suspension marker as well so callers cannot smuggle an
-        # internal lineage-shaped field into a consumer response.
         item.pop("_lineage_target", None)
-        shape_resource_target: dict[str, str] | None = None
-        expected_resource_id: str | None = None
-        if is_generated_shape_constraint:
-            raw_constraint_path = constraint.get("path") or item.get("iri")
-            if isinstance(raw_constraint_path, str):
-                try:
-                    expected_resource_id = canonical_iri(raw_constraint_path)
-                except (InvalidLineageStatement, ValueError):
-                    expected_resource_id = None
-        if is_generated_shape_constraint and isinstance(raw_shape_target, dict):
-            candidate_type = raw_shape_target.get("target_type")
-            candidate_id = raw_shape_target.get("target_id")
-            if candidate_type == "resource" and isinstance(candidate_id, str):
-                try:
-                    canonical_target_id = canonical_iri(candidate_id)
-                except (InvalidLineageStatement, ValueError):
-                    canonical_target_id = None
-                if (
-                    canonical_target_id is not None
-                    and expected_resource_id is not None
-                    and canonical_target_id == expected_resource_id
-                ):
-                    shape_resource_target = {
-                        "target_type": "resource",
-                        "target_id": canonical_target_id,
-                    }
         target_kind = item.get("target_kind")
-        if is_shape_constraint:
-            # Shape constraints are target-less projections unless the
-            # generated property marker above validated successfully.
-            target_kind = "resource" if shape_resource_target is not None else None
-        elif target_kind not in {"resource", "statement", "derived_reference"}:
+        if target_kind not in {"resource", "statement", "derived_reference"}:
             # Keep compatibility with semantic-retrieval candidates that
             # predate explicit target metadata.  A statement has the generic
             # subject/predicate/object shape; a relation-typed RDF resource
@@ -2446,8 +2278,6 @@ def _origin_for(item: Mapping[str, Any], data: Mapping[str, Any]) -> str:
     """Classify one public match without trusting presentation ``kind`` alone."""
     if item.get("target_kind") == "derived_reference" or data.get("derived_reference"):
         return "derived_reference"
-    if data.get("constraint") is not None or item.get("match", {}).get("reasons") == ["shape_constraint"]:
-        return "shape_constraint"
     if {"subject", "predicate", "object"} <= set(data):
         predicate = data.get("predicate")
         if isinstance(predicate, str) and predicate in _TBOX_PREDICATES:
@@ -2502,32 +2332,6 @@ def _public_item(item: Mapping[str, Any]) -> dict[str, Any]:
     if item.get("mapping_evidence") is not None:
         public["mapping_evidence"] = item.get("mapping_evidence")
     return {key: value for key, value in public.items() if value is not None}
-
-
-def _compact_related_row(
-    row: Mapping[str, Any], *, rule_predicate: str,
-) -> dict[str, Any]:
-    """Preserve business meaning and identity; declare script-only omissions."""
-    compact = {key: value for key, value in row.items() if key != "match"}
-    data = dict(row.get("data") or {})
-    omitted = []
-    definition = data.get("rule_definition")
-    if isinstance(definition, Mapping) and "script_source" in definition:
-        data["rule_definition"] = {key: value for key, value in definition.items()
-                                   if key != "script_source"}
-        omitted.append("data.rule_definition.script_source")
-    if data.get("predicate") == rule_predicate and isinstance(data.get("object"), str):
-        try:
-            raw = json.loads(data["object"])
-        except (TypeError, ValueError):
-            raw = None
-        if isinstance(raw, dict) and "script_source" in raw:
-            data.pop("object")
-            omitted.append("data.object")
-    compact["data"] = data
-    if omitted:
-        compact["projection"] = {"omitted_fields": omitted}
-    return compact
 
 
 def _public_scope(scope: Mapping[str, Any]) -> dict[str, Any]:
@@ -3146,3 +2950,8 @@ def _visible_digest(items: list[dict[str, Any]]) -> str:
 
 def _root_digest(items: list[dict[str, Any]]) -> str:
     return _json_digest([_match_resume_key(item) for item in items])
+
+
+def _compact_related_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Keep ordinary semantic values while omitting ranking diagnostics."""
+    return {key: value for key, value in row.items() if key != "match"}

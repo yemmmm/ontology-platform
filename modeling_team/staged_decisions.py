@@ -114,7 +114,6 @@ UNIFIED_CANDIDATE_ITEM_KINDS = (
     "entity",
     "relation",
     "property",
-    "shape",
     "table_mapping",
     "join_mapping",
     "enum_meaning",
@@ -197,8 +196,7 @@ UNIFIED_REASON_CODES = (
     "approval_stale",
     "approval_content_mismatch",
     "relation_scope_ambiguous",
-    "shape_conflict",
-    "forbidden",
+        "forbidden",
     "workspace_version_conflict",
     "staged_unreconciled_batch",
     "unified_schema_mismatch",
@@ -408,7 +406,7 @@ UNIFIED_CANDIDATE_ITEM_FIELDS = frozenset(
     }
 )
 UNIFIED_CANDIDATE_ITEM_OPTIONAL_FIELDS = frozenset({
-    "semantic_definition", "action_definition", "parameter_definition", "rule_definition",
+    "semantic_definition", "action_definition", "parameter_definition",
 })
 UNIFIED_APPROVALS_FIELDS = frozenset(
     {
@@ -2591,7 +2589,7 @@ def unified_identity_issue(
         identities[item_id] = binding
     targets = {
         "entity": "entity_iri", "class": "class_iri", "property": "property_iri",
-        "shape": "shape_iri", "operation": "operation_iri",
+        "operation": "operation_iri",
         "table_mapping": "table_mapping_iri", "join_mapping": "join_mapping_iri",
         "enum_meaning": "enum_meaning_iri", "metric_definition": "metric_iri",
     }

@@ -87,8 +87,6 @@ class BrokerDiagnosticPassthroughTests(unittest.TestCase):
                                 "dry-run": {"tool": "t", "arguments": {}, "artifact_path": "p"},
                                 "apply": {"tool": "t", "arguments": {}, "artifact_path": "p"},
                                 "readback": {"tool": "t", "arguments": {}, "artifact_path": "p"},
-                                "validation": {"tool": "t", "arguments": {}, "artifact_path": "p"},
-                                "reasoning": {"tool": "t", "arguments": {}, "artifact_path": "p"},
                             },
                         },
                     },
@@ -125,7 +123,7 @@ class BrokerDiagnosticPassthroughTests(unittest.TestCase):
                             "protocol_id": "protocol",
                             "stage_calls": {
                                 stage: {"tool": "t", "arguments": {}, "artifact_path": "p"}
-                                for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+                                for stage in ("dry-run", "apply", "readback")
                             },
                         },
                     },
@@ -156,7 +154,7 @@ class BrokerDiagnosticPassthroughTests(unittest.TestCase):
                             "protocol_id": "protocol",
                             "stage_calls": {
                                 stage: {"tool": "t", "arguments": {}, "artifact_path": "p"}
-                                for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+                                for stage in ("dry-run", "apply", "readback")
                             },
                         },
                     },
@@ -204,7 +202,7 @@ class BrokerDiagnosticPassthroughTests(unittest.TestCase):
                             "protocol_id": "protocol",
                             "stage_calls": {
                                 stage: {"tool": "t", "arguments": {}, "artifact_path": "p"}
-                                for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+                                for stage in ("dry-run", "apply", "readback")
                             },
                         },
                     },
@@ -367,8 +365,6 @@ class CapabilityHandoffBrokerEndToEndTests(unittest.TestCase):
             },
             "apply": {"tool": "submit_modeling_batch", "arguments": dict(self.dry_run_arguments), "artifact_path": self.real_artifact_path},
             "readback": {"tool": "get_modeling_context", "arguments": {"ontology_id": "ontology-1"}, "artifact_path": self.real_artifact_path},
-            "validation": {"tool": "run_semantic_validation", "arguments": {"graph_set_id": "graph-1"}, "artifact_path": self.real_artifact_path},
-            "reasoning": {"tool": "run_semantic_reasoning", "arguments": {"graph_set_id": "graph-1"}, "artifact_path": self.real_artifact_path},
         }
         response = self._handoff_response(stage_calls)
         self.assertNotIn("error", response)
@@ -397,8 +393,6 @@ class CapabilityHandoffBrokerEndToEndTests(unittest.TestCase):
             },
             "apply": {"tool": "submit_modeling_batch", "arguments": dict(self.dry_run_arguments), "artifact_path": self.real_artifact_path},
             "readback": {"tool": "get_modeling_context", "arguments": {"ontology_id": "ontology-1"}, "artifact_path": self.real_artifact_path},
-            "validation": {"tool": "run_semantic_validation", "arguments": {"graph_set_id": "graph-1"}, "artifact_path": self.real_artifact_path},
-            "reasoning": {"tool": "run_semantic_reasoning", "arguments": {"graph_set_id": "graph-1"}, "artifact_path": self.real_artifact_path},
         }
         response = self._handoff_response(stage_calls)
         structured = response["result"]["structuredContent"]
@@ -433,7 +427,7 @@ class CapabilityAuditTrailTests(unittest.TestCase):
     def _handoff_request(request_id: str, stage_calls: dict[str, Any] | None = None) -> dict[str, Any]:
         sc = stage_calls or {
             stage: {"tool": "t", "arguments": {}, "artifact_path": "p"}
-            for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+            for stage in ("dry-run", "apply", "readback")
         }
         return {
             "jsonrpc": "2.0",
@@ -533,7 +527,7 @@ class HandoffPreconditionDiagnosticTests(unittest.TestCase):
                             "protocol_id": "protocol",
                             "stage_calls": {
                                 stage: {"tool": "t", "arguments": {}, "artifact_path": "p"}
-                                for stage in ("dry-run", "apply", "readback", "validation", "reasoning")
+                                for stage in ("dry-run", "apply", "readback")
                             },
                         },
                     },

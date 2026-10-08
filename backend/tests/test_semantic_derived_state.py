@@ -74,39 +74,12 @@ def test_bump_revisions_records_content_hash(revision_service) -> None:
     assert record.last_edit_audit_id == "audit-1"
 
 
-def test_promote_reasoning_pointer_supersedes_prior_current(
-    derived_service, graph_set_service, in_memory_session
-) -> None:
-    graph_set = _seed_graph_set(in_memory_session, graph_set_service)
-    signature = graph_set_service.source_signature_for(graph_set.id)
-
-    first = derived_service.promote_reasoning_pointer(
-        graph_set_id=graph_set.id,
-        run_id="run-1",
-        result_graph_iri=f"{PREFIX}reasoning-result/run-1",
-        source_signature=signature,
-        engine_name="hermit",
-    )
-    assert first.status == "current"
-
-    second = derived_service.promote_reasoning_pointer(
-        graph_set_id=graph_set.id,
-        run_id="run-2",
-        result_graph_iri=f"{PREFIX}reasoning-result/run-2",
-        source_signature=signature,
-        engine_name="hermit",
-    )
-    assert second.status == "current"
-    in_memory_session.refresh(first)
-    assert first.status == "superseded"
-
-
 def test_mark_stale_after_edit_flags_only_current_pointers_for_affected_graphs(
     derived_service, graph_set_service, in_memory_session
 ) -> None:
     graph_set = _seed_graph_set(in_memory_session, graph_set_service)
     signature = graph_set_service.source_signature_for(graph_set.id)
-    pointer = derived_service.promote_reasoning_pointer(
+    pointer = _historical_pointer(derived_service,
         graph_set_id=graph_set.id,
         run_id="run-1",
         result_graph_iri=f"{PREFIX}reasoning-result/run-1",
@@ -128,7 +101,7 @@ def test_mark_stale_after_edit_skips_unrelated_graph_sets(
 ) -> None:
     graph_set = _seed_graph_set(in_memory_session, graph_set_service)
     signature = graph_set_service.source_signature_for(graph_set.id)
-    derived_service.promote_reasoning_pointer(
+    _historical_pointer(derived_service,
         graph_set_id=graph_set.id,
         run_id="run-1",
         result_graph_iri=f"{PREFIX}reasoning-result/run-1",
@@ -141,34 +114,10 @@ def test_mark_stale_after_edit_skips_unrelated_graph_sets(
     assert stale_rows == []
 
 
-def test_reconcile_marks_stale_when_signature_differs(
-    derived_service, graph_set_service, in_memory_session
-) -> None:
-    graph_set = _seed_graph_set(in_memory_session, graph_set_service)
-    derived_service.promote_reasoning_pointer(
-        graph_set_id=graph_set.id,
-        run_id="run-1",
-        result_graph_iri=f"{PREFIX}reasoning-result/run-1",
-        source_signature="old-signature",
-    )
-
-    summary = derived_service.reconcile()
-    assert summary["graph_sets_inspected"] == 1
-    assert summary["pointers_marked_stale"] == 1
-
-
-def test_status_summary_counts_by_kind_and_status(
-    derived_service, graph_set_service, in_memory_session
-) -> None:
-    graph_set = _seed_graph_set(in_memory_session, graph_set_service)
-    derived_service.promote_reasoning_pointer(
-        graph_set_id=graph_set.id,
-        run_id="r1",
-        result_graph_iri=f"{PREFIX}reasoning-result/r1",
-        source_signature=graph_set_service.source_signature_for(graph_set.id),
-    )
-    summary = derived_service.status_summary()
-    assert summary["current_reasoning_results"] == 1
-    assert "current_rule_results" not in summary
-    assert "rule" not in summary["derived_pointer_counts"]
-    assert summary["stale_reasoning_results"] == 0
+def _historical_pointer(service, **fields):
+    from uuid import uuid4
+    row = SemanticDerivedResultPointerModel(id=str(uuid4()), result_kind="reasoning",
+        status="current", **fields)
+    service.session.add(row)
+    service.session.commit()
+    return row

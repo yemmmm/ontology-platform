@@ -169,7 +169,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
                 "entity_id": suffix,
                 "label": f"Device {suffix}",
             },
-            "validate_edit": True,
+
         }
         rejected = client.post(
             "/api/semantic/canonical-writes:compile-and-apply", json=dict(canonical, evidence=[])

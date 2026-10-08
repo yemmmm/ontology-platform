@@ -22,7 +22,7 @@ def test_role_visible_contract_agrees_with_protocol_authoring_contract():
         == contracts[1]["multiview_semantic_definition"]
     )
     assert contracts[1]["unified_candidate"]["item_optional_fields"] == [
-        "semantic_definition", "action_definition", "parameter_definition", "rule_definition",
+        "semantic_definition", "action_definition", "parameter_definition",
     ]
 
 

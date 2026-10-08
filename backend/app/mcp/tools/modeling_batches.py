@@ -32,7 +32,6 @@ MODELING_BATCH_PAYLOAD_GUIDANCE = (
     "Use the Modeling Batch Handler contract. Required create payload fields: "
     "create_class: name; create_property: class_id, name, plus datatype or object_class_id; "
     "create_relation_type: name, source_class_id, target_class_id; "
-    "create_shape: target_class_id, constraints; "
     "create_entity: class_iri_or_legacy_id, label; its optional properties must be a JSON object "
     "mapping property IRI keys to values, and lists are invalid; update_entity uses the same "
     "properties form. "

@@ -8,12 +8,9 @@
     "item_fields": ["item_id", "item_kind", "semantic"],
     "rules": [
       "Every item_id is unique and item_kind is non-empty.",
-      "semantic carries business meaning, relations, values, Shapes, entities, explicit unknowns and consumer paths.",
       "Do not add source citation, source-tracing, lineage, provenance, platform IDs, receipts, Batch fields or execution parameters.",
       "Keep candidate meaning complete and immutable across revisions; preserve unresolved facts as explicit unknowns.",
       "A consumer query required path names one predicate declared in the same candidate and has one connected binding.",
-      "A required Shape path declares min_count 1; every materialized entity or explicit unknown has a meaningful semantic label.",
-      "Every class, predicate, relation, Shape path, entity, value and negative probe reference closes over the current candidate.",
       "Candidate constraints are semantic invariants; transport identities, platform scope and per-stage execution remain outside the candidate.",
       "Relational rows remain in their source database and are never copied into RDF individuals."
     ]
@@ -32,8 +29,20 @@
     "schema_version": "r3-0-009-unified-graph/v2",
     "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
     "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
-    "item_optional_fields": ["semantic_definition", "action_definition", "parameter_definition", "rule_definition"],
-    "item_kinds": ["entity", "relation", "property", "shape", "table_mapping", "join_mapping", "enum_meaning", "metric_definition"],
+    "item_optional_fields": [
+      "semantic_definition",
+      "action_definition",
+      "parameter_definition"
+    ],
+    "item_kinds": [
+      "entity",
+      "relation",
+      "property",
+      "table_mapping",
+      "join_mapping",
+      "enum_meaning",
+      "metric_definition"
+    ],
     "rules": [
       "Items are neutral and contain no guessed platform identifier or receipt handle.",
       "shared_scope is the only item-level commonality carrier; scope decisions belong to Coordinator approvals.",
@@ -311,7 +320,7 @@
     ],
     "protocol_checks": [
       "Use the existing closed neutral/unified candidate fields. Neutral declarations belong in semantic; unified declarations remain approved optional item fields. Map values to ordinary properties, resolving declared fact predicates and datatypes; never add process_definition or a new command.",
-      "Modeling chooses semantics; Protocol preserves them and binds identities. Definitions precede reference relations. Business graph cycles are legal; no execution-order sort or flow reachability/dominance/termination validator is added. Existing shape/authorization/atomic-write constraints remain unchanged.",
+      "Modeling chooses semantics; Protocol preserves them and binds identities. Definitions precede reference relations. Business graph cycles are legal; no execution-order sort or flow reachability/dominance/termination validator is added. Existing request-format/authorization/atomic-write constraints remain unchanged.",
       "Invalid fields/types/duplicate identities/unresolved references return existing item/field-local repair feedback; correct and retry the same goal. A structurally legal wrong business binding can be stored: independent semantic acceptance must identify it, not a platform guess.",
       "Read nodes via governed detail/list, edges and arbitrary facts via generic statements with existing paging/truncation status. Exact resource properties is a declared projection, not all fact predicates. Read non-NamedIndividual Class/property/Operation endpoints with statements. Do not infer order from returned rows.",
       "The old consumer_query.required_paths contract requires one instance per listed predicate; repeated invokesAction/inScope are ordinary repeated vocabulary, not unique per-edge predicates. Use generic statement/relation reads; do not force them into that contract.",
@@ -322,49 +331,13 @@
     "verification_boundary": "Functional fixture roundtrip proves contracts and storage/readback only. A12 real modeling and independent source-based semantic acceptance need separate authorization."
   },
   "business_rule_semantics": {
-    "requirement_id": "R4.0-005",
-    "field": "rule_definition",
-    "representation": "Ordinary entity with semantic_definition.semantic_role=rule; never a new resource kind or an executable platform Rule.",
-    "fields": {
-      "kind": [
-        "judgment_constraint",
-        "derivation"
-      ],
-      "script_language": "Non-empty declared language string, or null for unknown; no global language restriction.",
-      "script_version": "Non-empty version string, or null for unknown; not proof of semantic consistency.",
-      "script_source": "Non-empty stored script text, or null for unknown; never executed by the platform.",
-      "execution_environment": "Non-empty external Consumer agreement for environment, input binding, output form, failure handling and side effects, or null for unknown. No credentials or hidden resource references.",
-      "input_status": [
-        "defined",
-        "none",
-        "unknown"
-      ],
-      "output_status": [
-        "defined",
-        "none",
-        "unknown"
-      ],
-      "missing_policy": "Non-empty description of input/output unknown, not_applicable, empty, rejected/error handling, or null for unknown. These states never convert implicitly.",
-      "change_note": "Non-empty joint change description covering script, explanation, input/output and scope, or null for unknown; compatibility and reference review remain R4.0-007."
-    },
-    "authoring_checks": [
-      "Annotation is a non-empty object or null to clear; listed fields are optional. Omission is no information, not none. Partial declarations retain unknowns and never imply execution readiness. Unknown fields and invalid types/enums return field-local repair feedback.",
-      "Declare language/version/source and external execution agreement for each confirmed rule; language may be declarative, Python, JavaScript or another confirmed language. Explain input binding, output form, failure and allowed side effects. Platform stores and reads only.",
-      "Keep one stable rule identity, label, explanation, applicability, script and joint change note. Preserve known script/explanation conflicts in semantic_definition.conflicting_meanings; platform does not detect or choose textual semantics.",
-      "Inputs and outputs are separate entities using unchanged R4.0-003 parameter_definition. Result meaning is semantic_definition plus ordinary relations; do not add parameter fields.",
-      "Use R4.0-004 sourceKind: process_input, call_output, object_property, constant, iteration_item. Bind toParameter/fromValue/refersToDefinition; retain object/property direction, producing call/output parameter and iteration scope. Names/text paths never replace identities.",
-      "Use ordinary relations for applicability, inputs, conditions, results, existing target identity and effective scope. Neutral definition_ref resolves only current-candidate items; existing identities require authorized receipt bindings. Never hide references in annotation JSON.",
-      "Judgment outputs are not objects or occurred Actions. Derivation describes confirmed attributes/relations/classifications/conversions/semantic definitions; no automatic node or relation materialization. Explicit governed modeling remains allowed. Never use run IDs or relational rows as semantic identities.",
-      "Shape structural checks and OWL entailments remain platform capabilities. Business rule judgments and derivations are evaluated only by external Consumers or business systems; the platform stores ordinary entity rule_definition annotations and never runs or materializes business rules. Legacy executable Rule Definitions, Rule Runs and rule-result generation are retired.",
-      "Reference protected rules rather than copying sensitive text into visible declarations. IRI filtering does not detect sensitive text. No Evidence/lineage, credentials, runtime arguments or rows."
+    "representation": "Ordinary concepts/entities with semantic_definition.semantic_role=rule, natural-language meaning, applicability and relationships.",
+    "requirements": [
+      "Preserve confirmed conditions, thresholds, calculation definitions, scope, exceptions, conflicts and explicit unknowns from the source.",
+      "Connect rules to their relevant objects, Actions and processes through ordinary authorized relationships.",
+      "Source scripts may remain ordinary explanatory material; do not require scripts, language/version/runtime declarations, executable inputs/outputs, evaluation or automatic derivation."
     ],
-    "protocol_checks": [
-      "Neutral semantic.rule_definition is copied unchanged only onto entity commands. Non-entity targets return item/field-local conflicts. Unified candidates admit the same optional item field and Protocol copies approved content to create_entity/update_entity in the existing approved materialization plan; no new neutral update grammar.",
-      "Batch entity payload whitelist, compiler validation and prepare accept rule_definition; op:ruleDefinition stores its JSON literal. Object replaces, omitted annotation preserves, null clears. Other unknown payload fields and target overrides remain rejected.",
-      "References follow ordinary dependency binding/relations; return unresolved reference feedback and allow repair. Use existing dry_run/apply_atomic, receipts and uncertain-write recovery. Do not automatically evaluate conflicts, thresholds or missing values."
-    ],
-    "readback": "entity-list/entity-detail expose detail_fields.rule_definition; exact resource reads expose properties.rule_definition. Ordinary statements/relations expose identities and sources through existing endpoint and pre-pagination authorization filtering. Missing edges do not prove no input/constraint. Hidden/nonexistent exact responses are indistinguishable.",
-    "verification_boundary": "A1-A10 functional fixture evidence only; source-based judgments and A11 real modeling/independent semantic acceptance require later authorization. Automatic derivation materialization remains undelivered."
+    "readback": "Use ordinary governed detail, statement, relationship and Context Query reads. Missing links or missing specialized annotations never prove there is no business constraint."
   },
   "relational_mapping": {
     "requirement_id": "R4.0-010",

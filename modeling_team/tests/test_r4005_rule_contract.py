@@ -21,12 +21,14 @@ def test_rule_contracts_match_and_unified_candidate_fields_stay_closed():
     assert role["unified_candidate"]["item_optional_fields"] == unified["candidate"]["item_optional_fields"]
     for section, command in (("create_payloads", "create_entity"),
                              ("update_payloads", "update_entity")):
-        assert "rule_definition" in batch[section][command]["fields"]
+        assert "rule_definition" not in batch[section][command]["fields"]
     item = dict(item_id="rule", item_kind="entity", business_meaning="eligibility",
                 value=None, relation_endpoints=[], slice_ids=["slice"], shared_scope=None,
                 unknowns=[], rule_definition={"kind": "judgment_constraint"})
     value = dict(schema_version="r3-0-009-unified-graph/v2", scenario_id="scenario",
                  candidate_id="candidate", revision=1, items=[item], explicit_unknowns=[])
+    assert validate_unified_candidate(value)[0].reason_code == "unified_schema_mismatch"
+    item.pop("rule_definition")
     assert validate_unified_candidate(value) == ()
     item["unapproved_field"] = "bad"
     assert validate_unified_candidate(value)[0].reason_code == "unified_schema_mismatch"
@@ -37,7 +39,7 @@ def test_active_instructions_expose_rule_contract_without_execution():
     _check_mounted_inputs()
     for role in ("modeling", "protocol"):
         instructions = (ROOT / f"modeling_team/agent-packages/{role}/instructions.md").read_text()
-        assert "business_rule_semantics" in instructions
+        assert "R4.0-025 ordinary business rule knowledge" in instructions
         assert "rule_definition" in instructions
 
 
@@ -45,7 +47,7 @@ def test_current_rule_contract_declares_platform_retirement_and_external_executi
     for filename in ("platform-neutral-candidate-authoring.json", "r4-0-012-modeling-contract.json"):
         contract = json.loads((ROOT / "modeling_team/references" / filename).read_text())
         section = json.dumps(contract["business_rule_semantics"])
-        assert "ordinary entity rule_definition annotations" in section
-        assert "never runs or materializes business rules" in section
-        assert "Rule Definitions, Rule Runs and rule-result generation are retired" in section
+        assert "ordinary" in section.lower()
+        assert "do not require scripts" in section
+        assert "Missing links or missing specialized annotations never prove" in section
         assert "platform semantic_rule_definition/Rule Run" not in section

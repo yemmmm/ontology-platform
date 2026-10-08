@@ -45,7 +45,7 @@ from modeling_team.tests.test_r23005_contracts import _ticket
 ROOT = Path(__file__).resolve().parents[2]
 PROFILE_PATH = ROOT / "modeling_team/profiles/r2-3-008-modeling-team.yaml"
 TASK_PATH = ROOT / "modeling_team/tasks/r2-3-008-formal-acceptance.yaml"
-STANDARD_PATH = ROOT / "modeling_team/references/r2-3-008-acceptance-standard.json"
+STANDARD_PATH = ROOT / "modeling_team/references/r2-3-008-acceptance-standard-v2.json"
 
 _TEST_FORMAL_CREDENTIAL = Path(tempfile.mkdtemp(prefix="r23008-formal-credential-")) / "deepseek.env"
 _TEST_FORMAL_CREDENTIAL.write_text("DEEPSEEK_API_KEY=round23-test-sentinel\n", encoding="utf-8")
@@ -126,7 +126,7 @@ class R23008ContractTests(unittest.TestCase):
             {"formal_contract": "r2-3-005-formal-create"},
             {
                 "acceptance_standard": (
-                    "modeling_team/references/r2-3-005-acceptance-standard.json"
+                    "modeling_team/references/r2-3-005-acceptance-standard-v2.json"
                 )
             },
         )
@@ -153,13 +153,13 @@ class R23008ContractTests(unittest.TestCase):
             with patch.object(
                 Path,
                 "is_symlink",
-                new=lambda self: self.name == "r2-3-008-acceptance-standard.json",
+                new=lambda self: self.name == "r2-3-008-acceptance-standard-v2.json",
             ), self.assertRaisesRegex(
                 # The symlinked standard is rejected fail-closed: the v2 Task
                 # role-source gate fires first with its own unavailable message,
                 # and the formal asset loop would reject it identically.
                 TeamConfigurationError,
-                "unavailable.*r2-3-008-acceptance-standard.json",
+                "unavailable.*r2-3-008-acceptance-standard-v2.json",
             ):
                 load_formal_run_configuration(PROFILE_PATH, TASK_PATH, root=ROOT)
 
@@ -459,7 +459,7 @@ class R23008StandardTests(unittest.TestCase):
     def _policy(self, standard: dict[str, object], root: Path) -> dict[str, object]:
         probe = object.__new__(TeamRunner)
         probe.repository_root = root
-        relative = "modeling_team/references/r2-3-008-acceptance-standard.json"
+        relative = "modeling_team/references/r2-3-008-acceptance-standard-v2.json"
         target = root / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_text(json.dumps(standard, ensure_ascii=False), encoding="utf-8")
@@ -489,7 +489,7 @@ class R23008StandardTests(unittest.TestCase):
             ["cq-001", "cq-002"],
         )
         self.assertEqual(standard["unknown_policy"], "preserve-explicit-unknown")
-        self.assertEqual(standard["schema_version"], "r2-3-008-acceptance-standard/v1")
+        self.assertEqual(standard["schema_version"], "r2-3-008-acceptance-standard/v2")
 
     def test_c3_standard_shape_drift_fails_closed(self) -> None:
         import copy
@@ -553,8 +553,8 @@ class R23008StandardTests(unittest.TestCase):
                     {
                         **source,
                         "path": source["path"].replace(
-                            "r2-3-005-acceptance-standard.json",
-                            "r2-3-008-acceptance-standard.json",
+                            "r2-3-005-acceptance-standard-v2.json",
+                            "r2-3-008-acceptance-standard-v2.json",
                         ),
                     }
                     for source in mirrored
@@ -567,7 +567,7 @@ class R23008StandardTests(unittest.TestCase):
         ]
         self.assertEqual(
             [source["path"] for source in acceptance_source],
-            ["modeling_team/references/r2-3-008-acceptance-standard.json"],
+            ["modeling_team/references/r2-3-008-acceptance-standard-v2.json"],
         )
 
     def test_c5_baseline_freezes_the_same_model_profile_digest(self) -> None:

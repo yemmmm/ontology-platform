@@ -93,7 +93,7 @@ def test_create_ontology_initializes_complete_default_workspace(in_memory_sessio
         "policy",
     ]
     assert all(member["revision"] == 0 for member in context["members"])
-    assert [member["editable"] for member in context["members"]] == [True, True, True, False]
+    assert [member["editable"] for member in context["members"]] == [True, True, False, False]
     assert all(member["owner_id"] == ontology.id for member in context["members"])
 
     graph_set = in_memory_session.get(SemanticGraphSetModel, context["default_graph_set_id"])

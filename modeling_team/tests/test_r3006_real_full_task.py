@@ -28,11 +28,13 @@ MODELING_INSTRUCTIONS = (
 # 6047d381 (git diff --quiet 6047d381 -- <asset>) was recorded as delivery
 # evidence in developer-progress.md; the persistent test pins the same bytes by
 # content digest so a source/shallow checkout needs no Git history.
+# Current Task revisions remove the two retired engine tools (R4.0-025).
+# Prior hashes remain in git history; frozen run evidence is unchanged.
 FROZEN_ASSET_SHA256 = {
-    LEGACY_008B_TASK: "e6c86912cf229789c9f624bc702c37526d345d38c9e4871f7199581913688ae9",
+    LEGACY_008B_TASK: "61e691e7fa1703c5ad2fd56f3c21aab9d01b9d89a60219c3e5017f824e1583e0",
     # Re-frozen once for R3.0-014 (dry-run-first staged order): the objective
     # and terminal evidence now name the dry-run/translation/apply sequence.
-    LEGACY_009_TASK: "43226272b97c27f0f1fa6a5c41d2eec8d4707090f20ec423125ef0d7013a242b",
+    LEGACY_009_TASK: "40d1c6f40bb479cd0afe2414fd973fa4c474c526f224a2a9aca4eb63a9344daa",
 }
 
 

@@ -32,15 +32,6 @@ class ConsumerQueryPlanGuidanceTests(unittest.TestCase):
         self.assertIn("subject--predicate-->object", text)
         self.assertIn("complete revised candidate", text)
 
-    def test_modeling_instructions_pin_shape_min_count_for_probes(self) -> None:
-        text = (
-            self.root
-            / "modeling_team/agent-packages/modeling/instructions.md"
-        ).read_text(encoding="utf-8")
-        self.assertIn("min_count", text)
-        self.assertIn("imposes no presence constraint", text)
-        self.assertIn("internally inconsistent", text)
-        self.assertIn('"min_count": 1', text)
 
     def test_modeling_instructions_pin_one_connected_binding_for_queries(self) -> None:
         """start13 issue-1: the uniqueness rule recurred undocumented on surfaces."""
@@ -66,9 +57,6 @@ class ConsumerQueryPlanGuidanceTests(unittest.TestCase):
         self.assertEqual(rule["items"], "bare predicate local name string")
         self.assertIn("neutralAssociation", rule["rule"])
         self.assertIn("one complete revised candidate", rule["rule"])
-        min_count_rule = reference["candidate_envelope"]["shape_path_min_count"]
-        self.assertIn("no presence constraint", min_count_rule["rule"])
-        self.assertIn("internally inconsistent", min_count_rule["rule"])
         binding_rule = reference["candidate_envelope"]["consumer_query_one_connected_binding"]
         self.assertIn("one subject-object pair", binding_rule["rule"])
         self.assertIn("consumer-query-plan-invalid", binding_rule["rule"])
@@ -76,16 +64,10 @@ class ConsumerQueryPlanGuidanceTests(unittest.TestCase):
         checklist_text = "\n".join(reference["closure_checklist"])
         self.assertIn("bare predicate local name", checklist_text)
         self.assertIn("never a full path expression or an IRI", checklist_text)
-        self.assertIn("explicit min_count", checklist_text)
+        self.assertNotIn("explicit min_count", checklist_text)
         self.assertIn("exactly one relation (or fact) item", checklist_text)
-        # The example itself must not repeat the start11 inconsistency: the
-        # shape path its own negative_probe relies on carries min_count.
-        items = reference["example_candidate"]["items"]
-        shape = next(i for i in items if i["item_kind"] == "shape")
-        probe = next(i for i in items if i["item_kind"] == "negative_probe")
-        paths = {p["path_id"]: p for p in shape["semantic"]["paths"]}
-        probed_path = paths[probe["semantic"]["path"]]
-        self.assertEqual(probed_path.get("min_count"), 1)
+        self.assertFalse(any(i["item_kind"] in {"shape", "negative_probe"}
+                             for i in reference["example_candidate"]["items"]))
 
 
 if __name__ == "__main__":  # pragma: no cover

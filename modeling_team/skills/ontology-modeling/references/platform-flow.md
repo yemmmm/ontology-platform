@@ -8,9 +8,7 @@ Modeling or introduce a universal execution sequence.
 | --- | --- | --- |
 | Scope | Business-supported meaning, proposed scope, gaps and questions | Actual authorized Project/Ontology bindings when needed |
 | Candidate | Complete neutral semantic content and dependencies | Translation receipt or a concrete conflict |
-| Constraints | Source-supported Shapes and an intentionally invalid example | Dry-run findings; the negative example remains unapplied |
 | Application | Approved semantic revision and answers to semantic conflicts | Applied Batch/Attempt bindings and readback for that revision |
-| Validation / reasoning | Interpretation and correction of semantic findings | Validation scope, conforms/findings, consistency/findings |
 | Retrieval | Public consumer questions and required semantic relationships | Scoped facts, relations, pagination and explicit completeness |
 | Handoff | Own artifacts, outstanding unknowns and semantic findings | Bound execution results required by the Task |
 
@@ -48,7 +46,7 @@ answers; Modeling must not claim an independent acceptance result from its own s
 
 - Source contradiction or unresolved business meaning: ask the grounded question through the
   declared channel, or preserve an explicit unknown.
-- Semantic candidate or Shape finding: correct only the observed semantic defect and hand off
+- Semantic candidate or deterministic write finding: correct only the observed semantic defect and hand off
   the required complete revision.
 - Request-shape, lease, identity-binding or execution failure: return the exact conflict to
   Protocol; do not invent platform mechanics or change the candidate to bypass it.

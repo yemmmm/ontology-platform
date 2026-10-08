@@ -37,7 +37,7 @@ class DefaultGraphSpec:
 DEFAULT_GRAPH_SPECS = (
     DefaultGraphSpec("asserted_ontology", "ontology", True, 0),
     DefaultGraphSpec("asserted_data", "data", True, 1),
-    DefaultGraphSpec("shapes", "shapes", True, 2),
+    DefaultGraphSpec("shapes", "shapes", False, 2),
     DefaultGraphSpec("policy", "policy", False, 3),
 )
 

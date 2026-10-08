@@ -2126,16 +2126,11 @@ PLATFORM_PROXY_READ_TOOLS: tuple[str, ...] = (
     "query_semantic_context",
     "semantic_sparql_query",
     "describe_semantic_graph_set",
-    "list_semantic_derived_pointers",
     "inspect_semantic_projection_status",
     "list_evidence_references",
     "get_evidence_reference",
     "get_ontology_lineage",
     "inspect_semantic_statement_provenance",
-    "get_semantic_reasoning_run",
-    "get_semantic_validation_run",
-    "list_semantic_reasoning_runs",
-    "list_semantic_validation_runs",
 )
 
 
@@ -2203,9 +2198,6 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "result_limit": {"type": ["integer", "null"], "minimum": 1},
     },
     "describe_semantic_graph_set": {},
-    "list_semantic_derived_pointers": {
-        "result_kind": {"type": "string"}, "status": {"type": "string"},
-    },
     "inspect_semantic_projection_status": {},
     "list_evidence_references": {
         "search": {"type": "string"}, "limit": {"type": "integer", "minimum": 1},
@@ -2219,16 +2211,6 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
     },
     "inspect_semantic_statement_provenance": {
         "statement_iri": {"type": "string"}, "include": {"type": "string"},
-    },
-    "get_semantic_reasoning_run": {"reasoning_run_id": {"type": "string"}},
-    "get_semantic_validation_run": {"validation_run_id": {"type": "string"}},
-    "list_semantic_reasoning_runs": {
-        "limit": {"type": "integer", "minimum": 1}, "offset": {"type": "integer", "minimum": 0},
-        "kind": {"type": "string"},
-    },
-    "list_semantic_validation_runs": {
-        "limit": {"type": "integer", "minimum": 1}, "offset": {"type": "integer", "minimum": 0},
-        "kind": {"type": "string"},
     },
 }
 
@@ -2253,16 +2235,11 @@ def examiner_proxy_schemas(tools: Iterable[str] = PLATFORM_PROXY_READ_TOOLS) -> 
             "query_semantic_context": ["scope_mode", "ontology_ids"],
             "semantic_sparql_query": ["scope_mode", "query", "ontology_ids"],
             "describe_semantic_graph_set": [],
-            "list_semantic_derived_pointers": [],
             "inspect_semantic_projection_status": [],
             "list_evidence_references": [],
             "get_evidence_reference": ["reference_id"],
             "get_ontology_lineage": ["target_type", "target_id"],
             "inspect_semantic_statement_provenance": ["statement_iri"],
-            "get_semantic_reasoning_run": ["reasoning_run_id"],
-            "get_semantic_validation_run": ["validation_run_id"],
-            "list_semantic_reasoning_runs": [],
-            "list_semantic_validation_runs": [],
         }.get(tool, []))
         schema: dict[str, Any] = {
             "type": "object",

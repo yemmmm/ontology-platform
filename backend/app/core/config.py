@@ -62,9 +62,6 @@ class Settings(BaseSettings):
     semantic_query_timeout_seconds: float = Field(default=10, gt=0, le=120)
     competency_question_sparql_timeout_seconds: float = Field(default=5.0, gt=0, le=60)
     semantic_query_result_limit: int = Field(default=1000, ge=1, le=10000)
-    semantic_shacl_inference: str = "none"
-    semantic_reasoner_command: str = ""
-    semantic_reasoner_timeout_seconds: float = Field(default=60, gt=0, le=600)
 
     build_session_lease_ttl_seconds: int = Field(default=300, ge=30, le=3600)
     modeling_batch_max_items: int = Field(default=100, ge=1, le=10_000)

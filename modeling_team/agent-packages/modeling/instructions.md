@@ -7,7 +7,7 @@ not invent business facts, modify runtime mechanics, approve your own work, or r
 Agent's terminal outcome.
 
 For a v2 Task, send Protocol a structured platform-neutral semantic candidate covering classes,
-properties, relations, Shapes, entities, explicit unknowns, and dependencies. You do not
+properties, relations, entities, explicit unknowns, and dependencies. You do not
 own build sessions, leases, Batch/Item envelopes, or idempotency; do not author exact platform
 items. Protocol mechanically translates your candidate and returns a concrete translation conflict
 when one exists.
@@ -40,7 +40,7 @@ concrete blocker or report blocked.
 
 For formal R2.3-005, a Protocol candidate receipt with `status=accepted` verifies only the neutral
 candidate envelope and canonical semantic/candidate digests. It does not prove `dry_run`,
-`apply_atomic`, readback, semantic validation, reasoning, or governed retrieval. Do not treat that
+`apply_atomic`, readback or governed retrieval. Do not treat that
 receipt as permission to send `ready_for_acceptance`; wait for the complete platform and retrieval
 gates, and preserve any concrete conflict or blocked state.
 
@@ -129,18 +129,9 @@ each explicit unknown its own dedicated single-instance predicate, referenced by
 consumer_query item; when one query lists several paths, their unique bindings must share a
 connected subject.
 
-A `shape` path that must be present on every instance of its target class declares
-`"min_count": 1`; a path without `min_count` imposes no presence constraint, so an entity that
-lacks that predicate still validates against the shape. A `negative_probe` whose `expected_result`
-is `rejected` for a missing value must reference a shape path that declares `min_count` (the
-accepted baseline pattern gives every required shape path `"min_count": 1`). A candidate whose
-probe expects rejection while its shape path omits `min_count` is internally inconsistent: after
-acceptance the candidate is immutable, so its own validation gates can never be satisfied.
-
 Any item that Protocol will materialize as `create_entity` must carry its label as semantic
 content. For an ordinary `entity` or an `explicit_unknown`, provide a non-empty,
-source-grounded `semantic.values.label`; when a `negative_probe` includes a materialized
-`semantic.invalid_instance`, provide a non-empty, source-grounded label there as well. Do not
+source-grounded `semantic.values.label`. Do not
 derive or invent labels from `item_id`, `entity_id`, or an unknown question. A missing or blank
 label is a concrete Protocol conflict; do not send a candidate that relies on Protocol to fill it.
 
@@ -156,11 +147,11 @@ receipt-bound IDs/IRIs, stage ordering, or a whole-candidate atomic-apply instru
 neutral semantic candidate. Keep the run's fresh scope and all platform mechanics in the Runner /
 Protocol handoff outside the candidate.
 
-Before each delivery, declare every fact predicate, relation predicate, Shape predicate/path, and
+Before each delivery, declare every fact predicate, relation predicate, and
 negative-probe path exactly once in the current candidate. Give each object-valued predicate one
 declared target class. If targets are heterogeneous, declare a common superclass and explicit
 subclass bindings or split the predicates; never use `resource` or an external placeholder as a
-range. Close every class, entity, predicate, relation, Shape, path, and probe reference over this
+range. Close every class, entity, predicate, relation and retrieval path reference over this
 candidate alone. Team Transport delivery/reply identities and Batch/platform IDs remain outside
 the neutral semantic object.
 
@@ -474,23 +465,14 @@ text/constants or create business rows, runtime arguments, execution state or tr
 Use only authorized returned content; missing edges do not prove absence or hidden
 resources. Functional fixture results do not establish A12 real semantic acceptance.
 
-## R4.0-005 business rule declarations
+## R4.0-025 ordinary business rule knowledge
 
-Use `business_rule_semantics` in the mounted authoring/role contracts. Rules are
-ordinary entities with `semantic_role=rule` and `rule_definition`; distinguish
-judgment/constraint from derivation. Declare each script's language, version,
-source and external Consumer agreement for input/output, failures and side effects.
-Platform storage never executes the script or automatically materializes results.
-Keep explanation, scope, script, input/output and joint change note together;
-known conflicts stay in `conflicting_meanings`, unresolved parts stay unknown.
-Reuse 003 parameter entities and 004 value/source relations with explicit identities,
-object directions, call/output parameters and iteration scopes. Do not add parameter
-fields or replace identities with text paths. Preserve unknown/not_applicable/empty/
-none/rejected/error distinctions. Result identity and effective scope are definitions,
-never run IDs, business rows or occurred Actions. Shape, OWL and platform Rule results
-remain separate from external judgments. Reference protected rules without copying
-their sensitive text; IRI filtering is not text protection. A11 real semantic
-acceptance remains separate from functional fixtures.
+Express confirmed business conditions, thresholds, calculation definitions, scope,
+exceptions and explicit unknowns through ordinary semantic definitions and relationships.
+Preserve source meaning and use governed readback/retrieval to verify it. SHACL Shapes,
+OWL automatic reasoning, rule_definition and dedicated script contracts are retired.
+Do not require or invent their artifacts, results or receipts. Source scripts may remain
+ordinary explanatory material; the platform does not execute them.
 
 ## R4.0-010 relational mapping candidates
 

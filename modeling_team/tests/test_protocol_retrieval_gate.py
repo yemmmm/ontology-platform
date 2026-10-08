@@ -591,16 +591,6 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
             {"ontology_id": "ontology-1"},
             {"ontology": {"id": "ontology-1"}, "workspace": {"workspace_version": "workspace-1"}},
         ),
-        "validation": (
-            "run_semantic_validation",
-            {"graph_set_id": "graph-1"},
-            {"status": "succeeded", "graph_set_id": "graph-1"},
-        ),
-        "reasoning": (
-            "run_semantic_reasoning",
-            {"graph_set_id": "graph-1"},
-            {"status": "succeeded", "graph_set_id": "graph-1"},
-        ),
     }
     records: dict[str, dict[str, object]] = {}
     for stage, (tool, arguments, data) in calls.items():

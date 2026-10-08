@@ -59,8 +59,6 @@ def _ticket(round_suffix: str = "1") -> dict:
         ("dry-run", "validated"),
         ("apply", "applied"),
         ("readback", "complete"),
-        ("validation", "succeeded"),
-        ("reasoning", "succeeded"),
     ):
         ref = {
             "type": "platform_read",
@@ -115,10 +113,6 @@ def _ticket(round_suffix: str = "1") -> dict:
         "allowed_read_tools": sorted(
             {
                 "get_modeling_context",
-                "list_semantic_validation_runs",
-                "get_semantic_validation_run",
-                "list_semantic_reasoning_runs",
-                "get_semantic_reasoning_run",
             }
         ),
         "modeling_receipts": receipts,
@@ -224,7 +218,7 @@ _CHECK_KEYS = (
     "scope",
     "ontology_structure",
     "explicit_unknowns",
-    "validation_reasoning",
+    "deterministic_write_readback",
     "governed_retrieval",
     "evidence_lineage",
     "competency_questions",
@@ -479,7 +473,7 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 request_id="recycle-plt-blk-1",
             )
             checks = _pass_checks()
-            checks["validation_reasoning"] = "BLOCKED"
+            checks["deterministic_write_readback"] = "BLOCKED"
             built = carrier.build_acceptance_verdict(
                 acceptance_id="acceptance",
                 round_id=ticket["acceptance_round_id"],
@@ -790,7 +784,7 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
                 request_id="recycle-plt-mblk-1",
             )
             checks = _pass_checks()
-            checks["validation_reasoning"] = "BLOCKED"
+            checks["deterministic_write_readback"] = "BLOCKED"
             endpoint = carrier._capability_endpoints["acceptance"]
             token = carrier.capability_token("acceptance")
             submit = endpoint.handle({

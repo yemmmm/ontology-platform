@@ -439,7 +439,7 @@ def test_unapplied_candidate_script_and_mapping_kept(tmp_path):
     item = ModelingWorkbenchService(tmp_path).detail("p", "running")["artifacts"]["candidates"][0][
         "data"
     ]["items"][0]
-    assert item["value"]["values"]["rule_definition"]["script_source"] == "return None"
+    assert "rule_definition" not in item["value"]["values"]
     assert (
         item["value"]["values"]["mapping_payload"]["mapping_definition"]["row_grain"]
         == "one work order"

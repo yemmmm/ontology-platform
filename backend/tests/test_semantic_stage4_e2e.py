@@ -384,32 +384,6 @@ def test_entity_search_returns_exact_governed_mapping_evidence(
 # ---------------------------------------------------------------------------
 
 
-def test_read_model_owl_consistency_summary(
-    fake_graph_set_with_evidence, fake_reasoning_run_consistency
-):
-    svc, graph_set_id = fake_graph_set_with_evidence
-    run_id = fake_reasoning_run_consistency
-    envelope = svc.read_model(
-        graph_set_id=graph_set_id,
-        model_name="owl-consistency-summary",
-        field_set="summary",
-    )
-    assert envelope["model_name"] == "owl-consistency-summary"
-    items = envelope["items"]
-    assert len(items) == 1
-    row = items[0]
-    assert row["run_id"] == run_id
-    assert row["consistent"] is True
-    assert row["classification"] == {"profile": "owl2_dl"}
-    assert row["entailment_count"] == 1
-    assert isinstance(row["unsatisfiable_classes"], list)
-    assert row["result_graph_iri"].endswith("/run-stage4")
-    assert row["started_at"].startswith("2026-07-07")
-    assert row["finished_at"].startswith("2026-07-07")
-    # Freshly seeded → not stale.
-    assert row["is_stale"] is False
-
-
 # ---------------------------------------------------------------------------
 # R4.0-012 — retired fact-audit-queue evidence projection
 # ---------------------------------------------------------------------------

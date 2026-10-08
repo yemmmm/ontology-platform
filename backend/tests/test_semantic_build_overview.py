@@ -70,7 +70,7 @@ def test_build_overview_next_actions_priority_order():
     )
     resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o", graph_set_id="gs")
     keys = [a.key for a in resp.next_actions]
-    assert keys == ["complete_brief", "approve_questions", "recompute_validation"]
+    assert keys == ["complete_brief", "approve_questions"]
 
 
 def test_build_overview_no_actions_when_clean():
