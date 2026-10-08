@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { Core } from "cytoscape";
-import { assignNodeColors } from "../src/components/nodeColors";
+import { assignNodeColors, UNCLASSIFIED_COLORS, VIEWPOINT_COLORS } from "../src/components/nodeColors";
+import { semanticViews } from "../src/workspaceTypes";
 import { envelope, mockWorkspace, resource } from "./v42-fixtures";
 
 async function nodeColors(page: Page) {
@@ -10,7 +11,7 @@ async function nodeColors(page: Page) {
   });
 }
 
-test("nodes have distinct neighbor colors that survive search, selection, filtering and reordered refresh", async ({ page }) => {
+test("viewpoint color families and identity shades survive search, selection, filtering and reordered refresh", async ({ page }) => {
   let nodes = [
     resource("urn:hub", "Hub", "object"),
     resource("urn:leaf1", "Leaf 1", "object"),
@@ -34,9 +35,17 @@ test("nodes have distinct neighbor colors that survive search, selection, filter
   await expect(graph).toHaveAttribute("data-node-count", "5");
   await expect(graph).toHaveAttribute("data-edge-count", "3");
   const initial = await nodeColors(page);
-  for (const edge of edges) expect(initial[edge.source]).not.toBe(initial[edge.target]);
+  const rgb = (hex: string) => `rgb(${[1, 3, 5].map(start => parseInt(hex.slice(start, start + 2), 16)).join(",")})`;
+  const objectPalette = VIEWPOINT_COLORS.object.map(rgb);
+  for (const id of ["urn:hub", "urn:leaf1", "urn:leaf3", "urn:isolated"]) expect(objectPalette).toContain(initial[id]);
+  expect(VIEWPOINT_COLORS.process.map(rgb)).toContain(initial["urn:leaf2"]);
   expect(new Set(Object.values(initial)).size).toBeGreaterThan(1);
-  await expect(page.getByText("Colors distinguish nodes; the same color does not imply the same category.")).toBeVisible();
+  const legend = page.getByRole("list", { name: "Node color legend" });
+  for (const [role, name] of semanticViews) {
+    await expect(legend.locator(`[data-viewpoint="${role}"]`)).toHaveText(name);
+    expect(await legend.locator(`[data-viewpoint="${role}"] i`).evaluateAll(elements => elements.map(element => (element as HTMLElement).style.backgroundColor.replaceAll(" ", "")))).toEqual(VIEWPOINT_COLORS[role].map(rgb));
+  }
+  await expect(page.getByText("Color families indicate viewpoints; shade differences distinguish nodes, not importance.")).toBeVisible();
 
   await page.getByLabel("Search loaded model").fill("Hub");
   await page.getByRole("button", { name: "Hub", exact: true }).click();
@@ -65,13 +74,43 @@ test("nodes have distinct neighbor colors that survive search, selection, filter
   expect(await nodeColors(page)).toEqual(initial);
 });
 
-test("a dense graph exceeding the palette reuses colors deterministically", () => {
-  const ids = Array.from({ length: 11 }, (_, i) => `urn:node:${i}`);
-  const edges = ids.flatMap((source, i) => ids.slice(i + 1).map(target => ({ source, target })));
-  edges.push({ source: ids[0], target: ids[0] });
-  const initial = assignNodeColors(ids, edges);
-  expect(initial.size).toBe(11);
-  expect(new Set(initial.values()).size).toBe(10);
-  expect(assignNodeColors([...ids].reverse(), [...edges].reverse())).toEqual(initial);
-  expect(assignNodeColors([], [])).toEqual(new Map());
+test("every explicit viewpoint has its own family and unknown or multiple declarations use neutral colors", () => {
+  const nodes = semanticViews.flatMap(([role]) => Array.from({ length: 30 }, (_, i) => ({ id: `urn:${role}:${i}`, roles: [role] })));
+  const assigned = assignNodeColors(nodes);
+  for (const [role] of semanticViews) {
+    const colors = new Set(nodes.filter(node => node.roles[0] === role).map(node => assigned.get(node.id)));
+    expect(colors.size).toBe(3);
+    for (const color of colors) expect(VIEWPOINT_COLORS[role]).toContain(color);
+  }
+  const declaredPalette = Object.values(VIEWPOINT_COLORS).flat();
+  expect(new Set(declaredPalette).size).toBe(declaredPalette.length);
+  expect(assignNodeColors([...nodes].reverse())).toEqual(assigned);
+  const cases = [
+    { id: "urn:empty", roles: [] },
+    { id: "urn:unknown", roles: ["custom"] },
+    { id: "urn:invalid", roles: [null, {}] },
+    { id: "urn:multiple", roles: ["object", "process"] },
+    { id: "urn:partially-known", roles: ["object", "custom"] },
+    { id: "urn:prototype", roles: ["__proto__"] },
+  ];
+  for (const color of assignNodeColors(cases).values()) expect(UNCLASSIFIED_COLORS).toContain(color);
+  expect(assignNodeColors([{ id: "urn:work", roles: ["object", "object", null] }]).get("urn:work"))
+    .toBe(assignNodeColors([{ id: "urn:work", roles: ["object"] }]).get("urn:work"));
+  expect(assignNodeColors([])).toEqual(new Map());
+});
+
+test("a shared resource with multiple viewpoint declarations keeps its neutral identity across filters", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/?tab=model");
+  const graph = page.getByRole("img", { name: "Model graph" });
+  await expect(graph).toHaveAttribute("data-node-count", "11");
+  const initial = await nodeColors(page);
+  expect(initial["urn:work"]).not.toBe(initial["urn:process"]);
+  await expect(page.getByRole("list", { name: "Node color legend" }).getByText("Unclassified / multiple viewpoints")).toBeVisible();
+  await page.getByLabel("Viewpoint").selectOption("object");
+  await expect(graph).toHaveAttribute("data-node-count", "1");
+  expect((await nodeColors(page))["urn:work"]).toBe(initial["urn:work"]);
+  await page.getByLabel("Viewpoint").selectOption("process");
+  await expect(graph).toHaveAttribute("data-node-count", "2");
+  expect((await nodeColors(page))["urn:work"]).toBe(initial["urn:work"]);
 });

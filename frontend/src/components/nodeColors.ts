@@ -1,8 +1,14 @@
-// Tableau 10 categorical palette. Colors distinguish nodes, not semantic categories.
-const PALETTE = [
-  "#4e79a7", "#f28e2c", "#e15759", "#76b7b2", "#59a14f",
-  "#edc949", "#af7aa1", "#ff9da7", "#9c755f", "#bab0ab",
-];
+// A fixed hue per declared viewpoint, with three identity-based shades per hue.
+export const VIEWPOINT_COLORS = {
+  object: ["#2f6fba", "#4c86c6", "#76a3d5"],
+  behavior: ["#c2691d", "#da8138", "#e9a568"],
+  rule: ["#be4e4e", "#d36d6d", "#df9696"],
+  business_role: ["#9b7c21", "#b5963e", "#cbb16b"],
+  process: ["#7450af", "#9071c2", "#ac95d2"],
+  data_mapping: ["#37824d", "#559968", "#83b38f"],
+  interface_mapping: ["#227b89", "#4096a3", "#75b4bd"],
+};
+export const UNCLASSIFIED_COLORS = ["#737b88", "#9098a3", "#adb3bd"];
 
 function hashId(id: string): number {
   let hash = 2166136261;
@@ -11,29 +17,13 @@ function hashId(id: string): number {
 }
 
 export function assignNodeColors(
-  nodeIds: string[], edges: { source: string; target: string }[],
+  nodes: { id: string; roles: unknown[] }[],
 ): Map<string, string> {
-  const neighbors = new Map(nodeIds.map(id => [id, new Set<string>()]));
-  for (const edge of edges) {
-    if (edge.source === edge.target) continue;
-    neighbors.get(edge.source)!.add(edge.target);
-    neighbors.get(edge.target)!.add(edge.source);
-  }
-  const ordered = [...nodeIds].sort((a, b) => neighbors.get(b)!.size - neighbors.get(a)!.size
-    || (a < b ? -1 : a > b ? 1 : 0));
-  const assigned = new Map<string, number>();
-  const usage = PALETTE.map(() => 0);
-  for (const id of ordered) {
-    const conflicts = PALETTE.map(() => 0);
-    for (const neighbor of neighbors.get(id)!) {
-      const color = assigned.get(neighbor);
-      if (color !== undefined) conflicts[color] += 1;
-    }
-    const start = hashId(id) % PALETTE.length;
-    const candidates = PALETTE.map((_, index) => (start + index) % PALETTE.length);
-    candidates.sort((a, b) => conflicts[a] - conflicts[b] || usage[a] - usage[b]);
-    assigned.set(id, candidates[0]);
-    usage[candidates[0]] += 1;
-  }
-  return new Map([...assigned].map(([id, index]) => [id, PALETTE[index]]));
+  return new Map(nodes.map(node => {
+    const roles = [...new Set(node.roles.filter((role): role is string => typeof role === "string" && role.length > 0))];
+    const role = roles.length === 1 ? roles[0] : "";
+    const palette = Object.prototype.hasOwnProperty.call(VIEWPOINT_COLORS, role)
+      ? VIEWPOINT_COLORS[role as keyof typeof VIEWPOINT_COLORS] : UNCLASSIFIED_COLORS;
+    return [node.id, palette[hashId(node.id) % palette.length]];
+  }));
 }
