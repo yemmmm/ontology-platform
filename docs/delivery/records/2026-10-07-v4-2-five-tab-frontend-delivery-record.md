@@ -236,3 +236,24 @@
   read/model Key 与跨项目访问的 403 由 API 回归验证。
 - 结论：本增量开发验证和运行读取验证 PASS；未执行独立功能验收或真实语义建模验收，
   历史独立 Round 1 结果不升级为本次增量的独立验收。
+
+## 2026-10-08 画布视角点击多选增量
+
+- 用户要求以点击选择替换单选下拉，并支持同时展示多个视角；七视角色系图例合并为
+  可切换按钮，使用 aria-pressed 表达选择状态。所选视角取并集，未选择或点击“全部”
+  恢复全部已加载资源；“清除过滤”同时清除搜索与视角。沿用 IRI 去重与两端可见才画边。
+- 新增 viewpoint-filters 浏览器回归，先在原构建复现失败（无视角按钮），实现后验证
+  多选／取消、键盘选择、搜索协同、共享节点去重、关系恢复、中文 390px 和空视角恢复；
+  更新既有筛选用例并补验多选后节点尺寸重算，保留颜色稳定和结构引用检查。
+- `cd frontend && npm run build` PASS；`cd frontend && npx playwright test`
+  **41 passed（11.3s）**。构建保留已有大 chunk 提示。本轮没有后端代码变更。
+- 14:18:50+08 重启 ontology-platform.service，启动就绪后 unit active、后端 health ok、
+  前端 HTTP 200；重启后的多选定向回归 **2 passed（2.0s）**。
+- 开发侧真实只读浏览器验证：全部 **156 节点／225 边**，对象 **24／23**，对象＋流程
+  **25／23**，点击“全部”恢复 **156／225**，page errors=[]。查看桌面和 390px 截图，
+  筛选按钮正常换行，无文档横溢；证据 `/tmp/v42-multiview-filters-{desktop,mobile}.png`
+  与 `/tmp/v42-multiview-filters-live.json`。未创建或修改业务模型。
+- GitNexus impact 未找到当前 ModelBrowserPage；detect_changes 仅识别翻译常量，risk low。
+  当前调用点直接检查确认 App 为页面消费者，筛选只改变传给 ForceGraphCanvas 的节点与边；
+  不宣称图分析完整覆盖。相关需求同步与 git diff 格式检查通过。
+- 结论仅为本增量开发与运行展示验证；未执行独立功能验收或真实语义建模验收。

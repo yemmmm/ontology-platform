@@ -46,13 +46,16 @@ test("node sizes reflect visible incoming and outgoing edges and refresh after f
   }
   await page.getByLabel("Search loaded model").fill("Hub");
   expect(await nodeSizes(page)).toEqual(initial);
-  await page.getByLabel("Viewpoint").selectOption("object");
+  await page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button", { name: "Object", exact: true }).click();
   await expect(graph).toHaveAttribute("data-edge-count", "2");
   const filtered = await nodeSizes(page);
   expect(filtered["urn:leaf2"]).toBeUndefined();
   expect(filtered["urn:hub"].degree).toBe(2);
   expect(filtered["urn:hub"].width).toBeLessThan(initial["urn:hub"].width);
   expect(filtered["urn:hub"].width).toBeGreaterThan(filtered["urn:leaf1"].width);
+  await page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button", { name: "Process", exact: true }).click();
+  await expect(graph).toHaveAttribute("data-edge-count", "3");
+  expect(await nodeSizes(page)).toEqual(initial);
   edges = [];
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(graph).toHaveAttribute("data-edge-count", "0");

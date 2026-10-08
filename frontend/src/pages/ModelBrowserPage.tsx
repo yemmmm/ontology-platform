@@ -20,7 +20,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
   const t = useT();
   const [nodes, setNodes] = useState<Node[]>([]);
   const [edges, setEdges] = useState<(ForceGraphEdge & { positions: string[] })[]>([]);
-  const [view, setView] = useState("");
+  const [views, setViews] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
   const [position, setPosition] = useState(0);
@@ -91,7 +91,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
     void load();
     return () => { active = false; };
   }, [project.id, revision]);
-  const visible = useMemo(() => nodes.filter(node => !view || node.positions.some(item => definition(item.resource).semantic_role === view)), [nodes, view]);
+  const visible = useMemo(() => nodes.filter(node => !views.length || node.positions.some(item => views.some(view => definition(item.resource).semantic_role === view))), [nodes, views]);
   const visibleIds = useMemo(() => new Set(visible.map(node => node.iri)), [visible]);
   const graphEdges = useMemo(() => edges.filter(edge => visibleIds.has(edge.source) && visibleIds.has(edge.target)), [edges, visibleIds]);
   const nodeColors = useMemo(() => assignNodeColors(nodes.map(node => ({
@@ -105,16 +105,21 @@ export function ModelBrowserPage({ project }: { project: Project }) {
   const selectedPosition = selectedNode?.positions[position] ?? selectedNode?.positions[0];
   const semantic = selectedPosition ? definition(selectedPosition.resource) : {};
   function select(iri: string | null) { setSelected(iri); setPosition(0); }
-  return <section className="modelPage"><div className="panel modelToolbar"><label className="modelSearch">{t("Search loaded model")}<input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("Name, IRI or recorded meaning")} /></label><label>{t("Viewpoint")}<select value={view} onChange={event => { setView(event.target.value); select(null); }}><option value="">{t("All")}</option>{semanticViews.map(([role, name]) => <option value={role} key={role}>{t(name)}</option>)}</select></label><button onClick={() => { setQuery(""); setView(""); select(null); }}>{t("Clear filters")}</button><button disabled={loading} onClick={() => setRevision(value => value + 1)}>{t("Refresh")}</button></div>
+  function toggleView(role: string) {
+    setViews(current => current.includes(role) ? current.filter(view => view !== role) : [...current, role]);
+    select(null);
+  }
+  return <section className="modelPage"><div className="panel modelToolbar"><label className="modelSearch">{t("Search loaded model")}<input value={query} onChange={event => setQuery(event.target.value)} placeholder={t("Name, IRI or recorded meaning")} /></label><button onClick={() => { setQuery(""); setViews([]); select(null); }}>{t("Clear filters")}</button><button disabled={loading} onClick={() => setRevision(value => value + 1)}>{t("Refresh")}</button></div>
     {loading && <p role="status">{t("Loading…")}</p>}{error && <p className="errorMessage" role="alert">{t("Model could not be read")}: {error}</p>}
     {limits.length > 0 && <div className="notice" role="status"><strong>{t("Partial loading")}</strong>{limits.map((limit, i) => <p key={i}>{limit.name}: {t(limit.code)}{limit.detail ? ` · ${limit.detail}` : ""}</p>)}<p>{t("Search covers loaded nodes only")}</p></div>}
     {!loading && <p className="inlineHint">{t("Loaded nodes")}: {nodes.length} · {t("Visible nodes")}: {visible.length} · {t("Read relations")}: {graphEdges.length}</p>}
-    {!loading && nodes.length > 0 && <>
-      <ul className="nodeColorLegend" aria-label={t("Node color legend")}>{semanticViews.map(([role, name]) =>
-        <li key={role} data-viewpoint={role}><span className="nodeColorSwatches" aria-hidden="true">{VIEWPOINT_COLORS[role].map(color => <i key={color} style={{ backgroundColor: color }} />)}</span>{t(name)}</li>
+    <div className="viewpointFilters" role="group" aria-label={t("Viewpoint")}>
+      <p className="inlineHint">{t("Select multiple viewpoints; click again to deselect.")}</p>
+      <ul className="nodeColorLegend" aria-label={t("Node color legend")}><li><button aria-pressed={views.length === 0} onClick={() => { setViews([]); select(null); }}>{t("All")}</button></li>{semanticViews.map(([role, name]) =>
+        <li key={role} data-viewpoint={role}><button aria-pressed={views.includes(role)} onClick={() => toggleView(role)}><span className="nodeColorSwatches" aria-hidden="true">{VIEWPOINT_COLORS[role].map(color => <i key={color} style={{ backgroundColor: color }} />)}</span>{t(name)}</button></li>
       )}<li data-viewpoint="unclassified"><span className="nodeColorSwatches" aria-hidden="true">{UNCLASSIFIED_COLORS.map(color => <i key={color} style={{ backgroundColor: color }} />)}</span>{t("Unclassified / multiple viewpoints")}</li></ul>
       <p className="inlineHint">{t("Color families indicate viewpoints; shade differences distinguish nodes, not importance.")}</p>
-    </>}
+    </div>
     {!loading && graphEdges.some(edge => edge.edgeKind === "structured_reference") && <p className="inlineHint">{t("Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.")}</p>}
     {search && <div className="searchMatches" aria-label={t("Search matches")}><p>{t("Matches in loaded viewpoint")}: {matches.length}</p>{matches.length ? matches.map(node => <button key={node.iri} onClick={() => select(node.iri)}>{node.label}</button>) : <p>{t("No matches in the loaded viewpoint")}</p>}</div>}
     <div className={`modelBody${selectedNode ? " hasDetail" : ""}`}><div className="panel graphPanel"><ForceGraphCanvas nodes={graphNodes} edges={graphEdges} selectedNodeId={selectedNode?.iri ?? null} onSelectNode={select} highlightedNodeIds={highlighted} searchActive={Boolean(search)} emptyTitle={t(loading ? "Loading…" : error || limits.length && !nodes.length ? "Model scopes have not been loaded" : ontologyCount === 0 ? "No Ontologies in this project" : nodes.length ? "No nodes in this viewpoint" : "No model resources in the current scope")} emptyHint={t("The canvas displays the authorized default workspace only")} /></div>

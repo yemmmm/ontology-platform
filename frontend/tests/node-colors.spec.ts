@@ -60,7 +60,7 @@ test("viewpoint color families and identity shades survive search, selection, fi
   expect(emphasis.underlay).toBeGreaterThan(0);
   expect(emphasis.border).toBeGreaterThan(1);
 
-  await page.getByLabel("Viewpoint").selectOption("object");
+  await page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button", { name: "Object", exact: true }).click();
   await expect(graph).toHaveAttribute("data-node-count", "4");
   const { "urn:leaf2": _hidden, ...objectColors } = initial;
   expect(await nodeColors(page)).toEqual(objectColors);
@@ -107,10 +107,10 @@ test("a shared resource with multiple viewpoint declarations keeps its neutral i
   const initial = await nodeColors(page);
   expect(initial["urn:work"]).not.toBe(initial["urn:process"]);
   await expect(page.getByRole("list", { name: "Node color legend" }).getByText("Unclassified / multiple viewpoints")).toBeVisible();
-  await page.getByLabel("Viewpoint").selectOption("object");
+  await page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button", { name: "Object", exact: true }).click();
   await expect(graph).toHaveAttribute("data-node-count", "1");
   expect((await nodeColors(page))["urn:work"]).toBe(initial["urn:work"]);
-  await page.getByLabel("Viewpoint").selectOption("process");
+  await page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button", { name: "Process", exact: true }).click();
   await expect(graph).toHaveAttribute("data-node-count", "2");
   expect((await nodeColors(page))["urn:work"]).toBe(initial["urn:work"]);
 });

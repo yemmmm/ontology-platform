@@ -2,6 +2,7 @@ import type { TranslationMap } from "./translations";
 export const zh: TranslationMap = {
   "Node color legend":"节点配色图例",
   "Unclassified / multiple viewpoints":"未分类／多视角",
+  "Select multiple viewpoints; click again to deselect.":"点击视角可多选，再次点击取消选择。",
   "Color families indicate viewpoints; shade differences distinguish nodes, not importance.":"色系表示视角；深浅仅辅助区分节点，不表示重要程度。",
   "Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.":"实线：已断言关系；虚线：已记录的结构引用，标签为来源字段。",
   "Overview":"概览", "Model browser":"模型浏览", "Recall test":"召回测试", "Member permissions":"成员权限", "Settings":"设置",

@@ -212,8 +212,8 @@ test("T05 unified IRI canvas excludes property definitions, retains actual edges
 test("T06 seven explicit views and loaded search intersect without removing other view nodes", async ({ page }) => {
   await mockWorkspace(page); await page.goto("/?tab=model");
   await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "11");
-  await expect(page.getByLabel("Viewpoint").locator("option")).toHaveCount(8);
-  await page.getByLabel("Viewpoint").selectOption("process");
+  await expect(page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button")).toHaveCount(8);
+  await page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button", { name: "Process", exact: true }).click();
   await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "2");
   await page.getByLabel("Search loaded model").fill("integration meaning");
   await expect(page.getByText("Matches in loaded viewpoint: 1", { exact: true })).toBeVisible();
@@ -241,7 +241,7 @@ test("T05 structured references remain separate from asserted edges and follow v
   await expect(graph).toHaveAttribute("data-edge-count", "2");
   await expect(graph).toHaveAttribute("data-reference-count", "1");
   await expect(page.getByText("Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.")).toBeVisible();
-  await page.getByLabel("Viewpoint").selectOption("object");
+  await page.getByRole("group", { name: "Viewpoint", exact: true }).getByRole("button", { name: "Object", exact: true }).click();
   await expect(graph).toHaveAttribute("data-edge-count", "0");
   await page.getByRole("button", { name: "Clear filters" }).click();
   await expect(graph).toHaveAttribute("data-reference-count", "1");

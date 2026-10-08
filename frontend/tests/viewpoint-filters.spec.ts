@@ -1,0 +1,68 @@
+import { expect, test } from "@playwright/test";
+import { mockWorkspace } from "./v42-fixtures";
+
+test("viewpoint buttons combine views, deduplicate shared nodes and toggle back to all", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/?tab=model");
+  const graph = page.getByRole("img", { name: "Model graph" });
+  const filters = page.getByRole("group", { name: "Viewpoint", exact: true });
+  const all = filters.getByRole("button", { name: "All", exact: true });
+  const object = filters.getByRole("button", { name: "Object", exact: true });
+  const process = filters.getByRole("button", { name: "Process", exact: true });
+  await expect(graph).toHaveAttribute("data-node-count", "11");
+  await expect(filters.getByRole("button")).toHaveCount(8);
+  await expect(all).toHaveAttribute("aria-pressed", "true");
+  await object.click();
+  await expect(object).toHaveAttribute("aria-pressed", "true");
+  await expect(all).toHaveAttribute("aria-pressed", "false");
+  await expect(graph).toHaveAttribute("data-node-count", "1");
+  await expect(graph).toHaveAttribute("data-edge-count", "0");
+  await process.focus();
+  await page.keyboard.press("Enter");
+  await expect(object).toHaveAttribute("aria-pressed", "true");
+  await expect(process).toHaveAttribute("aria-pressed", "true");
+  await expect(graph).toHaveAttribute("data-node-count", "2");
+  await expect(graph).toHaveAttribute("data-edge-count", "1");
+  await expect(page.getByRole("button", { name: "Select node 工单", exact: true })).toHaveCount(1);
+  await page.getByLabel("Search loaded model").fill("integration meaning");
+  await expect(page.getByText("Matches in loaded viewpoint: 1", { exact: true })).toBeVisible();
+  await expect(graph).toHaveAttribute("data-node-count", "2");
+  await process.click();
+  await expect(process).toHaveAttribute("aria-pressed", "false");
+  await expect(graph).toHaveAttribute("data-node-count", "1");
+  await object.click();
+  await expect(all).toHaveAttribute("aria-pressed", "true");
+  await expect(graph).toHaveAttribute("data-node-count", "11");
+  await expect(page.getByLabel("Search loaded model")).toHaveValue("integration meaning");
+  await filters.getByRole("button", { name: "Rule", exact: true }).click();
+  await expect(graph).toHaveAttribute("data-node-count", "1");
+  await expect(page.getByText("No matches in the loaded viewpoint")).toBeVisible();
+  await all.click();
+  await expect(graph).toHaveAttribute("data-node-count", "11");
+  await expect(filters.getByRole("button", { name: "Rule", exact: true })).toHaveAttribute("aria-pressed", "false");
+  await object.click();
+  await process.click();
+  await page.getByRole("button", { name: "Clear filters", exact: true }).click();
+  await expect(page.getByLabel("Search loaded model")).toHaveValue("");
+  await expect(graph).toHaveAttribute("data-node-count", "11");
+  await expect(all).toHaveAttribute("aria-pressed", "true");
+});
+
+test("an empty selected view keeps filters available in Chinese on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.addInitScript(() => localStorage.setItem("ontology-platform-ui-lang", "zh"));
+  await mockWorkspace(page, { ontologies: [{ id: "o1", name: "Objects only" }], handler: async (path, route) => {
+    if (!path.endsWith("/resource-list")) return false;
+    await route.fulfill({ json: { items: [{ iri: "urn:object", label: "对象节点", detail_fields: { semantic_definition: { semantic_role: "object" } } }], source_signature: "sig1" } });
+    return true;
+  } });
+  await page.goto("/?tab=model");
+  const filters = page.getByRole("group", { name: "视角", exact: true });
+  await filters.getByRole("button", { name: "规则", exact: true }).click();
+  await expect(page.getByText("当前视角无节点", { exact: true })).toBeVisible();
+  await expect(filters.getByRole("button", { name: "规则", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(filters.getByRole("button", { name: "接口映射", exact: true })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+  await filters.getByRole("button", { name: "全部", exact: true }).click();
+  await expect(page.getByRole("img", { name: "模型图谱" })).toHaveAttribute("data-node-count", "1");
+});
