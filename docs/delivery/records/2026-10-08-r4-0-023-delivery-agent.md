@@ -8,6 +8,10 @@
 实施完成，独立功能验收 Round 6 PASS（A1—A12 离线合同与实际接线，
 0 Critical／0 未关闭 High）；真实 A13／L0／L1 保持未验收。
 
+2026-10-09 真实运行发现原生工具关闭标志未生效及忙时输入排队等缺陷，
+修复和当前验证边界见[真实运行故障修复](2026-10-09-delivery-runtime-repair.md)。
+原离线功能 PASS 不证明这些真实接线已有效；本次存在外层技术补位，A13 保持未通过。
+
 ## 已实现入口与边界
 
 - `modeling_team delivery` 使用独立 Codex App Server Thread，显式绑定模型与 effort；

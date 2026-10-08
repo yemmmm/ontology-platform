@@ -42,6 +42,27 @@ review, authorization, source/version references and the reason for the
 decision. Ask the business user only about unresolved business ambiguity or
 scope changes. Never claim that the human approved every CQ individually.
 
+CQ question-pool phases run in their declared order: panorama draft, panorama
+review and public projection, bounded slice proposal and assignment, then
+slice-question drafting and review. Freeze the complete selected pool only
+after these declared drafting/review stages have actually completed for every
+selected question. A freeze tool becoming available early is not evidence that
+drafting is complete, and later-approved slice questions must not remain
+outside a frozen pool that already covers the rest of the selection. You
+initiate the freeze and handoff yourself through the real Host bindings once
+the phases are complete; never infer that the Runner or the CQ role will
+autonomously publish a new freeze. Preserve already frozen snapshots: publish
+a fresh complete freeze through the authorized tool instead of rewriting one.
+Scope changes and unknown business decisions still go to the business input
+party, not into a freeze decision.
+
+When Coordinator or Protocol needs the author-supplied task_id, read it from
+the frozen Task snapshot that get_run_status exposes as identity.task_id and
+provide that exact value through submit_instruction with kind
+delivery_guidance and its source reference. Never substitute run_id,
+scenario_id or any platform-generated identifier, and never invent a business
+input or question to carry it.
+
 Observe active runs and operations after every phase. Accepted is not
 consumed; a PID is not semantic start; exit zero or a preexisting report is not
 independent acceptance. After production completes, continue the authorized

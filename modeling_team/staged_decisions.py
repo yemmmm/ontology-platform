@@ -2378,6 +2378,11 @@ def validate_materialization_plan(value: Any) -> tuple[StagedDecisionIssue, ...]
         binding_issue = _decision_binding_issue(plan_projection.get("decision_bindings"))
         if binding_issue is not None:
             issues.append(binding_issue)
+        index_issue = _command_index_issue(
+            plan_projection.get("decision_bindings"), plan_projection.get("items")
+        )
+        if index_issue is not None:
+            issues.append(index_issue)
     digest = value.get("projection_digest")
     if not _nonempty(digest) or not str(digest).startswith("sha256:"):
         issues.append(
@@ -2596,7 +2601,11 @@ def unified_identity_issue(
         "table_mapping": "table_mapping_iri", "join_mapping": "join_mapping_iri",
         "enum_meaning": "enum_meaning_iri", "metric_definition": "metric_iri",
     }
-    items = projection.get("items") or []
+    raw_items = projection.get("items")
+    items = raw_items if isinstance(raw_items, list) else []
+    index_issue = _command_index_issue(projection.get("decision_bindings"), items)
+    if index_issue is not None:
+        return index_issue
     for decision in projection.get("decision_bindings") or []:
         command = items[decision["command_index"]]
         kind = command["command_kind"]
@@ -3069,6 +3078,45 @@ def staged_receipt_schema_issue(record: Mapping[str, Any]) -> StagedDecisionIssu
     return StagedDecisionIssue(
         "unified_schema_mismatch", f"receipt schema {schema!r} is not supported", ""
     )
+
+
+def _command_index_issue(
+    decision_bindings: Any, items: Any
+) -> StagedDecisionIssue | None:
+    """A decision binding's ``command_index`` must name a position in ``items``.
+
+    The binding is the only positional link between an approved decision and
+    the forwarded commands.  An index that is not a non-negative integer inside
+    the current projection's ``items`` is a typed, fixable rejection: a one-item
+    bounded part whose binding carried ``command_index=1`` reached the identity
+    close check and crashed it with a raw ``IndexError`` instead.
+    """
+
+    if not isinstance(decision_bindings, list) or not isinstance(items, list):
+        # Shape failures (for example non-list decision_bindings) are owned by
+        # the shape validators; the range check only evaluates a well-formed
+        # binding list against real items.
+        return None
+    for position, binding in enumerate(decision_bindings):
+        if not isinstance(binding, Mapping):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch",
+                f"decision_bindings[{position}]: binding must be an object",
+                "",
+            )
+        command_index = binding.get("command_index")
+        if (
+            isinstance(command_index, bool)
+            or not isinstance(command_index, int)
+            or not 0 <= command_index < len(items)
+        ):
+            return StagedDecisionIssue(
+                "unified_schema_mismatch",
+                f"decision_bindings[{position}]: command_index must be a "
+                f"position in this projection's items (0..{len(items) - 1})",
+                "",
+            )
+    return None
 
 
 def _decision_binding_issue(value: Any) -> StagedDecisionIssue | None:

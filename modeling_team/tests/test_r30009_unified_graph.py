@@ -56,6 +56,7 @@ from modeling_team.staged_decisions import (
     unified_approval_issue,
     unified_candidate_issue,
     unified_graph_mode,
+    unified_identity_issue,
     unified_plan_issue,
     validate_materialization_plan,
     validate_unified_approvals,
@@ -611,6 +612,91 @@ def test_candidate_revision_and_approval_closures(tmp_path, candidate, projectio
     }
     assert _codes([unified_approval_issue(unknown_decision, projection)]) == ["approval_missing"]
     assert _codes([unified_approval_issue({}, projection)]) == ["unified_schema_mismatch"]
+
+
+def _published_items(candidate):
+    return {item["item_id"]: item for item in candidate["items"]}
+
+
+def test_out_of_range_command_index_is_a_typed_rejection_not_indexerror(
+    candidate, projection, plan
+):
+    # Observed defect shape: a one-item bounded part whose decision binding
+    # carried command_index=1 passed plan validation and the projection
+    # comparison, then crashed the identity close check with a raw IndexError.
+    bad_projection = {
+        **projection,
+        "decision_bindings": [{**projection["decision_bindings"][0], "command_index": 1}],
+    }
+    issue = unified_identity_issue(bad_projection, _published_items(candidate))
+    assert issue is not None
+    assert issue.reason_code == "unified_schema_mismatch"
+    assert "decision_bindings[0]" in issue.detail
+    assert "command_index" in issue.detail
+    assert "0..0" in issue.detail  # actionable: the valid positions of this part
+    # The plan is rejected at load time, before any close check runs.
+    bad_plan = {
+        **plan,
+        "projection": bad_projection,
+        "projection_digest": projection_digest(bad_projection),
+    }
+    assert "unified_schema_mismatch" in _codes(validate_materialization_plan(bad_plan))
+
+
+def test_noninteger_command_index_is_rejected_at_plan_load(plan, projection):
+    for invalid in ("1", True, None, 1.0, -1):
+        bad_projection = {
+            **projection,
+            "decision_bindings": [
+                {**projection["decision_bindings"][0], "command_index": invalid}
+            ],
+        }
+        bad_plan = {
+            **plan,
+            "projection": bad_projection,
+            "projection_digest": projection_digest(bad_projection),
+        }
+        issues = validate_materialization_plan(bad_plan)
+        assert "unified_schema_mismatch" in _codes(issues), invalid
+        assert any("command_index" in issue.detail for issue in issues), invalid
+
+
+def test_nonlist_decision_bindings_keeps_the_typed_shape_issue(plan, projection):
+    # A shape failure stays the shape validator's typed rejection: the range
+    # check must not evaluate a non-list binding value and crash instead.
+    bad_projection = {**projection, "decision_bindings": 1}
+    bad_plan = {
+        **plan,
+        "projection": bad_projection,
+        "projection_digest": projection_digest(bad_projection),
+    }
+    issues = validate_materialization_plan(bad_plan)
+    assert _codes(issues) == ["missing_candidate_reference"]
+    assert "decision bindings" in issues[0].detail
+
+
+def test_valid_command_index_zero_is_preserved(candidate, projection, plan):
+    # The in-range binding keeps its exact index and the plan still loads; the
+    # same create command bound as a future creation passes the identity check.
+    assert projection["decision_bindings"][0]["command_index"] == 0
+    assert validate_materialization_plan(plan) == ()
+    valid_projection = {
+        **projection,
+        "identity_bindings": [
+            build_identity_binding(
+                candidate_item_id="item-entity",
+                receipt_ref="plan-1-r1/batch-1/client-1",
+            )
+        ],
+    }
+    valid_plan = {
+        **plan,
+        "projection": valid_projection,
+        "projection_digest": projection_digest(valid_projection),
+    }
+    assert validate_materialization_plan(valid_plan) == ()
+    assert unified_identity_issue(valid_projection, _published_items(candidate)) is None
+    assert valid_projection["decision_bindings"][0]["command_index"] == 0
 
 
 def test_plan_ref_must_live_in_the_published_directory(tmp_path, plan):

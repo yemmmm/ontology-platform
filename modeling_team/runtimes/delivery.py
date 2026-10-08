@@ -22,6 +22,60 @@ class DeliveryRuntimeError(RuntimeError):
     """Native transport failure, without provider-controlled diagnostic text."""
 
 
+# The installed Codex app-server (verified against /agent/bin/real-codex
+# 0.161.0 and the mounted --experimental protocol schemas) has no single
+# "disable default tools" switch: ``default_tools_enabled`` is not a ``Config``
+# key, so a thread/start request carrying it is accepted and silently ignored
+# while the model still receives the native builtins (captured outbound
+# ``exec_command``/``write_stdin`` calls in the R4.0-023 Delivery incident).
+# The supported mechanism is the per-capability projection below.  Every entry
+# is a real schema key whose effect was confirmed on the installed server by
+# capturing its outbound model request, which then contained only the dynamic
+# Host tools:
+#   features.shell_tool=False        removes exec_command/write_stdin
+#   features.sleep_tool=False        removes the native sleep tool
+#   features.view_image=False        removes view_image
+#   features.goals=False             removes get/create/update_goal
+#   features.multi_agent(_v2)=False  removes the multi_agent_v1 namespace
+#   tools.experimental_request_user_input.enabled=False removes
+#                                   request_user_input
+#   tools.update_plan.enabled=False  removes update_plan
+#   web_search="disabled"            removes the web_search tool
+_NATIVE_TOOL_BOUNDARY_CONFIG: dict[str, Any] = {
+    "web_search": "disabled",
+    "features": {
+        "shell_tool": False,
+        "sleep_tool": False,
+        "view_image": False,
+        "goals": False,
+        "multi_agent": False,
+        "multi_agent_v2": False,
+    },
+    "tools": {
+        "experimental_request_user_input": {"enabled": False},
+        "update_plan": {"enabled": False},
+    },
+}
+# Feature-gated builtins the running app-server must report as off for this
+# exact thread before any turn is allowed.  ``tools.*`` and ``web_search`` have
+# no feature-list surface, so their effective state rests on the captured
+# outbound-tool evidence above plus the offline wire tests, not this check.
+_REQUIRED_DISABLED_FEATURES = (
+    "shell_tool",
+    "sleep_tool",
+    "view_image",
+    "goals",
+    "multi_agent",
+    "multi_agent_v2",
+)
+
+
+def _native_tool_boundary_config() -> dict[str, Any]:
+    """Return the per-thread config overlay that removes native builtins."""
+
+    return json.loads(json.dumps(_NATIVE_TOOL_BOUNDARY_CONFIG))
+
+
 class DeliveryRuntime:
     def __init__(
         self, *, binding: RoleModelBinding, home: Path, instructions: str,
@@ -91,10 +145,11 @@ class DeliveryRuntime:
                 "cwd": str(work), "model": self.binding.model,
                 "baseInstructions": "", "developerInstructions": self.instructions,
                 "approvalPolicy": "never", "sandbox": "read-only",
-                "config": {"default_tools_enabled": False, "web_search": "disabled"},
+                "config": _native_tool_boundary_config(),
                 "dynamicTools": [{"type": "function", **tool} for tool in self.tools],
             })
             self.thread_id = result["thread"]["id"]
+            self._verify_native_tool_boundary()
         except Exception:
             self.close()
             raise
@@ -130,6 +185,31 @@ class DeliveryRuntime:
                 return value.get("result", {})
             self._handle(value)
         raise DeliveryRuntimeError(f"Delivery native RPC timed out: {method}")
+
+    def _verify_native_tool_boundary(self) -> None:
+        """Fail closed unless the live app-server reports the builtins off.
+
+        An accepted ``thread/start`` cannot prove the effective boundary on its
+        own: unsupported config keys are silently ignored, which is exactly how
+        the previous ``default_tools_enabled`` flag failed.  The
+        ``experimentalFeature/list`` answer is computed from this thread's
+        refreshed config, so a renamed or re-forced builtin feature is caught
+        here, before any turn can drive native tool traffic.
+        """
+        result = self._rpc("experimentalFeature/list", {"threadId": self.thread_id})
+        reported: dict[str, Any] = {}
+        for entry in result.get("data") or []:
+            if isinstance(entry, dict) and isinstance(entry.get("name"), str):
+                reported[entry["name"]] = entry.get("enabled")
+        still_enabled = sorted(
+            name for name in _REQUIRED_DISABLED_FEATURES
+            if reported.get(name) is not False
+        )
+        if still_enabled:
+            raise DeliveryRuntimeError(
+                "Delivery native tool boundary not effective for thread"
+                f" (not reported off: {', '.join(still_enabled)})"
+            )
 
     def _remove_auth(self) -> None:
         (self.home / "auth.json").unlink(missing_ok=True)
@@ -183,6 +263,28 @@ class DeliveryRuntime:
             raise
         finally:
             self._remove_auth()
+
+    @property
+    def turn_id(self) -> str | None:
+        """Id of the most recently started turn, as reported by the server."""
+        return self._turn_id
+
+    def steer(self, text: str) -> None:
+        """Deliver input into the currently active turn via ``turn/steer``.
+
+        A long-running turn must not starve later sourced input: the packet is
+        delivered on the same live thread and turn instead of queueing behind
+        it.  The request binds the actual active turn id, so a turn that has
+        already ended server-side is rejected as stale instead of silently
+        dropping the input.
+        """
+        if not self.busy or self._turn_id is None or self.thread_id is None:
+            raise DeliveryRuntimeError("Delivery active turn is unavailable")
+        self._rpc("turn/steer", {
+            "threadId": self.thread_id,
+            "expectedTurnId": self._turn_id,
+            "input": [{"type": "text", "text": text, "text_elements": []}],
+        })
 
     def poll(self, timeout: float = 0) -> list[dict]:
         value = self._read(timeout)

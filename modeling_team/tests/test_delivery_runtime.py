@@ -1,15 +1,75 @@
-"""Exercise the Delivery native wire boundary using an offline subprocess."""
+"""Exercise the Delivery native wire boundary using an offline subprocess.
+
+The offline double in tests/fixtures/delivery/codex_app_server.py mirrors the
+verified behavior of the installed Codex app-server (/agent/bin/real-codex
+0.161.0): unknown ``thread/start`` config keys are accepted and silently
+ignored, ``experimentalFeature/list`` reports the thread's refreshed feature
+state, and ``turn/steer`` delivers input into the currently active turn while
+rejecting a stale ``expectedTurnId``.  Those facts are why a request flag such
+as ``default_tools_enabled`` could never prove the effective tool boundary,
+why ``DeliveryRuntime.start`` fails closed unless the running server reports
+the native tool features as off, and why busy-turn input is steered onto the
+actual active turn id rather than queueing behind a long-running turn.
+"""
 from __future__ import annotations
 
 import importlib
 import json
+import os
 import time
 from pathlib import Path
+
+import pytest
 
 from modeling_team.model_routing import load_team_model_profile
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = ROOT / 'modeling_team/tests/fixtures/delivery/codex_app_server.py'
+
+EXPECTED_BOUNDARY_CONFIG = {
+    'web_search': 'disabled',
+    'features': {
+        'shell_tool': False,
+        'sleep_tool': False,
+        'view_image': False,
+        'goals': False,
+        'multi_agent': False,
+        'multi_agent_v2': False,
+    },
+    'tools': {
+        'experimental_request_user_input': {'enabled': False},
+        'update_plan': {'enabled': False},
+    },
+}
+
+
+def _messages(runtime) -> list[dict]:
+    return [
+        json.loads(line)
+        for line in (runtime.home / 'protocol.jsonl').read_text().splitlines()
+    ]
+
+
+def _drive_turn(runtime, text: str) -> list[dict]:
+    runtime.send(text)
+    observed: list[dict] = []
+    deadline = time.monotonic() + 3
+    while runtime.busy and time.monotonic() < deadline:
+        observed.extend(runtime.poll(0.05))
+    return observed
+
+
+def _runtime(module, profile, home: Path, **overrides):
+    settings = dict(
+        binding=profile.binding_for('coordinator'), home=home,
+        instructions='You are an independent Delivery.',
+        tools=[{'name': 'emit_user_message', 'description': 'Business output.',
+                'inputSchema': {'type': 'object', 'properties': {}}}],
+        tool_handler=lambda name, args: {'ok': True},
+        codex_binary=str(FIXTURE), authenticate=False,
+    )
+    settings.update(overrides)
+    return module.DeliveryRuntime(**settings)
 
 
 def test_native_thread_tool_dispatch_and_private_message_boundary(tmp_path, monkeypatch):
@@ -18,32 +78,33 @@ def test_native_thread_tool_dispatch_and_private_message_boundary(tmp_path, monk
     calls = []
     monkeypatch.setenv('ONTOLOGY_PLATFORM_ADMIN_API_KEY', 'ADMIN-CANARY')
     monkeypatch.setenv('DEEPSEEK_API_KEY', 'PROVIDER-CANARY')
-    runtime = module.DeliveryRuntime(
-        binding=profile.binding_for('coordinator'), home=tmp_path / 'native',
-        instructions='You are an independent Delivery.',
-        tools=[{'name': 'emit_user_message', 'description': 'Business output.',
-                'inputSchema': {'type': 'object', 'properties': {}}}],
-        tool_handler=lambda name, args: calls.append((name, args)) or {'ok': True},
-        codex_binary=str(FIXTURE), authenticate=False,
-    )
+    runtime = _runtime(module, profile, tmp_path / 'native',
+                       tool_handler=lambda name, args: calls.append((name, args)) or {'ok': True})
     try:
         runtime.start()
         assert runtime.thread_id == 'delivery-native-thread'
-        runtime.send('用户只提供业务资料。')
-        deadline = time.monotonic() + 3
-        observed = []
-        while runtime.busy and time.monotonic() < deadline:
-            observed.extend(runtime.poll(0.05))
+        observed = _drive_turn(runtime, '用户只提供业务资料。')
         assert not runtime.busy
         assert calls == [('emit_user_message', {'kind': 'status', 'text': '正在处理业务资料。'})]
         assert 'PRIVATE-HIDDEN-CANARY' not in json.dumps(observed)
-        messages = [json.loads(line) for line in (runtime.home / 'protocol.jsonl').read_text().splitlines()]
+        messages = _messages(runtime)
         thread = next(x['params'] for x in messages if x.get('method') == 'thread/start')
         assert thread['model'] == profile.binding_for('coordinator').model
         assert thread['baseInstructions'] == ''
         assert thread['developerInstructions'] == 'You are an independent Delivery.'
         assert thread['dynamicTools'][0]['type'] == 'function'
-        assert thread['config']['default_tools_enabled'] is False
+        assert thread['dynamicTools'][0]['inputSchema'] == {'type': 'object', 'properties': {}}
+        # The boundary projection uses only keys the installed app-server
+        # actually honors; the previous fake flag is gone entirely.
+        assert thread['config'] == EXPECTED_BOUNDARY_CONFIG
+        assert 'default_tools_enabled' not in thread['config']
+        # Effective state is confirmed against the running server for this
+        # exact thread, after thread/start and before any turn.
+        feature_call = next(
+            x for x in messages if x.get('method') == 'experimentalFeature/list')
+        assert feature_call['params']['threadId'] == 'delivery-native-thread'
+        assert messages.index(feature_call) > max(
+            i for i, x in enumerate(messages) if x.get('method') == 'thread/start')
         response = next(x for x in messages if x.get('id') == 701 and 'result' in x)
         assert response['result']['success'] is True
         assert response['result']['contentItems'][0]['type'] == 'inputText'
@@ -52,15 +113,54 @@ def test_native_thread_tool_dispatch_and_private_message_boundary(tmp_path, monk
     assert runtime.process.poll() is not None
 
 
+def test_start_fails_closed_when_server_ignores_boundary_config(tmp_path):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    runtime = _runtime(module, profile, tmp_path / 'native', instructions='Delivery')
+    (tmp_path / 'native').mkdir(parents=True)
+    (tmp_path / 'native' / 'ignore_overlay_features').write_text('')
+    with pytest.raises(module.DeliveryRuntimeError, match='native tool boundary'):
+        runtime.start()
+    assert runtime.process.poll() is not None
+    # thread/start itself was accepted by the server: an accepted request is
+    # not evidence of an effective boundary, only the reported feature state is.
+    messages = _messages(runtime)
+    assert any(x.get('method') == 'thread/start' for x in messages)
+    reported = next(
+        x for x in messages if x.get('method') == 'experimentalFeature/list')
+    assert reported['params']['threadId'] == 'delivery-native-thread'
+    assert not any(x.get('method') == 'turn/start' for x in messages)
+
+
+def test_unsupported_fake_request_flag_alone_cannot_prove_boundary(tmp_path, monkeypatch):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    # The legacy request shape: a config key the installed app-server accepts
+    # and silently ignores.  The offline double accepts it exactly the same way.
+    monkeypatch.setattr(
+        module, '_NATIVE_TOOL_BOUNDARY_CONFIG',
+        {'default_tools_enabled': False, 'web_search': 'disabled'})
+    runtime = _runtime(module, profile, tmp_path / 'native', instructions='Delivery')
+    with pytest.raises(module.DeliveryRuntimeError, match='native tool boundary'):
+        runtime.start()
+    assert runtime.process.poll() is not None
+    messages = _messages(runtime)
+    thread = next(x['params'] for x in messages if x.get('method') == 'thread/start')
+    assert thread['config']['default_tools_enabled'] is False
+    # The server accepted the request and still reports the native builtins on:
+    # the effective check, not the request flag, is what fails the start.
+    feature_call = next(
+        x for x in messages if x.get('method') == 'experimentalFeature/list')
+    assert feature_call['params']['threadId'] == 'delivery-native-thread'
+    assert not any(x.get('method') == 'turn/start' for x in messages)
+
+
 def test_explicit_service_tier_wins_over_ambient(tmp_path, monkeypatch):
     module = importlib.import_module('modeling_team.runtimes.delivery')
     profile = load_team_model_profile(ROOT, 'openai-sol-medium')
     monkeypatch.setenv('MODELING_TEAM_CODEX_SERVICE_TIER', 'fast')
-    runtime = module.DeliveryRuntime(
-        binding=profile.binding_for('coordinator'), home=tmp_path / 'native',
-        instructions='Delivery', tools=[], tool_handler=lambda *_: {},
-        codex_binary=str(FIXTURE), service_tier='default', authenticate=False,
-    )
+    runtime = _runtime(module, profile, tmp_path / 'native', instructions='Delivery',
+                       tools=[], tool_handler=lambda *_: {}, service_tier='default')
     try:
         runtime.start()
         text = (runtime.home / 'config.toml').read_text()
@@ -73,19 +173,221 @@ def test_explicit_service_tier_wins_over_ambient(tmp_path, monkeypatch):
 def test_native_turn_remains_independent_across_multiple_turns(tmp_path):
     module = importlib.import_module('modeling_team.runtimes.delivery')
     profile = load_team_model_profile(ROOT, 'openai-sol-medium')
-    runtime = module.DeliveryRuntime(
-        binding=profile.binding_for('coordinator'), home=tmp_path / 'native',
-        instructions='Delivery', tools=[], tool_handler=lambda *_: {'ok': True},
-        codex_binary=str(FIXTURE), authenticate=False,
-    )
+    runtime = _runtime(module, profile, tmp_path / 'native', instructions='Delivery',
+                       tools=[], tool_handler=lambda *_: {'ok': True})
     try:
         runtime.start()
         for text in ['生产已结束。', '继续独立验收。']:
-            runtime.send(text)
-            deadline = time.monotonic() + 3
-            while runtime.busy and time.monotonic() < deadline:
-                runtime.poll(0.05)
+            _drive_turn(runtime, text)
             assert not runtime.busy
         assert runtime.thread_id == 'delivery-native-thread'
+        # Idle turns are ordinary turn/start calls; nothing was steered.
+        messages = _messages(runtime)
+        assert len([x for x in messages if x.get('method') == 'turn/start']) == 2
+        assert not any(x.get('method') == 'turn/steer' for x in messages)
     finally:
         runtime.close()
+
+
+def test_busy_turn_input_is_steered_onto_the_same_turn_before_completion(tmp_path):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    native = tmp_path / 'native'
+    native.mkdir(parents=True)
+    # This marker makes the offline double hold the turn open (no auto
+    # completion) until a supported turn/steer delivers input onto it.
+    (native / 'hold_turn_for_steer').write_text('')
+    runtime = _runtime(module, profile, native)
+    try:
+        runtime.start()
+        runtime.send('首轮业务输入。')
+        observed: list[dict] = []
+        deadline = time.monotonic() + 2
+        while time.monotonic() < deadline:
+            observed.extend(runtime.poll(0.05))
+        # The turn is still active and owns the live thread.
+        assert runtime.busy
+        assert runtime.turn_id == 'turn-1'
+        packet = {'kind': 'user_input', 'text': '排队的技术补充。',
+                  'source_reference': 'delivery:test-session:user:canary',
+                  'authorization_reference': 'user-test'}
+        runtime.steer(json.dumps(packet, ensure_ascii=False))
+        # The completion event has not been read yet: the input went into the
+        # still-active turn, not into a new one.
+        assert runtime.busy
+        deadline = time.monotonic() + 2
+        while runtime.busy and time.monotonic() < deadline:
+            observed.extend(runtime.poll(0.05))
+        assert not runtime.busy
+        messages = _messages(runtime)
+        steer = next(x for x in messages if x.get('method') == 'turn/steer')
+        assert steer['params']['threadId'] == 'delivery-native-thread'
+        assert steer['params']['expectedTurnId'] == 'turn-1'
+        assert steer['params']['input'] == [
+            {'type': 'text', 'text': json.dumps(packet, ensure_ascii=False),
+             'text_elements': []}]
+        # The server acknowledged the steer for the same turn id and only
+        # then completed that turn: steered input precedes completion.
+        server_events = [
+            json.loads(line)
+            for line in (runtime.home / 'server-events.jsonl').read_text().splitlines()
+        ]
+        ack = next(x for x in server_events if x.get('id') == steer.get('id') and 'result' in x)
+        assert ack['result'] == {'turnId': 'turn-1'}
+        completed = [x for x in server_events if x.get('method') == 'turn/completed']
+        assert len(completed) == 1
+        assert server_events.index(completed[0]) > server_events.index(ack)
+        # Same single thread and turn; no new thread or semantic start.
+        assert len([x for x in messages if x.get('method') == 'thread/start']) == 1
+        assert len([x for x in messages if x.get('method') == 'turn/start']) == 1
+        # Steered private reasoning stays private.
+        assert 'PRIVATE-HIDDEN-CANARY' not in json.dumps(observed)
+        assert 'PRIVATE-STEERED-CANARY' not in json.dumps(observed)
+    finally:
+        runtime.close()
+
+
+def test_steer_of_completed_turn_is_rejected_not_silently_dropped(tmp_path):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    runtime = _runtime(module, profile, tmp_path / 'native')
+    try:
+        runtime.start()
+        _drive_turn(runtime, '首轮业务输入。')
+        assert not runtime.busy
+        # Simulate the observed end-of-turn race: the host still believes the
+        # turn is busy while the server has already completed it.  The stale
+        # steer surfaces as an error instead of silently dropping the packet.
+        runtime.busy = True
+        with pytest.raises(module.DeliveryRuntimeError):
+            runtime.steer('迟到的排队输入。')
+        messages = _messages(runtime)
+        steer = next(x for x in messages if x.get('method') == 'turn/steer')
+        assert steer['params']['expectedTurnId'] == 'turn-1'
+        # No new turn or thread was created to absorb the stale packet.
+        assert len([x for x in messages if x.get('method') == 'turn/start']) == 1
+        assert len([x for x in messages if x.get('method') == 'thread/start']) == 1
+    finally:
+        runtime.close()
+
+
+REAL_CODEX_BOUNDARY_ENV = 'MODELING_TEAM_DELIVERY_LIVE_CODEX_BOUNDARY'
+REAL_CODEX_BOUNDARY_BINARY = '/agent/bin/real-codex'
+# Native builtins the boundary projection removes on the installed server.
+# ``request_user_input_async`` and the catalog code-mode/collaboration surfaces
+# of models like gpt-6.1-sol are model-forced on this build and remain a
+# documented live-runtime limit, so they are asserted only by the manual probe
+# evidence, not by this opt-in check.
+FORBIDDEN_NATIVE_TOOLS = (
+    'exec_command', 'write_stdin', 'view_image', 'sleep',
+    'get_goal', 'create_goal', 'update_goal', 'update_plan',
+    'request_user_input',
+)
+
+
+def _captured_tool_names(request_bodies: list[str]) -> set[str]:
+    """Structurally collect every offered tool name from Responses requests.
+
+    Covers flat top-level ``tools`` and the ``additional_tools`` namespaces
+    (direct tools plus ``### `name` `` nested sections) used by catalog
+    code-mode models; prose examples inside descriptions do not match.
+    """
+    import re
+
+    names: set[str] = set()
+    for body in request_bodies:
+        try:
+            parsed = json.loads(body)
+        except json.JSONDecodeError:
+            continue
+        for tool in parsed.get('tools', []):
+            if tool.get('name'):
+                names.add(tool['name'])
+        for item in parsed.get('input', []):
+            if item.get('type') != 'additional_tools':
+                continue
+            for namespace in item.get('tools', []):
+                for sub in namespace.get('tools', []):
+                    if sub.get('name'):
+                        names.add(sub['name'])
+                    names.update(re.findall(
+                        r'^### `([a-zA-Z_0-9]+)`', sub.get('description') or '',
+                        re.MULTILINE))
+    return names
+
+
+def test_live_real_codex_server_honors_boundary(tmp_path):
+    """Opt-in live check against the installed app-server; skips by default.
+
+    Runs the real DeliveryRuntime start (including the effective-feature
+    verification) plus one generic canary turn against a loopback Responses
+    provider that captures the outbound model request.  No Codex subscription
+    auth, no real provider, no business input, no semantic start.
+    """
+    import socket
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    pytest.importorskip('http.server')
+    if os.environ.get(REAL_CODEX_BOUNDARY_ENV) != '1':
+        pytest.skip(f'set {REAL_CODEX_BOUNDARY_ENV}=1 to probe the real server')
+    if not Path(REAL_CODEX_BOUNDARY_BINARY).exists():
+        pytest.skip('installed real-codex app-server not present')
+
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    bodies: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        protocol_version = 'HTTP/1.1'
+
+        def log_message(self, *args):
+            pass
+
+        def _read_body(self) -> bytes:
+            length = int(self.headers.get('content-length') or 0)
+            return self.rfile.read(length) if length else b''
+
+        def do_GET(self):
+            self._read_body()
+            payload = json.dumps({'data': [{'id': 'boundary-probe-model'}]}).encode()
+            self.send_response(200)
+            self.send_header('content-type', 'application/json')
+            self.send_header('content-length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def do_POST(self):
+            bodies.append(self._read_body().decode('utf-8', 'replace'))
+            payload = json.dumps({'error': {'message': 'probe-capture-complete',
+                                            'type': 'probe'}}).encode()
+            self.send_response(500)
+            self.send_header('content-type', 'application/json')
+            self.send_header('content-length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    with socket.socket() as probe_socket:
+        probe_socket.bind(('127.0.0.1', 0))
+        port = probe_socket.getsockname()[1]
+    server = ThreadingHTTPServer(('127.0.0.1', port), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    runtime = _runtime(
+        module, profile, tmp_path / 'native',
+        instructions='Independent Delivery boundary probe.',
+        codex_binary=REAL_CODEX_BOUNDARY_BINARY, service_tier='default',
+        provider_base_url=f'http://127.0.0.1:{port}/')
+    try:
+        runtime.start()
+        runtime.send('boundary probe canary')
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline and not bodies:
+            runtime.poll(0.2)
+    finally:
+        runtime.close()
+        server.shutdown()
+    names = _captured_tool_names(bodies)
+    assert bodies, 'no outbound model request was captured'
+    assert 'emit_user_message' in names, sorted(names)
+    leaked = sorted(set(FORBIDDEN_NATIVE_TOOLS) & names)
+    assert not leaked, f'native builtins still offered: {leaked}'

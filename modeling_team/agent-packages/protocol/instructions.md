@@ -55,7 +55,8 @@ never silently fall back to the candidate-only call when the candidate contains 
 delete declarations. The native tool returns the complete, dependency-ordered batch plan with every
 class/property/entity/relation/shape command, every `resource_id` bound to the candidate's own IDs
 (so the platform emits readable IRIs, not generated UUIDs), object predicates via
-`create_property`+`object_class_id` (never `create_relation_type`), relation-statement
+`create_property`, carrying `object_class_id` only when the candidate's approved range is
+a formal Class (never `create_relation_type`), relation-statement
 subjects/objects/predicates bound to candidate IDs, and digests computed. Apply
 each returned batch verbatim in the returned order via `submit_modeling_batch` (its `dry_run` then
 `apply_atomic`); do not hand-author, reorder, rebind, rename, or choose `command_kind` yourself,
@@ -92,8 +93,21 @@ semantic input: scheduling Batches must not mutate or reorder candidate meaning,
 delegate exact Batch Items back to Modeling. If a dependency cannot be formally bound,
 send a concrete translation conflict before the write.
 
+The optional range is not a mandatory field. In the mounted
+`modeling-batch-item-contract.json`, `create_property`'s required list is only
+`name`; `class_id` (domain) and `object_class_id` (range Class) are optional,
+and `datatype`/`object_class_id` are mutually exclusive — never two required
+alternatives. Translate the approved semantics and omit the optional range
+where no formal Class range is approved: do not invent a formal domain or
+range, request a common business superclass, or split the predicate to satisfy
+a mistaken premise of a mandatory single `object_class_id`. Validate with the
+actual dry-run feedback; if real compiler behavior contradicts that public
+contract, report the exact error rather than claiming business confirmation
+is required.
+
 Every object-typed predicate (a relation whose range is a class/resource, not a literal) MUST be
-created with `create_property` and `object_class_id`.
+created with `create_property`; include `object_class_id` only when the
+candidate's approved semantics carry a formal Class range for that predicate.
 Never use `create_relation_type` for such a predicate: `create_relation` binds its
 `relation_type_iri` to the formal `/property/{id}` resource, while `create_relation_type` produces a
 distinct `/relation-type/{id}` resource. If a predicate exists only as `/relation-type/{id}`, the
@@ -724,6 +738,20 @@ the approved boundaries — with each part keeping its own review, dry-run, appl
 readback. Old plan evidence is never overwritten and an already applied part is never
 replayed. If a submission already went out or a write is unknown, stop and use the
 staged failure handling above before proposing any split.
+
+Historical cumulative token counts or estimates are not a hard run budget:
+keep executing the approved bounded parts across normal same-thread turns, and
+report an actual runtime bound or error if one occurs instead of stopping on an
+estimated total. Each bounded part binds `decision_bindings.command_index` to
+that part's own `projection.items` positions while preserving every approved
+item field; the immutable successor, revision and approval rules above
+continue to govern every part. Yielding before the plan is complete requires
+an explicit handoff: when a turn ends with bounded parts still pending — even
+with only a plain continuation note such as "Continuing in subsequent turns" —
+send `mcp__team_transport__send_team_message` to Coordinator naming the
+completed parts' bounds, their receipt references, and the next concrete
+action, so Coordinator can schedule the next normal same-thread turn.
+Ordinary final prose does not schedule a turn.
 
 Bindings and proofs bind to the current actually created plan/batch/item, never to a historical
 name. When a plan or its creating `client_batch_id` is renamed, republished as a successor, or

@@ -25,7 +25,7 @@ from .model_routing import (
     ProviderSessionManager, load_team_model_profile, preflight_profile_credentials,
     resolve_delivery_model_binding, uses_external_credential_session,
 )
-from .runtimes.delivery import DeliveryRuntime
+from .runtimes.delivery import DeliveryRuntime, DeliveryRuntimeError
 from .delivery_verification import start_verification, verification_status, stop_verification
 
 _PUBLIC_KINDS = {"status", "business_question", "decision_request", "final"}
@@ -470,6 +470,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         last_observation = None
         next_observation = 0.0
         pending_input: list[dict] = []
+        steer_blocked_turn: str | None = None
         eof = False
         while not session.finished:
             observations = runtime.poll(0.1)
@@ -488,9 +489,26 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         packet["host_control_result"] = control
                         runtime.interrupt()
                     pending_input.append(packet)
+            if runtime.busy and pending_input and steer_blocked_turn != runtime.turn_id:
+                # An active turn must not starve later sourced input: deliver
+                # the original packets promptly onto the same live thread and
+                # turn through the supported turn/steer API, in queue order.
+                while pending_input and runtime.busy and steer_blocked_turn != runtime.turn_id:
+                    try:
+                        runtime.steer(json.dumps(pending_input[0], ensure_ascii=False))
+                    except DeliveryRuntimeError:
+                        # End-of-turn race: the turn completed server-side
+                        # between the busy check and the steer request.  Keep
+                        # the packet queued; the idle branch below delivers it
+                        # with a fresh turn/start once the completion event is
+                        # read, so a stale turn is never fatal or retried hot.
+                        steer_blocked_turn = runtime.turn_id
+                        break
+                    pending_input.pop(0)
             if not runtime.busy:
                 if pending_input:
                     runtime.send(json.dumps(pending_input.pop(0), ensure_ascii=False))
+                    steer_blocked_turn = None
                 elif time.monotonic() >= next_observation:
                     observation = session.observe()
                     serialized = json.dumps(observation, ensure_ascii=False, sort_keys=True)
