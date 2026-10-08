@@ -25,6 +25,7 @@ build/
 !.agents/skills/modeling-dev-loop
 .playwright-mcp/
 workspaces/
+.delivery-ops/
 skills-lock.json
 frontend/.od-skills/
 frontend/critique.json

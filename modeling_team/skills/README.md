@@ -2,10 +2,12 @@
 
 此目录集中保存 Team 成员使用的技能，由角色包或验收 Runtime 按当前 Task/Profile 加载。
 不链接到项目的 `.agents/skills/`；宿主 Delivery Agent 使用
-[`modeling-dev-loop`](../../skills/modeling-dev-loop/SKILL.md) 推进建模、观察和修复。
+独立 [delivery](delivery/SKILL.md) 技能和受限 Host 工具推进建模、观察和修复；
+外部技术宿主手动监督时仍使用 [`modeling-dev-loop`](../../skills/modeling-dev-loop/SKILL.md)。
 
 | 成员 / 执行模式 | 使用的技能 | 角色合同 |
 | --- | --- | --- |
+| 独立 Delivery（Host 私有会话） | [delivery](delivery/SKILL.md) | [delivery](../agent-packages/delivery/package.yaml) |
 | Modeling | [ontology-modeling](ontology-modeling/SKILL.md) | [modeling](../agent-packages/modeling/package.yaml) |
 | Coordinator | 仅角色提示与声明的参考合同 | [coordinator](../agent-packages/coordinator/package.yaml) |
 | Protocol | 仅角色提示与声明的参考合同 | [protocol](../agent-packages/protocol/package.yaml) |

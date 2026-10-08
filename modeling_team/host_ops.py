@@ -115,6 +115,7 @@ STAGE_SOURCES = (
 ACTION_EVIDENCE: dict[str, str] = {
     "user": "evidence/outer-user.jsonl",
     "question": "evidence/outer-question.jsonl",
+    "instruction": "evidence/outer-instruction.jsonl",
     "cq_interview": "evidence/cq-interview.jsonl",
     "cq_review": "evidence/cq-review-decision.jsonl",
     "cq_freeze": "evidence/cq-freeze.jsonl",
@@ -1865,6 +1866,70 @@ def answer_question(
     )
 
 
+def submit_instruction(
+    run_id: str,
+    *,
+    kind: str,
+    text: str,
+    source_reference: str,
+    authorization_reference: str,
+    request_id: str | None = None,
+    repository_root: Path | None = None,
+) -> dict[str, Any]:
+    """Submit a Delivery instruction without impersonating an owner answer.
+
+    ``user_supplement`` carries an explicit business-source supplement and
+    ``delivery_guidance`` carries a host-side control note.  Both use the
+    existing outer-input FIFO and request receipt contract, but deliberately
+    do not carry ``question_delivery_id`` or any other owner-question binding.
+    The Runner remains the authority for whether the instruction can be
+    consumed by the current run.
+    """
+
+    if kind not in {"user_supplement", "delivery_guidance"}:
+        raise HostOpError(
+            "instruction_kind_invalid",
+            "kind must be 'user_supplement' or 'delivery_guidance'",
+            obj="kind",
+            retryable=True,
+            next_action="choose the instruction kind that matches its source",
+        )
+    if not isinstance(text, str) or not text.strip():
+        raise HostOpError(
+            "instruction_invalid",
+            "text must be a non-empty string and is passed through verbatim",
+            obj="text",
+            retryable=True,
+            next_action="resend the complete instruction text",
+        )
+    for field, value in (
+        ("source_reference", source_reference),
+        ("authorization_reference", authorization_reference),
+    ):
+        if not isinstance(value, str) or not value.strip():
+            raise HostOpError(
+                "instruction_invalid",
+                f"{field} must be a non-empty source/authorization reference",
+                obj=field,
+                retryable=True,
+                next_action=f"provide the recorded {field} for this instruction",
+            )
+    envelope = {
+        "action": "instruction",
+        "kind": kind,
+        "text": text,
+        "source_reference": source_reference,
+        "authorization_reference": authorization_reference,
+    }
+    return submit_fifo_action(
+        run_id,
+        "instruction",
+        envelope,
+        request_id=request_id,
+        repository_root=repository_root,
+    )
+
+
 def register_question(
     run_id: str,
     *,
@@ -3535,6 +3600,7 @@ __all__ = [
     "settle_source_run",
     "start_run",
     "stop_run",
+    "submit_instruction",
     "submit_cq_review",
     "submit_fifo_action",
     "validate_freeze_started_at",

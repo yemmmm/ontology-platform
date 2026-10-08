@@ -240,3 +240,30 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 同一写者证据结算，否则返回 `write_tail_unrelated`/`write_tail_checkpoint_binding`/
 `source_active`/`write_unreconciled` 等类型化拒绝。acceptance 模式或非法 run id 在启动前
 即拒绝（`launch_arguments_invalid`）；未传时单源行为不变。
+
+## 独立 Delivery Host 工具（R4.0-023）
+
+上述宿主服务保留 S1 的 12 项及 S2 的 8 项原语义，另提供以下 8 项交付接线。
+它们不进入平台 MCP inventory 或生产角色权限。Delivery 会话通过原生结构化工具调用
+使用同一操作层；业务入口只输出显式发布的业务消息，不透传内部工具响应。
+
+| 工具 | 输入／作用 | 完成依据与限制 |
+| --- | --- | --- |
+| `submit_instruction` | run ID、`user_supplement`／`delivery_guidance`、原文、来源／授权、request ID | 既有 FIFO 与 Runner 实际投递回执；不伪造问题绑定 |
+| `start_evaluation` | run／freeze、cq-acceptance 或 public-feedback、交接／checkpoint、题集与模型配置 | 包装现有 CLI，记录调用与 PID；不提供 unexecuted-report |
+| `get_evaluation_status` | operation ID | 进程状态及本次新报告的真实请求绑定；旧报告、错误绑定或未执行不算有效结果 |
+| `start_repair` | repair-task 文件、指定 executor／model／effort、授权及 issue | 文件 stdin 与 typed argv；修复 workspace 隔离，启动不等于生效 |
+| `get_repair_status` | operation ID | 退出、受控日志及结果证据，`effect_verified` 不因 exit 0 变为 true |
+| `stop_delivery_operation` | operation ID、reason | 核对本次拥有的 PID／进程组后终止，保留日志／回执；不控制无关进程 |
+| `read_platform_record` | batch／session／ontology_batches 的 ID 与精确 project／ontology scope | 既有只读读回；返回记录与读取次数，无 apply/delete |
+| `reconcile_write_state` | 本次 run、project／ontology scope | 既有写者证据与 Batch／Attempt／资源／回执对账；不补做隐藏根因查询 |
+
+`start_run`／`resume_from_checkpoint` 新增可选 `host_session_ref` 透传；它仅关联宿主记录，
+不授予权限或证明 semantic start。Delivery 原生工具投影隐藏 `repository_root`、
+`base_url` 和 `host_session_ref`，由部署宿主注入。
+
+本地入口为 `python -m modeling_team delivery --config <yaml> [--resume]`。
+独立原生会话另有宿主专用 `verify_repair`／`get_repair_verification_status`，按绑定修复
+运行固定 repo 检查与明确授权的本地服务部署。它们不属于上述 stdio MCP 的 28 项清单，
+不开放通用 shell；实际命令、退出码、健康与目标摘要保存在交付私有回执中，不能代替语义验收。
+部署、授权、业务输入和证据边界见 [实施记录](../delivery/records/2026-10-08-r4-0-023-delivery-agent.md)。

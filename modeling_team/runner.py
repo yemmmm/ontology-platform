@@ -19,6 +19,9 @@ from typing import Any, Callable, ClassVar, Mapping, Sequence
 
 from .contracts import (
     MODELING_CHECKPOINTS_PARAMETER,
+    OUTER_INSTRUCTION_ACTION,
+    OUTER_INSTRUCTION_FIELDS,
+    OUTER_INSTRUCTION_KINDS,
     STAGED_MODELING_DECISIONS_PARAMETER,
     UNIFIED_GRAPH_TASK_PARAMETER,
     TeamConfiguration,
@@ -520,6 +523,12 @@ class TeamRunner:
         self._post_settlement_reporting_requested = False
         self._coordinator_final_captured = False
         self._outer_user_texts: set[str] = set()
+        # R4.0-023: text admitted through the Delivery instruction path is
+        # forwarded only by Coordinator.  Keep it separate from owner-answer
+        # text so the Runner can attribute the original sender/kind without
+        # changing the existing owner-answer release contract.
+        self._outer_instruction_texts: set[str] = set()
+        self._outer_instructions: dict[str, dict[str, Any]] = {}
         self._outer_questions: dict[str, dict[str, Any]] = {}
         self._owner_answers: dict[tuple[str, str], dict[str, str]] = {}
         self._owner_answer_failures: set[tuple[str, str]] = set()
@@ -4081,6 +4090,9 @@ class TeamRunner:
                     raise
                 self._outer_user_texts.add(text)
                 self._append_evidence("outer-user", {"text": text})
+        elif action == OUTER_INSTRUCTION_ACTION:
+            output = self._receive_outer_instruction(message)
+            return output + self.drain()
         elif action == "status":
             waits = self._provider_wait_status_records()
             if waits:
@@ -9026,6 +9038,203 @@ class TeamRunner:
         self._outer_questions[delivery_id] = record
         self._append_evidence("outer-question", record)
 
+    def _receive_outer_instruction(self, message: dict[str, Any]) -> list[dict[str, Any]]:
+        """Admit one schema-v2 Delivery instruction and deliver it to Coordinator.
+
+        ``instruction`` is intentionally a separate outer path from ``user``:
+        it carries a sourced supplement or bounded Delivery guidance and never
+        consumes a pending owner question.  Admission and Runtime delivery are
+        recorded as separate evidence events so an accepted request cannot be
+        mistaken for a message that reached Coordinator.
+        """
+
+        assert self.run
+        task = self.run.configuration.task
+        if getattr(task, "schema_version", 1) != 2:
+            raise RecoverableOuterInputError(
+                "outer instruction requires a schema-v2 Task",
+                code="instruction_requires_schema_v2",
+                run_id=self.run.run_id,
+            )
+        if (
+            set(message) - set(OUTER_INSTRUCTION_FIELDS)
+            or message.get("action") != OUTER_INSTRUCTION_ACTION
+        ):
+            raise RecoverableOuterInputError(
+                "outer instruction envelope has invalid fields",
+                code="invalid_instruction",
+                run_id=self.run.run_id,
+            )
+        kind = message.get("kind")
+        text = message.get("text")
+        source_reference = message.get("source_reference")
+        authorization_reference = message.get("authorization_reference")
+        supplied_run_id = message.get("run_id", self.run.run_id)
+        if kind not in OUTER_INSTRUCTION_KINDS:
+            raise RecoverableOuterInputError(
+                "outer instruction kind is invalid",
+                code="invalid_instruction",
+                run_id=self.run.run_id,
+            )
+        if any(
+            not isinstance(value, str) or not value.strip()
+            for value in (text, source_reference, authorization_reference)
+        ):
+            raise RecoverableOuterInputError(
+                "outer instruction text and references are required",
+                code="invalid_instruction",
+                run_id=self.run.run_id,
+            )
+        if not isinstance(supplied_run_id, str) or not supplied_run_id.strip():
+            raise RecoverableOuterInputError(
+                "outer instruction run binding is invalid",
+                code="invalid_instruction",
+                run_id=self.run.run_id,
+            )
+        if supplied_run_id != self.run.run_id:
+            raise RecoverableOuterInputError(
+                "outer instruction is stale for this run",
+                code="stale_instruction",
+                run_id=self.run.run_id,
+            )
+        coordinator = next(
+            (
+                agent.agent_id
+                for agent in self.run.configuration.profile.agents
+                if agent.package.role == "coordinator"
+            ),
+            None,
+        )
+        if coordinator is None:
+            raise RecoverableOuterInputError(
+                "outer instruction has no Coordinator recipient",
+                code="instruction_recipient_unavailable",
+                run_id=self.run.run_id,
+            )
+        results = getattr(self.transport, "results", {})
+        if isinstance(results, Mapping) and coordinator in results:
+            self._append_evidence(
+                "outer-instruction-rejected",
+                {
+                    "run_id": self.run.run_id,
+                    "recipient_id": coordinator,
+                    "kind": kind,
+                    "source_reference": source_reference,
+                    "authorization_reference": authorization_reference,
+                    "code": "instruction_recipient_terminal",
+                },
+            )
+            raise RecoverableOuterInputError(
+                "Coordinator already reported terminal; instruction was not delivered",
+                code="instruction_recipient_terminal",
+                run_id=self.run.run_id,
+            )
+
+        payload = {
+            "run_id": self.run.run_id,
+            "kind": kind,
+            "text": text,
+            "source_reference": source_reference,
+            "authorization_reference": authorization_reference,
+        }
+        instruction_id = "outer-instruction-" + self._canonical_digest(payload)
+        existing = self._outer_instructions.get(instruction_id)
+        if existing is None:
+            record: dict[str, Any] = {
+                "instruction_id": instruction_id,
+                "run_id": self.run.run_id,
+                "sender_id": "delivery/outer",
+                "recipient_id": coordinator,
+                "transport_kind": "outer-instruction",
+                **payload,
+                "admission_status": "accepted",
+            }
+            self._outer_instructions[instruction_id] = record
+            self._outer_instruction_texts.add(text)
+            self._append_evidence("outer-instruction", record)
+        else:
+            record = existing
+            if record.get("text") != text or record.get("kind") != kind:
+                raise TeamConfigurationError("outer instruction identity drift")
+
+        if record.get("delivery_status") == "delivered":
+            return [
+                {
+                    "type": "instruction-accepted",
+                    "instruction_id": instruction_id,
+                    "kind": kind,
+                    "run_id": self.run.run_id,
+                    "delivery_status": "delivered",
+                    "replayed": True,
+                }
+            ]
+
+        try:
+            self.adapter.send_message(
+                coordinator,
+                RuntimeDelivery(
+                    sender_id="delivery/outer",
+                    recipient_id=coordinator,
+                    kind="outer-instruction",
+                    text=text,
+                    delivery_id=instruction_id,
+                ),
+            )
+        except Exception as exc:
+            record["delivery_status"] = "deferred"
+            self._append_evidence(
+                "outer-instruction-delivery",
+                {
+                    "instruction_id": instruction_id,
+                    "run_id": self.run.run_id,
+                    "sender_id": "delivery/outer",
+                    "recipient_id": coordinator,
+                    "transport_kind": "outer-instruction",
+                    "kind": kind,
+                    "source_reference": source_reference,
+                    "authorization_reference": authorization_reference,
+                    "status": "deferred",
+                    "detail": str(exc)[:200],
+                },
+            )
+            raise RecoverableOuterInputError(
+                "outer instruction was accepted but Coordinator delivery is pending",
+                code="instruction_delivery_deferred",
+                run_id=self.run.run_id,
+            ) from exc
+
+        record["delivery_status"] = "delivered"
+        self._append_evidence(
+            "outer-instruction-delivery",
+            {
+                "instruction_id": instruction_id,
+                "run_id": self.run.run_id,
+                "sender_id": "delivery/outer",
+                "recipient_id": coordinator,
+                "transport_kind": "outer-instruction",
+                "kind": kind,
+                "source_reference": source_reference,
+                "authorization_reference": authorization_reference,
+                "status": "delivered",
+            },
+        )
+        return [
+            {
+                "type": "instruction-accepted",
+                "instruction_id": instruction_id,
+                "kind": kind,
+                "run_id": self.run.run_id,
+                "delivery_status": "delivered",
+            },
+            {
+                "type": "instruction-delivered",
+                "instruction_id": instruction_id,
+                "sender_id": "delivery/outer",
+                "recipient_id": coordinator,
+                "kind": "outer-instruction",
+            },
+        ]
+
     def _release_owner_answer(
         self,
         coordinator: str,
@@ -9452,7 +9661,10 @@ class TeamRunner:
                     kind=(
                         "outer-forward"
                         if delivery.sender_id == coordinator
-                        and delivery.text in self._outer_user_texts
+                        and (
+                            delivery.text in self._outer_user_texts
+                            or delivery.text in self._outer_instruction_texts
+                        )
                         else "peer"
                     ),
                     text=delivery.text,

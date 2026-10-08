@@ -1,7 +1,7 @@
 schema_version: 1
 package_id: coordinator
 role: coordinator
-description: Persistent team control-plane and user conversation entrypoint.
+description: Persistent production team control-plane and Delivery relay.
 instructions: instructions.md
 required_skills: []
 references: []

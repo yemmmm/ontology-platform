@@ -127,17 +127,53 @@ def test_start_service_tier_passes_through_mcp(monkeypatch):
     assert captured[0]["service_tier"] == "fast"
 
 
-def test_cold_start_exposes_exactly_the_20_s1_plus_s2_tools():
+def test_host_session_ref_and_repository_root_pass_through_mcp(monkeypatch, tmp_path):
+    captured = []
+
+    def start(**kwargs):
+        captured.append(kwargs)
+        return {}
+
+    monkeypatch.setattr(host_ops_mcp, "start_run", start)
+
+    async def call(client):
+        return _payload(
+            await client.call_tool(
+                "start_run",
+                {
+                    "run_id": "session-ref",
+                    "task": "task.yaml",
+                    "profile": "profile.yaml",
+                    "model_profile": "openai-sol-medium",
+                    "scope": "scope.yaml",
+                    "freeze_started_at": "2026-10-04T00:00:00+00:00",
+                    "host_session_ref": "host-session-7",
+                    "repository_root": str(tmp_path),
+                },
+            )
+        )
+
+    assert _session([call])[0]["ok"] is True
+    assert captured[0]["host_session_ref"] == "host-session-7"
+    assert captured[0]["repository_root"] == tmp_path
+
+
+def test_cold_start_exposes_the_20_s1_plus_s2_tools_and_delivery_extensions():
     async def list_names(client):
         listing = await client.list_tools()
         return [tool.name for tool in listing.tools]
 
     names = _session([list_names])[0]
     assert sorted(names) == sorted(host_ops_mcp.TOOL_NAMES)
-    assert len(names) == 20
-    assert set(names) == set(host_ops_mcp.S1_TOOL_NAMES) | set(host_ops_mcp.S2_TOOL_NAMES)
+    assert len(names) == 20 + len(host_ops_mcp.DELIVERY_TOOL_NAMES)
+    assert set(names) == (
+        set(host_ops_mcp.S1_TOOL_NAMES)
+        | set(host_ops_mcp.S2_TOOL_NAMES)
+        | set(host_ops_mcp.DELIVERY_TOOL_NAMES)
+    )
     assert len(host_ops_mcp.S1_TOOL_NAMES) == 12
     assert len(host_ops_mcp.S2_TOOL_NAMES) == 8
+    assert len(host_ops_mcp.DELIVERY_TOOL_NAMES) == 8
     assert not set(names) & FORBIDDEN_TOOL_NAMES
     # Every registered tool carries a schema, so a host cannot guess names.
     async def schemas(client):
@@ -150,12 +186,13 @@ def test_cold_start_exposes_exactly_the_20_s1_plus_s2_tools():
         assert schemas_by_name[name].get("required"), name
 
 
-def test_production_and_role_surfaces_expose_no_s2_tool_name():
-    """S2-ISO-001 (A07): the S2 names stay host-only.
+def test_production_and_role_surfaces_expose_no_host_only_tool_name():
+    """S2-ISO-001 (A07): host-only names stay off production role surfaces.
 
     The production ``backend/app/mcp/tools`` registry, the role capability
     operation registry and every role agent package are scanned for the S2
-    tool names; none of them may advertise one.
+    tool names; none of them may advertise one.  The independent Delivery
+    package is intentionally excluded from the production-role scan.
     """
 
     import ast
@@ -173,7 +210,8 @@ def test_production_and_role_surfaces_expose_no_s2_tool_name():
                 if isinstance(called, ast.Attribute) and called.attr == "tool":
                     production_names.add(node.name)
     assert production_names, "the production tool registry moved; update this test"
-    assert not production_names & set(host_ops_mcp.S2_TOOL_NAMES)
+    private_tool_names = set(host_ops_mcp.S2_TOOL_NAMES) | set(host_ops_mcp.DELIVERY_TOOL_NAMES)
+    assert not production_names & private_tool_names
 
     from modeling_team import capability_mcp
 
@@ -182,18 +220,18 @@ def test_production_and_role_surfaces_expose_no_s2_tool_name():
         for operations in capability_mcp.ROLE_OPERATIONS.values()
         for operation in operations
     }
-    assert not role_operations & set(host_ops_mcp.S2_TOOL_NAMES)
+    assert not role_operations & private_tool_names
 
     packages = REPO_ROOT / "modeling_team" / "agent-packages"
     package_blob = "\n".join(
         path.read_text("utf-8", errors="replace")
         for path in sorted(packages.rglob("*"))
-        if path.is_file()
+        if path.is_file() and "agent-packages/delivery/" not in path.as_posix()
     )
-    assert not set(host_ops_mcp.S2_TOOL_NAMES) & {
-        name for name in host_ops_mcp.S2_TOOL_NAMES if f"'{name}'" in package_blob
+    assert not private_tool_names & {
+        name for name in private_tool_names if f"'{name}'" in package_blob
     }
-    for name in host_ops_mcp.S2_TOOL_NAMES:
+    for name in private_tool_names:
         assert name not in package_blob
 
 

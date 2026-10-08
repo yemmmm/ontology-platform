@@ -1,11 +1,12 @@
-"""R3.0-016 S1+S2 host-only MCP tool surface (交付设计 §3/§4/§5).
+"""R3.0-016 S1+S2 and R4.0-023 host-only MCP tool surface.
 
 A stdio MCP server named ``modeling-team-host`` exposing exactly the fixed
-20 tools over the local operation layer :mod:`modeling_team.host_ops`: the
+28 tools over the local operation layers: the original
 12 read/submission tools of S1 plus the 8 S2 start/lifecycle/checkpoint
 tools (``start_run``, ``pause_run``, ``resume_live_run``, ``stop_run``,
 ``inspect_checkpoints``, ``save_checkpoint``, ``resume_from_checkpoint``,
-``settle_source_run``).  Every tool is a thin typed wrapper: parameters map
+``settle_source_run``), plus eight Delivery instruction, evaluation, repair
+and read-only reconciliation tools. Every tool is a thin typed wrapper: parameters map
 to the op-layer function, ``HostOpError`` becomes the design §9
 ``{ok: False, error}`` envelope, and success returns ``{ok: True, data}``.
 No business semantics, natural-language interpretation or auto-approval
@@ -22,6 +23,7 @@ registry or any role agent-package mount.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -47,7 +49,17 @@ from .host_ops import (
     settle_source_run,
     start_run,
     stop_run,
+    submit_instruction,
     submit_cq_review,
+)
+from .delivery_ops import (
+    get_evaluation_status,
+    get_repair_status,
+    read_platform_record,
+    reconcile_write_state,
+    stop_delivery_operation,
+    start_evaluation,
+    start_repair,
 )
 
 mcp: FastMCP = FastMCP("modeling-team-host")
@@ -58,6 +70,12 @@ def _call(function, /, *args: Any, **kwargs: Any) -> dict[str, Any]:
         return {"ok": True, "data": function(*args, **kwargs)}
     except HostOpError as exc:
         return {"ok": False, "error": exc.as_envelope()}
+
+
+def _repository_root(value: str | Path | None) -> Path | None:
+    """Convert an injected test/host repository root without widening scope."""
+
+    return None if value is None else Path(value)
 
 
 @mcp.tool(name="get_run_status")
@@ -130,6 +148,34 @@ def tool_answer_question(
         question_delivery_id=question_delivery_id,
         wait_for_draft=wait_for_draft,
         request_id=request_id,
+    )
+
+
+@mcp.tool(name="submit_instruction")
+def tool_submit_instruction(
+    run_id: str,
+    kind: str,
+    text: str,
+    source_reference: str,
+    authorization_reference: str,
+    request_id: str | None = None,
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Submit a Delivery supplement or guidance note through the FIFO.
+
+    This is intentionally parallel to ``answer_question`` and never creates
+    or guesses an owner question binding.
+    """
+
+    return _call(
+        submit_instruction,
+        run_id,
+        kind=kind,
+        text=text,
+        source_reference=source_reference,
+        authorization_reference=authorization_reference,
+        request_id=request_id,
+        repository_root=_repository_root(repository_root),
     )
 
 
@@ -345,6 +391,8 @@ def tool_start_run(
     base_url: str | None = None,
     request_id: str | None = None,
     service_tier: str = "unset",
+    host_session_ref: str | None = None,
+    repository_root: str | None = None,
 ) -> dict[str, Any]:
     """Start exactly one managed modeling Team run (design §5.1).
 
@@ -372,6 +420,8 @@ def tool_start_run(
         base_url=base_url,
         request_id=request_id,
         service_tier=service_tier,
+        **({"host_session_ref": host_session_ref} if host_session_ref is not None else {}),
+        **({"repository_root": _repository_root(repository_root)} if repository_root is not None else {}),
     )
 
 
@@ -476,6 +526,8 @@ def tool_resume_from_checkpoint(
     fork_reason: str | None = None,
     write_tail_run_id: str | None = None,
     service_tier: str = "unset",
+    host_session_ref: str | None = None,
+    repository_root: str | None = None,
 ) -> dict[str, Any]:
     """Resume one explicit published checkpoint as a fresh managed run (§5.5).
 
@@ -507,6 +559,8 @@ def tool_resume_from_checkpoint(
         question_visibility=question_visibility,
         request_id=request_id,
         service_tier=service_tier,
+        **({"host_session_ref": host_session_ref} if host_session_ref is not None else {}),
+        **({"repository_root": _repository_root(repository_root)} if repository_root is not None else {}),
         **({"fork_reason": fork_reason} if fork_reason is not None else {}),
         **({"write_tail_run_id": write_tail_run_id}
            if write_tail_run_id is not None else {}),
@@ -539,10 +593,162 @@ def tool_settle_source_run(
     )
 
 
+@mcp.tool(name="start_evaluation")
+def tool_start_evaluation(
+    run_id: str,
+    operation_id: str,
+    mode: str,
+    freeze_id: str,
+    model_handoff: str | None = None,
+    checkpoint_id: str | None = None,
+    question_ids: list[str] | None = None,
+    question_visibility: str | None = None,
+    model_profile: str | None = None,
+    session_timeout: float | None = None,
+    service_tier: str = "unset",
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Start one explicitly selected, read-only evaluation CLI process."""
+
+    return _call(
+        start_evaluation,
+        run_id=run_id,
+        operation_id=operation_id,
+        mode=mode,
+        freeze_id=freeze_id,
+        model_handoff=model_handoff,
+        checkpoint_id=checkpoint_id,
+        question_ids=question_ids,
+        question_visibility=question_visibility,
+        model_profile=model_profile,
+        session_timeout=session_timeout,
+        service_tier=service_tier,
+        repository_root=_repository_root(repository_root),
+    )
+
+
+@mcp.tool(name="get_evaluation_status")
+def tool_get_evaluation_status(
+    operation_id: str,
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Read one managed evaluation process and its newly bound report."""
+
+    return _call(
+        get_evaluation_status,
+        operation_id=operation_id,
+        repository_root=_repository_root(repository_root),
+    )
+
+
+@mcp.tool(name="start_repair")
+def tool_start_repair(
+    operation_id: str,
+    repair_task_file: str,
+    executor: str,
+    model: str,
+    effort: str,
+    authorization_reference: str,
+    issue_id: str | None = None,
+    service_tier: str = "unset",
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Start a specified repair task with the task file on stdin.
+
+    The Host currently admits only the proven isolated Codex path; Claude
+    returns a typed recoverable isolation-unavailable result.
+    """
+
+    return _call(
+        start_repair,
+        operation_id=operation_id,
+        repair_task_file=repair_task_file,
+        executor=executor,
+        model=model,
+        effort=effort,
+        authorization_reference=authorization_reference,
+        issue_id=issue_id,
+        service_tier=service_tier,
+        repository_root=_repository_root(repository_root),
+    )
+
+
+@mcp.tool(name="get_repair_status")
+def tool_get_repair_status(
+    operation_id: str,
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Read one managed repair process; never interprets text as proof of repair."""
+
+    return _call(
+        get_repair_status,
+        operation_id=operation_id,
+        repository_root=_repository_root(repository_root),
+    )
+
+
+@mcp.tool(name="stop_delivery_operation")
+def tool_stop_delivery_operation(
+    operation_id: str,
+    reason: str,
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Stop one owned evaluation or repair process and retain its evidence."""
+
+    return _call(
+        stop_delivery_operation,
+        operation_id=operation_id,
+        reason=reason,
+        repository_root=_repository_root(repository_root),
+    )
+
+
+@mcp.tool(name="read_platform_record")
+def tool_read_platform_record(
+    record_type: str,
+    record_id: str,
+    project_id: str | None = None,
+    ontology_id: str | None = None,
+    base_url: str | None = None,
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Read one scoped batch/session/ontology-batch record through readback."""
+
+    return _call(
+        read_platform_record,
+        record_type=record_type,
+        record_id=record_id,
+        project_id=project_id,
+        ontology_id=ontology_id,
+        base_url=base_url,
+        repository_root=_repository_root(repository_root),
+    )
+
+
+@mcp.tool(name="reconcile_write_state")
+def tool_reconcile_write_state(
+    run_id: str,
+    project_id: str,
+    ontology_ids: list[str],
+    base_url: str | None = None,
+    repository_root: str | None = None,
+) -> dict[str, Any]:
+    """Reconcile a run's write tail with scoped readback; no apply/delete path."""
+
+    return _call(
+        reconcile_write_state,
+        run_id=run_id,
+        project_id=project_id,
+        ontology_ids=ontology_ids,
+        base_url=base_url,
+        repository_root=_repository_root(repository_root),
+    )
+
+
 # The fixed tool names exposed on the wire (each ``@mcp.tool(name=...)`` above
 # registers exactly one): the 12 S1 read/submission tools plus the 8 S2
-# start/lifecycle/checkpoint tools.  Nothing outside these 20 may appear on
-# this server, and none of them may appear on a production or role surface.
+# start/lifecycle/checkpoint tools and the narrow Delivery host tools.  None
+# of these names is registered on a production or role surface.
 S1_TOOL_NAMES = (
     "get_run_status",
     "get_run_events",
@@ -567,7 +773,17 @@ S2_TOOL_NAMES = (
     "resume_from_checkpoint",
     "settle_source_run",
 )
-TOOL_NAMES = S1_TOOL_NAMES + S2_TOOL_NAMES
+DELIVERY_TOOL_NAMES = (
+    "submit_instruction",
+    "start_evaluation",
+    "get_evaluation_status",
+    "start_repair",
+    "get_repair_status",
+    "stop_delivery_operation",
+    "read_platform_record",
+    "reconcile_write_state",
+)
+TOOL_NAMES = S1_TOOL_NAMES + S2_TOOL_NAMES + DELIVERY_TOOL_NAMES
 
 
 def main() -> None:

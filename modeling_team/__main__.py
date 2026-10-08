@@ -183,6 +183,9 @@ _KNOWN_OUTER_ACTIONS = frozenset(
         "question",
         "issue_resolution",
         "user",
+        # R4.0-023: Delivery's sourced supplement/control note has its own
+        # schema-v2 admission path; it never consumes an owner-question slot.
+        "instruction",
         "status",
         "pause",
         "resume",
@@ -3445,6 +3448,9 @@ def _run_checkpoint_resume_acceptance(
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    delivery = subparsers.add_parser("delivery", help="Independent business-facing Delivery session")
+    delivery.add_argument("--config", required=True, type=Path)
+    delivery.add_argument("--resume", action="store_true", help="Reconcile and continue an existing delivery session")
     validate = subparsers.add_parser("validate")
     validate.add_argument("--profile", required=True, type=Path)
     validate.add_argument("--task", required=True, type=Path)
@@ -3624,6 +3630,14 @@ def main() -> int:
         "--fork-reason", help="Explicitly restore saved data into a new Project; record why",
     )
     args = parser.parse_args()
+    if args.command == "delivery":
+        from .delivery import run_delivery
+
+        try:
+            return run_delivery(args.config, repository_root=repository_root(), resume=args.resume)
+        except Exception:
+            print("Delivery 暂时无法继续；监督中断与内部原因已保留在交付私有记录中。", file=sys.stderr)
+            return 2
     resume_requested = args.command == "checkpoint" and args.checkpoint_command == "resume"
     if args.command == "cq-acceptance":
         # R3.0-011: the read-only v3 acceptance entry stays outside the run

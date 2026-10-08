@@ -28,13 +28,36 @@ PLATFORM_VALUES = {"none", "read", "write"}
 # ``FORMAL_ROLE_VALUES`` below and rejects it before scope or Agent startup.
 ROLE_VALUES = {"coordinator", "modeling", "protocol", "source-specialist", "acceptance"}
 FORMAL_ROLE_VALUES = {"coordinator", "modeling", "protocol", "acceptance"}
+# R4.0-023: Delivery is a host-side role package.  It is admitted by the
+# package loader so the standalone Delivery session can validate the same
+# package contract, but it is deliberately kept out of the production role
+# universe below and cannot be placed in a Team Profile roster.
+DELIVERY_ROLE = "delivery"
+HOST_ONLY_ROLE_VALUES = frozenset({DELIVERY_ROLE})
+# R4.0-023 schema-v2 outer instruction contract.  These fields are deliberately
+# separate from the owner-question answer envelope: an instruction never
+# releases a pending answer and never grants platform write/freeze authority.
+OUTER_INSTRUCTION_ACTION = "instruction"
+OUTER_INSTRUCTION_KINDS = frozenset({"user_supplement", "delivery_guidance"})
+OUTER_INSTRUCTION_FIELDS = frozenset(
+    {
+        "action",
+        "kind",
+        "text",
+        "source_reference",
+        "authorization_reference",
+        "run_id",
+    }
+)
 # R3.0-011: the competency-question role is registered in its own closed set so
 # every pre-existing ``ROLE_VALUES`` contract (R2.3 formal loading, R3.0-002
 # multi-slice assertions) stays byte-identical.  ``ADMITTED_ROLE_VALUES`` is the
 # single loader-wide registration point used by the package loader.
 COMPETENCY_QUESTION_ROLE = "competency-question"
 COMPETENCY_QUESTION_ROLE_VALUES = frozenset({COMPETENCY_QUESTION_ROLE})
-ADMITTED_ROLE_VALUES = ROLE_VALUES | set(COMPETENCY_QUESTION_ROLE_VALUES)
+ADMITTED_ROLE_VALUES = (
+    ROLE_VALUES | set(COMPETENCY_QUESTION_ROLE_VALUES) | set(HOST_ONLY_ROLE_VALUES)
+)
 # R3.0-002 non-formal multi-slice roster: exactly the three modeling roles.
 # Acceptance stays out until the R3.0-006 real-run requirement adds it.
 MULTI_SLICE_ROLE_VALUES = {"coordinator", "modeling", "protocol"}
@@ -363,10 +386,15 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
     if role not in ADMITTED_ROLE_VALUES:
         raise TeamConfigurationError(f"Package {package_id} has unknown role")
     permissions = data.get("permissions")
-    if (
-        not isinstance(permissions, dict)
-        or permissions.get("team_transport") is not True
-    ):
+    if not isinstance(permissions, dict):
+        raise TeamConfigurationError(f"Package {package_id} permissions are invalid")
+    team_transport = permissions.get("team_transport")
+    if role in HOST_ONLY_ROLE_VALUES:
+        if team_transport is not False:
+            raise TeamConfigurationError(
+                f"{role} package must not join production Team Transport"
+            )
+    elif team_transport is not True:
         raise TeamConfigurationError(f"Package {package_id} must permit Team Transport")
     platform = permissions.get("platform")
     if platform not in PLATFORM_VALUES:
@@ -449,6 +477,18 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
     )
 
 
+def load_agent_package(root: Path, package_id: str) -> AgentPackage:
+    """Load one repository-owned package without admitting it to a roster.
+
+    R4.0-023 uses this narrow entry point for the host-side Delivery session.
+    Production Profile loading remains responsible for its own roster rules;
+    in particular, the host-only Delivery package is rejected there rather
+    than silently becoming another production Agent.
+    """
+
+    return _load_package(root, package_id)
+
+
 def load_profile(
     path: Path,
     *,
@@ -487,6 +527,10 @@ def load_profile(
         if agent_id in ids:
             raise TeamConfigurationError("Profile duplicates Agent ID")
         package = _load_package(root, _safe_id(item["package"], "package"))
+        if package.role in HOST_ONLY_ROLE_VALUES:
+            raise TeamConfigurationError(
+                f"{package.role} package is host-only and cannot be placed in a production Profile"
+            )
         ids.add(agent_id)
         roles.append(package.role)
         agents.append(ProfileAgent(agent_id, package))

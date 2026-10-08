@@ -1,0 +1,19 @@
+schema_version: 1
+package_id: delivery
+role: delivery
+description: >-
+  Host-side Delivery Agent for the independent R4.0-023 delivery session. It
+  owns the user-facing delivery conversation and bounded lifecycle coordination
+  without becoming a production roster role or an independent semantic judge.
+instructions: instructions.md
+required_skills:
+  - modeling_team/skills/delivery/SKILL.md
+references: []
+permissions:
+  team_transport: false
+  platform: none
+runtime:
+  codex:
+    sandbox: read-only
+task_input:
+  required: [task, allowed_sources, roster]

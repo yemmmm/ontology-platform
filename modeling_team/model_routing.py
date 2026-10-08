@@ -47,10 +47,18 @@ MODEL_PROFILE_PACKAGE_IDS = (
     "source-examiner",
     "platform-examiner",
 )
+DELIVERY_MODEL_PROFILE_PACKAGE_ID = "delivery"
+MODEL_PROFILE_OPTIONAL_PACKAGE_IDS = (DELIVERY_MODEL_PROFILE_PACKAGE_ID,)
 # The closed role universe a profile may declare.  The formal six remain the
 # formal-run requirement; ``competency-question`` lets a v3 multi-slice
 # profile bind the R3.0-011 roster role that is absent from formal rosters.
 MODEL_PROFILE_ROLE_UNIVERSE = MODEL_PROFILE_PACKAGE_IDS + ("competency-question",)
+# R4.0-023 host-side Delivery is an optional profile declaration.  Keep it out
+# of MODEL_PROFILE_ROLE_UNIVERSE so old profiles and the formal six-role gate
+# remain byte-compatible; only the standalone Delivery resolver consults it.
+MODEL_PROFILE_ALLOWED_ROLE_UNIVERSE = (
+    MODEL_PROFILE_ROLE_UNIVERSE + MODEL_PROFILE_OPTIONAL_PACKAGE_IDS
+)
 REQUESTED_EFFORT_TIERS = ("none", "low", "medium", "high", "xhigh", "max")
 # ``openai-codex`` is the route identity used by profiles, baselines, and run
 # evidence.  Only the per-role Codex TOML projection maps it onto Codex's
@@ -244,6 +252,42 @@ class TeamModelProfile:
         }
 
 
+def resolve_delivery_model_binding(
+    profile: TeamModelProfile,
+) -> tuple[RoleModelBinding, str]:
+    """Resolve the standalone Delivery model and identify its source.
+
+    An explicit ``delivery`` declaration wins.  Otherwise Delivery inherits
+    the selected Coordinator's exact provider/model/effort binding, with a
+    new package identity so downstream runtime code cannot accidentally treat
+    the inherited route as a production Coordinator binding.  The returned
+    source is one of ``"delivery"`` or ``"coordinator"`` and is safe to
+    persist as configuration provenance.  A profile without either binding
+    is a typed configuration error; no ambient model is selected.
+    """
+
+    if not isinstance(profile, TeamModelProfile):
+        raise TeamModelProfileError("team model profile is invalid")
+    explicit = profile.bindings.get(DELIVERY_MODEL_PROFILE_PACKAGE_ID)
+    if explicit is not None:
+        return explicit, DELIVERY_MODEL_PROFILE_PACKAGE_ID
+    coordinator = profile.bindings.get("coordinator")
+    if coordinator is None:
+        raise TeamModelProfileError(
+            "team model profile requires a coordinator or delivery binding"
+        )
+    return (
+        RoleModelBinding(
+            package_id=DELIVERY_MODEL_PROFILE_PACKAGE_ID,
+            provider_id=coordinator.provider_id,
+            model=coordinator.model,
+            requested_effort=coordinator.requested_effort,
+            effective_effort=coordinator.effective_effort,
+        ),
+        "coordinator",
+    )
+
+
 class _StrictProfileLoader(yaml.SafeLoader):
     """SafeLoader that rejects duplicate mapping keys."""
 
@@ -314,11 +358,11 @@ def load_team_model_profile(root: Path, profile_id: str) -> TeamModelProfile:
     if (
         not isinstance(roles, dict)
         or not roles
-        or set(roles) - set(MODEL_PROFILE_ROLE_UNIVERSE)
+        or set(roles) - set(MODEL_PROFILE_ALLOWED_ROLE_UNIVERSE)
     ):
         raise TeamModelProfileError("team model profile role bindings drift")
     bindings: dict[str, RoleModelBinding] = {}
-    for package_id in MODEL_PROFILE_ROLE_UNIVERSE:
+    for package_id in MODEL_PROFILE_ALLOWED_ROLE_UNIVERSE:
         # An explicit ``role: null`` is a malformed declaration, not an
         # undeclared role: only an absent key skips validation.
         if package_id not in roles:
@@ -777,8 +821,11 @@ __all__ = [
     "CODEX_TOML_PROVIDER_ID",
     "DEFAULT_MODEL_PROFILE_ID",
     "DEEPSEEK_DIRECT_ROUTE",
+    "DELIVERY_MODEL_PROFILE_PACKAGE_ID",
     "GLM_DIRECT_ROUTE",
     "MODEL_PROFILE_DIRECTORY",
+    "MODEL_PROFILE_ALLOWED_ROLE_UNIVERSE",
+    "MODEL_PROFILE_OPTIONAL_PACKAGE_IDS",
     "MODEL_PROFILE_PACKAGE_IDS",
     "MODEL_PROFILE_ROLE_UNIVERSE",
     "MODEL_PROFILE_SCHEMA_VERSION",
@@ -794,6 +841,7 @@ __all__ = [
     "TeamModelProfileError",
     "codex_auth_cache_path",
     "load_team_model_profile",
+    "resolve_delivery_model_binding",
     "preflight_codex_subscription_auth",
     "preflight_profile_credentials",
     "profile_requires_codex_subscription_auth",

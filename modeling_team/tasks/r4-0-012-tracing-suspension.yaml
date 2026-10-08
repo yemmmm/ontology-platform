@@ -12,7 +12,10 @@ objective: >-
   unknowns/conflicts and scoped reference reviews before shared changes.
   Preserve source fidelity, explicit unknowns, competency-question
   coverage, generic semantic scope, deterministic dry-run/apply/readback,
-  authorization and independent acceptance.  Modeling candidates contain
+  authorization and independent acceptance. If the host explicitly delegates
+  CQ review to Delivery, submit_cq_review.note records the authorization and
+  source/question-version basis; review, hidden visibility, freeze, and
+  independent Judge contracts remain unchanged. Modeling candidates contain
   semantic meaning, shared slice scope and unknowns only; Protocol owns Batch
   envelopes, platform IDs, write receipts and read handles.  The active flow
   does not create, attach or complete source-tracing records and does not use

@@ -24,7 +24,11 @@ objective: >-
   authorization for future mapping work, external database/API access or
   acceptance beyond the active run's approved scope.
   CQ review and hidden-pool freezing precede formal semantic modeling; use only
-  the approved public projection. Independent acceptance consumes modeled
+  the approved public projection. When the host explicitly delegates CQ review
+  to Delivery, record that authorization and the source/question-version basis
+  in submit_cq_review.note; this does not expose private CQ material or weaken
+  the existing review, visibility, freeze, or independent Judge contracts.
+  Independent acceptance consumes modeled
   semantic resources, not production context, and does not repair this run.  Use the mounted r4-0-007 scenario-map contract for interleaved
   viewpoints, stable shared definitions, maintenance ownership, explicit
   unknowns/conflicts and scoped reference reviews before shared changes.

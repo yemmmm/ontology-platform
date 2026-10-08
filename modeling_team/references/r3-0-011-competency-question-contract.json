@@ -1,6 +1,6 @@
 {
   "schema_version": "r3-0-011-competency-question-contract/v1",
-  "purpose": "Agent-readable contract for the R3.0-011 competency-question lifecycle: explicit Task selector, question/draft/review/freeze schemas, the public projection, visibility rules, and the v3 hidden-batch acceptance hand-off. It describes schema, phase, status and visibility only and carries no business answers. It is only in force for a Team Task that declares parameters.competency_question_acceptance: true; tasks without the selector never load this contract and never get the competency-question capability.",
+  "purpose": "Agent-readable contract for the R3.0-011 competency-question lifecycle: explicit Task selector, question/draft/review/freeze schemas, the public projection, visibility rules, and the v3 hidden-batch acceptance hand-off. It describes schema, phase, status and visibility only and carries no business answers. Review may be submitted by the business user or by an explicitly delegated Delivery Agent; the delegation is recorded with its authorization and source/version basis and never changes private visibility or independent Judge acceptance. It is only in force for a Team Task that declares parameters.competency_question_acceptance: true; tasks without the selector never load this contract and never get the competency-question capability.",
   "task_parameter": {
     "name": "competency_question_acceptance",
     "requires": ["multi_slice_workflow", "staged_modeling_decisions"],
@@ -78,6 +78,7 @@
     "review": {
       "schema_version": "r3-0-011-cq-review/v1",
       "transport": "Outer FIFO/stdin action cq_review only; never Team Transport and never routed through Coordinator.",
+      "delegated_delivery": "When the host explicitly delegates review to Delivery, submit_cq_review.note records the delegation, authorization reference, source/material version, current question version, and point-by-point reasons. This is a user-authorized Agent decision, not a claim of per-question human approval; review binding, hidden/public visibility, freeze, and independent Consumer/Judge contracts remain unchanged.",
       "fields": [
         "schema_version",
         "review_id",

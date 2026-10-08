@@ -2926,7 +2926,12 @@ Consumer／业务系统理解或执行。旧 Platform DSL／SPARQL CONSTRUCT 可
 按已确认业务资料组织 CQ 自动审核，仅就业务歧义与范围变化请求用户决定。
 本轮完成需求细化与[详细设计](../delivery/designs/2026-10-08-r4-0-023-delivery-agent-design.md)，
 独立 `plan_reviewer` Round 1 PASS（0 Critical／0 High，无待确认关键假设）。按用户要求
-在设计独立审阅通过后暂停；未实施、未开展功能或真实建模验收。本次设计授权不增加真实启动额度。
+在设计独立审阅通过后暂停，随后用户明确授权实施。独立 Delivery 会话、Host 操作及
+修复核验接线已实现；独立功能验收 Round 6 PASS（A1—A12 离线合同与实际接线，
+0 Critical／0 未关闭 High），全量 Team 回归 2510 passed、10 skipped。
+详见[交付记录](../delivery/records/2026-10-08-r4-0-023-delivery-agent.md)及
+[独立测试记录](../delivery/tests/2026-10-08-r4-0-023-delivery-agent-acceptance.md)。
+A13、真实 L0／L1 尚未验收；本轮没有调用真实模型或消耗 semantic start 额度。
 
 #### 1. 目标与术语
 
@@ -3073,7 +3078,7 @@ L0 Runtime、L1 Modeling quality、L2 Repeatability、L3 Productization，不相
 恢复、配置及持续推进。选用 Delivery 的流程按本条区分业务用户和系统职责；这些条目中
 “宿主”原有技术职责归 Delivery，业务事实与新增授权不随之转移。v4.1 仅接入已有可用结果。
 
-设计审阅与实际验证状态见详细设计的审阅记录；设计通过不能证明功能或真实语义通过。
+设计审阅、实施及实际验证状态分别见详细设计、交付与测试记录；功能通过不能证明真实语义通过。
 
 ### R4.0-024 建模完成后的模型检查（首项：游离节点）
 
