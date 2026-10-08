@@ -70,7 +70,11 @@ test("visible degree controls saturation while viewpoint, search emphasis and re
   await page.getByLabel("Search loaded model").fill("Hub");
   await page.getByRole("button", { name: "Hub", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Node details" })).toBeVisible();
-  expect(await nodeColors(page)).toEqual(initial);
+  const selectedColors = await nodeColors(page);
+  for (const id of ["urn:hub", "urn:leaf1", "urn:leaf2", "urn:leaf3"]) {
+    expect(selectedColors[id]).toBe(initial[id]);
+  }
+  expect(channels(selectedColors["urn:isolated"]).saturation).toBeLessThan(10);
   const emphasis = await graph.evaluate(element => {
     const cy = (element as HTMLElement & { _cyreg: { cy: Core } })._cyreg.cy;
     const node = cy.getElementById("urn:hub");

@@ -18,7 +18,9 @@ const style: cytoscape.StylesheetStyle[] = [
   { selector: "edge", style: { width: 1.5, "line-color": "#b1abc8", "target-arrow-color": "#b1abc8", "target-arrow-shape": "triangle", "curve-style": "bezier", label: "data(label)", "font-size": 9, color: "#74788d", "text-rotation": "autorotate", "text-wrap": "wrap", "text-max-width": "140px" } },
   { selector: 'edge[edgeKind = "structured_reference"]', style: { "line-style": "dashed" } },
   { selector: ".dimmed", style: { opacity: 0.22 } },
+  { selector: "node.selection-dimmed", style: { "background-color": "#c4c6cd", color: "#74788d" } },
   { selector: ".highlighted", style: { "underlay-color": "#171821", "underlay-opacity": 0.16, "underlay-padding": 5 } },
+  { selector: "edge.highlighted", style: { width: 3, "line-color": "#6b5cad", "target-arrow-color": "#6b5cad" } },
   { selector: "node:selected", style: { "border-width": 4, "border-color": "#171821", "border-opacity": 1 } },
 ];
 export function ForceGraphCanvas({ nodes, edges, selectedNodeId, onSelectNode, highlightedNodeIds, searchActive, emptyTitle, emptyHint }: Props) {
@@ -83,15 +85,21 @@ export function ForceGraphCanvas({ nodes, edges, selectedNodeId, onSelectNode, h
   useEffect(() => {
     const cy = engine.current;
     if (!cy) return;
-    cy.elements().removeClass("highlighted dimmed").unselect();
+    cy.elements().removeClass("highlighted dimmed selection-dimmed").unselect();
+    const selected = selectedNodeId ? cy.getElementById(selectedNodeId) : cy.collection();
+    if (selected.nonempty()) {
+      const neighborhood = selected.closedNeighborhood();
+      neighborhood.addClass("highlighted");
+      cy.elements().difference(neighborhood).addClass("dimmed");
+      cy.nodes().difference(neighborhood).addClass("selection-dimmed");
+      selected.select();
+      cy.center(selected);
+      return;
+    }
     if (searchActive) {
       const ids = new Set(highlightedNodeIds);
       cy.nodes().forEach(node => { node.addClass(ids.has(node.id()) ? "highlighted" : "dimmed"); });
       cy.edges().forEach(edge => { if (!ids.has(edge.source().id()) && !ids.has(edge.target().id())) edge.addClass("dimmed"); });
-    }
-    if (selectedNodeId) {
-      const selected = cy.getElementById(selectedNodeId);
-      if (selected.nonempty()) { selected.select(); cy.center(selected); }
     }
   }, [selectedNodeId, highlightedNodeIds, searchActive, elements]);
   return <div className="graphCanvasWrap"><div className="graphZoom"><button aria-label={t("Zoom in")} onClick={() => engine.current?.zoom(Math.min(4, (engine.current?.zoom() ?? 1) * 1.3))}>+</button><button aria-label={t("Zoom out")} onClick={() => engine.current?.zoom(Math.max(0.15, (engine.current?.zoom() ?? 1) / 1.3))}>−</button><button onClick={() => engine.current?.fit(undefined, 48)}>{t("Fit graph")}</button></div>
