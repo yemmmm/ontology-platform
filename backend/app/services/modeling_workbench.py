@@ -837,16 +837,32 @@ class ModelingWorkbenchService:
                 scalars(q, "question_id verdict") for q in value.get("verdicts", [])
                 if isinstance(q, dict) and q.get("question_id") in all_ids
             ]
+            result["question_ids"] = sorted((
+                set(value.get("executed_question_ids", []))
+                | set(value.get("unexecuted_question_ids", []))
+                | {q["question_id"] for q in result["question_verdicts"]}
+            ) & all_ids)
             return {k: result[k] for k in (
                 "batch_id", "freeze_digest", "applicability", "denominator", "public_count",
                 "verdicts", "unexecuted_question_ids", "hidden_summary", "question_verdicts",
+                "question_ids",
             )} | {"verdicts": [scalars(q, "question_id verdict") for q in result["verdicts"]]}
 
-        groups["reports"] = [
-            self._artifact(run, path, "reports", binding, acceptance)
-            for path in self._paths(run, "acceptance-v3/reports/*/*/batch-report.json")[:ARTIFACT_LIMIT]
-        ]
-        return {**detail, "artifacts": groups}
+        # Acceptance-only runs have no production state.json. Their formal
+        # reports carry the project, ontology, freeze and before/after model
+        # bindings needed by _report_applicability; do not infer these from IDs.
+        paths = self._paths(self.root, "*/acceptance-v3/reports/*/*/batch-report.json")
+        for path in paths[:ARTIFACT_LIMIT]:
+            source_run = self.root / path.relative_to(self.root).parts[0]
+            artifact = self._artifact(source_run, path, "reports", binding, acceptance)
+            if source_run == run or (
+                artifact["availability"] == "available"
+                and artifact["data"].get("applicability") == "verified_current"
+            ):
+                artifact["artifact_id"] = source_run.name + "/" + artifact["artifact_id"]
+                groups["reports"].append(artifact)
+        return {**detail, "artifacts": groups,
+                "acceptance_reports_complete": len(paths) <= ARTIFACT_LIMIT}
 
     @staticmethod
     def _feedback(value: dict, public_ids: dict, projection_bound: bool = True) -> dict:

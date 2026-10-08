@@ -602,9 +602,14 @@ Team run ID 与平台 Session、旧数据库 Run ID 相互独立。
 歧义、枚举超过上限时 current_questions_available=false，不回退旧题。没有冻结文件时仅返回
 公开投影供前端选择唯一最新记录。隐藏题仅提供 question_id、question、visibility、content_version，
 不提供参考答案、答案点、私有回答或诊断。原 workbench run 投影继续不读取冻结隐藏题。
+报告从现有运行目录中的正式 acceptance-v3/reports 读取，包含无 state.json 的只读验收
+运行；跨运行报告必须核实同项目／本体、同 batch_id／snapshot_digest、前后模型绑定及
+在线模型一致，公开回归报告不参与。acceptance_reports_complete 表示报告枚举未截断。
 报告绑定同一 batch_id／snapshot_digest，沿用实时模型适用性核实；question_verdicts 仅含
 获准当前题的 question_id／verdict，包含隐藏题用于逐题标记。verdicts 保留公开裁决，
-hidden_summary 保留隐藏汇总，两者与 denominator／public_count 用于进度条，不能重复计数。
+hidden_summary 保留隐藏汇总。question_ids 包含该报告覆盖的当前题目（已执行、未执行
+或已有裁决）；denominator 为该报告覆盖题数。进度按每题最新正式报告的裁决统一计数，
+分母为当前完整题集，不区分公开／隐藏、不重复计数；最新报告覆盖却无裁决时不复用旧结果。
 不加入建模角色工具；普通 read／model Key 不可访问，管理员视图不改变生产侧盲测隔离。
 
 列表封套：`schema_version=v4.1-workbench/v1`、`project_id`、`observed_at`、`current_run_id`、

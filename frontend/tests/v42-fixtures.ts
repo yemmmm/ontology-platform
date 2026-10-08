@@ -6,7 +6,7 @@ export function artifact(kind: string, data: Record<string, unknown>, id = kind,
   return { artifact_id: id, kind, availability: "available", data, source: { path: `public/${id}`, updated_at: time }, limitations: [], scope: { phase: "L1", slices: ["maintenance"] } };
 }
 export function report(id = "report-current", applicability = "verified_current") {
-  return artifact("reports", { applicability, batch_id: "batch2", freeze_digest: "digest2", denominator: 3, public_count: 2, full_pass: false,
+  return artifact("reports", { applicability, batch_id: "batch2", freeze_digest: "digest2", denominator: 3, public_count: 2, full_pass: false, question_ids: ["Q1", "Q2", "H1"], question_verdicts: [{ question_id: "Q1", verdict: "pass" }, { question_id: "H1", verdict: "pending-review" }],
     verdicts: [{ question_id: "Q1", verdict: "pass" }, { question_id: "Q1", verdict: "pass" }], unexecuted_question_ids: ["Q2"],
     hidden_summary: { verdict_counts: { "pending-review": 1 }, unexecuted_count: 0 }, summary_by_scope: { slice: { pass: 1, "not-executed": 1 } }, coverage_gaps: { cross_slice_projection_gap: true },
   }, id);
@@ -16,7 +16,7 @@ export function index(runs = [{ run_id: "r1", state: "RUNNING", source_updated_a
 }
 export function run() {
   return { run_id: "r1", state: "RUNNING", observed_at: "2026-10-07T10:10:00Z", artifacts: {
-    competency_questions: [artifact("competency_questions", { batch_id: "batch1", snapshot_digest: "digest1", questions: [{ question_id: "Q1", question: "谁可以关闭工单？", scope: "maintenance", content_version: 1, answer_points: ["ANSWER_SENTINEL"] }] }, "cq1"), artifact("competency_questions", { batch_id: "batch2", snapshot_digest: "digest2", questions: [{ question_id: "Q1", question: "复查工单如何保持独立？", scope: "cross_slice", review_content_version: 2 }] }, "cq2")],
+    competency_questions: [artifact("competency_questions", { batch_id: "batch1", snapshot_digest: "digest1", questions: [{ question_id: "Q1", question: "谁可以关闭工单？", scope: "maintenance", content_version: 1, answer_points: ["ANSWER_SENTINEL"] }] }, "cq1"), artifact("competency_questions", { batch_id: "batch2", snapshot_digest: "digest2", questions: [{ question_id: "Q1", question: "复查工单如何保持独立？", scope: "cross_slice", review_content_version: 2 }, { question_id: "Q2", question: "尚未验收的业务问题", visibility: "public" }, { question_id: "H1", question: "隐藏业务验证问题", visibility: "hidden" }] }, "cq2")],
     host: [artifact("cq-freeze", { records: [{ batch_id: "batch2", snapshot_digest: "digest2", recorded_at: "2026-10-07T10:00:00Z" }] })],
     reports: [report(), artifact("public_regression_report", { full_pass: true, denominator: 50 }, "regression")],
   } };

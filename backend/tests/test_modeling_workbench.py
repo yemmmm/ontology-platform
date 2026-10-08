@@ -672,3 +672,61 @@ def test_admin_cq_report_verifies_latest_freeze_and_live_model_without_host_even
     assert service.competency_questions("p", "running")["artifacts"]["reports"][0][
         "data"
     ]["applicability"] == "stale"
+
+
+def test_admin_cq_reads_formal_acceptance_only_runs_with_current_binding(tmp_path):
+    root = run_fixture(tmp_path)
+    _, snapshot = frozen(root)
+    context = {
+        "state": "ready", "default_graph_set_id": "gs", "graph_set_status": "active",
+        "source_signature": "source",
+        "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
+    }
+    ws, gs = workspace_digests(context)
+    binding = {
+        "batch_id": "b", "freeze_digest": snapshot["snapshot_digest"],
+        "ontologies": [{"project_id": "p", "ontology_id": "o",
+                        "workspace_state": ws, "graph_state": gs}],
+    }
+    for name, ids in [("public-acceptance", ["Q"]), ("hidden-acceptance", ["secret"]),
+                      ("another-project", ["Q"]), ("changed-model", ["Q"]),
+                      ("other-freeze", ["Q"]), ("tampered", ["Q"]),
+                      ("public-regression", ["Q"])]:
+        source = tmp_path / name  # Read-only acceptance runs have no state.json.
+        path = report(source, snapshot["snapshot_digest"],
+                      path="acceptance-v3/public-regression/b/attempt-1/batch-report.json"
+                      if name == "public-regression" else
+                      "acceptance-v3/reports/b/attempt-1/batch-report.json")
+        value = json.loads(path.read_text())
+        model = json.loads(json.dumps(binding))
+        if name == "another-project":
+            model["ontologies"][0]["project_id"] = "other"
+        if name == "changed-model":
+            model["ontologies"][0]["workspace_state"] = "older"
+        if name == "other-freeze":
+            value["freeze_digest"] = model["freeze_digest"] = "different"
+        value.update(
+            sessions={"batch_model_binding": model, "post_batch_model_binding": model},
+            model_binding_digest=content_digest(model), executed_question_ids=ids,
+            unexecuted_question_ids=[],
+            verdicts=[{"question_id": q, "verdict": "pass", "note": "PRIVATE-SENTINEL"}
+                      for q in ids],
+        )
+        value["report_digest"] = content_digest(
+            {k: v for k, v in value.items() if k != "report_digest"}
+        )
+        if name == "tampered":
+            value["verdicts"][0]["verdict"] = "model-recall-insufficient"
+        path.write_text(json.dumps(value))
+    service = ModelingWorkbenchService(tmp_path, workspace_reader=lambda *_: context)
+    result = service.competency_questions("p", "running")
+    reports = result["artifacts"]["reports"]
+    assert {a["scope"]["run_id"] for a in reports} == {
+        "public-acceptance", "hidden-acceptance"
+    }
+    assert {q for a in reports for q in a["data"]["question_ids"]} == {"Q", "secret"}
+    assert all(a["data"]["applicability"] == "verified_current" for a in reports)
+    assert result["acceptance_reports_complete"] is True
+    assert "PRIVATE-SENTINEL" not in json.dumps(result)
+    context["source_signature"] = "changed"
+    assert service.competency_questions("p", "running")["artifacts"]["reports"] == []

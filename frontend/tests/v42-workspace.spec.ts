@@ -123,7 +123,7 @@ test("T04 current report marks acceptance and counts public plus hidden once", a
   await page.route("**/workbench/runs/**", route => route.fulfill({ json: stale }));
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByText("Acceptance passed", { exact: true })).toHaveCount(0);
-  await expect(page.getByText("Not accepted yet", { exact: true })).toBeVisible();
+  await expect(page.getByText("Not accepted yet", { exact: true })).toHaveCount(3);
   await expect(page.getByRole("progressbar")).not.toHaveAttribute("value");
 });
 test("T04 regression, mismatched freeze and incomplete counts cannot imply accepted progress", async ({ page }) => {
@@ -144,7 +144,6 @@ test("T04 regression, mismatched freeze and incomplete counts cannot imply accep
 test("T04 hidden question gets its own verdict badge without double counting progress", async ({ page }) => {
   const value = run();
   const questions = value.artifacts.competency_questions[1].data.questions as Record<string, unknown>[];
-  questions.push({ question_id: "H1", question: "隐藏业务验证问题", visibility: "hidden", content_version: 1 });
   const data = value.artifacts.reports[0].data;
   data.question_verdicts = [{ question_id: "Q1", verdict: "pass" }, { question_id: "H1", verdict: "model-recall-insufficient" }];
   data.hidden_summary = { verdict_counts: { "model-recall-insufficient": 1 }, unexecuted_count: 0 };
@@ -155,6 +154,38 @@ test("T04 hidden question gets its own verdict badge without double counting pro
   await expect(hidden.getByText("Acceptance not passed", { exact: true })).toBeVisible();
   await expect(page.getByText("Acceptance progress · Accepted 2 / 3; passed 1", { exact: true })).toBeVisible();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", String(2 / 3 * 100));
+});
+test("T04 all 26 questions share progress across formal acceptance reports", async ({ page }) => {
+  const value = run();
+  const questions = Array.from({ length: 26 }, (_, i) => ({ question_id: `Q${i}`, question: `问题 ${i}`, visibility: i < 18 ? "public" : "hidden" }));
+  value.artifacts.competency_questions[1].data.questions = questions;
+  value.artifacts.reports = [18, 8].map((count, batch) => {
+    const selected = questions.slice(batch ? 18 : 0, batch ? 26 : 18);
+    return artifact("reports", { applicability: "verified_current", batch_id: "batch2", freeze_digest: "digest2", denominator: count, question_ids: selected.map(q => q.question_id), question_verdicts: selected.map(q => ({ question_id: q.question_id, verdict: "pass" })) }, `formal-${batch}`);
+  });
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  await expect(page.getByText("Acceptance progress · Accepted 26 / 26; passed 26", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveAttribute("value", "100");
+  await expect(page.getByText("Acceptance passed", { exact: true })).toHaveCount(26);
+  // A newer partial rerun replaces the affected questions, without reusing
+  // their older PASS or counting the same questions twice.
+  value.artifacts.reports.push(artifact("reports", { applicability: "verified_current", batch_id: "batch2", freeze_digest: "digest2", denominator: 2, question_ids: ["Q0", "Q18"], question_verdicts: [{ question_id: "Q0", verdict: "model-recall-insufficient" }] }, "rerun", "2026-10-08T10:00:00Z"));
+  await page.route("**/workbench/runs/**", route => route.fulfill({ json: value }));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Acceptance progress · Accepted 25 / 26; passed 24", { exact: true })).toBeVisible();
+  await expect(page.getByText("Acceptance not passed", { exact: true })).toHaveCount(1);
+  await expect(page.getByText("Not accepted yet", { exact: true })).toHaveCount(1);
+});
+test("T04 eight hidden verdicts alone complete only eight of 26 questions", async ({ page }) => {
+  const value = run();
+  value.artifacts.competency_questions[1].data.questions = Array.from({ length: 26 }, (_, i) => ({ question_id: `Q${i}`, question: `问题 ${i}`, visibility: i < 18 ? "public" : "hidden" }));
+  const ids = Array.from({ length: 8 }, (_, i) => `Q${i + 18}`);
+  value.artifacts.reports = [artifact("reports", { applicability: "verified_current", batch_id: "batch2", freeze_digest: "digest2", denominator: 8, question_ids: ids, question_verdicts: ids.map(question_id => ({ question_id, verdict: "pass" })) })];
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  await expect(page.getByText("Acceptance progress · Accepted 8 / 26; passed 8", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveAttribute("value", String(8 / 26 * 100));
 });
 test("T05 unified IRI canvas excludes property definitions, retains actual edges and multiple locations", async ({ page }) => {
   const requests: string[] = [];

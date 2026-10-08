@@ -24,35 +24,34 @@ function Questions({ run }: { run: Run | null }) {
   const chosen = freeze ? (matches.length === 1 ? matches[0] : undefined) : latestMatches.length === 1 ? latest : undefined;
   const questions = [...new Map(objects(chosen?.data.questions).map(item => [item.question_id, item])).values()];
   const reports = (run?.artifacts.reports ?? []).filter(item => item.kind === "reports" && item.availability === "available" && item.data.applicability === "verified_current" && item.data.batch_id === chosen?.data.batch_id && item.data.freeze_digest === chosen?.data.snapshot_digest);
-  const report = latestArtifact(reports);
-  const verdicts = new Map<string, string>();
-  let conflict = false;
-  for (const item of objects(report?.data.verdicts)) {
-    if (typeof item.question_id !== "string" || typeof item.verdict !== "string") { conflict = true; continue; }
-    if (verdicts.has(item.question_id) && verdicts.get(item.question_id) !== item.verdict) conflict = true;
-    verdicts.set(item.question_id, item.verdict);
-  }
-  const data = report?.data ?? {};
-  const hidden = data.hidden_summary as { verdict_counts?: Record<string, number>; unexecuted_count?: number } | undefined;
-  const hiddenCounts = hidden?.verdict_counts ?? {};
-  const unexecuted = new Set(Array.isArray(data.unexecuted_question_ids) ? data.unexecuted_question_ids : []);
-  if ([...unexecuted].some(id => verdicts.has(String(id)))) conflict = true;
-  const validCounts = Object.values(hiddenCounts).every(count => Number.isInteger(count) && count >= 0) && Number.isInteger(hidden?.unexecuted_count) && (hidden?.unexecuted_count ?? -1) >= 0;
-  const accounted = verdicts.size + unexecuted.size + Object.values(hiddenCounts).reduce((sum, count) => sum + count, 0) + (hidden?.unexecuted_count ?? 0);
-  const denominator = data.denominator;
-  let incomplete = !Number.isInteger(denominator) || Number(denominator) <= 0 || !validCounts || conflict || accounted !== denominator || data.public_count !== verdicts.size + unexecuted.size;
-  const completedVerdicts = new Set(["pass", "model-recall-insufficient"]);
-  const completed = [...verdicts.values()].filter(value => completedVerdicts.has(value)).length + Object.entries(hiddenCounts).reduce((sum, [value, count]) => sum + (completedVerdicts.has(value) ? count : 0), 0);
-  const passed = [...verdicts.values()].filter(value => value === "pass").length + (hiddenCounts.pass ?? 0);
+  const questionIds = new Set(questions.map(item => String(item.question_id)));
   const questionVerdicts = new Map<string, string>();
-  for (const item of objects(data.question_verdicts ?? data.verdicts)) {
-    const id = String(item.question_id);
-    if (questionVerdicts.has(id) && questionVerdicts.get(id) !== item.verdict) conflict = true;
-    questionVerdicts.set(id, String(item.verdict));
+  const timestamps = new Map<string, string>();
+  let conflict = false;
+  let incomplete = run?.acceptance_reports_complete === false;
+  for (const report of [...reports].sort((a, b) => (a.source.updated_at ?? "").localeCompare(b.source.updated_at ?? ""))) {
+    const data = report.data;
+    const ids = Array.isArray(data.question_ids) ? new Set(data.question_ids.map(String)) : new Set<string>();
+    const verdicts = new Map<string, string>();
+    if (!ids.size || data.denominator !== ids.size || [...ids].some(id => !questionIds.has(id))) { incomplete = true; continue; }
+    for (const item of objects(data.question_verdicts)) {
+      const id = String(item.question_id);
+      if (!ids.has(id) || typeof item.verdict !== "string" || (verdicts.has(id) && verdicts.get(id) !== item.verdict)) { conflict = true; continue; }
+      verdicts.set(id, item.verdict);
+    }
+    const timestamp = report.source.updated_at ?? "";
+    for (const id of ids) {
+      const verdict = verdicts.get(id) ?? "not-executed";
+      if (timestamps.get(id) === timestamp && questionVerdicts.get(id) !== verdict) conflict = true;
+      timestamps.set(id, timestamp);
+      questionVerdicts.set(id, verdict);
+    }
   }
   incomplete ||= conflict;
+  const completed = [...questionVerdicts.values()].filter(value => value === "pass" || value === "model-recall-insufficient").length;
+  const passed = [...questionVerdicts.values()].filter(value => value === "pass").length;
   function verdictLabel(question: JsonObject): string {
-    if (!report || conflict) return t("Not accepted yet");
+    if (!reports.length || incomplete) return t("Not accepted yet");
     const verdict = questionVerdicts.get(String(question.question_id));
     if (verdict === "pass") return t("Acceptance passed");
     if (verdict === "model-recall-insufficient") return t("Acceptance not passed");
@@ -60,13 +59,13 @@ function Questions({ run }: { run: Run | null }) {
     if (verdict === "platform-runtime-incomplete" || verdict === "incomplete") return t("Acceptance incomplete");
     return t("Not accepted yet");
   }
-  const progressText = !run || !chosen ? t("Current acceptance cannot be determined") : !report ? t("No current acceptance results") : incomplete ? t("Progress data is incomplete") : t("Accepted {completed} / {total}; passed {passed}", { completed, total: Number(denominator), passed });
+  const progressText = !run || !chosen ? t("Current acceptance cannot be determined") : !reports.length ? t("No current acceptance results") : incomplete ? t("Progress data is incomplete") : t("Accepted {completed} / {total}; passed {passed}", { completed, total: questions.length, passed });
   return <section className="panel questionsPanel" aria-label={t("Competency questions")}><h2>{t("Competency questions")}</h2>
     {!run || run.current_questions_available === false || (artifacts.length > 0 && !chosen) ? <p>{t("Current questions cannot be determined")}</p> : !questions.length ? <p>{t("No competency questions recorded")}</p> : <>
       {!freeze && <p className="inlineHint">{t("Latest recorded questions; freeze unverified")}</p>}
       <ol className="questionList">{questions.map(item => <li key={String(item.question_id)}><strong>{text(item.question)}</strong>{item.visibility === "hidden" && <span className="inlineHint"> ({t("Hidden question")})</span>}<div className="questionTags"><span className="tag" data-verdict={conflict ? undefined : questionVerdicts.get(String(item.question_id))}>{verdictLabel(item)}</span></div></li>)}</ol>
     </>}
-    <div className="acceptanceProgress"><p id="cq-progress-label">{t("Acceptance progress")} · {progressText}</p><progress aria-labelledby="cq-progress-label" max={100} {...(report && !incomplete ? { value: completed / Number(denominator) * 100 } : {})} /></div>
+    <div className="acceptanceProgress"><p id="cq-progress-label">{t("Acceptance progress")} · {progressText}</p><progress aria-labelledby="cq-progress-label" max={100} {...(reports.length > 0 && questions.length > 0 && !incomplete ? { value: completed / questions.length * 100 } : {})} /></div>
   </section>;
 }
 export function OverviewPage({ project }: { project: Project }) {
