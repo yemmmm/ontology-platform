@@ -167,7 +167,7 @@ def test_context_query_rest_rejects_internal_scope_fields(in_memory_session):
             "scope_mode": "project",
             "ontology_ids": [],
             "query": "workflow",
-            "graph_set_id": "internal",
+            "ontology_id": "internal",
             "graph_iri": "https://secret.test/graph",
         },
     )

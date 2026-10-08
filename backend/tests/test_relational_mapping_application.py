@@ -27,7 +27,6 @@ from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteError,
 )
 from app.services.semantic_command_compiler import compile_command
-from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_mapping_state import _project
 
 
@@ -79,8 +78,8 @@ def mapping_application(request, in_memory_session):
             workspace = OntologyWorkspaceService(session, settings)
             workspace.ensure(ontology)
             context = workspace.context(iri)
-            sets.append(context["default_graph_set_id"])
-            graph_iris.extend(item["graph_iri"] for item in context["members"])
+            sets.append(context["ontology_id"])
+            graph_iris.append(context["model_graph_iri"])
         session.commit()
         base = settings.semantic_base_iri
         for ontology in ontology_ids:
@@ -95,22 +94,8 @@ def mapping_application(request, in_memory_session):
                 store.apply_dataset_delta(
                     compile_command(kind, dict(payload, ontology_id=ontology), settings).delta
                 )
-        scope = SemanticGraphSetService(session, settings).create_graph_set(
-            "Approved mapping dependencies",
-            "ontology",
-            ontology_ids[1],
-            [
-                {
-                    "graph_iri": graph,
-                    "role": "asserted_ontology" if "/ontology/" in graph else "asserted_data",
-                }
-                for graph in graph_iris
-                if any(graph.endswith("/" + owner) for owner in ontology_ids[:2])
-                and any(part in graph for part in ("/ontology/", "/data/"))
-            ],
-            metadata={"mapping_reference_scope": True},
-        )
-        sets.append(scope.id)
+        session.get(m.OntologyModel, ontology_ids[1]).reference_ontology_ids = [ontology_ids[0]]
+        session.commit()
         bindings = {}
         for index, ontology in enumerate(ontology_ids):
             build = BuildSessionService(session, settings)
@@ -137,9 +122,7 @@ def mapping_application(request, in_memory_session):
     finally:
         if live:
             session.rollback()
-            session.execute(
-                delete(m.SemanticGraphSetModel).where(m.SemanticGraphSetModel.id.in_(sets))
-            )
+
             session.execute(delete(m.ProjectModel).where(m.ProjectModel.id == project_id))
             for model in (m.SemanticGraphRegistryModel, m.SemanticGraphRevisionModel):
                 session.execute(delete(model).where(model.graph_iri.in_(graph_iris)))
@@ -289,32 +272,19 @@ def test_ontology_deletion_preserves_surviving_mapping_dependencies(mapping_appl
     assert f["session"].get(m.OntologyModel, a) is not None
 
 
-def test_reference_scope_shrink_and_supersede_preserve_dependencies(mapping_application):
-    from app.services.semantic_graph_set import GraphSetError
-    from sqlalchemy import select
-
+def test_reference_scope_shrink_preserves_dependencies(mapping_application, monkeypatch):
+    from fastapi import HTTPException
+    from app.api.schemas import OntologyUpdate
+    from app.services.ontology_crud import update_ontology
     f = mapping_application
     a, b, _ = f["ontologies"]
     assert submit(f, a, [table(f, "left", "a")])["attempt_status"] == "applied"
     assert submit(f, b, [table(f, "right", "b"), join(f)])["attempt_status"] == "applied"
-    scope = f["session"].scalar(
-        select(m.SemanticGraphSetModel).where(
-            m.SemanticGraphSetModel.scope_id == b, m.SemanticGraphSetModel.is_default.is_(False)
-        )
-    )
-    service = SemanticGraphSetService(f["session"], f["settings"], f["store"])
-    original_members = [dict(graph_iri=x.graph_iri, role=x.role) for x in scope.members]
-    own_members = [x for x in original_members if x["graph_iri"].endswith("/" + b)]
-    with pytest.raises(GraphSetError) as caught:
-        service.update_membership(scope.id, own_members)
+    monkeypatch.setattr("app.services.ontology_crud.RdfStoreRepository", lambda *_: f["store"])
+    with pytest.raises(HTTPException) as caught:
+        update_ontology(f["session"], b, OntologyUpdate(reference_ontology_ids=[]))
     assert caught.value.detail["code"] == "mapping_reference_scope_in_use"
-    assert {x.graph_iri for x in service.get_graph_set(scope.id).members} == {
-        x["graph_iri"] for x in original_members
-    }
-    with pytest.raises(GraphSetError) as caught:
-        service.create_graph_set("shrink", "ontology", b, own_members, supersedes=scope.id)
-    assert caught.value.detail["code"] == "mapping_reference_scope_in_use"
-    assert service.get_graph_set(scope.id).status == "active"
+    assert f["session"].get(m.OntologyModel, b).reference_ontology_ids == [a]
 
 
 def test_active_protocol_translation_applies_concrete_mapping_kinds(mapping_application):

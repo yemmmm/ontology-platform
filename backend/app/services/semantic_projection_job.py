@@ -1,10 +1,10 @@
 """Projection job lifecycle: create, snapshot inputs, run, manifest promotion, reconcile.
 
-Phase 6 graph-set-aware projection jobs. Each job snapshots the source
+Ontology-scoped projection jobs. Each job snapshots the source
 signature, input graph revisions, and an empty historical-pointer slot; writers
 implement the ``ProjectionWriter`` protocol. Successful rebuilds promote
-a manifest for ``(graph_set_id, projection_kind, target_partition)`` to
-``current``. Reconcile compares each manifest to the current graph-set
+a manifest for ``(ontology_id, projection_kind, target_partition)`` to
+``current``. Reconcile compares each manifest to the current Ontology model
 signature and retired-input presence and marks stale when they diverge.
 """
 
@@ -18,8 +18,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.repositories.models import (
+    OntologyModel,
     SemanticGraphRevisionModel,
-    SemanticGraphSetModel,
     SemanticProjectionJobModel,
     SemanticProjectionManifestModel,
 )
@@ -59,7 +59,7 @@ class SemanticProjectionJobService:
     # ------------------------------------------------------------------ create
     def create_job(
         self,
-        graph_set_id: str,
+        ontology_id: str,
         projection_kind: str,
         projection_version: str,
         include: str = "asserted",
@@ -68,27 +68,27 @@ class SemanticProjectionJobService:
         allow_stale_derived: bool = False,
         metadata: dict[str, Any] | None = None,
     ) -> SemanticProjectionJobModel:
-        graph_set = self._get_graph_set(graph_set_id)
+        ontology = self._get_ontology(ontology_id)
         scope = self.scope_resolver_builder(self.session).resolve(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             include=include,
             allow_stale_derived=allow_stale_derived,
         )
-        revisions = self._revisions_for(scope.source_graph_iris)
+        revisions = self._revisions_for(scope.model_graph_iris)
         pointers = {}
         job_id = str(uuid4())
         partition = target_partition or self._default_partition(
-            graph_set_id, projection_kind, projection_version, job_id
+            ontology_id, projection_kind, projection_version, job_id
         )
         job = SemanticProjectionJobModel(
             id=job_id,
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             projection_kind=projection_kind,
             projection_version=projection_version,
             projection_scope=include,
-            source_graph_iris=scope.source_graph_iris,
+            model_graph_iris=scope.model_graph_iris,
             reasoning_result_graph_iri=scope.reasoning_result_graph_iri,
-            source_signature=graph_set.source_signature,
+            source_signature=ontology.source_signature,
             input_graph_revisions=revisions,
             input_derived_pointers=pointers,
             target_store=self._target_store_for(projection_kind),
@@ -118,7 +118,7 @@ class SemanticProjectionJobService:
         self.session.commit()
         try:
             scope = self.scope_resolver_builder(self.session).resolve(
-                graph_set_id=job.graph_set_id,
+                ontology_id=job.ontology_id,
                 include=job.projection_scope,
                 allow_stale_derived=True,
             )
@@ -138,16 +138,16 @@ class SemanticProjectionJobService:
                 job.document_count = int(counts.get("document_count", 0))
             # A writer is allowed to take time (notably while embedding).  Do
             # not promote a partition that was built from a superseded scope.
-            current_graph_set = self._get_graph_set(job.graph_set_id)
+            current_ontology = self._get_ontology(job.ontology_id)
             current_scope = self.scope_resolver_builder(self.session).resolve(
-                graph_set_id=job.graph_set_id,
+                ontology_id=job.ontology_id,
                 include=job.projection_scope,
                 allow_stale_derived=True,
             )
             if (
-                current_graph_set.source_signature != job.source_signature
+                current_ontology.source_signature != job.source_signature
                 or current_scope.source_signature != job.source_signature
-                or self._revisions_for(current_scope.source_graph_iris) != job.input_graph_revisions
+                or self._revisions_for(current_scope.model_graph_iris) != job.input_graph_revisions
                 or {} != (job.input_derived_pointers or {})
             ):
                 job.status = "stale"
@@ -180,8 +180,8 @@ class SemanticProjectionJobService:
         rows = self.session.scalars(select(SemanticProjectionManifestModel))
         for manifest in rows:
             reconciled += 1
-            graph_set = self._get_graph_set(manifest.graph_set_id)
-            if manifest.source_signature != graph_set.source_signature:
+            ontology = self._get_ontology(manifest.ontology_id)
+            if manifest.source_signature != ontology.source_signature:
                 manifest.status = "stale"
                 marked.append(manifest.id)
                 continue
@@ -196,23 +196,23 @@ class SemanticProjectionJobService:
         }
 
     # ------------------------------------------------------------------ status
-    def status(self, graph_set_id: str | None = None) -> dict[str, Any]:
+    def status(self, ontology_id: str | None = None) -> dict[str, Any]:
         statement = select(SemanticProjectionManifestModel)
-        if graph_set_id:
+        if ontology_id:
             statement = statement.where(
-                SemanticProjectionManifestModel.graph_set_id == graph_set_id
+                SemanticProjectionManifestModel.ontology_id == ontology_id
             )
         manifests = list(self.session.scalars(statement))
         stale: list[str] = []
         missing: list[str] = []
         for manifest in manifests:
-            graph_set = self.session.get(SemanticGraphSetModel, manifest.graph_set_id)
-            if graph_set is None:
+            ontology = self.session.get(OntologyModel, manifest.ontology_id)
+            if ontology is None:
                 missing.append(manifest.id)
                 continue
             if (
                 manifest.status == "stale"
-                or manifest.source_signature != graph_set.source_signature
+                or manifest.source_signature != ontology.source_signature
             ):
                 stale.append(manifest.id)
         return {
@@ -225,16 +225,16 @@ class SemanticProjectionJobService:
     # ------------------------------------------------------------- list / get
     def list_jobs(
         self,
-        graph_set_id: str | None = None,
+        ontology_id: str | None = None,
         projection_kind: str | None = None,
         status: str | None = None,
     ) -> list[SemanticProjectionJobModel]:
         statement = select(SemanticProjectionJobModel).order_by(
             SemanticProjectionJobModel.started_at.desc().nullslast()
         )
-        if graph_set_id:
+        if ontology_id:
             statement = statement.where(
-                SemanticProjectionJobModel.graph_set_id == graph_set_id
+                SemanticProjectionJobModel.ontology_id == ontology_id
             )
         if projection_kind:
             statement = statement.where(
@@ -248,10 +248,10 @@ class SemanticProjectionJobService:
         return self._get_job(job_id)
 
     # ----------------------------------------------------------------- helpers
-    def _get_graph_set(self, graph_set_id: str) -> SemanticGraphSetModel:
-        record = self.session.get(SemanticGraphSetModel, graph_set_id)
+    def _get_ontology(self, ontology_id: str) -> OntologyModel:
+        record = self.session.get(OntologyModel, ontology_id)
         if record is None:
-            raise ProjectionJobError(f"Graph set not found: {graph_set_id}")
+            raise ProjectionJobError(f"Ontology not found: {ontology_id}")
         return record
 
     def _get_job(self, job_id: str) -> SemanticProjectionJobModel:
@@ -272,17 +272,17 @@ class SemanticProjectionJobService:
 
 
     def _promote_manifest(self, job: SemanticProjectionJobModel) -> None:
-        graph_set = self._get_graph_set(job.graph_set_id)
-        if graph_set.source_signature != job.source_signature:
+        ontology = self._get_ontology(job.ontology_id)
+        if ontology.source_signature != job.source_signature:
             job.status = "stale"
             self.session.commit()
             return
         # A projection partition becomes queryable only when it is the one
-        # current partition for this graph set/kind.  Older partitions remain
+        # current partition for this Ontology/kind.  Older partitions remain
         # recoverable but cannot leak into a current query.
         for prior in self.session.scalars(
             select(SemanticProjectionManifestModel).where(
-                SemanticProjectionManifestModel.graph_set_id == job.graph_set_id,
+                SemanticProjectionManifestModel.ontology_id == job.ontology_id,
                 SemanticProjectionManifestModel.projection_kind == job.projection_kind,
                 SemanticProjectionManifestModel.status == "current",
             )
@@ -290,7 +290,7 @@ class SemanticProjectionJobService:
             prior.status = "stale"
         manifest = self.session.scalar(
             select(SemanticProjectionManifestModel).where(
-                SemanticProjectionManifestModel.graph_set_id == job.graph_set_id,
+                SemanticProjectionManifestModel.ontology_id == job.ontology_id,
                 SemanticProjectionManifestModel.projection_kind == job.projection_kind,
                 SemanticProjectionManifestModel.target_partition
                 == (job.target_partition or ""),
@@ -306,7 +306,7 @@ class SemanticProjectionJobService:
         if manifest is None:
             manifest = SemanticProjectionManifestModel(
                 id=str(uuid4()),
-                graph_set_id=job.graph_set_id,
+                ontology_id=job.ontology_id,
                 projection_kind=job.projection_kind,
                 active_job_id=job.id,
                 source_signature=job.source_signature,
@@ -334,9 +334,9 @@ class SemanticProjectionJobService:
         self.session.commit()
 
     def _default_partition(
-        self, graph_set_id: str, kind: str, version: str, job_id: str
+        self, ontology_id: str, kind: str, version: str, job_id: str
     ) -> str:
-        return f"{graph_set_id}/{kind}/{version}/{job_id}"
+        return f"{ontology_id}/{kind}/{version}/{job_id}"
 
     def _target_store_for(self, kind: str) -> str | None:
         return {
@@ -351,7 +351,7 @@ class SemanticProjectionJobService:
     ) -> dict[str, Any]:
         return {
             "id": manifest.id,
-            "graph_set_id": manifest.graph_set_id,
+            "ontology_id": manifest.ontology_id,
             "projection_kind": manifest.projection_kind,
             "active_job_id": manifest.active_job_id,
             "source_signature": manifest.source_signature,

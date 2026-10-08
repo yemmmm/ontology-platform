@@ -71,9 +71,9 @@ class PlatformScope:
     # R3.0-006 M3: the full planned Ontology set once a topology decision's
     # ``ontology_plan`` has been applied (empty for the single-Ontology path).
     ontology_ids: list[str] = field(default_factory=list)
-    # R4.0-010: active non-default Graph Sets selected from the accepted
+    # R4.0-026: activated mapping reference scopes from the accepted
     # scenario-map dependency plan, keyed by the referencing Ontology.
-    mapping_reference_graph_set_ids: dict[str, str] = field(default_factory=dict)
+    mapping_reference_ontology_ids: dict[str, str] = field(default_factory=dict)
     # The host must provide this interpretation explicitly.  The scenario-map
     # ``direction`` field is structural/free text and cannot choose topology.
     mapping_reference_direction: str | None = None
@@ -298,7 +298,7 @@ class PlatformScope:
         self.ontology_ids = ontology_ids
         return list(ontology_ids)
 
-    def apply_mapping_reference_graph_sets(
+    def apply_mapping_reference_ontologies(
         self,
         scenario_map: Any,
         plan: Any,
@@ -312,15 +312,12 @@ class PlatformScope:
         This bridge fixes the host interpretation explicitly: ``from_slice``
         is the referencing/dependent slice and ``to_slice`` is the dependency.
         The opposite interpretation is available only by an explicit argument.
-        For each referencing Ontology, create (or reuse) one active non-default
-        Graph Set containing its own asserted ontology and data graphs plus the
-        selected dependency Ontologies' corresponding graphs. No other Project
-        Ontology is admitted.
+        For each referencing Ontology, update its reference_ontology_ids to the
+        selected dependency Ontologies. No other Project Ontology is admitted.
 
-        Existing active mapping scopes are never silently broadened or edited.
-        A scope is reused only when its complete member set exactly matches the
-        selected plan; a conflicting active scope is a typed failure because
-        the backend intentionally unions active mapping scopes for that owner.
+        The accepted plan supplies the complete reference set. The platform
+        validates Project ownership and rejects a shrink that would break
+        retained mappings before updating the Ontology.
         """
 
         dependent_direction = dependent_direction or self.mapping_reference_direction
@@ -338,7 +335,7 @@ class PlatformScope:
         if not isinstance(dependencies, list):
             raise PlatformScopeError("scenario map dependency plan is invalid")
         if not dependencies:
-            self.mapping_reference_graph_set_ids = {}
+            self.mapping_reference_ontology_ids = {}
             return {}
         if not isinstance(plan, list) or len(plan) != len(self.ontology_ids):
             raise PlatformScopeError(
@@ -400,158 +397,16 @@ class PlatformScope:
                 )
 
         if not dependencies_by_owner:
-            self.mapping_reference_graph_set_ids = {}
+            self.mapping_reference_ontology_ids = {}
             return {}
 
-        # Preserve topology-plan order when encoding members. The set itself
-        # is compared by (role, IRI), so retries remain deterministic even if
-        # the API returns members in a different order.
-        plan_order = {
-            ontology_id: index for index, ontology_id in enumerate(self.ontology_ids)
-        }
-        workspace_graphs = {
-            ontology_id: self._mapping_workspace_graphs(ontology_id)
-            for ontology_id in self.ontology_ids
-        }
-        selected: dict[str, str] = {}
-        for owner, dependency_ids in sorted(
-            dependencies_by_owner.items(), key=lambda item: plan_order[item[0]]
-        ):
-            member_pairs: list[tuple[str, str]] = []
-            for ontology_id in [owner, *sorted(dependency_ids, key=plan_order.__getitem__)]:
-                for role in ("asserted_ontology", "asserted_data"):
-                    member_pairs.append((role, workspace_graphs[ontology_id][role]))
-            expected_members = set(member_pairs)
-            query = urllib.parse.urlencode({"scope_type": "ontology", "scope_id": owner})
-            listed_sets = self._ok("GET", f"/api/semantic/graph-sets?{query}")
-            graph_sets = (
-                listed_sets.get("graph_sets")
-                if isinstance(listed_sets, dict)
-                else listed_sets
-            )
-            if not isinstance(graph_sets, list):
-                raise PlatformScopeError("mapping reference Graph Set listing is invalid")
-            active_mapping_sets: list[dict[str, Any]] = []
-            for graph_set in graph_sets:
-                if not isinstance(graph_set, dict):
-                    continue
-                metadata = graph_set.get(
-                    "metadata", graph_set.get("graph_set_metadata", {})
-                )
-                if (
-                    graph_set.get("status") == "active"
-                    and graph_set.get("scope_type") == "ontology"
-                    and graph_set.get("scope_id") == owner
-                    and isinstance(metadata, dict)
-                    and metadata.get("mapping_reference_scope") is True
-                ):
-                    active_mapping_sets.append(graph_set)
-            if len(active_mapping_sets) > 1:
-                raise PlatformScopeError(
-                    f"multiple active mapping reference Graph Sets for Ontology {owner}"
-                )
-            if active_mapping_sets:
-                graph_set = active_mapping_sets[0]
-                actual_members = {
-                    (member.get("role"), member.get("graph_iri"))
-                    for member in graph_set.get("members", [])
-                    if isinstance(member, dict)
-                }
-                if actual_members != expected_members:
-                    raise PlatformScopeError(
-                        f"active mapping reference Graph Set for Ontology {owner} "
-                        "does not match the selected dependency plan"
-                    )
-                graph_set_id = graph_set.get("id")
-                if not isinstance(graph_set_id, str) or not graph_set_id:
-                    raise PlatformScopeError(
-                        "active mapping reference Graph Set has no identity"
-                    )
-                selected[owner] = graph_set_id
-                continue
-            payload_members = [
-                {
-                    "graph_iri": graph_iri,
-                    "role": role,
-                    "required": True,
-                    "sort_order": index,
-                    "metadata": {"mapping_reference_owner": owner},
-                }
-                for index, (role, graph_iri) in enumerate(member_pairs)
-            ]
-            created = self._ok(
-                "POST",
-                "/api/semantic/graph-sets",
-                {
-                    "name": f"R4.0-010 mapping dependencies for {owner}",
-                    "scope_type": "ontology",
-                    "scope_id": owner,
-                    "members": payload_members,
-                    "metadata": {
-                        "mapping_reference_scope": True,
-                        "mapping_reference_direction": dependent_direction,
-                        "mapping_reference_dependencies": sorted(
-                            dependency_ids, key=plan_order.__getitem__
-                        ),
-                    },
-                },
-            )
-            graph_set_id = created.get("id") if isinstance(created, dict) else None
-            if not isinstance(graph_set_id, str) or not graph_set_id:
-                raise PlatformScopeError(
-                    "created mapping reference Graph Set has no identity"
-                )
-            selected[owner] = graph_set_id
-
-        self.mapping_reference_graph_set_ids = selected
+        selected = {}
+        for owner, dependency_ids in dependencies_by_owner.items():
+            self._ok("PATCH", f"/api/ontologies/{owner}",
+                     {"reference_ontology_ids": sorted(dependency_ids)})
+            selected[owner] = owner
+        self.mapping_reference_ontology_ids = selected
         return dict(selected)
-
-    def _mapping_workspace_graphs(self, ontology_id: str) -> dict[str, str]:
-        """Read and ownership-check the two graph members needed by mapping scope."""
-
-        context = self._ok("GET", f"/api/ontologies/{ontology_id}/workspace-context")
-        if not isinstance(context, dict) or context.get("state") != "ready":
-            raise PlatformScopeError(f"Ontology {ontology_id} workspace is not ready")
-        rows = context.get("members")
-        if not isinstance(rows, list):
-            raise PlatformScopeError(f"Ontology {ontology_id} workspace members are missing")
-        result: dict[str, str] = {}
-        for row in rows:
-            if not isinstance(row, dict):
-                continue
-            role = row.get("role")
-            graph_iri = row.get("graph_iri")
-            if role not in {"asserted_ontology", "asserted_data"}:
-                continue
-            if role in result or not isinstance(graph_iri, str) or not graph_iri:
-                raise PlatformScopeError(f"Ontology {ontology_id} has invalid {role} member")
-            owner_type = row.get("owner_type")
-            owner_id = row.get("owner_id")
-            if owner_type not in {None, "ontology"} or owner_id not in {None, ontology_id}:
-                raise PlatformScopeError(
-                    f"Ontology {ontology_id} workspace member ownership drifted"
-                )
-            registry = self._ok("GET", f"/api/semantic/graphs/{graph_iri}")
-            if not isinstance(registry, dict):
-                raise PlatformScopeError(f"Graph registry response is invalid for {graph_iri}")
-            registry_owner_type = registry.get(
-                "owner_type", registry.get("semantic_owner_type")
-            )
-            registry_owner_id = registry.get("owner_id", registry.get("semantic_owner_id"))
-            expected_category = "ontology" if role == "asserted_ontology" else "data"
-            if (
-                registry.get("registered") is False
-                or registry_owner_type != "ontology"
-                or registry_owner_id != ontology_id
-                or registry.get("category") != expected_category
-            ):
-                raise PlatformScopeError(f"Graph registry ownership drifted for {graph_iri}")
-            result[role] = graph_iri
-        if set(result) != {"asserted_ontology", "asserted_data"}:
-            raise PlatformScopeError(
-                f"Ontology {ontology_id} has incomplete workspace members"
-            )
-        return result
 
     def _empty_context(self) -> dict[str, Any]:
         if not self.ontology_id:
@@ -652,14 +507,11 @@ class PlatformScope:
                 if isinstance(ontology_workspace, dict):
                     version = ontology_workspace.get("workspace_version")
                 break
-        graph_set = context.get("default_graph_set", context.get("graph_set"))
-        graph_set_id = context.get("default_graph_set_id")
-        if graph_set_id is None and isinstance(graph_set, dict):
-            graph_set_id = graph_set.get("id")
+        ontology_id = context.get("ontology_id")
         return {
             "workspace_state": context["state"],
             **({"workspace_version": version} if isinstance(version, str) and version else {}),
-            **({"graph_set_id": graph_set_id} if graph_set_id is not None else {}),
+            **({"ontology_id": ontology_id} if ontology_id is not None else {}),
             "modeling_batch_count": len(items),
             "recent_session_count": len(recent),
             "active_session_count": len(active),
@@ -676,8 +528,8 @@ class PlatformScope:
         strict = self.existing_strict if strict is None else strict
         if strict and not result.get("workspace_version"):
             raise PlatformScopeError("workspace context has no version")
-        if strict and result.get("graph_set_id") is None:
-            raise PlatformScopeError("workspace context has no default Graph Set")
+        if strict and result.get("ontology_id") is None:
+            raise PlatformScopeError("workspace context has no Ontology identity")
         return result
 
     def _create_protocol_key(self) -> None:

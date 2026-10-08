@@ -84,7 +84,7 @@ def source(in_memory_session):
     )
     session.commit()
     store = Store()
-    iri = OntologyWorkspaceService(session, settings).context("ontology")["members"][0]["graph_iri"]
+    iri = OntologyWorkspaceService(session, settings).context("ontology")["model_graph_iri"]
     store.graphs[iri] = '<urn:business:Order> <urn:label> "Before checkpoint" .'
     return session, store, settings, iri
 
@@ -110,8 +110,8 @@ def test_fork_uses_saved_data_and_preserves_protection_without_suspended_evidenc
     workspace = OntologyWorkspaceService(session, settings).context(mapping["ontology"])
     assert workspace["state"] == "ready"
     assert (
-        workspace["default_graph_set_id"]
-        != OntologyWorkspaceService(session, settings).context("ontology")["default_graph_set_id"]
+        workspace["ontology_id"]
+        != OntologyWorkspaceService(session, settings).context("ontology")["ontology_id"]
     )
     assert session.get(m.OntologyModel, "ontology").status == "archived"
 
@@ -165,7 +165,7 @@ def test_lost_commit_ack_keeps_committed_fork_graphs(source, monkeypatch):
             )
         )
     )
-    assert len(graphs) == 4
+    assert len(graphs) == 1
     assert all(row.graph_iri in store.graphs for row in graphs)
 
 
@@ -206,7 +206,8 @@ def test_http_capture_fork_and_source_readonly(r008_client):
     blocked = client.patch(f"/api/projects/{project}", headers=headers, json={"name": "Rewrite"})
     assert blocked.status_code == 409, blocked.text
     assert blocked.json()["detail"]["code"] == "checkpoint_source_archived"
-    old_graph = created.json()["workspace"]["members"][0]["graph_iri"]
+    with env["factory"]() as db:
+        old_graph = db.get(m.OntologyModel, ontology_id).model_graph_iri
     bulk = client.post(
         "/api/semantic/datasets:load",
         headers=headers,
@@ -268,8 +269,8 @@ def test_multiple_ontologies_custom_shapes_and_rule_cycle(source):
     result = service.fork(snapshot, name="Multiple", settings=settings)
     mapping = result["identity_mapping"]
     assert len(result["ontology_ids"]) == 2
-    assert mapping[custom].endswith(f"/shapes/{mapping['second']}/custom")
-    assert "Custom shape" in store.graphs[mapping[custom]]
+    assert custom not in mapping
+    assert custom not in snapshot["graphs"]
     rule = session.get(m.SemanticRuleModel, mapping["rule"])
     assert rule.current_definition_id == mapping["definition"]
     assert (

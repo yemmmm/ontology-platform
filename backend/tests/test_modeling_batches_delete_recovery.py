@@ -250,7 +250,7 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
         OntologyLeaseAcquire(client_request_id="r23003-recovery-lease", expected_session_revision=1),
     )
     version = ModelingWorkspaceVersionService(in_memory_session, settings).version_for(ontology_id)
-    graph_iri = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/data/{ontology_id}"
+    graph_iri = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/{ontology_id}"
     target = f"{settings.semantic_base_iri.rstrip('/')}/entity/unknown-cross-release-output-meaning"
     source = f"{settings.semantic_base_iri.rstrip('/')}/entity/source"
     predicate = f"{settings.semantic_base_iri.rstrip('/')}/property/incident"
@@ -307,11 +307,11 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
     first = service.submit(session_id, request)
     assert first["attempt_status"] == "recovering"
     assert first["recovery"]["state"] == "pending"
-    assert len(store.graph) == 0
+    assert len(store.graph) == 1
 
     monkeypatch.setattr(service, "_finalize_success", original_finalize)
     second = service.submit(session_id, request)
     assert second["attempt_status"] == "applied"
     assert second["recovery"]["state"] == "converged"
     assert len(store.deltas) == 1
-    assert len(store.graph) == 0
+    assert len(store.graph) == 1

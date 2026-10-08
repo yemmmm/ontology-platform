@@ -159,7 +159,7 @@ compact 保留普通业务解释、身份和 statement 信息；R4.0-025 不再�
 失效。输出前复核已绑定 Ontology 的 workspace／source 版本，避免混读。
 
 R4.0-010 的四类数据映射资源沿用同一个 read-model 入口：
-`GET /api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}` 支持
+`GET /api/semantic/ontologies/{ontology_id}/read-models/{model_name}` 支持
 `table-mapping-list`／`table-mapping-detail`、`join-mapping-list`／`join-mapping-detail`、
 `enum-meaning-list`／`enum-meaning-detail` 和 `metric-list`／`metric-detail`。
 detail 行的 `detail_fields` 保留物理定位与已声明引用，并解码结构化注解：TableMapping 包含
@@ -172,7 +172,7 @@ detail 行的 `detail_fields` 保留物理定位与已声明引用，并解码�
 表达两种互斥的 TableMapping 目标形式；`mapping_definition` 的 `source_key`、Schema 版本、
 粒度、身份、路径、基数、字段含义和指标 contexts 是说明与引用，不是连接配置或执行授权。
 缺省字段表示未提供，JSON `null` 表示已知未知；平台不会从同名表或 Schema 猜补业务含义。
-精确 REST 资源读取 `GET /api/semantic/resources/{resource_iri}?graph_set_id=...` 也会按同一
+精确 REST 资源读取 `GET /api/semantic/resources/{resource_iri}?ontology_id=...` 也会按同一
 合同尝试四种 `*-detail` 模板，并在 `properties` 返回这些字段；不存在或无权的 mapping／metric
 资源仍返回同形 `404`。
 
@@ -202,29 +202,16 @@ statement。完整值先经过主体访问过滤，再计算列表／计数／cu
 故障继续使用既有可重试错误合同。平台只保存和读取映射，不连接外部数据库、不执行 SQL／转换，
 数据库行列权限由外部系统负责。
 
-跨 Ontology 的映射引用只通过显式的 reference-scope bridge 进入写入引用校验范围。读取仍使用
-调用方显式选择的 Graph Set／Ontology scope，不自动扩展。该 bridge 使用一个
-已有的、非默认 Graph Set，且必须同时满足：`scope_type="ontology"`、`scope_id` 是引用拥有方
-Ontology 的 ID、`metadata.mapping_reference_scope=true`，以及 `members` 只包含同一 Project
-内已注册、获准依赖 Ontology 的 `ontology`／`data` 图（即 asserted ontology/data graphs）。同一
-Project 关系本身不会隐式开放另一 Ontology 的映射、规则、属性或数据图；默认 Graph Set 也不会
-自动成为引用桥。Root／Protocol 负责形成并校验获准依赖集合，平台在最终读回时只使用 active 的
-这些 scope，并按 owner 计算投影后的 reference graph。
-
-bridge 的请求形状沿用已有 `POST /api/semantic/graph-sets`／Graph Set membership 合同，例如：
+跨 Ontology 的映射引用由拥有方 Ontology 的 `reference_ontology_ids` 显式声明。
+通过 `PATCH /api/ontologies/{ontology_id}` 提交同一 Project 内获准的依赖 Ontology ID，例如：
 
 ```json
-{
-  "name": "orders mapping references",
-  "scope_type": "ontology",
-  "scope_id": "owner-ontology-id",
-  "metadata": {"mapping_reference_scope": true},
-  "members": [
-    {"graph_iri": ".../ontology/approved-dependency", "role": "asserted_ontology"},
-    {"graph_iri": ".../data/approved-dependency", "role": "asserted_data"}
-  ]
-}
+{"reference_ontology_ids": ["approved-dependency-ontology-id"]}
 ```
+
+该列表用于写入引用校验，不自动扩大读取授权；读取仍只包含调用方选定且获准的 Ontology。
+同一 Project 关系不会隐式开放其他模型。取消依赖前会在已有 Project／Ontology 锁和 fence 下
+重验存量映射；会使引用悬空时返回 `mapping_reference_scope_in_use`，修订映射后可重试。
 
 映射资源或其声明依赖的直接编辑必须进入已有 Modeling Batch 的 `dry_run`／`apply_atomic`、
 Attempt、Project fence 和恢复回执；`POST /api/semantic/edits`、原始 TriG／N-Quads／JSON-LD
@@ -233,9 +220,7 @@ Attempt、Project fence 和恢复回执；`POST /api/semantic/edits`、原始 Tr
 `mapping_reference_write_fenced`；调用方应先读取／reconcile 原 Attempt 和 fence，再重试原目标，
 不要把同一不确定写入伪装成新的独立结果。
 
-修改 bridge 成员或通过 `supersedes` 收缩范围时，在 Project／Ontology 锁及 fence 下重验存量引用；
-会使映射悬空的修改返回 HTTP 409、`mapping_reference_scope_in_use` 和定位 findings。
-先用 Batch 修订依赖资源后可重试。`modeling-context` 返回非秘密的 `semantic_base_iri`，
+`modeling-context` 返回非秘密的 `semantic_base_iri`，
 Protocol 以该 namespace 构造当前平台引用，不从业务候选猜测 IRI。
 
 能力发现：`GET /api/mcp/tools` 在响应的 `capabilities.semantic_context_query` 中返回当前部署
@@ -342,14 +327,10 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `GET` | `/api/semantic/canonical-mode` | Get Canonical Mode |
 | semantic | `GET` | `/api/semantic/edits/audits` | List Semantic Edit Audits |
 | semantic | `GET` | `/api/semantic/export` | Export Dataset |
-| semantic | `GET` | `/api/semantic/graph-sets` | List Graph Sets |
-| semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}` | Get Graph Set |
-| semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/export` | Export Graph Set |
-| semantic | `GET` | `/api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}` | Read Model |
-| semantic | `GET` | `/api/semantic/graphs` | List Graph Registry |
-| semantic | `GET` | `/api/semantic/graphs/{graph_iri}` | Get Graph Registry |
 | semantic | `GET` | `/api/semantic/migrations` | List Migration Runs |
 | semantic | `GET` | `/api/semantic/migrations/{run_id}` | Get Migration Run |
+| semantic | `GET` | `/api/semantic/ontologies/{ontology_id}/export` | Export Ontology |
+| semantic | `GET` | `/api/semantic/ontologies/{ontology_id}/read-models/{model_name}` | Read Model |
 | semantic | `GET` | `/api/semantic/projection-jobs` | List Projection Jobs |
 | semantic | `GET` | `/api/semantic/projection-jobs/{job_id}` | Get Projection Job |
 | semantic | `GET` | `/api/semantic/projections/status` | Projection Status |
@@ -362,9 +343,6 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/datasets:load` | Load Dataset |
 | semantic | `POST` | `/api/semantic/derived-results:gc` | Run Derived Results Gc |
 | semantic | `POST` | `/api/semantic/edits` | Create Semantic Edit |
-| semantic | `POST` | `/api/semantic/graph-sets` | Create Graph Set |
-| semantic | `POST` | `/api/semantic/graph-sets/{graph_set_id}/projection-jobs` | Create Projection Job For Set |
-| semantic | `POST` | `/api/semantic/graphs` | Register Graph |
 | semantic | `POST` | `/api/semantic/migrations` | Create Migration Run |
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:cutover` | Cutover Migration Run |
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:parity-check` | Run Migration Parity Check |
@@ -372,12 +350,11 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:rollback` | Rollback Migration Run |
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:run-next-batch` | Run Next Migration Batch |
 | semantic | `POST` | `/api/semantic/migrations:preflight` | Preflight Migration |
+| semantic | `POST` | `/api/semantic/ontologies/{ontology_id}/projection-jobs` | Create Projection Job For Set |
 | semantic | `POST` | `/api/semantic/ontologies/{ontology_id}/retrieval:rebuild` | Rebuild Ontology Retrieval |
 | semantic | `POST` | `/api/semantic/projection-jobs/{job_id}:run` | Run Projection Job |
 | semantic | `POST` | `/api/semantic/projections:reconcile` | Reconcile Projections |
 | semantic | `POST` | `/api/semantic/sparql:query` | Query Sparql |
-| semantic | `PUT` | `/api/semantic/graph-sets/{graph_set_id}/members` | Update Graph Set Members |
-| semantic | `PATCH` | `/api/semantic/graphs/{graph_iri}/editability` | Update Graph Editability |
 | semantic-protection-sets | `GET` | `/api/projects/{project_id}/protection-sets` | List Protection Sets |
 | semantic-protection-sets | `GET` | `/api/protection-sets/{protection_set_id}` | Get Protection Set |
 | semantic-protection-sets | `POST` | `/api/projects/{project_id}/protection-sets` | Create Protection Set |
@@ -519,7 +496,7 @@ Class／Operation 的关系，不要求两端是 NamedIndividual。Class 层次�
 
 SHACL Shape CRUD／指导、SHACL 验证、OWL 自动一致性／分类／蕴含及其运行列表、
 详情、结果状态读取已退役。直接 REST `/api/semantic/validation-runs`、`reasoning-runs`、
-GraphSet 下的对应运行入口、`shapes/classes/*` 与 `derived-results:reconcile` 为 404；
+旧图集合的对应运行入口、`shapes/classes/*` 与 `derived-results:reconcile` 为 404；
 对应 MCP 工具不再注册或出现在授权目录中。`create_shape`／`update_shape`／`delete_shape`
 不在 Batch／canonical 命令集合中。Shape 专用图不能通过原始编辑或 dataset 导入进行维护。
 通用 RDF 的 `owl`／`rule`／`shape` 词汇本身仍可用，不按名称删除普通知识。
@@ -612,7 +589,7 @@ Ontology plan 后同步原 state 的绑定并保留状态和额外字段，历�
 
 ## 通用资源列表及外部能力定义阅读
 
-`GET /api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}`，使用
+`GET /api/semantic/ontologies/{ontology_id}/read-models/{model_name}`，使用
 `model_name=resource-list`、`field_set=full` 和 `limit=500`，
 组合既有实体/分类/属性/关系/映射/指标及 Operation 受治理投影。先在每个真实资源族服务端授权，
 再按 IRI 合并和分页；同 IRI 保留同一共享身份、实体完整可见分类和语义注解。无正式 Class 的实体
@@ -621,25 +598,25 @@ Ontology plan 后同步原 state 的绑定并保留状态和额外字段，历�
 
 `operation-list`/`operation-detail` 读取 ontology 图中的 Operation 定义、参数、前提、效果、失败、
 幂等性、全部精确 tool bindings 和凭据需求类别，沿用既有 Operation schema/秘密检测和语义授权；
-不选择首个 binding，不执行外部能力。`GET /api/semantic/resources/{resource_iri}?graph_set_id=...`
+不选择首个 binding，不执行外部能力。`GET /api/semantic/resources/{resource_iri}?ontology_id=...`
 也支持 Operation 精确下钻，与列表使用相同授权范围。
 
 ## v4.2 通用资源关系图谱读取
 
-沿用 `GET /api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}`，
+沿用 `GET /api/semantic/ontologies/{ontology_id}/read-models/{model_name}`，
 `model_name=resource-relations`、`include=asserted`，关系请求上限为 1000。
-此模板与旧 `entity-relations` 分开：端点使用同一 GraphSet 的 `resource-list` 获准
+此模板与旧 `entity-relations` 分开：端点使用同一 Ontology 的 `resource-list` 获准
 资源窗口（最多 500），支持 Class／属性／关系类型、无 Class 实体、Operation、映射及
 指标之间的真实 IRI 三元组，不要求两端为 NamedIndividual。
 
 返回既有 SemanticReadModelEnvelope；items 包含稳定三元组 id、source、target、relation
-（predicate IRI）、可选 label、source_graph_iri、assertion_kind。同一三元组跨图只返回
+（predicate IRI）、可选 label、ontology_id、assertion_kind。同一三元组跨图只返回
 一个稳定身份及一处真实图位置；不从自由文本或名称推断额外边，字面量不是节点。
 
 2026-10-08 投影升级为 `semantic-resource-relations-v2`：`edge_kind=rdf_relation` 表示
 真实 IRI 三元组，`edge_kind=structured_reference` 表示已有结构字段中的明确资源引用。
 后者另含 `field_path`，label 为该字段路径，relation 仍为原结构字段谓词，
-source_graph_iri 为原字面量所在图。稳定 id 纳入字段路径，避免同一资源在不同位置的引用被合并。
+ontology_id 表示原字面量的读取 Ontology。稳定 id 纳入字段路径，避免同一资源在不同位置的引用被合并。
 只读取既有映射／语义定义字段中的 `definition_ref`、`*_iri`、`*_iris`；
 definition_ref 按同一获准 resource-list 窗口内唯一的 semantic_id 解析，精确 IRI
 也必须落在该窗口内。兼容旧中性 mapping_payload 的 JSON 或安全字典字面量读取，
@@ -647,6 +624,6 @@ definition_ref 按同一获准 resource-list 窗口内唯一的 semantic_id 解�
 端点窗口在实际 RDF 查询前限定；受限 predicate 在查询端排除，可选 label 经过原有嵌套
 引用授权检查，不能公开的标签省略而保留已获准关系，客户端可用 predicate IRI 显示。
 
-`source_signature` 与该 GraphSet 资源读取范围保持一致。`paging.complete` 必须同时满足
+`source_signature` 与该 Ontology 资源读取范围保持一致。`paging.complete` 必须同时满足
 端点窗口、关系窗口和底层读取完整；部分结果及相关 warnings 不能被解释为全项目没有
 其他模型内容。本接口只读，不增加图写入、推理、业务执行或 Evidence／lineage 功能。

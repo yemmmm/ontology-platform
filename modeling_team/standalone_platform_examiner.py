@@ -82,7 +82,6 @@ def main() -> int:
         "platform_read_scope": {
             "project_id": scope["project_id"],
             "ontology_id": scope["ontology_id"],
-            "graph_set_id": scope["graph_set_id"],
         },
         "proxy_capability": {"capability_id": "standalone-probe"},
         "allowed_read_tools": list(prepared.allowed_tools),

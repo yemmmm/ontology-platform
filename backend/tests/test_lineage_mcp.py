@@ -15,7 +15,7 @@ from app.mcp.server import mcp
             "get_ontology_lineage",
             {"ontology_id": "o", "target_type": "resource", "target_id": "iri"},
         ),
-        ("inspect_semantic_statement_provenance", {"graph_set_id": "gs", "statement_iri": "iri"}),
+        ("inspect_semantic_statement_provenance", {"ontology_id": "gs", "statement_iri": "iri"}),
         (
             "create_evidence_reference",
             {"project_id": "p", "document_name": "source", "excerpt": "text"},

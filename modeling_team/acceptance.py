@@ -104,7 +104,7 @@ MODEL_STATE_FIELDS: tuple[str, ...] = (
     "workspace_version",
     "source_signature",
     "build_session_id",
-    "graph_set_id",
+    "ontology_id",
 )
 
 # The formal stage handoff does not accept an arbitrary platform read as proof
@@ -517,7 +517,7 @@ def validate_child_input(kind: str, value: Any) -> dict[str, Any]:
 
 
 def validate_platform_read_scope(value: Any) -> dict[str, Any]:
-    data = _require_exact_keys(value, {"project_id", "ontology_id", "graph_set_id"}, "platform_read_scope")
+    data = _require_exact_keys(value, {"project_id", "ontology_id", "ontology_id"}, "platform_read_scope")
     for field in data:
         _safe_platform_id(data[field], f"platform_read_scope.{field}")
     return data
@@ -2623,11 +2623,11 @@ class RunnerAcceptanceCarrier:
             project_id = project.get("id") if isinstance(project, Mapping) else None
             ontology_id = ontology.get("id") if isinstance(ontology, Mapping) else None
             workspace_version = workspace.get("workspace_version") if isinstance(workspace, Mapping) else None
-            graph_set_id = workspace_context.get("default_graph_set_id")
+            ontology_id = workspace_context.get("ontology_id")
             source_signature = workspace_context.get("source_signature")
             if not all(
                 isinstance(value, str) and value
-                for value in (project_id, ontology_id, workspace_version, graph_set_id, source_signature)
+                for value in (project_id, ontology_id, workspace_version, ontology_id, source_signature)
             ):
                 raise AcceptanceContractError("formal platform state is incomplete")
             build_session_id = getattr(scope, "completed_session_id", None)
@@ -2642,11 +2642,10 @@ class RunnerAcceptanceCarrier:
                 raise AcceptanceContractError("formal platform state has no Producer Build Session")
             state = {
                 "project_id": project_id,
-                "ontology_id": ontology_id,
                 "workspace_version": workspace_version,
                 "source_signature": source_signature,
                 "build_session_id": build_session_id,
-                "graph_set_id": graph_set_id,
+                "ontology_id": ontology_id,
             }
             state["state_digest"] = model_state_digest(state)
             return state
@@ -3155,7 +3154,6 @@ class RunnerAcceptanceCarrier:
             "platform_read_scope": {
                 "project_id": state["project_id"],
                 "ontology_id": state["ontology_id"],
-                "graph_set_id": state["graph_set_id"],
             },
             "model_state": state,
             "model_state_digest": state["state_digest"],
@@ -3291,7 +3289,6 @@ class RunnerAcceptanceCarrier:
         """
 
         live_workspace = state["workspace_version"]
-        live_graph_set = state["graph_set_id"]
         records = list(self._platform_read_artifacts.values())
         data_cache: dict[str, Mapping[str, Any] | None] = {}
 
@@ -4634,7 +4631,7 @@ class RunnerAcceptanceCarrier:
                 "ordinal",
                 "project_id",
                 "ontology_id",
-                "graph_set_id",
+
                 "ticket_digest",
                 "model_state_digest",
                 "tool",
@@ -4651,7 +4648,6 @@ class RunnerAcceptanceCarrier:
             if (
                 receipt["project_id"] != expected_scope["project_id"]
                 or receipt["ontology_id"] != expected_scope["ontology_id"]
-                or receipt["graph_set_id"] != expected_scope["graph_set_id"]
                 or receipt["ticket_digest"] != ticket["ticket_digest"]
                 or receipt["model_state_digest"] != ticket["model_state_digest"]
             ):
@@ -6599,16 +6595,16 @@ class PlatformScopeShim:
 
 def canonical_platform_allowlist() -> tuple[str, ...]:
     base = [
-        "check_platform_health", "get_project_build_context", "get_build_session", "get_modeling_context", "get_ontology_workspace_context", "get_ontology_read_model", "get_semantic_read_model", "query_semantic_context", "semantic_sparql_query", "describe_semantic_graph_set", "inspect_semantic_projection_status", "list_evidence_references", "get_evidence_reference", "get_ontology_lineage", "inspect_semantic_statement_provenance",
+        "check_platform_health", "get_project_build_context", "get_build_session", "get_modeling_context", "get_ontology_workspace_context", "get_ontology_read_model", "get_semantic_read_model", "query_semantic_context", "semantic_sparql_query", "get_ontology_workspace_context", "inspect_semantic_projection_status", "list_evidence_references", "get_evidence_reference", "get_ontology_lineage", "inspect_semantic_statement_provenance",
     ]
-    return tuple(base)
+    return tuple(dict.fromkeys(base))
 
 
 def validate_platform_read_request(*, ticket: Mapping[str, Any], request: Mapping[str, Any]) -> dict[str, Any]:
-    fields = {"project_id", "ontology_id", "graph_set_id", "tool", "ticket_digest", "request_digest"}
+    fields = {"project_id", "ontology_id",  "tool", "ticket_digest", "request_digest"}
     data = _require_exact_keys(request, fields, "platform read request")
     scope = ticket["platform_read_scope"]
-    if any(data[field] != scope[field] for field in ("project_id", "ontology_id", "graph_set_id")):
+    if any(data[field] != scope[field] for field in ("project_id", "ontology_id", "ontology_id")):
         _error("Platform Examiner read scope is outside the ticket")
     if data["ticket_digest"] != ticket["ticket_digest"] or data["tool"] not in ticket["allowed_read_tools"] or data["tool"] not in set(canonical_platform_allowlist()):
         _error("Platform Examiner read request is outside the ticket allowlist")

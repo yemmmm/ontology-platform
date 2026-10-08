@@ -2,7 +2,6 @@ from dataclasses import asdict
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
@@ -106,20 +105,6 @@ def validate_competency_question(
     return session.get(CompetencyQuestionModel, question_id)
 
 
-def _active_graph_set_for_ontology(session, ontology_id):
-    """Return the active graph-set id for an ontology, or None."""
-    from app.repositories.models import SemanticGraphSetModel
-
-    return session.scalar(
-        select(SemanticGraphSetModel.id)
-        .where(
-            SemanticGraphSetModel.scope_type == "ontology",
-            SemanticGraphSetModel.scope_id == ontology_id,
-            SemanticGraphSetModel.status == "active",
-        )
-        .order_by(SemanticGraphSetModel.updated_at.desc())
-        .limit(1)
-    )
 
 
 def _build_overview_service(session, rdf_store, settings):
@@ -134,9 +119,9 @@ def _build_overview_service(session, rdf_store, settings):
         default_limit=1,
     )
 
-    def _read(graph_set_id, model_name):
+    def _read(ontology_id, model_name):
         return read_model_service.read_model(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             model_name=model_name,
             field_set="summary",
         )
@@ -156,17 +141,16 @@ def get_build_overview(
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ):
-    graph_set_id = _active_graph_set_for_ontology(session, ontology_id)
-    if not graph_set_id:
-        raise HTTPException(
-            status_code=404,
-            detail=f"ontology {ontology_id} has no active graph-set; create one via /graph-sets",
-        )
+    from app.repositories.models import OntologyModel
+    ontology = session.get(OntologyModel, ontology_id)
+    if ontology is None or (project_id and ontology.project_id != project_id):
+        raise HTTPException(status_code=404, detail="Ontology not found")
+    project_id = ontology.project_id
     service = _build_overview_service(session, rdf_store, settings)
     response = service.build(
         session=session,
         project_id=project_id,
         ontology_id=ontology_id,
-        graph_set_id=graph_set_id,
+
     )
     return asdict(response)

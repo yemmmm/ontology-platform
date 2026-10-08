@@ -101,6 +101,12 @@ class R23005BRuntimeTests(unittest.TestCase):
         fixture = json.loads(fixture_path.read_text(encoding="utf-8"))
         round_id = fixture["acceptance_round_id"]
         ticket = fixture["ticket"]
+        # Adapt the retained historical ticket only in memory; keep frozen bytes.
+        for binding in (ticket["model_state"], ticket["platform_read_scope"]):
+            binding.pop("graph_set_id", None)
+        from modeling_team.acceptance import model_state_digest
+        ticket["model_state"]["state_digest"] = model_state_digest(ticket["model_state"])
+        ticket["model_state_digest"] = ticket["model_state"]["state_digest"]
         with tempfile.TemporaryDirectory() as directory:
             carrier = RunnerAcceptanceCarrier(
                 Path(directory), task_id="r2-3-005-formal-acceptance", acceptance_id="acceptance"
@@ -618,7 +624,7 @@ class R23005BRuntimeTests(unittest.TestCase):
                 read_key="temporary-read-key",
                 project_id="project-one",
                 ontology_id="ontology-one",
-                graph_set_id="graph-one",
+
                 ticket_digest="a" * 64,
                 model_state_digest="b" * 64,
                 allowed_tools=list(PLATFORM_PROXY_READ_TOOLS),
@@ -629,7 +635,7 @@ class R23005BRuntimeTests(unittest.TestCase):
             arguments = {
                 "project_id": "project-one",
                 "ontology_id": "ontology-one",
-                "graph_set_id": "graph-one",
+
                 "ticket_digest": "a" * 64,
                 "model_state_digest": "b" * 64,
             }
@@ -657,7 +663,7 @@ class R23005BRuntimeTests(unittest.TestCase):
                 read_key="temporary-read-key",
                 project_id="project-one",
                 ontology_id="ontology-one",
-                graph_set_id="graph-one",
+
                 ticket_digest="a" * 64,
                 model_state_digest="b" * 64,
                 allowed_tools=list(PLATFORM_PROXY_READ_TOOLS),
@@ -666,7 +672,7 @@ class R23005BRuntimeTests(unittest.TestCase):
             arguments = {
                 "project_id": "project-one",
                 "ontology_id": "ontology-one",
-                "graph_set_id": "graph-one",
+
                 "ticket_digest": "a" * 64,
                 "model_state_digest": "b" * 64,
                 "cursor": "cursor-1",
@@ -732,7 +738,7 @@ class R23005BRuntimeTests(unittest.TestCase):
                 "read_key_id": "read-key-one",
                 "read_key_digest": "e" * 64,
                 "descriptor": {"kind": "platform_examiner", "package_digest": "f" * 64},
-                "platform_read_scope": {"project_id": "project-one", "ontology_id": "ontology-one", "graph_set_id": "graph-one"},
+                "platform_read_scope": {"project_id": "project-one", "ontology_id": "ontology-one"},
                 "model_state_digest": "b" * 64,
                 "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),
                 "read_key_plaintext": "temporary-read-key",

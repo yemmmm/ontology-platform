@@ -56,35 +56,12 @@ def report_digest_scope(value: dict) -> str:
 
 
 def workspace_digests(context: dict) -> tuple[dict, dict]:
-    """Same read-only observation recipe as the CQ producer; no verdict logic."""
-    if (
-        not isinstance(context, dict)
-        or context.get("state") != "ready"
-        or not context.get("default_graph_set_id")
-        or not isinstance(context.get("members"), list)
-    ):
+    if not isinstance(context, dict) or context.get("state") != "ready" or not context.get("ontology_id"):
         raise ValueError("workspace observation incomplete")
-    revisions = sorted(
-        (q.get("role"), q.get("revision"), q.get("content_hash"))
-        for q in context["members"]
-        if isinstance(q, dict)
-    )
-    return (
-        {
-            "state_digest": content_digest(
-                {"state": context["state"], "source_signature": context.get("source_signature")}
-            )
-        },
-        {
-            "state_digest": content_digest(
-                {
-                    "graph_set_id": context["default_graph_set_id"],
-                    "status": context.get("graph_set_status"),
-                    "revisions": revisions,
-                }
-            )
-        },
-    )
+    return ({"state_digest": content_digest({"state": context["state"],
+              "source_signature": context.get("source_signature")})},
+            {"state_digest": content_digest({"ontology_id": context["ontology_id"],
+              "model_revision": context.get("model_revision"), "content_hash": context.get("content_hash")})})
 
 
 def scalars(value: Any, fields: str) -> dict:
@@ -1066,7 +1043,7 @@ class ModelingWorkbenchService:
             for entry in after["ontologies"]:
                 context = self.workspace_reader(scope["project_id"], entry["ontology_id"])
                 observed = workspace_digests(context)
-                if observed != (entry.get("workspace_state"), entry.get("graph_state")):
+                if observed != (entry.get("workspace_state"), entry.get("model_version_state")):
                     return "stale", ["live_model_binding_changed"]
         except LookupError:
             return "stale", ["bound_online_resource_missing"]

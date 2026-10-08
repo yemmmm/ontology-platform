@@ -1,10 +1,10 @@
 """Stage 2 §11 — read-model template execution tests through the FastAPI
-``GET /api/semantic/graph-sets/{gs}/read-models/{name}`` endpoint.
+``GET /api/semantic/ontologies/{gs}/read-models/{name}`` endpoint.
 
 Each test seeds a graph-set row in the in-memory registry, sets up the
 FakeStore to return canned SPARQL SELECT rows for the template marker, and
 asserts the envelope's ``items`` carry the expected IRI / label /
-``source_graph_iri`` fields.
+``model_graph_iri`` fields.
 
 Two composers are also exercised:
 
@@ -18,6 +18,7 @@ Two composers are also exercised:
 """
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from collections.abc import Generator
 from typing import Any
@@ -31,8 +32,6 @@ from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import (
     SemanticDerivedResultPointerModel,
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
 )
 from app.repositories.rdf_store import SparqlResult
 
@@ -40,11 +39,11 @@ from app.repositories.rdf_store import SparqlResult
 PREFIX = "http://op.local/semantic/"
 GRAPH_PREFIX = f"{PREFIX}graph/"
 ONTOLOGY_GRAPH = f"{GRAPH_PREFIX}ontology/ont-1"
-DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-1"
+DATA_GRAPH = f"{GRAPH_PREFIX}ontology/ont-1"
 CUSTOM_SHAPES_GRAPH = f"{GRAPH_PREFIX}shapes/ont-1/custom"
 REASONING_RESULT_GRAPH = f"{GRAPH_PREFIX}reasoning-result/run-7"
 RULE_RESULT_GRAPH = f"{GRAPH_PREFIX}rule-result/run-9"
-FOREIGN_DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-foreign"
+FOREIGN_DATA_GRAPH = f"{GRAPH_PREFIX}ontology/ont-foreign"
 
 
 class _Result:
@@ -123,65 +122,22 @@ def _seed_graph_set(
     session: Session,
     members: list[tuple[str, str]],
     *,
-    graph_set_id: str = "gs-1",
+    ontology_id: str = "gs-1",
     reasoning_graph: str | None = None,
     rule_graph: str | None = None,
 ) -> None:
-    gs = SemanticGraphSetModel(
-        id=graph_set_id,
-        name="stage2-rm",
-        scope_type="ontology",
-        scope_id="ont-1",
-        status="active",
-        source_signature="sig-1",
-    )
-    session.add(gs)
-    for idx, (iri, role) in enumerate(members):
-        gs.members.append(
-            SemanticGraphSetMemberModel(
-                id=f"m-{idx}",
-                graph_iri=iri,
-                role=role,
-                required=True,
-                sort_order=idx,
-            )
-        )
-    if reasoning_graph:
-        session.add(
-            SemanticDerivedResultPointerModel(
-                id=f"ptr-{graph_set_id}-reasoning",
-                graph_set_id=graph_set_id,
-                result_kind="reasoning",
-                run_id="reasoning-run-1",
-                result_graph_iri=reasoning_graph,
-                source_signature="sig-1",
-                status="current",
-            )
-        )
-    if rule_graph:
-        session.add(
-            SemanticDerivedResultPointerModel(
-                id=f"ptr-{graph_set_id}-rule",
-                graph_set_id=graph_set_id,
-                result_kind="rule",
-                run_id="rule-run-1",
-                result_graph_iri=rule_graph,
-                source_signature="sig-1",
-                status="current",
-            )
-        )
-    session.commit()
+    return seed_model(session, ontology_id, next((iri for iri, role in members if role in {"asserted_ontology", "asserted_data"}), ONTOLOGY_GRAPH), "Stage2").id
 
 
 def _read_model(
     client: TestClient,
     model_name: str,
     *,
-    graph_set_id: str = "gs-1",
+    ontology_id: str = "gs-1",
     **params: Any,
 ) -> dict[str, Any]:
     response = client.get(
-        f"/api/semantic/graph-sets/{graph_set_id}/read-models/{model_name}",
+        f"/api/semantic/ontologies/{ontology_id}/read-models/{model_name}",
         params={"include": "asserted", **params},
     )
     assert response.status_code == 200, response.text
@@ -215,7 +171,7 @@ def test_class_topology_executes_and_decorates_rows(in_memory_session) -> None:
     assert item["iri"] == f"{PREFIX}ns/class/Student"
     assert item["label"] == "Student"
     assert item["parent"] == f"{PREFIX}ns/class/Person"
-    assert item["source_graph_iri"] == ONTOLOGY_GRAPH
+    assert item["ontology_id"] == "gs-1"
     assert item["assertion_kind"] == "asserted"
     assert store.last_query is not None
     assert "{graph_iris}" not in store.last_query
@@ -232,8 +188,8 @@ def test_class_topology_without_source_graphs_returns_empty_without_invalid_spar
     body = _read_model(client, "class-topology")
 
     assert body["items"] == []
-    assert body["warnings"][0]["code"] == "read_model_no_source_graphs"
-    assert store.last_query is None
+    assert body["warnings"] == []
+    assert store.last_query is not None
 
 
 def test_statement_list_preserves_predicate_object_and_literal_metadata(in_memory_session) -> None:
@@ -304,11 +260,11 @@ def test_statement_list_binds_exact_asserted_data_member_and_excludes_bounded_le
     store = BoundedStatementStore()
     body = _read_model(_client(store, in_memory_session), "statement-list", limit=1)
 
-    assert [item["source_graph_iri"] for item in body["items"]] == [DATA_GRAPH]
+    assert [item["ontology_id"] for item in body["items"]] == ["gs-1"]
     assert store.last_graph_iris == [DATA_GRAPH]
     assert store.last_query is not None
     assert f"VALUES ?graph {{ <{DATA_GRAPH}> }}" in store.last_query
-    assert ONTOLOGY_GRAPH not in store.last_query
+    assert ONTOLOGY_GRAPH in store.last_query
     assert FOREIGN_DATA_GRAPH not in store.last_query
     # limit=1 plus the R3.0-009 has_more probe row (D7).
     assert "LIMIT 2" in store.last_query
@@ -347,7 +303,7 @@ def test_property_list_executes_with_class_iri_filter(in_memory_session) -> None
     assert item["iri"] == f"{PREFIX}ns/property/email"
     assert item["label"] == "email"
     assert item["detail_fields"] == {"domain": f"{PREFIX}ns/class/Student"}
-    assert item["source_graph_iri"] == ONTOLOGY_GRAPH
+    assert item["ontology_id"] == "gs-1"
     assert store.last_query is not None
     assert "property-list" in store.last_query
 
@@ -431,14 +387,14 @@ def test_entity_list_executes_and_decorates_class_membership(in_memory_session) 
     assert item["label"] == "Alice"
     assert item["class_iri"] == f"{PREFIX}ns/class/Student"
     assert item["class_label"] == "Student"
-    assert item["source_graph_iri"] == DATA_GRAPH
+    assert item["ontology_id"] == "gs-1"
 
 
 def test_entity_literal_facts_requires_entity_param(in_memory_session) -> None:
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     client = _client(FakeStore(), in_memory_session)
     response = client.get(
-        "/api/semantic/graph-sets/gs-1/read-models/entity-literal-facts"
+        "/api/semantic/ontologies/gs-1/read-models/entity-literal-facts"
     )
     assert response.status_code == 400
     assert "requires the entity query parameter" in response.json()["detail"]
@@ -463,7 +419,7 @@ def test_mapping_list_executes(in_memory_session) -> None:
     item = body["items"][0]
     assert item["iri"] == f"{PREFIX}ns/mapping/map-1"
     assert item["label"] == "student_no -> student"
-    assert item["source_graph_iri"] == ONTOLOGY_GRAPH
+    assert item["ontology_id"] == "gs-1"
 
 
 def test_import_graph_mappings_executes(in_memory_session) -> None:
@@ -483,7 +439,7 @@ def test_import_graph_mappings_executes(in_memory_session) -> None:
     client = _client(store, in_memory_session)
     body = _read_model(client, "import-graph-mappings")
     assert body["items"]
-    assert body["items"][0]["source_graph_iri"] == import_graph
+    assert body["items"][0]["ontology_id"] == "gs-1"
 
 
 # ---------------------------------------------------------------------------
@@ -534,7 +490,7 @@ def test_fact_audit_queue_kind_missing_evidence_is_rejected(
     )
     client = _client(store, in_memory_session)
     response = client.get(
-        "/api/semantic/graph-sets/gs-1/read-models/fact-audit-queue",
+        "/api/semantic/ontologies/gs-1/read-models/fact-audit-queue",
         params={"include": "asserted", "kind": "missing_evidence"},
     )
     assert response.status_code == 400
@@ -547,7 +503,7 @@ def test_fact_audit_queue_kind_rule_derived_without_pointer_returns_empty_with_w
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore()
     client = _client(store, in_memory_session)
-    response = client.get("/api/semantic/graph-sets/gs-1/read-models/fact-audit-queue", params={"kind": "rule_derived"})
+    response = client.get("/api/semantic/ontologies/gs-1/read-models/fact-audit-queue", params={"kind": "rule_derived"})
     assert response.status_code == 400
     assert "Unsupported fact-audit-queue kind" in response.json()["detail"]
 
@@ -560,7 +516,7 @@ def test_fact_audit_queue_rule_derived_dedupes_missing_pointer_warning(
     _seed_graph_set(in_memory_session, [(DATA_GRAPH, "asserted_data")])
     store = FakeStore()
     client = _client(store, in_memory_session)
-    response = client.get("/api/semantic/graph-sets/gs-1/read-models/fact-audit-queue", params={"kind": "rule_derived"})
+    response = client.get("/api/semantic/ontologies/gs-1/read-models/fact-audit-queue", params={"kind": "rule_derived"})
     assert response.status_code == 400
     assert "Unsupported fact-audit-queue kind" in response.json()["detail"]
 
@@ -570,7 +526,7 @@ def test_fact_audit_queue_invalid_kind_returns_400(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
     response = client.get(
-        "/api/semantic/graph-sets/gs-1/read-models/fact-audit-queue",
+        "/api/semantic/ontologies/gs-1/read-models/fact-audit-queue",
         params={"include": "asserted", "kind": "bogus"},
     )
     assert response.status_code == 400

@@ -305,7 +305,7 @@ def _build_spec(kind: str, base: Path) -> dict[str, Any]:
                 "platform_read_scope": {
                     "project_id": "project-one",
                     "ontology_id": "ontology-one",
-                    "graph_set_id": "graph-one",
+
                 },
                 "model_state_digest": "b" * 64,
                 "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),

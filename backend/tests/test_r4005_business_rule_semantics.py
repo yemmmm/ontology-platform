@@ -79,14 +79,14 @@ def test_hidden_rule_script_and_endpoints_filtered_before_paging(in_memory_sessi
     monkeypatch.setattr(semantic, "_access_view", lambda *_args, **_kwargs: view)
     client = _client(store, in_memory_session)
     for iri in hidden | {NS + "entity/nonexistent"}:
-        response = client.get(f"/api/semantic/resources/{iri}", params={"graph_set_id": "gs-009"})
+        response = client.get(f"/api/semantic/resources/{iri}", params={"ontology_id": "gs-009"})
         assert response.status_code == 404
         assert response.json() == {"detail": f"Resource not found: {iri}"}
     full = _read_model(client, "entity-list")
     page = _read_model(client, "entity-list", limit=1)
     assert page["items"] == full["items"][:1]
     assert page["paging"]["visible_count"] == len(full["items"])
-    statements = client.get("/api/semantic/statements", params={"graph_set_id": "gs-009"}).json()
+    statements = client.get("/api/semantic/statements", params={"ontology_id": "gs-009"}).json()
     for row in statements["items"]:
         assert row["subject"] not in hidden
         assert row.get("object") not in hidden

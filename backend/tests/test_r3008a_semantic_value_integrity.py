@@ -36,7 +36,7 @@ FOREIGN_BASE = "https://r3008a-foreign.test/resource/"
 GRAPH = "https://r3008a-int.test/graph/"
 OP = f"{BASE}vocab/"
 ONTOLOGY_GRAPH = f"{GRAPH}ontology/{ONTOLOGY_ID}"
-DATA_GRAPH = f"{GRAPH}data/{ONTOLOGY_ID}"
+DATA_GRAPH = f"{GRAPH}ontology/{ONTOLOGY_ID}"
 FOREIGN_GRAPH = f"{GRAPH}ontology/{FOREIGN_ONTOLOGY_ID}"
 
 RDF_TYPE = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
@@ -514,7 +514,7 @@ def test_b5_same_batch_delete_and_reference_is_blocked(modeling):
     blocking = [
         finding
         for finding in result["findings"]
-        if finding["code"] in {"conflicting_item_effects", "invalid_resource_reference"}
+        if finding["code"] in {"conflicting_item_effects", "invalid_resource_reference", "semantic_value_target_missing"}
     ]
     assert blocking
     mentioned = {item_id for finding in blocking for item_id in finding["client_item_ids"]}

@@ -86,7 +86,7 @@ class P2ProtocolDriverTests(unittest.TestCase):
             f"<{item['subject']}>",
             f"<{item['predicate']}>",
             f"<{item['object']}>",
-            str(namespace.graph("data", "p2-ontology")),
+            str(namespace.graph("ontology", "p2-ontology")),
         )
         self.assertEqual(compiled.delta.inserts, [expected])
         self.assertEqual(item["object_kind"], "iri")

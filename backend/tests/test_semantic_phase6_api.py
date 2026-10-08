@@ -1,3 +1,4 @@
+from single_model_support import seed_model
 """Phase 6 graph-derived API integration tests."""
 
 from collections.abc import Generator
@@ -11,32 +12,14 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.semantic import router
 from app.core.config import Settings
-from app.repositories.models import (
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
-)
+
 
 
 def _seed_graph_set(session: Session, graph_iris: list[str]) -> None:
-    gs = SemanticGraphSetModel(
-        id="gs-1",
-        name="demo",
-        scope_type="ontology_version",
-        scope_id="ov-1",
-        status="active",
-        source_signature="sig-1",
-    )
+    gs = seed_model(session, "gs-1", graph_iris[0] if graph_iris else None, name="demo")
     session.add(gs)
     for idx, iri in enumerate(graph_iris):
-        gs.members.append(
-            SemanticGraphSetMemberModel(
-                id=f"m-{idx}",
-                graph_iri=iri,
-                role="asserted_data" if idx == 0 else "shape",
-                required=True,
-                sort_order=idx,
-            )
-        )
+        pass
     session.commit()
 
 
@@ -94,102 +77,70 @@ def _client(
 
 
 def test_read_model_endpoint_returns_envelope(in_memory_session):
-    _seed_graph_set(in_memory_session, ["http://op/s/graph/data/ov-1"])
+    _seed_graph_set(in_memory_session, ["http://op/s/graph/ontology/ov-1"])
     store = FakeStore(
         rows=[
             {
                 "class": "http://op/s/class/x",
                 "label": "X",
-                "graph": "http://op/s/graph/data/ov-1",
+                "graph": "http://op/s/graph/ontology/ov-1",
             }
         ]
     )
     client = _client(store, in_memory_session)
     response = client.get(
-        "/api/semantic/graph-sets/gs-1/read-models/ontology-schema-summary",
+        "/api/semantic/ontologies/gs-1/read-models/ontology-schema-summary",
         params={"include": "asserted"},
     )
     assert response.status_code == 200
     body = response.json()
-    assert body["graph_set_id"] == "gs-1"
+    assert body["ontology_id"] == "gs-1"
     assert body["items"][0]["assertion_kind"] == "asserted"
-    assert body["items"][0]["source_graph_iri"] == "http://op/s/graph/data/ov-1"
+    assert body["items"][0]["ontology_id"] == "gs-1"
 
 
 def test_read_model_unknown_returns_400(in_memory_session):
-    _seed_graph_set(in_memory_session, ["http://op/s/graph/data/ov-1"])
+    _seed_graph_set(in_memory_session, ["http://op/s/graph/ontology/ov-1"])
     client = _client(FakeStore(), in_memory_session)
     response = client.get(
-        "/api/semantic/graph-sets/gs-1/read-models/no-such-model",
+        "/api/semantic/ontologies/gs-1/read-models/no-such-model",
     )
     assert response.status_code == 400
 
 
 def test_export_endpoint_returns_trig(in_memory_session):
-    _seed_graph_set(in_memory_session, ["http://op/s/graph/data/ov-1"])
+    _seed_graph_set(in_memory_session, ["http://op/s/graph/ontology/ov-1"])
     store = FakeStore(
         graphs={
-            "http://op/s/graph/data/ov-1": "@prefix ex: <http://example.test/> .\n<http://op/s/graph/data/ov-1> { ex:a ex:b ex:c . }\n"
+            "http://op/s/graph/ontology/ov-1": "@prefix ex: <http://example.test/> .\n<http://op/s/graph/ontology/ov-1> { ex:a ex:b ex:c . }\n"
         }
     )
     client = _client(store, in_memory_session)
     response = client.get(
-        "/api/semantic/graph-sets/gs-1/export",
+        "/api/semantic/ontologies/gs-1/export",
         params={"format": "trig"},
     )
     assert response.status_code == 200
     assert "application/trig" in response.headers["content-type"]
 
 
-def test_export_turtle_rejects_multi_graph(in_memory_session):
-    # Seed two graphs both as asserted_data so the export sees both.
-    gs = SemanticGraphSetModel(
-        id="gs-1",
-        name="demo",
-        scope_type="ontology_version",
-        scope_id="ov-1",
-        status="active",
-        source_signature="sig-1",
-    )
-    in_memory_session.add(gs)
-    for idx, iri in enumerate(
-        [
-            "http://op/s/graph/data/ov-1",
-            "http://op/s/graph/ontology/ov-1",
-        ]
-    ):
-        gs.members.append(
-            SemanticGraphSetMemberModel(
-                id=f"m-{idx}",
-                graph_iri=iri,
-                role="asserted_data",
-                required=True,
-                sort_order=idx,
-            )
-        )
-    in_memory_session.commit()
-    store = FakeStore(
-        graphs={
-            "http://op/s/graph/data/ov-1": "@prefix ex: <http://example.test/> .\n<http://op/s/graph/data/ov-1> { ex:a ex:b ex:c . }\n",
-            "http://op/s/graph/ontology/ov-1": "@prefix ex: <http://example.test/> .\n<http://op/s/graph/ontology/ov-1> { ex:x ex:y ex:z . }\n",
-        }
-    )
-    client = _client(store, in_memory_session)
-    response = client.get(
-        "/api/semantic/graph-sets/gs-1/export",
-        params={"format": "turtle"},
-    )
-    assert response.status_code == 400
+def test_export_turtle_needs_only_ontology(in_memory_session):
+    graph = "http://op/s/graph/ontology/ov-1"
+    _seed_graph_set(in_memory_session, [graph])
+    client = _client(FakeStore(graphs={graph: f'<{graph}> {{ <urn:a> <urn:b> "x" . }}'}), in_memory_session)
+    response = client.get("/api/semantic/ontologies/gs-1/export", params={"format": "turtle"})
+    assert response.status_code == 200
+    assert '"x"' in response.text
 
 
 def test_projection_job_lifecycle(in_memory_session):
-    _seed_graph_set(in_memory_session, ["http://op/s/graph/data/ov-1"])
+    _seed_graph_set(in_memory_session, ["http://op/s/graph/ontology/ov-1"])
     client = _client(FakeStore(), in_memory_session)
 
     create = client.post(
-        "/api/semantic/graph-sets/gs-1/projection-jobs",
+        "/api/semantic/ontologies/gs-1/projection-jobs",
         json={
-            "graph_set_id": "gs-1",
+            "ontology_id": "gs-1",
             "projection_kind": "search",
             "projection_version": "search-v1",
             "include": "asserted",
@@ -204,14 +155,14 @@ def test_projection_job_lifecycle(in_memory_session):
     assert run.json()["status"] == "succeeded"
 
     status = client.get(
-        "/api/semantic/projections/status", params={"graph_set_id": "gs-1"}
+        "/api/semantic/projections/status", params={"ontology_id": "gs-1"}
     )
     assert status.status_code == 200
     assert any(m["projection_kind"] == "search" for m in status.json()["manifests"])
 
 
 def test_projection_reconcile_endpoint(in_memory_session):
-    _seed_graph_set(in_memory_session, ["http://op/s/graph/data/ov-1"])
+    _seed_graph_set(in_memory_session, ["http://op/s/graph/ontology/ov-1"])
     client = _client(FakeStore(), in_memory_session)
     response = client.post("/api/semantic/projections:reconcile")
     assert response.status_code == 200
@@ -219,13 +170,13 @@ def test_projection_reconcile_endpoint(in_memory_session):
 
 
 def test_list_projection_jobs_filters_by_kind(in_memory_session):
-    _seed_graph_set(in_memory_session, ["http://op/s/graph/data/ov-1"])
+    _seed_graph_set(in_memory_session, ["http://op/s/graph/ontology/ov-1"])
     client = _client(FakeStore(), in_memory_session)
     for kind, version in [("search", "search-v1"), ("vector", "vector-v1")]:
         create = client.post(
-            "/api/semantic/graph-sets/gs-1/projection-jobs",
+            "/api/semantic/ontologies/gs-1/projection-jobs",
             json={
-                "graph_set_id": "gs-1",
+                "ontology_id": "gs-1",
                 "projection_kind": kind,
                 "projection_version": version,
                 "mode": "dry_run",

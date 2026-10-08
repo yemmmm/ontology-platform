@@ -55,7 +55,7 @@ from app.repositories.rdf_store import RdfStoreRepository, SparqlResult, UpdateR
 PREFIX = "http://op.local/semantic/"
 GRAPH_PREFIX = f"{PREFIX}graph/"
 ONTOLOGY_GRAPH = f"{GRAPH_PREFIX}ontology/ont-1"
-DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-1"
+DATA_GRAPH = f"{GRAPH_PREFIX}ontology/ont-1"
 CUSTOM_SHAPES_GRAPH = f"{GRAPH_PREFIX}shapes/ont-1/custom"
 
 
@@ -160,36 +160,11 @@ def _register_graph(session: Session, graph_iri: str, category: str) -> None:
 
 
 @pytest.fixture()
-def graph_set_id(in_memory_session) -> str:
-    """Step 1: register ontology + data + custom-shape graphs and create a
-    graph set that wires them up under the standard Stage 2 roles."""
-    for graph_iri, category in [
-        (ONTOLOGY_GRAPH, "ontology"),
-        (DATA_GRAPH, "data"),
-        (CUSTOM_SHAPES_GRAPH, "shapes"),
-    ]:
-        _register_graph(in_memory_session, graph_iri, category)
-
-    store = FakeStore()
-    client = _client(store, in_memory_session)
-    response = client.post(
-        "/api/semantic/graph-sets",
-        json={
-            "name": "stage2-e2e",
-            "scope_type": "ontology",
-            "scope_id": "ont-1",
-            "members": [
-                {"graph_iri": ONTOLOGY_GRAPH, "role": "asserted_ontology"},
-                {"graph_iri": DATA_GRAPH, "role": "asserted_data"},
-                {
-                    "graph_iri": CUSTOM_SHAPES_GRAPH,
-                    "role": "shape_graph_custom",
-                },
-            ],
-        },
-    )
-    assert response.status_code == 200, response.text
-    return response.json()["id"]
+def ontology_id(in_memory_session) -> str:
+    from single_model_support import seed_model
+    seed_model(in_memory_session, "ont-1", ONTOLOGY_GRAPH)
+    _register_graph(in_memory_session, ONTOLOGY_GRAPH, "ontology")
+    return "ont-1"
 
 
 # ---------------------------------------------------------------------------
@@ -199,7 +174,7 @@ def graph_set_id(in_memory_session) -> str:
 
 def test_step2_create_class_applies_and_bumps_ontology_revision(
     in_memory_session,
-    graph_set_id,
+    ontology_id,
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
@@ -208,7 +183,7 @@ def test_step2_create_class_applies_and_bumps_ontology_revision(
         "/api/semantic/canonical-writes:compile-and-apply",
         json={
             "command_kind": "create_class",
-            "graph_set_id": graph_set_id,
+            "ontology_id": ontology_id,
             "payload": {
                 "ontology_id": "ont-1",
                 "class_id": "Student",
@@ -235,7 +210,7 @@ def test_step2_create_class_applies_and_bumps_ontology_revision(
 
 def test_step3_class_topology_runs_against_ontology_graph(
     in_memory_session,
-    graph_set_id,
+    ontology_id,
 ) -> None:
     store = FakeStore(
         rows_by_marker={
@@ -251,7 +226,7 @@ def test_step3_class_topology_runs_against_ontology_graph(
     client = _client(store, in_memory_session)
 
     response = client.get(
-        f"/api/semantic/graph-sets/{graph_set_id}/read-models/class-topology",
+        f"/api/semantic/ontologies/{ontology_id}/read-models/class-topology",
         params={"include": "asserted"},
     )
     assert response.status_code == 200, response.text
@@ -264,7 +239,7 @@ def test_step3_class_topology_runs_against_ontology_graph(
     item = body["items"][0]
     assert item["iri"] == f"{PREFIX}ns/class/Student"
     assert item["label"] == "Student"
-    assert item["source_graph_iri"] == ONTOLOGY_GRAPH
+    assert item["ontology_id"] == ontology_id
 
 
 # ---------------------------------------------------------------------------
@@ -274,7 +249,7 @@ def test_step3_class_topology_runs_against_ontology_graph(
 
 def test_step4_create_property_applies_to_ontology_graph(
     in_memory_session,
-    graph_set_id,
+    ontology_id,
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
@@ -283,7 +258,7 @@ def test_step4_create_property_applies_to_ontology_graph(
         "/api/semantic/canonical-writes:compile-and-apply",
         json={
             "command_kind": "create_property",
-            "graph_set_id": graph_set_id,
+            "ontology_id": ontology_id,
             "payload": {
                 "ontology_id": "ont-1",
                 "class_id": "Student",
@@ -310,7 +285,7 @@ def test_step4_create_property_applies_to_ontology_graph(
 
 def test_step5_property_list_routes_class_iri_filter(
     in_memory_session,
-    graph_set_id,
+    ontology_id,
 ) -> None:
     store = FakeStore(
         rows_by_marker={
@@ -326,7 +301,7 @@ def test_step5_property_list_routes_class_iri_filter(
     client = _client(store, in_memory_session)
 
     response = client.get(
-        f"/api/semantic/graph-sets/{graph_set_id}/read-models/property-list",
+        f"/api/semantic/ontologies/{ontology_id}/read-models/property-list",
         params={
             "include": "asserted",
             "class_iri": f"{PREFIX}ns/class/Student",

@@ -384,7 +384,7 @@ def test_platform_child_payload_matches_current_proxy_receipt_and_rejects_duplic
                     "ordinal": 0,
                     "project_id": ticket["platform_read_scope"]["project_id"],
                     "ontology_id": ticket["platform_read_scope"]["ontology_id"],
-                    "graph_set_id": ticket["platform_read_scope"]["graph_set_id"],
+
                     "ticket_digest": ticket["ticket_digest"],
                     "model_state_digest": ticket["model_state_digest"],
                     "tool": "get_modeling_context",
@@ -633,7 +633,7 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
                 "platform_read_scope": {
                     "project_id": "project",
                     "ontology_id": "ontology",
-                    "graph_set_id": "graph",
+
                 },
                 "model_state_digest": "f" * 64,
                 "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),

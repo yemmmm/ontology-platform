@@ -35,7 +35,6 @@ class SemanticQueryScopeNotReady(SemanticQueryScopeError):
 class ResolvedOntologyScope:
     ontology_id: str
     ontology_name: str
-    graph_set_id: str
     workspace_version: str
     source_signature: str
     graph_iris: tuple[str, ...]
@@ -199,14 +198,14 @@ class SemanticQueryScopeResolver:
     def _resolved_ontology(
         ontology: OntologyModel, readiness: OntologyQueryReadiness
     ) -> ResolvedOntologyScope:
-        graph_set_id = readiness.graph_set_id
+        ontology_id = readiness.ontology_id
         read_scope = readiness.read_scope
         workspace_version = readiness.workspace_version
-        if not graph_set_id or read_scope is None or not workspace_version:
+        if not ontology_id or read_scope is None or not workspace_version:
             raise SemanticQueryScopeNotReady("Ontology workspace is not ready")
         graph_assertion_kinds = {
             graph: "asserted"
-            for graph in read_scope.source_graph_iris
+            for graph in read_scope.model_graph_iris
         }
         derived_state = {
             kind: {
@@ -218,7 +217,6 @@ class SemanticQueryScopeResolver:
         return ResolvedOntologyScope(
             ontology_id=ontology.id,
             ontology_name=ontology.name,
-            graph_set_id=graph_set_id,
             workspace_version=workspace_version,
             source_signature=read_scope.source_signature,
             graph_iris=tuple(graph_assertion_kinds),

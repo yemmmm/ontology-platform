@@ -1,7 +1,7 @@
 """Versioned SPARQL templates for graph-derived read models.
 
-Each template declares required graph roles, whether derived-result graphs
-are needed, default limit, and the projection version. Read models are owned
+Each template declares its default limit and projection version. It reads the selected
+Ontology model; callers do not select graph roles. Read models are owned
 by the backend; caller-provided SPARQL remains available through the direct
 semantic query endpoint from earlier phases.
 """
@@ -33,7 +33,6 @@ def _op_body(body: str) -> str:
 class ReadModelTemplate:
     name: str
     projection_version: str
-    required_roles: tuple[str, ...]
     needs_reasoning: bool
     default_limit: int
     assertion_kind: str
@@ -41,7 +40,7 @@ class ReadModelTemplate:
     # Name of the SELECT variable that holds the primary IRI for each row.
     # ``SemanticReadModelService._decorate_row`` reads this column first when
     # populating the item's ``iri`` / ``id`` fields. Composer templates
-    # (graph-set-staleness, entity-shape, fact-audit-queue) leave this empty
+    # (publication-readiness, fact-audit-queue) leave this empty
     # because their items are assembled by dedicated composers, not by the
     # generic decorator.
     primary_iri_variable: str = ""
@@ -55,7 +54,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "operation-list": ReadModelTemplate(
         name="operation-list",
         projection_version="semantic-operation-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=500,
         assertion_kind="asserted",
@@ -94,7 +92,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "resource-list": ReadModelTemplate(
         name="resource-list",
         projection_version="semantic-resource-read-v1",
-        required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=False,
         default_limit=500,
         assertion_kind="asserted",
@@ -103,7 +100,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "resource-relations": ReadModelTemplate(
         name="resource-relations",
         projection_version="semantic-resource-relations-v2",
-        required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=False,
         default_limit=1000,
         assertion_kind="asserted",
@@ -136,7 +132,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "ontology-schema-summary": ReadModelTemplate(
         name="ontology-schema-summary",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=500,
         assertion_kind="asserted",
@@ -160,7 +155,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "class-detail": ReadModelTemplate(
         name="class-detail",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=200,
         assertion_kind="asserted",
@@ -183,7 +177,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "entity-detail": ReadModelTemplate(
         name="entity-detail",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
         needs_reasoning=False,
         default_limit=500,
         assertion_kind="asserted",
@@ -200,7 +193,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "statement-list": ReadModelTemplate(
         name="statement-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
         needs_reasoning=False,
         default_limit=1000,
         assertion_kind="asserted",
@@ -213,22 +205,9 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
         LIMIT {limit}
         """,
     ),
-    "graph-set-staleness": ReadModelTemplate(
-        name="graph-set-staleness",
-        projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology", "asserted_data"),
-        needs_reasoning=True,
-        default_limit=1,
-        assertion_kind="asserted",
-        body="""# template: graph-set-staleness
-        # COMPOSER. The SemanticReadModelService delegates to
-        # ``_compose_graph_set_staleness``. The body is intentionally empty.
-        """,
-    ),
     "class-topology": ReadModelTemplate(
         name="class-topology",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=500,
         assertion_kind="asserted",
@@ -253,7 +232,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "property-list": ReadModelTemplate(
         name="property-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=200,
         assertion_kind="asserted",
@@ -287,7 +265,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "relation-type-list": ReadModelTemplate(
         name="relation-type-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=200,
         assertion_kind="asserted",
@@ -312,7 +289,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "entity-list": ReadModelTemplate(
         name="entity-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
         needs_reasoning=True,
         default_limit=500,
         assertion_kind="asserted",
@@ -372,7 +348,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "entity-relations": ReadModelTemplate(
         name="entity-relations",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
         needs_reasoning=True,
         default_limit=1000,
         assertion_kind="asserted",
@@ -412,7 +387,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "entity-literal-facts": ReadModelTemplate(
         name="entity-literal-facts",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
         needs_reasoning=True,
         default_limit=200,
         assertion_kind="any",
@@ -453,7 +427,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "mapping-list": ReadModelTemplate(
         name="mapping-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=500,
         assertion_kind="asserted",
@@ -479,7 +452,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "import-graph-mappings": ReadModelTemplate(
         name="import-graph-mappings",
         projection_version="semantic-read-v1",
-        required_roles=("import_graph",),
         needs_reasoning=False,
         default_limit=500,
         assertion_kind="asserted",
@@ -506,7 +478,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "fact-audit-queue": ReadModelTemplate(
         name="fact-audit-queue",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_data",),
         needs_reasoning=True,
         default_limit=500,
         assertion_kind="asserted",
@@ -538,46 +509,17 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "publication-readiness": ReadModelTemplate(
         name="publication-readiness",
         projection_version="1",
-        required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=True,
         default_limit=1,
         assertion_kind="asserted",
         body="""# template: publication-readiness
         # Single-row composer. Body is intentionally empty; the service
-        # delegates to ``_compose_publication_readiness`` which reuses the
-        # graph-set-staleness aggregator.
-        """,
-    ),
-    "graph-set-history-list": ReadModelTemplate(
-        name="graph-set-history-list",
-        projection_version="1",
-        required_roles=("asserted_ontology", "asserted_data"),
-        needs_reasoning=False,
-        default_limit=50,
-        assertion_kind="asserted",
-        body="""# template: graph-set-history-list
-        # Single-row composer that returns the list of graph sets in scope.
-        # Reads from SemanticGraphSetModel joined with members and derived
-        # pointers; see spec §4.2.
-        """,
-    ),
-    "graph-set-delta": ReadModelTemplate(
-        name="graph-set-delta",
-        projection_version="1",
-        required_roles=("asserted_ontology", "asserted_data"),
-        needs_reasoning=False,
-        default_limit=200,
-        assertion_kind="asserted",
-        body="""# template: graph-set-delta
-        # Composer-driven. Reads the ``target`` query param to identify the
-        # second graph set, then for each role present in both sets computes
-        # the CONSTRUCT diff. See spec §4.3.
+        # delegates to ``_compose_publication_readiness`` which evaluates Ontology projection freshness.
         """,
     ),
     "entity-search": ReadModelTemplate(
         name="entity-search",
         projection_version="1",
-        required_roles=("asserted_ontology", "asserted_data"),
         needs_reasoning=False,
         default_limit=50,
         assertion_kind="any",
@@ -636,7 +578,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "table-mapping-list": ReadModelTemplate(
         name="table-mapping-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=200,
         assertion_kind="asserted",
@@ -674,7 +615,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "table-mapping-detail": ReadModelTemplate(
         name="table-mapping-detail",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=1,
         assertion_kind="asserted",
@@ -714,7 +654,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "join-mapping-list": ReadModelTemplate(
         name="join-mapping-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=200,
         assertion_kind="asserted",
@@ -750,7 +689,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "join-mapping-detail": ReadModelTemplate(
         name="join-mapping-detail",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=1,
         assertion_kind="asserted",
@@ -786,7 +724,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "enum-meaning-list": ReadModelTemplate(
         name="enum-meaning-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=200,
         assertion_kind="asserted",
@@ -828,7 +765,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "enum-meaning-detail": ReadModelTemplate(
         name="enum-meaning-detail",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=1,
         assertion_kind="asserted",
@@ -870,7 +806,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "metric-list": ReadModelTemplate(
         name="metric-list",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=200,
         assertion_kind="asserted",
@@ -917,7 +852,6 @@ _TEMPLATES: dict[str, ReadModelTemplate] = {
     "metric-detail": ReadModelTemplate(
         name="metric-detail",
         projection_version="semantic-read-v1",
-        required_roles=("asserted_ontology",),
         needs_reasoning=False,
         default_limit=1,
         assertion_kind="asserted",

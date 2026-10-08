@@ -198,7 +198,7 @@ class R23009ExaminerStepBudgetTests(unittest.TestCase):
             "platform_read_scope": {
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
-                "graph_set_id": "graph-1",
+
             },
             "proxy_capability": {"capability_id": "proxy-1"},
             "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),

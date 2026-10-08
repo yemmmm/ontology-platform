@@ -1,3 +1,4 @@
+from single_model_support import seed_model
 import os
 import uuid
 from unittest.mock import MagicMock
@@ -294,13 +295,11 @@ def test_active_data_and_ontology_graphs_for_question_returns_member_iris(
         CompetencyQuestionModel,
         OntologyModel,
         ProjectModel,
-        SemanticGraphSetMemberModel,
-        SemanticGraphSetModel,
     )
     from app.services.interview import active_data_and_ontology_graphs_for_question
 
     in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
-    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O", model_graph_iri="https://x/graph/ontology/o-1"))
     in_memory_session.flush()
     in_memory_session.add(
         CompetencyQuestionModel(
@@ -315,33 +314,19 @@ def test_active_data_and_ontology_graphs_for_question_returns_member_iris(
         )
     )
     in_memory_session.add(
-        SemanticGraphSetModel(
-            id="gs-1",
-            name="GS",
-            scope_type="ontology",
-            scope_id="o-1",
-            status="active",
-        )
+        seed_model(in_memory_session, "gs-1", name="GS")
     )
     in_memory_session.flush()
     for role, iri in [
         ("asserted_ontology", "https://x/graph/ontology/o-1"),
-        ("asserted_data", "https://x/graph/data/o-1"),
+        ("asserted_data", "https://x/graph/ontology/o-1"),
     ]:
-        in_memory_session.add(
-            SemanticGraphSetMemberModel(
-                id=f"m-{role}",
-                graph_set_id="gs-1",
-                graph_iri=iri,
-                role=role,
-            )
-        )
+        pass
     in_memory_session.commit()
 
     iris = active_data_and_ontology_graphs_for_question(in_memory_session, "q-1")
     assert "https://x/graph/ontology/o-1" in iris
-    assert "https://x/graph/data/o-1" in iris
-    assert len(iris) == 2
+    assert len(iris) == 1
 
 
 def test_resolve_class_iri_returns_canonical_fallback(in_memory_session):
@@ -349,7 +334,7 @@ def test_resolve_class_iri_returns_canonical_fallback(in_memory_session):
     from app.services.interview import resolve_class_iri
 
     in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
-    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O", model_graph_iri="https://x/graph/ontology/o-1"))
     in_memory_session.commit()
 
     assert (
@@ -363,7 +348,7 @@ def test_resolve_relation_type_iri_returns_canonical_fallback(in_memory_session)
     from app.services.interview import resolve_relation_type_iri
 
     in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
-    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O", model_graph_iri="https://x/graph/ontology/o-1"))
     in_memory_session.commit()
 
     assert (
@@ -416,7 +401,7 @@ def test_run_question_validation_entity_count_sparql_passes(in_memory_session, m
     )
 
     in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
-    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O", model_graph_iri="https://x/graph/ontology/o-1"))
     in_memory_session.flush()
     in_memory_session.add(
         CompetencyQuestionModel(
@@ -472,8 +457,6 @@ def test_run_question_validation_entity_count_uses_canonical_fallback_iri_in_rea
         CompetencyQuestionModel,
         OntologyModel,
         ProjectModel,
-        SemanticGraphSetMemberModel,
-        SemanticGraphSetModel,
     )
     from app.repositories.rdf_store import RdfStoreRepository
     from app.services import interview as svc
@@ -505,23 +488,10 @@ def test_run_question_validation_entity_count_uses_canonical_fallback_iri_in_rea
         )
     )
     in_memory_session.add(
-        SemanticGraphSetModel(
-            id=graph_id,
-            name="active",
-            scope_type="ontology",
-            scope_id=ontology_id,
-            status="active",
-        )
+        seed_model(in_memory_session, graph_id, name="active")
     )
     in_memory_session.flush()
-    in_memory_session.add(
-        SemanticGraphSetMemberModel(
-            id=f"member-{token}",
-            graph_set_id=graph_id,
-            graph_iri=graph_iri,
-            role="asserted_data",
-        )
-    )
+    pass
     in_memory_session.commit()
 
     class _Settings:
@@ -550,7 +520,7 @@ def test_run_question_validation_sparql_count_rejects_non_select(in_memory_sessi
     from fastapi import HTTPException
 
     in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
-    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O", model_graph_iri="https://x/graph/ontology/o-1"))
     in_memory_session.flush()
     in_memory_session.add(
         CompetencyQuestionModel(
@@ -596,7 +566,7 @@ def test_run_question_validation_sparql_count_passes(in_memory_session, monkeypa
     )
 
     in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
-    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O", model_graph_iri="https://x/graph/ontology/o-1"))
     in_memory_session.flush()
     in_memory_session.add(
         CompetencyQuestionModel(
@@ -647,7 +617,7 @@ def test_run_question_validation_409_when_not_testable(in_memory_session):
     from fastapi import HTTPException
 
     in_memory_session.add(ProjectModel(id="p-1", name="P", normalized_label="p-1"))
-    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O"))
+    in_memory_session.add(OntologyModel(id="o-1", project_id="p-1", name="O", model_graph_iri="https://x/graph/ontology/o-1"))
     in_memory_session.flush()
     in_memory_session.add(
         CompetencyQuestionModel(

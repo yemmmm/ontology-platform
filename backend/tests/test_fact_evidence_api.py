@@ -12,7 +12,7 @@ from app.api.routes import router
     [
         (
             "POST",
-            "/api/semantic/graph-sets/gs/fact-evidence",
+            "/api/semantic/ontologies/gs/fact-evidence",
             {
                 "ontology_id": "o",
                 "subject_iri": "urn:entity",
@@ -20,10 +20,10 @@ from app.api.routes import router
                 "text": "source",
             },
         ),
-        ("POST", "/api/semantic/graph-sets/gs/fact-evidence", {}),
-        ("DELETE", "/api/semantic/graph-sets/gs/fact-evidence/historical-binding", None),
-        ("GET", "/api/semantic/graph-sets/gs/missing-evidence-facts", None),
-        ("GET", "/api/semantic/graph-sets/gs/missing-evidence-facts?limit=0", None),
+        ("POST", "/api/semantic/ontologies/gs/fact-evidence", {}),
+        ("DELETE", "/api/semantic/ontologies/gs/fact-evidence/historical-binding", None),
+        ("GET", "/api/semantic/ontologies/gs/missing-evidence-facts", None),
+        ("GET", "/api/semantic/ontologies/gs/missing-evidence-facts?limit=0", None),
     ],
 )
 def test_fact_evidence_routes_are_unavailable(method, path, payload):

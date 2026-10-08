@@ -135,7 +135,7 @@ def _batch_adapter(
                 ordinal=0,
                 project_id="project-1",
                 ontology_id="ontology-1",
-                graph_set_id="graph-set-1",
+
                 ticket_digest="b" * 64,
                 model_state_digest="c" * 64,
                 tool=tool,

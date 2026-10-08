@@ -355,22 +355,20 @@ def _proxy(tmp_path: Path, *, tools=( "get_ontology_read_model",), forward=None)
                     "project_id": "project-1",
                     "ontology_id": "ontology-1",
                     "workspace_state": {"state_digest": "ws-1"},
-                    "graph_state": {"state_digest": "graph-1"},
+                    "model_version_state": {"state_digest": "graph-1"},
                     "authorized_read_tools": list(tools),
                 },
                 {
                     "project_id": "project-1",
                     "ontology_id": "ontology-2",
                     "workspace_state": {"state_digest": "ws-2"},
-                    "graph_state": {"state_digest": "graph-2"},
+                    "model_version_state": {"state_digest": "graph-2"},
                     "authorized_read_tools": list(tools),
                 },
             ],
         },
     )
-    entries = v3_proxy_scope_entries(
-        packet, {"ontology-1": "graph-set-1", "ontology-2": "graph-set-2"}
-    )
+    entries = v3_proxy_scope_entries(packet)
     proxy = ScopedReadProxy(
         socket_path=tmp_path / "platform-proxy.sock",
         token="proxy-token",
@@ -418,19 +416,19 @@ def test_v3_proxy_forwards_each_authorized_ontology(tmp_path):
         assert second["ok"] is True
         assert second["result"]["data"]["ontology_id"] == "ontology-2"
         # The proxy injected the frozen per-Ontology bindings for both calls.
-        assert [call[1]["graph_set_id"] for call in forwarded] == [
-            "graph-set-1",
-            "graph-set-2",
+        assert [call[1]["ontology_id"] for call in forwarded] == [
+            "ontology-1",
+            "ontology-2",
         ]
         assert {call[1]["model_state_digest"] for call in forwarded} == {"ws-1", "ws-2"}
         assert {call[2] for call in forwarded} == {"read-key"}
         assert [receipt.ontologies for receipt in proxy._call_receipts] == [
             ({"project_id": "project-1", "ontology_id": "ontology-1",
-              "graph_set_id": "graph-set-1", "model_state_digest": "ws-1",
-              "graph_state_digest": "graph-1"},),
+               "model_state_digest": "ws-1",
+              "model_version_digest": "graph-1"},),
             ({"project_id": "project-1", "ontology_id": "ontology-2",
-              "graph_set_id": "graph-set-2", "model_state_digest": "ws-2",
-              "graph_state_digest": "graph-2"},),
+               "model_state_digest": "ws-2",
+              "model_version_digest": "graph-2"},),
         ]
     finally:
         proxy.stop()
@@ -464,13 +462,13 @@ def test_v3_proxy_refuses_unauthorized_and_cross_project_selections(tmp_path):
                     "model_name": "classes",
                     "project_id": "project-1",
                     "ontology_id": "ontology-2",
-                    "graph_set_id": "graph-set-1",
+
                     "model_state_digest": "ws-1",
                 },
             }
         )
         assert hinted["ok"] is True
-        assert forwarded[-1][1]["graph_set_id"] == "graph-set-2"
+        assert forwarded[-1][1]["ontology_id"] == "ontology-2"
         assert forwarded[-1][1]["model_state_digest"] == "ws-2"
         # A wrong ticket is a batch-identity error, not a hint.
         wrong_ticket = proxy.handle(
@@ -656,7 +654,6 @@ def test_v3_proxy_serves_the_real_read_proxy_bridge(tmp_path):
         **os.environ,
         "PLATFORM_PROXY_PROJECT_ID": primary["project_id"],
         "PLATFORM_PROXY_ONTOLOGY_ID": primary["ontology_id"],
-        "PLATFORM_PROXY_GRAPH_SET_ID": primary["graph_set_id"],
         "PLATFORM_PROXY_TICKET_DIGEST": v3_ticket_digest(packet.freeze_digest),
         "PLATFORM_PROXY_MODEL_STATE_DIGEST": primary["model_state_digest"],
     }
@@ -701,7 +698,7 @@ def test_v3_proxy_serves_the_real_read_proxy_bridge(tmp_path):
         )
         assert called["result"]["isError"] is False
         assert forwarded[0][1]["ontology_id"] == "ontology-2"
-        assert forwarded[0][1]["graph_set_id"] == "graph-set-2"
+        assert forwarded[0][1]["ontology_id"] == "ontology-2"
         assert forwarded[0][2] == "read-key"
     finally:
         process.stdin.close() if process.stdin is not None else None
@@ -711,16 +708,14 @@ def test_v3_proxy_serves_the_real_read_proxy_bridge(tmp_path):
 
 def test_v3_scope_entries_come_from_the_packet_binding(tmp_path):
     packet = _batch_packet(questions=_questions())
-    with pytest.raises(Exception):
-        v3_proxy_scope_entries(packet, {})
-    entries = v3_proxy_scope_entries(packet, {"ontology-1": "graph-set-1"})
+    entries = v3_proxy_scope_entries(packet)
     assert entries == (
         {
             "project_id": "project-1",
             "ontology_id": "ontology-1",
-            "graph_set_id": "graph-set-1",
+
             "model_state_digest": "ws-1",
-            "graph_state_digest": "graph-1",
+            "model_version_digest": "graph-1",
         },
     )
     # The legacy single-Ontology proxy is unchanged.
@@ -730,7 +725,7 @@ def test_v3_scope_entries_come_from_the_packet_binding(tmp_path):
         read_key="read-key",
         project_id="project-1",
         ontology_id="ontology-1",
-        graph_set_id="graph-set-1",
+
         ticket_digest="d" * 64,
         model_state_digest="e" * 64,
         allowed_tools=["get_ontology_workspace_context"],
@@ -811,16 +806,14 @@ def _multi_proxy(
                     "project_id": "project-1",
                     "ontology_id": ontology_id,
                     "workspace_state": {"state_digest": f"ws-{index}"},
-                    "graph_state": {"state_digest": f"graph-{index}"},
+                    "model_version_state": {"state_digest": f"graph-{index}"},
                     "authorized_read_tools": list(tools),
                 }
                 for index, ontology_id in enumerate(ids, start=1)
             ],
         },
     )
-    entries = v3_proxy_scope_entries(
-        packet, {ontology_id: f"graph-set-{index}" for index, ontology_id in enumerate(ids, start=1)}
-    )
+    entries = v3_proxy_scope_entries(packet)
     proxy = ScopedReadProxy(
         socket_path=tmp_path / "platform-proxy.sock",
         token="proxy-token",
@@ -877,7 +870,7 @@ def test_v3_partial_reports_survive_the_shared_list_teardown(tmp_path):
             read_key="read-key",
             platform_forwarder=lambda tool, arguments, key: {"ok": True},
             timeout_seconds=5.0,
-            graph_set_ids={"ontology-1": "graph-set-1", "ontology-2": "graph-set-2"},
+            ontology_ids={"ontology-1": "ontology-1", "ontology-2": "ontology-2"},
         )
     assert blocked.value.evidence["reason_code"] == "child-exited"
     assert [report["question_id"] for report in reports] == ["cq-1"]
@@ -1067,7 +1060,7 @@ def test_v3_wrapper_restores_reports_even_when_destroy_raises(tmp_path):
             read_key="read-key",
             platform_forwarder=lambda tool, arguments, key: {"ok": True},
             timeout_seconds=5.0,
-            graph_set_ids={"ontology-1": "graph-set-1", "ontology-2": "graph-set-2"},
+            ontology_ids={"ontology-1": "ontology-1", "ontology-2": "ontology-2"},
             teardown=teardown,
         )
     assert blocked.value.evidence["reason_code"] == "child-exited"
@@ -1093,7 +1086,7 @@ def _hints(packet) -> dict:
         "scope_mode": "ontologies",
         "query": "coverage",
         "ontology_id": "ontology-1",
-        "graph_set_id": "graph-set-1",
+
         "model_state_digest": "ws-1",
         "ticket_digest": v3_ticket_digest(packet.freeze_digest),
     }
@@ -1124,7 +1117,7 @@ def test_v3_proxy_subset_reads_drop_the_primary_singleton_hints(tmp_path):
     sent = forwarded[-1][1]
     assert sent["ontology_ids"] == ["ontology-2"]
     assert sent["ontology_id"] == "ontology-2"
-    assert sent["graph_set_id"] == "graph-set-2"
+    assert sent["ontology_id"] == "ontology-2"
     assert sent["model_state_digest"] == "ws-2"
     assert sent["project_id"] == "project-1"
 
@@ -1142,7 +1135,6 @@ def test_v3_proxy_subset_reads_drop_the_primary_singleton_hints(tmp_path):
     sent = forwarded[-1][1]
     assert sent["ontology_ids"] == ["ontology-2", "ontology-3"]
     assert "ontology_id" not in sent
-    assert "graph_set_id" not in sent
     assert "model_state_digest" not in sent
     assert sent["project_id"] == "project-1"
     assert sent["ticket_digest"] == v3_ticket_digest(packet.freeze_digest)
@@ -1184,7 +1176,7 @@ def test_v3_proxy_tools_list_advertises_the_exact_schemas(tmp_path):
     assert schema["name"] == "query_semantic_context"
     required = schema["inputSchema"]["required"]
     assert "project_id" in required and "ticket_digest" in required
-    assert not {"ontology_id", "graph_set_id", "model_state_digest"} & set(required)
+    assert not {"ontology_id",  "model_state_digest"} & set(required)
     assert schema["inputSchema"]["properties"]["ontology_ids"]["type"] == "array"
 
 
@@ -1278,7 +1270,7 @@ def test_v3_bridge_forwards_subset_selections_and_exact_schemas(tmp_path):
         )
         assert first["result"]["isError"] is False
         assert forwarded[-1][1]["ontology_ids"] == ["ontology-2"]
-        assert forwarded[-1][1]["graph_set_id"] == "graph-set-2"
+        assert forwarded[-1][1]["ontology_id"] == "ontology-2"
         assert forwarded[-1][1]["model_state_digest"] == "ws-2"
         assert forwarded[-1][2] == "read-key"
         # Multi-Ontology subset excluding the primary: no contradictory
@@ -1299,7 +1291,7 @@ def test_v3_bridge_forwards_subset_selections_and_exact_schemas(tmp_path):
         assert second["result"]["isError"] is False
         sent = forwarded[-1][1]
         assert sent["ontology_ids"] == ["ontology-2", "ontology-3"]
-        assert "ontology_id" not in sent and "graph_set_id" not in sent
+        assert "ontology_id" not in sent and "ontology_id" not in sent
         assert sent["ticket_digest"] == ticket
     finally:
         _close_bridge(process)
@@ -1435,7 +1427,6 @@ def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
             **os.environ,
             "PLATFORM_PROXY_PROJECT_ID": "project-1",
             "PLATFORM_PROXY_ONTOLOGY_ID": "ontology-1",
-            "PLATFORM_PROXY_GRAPH_SET_ID": "graph-set-1",
             "PLATFORM_PROXY_TICKET_DIGEST": v3_ticket_digest(packet.freeze_digest),
             "PLATFORM_PROXY_MODEL_STATE_DIGEST": "ws-1",
         },
@@ -1452,7 +1443,7 @@ def test_legacy_bridge_mode_still_projects_the_primary_scope(tmp_path):
         assert called["result"]["isError"] is False
         sent = forwarded[-1][1]
         assert sent["ontology_id"] == "ontology-1"
-        assert sent["graph_set_id"] == "graph-set-1"
+        assert sent["ontology_id"] == "ontology-1"
         assert sent["model_state_digest"] == "ws-1"
         assert sent["project_id"] == "project-1"
     finally:

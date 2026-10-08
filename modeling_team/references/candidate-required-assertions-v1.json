@@ -1,7 +1,6 @@
 {
   "schema_version": "candidate-required-assertions/v1",
   "item_fields": [
-    "graph_role",
     "subject",
     "predicate",
     "object",
@@ -9,13 +8,18 @@
     "object_datatype",
     "object_language"
   ],
-  "graph_role": "asserted_data",
-  "optional_term_types": ["string", "null"],
+  "optional_term_types": [
+    "string",
+    "null"
+  ],
   "canonical_json": {
     "encoding": "utf-8",
     "ensure_ascii": false,
     "sort_keys": true,
-    "separators": [",", ":"]
+    "separators": [
+      ",",
+      ":"
+    ]
   },
   "semantic_digest_payload": {
     "schema_version": "candidate-required-assertions/v1",
@@ -29,8 +33,7 @@
     "semantic_digest"
   ],
   "materialized_quad_fields": [
-    "graph_role",
-    "source_graph_iri",
+    "ontology_id",
     "subject",
     "predicate",
     "object",

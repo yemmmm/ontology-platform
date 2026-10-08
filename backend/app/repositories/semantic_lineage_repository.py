@@ -28,7 +28,7 @@ class SemanticLineageRepository:
         self,
         *,
         ontology_id: str,
-        graph_set_id: str | None,
+
         subject: str,
         predicate: str,
         object_ntriples: str,
@@ -46,7 +46,7 @@ class SemanticLineageRepository:
         occurrence = SemanticStatementOccurrenceModel(
             id=occurrence_id,
             ontology_id=ontology_id,
-            graph_set_id=graph_set_id,
+
             statement_id=statement_id,
             subject_iri=subject,
             predicate_iri=predicate,

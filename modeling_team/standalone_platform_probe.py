@@ -19,7 +19,6 @@ sys.path.insert(0, "backend")
 SCOPE = {
     "project_id": "7fc146d8-c76f-417b-9314-854544f269fc",
     "ontology_id": "fd762f52-2f5e-4bc0-902a-5583135ab64d",
-    "graph_set_id": "277fd804-e485-5156-b7a7-ca6a1081f950",
 }
 
 

@@ -98,7 +98,7 @@ def test_public_entity_and_class_read_models_filter_q_and_merge_scoped_recall(
     settings = Settings(semantic_graph_iri_prefix="https://public-search.test/graphs")
     ontology_id = _seed_ready_workspace(in_memory_session, settings)
 
-    def recall_graph_set(_self, *, resource_kinds, **_kwargs):
+    def recall_ontology(_self, *, resource_kinds, **_kwargs):
         if resource_kinds == {"instance"}:
             return {
                 "candidates": [
@@ -180,8 +180,8 @@ def test_public_entity_and_class_read_models_filter_q_and_merge_scoped_recall(
         }
 
     monkeypatch.setattr(
-        "app.api.modeling_batches.SemanticResourceRetrievalService.recall_graph_set",
-        recall_graph_set,
+        "app.api.modeling_batches.SemanticResourceRetrievalService.recall_ontology",
+        recall_ontology,
     )
     client = _client(in_memory_session, settings)
 

@@ -20,7 +20,7 @@
     "workspace_version",
     "source_signature",
     "build_session_id",
-    "graph_set_id",
+    "ontology_id",
     "state_digest"
   ],
   "modeling_receipt_fields": [

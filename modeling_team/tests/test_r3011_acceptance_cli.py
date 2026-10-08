@@ -52,7 +52,7 @@ _RUN_CONTRACT = {
 def _platform_context(
     *,
     source_signature: str = "sig-1",
-    graph_set_id: str = "gs-1",
+    ontology_id: str = "ontology-1",
     status: str = "ready",
 ) -> dict:
     """One canonical read-only workspace context the forwarder can serve."""
@@ -60,9 +60,9 @@ def _platform_context(
     return {
         "state": "ready",
         "source_signature": source_signature,
-        "default_graph_set_id": graph_set_id,
-        "graph_set_status": status,
-        "members": [{"role": "asserted", "revision": "r1", "content_hash": "h1"}],
+        "ontology_id": ontology_id,
+        "model_revision": 1,
+        "content_hash": "h1",
     }
 
 
@@ -88,10 +88,6 @@ def _observed_binding(
 ) -> dict:
     """The CLI's own batch-start observation of one served context (D5)."""
 
-    revisions = sorted(
-        (item.get("role"), item.get("revision"), item.get("content_hash"))
-        for item in context["members"]
-    )
     return {
         "schema_version": "r3-0-011-model-binding/v1",
         "batch_id": batch_id,
@@ -106,12 +102,12 @@ def _observed_binding(
                         {"state": context["state"], "source_signature": context["source_signature"]}
                     )
                 },
-                "graph_state": {
+                "model_version_state": {
                     "state_digest": content_digest(
                         {
-                            "graph_set_id": context["default_graph_set_id"],
-                            "status": context["graph_set_status"],
-                            "revisions": revisions,
+                            "ontology_id": context["ontology_id"],
+                            "model_revision": context["model_revision"],
+                            "content_hash": context["content_hash"],
                         }
                     )
                 },
@@ -139,7 +135,7 @@ def _handoff_binding(*, batch_id: str, freeze_digest: str, ontology_id: str = "o
                 "project_id": "project-1",
                 "ontology_id": ontology_id,
                 "workspace_state": {"state_digest": f"handoff-marker:{ontology_id}:workspace"},
-                "graph_state": {"state_digest": f"handoff-marker:{ontology_id}:graph"},
+                "model_version_state": {"state_digest": f"handoff-marker:{ontology_id}:graph"},
                 "authorized_read_tools": ["query_semantic_context"],
             }
         ],
@@ -368,8 +364,8 @@ def test_the_live_ok_data_envelope_is_unwrapped_into_the_observed_binding():
     """
 
     payload = _platform_context()
-    observed, graph_set_ids = _observe(_workspace_envelope(payload))
-    assert graph_set_ids == {"ontology-1": payload["default_graph_set_id"]}
+    observed, ontology_ids = _observe(_workspace_envelope(payload))
+    assert ontology_ids == {"ontology-1": payload["ontology_id"]}
     assert observed == _observed_binding(
         payload, batch_id="batch-1", freeze_digest="freeze-1"
     )
@@ -384,11 +380,11 @@ def test_the_live_ok_data_envelope_is_unwrapped_into_the_observed_binding():
         ({"ok": False, "error": "boom"}, "boom"),
         ({"ok": False}, "no ok/data envelope"),
         # A successful envelope whose workspace is not this Ontology's live state.
-        ({"ok": True, "data": {"state": "building"}}, "state is 'building'"),
-        ({"ok": True, "data": {"state": "ready"}}, "has no default Graph Set"),
+        ({"ok": True, "data": {"state": "building"}}, "not ready"),
+        ({"ok": True, "data": {"state": "ready"}}, "not ready"),
         (
-            {"ok": True, "data": {"state": "ready", "default_graph_set_id": "gs-1"}},
-            "no graph members",
+            {"ok": True, "data": {"state": "ready", "ontology_id": "ontology-1"}},
+            "revision is missing",
         ),
         ({"ok": True}, "carried no state object"),
         ({"ok": True, "data": []}, "carried no state object"),

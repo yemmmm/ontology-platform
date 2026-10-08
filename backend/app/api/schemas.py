@@ -38,12 +38,14 @@ class OntologyCreate(BaseModel):
 
 
 class OntologyUpdate(BaseModel):
+    reference_ontology_ids: list[str] | None = None
     name: str | None = Field(default=None, min_length=1, max_length=200)
     description: str | None = None
     external_mappings: dict[str, Any] | None = None
 
 
 class OntologyRead(BaseModel):
+    reference_ontology_ids: list[str]
     id: str
     project_id: str
     name: str
@@ -56,26 +58,16 @@ class OntologyRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
-class OntologyWorkspaceMemberRead(BaseModel):
-    role: str
-    graph_iri: str
-    category: str
-    required: bool
-    revision: int | None
-    content_hash: str | None
-    editable: bool
-    editability_reason: str | None = None
-    owner_type: str | None = None
-    owner_id: str | None = None
 
 
 class OntologyWorkspaceContextRead(BaseModel):
     ontology_id: str
     state: Literal["ready", "incomplete"]
-    default_graph_set_id: str | None
-    graph_set_status: str | None
-    source_signature: str | None
-    members: list[OntologyWorkspaceMemberRead]
+    model_revision: int
+    content_hash: str | None
+    source_signature: str
+    editable: bool
+    editability_reason: str | None = None
     issues: list[str]
 
 
@@ -595,7 +587,7 @@ class SemanticDiscoveryOntologyItem(BaseModel):
     queryable: bool
     unavailable_reason: Literal["ontology_archived", "workspace_not_ready"] | None
     workspace_version: str | None
-    graph_set_id: str | None = None
+    ontology_id: str | None = None
     derived_warnings: list[dict[str, str]] = Field(default_factory=list)
     matched_on: list[Literal["id", "name", "project"]] = Field(default_factory=list)
     query_scope: SemanticDiscoveryQueryScope
@@ -691,9 +683,10 @@ class SemanticSparqlQueryResponse(BaseModel):
 
 
 class SemanticEditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    ontology_id: str
     format: Literal["trig", "turtle", "json-ld", "sparql-update"]
     content: str
-    target_graph_iri: str | None = None
     actor: str | None = None
     reason: str | None = None
     warning_state: dict[str, Any] = Field(default_factory=dict)
@@ -777,16 +770,8 @@ class ValidationResult(BaseModel):
 
 
 # ---------------------------------------------------------------------------
-# Semantic stack: graph registry, graph sets, governance, validation, rules
+# Semantic stack: internal storage registry and governance
 # ---------------------------------------------------------------------------
-
-
-class SemanticGraphMember(BaseModel):
-    graph_iri: str
-    role: str
-    required: bool = True
-    sort_order: int = 0
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
 class SemanticGraphRegistryCreate(BaseModel):
@@ -825,36 +810,12 @@ class SemanticGraphRegistryListResponse(BaseModel):
     summary: dict[str, Any]
 
 
-class SemanticGraphSetCreate(BaseModel):
-    name: str
-    scope_type: str
-    scope_id: str | None = None
-    members: list[SemanticGraphMember]
-    created_by: str | None = None
-    supersedes: str | None = None
-    metadata: dict[str, Any] = Field(default_factory=dict)
 
 
-class SemanticGraphSetMembershipUpdate(BaseModel):
-    members: list[SemanticGraphMember]
 
 
-class SemanticGraphSetRead(BaseModel):
-    id: str
-    name: str
-    scope_type: str
-    scope_id: str | None
-    status: str
-    is_default: bool = False
-    source_signature: str
-    created_by: str | None = None
-    members: list[dict[str, Any]]
-    current_pointers: list[dict[str, Any]]
-    metadata: dict[str, Any]
 
 
-class SemanticGraphSetListResponse(BaseModel):
-    graph_sets: list[SemanticGraphSetRead]
 
 
 class SemanticGraphGcRequest(BaseModel):
@@ -890,7 +851,7 @@ class SemanticGovernanceStatusResponse(BaseModel):
 
 
 class SemanticReadModelEnvelope(BaseModel):
-    graph_set_id: str
+    ontology_id: str
     source_signature: str
     projection_version: str
     model_name: str = ""
@@ -907,10 +868,9 @@ class SemanticReadModelEnvelope(BaseModel):
 class SemanticResourceRead(BaseModel):
     iri: str
     label: str | None = None
-    graph_set_id: str | None = None
+    ontology_id: str | None = None
     source_signature: str | None = None
     assertion_kind: str
-    source_graph_iri: str
     properties: dict[str, Any] = Field(default_factory=dict)
     derived_state: dict[str, Any] = Field(default_factory=dict)
     warnings: list[dict[str, str]] = Field(default_factory=list)
@@ -928,7 +888,7 @@ class SemanticExportRequest(BaseModel):
 
 
 class SemanticProjectionJobCreate(BaseModel):
-    graph_set_id: str
+    ontology_id: str
     projection_kind: Literal["business_json", "search", "vector", "export_cache"]
     projection_version: str
     include: Literal[
@@ -944,7 +904,7 @@ class SemanticProjectionJobCreate(BaseModel):
 
 class SemanticProjectionJobRead(BaseModel):
     id: str
-    graph_set_id: str | None
+    ontology_id: str | None
     projection_kind: str
     projection_version: str
     projection_scope: str
@@ -1002,7 +962,7 @@ class SemanticMigrationPreflightRequest(BaseModel):
         "ad_hoc",
     ]
     scope_id: str | None = None
-    target_graph_set_id: str | None = None
+    target_ontology_id: str | None = None
 
 
 class SemanticMigrationPreflightResponse(BaseModel):
@@ -1026,7 +986,7 @@ class SemanticMigrationCreateRequest(BaseModel):
     ]
     scope_id: str | None = None
     mode: Literal["dry_run", "shadow", "dual_write_backfill", "cutover", "rollback"]
-    target_graph_set_id: str | None = None
+    target_ontology_id: str | None = None
     batch_size: int | None = Field(default=None, ge=1, le=10_000)
     created_by: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
@@ -1077,7 +1037,7 @@ class SemanticMigrationRunRead(BaseModel):
     status: str
     phase2_mapping_version: str
     source_snapshot_signature: str
-    target_graph_set_id: str | None
+    target_ontology_id: str | None
     started_at: datetime
     finished_at: datetime | None
     created_by: str | None
@@ -1160,8 +1120,7 @@ class SemanticCanonicalProductWriteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     command_kind: Literal[_canonical_command_kinds()]  # type: ignore[valid-type]
-    graph_set_id: str
-    target_graph_iri: str | None = None
+    ontology_id: str
     payload: dict[str, Any]
     actor: str | None = None
     reason: str | None = None

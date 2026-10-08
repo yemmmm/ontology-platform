@@ -237,7 +237,7 @@ def _write_child_config(tmp_path: Path, kind: str, provider: str) -> dict:
             platform_read_scope={
                 "project_id": "fixture-project",
                 "ontology_id": "fixture-ontology",
-                "graph_set_id": "fixture-graph",
+
             },
             ticket_digest="a" * 64,
             model_state_digest="b" * 64,

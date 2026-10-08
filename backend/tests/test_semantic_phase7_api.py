@@ -124,6 +124,9 @@ def _client(
     inventory_payloads: list[dict[str, Any]] | None = None,
     parity_registry=None,
 ) -> Iterator[TestClient]:
+    from single_model_support import seed_model
+    seed_model(session, "ont-1", f"{GRAPH_PREFIX}ontology/ont-1")
+    session.commit()
     app = FastAPI()
     app.include_router(router, prefix="/api")
     settings = settings or Settings(
@@ -339,7 +342,7 @@ def test_canonical_write_endpoint_compiles_and_applies(in_memory_session) -> Non
             "/api/semantic/canonical-writes:compile-and-apply",
             json={
                 "command_kind": "create_class",
-                "graph_set_id": "gs-1",
+                "ontology_id": "ont-1",
                 "payload": {
                     "ontology_id": "ont-1",
                     "class_id": "class-api-1",
@@ -369,7 +372,7 @@ def test_canonical_write_blocked_when_legacy_only(in_memory_session) -> None:
             "/api/semantic/canonical-writes:compile-and-apply",
             json={
                 "command_kind": "create_class",
-                "graph_set_id": "gs-1",
+                "ontology_id": "ont-1",
                 "payload": {
                     "ontology_id": "ont-1",
                     "class_id": "class-api-2",

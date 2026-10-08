@@ -30,7 +30,6 @@ from app.services.semantic_derived_state import (
     SemanticDerivedStateService,
     SemanticRevisionService,
 )
-from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 from app.services.semantic_retrieval import SemanticRetrievalCoordinator
 from app.services.operation_semantics import (
@@ -87,7 +86,6 @@ class SemanticService:
         rdf_store: RdfStoreRepository,
         settings: Settings,
         graph_registry: SemanticGraphRegistryService | None = None,
-        graph_set_service: SemanticGraphSetService | None = None,
         revision_service: SemanticRevisionService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
         lineage_recorder: SemanticLineageRecorder | None = None,
@@ -96,7 +94,6 @@ class SemanticService:
         self.rdf_store = rdf_store
         self.settings = settings
         self.graph_registry = graph_registry or SemanticGraphRegistryService(session, settings)
-        self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
         self.revision_service = revision_service or SemanticRevisionService(session)
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
@@ -255,6 +252,10 @@ class SemanticService:
             error = SemanticServiceError(str(exc))
             error.code = exc.code
             raise error from exc
+        from app.repositories.models import OntologyModel
+        owner = self.session.scalar(select(OntologyModel).where(OntologyModel.model_graph_iri == target_graph_iri))
+        if target_graph_iri is not None and (owner is None or set(affected_graphs) != {owner.model_graph_iri}):
+            raise SemanticServiceError("Edit must target the selected Ontology model")
         for graph_iri in affected_graphs:
             self._require_direct_editable_category(graph_iri)
         try:
@@ -300,7 +301,7 @@ class SemanticService:
                 {
                     "result_kind": row.result_kind,
                     "run_id": row.run_id,
-                    "graph_set_id": row.graph_set_id,
+                    "ontology_id": row.ontology_id,
                     "result_graph_iri": row.result_graph_iri,
                 }
                 for row in stale_rows
@@ -370,11 +371,6 @@ class SemanticService:
         return self.rdf_store.export_dataset(format, graph_iris)
 
 
-    def _graph_set_source_signature(self, graph_set_id: str) -> str:
-        try:
-            return self.graph_set_service.source_signature_for(graph_set_id)
-        except Exception:
-            return ""
 
     def governance_status(self) -> dict[str, Any]:
         registry_summary = self.graph_registry.status_summary()

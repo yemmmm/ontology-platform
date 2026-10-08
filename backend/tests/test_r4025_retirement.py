@@ -23,9 +23,9 @@ import test_modeling_batches_service as batches
     ("POST", "/validation-runs"), ("GET", "/validation-runs"),
     ("GET", "/validation-runs/old"), ("POST", "/reasoning-runs"),
     ("GET", "/reasoning-runs"), ("GET", "/reasoning-runs/old"),
-    ("POST", "/graph-sets/old/validation-runs"),
-    ("POST", "/graph-sets/old/reasoning-runs"),
-    ("GET", "/graph-sets/old/shapes/classes/urn:test"),
+    ("POST", "/ontologies/old/validation-runs"),
+    ("POST", "/ontologies/old/reasoning-runs"),
+    ("GET", "/ontologies/old/shapes/classes/urn:test"),
     ("POST", "/derived-results:reconcile"),
 ])
 def test_retired_rest_routes_absent_even_with_direct_requests(method, path):
@@ -104,11 +104,11 @@ def test_bad_fields_and_references_repair_then_apply_without_shape_dependency(in
 
 
 def test_historical_derived_graphs_excluded_and_records_preserved(in_memory_session):
-    from test_semantic_read_scope import _make_graph_set, _add_pointer
+    from single_model_support import seed_model
     from app.repositories.models import SemanticDerivedResultPointerModel
-    _make_graph_set(in_memory_session, [("http://op/s/graph/data/ov-1", "asserted_data"),
-                                      ("http://op/s/graph/shapes/ov-1", "shapes")])
-    _add_pointer(in_memory_session, "reasoning")
+    seed_model(in_memory_session, "gs-1")
+    in_memory_session.add(SemanticDerivedResultPointerModel(id="ptr-reasoning", ontology_id="gs-1", result_kind="reasoning", run_id="old", result_graph_iri="urn:old-result", status="current"))
+    in_memory_session.commit()
     resolver = SemanticReadScopeResolver(in_memory_session)
     scope = resolver.resolve("gs-1", include="full-working-view")
     assert scope.reasoning_result_graph_iri is None
@@ -133,11 +133,11 @@ def test_protocol_retired_artifacts_return_item_local_conflict():
 
 def test_export_has_no_dedicated_shape_or_reasoning_branch():
     import inspect
-    from app.services.semantic_graph_set_export import SemanticExportService
+    from app.services.semantic_ontology_export import SemanticExportService
     from app.services.semantic_read_scope import ScopeResolution
     from test_semantic_export_graph_set import FakeScopeResolver, FakeStore
-    scope = ScopeResolution(graph_set_id="g", source_signature="s", include="full-working-view",
-        source_graph_iris=[], shape_graph_iris=["https://old.test/shapes"],
+    scope = ScopeResolution(ontology_id="g", source_signature="s", include="full-working-view",
+        model_graph_iris=[], shape_graph_iris=["https://old.test/shapes"],
         governance_graph_iris=[], reasoning_result_graph_iri="https://old.test/reasoning-result",
         derived_state={"reasoning": {"status": "current"}})
     assert "include_shapes" not in inspect.signature(SemanticExportService.export).parameters

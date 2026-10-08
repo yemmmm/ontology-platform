@@ -1,9 +1,10 @@
+from single_model_support import seed_model
 from uuid import uuid4
 
 import pytest
 
 from app.api.schemas import BuildSessionCreate, OntologyCreate
-from app.repositories.models import SemanticGraphSetModel, SemanticRuleModel
+from app.repositories.models import OntologyModel, SemanticRuleModel
 from subject_access_support import create_api_key
 from app.security.http import (
     HTTP_ROUTE_POLICIES,
@@ -89,71 +90,19 @@ def test_project_model_cannot_load_unscoped_dataset(r008_client):
     assert response.json()["detail"]["code"] == "forbidden_scope"
 
 
-def test_project_model_denies_ad_hoc_graph_sets_and_allows_owned_ontology_scope(r008_client):
+def test_project_model_denies_foreign_and_allows_owned_ontology_scope(r008_client):
     with r008_client["factory"]() as session:
-        ontology = create_ontology(
-            session,
-            r008_client["ids"]["p1"],
-            OntologyCreate(name="P1 graph authorization"),
-        )
-        graph_iri = f"http://ontology-platform.local/semantic/graph/data/{ontology.id}"
-        ad_hoc = SemanticGraphSetModel(
-            id=str(uuid4()),
-            name="unowned",
-            scope_type="ontology_version",
-            scope_id="not-a-platform-ontology",
-            status="active",
-            source_signature="unowned",
-        )
-        session.add(ad_hoc)
+        owned = create_ontology(session, r008_client["ids"]["p1"], OntologyCreate(name="Owned single model"))
+        foreign = seed_model(session, str(uuid4()), name="Foreign")
         session.commit()
-        ontology_id = ontology.id
-        ad_hoc_id = ad_hoc.id
-
+        owned_id, foreign_id = owned.id, foreign.id
     client = r008_client["client"]
     headers = _bearer(r008_client["p1_model_key"])
-    denied_create = client.post(
-        "/api/semantic/graph-sets",
-        headers=headers,
-        json={
-            "name": "unowned create",
-            "scope_type": "ontology_version",
-            "scope_id": "not-a-platform-ontology",
-            "members": [{"graph_iri": graph_iri, "role": "asserted_data"}],
-        },
-    )
-    assert denied_create.status_code == 403
-    assert client.get(f"/api/semantic/graph-sets/{ad_hoc_id}", headers=headers).status_code == 403
-
-    allowed = client.post(
-        "/api/semantic/graph-sets",
-        headers=headers,
-        json={
-            "name": "owned create",
-            "scope_type": "ontology",
-            "scope_id": ontology_id,
-            "members": [{"graph_iri": graph_iri, "role": "asserted_data"}],
-        },
-    )
+    assert client.get(f"/api/ontologies/{foreign_id}/workspace-context", headers=headers).status_code == 404
+    allowed = client.get(f"/api/ontologies/{owned_id}/workspace-context", headers=headers)
     assert allowed.status_code == 200, allowed.text
-    assert (
-        client.get(f"/api/semantic/graph-sets/{allowed.json()['id']}", headers=headers).status_code
-        == 200
-    )
-    assert (
-        client.get(
-            "/api/semantic/graph-sets",
-            params={"scope_type": "ontology"},
-            headers=headers,
-        ).status_code
-        == 200
-    )
-    graphs = client.get("/api/semantic/graphs", headers=headers)
-    assert graphs.status_code == 200
-    assert all(item["owner_id"] == ontology_id for item in graphs.json()["graphs"])
-    assert sum(graphs.json()["summary"]["graph_counts_by_category"].values()) == len(
-        graphs.json()["graphs"]
-    )
+    assert allowed.json()["ontology_id"] == owned_id
+    assert "members" not in allowed.json()
 
 
 def test_client_idempotency_labels_are_not_treated_as_server_resources():

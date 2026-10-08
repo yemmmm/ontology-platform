@@ -48,7 +48,7 @@ def test_postgres_oxigraph_snapshot_fork_roundtrip():
             workspace = OntologyWorkspaceService(session, settings)
             workspace.ensure(ontology)
             context = workspace.context(ontology_id)
-            graph_iris.extend(item["graph_iri"] for item in context["members"])
+            graph_iris.append(context["model_graph_iri"])
             session.commit()
         iri = graph_iris[0]
         store.put_named_graph(iri, '<urn:r3017:Order> <urn:label> "Before writer" .', "turtle")
@@ -165,7 +165,7 @@ def test_postgres_oxigraph_snapshot_fork_roundtrip():
             )
             session.execute(
                 delete(m.SemanticGraphSetMemberModel).where(
-                    m.SemanticGraphSetMemberModel.graph_set_id.in_(sets)
+                    m.SemanticGraphSetMemberModel.ontology_id.in_(sets)
                 )
             )
             session.execute(

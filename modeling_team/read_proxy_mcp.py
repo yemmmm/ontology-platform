@@ -223,7 +223,6 @@ def main() -> int:
         for key in (
             "PLATFORM_PROXY_PROJECT_ID",
             "PLATFORM_PROXY_ONTOLOGY_ID",
-            "PLATFORM_PROXY_GRAPH_SET_ID",
             "PLATFORM_PROXY_TICKET_DIGEST",
             "PLATFORM_PROXY_MODEL_STATE_DIGEST",
         )
@@ -292,7 +291,6 @@ def main() -> int:
                     mapping = {
                         "project_id": "PLATFORM_PROXY_PROJECT_ID",
                         "ontology_id": "PLATFORM_PROXY_ONTOLOGY_ID",
-                        "graph_set_id": "PLATFORM_PROXY_GRAPH_SET_ID",
                         "ticket_digest": "PLATFORM_PROXY_TICKET_DIGEST",
                         "model_state_digest": "PLATFORM_PROXY_MODEL_STATE_DIGEST",
                     }

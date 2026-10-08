@@ -36,7 +36,7 @@ class FakeScopeResolver:
     def __init__(self, resolution):
         self._resolution = resolution
 
-    def resolve(self, graph_set_id, include="asserted", allow_stale_derived=True):
+    def resolve(self, ontology_id, include="asserted", allow_stale_derived=True):
         # Replace dataclass to reflect the include parameter so the service
         # can add derived-result graphs as appropriate.
         from dataclasses import replace
@@ -65,45 +65,19 @@ def _resolution(
         if isinstance(rule, dict):
             derived_state["rule"] = rule
 
-    # Auto-create members from graph_iris when not explicitly provided.
-    if members is None:
-        members = _members_from_iris(graph_iris, derived_state)
-    elif not isinstance(members, list):
-        members = list(members)
-
     return ScopeResolution(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         source_signature=signature,
         include="asserted",
-        source_graph_iris=graph_iris, shape_graph_iris=[],
+        model_graph_iris=graph_iris, shape_graph_iris=[],
 
         governance_graph_iris=[],
         reasoning_result_graph_iri=reasoning_iri,
         derived_state=derived_state,
         warnings=[],
-        members=list(members),
     )
 
 
-def _members_from_iris(graph_iris, derived_state):
-    from app.services.semantic_read_scope import ScopeMember
-
-    result = []
-    for iri in graph_iris:
-        if "/ontology/" in iri:
-            role = "asserted_ontology"
-        elif "/data/" in iri:
-            role = "asserted_data"
-        else:
-            role = "asserted_data"
-        result.append(
-            ScopeMember(
-                graph_iri=iri,
-                role=role,
-                derived_state=dict(derived_state),
-            )
-        )
-    return result
 
 
 def test_schema_summary_returns_envelope_with_assertion_metadata():
@@ -126,19 +100,19 @@ def test_schema_summary_returns_envelope_with_assertion_metadata():
     )
     service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
     envelope = service.read_model("gs-1", "ontology-schema-summary", include="asserted")
-    assert envelope["graph_set_id"] == "gs-1"
+    assert envelope["ontology_id"] == "gs-1"
     assert envelope["source_signature"] == "sig-1"
     assert envelope["projection_version"].startswith("semantic-read-v")
     assert len(envelope["items"]) == 2
     item = envelope["items"][0]
     assert item["assertion_kind"] == "asserted"
-    assert item["source_graph_iri"] == "http://op/s/graph/ontology/ov-1"
+    assert item["ontology_id"] == "gs-1"
     assert "evidence_status" not in item
     assert "staleness" in item
 
 
 def test_unknown_model_raises():
-    resolver = FakeScopeResolver(_resolution(["http://op/s/graph/data/ov-1"]))
+    resolver = FakeScopeResolver(_resolution(["http://op/s/graph/ontology/ov-1"]))
     store = FakeStore({})
     service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
     try:
@@ -151,7 +125,7 @@ def test_unknown_model_raises():
 def test_entity_list_exposes_explicit_canonical_identity_projection():
     """Protocol receives semantic IDs and IRIs as independent backend fields."""
 
-    data_iri = "https://example/graph/data/r23003"
+    data_iri = "https://example/graph/ontology/r23003"
     entity_iri = "https://example/entity/unknown-a"
     class_iri = "https://example/class/ExplicitUnknown"
     resolution = _resolution([data_iri])
@@ -182,7 +156,7 @@ def test_access_view_filters_rows_referencing_unauthorized_members():
     from app.services.semantic_access import SemanticAccessView
 
     resolver = FakeScopeResolver(
-        _resolution(["http://op/s/graph/data/a", "http://op/s/graph/data/b"])
+        _resolution(["http://op/s/graph/ontology/a", "http://op/s/graph/ontology/b"])
     )
     store = FakeStore(
         {
@@ -190,12 +164,12 @@ def test_access_view_filters_rows_referencing_unauthorized_members():
                 {
                     "class": "http://op/s/class/x",
                     "label": "X",
-                    "graph": "http://op/s/graph/data/a",
+                    "graph": "http://op/s/graph/ontology/a",
                 },
                 {
                     "class": "http://op/s/class/y",
                     "label": "Y",
-                    "graph": "http://op/s/graph/data/b",
+                    "graph": "http://op/s/graph/ontology/b",
                 },
             ]
         }
@@ -218,76 +192,7 @@ def test_access_view_filters_rows_referencing_unauthorized_members():
 # ------------------------------------------------------------------
 
 
-def test_graph_set_staleness_summary_assembles_members_and_count():
-    """graph-set-staleness summary composes members, staleness, missing-evidence count.
 
-    Phase 3 refactor: missing_evidence_count now comes from Postgres (the
-    fact_evidence_bindings table), not the SPARQL COUNT that the old FakeStore
-    row used to feed. Without a real session the count is 0 — the staleness
-    composer no longer consults the SPARQL template at all.
-    """
-
-    resolution = _resolution(
-        graph_iris=[
-            "https://example/graph/ontology/x",
-            "https://example/graph/data/x",
-        ],
-        reasoning={"status": "stale"},
-        rule={"status": "current"},
-    )
-    store = FakeStore({
-        "graph-set-staleness": [{"count": {"value": "3"}}],
-    })
-    service = SemanticReadModelService(
-        rdf_store=store,
-        scope_resolver=FakeScopeResolver(resolution),
-        timeout_seconds=10,
-        default_limit=1,
-    )
-
-    envelope = service.read_model(
-        graph_set_id="gs-1",
-        model_name="graph-set-staleness",
-        field_set="summary",
-    )
-
-    assert envelope["model_name"] == "graph-set-staleness"
-    assert len(envelope["items"]) == 1
-    item = envelope["items"][0]
-    assert item["graph_set_id"] == "gs-1"
-    assert "missing_evidence_count" not in item
-    # Verify member-level data
-    assert len(item["members"]) == 2
-    roles = {m["role"] for m in item["members"]}
-    assert roles == {"asserted_ontology", "asserted_data"}
-
-    assert all("reasoning_stale" not in member for member in item["members"])
-    assert "stale_derived_count" not in item
-
-def test_graph_set_staleness_summary_handles_no_derived_pointers():
-    """Missing derived pointers should yield null staleness, not crash."""
-
-    resolution = _resolution(graph_iris=["https://example/graph/data/x"])
-    store = FakeStore({"graph-set-staleness": [{"count": {"value": "0"}}]})
-    service = SemanticReadModelService(
-        rdf_store=store,
-        scope_resolver=FakeScopeResolver(resolution),
-        timeout_seconds=10,
-        default_limit=1,
-    )
-
-    envelope = service.read_model(
-        graph_set_id="gs-1",
-        model_name="graph-set-staleness",
-        field_set="summary",
-    )
-    member = envelope["items"][0]["members"][0]
-    # With no derived state from resolver, staleness fields are None
-    assert member.get("reasoning_stale") is None
-    assert member.get("rule_stale") is None
-    assert member.get("validation_stale") is None
-    assert member.get("editable") is True
-    assert member.get("role") == "asserted_data"
 
 
 # Stage 2 §5.3 — entity-shape composer delegation ---------------------------------------
@@ -300,8 +205,8 @@ class FakeShapeEndpointService:
         self._response = response
         self.calls: list[tuple[str, str]] = []
 
-    def read_merged_guidance(self, graph_set_id: str, class_iri: str) -> dict:
-        self.calls.append((graph_set_id, class_iri))
+    def read_merged_guidance(self, ontology_id: str, class_iri: str) -> dict:
+        self.calls.append((ontology_id, class_iri))
         return self._response
 
 
@@ -311,7 +216,7 @@ class FakeShapeEndpointService:
 def test_fact_audit_queue_kind_asserted_queries_data_graph_only():
     """kind=asserted restricts the SPARQL to asserted_data members and
     decorates each row with assertion_kind=asserted."""
-    data_iri = "http://op.local/graph/data/ont-1"
+    data_iri = "http://op.local/graph/ontology/ont-1"
     resolution = _resolution(
         graph_iris=[data_iri],
         reasoning="http://op.local/graph/reasoning-result/run-1",
@@ -336,7 +241,7 @@ def test_fact_audit_queue_kind_asserted_queries_data_graph_only():
         default_limit=500,
     )
     envelope = service.read_model(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         model_name="fact-audit-queue",
         kind="asserted",
         include="full-working-view",
@@ -355,7 +260,7 @@ def test_fact_audit_queue_kind_asserted_queries_data_graph_only():
 def test_fact_audit_queue_kind_rule_derived_is_retired():
     """kind=rule_derived restricts the SPARQL to the effective rule-result
     graph."""
-    data_iri = "http://op.local/graph/data/ont-1"
+    data_iri = "http://op.local/graph/ontology/ont-1"
     rule_iri = "http://op.local/graph/rule-result/run-9"
     resolution = _resolution(
         graph_iris=[data_iri],
@@ -387,13 +292,13 @@ def test_fact_audit_queue_kind_rule_derived_is_retired():
         default_limit=500,
     )
     with pytest.raises(ReadModelError, match="Unsupported fact-audit-queue kind"):
-        service.read_model(graph_set_id="gs-1", model_name="fact-audit-queue", kind="rule_derived")
+        service.read_model(ontology_id="gs-1", model_name="fact-audit-queue", kind="rule_derived")
     assert store.last_query is None
 
 
 def test_fact_audit_queue_rejects_missing_evidence_kind():
     """The retired missing-evidence projection is not a normal read model."""
-    data_iri = "http://op.local/graph/data/ont-1"
+    data_iri = "http://op.local/graph/ontology/ont-1"
     resolution = _resolution(graph_iris=[data_iri])
     store = FakeStore({
         "fact-audit-queue": [
@@ -415,7 +320,7 @@ def test_fact_audit_queue_rejects_missing_evidence_kind():
     )
     with pytest.raises(ReadModelError, match="Unsupported fact-audit-queue kind"):
         service.read_model(
-            graph_set_id="gs-1",
+            ontology_id="gs-1",
             model_name="fact-audit-queue",
             kind="missing_evidence",
         )
@@ -423,7 +328,7 @@ def test_fact_audit_queue_rejects_missing_evidence_kind():
 
 def test_fact_audit_queue_invalid_kind_raises_read_model_error():
     """An unknown kind value surfaces as a ReadModelError."""
-    data_iri = "http://op.local/graph/data/ont-1"
+    data_iri = "http://op.local/graph/ontology/ont-1"
     resolution = _resolution(graph_iris=[data_iri])
     store = FakeStore({})
     service = SemanticReadModelService(
@@ -436,7 +341,7 @@ def test_fact_audit_queue_invalid_kind_raises_read_model_error():
 
     with pytest.raises(ReadModelError) as exc_info:
         service.read_model(
-            graph_set_id="gs-1",
+            ontology_id="gs-1",
             model_name="fact-audit-queue",
             kind="not_a_kind",
         )
@@ -446,7 +351,7 @@ def test_fact_audit_queue_invalid_kind_raises_read_model_error():
 # R3.0-007 — entity-detail graph scoping and LIMIT semantics ------------------
 
 
-R307_DATA_GRAPH = "https://r307.test/data/graph-1"
+R307_DATA_GRAPH = "https://r307.test/ontology/graph-1"
 R307_REASONING_GRAPH = "https://r307.test/reasoning-result/run-1"
 R307_RULE_GRAPH = "https://r307.test/rule-result/run-2"
 
@@ -498,7 +403,7 @@ def test_entity_detail_without_source_graphs_returns_empty_without_query():
     envelope = service.read_model("gs-1", "entity-detail")
 
     assert envelope["items"] == []
-    assert envelope["warnings"][0]["code"] == "read_model_no_source_graphs"
+    assert envelope["warnings"][0]["code"] == "read_model_no_model"
     assert store.last_query is None
 
 
@@ -578,7 +483,7 @@ def test_entity_list_paging_survives_post_processing_head_room():
     """D7: entity-list fetches extra rows for aggregation, so the ceiling can
     be hit while the aggregated page still fits — truncated must say so rather
     than claiming a complete projection."""
-    data_iri = "https://example/graph/data/r23003"
+    data_iri = "https://example/graph/ontology/r23003"
 
     def _row(entity_index, class_index):
         return {
@@ -627,7 +532,7 @@ def test_every_executable_template_binds_graph_iris():
 
 def test_entity_detail_values_addition_preserves_decorated_row_shape():
     """F2: adding VALUES ?graph keeps ?graph a projected variable, so the
-    decorator still maps it to source_graph_iri without any drift."""
+    decorator still maps it to model_graph_iri without any drift."""
     store = FakeStore(
         {
             "entity-detail": [
@@ -643,7 +548,7 @@ def test_entity_detail_values_addition_preserves_decorated_row_shape():
 
     item = service.read_model("gs-1", "entity-detail")["items"][0]
 
-    assert item["source_graph_iri"] == R307_DATA_GRAPH
+    assert item["ontology_id"] == "gs-1"
     assert item["assertion_kind"] == "asserted"
     assert "evidence_status" not in item
     assert item["iri"] == "https://r307.test/entity/T1"
@@ -731,7 +636,7 @@ def test_r3003_all_mapping_templates_declare_detail_variables():
     ):
         template = get_template(name)
         assert template.detail_variables, name
-        assert template.required_roles == ("asserted_ontology",), name
+        assert not hasattr(template, "required_roles")
 
 
 def test_r3003_existing_templates_stay_without_detail_fields():

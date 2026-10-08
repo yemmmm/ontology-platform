@@ -31,6 +31,8 @@ from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import SemanticGraphRegistryModel
+from sqlalchemy import select
+from single_model_support import seed_model
 from app.repositories.rdf_store import RdfStoreRepository, SparqlResult, UpdateResult
 
 
@@ -121,7 +123,10 @@ def _client(
 def _register_graph(session: Session, graph_iri: str, category: str) -> None:
     """Insert a graph registry row so canonical-write sees a managed graph."""
     from uuid import uuid4
-
+    if session.scalar(select(SemanticGraphRegistryModel).where(SemanticGraphRegistryModel.graph_iri == graph_iri)):
+        return
+    if category in {"ontology", "data"}:
+        seed_model(session, "ont-1", graph_iri)
     session.add(
         SemanticGraphRegistryModel(
             id=str(uuid4()),
@@ -140,7 +145,7 @@ def _ontology_graph_iri() -> str:
 
 
 def _data_graph_iri() -> str:
-    return f"{GRAPH_PREFIX}data/ont-1"
+    return f"{GRAPH_PREFIX}ontology/ont-1"
 
 
 def _shapes_custom_graph_iri() -> str:
@@ -175,7 +180,7 @@ def _create_graph_set(client: TestClient, members: list[dict[str, Any]]) -> str:
 
 def _apply(
     client: TestClient,
-    graph_set_id: str,
+    ontology_id: str,
     command_kind: str,
     payload: dict[str, Any],
 ) -> dict[str, Any]:
@@ -183,7 +188,7 @@ def _apply(
         "/api/semantic/canonical-writes:compile-and-apply",
         json={
             "command_kind": command_kind,
-            "graph_set_id": graph_set_id,
+            "ontology_id": ontology_id,
             "payload": payload,
 
         },
@@ -215,27 +220,9 @@ def _assert_apply_payload(
 
 
 def _seed_default_graph_set(client: TestClient, session: Session) -> str:
-    """Pre-register an ontology + data + custom shape graph and create a
-    graph set with all three roles."""
-    for graph_iri, category in [
-        (_ontology_graph_iri(), "ontology"),
-        (_data_graph_iri(), "data"),
-        (_shapes_custom_graph_iri(), "data"),
-    ]:
-        _register_graph(session, graph_iri, category)
-    return _create_graph_set(
-        client,
-        members=[
-            {"graph_iri": _ontology_graph_iri(), "role": "asserted_ontology"},
-            {"graph_iri": _data_graph_iri(), "role": "asserted_data"},
-            {"graph_iri": _shapes_custom_graph_iri(), "role": "shape_graph_custom"},
-        ],
-    )
-
-
-# ---------------------------------------------------------------------------
-# Classes — 10 kinds
-# ---------------------------------------------------------------------------
+    """Register only the current Ontology model storage."""
+    _register_graph(session, _ontology_graph_iri(), "ontology")
+    return "ont-1"
 
 
 def test_update_class_apply_writes_label_replace_to_ontology_graph(
@@ -243,11 +230,11 @@ def test_update_class_apply_writes_label_replace_to_ontology_graph(
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "update_class",
         {
             "ontology_id": "ont-1",
@@ -274,11 +261,11 @@ def test_delete_class_apply_writes_subject_wildcard_delete_and_soft_marker(
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "delete_class",
         {"ontology_id": "ont-1", "class_id": "class-1"},
     )
@@ -293,11 +280,11 @@ def test_delete_class_apply_writes_subject_wildcard_delete_and_soft_marker(
 def test_create_property_apply_writes_owl_datatype_property(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "create_property",
         {
             "ontology_id": "ont-1",
@@ -323,11 +310,11 @@ def test_create_property_apply_writes_owl_datatype_property(in_memory_session) -
 def test_update_property_apply_replaces_label_and_range(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "update_property",
         {
             "ontology_id": "ont-1",
@@ -347,11 +334,11 @@ def test_update_property_apply_replaces_label_and_range(in_memory_session) -> No
 def test_delete_property_apply_emits_subject_wildcard_delete(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "delete_property",
         {"ontology_id": "ont-1", "property_id": "prop-1"},
     )
@@ -368,11 +355,11 @@ def test_update_relation_type_apply_replaces_label_and_endpoints(
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "update_relation_type",
         {
             "ontology_id": "ont-1",
@@ -395,11 +382,11 @@ def test_delete_relation_type_apply_emits_subject_wildcard_delete(
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "delete_relation_type",
         {"ontology_id": "ont-1", "relation_type_id": "rel-1"},
     )
@@ -421,11 +408,11 @@ def test_create_entity_apply_writes_named_individual_into_data_graph(
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "create_entity",
         {
             "ontology_id": "ont-1",
@@ -455,11 +442,11 @@ def test_update_entity_apply_replaces_label_aliases_and_properties(
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "update_entity",
         {
             "ontology_id": "ont-1",
@@ -482,11 +469,11 @@ def test_update_entity_apply_replaces_label_aliases_and_properties(
 def test_delete_entity_apply_cascades_to_relations(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "delete_entity",
         {"ontology_id": "ont-1", "entity_id": "entity-1"},
     )
@@ -494,18 +481,18 @@ def test_delete_entity_apply_cascades_to_relations(in_memory_session) -> None:
         body,
         store,
         _data_graph_iri(),
-        ["/ns/entity/entity-1>", "?s", "?p"],
+        ["/ns/entity/entity-1>", "?p"],
     )
 
 
 def test_create_relation_apply_writes_asserted_relation_triple(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "create_relation",
         {
             "ontology_id": "ont-1",
@@ -529,11 +516,11 @@ def test_create_relation_apply_writes_asserted_relation_triple(in_memory_session
 def test_delete_relation_apply_targets_specific_triple_pattern(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "delete_relation",
         {
             "ontology_id": "ont-1",
@@ -562,11 +549,11 @@ def test_delete_relation_apply_targets_specific_triple_pattern(in_memory_session
 def test_create_mapping_apply_writes_semantic_mapping(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "create_mapping",
         {
             "ontology_id": "ont-1",
@@ -592,11 +579,11 @@ def test_update_mapping_apply_patches_join_key_confidence_and_owner(
 ) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "update_mapping",
         {
             "ontology_id": "ont-1",
@@ -617,11 +604,11 @@ def test_update_mapping_apply_patches_join_key_confidence_and_owner(
 def test_delete_mapping_apply_emits_subject_wildcard_delete(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "delete_mapping",
         {"ontology_id": "ont-1", "mapping_id": "map-1"},
     )
@@ -641,11 +628,11 @@ def test_delete_mapping_apply_emits_subject_wildcard_delete(in_memory_session) -
 def test_review_assertion_apply_writes_rdf_star_reification(in_memory_session) -> None:
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     body = _apply(
         client,
-        graph_set_id,
+        ontology_id,
         "review_assertion",
         {
             "ontology_id": "ont-1",
@@ -683,13 +670,13 @@ def test_review_assertion_rejected_decision_without_fix_proposal_returns_400(
     already accepted the kind, so the error happens inside the service)."""
     store = FakeStore()
     client = _client(store, in_memory_session)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     response = client.post(
         "/api/semantic/canonical-writes:compile-and-apply",
         json={
             "command_kind": "review_assertion",
-            "graph_set_id": graph_set_id,
+            "ontology_id": ontology_id,
             "payload": {
                 "ontology_id": "ont-1",
                 "assertion_kind": "asserted",
@@ -722,13 +709,13 @@ def test_canonical_writer_blocked_when_in_legacy_only_mode(in_memory_session) ->
         semantic_legacy_write_blocked=False,
     )
     client = _client(store, in_memory_session, settings=settings)
-    graph_set_id = _seed_default_graph_set(client, in_memory_session)
+    ontology_id = _seed_default_graph_set(client, in_memory_session)
 
     response = client.post(
         "/api/semantic/canonical-writes:compile-and-apply",
         json={
             "command_kind": "update_class",
-            "graph_set_id": graph_set_id,
+            "ontology_id": ontology_id,
             "payload": {
                 "ontology_id": "ont-1",
                 "class_id": "class-1",

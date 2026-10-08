@@ -454,7 +454,7 @@ def test_verified_report_then_drift_deleted_missing_evidence_and_tamper(tmp_path
     write(run, "evidence/cq-freeze.jsonl", {"batch_id": "b", "snapshot_digest": "freeze"})
     context = {
         "state": "ready",
-        "default_graph_set_id": "gs",
+        "ontology_id": "gs",
         "graph_set_status": "active",
         "source_signature": "source",
         "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
@@ -464,7 +464,7 @@ def test_verified_report_then_drift_deleted_missing_evidence_and_tamper(tmp_path
         "batch_id": "b",
         "freeze_digest": "freeze",
         "ontologies": [
-            {"project_id": "p", "ontology_id": "o", "workspace_state": ws, "graph_state": gs}
+            {"project_id": "p", "ontology_id": "o", "workspace_state": ws, "model_version_state": gs}
         ],
     }
     path = report(run)
@@ -648,7 +648,7 @@ def test_admin_cq_report_verifies_latest_freeze_and_live_model_without_host_even
     root = run_fixture(tmp_path)
     _, snapshot = frozen(root)
     context = {
-        "state": "ready", "default_graph_set_id": "gs", "graph_set_status": "active",
+        "state": "ready", "ontology_id": "gs", "graph_set_status": "active",
         "source_signature": "source",
         "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
     }
@@ -656,7 +656,7 @@ def test_admin_cq_report_verifies_latest_freeze_and_live_model_without_host_even
     binding = {
         "batch_id": "b", "freeze_digest": snapshot["snapshot_digest"],
         "ontologies": [{"project_id": "p", "ontology_id": "o",
-                        "workspace_state": ws, "graph_state": gs}],
+                        "workspace_state": ws, "model_version_state": gs}],
     }
     path = report(root, snapshot["snapshot_digest"])
     value = json.loads(path.read_text())
@@ -678,7 +678,7 @@ def test_admin_cq_reads_formal_acceptance_only_runs_with_current_binding(tmp_pat
     root = run_fixture(tmp_path)
     _, snapshot = frozen(root)
     context = {
-        "state": "ready", "default_graph_set_id": "gs", "graph_set_status": "active",
+        "state": "ready", "ontology_id": "gs", "graph_set_status": "active",
         "source_signature": "source",
         "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
     }
@@ -686,7 +686,7 @@ def test_admin_cq_reads_formal_acceptance_only_runs_with_current_binding(tmp_pat
     binding = {
         "batch_id": "b", "freeze_digest": snapshot["snapshot_digest"],
         "ontologies": [{"project_id": "p", "ontology_id": "o",
-                        "workspace_state": ws, "graph_state": gs}],
+                        "workspace_state": ws, "model_version_state": gs}],
     }
     for name, ids in [("public-acceptance", ["Q"]), ("hidden-acceptance", ["secret"]),
                       ("another-project", ["Q"]), ("changed-model", ["Q"]),

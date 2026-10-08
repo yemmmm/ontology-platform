@@ -27,10 +27,9 @@ from .proof_v2 import (
 
 
 GRAPH_ASSERTED_DATA = "https://p2a.example.test/graph/asserted-data"
-GRAPH_ASSERTED_ONTOLOGY = "https://p2a.example.test/graph/asserted-ontology"
+GRAPH_ASSERTED_ONTOLOGY = GRAPH_ASSERTED_DATA
 GRAPH_SHAPES = "https://p2a.example.test/graph/shapes"
 ONTOLOGY_ID = "p2a-generated-ontology"
-GRAPH_SET_ID = "p2a-generated-graph-set"
 SOURCE_SIGNATURE = "p2a-generated-source-signature"
 
 
@@ -66,7 +65,6 @@ def _candidate(matrix: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, 
     for row in rows:
         item = {
             "assertion_id": row["assertion_id"],
-            "graph_role": "asserted_data",
             "subject": row["subject"],
             "predicate": row["predicate"],
             "object": row["object"],
@@ -117,8 +115,7 @@ def _proof(matrix: dict[str, Any], candidate: dict[str, Any], rows: list[dict[st
         elif row["binding_category"] == "relation_delta":
             obj = generated[assertion_id]
         quad = {
-            "graph_role": "asserted_data",
-            "source_graph_iri": GRAPH_ASSERTED_DATA,
+            "ontology_id": ONTOLOGY_ID,
             "subject": subject,
             "predicate": predicate,
             "object": obj,
@@ -188,6 +185,7 @@ def _proof(matrix: dict[str, Any], candidate: dict[str, Any], rows: list[dict[st
                     "mode": "apply_atomic",
                     "attempt_status": "applied",
                     "normalized_delta": {"inserts": inserts, "deletes": []},
+                    "target": {"ontology_id": ONTOLOGY_ID, "graphs": [{"graph_iri": GRAPH_ASSERTED_DATA}]},
                     "items": applied_items,
                 }
             ],
@@ -207,22 +205,17 @@ def _proof(matrix: dict[str, Any], candidate: dict[str, Any], rows: list[dict[st
     )
     workspace = _envelope(
         {
-            "ontology_id": ONTOLOGY_ID,
             "state": "ready",
-            "default_graph_set_id": GRAPH_SET_ID,
+            "ontology_id": ONTOLOGY_ID,
             "source_signature": SOURCE_SIGNATURE,
-            "members": [
-                {"role": "asserted_ontology", "owner_type": "ontology", "owner_id": ONTOLOGY_ID, "graph_iri": GRAPH_ASSERTED_ONTOLOGY},
-                {"role": "asserted_data", "owner_type": "ontology", "owner_id": ONTOLOGY_ID, "graph_iri": GRAPH_ASSERTED_DATA},
-                {"role": "shapes", "owner_type": "ontology", "owner_id": ONTOLOGY_ID, "graph_iri": GRAPH_SHAPES},
-            ],
+            "model_revision": 1,
         }
     )
     fact_items = [{"fact_id": fact_ids[row["assertion_id"]], "id": fact_ids[row["assertion_id"]]} for row in rows]
     statements = {
         "response": _envelope(
             {
-                "graph_set_id": GRAPH_SET_ID,
+                "ontology_id": ONTOLOGY_ID,
                 "source_signature": SOURCE_SIGNATURE,
                 "model_name": "statement-list",
                 "include": "asserted",

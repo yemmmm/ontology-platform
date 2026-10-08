@@ -59,7 +59,7 @@ def _scope_query_to_graphs(query: str, graph_iris: list[str]) -> str:
     """Inject the approved RDF dataset into the original SELECT query.
 
     ``FROM`` provides the approved default graph, and ``FROM NAMED`` limits
-    ``GRAPH ?g`` to that same approved graph set.  Keeping the user's SELECT
+    ``GRAPH ?g`` to that same approved Ontology storage scope.  Keeping the user's SELECT
     as the top-level query preserves its ``?count`` projection and avoids
     embedding a SELECT inside a graph-pattern group.
     """

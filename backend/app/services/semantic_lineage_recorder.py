@@ -10,7 +10,6 @@ from sqlalchemy.orm import Session
 
 from app.repositories.models import (
     SemanticGraphRegistryModel,
-    SemanticGraphSetModel,
     SemanticStatementOccurrenceModel,
     OntologyModel,
 )
@@ -39,7 +38,7 @@ class SemanticLineageRecorder:
         graph_revisions: Mapping[str, int],
         audit_id: str,
         ontology_id: str | None = None,
-        graph_set_id: str | None = None,
+
         modeling_item_effects: Mapping[Quad, Iterable[str]] | None = None,
     ) -> list[SemanticStatementOccurrenceModel]:
         effects = self._normalise_effects(modeling_item_effects or {})
@@ -79,7 +78,7 @@ class SemanticLineageRecorder:
             revision = int(graph_revisions.get(graph_iri, 0))
             occurrence, _was_created = self.repository.get_or_create_occurrence(
                 ontology_id=scoped_ontology,
-                graph_set_id=graph_set_id,
+
                 subject=subject,
                 predicate=predicate,
                 object_ntriples=obj,
@@ -108,7 +107,7 @@ class SemanticLineageRecorder:
         self,
         *,
         ontology_id: str,
-        graph_set_id: str | None,
+
         result_graph_iri: str,
         statements: list[dict[str, Any]],
         assertion_kind: str,
@@ -140,7 +139,7 @@ class SemanticLineageRecorder:
             }
             occurrence, _created = self.repository.get_or_create_occurrence(
                 ontology_id=ontology_id,
-                graph_set_id=graph_set_id,
+
                 subject=subject,
                 predicate=predicate,
                 object_ntriples=obj,
@@ -160,7 +159,7 @@ class SemanticLineageRecorder:
                 for premise_quad in premise_quads:
                     premise = self._resolve_or_record_legacy_premise(
                         ontology_id=ontology_id,
-                        graph_set_id=graph_set_id,
+
                         quad=tuple(premise_quad),
                         input_graph_revisions=input_revisions,
                     )
@@ -179,11 +178,9 @@ class SemanticLineageRecorder:
         )
         return registry.semantic_owner_id if registry is not None else None
 
-    def ontology_id_for_graph_set(self, graph_set_id: str) -> str | None:
-        graph_set = self.session.get(SemanticGraphSetModel, graph_set_id)
-        if graph_set is None or graph_set.scope_type != "ontology":
-            return None
-        return graph_set.scope_id
+    def ontology_id_for_scope(self, ontology_id: str) -> str | None:
+        ontology = self.session.get(OntologyModel, ontology_id)
+        return ontology.id if ontology else None
 
     def _ontology_exists(self, ontology_id: str | None) -> bool:
         return bool(ontology_id and self.session.get(OntologyModel, ontology_id) is not None)
@@ -235,7 +232,7 @@ class SemanticLineageRecorder:
         self,
         *,
         ontology_id: str,
-        graph_set_id: str | None,
+
         quad: Quad,
         input_graph_revisions: Mapping[str, int],
     ) -> SemanticStatementOccurrenceModel | None:
@@ -250,7 +247,7 @@ class SemanticLineageRecorder:
         revision = int(input_graph_revisions.get(graph_iri, 0))
         occurrence, _created = self.repository.get_or_create_occurrence(
             ontology_id=ontology_id,
-            graph_set_id=graph_set_id,
+
             subject=subject,
             predicate=predicate,
             object_ntriples=obj,

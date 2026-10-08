@@ -1,3 +1,4 @@
+from single_model_support import seed_model
 import asyncio
 from datetime import UTC, datetime
 
@@ -18,8 +19,6 @@ from app.repositories.models import (
     OntologyModel,
     ProjectModel,
     SemanticGraphRegistryModel,
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
 )
 from app.mcp.server import mcp
 
@@ -46,8 +45,8 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
                 "execution_event_id",
                 "reference_id",
                 "question_id",
-                "graph_set_id",
-                "target_graph_set_id",
+                "ontology_id",
+                "target_ontology_id",
                 "rule_definition_id",
                 "run_id",
                 "job_id",
@@ -117,50 +116,29 @@ def test_project_mcp_denies_ad_hoc_graph_set_and_allows_owned_graph_set(
         semantic_owner_type="ontology",
         semantic_owner_id=ontology.id,
     )
-    owned = SemanticGraphSetModel(
-        id="owned-set",
-        name="Owned",
-        scope_type="ontology",
-        scope_id=ontology.id,
-        status="active",
-        source_signature="owned",
-    )
-    owned.members.append(
-        SemanticGraphSetMemberModel(
-            id="owned-member",
-            graph_iri=graph.graph_iri,
-            role="asserted_data",
-            required=True,
-            sort_order=0,
-        )
-    )
-    ad_hoc = SemanticGraphSetModel(
-        id="ad-hoc-set",
-        name="Ad hoc",
-        scope_type="ontology_version",
-        scope_id="not-a-platform-ontology",
-        status="active",
-        source_signature="ad-hoc",
-    )
+    owned = ontology
+    ontology.model_graph_iri = "urn:r008:p1:model"
+    pass
+    ad_hoc = seed_model(in_memory_session, "ad-hoc-set", name="Ad hoc")
     in_memory_session.add_all([project, ontology, graph, owned, ad_hoc])
     in_memory_session.commit()
     mcp_principal_factory(in_memory_session, project_id=project.id, scopes=["model"])
 
-    graph_set_id = ad_hoc.id
+    ontology_id = ad_hoc.id
 
     def read_ad_hoc(_session, _driver, _embedding_client):
-        return graph_set_id
+        return ontology_id
 
-    with pytest.raises(PermissionError, match="owner cannot be resolved"):
-        _authorize_tool(in_memory_session, "describe_semantic_graph_set", read_ad_hoc)
+    with pytest.raises(PermissionError, match="outside the authorized Project"):
+        _authorize_tool(in_memory_session, "get_ontology_workspace_context", read_ad_hoc)
 
-    graph_set_id = owned.id
+    ontology_id = owned.id
 
     def read_owned(_session, _driver, _embedding_client):
-        return graph_set_id
+        return ontology_id
 
     assert (
-        _authorize_tool(in_memory_session, "describe_semantic_graph_set", read_owned).project_id
+        _authorize_tool(in_memory_session, "get_ontology_workspace_context", read_owned).project_id
         == project.id
     )
 

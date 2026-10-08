@@ -14,7 +14,7 @@ from app.api.routes import router
         {"target_type": "resource", "target_id": "https://example.test/Entity"},
         {"target_type": "statement", "target_id": "historical-statement", "include_history": True},
         {"target_type": "statement", "target_id": "historical-statement", "max_depth": 6},
-        {"graph_set_id": "forged", "graph_iri": "https://forged.test/g"},
+        {"ontology_id": "forged", "graph_iri": "https://forged.test/g"},
     ],
 )
 def test_lineage_route_is_unavailable(params):

@@ -37,9 +37,9 @@ pytest_plugins = ("conftest_stage4",)
 
 
 def test_read_model_entity_search(fake_graph_set_with_evidence):
-    svc, graph_set_id = fake_graph_set_with_evidence
+    svc, ontology_id = fake_graph_set_with_evidence
     envelope = svc.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="entity-search",
         q="acme",
         limit=50,
@@ -53,17 +53,17 @@ def test_read_model_entity_search(fake_graph_set_with_evidence):
     assert row["comment"] == ACME_COMMENT
     assert row["class_iri"] == ACME_CLASS
     assert row["class_label"] == ACME_CLASS_LABEL
-    # source_graph_iri is the asserted_data graph and assertion_kind is asserted.
-    assert row["source_graph_iri"] == EVIDENCE_DATA_GRAPH
+    # model_graph_iri is the asserted_data graph and assertion_kind is asserted.
+    assert row["ontology_id"] == ontology_id
     assert row["assertion_kind"] == "asserted"
-    assert row["graph_set_id"] == graph_set_id
+    assert row["ontology_id"] == ontology_id
 
 
 def test_read_model_entity_search_class_filter(fake_graph_set_with_evidence):
-    svc, graph_set_id = fake_graph_set_with_evidence
+    svc, ontology_id = fake_graph_set_with_evidence
     # Filter by the Acme class → still 1 row.
     envelope = svc.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="entity-search",
         q="acme",
         class_iri=ACME_CLASS,
@@ -76,7 +76,7 @@ def test_read_model_entity_search_class_filter(fake_graph_set_with_evidence):
     assert not class_filter_query.lstrip().startswith("VALUES ?class_iri")
     # Filter by a non-existent class → 0 rows.
     envelope_empty = svc.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="entity-search",
         q="acme",
         class_iri="http://example.org/Nonexistent",
@@ -90,7 +90,7 @@ def test_entity_search_fuses_exact_and_semantic_candidates_in_stable_order(
 ):
     """Vector candidates must enrich, never replace, decorated exact rows."""
 
-    svc, graph_set_id = fake_graph_set_with_evidence
+    svc, ontology_id = fake_graph_set_with_evidence
     store = svc.rdf_store
     exact_iri = "https://example.test/entity/workflow"
     lexical_iri = "https://example.test/entity/workflow-guide"
@@ -113,7 +113,7 @@ def test_entity_search_fuses_exact_and_semantic_candidates_in_stable_order(
     )
 
     class RetrievalStub:
-        def recall_graph_set(self, **kwargs):
+        def recall_ontology(self, **kwargs):
             assert kwargs["resource_kinds"] == {"instance"}
             return {
                 "candidates": [
@@ -157,7 +157,7 @@ def test_entity_search_fuses_exact_and_semantic_candidates_in_stable_order(
 
     svc.retrieval_service = RetrievalStub()
     envelope = svc.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="entity-search",
         q="workflow",
         limit=10,
@@ -166,7 +166,7 @@ def test_entity_search_fuses_exact_and_semantic_candidates_in_stable_order(
     items = envelope["items"]
     assert [item["iri"] for item in items] == [exact_iri, lexical_iri, semantic_iri]
     assert items[0]["comment"] == "The authoritative workflow description."
-    assert items[0]["source_graph_iri"] == EVIDENCE_DATA_GRAPH
+    assert items[0]["ontology_id"] == ontology_id
     assert items[0]["match"]["candidate_level"] == "exact"
     assert items[0]["match"]["method"] == "mixed"
     assert items[0]["match"]["semantic_similarity"] == 0.91
@@ -177,7 +177,7 @@ def test_entity_search_fuses_exact_and_semantic_candidates_in_stable_order(
 def test_entity_search_applies_limit_after_semantic_fusion_and_stable_sort(
     fake_graph_set_with_evidence,
 ):
-    svc, graph_set_id = fake_graph_set_with_evidence
+    svc, ontology_id = fake_graph_set_with_evidence
     store = svc.rdf_store
     alpha_iri = "https://example.test/entity/workflow-alpha"
     beta_iri = "https://example.test/entity/workflow-beta"
@@ -194,7 +194,7 @@ def test_entity_search_applies_limit_after_semantic_fusion_and_stable_sort(
         )
 
     class RetrievalStub:
-        def recall_graph_set(self, **_kwargs):
+        def recall_ontology(self, **_kwargs):
             return {
                 "candidates": [
                     {
@@ -224,7 +224,7 @@ def test_entity_search_applies_limit_after_semantic_fusion_and_stable_sort(
 
     svc.retrieval_service = RetrievalStub()
     envelope = svc.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="entity-search",
         q="workflow",
         limit=2,
@@ -249,7 +249,7 @@ def test_entity_search_returns_exact_governed_mapping_evidence(
         SemanticMappingModel,
     )
 
-    svc, graph_set_id = fake_graph_set_with_evidence
+    svc, ontology_id = fake_graph_set_with_evidence
     target_iri = "https://example.test/entity/customer"
     in_memory_session.add(
         ProjectModel(
@@ -259,13 +259,7 @@ def test_entity_search_returns_exact_governed_mapping_evidence(
         )
     )
     in_memory_session.flush()
-    in_memory_session.add(
-        OntologyModel(
-            id="ont-stage4",
-            project_id="project-stage4",
-            name="Stage 4 ontology",
-        )
-    )
+    in_memory_session.get(OntologyModel, ontology_id).project_id = "project-stage4"
     in_memory_session.flush()
     in_memory_session.add(
         DataSourceModel(
@@ -314,7 +308,7 @@ def test_entity_search_returns_exact_governed_mapping_evidence(
     in_memory_session.commit()
 
     class RetrievalStub:
-        def recall_graph_set(self, **_kwargs):
+        def recall_ontology(self, **_kwargs):
             return {
                 "candidates": [
                     {
@@ -344,7 +338,7 @@ def test_entity_search_returns_exact_governed_mapping_evidence(
 
     svc.retrieval_service = RetrievalStub()
     envelope = svc.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="entity-search",
         q="customer_id",
         limit=10,
@@ -366,7 +360,7 @@ def test_entity_search_returns_exact_governed_mapping_evidence(
     ]
 
     target_type_envelope = svc.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="entity-search",
         q="entity",
         limit=10,
@@ -392,12 +386,12 @@ def test_entity_search_returns_exact_governed_mapping_evidence(
 def test_fact_audit_queue_rejects_suspended_evidence_projection(
     fake_graph_set_with_evidence,
 ):
-    svc, graph_set_id = fake_graph_set_with_evidence
+    svc, ontology_id = fake_graph_set_with_evidence
     from app.services.semantic_read_model import ReadModelError
 
     with pytest.raises(ReadModelError, match="field_set=evidence is no longer supported"):
         svc.read_model(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             model_name="fact-audit-queue",
             include="asserted",
             field_set="evidence",

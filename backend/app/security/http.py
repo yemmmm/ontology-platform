@@ -22,7 +22,6 @@ from app.repositories.models import (
     BuildCheckpointModel,
     OntologyModel,
     ProjectModel,
-    SemanticGraphSetModel,
     SemanticGraphRegistryModel,
     SemanticProtectionSetModel,
     SemanticRuleDefinitionModel,
@@ -67,8 +66,8 @@ OWNER_RESOURCE_KEYS = frozenset(
         "association_id",
         "evidence_association_id",
         "question_id",
-        "graph_set_id",
-        "target_graph_set_id",
+        "ontology_id",
+        "target_ontology_id",
         "graph_iri",
         "target_graph_iri",
         "rule_id",
@@ -266,8 +265,8 @@ def current_principal(request: Request) -> AuthPrincipal:
 
 
 def _project_for_resource(session: Session, kind: str, value: str) -> str | None:
-    if kind == "target_graph_set_id":
-        kind = "graph_set_id"
+    if kind == "target_ontology_id":
+        kind = "ontology_id"
     if kind == "project_id":
         return value if session.get(ProjectModel, value) is not None else None
     if kind == "ontology_id":
@@ -312,20 +311,6 @@ def _project_for_resource(session: Session, kind: str, value: str) -> str | None
     if kind == "protection_set_id":
         row = session.get(SemanticProtectionSetModel, value)
         return row.project_id if row else None
-    if kind == "graph_set_id":
-        row = session.get(SemanticGraphSetModel, value)
-        if row and row.scope_type == "ontology" and row.scope_id:
-            ontology = session.get(OntologyModel, row.scope_id)
-            if ontology is None:
-                return None
-            for member in row.members:
-                if (
-                    _project_for_resource(session, "graph_iri", member.graph_iri)
-                    != ontology.project_id
-                ):
-                    return None
-            return ontology.project_id
-        return None
     if kind in {"graph_iri", "target_graph_iri"}:
         row = session.scalar(
             select(SemanticGraphRegistryModel).where(SemanticGraphRegistryModel.graph_iri == value)
@@ -346,10 +331,10 @@ def _project_for_resource(session: Session, kind: str, value: str) -> str | None
     if kind in {"run_id", "rule_run_id", "job_id", "projection_job_id"}:
         rule_run = session.get(SemanticRuleRunModel, value)
         if rule_run:
-            return _project_for_resource(session, "graph_set_id", rule_run.graph_set_id)
+            return _project_for_resource(session, "ontology_id", rule_run.ontology_id)
         projection = session.get(SemanticProjectionJobModel, value)
-        if projection and projection.graph_set_id:
-            return _project_for_resource(session, "graph_set_id", projection.graph_set_id)
+        if projection and projection.ontology_id:
+            return _project_for_resource(session, "ontology_id", projection.ontology_id)
         return None
     if kind in {"audit_id", "edit_audit_id"}:
         audit = session.get(SemanticEditAuditModel, value)
@@ -400,7 +385,7 @@ def _collect_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
             elif key.endswith("graph_iris") and isinstance(child, list):
                 output.extend(("graph_iri", item) for item in child if isinstance(item, str))
             elif key == "supersedes" and isinstance(child, str) and child:
-                output.append(("graph_set_id", child))
+                output.append(("ontology_id", child))
             _collect_resource_ids(child, output)
     elif isinstance(value, list):
         for child in value:
@@ -501,14 +486,6 @@ async def authorize_api_request(request: Request) -> None:
             collector(await request.json(), ids)
         except Exception:
             pass
-    if request.method == "POST" and request.url.path == "/api/semantic/graphs":
-        ids = [(kind, value) for kind, value in ids if kind != "graph_iri"]
-    if (
-        request.method == "POST"
-        and request.url.path in {"/api/semantic/graphs", "/api/semantic/graph-sets"}
-        and not any(kind == "ontology_id" for kind, _value in ids)
-    ):
-        raise HTTPException(status_code=403, detail={"code": "forbidden_scope"})
     explicit_project = any(kind == "project_id" for kind, _value in ids)
     org_only_without_scope = {
         "/api/semantic/edits/audits",

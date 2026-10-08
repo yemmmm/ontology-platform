@@ -39,7 +39,7 @@ class OntologyQueryReadiness:
     unavailable_reason: str | None
     workspace_version: str | None
     derived_warnings: tuple[dict[str, str], ...] = ()
-    graph_set_id: str | None = None
+    ontology_id: str | None = None
     read_scope: ScopeResolution | None = None
 
 
@@ -56,11 +56,11 @@ class OntologyQueryReadinessEvaluator:
             return OntologyQueryReadiness(False, "ontology_archived", None)
         try:
             workspace = self.workspace_service.context(ontology.id)
-            graph_set_id = workspace.get("default_graph_set_id")
-            if workspace.get("state") != "ready" or not graph_set_id:
+            ontology_id = workspace.get("ontology_id")
+            if workspace.get("state") != "ready" or not ontology_id:
                 return OntologyQueryReadiness(False, "workspace_not_ready", None)
             read_scope = self.read_scope_resolver.resolve(
-                graph_set_id,
+                ontology_id,
                 include="full-working-view",
                 allow_stale_derived=True,
             )
@@ -73,7 +73,7 @@ class OntologyQueryReadinessEvaluator:
             None,
             workspace_version,
             warnings,
-            graph_set_id,
+            ontology_id,
             read_scope,
         )
 
@@ -280,7 +280,7 @@ class AuthorizedScopeDiscoveryService:
             "queryable": readiness.queryable,
             "unavailable_reason": readiness.unavailable_reason,
             "workspace_version": readiness.workspace_version,
-            "graph_set_id": readiness.graph_set_id,
+            "ontology_id": readiness.ontology_id,
             "derived_warnings": list(readiness.derived_warnings),
             "matched_on": matched_on,
             "query_scope": {

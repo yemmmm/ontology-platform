@@ -62,7 +62,7 @@ def _handoff(
         "workspace_version": "workspace-e-1",
         "source_signature": "source-e-1",
         "build_session_id": "session-r23005-e",
-        "graph_set_id": "graph-r23005-e",
+
     }
     state["state_digest"] = model_state_digest(state)
     receipts: list[dict] = []
@@ -133,7 +133,7 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
     state = {
         "ontology_id": "ontology-r23005-e",
         "session_id": "session-r23005-e",
-        "graph_set_id": "graph-r23005-e",
+
     }
 
     def submit_arguments(
@@ -1229,11 +1229,11 @@ class R23005TicketPipelineTests(unittest.TestCase):
 
                 wrong_scope_artifact = carrier.register_platform_tool_result(
                     tool="get_modeling_context",
-                    arguments={"graph_set_id": "graph-other"},
+                    arguments={"ontology_id": "graph-other"},
                     result={
                         "structuredContent": {
                             "ok": True,
-                            "data": {"status": "succeeded", "graph_set_id": "graph-other"},
+                            "data": {"status": "succeeded", "ontology_id": "graph-other"},
                         }
                     },
                 )

@@ -48,7 +48,7 @@ def _ticket(round_suffix: str = "1") -> dict:
         "workspace_version": "workspace-1",
         "source_signature": "source-1",
         "build_session_id": "session-r23005",
-        "graph_set_id": "731daa4c-eff0-5702-bcee-32b64275736d",
+
     }
     state["state_digest"] = model_state_digest(state)
     sources = [{"path": "source.md", "sha256": "b" * 64}]
@@ -105,7 +105,7 @@ def _ticket(round_suffix: str = "1") -> dict:
         "platform_read_scope": {
             "project_id": state["project_id"],
             "ontology_id": state["ontology_id"],
-            "graph_set_id": state["graph_set_id"],
+
         },
         "model_state": state,
         "model_state_digest": state["state_digest"],

@@ -1,6 +1,6 @@
 """Vector projection document builder with deterministic ids and config hashes.
 
-Document ids are deterministic per ``(graph_set_id, iri, section_kind,
+Document ids are deterministic per ``(ontology_id, iri, section_kind,
 projection_version)``. The embedding config hash changes when model or
 version changes, which forces manifest staleness under Phase 6 reconcile
 when the embedding provider or model is updated.
@@ -64,7 +64,7 @@ class SemanticVectorProjectionService(ProjectionWriter):
 
     def _load_dataset(self, scope: ScopeResolution) -> Dataset:
         dataset = Dataset()
-        for iri in scope.source_graph_iris:
+        for iri in scope.model_graph_iris:
             content = self.rdf_store.get_graph(iri, RdfFormat.TRIG.value)
             if content:
                 dataset.parse(data=content, format=RdfFormat.TRIG.value)
@@ -92,14 +92,14 @@ class SemanticVectorProjectionService(ProjectionWriter):
             text_parts = [part for part in (label, comment) if part]
             documents.append(
                 {
-                    "id": self._deterministic_id(scope.graph_set_id, iri, version),
+                    "id": self._deterministic_id(scope.ontology_id, iri, version),
                     "iri": iri,
                     "text": " | ".join(text_parts),
-                    "source_graph_iris": [str(graph)],
+                    "model_graph_iris": [str(graph)],
                     "embedding_config_hash": config_hash,
                     "embedding_config": dict(self.embedding_config),
                     "source_signature": scope.source_signature,
-                    "graph_set_id": scope.graph_set_id,
+                    "ontology_id": scope.ontology_id,
                     "assertion_kind": self._assertion_kind(str(graph), scope),
                     "is_stale": is_stale,
                     "visibility_labels": [],
@@ -108,10 +108,10 @@ class SemanticVectorProjectionService(ProjectionWriter):
         return documents
 
     def _deterministic_id(
-        self, graph_set_id: str, iri: str, version: str
+        self, ontology_id: str, iri: str, version: str
     ) -> str:
         return hashlib.sha256(
-            f"{graph_set_id}|{iri}|resource|{version}".encode()
+            f"{ontology_id}|{iri}|resource|{version}".encode()
         ).hexdigest()
 
     def _config_hash(self) -> str:

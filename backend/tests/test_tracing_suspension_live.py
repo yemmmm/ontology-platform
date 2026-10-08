@@ -48,7 +48,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
     factory = create_session_factory(settings)
     store = RdfStoreRepository(settings.oxigraph_url)
     suffix = uuid4().hex
-    project_id = ontology_id = key_id = graph_set_id = key_actor = None
+    project_id = ontology_id = key_id = ontology_id = key_actor = None
     graphs: set[str] = set()
     rule_definition_ids: list[str] = []
     client = None
@@ -79,7 +79,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
         project_id = project["id"]
         ontology = post(f"/projects/{project_id}/ontologies", {"name": "Contract model"}, 201)
         ontology_id = ontology["id"]
-        graph_set_id = ontology["workspace"]["default_graph_set_id"]
+        ontology_id = ontology["workspace"]["ontology_id"]
         members = {item["role"]: item["graph_iri"] for item in ontology["workspace"]["members"]}
         graphs.update(members.values())
         retired_paths = [
@@ -87,7 +87,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
             f"/projects/{project_id}/evidence-references",
             f"/projects/{project_id}/evidence-associations",
             f"/ontologies/{ontology_id}/lineage",
-            f"/semantic/graph-sets/{graph_set_id}/missing-evidence-facts",
+            f"/semantic/ontologies/{ontology_id}/missing-evidence-facts",
         ]
         for retired_path in retired_paths:
             response = client.get("/api" + retired_path)
@@ -145,7 +145,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
         assert "Evidence inspection equipment" in store.get_graph(
             members["asserted_ontology"], "turtle"
         )
-        export_path = f"/api/semantic/graph-sets/{graph_set_id}/export"
+        export_path = f"/api/semantic/ontologies/{ontology_id}/export"
         ordinary_export = client.get(export_path)
         assert ordinary_export.status_code == 200, ordinary_export.text
         assert "Evidence inspection equipment" in ordinary_export.text
@@ -163,7 +163,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
 
         canonical = {
             "command_kind": "create_entity",
-            "graph_set_id": graph_set_id,
+            "ontology_id": ontology_id,
             "payload": {
                 "ontology_id": ontology_id,
                 "entity_id": suffix,
@@ -195,19 +195,19 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
             assert context["result_status"] == "matched"
             _assert_no_trace_fields(context)
         facts = get(
-            f"/semantic/graph-sets/{graph_set_id}/read-models/fact-audit-queue?kind=asserted"
+            f"/semantic/ontologies/{ontology_id}/read-models/fact-audit-queue?kind=asserted"
         )
         assert facts["items"]
         _assert_no_trace_fields(facts)
 
         for method, path in [("POST", "/semantic/rule-definitions"),
-                             ("POST", f"/semantic/graph-sets/{graph_set_id}/rule-runs"),
-                             ("POST", f"/semantic/graph-sets/{graph_set_id}/construct-runs"),
+                             ("POST", f"/semantic/ontologies/{ontology_id}/rule-runs"),
+                             ("POST", f"/semantic/ontologies/{ontology_id}/construct-runs"),
                              ("GET", "/semantic/rule-runs")]:
             response = client.request(method, "/api" + path, json={})
             assert response.status_code == 404, response.text
         reasoning = post(
-            f"/semantic/graph-sets/{graph_set_id}/reasoning-runs",
+            f"/semantic/ontologies/{ontology_id}/reasoning-runs",
             {
                 "tasks": ["consistency"],
                 "persist_result_graph": True,
@@ -248,7 +248,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
                         )
                     )
                 )
-            if graph_set_id:
+            if ontology_id:
                 for model in [
                     m.SemanticRuleRunModel,
                     m.SemanticReasoningRunModel,
@@ -256,7 +256,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
                 ]:
                     rows = session.scalars(
                         select(model).where(
-                            model.run_metadata["graph_set_id"].as_string() == graph_set_id
+                            model.run_metadata["ontology_id"].as_string() == ontology_id
                         )
                     ).all()
                     for row in rows:
@@ -281,10 +281,10 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
                 m.SemanticGraphRegistryModel,
             ]:
                 session.execute(delete(model).where(model.graph_iri.in_(graphs)))
-            if graph_set_id:
+            if ontology_id:
                 session.execute(
                     delete(m.SemanticGraphSetModel).where(
-                        m.SemanticGraphSetModel.id == graph_set_id
+                        m.SemanticGraphSetModel.id == ontology_id
                     )
                 )
             if key_id:

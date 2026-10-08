@@ -189,7 +189,7 @@ def test_live_binding_consumer_and_coordinator_raw_reports():
                         "freeze_digest": freeze, "bound_at": datetime.now(timezone.utc).isoformat(),
                         "ontologies": [{"project_id": project_id, "ontology_id": ontology_id,
                                         "workspace_state": {"state_digest": "host-observation"},
-                                        "graph_state": {"state_digest": "host-observation"},
+                                        "model_version_state": {"state_digest": "host-observation"},
                                         "authorized_read_tools": ["query_semantic_context"]}],
                     }
                     observed, graph_sets = _cq_observe_model_binding(
@@ -231,7 +231,7 @@ def test_live_binding_consumer_and_coordinator_raw_reports():
                         adapter.run_v3_acceptance_child(
                             packet, role_instructions=instructions, reports=reports,
                             read_key=read_key, platform_forwarder=forwarder.forward,
-                            graph_set_ids=graph_sets, timeout_seconds=300,
+                            ontology_ids=graph_sets, timeout_seconds=300,
                             response_persistence=_cq_platform_read_persistence(target),
                             examiner_observables=observables, teardown=teardown,
                         )

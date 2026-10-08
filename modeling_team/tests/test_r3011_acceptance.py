@@ -104,7 +104,7 @@ def _binding(
                 "project_id": "project-1",
                 "ontology_id": ontology_id,
                 "workspace_state": {"state_digest": "ws-1"},
-                "graph_state": {"state_digest": "graph-1"},
+                "model_version_state": {"state_digest": "graph-1"},
                 "authorized_read_tools": ["query_semantic_context"],
             }
         ],
@@ -574,7 +574,7 @@ def test_m12_cq_acceptance_rejects_an_unready_production_delivery(tmp_path):
 def test_m15_cq_acceptance_records_drift_and_never_reuses_a_pass(tmp_path, capsys):
     run_root = _write_run_root(tmp_path)
     handoff = json.loads((tmp_path / "handoff.json").read_text(encoding="utf-8"))
-    handoff["post_batch_model_binding"]["ontologies"][0]["graph_state"]["state_digest"] = "drift"
+    handoff["post_batch_model_binding"]["ontologies"][0]["model_version_state"]["state_digest"] = "drift"
     (tmp_path / "handoff.json").write_text(json.dumps(handoff), encoding="utf-8")
     assert _command(tmp_path, run_root) == 0
     batch_id = json.loads(capsys.readouterr().out)["batch_id"]
@@ -682,7 +682,7 @@ def _legacy_packet():
         platform_read_scope={
             "project_id": "project-1",
             "ontology_id": "ontology-1",
-            "graph_set_id": "graph-1",
+
         },
         proxy_capability={"capability_id": "proxy-1"},
         allowed_read_tools=list(PLATFORM_PROXY_READ_TOOLS),
@@ -721,7 +721,7 @@ def test_m13_v3_child_seam_dispatches_one_session_per_batch(tmp_path):
         reports=reports,
         read_key="read-key",
         platform_forwarder=lambda tool, arguments, key: {},
-        graph_set_ids={"ontology-1": "graph-set-1"},
+        ontology_ids={"ontology-1": "graph-set-1"},
     )
     try:
         assert captured["v3_batch"] is True
@@ -729,7 +729,7 @@ def test_m13_v3_child_seam_dispatches_one_session_per_batch(tmp_path):
         assert captured["session_id"].startswith("r3011-")
         assert captured["kind"] == "platform"
         assert captured["allowed_read_tools"] == ["query_semantic_context"]
-        assert captured["v3_graph_set_ids"] == {"ontology-1": "graph-set-1"}
+        assert captured["v3_ontology_ids"] == {"ontology-1": "graph-set-1"}
         assert captured["report_submit_payload"] == reports.append
         first_turn = captured["first_turn_input"][0]["text"]
         assert "One continuous session per batch" in first_turn
@@ -744,7 +744,7 @@ def test_m13_v3_child_seam_dispatches_one_session_per_batch(tmp_path):
                 packet,
                 role_instructions="submit one v3 report per question",
                 reports=reports,
-                graph_set_ids={"ontology-1": "graph-set-1"},
+                ontology_ids={"ontology-1": "graph-set-1"},
             )
         # Missing or incomplete graph sets are rejected before any private root
         # is allocated, so a rejected launch leaves nothing behind.
@@ -764,7 +764,7 @@ def test_m13_v3_child_seam_dispatches_one_session_per_batch(tmp_path):
                 reports=reports,
                 read_key="read-key",
                 platform_forwarder=lambda tool, arguments, key: {},
-                graph_set_ids={"ontology-1": ""},
+                ontology_ids={"ontology-1": ""},
             )
         after = set(tmp_path.iterdir()) | set(Path("/tmp").glob("r3011-acceptance-*"))
         assert before == after

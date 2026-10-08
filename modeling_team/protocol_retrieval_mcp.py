@@ -117,7 +117,6 @@ def _formal_envelope_schema(description: str) -> dict[str, Any]:
 
 def _candidate_item_schema() -> dict[str, Any]:
     fields = [
-        "graph_role",
         "subject",
         "predicate",
         "object",
@@ -130,7 +129,6 @@ def _candidate_item_schema() -> dict[str, Any]:
         "required": fields,
         "additionalProperties": False,
         "properties": {
-            "graph_role": {"type": "string", "enum": ["asserted_data"]},
             "subject": {"type": "string"},
             "predicate": {"type": "string"},
             "object": {"type": "string"},
@@ -143,8 +141,7 @@ def _candidate_item_schema() -> dict[str, Any]:
 
 def _materialized_quad_schema() -> dict[str, Any]:
     fields = [
-        "graph_role",
-        "source_graph_iri",
+        "ontology_id",
         "subject",
         "predicate",
         "object",
@@ -157,8 +154,7 @@ def _materialized_quad_schema() -> dict[str, Any]:
         "required": fields,
         "additionalProperties": False,
         "properties": {
-            "graph_role": {"type": "string", "enum": ["asserted_data"]},
-            "source_graph_iri": {"type": "string"},
+            "ontology_id": {"type": "string"},
             "subject": {"type": "string"},
             "predicate": {"type": "string"},
             "object": {"type": "string"},
@@ -225,7 +221,6 @@ def _validate_nested_proof(arguments: dict[str, Any]) -> str | None:
     if isinstance(lineage.get("max_depth"), bool) or not isinstance(lineage.get("max_depth"), int) or not 0 <= lineage["max_depth"] <= 5:
         return "statement_lineage.max_depth must be an integer from 0 through 5"
     item_fields = (
-        "graph_role",
         "subject",
         "predicate",
         "object",
@@ -234,8 +229,7 @@ def _validate_nested_proof(arguments: dict[str, Any]) -> str | None:
         "object_language",
     )
     quad_fields = (
-        "graph_role",
-        "source_graph_iri",
+        "ontology_id",
         "subject",
         "predicate",
         "object",
@@ -260,7 +254,7 @@ def _validate_nested_proof(arguments: dict[str, Any]) -> str | None:
         error = _exact_fields(item, item_fields, "candidate assertion item")
         if error:
             return error
-        if item.get("graph_role") != "asserted_data" or any(
+        if any(
             not isinstance(item.get(field), str) or not item[field]
             for field in ("subject", "predicate", "object", "object_kind")
         ) or any(
@@ -272,9 +266,9 @@ def _validate_nested_proof(arguments: dict[str, Any]) -> str | None:
         error = _exact_fields(quad, quad_fields, "materialized quad")
         if error:
             return error
-        if quad.get("graph_role") != "asserted_data" or any(
+        if any(
             not isinstance(quad.get(field), str) or not quad[field]
-            for field in ("source_graph_iri", "subject", "predicate", "object", "object_kind")
+            for field in ("ontology_id", "subject", "predicate", "object", "object_kind")
         ) or any(
             value is not None and (not isinstance(value, str) or not value)
             for value in (quad.get("object_datatype"), quad.get("object_language"))
@@ -538,7 +532,6 @@ def _proof_input_schema() -> dict[str, Any]:
     fields = list(V2_REQUIRED_PROOF_ARGUMENTS)
     item_fields = [
         "assertion_id",
-        "graph_role",
         "subject",
         "predicate",
         "object",
@@ -617,7 +610,6 @@ def _proof_input_schema() -> dict[str, Any]:
                             "additionalProperties": False,
                             "properties": {
                                 "assertion_id": {"type": "string"},
-                                "graph_role": {"type": "string", "enum": ["asserted_data"]},
                                 "subject": {"type": "string"},
                                 "predicate": {"type": "string"},
                                 "object": {"type": "string"},
@@ -727,7 +719,6 @@ def _candidate_item_evidence_map_schema() -> dict[str, Any]:
     """Advertise the only Protocol-owned candidate-map producer contract."""
     item_fields = [
         "assertion_id",
-        "graph_role",
         "subject",
         "predicate",
         "object",
@@ -782,7 +773,6 @@ def _candidate_item_evidence_map_schema() -> dict[str, Any]:
                             "additionalProperties": False,
                             "properties": {
                                 "assertion_id": {"type": "string", "minLength": 1},
-                                "graph_role": {"type": "string", "enum": ["asserted_data"]},
                                 "subject": {"type": "string", "minLength": 1},
                                 "predicate": {"type": "string", "minLength": 1},
                                 "object": {"type": "string", "minLength": 1},
@@ -1242,13 +1232,11 @@ def _model_association_tool() -> dict[str, Any]:
         ),
         "inputSchema": {
             "type": "object", "additionalProperties": False,
-            "required": ["project_id", "ontology_ids", "asserted_graph_iris", "read_pages",
+            "required": ["project_id", "ontology_ids", "read_pages",
                          "final_read", "semantic_base_iri"],
             "properties": {
                 "project_id": {"type": "string", "minLength": 1},
                 "ontology_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
-                "asserted_graph_iris": {"type": "array", "items": {"type": "string"},
-                                        "minItems": 1},
                 "read_pages": {"type": "array", "items": {"type": "object"},
                                "description": "Ordered {request, response} reads; preserve MCP envelopes."},
                 "final_read": {"type": "object", "description": "Same fixed query at OFFSET 0, result_limit=1, after the last page."},

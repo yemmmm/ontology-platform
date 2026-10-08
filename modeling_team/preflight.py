@@ -435,7 +435,7 @@ def _sanitize_evidence(value: Any) -> Any:
         "ontology_id",
         "run_id",
         "workspace_version",
-        "graph_set_id",
+        "ontology_id",
         "workspace_state",
         "modeling_batch_count",
         "recent_session_count",
@@ -446,7 +446,6 @@ def _sanitize_evidence(value: Any) -> Any:
         "handoff",
         "live",
         "ownership",
-        "default_graph_set",
     }
     if isinstance(value, Mapping):
         output: dict[str, Any] = {}
@@ -565,11 +564,8 @@ def canonical_existing_scope_preflight(
     )
     if not isinstance(context, Mapping) or context.get("state") != "ready":
         raise TeamConfigurationError("existing ontology workspace is not ready")
-    graph_set = context.get("default_graph_set", context.get("graph_set"))
-    graph_set_id = context.get("default_graph_set_id")
-    if graph_set_id is None and isinstance(graph_set, Mapping):
-        graph_set_id = graph_set.get("id")
-    if graph_set_id is None:
+    ontology_id = context.get("ontology_id")
+    if ontology_id is None:
         raise TeamConfigurationError("existing default Graph Set is unavailable")
 
     batches = _authenticated_json_get(
@@ -628,10 +624,9 @@ def canonical_existing_scope_preflight(
             raise TeamConfigurationError("existing scope has an in-flight Build Session")
     return {
         "project_id": project_id,
-        "ontology_id": ontology_id,
         "workspace_state": context.get("state"),
         "workspace_version": live_version,
-        "graph_set_id": str(graph_set_id),
+        "ontology_id": ontology_id,
         "modeling_batch_count": len(batch_items),
         "recent_session_count": len(recent_sessions),
         "active_session_count": len(active_sessions),

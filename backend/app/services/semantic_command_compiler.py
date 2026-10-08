@@ -177,7 +177,7 @@ def _ontology_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
 
 
 def _data_graph_iri(ns: SemanticNamespace, ontology_id: str) -> str:
-    return str(ns.graph("data", ontology_id))
+    return str(ns.graph("ontology", ontology_id))
 
 
 _NAMED_INDIVIDUAL_IRI = "http://www.w3.org/2002/07/owl#NamedIndividual"
@@ -598,7 +598,7 @@ def compile_update_fact(
     new_object_value = _required(payload, "new_object_value")
     old_object_is_iri = bool(payload.get("old_object_is_iri", False))
     new_object_is_iri = bool(payload.get("new_object_is_iri", False))
-    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
+    graph_iri = _data_graph_iri(ns, ontology_id)
 
     subject = _iri_term(subject_iri)
     predicate = _iri_term(predicate_iri)
@@ -635,7 +635,7 @@ def compile_delete_fact(
     predicate_iri = _required(payload, "predicate_iri")
     object_value = _required(payload, "object_value")
     object_is_iri = bool(payload.get("object_is_iri", False))
-    graph_iri = payload.get("graph_iri") or _data_graph_iri(ns, ontology_id)
+    graph_iri = _data_graph_iri(ns, ontology_id)
 
     subject = _iri_term(subject_iri)
     predicate = _iri_term(predicate_iri)
@@ -1315,10 +1315,10 @@ def compile_update_entity(
 def compile_delete_entity(
     payload: dict[str, Any], ns: SemanticNamespace, settings: Settings
 ) -> CompiledCommand:
-    """Stage 2 §5.4 — remove every triple whose subject or object is the entity.
+    """Remove entity statements; preserve incoming references for integrity validation.
 
-    Cascades to relations: any triple where this entity appears as the object
-    (e.g. ``<other> someRelation <entity>``) is also removed.
+    Shared model definitions must not disappear as an implicit deletion cascade.
+    Revise dependent relations/mappings explicitly in the same Batch.
     """
     ontology_id = _required(payload, "ontology_id")
     if "entity_id" not in payload and "entity_iri" not in payload:
@@ -1334,7 +1334,6 @@ def compile_delete_entity(
     entity_term = f"<{entity_iri}>"
     deletes = [
         (entity_term, "?p", "?o", graph_iri),
-        ("?s", "?p", entity_term, graph_iri),
     ]
     delta = RdfGraphDelta(inserts=[], deletes=deletes)
     source_ids = [entity_id] if entity_id else [entity_iri]
@@ -3199,6 +3198,11 @@ def compile_command(
     payload: dict[str, Any],
     settings: Settings,
 ) -> CompiledCommand:
+    retired = set(payload) & {"graph_set_id", "source_graph_iri", "graph_iri", "target_graph_iri"}
+    if retired:
+        raise InvalidCommandPayload(
+            f"Retired storage selectors {sorted(retired)}; select ontology_id instead"
+        )
     if "rule_definition" in payload:
         raise InvalidCommandPayload(
             "rule_definition is retired; express business rules as ordinary semantic knowledge"

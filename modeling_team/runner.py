@@ -2710,7 +2710,7 @@ class TeamRunner:
                 raise TeamConfigurationError("candidate assertion item is invalid")
             assertion_id = item.get("assertion_id")
             row = row_by_id.get(assertion_id)
-            if row is None or item.get("graph_role") != "asserted_data":
+            if row is None:
                 raise TeamConfigurationError("candidate assertion scope drifts from matrix")
             for field in ("subject", "predicate", "object", "object_kind", "object_datatype", "object_language"):
                 if item.get(field) != row.get(field):
@@ -5025,7 +5025,6 @@ class TeamRunner:
         """The admitted submission body; runs with a live admission ticket."""
 
         # R3.0-011 freeze ordering is enforced at this, the only platform write
-        # R3.0-011 freeze ordering is enforced at this, the only platform write
         # channel: while the competency-question pool is unfrozen, Modeling
         # cannot materialize anything, so the owning sequence (slice questions
         # reviewed and frozen before neutral candidate modeling) holds without
@@ -5608,7 +5607,7 @@ class TeamRunner:
                 "ontology_ids": list(ontology_ids),
             },
         )
-        mapping_scope = getattr(scope, "apply_mapping_reference_graph_sets", None)
+        mapping_scope = getattr(scope, "apply_mapping_reference_ontologies", None)
         mapping_dependencies = (
             scenario_map.get("cross_slice_dependencies")
             if isinstance(scenario_map, dict)
@@ -5622,7 +5621,7 @@ class TeamRunner:
         ):
             mapping_direction = getattr(scope, "mapping_reference_direction", None)
             try:
-                graph_set_ids = mapping_scope(
+                ontology_ids = mapping_scope(
                     scenario_map,
                     plan,
                     dependent_direction=mapping_direction,
@@ -5631,7 +5630,7 @@ class TeamRunner:
                 self._append_evidence(
                     "multi-slice-gate",
                     {
-                        "event": "mapping-reference-graph-sets-apply-failed",
+                        "event": "mapping-reference-ontologies-apply-failed",
                         "classification": "runtime/infrastructure",
                         "detail": str(exc),
                     },
@@ -5644,9 +5643,8 @@ class TeamRunner:
             self._append_evidence(
                 "multi-slice-gate",
                 {
-                    "event": "mapping-reference-graph-sets-applied",
-                    "ontology_ids": list(ontology_ids),
-                    "graph_set_ids": dict(graph_set_ids),
+                    "event": "mapping-reference-ontologies-applied",
+                    "ontology_ids": dict(ontology_ids),
                     "dependent_direction": mapping_direction,
                 },
             )

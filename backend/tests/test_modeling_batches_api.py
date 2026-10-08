@@ -86,8 +86,8 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     assert listed.json()["batches"][0]["batch_id"] == submitted["batch_id"]
     assert context.json()["workspace"]["workspace_version"] == version
     delta = client.get("/api/ontologies/o/semantic-read-models/delta")
-    assert delta.status_code == 200, delta.text
-    assert {warning["code"] for warning in delta.json()["warnings"]} == {"no_prior_graph_set"}
+    assert delta.status_code == 400, delta.text
+    assert delta.json()["detail"]["code"] == "unsupported_read_model"
 
 
 def test_rest_accepts_actor_hint_but_uses_authenticated_actor(

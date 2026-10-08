@@ -136,14 +136,14 @@ def test_candidate_rdf_and_governed_resource_roundtrip(in_memory_session):
         assert rows[key]["class_iris"] == []
         assert rows[key]["detail_fields"]["action_definition"] == expected
         response = client.get(f"/api/semantic/resources/{NS}entity/{key}",
-                              params={"graph_set_id": "gs-009"})
+                              params={"ontology_id": "gs-009"})
         assert response.status_code == 200
         assert response.json()["properties"]["action_definition"] == expected
     assert "action_definition" not in rows["missing-output"]["detail_fields"]
     assert rows["keep"]["iri"] != rows["others"]["iri"]
     assert rows["merged"]["detail_fields"]["parameter_definition"]["result_kind"] == "updated_input"
     duration = client.get(f"/api/semantic/resources/{NS}entity/duration",
-                          params={"graph_set_id": "gs-009"}).json()["properties"]
+                          params={"ontology_id": "gs-009"}).json()["properties"]
     assert duration["parameter_definition"]["unit"] == "小时"
     assert duration["parameter_definition"]["required"] is None
     assert duration["parameter_definition"]["enum_values"] == [0, 1, 2]
@@ -161,7 +161,7 @@ def test_candidate_rdf_and_governed_resource_roundtrip(in_memory_session):
     operations = decode_operations(store.dataset.graph(URIRef(ONTOLOGY_GRAPH)), Settings())
     assert len(operations) == 2
     assert operations[0]["preconditions"] == [{"name": "external", "description": "接口条件独立声明"}]
-    statements = client.get("/api/semantic/statements", params={"graph_set_id": "gs-009"}).json()
+    statements = client.get("/api/semantic/statements", params={"ontology_id": "gs-009"}).json()
     assert any(r.get("object") == NS + "operation/op-a" for r in statements["items"])
 
 
@@ -238,14 +238,14 @@ def test_hidden_parameter_rule_and_operation_do_not_leak(in_memory_session, monk
     monkeypatch.setattr(semantic, "_access_view", lambda *_args, **_kwargs: view)
     client = _client(store, in_memory_session)
     for iri in hidden:
-        response = client.get(f"/api/semantic/resources/{iri}", params={"graph_set_id": "gs-009"})
+        response = client.get(f"/api/semantic/resources/{iri}", params={"ontology_id": "gs-009"})
         assert response.status_code == 404
         assert response.json() == {"detail": f"Resource not found: {iri}"}
     before = _read_model(client, "entity-list")
     page = _read_model(client, "entity-list", limit=1)
     assert page["items"] == before["items"][:1]
     assert page["paging"]["visible_count"] == len(before["items"])
-    for path in ("/api/semantic/statements", "/api/semantic/graph-sets/gs-009/read-models/entity-relations"):
-        response = client.get(path, params={"graph_set_id": "gs-009"})
+    for path in ("/api/semantic/statements", "/api/semantic/ontologies/gs-009/read-models/entity-relations"):
+        response = client.get(path, params={"ontology_id": "gs-009"})
         assert response.status_code == 200
         assert all(iri not in response.text for iri in hidden)

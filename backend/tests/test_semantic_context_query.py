@@ -130,9 +130,9 @@ class RecordingLineage:
 
 
 class FakeShapes:
-    def read_merged_guidance(self, graph_set_id, class_iri):
+    def read_merged_guidance(self, ontology_id, class_iri):
         return {
-            "graph_set_id": graph_set_id,
+            "ontology_id": ontology_id,
             "generated_graph_iri": "https://secret.test/shapes",
             "fields": [
                 {
@@ -387,9 +387,9 @@ def test_small_context_page_keeps_asserted_facts_when_shapes_are_present(
     ]
 
     class CrowdedShapes(FakeShapes):
-        def read_merged_guidance(self, graph_set_id, class_iri):
+        def read_merged_guidance(self, ontology_id, class_iri):
             return {
-                "graph_set_id": graph_set_id,
+                "ontology_id": ontology_id,
                 "generated_graph_iri": "https://secret.test/shapes",
                 "fields": [
                     {
@@ -1048,10 +1048,10 @@ def test_property_label_matches_facts_only_within_the_same_ontology(in_memory_se
     graph("ontology", "ontology-2").add(
         (shared_property, RDFS.label, Literal("Private marker"))
     )
-    graph("data", "ontology-1").add(
+    graph("ontology", "ontology-1").add(
         (URIRef("urn:entity:billing"), shared_property, Literal("A"))
     )
-    graph("data", "ontology-2").add(
+    graph("ontology", "ontology-2").add(
         (URIRef("urn:entity:private"), shared_property, Literal("B"))
     )
 
@@ -1087,7 +1087,7 @@ def test_same_property_label_keeps_each_fact_in_its_own_ontology(in_memory_sessi
         dataset.graph(URIRef(f"urn:scope:graph/ontology/{ontology_id}")).add(
             (URIRef(property_iri), RDFS.label, Literal("Shared marker"))
         )
-        dataset.graph(URIRef(f"urn:scope:graph/data/{ontology_id}")).add(
+        dataset.graph(URIRef(f"urn:scope:graph/ontology/{ontology_id}")).add(
             (URIRef(subject_iri), URIRef(property_iri), Literal(ontology_id))
         )
 

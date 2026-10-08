@@ -1,6 +1,7 @@
 """Regression coverage for OWL/RDFS class compatibility in supported read models."""
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from collections.abc import Generator
 from types import SimpleNamespace
@@ -14,14 +15,14 @@ from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.modeling_batches import router as modeling_batches_router
 from app.api.semantic import router as semantic_router
 from app.core.config import Settings
-from app.repositories.models import SemanticGraphSetMemberModel, SemanticGraphSetModel
+from app.repositories.models import OntologyModel
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 
 GRAPH_IRI = "http://op.local/semantic/graph/ontology/class-types"
 OUT_OF_SCOPE_GRAPH_IRI = "http://op.local/semantic/graph/ontology/out-of-scope"
-GRAPH_SET_ID = "gs-class-types"
 ONTOLOGY_ID = "ont-class-types"
+GRAPH_SET_ID = ONTOLOGY_ID
 
 
 class _DatasetStore:
@@ -70,24 +71,7 @@ class _DatasetStore:
 
 
 def _seed_graph_set(session: Session) -> None:
-    graph_set = SemanticGraphSetModel(
-        id=GRAPH_SET_ID,
-        name="class-type-regression",
-        scope_type="ontology",
-        scope_id=ONTOLOGY_ID,
-        status="active",
-        source_signature="class-type-regression-v1",
-    )
-    graph_set.members.append(
-        SemanticGraphSetMemberModel(
-            id="member-class-types",
-            graph_iri=GRAPH_IRI,
-            role="asserted_ontology",
-            required=True,
-            sort_order=0,
-        )
-    )
-    session.add(graph_set)
+    seed_model(session, GRAPH_SET_ID, GRAPH_IRI)
     session.commit()
 
 
@@ -111,8 +95,7 @@ def _client(
         "context",
         lambda _self, ontology_id: {
             "state": "ready",
-            "ontology_id": ontology_id,
-            "default_graph_set_id": GRAPH_SET_ID,
+            "ontology_id": GRAPH_SET_ID,
         },
     )
     return TestClient(app)
@@ -124,7 +107,7 @@ def _assert_three_unique_classes(response) -> None:
     assert len(items) == 3
     assert len({item["iri"] for item in items}) == 3
     assert {item["label"] for item in items} == {"OWL only", "RDFS only", "Dual typed"}
-    assert {item["source_graph_iri"] for item in items} == {GRAPH_IRI}
+    assert {item["ontology_id"] for item in items} == {ONTOLOGY_ID}
 
 
 def test_class_read_models_support_owl_rdfs_and_dual_types_once(
@@ -138,5 +121,5 @@ def test_class_read_models_support_owl_rdfs_and_dual_types_once(
         client.get(f"/api/ontologies/{ONTOLOGY_ID}/semantic-read-models/classes")
     )
     _assert_three_unique_classes(
-        client.get(f"/api/semantic/graph-sets/{GRAPH_SET_ID}/read-models/class-detail")
+        client.get(f"/api/semantic/ontologies/{GRAPH_SET_ID}/read-models/class-detail")
     )

@@ -1,7 +1,7 @@
 """Stage 3 shared test fixtures.
 
 Provides:
-* ``fake_graph_set_with_members`` — (service, graph_set_id) tuple with a
+* ``fake_graph_set_with_members`` — (service, ontology_id) tuple with a
   registered graph set carrying asserted_ontology + asserted_data members.
 * ``second_graph_set_same_scope`` — graph set id of a second set under the
   same scope.
@@ -14,6 +14,7 @@ and ``backend/tests/test_semantic_read_model_stage2_execution.py``.
 """
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from collections.abc import Generator
 from typing import Any
@@ -28,8 +29,6 @@ from app.api.semantic import router
 from app.core.config import Settings
 from app.repositories.models import (
     SemanticEditAuditModel,
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
 )
 from app.repositories.rdf_store import RdfStoreRepository, SparqlResult, UpdateResult
 from app.services.semantic_read_model import SemanticReadModelService
@@ -39,9 +38,9 @@ from app.services.semantic_read_scope import SemanticReadScopeResolver
 PREFIX = "http://op.local/semantic/"
 GRAPH_PREFIX = f"{PREFIX}graph/"
 ONTOLOGY_GRAPH = f"{GRAPH_PREFIX}ontology/ont-stage3"
-DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-stage3"
+DATA_GRAPH = f"{GRAPH_PREFIX}ontology/ont-stage3"
 ONTOLOGY_GRAPH_B = f"{GRAPH_PREFIX}ontology/ont-stage3-b"
-DATA_GRAPH_B = f"{GRAPH_PREFIX}data/ont-stage3-b"
+DATA_GRAPH_B = f"{GRAPH_PREFIX}ontology/ont-stage3-b"
 
 
 class _Result:
@@ -155,34 +154,14 @@ def _settings() -> Settings:
 def _seed_graph_set(
     session: Session,
     *,
-    graph_set_id: str,
+    ontology_id: str,
     name: str,
     members: list[tuple[str, str]],
     scope_type: str = "ontology",
     scope_id: str = "ont-stage3",
     source_signature: str = "sig-stage3",
 ) -> str:
-    gs = SemanticGraphSetModel(
-        id=graph_set_id,
-        name=name,
-        scope_type=scope_type,
-        scope_id=scope_id,
-        status="active",
-        source_signature=source_signature,
-    )
-    session.add(gs)
-    for idx, (iri, role) in enumerate(members):
-        gs.members.append(
-            SemanticGraphSetMemberModel(
-                id=f"{graph_set_id}-m-{idx}",
-                graph_iri=iri,
-                role=role,
-                required=True,
-                sort_order=idx,
-            )
-        )
-    session.commit()
-    return graph_set_id
+    return seed_model(session, ontology_id, next(iri for iri, role in members if role in {"asserted_ontology", "asserted_data"}), name).id
 
 
 def _build_service(session: Session, store: FakeStore) -> SemanticReadModelService:
@@ -222,9 +201,9 @@ def fake_store() -> FakeStore:
 def fake_graph_set_with_members(
     in_memory_session: Session, fake_store: FakeStore
 ) -> tuple[SemanticReadModelService, str]:
-    graph_set_id = _seed_graph_set(
+    ontology_id = _seed_graph_set(
         in_memory_session,
-        graph_set_id="gs-stage3-base",
+        ontology_id="gs-stage3-base",
         name="stage3-base",
         members=[
             (ONTOLOGY_GRAPH, "asserted_ontology"),
@@ -232,7 +211,7 @@ def fake_graph_set_with_members(
         ],
     )
     service = _build_service(in_memory_session, fake_store)
-    return service, graph_set_id
+    return service, ontology_id
 
 
 @pytest.fixture()
@@ -241,7 +220,7 @@ def second_graph_set_same_scope(
 ) -> str:
     return _seed_graph_set(
         in_memory_session,
-        graph_set_id="gs-stage3-other",
+        ontology_id="gs-stage3-other",
         name="stage3-other",
         members=[
             (ONTOLOGY_GRAPH_B, "asserted_ontology"),
@@ -256,7 +235,7 @@ def second_graph_set_with_one_fewer_entity(
 ) -> str:
     """A second graph set whose asserted_data graph contains one fewer
     triple than the base fixture's DATA_GRAPH."""
-    other_data_graph = f"{GRAPH_PREFIX}data/ont-stage3-dim"
+    other_data_graph = f"{GRAPH_PREFIX}ontology/ont-stage3-dim"
     fake_store.set_triples(
         other_data_graph,
         [
@@ -273,7 +252,7 @@ def second_graph_set_with_one_fewer_entity(
     )
     return _seed_graph_set(
         in_memory_session,
-        graph_set_id="gs-stage3-dim",
+        ontology_id="gs-stage3-dim",
         name="stage3-dim",
         members=[
             (other_ontology_graph, "asserted_ontology"),

@@ -99,7 +99,7 @@ def test_mcp_tools_excludes_tracing_and_aliases():
     )
     assert all(not tool["source_file"].endswith("/evidence.py") for tool in tools)
     by_name = {tool["name"]: tool for tool in tools}
-    for name in ("compile_and_apply_canonical_command", "export_semantic_graph_set"):
+    for name in ("compile_and_apply_canonical_command", "export_semantic_ontology"):
         properties = by_name[name]["input_schema_summary"]["properties"]
         assert {
             "evidence",

@@ -35,8 +35,8 @@ P2A_TASK_ID = "p2a-protocol-production"
 P2A_PLAN_SCHEMA = "p2a-batch-plan/v1"
 P2A_CANDIDATE_REVISION = "p2a-generated-2"
 P2A_CANDIDATE_DELIVERY_ID = "p2a-candidate-delivery-1"
-P2A_SEMANTIC_DIGEST = "780ae626e0c94cbc51d5d8aff262bf7d4dbff07d6cb3d5ffbb6fd97a937f4e91"
-P2A_CANDIDATE_DIGEST = "22f03578616c3753f0d231308bb1da52bdff7a79cafdad0d5890f1f2c70f0ec7"
+P2A_SEMANTIC_DIGEST = "558a44e1077317abfe32164fe39e2e6871eacb464e7775c14426e4feccd8cbe1"
+P2A_CANDIDATE_DIGEST = "0d20e9165426b0661fcd586ad8c9d5a5d0ab2216768e4152e2fbc838f619988d"
 XSD_STRING = "http://www.w3.org/2001/XMLSchema#string"
 RDF_TYPE = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
 OWL_THING = "http://www.w3.org/2002/07/owl#Thing"
@@ -142,8 +142,6 @@ def _validate_frozen_candidate(candidate: Mapping[str, Any]) -> dict[str, Any]:
         _fail("candidate assertion set drifts")
     for assertion_id, terms in _EXPECTED_TERMS.items():
         item = by_assertion[assertion_id]
-        if item.get("graph_role") != "asserted_data":
-            _fail(f"{assertion_id} graph role drifts")
         if any(item.get(field) != expected for field, expected in terms.items()):
             _fail(f"{assertion_id} terms drift")
     return value

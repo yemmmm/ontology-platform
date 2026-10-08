@@ -50,7 +50,7 @@ def _seed_pointer(
         metadata["superseded_at"] = superseded_at.isoformat()
     pointer = SemanticDerivedResultPointerModel(
         id=f"ptr-{graph_iri}",
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         result_kind=kind,
         run_id=f"run-{graph_iri}",
         result_graph_iri=graph_iri,
@@ -133,12 +133,12 @@ def test_execute_refuses_unsupported_target_kind(gc_service) -> None:
         gc_service.execute(target_kind="rule_result")
 
 
-def test_execute_protects_source_graph_iris(gc_service) -> None:
+def test_execute_protects_model_graph_iris(gc_service) -> None:
     """Even if a non-derived category slips in, GC must refuse to delete it."""
     superseded_at = datetime.now(UTC) - timedelta(days=1)
     _seed_pointer(
         gc_service.session,
-        graph_iri=f"{PREFIX}data/demo",  # Not a reasoning-result graph
+        graph_iri=f"{PREFIX}ontology/demo",  # Not a reasoning-result graph
         status="superseded",
         superseded_at=superseded_at,
     )

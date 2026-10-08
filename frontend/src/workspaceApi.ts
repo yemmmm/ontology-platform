@@ -6,9 +6,9 @@ export const workspaceApi = {
   run: (project: string, run: string) => apiRequest<Run>(`/projects/${encodeURIComponent(project)}/workbench/runs/${encodeURIComponent(run)}`),
   questions: (project: string, run: string) => apiRequest<Run>(`/projects/${encodeURIComponent(project)}/workbench/runs/${encodeURIComponent(run)}/competency-questions`),
   ontologies: (project: string) => apiRequest<Ontology[]>(`/projects/${encodeURIComponent(project)}/ontologies`),
-  workspace: (ontology: string) => apiRequest<{ default_graph_set_id: string | null }>(`/ontologies/${encodeURIComponent(ontology)}/workspace-context`),
-  resources: (graph: string) => apiRequest<Envelope<Resource>>(`/semantic/graph-sets/${encodeURIComponent(graph)}/read-models/resource-list?include=asserted&field_set=detail&limit=500`),
-  relations: (graph: string) => apiRequest<Envelope<Relation>>(`/semantic/graph-sets/${encodeURIComponent(graph)}/read-models/resource-relations?include=asserted&limit=1000`),
+  workspace: (ontology: string) => apiRequest<{ ontology_id: string; state: "ready" | "incomplete" }>(`/ontologies/${encodeURIComponent(ontology)}/workspace-context`),
+  resources: (ontology: string) => apiRequest<Envelope<Resource>>(`/semantic/ontologies/${encodeURIComponent(ontology)}/read-models/resource-list?include=asserted&field_set=detail&limit=500`),
+  relations: (ontology: string) => apiRequest<Envelope<Relation>>(`/semantic/ontologies/${encodeURIComponent(ontology)}/read-models/resource-relations?include=asserted&limit=1000`),
   roles: (project: string) => apiRequest<AccessRole[]>(`/projects/${encodeURIComponent(project)}/semantic-access-roles`),
   recall: (project: string, query: string, cursor?: string) => apiRequest<RecallResponse>("/semantic/context:query", { method: "POST", body: JSON.stringify({
     project_id: project, scope_mode: "project", query,

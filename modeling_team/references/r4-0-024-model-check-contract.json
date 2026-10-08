@@ -11,14 +11,13 @@
   "scan": {
     "tool": "semantic_sparql_query",
     "scope_mode": "ontologies",
-    "graph_binding": "Use actual workspace members with role asserted_ontology or asserted_data from get_ontology_workspace_context for every authorized Ontology. Include approved shared/reference Ontologies needed for incoming and outgoing associations; enumerate actual scope, not just nodes created by the last Batch. Never guess graph IRIs or silently omit an authorized graph. No shapes, policy, evidence or inferred graphs.",
-    "query": "SELECT ?graph ?subject ?predicate ?object WHERE {\n  VALUES ?graph { {asserted_graphs} }\n  GRAPH ?graph { ?subject ?predicate ?object . }\n}\nORDER BY STR(?graph) STR(?subject) STR(?predicate) STR(?object)\n         (isIRI(?object)) (isBlank(?object))\n         (COALESCE(STR(DATATYPE(?object)), \"\")) (COALESCE(LANG(?object), \"\"))",
-    "pagination": "Bind {asserted_graphs} with unchanged absolute workspace graph IRIs in the supplied order, append a newline OFFSET 0, set result_limit (normally 1000), and do not add a smaller query LIMIT. The service bounds at result_limit+1 and reports truncated. Advance OFFSET by returned binding count; preserve ordered {request,response} pages until truncated=false. Do not silently skip a failed page. On elapsed/permission/read limits retain PARTIAL and the next offset, without infinite scanning.",
+    "graph_binding": "Use ontology_id and actual workspace model_revision for every authorized Ontology, including approved shared/reference Ontologies. Host tooling resolves the single model graph. No graph members, source graph selection or derived input.",
+    "query": "SELECT ?graph ?subject ?predicate ?object WHERE {\n  GRAPH ?graph { ?subject ?predicate ?object . }\n}\nORDER BY STR(?graph) STR(?subject) STR(?predicate) STR(?object)\n         (isIRI(?object)) (isBlank(?object))\n         (COALESCE(STR(DATATYPE(?object)), \"\")) (COALESCE(LANG(?object), \"\"))",
+    "pagination": "Use the unchanged fixed query with authorized ontology_ids, append a newline OFFSET 0, set result_limit (normally 1000), and do not add a query LIMIT. Host storage scope is resolved by the platform. Advance OFFSET by returned binding count; retain ordered raw pages until truncated=false. Failed, denied or bounded incomplete reads remain PARTIAL with the next offset.",
     "final_read": "After the last page, repeat the same bound query at OFFSET 0 with result_limit=1. Its result may be truncated; compare its current workspace/version/signature via the native helper, not its row count.",
     "helper_arguments": [
       "project_id",
       "ontology_ids",
-      "asserted_graph_iris",
       "read_pages",
       "final_read",
       "semantic_base_iri",

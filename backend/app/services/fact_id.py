@@ -53,7 +53,7 @@ def compute_fact_id(
 
     The object term must already be N-Triples serialized (use
     :func:`canonical_object_term`). Including ``graph_iri`` in the hash means
-    the same triple in two different graph_sets produces two distinct fact_ids
+    the same triple in two different Ontology model graphs produces two distinct fact_ids
     — this is intentional.
     """
     canonical = f"<{subject_iri}> <{predicate_iri}> {object_ntriples} <{graph_iri}>"

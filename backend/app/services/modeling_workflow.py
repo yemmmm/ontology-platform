@@ -26,7 +26,6 @@ from app.repositories.models import (
     ModelingWorkflowArtifactModel,
     OntologyLeaseModel,
     OntologyModel,
-    SemanticGraphSetModel,
     SemanticValidationRunModel,
 )
 from app.security.secrets import SecretDetected, scan_domain_payload
@@ -687,12 +686,6 @@ class ModelingWorkflowService:
         if ontology_id:
             ontology = self.session.get(OntologyModel, ontology_id)
             return ontology.project_id if ontology else None
-        graph_set_id = metadata.get("graph_set_id")
-        if graph_set_id:
-            graph_set = self.session.get(SemanticGraphSetModel, graph_set_id)
-            if graph_set and graph_set.scope_type == "ontology":
-                ontology = self.session.get(OntologyModel, graph_set.scope_id)
-                return ontology.project_id if ontology else None
         return None
 
     def _owned_ontology(self, project_id: str, ontology_id: str | None) -> OntologyModel | None:

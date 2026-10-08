@@ -214,7 +214,7 @@ class R23005SequentialCQTests(unittest.TestCase):
                 "workspace_version": "workspace-2",
                 "source_signature": "source-1",
                 "build_session_id": "session-r23005",
-                "graph_set_id": "graph-r23005",
+
             }
             changed_state["state_digest"] = model_state_digest(changed_state)
             runner, carrier, phase, first, second = _prepared_runner(

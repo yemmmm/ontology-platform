@@ -58,7 +58,6 @@ LEDGER_RELATIVE = Path("workspaces/modeling-runs/.r2-3-003-start-ledger.jsonl")
 EXPECTED_SCOPE = {
     "project_id": "7fc146d8-c76f-417b-9314-854544f269fc",
     "ontology_id": "fd762f52-2f5e-4bc0-902a-5583135ab64d",
-    "graph_set_id": "277fd804-e485-5156-b7a7-ca6a1081f950",
     "workspace_version": "18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0",
     "workspace_state": "ready",
 }
@@ -128,7 +127,7 @@ def prepare_r23006_operation(repository_root: Path) -> PreparedR23006Operation:
         raise R23006OperationError("retained ticket digest is invalid")
     if ticket.get("continuation_id") != "r23003-acceptance-only-start20-2":
         raise R23006OperationError("retained continuation identity drifted")
-    if ticket.get("scope") != EXPECTED_SCOPE or ticket.get("operation_limits") != EXPECTED_LIMITS:
+    if {key: ticket.get("scope", {}).get(key) for key in EXPECTED_SCOPE} != EXPECTED_SCOPE or ticket.get("operation_limits") != EXPECTED_LIMITS:
         raise R23006OperationError("retained scope or operation limits drifted")
 
     standard_path = root / STANDARD_RELATIVE
@@ -214,8 +213,8 @@ def prepare_r23006_operation(repository_root: Path) -> PreparedR23006Operation:
     if len(ticket_tools) != len(request_allowlist) or len(set(ticket_tools)) != len(ticket_tools):
         raise R23006OperationError("retained request allowlist is invalid")
     for item in request_allowlist:
-        if item.get("scope") != {
-            key: EXPECTED_SCOPE[key] for key in ("project_id", "ontology_id", "graph_set_id")
+        if {key: item.get("scope", {}).get(key) for key in ("project_id", "ontology_id")} != {
+            key: EXPECTED_SCOPE[key] for key in ("project_id", "ontology_id", "ontology_id")
         }:
             raise R23006OperationError("retained request allowlist scope drifted")
     # The Platform Examiner is a semantic consumer: it uses only the generic
@@ -265,7 +264,6 @@ def prepare_r23006_operation(repository_root: Path) -> PreparedR23006Operation:
                 "platform_read_scope": {
                     "project_id": scope["project_id"],
                     "ontology_id": scope["ontology_id"],
-                    "graph_set_id": scope["graph_set_id"],
                 },
                 "proxy_capability": {
                     "capability_id": _digest(
@@ -1018,7 +1016,7 @@ class _ProductionOperationHost:
         workspace = platform.get(paths[2])
         if not isinstance(workspace, Mapping) or (
             workspace.get("state") != EXPECTED_SCOPE["workspace_state"]
-            or workspace.get("default_graph_set_id") != EXPECTED_SCOPE["graph_set_id"]
+            or workspace.get("ontology_id") != EXPECTED_SCOPE["ontology_id"]
         ):
             raise R23006OperationError("retained workspace state drifted")
         modeling_context = platform.get(paths[3])

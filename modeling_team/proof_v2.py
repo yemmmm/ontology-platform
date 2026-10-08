@@ -48,7 +48,6 @@ CANDIDATE_FIELDS = {
 }
 CANDIDATE_ITEM_FIELDS = {
     "assertion_id",
-    "graph_role",
     "subject",
     "predicate",
     "object",
@@ -78,8 +77,7 @@ TERM_BINDING_FIELDS = {
     "resource_output_iri",
 }
 QUAD_FIELDS = {
-    "graph_role",
-    "source_graph_iri",
+    "ontology_id",
     "subject",
     "predicate",
     "object",
@@ -237,8 +235,7 @@ def _validate_candidate(candidate: Any) -> dict[str, Any]:
         if assertion_id in assertion_ids:
             _fail("candidate assertion_id is duplicated")
         assertion_ids.add(assertion_id)
-        if item.get("graph_role") != "asserted_data":
-            _fail("candidate assertion graph role is invalid")
+
         for field in ("subject", "predicate", "object", "object_kind"):
             _string(item.get(field), f"candidate assertion {field}")
         if item.get("object_datatype") is not None:
@@ -567,24 +564,25 @@ def _envelope(value: Any, name: str) -> dict[str, Any]:
     return value["data"]
 
 
-def _graph_roles(workspace: dict[str, Any], ontology_id: str) -> dict[str, str]:
-    members = workspace.get("members")
-    if not isinstance(members, list):
-        _fail("workspace graph members are invalid")
-    roles: dict[str, str] = {}
-    for member in members:
-        if not isinstance(member, dict):
-            _fail("workspace graph member is invalid")
-        role = member.get("role")
-        if role not in {"asserted_ontology", "asserted_data", "shapes"}:
-            continue
-        if role in roles or member.get("owner_type") != "ontology" or member.get("owner_id") != ontology_id:
-            _fail("workspace graph role is invalid")
-        _string(member.get("graph_iri"), "workspace graph_iri")
-        roles[role] = member["graph_iri"]
-    if set(roles) != {"asserted_ontology", "asserted_data", "shapes"}:
-        _fail("workspace graph roles are incomplete")
-    return roles
+def _model_storage(proof: dict[str, Any], ontology_id: str) -> str:
+    locations = set()
+    for envelope in proof.get("batch_details", []):
+        detail = envelope.get("data", envelope)
+        if detail.get("ontology_id") not in {None, ontology_id}:
+            raise ValueError("Receipt belongs to another Ontology")
+        for attempt in detail.get("attempts", []):
+            if attempt.get("attempt_status") != "applied":
+                continue
+            target = attempt.get("target", {})
+            if target.get("ontology_id") not in {None, ontology_id}:
+                raise ValueError("Receipt target belongs to another Ontology")
+            locations.update(row["graph_iri"] for row in target.get("graphs", []))
+            locations.update(quad[3] for quad in attempt.get("normalized_delta", {}).get("inserts", []))
+    if len(locations) != 1:
+        raise ValueError("Applied receipts must bind one Ontology model storage target")
+    iri = locations.pop()
+    return iri
+
 
 
 def _counts(context: dict[str, Any]) -> dict[str, int]:
@@ -599,7 +597,7 @@ def _quad_tuple(value: Any) -> tuple[str, str, str, str]:
     if isinstance(value, list) and len(value) == 4 and all(isinstance(item, str) and item for item in value):
         return value[0], value[1], value[2], value[3]
     if isinstance(value, dict):
-        graph = value.get("graph", value.get("source_graph_iri"))
+        graph = value.get("graph", value.get("model_graph_iri"))
         if all(isinstance(value.get(field), str) and value[field] for field in ("subject", "predicate", "object")) and isinstance(graph, str) and graph:
             return value["subject"], value["predicate"], value["object"], graph
     _fail("normalized delta quad is invalid")
@@ -623,7 +621,7 @@ def _fact_id_from_quad(quad: tuple[str, str, str, str], object_kind: str | None 
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def _collect_receipts(details: Sequence[Any], graphs: Mapping[str, str]) -> tuple[dict[tuple[str, str], str], dict[tuple[str, str, str], list[tuple[int, tuple[str, str, str, str], dict[str, Any]]]], list[tuple[str, str, dict[str, Any]]]]:
+def _collect_receipts(details: Sequence[Any], model_storage: str) -> tuple[dict[tuple[str, str], str], dict[tuple[str, str, str], list[tuple[int, tuple[str, str, str, str], dict[str, Any]]]], list[tuple[str, str, dict[str, Any]]]]:
     outputs: dict[tuple[str, str], str] = {}
     deltas: dict[tuple[str, str, str], list[tuple[int, tuple[str, str, str, str], dict[str, Any]]]] = defaultdict(list)
     applied: list[tuple[str, str, dict[str, Any]]] = []
@@ -650,7 +648,7 @@ def _collect_receipts(details: Sequence[Any], graphs: Mapping[str, str]) -> tupl
                 _fail("applied normalized_delta is invalid")
             for index, raw_quad in enumerate(inserts):
                 quad = _quad_tuple(raw_quad)
-                if quad[3] not in graphs.values():
+                if quad[3] != model_storage:
                     _fail("applied delta targets an unknown graph")
                 raw_value = raw_quad if isinstance(raw_quad, dict) else list(quad)
                 digest = canonical_digest(raw_value)
@@ -813,13 +811,13 @@ def _assert_materialized_terms(
         _fail("materialized_quads contain unbound assertions")
 
 
-def _validate_quads(raw_quads: Any, graph: str) -> list[dict[str, Any]]:
+def _validate_quads(raw_quads: Any, ontology_id: str) -> list[dict[str, Any]]:
     if not isinstance(raw_quads, list) or not raw_quads:
         _fail("materialized_quads are empty")
     normalized: list[dict[str, Any]] = []
     for raw in raw_quads:
         quad = _exact(raw, QUAD_FIELDS, "materialized quad")
-        if quad.get("graph_role") != "asserted_data" or quad.get("source_graph_iri") != graph:
+        if quad.get("ontology_id") != ontology_id:
             _fail("materialized quad graph is invalid")
         for field in ("subject", "predicate", "object", "object_kind"):
             _string(quad.get(field), f"materialized quad {field}")
@@ -1020,10 +1018,10 @@ def verify_proof_v2(proof: Mapping[str, Any]) -> dict[str, Any]:
         _fail("modeling context identity drifts")
     if workspace.get("ontology_id") != ontology_id or workspace.get("state") != "ready":
         _fail("workspace does not bind the selected ontology")
-    graph_set_id = _string(workspace.get("default_graph_set_id"), "default_graph_set_id")
+    ontology_id = _string(workspace.get("ontology_id"), "ontology_id")
     source_signature = _string(workspace.get("source_signature"), "source_signature")
-    assert ontology_id is not None and graph_set_id is not None and source_signature is not None
-    graphs = _graph_roles(workspace, ontology_id)
+    assert ontology_id is not None and ontology_id is not None and source_signature is not None
+    model_storage = _model_storage(proof_value, ontology_id)
     initial_counts = _counts(initial)
     _counts(final)
     if any(initial_counts.values()):
@@ -1049,13 +1047,13 @@ def verify_proof_v2(proof: Mapping[str, Any]) -> dict[str, Any]:
     detail_ids = {_string(value.get("batch_id"), "batch_id") for value in details}
     if None in detail_ids or detail_ids != inventory_ids or len(detail_ids) != len(details):
         _fail("batch inventory does not exactly match details")
-    outputs, deltas, applied = _collect_receipts(details, graphs)
+    outputs, deltas, applied = _collect_receipts(details, model_storage)
     if not applied:
         _fail("native proof v2 requires an applied write batch")
     candidate = _validate_candidate(proof_value["candidate_required_assertions"])
     _validate_candidate_binding_scope(candidate, candidate.get("matrix_binding"))
     term_bindings = _validate_term_bindings(candidate, proof_value["term_bindings"], outputs, deltas)
-    quads = _validate_quads(proof_value["materialized_quads"], graphs["asserted_data"])
+    quads = _validate_quads(proof_value["materialized_quads"], ontology_id)
     _assert_materialized_terms(candidate, term_bindings, quads, outputs, deltas)
     evidence_bindings_raw = proof_value["evidence_bindings"]
     if not isinstance(evidence_bindings_raw, list) or not evidence_bindings_raw:
@@ -1097,7 +1095,7 @@ def verify_proof_v2(proof: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(statements, dict):
         _fail("statement read request is invalid")
     statements_data = _envelope(statements.get("response"), "statement read")
-    if statements_data.get("graph_set_id") != graph_set_id or statements_data.get("source_signature") != source_signature or statements_data.get("model_name") != "statement-list" or statements_data.get("include") != "asserted":
+    if statements_data.get("ontology_id") != ontology_id or statements_data.get("source_signature") != source_signature or statements_data.get("model_name") != "statement-list" or statements_data.get("include") != "asserted":
         _fail("statement read does not bind the verified workspace")
     statement_items = statements_data.get("items")
     if not isinstance(statement_items, list):

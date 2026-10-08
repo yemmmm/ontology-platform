@@ -592,7 +592,7 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
                 "platform_read_scope": {
                     "project_id": "project",
                     "ontology_id": "ontology",
-                    "graph_set_id": "graph",
+
                 },
                 "model_state_digest": "f" * 64,
                 "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),

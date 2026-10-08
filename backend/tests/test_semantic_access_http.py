@@ -260,13 +260,9 @@ def http_env(in_memory_session):
     OntologyWorkspaceService(session, settings).ensure(ontology_a)
     OntologyWorkspaceService(session, settings).ensure(ontology_c)
     graph_set_a = OntologyWorkspaceService(session, settings).context(ontology_a.id)[
-        "default_graph_set_id"
+        "ontology_id"
     ]
-    data_graph = next(
-        member["graph_iri"]
-        for member in OntologyWorkspaceService(session, settings).context(ontology_a.id)["members"]
-        if member["role"] == "asserted_data"
-    )
+    data_graph = ontology_a.model_graph_iri
     protection_set = SemanticProtectionSetModel(
         id="ps", project_id="p", name="cost-visibility", allowed_grants=["cost-visibility"]
     )
@@ -353,7 +349,7 @@ def test_resource_route_returns_not_found_for_protected_member(http_env):
 
     denied = client.get(
         f"/api/semantic/resources/{COST_IRI}",
-        params={"graph_set_id": graph_set},
+        params={"ontology_id": graph_set},
         headers=http_env["operator"],
     )
     assert denied.status_code == 404
@@ -361,7 +357,7 @@ def test_resource_route_returns_not_found_for_protected_member(http_env):
 
     allowed = client.get(
         f"/api/semantic/resources/{PUBLIC_IRI}",
-        params={"graph_set_id": graph_set},
+        params={"ontology_id": graph_set},
         headers=http_env["operator"],
     )
     assert allowed.status_code == 200
@@ -369,7 +365,7 @@ def test_resource_route_returns_not_found_for_protected_member(http_env):
 
     manager = client.get(
         f"/api/semantic/resources/{COST_IRI}",
-        params={"graph_set_id": graph_set},
+        params={"ontology_id": graph_set},
         headers=http_env["manager"],
     )
     assert manager.status_code == 200
@@ -411,7 +407,7 @@ def test_resource_route_reads_r4010_mapping_resources(
     monkeypatch.setattr(AccessStore, "query_sparql", generic_overlap)
     response = http_env["client"].get(
         f"/api/semantic/resources/{resource_iri}",
-        params={"graph_set_id": http_env["graph_set_a"]},
+        params={"ontology_id": http_env["graph_set_a"]},
         headers=http_env["operator"],
     )
     assert response.status_code == 200, response.text
@@ -426,7 +422,7 @@ def test_statements_route_filters_rows_before_pagination(http_env):
     client = http_env["client"]
     response = client.get(
         "/api/semantic/statements",
-        params={"graph_set_id": http_env["graph_set_a"]},
+        params={"ontology_id": http_env["graph_set_a"]},
         headers=http_env["operator"],
     )
     assert response.status_code == 200, response.text
@@ -436,7 +432,7 @@ def test_statements_route_filters_rows_before_pagination(http_env):
 
     manager = client.get(
         "/api/semantic/statements",
-        params={"graph_set_id": http_env["graph_set_a"]},
+        params={"ontology_id": http_env["graph_set_a"]},
         headers=http_env["manager"],
     )
     assert manager.status_code == 200
@@ -446,7 +442,7 @@ def test_statements_route_filters_rows_before_pagination(http_env):
 def test_read_model_route_filters_protected_rows(http_env):
     client = http_env["client"]
     response = client.get(
-        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/read-models/entity-list",
+        f"/api/semantic/ontologies/{http_env['graph_set_a']}/read-models/entity-list",
         headers=http_env["operator"],
     )
     assert response.status_code == 200, response.text
@@ -457,7 +453,7 @@ def test_read_model_route_filters_protected_rows(http_env):
 @pytest.mark.parametrize("include_evidence", ["true", "false"])
 def test_export_graph_set_rejects_retired_include_evidence(http_env, include_evidence):
     response = http_env["client"].get(
-        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/export",
+        f"/api/semantic/ontologies/{http_env['graph_set_a']}/export",
         params={"include_evidence": include_evidence},
         headers=http_env["operator"],
     )
@@ -471,7 +467,7 @@ def test_export_graph_set_rejects_retired_include_evidence(http_env, include_evi
 def test_export_graph_set_route_omits_protected_quads(http_env):
     client = http_env["client"]
     response = client.get(
-        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/export",
+        f"/api/semantic/ontologies/{http_env['graph_set_a']}/export",
         params={"format": "trig"},
         headers=http_env["operator"],
     )
@@ -480,7 +476,7 @@ def test_export_graph_set_route_omits_protected_quads(http_env):
     assert "PublicResource" in response.text
 
     manager = client.get(
-        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/export",
+        f"/api/semantic/ontologies/{http_env['graph_set_a']}/export",
         params={"format": "trig"},
         headers=http_env["manager"],
     )
@@ -576,7 +572,7 @@ def test_read_model_route_filters_mapping_rows_by_reference_and_json(http_env):
     column-mappings JSON; the granted manager sees both."""
     client = http_env["client"]
     operator = client.get(
-        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/read-models/table-mapping-list",
+        f"/api/semantic/ontologies/{http_env['graph_set_a']}/read-models/table-mapping-list",
         headers=http_env["operator"],
     )
     assert operator.status_code == 200, operator.text
@@ -585,7 +581,7 @@ def test_read_model_route_filters_mapping_rows_by_reference_and_json(http_env):
     assert "service.cost" not in operator.text
 
     manager = client.get(
-        f"/api/semantic/graph-sets/{http_env['graph_set_a']}/read-models/table-mapping-list",
+        f"/api/semantic/ontologies/{http_env['graph_set_a']}/read-models/table-mapping-list",
         headers=http_env["manager"],
     )
     assert manager.status_code == 200, manager.text

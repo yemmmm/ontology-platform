@@ -341,25 +341,102 @@
   "batch_envelope": {
     "additional_properties": false,
     "fields": {
-      "session_id": {"type": "string", "required": true, "description": "MCP tool argument; identifies the Build Session."},
-      "client_batch_id": {"type": "string", "required": true, "min_length": 1},
-      "ontology_id": {"type": "string", "required": true, "min_length": 1},
-      "idempotency_key": {"type": "string", "required": true, "min_length": 1},
-      "expected_workspace_version": {"type": "string", "required": true, "min_length": 1, "invariant": "Required in every mode and must equal the current workspace version at Service submission."},
-      "items": {"type": "array", "required": true, "min_items": 1, "items": "item_envelope"},
-      "mode": {"type": "string", "required": false, "default": "apply_atomic", "enum": ["dry_run", "apply_atomic", "apply_partial"]},
-      "lease_token": {"type": ["string", "null"], "required": false, "default": null, "invariants": {"dry_run": "MUST be omitted or null", "apply_atomic": "MUST be a non-empty string", "apply_partial": "MUST be a non-empty string"}}
+      "session_id": {
+        "type": "string",
+        "required": true,
+        "description": "MCP tool argument; identifies the Build Session."
+      },
+      "client_batch_id": {
+        "type": "string",
+        "required": true,
+        "min_length": 1
+      },
+      "ontology_id": {
+        "type": "string",
+        "required": true,
+        "min_length": 1
+      },
+      "idempotency_key": {
+        "type": "string",
+        "required": true,
+        "min_length": 1
+      },
+      "expected_workspace_version": {
+        "type": "string",
+        "required": true,
+        "min_length": 1,
+        "invariant": "Required in every mode and must equal the current workspace version at Service submission."
+      },
+      "items": {
+        "type": "array",
+        "required": true,
+        "min_items": 1,
+        "items": "item_envelope"
+      },
+      "mode": {
+        "type": "string",
+        "required": false,
+        "default": "apply_atomic",
+        "enum": [
+          "dry_run",
+          "apply_atomic",
+          "apply_partial"
+        ]
+      },
+      "lease_token": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "required": false,
+        "default": null,
+        "invariants": {
+          "dry_run": "MUST be omitted or null",
+          "apply_atomic": "MUST be a non-empty string",
+          "apply_partial": "MUST be a non-empty string"
+        }
+      }
     }
   },
   "item_envelope": {
     "additional_properties": false,
     "fields": {
-      "client_item_id": {"type": "string", "required": true, "min_length": 1},
-      "command_kind": {"type": "string", "required": true, "min_length": 1},
-      "payload": {"type": "object", "required": true},
-      "depends_on": {"type": "array", "items": "string", "required": false, "default": [], "invariant": "Every entry must name a client_item_id in THIS SAME batch: the platform resolves dependencies against the current batch's items only, so naming an item from an earlier batch yields a blocking invalid_dependency finding. Cross-batch ordering is guaranteed by submitting batches sequentially in dependency order and is never expressed in the payload"},
-      "rationale": {"type": ["string", "null"], "required": false, "default": null},
-      "competency_question_ids": {"type": "array", "items": "string", "required": false, "default": [], "invariant": "Keep empty (the default) unless the platform project actually contains those CompetencyQuestion rows: R3.0-011 question pools are run artifacts only and are never registered as platform resources, so syncing pool IDs here yields blocking competency_question_not_found findings and the batch fails closed"}
+      "client_item_id": {
+        "type": "string",
+        "required": true,
+        "min_length": 1
+      },
+      "command_kind": {
+        "type": "string",
+        "required": true,
+        "min_length": 1
+      },
+      "payload": {
+        "type": "object",
+        "required": true
+      },
+      "depends_on": {
+        "type": "array",
+        "items": "string",
+        "required": false,
+        "default": [],
+        "invariant": "Every entry must name a client_item_id in THIS SAME batch: the platform resolves dependencies against the current batch's items only, so naming an item from an earlier batch yields a blocking invalid_dependency finding. Cross-batch ordering is guaranteed by submitting batches sequentially in dependency order and is never expressed in the payload"
+      },
+      "rationale": {
+        "type": [
+          "string",
+          "null"
+        ],
+        "required": false,
+        "default": null
+      },
+      "competency_question_ids": {
+        "type": "array",
+        "items": "string",
+        "required": false,
+        "default": [],
+        "invariant": "Keep empty (the default) unless the platform project actually contains those CompetencyQuestion rows: R3.0-011 question pools are run artifacts only and are never registered as platform resources, so syncing pool IDs here yields blocking competency_question_not_found findings and the batch fails closed"
+      }
     }
   },
   "create_payloads": {
@@ -739,91 +816,320 @@
     },
     "create_class": {
       "additional_properties": false,
-      "required": ["name"],
+      "required": [
+        "name"
+      ],
       "fields": {
-        "class_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
-        "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
-        "description": {"type": "string", "required": false},
-        "aliases": {"type": "array", "items": "string", "required": false, "default": []},
-        "parent_class_ids": {"type": "array", "items": "string", "required": false, "default": []},
-        "external_mappings": {"type": "object", "required": false, "default": {}},
-        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
+        "class_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "aliases": {
+          "type": "array",
+          "items": "string",
+          "required": false,
+          "default": []
+        },
+        "parent_class_ids": {
+          "type": "array",
+          "items": "string",
+          "required": false,
+          "default": []
+        },
+        "external_mappings": {
+          "type": "object",
+          "required": false,
+          "default": {}
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."
+        }
       }
     },
     "create_property": {
       "additional_properties": false,
-      "required": ["name"],
-      "at_most_one_required": ["datatype", "object_class_id"],
+      "required": [
+        "name"
+      ],
+      "at_most_one_required": [
+        "datatype",
+        "object_class_id"
+      ],
       "fields": {
-        "property_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
-        "class_id": {"type": "string", "required": false, "server_current_acceptance": "approved domain Class is optional (R3.0-009 §4.3); compiler does not prevalidate scalar type; Protocol MUST send a string"},
-        "name": {"type": "string", "required": true, "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"},
-        "description": {"type": "string", "required": false},
-        "datatype": {"type": "string", "required": false, "branch": "DatatypeProperty; a datatype property MUST carry its real datatype"},
-        "object_class_id": {"type": "string", "required": false, "branch": "ObjectProperty Class range; optional. datatype and object_class_id are mutually exclusive; when both are supplied the payload is rejected"},
-        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
+        "property_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"
+        },
+        "class_id": {
+          "type": "string",
+          "required": false,
+          "server_current_acceptance": "approved domain Class is optional (R3.0-009 §4.3); compiler does not prevalidate scalar type; Protocol MUST send a string"
+        },
+        "name": {
+          "type": "string",
+          "required": true,
+          "server_current_acceptance": "compiler does not prevalidate scalar type and literalizes accepted values; Protocol MUST send a string"
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "datatype": {
+          "type": "string",
+          "required": false,
+          "branch": "DatatypeProperty; a datatype property MUST carry its real datatype"
+        },
+        "object_class_id": {
+          "type": "string",
+          "required": false,
+          "branch": "ObjectProperty Class range; optional. datatype and object_class_id are mutually exclusive; when both are supplied the payload is rejected"
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."
+        }
       }
     },
     "create_relation_type": {
       "additional_properties": false,
-      "required": ["name", "source_class_id", "target_class_id"],
+      "required": [
+        "name",
+        "source_class_id",
+        "target_class_id"
+      ],
       "fields": {
-        "relation_type_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
-        "name": {"type": "string", "required": true},
-        "source_class_id": {"type": "string", "required": true},
-        "target_class_id": {"type": "string", "required": true},
-        "description": {"type": "string", "required": false},
-        "symmetric": {"type": "boolean", "required": false, "default": false},
-        "transitive": {"type": "boolean", "required": false, "default": false},
-        "scope_policy": {"type": "string", "required": false, "default": "both"},
-        "status": {"type": "string", "required": false, "default": "active"},
-        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."}
+        "relation_type_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"
+        },
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "source_class_id": {
+          "type": "string",
+          "required": true
+        },
+        "target_class_id": {
+          "type": "string",
+          "required": true
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "symmetric": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "transitive": {
+          "type": "boolean",
+          "required": false,
+          "default": false
+        },
+        "scope_policy": {
+          "type": "string",
+          "required": false,
+          "default": "both"
+        },
+        "status": {
+          "type": "string",
+          "required": false,
+          "default": "active"
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."
+        }
       }
     },
     "create_entity": {
       "additional_properties": false,
-      "required": ["label"],
+      "required": [
+        "label"
+      ],
       "fields": {
-        "entity_id": {"type": "string", "required": false, "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"},
-        "class_iri_or_legacy_id": {"type": "string", "required": false, "branch": "Legacy scalar Class; when class_iris is also supplied the expanded scalar MUST be a member of it, otherwise the payload is a class_membership_conflict."},
-        "class_iris": {"type": "array", "items": "string", "required": false, "description": "Full formal Class set (R3.0-009 §4.1/§6.2). Entries are class ids or absolute IRIs, deduplicated by the compiler. Omitted, null and [] are the same legal zero-member state; no placeholder Class is invented."},
-        "label": {"type": "string", "required": true},
-        "aliases": {"type": "array", "items": "string", "required": false, "default": []},
-        "properties": {"type": "object", "required": false, "default": {}, "additional_properties": true, "description": "Property keys are non-empty strings; lists are rejected by the handler."},
-        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."},
-        "action_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-003 input/output status on an ordinary Action; see reusable_action_semantics."},
-        "parameter_definition": {"type": ["object", "null"], "required": false, "description": "R4.0-003 structured parameter metadata on its own stable entity; references remain graph relations."}
+        "entity_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "nonempty explicit ID is accepted and preserved in resource_outputs.resource_id; omitted or empty ID receives the deterministic Modeling Item output ID"
+        },
+        "class_iri_or_legacy_id": {
+          "type": "string",
+          "required": false,
+          "branch": "Legacy scalar Class; when class_iris is also supplied the expanded scalar MUST be a member of it, otherwise the payload is a class_membership_conflict."
+        },
+        "class_iris": {
+          "type": "array",
+          "items": "string",
+          "required": false,
+          "description": "Full formal Class set (R3.0-009 §4.1/§6.2). Entries are class ids or absolute IRIs, deduplicated by the compiler. Omitted, null and [] are the same legal zero-member state; no placeholder Class is invented."
+        },
+        "label": {
+          "type": "string",
+          "required": true
+        },
+        "aliases": {
+          "type": "array",
+          "items": "string",
+          "required": false,
+          "default": []
+        },
+        "properties": {
+          "type": "object",
+          "required": false,
+          "default": {},
+          "additional_properties": true,
+          "description": "Property keys are non-empty strings; lists are rejected by the handler."
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "R4.0-002 common declaration; see platform-neutral-candidate-authoring.json multiview_semantic_definition."
+        },
+        "action_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "R4.0-003 input/output status on an ordinary Action; see reusable_action_semantics."
+        },
+        "parameter_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "R4.0-003 structured parameter metadata on its own stable entity; references remain graph relations."
+        }
       }
     },
     "create_operation": {
       "additional_properties": false,
-      "required_when_active": ["name", "target_resource_type_iri", "idempotency", "risk_level", "tool_bindings"],
+      "required_when_active": [
+        "name",
+        "target_resource_type_iri",
+        "idempotency",
+        "risk_level",
+        "tool_bindings"
+      ],
       "fields": {
-        "operation_id": {"type": "string", "required": false},
-        "name": {"type": "string", "required": true},
-        "description": {"type": "string", "required": false},
-        "aliases": {"type": "array", "required": false},
-        "target_resource_type_iri": {"type": "string", "required": true},
-        "parameters": {"type": "array", "required": false},
-        "preconditions": {"type": "array", "required": false},
-        "effects": {"type": "array", "required": false},
-        "possible_failures": {"type": "array", "required": false},
-        "idempotency": {"type": "object", "required": true},
-        "risk_level": {"type": "string", "required": true},
-        "tool_bindings": {"type": "array", "required": true},
-        "credential_requirements": {"type": "array", "required": false},
-        "status": {"type": "string", "required": false},
-        "schema_version": {"type": "string", "required": false}
+        "operation_id": {
+          "type": "string",
+          "required": false
+        },
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "description": {
+          "type": "string",
+          "required": false
+        },
+        "aliases": {
+          "type": "array",
+          "required": false
+        },
+        "target_resource_type_iri": {
+          "type": "string",
+          "required": true
+        },
+        "parameters": {
+          "type": "array",
+          "required": false
+        },
+        "preconditions": {
+          "type": "array",
+          "required": false
+        },
+        "effects": {
+          "type": "array",
+          "required": false
+        },
+        "possible_failures": {
+          "type": "array",
+          "required": false
+        },
+        "idempotency": {
+          "type": "object",
+          "required": true
+        },
+        "risk_level": {
+          "type": "string",
+          "required": true
+        },
+        "tool_bindings": {
+          "type": "array",
+          "required": true
+        },
+        "credential_requirements": {
+          "type": "array",
+          "required": false
+        },
+        "status": {
+          "type": "string",
+          "required": false
+        },
+        "schema_version": {
+          "type": "string",
+          "required": false
+        }
       },
       "invariant": "Operation v1 validation remains unchanged; active Operations require a nonempty tool binding. No secrets or Action annotations. Association nodes link to this resource, never merge identities."
     },
     "create_relation": {
       "additional_properties": false,
-      "required": ["source_entity_iri", "relation_type_iri", "target_entity_iri"],
+      "required": [
+        "source_entity_iri",
+        "relation_type_iri",
+        "target_entity_iri"
+      ],
       "fields": {
-        "source_entity_iri": {"type": "string", "format": "absolute-rdf-iri", "required": true},
-        "relation_type_iri": {"type": "string", "format": "absolute-rdf-iri", "required": true},
-        "target_entity_iri": {"type": "string", "format": "absolute-rdf-iri", "required": true}
+        "source_entity_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": true
+        },
+        "relation_type_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": true
+        },
+        "target_entity_iri": {
+          "type": "string",
+          "format": "absolute-rdf-iri",
+          "required": true
+        }
       }
     }
   },
@@ -838,10 +1144,32 @@
       "relation"
     ],
     "applied_stages": {
-      "class": {"command_kinds": ["create_class"], "execution": "independent dry_run then apply_atomic"},
-      "property_or_relation_type": {"command_kinds": ["create_property", "create_relation_type"], "execution": "independent dry_run then apply_atomic"},
-      "entity": {"command_kinds": ["create_entity", "create_operation"], "execution": "independent dry_run then apply_atomic"},
-      "relation": {"command_kinds": ["create_relation"], "execution": "independent dry_run then apply_atomic"}
+      "class": {
+        "command_kinds": [
+          "create_class"
+        ],
+        "execution": "independent dry_run then apply_atomic"
+      },
+      "property_or_relation_type": {
+        "command_kinds": [
+          "create_property",
+          "create_relation_type"
+        ],
+        "execution": "independent dry_run then apply_atomic"
+      },
+      "entity": {
+        "command_kinds": [
+          "create_entity",
+          "create_operation"
+        ],
+        "execution": "independent dry_run then apply_atomic"
+      },
+      "relation": {
+        "command_kinds": [
+          "create_relation"
+        ],
+        "execution": "independent dry_run then apply_atomic"
+      }
     },
     "formal_binding": {
       "workspace_version": "For every next Batch, use the current workspace version only from the immediately prior formal apply receipt or required platform read.",
@@ -885,26 +1213,74 @@
       "cursor": "The stable unfiltered Session Batch inventory must have no next_cursor; statement and entity reads remain bounded and explicit."
     }
   },
-  "forbidden_target_fields": ["actor", "graph_iri", "graph_set_id", "ontology_id", "shape_graph_iris", "target_graph_iri"],
+  "forbidden_target_fields": [
+    "actor",
+    "graph_iri",
+    "ontology_id",
+    "graph_set_id",
+    "source_graph_iri",
+    "shape_graph_iris",
+    "target_graph_iri"
+  ],
   "property_read_contract": {
     "availability": "MCP tools below are usable only when advertised in the current role catalog. If absent, request the authorized Host's original scoped HTTP read envelope through the existing Owner channel; do not call an unadvertised tool or widen permissions.",
     "listing": {
       "tool": "get_semantic_read_model",
-      "fields": ["graph_set_id", "model_name", "include", "allow_stale_derived", "limit", "entity_iri"],
-      "required": ["graph_set_id", "model_name"],
+      "fields": [
+        "ontology_id",
+        "model_name",
+        "include",
+        "allow_stale_derived",
+        "limit",
+        "entity_iri"
+      ],
+      "required": [
+        "ontology_id",
+        "model_name"
+      ],
       "model_name": "property-list",
       "include": "asserted",
-      "http": {"method": "GET", "path": "/api/semantic/graph-sets/{graph_set_id}/read-models/property-list", "query_example": {"include": "asserted", "field_set": "detail", "limit": 200}, "identity_filter_parameter": "entity", "identity_filter_note": "HTTP uses entity for the receipt/read-bound property IRI; MCP uses entity_iri."},
-      "rules": ["Bind graph_set_id to the existing authorized workspace/receipt; items[].iri is the returned property identity. Preserve paging/truncation limits. get_ontology_read_model does not accept property-list."]
+      "http": {
+        "method": "GET",
+        "path": "/api/semantic/ontologies/{ontology_id}/read-models/property-list",
+        "query_example": {
+          "include": "asserted",
+          "field_set": "detail",
+          "limit": 200
+        },
+        "identity_filter_parameter": "entity",
+        "identity_filter_note": "HTTP uses entity for the receipt/read-bound property IRI; MCP uses entity_iri."
+      },
+      "rules": [
+        "Bind ontology_id to the existing authorized workspace/receipt; items[].iri is the returned property identity. Preserve paging/truncation limits. get_ontology_read_model does not accept property-list."
+      ]
     },
     "exact_definition": {
       "tool": "semantic_sparql_query",
-      "fields": ["project_id", "scope_mode", "query", "ontology_ids", "timeout_seconds", "result_limit"],
-      "required": ["project_id", "scope_mode", "query"],
+      "fields": [
+        "project_id",
+        "scope_mode",
+        "query",
+        "ontology_ids",
+        "timeout_seconds",
+        "result_limit"
+      ],
+      "required": [
+        "project_id",
+        "scope_mode",
+        "query"
+      ],
       "scope_mode": "ontologies",
-      "http": {"method": "POST", "path": "/api/semantic/sparql:query", "body": "Use the same project_id, scope_mode, ontology_ids, query and optional timeout_seconds/result_limit fields."},
+      "http": {
+        "method": "POST",
+        "path": "/api/semantic/sparql:query",
+        "body": "Use the same project_id, scope_mode, ontology_ids, query and optional timeout_seconds/result_limit fields."
+      },
       "query_example": "SELECT ?predicate ?value WHERE { <https://example.test/property/existing> ?predicate ?value . }",
-      "rules": ["Use only the authorized project_id and ontology_ids; replace the synthetic example IRI with an existing receipt/read-bound property IRI. This read-only scoped query retrieves the property's current predicates/values without guessing its identity; respect the returned scope, including any inferred graphs.", "A concept/fact no_match or unsupported_read_model response does not establish property absence; use the advertised authorized read tool and preserve unresolved read limits."]
+      "rules": [
+        "Use only the authorized project_id and ontology_ids; replace the synthetic example IRI with an existing receipt/read-bound property IRI. This read-only scoped query retrieves the property's current predicates/values without guessing its identity; respect the returned scope, including any inferred graphs.",
+        "A concept/fact no_match or unsupported_read_model response does not establish property absence; use the advertised authorized read tool and preserve unresolved read limits."
+      ]
     }
   },
   "update_payloads": {
@@ -912,15 +1288,56 @@
       "additional_properties": false,
       "identity": "At least one of property_id or property_iri is required, using the existing authorized identity binding; update preserves that property identity. ontology_id belongs to the Batch envelope, not this payload.",
       "fields": {
-        "property_id": {"type": "string", "required": false},
-        "property_iri": {"type": "string", "required": false},
-        "name": {"type": ["string", "null"], "required": false},
-        "description": {"type": ["string", "null"], "required": false, "server_behavior": "Omitted or null leaves the comment unchanged; an empty string clears it; a nonempty string replaces it."},
-        "datatype": {"type": ["string", "null"], "required": false},
-        "object_class_id": {"type": ["string", "null"], "required": false},
-        "semantic_definition": {"type": ["object", "null"], "required": false, "description": "Existing R4.0-002 common declaration; retain the candidate's unchanged declaration when supplying an approved correction."}
+        "property_id": {
+          "type": "string",
+          "required": false
+        },
+        "property_iri": {
+          "type": "string",
+          "required": false
+        },
+        "name": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "description": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false,
+          "server_behavior": "Omitted or null leaves the comment unchanged; an empty string clears it; a nonempty string replaces it."
+        },
+        "datatype": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "object_class_id": {
+          "type": [
+            "string",
+            "null"
+          ],
+          "required": false
+        },
+        "semantic_definition": {
+          "type": [
+            "object",
+            "null"
+          ],
+          "required": false,
+          "description": "Existing R4.0-002 common declaration; retain the candidate's unchanged declaration when supplying an approved correction."
+        }
       },
-      "rules": ["Supply only approved changed fields and any required unchanged semantic declaration; omitted/null name, description, datatype and object_class_id do not update those fields. A description-only correction does not recreate the property or change its domain/type/range.", "When the approved plan's existing identity binding carries a resource_iri, send property_iri with that exact value, not a short property_id; property_id remains valid where the authorized target contract is ID-based and the ID matches."]
+      "rules": [
+        "Supply only approved changed fields and any required unchanged semantic declaration; omitted/null name, description, datatype and object_class_id do not update those fields. A description-only correction does not recreate the property or change its domain/type/range.",
+        "When the approved plan's existing identity binding carries a resource_iri, send property_iri with that exact value, not a short property_id; property_id remains valid where the authorized target contract is ID-based and the ID matches."
+      ]
     },
     "update_entity": {
       "additional_properties": false,

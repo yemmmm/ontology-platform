@@ -21,17 +21,9 @@ from app.api.schemas import (
     SemanticEditAuditRead,
     SemanticEditRequest,
     SemanticEditResponse,
-    SemanticGraphEditabilityRequest,
-    SemanticGraphEditabilityResponse,
     SemanticGraphGcRequest,
     SemanticGraphGcResponse,
-    SemanticGraphRegistryCreate,
-    SemanticGraphRegistryListResponse,
     SemanticGraphRegistryRead,
-    SemanticGraphSetCreate,
-    SemanticGraphSetListResponse,
-    SemanticGraphSetMembershipUpdate,
-    SemanticGraphSetRead,
     SemanticGovernanceStatusResponse,
     SemanticMigrationBatchRunResponse,
     SemanticMigrationCreateRequest,
@@ -58,7 +50,6 @@ from app.repositories.rdf_store import RdfStoreError, RdfStoreRepository
 from app.repositories.models import (
     OntologyModel,
     SemanticGraphRegistryModel,
-    SemanticGraphSetModel,
 )
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
@@ -77,16 +68,14 @@ from app.services.semantic_query_scope import (
     SemanticQueryScopeResolver,
 )
 from app.services.scoped_sparql_query import ScopedSparqlQueryError, ScopedSparqlQueryService
-from app.services.semantic_graph_set_export import (
+from app.services.semantic_ontology_export import (
     ExportError,
     SemanticExportService,
 )
 from app.services.semantic_graph_gc import GraphGcError, SemanticGraphGcService
 from app.services.semantic_graph_registry import (
-    GraphRegistryError,
     SemanticGraphRegistryService,
 )
-from app.services.semantic_graph_set import GraphSetError, SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
 from app.services.semantic_projection_job import (
     ProjectionJobError,
@@ -115,7 +104,7 @@ from app.services.semantic_access import (
     SemanticAccessResolver,
     SemanticAccessView,
     project_id_for_graph_iri,
-    project_id_for_graph_set,
+    project_id_for_ontology,
 )
 from app.services.semantic_canonical_write import (
     CanonicalSemanticWriteError,
@@ -148,8 +137,6 @@ def _registry_service(session: Session, settings: Settings) -> SemanticGraphRegi
     return SemanticGraphRegistryService(session, settings)
 
 
-def _graph_set_service(session: Session, settings: Settings) -> SemanticGraphSetService:
-    return SemanticGraphSetService(session, settings)
 
 
 def _gc_service(
@@ -240,7 +227,7 @@ def _projection_job_service(
 def _projection_job_read(job) -> SemanticProjectionJobRead:
     return SemanticProjectionJobRead(
         id=job.id,
-        graph_set_id=job.graph_set_id,
+        ontology_id=job.ontology_id,
         projection_kind=job.projection_kind,
         projection_version=job.projection_version,
         projection_scope=job.projection_scope,
@@ -417,7 +404,7 @@ def create_semantic_edit(
         result = _service(session, rdf_store, settings).apply_edit(
             request.format,
             request.content,
-            request.target_graph_iri,
+            _ontology_storage_iri(session, request.ontology_id),
             principal.actor,
             request.reason,
             request.warning_state,
@@ -438,27 +425,6 @@ def list_semantic_edit_audits(
     return [SemanticEditAuditRead(**item) for item in result]
 
 
-@router.patch(
-    "/graphs/{graph_iri:path}/editability", response_model=SemanticGraphEditabilityResponse
-)
-def update_graph_editability(
-    graph_iri: str,
-    request: SemanticGraphEditabilityRequest,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticGraphEditabilityResponse:
-    try:
-        result = _service(session, rdf_store, settings).set_graph_editability(
-            graph_iri,
-            request.editable,
-            principal.actor,
-            request.reason,
-        )
-        return SemanticGraphEditabilityResponse(**result)
-    except SemanticServiceError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
 
 
 @router.get("/export")
@@ -544,156 +510,18 @@ def _filtered_export(
     return merged.serialize(format="turtle")
 
 
-@router.get("/graphs", response_model=SemanticGraphRegistryListResponse)
-def list_graph_registry(
-    category: Annotated[str | None, Query()] = None,
-    owner_type: Annotated[str | None, Query()] = None,
-    owner_id: Annotated[str | None, Query()] = None,
-    include_revisions: Annotated[bool, Query()] = True,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-    principal: AuthPrincipal = Depends(principal_dependency),
-) -> SemanticGraphRegistryListResponse:
-    registry = _registry_service(session, settings)
-    records = registry.list_graphs(category=category, owner_type=owner_type, owner_id=owner_id)
-    if principal.project_id is not None:
-        ontology_ids = set(
-            session.scalars(
-                select(OntologyModel.id).where(OntologyModel.project_id == principal.project_id)
-            )
-        )
-        records = [
-            record
-            for record in records
-            if record.semantic_owner_type == "ontology" and record.semantic_owner_id in ontology_ids
-        ]
-    graphs: list[SemanticGraphRegistryRead] = []
-    for record in records:
-        graphs.append(_registry_read(registry, record, include_revisions, rdf_store))
-    summary = registry.status_summary(records if principal.project_id is not None else None)
-    return SemanticGraphRegistryListResponse(graphs=graphs, summary=summary)
 
 
-@router.post("/graphs", response_model=SemanticGraphRegistryRead)
-def register_graph(
-    request: SemanticGraphRegistryCreate,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticGraphRegistryRead:
-    registry = _registry_service(session, settings)
-    try:
-        record = registry.register_graph(
-            graph_iri=request.graph_iri,
-            category=request.category,
-            owner_type=request.owner_type,
-            owner_id=request.owner_id,
-            created_by=principal.actor,
-            mutable_by_direct_edit=request.mutable_by_direct_edit,
-            metadata=request.metadata,
-        )
-    except GraphRegistryError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc
-    return _registry_read(registry, record, include_revisions=True, rdf_store=rdf_store)
 
 
-@router.get("/graphs/{graph_iri:path}", response_model=SemanticGraphRegistryRead)
-def get_graph_registry(
-    graph_iri: str,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticGraphRegistryRead:
-    registry = _registry_service(session, settings)
-    status = registry.graph_status(graph_iri)
-    status["statement_count"] = _statement_count(rdf_store, graph_iri)
-    return SemanticGraphRegistryRead(**status)
 
 
-@router.get("/graph-sets", response_model=SemanticGraphSetListResponse)
-def list_graph_sets(
-    scope_type: Annotated[str | None, Query()] = None,
-    scope_id: Annotated[str | None, Query()] = None,
-    status: Annotated[str | None, Query()] = None,
-    session: Session = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-    principal: AuthPrincipal = Depends(principal_dependency),
-) -> SemanticGraphSetListResponse:
-    service = _graph_set_service(session, settings)
-    sets = service.list_graph_sets(scope_type=scope_type, scope_id=scope_id, status=status)
-    if principal.project_id is not None:
-        ontology_ids = set(
-            session.scalars(
-                select(OntologyModel.id).where(OntologyModel.project_id == principal.project_id)
-            )
-        )
-        sets = [
-            graph_set
-            for graph_set in sets
-            if graph_set.scope_type == "ontology" and graph_set.scope_id in ontology_ids
-        ]
-    return SemanticGraphSetListResponse(
-        graph_sets=[SemanticGraphSetRead(**service.describe(graph_set.id)) for graph_set in sets]
-    )
 
 
-@router.post("/graph-sets", response_model=SemanticGraphSetRead)
-def create_graph_set(
-    request: SemanticGraphSetCreate,
-    principal: AuthPrincipal = Depends(principal_dependency),
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticGraphSetRead:
-    service = SemanticGraphSetService(session, settings, rdf_store)
-    try:
-        graph_set = service.create_graph_set(
-            name=request.name,
-            scope_type=request.scope_type,
-            scope_id=request.scope_id,
-            members=[member.model_dump() for member in request.members],
-            created_by=principal.actor,
-            metadata=request.metadata,
-            supersedes=request.supersedes,
-        )
-    except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=getattr(exc, "detail", str(exc))) from exc
-    return SemanticGraphSetRead(**service.describe(graph_set.id))
 
 
-@router.get("/graph-sets/{graph_set_id}", response_model=SemanticGraphSetRead)
-def get_graph_set(
-    graph_set_id: str,
-    session: Session = Depends(get_db_session),
-    settings: Settings = Depends(get_settings),
-) -> SemanticGraphSetRead:
-    service = _graph_set_service(session, settings)
-    try:
-        description = service.describe(graph_set_id)
-    except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 404), detail=str(exc)) from exc
-    return SemanticGraphSetRead(**description)
 
 
-@router.put("/graph-sets/{graph_set_id}/members", response_model=SemanticGraphSetRead)
-def update_graph_set_members(
-    graph_set_id: str,
-    request: SemanticGraphSetMembershipUpdate,
-    session: Session = Depends(get_db_session),
-    rdf_store: RdfStoreRepository = Depends(get_rdf_store),
-    settings: Settings = Depends(get_settings),
-) -> SemanticGraphSetRead:
-    service = SemanticGraphSetService(session, settings, rdf_store)
-    try:
-        graph_set = service.update_membership(
-            graph_set_id,
-            [member.model_dump() for member in request.members],
-        )
-    except GraphSetError as exc:
-        raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=getattr(exc, "detail", str(exc))) from exc
-    return SemanticGraphSetRead(**service.describe(graph_set.id))
 
 
 @router.post("/ontologies/{ontology_id}/retrieval:rebuild")
@@ -776,7 +604,7 @@ def preflight_migration(
     summary = service.preflight(
         scope_type=request.scope_type,
         scope_id=request.scope_id,
-        target_graph_set_id=request.target_graph_set_id,
+        target_ontology_id=request.target_ontology_id,
     )
     return SemanticMigrationPreflightResponse(**summary)
 
@@ -795,7 +623,7 @@ def create_migration_run(
             scope_type=request.scope_type,
             scope_id=request.scope_id,
             mode=request.mode,
-            target_graph_set_id=request.target_graph_set_id,
+            target_ontology_id=request.target_ontology_id,
             batch_size=request.batch_size,
             created_by=principal.actor,
             metadata=request.metadata,
@@ -944,7 +772,7 @@ def compile_and_apply_product_command(
         result = service.apply_command(
             request.command_kind,
             request.payload,
-            graph_set_id=request.graph_set_id,
+            ontology_id=request.ontology_id,
             actor=principal.actor,
             reason=request.reason,
             commit=True,
@@ -982,11 +810,11 @@ def get_canonical_mode(
 
 
 @router.get(
-    "/graph-sets/{graph_set_id}/read-models/{model_name}",
+    "/ontologies/{ontology_id}/read-models/{model_name}",
     response_model=SemanticReadModelEnvelope,
 )
 def read_model(
-    graph_set_id: str,
+    ontology_id: str,
     model_name: str,
     include: Annotated[str, Query()] = "asserted",
     allow_stale_derived: Annotated[bool, Query()] = True,
@@ -1004,12 +832,12 @@ def read_model(
     settings: Settings = Depends(get_settings),
 ) -> SemanticReadModelEnvelope:
     access_view = _access_view(
-        session, principal, project_id_for_graph_set(session, graph_set_id)
+        session, principal, project_id_for_ontology(session, ontology_id)
     )
     service = _read_model_service(session, rdf_store, settings, access_view=access_view)
     try:
         envelope = service.read_model(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             model_name=model_name,
             include=include,
             allow_stale_derived=allow_stale_derived,
@@ -1028,13 +856,12 @@ def read_model(
 
 
 # ----------------------------------------------------------------------------
-# ----------------------------------------------------------------------------
 
 
 @router.get("/resources/{resource_iri:path}", response_model=SemanticResourceRead)
 def read_resource(
     resource_iri: str,
-    graph_set_id: Annotated[str, Query()],
+    ontology_id: Annotated[str, Query()],
     include: Annotated[str, Query()] = "asserted",
     principal: AuthPrincipal = Depends(principal_dependency),
     session: Session = Depends(get_db_session),
@@ -1042,7 +869,7 @@ def read_resource(
     settings: Settings = Depends(get_settings),
 ) -> SemanticResourceRead:
     access_view = _access_view(
-        session, principal, project_id_for_graph_set(session, graph_set_id)
+        session, principal, project_id_for_ontology(session, ontology_id)
     )
     service = _read_model_service(session, rdf_store, settings, access_view=access_view)
     # Mapping/metric resources use the same exact-IRI read contract as the
@@ -1061,7 +888,7 @@ def read_resource(
         "relation-type-list",
     ):
         envelope = service.read_model(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             model_name=model_name,
             include=include,
             entity_iri=resource_iri,
@@ -1071,10 +898,9 @@ def read_resource(
                 return SemanticResourceRead(
                     iri=resource_iri,
                     label=item.get("label"),
-                    graph_set_id=graph_set_id,
+                    ontology_id=ontology_id,
                     source_signature=envelope["source_signature"],
                     assertion_kind=item["assertion_kind"],
-                    source_graph_iri=item["source_graph_iri"],
                     properties=item.get("detail_fields", {}),
                     derived_state=envelope["derived_state"],
                     warnings=envelope["warnings"],
@@ -1084,7 +910,7 @@ def read_resource(
 
 @router.get("/statements", response_model=SemanticReadModelEnvelope)
 def list_statements(
-    graph_set_id: Annotated[str, Query()],
+    ontology_id: Annotated[str, Query()],
     include: Annotated[str, Query()] = "asserted",
     allow_stale_derived: Annotated[bool, Query()] = True,
     limit: Annotated[int | None, Query(ge=1, le=5000)] = None,
@@ -1094,11 +920,11 @@ def list_statements(
     settings: Settings = Depends(get_settings),
 ) -> SemanticReadModelEnvelope:
     access_view = _access_view(
-        session, principal, project_id_for_graph_set(session, graph_set_id)
+        session, principal, project_id_for_ontology(session, ontology_id)
     )
     service = _read_model_service(session, rdf_store, settings, access_view=access_view)
     envelope = service.read_model(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         model_name="statement-list",
         include=include,
         allow_stale_derived=allow_stale_derived,
@@ -1107,9 +933,9 @@ def list_statements(
     return SemanticReadModelEnvelope(**envelope)
 
 
-@router.get("/graph-sets/{graph_set_id}/export")
-def export_graph_set(
-    graph_set_id: str,
+@router.get("/ontologies/{ontology_id}/export")
+def export_ontology(
+    ontology_id: str,
     request: Request,
     format: Annotated[str, Query()] = "trig",
     include: Annotated[str, Query()] = "asserted",
@@ -1130,12 +956,12 @@ def export_graph_set(
             },
         )
     access_view = _access_view(
-        session, principal, project_id_for_graph_set(session, graph_set_id)
+        session, principal, project_id_for_ontology(session, ontology_id)
     )
     service = _export_service(session, rdf_store, settings, access_view=access_view)
     try:
         payload, _warnings = service.export(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             format=format,
             include=include,
             include_policy=include_policy,
@@ -1153,23 +979,23 @@ def export_graph_set(
 
 
 @router.post(
-    "/graph-sets/{graph_set_id}/projection-jobs",
+    "/ontologies/{ontology_id}/projection-jobs",
     response_model=SemanticProjectionJobRead,
     status_code=201,
 )
 def create_projection_job_for_set(
-    graph_set_id: str,
+    ontology_id: str,
     request: SemanticProjectionJobCreate,
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionJobRead:
-    if request.graph_set_id != graph_set_id:
-        raise HTTPException(status_code=400, detail="graph_set_id in body must match path")
+    if request.ontology_id != ontology_id:
+        raise HTTPException(status_code=400, detail="ontology_id in body must match path")
     service = _projection_job_service(session, rdf_store, settings)
     try:
         job = service.create_job(
-            graph_set_id=request.graph_set_id,
+            ontology_id=request.ontology_id,
             projection_kind=request.projection_kind,
             projection_version=request.projection_version,
             include=request.include,
@@ -1185,7 +1011,7 @@ def create_projection_job_for_set(
 
 @router.get("/projection-jobs", response_model=SemanticProjectionJobListResponse)
 def list_projection_jobs(
-    graph_set_id: Annotated[str | None, Query()] = None,
+    ontology_id: Annotated[str | None, Query()] = None,
     projection_kind: Annotated[str | None, Query()] = None,
     status: Annotated[str | None, Query()] = None,
     session: Session = Depends(get_db_session),
@@ -1194,7 +1020,7 @@ def list_projection_jobs(
 ) -> SemanticProjectionJobListResponse:
     service = _projection_job_service(session, rdf_store, settings)
     jobs = service.list_jobs(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         projection_kind=projection_kind,
         status=status,
     )
@@ -1245,13 +1071,13 @@ def reconcile_projections(
 
 @router.get("/projections/status", response_model=SemanticProjectionStatusResponse)
 def projection_status(
-    graph_set_id: Annotated[str | None, Query()] = None,
+    ontology_id: Annotated[str | None, Query()] = None,
     session: Session = Depends(get_db_session),
     rdf_store: RdfStoreRepository = Depends(get_rdf_store),
     settings: Settings = Depends(get_settings),
 ) -> SemanticProjectionStatusResponse:
     service = _projection_job_service(session, rdf_store, settings)
-    status = service.status(graph_set_id=graph_set_id)
+    status = service.status(ontology_id=ontology_id)
     return SemanticProjectionStatusResponse(**status)
 
 
@@ -1314,14 +1140,6 @@ def _statement_count(rdf_store: RdfStoreRepository, graph_iri: str) -> int | Non
         return None
 
 
-def _graph_set_ontology_id(session: Session, graph_set_id: str) -> str:
-    graph_set = session.get(SemanticGraphSetModel, graph_set_id)
-    if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
-        raise HTTPException(
-            status_code=403,
-            detail={"code": "forbidden_scope", "message": "Ontology-scoped Graph Set required"},
-        )
-    return graph_set.scope_id
 
 
 def _rebuild_retrieval_for_ontology_id(
@@ -1348,3 +1166,10 @@ def _retrieval_headers(retrieval_index: dict[str, Any]) -> dict[str, str]:
 def _set_retrieval_headers(response: Response | None, retrieval_index: dict[str, Any]) -> None:
     if response is not None:
         response.headers.update(_retrieval_headers(retrieval_index))
+
+
+def _ontology_storage_iri(session, ontology_id):
+    ontology = session.get(OntologyModel, ontology_id)
+    if ontology is None or not ontology.model_graph_iri:
+        raise HTTPException(status_code=404, detail="Ontology model not found")
+    return ontology.model_graph_iri

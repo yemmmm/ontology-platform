@@ -23,8 +23,7 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import (
-    SemanticGraphSetModel,
-    SemanticGraphSetMemberModel,
+    OntologyModel,
     SemanticProjectionManifestModel,
     SemanticRetrievalDocumentModel,
     SemanticMappingModel,
@@ -117,29 +116,17 @@ def retrieval_workspace_version(session: Session, settings: Settings, ontology_i
     """Use the public read contract's authoritative workspace version.
 
     Retrieval documents are only queryable when their identity tuple agrees
-    with the public Context and Entity readers.  Graph-set metadata contains
-    setup-era annotations (including the initial ``r001-v1`` marker), not the
-    current graph-and-Rule version fence.
+    with the public Context and Entity readers for the selected Ontology model.
     """
     return ModelingWorkspaceVersionService(session, settings).version_for(ontology_id)
 
 
 def mark_retrieval_stale(session: Session, ontology_id: str) -> list[str]:
     """Invalidate all retrieval manifests in the caller's SQL transaction."""
-    graph_set_ids = list(
-        session.scalars(
-            select(SemanticGraphSetModel.id).where(
-                SemanticGraphSetModel.scope_type == "ontology",
-                SemanticGraphSetModel.scope_id == ontology_id,
-            )
-        )
-    )
-    if not graph_set_ids:
-        return []
     rows = list(
         session.scalars(
             select(SemanticProjectionManifestModel).where(
-                SemanticProjectionManifestModel.graph_set_id.in_(graph_set_ids),
+                SemanticProjectionManifestModel.ontology_id == ontology_id,
                 SemanticProjectionManifestModel.projection_kind == RETRIEVAL_KIND,
                 SemanticProjectionManifestModel.status == "current",
             )
@@ -173,8 +160,8 @@ class PgVectorRetrievalRepository:
     def index_status(
         self,
         *,
-        graph_set_id: str,
         ontology_id: str,
+
         workspace_version: str,
         source_signature: str,
         current_rule_signature: str,
@@ -182,7 +169,7 @@ class PgVectorRetrievalRepository:
         manifests = list(
             self.session.scalars(
                 select(SemanticProjectionManifestModel).where(
-                    SemanticProjectionManifestModel.graph_set_id == graph_set_id,
+                    SemanticProjectionManifestModel.ontology_id == ontology_id,
                     SemanticProjectionManifestModel.projection_kind == RETRIEVAL_KIND,
                 )
             )
@@ -208,7 +195,6 @@ class PgVectorRetrievalRepository:
             return {**common, "status": "stale"}
         exists = self.session.scalar(
             select(SemanticRetrievalDocumentModel.id).where(
-                SemanticRetrievalDocumentModel.graph_set_id == graph_set_id,
                 SemanticRetrievalDocumentModel.ontology_id == ontology_id,
                 SemanticRetrievalDocumentModel.workspace_version == workspace_version,
                 SemanticRetrievalDocumentModel.source_signature == source_signature,
@@ -227,8 +213,8 @@ class PgVectorRetrievalRepository:
     def exact_cosine_candidates(
         self,
         *,
-        graph_set_id: str,
         ontology_id: str,
+
         workspace_version: str,
         source_signature: str,
         rule_signature: str,
@@ -255,7 +241,7 @@ class PgVectorRetrievalRepository:
                   FROM semantic_retrieval_documents AS d
                   JOIN semantic_projection_manifests AS m
                     ON m.active_job_id = d.build_job_id
-                 WHERE d.graph_set_id = :graph_set_id
+                 WHERE d.ontology_id = :ontology_id
                    AND d.ontology_id = :ontology_id
                    AND d.workspace_version = :workspace_version
                    AND d.source_signature = :source_signature
@@ -263,7 +249,7 @@ class PgVectorRetrievalRepository:
                    AND d.projection_version = :projection_version
                    AND d.embedding_config_hash = :config_hash
                    AND d.resource_kind = ANY(:resource_kinds)
-                   AND m.graph_set_id = :graph_set_id
+                   AND m.ontology_id = :ontology_id
                    AND m.projection_kind = :projection_kind
                    AND m.status = 'current'
                    AND m.source_signature = :source_signature
@@ -276,7 +262,6 @@ class PgVectorRetrievalRepository:
                 """
             ),
             {
-                "graph_set_id": graph_set_id,
                 "ontology_id": ontology_id,
                 "workspace_version": workspace_version,
                 "source_signature": source_signature,
@@ -314,10 +299,10 @@ class SemanticRetrievalProjectionService:
         self.repository = PgVectorRetrievalRepository(session, self.config)
 
     def rebuild(self, job_id: str, scope: ScopeResolution, partition: str) -> dict[str, int]:
-        graph_set = self.session.get(SemanticGraphSetModel, scope.graph_set_id)
-        if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
+        ontology = self.session.get(OntologyModel, scope.ontology_id)
+        if ontology is None or not ontology.model_graph_iri:
             raise SemanticRetrievalError("Retrieval projection requires an Ontology-scoped workspace")
-        ontology_id = graph_set.scope_id
+        ontology_id = ontology.id
         try:
             workspace_version = retrieval_workspace_version(
                 self.session, self.settings, ontology_id
@@ -326,7 +311,7 @@ class SemanticRetrievalProjectionService:
             raise SemanticRetrievalError("Retrieval projection requires a workspace version") from exc
         documents = self._metadata_documents(
             ontology_id=ontology_id,
-            graph_set_id=scope.graph_set_id,
+
             workspace_version=workspace_version,
             source_signature=scope.source_signature,
             rule_signature=rule_set_signature(self.session, ontology_id),
@@ -343,7 +328,7 @@ class SemanticRetrievalProjectionService:
         self,
         *,
         ontology_id: str,
-        graph_set_id: str,
+
         workspace_version: str,
         source_signature: str,
         rule_signature: str,
@@ -352,7 +337,7 @@ class SemanticRetrievalProjectionService:
         scope: ScopeResolution,
     ) -> list[dict[str, Any]]:
         dataset = Dataset()
-        for graph_iri in scope.source_graph_iris:
+        for graph_iri in scope.model_graph_iris:
             if not self.rdf_store.graph_exists(graph_iri):
                 # A registered source member whose store graph was never
                 # created yet (the asserted data graph before the first
@@ -385,7 +370,7 @@ class SemanticRetrievalProjectionService:
                 value,
                 mappings=mappings.get(value["iri"], []),
                 ontology_id=ontology_id,
-                graph_set_id=graph_set_id,
+
                 workspace_version=workspace_version,
                 source_signature=source_signature,
                 rule_signature=rule_signature,
@@ -517,14 +502,8 @@ class SemanticRetrievalCoordinator:
                 "status": "failed",
                 "warning": "retrieval_index_failed",
             }
-        graph_set = self.session.scalar(
-            select(SemanticGraphSetModel).where(
-                SemanticGraphSetModel.scope_type == "ontology",
-                SemanticGraphSetModel.scope_id == ontology_id,
-                SemanticGraphSetModel.is_default.is_(True),
-            )
-        )
-        if graph_set is None:
+        ontology = self.session.get(OntologyModel, ontology_id)
+        if ontology is None:
             return {
                 "ontology_id": ontology_id,
                 "write_applied": True,
@@ -546,7 +525,7 @@ class SemanticRetrievalCoordinator:
         )
         try:
             job = service.create_job(
-                graph_set_id=graph_set.id,
+                ontology_id=ontology.id,
                 projection_kind=RETRIEVAL_KIND,
                 projection_version=self.settings.semantic_retrieval_projection_version,
             )
@@ -556,9 +535,7 @@ class SemanticRetrievalCoordinator:
                 "write_applied": True,
                 "status": "current" if job.status == "succeeded" else job.status,
                 "job_id": job.id,
-                "workspace_version": (graph_set.graph_set_metadata or {}).get(
-                    "workspace_version"
-                ),
+                "workspace_version": retrieval_workspace_version(self.session, self.settings, ontology_id),
                 "projection_version": self.settings.semantic_retrieval_projection_version,
                 "stale_manifest_ids": stale_manifest_ids,
             }
@@ -587,17 +564,7 @@ class SemanticRetrievalCoordinator:
             try:
                 ids.update(
                     self.session.scalars(
-                        select(SemanticGraphSetModel.scope_id)
-                        .join(
-                            SemanticGraphSetMemberModel,
-                            SemanticGraphSetMemberModel.graph_set_id
-                            == SemanticGraphSetModel.id,
-                        )
-                        .where(
-                            SemanticGraphSetModel.scope_type == "ontology",
-                            SemanticGraphSetModel.scope_id.is_not(None),
-                            SemanticGraphSetMemberModel.graph_iri.in_(graph_iris),
-                        )
+                        select(OntologyModel.id).where(OntologyModel.model_graph_iri.in_(graph_iris))
                     )
                 )
             except Exception:
@@ -638,8 +605,8 @@ class SemanticResourceRetrievalService:
         signatures = {item.ontology_id: rule_set_signature(self.session, item.ontology_id) for item in scope.ontologies}
         indexes = [
             self.repository.index_status(
-                graph_set_id=item.graph_set_id,
                 ontology_id=item.ontology_id,
+
                 workspace_version=item.workspace_version,
                 source_signature=item.source_signature,
                 current_rule_signature=signatures[item.ontology_id],
@@ -674,8 +641,8 @@ class SemanticResourceRetrievalService:
                 if next(item for item in indexes if item["ontology_id"] == ontology.ontology_id)["status"] != "current":
                     continue
                 rows = self.repository.exact_cosine_candidates(
-                    graph_set_id=ontology.graph_set_id,
                     ontology_id=ontology.ontology_id,
+
                     workspace_version=ontology.workspace_version,
                     source_signature=ontology.source_signature,
                     rule_signature=signatures[ontology.ontology_id],
@@ -730,8 +697,8 @@ class SemanticResourceRetrievalService:
         }
         indexes = [
             self.repository.index_status(
-                graph_set_id=item.graph_set_id,
                 ontology_id=item.ontology_id,
+
                 workspace_version=item.workspace_version,
                 source_signature=item.source_signature,
                 current_rule_signature=signatures[item.ontology_id],
@@ -787,8 +754,8 @@ class SemanticResourceRetrievalService:
                     if status != "current":
                         continue
                     scan_args = dict(
-                        graph_set_id=ontology.graph_set_id,
                         ontology_id=ontology.ontology_id,
+
                         workspace_version=ontology.workspace_version,
                         source_signature=ontology.source_signature,
                         rule_signature=signatures[ontology.ontology_id],
@@ -872,7 +839,7 @@ class SemanticResourceRetrievalService:
             "completeness": completeness,
         }
 
-    def recall_graph_set(
+    def recall_ontology(
         self,
         *,
         scope: ScopeResolution,
@@ -881,8 +848,8 @@ class SemanticResourceRetrievalService:
         search_mode: str,
         limit: int,
     ) -> dict[str, Any]:
-        graph_set = self.session.get(SemanticGraphSetModel, scope.graph_set_id)
-        if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
+        ontology = self.session.get(OntologyModel, scope.ontology_id)
+        if ontology is None or not ontology.model_graph_iri:
             return {
                 "candidates": [],
                 "indexes": [],
@@ -893,7 +860,7 @@ class SemanticResourceRetrievalService:
             }
         try:
             workspace_version = retrieval_workspace_version(
-                self.session, self.settings, graph_set.scope_id
+                self.session, self.settings, ontology.id
             )
         except LookupError:
             return {
@@ -905,8 +872,8 @@ class SemanticResourceRetrievalService:
                 "completeness": "degraded",
             }
         ontology = SimpleNamespace(
-            ontology_id=graph_set.scope_id,
-            graph_set_id=scope.graph_set_id,
+            ontology_id=ontology.id,
+
             workspace_version=workspace_version,
             source_signature=scope.source_signature,
         )
@@ -955,7 +922,7 @@ def promote_exact_label_candidates(
     The lexical SPARQL corpus remains the primary source of exact evidence.
     This guard covers an incomplete lexical scan without expanding its scope:
     it only promotes a candidate which has already passed the same current
-    graph-set/manifest fences as semantic recall, and only when one of its
+    Ontology/manifest fences as semantic recall, and only when one of its
     persisted asserted ``rdfs:label`` evidence values equals the normalized
     user query. Callers run this before fusion so exact evidence is never
     reconstructed from a fused semantic row.
@@ -1223,7 +1190,7 @@ def _document_record(*, resource_iri: str, resource_kind: str, label: str, label
     document_id = hashlib.sha256(
         "|".join(
             (
-                identity["graph_set_id"],
+                identity["ontology_id"],
                 identity["workspace_version"],
                 identity["source_signature"],
                 identity["rule_signature"],
@@ -1256,7 +1223,6 @@ def _document_record(*, resource_iri: str, resource_kind: str, label: str, label
         "projection_version": config.projection_version,
         "visibility": [],
         "ontology_id": identity["ontology_id"],
-        "graph_set_id": identity["graph_set_id"],
         "workspace_version": identity["workspace_version"],
         "source_signature": identity["source_signature"],
         "rule_set_signature": identity["rule_signature"],

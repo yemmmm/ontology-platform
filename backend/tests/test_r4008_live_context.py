@@ -20,7 +20,6 @@ from app.repositories.models import (
     OntologyModel,
     UserModel,
     ApiKeyModel,
-    SemanticGraphSetModel,
     SemanticGraphRegistryModel,
     SemanticGraphRevisionModel,
 )
@@ -45,7 +44,7 @@ def test_pgvector_stable_distance_and_iri_continuation():
         with Session(engine) as session:
             session.execute(
                 text("""CREATE TEMP TABLE semantic_projection_manifests (
-                active_job_id text, graph_set_id text, projection_kind text, status text,
+                active_job_id text, ontology_id text, projection_kind text, status text,
                 source_signature text, projection_version text
             ) ON COMMIT DROP""")
             )
@@ -53,7 +52,7 @@ def test_pgvector_stable_distance_and_iri_continuation():
                 text("""CREATE TEMP TABLE semantic_retrieval_documents (
                 resource_iri text, resource_kind text, assertion_kind text, label text,
                 labels jsonb, aliases jsonb, descriptions jsonb, mapping_evidence jsonb,
-                rdf_types jsonb, embedding vector, build_job_id text, graph_set_id text,
+                rdf_types jsonb, embedding vector, build_job_id text, ontology_id text,
                 ontology_id text, workspace_version text, source_signature text,
                 rule_set_signature text, projection_version text, embedding_config_hash text
             ) ON COMMIT DROP""")
@@ -80,8 +79,8 @@ def test_pgvector_stable_distance_and_iri_continuation():
                 )
             repository = PgVectorRetrievalRepository(session, config)
             args = dict(
-                graph_set_id="g",
-                ontology_id="o",
+                ontology_id="g",
+
                 workspace_version="wv",
                 source_signature="ss",
                 rule_signature="rs",

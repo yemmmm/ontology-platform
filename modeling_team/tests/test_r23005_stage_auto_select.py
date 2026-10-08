@@ -45,8 +45,8 @@ RUN_ID = "r23005-real-20260807-deepseek-start53"
 # evidence so the golden assertion tracks the real run, not a hand-typed copy.
 START53_LIVE_STATE = {
     "build_session_id": "40cbe906-6478-4b79-aaf8-e99232de66ad",
-    "graph_set_id": "5a9094fd-0f7f-5799-ab05-10e813354819",
     "ontology_id": "ef6706df-9411-4a0b-afbc-85f7af27b840",
+
     "project_id": "b5dc5ade-b274-480d-aad6-b1b59c60e637",
     "source_signature": "a8c5cfa4bee7504c77f94d0b7b5f77d5",
     "workspace_version": "3a97f9d5b6733d068690529bb6bf4488089f5c11255f7084104620ae50ed61c0",
@@ -130,7 +130,7 @@ def _reconstruct_records(run_root: Path) -> dict[str, dict[str, Any]]:
         elif tool == "get_modeling_context":
             arguments = {"ontology_id": START53_LIVE_STATE["ontology_id"]}
         elif tool in {"run_semantic_validation", "run_semantic_reasoning"}:
-            arguments = {"graph_set_id": START53_LIVE_STATE["graph_set_id"]}
+            arguments = {"ontology_id": START53_LIVE_STATE["ontology_id"]}
         else:
             arguments = {}
         sequence += 1
@@ -281,11 +281,11 @@ def _readback_result(workspace_version: str, *, lease_active: bool | None = None
     return {"structuredContent": {"ok": True, "data": data}}
 
 
-def _graph_result(status: str, graph_set_id: str, *, kind: str) -> dict:
+def _graph_result(status: str, ontology_id: str, *, kind: str) -> dict:
     return {
         "structuredContent": {
             "ok": True,
-            "data": {"status": status, "graph_set_id": graph_set_id, "kind": kind},
+            "data": {"status": status, "ontology_id": ontology_id, "kind": kind},
         }
     }
 
@@ -303,7 +303,7 @@ def _synthetic_carrier(tmp: Path) -> RunnerAcceptanceCarrier:
         "workspace_version": "ws-live",
         "source_signature": "source-syn",
         "build_session_id": "session-syn",
-        "graph_set_id": "graph-syn",
+
     }
     state["state_digest"] = model_state_digest(state)
     carrier.bind_model_state(state)
@@ -376,12 +376,12 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                 )
                 validation = carrier.register_platform_tool_result(
                     tool="run_semantic_validation",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="validation"),
                 )
                 reasoning = carrier.register_platform_tool_result(
                     tool="run_semantic_reasoning",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
                 )
 
@@ -426,12 +426,12 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                 )
                 validation = carrier.register_platform_tool_result(
                     tool="run_semantic_validation",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="validation"),
                 )
                 reasoning = carrier.register_platform_tool_result(
                     tool="run_semantic_reasoning",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
                 )
                 catalog = carrier.protocol_list_platform_artifacts(
@@ -506,12 +506,12 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_validation",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="validation"),
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_reasoning",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
                 )
 
@@ -579,7 +579,7 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_reasoning",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
                 )
                 built = carrier.protocol_build_acceptance_stage_handoff(
@@ -618,12 +618,12 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_validation",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="validation"),
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_reasoning",
-                    arguments={"graph_set_id": "graph-syn"},
+                    arguments={"ontology_id": "ontology-syn"},
                     result=_graph_result("succeeded", "graph-syn", kind="reasoning"),
                 )
                 with self.assertRaises(AcceptanceContractError) as ctx:

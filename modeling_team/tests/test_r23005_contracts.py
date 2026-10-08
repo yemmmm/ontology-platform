@@ -70,7 +70,7 @@ def _ticket(round_suffix: str = "1") -> dict:
         "workspace_version": "workspace-1",
         "source_signature": "source-1",
         "build_session_id": "session-r23005",
-        "graph_set_id": "graph-r23005",
+
     }
     state["state_digest"] = model_state_digest(state)
     sources = [{"path": "source.md", "sha256": "b" * 64}]
@@ -128,7 +128,7 @@ def _ticket(round_suffix: str = "1") -> dict:
         "platform_read_scope": {
             "project_id": state["project_id"],
             "ontology_id": state["ontology_id"],
-            "graph_set_id": state["graph_set_id"],
+
         },
         "model_state": state,
         "model_state_digest": state["state_digest"],
@@ -331,10 +331,10 @@ class R23005ContractTests(unittest.TestCase):
         scope = {
             "project_id": "289e3e51-f8a7-4e92-b279-55a940d3462b",
             "ontology_id": "2469c710-8d7b-4269-ba81-6ee66bd696c8",
-            "graph_set_id": "553b91e4-785e-5816-a979-290a3d706c0b",
+
         }
         self.assertEqual(validate_platform_read_scope(scope), scope)
-        short_scope = {"project_id": "a", "ontology_id": "b", "graph_set_id": "c"}
+        short_scope = {"project_id": "a", "ontology_id": "b"}
         self.assertEqual(validate_platform_read_scope(short_scope), short_scope)
 
         for field in scope:
@@ -349,7 +349,7 @@ class R23005ContractTests(unittest.TestCase):
         for value in (
             {"mode": "existing", "project_id": "project-1", "ontology_id": "ontology-1"},
             {"mode": "create", "project_id": "project-1"},
-            {"mode": "create", "graph_set_id": "graph-1"},
+            {"mode": "create", "ontology_id": "graph-1"},
         ):
             with self.subTest(value=value), self.assertRaisesRegex(
                 Exception, "formal scope|unsupported fields"
@@ -1260,7 +1260,7 @@ class R23005ContractTests(unittest.TestCase):
     def test_model_state_and_ticket_digest_bindings_cannot_drift(self) -> None:
         ticket = _ticket()
         with self.assertRaises(AcceptanceContractError):
-            validate_model_state({key: value for key, value in ticket["model_state"].items() if key != "graph_set_id"})
+            validate_model_state({key: value for key, value in ticket["model_state"].items() if key != "ontology_id"})
         mutated = json.loads(json.dumps(ticket))
         mutated["modeling_receipts"][0]["evidence_ref"]["ticket_digest"] = "e" * 64
         with self.assertRaises(AcceptanceContractError):
@@ -1696,14 +1696,14 @@ class R23005ContractTests(unittest.TestCase):
         request = {
             "project_id": ticket["platform_read_scope"]["project_id"],
             "ontology_id": ticket["platform_read_scope"]["ontology_id"],
-            "graph_set_id": ticket["platform_read_scope"]["graph_set_id"],
+
             "tool": "get_modeling_context",
             "ticket_digest": ticket["ticket_digest"],
             "request_digest": None,
         }
         request["request_digest"] = _sha(request)
-        self.assertEqual(shim.authorize(request)["graph_set_id"], ticket["platform_read_scope"]["graph_set_id"])
-        foreign = {**request, "graph_set_id": "graph-foreign"}
+        self.assertEqual(shim.authorize(request)["ontology_id"], ticket["platform_read_scope"]["ontology_id"])
+        foreign = {**request, "ontology_id": "graph-foreign"}
         foreign["request_digest"] = _sha(foreign)
         with self.assertRaises(AcceptanceContractError):
             shim.authorize(foreign)

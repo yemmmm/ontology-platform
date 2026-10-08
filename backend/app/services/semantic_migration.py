@@ -35,7 +35,6 @@ from app.services.semantic_command_compiler import (
     CompiledCommand,
     compile_command,
 )
-from app.services.semantic_graph_set import SemanticGraphSetService
 
 logger = logging.getLogger(__name__)
 
@@ -221,7 +220,6 @@ class SemanticMigrationService:
         settings: Settings,
         *,
         canonical_write_service: CanonicalSemanticWriteService | None = None,
-        graph_set_service: SemanticGraphSetService | None = None,
         inventory_provider: SourceInventoryProvider | None = None,
         parity_registry: ParityCheckRegistry | None = None,
     ) -> None:
@@ -231,7 +229,6 @@ class SemanticMigrationService:
         self.canonical_write_service = canonical_write_service or CanonicalSemanticWriteService(
             session, rdf_store, settings
         )
-        self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
         self.inventory_provider = inventory_provider
         self.parity_registry = parity_registry or ParityCheckRegistry({})
 
@@ -252,7 +249,7 @@ class SemanticMigrationService:
         self,
         scope_type: str,
         scope_id: str | None,
-        target_graph_set_id: str | None = None,
+        target_ontology_id: str | None = None,
     ) -> dict[str, Any]:
         checks: list[dict[str, Any]] = []
         warnings: list[str] = []
@@ -300,7 +297,7 @@ class SemanticMigrationService:
                 "source_signature": inventory.source_signature,
             },
             "warnings": warnings,
-            "target_graph_set_id": target_graph_set_id,
+            "target_ontology_id": target_ontology_id,
         }
 
     # ------------------------------------------------------------------
@@ -313,7 +310,7 @@ class SemanticMigrationService:
         scope_type: str,
         scope_id: str | None,
         mode: str,
-        target_graph_set_id: str | None = None,
+        target_ontology_id: str | None = None,
         batch_size: int | None = None,
         created_by: str | None = None,
         metadata: dict[str, Any] | None = None,
@@ -335,12 +332,12 @@ class SemanticMigrationService:
             status="pending",
             phase2_mapping_version=self.settings.semantic_migration_phase2_mapping_version,
             source_snapshot_signature=inventory.source_signature,
-            target_graph_set_id=target_graph_set_id,
+            target_ontology_id=target_ontology_id,
             created_by=created_by,
             run_metadata={
                 "batch_size": batch_size or self.settings.semantic_migration_batch_size,
                 "requested_mode": mode,
-                "target_graph_set_id": target_graph_set_id,
+                "target_ontology_id": target_ontology_id,
                 **(metadata or {}),
             },
         )
@@ -590,8 +587,8 @@ class SemanticMigrationService:
             },
         }
         rolled_back_graphs: list[str] = []
-        if run.target_graph_set_id:
-            rolled_back_graphs = self._graph_set_graph_iris(run.target_graph_set_id)
+        if run.target_ontology_id:
+            rolled_back_graphs = self._ontology_graph_iris(run.target_ontology_id)
         self.session.commit()
         return self._rollback_response(run, restored=True, rolled_back_graphs=rolled_back_graphs)
 
@@ -715,7 +712,7 @@ class SemanticMigrationService:
             compiled: CompiledCommand = compile_command(command_kind, payload, self.settings)
             result = self.canonical_write_service.apply_compiled_command(
                 compiled,
-                graph_set_id=run.target_graph_set_id,
+                ontology_id=run.target_ontology_id,
                 actor=run.created_by,
                 reason=f"migration run {run.id} batch {batch.batch_index}",
             )
@@ -729,12 +726,10 @@ class SemanticMigrationService:
         batch.finished_at = datetime.now(UTC)
         return True
 
-    def _graph_set_graph_iris(self, graph_set_id: str) -> list[str]:
-        try:
-            description = self.graph_set_service.describe(graph_set_id)
-        except Exception:
-            return []
-        return [member["graph_iri"] for member in description.get("members", [])]
+    def _ontology_graph_iris(self, ontology_id: str) -> list[str]:
+        from app.repositories.models import OntologyModel
+        ontology = self.session.get(OntologyModel, ontology_id)
+        return [ontology.model_graph_iri] if ontology and ontology.model_graph_iri else []
 
     def _serialize_run(
         self,
@@ -749,7 +744,7 @@ class SemanticMigrationService:
             "status": run.status,
             "phase2_mapping_version": run.phase2_mapping_version,
             "source_snapshot_signature": run.source_snapshot_signature,
-            "target_graph_set_id": run.target_graph_set_id,
+            "target_ontology_id": run.target_ontology_id,
             "started_at": run.started_at,
             "finished_at": run.finished_at,
             "created_by": run.created_by,
@@ -889,7 +884,7 @@ def _expected_target_graph_iris(
         if payload.get("object_kind") in {"class", "relation_type", "property"}:
             iris.add(f"{prefix}/ontology/{ontology_id}")
         else:
-            iris.add(f"{prefix}/data/{ontology_id}")
+            iris.add(f"{prefix}/ontology/{ontology_id}")
     return sorted(iris)
 
 

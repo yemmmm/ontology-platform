@@ -1,7 +1,7 @@
 """Stage 4 shared test fixtures.
 
 Provides:
-* ``fake_graph_set_with_evidence`` — (service, graph_set_id) tuple with a
+* ``fake_graph_set_with_evidence`` — (service, ontology_id) tuple with a
   registered graph set whose asserted_data graph carries a fact with a
   ``prov:wasDerivedFrom`` triple pointing to an EvidenceChunk.
 * ``fake_store_with_prov_bindings`` — FakeStore pre-seeded with entity-search
@@ -16,6 +16,7 @@ Mirrors the FakeStore pattern from ``conftest_stage3.py``.
 """
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from datetime import datetime, timezone
 from typing import Any
@@ -24,8 +25,6 @@ import pytest
 from sqlalchemy.orm import Session
 
 from app.repositories.models import (
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
     SemanticReasoningRunModel,
 )
 from app.repositories.rdf_store import RdfStoreRepository, SparqlResult, UpdateResult
@@ -38,7 +37,7 @@ from conftest_stage3 import PREFIX, GRAPH_PREFIX
 # Stage 4 fixtures reuse the Stage 3 graph-set iris to keep the test
 # surface minimal. A separate data graph would require a new member row and
 # would dilute the entity-search result set.
-EVIDENCE_DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-stage4"
+EVIDENCE_DATA_GRAPH = f"{GRAPH_PREFIX}ontology/ont-stage4"
 EVIDENCE_ONTOLOGY_GRAPH = f"{GRAPH_PREFIX}ontology/ont-stage4"
 
 # IRIs used in the seeded triples below.
@@ -286,34 +285,14 @@ def _extract_bound_iri(query: str, var_name: str) -> str | None:
 def _seed_stage4_graph_set(
     session: Session,
     *,
-    graph_set_id: str,
+    ontology_id: str,
     name: str,
     members: list[tuple[str, str]],
     scope_type: str = "ontology",
     scope_id: str = "ont-stage4",
     source_signature: str = "sig-stage4",
 ) -> str:
-    gs = SemanticGraphSetModel(
-        id=graph_set_id,
-        name=name,
-        scope_type=scope_type,
-        scope_id=scope_id,
-        status="active",
-        source_signature=source_signature,
-    )
-    session.add(gs)
-    for idx, (iri, role) in enumerate(members):
-        gs.members.append(
-            SemanticGraphSetMemberModel(
-                id=f"{graph_set_id}-m-{idx}",
-                graph_iri=iri,
-                role=role,
-                required=True,
-                sort_order=idx,
-            )
-        )
-    session.commit()
-    return graph_set_id
+    return seed_model(session, ontology_id, next(iri for iri, role in members if role in {"asserted_ontology", "asserted_data"}), name).id
 
 
 def _build_service(
@@ -356,9 +335,9 @@ def fake_store_with_prov_bindings() -> FakeStoreStage4:
 def fake_graph_set_with_evidence(
     in_memory_session: Session, fake_store_with_prov_bindings: FakeStoreStage4
 ) -> tuple[SemanticReadModelService, str]:
-    graph_set_id = _seed_stage4_graph_set(
+    ontology_id = _seed_stage4_graph_set(
         in_memory_session,
-        graph_set_id="gs-stage4-evidence",
+        ontology_id="ont-stage4",
         name="stage4-evidence",
         members=[
             (EVIDENCE_ONTOLOGY_GRAPH, "asserted_ontology"),
@@ -366,7 +345,7 @@ def fake_graph_set_with_evidence(
         ],
     )
     service = _build_service(in_memory_session, fake_store_with_prov_bindings)
-    return service, graph_set_id
+    return service, ontology_id
 
 
 @pytest.fixture()
@@ -380,7 +359,7 @@ def fake_reasoning_run_consistency(
     in_memory_session.add(
         SemanticReasoningRunModel(
             id=run_id,
-            source_graph_iris=[EVIDENCE_ONTOLOGY_GRAPH, EVIDENCE_DATA_GRAPH],
+            model_graph_iris=[EVIDENCE_ONTOLOGY_GRAPH, EVIDENCE_DATA_GRAPH],
             result_graph_iri=reasoning_result,
             reasoner="owl2dl",
             status="completed",
@@ -393,7 +372,7 @@ def fake_reasoning_run_consistency(
                 "entailments": [
                     {"subject": ACME_ENTITY, "predicate": RDF_TYPE, "object": ACME_CLASS},
                 ],
-                "graph_set_id": "gs-stage4-evidence",
+                "ontology_id": "gs-stage4-evidence",
             },
         )
     )

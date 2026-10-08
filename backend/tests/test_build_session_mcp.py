@@ -9,6 +9,7 @@ import pytest
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.mcp.server import mcp
+from app.core.config import Settings
 from app.repositories.models import OntologyModel, ProjectModel
 
 
@@ -63,6 +64,9 @@ def mcp_scope(in_memory_session: Session, monkeypatch, mcp_principal_factory) ->
             name="MCP build ontology",
         )
     )
+    in_memory_session.flush()
+    from app.services.ontology_workspace import OntologyWorkspaceService
+    OntologyWorkspaceService(in_memory_session, Settings()).ensure(in_memory_session.get(OntologyModel, "mcp-build-ontology"))
     in_memory_session.commit()
     mcp_principal_factory(in_memory_session)
     factory = sessionmaker(bind=in_memory_session.get_bind(), autoflush=False, autocommit=False)

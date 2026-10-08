@@ -56,7 +56,7 @@ def test_public_four_kind_write_receipt_exact_read_context_and_export():
             project_id = post("/projects", {"name": f"R4010 HTTP {token}"}, 201)["id"]
             ontology = post(f"/projects/{project_id}/ontologies", {"name": "Fixture mappings"}, 201)
             ontology_id = ontology["id"]
-            graph_set = ontology["workspace"]["default_graph_set_id"]
+            graph_set = ontology["workspace"]["ontology_id"]
             graph_sets.append(graph_set)
             graphs.extend(member["graph_iri"] for member in ontology["workspace"]["members"])
             build = post(
@@ -253,10 +253,10 @@ def test_public_four_kind_write_receipt_exact_read_context_and_export():
                 for entry in applied["items"]
             }
             ordinary = get(
-                "/semantic/resources/" + resources["object"], {"graph_set_id": graph_set}
+                "/semantic/resources/" + resources["object"], {"ontology_id": graph_set}
             )
             assert ordinary["properties"]["semantic_definition"]["semantic_role"] == "object"
-            entity_list = get(f"/semantic/graph-sets/{graph_set}/read-models/entity-list")
+            entity_list = get(f"/semantic/ontologies/{graph_set}/read-models/entity-list")
             assert resources["object"] in {row["iri"] for row in entity_list["items"]}
             assert not {
                 resources[name]
@@ -270,13 +270,13 @@ def test_public_four_kind_write_receipt_exact_read_context_and_export():
                 ("metric", "metric"),
             ):
                 exact = get(
-                    "/semantic/resources/" + resources[key_name], {"graph_set_id": graph_set}
+                    "/semantic/resources/" + resources[key_name], {"ontology_id": graph_set}
                 )
                 assert exact["properties"]["semantic_definition"] == annotation
                 assert isinstance(exact["properties"]["mapping_definition"], dict)
                 exact_reads.append(exact)
                 detail = get(
-                    f"/semantic/graph-sets/{graph_set}/read-models/{model}-detail",
+                    f"/semantic/ontologies/{graph_set}/read-models/{model}-detail",
                     {"entity": resources[key_name], "field_set": "detail"},
                 )
                 assert detail["items"][0]["iri"] == resources[key_name]
@@ -381,7 +381,7 @@ def test_public_four_kind_write_receipt_exact_read_context_and_export():
                     },
                 )
                 assert context["result_status"] == "matched", context
-            response = client.get(f"/api/semantic/graph-sets/{graph_set}/export")
+            response = client.get(f"/api/semantic/ontologies/{graph_set}/export")
             assert response.status_code == 200, response.text
             assert "mappingDefinition" in response.text
             assert "Fixture shared definition" in response.text

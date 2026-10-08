@@ -121,13 +121,11 @@ metric 资源；不存在或无权资源沿用该读取面的空结果合同，R
 `annotation_read_diagnostic`；scope、cursor、RDF 依赖错误沿既有 `invalid_*`／snapshot 或
 可重试依赖错误合同返回。修正范围或注解后可重新发起同一读取目标。
 
-跨 Ontology 映射引用使用与 REST 相同的显式 scope bridge：已有的非默认 Graph Set 必须是
-`scope_type="ontology"`，`scope_id` 指向引用拥有方 Ontology，并带
-`metadata.mapping_reference_scope=true`；其成员仅能是同一 Project 中已注册、获准依赖 Ontology
-的 asserted `ontology`／`data` 图。Project 相同不产生隐式引用权限。`describe_semantic_graph_set`
-可读取 bridge 的 scope 与成员，`get_semantic_read_model`、`query_semantic_context` 和
-`export_semantic_graph_set` 只消费当前 active bridge；Root／Protocol 以这些 scope 计算每个 owner
-最终投影的 reference graph，不把未列入成员的图带入响应。
+跨 Ontology 映射引用使用拥有方 Ontology 的 `reference_ontology_ids`。
+Root／Protocol 通过现有 Ontology 更新接口声明同一 Project 内获准的依赖 ID；平台按这些模型
+验证结构引用。读取通过 `ontology_id`／`ontology_ids` 指定且先授权，不隐式扩展依赖范围。
+`get_ontology_workspace_context` 返回 Ontology 及模型状态，`get_semantic_read_model` 和
+`export_semantic_ontology` 直接读取指定的模型；无需图集合或成员管理。
 
 映射或声明依赖的写入仍必须走 Modeling Batch 的 `dry_run`／`apply_atomic`、Attempt、Project
 fence 与恢复回执。MCP 的 `submit_semantic_edit`、canonical command 及 raw RDF import 遵循同一
@@ -158,7 +156,7 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | --- | --- | --- | --- | --- | --- |
 | system | `check_platform_health` | Verify API and PostgreSQL are reachable without direct DB credentials. | - | - | `backend/app/mcp/tools/system.py` |
 | interview | `get_build_context` | Deprecated alias for get_project_build_context; use the new tool. | project_id | project_id | `backend/app/mcp/tools/interview.py` |
-| interview | `get_ontology_workspace_context` | Read the default Graph Set, graph roles, revisions, and editability. | ontology_id | ontology_id | `backend/app/mcp/tools/interview.py` |
+| interview | `get_ontology_workspace_context` | Read Ontology model state, revision, and editability. | ontology_id | ontology_id | `backend/app/mcp/tools/interview.py` |
 | interview | `get_project_brief` | Read Project Brief completeness and up to three high-value clarification items. | project_id | project_id | `backend/app/mcp/tools/interview.py` |
 | interview | `list_competency_questions` | List ordered competency questions and their validation states. | project_id | include_inactive, project_id | `backend/app/mcp/tools/interview.py` |
 | interview | `propose_competency_questions` | Create ordered draft competency questions; this does not approve them. | project_id, questions | project_id, questions | `backend/app/mcp/tools/interview.py` |
@@ -191,28 +189,27 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | build_sessions | `save_build_checkpoint` | Idempotently append an Agent-reported Build Checkpoint. | client_checkpoint_id, current_step, expected_revision, phase, session_id | blockers, client_checkpoint_id, current_step, expected_revision, failure, next_step, ontology_id, phase, related_batch_id, session_id, summary | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `submit_modeling_batch` | Dry-run or idempotently apply one immutable Ontology Modeling Batch. | client_batch_id, expected_workspace_version, idempotency_key, items, ontology_id, session_id | client_batch_id, expected_workspace_version, idempotency_key, items, lease_token, mode, ontology_id, session_id | `backend/app/mcp/tools/modeling_batches.py` |
 | semantic | `add_semantic_protection_set_members` | Batch-add resource IRIs to a protection set (idempotent). | members, protection_set_id | actor, members, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
-| semantic | `compile_and_apply_canonical_command` | Compile and apply a structured product command through the Phase 7 canonical writer. | command_kind, graph_set_id, payload | actor, command_kind, graph_set_id, payload, reason | `backend/app/mcp/tools/semantic.py` |
-| semantic | `create_semantic_migration_run` | Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode. | mode, scope_type | batch_size, created_by, mode, scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `compile_and_apply_canonical_command` | Compile and apply a structured product command through the Phase 7 canonical writer. | command_kind, ontology_id, payload | actor, command_kind, ontology_id, payload, reason | `backend/app/mcp/tools/semantic.py` |
+| semantic | `create_semantic_migration_run` | Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode. | mode, scope_type | batch_size, created_by, mode, scope_id, scope_type, target_ontology_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `create_semantic_protection_set` | Create a protection set (named resource IRIs + OR-semantics grants). | name, project_id | actor, allowed_grants, description, members, name, project_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `cutover_semantic_migration_run` | Execute the guarded RDF-primary cutover for a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `delete_semantic_protection_set` | Delete an empty protection set; non-empty sets are rejected. | protection_set_id | actor, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
-| semantic | `describe_semantic_graph_set` | Return graph-set membership, source signature, and current derived pointers. | graph_set_id | graph_set_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `discover_semantic_scopes` | Discover authorized Project/Ontology query scopes and readiness. | - | cursor, limit, query, queryable | `backend/app/mcp/tools/semantic.py` |
-| semantic | `export_semantic_graph_set` | Export a graph set as Turtle, TriG, or JSON-LD. | graph_set_id | allow_stale_derived, format, graph_set_id, include | `backend/app/mcp/tools/semantic.py` |
+| semantic | `export_semantic_ontology` | Export an Ontology model as Turtle, TriG, or JSON-LD. | ontology_id | allow_stale_derived, format, include, ontology_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_governance_status` | Return a governance status summary: graph counts, editability, derived staleness. | - | - | `backend/app/mcp/tools/semantic.py` |
-| semantic | `get_semantic_read_model` | Read a compact graph-derived business JSON read model for a graph set. | graph_set_id, model_name | allow_stale_derived, entity_iri, graph_set_id, include, limit, model_name | `backend/app/mcp/tools/semantic.py` |
-| semantic | `inspect_semantic_projection_status` | Inspect projection freshness by graph set and projection kind. | - | graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `get_semantic_read_model` | Read a compact graph-derived business JSON read model for an Ontology. | model_name, ontology_id | allow_stale_derived, entity_iri, include, limit, model_name, ontology_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `inspect_semantic_projection_status` | Inspect projection freshness by Ontology and projection kind. | - | ontology_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_edit_audits` | List recent governed semantic edit audit records. | - | limit | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_protection_sets` | List the protection sets of one authorized Project. | project_id | project_id | `backend/app/mcp/tools/protection_sets.py` |
-| semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_graph_set_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_ontology_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, scope_mode | assertion_types, context_cursor, context_detail, context_limit, depth, limit, match_cursor, ontology_ids, project_id, queries, query, resource_types, scope_mode, search_mode, semantic_roles | `backend/app/mcp/tools/semantic.py` |
 | semantic | `remove_semantic_protection_set_members` | Batch-remove resource IRIs from a protection set. | protection_set_id, resource_iris | actor, protection_set_id, resource_iris | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `rollback_semantic_migration_run` | Roll back a Phase 7 cutover and restore legacy-primary mode. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_next_semantic_migration_batch` | Execute the next pending batch of a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_semantic_migration_parity_check` | Run parity checks for a Phase 7 migration run. | run_id | check_name, run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `semantic_sparql_query` | Run scoped read-only SPARQL against current Ontology semantic state. | project_id, query, scope_mode | ontology_ids, project_id, query, result_limit, scope_mode, timeout_seconds | `backend/app/mcp/tools/semantic.py` |
-| semantic | `start_semantic_projection_job` | Request a projection rebuild job and (for non-dry-run modes) execute it. | graph_set_id, projection_kind, projection_version | allow_stale_derived, graph_set_id, include, mode, projection_kind, projection_version | `backend/app/mcp/tools/semantic.py` |
-| semantic | `submit_semantic_edit` | Submit a governed RDF/SPARQL Update semantic edit with audit metadata. | content, format | actor, content, format, reason, target_graph_iri, warning_state | `backend/app/mcp/tools/semantic.py` |
+| semantic | `start_semantic_projection_job` | Request a projection rebuild job and (for non-dry-run modes) execute it. | ontology_id, projection_kind, projection_version | allow_stale_derived, include, mode, ontology_id, projection_kind, projection_version | `backend/app/mcp/tools/semantic.py` |
+| semantic | `submit_semantic_edit` | Submit a governed RDF/SPARQL Update semantic edit with audit metadata. | content, format, ontology_id | actor, content, format, ontology_id, reason, warning_state | `backend/app/mcp/tools/semantic.py` |
 | semantic | `update_semantic_protection_set` | Update a protection set name, description, or allowed_grants. | protection_set_id | actor, allowed_grants, description, name, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
 
 <!-- END GENERATED MCP TOOL INVENTORY -->

@@ -402,10 +402,9 @@ def test_active_resource_binding_tool_adapts_governed_read_envelope():
                     "read_envelope": {
                         "iri": iri,
                         "label": "Existing table mapping",
-                        "graph_set_id": "graph-set",
+                        "ontology_id": "ontology",
                         "source_signature": "governed-read-v1",
                         "assertion_kind": "asserted",
-                        "source_graph_iri": "https://platform.test/graph/ontology",
                         "properties": {"mapping_definition": {}},
                     },
                     "scope": {
@@ -427,7 +426,6 @@ def test_active_resource_binding_tool_adapts_governed_read_envelope():
             "read_evidence": {
                 "assertion_kind": "asserted",
                 "envelope_digest": receipt["bindings"][0]["read_evidence"]["envelope_digest"],
-                "source_graph_iri": "https://platform.test/graph/ontology",
                 "source_signature": "governed-read-v1",
             },
             "project_id": "project",
@@ -545,68 +543,19 @@ def test_archival_p2a_snapshot_keeps_mapping_resource_kind():
 
 
 class _MappingScopeClient:
-    def __init__(self) -> None:
-        self.calls: list[tuple[str, str, dict | None]] = []
+    def __init__(self):
+        self.calls = []
         self.ontology_ids = ["ontology-a", "ontology-b", "ontology-unrelated"]
-        self.graphs = {
-            ontology: {
-                "asserted_ontology": f"https://example.test/graph/ontology/{ontology}",
-                "asserted_data": f"https://example.test/graph/data/{ontology}",
-            }
-            for ontology in self.ontology_ids
-        }
-        self.graph_sets: dict[str, list[dict]] = {ontology: [] for ontology in self.ontology_ids}
-        self.next_graph_set = 1
+        self.references = {}
 
     def __call__(self, method, path, body, _key):
         self.calls.append((method, path, body))
         if method == "GET" and path == "/api/projects/project/ontologies":
-            return 200, [{"id": ontology} for ontology in self.ontology_ids]
-        if method == "GET" and path.startswith("/api/ontologies/") and path.endswith(
-            "/workspace-context"
-        ):
-            ontology = path.split("/")[3]
-            return 200, {
-                "state": "ready",
-                "members": [
-                    {
-                        "role": role,
-                        "graph_iri": graph,
-                        "owner_type": "ontology",
-                        "owner_id": ontology,
-                    }
-                    for role, graph in self.graphs[ontology].items()
-                ],
-            }
-        if method == "GET" and path.startswith("/api/semantic/graphs/"):
-            graph = path.removeprefix("/api/semantic/graphs/")
-            for ontology, members in self.graphs.items():
-                for role, graph_iri in members.items():
-                    if graph == graph_iri:
-                        return 200, {
-                            "graph_iri": graph_iri,
-                            "category": "ontology" if role == "asserted_ontology" else "data",
-                            "registered": True,
-                            "owner_type": "ontology",
-                            "owner_id": ontology,
-                        }
-            return 404, {"detail": "missing"}
-        if method == "GET" and path.startswith("/api/semantic/graph-sets?"):
-            query = dict(part.split("=", 1) for part in path.split("?", 1)[1].split("&"))
-            return 200, {"graph_sets": self.graph_sets.get(query["scope_id"], [])}
-        if method == "POST" and path == "/api/semantic/graph-sets":
-            graph_set = {
-                "id": f"graph-set-{self.next_graph_set}",
-                "name": body["name"],
-                "scope_type": body["scope_type"],
-                "scope_id": body["scope_id"],
-                "status": "active",
-                "metadata": body["metadata"],
-                "members": body["members"],
-            }
-            self.next_graph_set += 1
-            self.graph_sets[body["scope_id"]].append(graph_set)
-            return 200, graph_set
+            return 200, [{"id": oid} for oid in self.ontology_ids]
+        if method == "PATCH" and path.startswith("/api/ontologies/"):
+            ontology_id = path.split("/")[-1]
+            self.references[ontology_id] = body["reference_ontology_ids"]
+            return 200, {"id": ontology_id, **body}
         raise AssertionError(f"unexpected scope request {method} {path}")
 
 
@@ -637,36 +586,15 @@ def test_platform_scope_activates_only_selected_mapping_dependencies_and_reuses_
             }
         ]
     }
-    selected = scope.apply_mapping_reference_graph_sets(
+    selected = scope.apply_mapping_reference_ontologies(
         scenario_map,
         plan,
         dependent_direction="from_slice_depends_on_to_slice",
     )
-    assert selected == {"ontology-a": "graph-set-1"}
-    created = client.graph_sets["ontology-a"][0]
-    assert created["metadata"]["mapping_reference_scope"] is True
-    assert created["metadata"]["mapping_reference_direction"] == (
-        "from_slice_depends_on_to_slice"
-    )
-    assert {
-        (member["role"], member["graph_iri"])
-        for member in created["members"]
-    } == {
-        ("asserted_ontology", client.graphs["ontology-a"]["asserted_ontology"]),
-        ("asserted_data", client.graphs["ontology-a"]["asserted_data"]),
-        ("asserted_ontology", client.graphs["ontology-b"]["asserted_ontology"]),
-        ("asserted_data", client.graphs["ontology-b"]["asserted_data"]),
-    }
-    post_count = sum(
-        method == "POST" and path == "/api/semantic/graph-sets"
-        for method, path, _body in client.calls
-    )
-    assert scope.apply_mapping_reference_graph_sets(
-        scenario_map,
-        plan,
-        dependent_direction="from_slice_depends_on_to_slice",
+    assert selected == {"ontology-a": "ontology-a"}
+    assert client.references == {"ontology-a": ["ontology-b"]}
+    assert scope.apply_mapping_reference_ontologies(
+        scenario_map, plan, dependent_direction="from_slice_depends_on_to_slice",
     ) == selected
-    assert sum(
-        method == "POST" and path == "/api/semantic/graph-sets"
-        for method, path, _body in client.calls
-    ) == post_count
+    assert client.references == {"ontology-a": ["ontology-b"]}
+    assert all(method in {"GET", "PATCH"} for method, _, _ in client.calls)

@@ -60,7 +60,7 @@ class SemanticSearchProjectionService(ProjectionWriter):
 
     def _load_dataset(self, scope: ScopeResolution) -> Dataset:
         dataset = Dataset()
-        iris = list(scope.source_graph_iris)
+        iris = list(scope.model_graph_iris)
         for iri in iris:
             content = self.rdf_store.get_graph(iri, RdfFormat.TRIG.value)
             if content:
@@ -91,9 +91,9 @@ class SemanticSearchProjectionService(ProjectionWriter):
                     "label": label,
                     "text": " | ".join(text_parts),
                     "assertion_kind": self._assertion_kind(str(graph), scope),
-                    "source_graph_iri": str(graph),
+                    "model_graph_iri": str(graph),
                     "source_signature": scope.source_signature,
-                    "graph_set_id": scope.graph_set_id,
+                    "ontology_id": scope.ontology_id,
                     "is_stale": is_stale,
                     "visibility_labels": [],
                 }

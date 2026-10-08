@@ -28,8 +28,8 @@ def _workspace(session):
     OntologyWorkspaceService(session, settings).ensure(ontology)
     session.commit()
     workspace = OntologyWorkspaceService(session, settings).context(ontology.id)
-    roles = {member["role"]: member["graph_iri"] for member in workspace["members"]}
-    return settings, ontology, workspace["default_graph_set_id"], roles
+    roles = {role: workspace["model_graph_iri"] for role in ("asserted_ontology", "asserted_data", "policy", "shapes")}
+    return settings, ontology, workspace["ontology_id"], roles
 
 
 def _audit(session, audit_id="audit", graphs=None):
@@ -113,7 +113,7 @@ class _DerivedStore:
 
 
 class _FailingLineageRecorder:
-    def ontology_id_for_graph_set(self, _graph_set_id):
+    def ontology_id_for_graph_set(self, _ontology_id):
         return "ontology"
 
     def record_derived_statements(self, **_kwargs):

@@ -162,7 +162,7 @@ def _state() -> dict:
         "workspace_version": "workspace-1",
         "source_signature": "source-1",
         "build_session_id": "session-1",
-        "graph_set_id": "graph-1",
+
     }
     state["state_digest"] = model_state_digest(state)
     return state

@@ -69,7 +69,7 @@ def _platform_payload(ordinal: int = 1, count: int = 1) -> dict:
         "count": count,
         "ticket_binding": {"ticket_digest": "a" * 64},
         "model_state": {"workspace_version": "w1", "state_digest": "b" * 64},
-        "platform_read_scope": {"project_id": "project-1", "ontology_id": "ontology-1", "graph_set_id": "graph-1"},
+        "platform_read_scope": {"project_id": "project-1", "ontology_id": "ontology-1"},
         "proxy_capability": {"capability_id": "proxy-1"},
         "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),
         "request_schema": exact,
@@ -177,7 +177,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             read_key="read-key",
             project_id="project-1",
             ontology_id="ontology-1",
-            graph_set_id="graph-1",
+
             ticket_digest="a" * 64,
             model_state_digest="b" * 64,
             allowed_tools=list(PLATFORM_PROXY_READ_TOOLS),
@@ -196,7 +196,6 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(tool, "query_semantic_context")
         self.assertEqual(arguments["project_id"], "project-1")
         self.assertEqual(arguments["ontology_id"], "ontology-1")
-        self.assertEqual(arguments["graph_set_id"], "graph-1")
         self.assertEqual(arguments["ticket_digest"], "a" * 64)
         self.assertEqual(arguments["model_state_digest"], "b" * 64)
         self.assertEqual(arguments["ontology_ids"], ["ontology-1"])
@@ -223,7 +222,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
     def test_exact_proxy_schema_rejects_extra_missing_wrong_type(self) -> None:
         schema = examiner_proxy_schemas(["query_semantic_context"])["query_semantic_context"]
         scope = {
-            "project_id": "project-1", "ontology_id": "ontology-1", "graph_set_id": "graph-1",
+            "project_id": "project-1", "ontology_id": "ontology-1",
             "ticket_digest": "a" * 64, "model_state_digest": "b" * 64,
         }
         valid = {**scope, "query": "release", "scope_mode": "ontologies", "ontology_ids": ["ontology-1"]}
@@ -274,7 +273,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             read_key="read-key",
             project_id="project-1",
             ontology_id="ontology-1",
-            graph_set_id="graph-1",
+
             ticket_digest="a" * 64,
             model_state_digest="b" * 64,
             allowed_tools=list(PLATFORM_PROXY_READ_TOOLS),
@@ -1215,7 +1214,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             ordinal=0,
             project_id="project-1",
             ontology_id="ontology-1",
-            graph_set_id="graph-1",
+
             ticket_digest="a" * 64,
             model_state_digest="b" * 64,
             tool="get_ontology_read_model",

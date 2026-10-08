@@ -58,7 +58,7 @@ def register_evidence(server: FastMCP) -> None:
         target_id: str,
         evidence_reference_ids: list[str] | None = None,
         evidence: list[dict[str, str]] | None = None,
-        graph_set_id: str | None = None,
+
         client_item_id: str | None = None,
         edit_audit_id: str | None = None,
         actor: str | None = None,
@@ -73,7 +73,7 @@ def register_evidence(server: FastMCP) -> None:
                 target_id=target_id,
                 evidence_reference_ids=evidence_reference_ids or [],
                 evidence=evidence or [],
-                graph_set_id=graph_set_id,
+
                 client_item_id=client_item_id,
                 edit_audit_id=edit_audit_id,
                 actor=runtime_actor(),
@@ -131,7 +131,7 @@ def _associate(session, **payload):
     rows = service.associate(
         project_id=payload["project_id"],
         ontology_id=payload["ontology_id"],
-        graph_set_id=payload["graph_set_id"],
+
         target_type=payload["target_type"],
         target_id=payload["target_id"],
         client_item_id=payload["client_item_id"],

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs";
 /**
  * Live-contract smoke: drives the running backend at :8001 (no mocks).
  * Verifies the integration test plan's runtime spine + governance +
- * SHACL/OWL and retired rule contracts work end-to-end against real Oxigraph.
+ * Single-model reads/writes and retired capability contracts against real Oxigraph.
  *
  * Pre-conditions:
  *   - backend up at http://127.0.0.1:8001
@@ -14,13 +14,6 @@ import { readFileSync } from "node:fs";
  * other's data. Requests go through the vite dev server's /api proxy
  * (same-origin), matching what the real frontend (semanticApi.ts) does.
  */
-
-interface GraphScope {
-  ontology: string;
-  data: string;
-  shapes: string;
-  policy: string;
-}
 
 let counter = 0;
 const cleanupProjects = new Set<string>();
@@ -47,55 +40,28 @@ function requireLiveApiKey() {
   }
 }
 
-function uniqueScope(): GraphScope {
-  counter += 1;
-  const id = `${Date.now()}-${counter}`;
-  const base = "http://ontology-platform.local/semantic/graph";
-  return {
-    ontology: `${base}/ontology/live-${id}`,
-    data: `${base}/data/live-${id}`,
-    shapes: `${base}/shapes/live-${id}`,
-    policy: `${base}/policy/live-${id}`,
-  };
-}
-
-function registerCleanup(projectId?: string, scope?: GraphScope) {
-  if (projectId) cleanupProjects.add(projectId);
-  if (scope) Object.values(scope).forEach((graph) => cleanupGraphs.add(graph));
-}
-
-function seedTrig(s: GraphScope): string {
-  return `
+const modelTurtle = `
 @prefix ex: <http://example.test/> .
-@prefix vocab: <http://ontology-platform.local/vocab/> .
+@prefix op: <http://ontology-platform.local/semantic/vocab/> .
 @prefix owl: <http://www.w3.org/2002/07/owl#> .
 @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .
-@prefix sh: <http://www.w3.org/ns/shacl#> .
-
-<${s.ontology}> {
-  ex:Person a owl:Class ; rdfs:label "Person" .
-  ex:Organization a owl:Class ; rdfs:label "Organization" .
-  ex:name a owl:DatatypeProperty ; rdfs:domain ex:Person ; rdfs:range xsd:string .
-  ex:age a owl:DatatypeProperty ; rdfs:domain ex:Person ; rdfs:range xsd:integer .
-  ex:worksFor a owl:ObjectProperty ; rdfs:domain ex:Person ; rdfs:range ex:Organization .
-}
-
-<${s.data}> {
-  ex:acme a owl:NamedIndividual, ex:Organization ; vocab:id "acme" ; rdfs:label "Acme" ; ex:name "Acme" .
-  ex:alice a owl:NamedIndividual, ex:Person ; vocab:id "alice" ; rdfs:label "Alice" ; ex:name "Alice" ; ex:age 30 ; ex:worksFor ex:acme .
-}
-
-<${s.shapes}> {
-  ex:PersonShape a sh:NodeShape ;
-    sh:targetClass ex:Person ;
-    sh:property [ sh:path ex:name ; sh:minCount 1 ; sh:datatype xsd:string ] .
-}
-
-<${s.policy}> {
-  ex:PublicPolicy a owl:Ontology .
-}
+ex:Person a owl:Class ; rdfs:label "Person" .
+ex:Organization a owl:Class ; rdfs:label "Organization" .
+ex:worksFor a owl:ObjectProperty .
+ex:acme a owl:NamedIndividual, ex:Organization ; op:id "acme" ; rdfs:label "Acme" ; ex:name "Acme" .
+ex:alice a owl:NamedIndividual, ex:Person ; op:id "alice" ; rdfs:label "Alice" ; ex:name "Alice" ; ex:worksFor ex:acme .
 `;
+
+async function createModel(page: Page) {
+  requireLiveApiKey();
+  const project = await apiPost(page, "/projects", { name: `Single model ${Date.now()}-${counter += 1}` });
+  expect(project.status).toBe(201);
+  cleanupProjects.add(project.json.id);
+  const ontology = await apiPost(page, `/projects/${project.json.id}/ontologies`, { name: "Business model" });
+  expect(ontology.status).toBe(201);
+  // Internal locator used solely to clean this isolated test's RDF artifact.
+  cleanupGraphs.add(`http://ontology-platform.local/semantic/graph/ontology/${ontology.json.id}`);
+  return { projectId: project.json.id, ontologyId: ontology.json.id };
 }
 
 async function apiPost(page: Page, path: string, body: unknown) {
@@ -148,165 +114,55 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
     cleanupGraphs.clear();
   });
 
-  test("runtime spine: load → query → write-SPARQL rejected", async ({ page }) => {
-    requireLiveApiKey();
-    const suffix = `${Date.now()}-${counter += 1}`;
-    const project = await apiPost(page, "/projects", { name: `R006 Live ${suffix}` });
-    expect(project.status).toBe(201);
-    const ontology = await apiPost(page, `/projects/${project.json.id}/ontologies`, {
-      name: `R006 Ontology ${suffix}`,
-    });
-    expect(ontology.status).toBe(201);
-    const workspace = await apiGet(page, `/ontologies/${ontology.json.id}/workspace-context`);
+  test("single model: ontology writes, governed reads and rejected write-SPARQL", async ({ page }) => {
+    const { projectId, ontologyId } = await createModel(page);
+    const workspace = await apiGet(page, `/ontologies/${ontologyId}/workspace-context`);
     expect(workspace.status).toBe(200);
-    const members = Object.fromEntries(
-      (workspace.json.members as Array<{ role: string; graph_iri: string }>).map((member) => [
-        member.role,
-        member.graph_iri,
-      ]),
-    );
-    const s: GraphScope = {
-      ontology: members.asserted_ontology,
-      data: members.asserted_data,
-      shapes: members.shapes,
-      policy: members.policy,
-    };
-    registerCleanup(project.json.id, s);
-    await apiPost(page, "/semantic/datasets:load", {
-      format: "trig",
-      base_iri: "http://ontology-platform.local/semantic/",
-      content: seedTrig(s),
-    });
-
-    const q = await apiPost(page, "/semantic/sparql:query", {
-      project_id: project.json.id,
-      scope_mode: "ontologies",
-      ontology_ids: [ontology.json.id],
-      query: `PREFIX ex: <http://example.test/> SELECT ?s ?n WHERE { GRAPH <${s.data}> { ?s ex:name ?n } }`,
-    });
-    expect(q.status, JSON.stringify(q.json)).toBe(200);
-    const names = (q.json.result.results.bindings as Array<{ n?: { value: string } }>)
-      .map((b) => b.n?.value)
-      .sort();
-    expect(names).toEqual(["Acme", "Alice"]);
-
-    const context = await apiPost(page, "/semantic/context:query", {
-      project_id: project.json.id,
-      scope_mode: "ontologies",
-      ontology_ids: [ontology.json.id],
-      query: "Alice worksFor Acme",
-      depth: 1,
-    });
+    expect(workspace.json.ontology_id).toBe(ontologyId);
+    for (const field of ["graph_set_id", "members", "source_graph_iri", "model_graph_iri"]) expect(workspace.json).not.toHaveProperty(field);
+    const edit = await apiPost(page, "/semantic/edits", { ontology_id: ontologyId, format: "turtle", content: modelTurtle });
+    expect(edit.status, JSON.stringify(edit.json)).toBe(200);
+    const scope = { project_id: projectId, scope_mode: "ontologies", ontology_ids: [ontologyId] };
+    const query = await apiPost(page, "/semantic/sparql:query", { ...scope, query: "PREFIX ex: <http://example.test/> SELECT ?s ?n WHERE { ?s ex:name ?n }" });
+    expect(query.status, JSON.stringify(query.json)).toBe(200);
+    expect(query.json.result.results.bindings.map((b: { n: { value: string } }) => b.n.value).sort()).toEqual(["Acme", "Alice"]);
+    const context = await apiPost(page, "/semantic/context:query", { ...scope, query: "Alice worksFor Acme", depth: 1 });
     expect(context.status, JSON.stringify(context.json)).toBe(200);
     expect(context.json.result_status).toBe("matched");
-    expect(context.json.primary_matches.length).toBeGreaterThan(0);
-    // Resource/graph positions remain readable; dedicated tracing fields are retired.
-    const serializedContext = JSON.stringify(context.json);
-    for (const field of ["evidence_reference_ids", "evidence_status", "dependency_evidence_status", "lineage", "lineage_status", "_lineage_target", "excerpt"]) {
-      expect(serializedContext).not.toContain(`"${field}":`);
-    }
-    const locatedResources = [...context.json.primary_matches, ...context.json.related_context]
-      .filter((resource: { data?: { graph_iri?: string } }) => resource.data?.graph_iri);
-    expect(locatedResources.length).toBeGreaterThan(0);
-    expect(locatedResources.every((resource: { data: { graph_iri: string } }) =>
-      Object.values(s).includes(resource.data.graph_iri))).toBe(true);
-
-    const write = await apiPost(page, "/semantic/sparql:query", {
-      project_id: project.json.id,
-      scope_mode: "ontologies",
-      ontology_ids: [ontology.json.id],
-      query: `DELETE DATA { <http://example.test/x> <http://example.test/y> "z" }`,
-    });
+    expect(context.json.primary_matches.every((r: { ontology_id: string }) => r.ontology_id === ontologyId)).toBe(true);
+    expect(JSON.stringify(context.json)).not.toContain('"source_graph_iri"');
+    const write = await apiPost(page, "/semantic/sparql:query", { ...scope, query: 'DELETE DATA { <urn:a> <urn:b> "z" }' });
     expect(write.status).toBe(400);
     expect(write.json.detail.code).toBe("invalid_query");
   });
 
-  test("governed edits accept valid Turtle and reject malformed RDF with 400", async ({ page }) => {
-    requireLiveApiKey();
-    const s = uniqueScope();
-    registerCleanup(undefined, s);
-    await apiPost(page, "/semantic/datasets:load", {
-      format: "trig",
-      base_iri: "http://ontology-platform.local/semantic/",
-      content: seedTrig(s),
-    });
-
-    const good = await apiPost(page, "/semantic/edits", {
-      format: "turtle",
-      content: `@prefix ex: <http://example.test/> . ex:bob a ex:Person ; ex:name "Bob" .`,
-      target_graph_iri: s.data,
-      actor: "live-contract",
-      reason: "valid edit",
-      warning_state: {},
-    });
-    expect(good.status).toBe(200);
+  test("ontology edits preserve versions and reject malformed RDF and retired graph selectors", async ({ page }) => {
+    const { ontologyId } = await createModel(page);
+    const before = await apiGet(page, `/ontologies/${ontologyId}/workspace-context`);
+    const good = await apiPost(page, "/semantic/edits", { ontology_id: ontologyId, format: "turtle", content: modelTurtle });
+    expect(good.status, JSON.stringify(good.json)).toBe(200);
     expect(good.json.applied).toBe(true);
-    expect(good.json.delta.triple_count).toBeGreaterThan(0);
-    expect(good.json.graph_revisions[s.data]).toBeGreaterThanOrEqual(1);
-
-    const bad = await apiPost(page, "/semantic/edits", {
-      format: "turtle",
-      content: "GARBAGE not valid turtle",
-      target_graph_iri: s.data,
-      actor: "live-contract",
-      reason: "malformed",
-      warning_state: {},
-    });
+    const after = await apiGet(page, `/ontologies/${ontologyId}/workspace-context`);
+    expect(after.json.model_revision).toBeGreaterThan(before.json.model_revision);
+    const bad = await apiPost(page, "/semantic/edits", { ontology_id: ontologyId, format: "turtle", content: "GARBAGE not valid turtle" });
     expect(bad.status).toBe(400);
-    const detail = typeof bad.json.detail === "string" ? bad.json.detail : bad.json.detail?.message;
-    expect(detail).toContain("RDF parse error");
+    const selector = await apiPost(page, "/semantic/edits", { ontology_id: ontologyId, format: "turtle", content: modelTurtle, target_graph_iri: "urn:other" });
+    expect(selector.status).toBe(422);
   });
 
-  test("graph-set SHACL/OWL and generic reading remain while rule execution is retired", async ({ page }) => {
-    requireLiveApiKey();
-    const suffix = `${Date.now()}-${counter += 1}`;
-    const project = await apiPost(page, "/projects", { name: `R006 Rules ${suffix}` });
-    expect(project.status).toBe(201);
-    const ontology = await apiPost(page, `/projects/${project.json.id}/ontologies`, {
-      name: `R006 Rules Ontology ${suffix}`,
-    });
-    expect(ontology.status).toBe(201);
-    const members = Object.fromEntries(
-      (ontology.json.workspace.members as Array<{ role: string; graph_iri: string }>).map((member) => [
-        member.role,
-        member.graph_iri,
-      ]),
-    );
-    const s: GraphScope = {
-      ontology: members.asserted_ontology,
-      data: members.asserted_data,
-      shapes: members.shapes,
-      policy: members.policy,
-    };
-    registerCleanup(project.json.id, s);
-    await apiPost(page, "/semantic/datasets:load", {
-      format: "trig",
-      base_iri: "http://ontology-platform.local/semantic/",
-      content: seedTrig(s),
-    });
-
-    const gsId = ontology.json.workspace.default_graph_set_id;
-
-    const sh = await apiPost(page, `/semantic/graph-sets/${gsId}/validation-runs`, {});
-    expect(sh.status).toBe(200);
-    expect(sh.json.status).toBe("succeeded");
-    expect(sh.json.conforms).toBe(true);
-
-    const reasoning=await apiPost(page, `/semantic/graph-sets/${gsId}/reasoning-runs`,{tasks:["consistency"]});
-    expect(reasoning.status).toBe(200);
-    expect(["succeeded","failed"]).toContain(reasoning.json.status);
-    const rule=await apiPost(page,"/semantic/rule-definitions",{ontology_id:ontology.json.id,name:"retired",language:"sparql_construct",body:{template:"CONSTRUCT {?s ?p ?o} WHERE {?s ?p ?o}"}});
-    expect([404,410]).toContain(rule.status);
-    const run=await apiPost(page,`/semantic/graph-sets/${gsId}/rule-runs`,{});
-    expect([404,410]).toContain(run.status);
-    const results=await apiGet(page,"/semantic/rule-runs");
-    expect([404,410]).toContain(results.status);
-    const definitions=await apiGet(page,"/semantic/rule-definitions");
-    expect([404,410]).toContain(definitions.status);
-    const model=await apiGet(page,`/semantic/graph-sets/${gsId}/read-models/resource-list?include=asserted&field_set=detail`);
-    expect(model.status,JSON.stringify(model.json)).toBe(200);
-    expect(model.json.items.some((r:{iri:string})=>r.iri==="http://example.test/alice")).toBe(true);
-
+  test("GraphSet, SHACL, OWL and executable rules stay retired; generic model reads work", async ({ page }) => {
+    const { ontologyId } = await createModel(page);
+    const edit = await apiPost(page, "/semantic/edits", { ontology_id: ontologyId, format: "turtle", content: modelTurtle });
+    expect(edit.status, JSON.stringify(edit.json)).toBe(200);
+    for (const path of ["/semantic/graph-sets", `/semantic/ontologies/${ontologyId}/validation-runs`, `/semantic/ontologies/${ontologyId}/reasoning-runs`, "/semantic/rule-definitions"]) {
+      const retired = await apiPost(page, path, {});
+      expect([404, 410]).toContain(retired.status);
+    }
+    const model = await apiGet(page, `/semantic/ontologies/${ontologyId}/read-models/resource-list?include=asserted&field_set=detail`);
+    expect(model.status, JSON.stringify(model.json)).toBe(200);
+    expect(model.json.items.some((r: { iri: string }) => r.iri === "http://example.test/alice")).toBe(true);
+    expect(model.json.items.every((r: { ontology_id: string }) => r.ontology_id === ontologyId)).toBe(true);
+    expect(JSON.stringify(model.json)).not.toContain('"source_graph_iri"');
   });
 
   test("frontend dev server renders home page", async ({ page }) => {

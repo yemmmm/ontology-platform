@@ -187,7 +187,7 @@ def register_modeling_batches(server: FastMCP) -> None:
             if ontology is None:
                 raise ValueError("ontology_not_found")
             workspace = OntologyWorkspaceService(session, Settings()).context(ontology_id)
-            if workspace.get("state") != "ready" or not workspace.get("default_graph_set_id"):
+            if workspace.get("state") != "ready" or not workspace.get("ontology_id"):
                 raise ValueError("ontology workspace is incomplete")
             current_version = ModelingWorkspaceVersionService(session, Settings()).version_for(ontology_id)
             # Read-only first pages bind the authoritative current version when
@@ -196,11 +196,7 @@ def register_modeling_batches(server: FastMCP) -> None:
             bound_version = workspace_version if workspace_version is not None else current_version
             if bound_version != current_version:
                 raise ValueError("entity statement workspace version drifted")
-            data_graphs = [
-                member["graph_iri"]
-                for member in workspace.get("members", [])
-                if member.get("role") == "asserted_data" and isinstance(member.get("graph_iri"), str)
-            ]
+            data_graphs = [workspace["model_graph_iri"]]
             if not data_graphs:
                 raise ValueError("asserted data graph is unavailable")
             escaped_entity = entity_iri.replace("\\", "\\\\").replace(">", "\\>")

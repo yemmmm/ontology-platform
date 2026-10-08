@@ -22,9 +22,8 @@ from app.services.semantic_context_query import (
     SemanticContextQueryService,
 )
 from app.services.semantic_graph_registry import SemanticGraphRegistryService
-from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_derived_state import SemanticDerivedStateService
-from app.services.semantic_graph_set_export import SemanticExportService
+from app.services.semantic_ontology_export import SemanticExportService
 from app.services.semantic_projection_job import (
     ProjectionJobError,
     SemanticProjectionJobService,
@@ -50,7 +49,7 @@ from app.services.semantic_retrieval import (
 from app.services.embedding import EmbeddingClient
 from app.services.semantic_access import (
     SemanticAccessResolver,
-    project_id_for_graph_set,
+    project_id_for_ontology,
 )
 
 
@@ -110,9 +109,6 @@ def _scoped_sparql_service(session, project_id: str | None = None) -> ScopedSpar
     )
 
 
-def _graph_set_service(session) -> SemanticGraphSetService:
-    settings = Settings()
-    return SemanticGraphSetService(session, settings)
 
 
 def _derived_state_service(session) -> SemanticDerivedStateService:
@@ -214,7 +210,7 @@ def register_semantic(server: FastMCP) -> None:
     def submit_semantic_edit(
         format: str,
         content: str,
-        target_graph_iri: str | None = None,
+        ontology_id: str,
         actor: str | None = None,
         reason: str | None = None,
         warning_state: dict[str, Any] | None = None,
@@ -224,7 +220,7 @@ def register_semantic(server: FastMCP) -> None:
             lambda session, _driver, _embedding_client: _semantic_service(session).apply_edit(
                 format=format,
                 content=content,
-                target_graph_iri=target_graph_iri,
+                target_graph_iri=SemanticReadScopeResolver(session).resolve(ontology_id).model_graph_iris[0],
                 actor=runtime_actor(),
                 reason=reason,
                 warning_state=warning_state or {},
@@ -240,14 +236,6 @@ def register_semantic(server: FastMCP) -> None:
             )
         )
 
-    @server.tool()
-    def describe_semantic_graph_set(graph_set_id: str) -> dict[str, Any]:
-        """Return graph-set membership, source signature, and current derived pointers."""
-        return _run_tool(
-            lambda session, _driver, _embedding_client: _graph_set_service(session).describe(
-                graph_set_id
-            )
-        )
 
 
     @server.tool()
@@ -263,18 +251,18 @@ def register_semantic(server: FastMCP) -> None:
 
     @server.tool()
     def get_semantic_read_model(
-        graph_set_id: str,
+        ontology_id: str,
         model_name: str,
         include: str = "asserted",
         allow_stale_derived: bool = True,
         limit: int | None = None,
         entity_iri: str | None = None,
     ) -> dict[str, Any]:
-        """Read a compact graph-derived business JSON read model for a graph set."""
+        """Read a compact graph-derived business JSON read model for an Ontology."""
         return _run_tool(
             lambda session, _driver, _embedding_client: _read_model(
                 session,
-                graph_set_id,
+                ontology_id,
                 model_name,
                 include,
                 allow_stale_derived,
@@ -284,17 +272,17 @@ def register_semantic(server: FastMCP) -> None:
         )
 
     @server.tool()
-    def export_semantic_graph_set(
-        graph_set_id: str,
+    def export_semantic_ontology(
+        ontology_id: str,
         format: str = "trig",
         include: str = "asserted",
         allow_stale_derived: bool = False,
     ) -> dict[str, Any]:
-        """Export a graph set as Turtle, TriG, or JSON-LD."""
+        """Export an Ontology model as Turtle, TriG, or JSON-LD."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _export_graph_set(
+            lambda session, _driver, _embedding_client: _export_ontology(
                 session,
-                graph_set_id,
+                ontology_id,
                 format,
                 include,
                 allow_stale_derived,
@@ -303,16 +291,16 @@ def register_semantic(server: FastMCP) -> None:
 
     @server.tool()
     def inspect_semantic_projection_status(
-        graph_set_id: str | None = None,
+        ontology_id: str | None = None,
     ) -> dict[str, Any]:
-        """Inspect projection freshness by graph set and projection kind."""
+        """Inspect projection freshness by Ontology and projection kind."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: _projection_status(session, graph_set_id)
+            lambda session, _driver, _embedding_client: _projection_status(session, ontology_id)
         )
 
     @server.tool()
     def start_semantic_projection_job(
-        graph_set_id: str,
+        ontology_id: str,
         projection_kind: str,
         projection_version: str,
         include: str = "asserted",
@@ -324,7 +312,7 @@ def register_semantic(server: FastMCP) -> None:
             lambda session, driver, _embedding_client: _start_projection_job(
                 session,
                 driver,
-                graph_set_id,
+                ontology_id,
                 projection_kind,
                 projection_version,
                 include,
@@ -341,12 +329,12 @@ def register_semantic(server: FastMCP) -> None:
     def preflight_semantic_migration(
         scope_type: str,
         scope_id: str | None = None,
-        target_graph_set_id: str | None = None,
+        target_ontology_id: str | None = None,
     ) -> dict[str, Any]:
         """Run Phase 7 migration preflight for a scope."""
         return _run_tool(
             lambda session, _driver, _embedding_client: _migration_service(session).preflight(
-                scope_type, scope_id, target_graph_set_id=target_graph_set_id
+                scope_type, scope_id, target_ontology_id=target_ontology_id
             )
         )
 
@@ -355,7 +343,7 @@ def register_semantic(server: FastMCP) -> None:
         scope_type: str,
         mode: str,
         scope_id: str | None = None,
-        target_graph_set_id: str | None = None,
+        target_ontology_id: str | None = None,
         batch_size: int | None = None,
         created_by: str | None = None,
     ) -> dict[str, Any]:
@@ -365,7 +353,7 @@ def register_semantic(server: FastMCP) -> None:
                 scope_type=scope_type,
                 scope_id=scope_id,
                 mode=mode,
-                target_graph_set_id=target_graph_set_id,
+                target_ontology_id=target_ontology_id,
                 batch_size=batch_size,
                 created_by=runtime_actor(),
             )
@@ -408,7 +396,7 @@ def register_semantic(server: FastMCP) -> None:
     @server.tool()
     def compile_and_apply_canonical_command(
         command_kind: str,
-        graph_set_id: str,
+        ontology_id: str,
         payload: dict[str, Any],
         actor: str | None = None,
         reason: str | None = None,
@@ -420,54 +408,21 @@ def register_semantic(server: FastMCP) -> None:
             ).apply_command(
                 command_kind,
                 payload,
-                graph_set_id=graph_set_id,
+                ontology_id=ontology_id,
                 actor=runtime_actor(),
                 reason=reason,
             )
         )
 
 
-def _selected_set_members(
-    session, graph_set_id: str, roles: tuple[str, ...]
-) -> list[dict[str, Any]]:
-    settings = Settings()
-    service = SemanticGraphSetService(session, settings)
-    description = service.describe(graph_set_id)
-    return [member for member in description["members"] if member["role"] in roles]
 
 
-def _reject_unmaterialized_members(
-    members: list[dict[str, Any]], graph_set_id: str, roles: tuple[str, ...]
-) -> None:
-    """R3.0-016 #29: name never-materialized members before the store does.
-
-    ``update_membership`` registers a member at revision 0 until its first
-    write materializes the graph.  Handing such an IRI to the RDF store made
-    the external ``graph does not exists`` reply the only diagnostic — no
-    backend source explained it.  Fail here, in backend vocabulary, instead.
-    """
-
-    missing = [str(member["graph_iri"]) for member in members if not member.get("revision")]
-    if missing:
-        raise ValueError(
-            f"graph set {graph_set_id} has {'/'.join(roles)} member(s) with no "
-            f"materialized revision: {', '.join(missing)}; materialize the graph "
-            "or drop it from the set before validation/reasoning"
-        )
 
 
-def _resolve_data_graphs(
-    session, graph_set_id: str, roles: tuple[str, ...] = ("asserted_data",)
-) -> list[str]:
-    members = _selected_set_members(session, graph_set_id, roles)
-    _reject_unmaterialized_members(members, graph_set_id, roles)
-    return [member["graph_iri"] for member in members]
+def _resolve_data_graphs(session, ontology_id: str) -> list[str]:
+    return SemanticReadScopeResolver(session).resolve(ontology_id).model_graph_iris
 
 
-def _resolve_role_graphs(session, graph_set_id: str, role: str) -> list[str]:
-    members = _selected_set_members(session, graph_set_id, (role,))
-    _reject_unmaterialized_members(members, graph_set_id, (role,))
-    return [member["graph_iri"] for member in members]
 
 
 def _read_model_service(
@@ -528,17 +483,17 @@ def _canonical_write_service(session):
 
 def _read_model(
     session,
-    graph_set_id: str,
+    ontology_id: str,
     model_name: str,
     include: str,
     allow_stale_derived: bool,
     limit: int | None,
     entity_iri: str | None = None,
 ) -> dict[str, Any]:
-    service = _read_model_service(session, project_id_for_graph_set(session, graph_set_id))
+    service = _read_model_service(session, project_id_for_ontology(session, ontology_id))
     try:
         return service.read_model(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             model_name=model_name,
             include=include,
             allow_stale_derived=allow_stale_derived,
@@ -549,17 +504,17 @@ def _read_model(
         return {"error": str(exc), "status_code": getattr(exc, "status_code", 400)}
 
 
-def _export_graph_set(
+def _export_ontology(
     session,
-    graph_set_id: str,
+    ontology_id: str,
     format: str,
     include: str,
     allow_stale_derived: bool,
 ) -> dict[str, Any]:
-    service = _export_service(session, project_id_for_graph_set(session, graph_set_id))
+    service = _export_service(session, project_id_for_ontology(session, ontology_id))
     try:
         payload, warnings = service.export(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             format=format,
             include=include,
             allow_stale_derived=allow_stale_derived,
@@ -569,15 +524,15 @@ def _export_graph_set(
     return {"format": format, "payload": payload, "warnings": warnings}
 
 
-def _projection_status(session, graph_set_id: str | None) -> dict[str, Any]:
+def _projection_status(session, ontology_id: str | None) -> dict[str, Any]:
     service = _projection_job_service(session, None)
-    return service.status(graph_set_id=graph_set_id)
+    return service.status(ontology_id=ontology_id)
 
 
 def _start_projection_job(
     session,
     driver,
-    graph_set_id: str,
+    ontology_id: str,
     projection_kind: str,
     projection_version: str,
     include: str,
@@ -587,7 +542,7 @@ def _start_projection_job(
     service = _projection_job_service(session, driver)
     try:
         job = service.create_job(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             projection_kind=projection_kind,
             projection_version=projection_version,
             include=include,

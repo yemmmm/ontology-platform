@@ -1,3 +1,4 @@
+from single_model_support import seed_model
 from sqlalchemy import func, select
 import pytest
 from collections.abc import Generator
@@ -16,7 +17,6 @@ from app.repositories.models import (
     ProjectModel,
     SemanticEditAuditModel,
     SemanticGraphRegistryModel,
-    SemanticGraphSetModel,
     SemanticProjectionManifestModel,
     SemanticReasoningRunModel,
     SemanticRuleRunModel,
@@ -25,7 +25,7 @@ from app.repositories.models import (
 from app.repositories.rdf_store import SparqlResult, UpdateResult
 
 
-GRAPH = "http://ontology-platform.local/semantic/graph/data/demo"
+GRAPH = "http://ontology-platform.local/semantic/graph/ontology/demo"
 RESULT_GRAPH = "http://ontology-platform.local/semantic/graph/reasoning-result/run-1"
 TEST_PROJECT_ID = "semantic-api-project"
 TEST_ONTOLOGY_ID = "semantic-api-ontology"
@@ -102,6 +102,7 @@ def _client(
                 id=TEST_ONTOLOGY_ID,
                 project_id=TEST_PROJECT_ID,
                 name="Semantic API ontology",
+                model_graph_iri=GRAPH,
             )
         )
         session.commit()
@@ -142,7 +143,7 @@ def test_semantic_edit_endpoint_applies_turtle_insert(in_memory_session) -> None
         json={
             "format": "turtle",
             "content": '@prefix ex: <http://example.test/> . ex:alice ex:name "Alice" .',
-            "target_graph_iri": GRAPH,
+            "ontology_id": TEST_ONTOLOGY_ID,
 
         },
     )
@@ -163,13 +164,13 @@ def test_semantic_edit_endpoint_rejects_reasoning_result_graph(in_memory_session
         json={
             "format": "turtle",
             "content": '@prefix ex: <http://example.test/> . ex:alice ex:name "Alice" .',
+            "ontology_id": TEST_ONTOLOGY_ID,
             "target_graph_iri": RESULT_GRAPH,
 
         },
     )
 
-    assert response.status_code == 400
-    assert "Direct semantic edits" in response.json()["detail"]
+    assert response.status_code == 422
     assert store.updates == []
 
 
@@ -183,7 +184,7 @@ def test_semantic_edit_endpoint_returns_400_for_malformed_rdf(in_memory_session)
         json={
             "format": "turtle",
             "content": "GARBAGE not valid turtle",
-            "target_graph_iri": GRAPH,
+            "ontology_id": TEST_ONTOLOGY_ID,
 
         },
     )
@@ -247,104 +248,10 @@ def test_semantic_edit_audits_endpoint_lists_records(in_memory_session) -> None:
     assert response.json()[0]["graph_delta"] == {"operation": "insert"}
 
 
-def test_graph_registry_endpoints_round_trip(in_memory_session) -> None:
-    client = _client(FakeStore(), in_memory_session)
-
-    response = client.post(
-        "/api/semantic/graphs",
-        json={
-            "graph_iri": GRAPH,
-            "category": "data",
-            "owner_type": "ontology",
-            "owner_id": "ont-1",
-            "created_by": "agent:test",
-        },
-    )
-    assert response.status_code == 200
-    body = response.json()
-    assert body["category"] == "data"
-    assert body["mutable_by_direct_edit"] is True
-
-    list_response = client.get("/api/semantic/graphs", params={"category": "data"})
-    assert list_response.status_code == 200
-    assert list_response.json()["graphs"][0]["graph_iri"] == GRAPH
 
 
-def test_graph_set_endpoints_and_reasoning_pointer_promotion(in_memory_session) -> None:
-    store = FakeStore()
-    client = _client(store, in_memory_session)
-
-    create_response = client.post(
-        "/api/semantic/graph-sets",
-        json={
-            "name": "working-version:v1",
-            "scope_type": "ontology",
-            "scope_id": TEST_ONTOLOGY_ID,
-            "members": [
-                {"graph_iri": GRAPH, "role": "asserted_data", "sort_order": 0},
-            ],
-            "created_by": "agent:test",
-        },
-    )
-    assert create_response.status_code == 200
-
-    # Seed a reasoning run record so the service-layer promotion has a target row.
-    in_memory_session.add(
-        SemanticReasoningRunModel(
-            id="run-1",
-            source_graph_iris=[GRAPH],
-            result_graph_iri=RESULT_GRAPH,
-            reasoner="command",
-            status="succeeded",
-            consistent=True,
-        )
-    )
-    # Manually promote through the reasoning endpoint by exercising the path
-    # via the API; since the reasoner is unconfigured, the run fails. We
-    # therefore validate staleness reporting through the membership update path
-    # and the status endpoint instead.
-    in_memory_session.commit()
-
-    status_response = client.get("/api/semantic/status")
-    assert status_response.status_code == 200
-    body = status_response.json()
-    assert "graphs" in body
-    assert "derived" in body
 
 
-def test_graph_set_membership_update_marks_pointers_stale(in_memory_session) -> None:
-    store = FakeStore()
-    client = _client(store, in_memory_session)
-
-    create_response = client.post(
-        "/api/semantic/graph-sets",
-        json={
-            "name": "gs",
-            "scope_type": "version",
-            "scope_id": "v1",
-            "members": [
-                {"graph_iri": GRAPH, "role": "asserted_data"},
-            ],
-        },
-    )
-    assert create_response.status_code == 200
-    graph_set_id = create_response.json()["id"]
-
-    update_response = client.put(
-        f"/api/semantic/graph-sets/{graph_set_id}/members",
-        json={
-            "members": [
-                {"graph_iri": GRAPH, "role": "asserted_data"},
-                {
-                    "graph_iri": "http://ontology-platform.local/semantic/graph/data/extra",
-                    "role": "asserted_data",
-                },
-            ],
-        },
-    )
-    assert update_response.status_code == 200
-    body = update_response.json()
-    assert len(body["members"]) == 2
 
 
 def test_gc_endpoint_dry_run_does_not_call_clear(in_memory_session) -> None:
@@ -370,7 +277,7 @@ def test_gc_endpoint_executes_clear_for_eligible_superseded(in_memory_session) -
     in_memory_session.add(
         SemanticDerivedResultPointerModel(
             id="ptr-1",
-            graph_set_id="gs-1",
+            ontology_id="gs-1",
             result_kind="reasoning",
             run_id="run-1",
             result_graph_iri=RESULT_GRAPH,
@@ -404,7 +311,7 @@ PREFIX = "http://ontology-platform.local/semantic/graph/"
 
 
 def _create_graph_set(client, members=None) -> str:
-    members = members or [{"graph_iri": f"{PREFIX}data/demo", "role": "asserted_data"}]
+    members = members or [{"graph_iri": f"{PREFIX}ontology/demo", "role": "asserted_data"}]
     response = client.post(
         "/api/semantic/graph-sets",
         json={
@@ -423,18 +330,12 @@ def test_stage5_projection_status_exposes_stale_projection_count(
 ) -> None:
     client = _client(FakeStore(), in_memory_session)
     in_memory_session.add(
-        SemanticGraphSetModel(
-            id="gs-stage5",
-            name="stage5",
-            scope_type="version",
-            scope_id="v1",
-            source_signature="current",
-        )
+        seed_model(in_memory_session, "gs-stage5", name="stage5")
     )
     in_memory_session.add(
         SemanticProjectionManifestModel(
             id="manifest-stage5",
-            graph_set_id="gs-stage5",
+            ontology_id="gs-stage5",
             projection_kind="search",
             active_job_id="job-old",
             source_signature="old",
@@ -453,50 +354,6 @@ def test_stage5_projection_status_exposes_stale_projection_count(
     assert body["stale_projection_count"] == 1
 
 
-def test_stage5_graph_registry_exposes_statement_count_and_latest_audit(
-    in_memory_session,
-) -> None:
-    store = FakeStore(
-        select_result={
-            "head": {"vars": ["c"]},
-            "results": {"bindings": [{"c": {"value": "7"}}]},
-        }
-    )
-    client = _client(store, in_memory_session)
-    audit_time = datetime(2026, 7, 7, 9, tzinfo=UTC)
-    in_memory_session.add(
-        SemanticGraphRegistryModel(
-            id="graph-stage5",
-            graph_iri=GRAPH,
-            category="data",
-            semantic_owner_type="ontology",
-            semantic_owner_id="ont-1",
-            mutable_by_direct_edit=True,
-        )
-    )
-    in_memory_session.add(
-        SemanticEditAuditModel(
-            id="audit-stage5",
-            actor="agent:test",
-            reason="stage5",
-            input_format="turtle",
-            target_graph_iri=GRAPH,
-            affected_graph_iris=[GRAPH],
-            validation_result=None,
-            graph_delta={"operation": "insert"},
-            applied=True,
-            created_at=audit_time,
-        )
-    )
-    in_memory_session.commit()
-
-    response = client.get(f"/api/semantic/graphs/{GRAPH}")
-
-    assert response.status_code == 200
-    body = response.json()
-    assert body["statement_count"] == 7
-    assert body["latest_audit_at"].startswith("2026-07-07T09:00:00")
-    assert "COUNT(*)" in store.queries[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -504,17 +361,6 @@ def test_stage5_graph_registry_exposes_statement_count_and_latest_audit(
 # ---------------------------------------------------------------------------
 
 
-def test_graph_set_staleness_template_registered() -> None:
-    """Verify the graph-set-staleness read-model template is registered and its
-    shape matches the expected read-model contract."""
-    from app.services.semantic_sparql_templates import get_template, ReadModelTemplate
-
-    template = get_template("graph-set-staleness")
-    assert isinstance(template, ReadModelTemplate)
-    assert template.name == "graph-set-staleness"
-    assert template.projection_version == "semantic-read-v1"
-    assert "asserted_ontology" in template.required_roles
-    assert "asserted_data" in template.required_roles
 
 
 def test_build_overview_route_registered() -> None:
@@ -573,9 +419,9 @@ def test_project_build_context_replaces_legacy_route_without_deprecation(
 @pytest.mark.parametrize("path,payload", [
     ("/rule-definitions", {"rule_iri": "urn:retired:dsl", "name": "Old DSL", "language": "platform_dsl", "input_roles": ["asserted_data"], "body": {"when": [{"s": "?s", "p": "urn:p", "o": "x"}], "then": [{"s": "?s", "p": "urn:result", "o": True}]}}),
     ("/rule-definitions", {"rule_iri": "urn:retired:construct", "language": "sparql_construct", "body": {"template": "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"}}),
-    ("/graph-sets/gs-stage5/construct-runs", {"template": "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"}),
-    ("/graph-sets/gs-stage5/rule-runs", {}),
-    ("/graph-sets/gs-stage5/rule-runs", {"rule_definition_ids": ["legacy"]}),
+    ("/ontologies/gs-stage5/construct-runs", {"template": "CONSTRUCT { ?s ?p ?o } WHERE { ?s ?p ?o }"}),
+    ("/ontologies/gs-stage5/rule-runs", {}),
+    ("/ontologies/gs-stage5/rule-runs", {"rule_definition_ids": ["legacy"]}),
 ])
 def test_retired_rule_requests_do_not_write_even_with_original_payloads(in_memory_session, path, payload):
     store = FakeStore()
@@ -584,3 +430,8 @@ def test_retired_rule_requests_do_not_write_even_with_original_payloads(in_memor
     assert response.status_code == 404, response.text
     assert store.updates == []
     assert in_memory_session.scalar(select(func.count()).select_from(SemanticRuleRunModel)) == 0
+
+@pytest.mark.parametrize("method,path", [("POST", "/graphs"), ("GET", "/graphs"), ("POST", "/graph-sets"), ("PUT", "/graph-sets/old/members")])
+def test_storage_container_management_routes_retired(in_memory_session, method, path):
+    client = _client(FakeStore(), in_memory_session)
+    assert client.request(method, "/api/semantic" + path, json={}).status_code == 404

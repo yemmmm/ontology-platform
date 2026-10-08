@@ -7,7 +7,7 @@
     "candidate_kind": "platform-neutral-candidate-v3",
     "item_kinds": ["table_mapping", "join_mapping", "enum_meaning", "metric_definition"],
     "item_fields": ["item_id", "item_kind", "semantic"],
-    "forbidden_fields": ["ontology_id", "graph_set_id", "batch_id", "command_kind", "resource_iri", "receipt_ref", "evidence"],
+    "forbidden_fields": ["ontology_id", "ontology_id", "batch_id", "command_kind", "resource_iri", "receipt_ref", "evidence"],
     "identity": "item_id plus table_mapping_id, join_mapping_id, enum_meaning_id or metric_id; schema version and labels do not create identities"
   },
   "unified_candidate": {

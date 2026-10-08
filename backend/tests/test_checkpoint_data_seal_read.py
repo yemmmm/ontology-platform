@@ -97,7 +97,7 @@ def sealed(in_memory_session):
         session.add(ontology)
         session.flush()
         workspace_service.ensure(ontology)
-        graph_iris[ontology_id] = workspace_service.context(ontology_id)["members"][0]["graph_iri"]
+        graph_iris[ontology_id] = workspace_service.context(ontology_id)["model_graph_iri"]
     store = SealedStore()
     store.graphs[graph_iris["ontology"]] = (
         '<urn:business:Order> <urn:label> "Before checkpoint" .'

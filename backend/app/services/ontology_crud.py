@@ -147,7 +147,34 @@ def create_ontology(
 
 def update_ontology(session: Session, ontology_id: str, payload: OntologyUpdate) -> OntologyModel:
     ontology = get_ontology(session, ontology_id)
-    for field, value in payload.model_dump(exclude_unset=True).items():
+    changes = payload.model_dump(exclude_unset=True)
+    references = changes.get("reference_ontology_ids")
+    if "reference_ontology_ids" in changes:
+        if references is None or len(set(references)) != len(references) or ontology_id in references:
+            raise conflict("reference_ontology_ids must be unique dependencies, excluding self")
+        targets = list(session.scalars(select(OntologyModel).where(OntologyModel.id.in_(references))))
+        if len(targets) != len(references) or any(target.project_id != ontology.project_id for target in targets):
+            raise conflict("Reference Ontologies must belong to this Project")
+        lock_projects(session, [ontology.project_id])
+        session.scalar(select(OntologyModel).where(OntologyModel.id == ontology_id).with_for_update())
+        from app.services.semantic_mapping_state import project_fence_check, mapping_state, _union
+        from app.services.semantic_mapping_integrity import validate_mapping_graph
+        project_fence_check(session, [ontology.project_id])
+        settings = Settings()
+        store = RdfStoreRepository(settings.oxigraph_url)
+        def findings():
+            _, owners, before, _, scopes = mapping_state(session, store, settings, RdfGraphDelta(), ontology_id)
+            return validate_mapping_graph(_union(before[iri] for iri in owners[ontology_id]),
+                                          reference_graph=_union(before[iri] for iri in scopes[ontology_id]))
+        previous = findings()
+        ontology.reference_ontology_ids = references
+        session.flush()
+        new = [finding for finding in findings() if finding not in previous]
+        if new:
+            session.rollback()
+            raise HTTPException(status_code=409, detail={"code": "mapping_reference_scope_in_use",
+                                "message": "Revise dependent mappings before removing references", "findings": new})
+    for field, value in changes.items():
         setattr(ontology, field, value)
     commit_or_409(session, "Ontology could not be updated")
     session.refresh(ontology)

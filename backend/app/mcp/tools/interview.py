@@ -12,6 +12,7 @@ from app.api.schemas import (
     InterviewAnswerCreate,
     InterviewAnswerRead,
     ProjectBriefUpdate,
+    OntologyWorkspaceContextRead,
 )
 from app.core.config import Settings
 from app.mcp.runtime import _run_tool, runtime_actor
@@ -32,11 +33,11 @@ def register_interview(server: FastMCP) -> None:
 
     @server.tool()
     def get_ontology_workspace_context(ontology_id: str) -> dict[str, Any]:
-        """Read the default Graph Set, graph roles, revisions, and editability."""
+        """Read Ontology model state, revision, and editability."""
         return _run_tool(
-            lambda session, _driver, _embedding_client: OntologyWorkspaceService(
+            lambda session, _driver, _embedding_client: OntologyWorkspaceContextRead.model_validate(OntologyWorkspaceService(
                 session, Settings()
-            ).context(ontology_id)
+            ).context(ontology_id)).model_dump()
         )
 
     @server.tool()

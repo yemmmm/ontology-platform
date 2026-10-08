@@ -219,7 +219,6 @@ def _synthetic_candidate() -> tuple[dict[str, Any], str]:
     """Return a nonbusiness candidate and its stable semantic digest."""
     items = [
         {
-            "graph_role": "asserted_data",
             "subject": SYNTHETIC_SOURCE_IRI,
             "predicate": SYNTHETIC_RELATION_IRI,
             "object": SYNTHETIC_TARGET_IRI,

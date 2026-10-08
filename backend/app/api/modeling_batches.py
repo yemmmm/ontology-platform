@@ -7,7 +7,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
-from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
@@ -15,7 +14,6 @@ from app.api.schemas import ModelingBatchSubmit
 from app.core.config import Settings
 from app.repositories.models import (
     OntologyModel,
-    SemanticGraphSetModel,
 )
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_batches import (
@@ -126,8 +124,6 @@ READ_MODEL_NAMES = {
     "classes": "ontology-schema-summary",
     "entities": "entity-list",
     "facts": "statement-list",
-    "history": "graph-set-history-list",
-    "delta": "graph-set-delta",
     # R4.0-010 keeps the exact list/detail model names available through the
     # Ontology read-model adapter used by the MCP surface as well as REST.
     "table-mapping-list": "table-mapping-list",
@@ -160,8 +156,8 @@ def get_ontology_read_model(
     settings: Settings = Depends(get_settings),
 ):
     workspace = OntologyWorkspaceService(session, settings).context(ontology_id)
-    graph_set_id = workspace.get("default_graph_set_id")
-    if workspace.get("state") != "ready" or not graph_set_id:
+    ontology_id = workspace.get("ontology_id")
+    if workspace.get("state") != "ready" or not ontology_id:
         raise HTTPException(
             status_code=409,
             detail={
@@ -193,31 +189,13 @@ def get_ontology_read_model(
         retrieval_service=SemanticResourceRetrievalService(session, settings),
     )
     try:
-        base_graph_set_id = graph_set_id
-        target_graph_set_id = None
-        no_delta_baseline = False
-        if model_name == "delta":
-            baseline = session.scalar(
-                select(SemanticGraphSetModel)
-                .where(
-                    SemanticGraphSetModel.scope_type == "ontology",
-                    SemanticGraphSetModel.scope_id == ontology_id,
-                    SemanticGraphSetModel.id != graph_set_id,
-                )
-                .order_by(SemanticGraphSetModel.created_at.desc())
-                .limit(1)
-            )
-            base_graph_set_id = baseline.id if baseline else graph_set_id
-            target_graph_set_id = graph_set_id
-            no_delta_baseline = baseline is None
         response = service.read_model(
-            graph_set_id=base_graph_set_id,
+            ontology_id=ontology_id,
             model_name=canonical_name,
             include=include,
             allow_stale_derived=allow_stale_derived,
             field_set=field_set,
             limit=limit,
-            target=target_graph_set_id,
             entity_iri=entity_iri,
             class_iri=class_iri,
             kind=kind,
@@ -245,11 +223,6 @@ def get_ontology_read_model(
                         "workspace_version": workspace_version,
                     }
                 )
-        if no_delta_baseline:
-            response["warnings"] = [
-                *response.get("warnings", []),
-                {"code": "no_prior_graph_set", "message": "No prior Ontology baseline exists"},
-            ]
         return response
     except (ReadModelError, ReadScopeError) as exc:
         raise HTTPException(status_code=getattr(exc, "status_code", 400), detail=str(exc)) from exc

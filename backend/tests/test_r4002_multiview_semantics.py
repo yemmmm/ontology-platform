@@ -225,7 +225,7 @@ def test_shared_identity_local_meaning_roles_and_unknowns_roundtrip(in_memory_se
             for item in _read_model(client, model)["items"]
         )
     for iri in (f"{NS}class/Shared", f"{NS}entity/reviewer", f"{NS}property/participates"):
-        response = client.get(f"/api/semantic/resources/{iri}", params={"graph_set_id": "gs-009"})
+        response = client.get(f"/api/semantic/resources/{iri}", params={"ontology_id": "gs-009"})
         assert response.status_code == 200, response.text
         assert "semantic_definition" in response.json()["properties"]
 
@@ -292,6 +292,6 @@ def test_exact_resource_read_binds_identity_before_listing_limit(in_memory_sessi
         iri = f"{NS}{kind}/filler-0549"
         body = _read_model(client, model, entity=iri)
         assert [item["iri"] for item in body["items"]] == [iri]
-        response = client.get(f"/api/semantic/resources/{iri}", params={"graph_set_id": "gs-009"})
+        response = client.get(f"/api/semantic/resources/{iri}", params={"ontology_id": "gs-009"})
         assert response.status_code == 200, response.text
         assert response.json()["iri"] == iri

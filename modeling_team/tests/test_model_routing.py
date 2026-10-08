@@ -1974,7 +1974,7 @@ def test_fresh_examiner_child_uses_own_binding_session_and_effort(
                 "platform_read_scope": {
                     "project_id": "project",
                     "ontology_id": "ontology",
-                    "graph_set_id": "graph",
+
                 },
                 "model_state_digest": "0" * 64,
                 "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),

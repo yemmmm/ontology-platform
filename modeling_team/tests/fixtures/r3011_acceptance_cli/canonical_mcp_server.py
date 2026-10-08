@@ -102,16 +102,8 @@ class FixtureState:
             "ontology_id": ontology_id,
             "state": "ready",
             "source_signature": entry["source_signature"],
-            "graph_set_status": "ready",
-            "default_graph_set_id": entry["default_graph_set_id"],
-            "members": [
-                {
-                    "role": member["role"],
-                    "revision": revision + offset,
-                    "content_hash": member["content_hash"],
-                }
-                for offset, member in enumerate(entry["members"])
-            ],
+            "model_revision": revision,
+            "content_hash": entry["members"][0]["content_hash"],
             "fixture_read_index": index,
         }
         if fail_after and index >= fail_after:

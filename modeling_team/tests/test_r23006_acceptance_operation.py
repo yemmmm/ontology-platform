@@ -159,7 +159,7 @@ class R23006AcceptanceOperationTests(unittest.TestCase):
         self.assertEqual(len(prepared.platform_packets), 2)
         self.assertEqual(
             prepared.platform_packets[0]["platform_read_scope"],
-            {key: EXPECTED_SCOPE[key] for key in ("project_id", "ontology_id", "graph_set_id")},
+            {key: EXPECTED_SCOPE[key] for key in ("project_id", "ontology_id", "ontology_id")},
         )
         for packet in prepared.source_packets:
             self.assertTrue(packet["approved_sources"])

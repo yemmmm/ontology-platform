@@ -1,9 +1,9 @@
+from single_model_support import seed_model
 import pytest
 from sqlalchemy import select
 
 from app.repositories.models import (
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
+    OntologyModel,
     SemanticProjectionJobModel,
     SemanticProjectionManifestModel,
 )
@@ -24,37 +24,20 @@ class FakeProjectionWriter:
 
 
 def _seed_graph_set(session, signature="sig-1"):
-    gs = SemanticGraphSetModel(
-        id="gs-1",
-        name="demo",
-        scope_type="ontology_version",
-        scope_id="ov-1",
-        status="active",
-        source_signature=signature,
-    )
-    session.add(gs)
-    gs.members.append(
-        SemanticGraphSetMemberModel(
-            id="m-1",
-            graph_iri="http://op/s/graph/data/ov-1",
-            role="asserted_data",
-            required=True,
-            sort_order=0,
-        )
-    )
+    model = seed_model(session, "gs-1", "http://op/s/graph/ontology/ov-1")
     session.commit()
-    return gs
+    return model
 
 
 class _StaticResolver:
-    def resolve(self, graph_set_id, include="asserted", allow_stale_derived=True):
+    def resolve(self, ontology_id, include="asserted", allow_stale_derived=True):
         from app.services.semantic_read_scope import ScopeResolution
 
         return ScopeResolution(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             source_signature="sig-1",
             include=include,
-            source_graph_iris=["http://op/s/graph/data/ov-1"], shape_graph_iris=[],
+            model_graph_iris=["http://op/s/graph/ontology/ov-1"], shape_graph_iris=[],
 
             governance_graph_iris=[],
             reasoning_result_graph_iri=None,
@@ -67,7 +50,7 @@ def _service(session, **writers) -> SemanticProjectionJobService:
     return SemanticProjectionJobService(
         session=session,
         writers=writers,
-        scope_resolver_builder=lambda s: _StaticResolver(),
+        scope_resolver_builder=__import__("app.services.semantic_read_scope", fromlist=["SemanticReadScopeResolver"]).SemanticReadScopeResolver,
     )
 
 
@@ -76,15 +59,15 @@ def test_create_job_snapshots_inputs(in_memory_session):
     writer = FakeProjectionWriter()
     service = _service(in_memory_session, search=writer)
     job = service.create_job(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         projection_kind="search",
         projection_version="search-v1",
         include="asserted",
         mode="rebuild",
     )
-    assert job.graph_set_id == "gs-1"
+    assert job.ontology_id == "gs-1"
     assert job.projection_kind == "search"
-    assert job.source_signature == "sig-1"
+    assert job.source_signature == in_memory_session.get(OntologyModel, "gs-1").source_signature
     assert isinstance(job.input_graph_revisions, dict)
     assert isinstance(job.input_derived_pointers, dict)
 
@@ -94,7 +77,7 @@ def test_run_job_calls_writer_and_promotes_manifest(in_memory_session):
     writer = FakeProjectionWriter()
     service = _service(in_memory_session, search=writer)
     job = service.create_job(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         projection_kind="search",
         projection_version="search-v1",
         include="asserted",
@@ -107,7 +90,7 @@ def test_run_job_calls_writer_and_promotes_manifest(in_memory_session):
     assert writer.calls
     manifest = in_memory_session.scalar(
         select(SemanticProjectionManifestModel).where(
-            SemanticProjectionManifestModel.graph_set_id == "gs-1",
+            SemanticProjectionManifestModel.ontology_id == "gs-1",
             SemanticProjectionManifestModel.projection_kind == "search",
         )
     )
@@ -125,20 +108,14 @@ def test_writer_flush_failure_marks_job_failed_and_allows_retry(in_memory_sessio
 
         def rebuild(self, job_id, scope, partition):  # noqa: ARG002
             in_memory_session.add(
-                SemanticGraphSetModel(
-                    id="gs-1",
-                    name="duplicate",
-                    scope_type="ontology_version",
-                    scope_id="duplicate",
-                    source_signature="duplicate",
-                )
+                OntologyModel(id="gs-1", project_id="single-model-test-project", name="duplicate")
             )
             in_memory_session.flush()
             return {"node_count": 0, "relationship_count": 0, "document_count": 0}
 
     service = _service(in_memory_session, search=FlushFailingWriter())
     failed = service.create_job(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         projection_kind="search",
         projection_version="search-v1",
     )
@@ -154,7 +131,7 @@ def test_writer_flush_failure_marks_job_failed_and_allows_retry(in_memory_sessio
 
     service.writers["search"] = FakeProjectionWriter()
     retry = service.create_job(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         projection_kind="search",
         projection_version="search-v1",
     )
@@ -166,7 +143,7 @@ def test_dry_run_does_not_mutate_target(in_memory_session):
     writer = FakeProjectionWriter()
     service = _service(in_memory_session, search=writer)
     job = service.create_job(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         projection_kind="search",
         projection_version="search-v1",
         mode="dry_run",
@@ -182,7 +159,7 @@ def test_reconcile_marks_stale_when_signature_changes(in_memory_session):
     in_memory_session.add(
         SemanticProjectionManifestModel(
             id="man-1",
-            graph_set_id="gs-1",
+            ontology_id="gs-1",
             projection_kind="search",
             active_job_id="job-old",
             source_signature="sig-0",
@@ -202,7 +179,7 @@ def test_reconcile_marks_stale_when_pointer_status_changes(in_memory_session):
     in_memory_session.add(
         SemanticProjectionManifestModel(
             id="man-2",
-            graph_set_id="gs-1",
+            ontology_id="gs-1",
             projection_kind="search",
             active_job_id="job-old",
             source_signature="sig-1",
@@ -228,7 +205,7 @@ def test_status_returns_manifests_with_stale_and_missing(in_memory_session):
     in_memory_session.add(
         SemanticProjectionManifestModel(
             id="man-1",
-            graph_set_id="gs-1",
+            ontology_id="gs-1",
             projection_kind="search",
             active_job_id="job-old",
             source_signature="old",
@@ -239,7 +216,7 @@ def test_status_returns_manifests_with_stale_and_missing(in_memory_session):
     )
     in_memory_session.commit()
     service = _service(in_memory_session)
-    status = service.status(graph_set_id="gs-1")
+    status = service.status(ontology_id="gs-1")
     assert any(m["projection_kind"] == "search" for m in status["manifests"])
     assert "man-1" in status["stale"]
 
@@ -248,12 +225,12 @@ def test_list_jobs_filters_by_kind(in_memory_session):
     _seed_graph_set(in_memory_session)
     service = _service(in_memory_session, search=FakeProjectionWriter())
     service.create_job(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         projection_kind="search",
         projection_version="search-v1",
     )
     service.create_job(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         projection_kind="vector",
         projection_version="vector-v1",
     )

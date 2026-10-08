@@ -19,10 +19,10 @@ class FakeStore:
 
 def _scope(iris):
     return ScopeResolution(
-        graph_set_id="gs-1",
+        ontology_id="gs-1",
         source_signature="sig-1",
         include="asserted",
-        source_graph_iris=iris, shape_graph_iris=[],
+        model_graph_iris=iris, shape_graph_iris=[],
 
         governance_graph_iris=[],
         reasoning_result_graph_iri=None,
@@ -40,7 +40,7 @@ def test_vector_documents_have_deterministic_ids_and_config_hash():
     )
     counts = service.rebuild(
         job_id="job-1",
-        scope=_scope(["http://op/s/graph/data/ov-1"]),
+        scope=_scope(["http://op/s/graph/ontology/ov-1"]),
         partition="gs-1/vector/vector-v1",
     )
     assert counts["document_count"] == 1
@@ -63,7 +63,7 @@ def test_different_projection_version_changes_document_id():
     )
     service.rebuild(
         job_id="job-1",
-        scope=_scope(["http://op/s/graph/data/ov-1"]),
+        scope=_scope(["http://op/s/graph/ontology/ov-1"]),
         partition="gs-1/vector/vector-v1",
     )
     first_id = writer.docs[0]["id"]
@@ -75,7 +75,7 @@ def test_different_projection_version_changes_document_id():
     )
     service2.rebuild(
         job_id="job-2",
-        scope=_scope(["http://op/s/graph/data/ov-1"]),
+        scope=_scope(["http://op/s/graph/ontology/ov-1"]),
         partition="gs-1/vector/vector-v2",
     )
     assert writer.docs[0]["id"] != first_id

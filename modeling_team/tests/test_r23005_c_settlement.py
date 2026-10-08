@@ -250,7 +250,7 @@ class R23005CSettlementTests(unittest.TestCase):
 
             def _workspace_context(self):
                 return {
-                    "default_graph_set_id": "graph-r23005",
+                    "ontology_id": self.ontology_id,
                     "source_signature": "source-1",
                 }
 
@@ -286,7 +286,7 @@ class R23005CSettlementTests(unittest.TestCase):
                         read_key=str(spec.get("read_key_plaintext") or "offline-read-key"),
                         project_id=spec["platform_read_scope"]["project_id"],
                         ontology_id=spec["platform_read_scope"]["ontology_id"],
-                        graph_set_id=spec["platform_read_scope"]["graph_set_id"],
+
                         ticket_digest=spec["ticket_digest"],
                         model_state_digest=spec["model_state_digest"],
                         allowed_tools=spec["allowed_read_tools"],
@@ -311,7 +311,7 @@ class R23005CSettlementTests(unittest.TestCase):
                     "arguments": {
                         "project_id": ticket["platform_read_scope"]["project_id"],
                         "ontology_id": ticket["platform_read_scope"]["ontology_id"],
-                        "graph_set_id": ticket["platform_read_scope"]["graph_set_id"],
+
                         "ticket_digest": ticket["ticket_digest"],
                         "model_state_digest": ticket["model_state_digest"],
                     },
@@ -358,7 +358,7 @@ class R23005CSettlementTests(unittest.TestCase):
                 read_key="foreign-read-key",
                 project_id="project-foreign",
                 ontology_id="ontology-foreign",
-                graph_set_id="graph-foreign",
+
                 ticket_digest=ticket["ticket_digest"],
                 model_state_digest=ticket["model_state_digest"],
                 allowed_tools=ticket["allowed_read_tools"],
@@ -374,7 +374,7 @@ class R23005CSettlementTests(unittest.TestCase):
                     "arguments": {
                         "project_id": "project-foreign",
                         "ontology_id": "ontology-foreign",
-                        "graph_set_id": "graph-foreign",
+
                         "ticket_digest": ticket["ticket_digest"],
                         "model_state_digest": ticket["model_state_digest"],
                     },
@@ -459,7 +459,7 @@ class R23005CSettlementTests(unittest.TestCase):
                                 "arguments": {
                                     "project_id": ticket["platform_read_scope"]["project_id"],
                                     "ontology_id": ticket["platform_read_scope"]["ontology_id"],
-                                    "graph_set_id": ticket["platform_read_scope"]["graph_set_id"],
+
                                     "ticket_digest": ticket["ticket_digest"],
                                     "model_state_digest": ticket["model_state_digest"],
                                 },

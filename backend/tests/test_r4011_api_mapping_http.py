@@ -64,7 +64,7 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                 f"/projects/{project_id}/ontologies", {"name": "Catalog API fixture"}, 201
             )
             ontology_id = ontology["id"]
-            graph_set = ontology["workspace"]["default_graph_set_id"]
+            graph_set = ontology["workspace"]["ontology_id"]
             graphs.extend(member["graph_iri"] for member in ontology["workspace"]["members"])
             build = post(
                 f"/projects/{project_id}/build-sessions", {"client_session_id": token}, 201
@@ -144,7 +144,7 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                 )
 
             def exact(name):
-                return get("/semantic/resources/" + receipts[name], {"graph_set_id": graph_set})
+                return get("/semantic/resources/" + receipts[name], {"ontology_id": graph_set})
 
             assert (
                 exact("query-a")["properties"]["semantic_definition"]["semantic_role"]
@@ -261,7 +261,7 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                 assert context["recall"]["completeness"] == "complete"
                 assert context["context_page"]["next_context_cursor"]
                 assert context["truncated"]
-            export = client.get(f"/api/semantic/graph-sets/{graph_set}/export")
+            export = client.get(f"/api/semantic/ontologies/{graph_set}/export")
             assert export.status_code == 200, export.text
             assert "202 means accepted" in export.text
             assert receipts["path-id"] in export.text
@@ -281,7 +281,7 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
             )
             assert exact("path-id")["iri"] == receipts["path-id"]
             assert receipts["original"] != receipts["replacement"]
-            statements = get("/semantic/statements", {"graph_set_id": graph_set, "limit": 1000})
+            statements = get("/semantic/statements", {"ontology_id": graph_set, "limit": 1000})
             assert any(
                 r.get("subject") == receipts["path-id"] and r.get("object") == "item_key"
                 for r in statements["items"]
@@ -298,7 +298,7 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                     [dict(client_item_id=action, command_kind=action, payload=edge_payload)],
                     token + "-" + action,
                 )
-                current = get("/semantic/statements", {"graph_set_id": graph_set, "limit": 5000})
+                current = get("/semantic/statements", {"ontology_id": graph_set, "limit": 5000})
                 present = any(
                     r.get("subject") == edge_payload["source_entity_iri"]
                     and r.get("predicate") == edge_payload["relation_type_iri"]
@@ -330,16 +330,16 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                 missing = base.rstrip("/") + "/entity/" + token + "-missing"
                 # Hidden and absent resources share the existing 404 contract.
                 missing_read = limited.get(
-                    "/api/semantic/resources/" + missing, params={"graph_set_id": graph_set}
+                    "/api/semantic/resources/" + missing, params={"ontology_id": graph_set}
                 )
                 assert missing_read.status_code == 404
                 for iri in hidden:
                     read = limited.get(
-                        "/api/semantic/resources/" + iri, params={"graph_set_id": graph_set}
+                        "/api/semantic/resources/" + iri, params={"ontology_id": graph_set}
                     )
                     assert read.status_code == 404
                     assert read.json() == {"detail": f"Resource not found: {iri}"}
-                list_path = f"/api/semantic/graph-sets/{graph_set}/read-models/entity-list"
+                list_path = f"/api/semantic/ontologies/{graph_set}/read-models/entity-list"
                 all_visible = limited.get(list_path, params={"limit": 1000})
                 first_page = limited.get(list_path, params={"limit": 1})
                 assert all_visible.status_code == first_page.status_code == 200
@@ -348,7 +348,7 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                     all_visible.json()["items"]
                 )
                 assert all(iri not in all_visible.text for iri in hidden)
-                response = limited.get(f"/api/semantic/graph-sets/{graph_set}/export")
+                response = limited.get(f"/api/semantic/ontologies/{graph_set}/export")
                 assert response.status_code == 200, response.text
                 assert all(iri not in response.text for iri in hidden)
                 context = limited.post(

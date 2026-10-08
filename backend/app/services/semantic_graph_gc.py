@@ -52,7 +52,7 @@ class SemanticGraphGcService:
                 "graph_iri": row.result_graph_iri,
                 "result_kind": row.result_kind,
                 "run_id": row.run_id,
-                "graph_set_id": row.graph_set_id,
+                "ontology_id": row.ontology_id,
                 "became_current_at": row.became_current_at,
                 "superseded_metadata": row.pointer_metadata,
             }

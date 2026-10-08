@@ -20,7 +20,7 @@ def _service(read_model_payload, brief, questions):
 def _gs_payload(members=None):
     return {
         "items": [{
-            "graph_set_id": "gs-1",
+            "ontology_id": "gs-1",
             "members": members or [],
             "last_semantic_edit_at": None,
         }],
@@ -53,10 +53,10 @@ def test_build_overview_composes_all_sections():
         _brief(0.5, ["scope"]),
         _questions(3, draft=1, passed=2),
     )
-    resp = svc.build(session=MagicMock(), project_id="p-1", ontology_id="o-1", graph_set_id="gs-1")
+    resp = svc.build(session=MagicMock(), project_id="p-1", ontology_id="o-1")
     assert isinstance(resp, BuildOverviewResponse)
     assert resp.ontology_id == "o-1"
-    assert resp.graph_set.members[0].role == "asserted_ontology"
+    assert resp.model.ontology_id == "o-1"
     assert resp.project_brief.completeness == 0.5
     assert resp.competency_questions.total == 3
     assert len(resp.next_actions) > 0
@@ -68,7 +68,7 @@ def test_build_overview_next_actions_priority_order():
         _brief(0.0, ["a", "b"]),
         _questions(1, draft=1),
     )
-    resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o", graph_set_id="gs")
+    resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o")
     keys = [a.key for a in resp.next_actions]
     assert keys == ["complete_brief", "approve_questions"]
 
@@ -79,11 +79,11 @@ def test_build_overview_no_actions_when_clean():
         _brief(1.0),
         _questions(0),
     )
-    resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o", graph_set_id="gs")
+    resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o")
     assert resp.next_actions == []
 
 
 def test_parse_empty_payload_is_safe():
     svc = _service({}, _brief(1.0), _questions(0))
-    resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o", graph_set_id="gs")
-    assert resp.graph_set.members == []
+    resp = svc.build(session=MagicMock(), project_id="p", ontology_id="o")
+    assert resp.model.ontology_id == "o"

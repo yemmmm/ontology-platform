@@ -200,8 +200,8 @@ def test_child_refuses_non_semantic_calls_before_forwarding(tmp_path, tool):
     proxy = ScopedReadProxy(
         socket_path=tmp_path / "proxy.sock", token="proxy-token", read_key="synthetic-key",
         authorized_ontologies=[{
-            "project_id": "project-1", "ontology_id": "ontology-1", "graph_set_id": "gs-1",
-            "model_state_digest": "b" * 64, "graph_state_digest": "c" * 64,
+            "project_id": "project-1", "ontology_id": "ontology-1",
+            "model_state_digest": "b" * 64, "model_version_digest": "c" * 64,
         }], ticket_digest="a" * 64, model_state_digest="b" * 64,
         allowed_tools=list(CQ_SEMANTIC_READ_TOOLS),
         exact_schemas=v3_examiner_proxy_schemas(CQ_SEMANTIC_READ_TOOLS),
@@ -280,7 +280,7 @@ def test_brief_only_answer_cannot_be_used_as_semantic_evidence(tmp_path):
         "tool": tool, "request": request, "result": result,
     }))
     receipt = ProxyCallReceipt(
-        ordinal=0, project_id="project-1", ontology_id="ontology-1", graph_set_id="gs-1",
+        ordinal=0, project_id="project-1", ontology_id="ontology-1",
         ticket_digest="a" * 64, model_state_digest="b" * 64,
         tool=tool, artifact_path=path,
         request_digest=canonical_read_digest({"tool": tool, "arguments": request}),

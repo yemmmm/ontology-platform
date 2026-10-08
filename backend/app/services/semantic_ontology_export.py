@@ -1,7 +1,6 @@
-"""Graph-set export service for Turtle/TriG/JSON-LD.
+"""Ontology model export service for Turtle/TriG/JSON-LD.
 
-TriG preserves named-graph boundaries. Turtle requires either a single graph
-or an explicit merged-profile request. JSON-LD compacts with the platform
+TriG preserves RDF storage syntax. Turtle exports the Ontology model. JSON-LD compacts with the platform
 context plus projection metadata terms.
 """
 
@@ -28,7 +27,6 @@ class ExportError(RuntimeError):
 _PROJECTION_TERMS = {
     "projection": "http://ontology-platform.local/semantic/vocab/projection/",
     "assertionKind": "projection:assertionKind",
-    "sourceGraph": "projection:sourceGraph",
     "derivedState": "projection:derivedState",
     "isStale": "projection:isStale",
 }
@@ -49,7 +47,7 @@ class SemanticExportService:
 
     def export(
         self,
-        graph_set_id: str,
+        ontology_id: str,
         format: str,
         include: str = "asserted",
         include_policy: bool = False,
@@ -57,11 +55,11 @@ class SemanticExportService:
         allow_stale_derived: bool = False,
     ) -> tuple[str, list[dict[str, str]]]:
         scope = self.scope_resolver.resolve(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             include=include,
             allow_stale_derived=allow_stale_derived,
         )
-        graph_iris = list(scope.source_graph_iris)
+        graph_iris = list(scope.model_graph_iris)
         warnings = list(scope.warnings)
 
         dataset = self._load_dataset(graph_iris)

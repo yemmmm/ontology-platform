@@ -231,7 +231,7 @@ test("T06 seven explicit views and loaded search intersect without removing othe
 });
 test("T05 structured references remain separate from asserted edges and follow viewpoint filters", async ({ page }) => {
   await mockWorkspace(page, { handler: async (path, route) => {
-    if (!path.includes("g1") || !path.endsWith("resource-relations")) return false;
+    if (!path.includes("o1") || !path.endsWith("resource-relations")) return false;
     const reference = { ...relations[0], id: "reference", edge_kind: "structured_reference", field_path: "mapped_definition.definition_ref", label: "mapped_definition.definition_ref" };
     await route.fulfill({ json: envelope([...relations, reference]) });
     return true;
@@ -265,7 +265,7 @@ test("T07 no ontology and missing default workspace distinguish unloaded from an
   await page.goto("/?tab=model");
   await expect(page.getByText("No Ontologies in this project", { exact: true })).toBeVisible();
   await page.route("**/projects/p1/ontologies", route => route.fulfill({ json: [{ id: "o1", name: "Service" }] }));
-  await page.route("**/workspace-context", route => route.fulfill({ json: { default_graph_set_id: null } }));
+  await page.route("**/workspace-context", route => route.fulfill({ json: { ontology_id: null } }));
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByText("Model scopes have not been loaded", { exact: true })).toBeVisible();
 });

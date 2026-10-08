@@ -73,9 +73,9 @@ def _platform_context() -> dict:
     return {
         "state": "ready",
         "source_signature": "sig-1",
-        "default_graph_set_id": "graph-set-1",
-        "graph_set_status": "ready",
-        "members": [{"role": "asserted", "revision": "r1", "content_hash": "h1"}],
+        "ontology_id": "ontology-1",
+        "model_revision": 1,
+        "content_hash": "h1",
     }
 
 
@@ -90,7 +90,7 @@ def _handoff_binding(*, batch_id: str, freeze_digest: str) -> dict:
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
                 "workspace_state": {"state_digest": "handoff-marker:workspace"},
-                "graph_state": {"state_digest": "handoff-marker:graph"},
+                "model_version_state": {"state_digest": "handoff-marker:graph"},
                 "authorized_read_tools": ["query_semantic_context"],
             }
         ],
@@ -103,7 +103,7 @@ def _retaining_proxy(tmp_path: Path, artifact_root: Path, *, forward, tools=(
     """A real v3 ScopedReadProxy whose reads persist under ``artifact_root``."""
 
     packet = _platform_packet([_question("cq-1")])
-    entries = v3_proxy_scope_entries(packet, {"ontology-1": "graph-set-1"})
+    entries = v3_proxy_scope_entries(packet)
     proxy = ScopedReadProxy(
         socket_path=tmp_path / "platform-proxy.sock",
         token="proxy-token",
@@ -157,7 +157,7 @@ def test_a_successful_read_retains_the_canonical_request_and_result(tmp_path):
     # child transcription: the frozen scope keys are present and authoritative.
     assert loaded["request"]["project_id"] == "project-1"
     assert loaded["request"]["ontology_id"] == "ontology-1"
-    assert loaded["request"]["graph_set_id"] == "graph-set-1"
+    assert loaded["request"]["ontology_id"] == "ontology-1"
     assert loaded["result"] == {"ok": True, "data": {"ontology_id": "ontology-1"}}
     assert receipt.request_digest == canonical_read_digest(
         {"tool": loaded["tool"], "arguments": loaded["request"]}
@@ -186,7 +186,7 @@ def test_a_retention_failure_is_observable_and_leaves_no_receipt(tmp_path):
         raise OSError("disk full")
 
     packet = _platform_packet([_question("cq-1")])
-    entries = v3_proxy_scope_entries(packet, {"ontology-1": "graph-set-1"})
+    entries = v3_proxy_scope_entries(packet)
     proxy = ScopedReadProxy(
         socket_path=tmp_path / "platform-proxy.sock",
         token="proxy-token",
@@ -287,7 +287,7 @@ def _retained_receipt(
         ordinal=ordinal,
         project_id="project-1",
         ontology_id="ontology-1",
-        graph_set_id="graph-set-1",
+
         ticket_digest="b" * 64,
         model_state_digest="c" * 64,
         tool=tool,
@@ -1113,7 +1113,7 @@ def _retaining_adapter(
                 ordinal=0,
                 project_id="project-1",
                 ontology_id="ontology-1",
-                graph_set_id="graph-set-1",
+
                 ticket_digest="b" * 64,
                 model_state_digest="c" * 64,
                 tool=tool,

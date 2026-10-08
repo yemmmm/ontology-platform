@@ -7,7 +7,7 @@ from test_semantic_read_model import FakeScopeResolver, FakeStore, _resolution
 
 
 def test_resource_list_shared_identity_annotations_multiclass_and_protection():
-    graph = "http://op/s/graph/data/a"
+    graph = "http://op/s/graph/ontology/a"
     iri = "http://op/s/entity/shared"
     hidden = "http://op/s/entity/hidden"
     store = FakeStore(
@@ -44,7 +44,7 @@ def test_resource_list_shared_identity_annotations_multiclass_and_protection():
 
 
 def test_resource_list_no_class_and_bound_does_not_claim_complete():
-    graph = "http://op/s/graph/data/a"
+    graph = "http://op/s/graph/ontology/a"
     store = FakeStore(
         {
             "template: entity-list": [

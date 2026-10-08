@@ -832,8 +832,8 @@ def test_apply_marks_projection_manifest_stale_immediately(modeling):
     service, db, _rdf, session_id, lease, version = modeling
     manifest = SemanticProjectionManifestModel(
         id="projection-manifest",
-        graph_set_id=OntologyWorkspaceService(db, _settings()).context(ONTOLOGY_ID)[
-            "default_graph_set_id"
+        ontology_id=OntologyWorkspaceService(db, _settings()).context(ONTOLOGY_ID)[
+            "ontology_id"
         ],
         projection_kind="search",
         source_signature=version,

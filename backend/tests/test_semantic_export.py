@@ -28,8 +28,8 @@ def test_namespace_resource_and_graph_quote_identifiers() -> None:
     assert str(NS.resource("class", "a/b")) == (
         f"{SETTINGS.semantic_base_iri.rstrip('/')}/class/a%2Fb"
     )
-    assert str(NS.graph("data", "ont-1")) == (
-        f"{SETTINGS.semantic_graph_iri_prefix.rstrip('/')}/data/ont-1"
+    assert str(NS.graph("ontology", "ont-1")) == (
+        f"{SETTINGS.semantic_graph_iri_prefix.rstrip('/')}/ontology/ont-1"
     )
 
 

@@ -26,7 +26,7 @@ from app.repositories.models import (
     ApiKeyModel, OntologyModel, ProjectModel, ProjectUserMembershipModel,
     SemanticAccessRoleModel, SemanticProtectionSetModel,
     SemanticAccessRoleMemberModel, SemanticProtectionSetMemberModel, UserModel,
-    SemanticGraphSetModel, SemanticGraphSetMemberModel, SemanticGraphRegistryModel,
+    SemanticGraphRegistryModel,
     SemanticGraphStateModel, SemanticGraphRevisionModel,
 )
 from app.repositories.rdf_store import SparqlResult
@@ -62,8 +62,7 @@ def independent_env(in_memory_session):
     service = OntologyWorkspaceService(session, settings)
     service.ensure(ontology)
     context = service.context("o")
-    graph = next(item["graph_iri"] for item in context["members"]
-                 if item["role"] == "asserted_data")
+    graph = context["model_graph_iri"]
     for name in ("g1", "g2"):
         session.add(SemanticProtectionSetModel(id=name, project_id="p", name=name,
                                                 allowed_grants=[name]))
@@ -81,7 +80,7 @@ def independent_env(in_memory_session):
     with TestClient(app) as client:
         yield {"client": client, "factory": factory, "org": org_key,
                "bootstrap": bootstrap_key, "admin": admin.id,
-               "graph_set": context["default_graph_set_id"], "store": store}
+               "graph_set": context["ontology_id"], "store": store}
     runtime.set_runtime_principal(None)
 
 
@@ -120,7 +119,7 @@ def assign(env, uid, roles, project="p", status=200):
 
 def resource(env, token, iri=COST_IRI, status=200):
     return call(env, "GET", f"/api/semantic/resources/{iri}", token, status,
-                params={"graph_set_id": env["graph_set"]})
+                params={"ontology_id": env["graph_set"]})
 
 
 def activate_mcp(env, token, monkeypatch):
@@ -352,11 +351,11 @@ def test_independent_filtering_after_http_role_change(independent_env):
         assign(env, uid, roles)
         resource(env, token, status=200 if allowed else 404)
         statements = call(env, "GET", "/api/semantic/statements", token,
-                          params={"graph_set_id": graph_set})
+                          params={"ontology_id": graph_set})
         assert (COST_IRI in str(statements)) == allowed
-        rows = call(env, "GET", f"/api/semantic/graph-sets/{graph_set}/read-models/entity-list", token)
+        rows = call(env, "GET", f"/api/semantic/ontologies/{graph_set}/read-models/entity-list", token)
         assert (COST_IRI in str(rows)) == allowed
-        export = call(env, "GET", f"/api/semantic/graph-sets/{graph_set}/export", token)
+        export = call(env, "GET", f"/api/semantic/ontologies/{graph_set}/export", token)
         parsed = Dataset()
         parsed.parse(data=export, format="trig")
         assert any(s == URIRef(COST_IRI) for s, _, _, _ in parsed.quads()) == allowed
@@ -431,7 +430,7 @@ def test_independent_fork_keeps_protection_without_subject_assignments(independe
     store = SnapshotStore()
     with env["factory"]() as session:
         workspace = OntologyWorkspaceService(session, settings).context("o")
-        graph = workspace["members"][0]["graph_iri"]
+        graph = workspace["model_graph_iri"]
         store.graphs[graph] = f'<{COST_IRI}> <urn:label> "private" .'
         service = CheckpointDataService(session, store)
         snapshot = service.capture("p", ["o"])
@@ -476,9 +475,9 @@ def test_independent_live_http_and_persistent_stdio_mcp():
                             json={"name": "Acceptance"})
             ontology_id = ontology["id"]
             context = ontology["workspace"]
-            graphs.extend(item["graph_iri"] for item in context["members"])
-            graph = next(item["graph_iri"] for item in context["members"] if item["role"] == "asserted_data")
-            graph_set = context["default_graph_set_id"]
+            graphs.append(context["model_graph_iri"])
+            graph = context["model_graph_iri"]
+            graph_set = context["ontology_id"]
             graph_sets.append(graph_set)
             iri = f"urn:r4006-live:{uuid4()}"
             public = f"urn:r4006-public:{uuid4()}"
@@ -499,7 +498,7 @@ def test_independent_live_http_and_persistent_stdio_mcp():
             assert mapped["business_role_status"] == "valid"
             def exact(expected):
                 return call(env, "GET", f"/api/semantic/resources/{iri}", token, expected,
-                            params={"graph_set_id": graph_set})
+                            params={"ontology_id": graph_set})
             async def scenario():
                 process_env = dict(os.environ)
                 process_env["ONTOLOGY_MCP_API_KEY"] = token
@@ -510,7 +509,7 @@ def test_independent_live_http_and_persistent_stdio_mcp():
                     async with ClientSession(read, write) as session:
                         await session.initialize()
                         async def exported(expected):
-                            result = await session.call_tool("export_semantic_graph_set", {"graph_set_id": graph_set})
+                            result = await session.call_tool("export_semantic_ontology", {"ontology_id": graph_set})
                             data = json.loads(next(c.text for c in result.content if c.type == "text"))
                             assert data["ok"] is True, data
                             dataset = Dataset().parse(data=data["data"]["payload"], format="trig")
@@ -526,7 +525,7 @@ def test_independent_live_http_and_persistent_stdio_mcp():
                         await exported(False)
                         call(env, "PATCH", f"/api/users/{uid}", json={"disabled": True})
                         exact(401)
-                        result = await session.call_tool("export_semantic_graph_set", {"graph_set_id": graph_set})
+                        result = await session.call_tool("export_semantic_ontology", {"ontology_id": graph_set})
                         data = json.loads(next(c.text for c in result.content if c.type == "text"))
                         assert data["ok"] is False and "credential" in data["error"].lower(), data
                         call(env, "PATCH", f"/api/users/{uid}", json={"disabled": False})
@@ -556,7 +555,7 @@ def cleanup_live_workspace(factory, graphs, graph_sets):
     """Generic graph registry/set ownership is not covered by project SQL CASCADE."""
     with factory() as session:
         session.execute(delete(SemanticGraphSetMemberModel).where(
-            SemanticGraphSetMemberModel.graph_set_id.in_(graph_sets)))
+            SemanticGraphSetMemberModel.ontology_id.in_(graph_sets)))
         session.execute(delete(SemanticGraphSetModel).where(SemanticGraphSetModel.id.in_(graph_sets)))
         for model in (SemanticGraphStateModel, SemanticGraphRevisionModel, SemanticGraphRegistryModel):
             session.execute(delete(model).where(model.graph_iri.in_(graphs)))

@@ -1,6 +1,7 @@
 """R1.2-003 retrieval contracts independent of a live embedding provider."""
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from types import SimpleNamespace
 
@@ -10,7 +11,6 @@ from app.core.config import Settings
 from app.repositories.models import (
     OntologyModel,
     ProjectModel,
-    SemanticGraphSetModel,
     SemanticProjectionManifestModel,
     SemanticRetrievalDocumentModel,
 )
@@ -98,7 +98,7 @@ def test_metadata_document_allow_list_keeps_mapping_key_names_not_values(in_memo
             }
         ],
         ontology_id="ontology-1",
-        graph_set_id="set-1",
+
         workspace_version="workspace-v1",
         source_signature="source-v1",
         rule_signature="rules-v1",
@@ -137,10 +137,8 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     workspace_service.ensure(ontology)
     in_memory_session.commit()
     workspace = workspace_service.context(ontology.id)
-    graph_set_id = workspace["default_graph_set_id"]
-    data_graph_iri = next(
-        item["graph_iri"] for item in workspace["members"] if item["role"] == "asserted_data"
-    )
+    ontology_id = workspace["ontology_id"]
+    data_graph_iri = workspace["model_graph_iri"]
 
     class PersistentFixtureStore:
         def graph_exists(self, graph_iri):
@@ -172,7 +170,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
         scope_resolver_builder=SemanticReadScopeResolver,
     )
     job = jobs.create_job(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         projection_kind=RETRIEVAL_KIND,
         projection_version=settings.semantic_retrieval_projection_version,
     )
@@ -185,11 +183,11 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     )
     manifest = in_memory_session.scalar(
         select(SemanticProjectionManifestModel).where(
-            SemanticProjectionManifestModel.graph_set_id == graph_set_id,
+            SemanticProjectionManifestModel.ontology_id == ontology_id,
             SemanticProjectionManifestModel.projection_kind == RETRIEVAL_KIND,
         )
     )
-    graph_set = in_memory_session.get(SemanticGraphSetModel, graph_set_id)
+    graph_set = in_memory_session.get(OntologyModel, ontology_id)
     assert job.status == "succeeded"
     assert document is not None
     assert manifest is not None and manifest.status == "current"
@@ -212,7 +210,6 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
 
     config = RetrievalConfig.from_settings(settings)
     reader_identity = {
-        "graph_set_id": graph_set_id,
         "ontology_id": ontology.id,
         "workspace_version": ModelingWorkspaceVersionService(
             in_memory_session, settings
@@ -224,7 +221,6 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
         "build_job_id": manifest.active_job_id,
     }
     persisted_identity = {
-        "graph_set_id": document.graph_set_id,
         "ontology_id": document.ontology_id,
         "workspace_version": document.workspace_version,
         "source_signature": document.source_signature,
@@ -235,12 +231,11 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     }
 
     assert persisted_identity == reader_identity
-    assert reader_identity["workspace_version"] != graph_set.graph_set_metadata["workspace_version"]
 
     repository = PgVectorRetrievalRepository(in_memory_session, config)
     status = repository.index_status(
-        graph_set_id=reader_identity["graph_set_id"],
         ontology_id=reader_identity["ontology_id"],
+
         workspace_version=reader_identity["workspace_version"],
         source_signature=reader_identity["source_signature"],
         current_rule_signature=reader_identity["rule_set_signature"],
@@ -277,7 +272,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
             ontologies=(
                 SimpleNamespace(
                     ontology_id=ontology.id,
-                    graph_set_id=graph_set_id,
+
                     workspace_version=reader_identity["workspace_version"],
                     source_signature=reader_identity["source_signature"],
                 ),
@@ -290,7 +285,6 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     )
 
     assert scanned_identity == {
-        "graph_set_id": reader_identity["graph_set_id"],
         "ontology_id": reader_identity["ontology_id"],
         "workspace_version": reader_identity["workspace_version"],
         "source_signature": reader_identity["source_signature"],
@@ -312,8 +306,8 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     ]
 
     scanned_identity.clear()
-    entity_result = reader.recall_graph_set(
-        scope=SemanticReadScopeResolver(in_memory_session).resolve(graph_set_id),
+    entity_result = reader.recall_ontology(
+        scope=SemanticReadScopeResolver(in_memory_session).resolve(ontology_id),
         query="客户支持工作流",
         resource_kinds={"concept"},
         search_mode="hybrid",
@@ -327,7 +321,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     ]
 
     retry = jobs.create_job(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         projection_kind=RETRIEVAL_KIND,
         projection_version=settings.semantic_retrieval_projection_version,
     )
@@ -342,7 +336,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     )
     current_manifest = in_memory_session.scalar(
         select(SemanticProjectionManifestModel).where(
-            SemanticProjectionManifestModel.graph_set_id == graph_set_id,
+            SemanticProjectionManifestModel.ontology_id == ontology_id,
             SemanticProjectionManifestModel.projection_kind == RETRIEVAL_KIND,
             SemanticProjectionManifestModel.status == "current",
         )
@@ -378,32 +372,17 @@ def test_rebuild_treats_never_created_data_graph_as_empty_input(in_memory_sessio
     workspace_service.ensure(ontology)
     in_memory_session.commit()
     workspace = workspace_service.context(ontology.id)
-    graph_set_id = workspace["default_graph_set_id"]
-    ontology_graph_iri = next(
-        item["graph_iri"] for item in workspace["members"] if item["role"] == "asserted_ontology"
-    )
-    data_graph_iri = next(
-        item["graph_iri"] for item in workspace["members"] if item["role"] == "asserted_data"
-    )
+    ontology_id = workspace["ontology_id"]
+    ontology_graph_iri = workspace["model_graph_iri"]
+    data_graph_iri = workspace["model_graph_iri"]
 
     class MissingDataGraphStore:
-        """Mimics Oxigraph: reading a never-created named graph raises, ASK is false."""
-
+        """An empty Ontology has not created its physical model graph yet."""
         def graph_exists(self, graph_iri):
-            return graph_iri == ontology_graph_iri
+            return False
 
         def get_graph(self, graph_iri, _format):
-            if graph_iri == data_graph_iri:
-                raise RdfStoreUnavailable(f"The graph <{data_graph_iri}> does not exists")
-            return f'''
-                @prefix owl: <http://www.w3.org/2002/07/owl#> .
-                @prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
-                <{ontology_graph_iri}> {{
-                  <https://example.test/ServiceTicket>
-                    a owl:Class ;
-                    rdfs:label "Service ticket"@en .
-                }}
-            '''
+            raise AssertionError("An absent model graph must not be fetched")
 
     projection = SemanticRetrievalProjectionService(
         in_memory_session,
@@ -417,7 +396,7 @@ def test_rebuild_treats_never_created_data_graph_as_empty_input(in_memory_sessio
         scope_resolver_builder=SemanticReadScopeResolver,
     )
     job = jobs.create_job(
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         projection_kind=RETRIEVAL_KIND,
         projection_version=settings.semantic_retrieval_projection_version,
     )
@@ -429,8 +408,7 @@ def test_rebuild_treats_never_created_data_graph_as_empty_input(in_memory_sessio
         )
     )
     assert job.status == "succeeded"
-    assert document is not None
-    assert document.label == "Service ticket"
+    assert document is None
 
 
 def test_fusion_preserves_exact_lexical_evidence_and_exposes_candidate_summary() -> None:
@@ -492,8 +470,8 @@ def test_exact_scan_uses_transaction_scoped_timeout_before_vector_query() -> Non
     session = _RecordingSession()
     config = RetrievalConfig.from_settings(Settings(semantic_retrieval_query_timeout_seconds=1.5))
     rows = PgVectorRetrievalRepository(session, config).exact_cosine_candidates(
-        graph_set_id="set-1",
         ontology_id="ontology-1",
+
         workspace_version="workspace-v1",
         source_signature="source-v1",
         rule_signature="rules-v1",
@@ -504,24 +482,18 @@ def test_exact_scan_uses_transaction_scoped_timeout_before_vector_query() -> Non
 
     assert rows == []
     assert session.calls[0] == ("SET LOCAL statement_timeout = 1500", None)
-    assert "WHERE d.graph_set_id" in session.calls[1][0]
+    assert "WHERE d.ontology_id" in session.calls[1][0]
     assert "ORDER BY d.embedding <=>" in session.calls[1][0]
 
 
 def test_rule_transaction_marks_current_retrieval_manifests_stale(in_memory_session) -> None:
     in_memory_session.add(
-        SemanticGraphSetModel(
-            id="set-1",
-            name="Ontology workspace",
-            scope_type="ontology",
-            scope_id="ontology-1",
-            source_signature="source-v1",
-        )
+        seed_model(in_memory_session, "ontology-1", name="Ontology workspace")
     )
     in_memory_session.add(
         SemanticProjectionManifestModel(
             id="manifest-1",
-            graph_set_id="set-1",
+            ontology_id="ontology-1",
             projection_kind="vector",
             active_job_id="job-1",
             source_signature="source-v1",
@@ -542,20 +514,12 @@ def test_rebuild_failure_keeps_prior_retrieval_manifest_stale(
     """A failed rebuild cannot make a pre-write vector partition look current."""
 
     in_memory_session.add(
-        SemanticGraphSetModel(
-            id="set-rebuild",
-            name="Ontology workspace",
-            scope_type="ontology",
-            scope_id="ontology-rebuild",
-            is_default=True,
-            source_signature="source-v1",
-            graph_set_metadata={"workspace_version": "workspace-v1"},
-        )
+        seed_model(in_memory_session, "ontology-rebuild", name="Ontology workspace")
     )
     in_memory_session.add(
         SemanticProjectionManifestModel(
             id="manifest-rebuild",
-            graph_set_id="set-rebuild",
+            ontology_id="ontology-rebuild",
             projection_kind="vector",
             active_job_id="job-before-write",
             source_signature="source-v1",

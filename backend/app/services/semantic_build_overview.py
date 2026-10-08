@@ -6,18 +6,10 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
-class GraphSetMemberStaleness:
-    iri: str
-    role: str
+class OntologyModelState:
+    ontology_id: str
+    revision: int
     editable: bool
-    last_semantic_edit_at: str | None
-
-
-@dataclass(frozen=True)
-class GraphSetStaleness:
-    graph_set_id: str
-    members: list[GraphSetMemberStaleness]
-    last_semantic_edit_at: str | None
 
 
 @dataclass(frozen=True)
@@ -43,7 +35,7 @@ class NextAction:
 @dataclass(frozen=True)
 class BuildOverviewResponse:
     ontology_id: str
-    graph_set: GraphSetStaleness
+    model: OntologyModelState
     project_brief: BriefSummary
     competency_questions: CompetencyQuestionSummary
     next_actions: list[NextAction] = field(default_factory=list)
@@ -55,42 +47,26 @@ class BuildOverviewService:
         self._brief_summary = brief_summary
         self._question_summary = question_summary
 
-    def build(self, *, session, project_id, ontology_id, graph_set_id):
-        payload = self._read_model(graph_set_id, "graph-set-staleness")
-        items = payload.get("items") or []
-        graph_set = self._parse_graph_set(items[0] if items else {})
+    def build(self, *, session, project_id, ontology_id):
+        from app.repositories.models import OntologyModel
+        ontology = session.get(OntologyModel, ontology_id)
+        model = OntologyModelState(ontology_id, ontology.model_revision, True)
 
         brief = self._brief_summary(session, project_id)
         questions = self._question_summary(session, project_id)
-        actions = self._derive_next_actions(graph_set, brief, questions)
+        actions = self._derive_next_actions(model, brief, questions)
 
         return BuildOverviewResponse(
             ontology_id=ontology_id,
-            graph_set=graph_set,
+            model=model,
             project_brief=brief,
             competency_questions=questions,
             next_actions=actions,
         )
 
-    @staticmethod
-    def _parse_graph_set(payload):
-        members = [
-            GraphSetMemberStaleness(
-                iri=m["iri"],
-                role=m["role"],
-                editable=m.get("editable", True),
-                last_semantic_edit_at=m.get("last_semantic_edit_at"),
-            )
-            for m in payload.get("members", [])
-        ]
-        return GraphSetStaleness(
-            graph_set_id=payload.get("graph_set_id", ""),
-            members=members,
-            last_semantic_edit_at=payload.get("last_semantic_edit_at"),
-        )
 
     @staticmethod
-    def _derive_next_actions(graph_set, brief, questions):
+    def _derive_next_actions(model, brief, questions):
         candidates = []
         if brief.completeness < 1.0:
             candidates.append(NextAction(

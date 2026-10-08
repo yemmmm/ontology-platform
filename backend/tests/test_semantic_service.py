@@ -22,7 +22,7 @@ from app.services.semantic import (
 from app.services.operation_semantics import operation_quads, operation_vocabulary
 
 
-GRAPH = "http://ontology-platform.local/semantic/graph/data/demo"
+GRAPH = "http://ontology-platform.local/semantic/graph/ontology/demo"
 RESULT_GRAPH = "http://ontology-platform.local/semantic/graph/reasoning-result/r1"
 
 
@@ -44,7 +44,7 @@ class FakeRdfStore:
         return DatasetLoadResult(loaded=True, format=format, graph_count=1, triple_count=2)
 
     def export_dataset(self, format, graph_iris=None):
-        return Path("tests/fixtures/semantic/tiny.trig").read_text(encoding="utf-8")
+        return Path("tests/fixtures/semantic/tiny.trig").read_text(encoding="utf-8").replace("/graph/data/", "/graph/ontology/")
 
     def graph_exists(self, graph_iri):
         return graph_iri in self.graphs
@@ -64,6 +64,13 @@ def settings():
     return Settings()
 
 
+@pytest.fixture(autouse=True)
+def owning_model(in_memory_session):
+    from single_model_support import seed_model
+    seed_model(in_memory_session, "demo", GRAPH)
+    in_memory_session.commit()
+
+
 @pytest.fixture()
 def service(in_memory_session, settings):
     return SemanticService(in_memory_session, FakeRdfStore(), settings)
@@ -76,7 +83,7 @@ def test_load_trig_query_and_export_round_trip_boundary(in_memory_session, setti
     trig = Path("tests/fixtures/semantic/tiny.trig").read_text(encoding="utf-8")
     load_result = service.load_dataset(trig, "trig")
     query_result = service.query_sparql(
-        "SELECT ?s WHERE { GRAPH <http://ontology-platform.local/semantic/graph/data/demo> { ?s ?p ?o } }",
+        "SELECT ?s WHERE { GRAPH <http://ontology-platform.local/semantic/graph/ontology/demo> { ?s ?p ?o } }",
         timeout_seconds=3,
         result_limit=10,
     )
@@ -85,7 +92,7 @@ def test_load_trig_query_and_export_round_trip_boundary(in_memory_session, setti
     assert load_result.loaded is True
     assert store.loaded[0][1] == "trig"
     assert query_result.result == {"ok": True}
-    assert "http://ontology-platform.local/semantic/graph/data/demo" in exported
+    assert "http://ontology-platform.local/semantic/graph/ontology/demo" in exported
 
 
 def test_read_sparql_rejects_write_forms(service) -> None:
@@ -193,13 +200,13 @@ def test_edit_auto_registers_managed_graph_in_registry(service, in_memory_sessio
         .filter(SemanticGraphRegistryModel.graph_iri == GRAPH)
         .one()
     )
-    assert record.category == "data"
+    assert record.category == "ontology"
     assert record.mutable_by_direct_edit is True
 
 
 def test_edit_rejects_non_direct_editable_category(service) -> None:
     turtle = Path("tests/fixtures/semantic/tiny.ttl").read_text(encoding="utf-8")
-    with pytest.raises(SemanticGraphPolicyViolation):
+    with pytest.raises(Exception, match="selected Ontology"):
         service.apply_edit(
             "turtle",
             turtle,
@@ -292,6 +299,8 @@ def test_operation_invariant_cannot_be_bypassed_with_validate_false(
             ),
         ]
     )
+    from single_model_support import seed_model
+    seed_model(in_memory_session, "operation-test", graph_iri)
     store = FakeRdfStore()
     direct = SemanticService(in_memory_session, store, settings)
 
@@ -455,6 +464,8 @@ def test_operation_unknown_secret_predicate_is_rejected_before_direct_rdf_write(
             f'{subject} <{settings.semantic_base_iri.rstrip("/")}/vocab/token> "leak" .',
         ]
     )
+    from single_model_support import seed_model
+    seed_model(in_memory_session, "operation-secret", graph_iri)
     store = FakeRdfStore()
 
     with pytest.raises(Exception) as rejected:

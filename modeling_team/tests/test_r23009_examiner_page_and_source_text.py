@@ -40,7 +40,7 @@ def _proxy(*, forward) -> ScopedReadProxy:
     self._read_key = "key"
     self.project_id = "project-one"
     self.ontology_id = "ontology-one"
-    self.graph_set_id = "graph-one"
+    self.ontology_id = "graph-one"
     self.ticket_digest = "a" * 64
     self.model_state_digest = "b" * 64
     self.allowed_tools = ("query_semantic_context", "get_ontology_read_model")

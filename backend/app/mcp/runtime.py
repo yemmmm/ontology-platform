@@ -91,12 +91,9 @@ MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
     "semantic_sparql_query": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "query_semantic_context": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
     "list_semantic_edit_audits": _policy("read", McpOwnership.ORG_ONLY, mutates_state=False),
-    "describe_semantic_graph_set": _policy(
-        "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
-    ),
     "get_semantic_governance_status": _policy("read", McpOwnership.ORG_ONLY, mutates_state=False),
     "get_semantic_read_model": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
-    "export_semantic_graph_set": _policy(
+    "export_semantic_ontology": _policy(
         "read", McpOwnership.PROJECT_RESOURCE, mutates_state=False
     ),
     "inspect_semantic_projection_status": _policy(

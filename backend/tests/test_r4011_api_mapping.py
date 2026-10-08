@@ -58,14 +58,14 @@ def test_field_positions_contexts_identifiers_codes_and_variants_roundtrip(in_me
             continue
         read = client.get(
             "/api/semantic/resources/" + NS + "entity/" + row["item_id"],
-            params={"graph_set_id": "gs-009"},
+            params={"ontology_id": "gs-009"},
         )
         assert read.status_code == 200, read.text
         data = read.json()["properties"]
         assert data["semantic_definition"] == row["semantic"]["semantic_definition"]
         if "parameter_definition" in row["semantic"]:
             assert data["parameter_definition"] == row["semantic"]["parameter_definition"]
-    exported = client.get("/api/semantic/graph-sets/gs-009/export")
+    exported = client.get("/api/semantic/ontologies/gs-009/export")
     assert exported.status_code == 200
     assert "202 means accepted" in exported.text
 
@@ -81,7 +81,7 @@ def test_governed_api_fields_edges_export_and_filtered_paging(in_memory_session,
     view = SemanticAccessView(requires_filtering=True, _unauthorized_iris=frozenset(hidden))
     monkeypatch.setattr(semantic, "_access_view", lambda *_a, **_kw: view)
     for iri in hidden:
-        response = client.get("/api/semantic/resources/" + iri, params={"graph_set_id": "gs-009"})
+        response = client.get("/api/semantic/resources/" + iri, params={"ontology_id": "gs-009"})
         assert response.status_code == 404
     visible = _read_model(client, "entity-list")
     page = _read_model(client, "entity-list", limit=1)
@@ -89,10 +89,10 @@ def test_governed_api_fields_edges_export_and_filtered_paging(in_memory_session,
     assert page["paging"]["visible_count"] == len(visible["items"])
     for path in (
         "/api/semantic/statements",
-        "/api/semantic/graph-sets/gs-009/read-models/entity-relations",
-        "/api/semantic/graph-sets/gs-009/export",
+        "/api/semantic/ontologies/gs-009/read-models/entity-relations",
+        "/api/semantic/ontologies/gs-009/export",
     ):
-        response = client.get(path, params={"graph_set_id": "gs-009"})
+        response = client.get(path, params={"ontology_id": "gs-009"})
         assert response.status_code == 200
         assert all(iri not in response.text for iri in hidden)
         assert "Path ID locates original" not in response.text

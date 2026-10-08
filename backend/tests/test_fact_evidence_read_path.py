@@ -16,7 +16,7 @@ def test_evidence_field_set_is_rejected_before_read_model_dispatch():
             rdf_store=object(),
             scope_resolver=object(),
         ).read_model(
-            graph_set_id="graph-set",
+            ontology_id="graph-set",
             model_name="fact-audit-queue",
             field_set="evidence",
         )

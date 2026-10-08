@@ -202,7 +202,7 @@ def _shapes_custom_graph_iri(ontology_id: str) -> str:
 
 
 def _data_graph_iri(ontology_id: str) -> str:
-    return f"http://op.local/graph/data/{ontology_id}"
+    return f"http://op.local/graph/ontology/{ontology_id}"
 
 
 def _entity_iri(entity_id: str) -> str:
@@ -349,7 +349,7 @@ def test_entity_property_keys_must_be_non_empty_strings(command_kind, payload):
         compile_command(command_kind, payload, _settings())
 
 
-def test_delete_entity_cascades_to_relations():
+def test_delete_entity_leaves_incoming_references_for_integrity_validation():
     """delete_entity removes all triples with the entity as subject OR object,
     so any relation that references the entity is also removed."""
     payload = {
@@ -366,7 +366,7 @@ def test_delete_entity_cascades_to_relations():
     # Subject wildcard delete
     assert (entity_term, "?p", "?o", graph_iri) in compiled.delta.deletes
     # Object wildcard delete (cascade to relations referencing this entity)
-    assert ("?s", "?p", entity_term, graph_iri) in compiled.delta.deletes
+    assert ("?s", "?p", entity_term, graph_iri) not in compiled.delta.deletes
 
 
 def _relation_type_iri(relation_type_id: str) -> str:
@@ -596,7 +596,7 @@ def test_delete_mapping_with_import_run_targets_import_graph():
 
 
 def _data_graph_iri(ontology_id: str) -> str:
-    return f"http://op.local/graph/data/{ontology_id}"
+    return f"http://op.local/graph/ontology/{ontology_id}"
 
 
 def _reasoning_result_graph_iri(run_id: str) -> str:
@@ -803,7 +803,7 @@ def test_update_fact_replaces_literal_object_in_data_graph():
 
     compiled = compile_command("update_fact", payload, _settings())
 
-    graph_iri = "http://op.local/graph/data/ont-1"
+    graph_iri = "http://op.local/graph/ontology/ont-1"
     assert compiled.command_kind == "update_fact"
     assert compiled.object_kind == "fact"
     assert compiled.target_graph_iris == [graph_iri]
@@ -824,7 +824,7 @@ def test_delete_fact_uses_iri_object_when_requested():
 
     compiled = compile_command("delete_fact", payload, _settings())
 
-    graph_iri = "http://op.local/graph/data/ont-1"
+    graph_iri = "http://op.local/graph/ontology/ont-1"
     assert compiled.command_kind == "delete_fact"
     assert (
         "<http://op.local/ns/entity/alice>",

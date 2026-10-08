@@ -141,7 +141,8 @@ def _advance_one_graph_revision(session: Session, ontology_id: str) -> None:
         .limit(1)
     )
     assert revision is not None
-    revision.revision += 1
+    from app.services.semantic_derived_state import SemanticRevisionService
+    SemanticRevisionService(session).bump_revisions([revision.graph_iri])
     session.commit()
 
 
@@ -423,7 +424,7 @@ def test_authorize_apply_accepts_current_workspace_and_rejects_changed_revision(
     assert guard["build_session_id"] == session["id"]
     assert guard["ontology_id"] == ONTOLOGY_ID
     assert guard["workspace_version"] == version
-    assert guard["graph_set_id"]
+    assert guard["ontology_id"]
 
     _advance_one_graph_revision(db_session, ONTOLOGY_ID)
     with pytest.raises(BuildSessionError) as stale:

@@ -22,7 +22,7 @@ export function run() {
   } };
 }
 export function resource(iri: string, label: string, role?: string, meaning = "已记录业务含义") {
-  return { iri, label, source_graph_iri: "urn:graph:data", detail_fields: { semantic_definition: { ...(role ? { semantic_role: role } : {}), business_meaning: meaning, applicability: "maintenance" } } };
+  return { iri, label, ontology_id: "o1", detail_fields: { semantic_definition: { ...(role ? { semantic_role: role } : {}), business_meaning: meaning, applicability: "maintenance" } } };
 }
 export const resources = [
   resource("urn:work", "工单", "object"), resource("urn:process", "关闭流程", "process"),
@@ -34,7 +34,7 @@ export const resources = [
   resource("urn:same-name", "工单", "rule"), resource("urn:role", "维修责任", "business_role"), resource("urn:interface", "关闭接口", "interface_mapping"),
 ];
 export function envelope(items: unknown[], signature = "sig1", complete = true) { return { items, source_signature: signature, paging: { complete }, warnings: [] }; }
-export const relations = [{ id: "e1", source: "urn:work", target: "urn:process", relation: "urn:relation", label: "父单关系", source_graph_iri: "urn:graph:data", assertion_kind: "asserted" }];
+export const relations = [{ id: "e1", source: "urn:work", target: "urn:process", relation: "urn:relation", label: "父单关系", ontology_id: "o1", assertion_kind: "asserted" }];
 export function recall(items: unknown[], cursor: string | null = null) { return { primary_matches: items, related_context: [{ kind: "fact", id: "FACT_SENTINEL" }], result_status: "matched", matches_page: { complete: !cursor, next_match_cursor: cursor }, recall: { completeness: "complete" }, warnings: [] }; }
 export function match(id: string, label = id) { return { id, iri: `urn:${id}`, label, ontology_id: "o1", kind: "instance", description: "已记录摘要" }; }
 type Options = { projects?: unknown[]; ontologies?: unknown[]; index?: unknown; run?: unknown; roles?: unknown; handler?: (path: string, route: Route) => Promise<boolean> };
@@ -49,9 +49,9 @@ export async function mockWorkspace(page: Page, options: Options = {}) {
     else if (path.endsWith("/workbench")) data = options.index ?? index();
     else if (path.includes("/workbench/runs/")) data = options.run ?? run();
     else if (path.endsWith("/ontologies")) data = options.ontologies ?? ontologies;
-    else if (path.endsWith("/workspace-context")) data = { default_graph_set_id: path.includes("o2") ? "g2" : "g1" };
-    else if (path.endsWith("/resource-list")) data = envelope(path.includes("g2") ? [resource("urn:work", "Work order", "process", "integration meaning")] : resources);
-    else if (path.endsWith("/resource-relations")) data = envelope(path.includes("g2") ? [] : relations);
+    else if (path.endsWith("/workspace-context")) data = { ontology_id: path.includes("o2") ? "o2" : "o1", state: "ready", model_revision: 0 };
+    else if (path.endsWith("/resource-list")) data = envelope(path.includes("o2") ? [resource("urn:work", "Work order", "process", "integration meaning")] : resources);
+    else if (path.endsWith("/resource-relations")) data = envelope(path.includes("o2") ? [] : relations);
     else if (path.endsWith("/semantic-access-roles")) data = options.roles ?? [{ id: "role1", name: "Reader", description: "Scope reader", grants: ["context:query", "read:model"] }, { id: "role2", name: "Empty", description: null, grants: [] }];
     else if (path === "/semantic/context:query") data = recall([]);
     await route.fulfill({ json: data });

@@ -44,7 +44,7 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
             project_id = post("/projects", {"name": "R4025 " + token}, 201)["id"]
             ontology = post(f"/projects/{project_id}/ontologies", {"name": "普通工单规则"}, 201)
             ontology_id = ontology["id"]
-            graph_set = ontology["workspace"]["default_graph_set_id"]
+            graph_set = ontology["workspace"]["ontology_id"]
             graphs.extend(member["graph_iri"] for member in ontology["workspace"]["members"])
             assert not next(m for m in ontology["workspace"]["members"]
                             if m["role"] == "shapes")["editable"]
@@ -69,14 +69,14 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
             bad = post(batch_path, invalid)
             assert bad["attempt_status"] == "validation_failed"
             assert any("bad" in finding["client_item_ids"] for finding in bad["findings"])
-            assert not get("/semantic/statements", {"graph_set_id": graph_set})["items"]
+            assert not get("/semantic/statements", {"ontology_id": graph_set})["items"]
             assert post(batch_path, request)["attempt_status"] == "validated"
             request.update(mode="apply_atomic", idempotency_key="apply", lease_token=lease["lease_token"])
             applied = post(batch_path, request)
             assert applied["attempt_status"] == "applied", applied["findings"]
             assert post(batch_path, request)["attempt_id"] == applied["attempt_id"]
             iri = applied["items"][0]["resource_outputs"]["resource_iri"]
-            exact = get("/semantic/resources/" + iri, {"graph_set_id": graph_set})
+            exact = get("/semantic/resources/" + iri, {"ontology_id": graph_set})
             definition = exact["properties"]["semantic_definition"]
             assert definition["unknowns"] == ["超时例外待确认"]
             assert "未验收工单不能关闭" in definition["business_meaning"]
@@ -88,9 +88,9 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
             assert "rule_definition" not in context["primary_matches"][0]["data"]
             for model in ("entity-shape", "class-shape-generated", "class-shape-custom",
                           "owl-consistency-summary", "entity-inferred-types"):
-                response = client.get(f"/api/semantic/graph-sets/{graph_set}/read-models/{model}")
+                response = client.get(f"/api/semantic/ontologies/{graph_set}/read-models/{model}")
                 assert response.status_code == 400, response.text
-            response = client.get(f"/api/semantic/graph-sets/{graph_set}/read-models/entity-list",
+            response = client.get(f"/api/semantic/ontologies/{graph_set}/read-models/entity-list",
                                   params={"include": "asserted-plus-reasoning"})
             assert response.status_code == 400
             post(f"/projects/{project_id}/protection-sets", dict(name="规则保护",
@@ -104,11 +104,11 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
                 assert not session.scalar(select(m.SemanticValidationRunModel.id).where(
                     or_(*(m.SemanticValidationRunModel.data_graph_iris.contains([g]) for g in graphs))))
                 assert not session.scalar(select(m.SemanticReasoningRunModel.id).where(
-                    or_(*(m.SemanticReasoningRunModel.source_graph_iris.contains([g]) for g in graphs))))
+                    or_(*(m.SemanticReasoningRunModel.model_graph_iris.contains([g]) for g in graphs))))
             with httpx.Client(base_url=client.base_url, timeout=30,
                               headers={"Authorization": "Bearer " + reader}) as limited:
                 response = limited.get("/api/semantic/resources/" + iri,
-                                       params={"graph_set_id": graph_set})
+                                       params={"ontology_id": graph_set})
                 assert response.status_code == 404
                 response = limited.post("/api/semantic/context:query", json=query)
                 assert response.status_code == 200

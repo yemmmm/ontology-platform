@@ -59,7 +59,7 @@ def reader(in_memory_session, rows):
         ontologies=(
             SimpleNamespace(
                 ontology_id="o",
-                graph_set_id="g",
+
                 workspace_version="wv",
                 source_signature="ss",
             ),

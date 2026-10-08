@@ -34,7 +34,7 @@ def _edge(fixture, key, source, target, kind="create_relation"):
 
 
 def _data(fixture, ontology):
-    graph = namespace_from_settings(fixture["settings"]).graph("data", ontology)
+    graph = namespace_from_settings(fixture["settings"]).graph("ontology", ontology)
     return Graph().parse(data=fixture["store"].get_graph(str(graph), "turtle"), format="turtle")
 
 

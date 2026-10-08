@@ -18,6 +18,7 @@ B01/B10/B11/B13, F08/F15/F16, R01/R03/R04/R13.
 """
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from collections.abc import Generator
 from types import SimpleNamespace
@@ -32,21 +33,20 @@ from sqlalchemy.orm import Session
 from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.semantic import router as semantic_router
 from app.core.config import Settings
-from app.repositories.models import SemanticGraphSetMemberModel, SemanticGraphSetModel
+from app.repositories.models import OntologyModel
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
 from app.services.semantic_command_compiler import (
     ClassMembershipConflict,
     InvalidCommandPayload,
     compile_command,
 )
-from app.services.semantic_graph_set import SemanticGraphSetService
 
 PREFIX = "http://ontology-platform.local/semantic/"
 # Settings.semantic_base_iri default — compiler resource IRIs below must match it.
 NS = PREFIX
 GRAPH_PREFIX = f"{PREFIX}graph/"
 ONTOLOGY_GRAPH = f"{GRAPH_PREFIX}ontology/ont-1"
-DATA_GRAPH = f"{GRAPH_PREFIX}data/ont-1"
+DATA_GRAPH = f"{GRAPH_PREFIX}ontology/ont-1"
 CUSTOM_SHAPES_GRAPH = f"{GRAPH_PREFIX}shapes/ont-1/custom"
 WORKSPACE_SHAPES_GRAPH = f"{GRAPH_PREFIX}shapes/ont-1"
 GENERATED_SHAPES_GRAPH = f"{GRAPH_PREFIX}shapes/ont-1/generated"
@@ -130,8 +130,7 @@ class _DatasetStore:
         ontology: str = ONTOLOGY_TTL,
     ) -> None:
         self.graphs: dict[str, str] = {
-            ONTOLOGY_GRAPH: ontology,
-            DATA_GRAPH: data,
+            ONTOLOGY_GRAPH: ontology + "\n" + data,
             CUSTOM_SHAPES_GRAPH: custom_shapes,
         }
         self.dataset = Dataset()
@@ -169,31 +168,7 @@ class _DatasetStore:
 def _seed_graph_set(
     session: Session, members: list[tuple[str, str]] | None = None
 ) -> None:
-    graph_set = SemanticGraphSetModel(
-        id=GRAPH_SET_ID,
-        name="unified-semantic-graph",
-        scope_type="ontology",
-        scope_id=ONTOLOGY_ID,
-        status="active",
-        source_signature="r3009-v1",
-    )
-    for index, (graph_iri, role) in enumerate(
-        members
-        or [
-            (ONTOLOGY_GRAPH, "asserted_ontology"),
-            (DATA_GRAPH, "asserted_data"),
-        ]
-    ):
-        graph_set.members.append(
-            SemanticGraphSetMemberModel(
-                id=f"m-{index}",
-                graph_iri=graph_iri,
-                role=role,
-                required=True,
-                sort_order=index,
-            )
-        )
-    session.add(graph_set)
+    seed_model(session, GRAPH_SET_ID, ONTOLOGY_GRAPH)
     session.commit()
 
 
@@ -212,7 +187,7 @@ def _client(store: _DatasetStore, session: Session) -> TestClient:
 
 def _read_model(client: TestClient, model_name: str, **params: Any) -> dict[str, Any]:
     response = client.get(
-        f"/api/semantic/graph-sets/{GRAPH_SET_ID}/read-models/{model_name}",
+        f"/api/semantic/ontologies/{GRAPH_SET_ID}/read-models/{model_name}",
         params={"include": "asserted", **params},
     )
     assert response.status_code == 200, response.text
@@ -504,7 +479,7 @@ def test_entity_list_collects_classes_from_a_second_authorized_graph(
 ) -> None:
     # B13: type edges may live in a different authorized graph than the
     # entity identity; the aggregate still carries the full visible set.
-    second_data_graph = f"{GRAPH_PREFIX}data/ont-2"
+    second_data_graph = f"{GRAPH_PREFIX}ontology/ont-2"
     _seed_graph_set(
         in_memory_session,
         [

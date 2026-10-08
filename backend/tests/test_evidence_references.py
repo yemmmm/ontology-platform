@@ -1,6 +1,7 @@
 """R4.0-012 canonical writes remain decoupled from inline evidence."""
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
@@ -10,7 +11,6 @@ from app.repositories.models import (
     EvidenceReferenceModel,
     OntologyModel,
     ProjectModel,
-    SemanticGraphSetModel,
     SemanticEditAuditModel,
 )
 from app.api.schemas import SemanticCanonicalProductWriteRequest
@@ -43,15 +43,7 @@ def _seed_scope(session: Session) -> None:
                 project_id=PROJECT_ID,
                 name="Evidence ontology",
             ),
-            SemanticGraphSetModel(
-                id=GRAPH_SET_ID,
-                name="Default",
-                scope_type="ontology",
-                scope_id=ONTOLOGY_ID,
-                status="active",
-                is_default=True,
-                source_signature="test",
-            ),
+            seed_model(session, GRAPH_SET_ID, name="Default"),
         ]
     )
     session.commit()
@@ -99,7 +91,7 @@ def test_canonical_write_does_not_expose_inline_evidence(
     response = compile_and_apply_product_command(
         SemanticCanonicalProductWriteRequest(
             command_kind="create_class",
-            graph_set_id=GRAPH_SET_ID,
+            ontology_id=GRAPH_SET_ID,
             payload={"class_iri": "https://example.test/Workflow", "label": "Workflow"},
             actor="agent:test",
             client_item_id="item-class-1",

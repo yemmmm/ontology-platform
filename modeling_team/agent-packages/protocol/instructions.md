@@ -837,9 +837,9 @@ ordinary explanatory material; the platform does not execute them.
 ## R4.0-024 production association scan
 
 Only when `r4-0-024-model-check-contract.json` is mounted, use its fixed query with the advertised
-`semantic_sparql_query` tool. Obtain actual asserted_ontology/asserted_data graph IRIs from each
-authorized `get_ontology_workspace_context` response; include the approved shared/reference scope,
-not just the last Batch. Bind those graph IRIs to the fixed query, set `scope_mode=ontologies`,
+`semantic_sparql_query` tool. Obtain each authorized Ontology model revision from
+`get_ontology_workspace_context`; include the approved shared/reference Ontologies,
+not just the last Batch. Let the platform resolve model storage, set `scope_mode=ontologies`,
 use explicit authorized Project/Ontology IDs, and paginate the actual `truncated` response with
 OFFSET equal to the number of bindings already returned. Do not add a smaller query LIMIT. This
 reads RDF and formal literal references beyond the canvas's 500-node endpoint window, without
@@ -904,7 +904,7 @@ meaning. Request a complete corrected candidate/approved plan for a missing or c
 A stable IRI is not compatibility proof; semantic review belongs to Modeling/Coordinator.
 
 Check approved current resources and direct/known indirect references with existing governed
-resource/statement-list, graph sets and bounded queries. Report truncation/scope/version limits;
+resource/statement-list, Ontology scopes and bounded queries. Report truncation/scope/version limits;
 never infer absence, bypass permissions or disclose restricted existence/counts/names. Check
 workspace drift before writing, then re-read affected content/review and dry-run. Exact candidate
 content/projection approvals still bind submissions; old approval cannot release new revision.
@@ -933,3 +933,11 @@ API semantic assertion. Bind the actual kind and current host namespace, never g
 Return repairable translation conflicts. Missing binding IDs require semantic reference review,
 not automatic substitution. Governed facts/edges and bounded Context Query can require multiple
 reads; truncation/filtering does not prove absence. Do not invoke business APIs or add Evidence.
+
+
+R4.0-026 storage contract: each Ontology owns one current business model. Submit and read with
+`ontology_id` / `ontology_ids`; bind the actual model revision and workspace version. Do not author,
+request or carry GraphSet identifiers, member roles, or source-graph selectors in business candidates
+and handoffs. Definitions, ordinary nodes and relations share that model. Internal RDF locators in
+technical write receipts are host storage details. Keep original business sources and external mapping
+provenance intact; shared references require explicitly approved Ontology scope.

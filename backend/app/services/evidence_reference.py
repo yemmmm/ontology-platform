@@ -18,7 +18,6 @@ from app.repositories.models import (
     OntologyModel,
     ProjectModel,
     SemanticEditAuditModel,
-    SemanticGraphSetModel,
 )
 from app.services.semantic_access import SemanticAccessView
 
@@ -215,20 +214,10 @@ class EvidenceReferenceService:
         ) or 0
         return list(self.session.scalars(statement)), int(total)
 
-    def require_ontology_scope(
-        self, project_id: str, ontology_id: str, graph_set_id: str | None
-    ) -> OntologyModel:
+    def require_ontology_scope(self, project_id: str, ontology_id: str) -> OntologyModel:
         ontology = self.session.get(OntologyModel, ontology_id)
         if ontology is None or ontology.project_id != project_id:
             raise EvidenceReferenceNotFound("Ontology not found in project")
-        if graph_set_id:
-            graph_set = self.session.get(SemanticGraphSetModel, graph_set_id)
-            if (
-                graph_set is None
-                or graph_set.scope_type != "ontology"
-                or graph_set.scope_id != ontology_id
-            ):
-                raise EvidenceReferenceNotFound("Graph set not found for ontology")
         return ontology
 
     def resolve_candidates(
@@ -281,13 +270,13 @@ class EvidenceReferenceService:
         target_type: str,
         target_id: str,
         references: list[EvidenceReferenceModel],
-        graph_set_id: str | None = None,
+
         client_item_id: str | None = None,
         edit_audit_id: str | None = None,
         actor: str | None = None,
         association_ids: dict[str, str] | None = None,
     ) -> list[EvidenceAssociationModel]:
-        self.require_ontology_scope(project_id, ontology_id, graph_set_id)
+        self.require_ontology_scope(project_id, ontology_id)
         clean_type = target_type.strip()
         clean_target = target_id.strip()
         if not clean_type or not clean_target:
@@ -313,7 +302,6 @@ class EvidenceReferenceService:
                 "id": (association_ids or {}).get(reference.id, str(uuid4())),
                 "project_id": project_id,
                 "ontology_id": ontology_id,
-                "graph_set_id": graph_set_id,
                 "evidence_reference_id": reference.id,
                 "target_type": clean_type,
                 "target_id": clean_target,
@@ -407,7 +395,6 @@ def association_to_dict(row: EvidenceAssociationModel) -> dict[str, Any]:
         "id": row.id,
         "project_id": row.project_id,
         "ontology_id": row.ontology_id,
-        "graph_set_id": row.graph_set_id,
         "evidence_reference_id": row.evidence_reference_id,
         "target_type": row.target_type,
         "target_id": row.target_id,

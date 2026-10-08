@@ -229,7 +229,7 @@ class ExaminerRolePacket:
                 or not state.get("workspace_version")
                 or not isinstance(state.get("state_digest"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", state["state_digest"]) is None
-                or any(not isinstance(scope.get(field), str) or not scope.get(field) for field in ("project_id", "ontology_id", "graph_set_id"))
+                or any(not isinstance(scope.get(field), str) or not scope.get(field) for field in ("project_id", "ontology_id"))
             ):
                 raise ExaminerRuntimeBlocked("acceptance-input", role="platform")
             ticket_digest = normalized["ticket_binding"].get("ticket_digest")
@@ -745,21 +745,8 @@ def v3_ticket_digest(value: Any) -> str:
     return text[len("sha256:") :] if text.startswith("sha256:") else text
 
 
-def v3_proxy_scope_entries(
-    packet: AcceptanceBatchPacket, graph_set_ids: Mapping[str, Any]
-) -> tuple[dict[str, str], ...]:
-    """Build the packet-verified proxy scope for one v3 platform session.
-
-    One entry per authorized Ontology, in packet order: project, Ontology, graph
-    set and both bound state digests.  Project and state identity are read from
-    the packet's own model binding, so a host entry can never widen or re-point
-    the authorized scope; ``graph_set_ids`` supplies the default graph set the
-    host observed for that Ontology with the same authorized read tools (the
-    packet carries the binding, not the platform's graph-set locator).  These
-    entries are the only scope a v3 Platform Examiner can read; anything outside
-    the list is refused before a forward.
-    """
-
+def v3_proxy_scope_entries(packet: AcceptanceBatchPacket) -> tuple[dict[str, str], ...]:
+    """Bind authorized Ontologies directly from the frozen packet, before forwarding."""
     if not isinstance(packet, AcceptanceBatchPacket) or packet.role != (
         CQ_ACCEPTANCE_PLATFORM_ROLE
     ):
@@ -772,8 +759,6 @@ def v3_proxy_scope_entries(
     ontologies = binding.get("ontologies") if isinstance(binding, Mapping) else None
     if not isinstance(ontologies, list) or not ontologies:
         raise ChildRuntimeError("v3 proxy scope requires the packet model binding")
-    if not isinstance(graph_set_ids, Mapping):
-        raise ChildRuntimeError("v3 proxy scope graph sets are invalid")
     entries: list[dict[str, str]] = []
     for item in ontologies:
         if not isinstance(item, Mapping):
@@ -781,13 +766,12 @@ def v3_proxy_scope_entries(
         ontology_id = item.get("ontology_id")
         project_id = item.get("project_id")
         workspace = item.get("workspace_state")
-        graph = item.get("graph_state")
+        graph = item.get("model_version_state")
         state = workspace.get("state_digest") if isinstance(workspace, Mapping) else None
-        graph_state = graph.get("state_digest") if isinstance(graph, Mapping) else None
-        graph_set_id = graph_set_ids.get(ontology_id) if isinstance(ontology_id, str) else None
+        model_version_state = graph.get("state_digest") if isinstance(graph, Mapping) else None
         if not all(
             isinstance(field, str) and field
-            for field in (ontology_id, project_id, state, graph_state, graph_set_id)
+            for field in (ontology_id, project_id, state, model_version_state)
         ):
             raise ChildRuntimeError("v3 proxy scope entry is incomplete")
         if ontology_id not in scope:
@@ -796,9 +780,8 @@ def v3_proxy_scope_entries(
             {
                 "project_id": str(project_id),
                 "ontology_id": str(ontology_id),
-                "graph_set_id": str(graph_set_id),
                 "model_state_digest": str(state),
-                "graph_state_digest": str(graph_state),
+                "model_version_digest": str(model_version_state),
             }
         )
     return tuple(entries)
@@ -2125,7 +2108,6 @@ PLATFORM_PROXY_READ_TOOLS: tuple[str, ...] = (
     "get_semantic_read_model",
     "query_semantic_context",
     "semantic_sparql_query",
-    "describe_semantic_graph_set",
     "inspect_semantic_projection_status",
     "list_evidence_references",
     "get_evidence_reference",
@@ -2140,7 +2122,6 @@ PLATFORM_PROXY_READ_TOOLS: tuple[str, ...] = (
 _EXAMINER_SCOPE_SCHEMA: dict[str, Any] = {
     "project_id": {"type": "string"},
     "ontology_id": {"type": "string"},
-    "graph_set_id": {"type": "string"},
     "ticket_digest": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
     "model_state_digest": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
 }
@@ -2156,7 +2137,6 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "checkpoint_cursor": {"type": ["integer", "null"], "minimum": 0},
     },
     "get_modeling_context": {},
-    "get_ontology_workspace_context": {},
     "get_ontology_read_model": {
         "model_name": {"type": "string", "enum": ["classes", "entities", "facts", "rules"]},
         "include": {"type": "string", "enum": ["asserted"]},
@@ -2197,7 +2177,7 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "ontology_ids": {"type": "array", "items": {"type": "string"}}, "timeout_seconds": {"type": ["number", "null"]},
         "result_limit": {"type": ["integer", "null"], "minimum": 1},
     },
-    "describe_semantic_graph_set": {},
+    "get_ontology_workspace_context": {},
     "inspect_semantic_projection_status": {},
     "list_evidence_references": {
         "search": {"type": "string"}, "limit": {"type": "integer", "minimum": 1},
@@ -2228,13 +2208,12 @@ def examiner_proxy_schemas(tools: Iterable[str] = PLATFORM_PROXY_READ_TOOLS) -> 
             "get_project_build_context": [],
             "get_build_session": ["session_id"],
             "get_modeling_context": [],
-            "get_ontology_workspace_context": [],
             "get_ontology_read_model": ["model_name"],
             "get_entity_statement_context": ["entity_iri"],
             "get_semantic_read_model": ["model_name"],
             "query_semantic_context": ["scope_mode", "ontology_ids"],
             "semantic_sparql_query": ["scope_mode", "query", "ontology_ids"],
-            "describe_semantic_graph_set": [],
+            "get_ontology_workspace_context": [],
             "inspect_semantic_projection_status": [],
             "list_evidence_references": [],
             "get_evidence_reference": ["reference_id"],
@@ -2258,7 +2237,7 @@ def examiner_proxy_schemas(tools: Iterable[str] = PLATFORM_PROXY_READ_TOOLS) -> 
 # from the selected authorized entries.  ``project_id`` and ``ticket_digest``
 # stay caller-visible because one read is still exactly one project and one
 # frozen batch (design §3.G4.1).
-_V3_PER_ONTOLOGY_SCOPE_FIELDS = ("ontology_id", "graph_set_id", "model_state_digest")
+_V3_PER_ONTOLOGY_SCOPE_FIELDS = ("ontology_id",  "model_state_digest")
 
 
 def v3_examiner_proxy_schemas(
@@ -2384,7 +2363,6 @@ class ProxyReceipt:
     token_digest: str
     project_id: str
     ontology_id: str
-    graph_set_id: str
     ticket_digest: str
     allowed_tools: tuple[str, ...]
     config_digest: str
@@ -2402,7 +2380,6 @@ class ProxyCallReceipt:
     ordinal: int
     project_id: str
     ontology_id: str
-    graph_set_id: str
     ticket_digest: str
     model_state_digest: str
     tool: str
@@ -2428,7 +2405,7 @@ class V3ProxyCallReceipt(ProxyCallReceipt):
     """
 
     # v3 multi-Ontology scope actually selected for this call (project, Ontology,
-    # graph set and both bound state digests per entry).  The legacy
+    # and both bound state digests per entry).  The legacy
     # single-Ontology proxy receipt fields already carry that scope.
     ontologies: tuple[Mapping[str, str], ...] = ()
 
@@ -2508,7 +2485,7 @@ class ScopedReadProxy:
         read_key: str,
         project_id: str | None = None,
         ontology_id: str | None = None,
-        graph_set_id: str | None = None,
+
         ticket_digest: str,
         model_state_digest: str | None = None,
         allowed_tools: list[str] | tuple[str, ...],
@@ -2536,11 +2513,10 @@ class ScopedReadProxy:
                 entry = {
                     "project_id": _safe_id(item.get("project_id"), "project_id"),
                     "ontology_id": _safe_id(item.get("ontology_id"), "ontology_id"),
-                    "graph_set_id": _safe_id(item.get("graph_set_id"), "graph_set_id"),
                     "model_state_digest": str(item.get("model_state_digest") or ""),
-                    "graph_state_digest": str(item.get("graph_state_digest") or ""),
+                    "model_version_digest": str(item.get("model_version_digest") or ""),
                 }
-                if not entry["model_state_digest"] or not entry["graph_state_digest"]:
+                if not entry["model_state_digest"] or not entry["model_version_digest"]:
                     raise ChildRuntimeError("v3 proxy Ontology scope entry is incomplete")
                 entries.append(entry)
             if not entries or len({entry["ontology_id"] for entry in entries}) != len(entries):
@@ -2549,13 +2525,11 @@ class ScopedReadProxy:
             primary = self.authorized_ontologies[0]
             self.project_id = primary["project_id"]
             self.ontology_id = primary["ontology_id"]
-            self.graph_set_id = primary["graph_set_id"]
             self.model_state_digest = primary["model_state_digest"]
             self.ticket_digest = v3_ticket_digest(ticket_digest)
         else:
             self.project_id = _safe_id(project_id, "project_id")
             self.ontology_id = _safe_id(ontology_id, "ontology_id")
-            self.graph_set_id = _safe_id(graph_set_id, "graph_set_id")
             self.ticket_digest = _safe_digest(ticket_digest, "ticket_digest")
             self.model_state_digest = _safe_digest(model_state_digest, "model_state_digest")
         normalized = tuple(str(tool) for tool in allowed_tools)
@@ -2612,7 +2586,6 @@ class ScopedReadProxy:
             "scope": {
                 "project_id": self.project_id,
                 "ontology_id": self.ontology_id,
-                "graph_set_id": self.graph_set_id,
             },
             "ticket_digest": self.ticket_digest,
             "model_state_digest": self.model_state_digest,
@@ -2623,7 +2596,7 @@ class ScopedReadProxy:
             token_digest=self.token_digest,
             project_id=self.project_id,
             ontology_id=self.ontology_id,
-            graph_set_id=self.graph_set_id,
+
             ticket_digest=self.ticket_digest,
             allowed_tools=self.allowed_tools,
             config_digest=_digest(config),
@@ -2804,7 +2777,7 @@ class ScopedReadProxy:
                         ordinal=len(self._call_receipts),
                         project_id=str(arguments["project_id"]),
                         ontology_id=str(arguments.get("ontology_id", "")),
-                        graph_set_id=str(arguments.get("graph_set_id", "")),
+
                         ticket_digest=self.ticket_digest,
                         model_state_digest=str(arguments.get("model_state_digest", "")),
                         tool=tool,
@@ -2834,7 +2807,6 @@ class ScopedReadProxy:
             required = {
                 "project_id": self.project_id,
                 "ontology_id": self.ontology_id,
-                "graph_set_id": self.graph_set_id,
                 "ticket_digest": self.ticket_digest,
                 "model_state_digest": self.model_state_digest,
             }
@@ -2910,7 +2882,7 @@ class ScopedReadProxy:
                     ordinal=len(self._call_receipts),
                     project_id=self.project_id,
                     ontology_id=self.ontology_id,
-                    graph_set_id=self.graph_set_id,
+
                     ticket_digest=self.ticket_digest,
                     model_state_digest=self.model_state_digest,
                     tool=tool,
@@ -2988,7 +2960,6 @@ class ScopedReadProxy:
             injected.update(
                 {
                     "ontology_id": primary["ontology_id"],
-                    "graph_set_id": primary["graph_set_id"],
                     "model_state_digest": primary["model_state_digest"],
                 }
             )
@@ -2999,7 +2970,7 @@ class ScopedReadProxy:
             # rather than contradictory, so it is dropped: the forwarded read
             # stays bound by the strictly authorized ``ontology_ids`` selection
             # resolved above, and the receipt records each selected entry.
-            for key in ("ontology_id", "graph_set_id", "model_state_digest"):
+            for key in ("ontology_id",  "model_state_digest"):
                 hints.pop(key, None)
         if "ticket_digest" in arguments and arguments["ticket_digest"] != self.ticket_digest:
             raise _ProxyScopeDenied("read-scope-denied")
@@ -3207,7 +3178,7 @@ class McpReadForwarder:
                         if exact is not None:
                             scope = {
                                 key: arguments[key]
-                                for key in ("project_id", "ontology_id", "graph_set_id", "ticket_digest", "model_state_digest")
+                                for key in ("project_id", "ontology_id",  "ticket_digest", "model_state_digest")
                                 if key in arguments
                             }
                             arguments = validate_examiner_proxy_arguments(

@@ -27,8 +27,8 @@ import test_modeling_batches_service as batches
     ("get", "/rule-definitions"), ("post", "/rule-definitions"),
     ("get", "/rule-definitions/legacy"), ("patch", "/rule-definitions/legacy"),
     ("delete", "/rule-definitions/legacy"),
-    ("post", "/graph-sets/gs/construct-runs"),
-    ("post", "/graph-sets/gs/rule-runs"),
+    ("post", "/ontologies/gs/construct-runs"),
+    ("post", "/ontologies/gs/rule-runs"),
     ("get", "/rule-runs"), ("get", "/rule-runs/legacy"),
 ])
 def test_direct_legacy_rest_routes_are_gone(method, path, in_memory_session):
@@ -78,15 +78,18 @@ def test_legacy_executor_implementations_have_been_removed(module):
 
 def test_archived_rule_pointers_are_not_live_scopes_counts_or_projection_inputs(in_memory_session):
     from app.services.semantic_derived_state import SemanticDerivedStateService
-    from app.services.semantic_graph_set import SemanticGraphSetService
     from app.services.semantic_projection_job import SemanticProjectionJobService
     from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
     from app.repositories.models import SemanticDerivedResultPointerModel
-    from test_semantic_read_scope import _make_graph_set, _add_pointer
+    from single_model_support import seed_model
 
-    _make_graph_set(in_memory_session, [("http://op/s/graph/data/ov-1", "asserted_data")])
-    _add_pointer(in_memory_session, "rule")
-    _add_pointer(in_memory_session, "reasoning")
+    ontology = seed_model(in_memory_session, "gs-1")
+    for kind in ("rule", "reasoning"):
+        in_memory_session.add(SemanticDerivedResultPointerModel(
+            id="ptr-" + kind, ontology_id=ontology.id, result_kind=kind,
+            run_id="archived-" + kind, result_graph_iri="urn:archived:" + kind,
+            source_signature="old", status="current"))
+    in_memory_session.flush()
     archived = in_memory_session.get(SemanticDerivedResultPointerModel, "ptr-rule")
     resolver = SemanticReadScopeResolver(in_memory_session)
     scope = resolver.resolve("gs-1", include="full-working-view")
@@ -97,8 +100,6 @@ def test_archived_rule_pointers_are_not_live_scopes_counts_or_projection_inputs(
     derived = SemanticDerivedStateService(in_memory_session, Settings())
     assert not hasattr(derived, "list_pointers")
     assert not hasattr(derived, "reconcile")
-    described = SemanticGraphSetService(in_memory_session, Settings()).describe("gs-1")
-    assert {p["result_kind"] for p in described["current_pointers"]} == set()
     projection = SemanticProjectionJobService(in_memory_session, writers={}, scope_resolver_builder=SemanticReadScopeResolver)
     job = projection.create_job("gs-1", "search", "retirement-v1", include="full-working-view")
     assert job.input_derived_pointers == {}

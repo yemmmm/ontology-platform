@@ -31,7 +31,6 @@ from app.repositories.models import (
     OntologyModel,
     OntologyWriteFenceModel,
     SemanticEditAuditModel,
-    SemanticGraphSetModel,
     SemanticGraphRevisionModel,
     SemanticProjectionManifestModel,
 )
@@ -337,7 +336,7 @@ class ModelingBatchService:
         workspace = OntologyWorkspaceService(self.session, self.settings).context(
             payload.ontology_id
         )
-        if workspace.get("state") != "ready" or not workspace.get("default_graph_set_id"):
+        if workspace.get("state") != "ready" or not workspace.get("ontology_id"):
             raise ModelingBatchError(
                 "workspace_revision_conflict", "Ontology workspace is incomplete"
             )
@@ -387,10 +386,7 @@ class ModelingBatchService:
             status="validating",
             expected_workspace_version=payload.expected_workspace_version,
             workspace_version_before=current_version,
-            graph_set_id=(authorization_result or {}).get("graph_set_id")
-            or OntologyWorkspaceService(self.session, self.settings).context(payload.ontology_id)[
-                "default_graph_set_id"
-            ],
+            ontology_id=payload.ontology_id,
             lease_revision=(authorization_result or {}).get("lease_revision"),
             target_snapshot=self._target_snapshot(payload.ontology_id),
             findings=[],
@@ -598,8 +594,8 @@ class ModelingBatchService:
         stale_projections = int(
             self.session.scalar(
                 select(func.count(SemanticProjectionManifestModel.id)).where(
-                    SemanticProjectionManifestModel.graph_set_id
-                    == workspace.get("default_graph_set_id"),
+                    SemanticProjectionManifestModel.ontology_id
+                    == workspace.get("ontology_id"),
                     SemanticProjectionManifestModel.status == "stale",
                 )
             )
@@ -621,7 +617,7 @@ class ModelingBatchService:
                     "model_name": name,
                 },
             }
-            for name in ("classes", "entities", "facts", "history", "delta")
+            for name in ("classes", "entities", "facts")
         }
         rdf_counts, counts_warning = self._rdf_resource_counts(workspace)
         return {
@@ -632,7 +628,7 @@ class ModelingBatchService:
                 "state": workspace["state"],
                 "workspace_version": version,
                 "editable": workspace["state"] == "ready"
-                and any(m["editable"] for m in workspace["members"]),
+                and workspace["editable"],
                 "issues": workspace["issues"],
             },
             "resource_counts": {
@@ -673,9 +669,7 @@ class ModelingBatchService:
             return empty, "semantic_workspace_incomplete"
         if self.rdf_store is None or not hasattr(self.rdf_store, "query_sparql"):
             return empty, "semantic_count_query_unavailable"
-        roles = {member["role"]: member["graph_iri"] for member in workspace.get("members", [])}
-        ontology_graph = roles.get("asserted_ontology")
-        data_graph = roles.get("asserted_data")
+        ontology_graph = data_graph = workspace["model_graph_iri"]
         if not ontology_graph or not data_graph:
             return empty, "semantic_workspace_incomplete"
         op = self.settings.semantic_base_iri.rstrip("/") + "/vocab/"
@@ -872,6 +866,19 @@ class ModelingBatchService:
                             item_ids=sorted({left.item_id, right.item_id}),
                         )
                     )
+        # A single model also contains incoming definition/mapping references.
+        # Reject new references to a resource removed by another item; do not erase
+        # those definitions as an implicit entity-delete cascade.
+        for delete_id, delete_command in prepared.items():
+            if delete_command.compiled is None:
+                continue
+            removed = {subject for subject, predicate, obj, graph in delete_command.compiled.delta.deletes
+                       if predicate == "?p" and obj == "?o" and not subject.startswith("?")}
+            for insert_id, insert_command in prepared.items():
+                if delete_id != insert_id and insert_command.compiled is not None and any(obj in removed for _, _, obj, _ in insert_command.compiled.delta.inserts):
+                    findings.append(_finding("conflicting_item_effects", "error",
+                        "An item references a resource deleted by another item",
+                        item_ids=sorted({delete_id, insert_id})))
         return prepared, self._dedupe_findings(findings), groups, dependency_map
 
     @staticmethod
@@ -1399,7 +1406,7 @@ class ModelingBatchService:
                             self.session, self.rdf_store, self.settings
                         ).apply_compiled_command(
                             compiled,
-                            graph_set_id=attempt.graph_set_id,
+                            ontology_id=attempt.ontology_id,
                             actor=auth.actor,
                             reason=f"Modeling Batch {batch.id}",
                             commit=False,
@@ -1730,11 +1737,22 @@ class ModelingBatchService:
                         after.append(canonical_statement(subject, predicate, obj, graph_iri))
             before_hashes = {_hash(item) for item in before if isinstance(item, dict)}
             after_hashes = {_hash(item) for item in after}
-            target_present = bool(after_hashes)
-            if target_present and after_hashes == before_hashes:
-                state = "not_applied"
-            elif not target_present and not after_hashes:
+            planned_deletes = (attempt.operation_plan or {}).get("delta", {}).get("deletes")
+            expected_after = set()
+            if isinstance(planned_deletes, list):
+                for item in before:
+                    def removes(quad):
+                        terms = (item["subject"], item["predicate"], item["object"])
+                        return quad[3] == item["graph"] and all(
+                            term.startswith("?") or str(from_n3(term)) == actual
+                            for term, actual in zip(quad[:3], terms)
+                        )
+                    if not any(removes(quad) for quad in planned_deletes):
+                        expected_after.add(_hash(item))
+            if after_hashes == expected_after and after_hashes != before_hashes:
                 state = "applied"
+            elif after_hashes == before_hashes:
+                state = "not_applied"
             else:
                 state = "partial_or_drifted"
             states.append(state)
@@ -2029,14 +2047,6 @@ class ModelingBatchService:
         attempt.recovery_state = (
             "converged" if attempt.recovery_state != "not_required" else "not_required"
         )
-        if attempt.graph_set_id:
-            from app.services.semantic_graph_set import SemanticGraphSetService
-
-            graph_set = self.session.get(SemanticGraphSetModel, attempt.graph_set_id)
-            if graph_set is not None:
-                graph_set.source_signature = SemanticGraphSetService(
-                    self.session, self.settings
-                ).source_signature_for(attempt.graph_set_id)
         attempt.workspace_version_after = self.workspace_versions.version_for(
             attempt.batch.ontology_id
         )
@@ -2316,42 +2326,22 @@ class ModelingBatchService:
 
     def _target_snapshot(self, ontology_id):
         workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
-        content_hashes: dict[str, str | None] = {}
+        iri = workspace["model_graph_iri"]
+        content_hash = workspace["content_hash"]
         if self.rdf_store is not None and hasattr(self.rdf_store, "get_graph"):
-            for member in workspace.get("members", []):
-                try:
-                    content_hashes[member["graph_iri"]] = self._observed_graph_hash(
-                        member["graph_iri"]
-                    )
-                except Exception:
-                    content_hashes[member["graph_iri"]] = member.get("content_hash")
-        return {
-            "graph_set_id": workspace.get("default_graph_set_id"),
-            "source_signature_before": workspace.get("source_signature"),
-            "source_signature_after": None,
-            "graphs": [
-                {
-                    "role": member["role"],
-                    "graph_iri": member["graph_iri"],
-                    "revision_before": member["revision"],
-                    "revision_after": None,
-                    "content_hash_before": content_hashes.get(
-                        member["graph_iri"], member.get("content_hash")
-                    ),
-                }
-                for member in workspace.get("members", [])
-            ],
-        }
+            content_hash = self._observed_graph_hash(iri)
+        return {"ontology_id": ontology_id,
+                "source_signature_before": workspace["source_signature"],
+                "source_signature_after": None,
+                "graphs": [{"role": "model", "graph_iri": iri,
+                            "revision_before": workspace["model_revision"], "revision_after": None,
+                            "content_hash_before": content_hash, "content_hash_after": None}]}
 
 
     def _data_graphs(self, ontology_id):
         """Workspace graphs holding asserted instances (R3.0-009 §6.1)."""
         workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
-        return [
-            member["graph_iri"]
-            for member in workspace["members"]
-            if member["role"] == "asserted_data"
-        ]
+        return [workspace["model_graph_iri"]]
 
 
     @staticmethod

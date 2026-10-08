@@ -1047,7 +1047,7 @@ def test_existing_platform_scope_allows_completed_history_without_delete() -> No
         if path.endswith("workspace-context"):
             return 200, {
                 "state": "ready",
-                "default_graph_set_id": "graph-1",
+                "ontology_id": "graph-1",
                 "workspace": {"workspace_version": "v1"},
             }
         if path.endswith("modeling-batches"):

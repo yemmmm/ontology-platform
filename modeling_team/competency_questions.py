@@ -1253,7 +1253,7 @@ def validate_model_binding(payload: Any, *, authorized_ontology_ids: list[str]) 
                 "project_id",
                 "ontology_id",
                 "workspace_state",
-                "graph_state",
+                "model_version_state",
                 "authorized_read_tools",
             },
             obj,
@@ -1276,7 +1276,7 @@ def validate_model_binding(payload: Any, *, authorized_ontology_ids: list[str]) 
             )
         seen.add(ontology_id)
         _text(item["project_id"], obj, "project_id", "cq_model_binding_missing")
-        for state_field in ("workspace_state", "graph_state"):
+        for state_field in ("workspace_state", "model_version_state"):
             state = _mapping(item[state_field], obj, "cq_model_binding_missing", "fix state entry")
             if not state.get("state_digest"):
                 raise CQContractError(
@@ -1302,7 +1302,7 @@ def model_binding_drift(before: dict[str, Any], after: dict[str, Any]) -> list[s
     def index(binding: dict[str, Any]) -> dict[str, str]:
         return {
             entry["ontology_id"]: content_digest(
-                {"workspace_state": entry["workspace_state"], "graph_state": entry["graph_state"]}
+                {"workspace_state": entry["workspace_state"], "model_version_state": entry["model_version_state"]}
             )
             for entry in binding.get("ontologies", [])
         }

@@ -26,8 +26,8 @@ def _workspace(session, settings: Settings, ontology_id: str) -> tuple[str, dict
     OntologyWorkspaceService(session, settings).ensure(ontology)
     session.commit()
     context = OntologyWorkspaceService(session, settings).context(ontology_id)
-    roles = {member["role"]: member["graph_iri"] for member in context["members"]}
-    return context["default_graph_set_id"], roles
+    roles = {role: context["model_graph_iri"] for role in ("asserted_ontology", "asserted_data", "policy", "shapes")}
+    return context["ontology_id"], roles
 
 
 def _audit(session, audit_id: str, graph_iri: str, reason: str) -> None:
@@ -93,7 +93,7 @@ def test_restricted_where_update_does_not_collect_new_lineage(
 ) -> None:
     settings = Settings(semantic_graph_iri_prefix="https://r005-update.test/graph/")
     in_memory_session.add(ProjectModel(id="project", name="Project", normalized_label="project"))
-    graph_set_id, roles = _workspace(in_memory_session, settings, "ontology")
+    ontology_id, roles = _workspace(in_memory_session, settings, "ontology")
     graph = roles["asserted_data"]
     old_quad = (
         "<https://r005-update.test/entity/alice>",
@@ -107,7 +107,7 @@ def test_restricted_where_update_does_not_collect_new_lineage(
         graph_revisions={graph: 0},
         audit_id="audit-create",
         ontology_id="ontology",
-        graph_set_id=graph_set_id,
+
     )[0]
     in_memory_session.commit()
 
@@ -134,7 +134,7 @@ def test_restricted_where_snapshot_does_not_collect_inserted_lineage(
 ) -> None:
     settings = Settings(semantic_graph_iri_prefix="https://r005-update.test/graph/")
     in_memory_session.add(ProjectModel(id="project", name="Project", normalized_label="project"))
-    graph_set_id, roles = _workspace(in_memory_session, settings, "ontology")
+    ontology_id, roles = _workspace(in_memory_session, settings, "ontology")
     graph = roles["asserted_data"]
     old_quad = (
         "<https://r005-update.test/entity/alice>",
@@ -148,7 +148,7 @@ def test_restricted_where_snapshot_does_not_collect_inserted_lineage(
         graph_revisions={graph: 0},
         audit_id="audit-create",
         ontology_id="ontology",
-        graph_set_id=graph_set_id,
+
     )[0]
     in_memory_session.commit()
 

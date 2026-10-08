@@ -124,12 +124,12 @@ def test_repeated_calls_sources_and_loop_scopes_roundtrip(in_memory_session):
         if item["item_kind"] != "entity":
             continue
         response = client.get(f"/api/semantic/resources/{NS}entity/{item['item_id']}",
-                              params={"graph_set_id": "gs-009"})
+                              params={"ontology_id": "gs-009"})
         assert response.status_code == 200
         assert response.json()["properties"]["semantic_definition"] == (
             item["semantic"]["semantic_definition"]
         )
-    statements = client.get("/api/semantic/statements", params={"graph_set_id": "gs-009"}).json()
+    statements = client.get("/api/semantic/statements", params={"ontology_id": "gs-009"}).json()
     assert any(r["predicate"] == NS + "property/literalValue" for r in statements["items"])
     assert any(r.get("object") == NS + "property/ticketNumber" for r in statements["items"])
     for key, timing in (("pre", "pre"), ("post", "post")):
@@ -196,21 +196,21 @@ def test_hidden_sources_and_guards_keep_existing_response_and_count_contract(
     # Same subject/same IRI before creation vs after authorization filtering.
     missing = NS + "entity/not-created"
     before = client.get(f"/api/semantic/resources/{missing}",
-                        params={"graph_set_id": "gs-009"})
+                        params={"ontology_id": "gs-009"})
     view = SemanticAccessView(requires_filtering=True,
                              _unauthorized_iris=frozenset(hidden | {missing}))
     monkeypatch.setattr(semantic, "_access_view", lambda *_a, **_kw: view)
-    after = client.get(f"/api/semantic/resources/{missing}", params={"graph_set_id": "gs-009"})
+    after = client.get(f"/api/semantic/resources/{missing}", params={"ontology_id": "gs-009"})
     assert (before.status_code, before.json()) == (after.status_code, after.json())
     for iri in hidden:
-        response = client.get(f"/api/semantic/resources/{iri}", params={"graph_set_id": "gs-009"})
+        response = client.get(f"/api/semantic/resources/{iri}", params={"ontology_id": "gs-009"})
         assert response.status_code == 404
         assert response.json() == {"detail": f"Resource not found: {iri}"}
     all_visible = _read_model(client, "entity-list")
     page = _read_model(client, "entity-list", limit=1)
     assert page["items"] == all_visible["items"][:1]
     assert page["paging"]["visible_count"] == len(all_visible["items"])
-    for path in ("/api/semantic/statements", "/api/semantic/graph-sets/gs-009/read-models/entity-relations"):
-        response = client.get(path, params={"graph_set_id": "gs-009"})
+    for path in ("/api/semantic/statements", "/api/semantic/ontologies/gs-009/read-models/entity-relations"):
+        response = client.get(path, params={"ontology_id": "gs-009"})
         assert response.status_code == 200
         assert all(iri not in response.text for iri in hidden)

@@ -67,7 +67,7 @@ for kind in ('source', 'platform', 'acceptance'):
     if kind == 'platform':
         spec.update(read_key_plaintext='fixture-reader',
           platform_read_scope={'project_id':'fixture-project','ontology_id':'fixture-ontology',
-                               'graph_set_id':'fixture-graph'},
+                               'ontology_id':'fixture-graph'},
           ticket_digest='c'*64, model_state_digest='d'*64,
           acceptance_round_id='independent-round', allowed_read_tools=['query_semantic_context'])
     try:

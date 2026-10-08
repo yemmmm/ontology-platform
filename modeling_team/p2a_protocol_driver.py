@@ -101,7 +101,7 @@ _PROOF_V2_ASSET = {
     "mount_path": "/opt/proof_v2.py",
     "mode": "0600",
     "parent_mode": "0700",
-    "sha256": "b053f01cfd389f3541fa89702134db899770b5b5276c57f3048131176868c593",
+    "sha256": "1b4dfc2fc7c1a61de02300477eb3652b15462e5065a8c768c5017d86dd088d0d",
 }
 
 _CONTRACT_FIELDS = {
@@ -1115,7 +1115,6 @@ def _generated_candidate(matrix: dict[str, Any]) -> tuple[dict[str, Any], list[d
         items.append(
             {
                 "assertion_id": assertion_id,
-                "graph_role": "asserted_data",
                 **terms[assertion_id],
                 "evidence_citations": row["approved_citations"],
             }

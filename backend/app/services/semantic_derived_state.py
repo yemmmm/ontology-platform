@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 from app.core.config import Settings
 from app.repositories.models import (
     SemanticDerivedResultPointerModel,
+    OntologyModel,
     SemanticGraphRevisionModel,
-    SemanticGraphSetMemberModel,
     SemanticProjectionManifestModel,
 )
 
@@ -66,6 +66,13 @@ class SemanticRevisionService:
                     record.content_hash = content_hashes[graph_iri]
                 if metadata:
                     record.revision_metadata = {**(record.revision_metadata or {}), **metadata}
+            ontology = self.session.scalar(select(OntologyModel).where(
+                OntologyModel.model_graph_iri == graph_iri
+            ))
+            if ontology is not None:
+                ontology.model_revision = record.revision
+                if graph_iri in content_hashes:
+                    ontology.model_content_hash = content_hashes[graph_iri]
             revisions[graph_iri] = record.revision
         self.session.flush()
         return revisions
@@ -86,12 +93,12 @@ class SemanticDerivedStateService:
     ) -> list[SemanticDerivedResultPointerModel]:
         if not affected_graph_iris:
             return []
-        graph_set_ids = self._graph_sets_containing(affected_graph_iris)
-        if not graph_set_ids:
+        ontology_ids = self._ontologies_containing(affected_graph_iris)
+        if not ontology_ids:
             return []
         rows = self.session.scalars(
             select(SemanticDerivedResultPointerModel).where(
-                SemanticDerivedResultPointerModel.graph_set_id.in_(graph_set_ids),
+                SemanticDerivedResultPointerModel.ontology_id.in_(ontology_ids),
                 SemanticDerivedResultPointerModel.status == "current",
             )
         )
@@ -101,24 +108,24 @@ class SemanticDerivedStateService:
             row.status = "stale"
             row.pointer_metadata = {
                 **(row.pointer_metadata or {}),
-                "stale_reason": "source_graph_revision_changed",
+                "stale_reason": "model_revision_changed",
                 "stale_at": now,
                 "stale_audit_id": audit_id,
             }
             stale.append(row)
         self._mark_projection_manifests_stale(
-            graph_set_ids,
+            ontology_ids,
             audit_id=audit_id,
-            reason="source_graph_revision_changed",
+            reason="model_revision_changed",
             stale_at=now,
         )
         if commit:
             self.session.commit()
         return stale
 
-    def mark_graph_set_stale(
+    def mark_ontology_stale(
         self,
-        graph_set_id: str,
+        ontology_id: str,
         *,
         audit_id: str | None = None,
         reason: str = "workspace_changed",
@@ -127,7 +134,7 @@ class SemanticDerivedStateService:
         rows = list(
             self.session.scalars(
                 select(SemanticDerivedResultPointerModel).where(
-                    SemanticDerivedResultPointerModel.graph_set_id == graph_set_id,
+                    SemanticDerivedResultPointerModel.ontology_id == ontology_id,
                     SemanticDerivedResultPointerModel.status == "current",
                 )
             )
@@ -142,7 +149,7 @@ class SemanticDerivedStateService:
                 "stale_audit_id": audit_id,
             }
         self._mark_projection_manifests_stale(
-            [graph_set_id], audit_id=audit_id, reason=reason, stale_at=now
+            [ontology_id], audit_id=audit_id, reason=reason, stale_at=now
         )
         if commit:
             self.session.commit()
@@ -150,7 +157,7 @@ class SemanticDerivedStateService:
 
     def _mark_projection_manifests_stale(
         self,
-        graph_set_ids: list[str],
+        ontology_ids: list[str],
         *,
         audit_id: str | None,
         reason: str,
@@ -158,7 +165,7 @@ class SemanticDerivedStateService:
     ) -> None:
         manifests = self.session.scalars(
             select(SemanticProjectionManifestModel).where(
-                SemanticProjectionManifestModel.graph_set_id.in_(graph_set_ids),
+                SemanticProjectionManifestModel.ontology_id.in_(ontology_ids),
                 SemanticProjectionManifestModel.status == "current",
             )
         )
@@ -172,10 +179,7 @@ class SemanticDerivedStateService:
             }
 
 
-    def _graph_sets_containing(self, graph_iris: list[str]) -> list[str]:
-        rows = self.session.scalars(
-            select(SemanticGraphSetMemberModel.graph_set_id)
-            .where(SemanticGraphSetMemberModel.graph_iri.in_(graph_iris))
-            .distinct()
-        )
-        return list(rows)
+    def _ontologies_containing(self, graph_iris: list[str]) -> list[str]:
+        return list(self.session.scalars(select(OntologyModel.id).where(
+            OntologyModel.model_graph_iri.in_(graph_iris)
+        )))

@@ -209,7 +209,7 @@ class BuildSessionService:
                 .limit(1)
             )
             workspace_version = None
-            if workspace["default_graph_set_id"] is not None:
+            if workspace["ontology_id"] is not None:
                 workspace_version = version_service.version_for(ontology.id)
             ontology_state.append(
                 {
@@ -220,7 +220,7 @@ class BuildSessionService:
                         "state": workspace["state"],
                         "workspace_version": workspace_version,
                         "editable": workspace["state"] == "ready"
-                        and any(member["editable"] for member in workspace["members"]),
+                        and workspace["editable"],
                         "issues": []
                         if workspace["state"] == "ready"
                         else ["semantic_workspace_incomplete"],
@@ -647,8 +647,8 @@ class BuildSessionService:
         if not self._lease_is_active(lease, self._database_now()):
             raise BuildSessionError("lease_expired", "Ontology lease has expired")
         workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
-        graph_set_id = workspace["default_graph_set_id"]
-        if workspace["state"] != "ready" or graph_set_id is None:
+        ontology_id = workspace["ontology_id"]
+        if workspace["state"] != "ready" or ontology_id is None:
             raise BuildSessionError(
                 "workspace_revision_conflict", "Ontology workspace is incomplete"
             )
@@ -664,7 +664,6 @@ class BuildSessionService:
         return {
             "build_session_id": session_id,
             "ontology_id": ontology_id,
-            "graph_set_id": graph_set_id,
             "workspace_version": current_version,
             "lease_revision": lease.revision,
         }

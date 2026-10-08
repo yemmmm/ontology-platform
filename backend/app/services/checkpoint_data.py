@@ -19,7 +19,7 @@ from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.checkpoint_archive import ARCHIVE_KEY
 
 
-SNAPSHOT_SCHEMA = "r3-0-017-platform-data/v2"
+SNAPSHOT_SCHEMA = "r4-0-026-platform-data/v3"
 
 # These columns remain in the relational schema for now, but they are not
 # part of the new checkpoint contract. A checkpoint must not reintroduce the
@@ -161,27 +161,13 @@ class CheckpointDataService:
                 [item["id"] for item in tables["semantic_rules"]]
             ),
         )
-        registries = collect(
+        collect(
             m.SemanticGraphRegistryModel,
             (m.SemanticGraphRegistryModel.semantic_owner_type == "ontology")
-            & m.SemanticGraphRegistryModel.semantic_owner_id.in_(ids),
+            & m.SemanticGraphRegistryModel.semantic_owner_id.in_(ids)
+            & m.SemanticGraphRegistryModel.graph_iri.in_([item.model_graph_iri for item in ontologies]),
         )
-        graph_iris = sorted(item.graph_iri for item in registries)
-        sets = collect(
-            m.SemanticGraphSetModel,
-            (m.SemanticGraphSetModel.scope_type == "ontology")
-            & m.SemanticGraphSetModel.scope_id.in_(ids),
-        )
-        collect(
-            m.SemanticGraphSetMemberModel,
-            m.SemanticGraphSetMemberModel.graph_set_id.in_([item.id for item in sets]),
-        )
-        if any(
-            item["graph_iri"] not in graph_iris for item in tables["semantic_graph_set_members"]
-        ):
-            raise CheckpointDataError(
-                "snapshot_external_graph", "Graph Set includes an unowned graph"
-            )
+        graph_iris = sorted(item.model_graph_iri for item in ontologies)
         for model in (
             m.SemanticGraphRevisionModel,
             m.SemanticGraphStateModel,
@@ -262,12 +248,13 @@ class CheckpointDataService:
         No old Session, Attempt, lease, credential or execution queue is imported.
         The caller must retain the returned map with its checkpoint lineage.
         """
-        if snapshot.get("schema_version") != SNAPSHOT_SCHEMA or snapshot.get(
-            "digest"
-        ) != snapshot_digest(snapshot):
-            raise CheckpointDataError(
-                "snapshot_invalid", "Snapshot schema or digest does not match"
-            )
+        if snapshot.get("digest") != snapshot_digest(snapshot):
+            raise CheckpointDataError("snapshot_invalid", "Snapshot digest does not match")
+        if snapshot.get("schema_version") == "r3-0-017-platform-data/v2":
+            from app.services.ontology_single_graph_migration import upgrade_checkpoint
+            snapshot = upgrade_checkpoint(snapshot, settings)
+        if snapshot.get("schema_version") != SNAPSHOT_SCHEMA:
+            raise CheckpointDataError("snapshot_invalid", "Snapshot schema does not match")
         tables = snapshot["tables"]
         model_types = (
             m.ProjectModel,
@@ -280,8 +267,6 @@ class CheckpointDataService:
             m.SemanticGraphRegistryModel,
             m.SemanticGraphRevisionModel,
             m.SemanticGraphStateModel,
-            m.SemanticGraphSetModel,
-            m.SemanticGraphSetMemberModel,
             m.CompetencyQuestionModel,
             m.SemanticMappingModel,
             m.SemanticProtectionSetModel,
@@ -411,7 +396,10 @@ class CheckpointDataService:
                     )
                 )
                 if revision is not None:
-                    revision.content_hash = self.rdf_store.graph_content_hash(iri)
+                    from app.services.ontology_single_graph_migration import model_content_hash
+                    revision.content_hash = model_content_hash(Graph().parse(data=content, format="turtle"))
+                    ontology = self.session.scalar(select(m.OntologyModel).where(m.OntologyModel.model_graph_iri == iri))
+                    ontology.model_content_hash = revision.content_hash
             for old_id in source_ontologies:
                 OntologyWorkspaceService(self.session, settings).ensure(
                     self.session.get(m.OntologyModel, mapping[old_id])

@@ -51,7 +51,6 @@ from app.repositories.models import (
     ModelingBatchModel,
     OntologyModel,
     ProjectModel,
-    SemanticGraphSetModel,
 )
 from app.repositories.postgres import Base
 from app.repositories.rdf_store import RdfStoreRepository
@@ -374,11 +373,10 @@ def _seed_items(base: str) -> list[dict]:
 
 
 class ChainEnv:
-    def __init__(self, client, project_id, ontology_id, graph_set_id, base, keys):
+    def __init__(self, client, project_id, ontology_id,  base, keys):
         self.client = client
         self.project_id = project_id
         self.ontology_id = ontology_id
-        self.graph_set_id = graph_set_id
         self.base = base
         self.keys = keys
         self.seeding_batch_ids: list[str] = []
@@ -422,7 +420,7 @@ def chain_env():
         session.flush()
         OntologyWorkspaceService(session, settings).ensure(ontology)
         session.commit()
-        graph_set_id = session.scalars(
+        ontology_id = session.scalars(
             select(SemanticGraphSetModel.id).where(
                 SemanticGraphSetModel.scope_id == ontology_id,
                 SemanticGraphSetModel.is_default.is_(True),
@@ -454,7 +452,7 @@ def chain_env():
     app.state.rdf_store = store
 
     with TestClient(app) as client:
-        env = ChainEnv(client, project_id, ontology_id, graph_set_id, base, keys)
+        env = ChainEnv(client, project_id, ontology_id, ontology_id, base, keys)
         _seed_fixture(env, workspace_version)
         yield env
 
@@ -578,7 +576,7 @@ class AuthorizedChain:
     def _read_model(self, model: str, entity_iri: str | None = None) -> dict | None:
         params = {"entity": entity_iri} if entity_iri else {}
         response = self.env.client.get(
-            f"/api/semantic/graph-sets/{self.env.graph_set_id}/read-models/{model}",
+            f"/api/semantic/ontologies/{self.env.ontology_id}/read-models/{model}",
             params=params,
             headers=self.headers,
         )

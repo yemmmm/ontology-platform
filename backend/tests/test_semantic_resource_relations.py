@@ -18,7 +18,7 @@ from test_operation_semantics import _operation
 
 
 ONTOLOGY = "https://example.test/graph/ontology/a"
-DATA = "https://example.test/graph/data/b"
+DATA = "https://example.test/graph/ontology/b"
 EX = "https://example.test/"
 
 
@@ -106,7 +106,7 @@ def test_actual_rdf_class_type_unclassified_individuals_and_schema_endpoints():
         "gs-1", "resource-list", field_set="detail", limit=500,
     )["source_signature"]
     template = get_template("resource-relations")
-    assert template.required_roles == ("asserted_ontology", "asserted_data")
+    assert not hasattr(template, "required_roles")
     assert not template.needs_reasoning and "NamedIndividual" not in template.body
 
 
@@ -238,7 +238,7 @@ def test_stable_identity_sort_deduplicate_before_edge_window():
     assert result["paging"]["visible_count"] == 2
     assert result["paging"]["has_more"] and not result["paging"]["complete"]
     first = result["items"][0]
-    assert first["source_graph_iri"] == min(DATA, ONTOLOGY)
+    assert first["ontology_id"] == "gs-1"
     store.rows_by_template["template: resource-relations"].reverse()
     assert reader.read_model("gs-1", "resource-relations", limit=1)["items"] == [first]
     store.rows_by_template["template: resource-relations"] = [edge(graph=ONTOLOGY, label="changed")]
@@ -317,7 +317,7 @@ def test_mapping_reference_fields_connect_loaded_definitions_without_guessing(le
     }
     assert all(item["edge_kind"] == "structured_reference" for item in result["items"])
     assert all(item["relation"] == str(predicate) for item in result["items"])
-    assert all(item["source_graph_iri"] == DATA for item in result["items"])
+    assert all(item["ontology_id"] == "gs-1" for item in result["items"])
     assert result["paging"]["complete"]
     # Authorization is applied before resolving references and counting edges.
     hidden_result = service(store, [EX + "value"]).read_model("gs-1", "resource-relations")

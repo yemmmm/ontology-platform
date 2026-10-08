@@ -85,13 +85,13 @@ def test_direct_edit_only_allowed_for_ontology_data(service) -> None:
 
 def test_ensure_registered_for_direct_edit_autoregisters(service) -> None:
     record = service.ensure_registered_for_direct_edit(
-        f"{PREFIX}data/demo", actor="agent:test"
+        f"{PREFIX}ontology/demo", actor="agent:test"
     )
-    assert record.category == "data"
+    assert record.category == "ontology"
     assert record.mutable_by_direct_edit is True
     # second call should return the existing record
     record_again = service.ensure_registered_for_direct_edit(
-        f"{PREFIX}data/demo", actor="agent:test"
+        f"{PREFIX}ontology/demo", actor="agent:test"
     )
     assert record_again.id == record.id
 

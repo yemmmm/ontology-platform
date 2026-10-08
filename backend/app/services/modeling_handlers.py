@@ -19,6 +19,7 @@ from app.services.semantic_command_compiler import (
 FORBIDDEN_TARGET_FIELDS = {
     "ontology_id",
     "graph_set_id",
+    "source_graph_iri",
     "graph_iri",
     "target_graph_iri",
     "shape_graph_iris",

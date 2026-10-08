@@ -719,8 +719,8 @@ def _cq_observed_state_entry(
     (``_cq_workspace_payload``), never the raw response envelope.
 
     The state digests are computed here from the real read with one explicit
-    recipe (workspace state/signature plus the default Graph Set identity and
-    its member revisions).  The handoff producer must use the same recipe for
+    recipe (workspace state/signature plus Ontology identity and
+    model revision).  The handoff producer must use the same recipe for
     ``model_binding``/``post_batch_model_binding`` so the drift comparison is
     like-for-like; a drift result is therefore never silently swallowed.
     """
@@ -730,25 +730,11 @@ def _cq_observed_state_entry(
             f"cq_model_state_missing: workspace read for {ontology_id} returned no object"
         )
     state = context.get("state")
-    graph_set_id = context.get("default_graph_set_id")
-    members = context.get("members")
-    if state != "ready":
-        raise TeamConfigurationError(
-            f"cq_model_state_missing: ontology {ontology_id} workspace state is {state!r}"
-        )
-    if not isinstance(graph_set_id, str) or not graph_set_id:
-        raise TeamConfigurationError(
-            f"cq_model_state_missing: ontology {ontology_id} has no default Graph Set"
-        )
-    if not isinstance(members, list):
-        raise TeamConfigurationError(
-            f"cq_model_state_missing: ontology {ontology_id} workspace read has no graph members"
-        )
-    revisions = sorted(
-        (item.get("role"), item.get("revision"), item.get("content_hash"))
-        for item in members
-        if isinstance(item, dict)
-    )
+    if state != "ready" or context.get("ontology_id") != ontology_id:
+        raise TeamConfigurationError(f"cq_model_state_missing: ontology {ontology_id} model is not ready")
+    revision = context.get("model_revision")
+    if not isinstance(revision, int):
+        raise TeamConfigurationError(f"cq_model_state_missing: ontology {ontology_id} revision is missing")
     return {
         "project_id": project_id,
         "ontology_id": ontology_id,
@@ -757,12 +743,12 @@ def _cq_observed_state_entry(
                 {"state": state, "source_signature": context.get("source_signature")}
             )
         },
-        "graph_state": {
+        "model_version_state": {
             "state_digest": content_digest(
                 {
-                    "graph_set_id": graph_set_id,
-                    "status": context.get("graph_set_status"),
-                    "revisions": revisions,
+                    "ontology_id": ontology_id,
+                    "model_revision": revision,
+                    "content_hash": context.get("content_hash"),
                 }
             )
         },
@@ -778,7 +764,7 @@ def _cq_observe_model_binding(
     if not callable(forward):
         raise TeamConfigurationError("cq_model_state_missing: platform read path is unavailable")
     observed: list[dict[str, object]] = []
-    graph_set_ids: dict[str, str] = {}
+    ontology_ids: dict[str, str] = {}
     for entry in binding["ontologies"]:
         if not isinstance(entry, dict):
             raise TeamConfigurationError("cq_model_binding_missing: model binding entry is invalid")
@@ -792,14 +778,14 @@ def _cq_observe_model_binding(
             [str(tool) for tool in entry["authorized_read_tools"]],
         )
         observed.append(observed_entry)
-        graph_set_ids[ontology_id] = str(context["default_graph_set_id"])
+        ontology_ids[ontology_id] = str(context["ontology_id"])
     return {
         "schema_version": "r3-0-011-model-binding/v1",
         "batch_id": binding["batch_id"],
         "freeze_digest": binding["freeze_digest"],
         "bound_at": binding["bound_at"],
         "ontologies": observed,
-    }, graph_set_ids
+    }, ontology_ids
 
 
 def _cq_decorated_manifest_path(source_name: str) -> str | None:
@@ -2084,7 +2070,7 @@ def _cq_consume_production_handoff(
                             {"handoff": attempt_id, "kind": "workspace"}
                         )
                     },
-                    "graph_state": {
+                    "model_version_state": {
                         "state_digest": content_digest(
                             {"handoff": attempt_id, "kind": "graph"}
                         )
@@ -2190,7 +2176,7 @@ def _cq_platform_packet(contract, questions, binding, observed, read_tools):
 
 def _cq_run_platform_session(
     args, root, artifacts, profile, packet, reports, read_key,
-    forwarder, observables, graph_set_ids, teardown,
+    forwarder, observables, ontology_ids, teardown,
 ):
     """Reuse the v3 Examiner runtime and persistence for formal or early reads."""
     adapter = CodexRuntimeAdapter(repository_root=root)
@@ -2202,7 +2188,7 @@ def _cq_run_platform_session(
         response_persistence=_cq_platform_read_persistence(artifacts),
         examiner_observables=observables,
         timeout_seconds=float(getattr(args, "session_timeout", 300.0) or 300.0),
-        graph_set_ids=graph_set_ids, teardown=teardown,
+        ontology_ids=ontology_ids, teardown=teardown,
     ))
 
 
@@ -2285,7 +2271,7 @@ def _cq_execute_batch(
         # its carried state digests are opaque markers and are never compared
         # against the live read.  This command's own pre-session observation is
         # the batch binding; drift is measured post-session against it.
-        pre_binding, graph_set_ids = _cq_observe_model_binding(forwarder.forward, read_key, binding)
+        pre_binding, ontology_ids = _cq_observe_model_binding(forwarder.forward, read_key, binding)
         # One binding identity for the whole batch (D5): the immutable Platform
         # packet is built from the observed pre-session read, so the child, the
         # proxy scope entries, the retained ``batch_model_binding`` and the
@@ -2298,7 +2284,7 @@ def _cq_execute_batch(
             try:
                 reports = _cq_run_platform_session(
                     args, root, artifacts, profile, packet, reports,
-                    read_key, forwarder, examiner_observables, graph_set_ids, teardown_platform,
+                    read_key, forwarder, examiner_observables, ontology_ids, teardown_platform,
                 )
             except (ExaminerRuntimeBlocked, ChildRuntimeError, CodexRuntimeError) as exc:
                 typed_failure = _cq_typed_failure(exc)

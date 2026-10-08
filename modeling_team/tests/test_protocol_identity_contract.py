@@ -82,7 +82,7 @@ def test_documented_property_reads_match_registered_governed_tool_fields():
     assert listing["model_name"] == "property-list"
     assert listing["include"] == "asserted"
     assert "property-list" not in READ_MODEL_NAMES
-    assert get_template(listing["model_name"]).required_roles == ("asserted_ontology",)
+    assert not hasattr(get_template(listing["model_name"]), "required_roles")
     assert validate_read_only_query(reads["exact_definition"]["query_example"]) == "select"
     assert "only when advertised" in reads["availability"]
     assert "original scoped HTTP read envelope" in reads["availability"]
@@ -97,7 +97,7 @@ def test_documented_property_reads_match_registered_governed_tool_fields():
         assert (path, http["method"]) in routes
     listing_endpoint = next(
         route.endpoint for route in router.routes
-        if route.path == "/semantic/graph-sets/{graph_set_id}/read-models/{model_name}"
+        if route.path == "/semantic/ontologies/{ontology_id}/read-models/{model_name}"
     )
     parameters = inspect.signature(listing_endpoint).parameters
     assert set(listing["http"]["query_example"]) <= set(parameters)

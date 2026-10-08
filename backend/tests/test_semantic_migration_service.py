@@ -17,6 +17,7 @@ that are exercisable without a live Oxigraph or Postgres instance:
 """
 
 from __future__ import annotations
+from single_model_support import seed_model
 
 from typing import Any
 
@@ -24,8 +25,6 @@ import pytest
 
 from app.core.config import Settings
 from app.repositories.models import (
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
     SemanticGraphStateModel,
 )
 from app.repositories.rdf_store import (
@@ -367,7 +366,7 @@ def test_canonical_write_rejects_locked_graph(in_memory_session) -> None:
         service.apply_command(
             "create_class",
             {"ontology_id": "ont-1", "class_id": "class-1", "name": "Person"},
-            graph_set_id=None,
+            ontology_id=None,
 
         )
 
@@ -472,23 +471,8 @@ def test_rollback_restores_legacy_primary(in_memory_session) -> None:
 
 def test_rollback_lists_graph_set_members_when_target_known(in_memory_session) -> None:
     settings = _settings()
-    gs = SemanticGraphSetModel(
-        id="gs-1",
-        name="rollback-target",
-        scope_type="ontology",
-        scope_id="ont-1",
-        status="active",
-        source_signature="abc",
-    )
-    gs.members.append(
-        SemanticGraphSetMemberModel(
-            id="m-1",
-            graph_iri=f"{GRAPH_PREFIX}ontology/ont-1",
-            role="ontology",
-            required=True,
-            sort_order=0,
-        )
-    )
+    gs = seed_model(in_memory_session, "gs-1", name="rollback-target")
+    pass
     in_memory_session.add(gs)
     in_memory_session.commit()
 
@@ -507,11 +491,11 @@ def test_rollback_lists_graph_set_members_when_target_known(in_memory_session) -
         scope_type="ontology",
         scope_id="ont-1",
         mode="cutover",
-        target_graph_set_id="gs-1",
+        target_ontology_id="gs-1",
     )
     service.cutover(run["id"])
     rollback = service.rollback(run["id"])
-    assert rollback["rolled_back_graphs"] == [f"{GRAPH_PREFIX}ontology/ont-1"]
+    assert rollback["rolled_back_graphs"] == [gs.model_graph_iri]
 
 
 def test_command_compiler_and_canonical_writer_share_delta_shape(

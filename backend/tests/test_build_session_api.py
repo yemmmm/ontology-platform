@@ -508,7 +508,7 @@ def test_rest_returns_stable_error_codes_and_forbids_extra_fields(build_client) 
             "phase": "done",
             "current_step": "Invalid phase",
             "blockers": [],
-            "graph_set_id": "must-not-be-accepted",
+            "ontology_id": "must-not-be-accepted",
         },
     )
     assert invalid_checkpoint.status_code == 422

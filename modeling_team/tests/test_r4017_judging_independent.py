@@ -106,7 +106,7 @@ def test_independent_partial_batch_reaches_native_judge_and_preserves_evidence(
             receipts = []
             for index, result in enumerate(pages):
                 request = {"project_id": "project-1", "ontology_id": "ontology-1",
-                           "graph_set_id": "graph-set-1", "query": "generic reservations"}
+                            "query": "generic reservations"}
                 if index:
                     request["match_cursor"] = "generic-page-two"
                 receipt = _retained_receipt(run_root, request=request, result=result, ordinal=index,

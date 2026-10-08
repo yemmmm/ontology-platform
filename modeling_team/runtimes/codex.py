@@ -2066,7 +2066,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         read_key: str | None = None,
         platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         timeout_seconds: float = 300.0,
-        graph_set_ids: Mapping[str, Any] | None = None,
+        ontology_ids: Mapping[str, Any] | None = None,
         response_persistence: Callable[[str, Mapping[str, Any]], None] | None = None,
     ) -> Any:
         """Launch the single v3 hidden-batch acceptance child (R3.0-011).
@@ -2104,31 +2104,31 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 evidence={"read_key": bool(read_key), "forwarder": callable(platform_forwarder)},
             )
         scope = payload.get("authorized_scope") if isinstance(payload.get("authorized_scope"), list) else []
-        # The Host observes one default graph set per authorized Ontology with the
+        # The Host observes the model state of each authorized Ontology with the
         # same read-only tools before the child exists; the child scope is built
-        # from the packet binding plus these locators and nothing else.  Every
+        # from the packet binding plus these model states and nothing else.  Every
         # required Host input is validated before the private tree is allocated
         # so a rejected launch never leaves an allocated root behind.
-        v3_graph_set_ids: dict[str, Any] = {}
+        v3_ontology_ids: dict[str, Any] = {}
         if platform_role:
-            if not isinstance(graph_set_ids, Mapping) or not graph_set_ids:
+            if not isinstance(ontology_ids, Mapping) or not ontology_ids:
                 raise ExaminerRuntimeBlocked(
                     "acceptance-input",
                     role="platform",
-                    evidence={"graph_set_ids": bool(graph_set_ids)},
+                    evidence={"ontology_ids": bool(ontology_ids)},
                 )
-            v3_graph_set_ids = {
+            v3_ontology_ids = {
                 str(key): value
-                for key, value in graph_set_ids.items()
+                for key, value in ontology_ids.items()
                 if isinstance(key, str) and key in set(scope)
             }
-            if sorted(v3_graph_set_ids) != sorted(str(item) for item in scope) or any(
-                not isinstance(value, str) or not value for value in v3_graph_set_ids.values()
+            if sorted(v3_ontology_ids) != sorted(str(item) for item in scope) or any(
+                not isinstance(value, str) or not value for value in v3_ontology_ids.values()
             ):
                 raise ExaminerRuntimeBlocked(
                     "acceptance-input",
                     role="platform",
-                    evidence={"graph_set_ids": "incomplete"},
+                    evidence={"ontology_ids": "incomplete"},
                 )
         private_root = Path(tempfile.mkdtemp(prefix="r3011-acceptance-", dir="/tmp"))
         os.chmod(private_root, 0o700)
@@ -2157,7 +2157,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "private_root": str(private_root),
             "private_input": str(private_input),
             "platform_read_scope": {"ontology_ids": list(scope)},
-            "v3_graph_set_ids": v3_graph_set_ids,
+            "v3_ontology_ids": v3_ontology_ids,
             "model_state_digest": state_digest,
             "allowed_read_tools": (
                 list(payload.get("authorized_read_tools", ())) if platform_role else []
@@ -2197,7 +2197,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         read_key: str | None = None,
         platform_forwarder: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         timeout_seconds: float = 300.0,
-        graph_set_ids: Mapping[str, Any] | None = None,
+        ontology_ids: Mapping[str, Any] | None = None,
         teardown: dict[str, Any] | None = None,
         response_persistence: Callable[[str, Mapping[str, Any]], None] | None = None,
         examiner_observables: dict[str, Any] | None = None,
@@ -2227,7 +2227,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             read_key=read_key,
             platform_forwarder=platform_forwarder,
             timeout_seconds=timeout_seconds,
-            graph_set_ids=graph_set_ids,
+            ontology_ids=ontology_ids,
             response_persistence=response_persistence,
         )
         expected = 0
@@ -3169,13 +3169,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if v3_batch:
                 # One read-only scope entry per packet-authorized Ontology: the
                 # packet binding supplies project/state identity, the Host's
-                # pre-read supplies the default graph set, and the child may
+                # pre-read validates its model state, and the child may
                 # select any subset per call.  Anything outside the list is
                 # refused by the proxy before a forward.
-                v3_entries = v3_proxy_scope_entries(
-                    v3_packet,
-                    spec.get("v3_graph_set_ids") or {},
-                )
+                v3_entries = v3_proxy_scope_entries(v3_packet)
                 proxy = ScopedReadProxy(
                     socket_path=proxy_socket,
                     token=proxy_token,
@@ -3199,7 +3196,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     read_key=read_key,
                     project_id=str(scope.get("project_id")),
                     ontology_id=str(scope.get("ontology_id")),
-                    graph_set_id=str(scope.get("graph_set_id")),
+
                     ticket_digest=str(spec["ticket_digest"]),
                     model_state_digest=str(spec["model_state_digest"]),
                     allowed_tools=list(spec.get("allowed_read_tools") or ()),
@@ -3261,7 +3258,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 env_scope = {
                     "project_id": str(spec["platform_read_scope"]["project_id"]),
                     "ontology_id": str(spec["platform_read_scope"]["ontology_id"]),
-                    "graph_set_id": str(spec["platform_read_scope"]["graph_set_id"]),
+
                     "ticket_digest": str(spec["ticket_digest"]),
                     "model_state_digest": str(spec["model_state_digest"]),
                 }
@@ -3274,7 +3271,6 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         "[mcp_servers.platform_read_proxy.env]",
                         f'PLATFORM_PROXY_PROJECT_ID = {json.dumps(env_scope["project_id"])}',
                         f'PLATFORM_PROXY_ONTOLOGY_ID = {json.dumps(env_scope["ontology_id"])}',
-                        f'PLATFORM_PROXY_GRAPH_SET_ID = {json.dumps(env_scope["graph_set_id"])}',
                         f'PLATFORM_PROXY_TICKET_DIGEST = {json.dumps(env_scope["ticket_digest"])}',
                         f'PLATFORM_PROXY_MODEL_STATE_DIGEST = {json.dumps(env_scope["model_state_digest"])}',
                     ]

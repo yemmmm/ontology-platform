@@ -647,7 +647,7 @@ class ProtocolRetrievalGate:
                         "workspace_version",
                         "source_signature",
                         "build_session_id",
-                        "graph_set_id",
+                        "ontology_id",
                     )
                 },
             }

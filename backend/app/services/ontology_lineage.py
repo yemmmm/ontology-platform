@@ -20,8 +20,6 @@ from app.repositories.models import (
     SemanticDerivedResultPointerModel,
     SemanticEditAuditModel,
     SemanticGraphRevisionModel,
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
     SemanticReasoningRunModel,
     SemanticRuleDefinitionModel,
     SemanticRuleModel,
@@ -185,37 +183,10 @@ class OntologyLineageService:
         }
 
     def _scope(self, ontology_id: str) -> dict[str, Any]:
-        graph_set = self.session.scalar(
-            select(SemanticGraphSetModel).where(
-                SemanticGraphSetModel.scope_type == "ontology",
-                SemanticGraphSetModel.scope_id == ontology_id,
-                SemanticGraphSetModel.is_default.is_(True),
-            )
-        )
-        asserted_graphs: set[str] = set()
-        current_derived: set[str] = set()
-        if graph_set is not None:
-            asserted_graphs = set(
-                self.session.scalars(
-                    select(SemanticGraphSetMemberModel.graph_iri).where(
-                        SemanticGraphSetMemberModel.graph_set_id == graph_set.id
-                    )
-                )
-            )
-            current_derived = set(
-                self.session.scalars(
-                    select(SemanticDerivedResultPointerModel.result_graph_iri).where(
-                        SemanticDerivedResultPointerModel.graph_set_id == graph_set.id,
-                        SemanticDerivedResultPointerModel.status == "current",
-                    )
-                )
-            )
-        return {
-            "graph_set": graph_set,
-            "asserted_graphs": asserted_graphs,
-            "current_derived": current_derived,
-            "current_graphs": asserted_graphs | current_derived,
-        }
+        ontology = self.session.get(OntologyModel, ontology_id)
+        graphs = {ontology.model_graph_iri} if ontology and ontology.model_graph_iri else set()
+        return {"ontology": ontology, "asserted_graphs": graphs,
+                "current_derived": set(), "current_graphs": graphs}
 
     @staticmethod
     def _filter_current(rows, scope, include_history):
@@ -326,7 +297,7 @@ class OntologyLineageService:
             "staleness": {"is_stale": stale, "reason": stale_reason},
             "technical_trace": {
                 "graph_iri": occurrence.graph_iri,
-                "graph_set_id": occurrence.graph_set_id,
+                "ontology_id": occurrence.ontology_id,
             },
             "warnings": list(dict.fromkeys(warnings)),
         }
@@ -380,7 +351,7 @@ class OntologyLineageService:
             elif origin.origin_kind == "reasoning_run":
                 run = self.session.get(SemanticReasoningRunModel, origin.origin_id)
                 if run is None or not self._run_in_ontology(
-                    (run.run_metadata or {}).get("graph_set_id"), ontology.id
+                    (run.run_metadata or {}).get("ontology_id"), ontology.id
                 ):
                     warnings.append("origin_scope_mismatch")
                     continue
@@ -393,7 +364,7 @@ class OntologyLineageService:
                 }
             elif origin.origin_kind == "rule_run":
                 run = self.session.get(SemanticRuleRunModel, origin.origin_id)
-                if run is None or not self._run_in_ontology(run.graph_set_id, ontology.id):
+                if run is None or not self._run_in_ontology(run.ontology_id, ontology.id):
                     warnings.append("origin_scope_mismatch")
                     continue
                 entry["run"] = self._rule_run_payload(run)
@@ -480,26 +451,11 @@ class OntologyLineageService:
     def _fact_evidence(self, occurrence, ontology):
         if getattr(occurrence, "assertion_kind", "asserted") != "asserted":
             return []
-        graph_set_ids = set(
-            self.session.scalars(
-                select(SemanticGraphSetMemberModel.graph_set_id)
-                .join(
-                    SemanticGraphSetModel,
-                    SemanticGraphSetModel.id == SemanticGraphSetMemberModel.graph_set_id,
-                )
-                .where(
-                    SemanticGraphSetModel.scope_type == "ontology",
-                    SemanticGraphSetModel.scope_id == ontology.id,
-                    SemanticGraphSetModel.status == "active",
-                    SemanticGraphSetMemberModel.role == "asserted_data",
-                    SemanticGraphSetMemberModel.graph_iri == occurrence.graph_iri,
-                )
-            )
-        )
-        occurrence_graph_set_id = getattr(occurrence, "graph_set_id", None)
-        if occurrence_graph_set_id:
-            graph_set_ids.intersection_update({occurrence_graph_set_id})
-        if not graph_set_ids:
+        ontology_ids = {ontology.id} if ontology.model_graph_iri == occurrence.graph_iri else set()
+        occurrence_ontology_id = getattr(occurrence, "ontology_id", None)
+        if occurrence_ontology_id:
+            ontology_ids.intersection_update({occurrence_ontology_id})
+        if not ontology_ids:
             return []
         rows = self.session.scalars(
             select(FactEvidenceBindingModel).where(
@@ -516,7 +472,7 @@ class OntologyLineageService:
                 select(EvidenceAssociationModel).where(
                     EvidenceAssociationModel.project_id == ontology.project_id,
                     EvidenceAssociationModel.ontology_id == ontology.id,
-                    EvidenceAssociationModel.graph_set_id.in_(graph_set_ids),
+                    EvidenceAssociationModel.ontology_id.in_(ontology_ids),
                     EvidenceAssociationModel.target_type == "fact",
                     EvidenceAssociationModel.target_id == occurrence.statement_id,
                     EvidenceAssociationModel.evidence_reference_id == binding.evidence_reference_id,
@@ -601,13 +557,8 @@ class OntologyLineageService:
             "status": definition.status,
         }
 
-    def _run_in_ontology(self, graph_set_id: str | None, ontology_id: str) -> bool:
-        if not graph_set_id:
-            return False
-        graph_set = self.session.get(SemanticGraphSetModel, graph_set_id)
-        return bool(
-            graph_set and graph_set.scope_type == "ontology" and graph_set.scope_id == ontology_id
-        )
+    def _run_in_ontology(self, run_ontology_id: str | None, ontology_id: str) -> bool:
+        return run_ontology_id == ontology_id
 
     def _rule_items(self, *, ontology, rule_iri, include_history, state):
         rule = self.session.scalar(
@@ -801,7 +752,7 @@ class OntologyLineageService:
                         else None
                     ),
                     "staleness": {"is_stale": False, "reason": None},
-                    "technical_trace": {"graph_iri": graph_iri, "graph_set_id": None},
+                    "technical_trace": {"graph_iri": graph_iri, "ontology_id": None},
                     "warnings": ["legacy_lineage_unavailable"],
                 }
             )

@@ -41,7 +41,6 @@ def _candidate() -> dict[str, object]:
     }
     item = {
         "assertion_id": "assertion-1",
-        "graph_role": "asserted_data",
         "subject": "subject",
         "predicate": "predicate",
         "object": "object",
@@ -96,8 +95,7 @@ def _exact_four_proof_fixture() -> dict[str, object]:
         delta_inserts.append(delta)
         delta_selectors[assertion_id] = (delta_index, canonical_digest(delta))
         quad = {
-            "graph_role": "asserted_data",
-            "source_graph_iri": asserted_data_graph,
+            "ontology_id": ontology_id,
             "subject": subject,
             "predicate": predicate,
             "object": obj,
@@ -253,7 +251,7 @@ def _exact_four_proof_fixture() -> dict[str, object]:
     workspace_data = {
         "ontology_id": ontology_id,
         "state": "ready",
-        "default_graph_set_id": "graph-set-p2a-proof-v2",
+
         "source_signature": "source-signature-p2a-proof-v2",
         "members": [
             {"role": "asserted_ontology", "owner_type": "ontology", "owner_id": ontology_id, "graph_iri": "urn:p2a:graph:asserted-ontology"},
@@ -278,7 +276,7 @@ def _exact_four_proof_fixture() -> dict[str, object]:
             "response": {
                 "ok": True,
                 "data": {
-                    "graph_set_id": workspace_data["default_graph_set_id"],
+                    "ontology_id": workspace_data["ontology_id"],
                     "source_signature": workspace_data["source_signature"],
                     "model_name": "statement-list",
                     "include": "asserted",

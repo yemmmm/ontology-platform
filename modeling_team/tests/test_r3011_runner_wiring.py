@@ -627,7 +627,7 @@ def _model_binding(batch_id: str, freeze_digest: str) -> dict:
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
                 "workspace_state": {"state_digest": "ws-1"},
-                "graph_state": {"state_digest": "graph-1"},
+                "model_version_state": {"state_digest": "graph-1"},
                 "authorized_read_tools": ["query_semantic_context"],
             }
         ],

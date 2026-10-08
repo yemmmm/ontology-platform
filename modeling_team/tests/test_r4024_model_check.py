@@ -40,7 +40,7 @@ def scope(signature="sig-1", ontology_id="ontology-1", graph=GRAPH):
     return SemanticQueryScope(
         project_id="project-1", mode="ontologies", status="complete",
         ontologies=(ResolvedOntologyScope(
-            ontology_id=ontology_id, ontology_name="Test", graph_set_id="gs-1",
+            ontology_id=ontology_id, ontology_name="Test",
             workspace_version="workspace-1", source_signature=signature,
             graph_iris=(graph,), graph_assertion_kinds={graph: "asserted"}, derived_state={},
         ),),
@@ -81,7 +81,7 @@ def inspect(pages, final, focus=None, ids=None):
     return inspect_model_associations(
         project_id="project-1", ontology_ids=ids or ["ontology-1"],
         read_pages=pages, final_read=final, semantic_base_iri=Settings().semantic_base_iri,
-        focus_iris=focus, asserted_graph_iris=[GRAPH, EX + "other-graph"] if ids else [GRAPH],
+        focus_iris=focus,
     )
 
 
@@ -246,7 +246,6 @@ def test_native_facade_dispatches_read_only_tool_and_recovers_from_bad_input():
         "project_id": "project-1", "ontology_ids": ["ontology-1"],
         "read_pages": [read(store)], "final_read": read(store, limit=1),
         "semantic_base_iri": Settings().semantic_base_iri,
-        "asserted_graph_iris": [GRAPH],
     }
     call = {"id": 1, "method": "tools/call", "params": {
         "name": "inspect_model_associations", "arguments": {},
@@ -308,7 +307,7 @@ def test_live_oxigraph_scan_repair_and_cleanup():
 
     def check():
         return inspect_model_associations(
-            project_id="project-1", ontology_ids=["ontology-1"], asserted_graph_iris=[graph_iri],
+            project_id="project-1", ontology_ids=["ontology-1"],
             read_pages=[read(store, selected=selected, limit=2),
                         read(store, selected=selected, offset=2, limit=2)],
             final_read=read(store, selected=selected, limit=1),
@@ -323,7 +322,7 @@ def test_live_oxigraph_scan_repair_and_cleanup():
         store.put_named_graph(graph_iri, g.serialize(format="turtle"), "turtle")
         # After repair there are five triples, requiring one more actual page.
         result = inspect_model_associations(
-            project_id="project-1", ontology_ids=["ontology-1"], asserted_graph_iris=[graph_iri],
+            project_id="project-1", ontology_ids=["ontology-1"],
             read_pages=[read(store, selected=selected, limit=2),
                         read(store, selected=selected, offset=2, limit=2),
                         read(store, selected=selected, offset=4, limit=2)],

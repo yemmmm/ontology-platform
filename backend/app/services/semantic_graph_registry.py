@@ -283,7 +283,7 @@ class SemanticGraphRegistryService:
             {
                 "result_kind": row.result_kind,
                 "run_id": row.run_id,
-                "graph_set_id": row.graph_set_id,
+                "ontology_id": row.ontology_id,
                 "status": row.status,
                 "became_current_at": row.became_current_at,
             }
@@ -300,24 +300,6 @@ def _coerce_category(value: GraphCategory | str) -> GraphCategory:
         raise GraphRegistryError(f"Unknown graph category: {value}") from exc
 
 
-def graph_set_signature(
-    members: list[tuple[str, str, int]],
-    revisions_by_graph: dict[str, int],
-) -> str:
-    """Compute a deterministic signature for a graph set.
-
-    ``members`` is a list of ``(graph_iri, role, sort_order)`` tuples already
-    sorted by the caller. ``revisions_by_graph`` provides source-graph revision
-    numbers for asserted graphs; missing entries default to 0.
-    """
-    import hashlib
-
-    parts: list[str] = []
-    for graph_iri, role, sort_order in members:
-        revision = revisions_by_graph.get(graph_iri, 0)
-        parts.append(f"{role}:{graph_iri}:{revision}:{sort_order}")
-    payload = "|".join(parts)
-    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:32]
 
 
 def utc_now() -> datetime:

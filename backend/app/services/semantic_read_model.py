@@ -1,6 +1,6 @@
 """Graph-derived compact business JSON read models.
 
-Read models are compiled from versioned SPARQL templates over graph sets.
+Read models are compiled from versioned SPARQL templates over Ontology models.
 Every statement-bearing row is decorated with origin, assertion-kind, and
 staleness metadata. An optional ``SemanticAccessView`` (R3.0-004) filters
 rows that reference unauthorized protected members before pagination,
@@ -97,13 +97,13 @@ class SemanticReadModelService:
         self.timeout_seconds = timeout_seconds
         self.default_limit = default_limit
         self.access_view = access_view or SemanticAccessView.all_visible()
-        # Publication and graph-set history composers use the request-scoped session.
+        # Publication composers use the request-scoped session.
         self.session = session
         self.retrieval_service = retrieval_service
 
     def read_model(
         self,
-        graph_set_id: str,
+        ontology_id: str,
         model_name: str,
         include: str = "asserted",
         allow_stale_derived: bool = True,
@@ -125,7 +125,7 @@ class SemanticReadModelService:
         if template.name == "resource-relations" and include != "asserted":
             raise ReadModelError("resource-relations requires include=asserted")
         scope = self.scope_resolver.resolve(
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             include=include,
             allow_stale_derived=allow_stale_derived,
         )
@@ -147,7 +147,7 @@ class SemanticReadModelService:
                 "operation-list",
             ):
                 envelope = self.read_model(
-                    graph_set_id=graph_set_id, model_name=family, include=include,
+                    ontology_id=ontology_id, model_name=family, include=include,
                     allow_stale_derived=allow_stale_derived, limit=bounded_limit,
                     field_set=field_set,
                 )
@@ -173,38 +173,12 @@ class SemanticReadModelService:
                     visible_count=len(items), ceiling_reached=incomplete,
                 ),
             )
-        if template.name == "graph-set-staleness":
-            items = [self._compose_graph_set_staleness(scope, field_set)]
-            return self._envelope(
-                template=template,
-                scope=scope,
-                items=items,
-                warnings=list(scope.warnings),
-            )
         if template.name == "publication-readiness":
             items = [self._compose_publication_readiness(scope, field_set)]
             return self._envelope(
                 template=template,
                 scope=scope,
                 items=items,
-                warnings=list(scope.warnings),
-            )
-        if template.name == "graph-set-history-list":
-            item = self._compose_graph_set_history_list(scope)
-            return self._envelope(
-                template=template,
-                scope=scope,
-                items=[item],
-                warnings=list(scope.warnings),
-            )
-        if template.name == "graph-set-delta":
-            item = self._compose_graph_set_delta(
-                scope, target, limit or template.default_limit
-            )
-            return self._envelope(
-                template=template,
-                scope=scope,
-                items=[item],
                 warnings=list(scope.warnings),
             )
         if template.name == "fact-audit-queue":
@@ -255,7 +229,7 @@ class SemanticReadModelService:
                 warnings=list(scope.warnings)
                 + [
                     {
-                        "code": "read_model_no_source_graphs",
+                        "code": "read_model_no_model",
                         "message": (
                             f"No source graphs are available for read model "
                             f"{template.name}."
@@ -376,7 +350,7 @@ class SemanticReadModelService:
         self, template: ReadModelTemplate, scope: ScopeResolution, limit: int
     ) -> dict[str, Any]:
         resources = self.read_model(
-            scope.graph_set_id, "resource-list", include="asserted", limit=500,
+            scope.ontology_id, "resource-list", include="asserted", limit=500,
             field_set="detail",
         )
         if resources["source_signature"] != scope.source_signature:
@@ -390,9 +364,9 @@ class SemanticReadModelService:
         endpoint_incomplete = not resources["paging"]["complete"]
         rows = []
         fetch_incomplete = False
-        if endpoints and scope.source_graph_iris:
+        if endpoints and scope.model_graph_iris:
             # Bind the governed node window before the RDF fetch ceiling. Edges
-            # elsewhere in the GraphSet must not consume this window's budget.
+            # elsewhere in the Ontology must not consume this window's budget.
             values = ", ".join(f"<{_sparql_iri_value(iri)}>" for iri in sorted(endpoints))
             # The frozen view already resolved all project protection sets.
             # Exclude denied predicates before LIMIT just as endpoints above;
@@ -405,7 +379,7 @@ class SemanticReadModelService:
                 )
                 predicate_filter = f"FILTER(?relation NOT IN ({denied_values}))"
             query = self._compile_template_query(
-                template, scope.source_graph_iris, _FILTERED_FETCH_LIMIT
+                template, scope.model_graph_iris, _FILTERED_FETCH_LIMIT
             ).replace("{resource_iris}", values).replace(
                 "{relation_access_filter}", predicate_filter
             )
@@ -423,7 +397,7 @@ class SemanticReadModelService:
                 ", ".join(f"<{_sparql_iri_value(iri)}>" for iri in reference_predicates),
             )
             result = self.rdf_store.query_read_model(
-                query=query, graph_iris=scope.source_graph_iris,
+                query=query, graph_iris=scope.model_graph_iris,
                 timeout_seconds=self.timeout_seconds, limit=_FILTERED_FETCH_LIMIT,
             )
             rows = self._rows(result)
@@ -472,8 +446,8 @@ class SemanticReadModelService:
             ).hexdigest()
             previous = by_triple.get(identity)
             if previous is None or (
-                item["source_graph_iri"], item.get("label") or ""
-            ) < (previous["source_graph_iri"], previous.get("label") or ""):
+                item.get("label") or "",
+            ) < (previous.get("label") or "",):
                 by_triple[identity] = item
         items = [by_triple[key] for key in sorted(by_triple)]
         paging = self._paging_state(
@@ -509,7 +483,7 @@ class SemanticReadModelService:
         paging: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         envelope = {
-            "graph_set_id": scope.graph_set_id,
+            "ontology_id": scope.ontology_id,
             "source_signature": scope.source_signature,
             "projection_version": template.projection_version,
             "model_name": template.name,
@@ -667,8 +641,8 @@ class SemanticReadModelService:
         self, scope: ScopeResolution, template: ReadModelTemplate
     ) -> list[str]:
         if template.name == "statement-list":
-            return [member.graph_iri for member in scope.members if member.role == "asserted_data"]
-        iris = list(scope.source_graph_iris)
+            return list(scope.model_graph_iris)
+        iris = list(scope.model_graph_iris)
         return iris
 
     def _rows(self, result: Any) -> list[dict[str, str]]:
@@ -689,9 +663,9 @@ class SemanticReadModelService:
     ) -> dict[str, Any]:
         iri = self._row_iri(row, template)
         label = self._cell(row, "label")
-        source_graph_iri = self._cell(row, "graph")
-        if not source_graph_iri:
-            source_graph_iri = scope.source_graph_iris[0] if scope.source_graph_iris else ""
+        model_graph_iri = self._cell(row, "graph")
+        if not model_graph_iri:
+            model_graph_iri = scope.model_graph_iris[0] if scope.model_graph_iris else ""
         display_fields = self._graph_display_fields(row)
         if template.name == "entity-list":
             # Keep the existing id/iri aliases for compatibility, while making
@@ -701,12 +675,12 @@ class SemanticReadModelService:
             "id": iri,
             "iri": iri,
             "label": label,
-            "source_graph_iri": source_graph_iri,
-            "assertion_kind": self._assertion_kind_for(source_graph_iri, scope, template),
+            "ontology_id": scope.ontology_id,
+            "assertion_kind": self._assertion_kind_for(model_graph_iri, scope, template),
             "audit_status": "system_accepted",
             "staleness": {
-                "is_stale": self._is_stale(source_graph_iri, scope),
-                "reason": self._staleness_reason(source_graph_iri, scope),
+                "is_stale": self._is_stale(model_graph_iri, scope),
+                "reason": self._staleness_reason(model_graph_iri, scope),
             },
             **display_fields,
         }
@@ -853,135 +827,27 @@ class SemanticReadModelService:
 
 
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
 
 
     # ------------------------------------------------------------------
-    # graph-set-staleness composer
     # ------------------------------------------------------------------
 
-    def _compose_graph_set_staleness(
-        self, scope: ScopeResolution, field_set: str
-    ) -> dict[str, Any]:
-        members: list[dict[str, Any]] = []
-        for member in scope.members:
-            entry: dict[str, Any] = {
-                "iri": member.graph_iri,
-                "role": member.role,
-                "editable": member.editable,
-                "last_semantic_edit_at": (
-                    member.last_edit_at.isoformat() if member.last_edit_at else None
-                ),
-            }
-            members.append(entry)
-        return {
-            "graph_set_id": scope.graph_set_id,
-            "members": members,
-            "last_semantic_edit_at": self._latest_member_edit_at(scope),
-        }
 
 
-    @staticmethod
-    def _latest_member_edit_at(scope: ScopeResolution) -> str | None:
-        timestamps = [
-            m.last_edit_at for m in scope.members if m.last_edit_at is not None
-        ]
-        if not timestamps:
-            return None
-        return max(timestamps).isoformat()
 
     # ------------------------------------------------------------------
     # publication-readiness composer (Stage 3 §4.1)
     # ------------------------------------------------------------------
 
-    def _compose_publication_readiness(
-        self, scope: ScopeResolution, field_set: str
-    ) -> dict[str, Any]:
-        """Aggregate staleness, open edits, projection freshness, and
-        editability into a single readiness row."""
-        staleness_row = self._compose_graph_set_staleness(scope, "detail")
-        open_edits = self._open_edits_count(scope.graph_set_id)
-        editable_graphs = [
-            {"graph_iri": m.graph_iri, "role": m.role}
-            for m in scope.members
-            if m.editable
-        ]
-        projection_freshness = self._projection_freshness(scope.graph_set_id)
-        gates = self._evaluate_publication_gates(
-            staleness_row=staleness_row,
-            open_edits=open_edits,
-            projection_freshness=projection_freshness,
-        )
-        ready = all(g["status"] == "passed" for g in gates)
-        row: dict[str, Any] = {
-            "graph_set_id": scope.graph_set_id,
-            "ready": ready,
-            "gates": gates,
-            "blockers": [g["label"] for g in gates if g["status"] == "blocked"],
-            "warnings": [g["label"] for g in gates if g["status"] == "warning"],
-            "editable_graph_count": len(editable_graphs),
-            "editable_graphs": editable_graphs,
-            "last_published_at": self._last_published_at(scope.graph_set_id),
-        }
-        if field_set == "summary":
-            return {
-                "graph_set_id": row["graph_set_id"],
-                "ready": row["ready"],
-                "blockers": row["blockers"],
-                "warnings": row["warnings"],
-            }
-        return row
+    def _compose_publication_readiness(self, scope, field_set):
+        freshness = self._projection_freshness(scope.ontology_id)
+        gates = self._evaluate_publication_gates(staleness_row={}, open_edits=0,
+                                                  projection_freshness=freshness)
+        return {"ontology_id": scope.ontology_id, "ready": True, "gates": gates,
+                "blockers": [], "warnings": [g["label"] for g in gates if g["status"] == "warning"]}
 
-    def _open_edits_count(self, graph_set_id: str) -> int:
-        """Stage 3 publication blocker: count SemanticEditAuditModel rows
-        whose latest edit per target graph is still unapplied (``applied``
-        flag False). Only the latest edit per target graph is considered so
-        that an applied-then-reopened graph counts once."""
-        if self.session is None:
-            return 0
-        from sqlalchemy import func, select
 
-        from app.repositories.models import (
-            SemanticEditAuditModel,
-            SemanticGraphSetMemberModel,
-        )
-
-        member_iris = list(
-            self.session.scalars(
-                select(SemanticGraphSetMemberModel.graph_iri).where(
-                    SemanticGraphSetMemberModel.graph_set_id == graph_set_id
-                )
-            )
-        )
-        if not member_iris:
-            return 0
-        latest_subq = (
-            select(
-                SemanticEditAuditModel.target_graph_iri,
-                func.max(SemanticEditAuditModel.created_at).label("max_created_at"),
-            )
-            .where(SemanticEditAuditModel.target_graph_iri.in_(member_iris))
-            .group_by(SemanticEditAuditModel.target_graph_iri)
-            .subquery()
-        )
-        rows = list(
-            self.session.scalars(
-                select(SemanticEditAuditModel).join(
-                    latest_subq,
-                    (
-                        SemanticEditAuditModel.target_graph_iri
-                        == latest_subq.c.target_graph_iri
-                    )
-                    & (
-                        SemanticEditAuditModel.created_at
-                        == latest_subq.c.max_created_at
-                    ),
-                )
-            )
-        )
-        return sum(1 for r in rows if not r.applied)
-
-    def _projection_freshness(self, graph_set_id: str) -> dict[str, dict[str, Any]]:
+    def _projection_freshness(self, ontology_id: str) -> dict[str, dict[str, Any]]:
         """Returns {manifest_projection_kind: {fresh, last_run_at}}."""
         if self.session is None:
             return {}
@@ -992,7 +858,7 @@ class SemanticReadModelService:
         rows = list(
             self.session.scalars(
                 select(SemanticProjectionManifestModel).where(
-                    SemanticProjectionManifestModel.graph_set_id == graph_set_id
+                    SemanticProjectionManifestModel.ontology_id == ontology_id
                 )
             )
         )
@@ -1004,22 +870,6 @@ class SemanticReadModelService:
             }
         return out
 
-    def _last_published_at(self, graph_set_id: str) -> str | None:
-        if self.session is None:
-            return None
-        from sqlalchemy import select
-
-        from app.repositories.models import SemanticGraphSetModel
-
-        row = self.session.scalar(
-            select(SemanticGraphSetModel).where(
-                SemanticGraphSetModel.id == graph_set_id
-            )
-        )
-        if row and row.graph_set_metadata:
-            v = row.graph_set_metadata.get("last_published_at")
-            return str(v) if v else None
-        return None
 
     def _evaluate_publication_gates(
         self,
@@ -1051,200 +901,15 @@ class SemanticReadModelService:
         return gates
 
     # ------------------------------------------------------------------
-    # graph-set-history-list composer (Stage 3 §4.2)
     # ------------------------------------------------------------------
 
-    def _member_editable(self, graph_iri: str) -> bool:
-        """Stage 3 history-list helper: read the graph registry row for
-        ``graph_iri`` and return its ``mutable_by_direct_edit`` flag, defaulting
-        to True when the row is absent (matches the scope resolver's behaviour)."""
-        from sqlalchemy import select
 
-        from app.repositories.models import SemanticGraphRegistryModel
-
-        row = self.session.scalar(
-            select(SemanticGraphRegistryModel).where(
-                SemanticGraphRegistryModel.graph_iri == graph_iri
-            )
-        )
-        if row is None:
-            return True
-        return bool(row.mutable_by_direct_edit)
-
-    def _compose_graph_set_history_list(
-        self, scope: ScopeResolution
-    ) -> dict[str, Any]:
-        """List graph sets in the same scope as ``scope.graph_set_id``."""
-        if self.session is None:
-            return {"graph_sets": [], "total": 0}
-        from sqlalchemy import func, select
-
-        from app.repositories.models import (
-            SemanticDerivedResultPointerModel,
-            SemanticGraphSetMemberModel,
-            SemanticGraphSetModel,
-        )
-
-        anchor = self.session.scalar(
-            select(SemanticGraphSetModel).where(
-                SemanticGraphSetModel.id == scope.graph_set_id
-            )
-        )
-        if anchor is None:
-            return {"graph_sets": [], "total": 0}
-        sets = list(
-            self.session.scalars(
-                select(SemanticGraphSetModel)
-                .where(
-                    SemanticGraphSetModel.scope_type == anchor.scope_type,
-                    SemanticGraphSetModel.scope_id == anchor.scope_id,
-                )
-                .order_by(SemanticGraphSetModel.created_at.desc())
-            )
-        )
-        out: list[dict[str, Any]] = []
-        for s in sets:
-            members = list(
-                self.session.scalars(
-                    select(SemanticGraphSetMemberModel).where(
-                        SemanticGraphSetMemberModel.graph_set_id == s.id
-                    )
-                )
-            )
-            any_editable = any(self._member_editable(m.graph_iri) for m in members)
-            latest_pointer = self.session.scalar(
-                select(
-                    func.max(SemanticDerivedResultPointerModel.became_current_at)
-                )
-                .join(
-                    SemanticGraphSetMemberModel,
-                    SemanticGraphSetMemberModel.graph_iri
-                    == SemanticDerivedResultPointerModel.result_graph_iri,
-                )
-                .where(SemanticGraphSetMemberModel.graph_set_id == s.id)
-            )
-            metadata = s.graph_set_metadata or {}
-            out.append({
-                "graph_set_id": s.id,
-                "status": "editable" if any_editable else "locked",
-                "created_at": s.created_at.isoformat() if s.created_at else None,
-                "locked_at": metadata.get("locked_at"),
-                "source_signature": s.source_signature,
-                "member_count": len(members),
-                "latest_derived_pointer_at": (
-                    latest_pointer.isoformat() if latest_pointer else None
-                ),
-                "ready": None,
-            })
-        return {"graph_sets": out, "total": len(out)}
 
     # ------------------------------------------------------------------
-    # graph-set-delta composer (Stage 3 §4.3)
     # ------------------------------------------------------------------
 
-    def _compose_graph_set_delta(
-        self,
-        scope: ScopeResolution,
-        target: str | None,
-        limit: int,
-    ) -> dict[str, Any]:
-        """Diff two graph sets by named graph role."""
-        if not target:
-            raise ReadModelError(
-                "graph-set-delta requires ?target=<other_graph_set_id>"
-            )
-        if self.session is None:
-            raise ReadModelError(
-                "graph-set-delta requires a database session for scope resolution"
-            )
-        from sqlalchemy import select
 
-        from app.repositories.models import SemanticGraphSetMemberModel
 
-        def _members_for(graph_set_id: str) -> list[SemanticGraphSetMemberModel]:
-            return list(
-                self.session.scalars(
-                    select(SemanticGraphSetMemberModel).where(
-                        SemanticGraphSetMemberModel.graph_set_id == graph_set_id
-                    )
-                )
-            )
-
-        base_members = {m.role: m for m in _members_for(scope.graph_set_id)}
-        target_members = {m.role: m for m in _members_for(target)}
-        roles = sorted(set(base_members) | set(target_members))
-        out: list[dict[str, Any]] = []
-        for role in roles:
-            b = base_members.get(role)
-            t = target_members.get(role)
-            # Fetch the FULL triple sets per role (uncapped) so set differences
-            # reflect the real diff size. The ``limit`` only slices the
-            # displayed ``added[]``/``removed[]`` arrays in the response.
-            b_triples = self._role_triples(b.graph_iri) if b else set()
-            t_triples = self._role_triples(t.graph_iri) if t else set()
-            added_full = list(t_triples - b_triples)
-            removed_full = list(b_triples - t_triples)
-            out.append({
-                "role": role,
-                "base_graph_iri": b.graph_iri if b else None,
-                "target_graph_iri": t.graph_iri if t else None,
-                "added": [self._triple_dict(x) for x in added_full[:limit]],
-                "removed": [self._triple_dict(x) for x in removed_full[:limit]],
-                "counts": {
-                    "added": len(added_full),
-                    "removed": len(removed_full),
-                },
-            })
-        truncated = any(
-            r["counts"]["added"] > limit or r["counts"]["removed"] > limit
-            for r in out
-        )
-        return {
-            "base_graph_set_id": scope.graph_set_id,
-            "target_graph_set_id": target,
-            "roles": out,
-            "truncated": truncated,
-        }
-
-    def _role_triples(self, graph_iri: str) -> set[tuple[str, str, str]]:
-        """Return the FULL set of (s, p, o) tuples in ``graph_iri``.
-
-        Stage 3 §4.3 requires the diff to be computed over the uncapped
-        triple sets so ``counts.added`` / ``counts.removed`` reflect the
-        real diff size; the ``limit`` only slices the response arrays in
-        the composer. A separate ``SELECT COUNT`` query is unnecessary
-        here because we materialize the full set anyway to compute the
-        set difference.
-        """
-        # Use a large cap to protect against pathological graphs while
-        # remaining effectively unbounded for any realistic ontology. The
-        # composer slices to ``limit`` afterwards.
-        fetch_limit = 100_000
-        query = (
-            f"# graph-set-delta SELECT\nSELECT ?s ?p ?o WHERE {{ "
-            f"GRAPH <{graph_iri}> {{ ?s ?p ?o }} }} LIMIT {fetch_limit}"
-        )
-        result = self.rdf_store.query_read_model(
-            query=query,
-            graph_iris=[graph_iri],
-            timeout_seconds=self.timeout_seconds,
-            limit=fetch_limit,
-        )
-        rows = self._rows(result)
-        triples: set[tuple[str, str, str]] = set()
-        for row in rows:
-            s = self._cell(row, "s") or self._cell(row, "subject") or ""
-            p = self._cell(row, "p") or self._cell(row, "predicate") or ""
-            o = self._cell(row, "o") or self._cell(row, "object") or ""
-            if not self.access_view.is_statement_visible(s, p, [o]):
-                continue
-            triples.add((s, p, o))
-        return triples
-
-    @staticmethod
-    def _triple_dict(triple: tuple[str, str, str]) -> dict[str, str]:
-        s, p, o = triple
-        return {"subject": s, "predicate": p, "object": o}
 
     # ------------------------------------------------------------------
     # fact-audit-queue composer (Stage 2 §6.3)
@@ -1262,7 +927,7 @@ class SemanticReadModelService:
 
         kind selects the source graph(s):
 
-        - ``asserted`` → asserted_data members of the active graph set.
+        - ``asserted`` → the selected Ontology model.
 
         Each row is decorated into the unified FactRow shape (spec §6.3):
         id, assertion_kind, subject_iri, subject_label, predicate_iri,
@@ -1278,14 +943,12 @@ class SemanticReadModelService:
 
         warnings: list[dict[str, str]] = list(scope.warnings)
         if resolved_kind == "asserted":
-            data_iris = [
-                m.graph_iri for m in scope.members if m.role == "asserted_data"
-            ]
+            data_iris = list(scope.model_graph_iris)
             if not data_iris:
                 return [], warnings + [
                     {
                         "code": "fact_audit_no_asserted_data",
-                        "message": "Graph set is missing an asserted data graph.",
+                        "message": "Ontology model is unavailable.",
                     }
                 ]
             rows = self._fetch_fact_rows(
@@ -1385,8 +1048,8 @@ class SemanticReadModelService:
         object_value: Any = self._cell(row, "object")
         object_is_iri = self._cell_is_uri(row, "object")
         object_label = self._cell(row, "object_label")
-        source_graph_iri = self._cell(row, "graph") or (
-            scope.source_graph_iris[0] if scope.source_graph_iris else ""
+        model_graph_iri = self._cell(row, "graph") or (
+            scope.model_graph_iris[0] if scope.model_graph_iris else ""
         )
         # Audit status defaults to "pending" — the FactAuditPage surfaces
         # the audit_status that may be set on the row by an RDF-star
@@ -1407,15 +1070,15 @@ class SemanticReadModelService:
             lang=object_lang,
         )
         fact_id = compute_fact_id(
-            subject_iri, predicate_iri, object_term, source_graph_iri
+            subject_iri, predicate_iri, object_term, model_graph_iri
         )
         # Staleness for derived graphs.
         if stale is None:
-            stale_bool = self._is_stale(source_graph_iri, scope)
+            stale_bool = self._is_stale(model_graph_iri, scope)
         else:
             stale_bool = bool(stale)
         if stale_reason is None:
-            stale_reason_val = self._staleness_reason(source_graph_iri, scope)
+            stale_reason_val = self._staleness_reason(model_graph_iri, scope)
         else:
             stale_reason_val = stale_reason
         item: dict[str, Any] = {
@@ -1429,8 +1092,7 @@ class SemanticReadModelService:
             "object_value": object_value,
             "object_is_iri": object_is_iri,
             "object_label": object_label,
-            "graph_iri": source_graph_iri,
-            "source_graph_iri": source_graph_iri,
+            "ontology_id": scope.ontology_id,
             "audit_status": audit_status,
             "stale": stale_bool,
             "stale_reason": stale_reason_val,
@@ -1456,9 +1118,9 @@ class SemanticReadModelService:
     ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
         """Run the entity-search SPARQL against the active scope's data graphs,
         decorating each row with the standard decorator plus the
-        ``comment`` / ``class_iri`` / ``class_label`` / ``graph_set_id``
+        ``comment`` / ``class_iri`` / ``class_label`` / ``ontology_id``
         extensions declared in spec §4.1."""
-        graph_iris = list(scope.source_graph_iris) or []
+        graph_iris = list(scope.model_graph_iris) or []
         bounded_limit = min(limit or template.default_limit, template.default_limit)
         # R3.0-009 §9.3: rows are one per (entity, class) pair and are
         # aggregated per entity, so fetch extra head room before pagination.
@@ -1505,7 +1167,7 @@ class SemanticReadModelService:
             decorated["comment"] = self._cell(row, "comment")
             decorated["class_iri"] = self._cell(row, "class")
             decorated["class_label"] = self._cell(row, "class_label")
-            decorated["graph_set_id"] = scope.graph_set_id
+            decorated["ontology_id"] = scope.ontology_id
             items.append(decorated)
         items = self._aggregate_entity_class_rows(items, with_identity=False)
         items = self.access_view.filter_items(items)
@@ -1515,7 +1177,7 @@ class SemanticReadModelService:
         if q:
             semantic_items: list[dict[str, Any]] = []
             if self.retrieval_service is not None:
-                retrieval = self.retrieval_service.recall_graph_set(
+                retrieval = self.retrieval_service.recall_ontology(
                     scope=scope,
                     query=q,
                     resource_kinds={"instance"},
@@ -1533,7 +1195,7 @@ class SemanticReadModelService:
                     for item in semantic_items
                     if class_iri in item.get("data", {}).get("rdf_types", [])
                 ]
-            ontology_id = self._entity_search_ontology_id(scope.graph_set_id)
+            ontology_id = scope.ontology_id
             lexical_items = [
                 self._entity_lexical_candidate(item, q, ontology_id) for item in items
             ]
@@ -1576,7 +1238,7 @@ class SemanticReadModelService:
         candidates into that same shape when callers supply ``q``.
         """
         resource_kind = "instance" if template.name == "entity-list" else "concept"
-        ontology_id = self._entity_search_ontology_id(scope.graph_set_id)
+        ontology_id = scope.ontology_id
         lexical_items = [
             candidate
             for item in items
@@ -1596,7 +1258,7 @@ class SemanticReadModelService:
         }
         semantic_items: list[dict[str, Any]] = []
         if self.retrieval_service is not None:
-            retrieval = self.retrieval_service.recall_graph_set(
+            retrieval = self.retrieval_service.recall_ontology(
                 scope=scope,
                 query=q,
                 resource_kinds={resource_kind},
@@ -1700,7 +1362,7 @@ class SemanticReadModelService:
     ) -> dict[str, Any] | None:
         item = {
             **candidate,
-            "source_graph_iri": scope.source_graph_iris[0] if scope.source_graph_iris else "",
+            "ontology_id": scope.ontology_id,
             "audit_status": "system_accepted",
             "staleness": {"is_stale": False, "reason": None},
         }
@@ -1734,19 +1396,6 @@ class SemanticReadModelService:
             )
         return item
 
-    def _entity_search_ontology_id(self, graph_set_id: str) -> str:
-        if self.session is None:
-            return graph_set_id
-        from app.repositories.models import SemanticGraphSetModel
-
-        graph_set = self.session.get(SemanticGraphSetModel, graph_set_id)
-        return (
-            graph_set.scope_id
-            if graph_set is not None
-            and graph_set.scope_type == "ontology"
-            and graph_set.scope_id
-            else graph_set_id
-        )
 
     @staticmethod
     def _entity_lexical_candidate(
@@ -1781,26 +1430,24 @@ class SemanticReadModelService:
         rdf_types = list(candidate.get("data", {}).get("rdf_types", []))
         return {
             **candidate,
-            "source_graph_iri": scope.source_graph_iris[0] if scope.source_graph_iris else "",
             "audit_status": "system_accepted",
             "staleness": {"is_stale": False, "reason": None},
             "comment": candidate.get("description"),
             "class_iri": rdf_types[0] if rdf_types else None,
             "class_label": None,
-            "graph_set_id": scope.graph_set_id,
+            "ontology_id": scope.ontology_id,
         }
 
     # ------------------------------------------------------------------
-    # ------------------------------------------------------------------
 
 
-    def _assertion_kind_for(self, source_graph_iri, scope, template) -> str:
+    def _assertion_kind_for(self, model_graph_iri, scope, template) -> str:
         return "asserted" if template.assertion_kind == "any" else template.assertion_kind
 
-    def _is_stale(self, source_graph_iri, scope) -> bool:
+    def _is_stale(self, model_graph_iri, scope) -> bool:
         return False
 
-    def _staleness_reason(self, source_graph_iri, scope) -> None:
+    def _staleness_reason(self, model_graph_iri, scope) -> None:
         return None
 
 

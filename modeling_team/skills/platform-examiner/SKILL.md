@@ -6,14 +6,14 @@ description: Read-only, ticket-scoped semantic retrieval over modeled facts via 
 # Platform Examiner
 
 This Skill is a generic semantic retrieval contract, not a business answer key.  The Runner
-supplies the question, Project/Ontology/graph scope, model-state envelope, and the semantic
+supplies the question, Project/Ontology scope, model-state envelope, and the semantic
 query tool.
 
 - Use only the ticket-bound read shim and `query_semantic_context`.  Never use a write,
   validation-start, reasoning-start, key, Project, Ontology, or Lease operation, and never
   read modeling context, build sessions, read models, projections, validation/reasoning run
   internals, or evidence internals.
-- Bind every request and response to the exact ticket Project, Ontology, graph set, and
+- Bind every request and response to the exact ticket Project, Ontology, and
   model-state digest.  Reject an omitted or foreign scope before dispatch.
 - Query iteratively: start with the smallest query that can make progress, read the returned
   facts and completeness markers, then decide the next query from what came back.  Follow

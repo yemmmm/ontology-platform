@@ -62,7 +62,7 @@ class EvidenceReferenceResolveRequest(BaseModel):
 
 class EvidenceAssociationCreate(BaseModel):
     ontology_id: str
-    graph_set_id: str | None = None
+    ontology_id: str | None = None
     target_type: str = Field(min_length=1, max_length=64)
     target_id: str = Field(min_length=1, max_length=512)
     client_item_id: str | None = None
@@ -75,7 +75,7 @@ class EvidenceAssociationCreate(BaseModel):
 class EvidenceAssociationBatchItem(BaseModel):
     client_item_id: str = Field(min_length=1, max_length=255)
     ontology_id: str
-    graph_set_id: str | None = None
+    ontology_id: str | None = None
     target_type: str = Field(min_length=1, max_length=64)
     target_id: str = Field(min_length=1, max_length=512)
     edit_audit_id: str | None = None
@@ -231,7 +231,7 @@ def list_target_evidence_associations(
     service = EvidenceReferenceService(session, access_view=access_view)
     try:
         service.require_project(project_id)
-        service.require_ontology_scope(project_id, ontology_id, None)
+        service.require_ontology_scope(project_id, ontology_id)
         rows = service.list_associations(
             ontology_id=ontology_id,
             target_type=target_type,
@@ -314,7 +314,7 @@ def create_evidence_associations(
         rows = service.associate(
             project_id=project_id,
             ontology_id=payload.ontology_id,
-            graph_set_id=payload.graph_set_id,
+
             target_type=payload.target_type,
             target_id=payload.target_id,
             client_item_id=payload.client_item_id,
@@ -335,7 +335,7 @@ def _preview_batch_item(
     item: EvidenceAssociationBatchItem,
     actor: str | None,
 ) -> dict:
-    service.require_ontology_scope(project_id, item.ontology_id, item.graph_set_id)
+    service.require_ontology_scope(project_id, item.ontology_id)
     if (
         item.edit_audit_id
         and service.session.get(SemanticEditAuditModel, item.edit_audit_id) is None
@@ -382,7 +382,7 @@ def _apply_batch_item(
     rows = service.associate(
         project_id=project_id,
         ontology_id=item.ontology_id,
-        graph_set_id=item.graph_set_id,
+
         target_type=item.target_type,
         target_id=item.target_id,
         client_item_id=item.client_item_id,

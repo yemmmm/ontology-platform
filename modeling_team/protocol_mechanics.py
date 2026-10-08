@@ -20,7 +20,6 @@ _TRANSLATION_BASE_OVERRIDE: ContextVar[str | None] = ContextVar(
 # R4.0-024: a fixed read recipe, with only governed graph bindings and OFFSET
 # substituted by Protocol. The platform owns the result bound (limit + 1).
 MODEL_CHECK_QUERY = """SELECT ?graph ?subject ?predicate ?object WHERE {
-  VALUES ?graph { {asserted_graphs} }
   GRAPH ?graph { ?subject ?predicate ?object . }
 }
 ORDER BY STR(?graph) STR(?subject) STR(?predicate) STR(?object)
@@ -29,7 +28,7 @@ ORDER BY STR(?graph) STR(?subject) STR(?predicate) STR(?object)
 
 
 def inspect_model_associations(
-    *, project_id: str, ontology_ids: list[str], asserted_graph_iris: list[str],
+    *, project_id: str, ontology_ids: list[str],
     read_pages: list[dict[str, Any]], final_read: dict[str, Any],
     semantic_base_iri: str, focus_iris: list[str] | None = None,
 ) -> dict[str, Any]:
@@ -39,16 +38,14 @@ def inspect_model_associations(
     snapshot after pagination. Missing pages, failed reads and drift produce
     recoverable feedback, not a new run/application gate.
     """
-    if not project_id or not ontology_ids or not asserted_graph_iris:
-        raise ValueError("project_id, ontology_ids and asserted_graph_iris are required")
-    for iri in [semantic_base_iri, *asserted_graph_iris, *(focus_iris or [])]:
+    if not project_id or not ontology_ids:
+        raise ValueError("project_id and ontology_ids are required")
+    for iri in [semantic_base_iri, *(focus_iris or [])]:
         if not isinstance(iri, str) or not urlparse(iri).scheme or any(
             c.isspace() or c in '<>"{}\\' for c in iri
         ):
             raise ValueError("Use absolute IRIs from the governed workspace/read, without delimiters")
-    query = MODEL_CHECK_QUERY.replace(
-        "{asserted_graphs}", " ".join(f"<{g}>" for g in asserted_graph_iris)
-    )
+    query = MODEL_CHECK_QUERY
     issues: list[dict[str, Any]] = []
     rows: list[dict[str, Any]] = []
     snapshot = None
@@ -113,7 +110,7 @@ def inspect_model_associations(
         for row_index, row in enumerate(bindings):
             if (not isinstance(row, dict) or any(not isinstance(row.get(k), dict)
                                                for k in ("graph", "subject", "predicate", "object"))
-                    or row["graph"].get("value") not in asserted_graph_iris):
+                    or row["graph"].get("type") != "uri"):
                 issues.append({"code": "invalid_statement_binding", "page": index})
                 break
             rows.append({"binding": row, "read_ref": {"page": index, "row": row_index}})
@@ -223,7 +220,7 @@ def inspect_model_associations(
     complete = not issues
     return {
         "schema_version": "r4-0-024-association-scan/v1", "project_id": project_id,
-        "ontology_ids": ontology_ids, "asserted_graph_iris": asserted_graph_iris,
+        "ontology_ids": ontology_ids,
         "snapshot": snapshot or [], "coverage": "complete" if complete else "partial",
         "checked_count": len(checked), "statement_count": len(rows), "issues": issues,
         "connected_resource_iris": sorted(checked & connected),
@@ -704,7 +701,6 @@ class ProtocolRetrievalFallbackError(ValueError):
 
 _CANDIDATE_SCHEMA_VERSION = "candidate-required-assertions/v1"
 _CANDIDATE_ITEM_FIELDS = (
-    "graph_role",
     "subject",
     "predicate",
     "object",
@@ -713,8 +709,7 @@ _CANDIDATE_ITEM_FIELDS = (
     "object_language",
 )
 _MATERIALIZED_QUAD_FIELDS = (
-    "graph_role",
-    "source_graph_iri",
+    "ontology_id",
     "subject",
     "predicate",
     "object",
@@ -814,8 +809,7 @@ def _sorted_unique(values: list[dict[str, Any]], name: str) -> list[dict[str, An
 
 def _candidate_item(value: Any) -> dict[str, Any]:
     item = _strict_object(value, _CANDIDATE_ITEM_FIELDS, "candidate assertion item")
-    if item.get("graph_role") != "asserted_data":
-        raise ProtocolRetrievalFallbackError("candidate assertion graph role is invalid")
+
     for field in ("subject", "predicate", "object", "object_kind"):
         if not _is_nonempty_string(item.get(field)):
             raise ProtocolRetrievalFallbackError(f"candidate assertion {field} is not bound")
@@ -824,9 +818,9 @@ def _candidate_item(value: Any) -> dict[str, Any]:
     return item
 
 
-def _materialized_quad(value: Any, data_graph: str) -> dict[str, Any]:
+def _materialized_quad(value: Any, ontology_id: str) -> dict[str, Any]:
     quad = _strict_object(value, _MATERIALIZED_QUAD_FIELDS, "materialized quad")
-    if quad.get("graph_role") != "asserted_data" or quad.get("source_graph_iri") != data_graph:
+    if quad.get("ontology_id") != ontology_id:
         raise ProtocolRetrievalFallbackError("materialized quad graph is invalid")
     for field in ("subject", "predicate", "object", "object_kind"):
         if not _is_nonempty_string(quad.get(field)):
@@ -871,7 +865,7 @@ def _verify_candidate_proof(
     if not isinstance(quads, list) or not quads:
         raise ProtocolRetrievalFallbackError("materialized quads are empty")
     normalized_items = [_candidate_item(item) for item in items]
-    normalized_quads = [_materialized_quad(quad, data_graph) for quad in quads]
+    normalized_quads = [_materialized_quad(quad, ontology_id) for quad in quads]
     _sorted_unique(normalized_items, "candidate assertion items")
     _sorted_unique(normalized_quads, "materialized quads")
     semantic_digest = _canonical_digest(
@@ -890,7 +884,7 @@ def _verify_candidate_proof(
     )
     if candidate.get("candidate_digest") != candidate_digest:
         raise ProtocolRetrievalFallbackError("candidate_digest drifts")
-    expected_quads = [dict(item, source_graph_iri=data_graph) for item in normalized_items]
+    expected_quads = [dict(item, ontology_id=ontology_id) for item in normalized_items]
     expected_quads = [
         {field: quad[field] for field in _MATERIALIZED_QUAD_FIELDS} for quad in expected_quads
     ]
@@ -925,7 +919,7 @@ def _verify_candidate_proof(
         fact_id = _strict_digest(record.get("fact_id"), "statement lineage fact_id")
         if fact_id in seen_fact_ids:
             raise ProtocolRetrievalFallbackError("statement lineage contains duplicate fact ID")
-        quad = _materialized_quad(record.get("quad"), data_graph)
+        quad = _materialized_quad(record.get("quad"), ontology_id)
         quad_bytes = _canonical_bytes(quad)
         if quad_bytes in seen_quad_bytes or quad_bytes not in quad_by_bytes:
             raise ProtocolRetrievalFallbackError("statement lineage quad is duplicate or unbound")
@@ -933,7 +927,7 @@ def _verify_candidate_proof(
         seen_quad_bytes.add(quad_bytes)
         response = _fallback_response(record.get("response"), "statement lineage")
         computed_fact_id = _fallback_statement_fact_id(
-            {**quad, "source_graph_iri": data_graph}, data_graph
+            quad, data_graph
         )
         if fact_id != computed_fact_id or fact_id not in statement_ids:
             raise ProtocolRetrievalFallbackError("statement lineage fact/quad mismatch")
@@ -984,9 +978,9 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
         raise ProtocolRetrievalFallbackError("workspace does not bind the selected ontology")
     if workspace.get("state") != "ready":
         raise ProtocolRetrievalFallbackError("workspace is not ready")
-    graph_set_id = _required_string(workspace, "default_graph_set_id")
+    ontology_id = _required_string(workspace, "ontology_id")
     source_signature = _required_string(workspace, "source_signature")
-    graphs = _fallback_workspace_graphs(workspace, ontology_id)
+    model_storage = _fallback_model_storage(proof, ontology_id)
     initial_counts = _fallback_counts(initial)
     final_counts = _fallback_counts(final)
     if any(initial_counts[name] != 0 for name in initial_counts):
@@ -1082,13 +1076,12 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
         detail_items = _fallback_applied_items(detail, attempt)
         for item in detail_items:
             command_kind = _required_string(item, "command_kind")
-            expected_role = _FALLBACK_COMMAND_ROLES.get(command_kind)
-            if expected_role is None:
+            if command_kind not in _FALLBACK_CREATE_COMMANDS:
                 raise ProtocolRetrievalFallbackError("receipt contains a non-create command")
             output = item.get("resource_outputs")
             if command_kind == "create_relation":
                 payload = item.get("payload")
-                relation_quad = _fallback_relation_quad(payload, graphs["asserted_data"])
+                relation_quad = _fallback_relation_quad(payload, model_storage)
                 if relation_quad not in deltas:
                     raise ProtocolRetrievalFallbackError("relation payload does not match applied data")
                 relation_sources.add(relation_quad[0])
@@ -1097,18 +1090,18 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
                 raise ProtocolRetrievalFallbackError("formal resource output is missing")
             output_iri = output["resource_iri"]
             if not any(
-                _fallback_iri(quad[0]) == output_iri and quad[3] == graphs[expected_role]
+                _fallback_iri(quad[0]) == output_iri and quad[3] == model_storage
                 for quad in deltas
             ):
-                raise ProtocolRetrievalFallbackError("command output does not bind its graph role")
+                raise ProtocolRetrievalFallbackError("command output does not bind the Ontology model")
             count_name = _RECEIPT_RESOURCE_COUNTS[command_kind]
             receipt_counts[count_name] += 1
             if command_kind == "create_entity":
                 entity_output_iris.add(output_iri)
         for quad in deltas:
-            if quad[3] not in graphs.values():
+            if quad[3] != model_storage:
                 raise ProtocolRetrievalFallbackError("applied delta targets an unknown graph")
-            if quad[3] == graphs["asserted_data"]:
+            if quad[3] == model_storage:
                 expected_data_fact_ids.add(_fallback_fact_id_from_quad(quad))
     if any(receipt_counts[name] != final_counts[name] for name in receipt_counts):
         raise ProtocolRetrievalFallbackError("receipt-derived resource count drifts from modeling context")
@@ -1127,13 +1120,13 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
     entities = _fallback_read_model(
         proof.get("entities_read"),
         "entity read",
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         source_signature=source_signature,
         model_name="entity-list",
     )
     entity_iris = {_required_string(item, "iri") for item in entities["items"] if isinstance(item, dict)}
     if any(
-        not isinstance(item, dict) or item.get("source_graph_iri") != graphs["asserted_data"]
+        not isinstance(item, dict) or item.get("ontology_id") != ontology_id
         for item in entities["items"]
     ):
         raise ProtocolRetrievalFallbackError("entity read is outside the asserted-data graph")
@@ -1149,7 +1142,7 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
     statement_data = _fallback_read_model(
         statements.get("response"),
         "statement read",
-        graph_set_id=graph_set_id,
+        ontology_id=ontology_id,
         source_signature=source_signature,
         model_name="statement-list",
     )
@@ -1160,7 +1153,7 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
         or min(requested_limit, 1000) <= expected_count
     ):
         raise ProtocolRetrievalFallbackError("statement response capacity is unknown or insufficient")
-    statement_ids = {_fallback_statement_fact_id(item, graphs["asserted_data"]) for item in statement_data["items"]}
+    statement_ids = {_fallback_statement_fact_id(item, model_storage) for item in statement_data["items"]}
     if statement_ids != expected_data_fact_ids:
         raise ProtocolRetrievalFallbackError("facts do not exactly equal reconstructed applied deltas")
     if len({_required_string(item, "subject") for item in statement_data["items"]}) != final_counts["facts"]:
@@ -1170,7 +1163,7 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
         proof.get("candidate_required_assertions"),
         proof.get("statement_lineage"),
         ontology_id=ontology_id,
-        data_graph=graphs["asserted_data"],
+        data_graph=model_storage,
         statement_ids=statement_ids,
     )
     return {
@@ -1206,13 +1199,7 @@ def verify_scoped_retrieval_fallback(proof: dict[str, Any]) -> dict[str, Any]:
     return _verify_scoped_retrieval_fallback_v1(proof)
 
 
-_FALLBACK_COMMAND_ROLES = {
-    "create_class": "asserted_ontology",
-    "create_property": "asserted_ontology",
-    "create_relation_type": "asserted_ontology",
-    "create_entity": "asserted_data",
-    "create_relation": "asserted_data",
-}
+_FALLBACK_CREATE_COMMANDS = {"create_class", "create_property", "create_relation_type", "create_entity", "create_relation"}
 
 
 def _fallback_response(value: Any, name: str) -> dict[str, Any]:
@@ -1228,13 +1215,13 @@ def _fallback_read_model(
     value: Any,
     name: str,
     *,
-    graph_set_id: str,
+    ontology_id: str,
     source_signature: str,
     model_name: str,
 ) -> dict[str, Any]:
     data = _fallback_response(value, name)
     if (
-        data.get("graph_set_id") != graph_set_id
+        data.get("ontology_id") != ontology_id
         or data.get("source_signature") != source_signature
         or data.get("model_name") != model_name
         or data.get("include") != "asserted"
@@ -1261,28 +1248,25 @@ def _fallback_counts(context: dict[str, Any]) -> dict[str, int]:
     return {name: counts[name] for name in required}
 
 
-def _fallback_workspace_graphs(workspace: dict[str, Any], ontology_id: str) -> dict[str, str]:
-    members = workspace.get("members")
-    if not isinstance(members, list):
-        raise ProtocolRetrievalFallbackError("workspace members are invalid")
-    roles: dict[str, str] = {}
-    for member in members:
-        if not isinstance(member, dict):
-            raise ProtocolRetrievalFallbackError("workspace member is invalid")
-        role = member.get("role")
-        if role not in {"asserted_ontology", "asserted_data"}:
-            continue
-        if (
-            role in roles
-            or member.get("owner_type") != "ontology"
-            or member.get("owner_id") != ontology_id
-            or not _is_nonempty_string(member.get("graph_iri"))
-        ):
-            raise ProtocolRetrievalFallbackError("workspace graph role is invalid")
-        roles[role] = member["graph_iri"]
-    if set(roles) != {"asserted_ontology", "asserted_data"}:
-        raise ProtocolRetrievalFallbackError("workspace graph roles are incomplete")
-    return roles
+def _fallback_model_storage(proof: dict[str, Any], ontology_id: str) -> dict[str, str]:
+    locations = set()
+    for envelope in proof.get("batch_details", []):
+        detail = envelope.get("data", envelope)
+        if detail.get("ontology_id") not in {None, ontology_id}:
+            raise ValueError("Receipt belongs to another Ontology")
+        for attempt in detail.get("attempts", []):
+            if attempt.get("attempt_status") != "applied":
+                continue
+            target = attempt.get("target", {})
+            if target.get("ontology_id") not in {None, ontology_id}:
+                raise ValueError("Receipt target belongs to another Ontology")
+            locations.update(row["graph_iri"] for row in target.get("graphs", []))
+            locations.update(quad[3] for quad in attempt.get("normalized_delta", {}).get("inserts", []))
+    if len(locations) != 1:
+        raise ValueError("Applied receipts must bind one Ontology model storage target")
+    iri = locations.pop()
+    return iri
+
 
 
 def _fallback_applied_attempt(attempt: dict[str, Any]) -> tuple[str, str, dict[str, Any]]:
@@ -1360,7 +1344,7 @@ def _fallback_fact_id_from_quad(quad: tuple[str, str, str, str]) -> str:
 
 
 def _fallback_statement_fact_id(value: Any, data_graph: str) -> str:
-    if not isinstance(value, dict) or value.get("source_graph_iri") != data_graph:
+    if not isinstance(value, dict):
         raise ProtocolRetrievalFallbackError("statement is outside the asserted-data graph")
     subject = _required_string(value, "subject")
     predicate = _required_string(value, "predicate")
@@ -1435,7 +1419,6 @@ def _fallback_statement_object_term(value: Any) -> str:
     copy = dict(value) if isinstance(value, dict) else value
     if not isinstance(copy, dict):
         raise ProtocolRetrievalFallbackError("statement is invalid")
-    _fallback_statement_fact_id(copy, _required_string(copy, "source_graph_iri"))
     if copy["object_kind"] == "iri":
         return f"<{copy['object']}>"
     escaped = copy["object"].replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r").replace("\t", "\\t")
@@ -2524,7 +2507,7 @@ def build_unified_resource_binding_receipt(
     read_body = _unwrap_governed_read_envelope(read_model)
     # A governed read may carry scope at envelope level.  When present it must
     # agree with the caller-selected scope; absent fields are supplied by the
-    # selected scope below because the public read models identify graph sets,
+    # selected scope below because the public read models identify Ontologies,
     # not SQL workspace rows.
     for source in (read_model, read_body):
         if not isinstance(source, Mapping):
@@ -2546,11 +2529,6 @@ def build_unified_resource_binding_receipt(
     envelope_digest = _canonical_digest(read_model)
     body_source_signature = (
         read_body.get("source_signature")
-        if isinstance(read_body, Mapping)
-        else None
-    )
-    body_source_graph = (
-        read_body.get("source_graph_iri")
         if isinstance(read_body, Mapping)
         else None
     )
@@ -2583,16 +2561,13 @@ def build_unified_resource_binding_receipt(
         if _read_resource_evidence(row) in (None, "", [], {}):
             # The API read model does not currently duplicate SQL workspace
             # scope into every item.  Bind the exact authorized envelope
-            # digest, plus its public source signature/graph markers, as the
+            # digest, plus its public model state markers, as the
             # read evidence used by this Protocol receipt.
             evidence: dict[str, Any] = {"envelope_digest": envelope_digest}
             source_signature = row.get("source_signature", body_source_signature)
-            source_graph = row.get("source_graph_iri", body_source_graph)
             assertion_kind = row.get("assertion_kind")
             if _is_nonempty_string(source_signature):
                 evidence["source_signature"] = source_signature
-            if _is_nonempty_string(source_graph):
-                evidence["source_graph_iri"] = source_graph
             if _is_nonempty_string(assertion_kind):
                 evidence["assertion_kind"] = assertion_kind
             row["read_evidence"] = evidence

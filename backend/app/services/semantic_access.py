@@ -21,7 +21,6 @@ from sqlalchemy.orm import Session
 from app.repositories.models import (
     OntologyModel,
     SemanticGraphRegistryModel,
-    SemanticGraphSetModel,
 )
 from app.repositories.models import SemanticProtectionSetMemberModel
 from app.repositories.models import SemanticProtectionSetModel
@@ -321,22 +320,14 @@ class SemanticAccessResolver:
             ) from exc
 
 
-def project_id_for_graph_set(session: Session, graph_set_id: str | None) -> str | None:
-    """Owning Project for a graph set (ontology-scoped sets only); None when
-    the set is unknown or not ontology-scoped."""
-    if not graph_set_id:
+def project_id_for_ontology(session: Session, ontology_id: str | None) -> str | None:
+    if not ontology_id:
         return None
     try:
-        graph_set = session.get(SemanticGraphSetModel, graph_set_id)
-        if graph_set is None or graph_set.scope_type != "ontology" or not graph_set.scope_id:
-            return None
-        ontology = session.get(OntologyModel, graph_set.scope_id)
+        ontology = session.get(OntologyModel, ontology_id)
         return ontology.project_id if ontology else None
     except SQLAlchemyError as exc:
-        logger.error("Graph-set project resolution failed: %s", exc)
-        raise SemanticAccessDependencyError(
-            "Semantic protection data is temporarily unavailable"
-        ) from exc
+        raise SemanticAccessDependencyError("Semantic protection data is temporarily unavailable") from exc
 
 
 def project_id_for_graph_iri(session: Session, graph_iri: str | None) -> str | None:

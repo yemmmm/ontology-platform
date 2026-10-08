@@ -103,7 +103,7 @@ def _canonical_state() -> dict:
         "project_id": PROJECT_ID,
         "ontologies": {
             ONTOLOGY_A: {
-                "default_graph_set_id": GRAPH_A,
+                "ontology_id": GRAPH_A,
                 "source_signature": "sig-ontology-1",
                 "graph_set_status": "ready",
                 "revision": 3,
@@ -111,7 +111,7 @@ def _canonical_state() -> dict:
                 "facts": [f"fact: {FACT_A}"],
             },
             ONTOLOGY_B: {
-                "default_graph_set_id": GRAPH_B,
+                "ontology_id": GRAPH_B,
                 "source_signature": "sig-ontology-2",
                 "graph_set_status": "ready",
                 "revision": 5,
@@ -119,7 +119,7 @@ def _canonical_state() -> dict:
                 "facts": [f"fact: {FACT_B}"],
             },
             ONTOLOGY_C: {
-                "default_graph_set_id": GRAPH_C,
+                "ontology_id": GRAPH_C,
                 "source_signature": "sig-ontology-3",
                 "graph_set_status": "ready",
                 "revision": 7,
@@ -151,7 +151,7 @@ def _handoff_binding(frozen: dict) -> dict:
                 "project_id": PROJECT_ID,
                 "ontology_id": ontology,
                 "workspace_state": {"state_digest": f"handoff-marker:{ontology}:workspace"},
-                "graph_state": {"state_digest": f"handoff-marker:{ontology}:graph"},
+                "model_version_state": {"state_digest": f"handoff-marker:{ontology}:graph"},
                 "authorized_read_tools": list(READ_TOOLS),
             }
             for ontology in (ONTOLOGY_A, ONTOLOGY_B, ONTOLOGY_C)
@@ -374,7 +374,7 @@ def _assert_handoff_markers_replaced(scenario: dict, report: dict) -> None:
     binding = report["sessions"]["batch_model_binding"]
     assert binding is not None, "the executed batch never bound actual pre-session state"
     for entry in binding["ontologies"]:
-        for field in ("workspace_state", "graph_state"):
+        for field in ("workspace_state", "model_version_state"):
             digest = str(entry[field]["state_digest"])
             assert not digest.startswith("handoff-marker:"), (
                 f"{entry['ontology_id']}.{field} still carries the handoff marker: {digest}"

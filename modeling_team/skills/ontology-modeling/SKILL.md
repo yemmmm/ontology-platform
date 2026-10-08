@@ -169,3 +169,11 @@ concurrent incompatible versions. Keep credentials, actual messages/runtime IDs 
 out of the model. Use governed entity/role/edge reads and controlled Operation projections;
 incomplete retrieval does not prove absence. Static samples and fixture PASS do not establish
 A10 real semantic acceptance, online availability or execution success.
+
+
+R4.0-026 storage contract: each Ontology owns one current business model. Submit and read with
+`ontology_id` / `ontology_ids`; bind the actual model revision and workspace version. Do not author,
+request or carry GraphSet identifiers, member roles, or source-graph selectors in business candidates
+and handoffs. Definitions, ordinary nodes and relations share that model. Internal RDF locators in
+technical write receipts are host storage details. Keep original business sources and external mapping
+provenance intact; shared references require explicitly approved Ontology scope.

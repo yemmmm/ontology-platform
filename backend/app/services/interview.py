@@ -22,8 +22,6 @@ from app.repositories.models import (
     OntologyModel,
     ProjectBriefModel,
     ProjectModel,
-    SemanticGraphSetMemberModel,
-    SemanticGraphSetModel,
 )
 from app.services.semantic_build_overview import BriefSummary, CompetencyQuestionSummary
 
@@ -394,7 +392,7 @@ def set_question_status(
 
 
 def run_question_validation(session, store, question_id, settings):
-    """Run the question's query definition as SPARQL SELECT count over the active graph-set.
+    """Run the question's query definition as SPARQL SELECT count over the selected Ontology model.
 
     Dispatches on query_definition.kind:
       - entity_count:   SPARQL count of rdf:type/rdfs:subClassOf* matches
@@ -526,25 +524,10 @@ def run_question_validation(session, store, question_id, settings):
 
 
 def active_data_and_ontology_graphs_for_question(session, question_id: str) -> list[str]:
-    """Return ontology + data member IRIs for the question's active graph-set."""
+    from app.repositories.models import OntologyModel
     question = _question(session, question_id)
-    rows = session.execute(
-        select(
-            SemanticGraphSetMemberModel.graph_iri,
-            SemanticGraphSetMemberModel.role,
-        )
-        .join(
-            SemanticGraphSetModel,
-            SemanticGraphSetModel.id == SemanticGraphSetMemberModel.graph_set_id,
-        )
-        .where(
-            SemanticGraphSetModel.scope_type == "ontology",
-            SemanticGraphSetModel.scope_id == question.ontology_id,
-            SemanticGraphSetModel.status == "active",
-            SemanticGraphSetMemberModel.role.in_(("asserted_ontology", "asserted_data")),
-        )
-    ).all()
-    return [r[0] for r in rows]
+    ontology = session.get(OntologyModel, question.ontology_id)
+    return [ontology.model_graph_iri] if ontology and ontology.model_graph_iri else []
 
 
 def resolve_class_iri(session, ontology_id: str, class_id: str) -> str:

@@ -59,7 +59,6 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 "semantic_digest": "d864bba0d2372f63d87233e5191ba137bb5ed655f68ebeb2f1810a0e5a231691",
                 "candidate_digest": "7ec1a6654807a2dea9b494368465bb2103969a9e4aff9934d816475729d32fab",
                 "items": [{
-                    "graph_role": "asserted_data",
                     "subject": "subject",
                     "predicate": "predicate",
                     "object": "object",
@@ -69,8 +68,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 }],
                 "materialized_digest": "18513bd05c3d61acf98c54f760b400741a073fc3b5b90355c87abade2d90bfd2",
                 "materialized_quads": [{
-                    "graph_role": "asserted_data",
-                    "source_graph_iri": "graph:data",
+                    "ontology_id": "graph:data",
                     "subject": "subject",
                     "predicate": "predicate",
                     "object": "object",
@@ -91,8 +89,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 "records": [{
                     "fact_id": "a3b5365df0a9f1d9de30165798cb28336d7e7ad0f45d6cc3354ac4c2eaad98d3",
                     "quad": {
-                        "graph_role": "asserted_data",
-                        "source_graph_iri": "graph:data",
+                        "ontology_id": "graph:data",
                         "subject": "subject",
                         "predicate": "predicate",
                         "object": "object",

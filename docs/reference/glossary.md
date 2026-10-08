@@ -65,12 +65,15 @@ ontology model, actual business data, evidence item, reasoning result, rule resu
 metadata, policy, or import.
 _Avoid_: table, project graph, property graph
 
-**Graph Set**:
-The group of named graphs that together define the current semantic state, such as an ontology
-graph plus its data graph, and current effective reasoning/rule result graphs where inferred or
-derived statements are needed. The legacy `policy` canonical role remains a governance graph slot;
-semantic knowledge protection itself is stored in PostgreSQL Protection Sets, not in a policy graph.
-_Avoid_: snapshot, bundle, Protection Set storage
+**Ontology Model**:
+The current business semantic content of one Ontology, stored in one RDF named graph. Definitions,
+nodes, relations and mappings share this container. Agents select Project/Ontology scope; stable
+resource IRIs and Ontology identity locate resources. Model revision and content hash belong to
+Ontology. Internal graph IRIs are storage details.
+
+**Graph Set (retired by R4.0-026)**:
+A historical multi-graph container. It is absent from current persistence, management, read/write,
+retrieval and Team contracts. Historical reports and retained artifacts preserve their original form.
 
 **Build Context**:
 A project-level, server-derived recovery view for external modeling Agents. It summarizes the
@@ -417,7 +420,7 @@ _Avoid_: CRUD API, raw write endpoint
 **Agent SPARQL Query Interface**:
 The agent-facing read surface that accepts SPARQL queries for flexible exploration of canonical
 semantic data within an explicitly selected Project/Ontology scope. The platform resolves internal
-Graph Sets and named graphs; ordinary Agents do not supply them. It is separate from semantic
+the single model graph of each authorized Ontology; ordinary Agents do not select storage graphs. It is separate from semantic
 write/edit interfaces.
 _Avoid_: fixed CRUD API, semantic edit endpoint
 

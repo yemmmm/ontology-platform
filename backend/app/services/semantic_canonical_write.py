@@ -47,7 +47,6 @@ from app.services.semantic_graph_registry import (
     GraphRegistryError,
     SemanticGraphRegistryService,
 )
-from app.services.semantic_graph_set import SemanticGraphSetService
 from app.services.semantic_lineage_recorder import SemanticLineageRecorder
 from app.services.operation_semantics import OperationValidationError, validate_operation_delta
 from app.services.semantic_retrieval import SemanticRetrievalCoordinator
@@ -75,21 +74,6 @@ class CanonicalValidationError(CanonicalSemanticWriteError):
         self.validation_result = validation_result or {}
 
 
-def _revision_graphs_for(graph_iris: list[str]) -> list[str]:
-    """Add the parent shapes graph when a custom shapes sub-graph changed.
-
-    The custom sub-graph is written by Modeling Shape commands but is not a
-    workspace member, so its revision alone would leave the workspace
-    signature untouched and weaken the apply-time optimistic lock
-    (R3.0-009 §6.1).
-    """
-    graphs = list(graph_iris)
-    for graph_iri in graph_iris:
-        if graph_iri.endswith("/custom"):
-            parent = graph_iri[: -len("/custom")]
-            if parent not in graphs:
-                graphs.append(parent)
-    return graphs
 
 
 def _delta_to_dict(delta: RdfGraphDelta) -> dict[str, Any]:
@@ -120,7 +104,6 @@ class CanonicalSemanticWriteService:
         graph_registry: SemanticGraphRegistryService | None = None,
         revision_service: SemanticRevisionService | None = None,
         derived_state_service: SemanticDerivedStateService | None = None,
-        graph_set_service: SemanticGraphSetService | None = None,
         lineage_recorder: SemanticLineageRecorder | None = None,
     ) -> None:
         self.session = session
@@ -131,7 +114,6 @@ class CanonicalSemanticWriteService:
         self.derived_state_service = derived_state_service or SemanticDerivedStateService(
             session, settings
         )
-        self.graph_set_service = graph_set_service or SemanticGraphSetService(session, settings)
         # Retain injection compatibility for historical callers. The active
         # canonical write path does not construct or invoke a pure lineage
         # collector.
@@ -141,7 +123,7 @@ class CanonicalSemanticWriteService:
         self,
         compiled: CompiledCommand,
         *,
-        graph_set_id: str | None = None,
+        ontology_id: str | None = None,
         actor: str | None = None,
         reason: str | None = None,
         commit: bool = True,
@@ -195,11 +177,21 @@ class CanonicalSemanticWriteService:
             validation_result=validation_result,
             warnings=all_warnings,
             applied=write_result.applied,
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             audit_id=audit_id,
         )
+        hashes = {}
+        if hasattr(self.rdf_store, "get_graph"):
+            from rdflib import Graph
+            from app.services.ontology_single_graph_migration import model_content_hash
+            for iri in affected:
+                exists = not hasattr(self.rdf_store, "graph_exists") or self.rdf_store.graph_exists(iri)
+                content = self.rdf_store.get_graph(iri, "turtle") if exists else ""
+                graph = Graph().parse(data=content, format="turtle") if content else Graph()
+                hashes[iri] = model_content_hash(graph)
         revision_bumps = self.revision_service.bump_revisions(
-            _revision_graphs_for(affected),
+            affected,
+            content_hashes=hashes,
             audit_id=audit.id,
             actor=actor,
         )
@@ -210,7 +202,7 @@ class CanonicalSemanticWriteService:
             {
                 "result_kind": row.result_kind,
                 "run_id": row.run_id,
-                "graph_set_id": row.graph_set_id,
+                "ontology_id": row.ontology_id,
                 "result_graph_iri": row.result_graph_iri,
             }
             for row in stale_rows
@@ -246,7 +238,7 @@ class CanonicalSemanticWriteService:
         command_kind: str,
         payload: dict[str, Any],
         *,
-        graph_set_id: str | None = None,
+        ontology_id: str | None = None,
         actor: str | None = None,
         reason: str | None = None,
         commit: bool = True,
@@ -254,10 +246,14 @@ class CanonicalSemanticWriteService:
         fence_attempt_id: str | None = None,
     ) -> dict[str, Any]:
         """Compile a product command and apply it through the canonical pipeline."""
+        if ontology_id:
+            if payload.get("ontology_id") not in {None, ontology_id}:
+                raise CanonicalSemanticWriteError("ontology_id does not match command scope")
+            payload = {**payload, "ontology_id": ontology_id}
         compiled = compile_command(command_kind, payload, self.settings)
         return self.apply_compiled_command(
             compiled,
-            graph_set_id=graph_set_id,
+            ontology_id=ontology_id,
             actor=actor,
             reason=reason,
             commit=commit,
@@ -392,7 +388,7 @@ class CanonicalSemanticWriteService:
         validation_result: dict[str, Any] | None,
         warnings: list[str],
         applied: bool,
-        graph_set_id: str | None,
+        ontology_id: str | None,
         audit_id: str | None,
     ) -> SemanticEditAuditModel:
         affected = compiled.delta.affected_graph_iris()
@@ -415,7 +411,7 @@ class CanonicalSemanticWriteService:
                 "command_kind": compiled.command_kind,
                 "object_kind": compiled.object_kind,
                 "source_ids": compiled.source_ids,
-                "graph_set_id": graph_set_id,
+                "ontology_id": ontology_id,
             },
             applied=applied,
         )

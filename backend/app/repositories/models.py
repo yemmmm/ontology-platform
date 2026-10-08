@@ -105,6 +105,17 @@ class OntologyModel(Base):
         nullable=False,
     )
 
+    model_graph_iri: Mapped[str | None] = mapped_column(Text, unique=True)
+    model_revision: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    model_content_hash: Mapped[str | None] = mapped_column(String(64))
+    reference_ontology_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+
+    @property
+    def source_signature(self) -> str:
+        import hashlib
+        value = f"{self.id}:{self.model_revision}:{self.model_content_hash or ''}"
+        return hashlib.sha256(value.encode()).hexdigest()
+
     project: Mapped[ProjectModel] = relationship(back_populates="ontologies")
 
 
@@ -362,7 +373,7 @@ class ModelingBatchAttemptModel(Base):
     mode: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="validating", nullable=False)
     expected_workspace_version: Mapped[str] = mapped_column(String(128), nullable=False)
-    graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    ontology_id: Mapped[str | None] = mapped_column(String(36))
     lease_revision: Mapped[int | None] = mapped_column(Integer)
     workspace_version_before: Mapped[str | None] = mapped_column(String(128))
     workspace_version_after: Mapped[str | None] = mapped_column(String(128))
@@ -902,7 +913,6 @@ class EvidenceAssociationModel(Base):
     ontology_id: Mapped[str] = mapped_column(
         ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False, index=True
     )
-    graph_set_id: Mapped[str | None] = mapped_column(String(36), index=True)
     evidence_reference_id: Mapped[str] = mapped_column(
         ForeignKey("evidence_references.id", ondelete="RESTRICT"), nullable=False, index=True
     )
@@ -1197,9 +1207,6 @@ class SemanticStatementOccurrenceModel(Base):
     ontology_id: Mapped[str] = mapped_column(
         ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
     )
-    graph_set_id: Mapped[str | None] = mapped_column(
-        ForeignKey("semantic_graph_sets.id", ondelete="SET NULL")
-    )
     statement_id: Mapped[str] = mapped_column(String(64), nullable=False)
     subject_iri: Mapped[str] = mapped_column(Text, nullable=False)
     predicate_iri: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1297,7 +1304,7 @@ class SemanticReasoningRunModel(Base):
     __tablename__ = "semantic_reasoning_runs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    source_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    model_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     result_graph_iri: Mapped[str | None] = mapped_column(Text)
     reasoner: Mapped[str] = mapped_column(String(255), default="command", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="pending", nullable=False)
@@ -1314,11 +1321,11 @@ class SemanticProjectionJobModel(Base):
     __tablename__ = "semantic_projection_jobs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    ontology_id: Mapped[str | None] = mapped_column(String(36))
     projection_kind: Mapped[str] = mapped_column(String(40), default="search", nullable=False)
     projection_version: Mapped[str] = mapped_column(String(80), default="v1", nullable=False)
     projection_scope: Mapped[str] = mapped_column(String(40), default="asserted", nullable=False)
-    source_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
+    model_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     reasoning_result_graph_iri: Mapped[str | None] = mapped_column(Text)
     rule_result_graph_iri: Mapped[str | None] = mapped_column(Text)
     source_signature: Mapped[str] = mapped_column(String(128), default="", nullable=False)
@@ -1346,7 +1353,7 @@ class SemanticProjectionManifestModel(Base):
     __tablename__ = "semantic_projection_manifests"
     __table_args__ = (
         UniqueConstraint(
-            "graph_set_id",
+            "ontology_id",
             "projection_kind",
             "target_partition",
             name="uq_semantic_projection_manifests_set_kind_partition",
@@ -1354,7 +1361,7 @@ class SemanticProjectionManifestModel(Base):
     )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    graph_set_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
     projection_kind: Mapped[str] = mapped_column(String(40), nullable=False)
     active_job_id: Mapped[str | None] = mapped_column(String(36))
     source_signature: Mapped[str] = mapped_column(String(128), default="", nullable=False)
@@ -1400,7 +1407,6 @@ class SemanticRetrievalDocumentModel(Base):
     ontology_id: Mapped[str] = mapped_column(
         ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
     )
-    graph_set_id: Mapped[str] = mapped_column(String(36), nullable=False)
     workspace_version: Mapped[str] = mapped_column(String(120), nullable=False)
     source_signature: Mapped[str] = mapped_column(String(128), nullable=False)
     rule_set_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
@@ -1469,71 +1475,15 @@ class SemanticGraphRevisionModel(Base):
     )
 
 
-class SemanticGraphSetModel(Base):
-    __tablename__ = "semantic_graph_sets"
-    __table_args__ = (
-        Index(
-            "uq_semantic_graph_sets_default_ontology",
-            "scope_type",
-            "scope_id",
-            unique=True,
-            postgresql_where=text("is_default"),
-            sqlite_where=text("is_default = 1"),
-        ),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    name: Mapped[str] = mapped_column(String(255), nullable=False)
-    scope_type: Mapped[str] = mapped_column(String(40), nullable=False)
-    scope_id: Mapped[str | None] = mapped_column(String(255))
-    status: Mapped[str] = mapped_column(String(32), default="active", nullable=False)
-    is_default: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    source_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    created_by: Mapped[str | None] = mapped_column(String(255))
-    created_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), nullable=False
-    )
-    updated_at: Mapped[datetime] = mapped_column(
-        DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), nullable=False
-    )
-    graph_set_metadata: Mapped[dict[str, Any]] = mapped_column(
-        "metadata", JSONB, default=dict, nullable=False
-    )
-    members: Mapped[list["SemanticGraphSetMemberModel"]] = relationship(
-        back_populates="graph_set",
-        cascade="all, delete-orphan",
-        order_by="SemanticGraphSetMemberModel.sort_order",
-    )
 
 
-class SemanticGraphSetMemberModel(Base):
-    __tablename__ = "semantic_graph_set_members"
-    __table_args__ = (
-        UniqueConstraint(
-            "graph_set_id", "graph_iri", name="uq_semantic_graph_set_members_set_graph"
-        ),
-    )
-
-    id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    graph_set_id: Mapped[str] = mapped_column(
-        ForeignKey("semantic_graph_sets.id", ondelete="CASCADE"), nullable=False
-    )
-    graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
-    role: Mapped[str] = mapped_column(String(40), nullable=False)
-    required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
-    sort_order: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    member_metadata: Mapped[dict[str, Any]] = mapped_column(
-        "metadata", JSONB, default=dict, nullable=False
-    )
-
-    graph_set: Mapped[SemanticGraphSetModel] = relationship(back_populates="members")
 
 
 class SemanticDerivedResultPointerModel(Base):
     __tablename__ = "semantic_derived_result_pointers"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    ontology_id: Mapped[str | None] = mapped_column(String(36))
     result_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     run_id: Mapped[str] = mapped_column(String(36), nullable=False)
     result_graph_iri: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1651,7 +1601,7 @@ class SemanticRuleRunModel(Base):
     __tablename__ = "semantic_rule_runs"
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True)
-    graph_set_id: Mapped[str] = mapped_column(String(36), nullable=False)
+    ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
     rule_definition_id: Mapped[str | None] = mapped_column(String(36))
     rule_version: Mapped[str | None] = mapped_column(String(80))
     result_graph_iri: Mapped[str | None] = mapped_column(Text)
@@ -1690,7 +1640,7 @@ class SemanticMigrationRunModel(Base):
         String(80), nullable=False, default="phase2-v1"
     )
     source_snapshot_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
-    target_graph_set_id: Mapped[str | None] = mapped_column(String(36))
+    target_ontology_id: Mapped[str | None] = mapped_column(String(36))
     started_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -1718,7 +1668,7 @@ class SemanticMigrationBatchModel(Base):
 
     A batch is the unit of idempotent rerun. Two batches with identical source
     hash and target hash for the same run are considered redundant and must not
-    mutate the target graph set when re-applied.
+    mutate the target Ontology model when re-applied.
     """
 
     __tablename__ = "semantic_migration_batches"

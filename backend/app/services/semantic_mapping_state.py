@@ -1,6 +1,6 @@
 """Project-scoped mapping views shared by Batch and canonical writes.
 
-Only explicitly selected Graph Sets open cross-Ontology reference scope.
+Only explicit Ontology reference_ontology_ids open cross-Ontology reference scope.
 Project-wide views are used solely to protect existing reverse dependencies.
 """
 
@@ -17,7 +17,6 @@ from app.repositories.models import (
     OntologyModel,
     OntologyWriteFenceModel,
     SemanticGraphRegistryModel,
-    SemanticGraphSetModel,
 )
 from app.services.semantic_export import namespace_from_settings
 
@@ -123,19 +122,11 @@ def mapping_state(session, rdf_store, settings, delta, ontology_id=None):
     after = {iri: _project(graph, delta, iri) for iri, graph in before.items()}
     scopes = {owner.id: set(graphs_by_owner[owner.id]) for owner in owners}
     owner_project = {owner.id: owner.project_id for owner in owners}
-    for graph_set in session.scalars(
-        select(SemanticGraphSetModel).where(
-            SemanticGraphSetModel.scope_type == "ontology",
-            SemanticGraphSetModel.scope_id.in_(list(scopes)),
-            SemanticGraphSetModel.status == "active",
-        )
-    ):
-        if (graph_set.graph_set_metadata or {}).get("mapping_reference_scope") is not True:
-            continue
-        for member in graph_set.members:
-            member_owner = graph_owner.get(member.graph_iri)
-            if member_owner and owner_project[member_owner] == owner_project[graph_set.scope_id]:
-                scopes[graph_set.scope_id].add(member.graph_iri)
+    for owner in owners:
+        for reference_id in owner.reference_ontology_ids or []:
+            if owner_project.get(reference_id) == owner.project_id:
+                scopes[owner.id].update(graphs_by_owner[reference_id])
+
     return projects, graphs_by_owner, before, after, scopes
 
 
