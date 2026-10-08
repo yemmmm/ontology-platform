@@ -95,3 +95,25 @@ GitNexus detect_changes 返回 LOW，现有索引识别 18 处变更符号、无
 
 backend／frontend 可执行代码未变更；本轮不要求应用服务重启。功能验证不能证明真实
 Delivery 自主建模效果、L0 真实运行或独立 L1 业务语义质量；A13 须获得真实运行授权后另行取证。
+
+## 2026-10-09 宿主技能适配补记
+
+只读核对发现：独立 Delivery 已实现，但 `skills/modeling-dev-loop/` 未随实施提交同步，
+仍指导外层直接推进、兼任测试代答及注册宿主通知为问题。归为 prompt-contract 遗漏；
+用户随后授权补齐，本次不改变运行代码、生产资源或既有独立验收记录。
+
+- [主技能](../../../skills/modeling-dev-loop/SKILL.md#先选择交付模式r40-023)及发现元数据明确
+  独立 Delivery／旧手动模式分流、技术职责归属、隔离测试代答和 CQ 委托审核。
+- [运行参考](../../../skills/modeling-dev-loop/references/team-runbook.md#独立-delivery-启动与接续r40-023)
+  接入实际 `delivery --config/--resume`、配置／生命周期和 Host 工具；主动补充使用
+  `submit_instruction`，保留真实问题注册，移除“恰好 20 个工具”的过时判据。
+- 修复参考对齐隔离执行者与异步核验；进展参考区分私有运行记录与业务消息；Team 技能目录
+  明确外层只准备／接入独立会话。外层技术补位不能作为 A13 自主交付 PASS。
+
+本次开发者检查：`quick_validate.py skills/modeling-dev-loop` 通过；
+`env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m modeling_team delivery --help`
+确认 `--config`／`--resume`；对六个技能／目录文件完成 96 个本地链接及锚点、Markdown 围栏、
+UI YAML 元数据、`.agents/skills/modeling-dev-loop` 软链接与 18 个引用工具的目录核对，均通过。
+工具目录检查只调用 `tools/list` 并读取本地声明，未调用生命周期／模型工具；`git diff --check`
+通过。这些是文档及现有合同检查，不是独立行为验收或真实运行证据；本次不运行后端／前端套件、
+不重启服务、不启动真实模型，A13／L0／L1 保持未验收。

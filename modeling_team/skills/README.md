@@ -3,7 +3,8 @@
 此目录集中保存 Team 成员使用的技能，由角色包或验收 Runtime 按当前 Task/Profile 加载。
 不链接到项目的 `.agents/skills/`；宿主 Delivery Agent 使用
 独立 [delivery](delivery/SKILL.md) 技能和受限 Host 工具推进建模、观察和修复；
-外部技术宿主手动监督时仍使用 [`modeling-dev-loop`](../../skills/modeling-dev-loop/SKILL.md)。
+外部技术宿主使用 [`modeling-dev-loop`](../../skills/modeling-dev-loop/SKILL.md) 选择模式、准备并
+接入 Delivery 会话，或继续已有手动监督。测试代答者不加载这两个技能，不接收私有历史或工具。
 
 | 成员 / 执行模式 | 使用的技能 | 角色合同 |
 | --- | --- | --- |

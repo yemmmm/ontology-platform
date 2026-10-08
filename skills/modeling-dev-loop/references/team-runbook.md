@@ -1,9 +1,13 @@
 # Team 启动、观察与恢复参考
 
-供宿主按需读取。下列命令和路径于 2026-09-10 对当前仓库核实；使用时以实际 checkout、
-归属需求和 CLI `--help` 为准。不要将此宿主参考挂载给隔离建模角色。
+供技术宿主按需读取。2026-10-09 按 R4.0-023 对齐独立 Delivery 入口；其余历史命令使用时
+以实际 checkout、归属需求和 CLI `--help` 为准。不要将此宿主参考挂载给隔离建模角色或测试代答者。
 
 ## 选择入口
+
+先按[主技能的模式分流](../SKILL.md#先选择交付模式r40-023)确定技术责任方。采用 R4.0-023
+时走下节独立 Delivery 入口；已有手动 run 保留原入口。下面的 Task 选择不意味着外层应
+直接执行 `run`：独立模式将选定值交给 Delivery 配置，由 Delivery 发起获准生产。
 
 先定位当前版本需求、获准范围及 Task，再核对 Profile、检查点开关和验收目标。
 现成 v4 入口为 [r4-0-009-multiview-semantic-acceptance.yaml](../../../modeling_team/tasks/r4-0-009-multiview-semantic-acceptance.yaml)，
@@ -35,6 +39,53 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 旧 002/008B/009 Task 保留各自范围，不能冒充完整 v3 入口。旧
 `modeling_team.foreground_monitor` 标为 `ARCHIVAL_ONLY`，不要启动。
 
+## 独立 Delivery 启动与接续（R4.0-023）
+
+依据：[需求](../../../docs/requirements/requirements-v4.0.md#r40-023-独立-delivery-agent-与统一用户交互)、
+[已实现配置与入口](../../../docs/delivery/records/2026-10-08-r4-0-023-delivery-agent.md#启动)、
+[角色方法](../../../modeling_team/skills/delivery/SKILL.md)。外层技术宿主完成以下部署交接，
+业务用户或测试代答者只使用同一业务对话入口。
+
+1. 在已有私有工作目录准备 YAML 配置，复用实际授权台账、获准来源和 scope。填写
+   `session_id`、`authorization_reference`、`model_profile`、`business_input_role`、
+   `allowed_operations`、`allowed_sources`；获准生产还需 `task/profile/scope`。
+   使用已有 run 时填写真实 `run_ids`。按本轮授权列出 `read/supervise/production/evaluation/repair`，
+   只加入实际获准的操作；配置中的 `production` 不授予新 start。技术标识与路径由宿主准备，
+   不让业务输入方查日志或填写。来源只列获准业务材料，不把隐藏 CQ、凭据或全仓库列为业务源。
+2. Delivery 的模型／effort 使用 profile 中可选 `delivery` binding；未配置时显式继承
+   Coordinator 并记录来源。保留最新用户选择及 `service_tier`，不另套默认修复者调度。
+   需要修复时填写本轮指定的 `repair.executor/model/effort`、`repair_owned_paths` 与合法公开
+   依据；当前隔离修复仅支持 Codex，已指定 Claude 时报告 `repair_isolation_unavailable`，
+   不擅自换执行者或退到非隔离 shell。部署权限按[修复参考](claude-repair.md#独立-delivery-模式r40-023)处理。
+3. 从实际 checkout 启动可交互、可返回控制权的进程，保持 stdin 开放。以下路径为已准备
+   配置的示例；凭据沿现有 Host 环境通道，不写入配置、业务输入或角色提示。
+
+   ```bash
+   env -u DEEPSEEK_API_KEY PYTHONPATH=. backend/.venv/bin/python -m modeling_team delivery \
+     --config workspaces/delivery-config.yaml
+   ```
+
+   CLI 加载独立角色包与 `modeling_team/skills/delivery/SKILL.md`；外层不把本手册、完整历史
+   或仓库注入 Delivery。Delivery 会话建立不等于 semantic start，生产开始仍以实际证据记账。
+4. stdin 只传业务原文；stdout 只转交 Delivery 发布的业务消息。测试配置使用
+   `business_input_role: test-answerer`，代答者另开会话，仅接收获准业务资料、允许的测试
+   补充和业务问题，可回答“无法确认”；不继承监督历史、私有目录、Host 工具或隐藏材料。
+   不仅改一个 role 字段就把已读私有材料的宿主当作隔离代答者。
+5. Delivery 负责状态查询、真实问题绑定答复、`submit_instruction` 主动补充、委托 CQ
+   审核／冻结、交接、验收及修复。live 验收由 `start_evaluation/get_evaluation_status`
+   托管并按原合同收口；S4 由其完成 checkpoint 核对、源 writer 停止及
+   `resume_from_checkpoint(mode=acceptance)`。外层保持对话与进程承载，不代它选择阶段、
+   发送 Host 指令或用脚本安排冻结／修复／验收。实际需要技术补位时记录首阻塞、动作和证据，
+   A13 保持失败／未验证，不能借外层完成了流程宣称 Delivery 自主交付 PASS。
+6. 中断后使用同一配置加 `--resume`，先由 Delivery 核对真实 run／operation、请求台账与
+   回执，不重放未知请求、不另开生产或第二监督者。状态及监督空档保留在
+   `workspaces/delivery-sessions/<session_id>/session.json` 和对应私有记录；不是后台监控承诺。
+   `暂停`／`取消`／`撤回预算` 通过业务入口及时处理；恢复不会复活已撤回权限。扩大授权时
+   按现有配置合同建立明确获准的新 session，旧证据保留。
+
+下文记录共用的运行、授权和证据规则。独立模式由 Delivery 按其实际 Host 工具执行；外层
+不依照旧 CLI／FIFO 示例再开一条控制链。保留旧手动入口不构成独立 Delivery 的完成证据。
+
 ## 授权时的模型调度
 
 先引用已有 session 台账中的最新适用指令：执行者、model/profile、effort、service tier、
@@ -43,7 +94,8 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 
 只有台账选择 Claude Code 修复者时才读取和执行本节 Claude CLI/provider 步骤；
 选择 Codex 子 Agent 等执行者时沿其既有入口传递获准配置，不运行 cc-switch。
-未被用户覆盖的修复默认执行者仍为 Claude Code，未指定的 Team 模型调度仍沿下表。
+旧手动模式未被用户覆盖的修复默认执行者仍为 Claude Code；独立 Delivery 的修复使用
+部署配置与当前隔离工具能力，不继承此默认。未指定的 Team 模型调度仍沿下表。
 下列 Claude 命令于 2026-09-10 对本机核实：`cc-switch --help`、`cc-switch -a claude provider list`、
 `cc-switch -a claude provider switch <ID>`；`claude --help` 支持 `--model` 与 `--effort max`。
 高峰/非高峰划分是用户指定调度表，不代表已核实官方价格。
@@ -170,6 +222,9 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 
 ## 最小准备与启动
 
+本节直接 CLI 启动仅供旧手动模式。独立模式复用必要准备，把 Task/Profile/scope 交给
+[Delivery 配置](#独立-delivery-启动与接续r40-023)，由 Delivery 调用 `start_run`。
+
 在仓库根执行。先核对用户授权和余额、任务允许的源文件/角色输入、依赖健康、已有写入及
 进程状态，并完成上文 [授权时的模型调度](#授权时的模型调度) 的判定与记录。按任务要求冻结
 代码/配置/源材料；要求 clean checkout 时使用明确提交或隔离 checkout 保留用户改动，不能
@@ -177,7 +232,7 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 
 隔离 checkout 启动前确认其 `backend/.venv` 可用；优先复用与冻结提交兼容的现有环境，确需
 安装时执行 `uv sync --frozen`。这是避免已发生的启动失败的准备动作，不增加平台门禁。
-若本轮授权宿主扮演业务方回答者，在 CQ 首次 review 发布前，把同一项目中有来源、仍适用于
+若旧手动模式本轮授权宿主扮演业务方回答者，在 CQ 首次 review 发布前，把同一项目中有来源、仍适用于
 当前范围的既有确认通过 `cq_interview` 一次性交给 CQ 角色，并保留来源；不要携带隐藏题答案，
 也不要把未获资料支持的内容补成确认。这样可以在第一次公开投影前确定题目可见性。
 
@@ -239,7 +294,7 @@ JSONL 行；主智能体保存各日志行号/字节偏移，避免每轮重新�
 | `state.json` | 顶层生命周期；不是每个 Agent 的实时进展或写入证明 |
 | `evidence/app-server-events.jsonl` | 角色工具/turn 事件；可能含完整参数，禁止整份注入生产或修复 Agent |
 | `evidence/staged-decisions.jsonl`、`multi-slice-gate.jsonl` | 阶段推进及具体门反馈；缺文件可能只是尚未到该阶段 |
-| `evidence/competency-questions.jsonl` | CQ 审核与冻结元数据；私有审核快照只供用户/CQ 通道 |
+| `evidence/competency-questions.jsonl` | CQ 审核与冻结元数据；私有审核快照仅在获准 Host/CQ 边界读取，独立模式由 Delivery 审核，不转给生产或测试代答者 |
 | `evidence/outer-question.jsonl`、`outer-user.jsonl` | 实际访谈与回答绑定；按当前 run 发出的 ID 处理 |
 | `evidence/runtime-failure.jsonl`、`terminal-classification.jsonl` | 第一失败及终态归因；不存在时不要猜出终态 |
 | `state.json` 的 `cleanup`、宿主终态输出的清理结果、`evidence/cq-cleanup.jsonl` | 清理/保留证据；状态可能被后续终态覆盖，保留原输出，并用平台 Batch/Attempt 与资源读取核实实际状态 |
@@ -275,26 +330,29 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
 
 ## 外层输入与恢复边界
 
+以下 FIFO 用法供旧手动模式；独立模式通过 Delivery 的 Host 工具提交，不由外层写 FIFO。
 `run --enable-outer-input-fifo` 创建 `<run-root>/control/outer-input.fifo`。用当前
 [CLI](../../../modeling_team/__main__.py) 与 [Runner](../../../modeling_team/runner.py)
 已接受的 action，每条消息恰一条换行结尾的 JSON；使用 JSON 序列化或预先写好的消息文件，
 不要通过 shell 拼接用户答案。确认 FIFO 仍属于该 live run，并用有界/非阻塞写入，避免进程
 退出后宿主卡在打开 FIFO。按返回 rejection 修正对应消息，不手工修改冻结 artifact。
 
-- 用户答案按已显示问题的 run/project/delivery 绑定经 `user` 输入；实际字段以当前合同为准。
-  非 formal v3 run（如 r3-0-006-real-full + r3-0-011 profile）不注册 Modeling→Coordinator
-  问题为可答 outer question：`user` 动作必须显式绑定一个已注册的 question delivery ID，
-  且该 ID 必须先经 `question` 动作注册（宿主自定义 ID，例如 `host-approved-business-001`）。
-  正确两步模式（2026-09-11 auth006-start2 终止教训，start2 因 text-only `user` 触发
-  `owner answer requires a question delivery ID` 的 fatal 边界而整 run 终止）：
-  1) `{"action":"question","delivery_id":"host-<来源>-001","text":"<宿主通知/业务来源说明>"}`；
-  2) `{"action":"user","question_delivery_id":"host-<来源>-001","text":"<完整答复文本>"}`。
-  上述 fatal 是历史行为。本次实现对无副作用的字段/问题绑定错误返回
+- 回答真实待答问题时，先读 `get_pending_actions`，用实际 `question_delivery_id` 经
+  `answer_question(channel=user)`／`user` 提交原文。旧通道确需 `question`／`register_question`
+  注册时，只注册真实已提出的问题并保留来源；不为宿主通知、主动补充或修复指导制造假问题。
+  主动业务补充经 `submit_instruction(kind=user_supplement)`，技术控制说明经
+  `submit_instruction(kind=delivery_guidance)`，保留原文、`source_reference`、
+  `authorization_reference` 和 `request_id`；对应 Runner action 为 `instruction`，由
+  Coordinator 内部转发一次。instruction 不代替待答释放、CQ 审批、写入授权或 issue resolution。
+  历史缺 ID 的 fatal 不再作为注册假问题的理由。当前实现对无副作用的字段/问题绑定错误返回
   `outer-input-rejected`（含 `code`、`retryable`、`issue_id`），修正消息后仍可输入，
   不消耗问题或 issue。持久化/实际发送失败不属于这一保证；答完即消费，同 ID 不可重放。
 - CQ 的 `cq_interview`、`cq_review`、`cq_freeze`、`cq_handoff_complete` 走直接通道，不能
   通过 Coordinator 转发私有问题或答案。审核使用当前 `review_id`、revision/digest，不能
-  未经本次明确委托由宿主代批，也不能就地改写冻结题池。具体见 [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
+  未经本次明确委托由宿主代批，也不能就地改写冻结题池。R4.0-023 独立模式中，Delivery
+  按已记录委托完成逐点审核，note 保留授权、来源／题目版本及理由；仅业务歧义和范围变化
+  交用户，不逐题重问、不冒称人工逐项批准。旧手动模式仍沿原批准合同。具体见
+  [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
 - 已存在 `issue_resolution` 合同的 issue，读取该 issue 的绑定和允许 resolution 后再提交；
   接口修复使用下节步骤，不把此 action 当成任意 run 的通用修复命令。
 - **任何 issue（含 coordinator 自报）都只能由 `issue_resolution` 信封解除
@@ -769,7 +827,7 @@ Batch 详情含 `batch_status`、`attempts[]`；每个 Attempt 有 `mode`、`att
 
 宿主与建模 run 的交互闭环（启动 run → 查询待办 → 提交答复/修复通知/审核冻结/交接收口 →
 pause/resume/stop → 检查点保存/接续/结算 → 核对处理结果）走本节工具面；自然语言理解、
-业务判断与授权决定留在宿主。
+技术交付判断归技术宿主；独立模式归 Delivery，业务事实与新增授权仍由用户提供。
 需求：[R3.0-016](../../../docs/requirements/requirements-v3.0.md)；
 设计与合同：[交付设计](../../../docs/delivery/designs/2026-09-18-r3-0-016-s1-host-interaction-interface-design.md)、
 [S2 交付设计](../../../docs/delivery/designs/2026-09-18-r3-0-016-s2-start-lifecycle-checkpoint-design.md)。
@@ -781,12 +839,12 @@ pause/resume/stop → 检查点保存/接续/结算 → 核对处理结果）走
 - Claude Code：把片段内容并入项目/用户级 `mcpServers` 配置后重启会话；
   Codex：写入对应宿主配置的 mcp servers 段。两种宿主都只做手工合并，本仓库不提供
   任何自动注册脚本。
-- 冷启动自检：`tools/list` 应返回且仅返回下表 20 个工具（12 个 S1 查询/提交 +
-  8 个 S2 启动/生命周期/检查点）；出现 `resume_run`/`abort_run`/`create_run`/
-  `checkpoint_run` 等表外名称即为错误安装，生产 `backend/app/mcp/tools` 与
-  角色 agent-package 能力面也不得出现任何 S2 工具名。
+- 工具目录以当前 `host_ops_mcp.py` 和实际 `tools/list` 为准。下表保留 S1/S2 基础工具；
+  R4.0-023 已增加 instruction、验收／修复托管和对账工具，不再用“恰好 20 个”判安装正确。
+  独立 Delivery 自动注册 Host 工具及本地包装，调用受 session 配置限制，无需业务用户安装 MCP；
+  生产角色和测试代答者不获得 Host 生命周期／私有工具。
 
-### 固定 20 工具最小用法
+### S1/S2 基础工具最小用法
 
 | 工具 | 何时用 | 关键点 |
 | --- | --- | --- |

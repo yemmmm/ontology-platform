@@ -1,15 +1,34 @@
 ---
 name: modeling-dev-loop
-description: "Use when developing ontology-platform through real Modeling Team runs, supervising modeling progress, coordinating repairs by the agent selected in the current session ledger, applying authorized executor and Team model configurations, or requesting another semantic-start budget. For the host delivery agent, not the isolated role authoring ontology payloads."
+description: "Start or resume an authorized ontology-platform modeling delivery: hand R4.0-023 lifecycle work to the independent Delivery session, or continue an existing manual Host workflow. Covers configuration, supervision, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
 ---
 
 # 建模开发推进
 
-执行此 Skill 的主智能体负责启动、观察、故障归因、开发协调、恢复和证据交接，持续推进用户的
-原始建模目标。语义判断与候选内容归建模 Team；平台调用遵循选定 Profile 的 Protocol 边界。
+本 Skill 供技术宿主选择入口、交接配置和接续已有任务。采用独立 Delivery 时，由 Delivery
+负责启动、观察、故障归因、修复协调、恢复和证据交接；旧手动模式仍由外层主智能体承担这些
+职责。语义判断与候选内容归建模 Team；平台调用遵循选定 Profile 的 Protocol 边界。
 Team 内部的 [ontology-modeling](../../modeling_team/skills/ontology-modeling/SKILL.md) 提供 Modeling 角色的
 语义建模方法，各成员的技能对应关系见 [Team 技能目录](../../modeling_team/skills/README.md)。
 Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧工作流，不加入生产角色的挂载输入。
+
+## 先选择交付模式（R4.0-023）
+
+- 当前目标采用 [R4.0-023](../../docs/requirements/requirements-v4.0.md#r40-023-独立-delivery-agent-与统一用户交互)，
+  或本轮已有 Delivery 配置／session 时，按[独立 Delivery 启动与接续](references/team-runbook.md#独立-delivery-启动与接续r40-023)
+  准备获准配置、建立或接续 `modeling_team delivery` 会话。独立角色加载
+  [delivery 技能](../../modeling_team/skills/delivery/SKILL.md)，通过受限 Host 工具推进全程。
+  外层负责部署准备和业务输入转接，不再手动替它启动生产、冻结 CQ、派修复或切换验收。
+  真实运行若需要外层技术补位，保留原因和实际动作，不能记为 Delivery 自主交付通过。
+- 未采用独立 Delivery 的已有手动 run，或本轮明确选择旧手动入口时，保留原 run、授权、冻结和证据，按下文宿主流程
+  接续；不为升级角色重新消费 start，也不把旧人工审核回填为 Delivery 自动审核。
+- 测试代答者只接收获准业务资料、明确允许的测试补充和 Delivery 业务问题，必须使用独立
+  会话与输入；不加载本 Skill，不继承技术宿主／Delivery 历史、Host 工具或私有目录。已经
+  读取隐藏材料的监督会话不能切换身份充当代答者。回答可为未知，并保留测试来源。
+
+下文“宿主／主智能体”指技术交付责任方，不指业务用户或测试代答者。旧手动模式由外层执行；
+独立模式中相应职责归 Delivery，外层只核对交接是否到位，不另建第二条推进链。通用方法可
+复用，具体动作以 Delivery 已声明工具为准，不把整份宿主手册注入其会话。
 
 ## 开始或接续任务
 
@@ -44,7 +63,8 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
   请求、启动传递和实际生效分开记录，无法核实写 `unverified`，不支持写 `unsupported`。
   用户未覆盖的[默认调度](references/team-runbook.md#授权时的模型调度)及
   [配置传递](references/team-runbook.md#session-配置传递与核对r40-019)按需读取；
-  仅选定 Claude Code 修复者时读取 Claude CLI/provider 步骤，不为 Codex 子 Agent 切换 provider。
+  仅旧手动模式选定 Claude Code 修复者时读取 Claude CLI/provider 步骤，独立模式按配置使用
+  受限修复工具，不为 Codex 子 Agent 切换 provider。
 - 已安全写入的小链需要早期公开反馈：读[公开反馈（015）](references/team-runbook.md#已安全写入小链的早期公开反馈015)。
 - 启动、接续或阶段范围变化：读[范围与入口核对（016）](references/team-runbook.md#启动接续范围与入口对账016)。
 - Examiner、证据、Judge 或报告发生故障：读[故障交接（017）](references/team-runbook.md#examiner证据judge报告故障交接017)。
@@ -53,7 +73,8 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 
 ## 保持观察和推进
 
-通过可返回控制权的进程会话启动 Team，主智能体继续观察。默认每 30～60 秒读取新增事件，
+旧手动模式通过可返回控制权的进程会话启动 Team，由主智能体继续观察；独立模式保持 Delivery
+进程和业务输入通道，由 Delivery 观察 Team。默认每 30～60 秒读取新增事件，
 立即处理错误、审核请求和阶段变化；根据当前工作调整频率，不把轮询次数或时间写成平台硬门。
 长工具调用尽可能每 60 秒内返回一次控制权。Skill 不提供后台调度能力，会话结束后不能声称
 仍在监控；必须交接真实进程、日志位置、待办与下一次观察责任。
@@ -65,18 +86,21 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 按可见证据检查获批范围、阶段及输入/写入边界，发现业务语义疑点交给建模 Team 澄清，
 不要由宿主改写候选、指定本体拓扑或通过平台补造业务事实。
 
-- **等待用户**：转交具体业务问题或 CQ 审核，保留等待状态；复用已确认答案。本次任务的用户
-  授权明确允许依业务资料代答并补充资料时，按获准范围持续处理访谈与必要资料补充，不再反复
-  询问同一权限；新增资料须标识为“授权新增业务定义/场景补充”并保留来源与修订，不得冒称
-  原始证据、改写冻结源或据隐藏答案补料。超出获准范围的问题仍问用户；CQ 审批仍按本次具体
-  授权，不暗自扩张；隐藏题隔离、授权额度与独立验收边界不变。设计自治不代替业务/CQ 审批。
-  在项目测试中用户已授权宿主扮演业务方回答者时，宿主直接复用同一项目中有来源的既有确认，
-  并把来源交给当前 run；不能从资料或既有确认支持的内容继续保留为未知，不为凑完整度编造答案。
+- **等待用户**：独立模式由 Delivery 提出业务问题；已有委托的 CQ 审核由 Delivery 按下节
+  完成，仅将业务歧义或范围变化交用户。旧手动模式按原授权转交业务问题或 CQ 审核。
+  宿主直接代答仅限已有明确授权的旧手动模式；独立模式由真实用户或隔离的测试代答者提供业务输入。
+  两种模式都可复用同一项目有来源、仍适用的既有确认；获准补充须标识为“授权新增业务定义/
+  场景补充”并保留来源与修订，不冒称原始证据、不改冻结源、不据隐藏答案补料。资料不能
+  支持的内容保留未知；超出获准范围的问题仍问用户，不反复请求已有授权。旧手动代答记录
+  不作为独立 Delivery 的隔离证明；设计自治不代替业务/CQ 审批。
 - **仍有活动但较慢**：结合工具事件与阶段继续观察；几分钟无日志只能触发诊断，不能判死或重开。
 - **重复错误、相互等待或已退出**：保留第一异常和相关事件，检查具体阻塞与写状态，再进入归因。
 - **收到交付**：核对回执、阶段与产物，按当前验收阶段交给独立验收者；正常结束不是语义 PASS。
 
 ### CQ 必答点审核与验收诊断（R4.0-013）
+
+独立模式由 Delivery 依据 R4.0-023 的已记录委托组织审核，在 note 中注明 Agent 代审、授权
+和资料／题目版本；依据充分且范围内的题目不再逐项请用户批准，旧人工记录保持原样。
 
 生成后、冻结前，按[运行参考](references/team-runbook.md#cq-必答点审核与验收诊断r40-013)
 在现有审核中复核公开／隐藏题的每个必答点，将获准依据、题意对应及保留／修改／移出理由
@@ -205,6 +229,10 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 无需重复请示；修复不得顺带加入无当前需求的治理、审计、编排框架或产品功能。
 
 ## 委派修复并核验
+
+独立模式由 Delivery 使用 `prepare_repair_task → start_repair → get_repair_status`，再经
+`verify_repair → get_repair_verification_status` 核验生效后恢复原步骤；配置与工具边界见
+[独立 Delivery 修复](references/claude-repair.md#独立-delivery-模式r40-023)。下述外层派发方式仅用于旧手动模式。
 
 使用 [当前台账指定修复 Agent 的交接](references/claude-repair.md) 提供明确的目标、范围、输入、证据、
 权限、文件归属和完成标准。平台实现缺陷交外部 Agent 修复；流程设计问题由主智能体完成设计
