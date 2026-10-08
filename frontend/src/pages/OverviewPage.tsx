@@ -61,11 +61,11 @@ function Questions({ run }: { run: Run | null }) {
   }
   const progressText = !run || !chosen ? t("Current acceptance cannot be determined") : !reports.length ? t("No current acceptance results") : incomplete ? t("Progress data is incomplete") : t("Accepted {completed} / {total}; passed {passed}", { completed, total: questions.length, passed });
   return <section className="panel questionsPanel" aria-label={t("Competency questions")}><h2>{t("Competency questions")}</h2>
+    <div className="acceptanceProgress"><p id="cq-progress-label">{t("Acceptance progress")} · {progressText}</p><progress aria-labelledby="cq-progress-label" max={100} {...(reports.length > 0 && questions.length > 0 && !incomplete ? { value: completed / questions.length * 100 } : {})} /></div>
     {!run || run.current_questions_available === false || (artifacts.length > 0 && !chosen) ? <p>{t("Current questions cannot be determined")}</p> : !questions.length ? <p>{t("No competency questions recorded")}</p> : <>
       {!freeze && <p className="inlineHint">{t("Latest recorded questions; freeze unverified")}</p>}
       <ol className="questionList">{questions.map(item => <li key={String(item.question_id)}><strong>{text(item.question)}</strong>{item.visibility === "hidden" && <span className="inlineHint"> ({t("Hidden question")})</span>}<div className="questionTags"><span className="tag" data-verdict={conflict ? undefined : questionVerdicts.get(String(item.question_id))}>{verdictLabel(item)}</span></div></li>)}</ol>
     </>}
-    <div className="acceptanceProgress"><p id="cq-progress-label">{t("Acceptance progress")} · {progressText}</p><progress aria-labelledby="cq-progress-label" max={100} {...(reports.length > 0 && questions.length > 0 && !incomplete ? { value: completed / questions.length * 100 } : {})} /></div>
   </section>;
 }
 export function OverviewPage({ project }: { project: Project }) {
