@@ -10,8 +10,10 @@ type Props = {
   onSelectNode: (id: string | null) => void; highlightedNodeIds: string[]; searchActive: boolean;
   emptyTitle: string; emptyHint: string;
 };
+const NODE_MIN_SIZE = 25;
+const NODE_MAX_SIZE = 58;
 const style: cytoscape.StylesheetStyle[] = [
-  { selector: "node", style: { "background-color": "#6c4df6", label: "data(label)", color: "#171821", "font-size": 12, "text-valign": "bottom", "text-margin-y": 7, "text-outline-color": "#fff", "text-outline-width": 2, "text-wrap": "wrap", "text-max-width": "150px", width: 30, height: 30 } },
+  { selector: "node", style: { "background-color": "#6c4df6", label: "data(label)", color: "#171821", "font-size": 12, "text-valign": "bottom", "text-margin-y": 7, "text-outline-color": "#fff", "text-outline-width": 2, "text-wrap": "wrap", "text-max-width": "150px", width: "data(baseSize)", height: "data(baseSize)" } },
   { selector: "edge", style: { width: 1.5, "line-color": "#b1abc8", "target-arrow-color": "#b1abc8", "target-arrow-shape": "triangle", "curve-style": "bezier", label: "data(label)", "font-size": 9, color: "#74788d", "text-rotation": "autorotate", "text-wrap": "wrap", "text-max-width": "140px" } },
   { selector: 'edge[edgeKind = "structured_reference"]', style: { "line-style": "dashed" } },
   { selector: ".dimmed", style: { opacity: 0.22 } },
@@ -25,10 +27,27 @@ export function ForceGraphCanvas({ nodes, edges, selectedNodeId, onSelectNode, h
   const positions = useRef(new Map<string, { x: number; y: number }>());
   const select = useRef(onSelectNode);
   select.current = onSelectNode;
-  const elements = useMemo<ElementDefinition[]>(() => [
-    ...nodes.map(node => ({ data: { id: node.id, label: node.label }, position: positions.current.get(node.id) })),
-    ...edges.map(edge => ({ data: edge })),
-  ], [nodes, edges]);
+  const elements = useMemo<ElementDefinition[]>(() => {
+    if (!nodes.length) return [];
+    const degree = new Map<string, number>();
+    edges.forEach(edge => {
+      degree.set(edge.source, (degree.get(edge.source) ?? 0) + 1);
+      degree.set(edge.target, (degree.get(edge.target) ?? 0) + 1);
+    });
+    const degrees = nodes.map(node => degree.get(node.id) ?? 0);
+    const mean = degrees.reduce((sum, value) => sum + value, 0) / nodes.length;
+    const std = Math.sqrt(degrees.reduce((sum, value) => sum + (value - mean) ** 2, 0) / nodes.length);
+    return [
+      ...nodes.map(node => {
+        const nodeDegree = degree.get(node.id) ?? 0;
+        const baseSize = std < 1e-6 ? NODE_MIN_SIZE
+          : NODE_MIN_SIZE + (Math.tanh((nodeDegree - mean) / std * 0.5) * 0.5 + 0.5)
+            * (NODE_MAX_SIZE - NODE_MIN_SIZE);
+        return { data: { id: node.id, label: node.label, degree: nodeDegree, baseSize }, position: positions.current.get(node.id) };
+      }),
+      ...edges.map(edge => ({ data: edge })),
+    ];
+  }, [nodes, edges]);
   useEffect(() => {
     if (!container.current) return;
     const cy = cytoscape({ container: container.current, style, elements: [], minZoom: 0.15, maxZoom: 4, wheelSensitivity: 0.25 });

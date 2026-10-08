@@ -192,3 +192,19 @@
 - 实际查看截图 `/tmp/v42-structured-references-live-mapping.png`：Join 两端虚线可见、
   来源字段标签与说明存在，选中节点详情和既有风格正常；完整页面截图及无凭据响应
   保留于 `/tmp/v42-structured-references-live.{png,json}`。以上为开发侧真实功能验证。
+
+## 2026-10-08 节点连接数量与尺寸增量
+
+- 用户要求恢复按边数量调整节点大小；只修改 ForceGraphCanvas 的可见图连接数统计和
+  宽高绑定，复用旧版均值／标准差及 tanh 映射，尺寸范围 25～58；实线／虚线均计入，
+  视角过滤、刷新后重新计算，搜索不影响尺寸。节点连接数全部相同时统一为 25。
+- 新增 `frontend/tests/node-degree-size.spec.ts`，先在原代码复现失败：3 条边与 1 条边的
+  节点宽度均为 30；修改后验证连接数与实际 Cytoscape 宽高、同度节点相同尺寸、
+  25～58 范围、搜索不变、过滤后重算及刷新后无边的统一尺寸。
+- `cd frontend && npm run build` PASS；`cd frontend && npx playwright test`
+  **32 passed（8.7s）**，包含新增浏览器回归及既有真实后端合同用例。
+- 10:17:41+08 重启 ontology-platform.service，启动就绪后 unit active、后端 health ok、
+  前端 HTTP 200；对重启后的构建产物再运行节点尺寸浏览器回归 **1 passed**。
+- GitNexus impact 找不到当前组件符号，detect_changes 返回旧 GROUP_PALETTE 符号；
+  依据当前源码调用点和 diff 确认唯一消费者为 ModelBrowserPage，不宣称图分析完整覆盖。
+- 本轮为开发侧展示功能验证；未执行独立功能验收或真实语义建模验收，不继承原版 PASS。
