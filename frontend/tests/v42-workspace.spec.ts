@@ -187,7 +187,7 @@ test("T04 eight hidden verdicts alone complete only eight of 26 questions", asyn
   await expect(page.getByText("Acceptance progress · Accepted 8 / 26; passed 8", { exact: true })).toBeVisible();
   await expect(page.getByRole("progressbar")).toHaveAttribute("value", String(8 / 26 * 100));
 });
-test("T05 unified IRI canvas excludes property definitions, retains actual edges and multiple locations", async ({ page }) => {
+test("T05 unified IRI canvas excludes property definitions, retains actual edges and hides location metadata", async ({ page }) => {
   const requests: string[] = [];
   await mockWorkspace(page, { handler: async (path, route) => { requests.push(route.request().url()); return false; } });
   await page.goto("/?tab=model");
@@ -204,10 +204,18 @@ test("T05 unified IRI canvas excludes property definitions, retains actual edges
   await page.getByLabel("Search loaded model").fill("urn:work");
   await page.getByRole("button", { name: "工单", exact: true }).click();
   await expect(page.getByRole("complementary", { name: "Node details" })).toBeVisible();
-  await expect(page.getByLabel("Read location").locator("option")).toHaveCount(2);
-  await page.getByLabel("Read location").selectOption("1");
-  await expect(page.getByText("integration meaning", { exact: true })).toBeVisible();
-  await expect(page.getByText("Work order", { exact: true })).toBeVisible();
+  const detail = page.getByRole("complementary", { name: "Node details" });
+  await expect(detail.getByRole("combobox")).toHaveCount(0);
+  await expect(detail.getByText("Read location", { exact: true })).toHaveCount(0);
+  await expect(detail.getByText("Ontology", { exact: true })).toHaveCount(0);
+  await expect(detail.getByText("Service", { exact: true })).toHaveCount(0);
+  await expect(detail.getByText("已记录业务含义", { exact: true })).toBeVisible();
+  await expect(detail.getByText("maintenance", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Model revision", { exact: true })).toBeVisible();
+  await expect(detail.getByText("Source time", { exact: true })).toBeVisible();
+  // Other loaded positions remain searchable after the selector is removed.
+  await page.getByLabel("Search loaded model").fill("integration meaning");
+  await expect(page.getByText("Matches in loaded viewpoint: 1", { exact: true })).toBeVisible();
 });
 test("T06 seven explicit views and loaded search intersect without removing other view nodes", async ({ page }) => {
   await mockWorkspace(page); await page.goto("/?tab=model");

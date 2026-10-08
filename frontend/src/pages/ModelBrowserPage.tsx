@@ -23,7 +23,6 @@ export function ModelBrowserPage({ project }: { project: Project }) {
   const [views, setViews] = useState<string[]>([]);
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<string | null>(null);
-  const [position, setPosition] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [limits, setLimits] = useState<{ name: string; code: string; detail?: string }[]>([]);
@@ -31,7 +30,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let active = true;
-    setNodes([]); setEdges([]); setSelected(null); setPosition(0); setError(""); setLimits([]); setLoading(true); setOntologyCount(null);
+    setNodes([]); setEdges([]); setSelected(null); setError(""); setLimits([]); setLoading(true); setOntologyCount(null);
     async function load() {
       try {
         const ontologies = await workspaceApi.ontologies(project.id);
@@ -102,9 +101,9 @@ export function ModelBrowserPage({ project }: { project: Project }) {
   const matches = visible.filter(node => node.positions.some(item => [item.resource.label, node.iri, item.resource.description, readable(definition(item.resource).business_meaning)].join(" ").toLowerCase().includes(search)));
   const highlighted = useMemo(() => search ? matches.map(node => node.iri) : [], [search, visible]);
   const selectedNode = visible.find(node => node.iri === selected);
-  const selectedPosition = selectedNode?.positions[position] ?? selectedNode?.positions[0];
+  const selectedPosition = selectedNode?.positions[0];
   const semantic = selectedPosition ? definition(selectedPosition.resource) : {};
-  function select(iri: string | null) { setSelected(iri); setPosition(0); }
+  function select(iri: string | null) { setSelected(iri); }
   function toggleView(role: string) {
     setViews(current => current.includes(role) ? current.filter(view => view !== role) : [...current, role]);
     select(null);
@@ -123,7 +122,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
     {!loading && graphEdges.some(edge => edge.edgeKind === "structured_reference") && <p className="inlineHint">{t("Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.")}</p>}
     {search && <div className="searchMatches" aria-label={t("Search matches")}><p>{t("Matches in loaded viewpoint")}: {matches.length}</p>{matches.length ? matches.map(node => <button key={node.iri} onClick={() => select(node.iri)}>{node.label}</button>) : <p>{t("No matches in the loaded viewpoint")}</p>}</div>}
     <div className={`modelBody${selectedNode ? " hasDetail" : ""}`}><div className="panel graphPanel"><ForceGraphCanvas nodes={graphNodes} edges={graphEdges} selectedNodeId={selectedNode?.iri ?? null} onSelectNode={select} highlightedNodeIds={highlighted} searchActive={Boolean(search)} emptyTitle={t(loading ? "Loading…" : error || limits.length && !nodes.length ? "Model scopes have not been loaded" : ontologyCount === 0 ? "No Ontologies in this project" : nodes.length ? "No nodes in this viewpoint" : "No model resources in the current scope")} emptyHint={t("The canvas displays the authorized default workspace only")} /></div>
-    {selectedNode && selectedPosition && <aside className="panel nodeDetail" aria-label={t("Node details")}><div className="detailHeading"><h2>{selectedPosition.resource.label || selectedNode.iri}</h2><button onClick={() => select(null)} aria-label={t("Close node details")}>×</button></div><p className="resourceIri">{selectedNode.iri}</p><label>{t("Read location")}<select value={position} onChange={event => setPosition(Number(event.target.value))}>{selectedNode.positions.map((item, i) => <option key={item.ontologyId} value={i}>{item.ontologyName}</option>)}</select></label><dl className="nodeFacts"><dt>{t("Declared viewpoint")}</dt><dd>{semanticViews.some(([role]) => role === semantic.semantic_role) ? t(semanticViews.find(([role]) => role === semantic.semantic_role)![1]) : readable(semantic.semantic_role) || t("Unknown")}</dd><dt>{t("Business meaning")}</dt><dd>{readable(semantic.business_meaning) || selectedPosition.resource.description || t("Unknown")}</dd><dt>{t("Applicable scope")}</dt><dd>{readable(semantic.applicability) || t("Unknown")}</dd><dt>Ontology</dt><dd>{selectedPosition.ontologyName}</dd><dt>{t("Model revision")}</dt><dd>{selectedPosition.modelRevision ?? t("Unknown")}</dd><dt>{t("Source time")}</dt><dd>{t("Unknown")}</dd></dl></aside>}
+    {selectedNode && selectedPosition && <aside className="panel nodeDetail" aria-label={t("Node details")}><div className="detailHeading"><h2>{selectedPosition.resource.label || selectedNode.iri}</h2><button onClick={() => select(null)} aria-label={t("Close node details")}>×</button></div><p className="resourceIri">{selectedNode.iri}</p><dl className="nodeFacts"><dt>{t("Declared viewpoint")}</dt><dd>{semanticViews.some(([role]) => role === semantic.semantic_role) ? t(semanticViews.find(([role]) => role === semantic.semantic_role)![1]) : readable(semantic.semantic_role) || t("Unknown")}</dd><dt>{t("Business meaning")}</dt><dd>{readable(semantic.business_meaning) || selectedPosition.resource.description || t("Unknown")}</dd><dt>{t("Applicable scope")}</dt><dd>{readable(semantic.applicability) || t("Unknown")}</dd><dt>{t("Model revision")}</dt><dd>{selectedPosition.modelRevision ?? t("Unknown")}</dd><dt>{t("Source time")}</dt><dd>{t("Unknown")}</dd></dl></aside>}
     </div>
   </section>;
 }
