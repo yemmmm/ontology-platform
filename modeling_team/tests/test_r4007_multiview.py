@@ -417,7 +417,7 @@ def test_real_judge_assembly_includes_only_authorized_statuses(tmp_path, monkeyp
     assert "collaboration_context" not in examiner[0]
     from modeling_team.__main__ import _cq_collaboration_context
 
-    assert _cq_collaboration_context(root, {})["definitions"] == []
+    assert _cq_collaboration_context(root, {})[0]["definitions"] == []
     path.write_text("{}")
     with pytest.raises(Exception, match="collaboration_binding_changed"):
         _cq_collaboration_context(root, {"cq-1": [{"result": result}]})
@@ -466,12 +466,12 @@ def test_collaboration_context_skips_non_plan_evidence_keeps_work_state(tmp_path
     write_json(plans / "read-evidence-2.json", dict(note="not a materialization plan"))
     result = {"ok": True, "matches": [{"id": "resource-1", "iri": "iri:1"}]}
 
-    context = _cq_collaboration_context(tmp_path, {"cq-1": [{"result": result}]})
+    context = _cq_collaboration_context(tmp_path, {"cq-1": [{"result": result}]})[0]
     assert context["definitions"] == [
         dict(definition_id="def-0", resource_iri="iri:1", status="unknown", reviews=[])
     ]
     assert "iri:9" not in json.dumps(context)
-    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+    assert _cq_collaboration_context(tmp_path, {})[0]["definitions"] == []
 
 
 def _superseded_review_run_root(tmp_path, stale_fields):
@@ -520,7 +520,7 @@ def test_collaboration_context_omits_superseded_reviews_without_editing_bound_ma
 
     path, value, original, handoff = _superseded_review_run_root(tmp_path, stale_fields)
 
-    context = _cq_collaboration_context(tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]})
+    context = _cq_collaboration_context(tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]})[0]
 
     assert context["definitions"] == [dict(
         definition_id="def-0", resource_iri="iri:1", status="unknown", reviews=[],
@@ -528,7 +528,7 @@ def test_collaboration_context_omits_superseded_reviews_without_editing_bound_ma
     assert "superseded" in context["scope_note"]
     assert path.read_bytes() == original
     assert (tmp_path / "acceptance-v3/production-handoff.json").read_bytes() == handoff
-    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+    assert _cq_collaboration_context(tmp_path, {})[0]["definitions"] == []
 
 
 @pytest.mark.parametrize("defect", ["missing_candidate", "wrong_item", "slice_scope", "schema", "shared_stale"])
@@ -554,6 +554,205 @@ def test_superseded_review_does_not_bypass_other_map_binding_errors(tmp_path, de
     ))
     with pytest.raises(TeamConfigurationError, match="invalid scenario map"):
         _cq_collaboration_context(tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]})
+
+
+def _stale_shared_terms_run_root(tmp_path):
+    """Handoff-bound map whose only defects are shared_terms candidate refs."""
+
+    _collaboration_run_root(tmp_path)
+    path = tmp_path / "scenario-map/scenario-map.json"
+    value = json.loads(path.read_text())
+    candidate = json.loads(
+        (tmp_path / "stage3-neutral-graph/candidates/cand-1-r2.json").read_text()
+    )
+    newer = deepcopy(candidate)
+    newer["revision"] = 3
+    write_json(tmp_path / "stage3-neutral-graph/candidates/cand-1-r3.json", newer)
+    value["shared_terms"][0]["candidate_refs"] = [
+        ref(candidate),
+        dict(
+            candidate_id=candidate["candidate_id"], revision=candidate["revision"],
+            item_id="missing-item",
+        ),
+    ]
+    write_json(path, value)
+    write_json(tmp_path / "acceptance-v3/production-handoff.json", dict(
+        collaboration_artifact=dict(
+            path="scenario-map/scenario-map.json", digest=digest_file(path),
+        ),
+    ))
+    original = path.read_bytes()
+    handoff = (tmp_path / "acceptance-v3/production-handoff.json").read_bytes()
+    issues = validate_scenario_map(value, run_root=tmp_path)
+    assert [issue.detail for issue in issues] == [
+        "shared_terms[0].candidate_refs[0].revision: stale",
+        "shared_terms[0].candidate_refs[1]: candidate/item binding",
+    ]
+    return path, original, handoff
+
+
+def test_stale_shared_terms_refs_accepted_as_warnings_when_binding_stable(tmp_path):
+    from modeling_team.__main__ import _cq_collaboration_context
+    from modeling_team.contracts import TeamConfigurationError
+
+    path, original, handoff = _stale_shared_terms_run_root(tmp_path)
+    result = {"ok": True, "matches": [{"id": "resource-1", "iri": "iri:1"}]}
+
+    # Unknown model binding drift keeps the original fail-closed hard failure.
+    with pytest.raises(
+        TeamConfigurationError, match="collaboration_binding_changed: invalid scenario map"
+    ):
+        _cq_collaboration_context(tmp_path, {"cq-1": [{"result": result}]})
+
+    context, warnings = _cq_collaboration_context(
+        tmp_path, {"cq-1": [{"result": result}]}, model_binding_stable=True
+    )
+    # The untrusted references are omitted from the Judge's work copy, so the
+    # term establishes no visible binding; the omission is disclosed, and the
+    # warning carries the exact entry locations for the retained report.
+    assert context["definitions"] == []
+    assert "untrusted" in context["scope_note"]
+    assert [item["detail"] for item in warnings] == [
+        "shared_terms[0].candidate_refs[0].revision: stale",
+        "shared_terms[0].candidate_refs[1]: candidate/item binding",
+    ]
+    assert all(
+        item["warning"] == "collaboration_metadata_stale"
+        and item["reason_code"] == "map_dangling_reference"
+        for item in warnings
+    )
+    # The handoff-bound source map and handoff stay immutable.
+    assert path.read_bytes() == original
+    assert (tmp_path / "acceptance-v3/production-handoff.json").read_bytes() == handoff
+
+
+def test_stale_shared_terms_digest_mismatch_still_hard_fails(tmp_path):
+    from modeling_team.__main__ import _cq_collaboration_context
+    from modeling_team.contracts import TeamConfigurationError
+
+    path, _original, _handoff = _stale_shared_terms_run_root(tmp_path)
+    value = json.loads(path.read_text())
+    value["slices"][0]["viewpoints"][0]["note"] = "post-handoff edit"
+    write_json(path, value)
+    with pytest.raises(
+        TeamConfigurationError,
+        match="collaboration_binding_changed: handoff content changed",
+    ):
+        _cq_collaboration_context(
+            tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]}, model_binding_stable=True
+        )
+
+
+@pytest.mark.parametrize("defect", ["candidate_unavailable", "schema_drift"])
+def test_other_map_binding_errors_still_hard_fail_with_stable_binding(tmp_path, defect):
+    from modeling_team.__main__ import _cq_collaboration_context
+    from modeling_team.contracts import TeamConfigurationError
+
+    path, _original, _handoff = _stale_shared_terms_run_root(tmp_path)
+    if defect == "candidate_unavailable":
+        (tmp_path / "stage3-neutral-graph/candidates/cand-1-r2.json").unlink()
+    else:
+        # Rebind the handoff digest so the digest gate stays satisfied and the
+        # failure isolates the map's own structural contract.
+        path.write_text("{}")
+        write_json(tmp_path / "acceptance-v3/production-handoff.json", dict(
+            collaboration_artifact=dict(
+                path="scenario-map/scenario-map.json", digest=digest_file(path),
+            ),
+        ))
+    with pytest.raises(
+        TeamConfigurationError, match="collaboration_binding_changed: invalid scenario map"
+    ):
+        _cq_collaboration_context(
+            tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]}, model_binding_stable=True
+        )
+
+
+def test_judge_starts_on_stale_shared_terms_and_records_report_warning(
+    tmp_path, monkeypatch
+):
+    from modeling_team.tests.test_r3012_partial_judging import (
+        _write_run_root,
+        _question,
+        _production_handoff,
+        _publish_handoff,
+        _handoff_file,
+        _DualForwarder,
+        _platform_context,
+        _run_cli,
+        _batch_adapter,
+    )
+
+    root, frozen = _write_run_root(tmp_path, [_question("cq-1")])
+    candidate = _candidate()
+    value = multiview_map()
+    value["scenario_id"] = candidate["scenario_id"]
+    value["shared_terms"][0].update(candidate_refs=[ref(candidate)], status="unknown")
+    write_json(root / "stage3-neutral-graph/candidates/cand-1-r2.json", candidate)
+    newer = deepcopy(candidate)
+    newer["revision"] = 3
+    write_json(root / "stage3-neutral-graph/candidates/cand-1-r3.json", newer)
+    value["shared_terms"][0]["candidate_refs"].append(
+        dict(
+            candidate_id=candidate["candidate_id"], revision=candidate["revision"],
+            item_id="missing-item",
+        )
+    )
+    projection = _projection(candidate, _batch_items())
+    projection["identity_bindings"][0]["resource_iri"] = "iri:1"
+    plan = dict(
+        schema_version="r3-0-009-materialization-plan/v2",
+        plan_id="plan-1",
+        revision=1,
+        projection=projection,
+        projection_digest=projection_digest(projection),
+    )
+    write_json(root / "stage3-neutral-graph/materialization-plans/plan-1-r1.json", plan)
+    path = root / "scenario-map/scenario-map.json"
+    write_json(path, value)
+    handoff = _production_handoff(frozen)
+    handoff["collaboration_artifact"] = dict(
+        path="scenario-map/scenario-map.json", digest=digest_file(path)
+    )
+    _publish_handoff(root, handoff)
+    original_map = path.read_bytes()
+    result = {"ok": True, "matches": [{"id": "resource-1", "iri": "iri:1"}]}
+    adapter, state = _batch_adapter(result=result)
+    code = _run_cli(
+        tmp_path,
+        root,
+        _handoff_file(tmp_path, handoff),
+        _DualForwarder(_platform_context(), [result]),
+        adapter,
+        monkeypatch,
+    )
+    assert code == 0
+    report = json.loads(
+        (
+            root / "acceptance-v3" / "reports" / frozen["batch_id"]
+            / "attempt-0001" / "batch-report.json"
+        ).read_text(encoding="utf-8")
+    )
+    # The Judge started and judged; the stale metadata is a recorded warning,
+    # never a lifecycle error or a full-pass gate.
+    assert report["sessions"]["acceptance_judge"]["verdicts"] == 1
+    assert [item["detail"] for item in report["sessions"]["lifecycle_warnings"]] == [
+        "shared_terms[0].candidate_refs[0].revision: stale",
+        "shared_terms[0].candidate_refs[1]: candidate/item binding",
+    ]
+    assert all(
+        item["stage"] == "acceptance-judge-setup"
+        and item["warning"] == "collaboration_metadata_stale"
+        for item in report["sessions"]["lifecycle_warnings"]
+    )
+    assert report["sessions"]["lifecycle_errors"] == []
+    assert report["full_pass"] is True
+    # The Judge's work copy discloses the omitted references as untrusted.
+    context = state["judge_payload"]["collaboration_context"]
+    assert context["definitions"] == []
+    assert "untrusted" in context["scope_note"]
+    # The handoff-bound source map stays immutable.
+    assert path.read_bytes() == original_map
 
 
 def test_collaboration_context_keeps_plan_parse_and_identity_guards(tmp_path):
@@ -601,7 +800,7 @@ def test_progress_note_change_after_handoff_still_rejects_digest_drift(tmp_path)
     _collaboration_run_root(tmp_path)
     path = tmp_path / "scenario-map/scenario-map.json"
     original = path.read_bytes()
-    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+    assert _cq_collaboration_context(tmp_path, {})[0]["definitions"] == []
     value = json.loads(original)
     value["slices"][0]["viewpoints"][0]["note"] = "Updated current coverage only"
     assert validate_scenario_map(value, run_root=tmp_path) == ()
@@ -609,7 +808,7 @@ def test_progress_note_change_after_handoff_still_rejects_digest_drift(tmp_path)
     with pytest.raises(TeamConfigurationError, match="collaboration_binding_changed"):
         _cq_collaboration_context(tmp_path, {})
     path.write_bytes(original)
-    assert _cq_collaboration_context(tmp_path, {})["definitions"] == []
+    assert _cq_collaboration_context(tmp_path, {})[0]["definitions"] == []
 
 
 def test_emergency_save_restores_stale_progress_and_current_candidate_without_editing_source(tmp_path):

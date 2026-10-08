@@ -1489,18 +1489,34 @@ def _cq_build_judge_evidence_bundle(
 
 
 def _cq_collaboration_context(
-    run_root: Path, responses: Mapping[str, object]
-) -> dict[str, object] | None:
-    """Host-bound collaboration statuses for visible resources only, Judge only."""
+    run_root: Path, responses: Mapping[str, object],
+    *, model_binding_stable: bool = False,
+) -> tuple[dict[str, object] | None, list[dict[str, str]]]:
+    """Host-bound collaboration statuses for visible resources only, Judge only.
+
+    Returns the Judge's collaboration context (``None`` when the handoff binds
+    no collaboration artifact) plus the non-fatal warnings this call recorded.
+    ``model_binding_stable`` is True only when this batch's observed pre/post
+    model binding drift is empty.  Only then are ``shared_terms[].candidate_refs``
+    collaboration-metadata defects -- a superseded candidate revision, or a
+    candidate/item reference no published candidate carries -- downgraded from
+    a Judge-setup hard failure to recorded warnings (T0: in acceptance mode the
+    binding authority is the handoff/freeze digest, still hard-checked here,
+    and the model state summary, still hard-checked in the report; stale
+    collaboration metadata alone indicates no semantic drift).  The untrusted
+    references are omitted from the Judge's work copy and disclosed as
+    unknown, never trusted or confirmed.  Any other map issue, and the same
+    defects with unknown drift, stay hard failures.
+    """
     from .contracts import digest_file
     from .scenario_map import collaboration_projection, load_scenario_map, validate_scenario_map
 
     handoff_path = run_root / "acceptance-v3/production-handoff.json"
     if not handoff_path.is_file() or handoff_path.is_symlink():
-        return None
+        return None, []
     reference = _read_json_object(handoff_path).get("collaboration_artifact")
     if reference is None:
-        return None
+        return None, []
     if (not isinstance(reference, dict) or set(reference) != {"path", "digest"}
         or reference["path"] != "scenario-map/scenario-map.json"):
         raise TeamConfigurationError("collaboration_binding_changed: invalid handoff reference")
@@ -1509,14 +1525,43 @@ def _cq_collaboration_context(
         raise TeamConfigurationError("collaboration_binding_changed: handoff content changed")
     scenario_map = load_scenario_map(path)
     superseded_reviews = set()
+    untrusted_candidate_refs: dict[tuple[int, int], str] = {}
+    collaboration_warnings: list[dict[str, str]] = []
     for issue in validate_scenario_map(scenario_map, run_root=run_root):
         historical = re.fullmatch(
             r"adjustments\[(\d+)\]\.review\.(?:after_refs|references)\[\d+\]\.revision: stale",
             issue.detail,
         )
-        if issue.reason_code != "map_dangling_reference" or historical is None:
-            raise TeamConfigurationError("collaboration_binding_changed: invalid scenario map")
-        superseded_reviews.add(int(historical[1]))
+        shared_candidate = re.fullmatch(
+            r"shared_terms\[(\d+)\]\.candidate_refs\[(\d+)\]"
+            r"(?:\.revision: stale|: candidate/item binding)",
+            issue.detail,
+        )
+        if issue.reason_code == "map_dangling_reference" and historical is not None:
+            superseded_reviews.add(int(historical[1]))
+            continue
+        if (
+            issue.reason_code == "map_dangling_reference"
+            and shared_candidate is not None
+            and model_binding_stable
+        ):
+            # Collaboration metadata only: with the handoff digest already
+            # matched above and an empty pre/post model binding drift, a stale
+            # candidate revision or an unresolvable candidate/item reference
+            # shows no semantic drift, so it is recorded as a non-fatal
+            # warning instead of blocking the independent Judge.
+            untrusted_candidate_refs[
+                (int(shared_candidate[1]), int(shared_candidate[2]))
+            ] = issue.detail
+            collaboration_warnings.append(
+                {
+                    "warning": "collaboration_metadata_stale",
+                    "reason_code": issue.reason_code,
+                    "detail": issue.detail,
+                }
+            )
+            continue
+        raise TeamConfigurationError("collaboration_binding_changed: invalid scenario map")
     # A handoff-bound map stays immutable. Superseded review progress is not a
     # binding failure or a current ready/complete claim; omit it only from the
     # Judge's work-context copy, preserving all other reference validation.
@@ -1526,6 +1571,25 @@ def _cq_collaboration_context(
             if index in superseded_reviews else adjustment
             for index, adjustment in enumerate(scenario_map["adjustments"])
         ]}
+    # Same immutability for the downgraded shared-term references: the Judge's
+    # work copy drops exactly the references that cannot be trusted to bind;
+    # their omission is disclosed as unknown below, never as confirmation.
+    if untrusted_candidate_refs:
+        omitted_refs: dict[int, set[int]] = {}
+        for term_index, ref_index in untrusted_candidate_refs:
+            omitted_refs.setdefault(term_index, set()).add(ref_index)
+        scenario_map = {
+            **scenario_map,
+            "shared_terms": [
+                {**term, "candidate_refs": [
+                    candidate_ref
+                    for index, candidate_ref in enumerate(term["candidate_refs"])
+                    if index not in omitted_refs.get(term_index, set())
+                ]}
+                if term_index in omitted_refs else term
+                for term_index, term in enumerate(scenario_map["shared_terms"])
+            ],
+        }
     visible: set[str] = set()
 
     def observe(value: object) -> None:
@@ -1608,7 +1672,13 @@ def _cq_collaboration_context(
         " Reviews tied to superseded candidate revisions are omitted; they do not "
         "establish current readiness or complete coverage."
     )
-    return context
+    if untrusted_candidate_refs:
+        context["scope_note"] += (
+            " Shared-term candidate references whose revision or candidate/item "
+            "binding cannot be verified against the frozen candidates are omitted "
+            "as untrusted; their absence is an unknown, not a confirmation."
+        )
+    return context, collaboration_warnings
 
 
 _CQ_PLATFORM_ROLE_INSTRUCTIONS = (
@@ -2251,6 +2321,9 @@ def _cq_execute_batch(
     executed: list[str] = []
     failure_reason: str | None = None
     lifecycle_errors: list[dict[str, object]] = []
+    # Non-fatal recorded warnings (never a full-pass gate): for example stale
+    # collaboration metadata on a digest-matched map with no model drift.
+    lifecycle_warnings: list[dict[str, object]] = []
     pre_binding: dict[str, object] | None = None
     post_binding: dict[str, object] | None = None
     # The Judge session only starts after the actual post-batch state read
@@ -2459,10 +2532,19 @@ def _cq_execute_batch(
             # the retained report instead of discarding the examiner reports.
             judge_stage = "acceptance-judge-setup"
             try:
-                collaboration = _cq_collaboration_context(
+                collaboration, collaboration_warnings = _cq_collaboration_context(
                     run_root, {question_id: response_projection[question_id]
-                               for question_id in judgeable}
+                               for question_id in judgeable},
+                    # T0: this branch only runs after the actual post-batch
+                    # state read succeeded with no drift, so stale
+                    # collaboration metadata is recorded as a warning here
+                    # instead of failing the Judge setup.
+                    model_binding_stable=post_read_ok and not post_drift,
                 )
+                for collaboration_warning in collaboration_warnings:
+                    lifecycle_warnings.append(
+                        {"stage": judge_stage, **collaboration_warning}
+                    )
                 judge_packet = build_acceptance_judge_packet(
                     run_id=str(contract["run_id"]),
                     batch_id=batch_id,
@@ -2641,6 +2723,7 @@ def _cq_execute_batch(
         "pre_batch_model_state_drift": pre_drift,
         "post_batch_model_state_drift": post_drift,
         "lifecycle_errors": lifecycle_errors,
+        "lifecycle_warnings": lifecycle_warnings,
         "cleanup": cleanup,
         # R3.0-012 design §4.3: the per-question judging split -- which hidden
         # questions were judged and why the rest were not (an executed service

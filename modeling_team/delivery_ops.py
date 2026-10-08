@@ -1142,8 +1142,73 @@ def _report_summary(mode: str, report: Mapping[str, Any]) -> dict[str, Any]:
     }
 
 
-def _bind_report(record: dict[str, Any]) -> dict[str, Any] | None:
-    candidates = _new_reports(record)
+def _request_report_visibility(record: Mapping[str, Any]) -> str | None:
+    """The question visibility this operation's cq-acceptance request bound."""
+
+    request = record.get("request")
+    request = request if isinstance(request, Mapping) else {}
+    if request.get("mode") != "cq-acceptance":
+        return None
+    expected = request.get("report_expectations")
+    expected = expected if isinstance(expected, Mapping) else {}
+    visibility = expected.get("question_visibility")
+    return visibility if visibility in {"hidden", "public"} else None
+
+
+def _report_visibility(report: Mapping[str, Any]) -> str:
+    """A report's own visibility claim (legacy reports default to hidden)."""
+
+    selection = report.get("question_selection")
+    if isinstance(selection, Mapping):
+        visibility = selection.get("visibility")
+        if visibility in {"hidden", "public"}:
+            return str(visibility)
+    return "hidden"
+
+
+def _eligible_report_candidates(
+    record: Mapping[str, Any],
+) -> tuple[list[tuple[Path, dict[str, Any], bool]], list[dict[str, Any]]]:
+    """Split new reports into this-operation candidates and out-of-scope ones.
+
+    A cq-acceptance operation binds only a report published for its own
+    requested question visibility; a readable report whose visibility differs
+    (for example a public regression report published while this operation
+    runs the hidden set) belongs to another operation and is never selected or
+    attributed here.  Unreadable reports cannot be classified and stay
+    candidates, preserving the refuse-to-guess ambiguity contract, and a
+    same-visibility report with a foreign run/freeze identity is still bound
+    and then rejected by ``_report_binding_errors``.
+    """
+
+    expected_visibility = _request_report_visibility(record)
+    candidates: list[tuple[Path, dict[str, Any], bool]] = []
+    excluded: list[dict[str, Any]] = []
+    for path, metadata, preexisted in _new_reports(record):
+        report = _load_report(path)
+        if (
+            expected_visibility is not None
+            and report is not None
+            and _report_visibility(report) != expected_visibility
+        ):
+            excluded.append(
+                {
+                    "path": path.as_posix(),
+                    "digest": metadata.get("digest"),
+                    "visibility": _report_visibility(report),
+                }
+            )
+            continue
+        candidates.append((path, metadata, preexisted))
+    return candidates, excluded
+
+
+def _bind_report(
+    record: dict[str, Any],
+    candidates: list[tuple[Path, dict[str, Any], bool]] | None = None,
+) -> dict[str, Any] | None:
+    if candidates is None:
+        candidates, _excluded = _eligible_report_candidates(record)
     if not candidates:
         return None
     # The CLI writes one authoritative report per invocation.  If a malformed
@@ -1151,7 +1216,7 @@ def _bind_report(record: dict[str, Any]) -> dict[str, Any] | None:
     # one belongs to this operation.
     if len(candidates) != 1:
         return None
-    candidates.sort(key=lambda item: item[0].as_posix())
+    candidates = sorted(candidates, key=lambda item: item[0].as_posix())
     path, metadata, preexisted = candidates[0]
     report = _load_report(path)
     run_root = Path(str(record["request"]["run_root"]))
@@ -1189,8 +1254,12 @@ def _bind_report(record: dict[str, Any]) -> dict[str, Any] | None:
 def _refresh_evaluation_record(record: dict[str, Any]) -> dict[str, Any]:
     binding = record.get("report_binding")
     if not isinstance(binding, Mapping):
-        candidates = _new_reports(record)
-        bound = _bind_report(record) if len(candidates) == 1 else None
+        candidates, excluded = _eligible_report_candidates(record)
+        if excluded:
+            # Retained host-side evidence that a foreign-visibility report was
+            # published in this window; it is never this operation's report.
+            record["excluded_report_candidates"] = excluded
+        bound = _bind_report(record, candidates) if len(candidates) == 1 else None
         if bound is not None:
             record["report_binding"] = bound
             record["report_status"] = (

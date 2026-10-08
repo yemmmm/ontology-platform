@@ -318,6 +318,139 @@ def test_evaluation_report_with_wrong_batch_identity_is_rejected(tmp_path: Path)
     )
 
 
+def test_hidden_evaluation_never_selects_a_public_report_as_its_own(
+    tmp_path: Path,
+) -> None:
+    run_id = "evaluation-visibility-run"
+    run_root = _run_root(tmp_path, run_id)
+    handoff = tmp_path / "handoff.json"
+    handoff.write_text(json.dumps({"schema_version": "handoff/test"}), encoding="utf-8")
+
+    def launcher(argv, **_kwargs):
+        return _Process(exit_code=0)
+
+    delivery_ops.start_evaluation(
+        run_id=run_id,
+        operation_id="evaluation-visibility",
+        mode="cq-acceptance",
+        freeze_id="freeze-visibility",
+        model_handoff="handoff.json",
+        model_profile="openai-sol-medium",
+        question_visibility="hidden",
+        repository_root=tmp_path,
+        launcher=launcher,
+    )
+    # A public regression report published inside this hidden operation's
+    # window is another operation's report.  Even as the only new report it
+    # must not be selected or attributed to this operation.
+    public_report = run_root / "acceptance-v3" / "public-regression" / "pub" / "batch-report.json"
+    public_report.parent.mkdir(parents=True)
+    public_report.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "full_pass": True,
+                "run_id": run_id,
+                "batch_id": "freeze-visibility",
+                "freeze_digest": "sha256:test",
+                "executed_question_ids": ["pq-1"],
+                "unexecuted_question_ids": [],
+                "verdicts": [{"verdict": "pass"}],
+                "question_selection": {"visibility": "public", "question_ids": ["pq-1"]},
+                "sessions": {"model_profile": "openai-sol-medium"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    skipped = delivery_ops.get_evaluation_status(
+        operation_id="evaluation-visibility", repository_root=tmp_path
+    )
+    assert skipped["report_status"] == "no_new_report"
+    assert skipped["report_binding"] is None
+    record_path = Path(skipped["record_path"])
+    record = json.loads(
+        (record_path if record_path.is_absolute() else tmp_path / record_path).read_text(
+            encoding="utf-8"
+        )
+    )
+    assert [item["visibility"] for item in record["excluded_report_candidates"]] == ["public"]
+
+    # Once this operation's own hidden report is also new, it is the one bound;
+    # the coexisting public report stays excluded, and the same-visibility
+    # foreign-identity rejection contract is untouched.
+    hidden_report = run_root / "acceptance-v3" / "reports" / "new" / "batch-report.json"
+    hidden_report.parent.mkdir(parents=True)
+    hidden_report.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "full_pass": True,
+                "run_id": run_id,
+                "batch_id": "freeze-visibility",
+                "freeze_digest": "sha256:test",
+                "executed_question_ids": ["cq-1"],
+                "unexecuted_question_ids": [],
+                "verdicts": [{"verdict": "pass"}],
+                "sessions": {"model_profile": "openai-sol-medium"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    bound = delivery_ops.get_evaluation_status(
+        operation_id="evaluation-visibility", repository_root=tmp_path
+    )
+    assert bound["report_status"] == "new_report_bound"
+    assert bound["report_binding"]["valid"] is True
+    assert bound["report_binding"]["summary"]["executed_question_ids"] == ["cq-1"]
+
+
+def test_public_evaluation_never_selects_a_hidden_report_as_its_own(
+    tmp_path: Path,
+) -> None:
+    run_id = "evaluation-public-visibility-run"
+    run_root = _run_root(tmp_path, run_id)
+    handoff = tmp_path / "handoff.json"
+    handoff.write_text("{}", encoding="utf-8")
+
+    def launcher(argv, **_kwargs):
+        return _Process(exit_code=0)
+
+    delivery_ops.start_evaluation(
+        run_id=run_id,
+        operation_id="evaluation-public-visibility",
+        mode="cq-acceptance",
+        freeze_id="freeze-public-visibility",
+        model_handoff="handoff.json",
+        model_profile="openai-sol-medium",
+        question_visibility="public",
+        repository_root=tmp_path,
+        launcher=launcher,
+    )
+    hidden_report = run_root / "acceptance-v3" / "reports" / "hid" / "batch-report.json"
+    hidden_report.parent.mkdir(parents=True)
+    hidden_report.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "full_pass": True,
+                "run_id": run_id,
+                "batch_id": "freeze-public-visibility",
+                "freeze_digest": "sha256:test",
+                "executed_question_ids": ["cq-1"],
+                "unexecuted_question_ids": [],
+                "verdicts": [{"verdict": "pass"}],
+                "sessions": {"model_profile": "openai-sol-medium"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    status = delivery_ops.get_evaluation_status(
+        operation_id="evaluation-public-visibility", repository_root=tmp_path
+    )
+    assert status["report_status"] == "no_new_report"
+    assert status["report_binding"] is None
+
+
 def test_cq_report_requires_run_identity_and_profile_digest_when_report_supplies_it(
     tmp_path: Path,
 ) -> None:
