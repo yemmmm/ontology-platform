@@ -23,6 +23,27 @@ test("T01 five sibling links normalize retired URL and storage, with history nav
   await page.goForward();
   await expect(page.getByRole("heading", { name: "Recall test", exact: true })).toBeVisible();
 });
+test("T01 project switching requires returning to overview from every other tab", async ({ page }) => {
+  await mockWorkspace(page);
+  await page.goto("/?project=p1&tab=overview");
+  await expect(page.getByLabel("Project", { exact: true })).toHaveValue("p1");
+  for (const name of ["Model browser", "Recall test", "Member permissions", "Settings"]) {
+    await page.getByRole("link", { name, exact: true }).click();
+    await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
+    await expect(page.getByLabel("Project", { exact: true })).toHaveCount(0);
+    expect(new URL(page.url()).searchParams.get("project")).toBe("p1");
+  }
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Settings", exact: true })).toBeVisible();
+  await expect(page.getByLabel("Project", { exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
+  await page.getByLabel("Project", { exact: true }).selectOption("p2");
+  await expect(page.getByRole("region", { name: "Project introduction", exact: true }).getByRole("heading", { name: "Integration", exact: true })).toBeVisible();
+  expect(new URL(page.url()).search).toBe("?project=p2&tab=overview");
+  await page.getByRole("link", { name: "Model browser", exact: true }).click();
+  await expect(page.getByLabel("Project", { exact: true })).toHaveCount(0);
+  expect(new URL(page.url()).search).toBe("?project=p2&tab=model");
+});
 test("T01 settings works without a project or ontology; ontology-only links fall back", async ({ page }) => {
   await mockWorkspace(page, { projects: [] });
   await page.goto("/?ontology=retired");
@@ -284,7 +305,10 @@ test("T12 roles and grants use only the read contract; project switch never leak
   await expect(page.getByText("context:query", { exact: true })).toBeVisible();
   await expect(page.getByText("No Grant configured")).toBeVisible();
   expect(requests.every(path => path === "GET /auth/me" || path === "GET /projects" || path === "GET /projects/p1/semantic-access-roles")).toBe(true);
+  await expect(page.getByLabel("Project", { exact: true })).toHaveCount(0);
+  await page.getByRole("link", { name: "Overview", exact: true }).click();
   await page.getByLabel("Project", { exact: true }).selectOption("p2");
+  await page.getByRole("link", { name: "Member permissions", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("403");
   await expect(page.getByText("context:query", { exact: true })).toHaveCount(0);
 });
