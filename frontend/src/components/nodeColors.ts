@@ -1,29 +1,35 @@
-// A fixed hue per declared viewpoint, with three identity-based shades per hue.
-export const VIEWPOINT_COLORS = {
-  object: ["#2f6fba", "#4c86c6", "#76a3d5"],
-  behavior: ["#c2691d", "#da8138", "#e9a568"],
-  rule: ["#be4e4e", "#d36d6d", "#df9696"],
-  business_role: ["#9b7c21", "#b5963e", "#cbb16b"],
-  process: ["#7450af", "#9071c2", "#ac95d2"],
-  data_mapping: ["#37824d", "#559968", "#83b38f"],
-  interface_mapping: ["#227b89", "#4096a3", "#75b4bd"],
+const VIEWPOINT_HUES = {
+  object: 212,
+  behavior: 28,
+  rule: 0,
+  business_role: 45,
+  process: 263,
+  data_mapping: 133,
+  interface_mapping: 188,
 };
-export const UNCLASSIFIED_COLORS = ["#737b88", "#9098a3", "#adb3bd"];
+export type NodeColorFamily = keyof typeof VIEWPOINT_HUES | "unclassified";
 
-function hashId(id: string): number {
-  let hash = 2166136261;
-  for (let i = 0; i < id.length; i += 1) hash = Math.imul(hash ^ id.charCodeAt(i), 16777619);
-  return hash >>> 0;
+// Strength uses the same bounded connection-degree mapping as node size.
+export function connectionColor(family: NodeColorFamily, strength: number): string {
+  if (family === "unclassified") return `hsl(220, 0%, ${68 - strength * 24}%)`;
+  return `hsl(${VIEWPOINT_HUES[family]}, ${35 + strength * 40}%, 55%)`;
 }
 
-export function assignNodeColors(
+export const VIEWPOINT_COLORS = Object.fromEntries(
+  Object.keys(VIEWPOINT_HUES).map(role => [role,
+    [0, 0.5, 1].map(strength => connectionColor(role as keyof typeof VIEWPOINT_HUES, strength)),
+  ]),
+) as Record<keyof typeof VIEWPOINT_HUES, string[]>;
+export const UNCLASSIFIED_COLORS = [0, 0.5, 1].map(strength => connectionColor("unclassified", strength));
+
+export function assignNodeColorFamilies(
   nodes: { id: string; roles: unknown[] }[],
-): Map<string, string> {
+): Map<string, NodeColorFamily> {
   return new Map(nodes.map(node => {
     const roles = [...new Set(node.roles.filter((role): role is string => typeof role === "string" && role.length > 0))];
     const role = roles.length === 1 ? roles[0] : "";
-    const palette = Object.prototype.hasOwnProperty.call(VIEWPOINT_COLORS, role)
-      ? VIEWPOINT_COLORS[role as keyof typeof VIEWPOINT_COLORS] : UNCLASSIFIED_COLORS;
-    return [node.id, palette[hashId(node.id) % palette.length]];
+    const family = Object.prototype.hasOwnProperty.call(VIEWPOINT_HUES, role)
+      ? role as keyof typeof VIEWPOINT_HUES : "unclassified";
+    return [node.id, family];
   }));
 }

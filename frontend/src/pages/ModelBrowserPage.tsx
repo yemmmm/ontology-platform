@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ForceGraphCanvas, type ForceGraphEdge } from "../components/ForceGraphCanvas";
-import { assignNodeColors, UNCLASSIFIED_COLORS, VIEWPOINT_COLORS } from "../components/nodeColors";
+import { assignNodeColorFamilies, UNCLASSIFIED_COLORS, VIEWPOINT_COLORS } from "../components/nodeColors";
 import { useT } from "../i18n";
 import { workspaceApi } from "../workspaceApi";
 import { semanticViews, type JsonObject, type Project, type Relation, type Resource } from "../workspaceTypes";
@@ -94,10 +94,10 @@ export function ModelBrowserPage({ project }: { project: Project }) {
   const visible = useMemo(() => nodes.filter(node => !views.length || node.positions.some(item => views.some(view => definition(item.resource).semantic_role === view))), [nodes, views]);
   const visibleIds = useMemo(() => new Set(visible.map(node => node.iri)), [visible]);
   const graphEdges = useMemo(() => edges.filter(edge => visibleIds.has(edge.source) && visibleIds.has(edge.target)), [edges, visibleIds]);
-  const nodeColors = useMemo(() => assignNodeColors(nodes.map(node => ({
+  const nodeColorFamilies = useMemo(() => assignNodeColorFamilies(nodes.map(node => ({
     id: node.iri, roles: node.positions.map(item => definition(item.resource).semantic_role),
   }))), [nodes]);
-  const graphNodes = useMemo(() => visible.map(node => ({ id: node.iri, label: node.label, color: nodeColors.get(node.iri)! })), [visible, nodeColors]);
+  const graphNodes = useMemo(() => visible.map(node => ({ id: node.iri, label: node.label, colorFamily: nodeColorFamilies.get(node.iri)! })), [visible, nodeColorFamilies]);
   const search = query.trim().toLowerCase();
   const matches = visible.filter(node => node.positions.some(item => [item.resource.label, node.iri, item.resource.description, readable(definition(item.resource).business_meaning)].join(" ").toLowerCase().includes(search)));
   const highlighted = useMemo(() => search ? matches.map(node => node.iri) : [], [search, visible]);
@@ -118,7 +118,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
       <ul className="nodeColorLegend" aria-label={t("Node color legend")}><li><button aria-pressed={views.length === 0} onClick={() => { setViews([]); select(null); }}>{t("All")}</button></li>{semanticViews.map(([role, name]) =>
         <li key={role} data-viewpoint={role}><button aria-pressed={views.includes(role)} onClick={() => toggleView(role)}><span className="nodeColorSwatches" aria-hidden="true">{VIEWPOINT_COLORS[role].map(color => <i key={color} style={{ backgroundColor: color }} />)}</span>{t(name)}</button></li>
       )}<li data-viewpoint="unclassified"><span className="nodeColorSwatches" aria-hidden="true">{UNCLASSIFIED_COLORS.map(color => <i key={color} style={{ backgroundColor: color }} />)}</span>{t("Unclassified / multiple viewpoints")}</li></ul>
-      <p className="inlineHint">{t("Color families indicate viewpoints; shade differences distinguish nodes, not importance.")}</p>
+      <p className="inlineHint">{t("Color families indicate viewpoints. Larger, more vivid nodes have more visible connections; gray nodes become darker. This does not indicate business importance or model quality.")}</p>
     </div>
     {!loading && graphEdges.some(edge => edge.edgeKind === "structured_reference") && <p className="inlineHint">{t("Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.")}</p>}
     {search && <div className="searchMatches" aria-label={t("Search matches")}><p>{t("Matches in loaded viewpoint")}: {matches.length}</p>{matches.length ? matches.map(node => <button key={node.iri} onClick={() => select(node.iri)}>{node.label}</button>) : <p>{t("No matches in the loaded viewpoint")}</p>}</div>}

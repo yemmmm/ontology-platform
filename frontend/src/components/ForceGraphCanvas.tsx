@@ -2,8 +2,9 @@ import cytoscape, { type Core, type ElementDefinition } from "cytoscape";
 import fcose from "cytoscape-fcose";
 import { useEffect, useMemo, useRef } from "react";
 import { useT } from "../i18n";
+import { connectionColor, type NodeColorFamily } from "./nodeColors";
 cytoscape.use(fcose);
-export type ForceGraphNode = { id: string; label: string; color: string; group?: string };
+export type ForceGraphNode = { id: string; label: string; colorFamily: NodeColorFamily; group?: string };
 export type ForceGraphEdge = { id: string; source: string; target: string; label?: string; edgeKind?: string };
 type Props = {
   nodes: ForceGraphNode[]; edges: ForceGraphEdge[]; selectedNodeId: string | null;
@@ -40,10 +41,10 @@ export function ForceGraphCanvas({ nodes, edges, selectedNodeId, onSelectNode, h
     return [
       ...nodes.map(node => {
         const nodeDegree = degree.get(node.id) ?? 0;
-        const baseSize = std < 1e-6 ? NODE_MIN_SIZE
-          : NODE_MIN_SIZE + (Math.tanh((nodeDegree - mean) / std * 0.5) * 0.5 + 0.5)
-            * (NODE_MAX_SIZE - NODE_MIN_SIZE);
-        return { data: { id: node.id, label: node.label, color: node.color, degree: nodeDegree, baseSize }, position: positions.current.get(node.id) };
+        const strength = std < 1e-6 ? 0
+          : Math.tanh((nodeDegree - mean) / std * 0.5) * 0.5 + 0.5;
+        const baseSize = NODE_MIN_SIZE + strength * (NODE_MAX_SIZE - NODE_MIN_SIZE);
+        return { data: { id: node.id, label: node.label, color: connectionColor(node.colorFamily, strength), degree: nodeDegree, baseSize }, position: positions.current.get(node.id) };
       }),
       ...edges.map(edge => ({ data: edge })),
     ];

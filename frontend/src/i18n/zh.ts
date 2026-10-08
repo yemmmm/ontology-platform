@@ -3,7 +3,7 @@ export const zh: TranslationMap = {
   "Node color legend":"节点配色图例",
   "Unclassified / multiple viewpoints":"未分类／多视角",
   "Select multiple viewpoints; click again to deselect.":"点击视角可多选，再次点击取消选择。",
-  "Color families indicate viewpoints; shade differences distinguish nodes, not importance.":"色系表示视角；深浅仅辅助区分节点，不表示重要程度。",
+  "Color families indicate viewpoints. Larger, more vivid nodes have more visible connections; gray nodes become darker. This does not indicate business importance or model quality.":"色系表示视角；节点越大、颜色越鲜明，当前可见连接越多，灰色节点则越深。不表示业务重要程度或模型质量。",
   "Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.":"实线：已断言关系；虚线：已记录的结构引用，标签为来源字段。",
   "Overview":"概览", "Model browser":"模型浏览", "Recall test":"召回测试", "Member permissions":"成员权限", "Settings":"设置",
   "Workspace navigation":"工作空间导航", "Project":"项目", "No accessible projects":"暂无可访问项目", "Loading…":"加载中…", "Project list could not be read":"项目列表读取失败",
