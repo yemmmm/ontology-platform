@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { ForceGraphCanvas, type ForceGraphEdge } from "../components/ForceGraphCanvas";
+import { assignNodeColors } from "../components/nodeColors";
 import { useT } from "../i18n";
 import { workspaceApi } from "../workspaceApi";
 import { semanticViews, type JsonObject, type Project, type Relation, type Resource } from "../workspaceTypes";
@@ -93,7 +94,8 @@ export function ModelBrowserPage({ project }: { project: Project }) {
   const visible = useMemo(() => nodes.filter(node => !view || node.positions.some(item => definition(item.resource).semantic_role === view)), [nodes, view]);
   const visibleIds = useMemo(() => new Set(visible.map(node => node.iri)), [visible]);
   const graphEdges = useMemo(() => edges.filter(edge => visibleIds.has(edge.source) && visibleIds.has(edge.target)), [edges, visibleIds]);
-  const graphNodes = useMemo(() => visible.map(node => ({ id: node.iri, label: node.label, group: "model" })), [visible]);
+  const nodeColors = useMemo(() => assignNodeColors(nodes.map(node => node.iri), edges), [nodes, edges]);
+  const graphNodes = useMemo(() => visible.map(node => ({ id: node.iri, label: node.label, color: nodeColors.get(node.iri)! })), [visible, nodeColors]);
   const search = query.trim().toLowerCase();
   const matches = visible.filter(node => node.positions.some(item => [item.resource.label, node.iri, item.resource.description, readable(definition(item.resource).business_meaning)].join(" ").toLowerCase().includes(search)));
   const highlighted = useMemo(() => search ? matches.map(node => node.iri) : [], [search, visible]);
@@ -105,6 +107,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
     {loading && <p role="status">{t("Loading…")}</p>}{error && <p className="errorMessage" role="alert">{t("Model could not be read")}: {error}</p>}
     {limits.length > 0 && <div className="notice" role="status"><strong>{t("Partial loading")}</strong>{limits.map((limit, i) => <p key={i}>{limit.name}: {t(limit.code)}{limit.detail ? ` · ${limit.detail}` : ""}</p>)}<p>{t("Search covers loaded nodes only")}</p></div>}
     {!loading && <p className="inlineHint">{t("Loaded nodes")}: {nodes.length} · {t("Visible nodes")}: {visible.length} · {t("Read relations")}: {graphEdges.length}</p>}
+    {!loading && nodes.length > 0 && <p className="inlineHint">{t("Colors distinguish nodes; the same color does not imply the same category.")}</p>}
     {!loading && graphEdges.some(edge => edge.edgeKind === "structured_reference") && <p className="inlineHint">{t("Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.")}</p>}
     {search && <div className="searchMatches" aria-label={t("Search matches")}><p>{t("Matches in loaded viewpoint")}: {matches.length}</p>{matches.length ? matches.map(node => <button key={node.iri} onClick={() => select(node.iri)}>{node.label}</button>) : <p>{t("No matches in the loaded viewpoint")}</p>}</div>}
     <div className={`modelBody${selectedNode ? " hasDetail" : ""}`}><div className="panel graphPanel"><ForceGraphCanvas nodes={graphNodes} edges={graphEdges} selectedNodeId={selectedNode?.iri ?? null} onSelectNode={select} highlightedNodeIds={highlighted} searchActive={Boolean(search)} emptyTitle={t(loading ? "Loading…" : error || limits.length && !nodes.length ? "Model scopes have not been loaded" : ontologyCount === 0 ? "No Ontologies in this project" : nodes.length ? "No nodes in this viewpoint" : "No model resources in the current scope")} emptyHint={t("The canvas displays the authorized default workspace only")} /></div>

@@ -3,7 +3,7 @@ import fcose from "cytoscape-fcose";
 import { useEffect, useMemo, useRef } from "react";
 import { useT } from "../i18n";
 cytoscape.use(fcose);
-export type ForceGraphNode = { id: string; label: string; group?: string };
+export type ForceGraphNode = { id: string; label: string; color: string; group?: string };
 export type ForceGraphEdge = { id: string; source: string; target: string; label?: string; edgeKind?: string };
 type Props = {
   nodes: ForceGraphNode[]; edges: ForceGraphEdge[]; selectedNodeId: string | null;
@@ -13,12 +13,12 @@ type Props = {
 const NODE_MIN_SIZE = 25;
 const NODE_MAX_SIZE = 58;
 const style: cytoscape.StylesheetStyle[] = [
-  { selector: "node", style: { "background-color": "#6c4df6", label: "data(label)", color: "#171821", "font-size": 12, "text-valign": "bottom", "text-margin-y": 7, "text-outline-color": "#fff", "text-outline-width": 2, "text-wrap": "wrap", "text-max-width": "150px", width: "data(baseSize)", height: "data(baseSize)" } },
+  { selector: "node", style: { "background-color": "data(color)", "border-width": 1, "border-color": "#171821", "border-opacity": 0.22, label: "data(label)", color: "#171821", "font-size": 12, "text-valign": "bottom", "text-margin-y": 7, "text-outline-color": "#fff", "text-outline-width": 2, "text-wrap": "wrap", "text-max-width": "150px", width: "data(baseSize)", height: "data(baseSize)" } },
   { selector: "edge", style: { width: 1.5, "line-color": "#b1abc8", "target-arrow-color": "#b1abc8", "target-arrow-shape": "triangle", "curve-style": "bezier", label: "data(label)", "font-size": 9, color: "#74788d", "text-rotation": "autorotate", "text-wrap": "wrap", "text-max-width": "140px" } },
   { selector: 'edge[edgeKind = "structured_reference"]', style: { "line-style": "dashed" } },
   { selector: ".dimmed", style: { opacity: 0.22 } },
-  { selector: ".highlighted", style: { "border-width": 3, "border-color": "#2fbf8f" } },
-  { selector: "node:selected", style: { "border-width": 4, "border-color": "#171821" } },
+  { selector: ".highlighted", style: { "underlay-color": "#171821", "underlay-opacity": 0.16, "underlay-padding": 5 } },
+  { selector: "node:selected", style: { "border-width": 4, "border-color": "#171821", "border-opacity": 1 } },
 ];
 export function ForceGraphCanvas({ nodes, edges, selectedNodeId, onSelectNode, highlightedNodeIds, searchActive, emptyTitle, emptyHint }: Props) {
   const t = useT();
@@ -43,7 +43,7 @@ export function ForceGraphCanvas({ nodes, edges, selectedNodeId, onSelectNode, h
         const baseSize = std < 1e-6 ? NODE_MIN_SIZE
           : NODE_MIN_SIZE + (Math.tanh((nodeDegree - mean) / std * 0.5) * 0.5 + 0.5)
             * (NODE_MAX_SIZE - NODE_MIN_SIZE);
-        return { data: { id: node.id, label: node.label, degree: nodeDegree, baseSize }, position: positions.current.get(node.id) };
+        return { data: { id: node.id, label: node.label, color: node.color, degree: nodeDegree, baseSize }, position: positions.current.get(node.id) };
       }),
       ...edges.map(edge => ({ data: edge })),
     ];

@@ -1,5 +1,6 @@
 import type { TranslationMap } from "./translations";
 export const zh: TranslationMap = {
+  "Colors distinguish nodes; the same color does not imply the same category.":"颜色辅助区分节点；同色不代表同类。",
   "Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.":"实线：已断言关系；虚线：已记录的结构引用，标签为来源字段。",
   "Overview":"概览", "Model browser":"模型浏览", "Recall test":"召回测试", "Member permissions":"成员权限", "Settings":"设置",
   "Workspace navigation":"工作空间导航", "Project":"项目", "No accessible projects":"暂无可访问项目", "Loading…":"加载中…", "Project list could not be read":"项目列表读取失败",
