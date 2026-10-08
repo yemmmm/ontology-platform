@@ -510,7 +510,7 @@ class ModelingContextReceipt:
     run_id: str
     project_id: str
     ontology_id: str
-    workspace_version: str
+    model_revision: int
     response_digest: str
     call_receipt_digest: str
     receipt_digest: str
@@ -553,7 +553,7 @@ class ModelingContextGate:
             not isinstance(project, Mapping) or project.get("id") != self.project_id
             or not isinstance(ontology, Mapping) or ontology.get("id") != self.ontology_id
             or not isinstance(workspace, Mapping) or workspace.get("state") != "ready"
-            or not isinstance(workspace.get("workspace_version"), str) or not workspace["workspace_version"]
+            or type(workspace.get("model_revision")) is not int or workspace["model_revision"] < 0
             or workspace.get("issues") != []
             or not isinstance(counts, Mapping)
             or any(isinstance(v, bool) or not isinstance(v, int) or v < 0 for v in counts.values())
@@ -568,19 +568,19 @@ class ModelingContextGate:
 
     def observe(self, response: Mapping[str, Any], *, call_receipt: Any) -> ModelingContextReceipt:
         value = self._validate_context(response)
-        version = value["workspace"]["workspace_version"]
+        version = value["workspace"]["model_revision"]
         response_digest = canonical_digest(value)
         call_digest = canonical_digest(call_receipt)
         payload = {
             "run_id": self.run_id, "project_id": self.project_id, "ontology_id": self.ontology_id,
-            "workspace_version": version, "response_digest": response_digest, "call_receipt_digest": call_digest,
+            "model_revision": version, "response_digest": response_digest, "call_receipt_digest": call_digest,
         }
         receipt = ModelingContextReceipt(**payload, receipt_digest=canonical_digest(payload))
         if self.receipt is not None and self.state == "closed" and self.invalidated_reason:
             self.invalidated_receipts.append(self.receipt)
             self.receipt = receipt
         elif self.receipt is not None and self.receipt != receipt:
-            if self.receipt.workspace_version != version:
+            if self.receipt.model_revision != version:
                 raise ModelingReadError("Modeling context receipt is immutable")
             # A second exact-O context read at the same workspace version is a
             # revalidation, not a replacement receipt.  Retain the original
@@ -612,24 +612,24 @@ class ModelingContextGate:
     def revalidate(self, response: Mapping[str, Any], *, call_receipt: Any) -> dict[str, str]:
         current = self._validate_context(response)
         receipt = self.assert_open()
-        version = current["workspace"]["workspace_version"]
+        version = current["workspace"]["model_revision"]
         observed_digest = canonical_digest(current)
         # Workspace version is the immutable live-state fence.  Counts and other
         # read-only context details may legitimately be enriched between calls;
         # a same-version context remains the same current-state binding.  The
         # original response digest is still retained in the receipt for audit and
         # candidate binding, but is not treated as a spurious drift signal.
-        if version != receipt.workspace_version:
+        if version != receipt.model_revision:
             self.state = "closed"
-            self.invalidated_reason = "workspace_version_or_context_drift"
+            self.invalidated_reason = "model_revision_or_context_drift"
             raise ModelingContextDrift(
-                f"Modeling context drifted from {receipt.workspace_version} to {version}"
+                f"Modeling context drifted from {receipt.model_revision} to {version}"
             )
         result = {
             "run_id": self.run_id,
             "project_id": self.project_id,
             "ontology_id": self.ontology_id,
-            "workspace_version": version,
+            "model_revision": version,
             "context_receipt_digest": receipt.receipt_digest,
             "response_digest": observed_digest,
             "call_receipt_digest": canonical_digest(call_receipt),

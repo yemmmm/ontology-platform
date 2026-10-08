@@ -253,7 +253,7 @@ revise semantics only when new authorized business input or actual modeling feed
 For `r2-3-003-existing-scope-incremental`, author one complete incremental candidate: never replay
 the Start75 candidate and never send a patch-only revision. Reference retained entities only with
 `existing_entity_ref` containing platform-neutral `semantic_id` and `expected_class`; never place
-an IRI, Project/Ontology ID, workspace version, Batch ID, or guessed platform identity in that ref.
+an IRI, Project/Ontology ID, model revision, Batch ID, or guessed platform identity in that ref.
 Resolve exactly the two Runner-frozen ExplicitUnknown targets
 `unknown-cross-release-output-meaning` and `unknown-b-no-score-behavior` with
 `expected_class=ExplicitUnknown` and source-grounded current semantics, together with the one
@@ -518,7 +518,7 @@ absence from truncation. Preserve unknowns/conflicting_meanings in the candidate
 Local restrictions change only local use. Retain old meaning if an unsafe change cannot be
 synchronously applied; propose a business-confirmed distinct new contract, write it first and
 switch references safely, or defer affected work. Compatible changes may keep identity after
-review. Stable IRI/script_version/workspace version/dry-run is not compatibility proof.
+review. Stable IRI/script_version/model revision/dry-run is not compatibility proof.
 Do not promise same-identity version pinning or cross-Batch atomicity. New candidate revisions
 need renewed approvals/review; independent confirmed content continues. No source excerpts,
 per-resource Evidence or lineage tasks are introduced. Final semantic acceptance is independent.

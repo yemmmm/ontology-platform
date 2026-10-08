@@ -21,7 +21,7 @@ from app.services.modeling_batches import (
     ModelingBatchError,
     ModelingBatchService,
 )
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_read_model import ReadModelError, SemanticReadModelService
 from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
@@ -210,9 +210,11 @@ def get_ontology_read_model(
             ontology = session.get(OntologyModel, ontology_id)
             if ontology is None:
                 raise HTTPException(status_code=404, detail="Ontology not found")
-            workspace_version = ModelingWorkspaceVersionService(
+            model_revision = OntologyModelRevisionService(
                 session, settings
             ).version_for(ontology_id)
+            if model_revision != response["model_revision"]:
+                raise ReadModelError("Model revision changed during reading; refresh the model")
             for item in response.get("items", []):
                 if not isinstance(item, dict):
                     continue
@@ -220,7 +222,7 @@ def get_ontology_read_model(
                     {
                         "project_id": ontology.project_id,
                         "ontology_id": ontology_id,
-                        "workspace_version": workspace_version,
+                        "model_revision": model_revision,
                     }
                 )
         return response

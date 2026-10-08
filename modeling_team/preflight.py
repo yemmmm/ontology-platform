@@ -43,7 +43,7 @@ _R2_3_003_HANDOFF_KEYS = frozenset(
         "run_id",
         "project_id",
         "ontology_id",
-        "workspace_version",
+        "model_revision",
         "scope_disposition",
         "deletion_policy",
     }
@@ -119,6 +119,8 @@ def load_existing_scope_handoff(scope: Mapping[str, str], *, repository_root: Pa
         value = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
         raise TeamConfigurationError("R2.3-003 handoff is unreadable") from exc
+    if isinstance(value, Mapping) and "workspace_version" in value:
+        raise TeamConfigurationError("legacy_model_binding: re-read the retained scope and prepare a new numbered handoff; original evidence remains unchanged")
     if not isinstance(value, Mapping) or set(value) != _R2_3_003_HANDOFF_KEYS:
         raise TeamConfigurationError("R2.3-003 handoff fields drift")
     if (
@@ -135,22 +137,17 @@ def load_existing_scope_handoff(scope: Mapping[str, str], *, repository_root: Pa
         raise TeamConfigurationError("R2.3-003 handoff target IDs drift")
     if any(item["expected_class"] != R2_3_003_TARGET_CLASS for item in policy["targets"]):
         raise TeamConfigurationError("R2.3-003 handoff target Class drifts")
-    for field in ("run_id", "workspace_version"):
+    for field in ("run_id",):
         item = value.get(field)
         if not isinstance(item, str) or not item.strip():
             raise TeamConfigurationError("R2.3-003 handoff value is invalid")
-    version = str(value["workspace_version"])
-    if len(version) != 64:
-        raise TeamConfigurationError("R2.3-003 workspace version is invalid")
-    try:
-        int(version, 16)
-    except ValueError as exc:
-        raise TeamConfigurationError("R2.3-003 workspace version is invalid") from exc
+    if type(value.get("model_revision")) is not int or value["model_revision"] < 0:
+        raise TeamConfigurationError("R2.3-003 model revision is invalid")
     return {
         "run_id": str(value["run_id"]),
         "project_id": str(value["project_id"]),
         "ontology_id": str(value["ontology_id"]),
-        "workspace_version": str(value["workspace_version"]),
+        "model_revision": value["model_revision"],
         "scope_disposition": "retained",
         "deletion_policy": policy,
     }
@@ -434,7 +431,7 @@ def _sanitize_evidence(value: Any) -> Any:
         "project_id",
         "ontology_id",
         "run_id",
-        "workspace_version",
+        "model_revision",
         "ontology_id",
         "workspace_state",
         "modeling_batch_count",
@@ -520,18 +517,10 @@ def _authenticated_json_get(base_url: str, admin_key: str, path: str) -> Any:
         raise TeamConfigurationError("existing scope live read failed") from exc
 
 
-def _workspace_version(context: Mapping[str, Any]) -> str | None:
-    for key in ("workspace_version", "version", "workspaceVersion"):
-        value = context.get(key)
-        if isinstance(value, str) and value:
-            return value
-    nested = context.get("workspace")
-    if isinstance(nested, Mapping):
-        for key in ("workspace_version", "version"):
-            value = nested.get(key)
-            if isinstance(value, str) and value:
-                return value
-    return None
+def _model_revision(context: Mapping[str, Any]) -> int | None:
+    workspace = context.get("workspace")
+    value = workspace.get("model_revision") if isinstance(workspace, Mapping) else context.get("model_revision")
+    return value if type(value) is int and value >= 0 else None
 
 
 def canonical_existing_scope_preflight(
@@ -575,7 +564,7 @@ def canonical_existing_scope_preflight(
     if not isinstance(batch_items, list):
         raise TeamConfigurationError("existing Modeling Batch history is invalid")
     build = _authenticated_json_get(base_url, admin_key, f"/api/projects/{project_id}/build-context")
-    live_version = _workspace_version(context)
+    live_version = _model_revision(context)
     if live_version is None and isinstance(build, Mapping):
         platform_state = build.get("platform_state")
         ontologies = platform_state.get("ontologies", []) if isinstance(platform_state, Mapping) else []
@@ -584,9 +573,9 @@ def canonical_existing_scope_preflight(
                 continue
             workspace = ontology.get("workspace")
             if isinstance(workspace, Mapping):
-                live_version = workspace.get("workspace_version")
+                live_version = workspace.get("model_revision")
             break
-    if live_version != handoff.get("workspace_version"):
+    if live_version != handoff.get("model_revision"):
         raise TeamConfigurationError("existing workspace version drifts from handoff")
     agent_state = build.get("agent_state") if isinstance(build, Mapping) else None
     if not isinstance(agent_state, Mapping):
@@ -625,7 +614,7 @@ def canonical_existing_scope_preflight(
     return {
         "project_id": project_id,
         "workspace_state": context.get("state"),
-        "workspace_version": live_version,
+        "model_revision": live_version,
         "ontology_id": ontology_id,
         "modeling_batch_count": len(batch_items),
         "recent_session_count": len(recent_sessions),
@@ -673,8 +662,8 @@ def run_existing_scope_preflight(
             raise TeamConfigurationError("injected existing Project identity drifts")
         if live.get("ontology_id", normalized["ontology_id"]) != normalized["ontology_id"]:
             raise TeamConfigurationError("injected existing Ontology identity drifts")
-        live_version = live.get("workspace_version")
-        if live_version is not None and live_version != handoff["workspace_version"]:
+        live_version = live.get("model_revision")
+        if live_version is not None and live_version != handoff["model_revision"]:
             raise TeamConfigurationError("injected existing workspace version drifts")
     return {
         "checkout": _sanitize_evidence(checkout),

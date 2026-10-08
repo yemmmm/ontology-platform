@@ -41,7 +41,7 @@ from app.services.modeling_handlers import (
     PreparedModelingCommand,
     union_delta,
 )
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.operation_semantics import (
     OperationValidationError,
     reject_operation_secrets,
@@ -115,10 +115,10 @@ def _validate_delete_only_impact_receipt(value: Any) -> dict[str, Any]:
         raise InvalidCommandPayload("delete-only impact_receipt must be an object")
     required = {
         "schema_version",
+        "model_revision",
         "target_semantic_id",
         "project_id",
         "ontology_id",
-        "workspace_version",
         "candidate_digest",
         "entity_iri",
         "snapshot_digest",
@@ -137,7 +137,6 @@ def _validate_delete_only_impact_receipt(value: Any) -> dict[str, Any]:
         "target_semantic_id",
         "project_id",
         "ontology_id",
-        "workspace_version",
         "candidate_digest",
         "entity_iri",
         "snapshot_digest",
@@ -145,6 +144,8 @@ def _validate_delete_only_impact_receipt(value: Any) -> dict[str, Any]:
     ):
         if not isinstance(value.get(field), str) or not value[field]:
             raise InvalidCommandPayload(f"delete-only impact_receipt {field} is required")
+    if type(value.get("model_revision")) is not int or value["model_revision"] < 0:
+        raise InvalidCommandPayload("delete-only impact_receipt model_revision is required")
     if not isinstance(value.get("page_digests"), list) or not value["page_digests"]:
         raise InvalidCommandPayload("delete-only impact_receipt page_digests are required")
     if not isinstance(value.get("statements"), list):
@@ -241,7 +242,7 @@ class ModelingBatchService:
         self.settings = settings
         self.rdf_store = rdf_store
         self.handlers = ModelingCommandHandlerRegistry(settings)
-        self.workspace_versions = ModelingWorkspaceVersionService(session, settings)
+        self.model_revisions = OntologyModelRevisionService(session, settings)
 
     def submit(
         self,
@@ -309,7 +310,7 @@ class ModelingBatchService:
             {
                 "content_hash": content_hash,
                 "mode": payload.mode,
-                "expected_workspace_version": payload.expected_workspace_version,
+                "expected_model_revision": payload.expected_model_revision,
             }
         )
         existing_attempt = self.session.scalar(
@@ -340,12 +341,12 @@ class ModelingBatchService:
             raise ModelingBatchError(
                 "workspace_revision_conflict", "Ontology workspace is incomplete"
             )
-        current_version = self.workspace_versions.version_for(payload.ontology_id)
-        if current_version != payload.expected_workspace_version:
+        current_version = self.model_revisions.version_for(payload.ontology_id)
+        if current_version != payload.expected_model_revision:
             raise ModelingBatchError(
                 "workspace_revision_conflict",
                 "Ontology workspace changed after the caller last read it",
-                current_workspace_version=current_version,
+                current_model_revision=current_version,
             )
 
         batch, created_batch = self._get_or_create_batch(
@@ -369,7 +370,7 @@ class ModelingBatchService:
                     session_id=build_session_id,
                     ontology_id=payload.ontology_id,
                     lease_token=payload.lease_token or "",
-                    expected_workspace_version=payload.expected_workspace_version,
+                    expected_model_revision=payload.expected_model_revision,
                 )
             except BuildSessionError as exc:
                 raise ModelingBatchError(
@@ -384,8 +385,8 @@ class ModelingBatchService:
             request_hash=request_hash,
             mode=payload.mode,
             status="validating",
-            expected_workspace_version=payload.expected_workspace_version,
-            workspace_version_before=current_version,
+            expected_model_revision=payload.expected_model_revision,
+            model_revision_before=current_version,
             ontology_id=payload.ontology_id,
             lease_revision=(authorization_result or {}).get("lease_revision"),
             target_snapshot=self._target_snapshot(payload.ontology_id),
@@ -580,7 +581,7 @@ class ModelingBatchService:
             )
         workspace = OntologyWorkspaceService(self.session, self.settings).context(ontology_id)
         version = (
-            self.workspace_versions.version_for(ontology_id)
+            self.model_revisions.version_for(ontology_id)
             if workspace["state"] == "ready"
             else None
         )
@@ -626,7 +627,7 @@ class ModelingBatchService:
             "ontology": {"id": ontology.id, "name": ontology.name, "status": ontology.status},
             "workspace": {
                 "state": workspace["state"],
-                "workspace_version": version,
+                "model_revision": version,
                 "editable": workspace["state"] == "ready"
                 and workspace["editable"],
                 "issues": workspace["issues"],
@@ -1952,21 +1953,23 @@ class ModelingBatchService:
         return hashlib.sha256("\n".join(rows).encode("utf-8")).hexdigest()
 
     def _recovery_revision_guard(self, attempt) -> bool:
-        for graph in attempt.target_snapshot.get("graphs", []):
-            revision = self.session.scalar(
-                select(SemanticGraphRevisionModel).where(
-                    SemanticGraphRevisionModel.graph_iri == graph.get("graph_iri")
-                )
-            )
-            before = graph.get("revision_before")
-            if revision is None or before is None:
-                continue
-            if revision.revision == before:
-                continue
-            if revision.revision == before + 1 and revision.last_edit_audit_id == attempt.audit_id:
-                continue
+        # Old hash-bound attempts stay historical; recovery cannot assume they
+        # were prepared against the new revision contract.
+        before = attempt.model_revision_before
+        if before is None:
             return False
-        return True
+        current = self.model_revisions.version_for(attempt.batch.ontology_id)
+        if current == before:
+            return True
+        if current != before + 1:
+            return False
+        ontology = self.session.get(OntologyModel, attempt.batch.ontology_id)
+        audit_revision = self.session.scalar(
+            select(SemanticGraphRevisionModel).where(
+                SemanticGraphRevisionModel.graph_iri == ontology.model_graph_iri
+            )
+        )
+        return audit_revision is not None and audit_revision.last_edit_audit_id == attempt.audit_id
 
     def _commands_from_plan(self, ontology_id, plan):
         commands = {}
@@ -2047,7 +2050,7 @@ class ModelingBatchService:
         attempt.recovery_state = (
             "converged" if attempt.recovery_state != "not_required" else "not_required"
         )
-        attempt.workspace_version_after = self.workspace_versions.version_for(
+        attempt.model_revision_after = self.model_revisions.version_for(
             attempt.batch.ontology_id
         )
         after = self._target_snapshot(attempt.batch.ontology_id)
@@ -2056,7 +2059,7 @@ class ModelingBatchService:
         }
         attempt.target_snapshot = {
             **attempt.target_snapshot,
-            "source_signature_after": after.get("source_signature_before"),
+            "model_revision_after": after.get("model_revision_before"),
             "graphs": [
                 {
                     **before_graphs.get(graph["role"], {}),
@@ -2178,9 +2181,9 @@ class ModelingBatchService:
             "created_batch": created_batch,
             "created_attempt": created_attempt,
             "workspace": {
-                "expected_version": attempt.expected_workspace_version,
-                "before_version": attempt.workspace_version_before,
-                "after_version": attempt.workspace_version_after,
+                "expected_version": attempt.expected_model_revision,
+                "before_version": attempt.model_revision_before,
+                "after_version": attempt.model_revision_after,
             },
             "target": attempt.target_snapshot,
             "items": [self._result_dict(result) for result in attempt.item_results],
@@ -2331,8 +2334,8 @@ class ModelingBatchService:
         if self.rdf_store is not None and hasattr(self.rdf_store, "get_graph"):
             content_hash = self._observed_graph_hash(iri)
         return {"ontology_id": ontology_id,
-                "source_signature_before": workspace["source_signature"],
-                "source_signature_after": None,
+                "model_revision_before": workspace["model_revision"],
+                "model_revision_after": None,
                 "graphs": [{"role": "model", "graph_iri": iri,
                             "revision_before": workspace["model_revision"], "revision_after": None,
                             "content_hash_before": content_hash, "content_hash_after": None}]}

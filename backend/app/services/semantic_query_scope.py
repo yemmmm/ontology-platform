@@ -35,8 +35,7 @@ class SemanticQueryScopeNotReady(SemanticQueryScopeError):
 class ResolvedOntologyScope:
     ontology_id: str
     ontology_name: str
-    workspace_version: str
-    source_signature: str
+    model_revision: int
     graph_iris: tuple[str, ...]
     graph_assertion_kinds: dict[str, str]
     derived_state: dict[str, Any]
@@ -46,8 +45,7 @@ class ResolvedOntologyScope:
         return {
             "ontology_id": self.ontology_id,
             "ontology_name": self.ontology_name,
-            "workspace_version": self.workspace_version,
-            "source_signature": self.source_signature,
+            "model_revision": self.model_revision,
             "derived_state": self.derived_state,
             "warnings": list(self.warnings),
         }
@@ -200,8 +198,8 @@ class SemanticQueryScopeResolver:
     ) -> ResolvedOntologyScope:
         ontology_id = readiness.ontology_id
         read_scope = readiness.read_scope
-        workspace_version = readiness.workspace_version
-        if not ontology_id or read_scope is None or not workspace_version:
+        model_revision = readiness.model_revision
+        if not ontology_id or read_scope is None or model_revision is None:
             raise SemanticQueryScopeNotReady("Ontology workspace is not ready")
         graph_assertion_kinds = {
             graph: "asserted"
@@ -217,8 +215,7 @@ class SemanticQueryScopeResolver:
         return ResolvedOntologyScope(
             ontology_id=ontology.id,
             ontology_name=ontology.name,
-            workspace_version=workspace_version,
-            source_signature=read_scope.source_signature,
+            model_revision=model_revision,
             graph_iris=tuple(graph_assertion_kinds),
             graph_assertion_kinds=graph_assertion_kinds,
             derived_state=derived_state,

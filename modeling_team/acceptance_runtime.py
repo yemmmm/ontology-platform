@@ -225,8 +225,8 @@ class ExaminerRolePacket:
             state = normalized["model_state"]
             scope = normalized["platform_read_scope"]
             if (
-                not isinstance(state.get("workspace_version"), str)
-                or not state.get("workspace_version")
+                type(state.get("model_revision")) is not int
+                or state.get("model_revision") < 0
                 or not isinstance(state.get("state_digest"), str)
                 or re.fullmatch(r"[0-9a-f]{64}", state["state_digest"]) is None
                 or any(not isinstance(scope.get(field), str) or not scope.get(field) for field in ("project_id", "ontology_id"))
@@ -2148,7 +2148,7 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
     },
     "get_entity_statement_context": {
         "entity_iri": {"type": "string"},
-        "workspace_version": {"type": ["string", "null"]},
+        "model_revision": {"type": ["integer", "null"], "minimum": 0},
         "page_size": {"type": "integer", "minimum": 1, "maximum": 1000},
         "cursor": {"type": ["string", "null"]},
     },

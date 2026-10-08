@@ -104,7 +104,7 @@ def _canonical_state() -> dict:
         "ontologies": {
             ONTOLOGY_A: {
                 "ontology_id": GRAPH_A,
-                "source_signature": "sig-ontology-1",
+                "model_revision": 1,
                 "graph_set_status": "ready",
                 "revision": 3,
                 "members": [{"role": "asserted", "revision": 3, "content_hash": "sha256:" + "1" * 64}],
@@ -112,7 +112,7 @@ def _canonical_state() -> dict:
             },
             ONTOLOGY_B: {
                 "ontology_id": GRAPH_B,
-                "source_signature": "sig-ontology-2",
+                "model_revision": 2,
                 "graph_set_status": "ready",
                 "revision": 5,
                 "members": [{"role": "asserted", "revision": 5, "content_hash": "sha256:" + "2" * 64}],
@@ -120,7 +120,7 @@ def _canonical_state() -> dict:
             },
             ONTOLOGY_C: {
                 "ontology_id": GRAPH_C,
-                "source_signature": "sig-ontology-3",
+                "model_revision": 3,
                 "graph_set_status": "ready",
                 "revision": 7,
                 "members": [{"role": "asserted", "revision": 7, "content_hash": "sha256:" + "3" * 64}],

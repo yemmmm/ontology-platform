@@ -355,7 +355,7 @@ def test_resource_binding_receipt_preserves_kind_and_scope():
                 "read_evidence": {"source": "governed-read"},
                 "project_id": "project",
                 "ontology_id": "ontology",
-                "workspace_version": "w1",
+                "model_revision": 1,
             }
         ]
     }
@@ -364,7 +364,7 @@ def test_resource_binding_receipt_preserves_kind_and_scope():
         read_model,
         project_id="project",
         ontology_id="ontology",
-        workspace_version="w1",
+        model_revision=1,
     )
     assert receipt["bindings"][0]["resource_kind"] == "table_mapping"
     assert validate_unified_resource_binding_receipt(candidate, receipt) == receipt
@@ -403,14 +403,14 @@ def test_active_resource_binding_tool_adapts_governed_read_envelope():
                         "iri": iri,
                         "label": "Existing table mapping",
                         "ontology_id": "ontology",
-                        "source_signature": "governed-read-v1",
+                        "model_revision": 1,
                         "assertion_kind": "asserted",
                         "properties": {"mapping_definition": {}},
                     },
                     "scope": {
                         "project_id": "project",
                         "ontology_id": "ontology",
-                        "workspace_version": "w1",
+                        "model_revision": 1,
                     },
                 },
             },
@@ -426,11 +426,11 @@ def test_active_resource_binding_tool_adapts_governed_read_envelope():
             "read_evidence": {
                 "assertion_kind": "asserted",
                 "envelope_digest": receipt["bindings"][0]["read_evidence"]["envelope_digest"],
-                "source_signature": "governed-read-v1",
+                "model_revision": 1,
             },
             "project_id": "project",
             "ontology_id": "ontology",
-            "workspace_version": "w1",
+            "model_revision": 1,
         }
     ]
     assert validate_unified_resource_binding_receipt(candidate, receipt) == receipt

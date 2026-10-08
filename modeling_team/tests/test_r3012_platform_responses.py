@@ -72,9 +72,8 @@ def _platform_context() -> dict:
 
     return {
         "state": "ready",
-        "source_signature": "sig-1",
-        "ontology_id": "ontology-1",
         "model_revision": 1,
+        "ontology_id": "ontology-1",
         "content_hash": "h1",
     }
 
@@ -611,7 +610,7 @@ def test_api_envelope_reissued_pagination_cursors_are_not_semantic_drift():
         (("data", "result_status"), "no_match"),
         (("data", "scope", "ontology_ids"), ["ontology-2"]),
         (("data", "source"), {"id": "source-2"}),
-        (("data", "workspace_version"), 2),
+        (("data", "model_revision"), 2),
         (("data", "primary_matches"), [{"id": "resource-9", "iri": "iri:9"}]),
         (("data", "primary_matches", 0, "iri"), "iri:changed"),
         (("data", "matches_page", "returned"), 2),
@@ -628,7 +627,7 @@ def test_api_envelope_reissued_pagination_cursors_are_not_semantic_drift():
 def test_api_envelope_semantic_and_pagination_state_drift_is_preserved(path, replacement):
     payload = json.loads(json.dumps(_CURSOR_PAGE_RESULT))
     payload.update(
-        scope={"ontology_ids": ["ontology-1"]}, source={"id": "source-1"}, workspace_version=1
+        scope={"ontology_ids": ["ontology-1"]}, source={"id": "source-1"}, model_revision=1
     )
     retained = {"status": "matched", "data": payload}
     reread = json.loads(json.dumps(retained))

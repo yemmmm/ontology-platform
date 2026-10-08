@@ -107,7 +107,7 @@ def test_real_early_consumer_without_handoff_attempt_or_production_transition(mo
             def apply(commands, suffix):
                 request = {'client_batch_id':token+'-'+suffix, 'ontology_id':ontology_id,
                     'mode':'dry_run', 'idempotency_key':token+'-dry-'+suffix,
-                    'expected_workspace_version':context()['workspace']['workspace_version'],
+                    'expected_model_revision':context()['workspace']['model_revision'],
                     'items':commands}
                 endpoint = f"/build-sessions/{build['id']}/modeling-batches"
                 dry = post(endpoint, request)

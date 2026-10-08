@@ -269,7 +269,7 @@ def test_r23003_receipt_v1_binding_mismatch_invalidates_receipt_and_accepts_revi
         "workflow-b expected Workflow but live projection is InvokingWorkflow",
         original_delivery_id="delivery-5",
         receipt_digest=canonical_digest(receipt),
-        workspace_version="workspace-v1",
+        model_revision=1,
     )
     assert progress.observe_delivery(
         _delivery(
@@ -503,7 +503,7 @@ def test_r23003_broker_allows_standalone_post_receipt_conflict_and_revision_repl
         "candidate references a class absent from the retained ontology",
         original_delivery_id=original.delivery_id,
         receipt_digest=canonical_digest(receipt),
-        workspace_version="workspace-v1",
+        model_revision=1,
     )
     standalone = broker.send(
         "protocol", "modeling", json.dumps(conflict), expects_reply=True
@@ -582,7 +582,7 @@ def test_r23003_post_receipt_revision_rejects_same_revision_and_accepts_next() -
         "each delete target needs a standalone existing_entity_ref binding",
         original_delivery_id="delivery-6",
         receipt_digest=canonical_digest(receipt),
-        workspace_version="workspace-v1",
+        model_revision=1,
     )
     assert progress.observe_delivery(
         _delivery("protocol", "modeling", json.dumps(conflict), "delivery-8"),

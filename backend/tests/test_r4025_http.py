@@ -52,7 +52,7 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
                          {"client_session_id": token}, 201)
             lease = post(f"/build-sessions/{build['id']}/ontology-leases/{ontology_id}:acquire",
                          {"client_request_id": token, "expected_session_revision": 1})
-            version = get(f"/ontologies/{ontology_id}/modeling-context")["workspace"]["workspace_version"]
+            version = get(f"/ontologies/{ontology_id}/modeling-context")["workspace"]["model_revision"]
             batch_path = f"/build-sessions/{build['id']}/modeling-batches"
             item = {"client_item_id": "rule", "command_kind": "create_entity", "payload": {
                 "entity_id": token + "-shape-owl-rule", "label": "工单关闭规则",
@@ -61,7 +61,7 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
                     "applicability": "工单", "unknowns": ["超时例外待确认"]},
             }}
             request = dict(client_batch_id=token, ontology_id=ontology_id, mode="dry_run",
-                           idempotency_key="dry", expected_workspace_version=version, items=[item])
+                           idempotency_key="dry", expected_model_revision=version, items=[item])
             invalid = {**request, "client_batch_id": token + "-invalid", "idempotency_key": "invalid",
                        "mode": "apply_atomic", "lease_token": lease["lease_token"], "items": [item,
                        {"client_item_id": "bad", "command_kind": "create_entity",

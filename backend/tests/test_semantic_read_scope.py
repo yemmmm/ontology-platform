@@ -9,7 +9,7 @@ def test_scope_is_the_ontology_model_only(in_memory_session, include):
     result = SemanticReadScopeResolver(in_memory_session).resolve(ontology.id, include)
     assert result.ontology_id == ontology.id
     assert result.model_graph_iris == [ontology.model_graph_iri]
-    assert result.source_signature == ontology.source_signature
+    assert result.model_revision == ontology.model_revision
     assert result.shape_graph_iris == []
     assert result.reasoning_result_graph_iri is None
     assert result.derived_state == {}

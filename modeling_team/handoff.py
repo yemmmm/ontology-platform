@@ -14,7 +14,7 @@ from .contracts import TeamConfigurationError
 from .platform_scope import PlatformScope, PlatformScopeError
 
 
-HANDOFF_FIELDS = ("run_id", "project_id", "ontology_id", "workspace_version", "scope_disposition")
+HANDOFF_FIELDS = ("run_id", "project_id", "ontology_id", "model_revision", "scope_disposition")
 _REQUIRED_ROLES = {"coordinator", "modeling", "protocol", "acceptance"}
 
 
@@ -46,10 +46,10 @@ def publish_scope_handoff(scope: Any, run: Any, phase_a_verdict: str, destinatio
                 "run_id": run.run_id,
                 "project_id": terminal["project_id"],
                 "ontology_id": terminal["ontology_id"],
-                "workspace_version": terminal["workspace_version"],
+                "model_revision": terminal["model_revision"],
                 "scope_disposition": "retained",
             }
-            if not isinstance(payload["workspace_version"], str) or not payload["workspace_version"]:
+            if type(payload["model_revision"]) is not int or payload["model_revision"] < 0:
                 raise TeamConfigurationError("scope handoff requires a non-empty workspace version")
             payload_hash = hashlib.sha256(
                 json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
@@ -94,14 +94,18 @@ def publish_offline_scope_handoff(
         raise TeamConfigurationError("offline handoff requires immutable cleaned run state")
     if not isinstance(run_id, str) or not isinstance(scope_data, dict):
         raise TeamConfigurationError("offline handoff requires immutable retained scope evidence")
-    required_scope = ("project_id", "ontology_id", "workspace_version", "completed_session_id")
-    scope_keys = {"owned", "project_id", "ontology_id", "workspace_version", "completed_session_id", "scope_disposition"}
+    required_scope = ("project_id", "ontology_id", "model_revision", "completed_session_id")
+    scope_keys = {"owned", "project_id", "ontology_id", "model_revision", "completed_session_id", "scope_disposition"}
     if set(retained) != {"run_id", "terminal_statuses", "scope"} or set(scope_data) != scope_keys:
         raise TeamConfigurationError("offline handoff retained evidence has unexpected fields")
     if (
         scope_data.get("scope_disposition") != "retained-pending-acceptance"
         or scope_data.get("owned") is not True
-        or any(not isinstance(scope_data.get(field), str) or not scope_data[field] for field in required_scope)
+        or any(
+            (type(scope_data.get(field)) is not int or scope_data[field] < 0) if field == "model_revision"
+            else (not isinstance(scope_data.get(field), str) or not scope_data[field])
+            for field in required_scope
+        )
     ):
         raise TeamConfigurationError("offline handoff producer state is not retained pending acceptance")
     if statuses != {role: "completed" for role in sorted(_REQUIRED_ROLES)}:
@@ -119,7 +123,7 @@ def publish_offline_scope_handoff(
     scope.project_id = scope_data["project_id"]
     scope.ontology_id = scope_data["ontology_id"]
     scope.scope_disposition = scope_data["scope_disposition"]
-    scope.final_workspace_version = scope_data["workspace_version"]
+    scope.final_model_revision = scope_data["model_revision"]
     scope.completed_session_id = scope_data["completed_session_id"]
     scope.terminal_results = run.terminal_results
     try:
@@ -129,7 +133,7 @@ def publish_offline_scope_handoff(
     expected = {
         "project_id": scope_data["project_id"],
         "ontology_id": scope_data["ontology_id"],
-        "workspace_version": scope_data["workspace_version"],
+        "model_revision": scope_data["model_revision"],
     }
     if {key: current.get(key) for key in expected} != expected:
         raise TeamConfigurationError("offline handoff scope drifted from immutable run state")

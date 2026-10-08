@@ -3,6 +3,20 @@
 本文档描述当前 FastMCP 进程实际注册的工具。完整清单来自 `mcp.list_tools()`，并通过现有
 `app.api.mcp_catalog._enumerate_tools()` 补充 category 和源文件。
 
+## R4.0-027 模型状态绑定
+
+当前读取、索引、分页与交接使用 Ontology 的非负整数 `model_revision`（包括 `0`）。
+Batch 必须提交整数 `expected_model_revision`；旧 `expected_workspace_version` 字段与
+字符串哈希不再有效。漂移仍返回 `workspace_revision_conflict`，详情包含
+`current_model_revision`；重新读取后使用新的幂等键继续。Attempt 的
+`workspace.expected_version/before_version/after_version` 保留现有回执结构，值均为编号。
+模型写入已提交才推进编号，dry-run、失败未写入、索引重建和搜索配置变化不推进。
+Embedding／投影配置仍单独校验；旧索引降级为词面召回，重建成功后恢复当前向量索引。
+恢复未收敛时，现有写入围栏阻止将不确定 RDF 内容作为稳定模型读取；反馈指向待协调 Attempt。
+迁移 `0035_ontology_model_revision` 保留原 Ontology 编号与历史哈希列，不翻译旧回执。
+旧分页游标须从第一页重读；旧交接与未完成 Attempt 须重新读取并准备新的编号绑定。
+检查点和冻结证据保留原样，不改写历史记录为新状态。
+
 ## 启动与配置
 
 从 backend 目录启动 stdio MCP server：
@@ -64,7 +78,7 @@ R1.2-004 起 `query_semantic_context` 支持一次提交一组同主题的相关
 `context_limit` 默认 100/最大 1000）和独立 cursor：`match_cursor` 继续下一页匹配，
 `context_cursor` 只在当前匹配页内继续上下文。请求同时只能携带其中一种 cursor，且 cursor 必须与
 当前 principal、Project/Ontology 范围、原始 `queries`、过滤、深度、页大小及绑定的
-`workspace_version`/source signature 完全匹配；否则返回 `invalid_context_cursor`、
+`model_revision` 完全匹配；否则返回 `invalid_context_cursor`、
 `context_cursor_mismatch` 或 `context_snapshot_changed`。响应新增 `query.queries`、
 `query.normalized_queries`、`primary_matches[*].matched_queries`、`primary_matches[*].fusion`、
 `related_context[*].root_paths`、`matches_page`、`context_page`。配置
@@ -171,7 +185,7 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | build_sessions | `create_modeling_workflow_artifact` | Create one immutable, idempotent workflow artifact version. | artifact_key, artifact_type, client_version_id, content, content_format, created_by_role, session_id, workflow_name, workflow_version | artifact_key, artifact_type, client_version_id, content, content_format, created_by_role, ontology_id, role_prompt_version, session_id, supersedes_workflow_artifact_id, workflow_name, workflow_version | `backend/app/mcp/tools/modeling_workflow.py` |
 | build_sessions | `export_modeling_workflow_record` | Export the complete execution record as structured JSON or Markdown. | session_id | format, session_id | `backend/app/mcp/tools/modeling_workflow.py` |
 | build_sessions | `get_build_session` | Read one Build Session's checkpoints, leases, and recovery context. | session_id | checkpoint_cursor, checkpoint_limit, session_id | `backend/app/mcp/tools/build_sessions.py` |
-| build_sessions | `get_entity_statement_context` | Read the complete incident statement set for one exact live entity IRI.  This is intentionally a generic read projection.  Omitting ``workspace_version`` binds the authoritative current version, which the response and every opaque cursor carry; an explicit version must still equal the current version.  The opaque cursor binds Project/Ontology, exact entity IRI, workspace version, and a snapshot digest; callers must consume every page through ``complete=true`` before using the response as delete-impact evidence.  | entity_iri, ontology_id | cursor, entity_iri, ontology_id, page_size, workspace_version | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `get_entity_statement_context` | Read the complete incident statement set for one exact live entity IRI.  This is intentionally a generic read projection.  Omitting ``model_revision`` binds the authoritative current version, which the response and every opaque cursor carry; an explicit version must still equal the current version.  The opaque cursor binds Project/Ontology, exact entity IRI, model revision, and a snapshot digest; callers must consume every page through ``complete=true`` before using the response as delete-impact evidence.  | entity_iri, ontology_id | cursor, entity_iri, model_revision, ontology_id, page_size | `backend/app/mcp/tools/modeling_batches.py` |
 | build_sessions | `get_modeling_batch` | Read immutable Items, Attempts, Findings, and recovery history. | batch_id | batch_id | `backend/app/mcp/tools/modeling_batches.py` |
 | build_sessions | `get_modeling_context` | Read the authoritative current state from which further modeling starts. | ontology_id | ontology_id | `backend/app/mcp/tools/modeling_batches.py` |
 | build_sessions | `get_modeling_execution_event` | Read one immutable Modeling Execution Event. | execution_event_id | execution_event_id | `backend/app/mcp/tools/modeling_workflow.py` |
@@ -187,7 +201,7 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | build_sessions | `renew_ontology_lease` | Renew a valid Ontology lease using its opaque token. | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `resume_build_session` | Resume an active Build Session without changing its revision. | client_request_id, expected_revision, session_id | client_request_id, expected_revision, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `save_build_checkpoint` | Idempotently append an Agent-reported Build Checkpoint. | client_checkpoint_id, current_step, expected_revision, phase, session_id | blockers, client_checkpoint_id, current_step, expected_revision, failure, next_step, ontology_id, phase, related_batch_id, session_id, summary | `backend/app/mcp/tools/build_sessions.py` |
-| build_sessions | `submit_modeling_batch` | Dry-run or idempotently apply one immutable Ontology Modeling Batch. | client_batch_id, expected_workspace_version, idempotency_key, items, ontology_id, session_id | client_batch_id, expected_workspace_version, idempotency_key, items, lease_token, mode, ontology_id, session_id | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `submit_modeling_batch` | Dry-run or idempotently apply one immutable Ontology Modeling Batch. | client_batch_id, expected_model_revision, idempotency_key, items, ontology_id, session_id | client_batch_id, expected_model_revision, idempotency_key, items, lease_token, mode, ontology_id, session_id | `backend/app/mcp/tools/modeling_batches.py` |
 | semantic | `add_semantic_protection_set_members` | Batch-add resource IRIs to a protection set (idempotent). | members, protection_set_id | actor, members, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `compile_and_apply_canonical_command` | Compile and apply a structured product command through the Phase 7 canonical writer. | command_kind, ontology_id, payload | actor, command_kind, ontology_id, payload, reason | `backend/app/mcp/tools/semantic.py` |
 | semantic | `create_semantic_migration_run` | Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode. | mode, scope_type | batch_size, created_by, mode, scope_id, scope_type, target_ontology_id | `backend/app/mcp/tools/semantic.py` |

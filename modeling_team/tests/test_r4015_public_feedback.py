@@ -128,7 +128,7 @@ def test_feedback_changes_are_superseded_and_reports_preserved(tmp_path, monkeyp
         if change == "freeze":
             path = run_root / "competency-questions/frozen/freeze-0001.json"
             path.write_text(path.read_text() + " ")
-    contexts = [_platform_context(), _platform_context(source_signature="changed")] if change == "model" else None
+    contexts = [_platform_context(), _platform_context(model_revision=2)] if change == "model" else None
     code, record, _, _, _, state, _ = execute_feedback(
         tmp_path, monkeypatch, callback=mutate, contexts=contexts)
     assert code == 1

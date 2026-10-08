@@ -19,6 +19,16 @@ def write(root, path, value):
     return target
 
 
+def test_workspace_bindings_use_revision_independent_of_storage_hash():
+    context = {"state": "ready", "ontology_id": "o", "model_revision": 0,
+               "content_hash": "old-storage-hash"}
+    before = workspace_digests(context)
+    context["content_hash"] = "new-storage-hash"
+    assert workspace_digests(context) == before
+    context["model_revision"] = 1
+    assert workspace_digests(context) != before
+
+
 def run_fixture(root, project="p", run="running"):
     path = root / run
     write(
@@ -456,7 +466,7 @@ def test_verified_report_then_drift_deleted_missing_evidence_and_tamper(tmp_path
         "state": "ready",
         "ontology_id": "gs",
         "graph_set_status": "active",
-        "source_signature": "source",
+        "model_revision": 1,
         "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
     }
     ws, gs = workspace_digests(context)
@@ -510,7 +520,7 @@ def test_verified_report_then_drift_deleted_missing_evidence_and_tamper(tmp_path
     path.write_text(json.dumps(produced))
     assert state() == "stale"
     path.write_text(json.dumps(value))
-    context["source_signature"] = "new-source"
+    context["model_revision"] = "new-source"
     assert state() == "stale"
 
     def missing(*_):
@@ -649,7 +659,7 @@ def test_admin_cq_report_verifies_latest_freeze_and_live_model_without_host_even
     _, snapshot = frozen(root)
     context = {
         "state": "ready", "ontology_id": "gs", "graph_set_status": "active",
-        "source_signature": "source",
+        "model_revision": 1,
         "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
     }
     ws, gs = workspace_digests(context)
@@ -668,7 +678,7 @@ def test_admin_cq_report_verifies_latest_freeze_and_live_model_without_host_even
     result = service.competency_questions("p", "running")["artifacts"]["reports"][0]["data"]
     assert result["applicability"] == "verified_current"
     assert result["question_verdicts"][1]["verdict"] == "pass"
-    context["source_signature"] = "changed"
+    context["model_revision"] = "changed"
     assert service.competency_questions("p", "running")["artifacts"]["reports"][0][
         "data"
     ]["applicability"] == "stale"
@@ -679,7 +689,7 @@ def test_admin_cq_reads_formal_acceptance_only_runs_with_current_binding(tmp_pat
     _, snapshot = frozen(root)
     context = {
         "state": "ready", "ontology_id": "gs", "graph_set_status": "active",
-        "source_signature": "source",
+        "model_revision": 1,
         "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
     }
     ws, gs = workspace_digests(context)
@@ -728,5 +738,5 @@ def test_admin_cq_reads_formal_acceptance_only_runs_with_current_binding(tmp_pat
     assert all(a["data"]["applicability"] == "verified_current" for a in reports)
     assert result["acceptance_reports_complete"] is True
     assert "PRIVATE-SENTINEL" not in json.dumps(result)
-    context["source_signature"] = "changed"
+    context["model_revision"] = "changed"
     assert service.competency_questions("p", "running")["artifacts"]["reports"] == []

@@ -33,7 +33,7 @@ export const resources = [
   resource("urn:operation", "关闭操作", "behavior"), resource("urn:mapping", "字段映射", "data_mapping"), resource("urn:metric", "完成时长"),
   resource("urn:same-name", "工单", "rule"), resource("urn:role", "维修责任", "business_role"), resource("urn:interface", "关闭接口", "interface_mapping"),
 ];
-export function envelope(items: unknown[], signature = "sig1", complete = true) { return { items, source_signature: signature, paging: { complete }, warnings: [] }; }
+export function envelope(items: unknown[], modelRevision = 1, complete = true) { return { items, model_revision: modelRevision, paging: { complete }, warnings: [] }; }
 export const relations = [{ id: "e1", source: "urn:work", target: "urn:process", relation: "urn:relation", label: "父单关系", ontology_id: "o1", assertion_kind: "asserted" }];
 export function recall(items: unknown[], cursor: string | null = null) { return { primary_matches: items, related_context: [{ kind: "fact", id: "FACT_SENTINEL" }], result_status: "matched", matches_page: { complete: !cursor, next_match_cursor: cursor }, recall: { completeness: "complete" }, warnings: [] }; }
 export function match(id: string, label = id) { return { id, iri: `urn:${id}`, label, ontology_id: "o1", kind: "instance", description: "已记录摘要" }; }

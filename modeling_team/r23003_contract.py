@@ -140,7 +140,7 @@ def validate_canonical_entity_projection(
     *,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
 ) -> dict[str, str]:
     """Validate the backend's explicit entity identity projection.
 
@@ -155,7 +155,7 @@ def validate_canonical_entity_projection(
         "class_iri",
         "project_id",
         "ontology_id",
-        "workspace_version",
+        "model_revision",
     }
     if not isinstance(value, Mapping) or not required.issubset(value):
         raise ValueError("canonical entity projection fields are incomplete")
@@ -172,11 +172,11 @@ def validate_canonical_entity_projection(
     for field, expected in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
-        if not isinstance(result[field], str) or result[field] != expected:
+        if result[field] != expected or (type(result[field]) is not int if field == "model_revision" else not isinstance(result[field], str)):
             raise ValueError(f"canonical entity {field} drifts")
-    return {field: str(result[field]) for field in required}
+    return {field: result[field] for field in required}
 
 
 def _cursor_encode(value: Mapping[str, Any]) -> str:
@@ -204,7 +204,7 @@ def get_entity_statement_context(
     project_id: str,
     ontology_id: str,
     entity_iri: str,
-    workspace_version: str,
+    model_revision: int,
     page_size: int = 100,
     cursor: str | None = None,
 ) -> dict[str, Any]:
@@ -216,7 +216,7 @@ def get_entity_statement_context(
     page as a complete delete impact read.
     """
 
-    if not all(isinstance(item, str) and item for item in (project_id, ontology_id, workspace_version)):
+    if not all(isinstance(item, str) and item for item in (project_id, ontology_id)) or type(model_revision) is not int or model_revision < 0:
         raise ValueError("entity statement scope is invalid")
     parsed = urlparse(entity_iri) if isinstance(entity_iri, str) else None
     if parsed is None or not parsed.scheme or not parsed.netloc:
@@ -239,7 +239,7 @@ def get_entity_statement_context(
             "project_id": project_id,
             "ontology_id": ontology_id,
             "entity_iri": entity_iri,
-            "workspace_version": workspace_version,
+            "model_revision": model_revision,
             "snapshot_digest": snapshot_digest,
         }
         for key, value in expected.items():
@@ -260,7 +260,7 @@ def get_entity_statement_context(
                 "project_id": project_id,
                 "ontology_id": ontology_id,
                 "entity_iri": entity_iri,
-                "workspace_version": workspace_version,
+                "model_revision": model_revision,
                 "snapshot_digest": snapshot_digest,
                 "offset": next_offset,
             }
@@ -269,7 +269,7 @@ def get_entity_statement_context(
         "project_id": project_id,
         "ontology_id": ontology_id,
         "entity_iri": entity_iri,
-        "workspace_version": workspace_version,
+        "model_revision": model_revision,
         "statements": page,
         "page_digest": canonical_digest(page),
         "snapshot_digest": snapshot_digest,
@@ -285,7 +285,7 @@ def build_delete_impact_receipt(
     candidate_digest: str,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
 ) -> dict[str, Any]:
     """Freeze a complete page chain as tool-owned delete impact evidence."""
 
@@ -300,7 +300,7 @@ def build_delete_impact_receipt(
         if (
             page.get("project_id") != project_id
             or page.get("ontology_id") != ontology_id
-            or page.get("workspace_version") != workspace_version
+            or page.get("model_revision") != model_revision
             or page.get("entity_iri") != entity_iri
         ):
             raise ValueError("delete impact scope/entity drifts")
@@ -348,7 +348,7 @@ def build_delete_impact_receipt(
         "target_semantic_id": target_semantic_id,
         "project_id": project_id,
         "ontology_id": ontology_id,
-        "workspace_version": workspace_version,
+        "model_revision": model_revision,
         "candidate_digest": candidate_digest,
         "entity_iri": entity_iri,
         "snapshot_digest": next(iter(snapshots)),

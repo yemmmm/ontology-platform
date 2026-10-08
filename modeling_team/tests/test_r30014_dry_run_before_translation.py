@@ -115,7 +115,7 @@ def _proof(**overrides) -> dict:
         "mode": "dry_run",
         "attempt_status": "validated",
         "content_hash": platform_content_hash(_dry_run_batch()),
-        "workspace_before_version": "1",
+        "workspace_before_version": 1,
         "response_digest": "sha256:" + "b" * 64,
         "recorded_at": "2026-01-01T00:00:00+00:00",
     }
@@ -158,7 +158,7 @@ def test_platform_content_hash_matches_the_backend_service_hash():
         client_batch_id="placeholder-batch-1",
         ontology_id=ontology_id,
         idempotency_key="placeholder-key-1",
-        expected_workspace_version="1",
+        expected_model_revision=1,
         mode="dry_run",
         items=items,
     )
@@ -177,7 +177,7 @@ def test_platform_content_hash_matches_the_backend_service_hash():
             "mode": "apply_atomic",
             "idempotency_key": "another-key",
             "lease_token": "lease",
-            "expected_workspace_version": "9",
+            "expected_model_revision": 9,
         }
     ) == backend_hash_value
 
@@ -258,7 +258,7 @@ def test_dry_run_proof_gate_matrix(tmp_path):
     cases = [
         (_proof(attempt_status="validation_failed"), "dry_run_proof_not_validated"),
         (_proof(content_hash="0" * 64), "dry_run_proof_content_mismatch"),
-        (_proof(workspace_before_version="0"), "dry_run_proof_workspace_mismatch"),
+        (_proof(workspace_before_version=0), "dry_run_proof_workspace_mismatch"),
         (_proof(mode="apply_atomic"), "dry_run_proof_missing"),
         (_proof(plan_ref="stage3-neutral-graph/materialization-plans/plan-0-r1.json"), "dry_run_proof_missing"),
         (_proof(projection_digest="sha256:" + "c" * 64), "dry_run_proof_missing"),
@@ -324,7 +324,7 @@ def test_build_attempt_proof_requires_complete_platform_identity():
             "mode": "dry_run",
             "attempt_status": "validated",
             "content_hash": platform_content_hash(batch),
-            "workspace": {"before_version": "1"},
+            "workspace": {"before_version": 1},
         }
         data.update(overrides)
         return data
@@ -371,7 +371,7 @@ def test_build_attempt_proof_requires_complete_platform_identity():
 # --- Runner integration: the staged order through the real handler ------------
 
 
-def _attempt_forwarder(*, content_hash=None, attempt_status="validated", workspace_before="1"):
+def _attempt_forwarder(*, content_hash=None, attempt_status="validated", workspace_before=1):
     """A forwarder whose reply carries the full read-back-verified identity."""
 
     calls: list[dict] = []
@@ -586,7 +586,7 @@ def test_apply_rejects_reusing_the_dry_run_idempotency_key(tmp_path):
 
 def test_workspace_drift_is_typed_and_a_timepoint_free_proof_stays_usable(tmp_path):
     # M16: the dry-run was taken at another workspace version.
-    forwarder, _calls = _attempt_forwarder(workspace_before="0")
+    forwarder, _calls = _attempt_forwarder(workspace_before=0)
     staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
     try:
         staged.prepare()

@@ -296,11 +296,8 @@ class SemanticContextQueryService:
         # across requests.  Direct/MCP callers without an injected codec keep
         # the historical per-query construction semantics.
         cursor_codec = self.cursor_codec or ContextCursorCodec.from_settings(self.settings)
-        workspace_versions = tuple(
-            (entry.ontology_id, entry.workspace_version) for entry in scope.ontologies
-        )
-        source_signatures = tuple(
-            (entry.ontology_id, entry.source_signature) for entry in scope.ontologies
+        model_revisions = tuple(
+            (entry.ontology_id, entry.model_revision) for entry in scope.ontologies
         )
         binding = make_binding(
             principal=principal,
@@ -316,8 +313,7 @@ class SemanticContextQueryService:
             depth=depth,
             limit=limit,
             context_limit=context_limit,
-            workspace_versions=workspace_versions,
-            source_signatures=source_signatures,
+            model_revisions=model_revisions,
         )
 
         match_payload = self._decode_cursor_opt(
@@ -452,8 +448,7 @@ class SemanticContextQueryService:
                 CursorPayload(
                     kind=CURSOR_KIND_MATCH,
                     binding_digest=binding_digest(binding),
-                    workspace_versions=workspace_versions,
-                    source_signatures=source_signatures,
+                    model_revisions=model_revisions,
                     resume_key=_match_resume_key(fused[limit]),
                     candidate_digest=candidate_digest,
                 ),
@@ -483,8 +478,7 @@ class SemanticContextQueryService:
                 CursorPayload(
                     kind=CURSOR_KIND_CONTEXT,
                     binding_digest=binding_digest(binding),
-                    workspace_versions=workspace_versions,
-                    source_signatures=source_signatures,
+                    model_revisions=model_revisions,
                     resume_key=_context_resume_key(related_raw[context_limit]),
                     match_page_start_key=_match_resume_key(primary[0]),
                     root_match_digest=root_digest,
@@ -579,11 +573,8 @@ class SemanticContextQueryService:
             ontology_ids=ontology_ids,
         )
         cursor_codec = self.cursor_codec or ContextCursorCodec.from_settings(self.settings)
-        workspace_versions = tuple(
-            (entry.ontology_id, entry.workspace_version) for entry in scope.ontologies
-        )
-        source_signatures = tuple(
-            (entry.ontology_id, entry.source_signature) for entry in scope.ontologies
+        model_revisions = tuple(
+            (entry.ontology_id, entry.model_revision) for entry in scope.ontologies
         )
         binding = make_binding(
             principal=principal,
@@ -599,8 +590,7 @@ class SemanticContextQueryService:
             depth=depth,
             limit=limit,
             context_limit=context_limit,
-            workspace_versions=workspace_versions,
-            source_signatures=source_signatures,
+            model_revisions=model_revisions,
         )
         context_payload = self._decode_cursor_opt(
             cursor_codec, context_cursor, binding=binding, expected_kind=CURSOR_KIND_CONTEXT,
@@ -685,8 +675,7 @@ class SemanticContextQueryService:
                 CursorPayload(
                     kind=CURSOR_KIND_CONTEXT,
                     binding_digest=binding_digest(binding),
-                    workspace_versions=workspace_versions,
-                    source_signatures=source_signatures,
+                    model_revisions=model_revisions,
                     resume_key=_context_resume_key(related_raw[context_limit]),
                     match_page_start_key=_match_resume_key(anchor_item),
                     root_match_digest=_root_digest([anchor_item]),
@@ -972,8 +961,7 @@ class SemanticContextQueryService:
             readiness = self.scope_resolver.readiness.evaluate(ontology)
             if (
                 not readiness.queryable or readiness.read_scope is None
-                or readiness.workspace_version != entry.workspace_version
-                or readiness.read_scope.source_signature != entry.source_signature
+                or readiness.model_revision != entry.model_revision
             ):
                 raise SemanticContextSnapshotChanged("Semantic scope changed during the query")
 
@@ -2344,7 +2332,7 @@ def _public_scope(scope: Mapping[str, Any]) -> dict[str, Any]:
             compact_ontologies.append(
                 {
                     "ontology_id": ontology.get("ontology_id"),
-                    "workspace_version": ontology.get("workspace_version"),
+                    "model_revision": ontology.get("model_revision"),
                 }
             )
     return {

@@ -30,7 +30,7 @@ class FakeScopeResolver:
 def _resolution(source_iris, reasoning=None, rule=None):
     return ScopeResolution(
         ontology_id="gs-1",
-        source_signature="sig-1",
+        model_revision=1,
         include="asserted",
         model_graph_iris=source_iris, shape_graph_iris=[],
 

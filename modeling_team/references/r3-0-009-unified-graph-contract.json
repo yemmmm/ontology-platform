@@ -121,7 +121,7 @@
       "every forwarded item is bound to candidate content through a decision binding, including items with no commonality decision",
       "candidate_content_digests is a JSON object mapping candidate item_id to that item's canonical digest, never an array of digests; a non-object shape is a typed unified_schema_mismatch naming the field, so the plan is rejected at load time instead of failing inside a close check",
       "identity bindings carry exactly one of resource_iri (with the approved read evidence_ref) and receipt_ref; a future IRI is never fabricated. A Host-authoritative intended identity used for preprotection or a same-batch confirmed L3 attachment is distinct from existing identity, keeps the future receipt_ref binding, and must match actual dry_run/apply resource_outputs before dependent work proceeds",
-      "execution parameters (lease, mode, idempotency key, expected workspace version) never enter the projection or its digest"
+      "execution parameters (lease, mode, idempotency key, expected model revision) never enter the projection or its digest"
     ]
   },
   "digest_rules": {

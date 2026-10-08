@@ -15,7 +15,7 @@ export type Resource = {
   detail_fields?: JsonObject; properties?: JsonObject; data?: JsonObject;
 };
 export type Relation = { id: string; source: string; target: string; relation: string; label?: string; assertion_kind: string; edge_kind?: "rdf_relation" | "structured_reference"; field_path?: string };
-export type Envelope<T> = { items: T[]; source_signature: string; paging?: { complete?: boolean }; warnings?: { code?: string; message?: string }[] };
+export type Envelope<T> = { items: T[]; model_revision: number; paging?: { complete?: boolean }; warnings?: { code?: string; message?: string }[] };
 export type RecallResult = Resource & { id: string };
 export type RecallResponse = {
   primary_matches: RecallResult[]; result_status: string;

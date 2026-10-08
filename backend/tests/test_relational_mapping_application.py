@@ -19,7 +19,7 @@ from app.repositories.postgres import create_session_factory
 from app.repositories.rdf_store import GraphWriteResult, RdfGraphDelta, RdfStoreRepository
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingAuthorizationContext, ModelingBatchService
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic import SemanticService, SemanticServiceError
 from app.services.semantic_canonical_write import (
@@ -147,7 +147,7 @@ def submit(fixture, ontology, items, mode="apply_atomic", *, session=None):
             idempotency_key=token,
             ontology_id=ontology,
             mode=mode,
-            expected_workspace_version=ModelingWorkspaceVersionService(
+            expected_model_revision=OntologyModelRevisionService(
                 session, fixture["settings"]
             ).version_for(ontology),
             lease_token=lease if mode != "dry_run" else None,

@@ -20,7 +20,7 @@ class FakeStore:
 def _scope(iris, derived_state=None):
     return ScopeResolution(
         ontology_id="gs-1",
-        source_signature="sig-1",
+        model_revision=1,
         include="asserted",
         model_graph_iris=iris, shape_graph_iris=[],
 
@@ -44,7 +44,7 @@ def test_search_documents_include_label_assertion_kind_and_signature():
     assert doc["iri"] == "http://example.test/alice"
     assert doc["assertion_kind"] == "asserted"
     assert doc["model_graph_iri"] == "http://op/s/graph/ontology/ov-1"
-    assert doc["source_signature"] == "sig-1"
+    assert doc["model_revision"] == 1
     assert doc["ontology_id"] == "gs-1"
     assert "Alice" in doc["text"]
 

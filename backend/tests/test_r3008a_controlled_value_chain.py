@@ -43,7 +43,7 @@ from app.repositories.models import (
 from app.repositories.postgres import Base
 from app.repositories.rdf_store import RdfStoreRepository
 from app.security.auth import create_api_key
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 pytestmark = pytest.mark.skipif(
@@ -369,7 +369,7 @@ def chain_env():
             )
             keys[name] = plaintext
         session.commit()
-        workspace_version = ModelingWorkspaceVersionService(session, settings).version_for(
+        model_revision = OntologyModelRevisionService(session, settings).version_for(
             ontology_id
         )
 
@@ -381,7 +381,7 @@ def chain_env():
 
     with TestClient(app) as client:
         env = ChainEnv(client, project_id, ontology_id, ontology_id, base, keys, store)
-        _seed_fixture(env, settings, workspace_version)
+        _seed_fixture(env, settings, model_revision)
         yield env
 
     # Cleanup: drop the token-scoped Oxigraph graphs; the SQLite control
@@ -395,7 +395,7 @@ def _submit_batch(
     env: ChainEnv,
     settings: Settings,
     session_id: str,
-    workspace_version: str,
+    model_revision: int,
     items: list[dict],
     *,
     batch: str,
@@ -410,7 +410,7 @@ def _submit_batch(
             "ontology_id": env.ontology_id,
             "idempotency_key": key,
             "mode": mode,
-            "expected_workspace_version": workspace_version,
+            "expected_model_revision": model_revision,
             "lease_token": lease_token,
             "items": items,
         },
@@ -418,7 +418,7 @@ def _submit_batch(
     )
 
 
-def _seed_fixture(env: ChainEnv, settings: Settings, workspace_version: str) -> None:
+def _seed_fixture(env: ChainEnv, settings: Settings, model_revision: int) -> None:
     created = env.client.post(
         f"/api/projects/{env.project_id}/build-sessions",
         json={"client_session_id": "r3008a-seed"},
@@ -439,7 +439,7 @@ def _seed_fixture(env: ChainEnv, settings: Settings, workspace_version: str) -> 
         env,
         settings,
         session_id,
-        workspace_version,
+        model_revision,
         _seed_items(env.base),
         batch="r3008a-seed-dry",
         key="r3008a-seed-dry-key",
@@ -453,7 +453,7 @@ def _seed_fixture(env: ChainEnv, settings: Settings, workspace_version: str) -> 
         env,
         settings,
         session_id,
-        workspace_version,
+        model_revision,
         _seed_items(env.base),
         batch="r3008a-seed-apply",
         key="r3008a-seed-apply-key",
@@ -900,7 +900,7 @@ def test_s5c_broken_chain_matrix(chain_env):
         )
         assert response.status_code == 404, response.text  # not yet submitted
         with chain_env.client.app.state.session_factory() as db:
-            version = ModelingWorkspaceVersionService(
+            version = OntologyModelRevisionService(
                 db, chain_env.client.app.state.settings
             ).version_for(chain_env.ontology_id)
         submitted = _submit_batch(

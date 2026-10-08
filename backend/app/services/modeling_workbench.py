@@ -59,9 +59,9 @@ def workspace_digests(context: dict) -> tuple[dict, dict]:
     if not isinstance(context, dict) or context.get("state") != "ready" or not context.get("ontology_id"):
         raise ValueError("workspace observation incomplete")
     return ({"state_digest": content_digest({"state": context["state"],
-              "source_signature": context.get("source_signature")})},
+              "model_revision": context.get("model_revision")})},
             {"state_digest": content_digest({"ontology_id": context["ontology_id"],
-              "model_revision": context.get("model_revision"), "content_hash": context.get("content_hash")})})
+              "model_revision": context.get("model_revision")})})
 
 
 def scalars(value: Any, fields: str) -> dict:
@@ -359,7 +359,7 @@ def materialization(value: dict) -> dict:
                         item,
                         "result",
                         "status batch_id attempt_id audit_id "
-                        "workspace_version resource_iri resource_id applied_at",
+                        "model_revision resource_iri resource_id applied_at",
                     ),
                     "outputs": object_field(item, "outputs", "resource_iri resource_id"),
                 }

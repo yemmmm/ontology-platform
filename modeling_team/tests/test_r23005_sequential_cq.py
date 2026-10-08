@@ -211,8 +211,7 @@ class R23005SequentialCQTests(unittest.TestCase):
             changed_state = {
                 "project_id": "project-r23005",
                 "ontology_id": "ontology-r23005",
-                "workspace_version": "workspace-2",
-                "source_signature": "source-1",
+                "model_revision": 2,
                 "build_session_id": "session-r23005",
 
             }

@@ -44,11 +44,26 @@ class FakeScopeResolver:
         return replace(self._resolution, include=include)
 
 
+def test_read_rejects_revision_drift_during_rdf_read():
+    resolver = FakeScopeResolver(_resolution(["urn:model"], signature=0))
+
+    class ChangingStore(FakeStore):
+        def query_read_model(self, **kwargs):
+            result = super().query_read_model(**kwargs)
+            resolver._resolution.model_revision = 1
+            return result
+
+    # Resolve a copy so the captured revision is not mutated by the writer.
+    service = SemanticReadModelService(rdf_store=ChangingStore({}), scope_resolver=resolver)
+    with pytest.raises(ReadModelError, match="Model revision changed"):
+        service.read_model("gs-1", "ontology-schema-summary")
+
+
 def _resolution(
     graph_iris,
     reasoning=None,
     rule=None,
-    signature="sig-1",
+    signature=1,
     members=None,
     derived_state=None,
 ):
@@ -67,7 +82,7 @@ def _resolution(
 
     return ScopeResolution(
         ontology_id="gs-1",
-        source_signature=signature,
+        model_revision=signature,
         include="asserted",
         model_graph_iris=graph_iris, shape_graph_iris=[],
 
@@ -101,7 +116,7 @@ def test_schema_summary_returns_envelope_with_assertion_metadata():
     service = SemanticReadModelService(rdf_store=store, scope_resolver=resolver)
     envelope = service.read_model("gs-1", "ontology-schema-summary", include="asserted")
     assert envelope["ontology_id"] == "gs-1"
-    assert envelope["source_signature"] == "sig-1"
+    assert envelope["model_revision"] == 1
     assert envelope["projection_version"].startswith("semantic-read-v")
     assert len(envelope["items"]) == 2
     item = envelope["items"][0]

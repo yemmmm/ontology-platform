@@ -39,7 +39,7 @@ FORMAL_TYPED_CONFLICT_FIELDS = frozenset(
     {
         "original_delivery_id",
         "receipt_digest",
-        "workspace_version",
+        "model_revision",
         "mutation_state",
     }
 )
@@ -236,7 +236,7 @@ def validate_formal_conflict(
             raise FormalCandidateError("formal candidate conflict original delivery is not bound")
         if not _nonempty_string(conflict.get("receipt_digest")):
             raise FormalCandidateError("formal candidate conflict receipt digest is not bound")
-        if not _nonempty_string(conflict.get("workspace_version")):
+        if type(conflict.get("model_revision")) is not int or conflict["model_revision"] < 0:
             raise FormalCandidateError("formal candidate conflict workspace version is not bound")
         if conflict.get("mutation_state") != "zero-mutation":
             raise FormalCandidateError("formal candidate conflict mutation state is invalid")

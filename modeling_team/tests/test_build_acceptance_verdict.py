@@ -45,8 +45,7 @@ def _ticket(round_suffix: str = "1") -> dict:
     state = {
         "project_id": "2480506c-a9f8-4c2b-804d-aec6e993a4f8",
         "ontology_id": "3c52a819-feb6-468d-a6dc-2e9dbf5f9b24",
-        "workspace_version": "workspace-1",
-        "source_signature": "source-1",
+        "model_revision": 1,
         "build_session_id": "session-r23005",
 
     }
@@ -861,7 +860,7 @@ class BuildAcceptanceVerdictTests(unittest.TestCase):
             # getter must refuse: only the revalidation path flips the round
             # status to ``state_invalidated``.
             changed_state = deepcopy(ticket["model_state"])
-            changed_state["workspace_version"] = "workspace-drifted"
+            changed_state["model_revision"] += 1
             changed_state["state_digest"] = model_state_digest(changed_state)
             invalidation = carrier.revalidate_model_state(
                 boundary="after-pass-before-next-cq", observed=changed_state

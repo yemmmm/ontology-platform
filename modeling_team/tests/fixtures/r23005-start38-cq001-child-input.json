@@ -23,9 +23,8 @@
       "graph_set_id": "765142b9-d47e-5986-a6ec-24e34a37fa3b",
       "ontology_id": "82488561-03bb-4ad4-9a9c-7cdcd8dce23e",
       "project_id": "62330e9e-d380-4984-88ad-994612257515",
-      "source_signature": "3cfdc0a479430445fa27e4cd15054264",
-      "state_digest": "d2c4e1e025ff0f63a977231a43348a5004a75ca523131b816d394978aeb9c295",
-      "workspace_version": "bde1f79e959f1ee6ce457c457ce1e415f4c4a87fb0079950e7a690be25a209a9"
+      "model_revision": 9,
+      "state_digest": "d2c4e1e025ff0f63a977231a43348a5004a75ca523131b816d394978aeb9c295"
     },
     "platform_read_scope": {
       "graph_set_id": "765142b9-d47e-5986-a6ec-24e34a37fa3b",

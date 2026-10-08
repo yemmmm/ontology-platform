@@ -117,7 +117,7 @@ class CandidatePlatformGate:
             required_context = {
                 "project_id",
                 "ontology_id",
-                "workspace_version",
+                "model_revision",
                 "context_receipt_digest",
                 "response_digest",
                 "call_receipt_digest",
@@ -126,7 +126,7 @@ class CandidatePlatformGate:
                 raise CandidatePlatformGateError("candidate Modeling context binding is incomplete")
             for field in required_context:
                 value = context_binding.get(field)
-                if not isinstance(value, str) or not value:
+                if (type(value) is not int or value < 0) if field == "model_revision" else (not isinstance(value, str) or not value):
                     raise CandidatePlatformGateError("candidate Modeling context binding is invalid")
         self._ensure_directory()
         payload: dict[str, Any] = {

@@ -85,7 +85,7 @@ def test_discovery_filters_authorization_before_catalog_matching(catalog):
     }
     ready = next(item for item in result["items"] if item["id"] == "o1")
     assert ready["queryable"] is True
-    assert ready["workspace_version"]
+    assert ready["model_revision"] == 0
     assert {warning["code"] for warning in ready["derived_warnings"]} == set()
     # Only the opaque graph set handle is projected; internal graph IRIs stay hidden.
     assert "graph_iri" not in str(result)

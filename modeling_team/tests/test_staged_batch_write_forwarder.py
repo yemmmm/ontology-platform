@@ -106,7 +106,7 @@ def submit_modeling_batch(
     client_batch_id: str,
     ontology_id: str,
     idempotency_key: str,
-    expected_workspace_version: str,
+    expected_model_revision: int,
     items: list[dict],
     mode: str = "apply_atomic",
     lease_token: str | None = None,
@@ -117,7 +117,7 @@ def submit_modeling_batch(
             "client_batch_id": client_batch_id,
             "ontology_id": ontology_id,
             "idempotency_key": idempotency_key,
-            "expected_workspace_version": expected_workspace_version,
+            "expected_model_revision": expected_model_revision,
             "items": items,
             "mode": mode,
             "lease_token": lease_token,
@@ -146,9 +146,9 @@ def submit_modeling_batch(
                 "mode": mode,
                 "attempt_status": STORED["attempt_status"],
                 "workspace": {
-                    "expected_version": expected_workspace_version,
-                    "before_version": "fixture-v0",
-                    "after_version": "fixture-v1",
+                    "expected_version": expected_model_revision,
+                    "before_version": 0,
+                    "after_version": 1,
                 },
             },
         }
@@ -350,7 +350,7 @@ def test_forwarder_reaches_the_real_tool_shape_with_the_verbatim_envelope(tmp_pa
         "client_batch_id",
         "ontology_id",
         "idempotency_key",
-        "expected_workspace_version",
+        "expected_model_revision",
         "items",
         "mode",
         "lease_token",
@@ -373,9 +373,9 @@ def test_forwarder_reaches_the_real_tool_shape_with_the_verbatim_envelope(tmp_pa
         "mode": "apply_atomic",
         "attempt_status": "validated",
         "workspace": {
-            "expected_version": "1",
-            "before_version": "fixture-v0",
-            "after_version": "fixture-v1",
+            "expected_version": 1,
+            "before_version": 0,
+            "after_version": 1,
         },
         "content_hash": hashlib.sha256(
             json.dumps(batch["items"], sort_keys=True).encode()

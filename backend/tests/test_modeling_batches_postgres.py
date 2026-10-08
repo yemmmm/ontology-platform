@@ -32,7 +32,7 @@ from app.repositories.models import (
 from app.repositories.rdf_store import GraphWriteResult
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchService
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 
@@ -89,7 +89,7 @@ def test_concurrent_same_batch_and_attempt_converge_to_one_record() -> None:
         build, _created = BuildSessionService(session, settings).create_session(
             project_id, BuildSessionCreate(client_session_id=f"agent-{suffix}")
         )
-        version = ModelingWorkspaceVersionService(session, settings).version_for(ontology_id)
+        version = OntologyModelRevisionService(session, settings).version_for(ontology_id)
 
     def submit() -> tuple[str, str]:
         with factory() as session:
@@ -100,7 +100,7 @@ def test_concurrent_same_batch_and_attempt_converge_to_one_record() -> None:
                     ontology_id=ontology_id,
                     idempotency_key="same-attempt",
                     mode="dry_run",
-                    expected_workspace_version=version,
+                    expected_model_revision=version,
                     items=[_item("same-item")],
                 ),
             )
@@ -160,7 +160,7 @@ def test_concurrent_apply_does_not_collect_suspended_evidence_for_two_ontologies
                     client_request_id=f"lease-{suffix}-{index}", expected_session_revision=1
                 ),
             )
-            version = ModelingWorkspaceVersionService(session, settings).version_for(ontology_id)
+            version = OntologyModelRevisionService(session, settings).version_for(ontology_id)
             work.append((build["id"], ontology_id, lease["lease_token"], version))
 
     def submit(index: int) -> str:
@@ -173,7 +173,7 @@ def test_concurrent_apply_does_not_collect_suspended_evidence_for_two_ontologies
                     ontology_id=ontology_id,
                     idempotency_key=f"attempt-{index}",
                     mode="apply_atomic",
-                    expected_workspace_version=version,
+                    expected_model_revision=version,
                     lease_token=token,
                     items=[_item(f"item-{index}")],
                 ),

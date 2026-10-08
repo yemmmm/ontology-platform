@@ -398,16 +398,20 @@ def _context_binding(state: dict[str, Any]) -> dict[str, str] | None:
     required = {
         "project_id",
         "ontology_id",
-        "workspace_version",
+        "model_revision",
         "context_receipt_digest",
         "response_digest",
         "call_receipt_digest",
     }
     if not isinstance(value, dict) or set(value) != required:
         return {}
-    if any(not isinstance(value.get(field), str) or not value[field] for field in required):
+    if any(
+        (type(value.get(field)) is not int or value[field] < 0) if field == "model_revision"
+        else (not isinstance(value.get(field), str) or not value[field])
+        for field in required
+    ):
         return {}
-    return {field: str(value[field]) for field in required}
+    return {field: value[field] for field in required}
 
 
 def _gate_denial(
@@ -475,7 +479,7 @@ def _candidate_platform_gate_error(
                 "candidate_digest": candidate_digest,
                 "project_id": context["project_id"],
                 "ontology_id": context["ontology_id"],
-                "expected_workspace_version": context["workspace_version"],
+                "expected_model_revision": context["model_revision"],
                 "mutation_state": "zero-mutation",
                 "conflict_code": "modeling_context_revalidation_required",
             },
@@ -510,7 +514,7 @@ def _context_is_valid(value: Any, context: dict[str, str]) -> bool:
         and ontology.get("id") == context["ontology_id"]
         and isinstance(workspace, dict)
         and workspace.get("state") == "ready"
-        and workspace.get("workspace_version") == context["workspace_version"]
+        and workspace.get("model_revision") == context["model_revision"]
         and workspace.get("issues") == []
         and isinstance(derived, dict)
         and isinstance(derived.get("stale_count"), int)
@@ -540,10 +544,10 @@ def _current_revalidation_context(
     key = (gate_path, str(state.get("candidate_digest")))
     with _protocol_revalidation_lock:
         record = _protocol_revalidations.get(key)
-    workspace_version = record.get("workspace_version") if record is not None else None
-    if not isinstance(workspace_version, str) or not workspace_version:
+    model_revision = record.get("model_revision") if record is not None else None
+    if type(model_revision) is not int or model_revision < 0:
         return context
-    return {**context, "workspace_version": workspace_version}
+    return {**context, "model_revision": model_revision}
 
 
 def _protocol_revalidation_error(
@@ -555,7 +559,7 @@ def _protocol_revalidation_error(
 ) -> dict[str, Any]:
     observed_value = _context_value(observed)
     workspace = observed_value.get("workspace") if observed_value else None
-    observed_version = workspace.get("workspace_version") if isinstance(workspace, dict) else None
+    observed_version = workspace.get("model_revision") if isinstance(workspace, dict) else None
     return _gate_denial(
         "Protocol Modeling context revalidation failed; stateful call remains closed",
         "modeling_context_revalidation_failed",
@@ -564,8 +568,8 @@ def _protocol_revalidation_error(
             "candidate_digest": state.get("candidate_digest"),
             "project_id": context["project_id"],
             "ontology_id": context["ontology_id"],
-            "expected_workspace_version": context["workspace_version"],
-            "observed_workspace_version": observed_version,
+            "expected_model_revision": context["model_revision"],
+            "observed_model_revision": observed_version,
             "reason_code": reason,
             "mutation_state": "zero-mutation",
             "conflict_code": "modeling_context_revalidation_failed",
@@ -597,7 +601,7 @@ def _record_protocol_revalidation(
         "candidate_digest": state.get("candidate_digest"),
         "project_id": context["project_id"],
         "ontology_id": context["ontology_id"],
-        "workspace_version": context["workspace_version"],
+        "model_revision": context["model_revision"],
         "context_receipt_digest": context["context_receipt_digest"],
         "response_digest": response_digest,
         "call_receipt_digest": call_digest,
@@ -629,18 +633,18 @@ def _advance_protocol_revalidation_after_apply(
     before_version = workspace.get("before_version")
     expected_version = workspace.get("expected_version")
     after_version = workspace.get("after_version")
-    if not all(isinstance(item, str) and item for item in (before_version, after_version)):
+    if not all(type(item) is int and item >= 0 for item in (before_version, after_version)):
         return
     key = (gate_path, str(state.get("candidate_digest")))
     with _protocol_revalidation_lock:
         record = _protocol_revalidations.get(key)
-        if record is None or record.get("workspace_version") != before_version:
+        if record is None or record.get("model_revision") != before_version:
             return
         if expected_version not in (None, before_version):
             return
         payload = {
             **{key: item for key, item in record.items() if key != "revalidation_receipt_digest"},
-            "workspace_version": after_version,
+            "model_revision": after_version,
         }
         _protocol_revalidations[key] = {
             **payload,

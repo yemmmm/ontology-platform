@@ -30,7 +30,7 @@ from app.repositories.models import (
 )
 from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
 from app.services.embedding import EmbeddingClient, EmbeddingServiceError
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.semantic_projection_job import SemanticProjectionJobService
 from app.services.semantic_read_scope import ScopeResolution
 from app.services.semantic_read_scope import SemanticReadScopeResolver
@@ -107,18 +107,13 @@ def normalize_retrieval_text(value: str) -> str:
     return " ".join(value.replace("_", " ").replace("-", " ").casefold().split())
 
 
-def rule_set_signature(session: Session, ontology_id: str) -> str:
-    """Compatibility identity for persisted projection rows; executable rules are retired."""
-    return hashlib.sha256(b"[]").hexdigest()
-
-
-def retrieval_workspace_version(session: Session, settings: Settings, ontology_id: str) -> str:
-    """Use the public read contract's authoritative workspace version.
+def retrieval_model_revision(session: Session, settings: Settings, ontology_id: str) -> int:
+    """Use the public read contract's authoritative model revision.
 
     Retrieval documents are only queryable when their identity tuple agrees
     with the public Context and Entity readers for the selected Ontology model.
     """
-    return ModelingWorkspaceVersionService(session, settings).version_for(ontology_id)
+    return OntologyModelRevisionService(session, settings).version_for(ontology_id)
 
 
 def mark_retrieval_stale(session: Session, ontology_id: str) -> list[str]:
@@ -162,9 +157,7 @@ class PgVectorRetrievalRepository:
         *,
         ontology_id: str,
 
-        workspace_version: str,
-        source_signature: str,
-        current_rule_signature: str,
+        model_revision: int,
     ) -> dict[str, Any]:
         manifests = list(
             self.session.scalars(
@@ -176,7 +169,7 @@ class PgVectorRetrievalRepository:
         )
         common = {
             "ontology_id": ontology_id,
-            "workspace_version": workspace_version,
+            "model_revision": model_revision,
             "projection_version": self.config.projection_version,
             "embedding_model": self.config.model,
             "embedding_config_hash": self.config.config_hash,
@@ -188,7 +181,7 @@ class PgVectorRetrievalRepository:
         if not current:
             return {**common, "status": "stale"}
         if not any(
-            item.source_signature == source_signature
+            item.model_revision == model_revision
             and item.projection_version == self.config.projection_version
             for item in current
         ):
@@ -196,9 +189,7 @@ class PgVectorRetrievalRepository:
         exists = self.session.scalar(
             select(SemanticRetrievalDocumentModel.id).where(
                 SemanticRetrievalDocumentModel.ontology_id == ontology_id,
-                SemanticRetrievalDocumentModel.workspace_version == workspace_version,
-                SemanticRetrievalDocumentModel.source_signature == source_signature,
-                SemanticRetrievalDocumentModel.rule_set_signature == current_rule_signature,
+                SemanticRetrievalDocumentModel.model_revision == model_revision,
                 SemanticRetrievalDocumentModel.projection_version == self.config.projection_version,
                 SemanticRetrievalDocumentModel.embedding_config_hash == self.config.config_hash,
                 SemanticRetrievalDocumentModel.build_job_id.in_(
@@ -215,9 +206,7 @@ class PgVectorRetrievalRepository:
         *,
         ontology_id: str,
 
-        workspace_version: str,
-        source_signature: str,
-        rule_signature: str,
+        model_revision: int,
         resource_kinds: set[str],
         query_vector: list[float],
         limit: int,
@@ -242,17 +231,14 @@ class PgVectorRetrievalRepository:
                   JOIN semantic_projection_manifests AS m
                     ON m.active_job_id = d.build_job_id
                  WHERE d.ontology_id = :ontology_id
-                   AND d.ontology_id = :ontology_id
-                   AND d.workspace_version = :workspace_version
-                   AND d.source_signature = :source_signature
-                   AND d.rule_set_signature = :rule_signature
+                   AND d.model_revision = :model_revision
                    AND d.projection_version = :projection_version
                    AND d.embedding_config_hash = :config_hash
                    AND d.resource_kind = ANY(:resource_kinds)
                    AND m.ontology_id = :ontology_id
                    AND m.projection_kind = :projection_kind
                    AND m.status = 'current'
-                   AND m.source_signature = :source_signature
+                   AND m.model_revision = :model_revision
                    AND m.projection_version = :projection_version
                    AND (CAST(:after_distance AS double precision) IS NULL OR
                         (d.embedding <=> CAST(:query_vector AS vector), d.resource_iri)
@@ -263,9 +249,7 @@ class PgVectorRetrievalRepository:
             ),
             {
                 "ontology_id": ontology_id,
-                "workspace_version": workspace_version,
-                "source_signature": source_signature,
-                "rule_signature": rule_signature,
+                "model_revision": model_revision,
                 "projection_version": self.config.projection_version,
                 "config_hash": self.config.config_hash,
                 "projection_kind": RETRIEVAL_KIND,
@@ -304,7 +288,7 @@ class SemanticRetrievalProjectionService:
             raise SemanticRetrievalError("Retrieval projection requires an Ontology-scoped workspace")
         ontology_id = ontology.id
         try:
-            workspace_version = retrieval_workspace_version(
+            model_revision = retrieval_model_revision(
                 self.session, self.settings, ontology_id
             )
         except LookupError as exc:
@@ -312,9 +296,7 @@ class SemanticRetrievalProjectionService:
         documents = self._metadata_documents(
             ontology_id=ontology_id,
 
-            workspace_version=workspace_version,
-            source_signature=scope.source_signature,
-            rule_signature=rule_set_signature(self.session, ontology_id),
+            model_revision=model_revision,
             job_id=job_id,
             partition=partition,
             scope=scope,
@@ -329,9 +311,7 @@ class SemanticRetrievalProjectionService:
         *,
         ontology_id: str,
 
-        workspace_version: str,
-        source_signature: str,
-        rule_signature: str,
+        model_revision: int,
         job_id: str,
         partition: str,
         scope: ScopeResolution,
@@ -371,9 +351,7 @@ class SemanticRetrievalProjectionService:
                 mappings=mappings.get(value["iri"], []),
                 ontology_id=ontology_id,
 
-                workspace_version=workspace_version,
-                source_signature=source_signature,
-                rule_signature=rule_signature,
+                model_revision=model_revision,
                 job_id=job_id,
                 partition=partition,
             )
@@ -535,7 +513,7 @@ class SemanticRetrievalCoordinator:
                 "write_applied": True,
                 "status": "current" if job.status == "succeeded" else job.status,
                 "job_id": job.id,
-                "workspace_version": retrieval_workspace_version(self.session, self.settings, ontology_id),
+                "model_revision": retrieval_model_revision(self.session, self.settings, ontology_id),
                 "projection_version": self.settings.semantic_retrieval_projection_version,
                 "stale_manifest_ids": stale_manifest_ids,
             }
@@ -602,14 +580,11 @@ class SemanticResourceRetrievalService:
     ) -> dict[str, Any]:
         if search_mode not in {"hybrid", "lexical"}:
             raise SemanticRetrievalError("search_mode must be hybrid or lexical")
-        signatures = {item.ontology_id: rule_set_signature(self.session, item.ontology_id) for item in scope.ontologies}
         indexes = [
             self.repository.index_status(
                 ontology_id=item.ontology_id,
 
-                workspace_version=item.workspace_version,
-                source_signature=item.source_signature,
-                current_rule_signature=signatures[item.ontology_id],
+                model_revision=item.model_revision,
             )
             for item in scope.ontologies
         ]
@@ -643,9 +618,7 @@ class SemanticResourceRetrievalService:
                 rows = self.repository.exact_cosine_candidates(
                     ontology_id=ontology.ontology_id,
 
-                    workspace_version=ontology.workspace_version,
-                    source_signature=ontology.source_signature,
-                    rule_signature=signatures[ontology.ontology_id],
+                    model_revision=ontology.model_revision,
                     resource_kinds=resource_kinds,
                     query_vector=vector,
                     limit=per_ontology_limit,
@@ -691,17 +664,11 @@ class SemanticResourceRetrievalService:
         """
         if search_mode not in {"hybrid", "lexical"}:
             raise SemanticRetrievalError("search_mode must be hybrid or lexical")
-        signatures = {
-            item.ontology_id: rule_set_signature(self.session, item.ontology_id)
-            for item in scope.ontologies
-        }
         indexes = [
             self.repository.index_status(
                 ontology_id=item.ontology_id,
 
-                workspace_version=item.workspace_version,
-                source_signature=item.source_signature,
-                current_rule_signature=signatures[item.ontology_id],
+                model_revision=item.model_revision,
             )
             for item in scope.ontologies
         ]
@@ -756,9 +723,7 @@ class SemanticResourceRetrievalService:
                     scan_args = dict(
                         ontology_id=ontology.ontology_id,
 
-                        workspace_version=ontology.workspace_version,
-                        source_signature=ontology.source_signature,
-                        rule_signature=signatures[ontology.ontology_id],
+                        model_revision=ontology.model_revision,
                         resource_kinds=resource_kinds,
                         query_vector=vector,
                         limit=per_ontology_limit,
@@ -859,7 +824,7 @@ class SemanticResourceRetrievalService:
                 "completeness": "degraded",
             }
         try:
-            workspace_version = retrieval_workspace_version(
+            model_revision = retrieval_model_revision(
                 self.session, self.settings, ontology.id
             )
         except LookupError:
@@ -874,8 +839,7 @@ class SemanticResourceRetrievalService:
         ontology = SimpleNamespace(
             ontology_id=ontology.id,
 
-            workspace_version=workspace_version,
-            source_signature=scope.source_signature,
+            model_revision=model_revision,
         )
         return self.recall(
             scope=SimpleNamespace(ontologies=(ontology,)),
@@ -1191,9 +1155,7 @@ def _document_record(*, resource_iri: str, resource_kind: str, label: str, label
         "|".join(
             (
                 identity["ontology_id"],
-                identity["workspace_version"],
-                identity["source_signature"],
-                identity["rule_signature"],
+                str(identity["model_revision"]),
                 resource_iri,
                 resource_kind,
                 config.projection_version,
@@ -1223,9 +1185,7 @@ def _document_record(*, resource_iri: str, resource_kind: str, label: str, label
         "projection_version": config.projection_version,
         "visibility": [],
         "ontology_id": identity["ontology_id"],
-        "workspace_version": identity["workspace_version"],
-        "source_signature": identity["source_signature"],
-        "rule_set_signature": identity["rule_signature"],
+        "model_revision": identity["model_revision"],
         "build_job_id": identity["job_id"],
         "target_partition": identity["partition"],
     }

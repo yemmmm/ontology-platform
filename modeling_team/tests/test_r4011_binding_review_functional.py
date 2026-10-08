@@ -132,7 +132,7 @@ def test_live_binding_consumer_and_coordinator_raw_reports():
                 request = {
                     "client_batch_id": token + "-" + name, "ontology_id": ontology_id,
                     "mode": "dry_run", "idempotency_key": token + "-dry-" + name,
-                    "expected_workspace_version": context()["workspace"]["workspace_version"],
+                    "expected_model_revision": context()["workspace"]["model_revision"],
                     "items": items,
                 }
                 path = f"/build-sessions/{build['id']}/modeling-batches"

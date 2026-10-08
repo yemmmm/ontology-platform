@@ -20,7 +20,7 @@ class FakeStore:
 def _scope(iris):
     return ScopeResolution(
         ontology_id="gs-1",
-        source_signature="sig-1",
+        model_revision=1,
         include="asserted",
         model_graph_iris=iris, shape_graph_iris=[],
 
@@ -50,7 +50,7 @@ def test_vector_documents_have_deterministic_ids_and_config_hash():
     ).hexdigest()
     assert doc["id"] == expected_id
     assert doc["embedding_config_hash"]
-    assert doc["source_signature"] == "sig-1"
+    assert doc["model_revision"] == 1
     assert doc["assertion_kind"] == "asserted"
 
 

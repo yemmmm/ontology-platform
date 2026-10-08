@@ -343,7 +343,7 @@ def test_s4_capability_pass_path_intent_first_receipt_backfilled(tmp_path):
             "client_batch_id",
             "ontology_id",
             "idempotency_key",
-            "expected_workspace_version",
+            "expected_model_revision",
             "items",
             "mode",
             "lease_token",

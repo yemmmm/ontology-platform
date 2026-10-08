@@ -156,7 +156,7 @@ class R23005CSettlementTests(unittest.TestCase):
             _run_round(carrier, first, "cq1")
             old_receipt = carrier._verdicts[first["acceptance_round_id"]]
             changed_state = dict(first["model_state"])
-            changed_state["workspace_version"] = "workspace-2"
+            changed_state["model_revision"] = 2
             changed_state["state_digest"] = model_state_digest(changed_state)
             invalidation = carrier.revalidate_model_state(
                 boundary="after-pass-before-next-cq", observed=changed_state
@@ -190,7 +190,7 @@ class R23005CSettlementTests(unittest.TestCase):
             _run_round(carrier, second, "old-cq2")
             old_rounds = set(carrier._rounds)
             changed_state = dict(first["model_state"])
-            changed_state["workspace_version"] = "workspace-recovered"
+            changed_state["model_revision"] = 3
             changed_state["state_digest"] = model_state_digest(changed_state)
             invalidation = carrier.revalidate_model_state(
                 boundary="post-cleanup", observed=changed_state
@@ -238,20 +238,20 @@ class R23005CSettlementTests(unittest.TestCase):
             completed_session_id = None
 
             def __init__(self) -> None:
-                self.workspace_version = "workspace-1"
+                self.model_revision = 1
 
             def _modeling_context(self):
                 return {
                     "project": {"id": self.project_id},
                     "ontology": {"id": self.ontology_id},
-                    "workspace": {"workspace_version": self.workspace_version},
+                    "workspace": {"model_revision": self.model_revision},
                     "recent_batches": [{"build_session_id": "session-r23005"}],
                 }
 
             def _workspace_context(self):
                 return {
                     "ontology_id": self.ontology_id,
-                    "source_signature": "source-1",
+                    "model_revision": self.model_revision,
                 }
 
         with tempfile.TemporaryDirectory() as directory:
@@ -265,12 +265,12 @@ class R23005CSettlementTests(unittest.TestCase):
                 owner_revision=ticket["quality_standard_ref"],
             )
             self.assertEqual(carrier.model_state_snapshot["state_digest"], ticket["model_state_digest"])
-            scope.workspace_version = "workspace-2"
+            scope.model_revision = 2
             changed = carrier.revalidate_model_state(boundary="before-pair")
             self.assertEqual(changed["status"], "state_invalidated")
             self.assertEqual(changed["new_model_state_digest"], model_state_digest({
                 **ticket["model_state"],
-                "workspace_version": "workspace-2",
+                "model_revision": 2,
                 "state_digest": None,
             }))
 

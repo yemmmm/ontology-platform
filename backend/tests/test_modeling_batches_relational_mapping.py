@@ -21,7 +21,7 @@ from app.repositories.models import OntologyModel, ProjectModel
 from app.repositories.rdf_store import GraphWriteResult
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchService
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 PROJECT_ID = "r3003-project"
@@ -88,7 +88,7 @@ def modeling(in_memory_session: Session):
     )
     rdf = SeededRdfStore()
     service = ModelingBatchService(in_memory_session, settings, rdf)  # type: ignore[arg-type]
-    version = ModelingWorkspaceVersionService(in_memory_session, settings).version_for(ONTOLOGY_ID)
+    version = OntologyModelRevisionService(in_memory_session, settings).version_for(ONTOLOGY_ID)
     return service, in_memory_session, rdf, session_id, lease, version
 
 
@@ -109,7 +109,7 @@ def _request(version, items, *, key="attempt-1", batch="batch-1", mode="dry_run"
         ontology_id=ONTOLOGY_ID,
         idempotency_key=key,
         mode=mode,
-        expected_workspace_version=version,
+        expected_model_revision=version,
         lease_token=token,
         items=items,
     )

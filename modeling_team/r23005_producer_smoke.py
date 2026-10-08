@@ -601,7 +601,7 @@ def run_no_semantic_start_smoke(
                 "be a dry_run object conforming to modeling-batch-item-contract.json: use client_batch_id "
                 f"batch-{run_id}, ontology_id {generated_scope['ontology_id']}, session_id "
                 f"smoke-session-{run_id}, idempotency_key smoke-idempotency-{run_id}, "
-                "expected_workspace_version workspace-0, lease_token null, and one create_class item "
+                "expected_model_revision 0, lease_token null, and one create_class item "
                 "whose client_item_id and name come from the candidate. Do not add prose."
             )
             prompt_digest = hashlib.sha256(prompt.encode("utf-8")).hexdigest()

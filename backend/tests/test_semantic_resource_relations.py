@@ -102,9 +102,9 @@ def test_actual_rdf_class_type_unclassified_individuals_and_schema_endpoints():
     }
     assert result["paging"]["complete"]
     assert all(item["assertion_kind"] == "asserted" for item in result["items"])
-    assert result["source_signature"] == service(store).read_model(
+    assert result["model_revision"] == service(store).read_model(
         "gs-1", "resource-list", field_set="detail", limit=500,
-    )["source_signature"]
+    )["model_revision"]
     template = get_template("resource-relations")
     assert not hasattr(template, "required_roles")
     assert not template.needs_reasoning and "NamedIndividual" not in template.body
@@ -283,13 +283,13 @@ def test_resource_window_signature_change_rejects_mixed_scope():
         def resolve(self, *args, **kwargs):
             resolution = super().resolve(*args, **kwargs)
             self.reads += 1
-            resolution.source_signature = f"signature-{self.reads}"
+            resolution.model_revision = f"signature-{self.reads}"
             return resolution
 
     reader = SemanticReadModelService(
         fake_store([edge()]), ChangingResolver(_resolution([ONTOLOGY, DATA])),
     )
-    with pytest.raises(ReadModelError, match="Resource scope changed"):
+    with pytest.raises(ReadModelError, match="Model revision changed"):
         reader.read_model("gs-1", "resource-relations")
 
 

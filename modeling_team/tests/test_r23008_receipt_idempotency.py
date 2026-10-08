@@ -131,7 +131,7 @@ class ReceiptIdempotencyTests(unittest.TestCase):
         runner = TeamRunner(repository_root=self.root, adapter=SimpleNamespace())
         runner.run = SimpleNamespace(
             run_id="run-1",
-            scope={"workspace_version": "v1"},
+            scope={"model_revision": 1},
             configuration=SimpleNamespace(
                 task=SimpleNamespace(schema_version=2, task_id=task_id),
                 profile=SimpleNamespace(

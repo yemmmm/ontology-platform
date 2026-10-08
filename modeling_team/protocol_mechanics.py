@@ -76,9 +76,8 @@ def inspect_model_associations(
                 or {s.get("ontology_id") for s in scopes} != set(ontology_ids)):
             issues.append({"code": "read_scope_incomplete_or_mismatched", "page": page})
             return None
-        current = sorted((s["ontology_id"], s.get("workspace_version"),
-                          s.get("source_signature")) for s in scopes)
-        if any(not version or not signature for _, version, signature in current):
+        current = sorted((s["ontology_id"], s.get("model_revision")) for s in scopes)
+        if any(type(revision) is not int or revision < 0 for _, revision in current):
             issues.append({"code": "read_snapshot_missing", "page": page})
             return None
         if snapshot is None:
@@ -301,11 +300,11 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
             *,
             project_id: str,
             ontology_id: str,
-            workspace_version: str,
+            model_revision: int,
         ) -> dict[str, str]:
             required = {
                 "semantic_id", "entity_iri", "class_semantic_id", "class_iri",
-                "project_id", "ontology_id", "workspace_version",
+                "project_id", "ontology_id", "model_revision",
             }
             if not isinstance(value, Mapping) or not required.issubset(value):
                 raise ValueError("canonical entity projection fields are incomplete")
@@ -319,11 +318,11 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
                     raise ValueError(f"canonical entity {field} is invalid")
             for field, expected in (
                 ("project_id", project_id), ("ontology_id", ontology_id),
-                ("workspace_version", workspace_version),
+                ("model_revision", model_revision),
             ):
                 if value.get(field) != expected:
                     raise ValueError(f"canonical entity {field} drifts")
-            return {field: str(value[field]) for field in required}
+            return {field: value[field] for field in required}
 
         def _003_cursor_encode(value: Mapping[str, Any]) -> str:
             return "esc1." + base64.urlsafe_b64encode(_003_bytes(value)).decode("ascii").rstrip("=")
@@ -346,7 +345,7 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
             project_id: str,
             ontology_id: str,
             entity_iri: str,
-            workspace_version: str,
+            model_revision: int,
             page_size: int = 100,
             cursor: str | None = None,
         ) -> dict[str, Any]:
@@ -374,7 +373,7 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
                 token = _003_cursor_decode(cursor)
                 for key, expected in {
                     "project_id": project_id, "ontology_id": ontology_id, "entity_iri": entity_iri,
-                    "workspace_version": workspace_version, "snapshot_digest": snapshot_digest,
+                    "model_revision": model_revision, "snapshot_digest": snapshot_digest,
                 }.items():
                     if token.get(key) != expected:
                         raise ValueError("entity statement cursor scope or snapshot drifted")
@@ -388,12 +387,12 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
             complete = next_offset >= len(ordered)
             next_cursor = None if complete else _003_cursor_encode({
                 "project_id": project_id, "ontology_id": ontology_id, "entity_iri": entity_iri,
-                "workspace_version": workspace_version, "snapshot_digest": snapshot_digest,
+                "model_revision": model_revision, "snapshot_digest": snapshot_digest,
                 "offset": next_offset,
             })
             return {
                 "project_id": project_id, "ontology_id": ontology_id, "entity_iri": entity_iri,
-                "workspace_version": workspace_version, "statements": page,
+                "model_revision": model_revision, "statements": page,
                 "page_digest": _003_digest(page), "snapshot_digest": snapshot_digest,
                 "next_cursor": next_cursor, "complete": complete,
             }
@@ -405,7 +404,7 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
             candidate_digest: str,
             project_id: str,
             ontology_id: str,
-            workspace_version: str,
+            model_revision: int,
         ) -> dict[str, Any]:
             raw_pages = list(pages)
             if not raw_pages or not all(isinstance(page, Mapping) for page in raw_pages):
@@ -433,7 +432,7 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
                 if (
                     page.get("project_id") != project_id
                     or page.get("ontology_id") != ontology_id
-                    or page.get("workspace_version") != workspace_version
+                    or page.get("model_revision") != model_revision
                     or page.get("entity_iri") != entity_iri
                 ):
                     raise ValueError("delete impact scope/entity drifts")
@@ -458,7 +457,7 @@ except ImportError:  # pragma: no cover - stdio/staged facade has no package sib
                 raise ValueError("delete impact snapshot digest is invalid")
             receipt = {
                 "schema_version": "r2-3-003-delete-impact/v1", "target_semantic_id": target_semantic_id,
-                "project_id": project_id, "ontology_id": ontology_id, "workspace_version": workspace_version,
+                "project_id": project_id, "ontology_id": ontology_id, "model_revision": model_revision,
                 "candidate_digest": candidate_digest, "entity_iri": entity_iri,
                 "snapshot_digest": next(iter(snapshots)), "page_digests": page_digests, "statements": ordered,
                 "complete": True,
@@ -979,7 +978,9 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
     if workspace.get("state") != "ready":
         raise ProtocolRetrievalFallbackError("workspace is not ready")
     ontology_id = _required_string(workspace, "ontology_id")
-    source_signature = _required_string(workspace, "source_signature")
+    model_revision = workspace.get("model_revision")
+    if type(model_revision) is not int or model_revision < 0:
+        raise ProtocolRetrievalFallbackError("model_revision must be a nonnegative integer")
     model_storage = _fallback_model_storage(proof, ontology_id)
     initial_counts = _fallback_counts(initial)
     final_counts = _fallback_counts(final)
@@ -1064,7 +1065,7 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
     entity_output_iris: set[str] = set()
     receipt_counts = {name: 0 for name in _RECEIPT_RESOURCE_COUNTS.values()}
     relation_sources: set[str] = set()
-    chain = {initial.get("workspace", {}).get("workspace_version"): None}
+    chain = {initial.get("workspace", {}).get("model_revision"): None}
     for detail, attempt in applied:
         before, after, normalized_delta = _fallback_applied_attempt(attempt)
         if before in chain and chain[before] is not None:
@@ -1107,21 +1108,21 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
         raise ProtocolRetrievalFallbackError("receipt-derived resource count drifts from modeling context")
     if len(relation_sources) != final_counts["relations"]:
         raise ProtocolRetrievalFallbackError("distinct relation-source count drifts from modeling context")
-    cursor = initial.get("workspace", {}).get("workspace_version")
+    cursor = initial.get("workspace", {}).get("model_revision")
     visited = 0
     while cursor in chain and chain[cursor] is not None:
         cursor = chain[cursor]
         visited += 1
         if visited > len(applied):
             raise ProtocolRetrievalFallbackError("applied workspace chain loops")
-    if cursor != final.get("workspace", {}).get("workspace_version") or visited != len(applied):
+    if cursor != final.get("workspace", {}).get("model_revision") or visited != len(applied):
         raise ProtocolRetrievalFallbackError("applied workspace chain is not contiguous")
 
     entities = _fallback_read_model(
         proof.get("entities_read"),
         "entity read",
         ontology_id=ontology_id,
-        source_signature=source_signature,
+        model_revision=model_revision,
         model_name="entity-list",
     )
     entity_iris = {_required_string(item, "iri") for item in entities["items"] if isinstance(item, dict)}
@@ -1143,7 +1144,7 @@ def _verify_scoped_retrieval_fallback_v1(proof: dict[str, Any]) -> dict[str, Any
         statements.get("response"),
         "statement read",
         ontology_id=ontology_id,
-        source_signature=source_signature,
+        model_revision=model_revision,
         model_name="statement-list",
     )
     expected_count = len(expected_data_fact_ids)
@@ -1216,13 +1217,13 @@ def _fallback_read_model(
     name: str,
     *,
     ontology_id: str,
-    source_signature: str,
+    model_revision: int,
     model_name: str,
 ) -> dict[str, Any]:
     data = _fallback_response(value, name)
     if (
         data.get("ontology_id") != ontology_id
-        or data.get("source_signature") != source_signature
+        or data.get("model_revision") != model_revision
         or data.get("model_name") != model_name
         or data.get("include") != "asserted"
         or not isinstance(data.get("items"), list)
@@ -1639,7 +1640,7 @@ def build_existing_scope_candidate_conflict(
     *,
     original_delivery_id: str,
     receipt_digest: str,
-    workspace_version: str,
+    model_revision: int,
 ) -> dict[str, Any]:
     """Build a typed pre-mutation 003 binding conflict.
 
@@ -1652,15 +1653,15 @@ def build_existing_scope_candidate_conflict(
     for name, value in (
         ("original_delivery_id", original_delivery_id),
         ("receipt_digest", receipt_digest),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
-        if not _is_nonempty_string(value):
+        if (type(value) is not int or value < 0) if name == "model_revision" else not _is_nonempty_string(value):
             raise ProtocolRetrievalFallbackError(f"typed candidate conflict {name} is invalid")
     base.update(
         {
             "original_delivery_id": original_delivery_id,
             "receipt_digest": receipt_digest,
-            "workspace_version": workspace_version,
+            "model_revision": model_revision,
             "mutation_state": "zero-mutation",
         }
     )
@@ -1811,7 +1812,7 @@ def _canonical_row_scope(
     *,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
 ) -> dict[str, str]:
     """Validate the explicit backend entity projection without guessing IRIs."""
 
@@ -1822,7 +1823,7 @@ def _canonical_row_scope(
         "class_iri",
         "project_id",
         "ontology_id",
-        "workspace_version",
+        "model_revision",
     }
     if not canonical_markers.issubset(row):
         raise ProtocolRetrievalFallbackError(
@@ -1833,7 +1834,7 @@ def _canonical_row_scope(
             row,
             project_id=project_id,
             ontology_id=ontology_id,
-            workspace_version=workspace_version,
+            model_revision=model_revision,
         )
     except ValueError as exc:
         raise ProtocolRetrievalFallbackError(str(exc)) from exc
@@ -1845,7 +1846,7 @@ def build_existing_entity_binding_receipt(
     *,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
     requirement_id: str = "R2.3-003",
 ) -> dict[str, Any]:
     """Bind neutral existing refs to one ontology-scoped live read model."""
@@ -1882,9 +1883,9 @@ def build_existing_entity_binding_receipt(
     for field, value in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
-        if not _is_nonempty_string(value) or "://" in value:
+        if (type(value) is not int or value < 0) if field == "model_revision" else (not _is_nonempty_string(value) or "://" in value):
             raise ProtocolRetrievalFallbackError(f"existing binding {field} is invalid")
     rows = _read_model_entities(read_model)
     indexed: dict[str, Mapping[str, Any]] = {}
@@ -1893,7 +1894,7 @@ def build_existing_entity_binding_receipt(
             row,
             project_id=project_id,
             ontology_id=ontology_id,
-            workspace_version=workspace_version,
+            model_revision=model_revision,
         )
         semantic_id = _row_semantic_id(row)
         if semantic_id is None:
@@ -1927,7 +1928,7 @@ def build_existing_entity_binding_receipt(
             row,
             project_id=project_id,
             ontology_id=ontology_id,
-            workspace_version=workspace_version,
+            model_revision=model_revision,
         )
         if canonical is not None:
             binding.update(
@@ -1936,7 +1937,7 @@ def build_existing_entity_binding_receipt(
                     "class_iri": canonical["class_iri"],
                     "project_id": canonical["project_id"],
                     "ontology_id": canonical["ontology_id"],
-                    "workspace_version": canonical["workspace_version"],
+                    "model_revision": canonical["model_revision"],
                 }
             )
         bindings.append(binding)
@@ -1946,7 +1947,7 @@ def build_existing_entity_binding_receipt(
         "candidate_digest": _canonical_digest(normalized),
         "project_id": project_id,
         "ontology_id": ontology_id,
-        "workspace_version": workspace_version,
+        "model_revision": model_revision,
         "bindings": bindings,
     }
     receipt["receipt_digest"] = _canonical_digest(receipt)
@@ -1962,7 +1963,7 @@ def validate_existing_entity_binding_receipt(
     *,
     project_id: str | None = None,
     ontology_id: str | None = None,
-    workspace_version: str | None = None,
+    model_revision: int | None = None,
 ) -> dict[str, Any]:
     """Validate the frozen binding receipt before translation or mutation."""
 
@@ -1975,7 +1976,7 @@ def validate_existing_entity_binding_receipt(
         "candidate_digest",
         "project_id",
         "ontology_id",
-        "workspace_version",
+        "model_revision",
         "bindings",
         "receipt_digest",
     }
@@ -1988,10 +1989,10 @@ def validate_existing_entity_binding_receipt(
     for field, expected in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
         value = receipt.get(field)
-        if not _is_nonempty_string(value) or (expected is not None and value != expected):
+        if ((type(value) is not int or value < 0) if field == "model_revision" else not _is_nonempty_string(value)) or (expected is not None and value != expected):
             raise ProtocolRetrievalFallbackError(f"existing binding receipt {field} drifts")
     bindings = receipt.get("bindings")
     if not isinstance(bindings, list) or not bindings:
@@ -2003,7 +2004,7 @@ def validate_existing_entity_binding_receipt(
         if not isinstance(item, Mapping):
             raise ProtocolRetrievalFallbackError("existing binding receipt item is invalid")
         required = {"semantic_id", "expected_class", "actual_class", "entity_iri", "read_evidence"}
-        canonical_fields = {"class_semantic_id", "class_iri", "project_id", "ontology_id", "workspace_version"}
+        canonical_fields = {"class_semantic_id", "class_iri", "project_id", "ontology_id", "model_revision"}
         if set(item) not in (required, required | canonical_fields):
             raise ProtocolRetrievalFallbackError("existing binding receipt item fields drift")
         semantic_id = item.get("semantic_id")
@@ -2024,7 +2025,7 @@ def validate_existing_entity_binding_receipt(
                     item,
                     project_id=str(receipt["project_id"]),
                     ontology_id=str(receipt["ontology_id"]),
-                    workspace_version=str(receipt["workspace_version"]),
+                    model_revision=receipt["model_revision"],
                 )
             except ValueError as exc:
                 raise ProtocolRetrievalFallbackError(str(exc)) from exc
@@ -2079,7 +2080,7 @@ def validate_unified_entity_projection(
     *,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
 ) -> dict[str, Any]:
     """009 canonical entity projection: the Class is optional, identity is not.
 
@@ -2097,7 +2098,7 @@ def validate_unified_entity_projection(
         "class_iri",
         "project_id",
         "ontology_id",
-        "workspace_version",
+        "model_revision",
     }
     if not isinstance(value, Mapping) or not required.issubset(value):
         raise ValueError("canonical entity projection fields are incomplete")
@@ -2123,9 +2124,9 @@ def validate_unified_entity_projection(
     for field, expected in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
-        if not isinstance(result[field], str) or result[field] != expected:
+        if result[field] != expected or (type(result[field]) is not int if field == "model_revision" else not isinstance(result[field], str)):
             raise ValueError(f"canonical entity {field} drifts")
     return result
 
@@ -2148,7 +2149,7 @@ def build_unified_entity_binding_receipt(
     *,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
 ) -> dict[str, Any]:
     """Bind neutral existing refs to one ontology-scoped 009 read model.
 
@@ -2170,9 +2171,9 @@ def build_unified_entity_binding_receipt(
     for field, value in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
-        if not _is_nonempty_string(value) or "://" in value:
+        if (type(value) is not int or value < 0) if field == "model_revision" else (not _is_nonempty_string(value) or "://" in value):
             raise ProtocolRetrievalFallbackError(f"existing binding {field} is invalid")
     rows = _read_model_entities(read_model)
     indexed: dict[str, Mapping[str, Any]] = {}
@@ -2182,7 +2183,7 @@ def build_unified_entity_binding_receipt(
                 row,
                 project_id=project_id,
                 ontology_id=ontology_id,
-                workspace_version=workspace_version,
+                model_revision=model_revision,
             )
         except ValueError as exc:
             raise ProtocolRetrievalFallbackError(str(exc)) from exc
@@ -2202,7 +2203,7 @@ def build_unified_entity_binding_receipt(
             row,
             project_id=project_id,
             ontology_id=ontology_id,
-            workspace_version=workspace_version,
+            model_revision=model_revision,
         )
         actual_class = _row_class(row) or canonical.get("class_semantic_id")
         class_state = _unified_class_state(canonical)
@@ -2235,7 +2236,7 @@ def build_unified_entity_binding_receipt(
             "class_iri": canonical["class_iri"],
             "project_id": canonical["project_id"],
             "ontology_id": canonical["ontology_id"],
-            "workspace_version": canonical["workspace_version"],
+            "model_revision": canonical["model_revision"],
         }
         bindings.append(binding)
     receipt = {
@@ -2244,7 +2245,7 @@ def build_unified_entity_binding_receipt(
         "candidate_digest": _canonical_digest(normalized),
         "project_id": project_id,
         "ontology_id": ontology_id,
-        "workspace_version": workspace_version,
+        "model_revision": model_revision,
         "bindings": bindings,
     }
     receipt["receipt_digest"] = _canonical_digest(receipt)
@@ -2280,7 +2281,7 @@ def validate_unified_entity_binding_receipt(
     *,
     project_id: str | None = None,
     ontology_id: str | None = None,
-    workspace_version: str | None = None,
+    model_revision: int | None = None,
 ) -> dict[str, Any]:
     """Validate a frozen 009 binding receipt before it is used for identity."""
 
@@ -2293,7 +2294,7 @@ def validate_unified_entity_binding_receipt(
         "candidate_digest",
         "project_id",
         "ontology_id",
-        "workspace_version",
+        "model_revision",
         "bindings",
         "receipt_digest",
     }
@@ -2306,10 +2307,10 @@ def validate_unified_entity_binding_receipt(
     for field, expected in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
         value = receipt.get(field)
-        if not _is_nonempty_string(value) or (expected is not None and value != expected):
+        if ((type(value) is not int or value < 0) if field == "model_revision" else not _is_nonempty_string(value)) or (expected is not None and value != expected):
             raise ProtocolRetrievalFallbackError(f"existing binding receipt {field} drifts")
     refs = {ref["semantic_id"]: ref for ref in _unified_refs(normalized)}
     bindings = receipt.get("bindings")
@@ -2328,7 +2329,7 @@ def validate_unified_entity_binding_receipt(
             "class_iri",
             "project_id",
             "ontology_id",
-            "workspace_version",
+            "model_revision",
         }:
             raise ProtocolRetrievalFallbackError("existing binding receipt item fields drift")
         semantic_id = item.get("semantic_id")
@@ -2342,7 +2343,7 @@ def validate_unified_entity_binding_receipt(
                 item,
                 project_id=str(receipt["project_id"]),
                 ontology_id=str(receipt["ontology_id"]),
-                workspace_version=str(receipt["workspace_version"]),
+                model_revision=receipt["model_revision"],
             )
         except ValueError as exc:
             raise ProtocolRetrievalFallbackError(str(exc)) from exc
@@ -2477,7 +2478,7 @@ def build_unified_resource_binding_receipt(
     *,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
 ) -> dict[str, Any]:
     """Bind active R4 resource refs to a governed read model.
 
@@ -2500,9 +2501,9 @@ def build_unified_resource_binding_receipt(
     for field, value in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
-        if not _is_nonempty_string(value) or "://" in value:
+        if (type(value) is not int or value < 0) if field == "model_revision" else (not _is_nonempty_string(value) or "://" in value):
             raise ProtocolRetrievalFallbackError(f"resource binding {field} is invalid")
     read_body = _unwrap_governed_read_envelope(read_model)
     # A governed read may carry scope at envelope level.  When present it must
@@ -2520,15 +2521,15 @@ def build_unified_resource_binding_receipt(
             for field, expected_value in (
                 ("project_id", project_id),
                 ("ontology_id", ontology_id),
-                ("workspace_version", workspace_version),
+                ("model_revision", model_revision),
             ):
                 actual = scoped.get(field)
                 if actual is not None and actual != expected_value:
                     raise ProtocolRetrievalFallbackError("resource read scope drifts")
     indexed: dict[tuple[str, str], Mapping[str, Any]] = {}
     envelope_digest = _canonical_digest(read_model)
-    body_source_signature = (
-        read_body.get("source_signature")
+    body_model_revision = (
+        read_body.get("model_revision")
         if isinstance(read_body, Mapping)
         else None
     )
@@ -2536,14 +2537,14 @@ def build_unified_resource_binding_receipt(
         row = dict(raw_row)
         row_project = row.get("project_id")
         row_ontology = row.get("ontology_id")
-        row_workspace = row.get("workspace_version")
+        row_workspace = row.get("model_revision")
         if any(
             not _is_nonempty_string(value)
             or value != expected_value
             for value, expected_value in (
                 (row_project, project_id),
                 (row_ontology, ontology_id),
-                (row_workspace, workspace_version),
+                (row_workspace, model_revision),
             )
         ):
             if any(
@@ -2551,23 +2552,23 @@ def build_unified_resource_binding_receipt(
                 for value, expected_value in (
                     (row_project, project_id),
                     (row_ontology, ontology_id),
-                    (row_workspace, workspace_version),
+                    (row_workspace, model_revision),
                 )
             ):
                 raise ProtocolRetrievalFallbackError("resource read scope drifts")
         row["project_id"] = project_id
         row["ontology_id"] = ontology_id
-        row["workspace_version"] = workspace_version
+        row["model_revision"] = model_revision
         if _read_resource_evidence(row) in (None, "", [], {}):
             # The API read model does not currently duplicate SQL workspace
             # scope into every item.  Bind the exact authorized envelope
             # digest, plus its public model state markers, as the
             # read evidence used by this Protocol receipt.
             evidence: dict[str, Any] = {"envelope_digest": envelope_digest}
-            source_signature = row.get("source_signature", body_source_signature)
+            model_revision = row.get("model_revision", body_model_revision)
             assertion_kind = row.get("assertion_kind")
-            if _is_nonempty_string(source_signature):
-                evidence["source_signature"] = source_signature
+            if type(model_revision) is int and model_revision >= 0:
+                evidence["model_revision"] = model_revision
             if _is_nonempty_string(assertion_kind):
                 evidence["assertion_kind"] = assertion_kind
             row["read_evidence"] = evidence
@@ -2604,7 +2605,7 @@ def build_unified_resource_binding_receipt(
                 "read_evidence": evidence,
                 "project_id": project_id,
                 "ontology_id": ontology_id,
-                "workspace_version": workspace_version,
+                "model_revision": model_revision,
             }
         )
     receipt = {
@@ -2613,7 +2614,7 @@ def build_unified_resource_binding_receipt(
         "candidate_digest": _canonical_digest(normalized),
         "project_id": project_id,
         "ontology_id": ontology_id,
-        "workspace_version": workspace_version,
+        "model_revision": model_revision,
         "bindings": bindings,
     }
     receipt["receipt_digest"] = _canonical_digest(receipt)
@@ -2626,7 +2627,7 @@ def validate_unified_resource_binding_receipt(
     *,
     project_id: str | None = None,
     ontology_id: str | None = None,
-    workspace_version: str | None = None,
+    model_revision: int | None = None,
 ) -> dict[str, Any]:
     """Validate a resource-kind-aware R4 governed-read binding receipt."""
 
@@ -2635,7 +2636,7 @@ def validate_unified_resource_binding_receipt(
         raise ProtocolRetrievalFallbackError("resource binding receipt is invalid")
     required = {
         "schema_version", "requirement_id", "candidate_digest", "project_id",
-        "ontology_id", "workspace_version", "bindings", "receipt_digest",
+        "ontology_id", "model_revision", "bindings", "receipt_digest",
     }
     if set(receipt) != required or receipt.get("schema_version") != _UNIFIED_RESOURCE_BINDING_SCHEMA:
         raise ProtocolRetrievalFallbackError("resource binding receipt fields drift")
@@ -2646,10 +2647,10 @@ def validate_unified_resource_binding_receipt(
     for field, expected_value in (
         ("project_id", project_id),
         ("ontology_id", ontology_id),
-        ("workspace_version", workspace_version),
+        ("model_revision", model_revision),
     ):
         value = receipt.get(field)
-        if not _is_nonempty_string(value) or (
+        if (not (type(value) is int and value >= 0) if field == "model_revision" else not _is_nonempty_string(value)) or (
             expected_value is not None and value != expected_value
         ):
             raise ProtocolRetrievalFallbackError(f"resource binding receipt {field} drifts")
@@ -2661,7 +2662,7 @@ def validate_unified_resource_binding_receipt(
     for item in bindings:
         if not isinstance(item, Mapping) or set(item) != {
             "semantic_id", "resource_kind", "resource_iri", "read_evidence",
-            "project_id", "ontology_id", "workspace_version",
+            "project_id", "ontology_id", "model_revision",
         }:
             raise ProtocolRetrievalFallbackError("resource binding receipt item fields drift")
         semantic_id = item.get("semantic_id")
@@ -2678,7 +2679,7 @@ def validate_unified_resource_binding_receipt(
             raise ProtocolRetrievalFallbackError("resource binding receipt IRI is invalid")
         if item.get("read_evidence") in (None, "", [], {}):
             raise ProtocolRetrievalFallbackError("resource binding receipt evidence is missing")
-        for field in ("project_id", "ontology_id", "workspace_version"):
+        for field in ("project_id", "ontology_id", "model_revision"):
             if item.get(field) != receipt.get(field):
                 raise ProtocolRetrievalFallbackError("resource binding receipt scope drifts")
         seen.add(semantic_id)
@@ -2891,7 +2892,7 @@ def _translate_candidate_to_batches_impl(
                     raise _TranslateConflict("delete_impact_target_drift", "impact receipt target drifts")
                 if any(
                     impact.get(field) != validated_receipt.get(field)
-                    for field in ("project_id", "ontology_id", "workspace_version")
+                    for field in ("project_id", "ontology_id", "model_revision")
                 ):
                     raise _TranslateConflict("delete_impact_scope_drift", "impact receipt scope drifts")
                 if impact.get("candidate_digest") != _canonical_digest(normalized):

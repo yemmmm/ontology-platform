@@ -36,12 +36,12 @@ class Store:
         return SparqlResult(result=result)
 
 
-def scope(signature="sig-1", ontology_id="ontology-1", graph=GRAPH):
+def scope(signature=1, ontology_id="ontology-1", graph=GRAPH):
     return SemanticQueryScope(
         project_id="project-1", mode="ontologies", status="complete",
         ontologies=(ResolvedOntologyScope(
             ontology_id=ontology_id, ontology_name="Test",
-            workspace_version="workspace-1", source_signature=signature,
+            model_revision=signature,
             graph_iris=(graph,), graph_assertion_kinds={graph: "asserted"}, derived_state={},
         ),),
     )
@@ -179,7 +179,7 @@ def test_recoverable_feedback_never_claims_complete(mutation):
     node(store, "a")
     pages, final = [read(store)], read(store, limit=1)
     if mutation == "drift":
-        final = read(store, limit=1, selected=scope("sig-2"))
+        final = read(store, limit=1, selected=scope(2))
     elif mutation == "scope":
         pages[0]["response"]["data"]["scope"]["project_id"] = "other-project"
     elif mutation == "failure":

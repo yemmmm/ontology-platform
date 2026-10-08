@@ -95,7 +95,10 @@ class OntologyWorkspaceService:
         }
 
     def context(self, ontology_id: str) -> dict[str, Any]:
-        ontology = self.session.get(OntologyModel, ontology_id)
+        ontology = self.session.scalar(
+            select(OntologyModel).where(OntologyModel.id == ontology_id)
+            .execution_options(populate_existing=True)
+        )
         if ontology is None:
             raise LookupError("Ontology not found")
         iri = ontology.model_graph_iri
@@ -113,7 +116,6 @@ class OntologyWorkspaceService:
             "model_graph_iri": iri,
             "model_revision": ontology.model_revision,
             "content_hash": ontology.model_content_hash,
-            "source_signature": ontology.source_signature,
             "editable": state.editable if state else True,
             "editability_reason": state.reason if state else None,
             "issues": issues,

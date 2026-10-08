@@ -21,11 +21,11 @@ from modeling_team.modeling_readonly import (
 from modeling_team.transport_mcp import RoutingError, TeamTransportBroker
 
 
-def _context(version: str = "v1") -> dict[str, object]:
+def _context(version: str = 1) -> dict[str, object]:
     return {
         "project": {"id": "P"},
         "ontology": {"id": "O"},
-        "workspace": {"state": "ready", "workspace_version": version, "issues": []},
+        "workspace": {"state": "ready", "model_revision": version, "issues": []},
         "resource_counts": {"classes": 1, "entities": 2, "facts": 3, "rules": 0},
         "derived_state": {"stale_count": 0, "warning": None},
         "lease": {"active": False},
@@ -227,21 +227,21 @@ def test_staged_modeling_bridge_projects_each_tool_to_real_proxy_and_advertises_
 def test_modeling_context_receipt_is_immutable_and_version_drift_closes_gate() -> None:
     gate = ModelingContextGate(run_id="run-1", project_id="P", ontology_id="O")
     first = gate.observe({"ok": True, "data": _context()}, call_receipt={"ordinal": 0})
-    assert first.workspace_version == "v1"
+    assert first.model_revision == 1
     gate.bind_candidate("delivery-1", "candidate-digest")
     with pytest.raises(ModelingContextDrift):
-        gate.revalidate(_context("v2"), call_receipt={"ordinal": 1})
+        gate.revalidate(_context(2), call_receipt={"ordinal": 1})
     assert gate.state == "closed"
     with pytest.raises(ModelingReadError):
         gate.bind_candidate("delivery-2", "candidate-digest")
-    refreshed_context = _context("v2")
+    refreshed_context = _context(2)
     refreshed_context["lease"] = {"active": True, "lease_id": "run-owned-lease"}
     refreshed_context["derived_state"] = {
         "stale_count": 1,
         "warning": "derived_state_stale",
     }
     refreshed = gate.observe(refreshed_context, call_receipt={"ordinal": 2})
-    assert refreshed.workspace_version == "v2"
+    assert refreshed.model_revision == 2
     assert gate.state == "context_observed"
 
 

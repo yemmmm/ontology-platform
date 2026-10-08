@@ -92,7 +92,7 @@ class SemanticSearchProjectionService(ProjectionWriter):
                     "text": " | ".join(text_parts),
                     "assertion_kind": self._assertion_kind(str(graph), scope),
                     "model_graph_iri": str(graph),
-                    "source_signature": scope.source_signature,
+                    "model_revision": scope.model_revision,
                     "ontology_id": scope.ontology_id,
                     "is_stale": is_stale,
                     "visibility_labels": [],

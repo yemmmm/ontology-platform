@@ -45,8 +45,7 @@ def _binding(
     principal: AuthPrincipal | None = None,
     original_queries=("topic",),
     normalized_queries=("topic",),
-    workspace_versions=(("ontology-1", "v1"),),
-    source_signatures=(("ontology-1", "sig-1"),),
+    model_revisions=(("ontology-1", 1),),
     limit: int = 20,
     context_limit: int = 100,
     depth: int = 1,
@@ -64,8 +63,7 @@ def _binding(
         depth=depth,
         limit=limit,
         context_limit=context_limit,
-        workspace_versions=list(workspace_versions),
-        source_signatures=list(source_signatures),
+        model_revisions=list(model_revisions),
     )
 
 
@@ -77,8 +75,7 @@ def _fill_payload(
     return CursorPayload(
         kind=kind,
         binding_digest=binding_digest(binding),
-        workspace_versions=binding.workspace_versions,
-        source_signatures=binding.source_signatures,
+        model_revisions=binding.model_revisions,
         resume_key=("ontology-1", "match-2"),
         root_match_ids=("match-1",) if kind == CURSOR_KIND_CONTEXT else (),
         issued_at=int(time.time()),
@@ -118,8 +115,7 @@ def test_cursor_expired_returns_invalid():
     payload = CursorPayload(
         kind=CURSOR_KIND_MATCH,
         binding_digest=binding_digest(binding),
-        workspace_versions=binding.workspace_versions,
-        source_signatures=binding.source_signatures,
+        model_revisions=binding.model_revisions,
         resume_key=("ontology-1", "match-2"),
         root_match_ids=(),
         issued_at=int(time.time()) - 10,
@@ -152,10 +148,10 @@ def test_cursor_query_change_returns_mismatch():
         codec.decode(token, binding=binding_changed, expected_kind=CURSOR_KIND_MATCH)
 
 
-def test_cursor_workspace_version_drift_returns_snapshot_changed():
+def test_cursor_model_revision_drift_returns_snapshot_changed():
     codec = _codec()
-    binding_v1 = _binding(workspace_versions=(("ontology-1", "v1"),))
-    binding_v2 = _binding(workspace_versions=(("ontology-1", "v2"),))
+    binding_v1 = _binding(model_revisions=(("ontology-1", 1),))
+    binding_v2 = _binding(model_revisions=(("ontology-1", 2),))
     token = codec.encode(_fill_payload(codec, binding_v1))
     with pytest.raises(ContextSnapshotChanged):
         codec.decode(token, binding=binding_v2, expected_kind=CURSOR_KIND_MATCH)

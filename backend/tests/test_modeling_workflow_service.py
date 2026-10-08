@@ -412,7 +412,7 @@ def test_event_finding_reference_requires_exact_attempt_fingerprint(workflow):
         request_hash="b" * 64,
         mode="dry_run",
         status="validation_failed",
-        expected_workspace_version="workspace-v1",
+        expected_model_revision=1,
         findings=[{"code": "invalid_dependency", "finding_fingerprint": "c" * 64}],
     )
     session.add_all([batch, attempt])

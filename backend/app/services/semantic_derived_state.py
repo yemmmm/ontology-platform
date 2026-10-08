@@ -44,12 +44,16 @@ class SemanticRevisionService:
         now = datetime.now(UTC)
         content_hashes = content_hashes or {}
         for graph_iri in graph_iris:
+            ontology = self.session.scalar(
+                select(OntologyModel).where(OntologyModel.model_graph_iri == graph_iri)
+                .with_for_update().execution_options(populate_existing=True)
+            )
             record = self.get_revision(graph_iri)
             if record is None:
                 record = SemanticGraphRevisionModel(
                     id=str(uuid4()),
                     graph_iri=graph_iri,
-                    revision=1,
+                    revision=(ontology.model_revision + 1) if ontology is not None else 1,
                     content_hash=content_hashes.get(graph_iri),
                     last_edit_audit_id=audit_id,
                     changed_at=now,
@@ -58,7 +62,7 @@ class SemanticRevisionService:
                 )
                 self.session.add(record)
             else:
-                record.revision = int(record.revision or 0) + 1
+                record.revision = (ontology.model_revision + 1) if ontology is not None else int(record.revision or 0) + 1
                 record.changed_at = now
                 record.changed_by = actor or record.changed_by
                 record.last_edit_audit_id = audit_id or record.last_edit_audit_id
@@ -66,9 +70,6 @@ class SemanticRevisionService:
                     record.content_hash = content_hashes[graph_iri]
                 if metadata:
                     record.revision_metadata = {**(record.revision_metadata or {}), **metadata}
-            ontology = self.session.scalar(select(OntologyModel).where(
-                OntologyModel.model_graph_iri == graph_iri
-            ))
             if ontology is not None:
                 ontology.model_revision = record.revision
                 if graph_iri in content_hashes:

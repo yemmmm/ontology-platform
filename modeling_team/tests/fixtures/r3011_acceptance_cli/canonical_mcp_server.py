@@ -101,7 +101,6 @@ class FixtureState:
         context = {
             "ontology_id": ontology_id,
             "state": "ready",
-            "source_signature": entry["source_signature"],
             "model_revision": revision,
             "content_hash": entry["members"][0]["content_hash"],
             "fixture_read_index": index,

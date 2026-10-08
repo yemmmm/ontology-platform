@@ -110,12 +110,6 @@ class OntologyModel(Base):
     model_content_hash: Mapped[str | None] = mapped_column(String(64))
     reference_ontology_ids: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
 
-    @property
-    def source_signature(self) -> str:
-        import hashlib
-        value = f"{self.id}:{self.model_revision}:{self.model_content_hash or ''}"
-        return hashlib.sha256(value.encode()).hexdigest()
-
     project: Mapped[ProjectModel] = relationship(back_populates="ontologies")
 
 
@@ -372,11 +366,11 @@ class ModelingBatchAttemptModel(Base):
     request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     mode: Mapped[str] = mapped_column(String(32), nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="validating", nullable=False)
-    expected_workspace_version: Mapped[str] = mapped_column(String(128), nullable=False)
+    expected_model_revision: Mapped[int | None] = mapped_column(Integer)
     ontology_id: Mapped[str | None] = mapped_column(String(36))
     lease_revision: Mapped[int | None] = mapped_column(Integer)
-    workspace_version_before: Mapped[str | None] = mapped_column(String(128))
-    workspace_version_after: Mapped[str | None] = mapped_column(String(128))
+    model_revision_before: Mapped[int | None] = mapped_column(Integer)
+    model_revision_after: Mapped[int | None] = mapped_column(Integer)
     target_snapshot: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     normalized_delta: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict, nullable=False)
     delta_hash: Mapped[str | None] = mapped_column(String(64))
@@ -1328,7 +1322,7 @@ class SemanticProjectionJobModel(Base):
     model_graph_iris: Mapped[list[str]] = mapped_column(JSONB, default=list, nullable=False)
     reasoning_result_graph_iri: Mapped[str | None] = mapped_column(Text)
     rule_result_graph_iri: Mapped[str | None] = mapped_column(Text)
-    source_signature: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    model_revision: Mapped[int | None] = mapped_column(Integer)
     input_graph_revisions: Mapped[dict[str, Any]] = mapped_column(
         JSONB, default=dict, nullable=False
     )
@@ -1364,7 +1358,7 @@ class SemanticProjectionManifestModel(Base):
     ontology_id: Mapped[str] = mapped_column(String(36), nullable=False)
     projection_kind: Mapped[str] = mapped_column(String(40), nullable=False)
     active_job_id: Mapped[str | None] = mapped_column(String(36))
-    source_signature: Mapped[str] = mapped_column(String(128), default="", nullable=False)
+    model_revision: Mapped[int | None] = mapped_column(Integer)
     projection_version: Mapped[str] = mapped_column(String(80), default="", nullable=False)
     target_partition: Mapped[str] = mapped_column(String(255), default="", nullable=False)
     status: Mapped[str] = mapped_column(String(32), default="current", nullable=False)
@@ -1383,8 +1377,7 @@ class SemanticRetrievalDocumentModel(Base):
     __table_args__ = (
         UniqueConstraint(
             "ontology_id",
-            "workspace_version",
-            "source_signature",
+            "model_revision",
             "resource_iri",
             "resource_kind",
             "projection_version",
@@ -1395,8 +1388,7 @@ class SemanticRetrievalDocumentModel(Base):
         Index(
             "ix_semantic_retrieval_scope",
             "ontology_id",
-            "workspace_version",
-            "source_signature",
+            "model_revision",
             "resource_kind",
             "projection_version",
             "embedding_config_hash",
@@ -1407,9 +1399,7 @@ class SemanticRetrievalDocumentModel(Base):
     ontology_id: Mapped[str] = mapped_column(
         ForeignKey("ontologies.id", ondelete="CASCADE"), nullable=False
     )
-    workspace_version: Mapped[str] = mapped_column(String(120), nullable=False)
-    source_signature: Mapped[str] = mapped_column(String(128), nullable=False)
-    rule_set_signature: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    model_revision: Mapped[int | None] = mapped_column(Integer)
     resource_iri: Mapped[str] = mapped_column(Text, nullable=False)
     resource_kind: Mapped[str] = mapped_column(String(32), nullable=False)
     assertion_kind: Mapped[str] = mapped_column(String(32), nullable=False, default="asserted")

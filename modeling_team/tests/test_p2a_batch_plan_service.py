@@ -21,7 +21,7 @@ from app.repositories.postgres import Base
 from app.repositories.rdf_store import GraphWriteResult
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchService
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from modeling_team.matrix_artifact import load_matrix
 from modeling_team.p2a_batch_plan import ASSERTION_CLIENT_ITEM_IDS, build_p2a_batch_plan
@@ -139,7 +139,7 @@ def test_exact_four_plan_compiles_and_service_dry_run_has_zero_rdf_side_effects(
                 expected_session_revision=1,
             ),
         )
-        version = ModelingWorkspaceVersionService(session, settings).version_for(ontology_id)
+        version = OntologyModelRevisionService(session, settings).version_for(ontology_id)
         service = ModelingBatchService(session, settings, rdf)  # type: ignore[arg-type]
         result = service.submit(
             build_session["id"],
@@ -148,7 +148,7 @@ def test_exact_four_plan_compiles_and_service_dry_run_has_zero_rdf_side_effects(
                 ontology_id=ontology_id,
                 idempotency_key="p2a-exact-four-dry-run",
                 mode="dry_run",
-                expected_workspace_version=version,
+                expected_model_revision=version,
                 items=items,
             ),
         )

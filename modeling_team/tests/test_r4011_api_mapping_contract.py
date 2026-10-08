@@ -281,13 +281,13 @@ def test_existing_resource_binding_reuses_actual_kind_with_current_namespace(kin
                     "read_evidence": {"source": "governed"},
                     "project_id": "p",
                     "ontology_id": "o",
-                    "workspace_version": "v1",
+                    "model_revision": 1,
                 }
             ]
         },
         project_id="p",
         ontology_id="o",
-        workspace_version="v1",
+        model_revision=1,
     )
     plan = translate_candidate_to_batches(
         value,

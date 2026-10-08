@@ -88,7 +88,7 @@ def test_archived_rule_pointers_are_not_live_scopes_counts_or_projection_inputs(
         in_memory_session.add(SemanticDerivedResultPointerModel(
             id="ptr-" + kind, ontology_id=ontology.id, result_kind=kind,
             run_id="archived-" + kind, result_graph_iri="urn:archived:" + kind,
-            source_signature="old", status="current"))
+            source_signature="historical-signature", status="current"))
     in_memory_session.flush()
     archived = in_memory_session.get(SemanticDerivedResultPointerModel, "ptr-rule")
     resolver = SemanticReadScopeResolver(in_memory_session)

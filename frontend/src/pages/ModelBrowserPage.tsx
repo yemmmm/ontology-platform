@@ -4,7 +4,7 @@ import { assignNodeColorFamilies, UNCLASSIFIED_COLORS, VIEWPOINT_COLORS } from "
 import { useT } from "../i18n";
 import { workspaceApi } from "../workspaceApi";
 import { semanticViews, type JsonObject, type Project, type Relation, type Resource } from "../workspaceTypes";
-type Position = { ontologyId: string; ontologyName: string; signature: string; resource: Resource };
+type Position = { ontologyId: string; ontologyName: string; modelRevision: number; resource: Resource };
 type Node = { iri: string; label: string; positions: Position[] };
 function definition(resource: Resource): JsonObject {
   const value = resource.detail_fields?.semantic_definition;
@@ -52,13 +52,13 @@ export function ModelBrowserPage({ project }: { project: Project }) {
             items = resources.items.filter(item => item.iri
               && item.type_iri !== "http://www.w3.org/2002/07/owl#DatatypeProperty"
               && item.type_iri !== "http://www.w3.org/2002/07/owl#ObjectProperty"
-            ).map(resource => ({ ontologyId: ontology.id, ontologyName: ontology.name, signature: resources.source_signature, resource }));
+            ).map(resource => ({ ontologyId: ontology.id, ontologyName: ontology.name, modelRevision: resources.model_revision, resource }));
             if (resources.paging?.complete === false) warnings.push({ name: ontology.name, code: "Resource window is incomplete" });
             for (const warning of resources.warnings ?? []) warnings.push({ name: ontology.name, code: "Partial loading", detail: warning.message || warning.code });
             if (relationResult.status === "rejected") warnings.push({ name: ontology.name, code: "Relations could not be read", detail: String(relationResult.reason) });
             else {
               const relationEnvelope = relationResult.value;
-              if (!resources.source_signature || resources.source_signature !== relationEnvelope.source_signature) warnings.push({ name: ontology.name, code: "Source versions differ; refresh before combining relations" });
+              if (!resources.model_revision || resources.model_revision !== relationEnvelope.model_revision) warnings.push({ name: ontology.name, code: "Model revisions differ; refresh before combining relations" });
               else relations = relationEnvelope.items;
               if (relationEnvelope.paging?.complete === false) warnings.push({ name: ontology.name, code: "Relation window is incomplete" });
               for (const warning of relationEnvelope.warnings ?? []) warnings.push({ name: ontology.name, code: "Partial loading", detail: warning.message || warning.code });
@@ -123,7 +123,7 @@ export function ModelBrowserPage({ project }: { project: Project }) {
     {!loading && graphEdges.some(edge => edge.edgeKind === "structured_reference") && <p className="inlineHint">{t("Solid lines: asserted relations. Dashed lines: recorded structured references; labels show source fields.")}</p>}
     {search && <div className="searchMatches" aria-label={t("Search matches")}><p>{t("Matches in loaded viewpoint")}: {matches.length}</p>{matches.length ? matches.map(node => <button key={node.iri} onClick={() => select(node.iri)}>{node.label}</button>) : <p>{t("No matches in the loaded viewpoint")}</p>}</div>}
     <div className={`modelBody${selectedNode ? " hasDetail" : ""}`}><div className="panel graphPanel"><ForceGraphCanvas nodes={graphNodes} edges={graphEdges} selectedNodeId={selectedNode?.iri ?? null} onSelectNode={select} highlightedNodeIds={highlighted} searchActive={Boolean(search)} emptyTitle={t(loading ? "Loading…" : error || limits.length && !nodes.length ? "Model scopes have not been loaded" : ontologyCount === 0 ? "No Ontologies in this project" : nodes.length ? "No nodes in this viewpoint" : "No model resources in the current scope")} emptyHint={t("The canvas displays the authorized default workspace only")} /></div>
-    {selectedNode && selectedPosition && <aside className="panel nodeDetail" aria-label={t("Node details")}><div className="detailHeading"><h2>{selectedPosition.resource.label || selectedNode.iri}</h2><button onClick={() => select(null)} aria-label={t("Close node details")}>×</button></div><p className="resourceIri">{selectedNode.iri}</p><label>{t("Read location")}<select value={position} onChange={event => setPosition(Number(event.target.value))}>{selectedNode.positions.map((item, i) => <option key={item.ontologyId} value={i}>{item.ontologyName}</option>)}</select></label><dl className="nodeFacts"><dt>{t("Declared viewpoint")}</dt><dd>{semanticViews.some(([role]) => role === semantic.semantic_role) ? t(semanticViews.find(([role]) => role === semantic.semantic_role)![1]) : readable(semantic.semantic_role) || t("Unknown")}</dd><dt>{t("Business meaning")}</dt><dd>{readable(semantic.business_meaning) || selectedPosition.resource.description || t("Unknown")}</dd><dt>{t("Applicable scope")}</dt><dd>{readable(semantic.applicability) || t("Unknown")}</dd><dt>Ontology</dt><dd>{selectedPosition.ontologyName}</dd><dt>{t("Source version")}</dt><dd>{selectedPosition.signature || t("Unknown")}</dd><dt>{t("Source time")}</dt><dd>{t("Unknown")}</dd></dl></aside>}
+    {selectedNode && selectedPosition && <aside className="panel nodeDetail" aria-label={t("Node details")}><div className="detailHeading"><h2>{selectedPosition.resource.label || selectedNode.iri}</h2><button onClick={() => select(null)} aria-label={t("Close node details")}>×</button></div><p className="resourceIri">{selectedNode.iri}</p><label>{t("Read location")}<select value={position} onChange={event => setPosition(Number(event.target.value))}>{selectedNode.positions.map((item, i) => <option key={item.ontologyId} value={i}>{item.ontologyName}</option>)}</select></label><dl className="nodeFacts"><dt>{t("Declared viewpoint")}</dt><dd>{semanticViews.some(([role]) => role === semantic.semantic_role) ? t(semanticViews.find(([role]) => role === semantic.semantic_role)![1]) : readable(semantic.semantic_role) || t("Unknown")}</dd><dt>{t("Business meaning")}</dt><dd>{readable(semantic.business_meaning) || selectedPosition.resource.description || t("Unknown")}</dd><dt>{t("Applicable scope")}</dt><dd>{readable(semantic.applicability) || t("Unknown")}</dd><dt>Ontology</dt><dd>{selectedPosition.ontologyName}</dd><dt>{t("Model revision")}</dt><dd>{selectedPosition.modelRevision ?? t("Unknown")}</dd><dt>{t("Source time")}</dt><dd>{t("Unknown")}</dd></dl></aside>}
     </div>
   </section>;
 }

@@ -361,11 +361,11 @@
         "required": true,
         "min_length": 1
       },
-      "expected_workspace_version": {
-        "type": "string",
+      "expected_model_revision": {
+        "type": "integer",
         "required": true,
-        "min_length": 1,
-        "invariant": "Required in every mode and must equal the current workspace version at Service submission."
+        "invariant": "Required in every mode and must equal the current model revision at Service submission.",
+        "minimum": 0
       },
       "items": {
         "type": "array",
@@ -1172,7 +1172,7 @@
       }
     },
     "formal_binding": {
-      "workspace_version": "For every next Batch, use the current workspace version only from the immediately prior formal apply receipt or required platform read.",
+      "model_revision": "For every next Batch, use the current model revision only from the immediately prior formal apply receipt or required platform read.",
       "generated_identifiers": "Before the relation stage, bind generated resource IDs and absolute resource IRIs only from formal create receipts or required platform reads; never guess, synthesize, or forward-reference them."
     },
     "candidate_invariant": "Protocol treats the Modeling candidate and its dependencies as immutable semantic input. It may schedule platform application across Batches, but must not mutate candidate meaning or reorder candidate semantics.",
@@ -1209,7 +1209,7 @@
     ],
     "fallback": {
       "allowed": "An incomplete or degraded generic query may use the ordinary scoped readback path before returning a typed retrieval conflict.",
-      "readback": "Bind final graph, workspace and source signature, compare applied deltas with entity and statement reads, and preserve exact predicate/value and scope checks.",
+      "readback": "Bind final graph, model revision, compare applied deltas with entity and statement reads, and preserve exact predicate/value and scope checks.",
       "cursor": "The stable unfiltered Session Batch inventory must have no next_cursor; statement and entity reads remain bounded and explicit."
     }
   },

@@ -22,7 +22,7 @@ def _r23003_gate(candidate_digest: str = "candidate-v1") -> dict[str, Any]:
         "modeling_context": {
             "project_id": "project-1",
             "ontology_id": "ontology-1",
-            "workspace_version": "workspace-v1",
+            "model_revision": 1,
             "context_receipt_digest": "context-receipt",
             "response_digest": "modeling-response",
             "call_receipt_digest": "modeling-call",
@@ -31,11 +31,11 @@ def _r23003_gate(candidate_digest: str = "candidate-v1") -> dict[str, Any]:
     }
 
 
-def _context(version: str = "workspace-v1") -> dict[str, Any]:
+def _context(version: int = 1) -> dict[str, Any]:
     return {
         "project": {"id": "project-1"},
         "ontology": {"id": "ontology-1"},
-        "workspace": {"state": "ready", "workspace_version": version, "issues": []},
+        "workspace": {"state": "ready", "model_revision": version, "issues": []},
         "resource_counts": {"classes": 1},
         "derived_state": {"stale_count": 0, "warning": None},
         "lease": {"active": False},
@@ -216,7 +216,7 @@ def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_
     assert get_ontology_read_model() == {"ok": True, "data": {"read": True}}
     assert effects == ["read"]
 
-    wrong = get_modeling_context(_context("workspace-v2"))
+    wrong = get_modeling_context(_context(2))
     assert wrong["error_code"] == "modeling_context_revalidation_failed"
     assert effects == ["read"]
     assert submit_modeling_batch()["error_code"] == "modeling_context_revalidation_required"
@@ -232,16 +232,16 @@ def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_
             "mode": "apply_atomic",
             "attempt_status": "applied",
             "workspace": {
-                "before_version": "workspace-v1",
-                "expected_version": "workspace-v1",
-                "after_version": "workspace-v2",
+                "before_version": 1,
+                "expected_version": 1,
+                "after_version": 2,
             },
         }
     )
     assert submit_modeling_batch()["ok"] is True
     stateful_result.clear()
     stateful_result["submitted"] = True
-    live_context["value"] = _context("workspace-v2")
+    live_context["value"] = _context(2)
     live_context["value"]["derived_state"] = {
         "stale_count": 1,
         "warning": "derived_state_stale",
@@ -249,12 +249,12 @@ def test_r23003_protocol_stateful_tools_require_exact_o_revalidation_and_detect_
     assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
     assert effects == ["read", "stateful", "stateful", "stateful"]
 
-    live_context["value"] = _context("workspace-v2")
+    live_context["value"] = _context(2)
     live_context["value"]["lease"] = {"active": True, "lease_id": "run-owned-lease"}
     assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
     assert effects == ["read", "stateful", "stateful", "stateful", "stateful"]
 
-    live_context["value"] = _context("workspace-v3")
+    live_context["value"] = _context(3)
     drifted = submit_modeling_batch()
     assert drifted["error_code"] == "modeling_context_revalidation_failed"
     assert drifted["data"]["mutation_state"] == "zero-mutation"
@@ -307,7 +307,7 @@ def test_r23003_revalidation_normalizes_recent_batch_datetimes_and_keeps_005_gat
     assert submit_modeling_batch() == {"ok": True, "data": {"submitted": True}}
     assert effects == ["stateful"]
 
-    live_context["value"] = _context("workspace-v2")
+    live_context["value"] = _context(2)
     drifted = submit_modeling_batch()
     assert drifted["error_code"] == "modeling_context_revalidation_failed"
     assert drifted["data"]["mutation_state"] == "zero-mutation"

@@ -1,11 +1,8 @@
 """Projection job lifecycle: create, snapshot inputs, run, manifest promotion, reconcile.
 
-Ontology-scoped projection jobs. Each job snapshots the source
-signature, input graph revisions, and an empty historical-pointer slot; writers
-implement the ``ProjectionWriter`` protocol. Successful rebuilds promote
-a manifest for ``(ontology_id, projection_kind, target_partition)`` to
-``current``. Reconcile compares each manifest to the current Ontology model
-signature and retired-input presence and marks stale when they diverge.
+Each job binds one Ontology model revision. A successful rebuild promotes its
+partition only while that revision remains current. Historical pointer slots
+are retained for stored evidence; they cannot become live projection inputs.
 """
 
 from __future__ import annotations
@@ -19,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from app.repositories.models import (
     OntologyModel,
-    SemanticGraphRevisionModel,
     SemanticProjectionJobModel,
     SemanticProjectionManifestModel,
 )
@@ -74,7 +70,6 @@ class SemanticProjectionJobService:
             include=include,
             allow_stale_derived=allow_stale_derived,
         )
-        revisions = self._revisions_for(scope.model_graph_iris)
         pointers = {}
         job_id = str(uuid4())
         partition = target_partition or self._default_partition(
@@ -88,8 +83,7 @@ class SemanticProjectionJobService:
             projection_scope=include,
             model_graph_iris=scope.model_graph_iris,
             reasoning_result_graph_iri=scope.reasoning_result_graph_iri,
-            source_signature=ontology.source_signature,
-            input_graph_revisions=revisions,
+            model_revision=ontology.model_revision,
             input_derived_pointers=pointers,
             target_store=self._target_store_for(projection_kind),
             target_partition=partition,
@@ -122,6 +116,11 @@ class SemanticProjectionJobService:
                 include=job.projection_scope,
                 allow_stale_derived=True,
             )
+            if scope.model_revision != job.model_revision:
+                job.status = "stale"
+                job.finished_at = datetime.now(UTC)
+                self.session.commit()
+                return job
             if mode != "dry_run":
                 writer = self.writers.get(job.projection_kind)
                 if writer is None:
@@ -138,16 +137,12 @@ class SemanticProjectionJobService:
                 job.document_count = int(counts.get("document_count", 0))
             # A writer is allowed to take time (notably while embedding).  Do
             # not promote a partition that was built from a superseded scope.
+            self.session.flush()
+            self.session.expire_all()
+            job = self._get_job(job_id)
             current_ontology = self._get_ontology(job.ontology_id)
-            current_scope = self.scope_resolver_builder(self.session).resolve(
-                ontology_id=job.ontology_id,
-                include=job.projection_scope,
-                allow_stale_derived=True,
-            )
             if (
-                current_ontology.source_signature != job.source_signature
-                or current_scope.source_signature != job.source_signature
-                or self._revisions_for(current_scope.model_graph_iris) != job.input_graph_revisions
+                current_ontology.model_revision != job.model_revision
                 or {} != (job.input_derived_pointers or {})
             ):
                 job.status = "stale"
@@ -181,7 +176,7 @@ class SemanticProjectionJobService:
         for manifest in rows:
             reconciled += 1
             ontology = self._get_ontology(manifest.ontology_id)
-            if manifest.source_signature != ontology.source_signature:
+            if manifest.model_revision != ontology.model_revision:
                 manifest.status = "stale"
                 marked.append(manifest.id)
                 continue
@@ -212,7 +207,7 @@ class SemanticProjectionJobService:
                 continue
             if (
                 manifest.status == "stale"
-                or manifest.source_signature != ontology.source_signature
+                or manifest.model_revision != ontology.model_revision
             ):
                 stale.append(manifest.id)
         return {
@@ -260,20 +255,12 @@ class SemanticProjectionJobService:
             raise ProjectionJobError(f"Projection job not found: {job_id}")
         return record
 
-    def _revisions_for(self, graph_iris: list[str]) -> dict[str, int]:
-        if not graph_iris:
-            return {}
-        rows = self.session.scalars(
-            select(SemanticGraphRevisionModel).where(
-                SemanticGraphRevisionModel.graph_iri.in_(graph_iris)
-            )
-        )
-        return {row.graph_iri: row.revision for row in rows}
-
-
     def _promote_manifest(self, job: SemanticProjectionJobModel) -> None:
-        ontology = self._get_ontology(job.ontology_id)
-        if ontology.source_signature != job.source_signature:
+        ontology = self.session.scalar(
+            select(OntologyModel).where(OntologyModel.id == job.ontology_id)
+            .with_for_update().execution_options(populate_existing=True)
+        )
+        if ontology.model_revision != job.model_revision:
             job.status = "stale"
             self.session.commit()
             return
@@ -309,7 +296,7 @@ class SemanticProjectionJobService:
                 ontology_id=job.ontology_id,
                 projection_kind=job.projection_kind,
                 active_job_id=job.id,
-                source_signature=job.source_signature,
+                model_revision=job.model_revision,
                 projection_version=job.projection_version,
                 target_partition=job.target_partition or "",
                 status="current",
@@ -318,7 +305,7 @@ class SemanticProjectionJobService:
             self.session.add(manifest)
         else:
             manifest.active_job_id = job.id
-            manifest.source_signature = job.source_signature
+            manifest.model_revision = job.model_revision
             manifest.projection_version = job.projection_version
             manifest.status = "current"
             manifest.manifest_metadata = payload
@@ -354,7 +341,7 @@ class SemanticProjectionJobService:
             "ontology_id": manifest.ontology_id,
             "projection_kind": manifest.projection_kind,
             "active_job_id": manifest.active_job_id,
-            "source_signature": manifest.source_signature,
+            "model_revision": manifest.model_revision,
             "projection_version": manifest.projection_version,
             "target_partition": manifest.target_partition,
             "status": manifest.status,

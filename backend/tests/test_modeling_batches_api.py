@@ -13,7 +13,7 @@ from app.core.config import Settings
 from app.repositories.models import OntologyModel, ProjectModel
 from app.repositories.rdf_store import SparqlResult
 from app.services.build_sessions import BuildSessionService
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 
@@ -45,7 +45,7 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     build, _created = BuildSessionService(in_memory_session, settings).create_session(
         "p", BuildSessionCreate(client_session_id="rest-agent")
     )
-    version = ModelingWorkspaceVersionService(in_memory_session, settings).version_for("o")
+    version = OntologyModelRevisionService(in_memory_session, settings).version_for("o")
 
     app = FastAPI()
     app.include_router(router, prefix="/api")
@@ -64,7 +64,7 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
             "ontology_id": "o",
             "idempotency_key": "rest-attempt",
             "mode": "dry_run",
-            "expected_workspace_version": version,
+            "expected_model_revision": version,
             "items": [
                 {
                     "client_item_id": "class",
@@ -84,7 +84,7 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     assert detail.status_code == listed.status_code == context.status_code == 200
     assert detail.json()["attempts"][0]["attempt_id"] == submitted["attempt_id"]
     assert listed.json()["batches"][0]["batch_id"] == submitted["batch_id"]
-    assert context.json()["workspace"]["workspace_version"] == version
+    assert context.json()["workspace"]["model_revision"] == version
     delta = client.get("/api/ontologies/o/semantic-read-models/delta")
     assert delta.status_code == 400, delta.text
     assert delta.json()["detail"]["code"] == "unsupported_read_model"
@@ -109,7 +109,7 @@ def test_rest_accepts_actor_hint_but_uses_authenticated_actor(
             "client_batch_id": "b",
             "ontology_id": "o",
             "idempotency_key": "k",
-            "expected_workspace_version": "v",
+            "expected_model_revision": 1,
             "actor": "forged",
             "items": [
                 {"client_item_id": "i", "command_kind": "create_class", "payload": {"name": "X"}}

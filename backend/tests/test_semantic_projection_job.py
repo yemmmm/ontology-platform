@@ -35,7 +35,7 @@ class _StaticResolver:
 
         return ScopeResolution(
             ontology_id=ontology_id,
-            source_signature="sig-1",
+            model_revision=1,
             include=include,
             model_graph_iris=["http://op/s/graph/ontology/ov-1"], shape_graph_iris=[],
 
@@ -67,7 +67,7 @@ def test_create_job_snapshots_inputs(in_memory_session):
     )
     assert job.ontology_id == "gs-1"
     assert job.projection_kind == "search"
-    assert job.source_signature == in_memory_session.get(OntologyModel, "gs-1").source_signature
+    assert job.model_revision == in_memory_session.get(OntologyModel, "gs-1").model_revision
     assert isinstance(job.input_graph_revisions, dict)
     assert isinstance(job.input_derived_pointers, dict)
 
@@ -154,7 +154,7 @@ def test_dry_run_does_not_mutate_target(in_memory_session):
     assert refreshed.status == "succeeded"
 
 
-def test_reconcile_marks_stale_when_signature_changes(in_memory_session):
+def test_reconcile_marks_stale_when_revision_changes(in_memory_session):
     _seed_graph_set(in_memory_session, signature="sig-1")
     in_memory_session.add(
         SemanticProjectionManifestModel(
@@ -162,7 +162,7 @@ def test_reconcile_marks_stale_when_signature_changes(in_memory_session):
             ontology_id="gs-1",
             projection_kind="search",
             active_job_id="job-old",
-            source_signature="sig-0",
+            model_revision=1,
             projection_version="search-v1",
             target_partition="gs-1/search/search-v1",
             status="current",
@@ -182,7 +182,7 @@ def test_reconcile_marks_stale_when_pointer_status_changes(in_memory_session):
             ontology_id="gs-1",
             projection_kind="search",
             active_job_id="job-old",
-            source_signature="sig-1",
+            model_revision=1,
             projection_version="search-v1",
             target_partition="gs-1/search/search-v1",
             status="current",
@@ -208,7 +208,7 @@ def test_status_returns_manifests_with_stale_and_missing(in_memory_session):
             ontology_id="gs-1",
             projection_kind="search",
             active_job_id="job-old",
-            source_signature="old",
+            model_revision=1,
             projection_version="search-v1",
             target_partition="gs-1/search/search-v1",
             status="current",

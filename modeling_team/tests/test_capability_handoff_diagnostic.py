@@ -295,8 +295,7 @@ class CapabilityHandoffBrokerEndToEndTests(unittest.TestCase):
         state = {
             "project_id": "project-1",
             "ontology_id": "ontology-1",
-            "workspace_version": "workspace-1",
-            "source_signature": "source-1",
+            "model_revision": 1,
             "build_session_id": "session-1",
 
         }
@@ -324,7 +323,7 @@ class CapabilityHandoffBrokerEndToEndTests(unittest.TestCase):
             "client_batch_id": "batch-dry",
             "ontology_id": "ontology-1",
             "idempotency_key": "idem-dry",
-            "expected_workspace_version": "workspace-0",
+            "expected_model_revision": 0,
             "items": [{"client_item_id": "item-dry", "command_kind": "create_class", "payload": {"name": "X"}}],
             "mode": "dry_run",
         }

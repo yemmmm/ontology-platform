@@ -19,7 +19,7 @@ from app.repositories.models import OntologyModel
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.modeling_batches import ModelingAuthorizationContext, ModelingBatchService
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 
@@ -87,7 +87,7 @@ def register_modeling_batches(server: FastMCP) -> None:
         client_batch_id: str,
         ontology_id: str,
         idempotency_key: str,
-        expected_workspace_version: str,
+        expected_model_revision: int,
         items: list[McpModelingItemInput],
         mode: str = "apply_atomic",
         lease_token: str | None = None,
@@ -100,7 +100,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                     client_batch_id=client_batch_id,
                     ontology_id=ontology_id,
                     idempotency_key=idempotency_key,
-                    expected_workspace_version=expected_workspace_version,
+                    expected_model_revision=expected_model_revision,
                     mode=mode,
                     lease_token=lease_token,
                     items=items,
@@ -160,17 +160,17 @@ def register_modeling_batches(server: FastMCP) -> None:
     def get_entity_statement_context(
         ontology_id: str,
         entity_iri: str,
-        workspace_version: str | None = None,
+        model_revision: int | None = None,
         page_size: int = 100,
         cursor: str | None = None,
     ) -> dict[str, Any]:
         """Read the complete incident statement set for one exact live entity IRI.
 
         This is intentionally a generic read projection.  Omitting
-        ``workspace_version`` binds the authoritative current version, which the
+        ``model_revision`` binds the authoritative current version, which the
         response and every opaque cursor carry; an explicit version must still
         equal the current version.  The opaque cursor binds Project/Ontology,
-        exact entity IRI, workspace version, and a snapshot digest; callers
+        exact entity IRI, model revision, and a snapshot digest; callers
         must consume every page through ``complete=true`` before using the
         response as delete-impact evidence.
         """
@@ -180,23 +180,26 @@ def register_modeling_batches(server: FastMCP) -> None:
 
             if isinstance(page_size, bool) or not isinstance(page_size, int) or not 0 < page_size <= 1000:
                 raise ValueError("entity statement page_size must be between 1 and 1000")
+            if model_revision is not None and (type(model_revision) is not int or model_revision < 0):
+                raise ValueError("entity statement model_revision must be a nonnegative integer")
             parsed = urlparse(entity_iri) if isinstance(entity_iri, str) else None
             if parsed is None or not parsed.scheme or not parsed.netloc:
                 raise ValueError("entity statement entity_iri is invalid")
             ontology = session.get(OntologyModel, ontology_id)
             if ontology is None:
                 raise ValueError("ontology_not_found")
-            workspace = OntologyWorkspaceService(session, Settings()).context(ontology_id)
-            if workspace.get("state") != "ready" or not workspace.get("ontology_id"):
-                raise ValueError("ontology workspace is incomplete")
-            current_version = ModelingWorkspaceVersionService(session, Settings()).version_for(ontology_id)
+            from app.services.semantic_read_scope import SemanticReadScopeResolver
+
+            resolver = SemanticReadScopeResolver(session)
+            scope = resolver.resolve(ontology_id)
+            current_version = scope.model_revision
             # Read-only first pages bind the authoritative current version when
             # the caller omits it; explicit delete-impact callers keep the
             # strict drift check below.
-            bound_version = workspace_version if workspace_version is not None else current_version
+            bound_version = model_revision if model_revision is not None else current_version
             if bound_version != current_version:
                 raise ValueError("entity statement workspace version drifted")
-            data_graphs = [workspace["model_graph_iri"]]
+            data_graphs = scope.model_graph_iris
             if not data_graphs:
                 raise ValueError("asserted data graph is unavailable")
             escaped_entity = entity_iri.replace("\\", "\\\\").replace(">", "\\>")
@@ -263,6 +266,8 @@ def register_modeling_batches(server: FastMCP) -> None:
             if len(set(encoded)) != len(encoded):
                 raise ValueError("entity statement projection contains duplicate statements")
             ordered = [json.loads(item) for item in sorted(encoded)]
+            if resolver.resolve(ontology_id).model_revision != bound_version:
+                raise ValueError("entity statement model revision changed during reading")
             snapshot_digest = _canonical_json_digest(ordered)
             offset = 0
             if cursor is not None:
@@ -271,7 +276,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                     "project_id": ontology.project_id,
                     "ontology_id": ontology_id,
                     "entity_iri": entity_iri,
-                    "workspace_version": bound_version,
+                    "model_revision": bound_version,
                     "snapshot_digest": snapshot_digest,
                 }
                 if any(token.get(key) != value for key, value in expected.items()):
@@ -291,7 +296,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                         "project_id": ontology.project_id,
                         "ontology_id": ontology_id,
                         "entity_iri": entity_iri,
-                        "workspace_version": bound_version,
+                        "model_revision": bound_version,
                         "snapshot_digest": snapshot_digest,
                         "offset": next_offset,
                     }
@@ -300,7 +305,7 @@ def register_modeling_batches(server: FastMCP) -> None:
                 "project_id": ontology.project_id,
                 "ontology_id": ontology_id,
                 "entity_iri": entity_iri,
-                "workspace_version": bound_version,
+                "model_revision": bound_version,
                 "cursor": cursor,
                 "statements": page,
                 "page_digest": _canonical_json_digest(page),

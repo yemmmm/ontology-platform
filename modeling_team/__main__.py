@@ -736,14 +736,14 @@ def _cq_observed_state_entry(
     if state != "ready" or context.get("ontology_id") != ontology_id:
         raise TeamConfigurationError(f"cq_model_state_missing: ontology {ontology_id} model is not ready")
     revision = context.get("model_revision")
-    if not isinstance(revision, int):
+    if type(revision) is not int or revision < 0:
         raise TeamConfigurationError(f"cq_model_state_missing: ontology {ontology_id} revision is missing")
     return {
         "project_id": project_id,
         "ontology_id": ontology_id,
         "workspace_state": {
             "state_digest": content_digest(
-                {"state": state, "source_signature": context.get("source_signature")}
+                {"state": state, "model_revision": context.get("model_revision")}
             )
         },
         "model_version_state": {
@@ -751,7 +751,6 @@ def _cq_observed_state_entry(
                 {
                     "ontology_id": ontology_id,
                     "model_revision": revision,
-                    "content_hash": context.get("content_hash"),
                 }
             )
         },

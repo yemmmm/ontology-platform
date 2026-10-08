@@ -290,12 +290,12 @@ class SemanticService:
             for graph_iri in affected_graphs:
                 self.graph_registry.ensure_registered_for_direct_edit(graph_iri, actor=actor)
             revision_bumps = self.revision_service.bump_revisions(
-                affected_graphs,
+                affected_graphs if update_result.applied else [],
                 audit_id=audit.id,
                 actor=actor,
             )
             stale_rows = self.derived_state_service.mark_stale_after_edit(
-                affected_graphs, audit_id=audit.id
+                affected_graphs if update_result.applied else [], audit_id=audit.id
             )
             stale_pointers = [
                 {

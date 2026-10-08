@@ -968,12 +968,12 @@ def _resource_binding_receipt_tool() -> dict[str, Any]:
                 },
                 "scope": {
                     "type": "object",
-                    "required": ["project_id", "ontology_id", "workspace_version"],
+                    "required": ["project_id", "ontology_id", "model_revision"],
                     "additionalProperties": False,
                     "properties": {
                         "project_id": {"type": "string", "minLength": 1},
                         "ontology_id": {"type": "string", "minLength": 1},
-                        "workspace_version": {"type": "string", "minLength": 1},
+                        "model_revision": {"type": "integer", "minimum": 0},
                     },
                 },
             },
@@ -1031,14 +1031,16 @@ def _validate_resource_binding_receipt_arguments(arguments: object) -> str | Non
         return "resource binding receipt read_envelope must be an object or array"
     scope = arguments.get("scope")
     if not isinstance(scope, dict) or set(scope) != {
-        "project_id", "ontology_id", "workspace_version"
+        "project_id", "ontology_id", "model_revision"
     }:
-        return "resource binding receipt scope must contain exactly project_id, ontology_id and workspace_version"
+        return "resource binding receipt scope must contain exactly project_id, ontology_id and model_revision"
     if any(
         not isinstance(scope.get(field), str) or not scope[field].strip()
-        for field in ("project_id", "ontology_id", "workspace_version")
+        for field in ("project_id", "ontology_id")
     ):
-        return "resource binding receipt scope fields must be non-empty strings"
+        return "resource binding receipt project and ontology IDs must be non-empty strings"
+    if type(scope.get("model_revision")) is not int or scope["model_revision"] < 0:
+        return "resource binding receipt model_revision must be a nonnegative integer"
     return None
 
 
@@ -1326,7 +1328,7 @@ def handle(request: object) -> dict[str, Any] | None:
                 read_envelope,
                 project_id=scope["project_id"],
                 ontology_id=scope["ontology_id"],
-                workspace_version=scope["workspace_version"],
+                model_revision=scope["model_revision"],
             )
         except ProtocolRetrievalFallbackError as exc:
             return _error(request_id, -32015, f"resource binding receipt failed: {exc}")

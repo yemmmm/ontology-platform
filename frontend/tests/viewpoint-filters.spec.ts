@@ -53,7 +53,7 @@ test("an empty selected view keeps filters available in Chinese on a narrow scre
   await page.addInitScript(() => localStorage.setItem("ontology-platform-ui-lang", "zh"));
   await mockWorkspace(page, { ontologies: [{ id: "o1", name: "Objects only" }], handler: async (path, route) => {
     if (!path.endsWith("/resource-list")) return false;
-    await route.fulfill({ json: { items: [{ iri: "urn:object", label: "对象节点", detail_fields: { semantic_definition: { semantic_role: "object" } } }], source_signature: "sig1" } });
+    await route.fulfill({ json: { items: [{ iri: "urn:object", label: "对象节点", detail_fields: { semantic_definition: { semantic_role: "object" } } }], model_revision: 1 } });
     return true;
   } });
   await page.goto("/?tab=model");

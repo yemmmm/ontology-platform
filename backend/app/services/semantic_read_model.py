@@ -353,7 +353,7 @@ class SemanticReadModelService:
             scope.ontology_id, "resource-list", include="asserted", limit=500,
             field_set="detail",
         )
-        if resources["source_signature"] != scope.source_signature:
+        if resources["model_revision"] != scope.model_revision:
             raise ReadModelError("Resource scope changed during reading; refresh the graph")
         endpoints = {item["iri"] for item in resources["items"]}
         definitions: dict[str, set[str]] = {}
@@ -482,9 +482,12 @@ class SemanticReadModelService:
         warnings: list[dict[str, str]],
         paging: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
+        current = self.scope_resolver.resolve(scope.ontology_id, include=scope.include)
+        if current.model_revision != scope.model_revision:
+            raise ReadModelError("Model revision changed during reading; refresh the model")
         envelope = {
             "ontology_id": scope.ontology_id,
-            "source_signature": scope.source_signature,
+            "model_revision": scope.model_revision,
             "projection_version": template.projection_version,
             "model_name": template.name,
             "include": scope.include,

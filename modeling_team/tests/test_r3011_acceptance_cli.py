@@ -51,7 +51,7 @@ _RUN_CONTRACT = {
 
 def _platform_context(
     *,
-    source_signature: str = "sig-1",
+    model_revision: int = 1,
     ontology_id: str = "ontology-1",
     status: str = "ready",
 ) -> dict:
@@ -59,9 +59,8 @@ def _platform_context(
 
     return {
         "state": "ready",
-        "source_signature": source_signature,
+        "model_revision": model_revision,
         "ontology_id": ontology_id,
-        "model_revision": 1,
         "content_hash": "h1",
     }
 
@@ -99,7 +98,7 @@ def _observed_binding(
                 "ontology_id": ontology_id,
                 "workspace_state": {
                     "state_digest": content_digest(
-                        {"state": context["state"], "source_signature": context["source_signature"]}
+                        {"state": context["state"], "model_revision": context["model_revision"]}
                     )
                 },
                 "model_version_state": {
@@ -107,7 +106,6 @@ def _observed_binding(
                         {
                             "ontology_id": context["ontology_id"],
                             "model_revision": context["model_revision"],
-                            "content_hash": context["content_hash"],
                         }
                     )
                 },
@@ -320,8 +318,8 @@ def test_post_session_drift_is_measured_against_the_actual_pre_binding(
     tmp_path, capsys, monkeypatch
 ):
     run_root, frozen = _write_run_root(tmp_path)
-    pre_context = _platform_context(source_signature="sig-1")
-    post_context = _platform_context(source_signature="sig-2")
+    pre_context = _platform_context(model_revision=1)
+    post_context = _platform_context(model_revision=2)
     forwarder = _ScriptedForwarder([pre_context, post_context])
     factory = _RecordingFactory(forwarder)
     handoff = _write_handoff(

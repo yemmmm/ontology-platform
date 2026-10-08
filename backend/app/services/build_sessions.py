@@ -38,7 +38,7 @@ from app.repositories.models import (
 )
 from app.services import interview
 from app.services.ontology_workspace import OntologyWorkspaceService
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.modeling_workflow import ModelingWorkflowService
 
 
@@ -197,7 +197,7 @@ class BuildSessionService:
             question_counts[key] = question_counts.get(key, 0) + int(count)
 
         workspace_service = OntologyWorkspaceService(self.session, self.settings)
-        version_service = ModelingWorkspaceVersionService(self.session, self.settings)
+        version_service = OntologyModelRevisionService(self.session, self.settings)
         ontology_state: list[dict[str, Any]] = []
         for ontology in ontologies:
             workspace = workspace_service.context(ontology.id)
@@ -208,9 +208,9 @@ class BuildSessionService:
                 .order_by(ModelingBatchModel.created_at.desc(), ModelingBatchModel.id.desc())
                 .limit(1)
             )
-            workspace_version = None
+            model_revision = None
             if workspace["ontology_id"] is not None:
-                workspace_version = version_service.version_for(ontology.id)
+                model_revision = version_service.version_for(ontology.id)
             ontology_state.append(
                 {
                     "id": ontology.id,
@@ -218,7 +218,7 @@ class BuildSessionService:
                     "status": ontology.status,
                     "workspace": {
                         "state": workspace["state"],
-                        "workspace_version": workspace_version,
+                        "model_revision": model_revision,
                         "editable": workspace["state"] == "ready"
                         and workspace["editable"],
                         "issues": []
@@ -631,7 +631,7 @@ class BuildSessionService:
         session_id: str,
         ontology_id: str,
         lease_token: str,
-        expected_workspace_version: str,
+        expected_model_revision: int,
     ) -> dict[str, Any]:
         """Narrow R-004 guard: validate session, lease, and workspace version."""
         build_session = self._build_session(session_id, lock=True)
@@ -652,19 +652,19 @@ class BuildSessionService:
             raise BuildSessionError(
                 "workspace_revision_conflict", "Ontology workspace is incomplete"
             )
-        current_version = ModelingWorkspaceVersionService(self.session, self.settings).version_for(
+        current_version = OntologyModelRevisionService(self.session, self.settings).version_for(
             ontology_id
         )
-        if current_version != expected_workspace_version:
+        if current_version != expected_model_revision:
             raise BuildSessionError(
                 "workspace_revision_conflict",
                 "Ontology workspace changed after the caller last read it",
-                current_workspace_version=current_version,
+                current_model_revision=current_version,
             )
         return {
             "build_session_id": session_id,
             "ontology_id": ontology_id,
-            "workspace_version": current_version,
+            "model_revision": current_version,
             "lease_revision": lease.revision,
         }
 

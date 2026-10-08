@@ -112,8 +112,8 @@ def test_runner_issue_abort_reconciliation_appends_bound_terminal_failure(tmp_pa
         "acceptance": {"status": "aborted", "zero_child_residue": True},
         "scope": {
             "no_in_flight_attempts": True,
-            "existing_context_before": {"workspace_version": "workspace-v1"},
-            "existing_context_after": {"workspace_version": "workspace-v1"},
+            "existing_context_before": {"model_revision": 1},
+            "existing_context_after": {"model_revision": 1},
         },
     }
     runner._record_issue_abort_terminal_failure(issue, cleanup)
@@ -242,7 +242,7 @@ def test_runner_validator_allows_only_bound_post_receipt_revision_via_broker(
         {"ok": True, "data": {
             "project": {"id": "P"},
             "ontology": {"id": "O"},
-            "workspace": {"state": "ready", "workspace_version": "v1", "issues": []},
+            "workspace": {"state": "ready", "model_revision": 1, "issues": []},
             "resource_counts": {"classes": 1},
             "derived_state": {"stale_count": 0, "warning": None},
         }},
@@ -298,7 +298,7 @@ def test_runner_validator_allows_only_bound_post_receipt_revision_via_broker(
         "conflict_detail": "Workflow vs InvokingWorkflow",
         "original_delivery_id": initial.delivery_id,
         "receipt_digest": progress.pending.accepted_receipt_digest,
-        "workspace_version": "v1",
+        "model_revision": 1,
         "mutation_state": "zero-mutation",
     }
     conflict = broker.send(
@@ -367,10 +367,8 @@ def test_formal_r23003_pair_and_model_profile_are_closed() -> None:
 
 def test_r23003_scope_handoff_is_exact() -> None:
     assert normalize_existing_scope(SCOPE) == SCOPE
-    handoff = load_existing_scope_handoff(SCOPE, repository_root=ROOT)
-    assert handoff["scope_disposition"] == "retained"
-    assert handoff["run_id"] == "r23003-real-20260812-deepseek-start20"
-    assert handoff["workspace_version"] == "18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0"
+    with pytest.raises(TeamConfigurationError, match="legacy_model_binding"):
+        load_existing_scope_handoff(SCOPE, repository_root=ROOT)
     with pytest.raises(ValueError):
         normalize_existing_scope({**SCOPE, "project_id": "wrong"})
 
@@ -574,6 +572,10 @@ def test_r23003_preflight_runs_live_probe_before_side_effects(monkeypatch: pytes
         "modeling_team.preflight.capture_clean_checkout",
         lambda _root: {"head": "a" * 40, "status_porcelain": "", "status_digest": "b" * 64},
     )
+    monkeypatch.setattr(
+        "modeling_team.preflight.load_existing_scope_handoff",
+        lambda *_args, **_kwargs: {"project_id": R2_3_003_PROJECT_ID, "ontology_id": R2_3_003_ONTOLOGY_ID, "model_revision": 0},
+    )
     evidence = run_existing_scope_preflight(
         repository_root=ROOT,
         scope=SCOPE,
@@ -581,11 +583,11 @@ def test_r23003_preflight_runs_live_probe_before_side_effects(monkeypatch: pytes
         probe=lambda **_: {
             "project_id": R2_3_003_PROJECT_ID,
             "ontology_id": R2_3_003_ONTOLOGY_ID,
-            "workspace_version": "18e4912e2ab90f808d4b31ab01befc1c0bea3471426abfc1e915cf27869157c0",
+            "model_revision": 0,
             "secret": "must-not-be-retained",
         },
     )
-    assert evidence["live"]["workspace_version"].startswith("18e491")
+    assert evidence["live"]["model_revision"] == 0
     assert "secret" not in json.dumps(evidence)
 
 
@@ -602,7 +604,7 @@ def test_r23003_existing_project_identity_is_fail_closed(
     with pytest.raises(TeamConfigurationError, match="Project identity"):
         canonical_existing_scope_preflight(
             scope=SCOPE,
-            handoff={"workspace_version": "v1"},
+            handoff={"model_revision": 1},
             base_url="http://example",
             admin_key="delivery-only-secret",
         )
@@ -618,7 +620,7 @@ def test_r23003_runner_reads_credential_only_after_existing_live_preflight(
 
     def live_preflight(**_kwargs: object) -> dict[str, object]:
         events.append("live-preflight")
-        return {"status": "ready", "live": {"workspace_version": "v1"}}
+        return {"status": "ready", "live": {"model_revision": 1}}
 
     def credential_preflight(_profile: object, **_kwargs: object) -> object:
         events.append("credential")
@@ -677,7 +679,7 @@ def test_r23003_protocol_task_text_waits_for_candidate_receipt_before_platform_c
         with patch.object(
             runner_module,
             "run_existing_scope_preflight",
-            lambda **_kwargs: {"status": "ready", "live": {"workspace_version": "v1"}},
+            lambda **_kwargs: {"status": "ready", "live": {"model_revision": 1}},
         ), patch.object(
             runner_module,
             "preflight_profile_credentials",
@@ -761,7 +763,7 @@ def test_r23003_modeling_prompt_bounds_candidate_and_requires_inline_transport(
         with patch.object(
             runner_module,
             "run_existing_scope_preflight",
-            lambda **_kwargs: {"status": "ready", "live": {"workspace_version": "v1"}},
+            lambda **_kwargs: {"status": "ready", "live": {"model_revision": 1}},
         ), patch.object(
             runner_module,
             "preflight_profile_credentials",
@@ -903,14 +905,14 @@ def test_r23003_existing_binding_receipt_and_translation_are_read_only() -> None
                     "class_iri": "http://ontology-platform.local/semantic/class/Review",
                     "project_id": R2_3_003_PROJECT_ID,
                     "ontology_id": R2_3_003_ONTOLOGY_ID,
-                    "workspace_version": "v1",
+                    "model_revision": 1,
                     "read_evidence": {"source": "live-read"},
                 }
             ]
         },
         project_id=R2_3_003_PROJECT_ID,
         ontology_id=R2_3_003_ONTOLOGY_ID,
-        workspace_version="v1",
+        model_revision=1,
     )
     translated = translate_candidate_to_batches(
         candidate, receipt, requirement_id="R2.3-003"
@@ -972,7 +974,7 @@ def test_r23003_continuation_reuses_phase_a_entities_and_splits_delete_batches()
             "class_iri": f"http://ontology-platform.local/semantic/class/{expected_class}",
             "project_id": R2_3_003_PROJECT_ID,
             "ontology_id": R2_3_003_ONTOLOGY_ID,
-            "workspace_version": "phase-a-v1",
+            "model_revision": 1,
             "read_evidence": {"source": "durable-phase-a-readback"},
         }
         for semantic_id, expected_class in retained_refs
@@ -983,7 +985,7 @@ def test_r23003_continuation_reuses_phase_a_entities_and_splits_delete_batches()
         {"entities": rows},
         project_id=R2_3_003_PROJECT_ID,
         ontology_id=R2_3_003_ONTOLOGY_ID,
-        workspace_version="phase-a-v1",
+        model_revision=1,
     )
     candidate_digest = canonical_digest(candidate)
     impact_receipts = {}
@@ -996,7 +998,7 @@ def test_r23003_continuation_reuses_phase_a_entities_and_splits_delete_batches()
                     "project_id": R2_3_003_PROJECT_ID,
                     "ontology_id": R2_3_003_ONTOLOGY_ID,
                     "entity_iri": entity_iri,
-                    "workspace_version": "phase-a-v1",
+                    "model_revision": 1,
                     "statements": [],
                     "page_digest": empty_digest,
                     "snapshot_digest": empty_digest,
@@ -1008,7 +1010,7 @@ def test_r23003_continuation_reuses_phase_a_entities_and_splits_delete_batches()
             candidate_digest=candidate_digest,
             project_id=R2_3_003_PROJECT_ID,
             ontology_id=R2_3_003_ONTOLOGY_ID,
-            workspace_version="phase-a-v1",
+            model_revision=1,
         )
 
     translated = translate_candidate_to_batches(
@@ -1048,14 +1050,14 @@ def test_existing_platform_scope_allows_completed_history_without_delete() -> No
             return 200, {
                 "state": "ready",
                 "ontology_id": "graph-1",
-                "workspace": {"workspace_version": "v1"},
+                "workspace": {"model_revision": 1},
             }
         if path.endswith("modeling-batches"):
             return 200, {"items": [{"id": "history-1"}]}
         if path.endswith("build-context"):
             return 200, {
                 "platform_state": {
-                    "ontologies": [{"id": R2_3_003_ONTOLOGY_ID, "workspace": {"workspace_version": "v1"}}]
+                    "ontologies": [{"id": R2_3_003_ONTOLOGY_ID, "workspace": {"model_revision": 1}}]
                 },
                 "agent_state": {"active_sessions": [], "recent_sessions": []},
             }

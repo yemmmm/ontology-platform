@@ -252,7 +252,7 @@ def _exact_four_proof_fixture() -> dict[str, object]:
         "ontology_id": ontology_id,
         "state": "ready",
 
-        "source_signature": "source-signature-p2a-proof-v2",
+        "model_revision": 2,
         "members": [
             {"role": "asserted_ontology", "owner_type": "ontology", "owner_id": ontology_id, "graph_iri": "urn:p2a:graph:asserted-ontology"},
             {"role": "asserted_data", "owner_type": "ontology", "owner_id": ontology_id, "graph_iri": asserted_data_graph},
@@ -277,7 +277,7 @@ def _exact_four_proof_fixture() -> dict[str, object]:
                 "ok": True,
                 "data": {
                     "ontology_id": workspace_data["ontology_id"],
-                    "source_signature": workspace_data["source_signature"],
+                    "model_revision": workspace_data["model_revision"],
                     "model_name": "statement-list",
                     "include": "asserted",
                     "items": [{"fact_id": fact_id} for fact_id in ordered_fact_ids],

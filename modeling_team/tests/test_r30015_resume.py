@@ -1416,7 +1416,7 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
     from app.repositories.postgres import Base
     from app.services.build_sessions import BuildSessionService
     from app.services.modeling_batches import ModelingBatchService
-    from app.services.modeling_workspace import ModelingWorkspaceVersionService
+    from app.services.modeling_workspace import OntologyModelRevisionService
     from app.services.ontology_workspace import OntologyWorkspaceService
     from modeling_team.tests.test_p2a_batch_plan_service import FakeRdfStore
 
@@ -1467,7 +1467,7 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
                 expected_session_revision=1,
             ),
         )
-        versions = ModelingWorkspaceVersionService(session, settings)
+        versions = OntologyModelRevisionService(session, settings)
         version = versions.version_for(ontology_id)
         service = ModelingBatchService(session, settings, rdf)  # type: ignore[arg-type]
 
@@ -1489,7 +1489,7 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
                 ontology_id=ontology_id,
                 idempotency_key="idem-r3015-real",
                 mode="apply_atomic",
-                expected_workspace_version=version,
+                expected_model_revision=version,
                 lease_token=lease["lease_token"],
                 items=[item("item-real-1")],
             ),
@@ -1512,7 +1512,7 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
                 ontology_id=ontology_id,
                 idempotency_key="idem-r3015-real",
                 mode="dry_run",
-                expected_workspace_version=version_after,
+                expected_model_revision=version_after,
                 items=[item("item-real-1")],
             ),
         )

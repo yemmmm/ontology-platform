@@ -1019,8 +1019,10 @@ def verify_proof_v2(proof: Mapping[str, Any]) -> dict[str, Any]:
     if workspace.get("ontology_id") != ontology_id or workspace.get("state") != "ready":
         _fail("workspace does not bind the selected ontology")
     ontology_id = _string(workspace.get("ontology_id"), "ontology_id")
-    source_signature = _string(workspace.get("source_signature"), "source_signature")
-    assert ontology_id is not None and ontology_id is not None and source_signature is not None
+    model_revision = workspace.get("model_revision")
+    if type(model_revision) is not int or model_revision < 0:
+        _fail("model_revision must be a nonnegative integer")
+    assert ontology_id is not None and ontology_id is not None and model_revision is not None
     model_storage = _model_storage(proof_value, ontology_id)
     initial_counts = _counts(initial)
     _counts(final)
@@ -1095,7 +1097,7 @@ def verify_proof_v2(proof: Mapping[str, Any]) -> dict[str, Any]:
     if not isinstance(statements, dict):
         _fail("statement read request is invalid")
     statements_data = _envelope(statements.get("response"), "statement read")
-    if statements_data.get("ontology_id") != ontology_id or statements_data.get("source_signature") != source_signature or statements_data.get("model_name") != "statement-list" or statements_data.get("include") != "asserted":
+    if statements_data.get("ontology_id") != ontology_id or statements_data.get("model_revision") != model_revision or statements_data.get("model_name") != "statement-list" or statements_data.get("include") != "asserted":
         _fail("statement read does not bind the verified workspace")
     statement_items = statements_data.get("items")
     if not isinstance(statement_items, list):

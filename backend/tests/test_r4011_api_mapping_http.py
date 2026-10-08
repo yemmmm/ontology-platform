@@ -111,14 +111,14 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
 
             def apply(items, batch_id):
                 version = get(f"/ontologies/{ontology_id}/modeling-context")["workspace"][
-                    "workspace_version"
+                    "model_revision"
                 ]
                 request = dict(
                     client_batch_id=batch_id,
                     ontology_id=ontology_id,
                     mode="dry_run",
                     idempotency_key="dry-" + batch_id,
-                    expected_workspace_version=version,
+                    expected_model_revision=version,
                     items=items,
                 )
                 checked = post(path, request)
@@ -224,7 +224,7 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                     {"items": [exact("reserve-operation"), exact("catalog-table")]},
                     project_id=project_id,
                     ontology_id=ontology_id,
-                    workspace_version=current_scope["workspace"]["workspace_version"],
+                    model_revision=current_scope["workspace"]["model_revision"],
                 )
                 assert {r["resource_kind"] for r in receipt["bindings"]} == {
                     "operation",

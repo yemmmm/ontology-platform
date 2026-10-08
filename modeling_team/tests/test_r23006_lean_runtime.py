@@ -68,7 +68,7 @@ def _platform_payload(ordinal: int = 1, count: int = 1) -> dict:
         "ordinal": ordinal,
         "count": count,
         "ticket_binding": {"ticket_digest": "a" * 64},
-        "model_state": {"workspace_version": "w1", "state_digest": "b" * 64},
+        "model_state": {"model_revision": 1, "state_digest": "b" * 64},
         "platform_read_scope": {"project_id": "project-1", "ontology_id": "ontology-1"},
         "proxy_capability": {"capability_id": "proxy-1"},
         "allowed_read_tools": list(PLATFORM_PROXY_READ_TOOLS),

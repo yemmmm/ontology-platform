@@ -29,7 +29,7 @@ from modeling_team.protocol_mechanics import (
 SCOPE = {
     "project_id": "project-r23003",
     "ontology_id": "ontology-r23003",
-    "workspace_version": "workspace-v1",
+    "model_revision": 1,
 }
 
 

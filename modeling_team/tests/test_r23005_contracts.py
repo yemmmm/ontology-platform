@@ -67,8 +67,7 @@ def _ticket(round_suffix: str = "1") -> dict:
     state = {
         "project_id": "project-r23005",
         "ontology_id": "ontology-r23005",
-        "workspace_version": "workspace-1",
-        "source_signature": "source-1",
+        "model_revision": 1,
         "build_session_id": "session-r23005",
 
     }
@@ -1707,10 +1706,10 @@ class R23005ContractTests(unittest.TestCase):
         foreign["request_digest"] = _sha(foreign)
         with self.assertRaises(AcceptanceContractError):
             shim.authorize(foreign)
-        cas = SettlementCAS.create(expected_state_digest=ticket["model_state_digest"], workspace_version=ticket["model_state"]["workspace_version"])
-        observed = {"state_digest": ticket["model_state_digest"], "workspace_version": ticket["model_state"]["workspace_version"], "phase": "SETTLED", "token": cas.token}
+        cas = SettlementCAS.create(expected_state_digest=ticket["model_state_digest"], model_revision=ticket["model_state"]["model_revision"])
+        observed = {"state_digest": ticket["model_state_digest"], "model_revision": ticket["model_state"]["model_revision"], "phase": "SETTLED", "token": cas.token}
         self.assertEqual(cas.evaluate(observed, post_cleanup=observed)["status"], "settled")
-        drifted = {**observed, "workspace_version": "workspace-drift"}
+        drifted = {**observed, "model_revision": 2}
         result = cas.commit(observed, post_cleanup=drifted)
         self.assertEqual(result["status"], "withheld")
         self.assertTrue(result["rerun_competency_questions"])
@@ -1719,7 +1718,7 @@ class R23005ContractTests(unittest.TestCase):
         ticket = _ticket()
         boundary = ModelStateBoundary(ticket["model_state"])
         boundary.record_pass("a" * 64)
-        changed = {**ticket["model_state"], "workspace_version": "workspace-2"}
+        changed = {**ticket["model_state"], "model_revision": 2}
         changed["state_digest"] = model_state_digest(changed)
         self.assertFalse(boundary.revalidate(changed, boundary="before-next-cq"))
         self.assertTrue(boundary.invalidated)
@@ -2029,7 +2028,7 @@ class R23005ContractTests(unittest.TestCase):
                 "scope_disposition": "retained-pending-acceptance",
                 "project_id": "project-r23005",
                 "ontology_id": "ontology-r23005",
-                "workspace_version": "workspace-r23005",
+                "model_revision": 23005,
                 "completed_session_id": "session-r23005",
                 "sessions_terminal": True,
                 "protocol_key_revoked": True,

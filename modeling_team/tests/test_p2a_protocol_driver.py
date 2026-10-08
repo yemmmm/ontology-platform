@@ -313,12 +313,12 @@ class P2AProtocolDriverTests(unittest.TestCase):
             },
             "/api/ontologies/ontology-1/workspace-context": {
                 "state": "ready",
-                "workspace_version": "workspace-2",
+                "model_revision": 2,
             },
             "/api/ontologies/ontology-1/modeling-context": {
                 "project": {"id": "project-1"},
                 "ontology": {"id": "ontology-1"},
-                "workspace": {"state": "ready", "workspace_version": "workspace-2"},
+                "workspace": {"state": "ready", "model_revision": 2},
             },
         }
 
@@ -409,10 +409,10 @@ class P2AProtocolDriverTests(unittest.TestCase):
             _read_continuation_baseline(scope, run, agent, batch_snapshot, applied_snapshot)
         credential["id"] = "key-1"
 
-        values["/api/ontologies/ontology-1/workspace-context"]["workspace_version"] = "drift"
+        values["/api/ontologies/ontology-1/workspace-context"]["model_revision"] = "drift"
         with self.assertRaisesRegex(P2AProtocolDriverError, "workspace baseline"):
             _read_continuation_baseline(scope, run, agent, batch_snapshot, applied_snapshot)
-        values["/api/ontologies/ontology-1/workspace-context"]["workspace_version"] = "workspace-2"
+        values["/api/ontologies/ontology-1/workspace-context"]["model_revision"] = "workspace-2"
         batch["attempts"].append(
             {"attempt_id": "apply-2", "mode": "apply_atomic", "attempt_status": "applied"}
         )

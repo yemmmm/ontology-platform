@@ -78,7 +78,7 @@ def main() -> int:
         "ordinal": 1,
         "count": 2,
         "ticket_binding": {"ticket_digest": prepared.ticket["ticket_digest"]},
-        "model_state": {"workspace_version": scope["workspace_version"], "state_digest": "0" * 64},
+        "model_state": {"model_revision": scope["model_revision"], "state_digest": "0" * 64},
         "platform_read_scope": {
             "project_id": scope["project_id"],
             "ontology_id": scope["ontology_id"],

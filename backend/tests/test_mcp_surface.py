@@ -1,6 +1,8 @@
 import asyncio
 from types import SimpleNamespace
 
+import pytest
+
 from sqlalchemy.orm import sessionmaker
 
 from app.core.config import Settings
@@ -322,7 +324,7 @@ def _entity_statement_rows(
 
 def _entity_statement_tool(in_memory_session, mcp_principal_factory, monkeypatch):
     """Bind one ready workspace and a canned RDF store for statement reads."""
-    from app.services.modeling_workspace import ModelingWorkspaceVersionService
+    from app.services.modeling_workspace import OntologyModelRevisionService
     from app.services.ontology_workspace import OntologyWorkspaceService
 
     in_memory_session.add_all(
@@ -345,7 +347,7 @@ def _entity_statement_tool(in_memory_session, mcp_principal_factory, monkeypatch
     monkeypatch.setattr(
         "app.mcp.tools.modeling_batches.RdfStoreRepository", lambda _url: store
     )
-    version = ModelingWorkspaceVersionService(in_memory_session, Settings()).version_for(
+    version = OntologyModelRevisionService(in_memory_session, Settings()).version_for(
         "o-esc"
     )
     tool = mcp._tool_manager.get_tool("get_entity_statement_context")  # noqa: SLF001
@@ -353,13 +355,13 @@ def _entity_statement_tool(in_memory_session, mcp_principal_factory, monkeypatch
     return tool.fn, version, store
 
 
-def test_get_entity_statement_context_workspace_version_is_optional() -> None:
+def test_get_entity_statement_context_model_revision_is_optional() -> None:
     tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
     schema = tools["get_entity_statement_context"].inputSchema or {}
     assert set(schema.get("required", [])) == {"ontology_id", "entity_iri"}
-    version = schema["properties"]["workspace_version"]
+    version = schema["properties"]["model_revision"]
     assert version.get("default") is None
-    assert {"type": "string"} in version.get("anyOf", [])
+    assert {"type": "integer"} in version.get("anyOf", [])
 
 
 def test_entity_statement_context_omitted_version_binds_current(
@@ -371,7 +373,7 @@ def test_entity_statement_context_omitted_version_binds_current(
     result = invoke(ontology_id="o-esc", entity_iri="https://esc.test/entity/live-1")
     assert result["ok"] is True, result
     data = result["data"]
-    assert data["workspace_version"] == version
+    assert data["model_revision"] == version
     assert data["complete"] is True
     assert len(data["statements"]) == 3
 
@@ -383,11 +385,24 @@ def test_entity_statement_context_explicit_version_stays_strict(
         in_memory_session, mcp_principal_factory, monkeypatch
     )
     entity = "https://esc.test/entity/live-1"
-    current = invoke(ontology_id="o-esc", entity_iri=entity, workspace_version=version)
+    current = invoke(ontology_id="o-esc", entity_iri=entity, model_revision=version)
     assert current["ok"] is True, current
-    stale = invoke(ontology_id="o-esc", entity_iri=entity, workspace_version="0" * 64)
+    stale = invoke(ontology_id="o-esc", entity_iri=entity, model_revision=version + 1)
     assert stale["ok"] is False
     assert "drifted" in stale["error"]
+
+
+@pytest.mark.parametrize("invalid", ["legacy-hash", "0", True, -1])
+def test_entity_statement_context_rejects_non_revision_bindings(
+    invalid, in_memory_session, monkeypatch, mcp_principal_factory
+):
+    invoke, _version, _store = _entity_statement_tool(
+        in_memory_session, mcp_principal_factory, monkeypatch
+    )
+    result = invoke(ontology_id="o-esc", entity_iri="https://esc.test/entity/live-1",
+                    model_revision=invalid)
+    assert result["ok"] is False
+    assert "nonnegative integer" in result["error"]
 
 
 def test_entity_statement_context_cursor_binds_version_entity_and_snapshot(
@@ -408,14 +423,14 @@ def test_entity_statement_context_cursor_binds_version_entity_and_snapshot(
     assert second["ok"] is True, second
     assert second["data"]["complete"] is True
     assert len(second["data"]["statements"]) == 1
-    assert second["data"]["workspace_version"] == version
+    assert second["data"]["model_revision"] == version
     # An explicit restatement must stay strict mid-pagination.
     stale = invoke(
         ontology_id="o-esc",
         entity_iri=entity,
         page_size=2,
         cursor=cursor,
-        workspace_version="0" * 64,
+        model_revision=version + 1,
     )
     assert stale["ok"] is False
     assert "drifted" in stale["error"]

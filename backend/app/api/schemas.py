@@ -65,7 +65,6 @@ class OntologyWorkspaceContextRead(BaseModel):
     state: Literal["ready", "incomplete"]
     model_revision: int
     content_hash: str | None
-    source_signature: str
     editable: bool
     editability_reason: str | None = None
     issues: list[str]
@@ -496,7 +495,7 @@ class ModelingBatchSubmit(ModelingBatchSchema):
     ontology_id: str = Field(min_length=1, max_length=36)
     idempotency_key: str = Field(min_length=1, max_length=255)
     mode: Literal["dry_run", "apply_atomic", "apply_partial"] = "apply_atomic"
-    expected_workspace_version: str = Field(min_length=1, max_length=128)
+    expected_model_revision: int = Field(ge=0, strict=True)
     lease_token: str | None = Field(default=None, min_length=1, max_length=1024)
     # Compatibility hint only.  The authenticated REST/MCP principal is the
     # sole audit actor; this client-supplied value is intentionally ignored.
@@ -586,7 +585,7 @@ class SemanticDiscoveryOntologyItem(BaseModel):
     status: Literal["draft", "active", "archived"]
     queryable: bool
     unavailable_reason: Literal["ontology_archived", "workspace_not_ready"] | None
-    workspace_version: str | None
+    model_revision: int | None
     ontology_id: str | None = None
     derived_warnings: list[dict[str, str]] = Field(default_factory=list)
     matched_on: list[Literal["id", "name", "project"]] = Field(default_factory=list)
@@ -852,7 +851,7 @@ class SemanticGovernanceStatusResponse(BaseModel):
 
 class SemanticReadModelEnvelope(BaseModel):
     ontology_id: str
-    source_signature: str
+    model_revision: int
     projection_version: str
     model_name: str = ""
     include: str
@@ -869,7 +868,7 @@ class SemanticResourceRead(BaseModel):
     iri: str
     label: str | None = None
     ontology_id: str | None = None
-    source_signature: str | None = None
+    model_revision: int | None = None
     assertion_kind: str
     properties: dict[str, Any] = Field(default_factory=dict)
     derived_state: dict[str, Any] = Field(default_factory=dict)
@@ -908,7 +907,7 @@ class SemanticProjectionJobRead(BaseModel):
     projection_kind: str
     projection_version: str
     projection_scope: str
-    source_signature: str
+    model_revision: int | None
     input_graph_revisions: dict[str, Any]
     input_derived_pointers: dict[str, Any]
     target_store: str | None

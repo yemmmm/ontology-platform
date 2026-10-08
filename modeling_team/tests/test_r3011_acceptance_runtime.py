@@ -489,7 +489,7 @@ def test_v3_proxy_refuses_unauthorized_and_cross_project_selections(tmp_path):
 def test_v3_proxy_entity_statement_read_matches_canonical_pagination_contract(tmp_path):
     """The proxy exposes the canonical entity-statement read contract.
 
-    The canonical tool accepts an optional ``workspace_version`` (omission binds
+    The canonical tool accepts an optional ``model_revision`` (omission binds
     the platform's authoritative current version), a bounded ``page_size``, and
     the opaque ``cursor``.  Before those fields existed here every legal child
     read failed as ``platform-forward-failed`` because the backend required a
@@ -509,14 +509,14 @@ def test_v3_proxy_entity_statement_read_matches_canonical_pagination_contract(tm
             "get_entity_statement_context"
         ]
         assert schema["required"] == ["project_id", "ticket_digest", "entity_iri"]
-        for field in ("workspace_version", "page_size", "cursor"):
+        for field in ("model_revision", "page_size", "cursor"):
             assert field in schema["properties"], field
         assert schema["properties"]["page_size"] == {
             "type": "integer",
             "minimum": 1,
             "maximum": 1000,
         }
-        assert schema["properties"]["workspace_version"] == {"type": ["string", "null"]}
+        assert schema["properties"]["model_revision"] == {"type": ["integer", "null"], "minimum": 0}
         assert schema["properties"]["cursor"] == {"type": ["string", "null"]}
 
         first = proxy.handle(
@@ -530,7 +530,7 @@ def test_v3_proxy_entity_statement_read_matches_canonical_pagination_contract(tm
         assert first["ok"] is True, first
         # The proxy injects the frozen scope but never invents a workspace
         # version: the canonical first page binds the current version itself.
-        assert "workspace_version" not in forwarded[-1][1]
+        assert "model_revision" not in forwarded[-1][1]
         assert forwarded[-1][1]["entity_iri"] == "https://r3011.test/entity/live-1"
 
         second = proxy.handle(
@@ -540,14 +540,14 @@ def test_v3_proxy_entity_statement_read_matches_canonical_pagination_contract(tm
                 "tool": "get_entity_statement_context",
                 "arguments": {
                     "entity_iri": "https://r3011.test/entity/live-1",
-                    "workspace_version": "v-bound",
+                    "model_revision": 1,
                     "page_size": 2,
                     "cursor": "esc1.cGFnZQ",
                 },
             }
         )
         assert second["ok"] is True, second
-        assert forwarded[-1][1]["workspace_version"] == "v-bound"
+        assert forwarded[-1][1]["model_revision"] == 1
         assert forwarded[-1][1]["page_size"] == 2
         assert forwarded[-1][1]["cursor"] == "esc1.cGFnZQ"
 

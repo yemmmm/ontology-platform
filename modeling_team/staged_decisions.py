@@ -197,7 +197,7 @@ UNIFIED_REASON_CODES = (
     "approval_content_mismatch",
     "relation_scope_ambiguous",
         "forbidden",
-    "workspace_version_conflict",
+    "model_revision_conflict",
     "staged_unreconciled_batch",
     "unified_schema_mismatch",
     # R3.0-014 (design §3.3/§3.4): apply-only gates over the current-plan
@@ -352,7 +352,7 @@ RECEIPT_FIELDS = frozenset(
 
 # The staged capability envelope mirrors the real ``submit_modeling_batch``
 # signature (backend/app/mcp/tools/modeling_batches.py): session_id,
-# client_batch_id, ontology_id, idempotency_key, expected_workspace_version,
+# client_batch_id, ontology_id, idempotency_key, expected_model_revision,
 # items[{command_kind, payload}], mode, lease_token.  ``value_traces`` and
 # ``l3_nodes`` are Runner-side trace attachments and are never forwarded.
 BATCH_ENVELOPE_REQUIRED_FIELDS = (
@@ -360,7 +360,7 @@ BATCH_ENVELOPE_REQUIRED_FIELDS = (
     "client_batch_id",
     "ontology_id",
     "idempotency_key",
-    "expected_workspace_version",
+    "expected_model_revision",
     "items",
     "mode",
 )
@@ -1273,9 +1273,12 @@ def _batch_envelope_issues(batch: Any, *, unified: bool = False) -> StagedDecisi
     allowed = set(BATCH_ENVELOPE_REQUIRED_FIELDS) | set(BATCH_ENVELOPE_OPTIONAL_FIELDS)
     if keys - allowed or any(field not in keys for field in BATCH_ENVELOPE_REQUIRED_FIELDS):
         return StagedDecisionIssue("staged_submit_schema_mismatch", "batch fields", artifact)
-    for field in ("session_id", "client_batch_id", "ontology_id", "idempotency_key", "expected_workspace_version"):
+    for field in ("session_id", "client_batch_id", "ontology_id", "idempotency_key"):
         if not _nonempty(batch.get(field)):
             return StagedDecisionIssue("staged_submit_schema_mismatch", field, artifact)
+    revision = batch.get("expected_model_revision")
+    if type(revision) is not int or revision < 0:
+        return StagedDecisionIssue("staged_submit_schema_mismatch", "expected_model_revision", artifact)
     if batch.get("mode") not in BATCH_MODES:
         return StagedDecisionIssue("staged_submit_schema_mismatch", "mode", artifact)
     if batch.get("mode") == "apply_atomic" and not _nonempty(batch.get("lease_token")):
@@ -2998,7 +3001,7 @@ def unified_dry_run_proof_issue(
             "the dry-run proof covers different batch content",
             "",
         )
-    expected = batch.get("expected_workspace_version")
+    expected = batch.get("expected_model_revision")
     if expected is not None and all(
         proof.get("workspace_before_version") not in (None, expected) for proof in matching
     ):

@@ -3,8 +3,9 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
+from sqlalchemy import select
 from sqlalchemy.orm import Session
-from app.repositories.models import OntologyModel
+from app.repositories.models import OntologyModel, OntologyWriteFenceModel
 
 
 class ReadScopeError(RuntimeError):
@@ -14,7 +15,7 @@ class ReadScopeError(RuntimeError):
 @dataclass
 class ScopeResolution:
     ontology_id: str
-    source_signature: str
+    model_revision: int
     include: str
     model_graph_iris: list[str]
     shape_graph_iris: list[str] = field(default_factory=list)
@@ -33,12 +34,21 @@ class SemanticReadScopeResolver:
     ) -> ScopeResolution:
         if include not in {"asserted", "full-working-view"}:
             raise ReadScopeError(f"Unsupported include value: {include}")
-        ontology = self.session.get(OntologyModel, ontology_id)
+        ontology = self.session.scalar(
+            select(OntologyModel).where(OntologyModel.id == ontology_id)
+            .execution_options(populate_existing=True)
+        )
         if ontology is None or not ontology.model_graph_iri:
             raise ReadScopeError(f"Ontology model is not ready: {ontology_id}")
+        fence = self.session.get(OntologyWriteFenceModel, ontology_id)
+        if fence is not None:
+            raise ReadScopeError(
+                f"Ontology model write is pending: {ontology_id}; reconcile attempt {fence.attempt_id} "
+                "and retry the read"
+            )
         return ScopeResolution(
             ontology_id=ontology_id,
-            source_signature=ontology.source_signature,
+            model_revision=ontology.model_revision,
             include=include,
             model_graph_iris=[ontology.model_graph_iri],
         )

@@ -159,8 +159,7 @@ def _state() -> dict:
     state = {
         "project_id": "project-1",
         "ontology_id": "ontology-1",
-        "workspace_version": "workspace-1",
-        "source_signature": "source-1",
+        "model_revision": 1,
         "build_session_id": "session-1",
 
     }
@@ -561,7 +560,7 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
                 "client_batch_id": "batch-dry",
                 "ontology_id": "ontology-1",
                 "idempotency_key": "idem-dry",
-                "expected_workspace_version": "workspace-0",
+                "expected_model_revision": 0,
                 "items": [{"client_item_id": "item-dry", "command_kind": "create_class", "payload": {"name": "X"}}],
                 "mode": "dry_run",
             },
@@ -574,7 +573,7 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
                 "client_batch_id": "batch-apply",
                 "ontology_id": "ontology-1",
                 "idempotency_key": "idem-apply",
-                "expected_workspace_version": "workspace-0",
+                "expected_model_revision": 0,
                 "items": [{"client_item_id": "item-apply", "command_kind": "create_class", "payload": {"name": "X"}}],
                 "mode": "apply_atomic",
                 "lease_token": "lease-1",
@@ -582,14 +581,14 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
             {
                 "mode": "apply_atomic",
                 "attempt_status": "applied",
-                "workspace": {"after_version": "workspace-1"},
-                "target": {"source_signature_after": "source-1"},
+                "workspace": {"after_version": 1},
+                "target": {"model_revision_after": 1},
             },
         ),
         "readback": (
             "get_modeling_context",
             {"ontology_id": "ontology-1"},
-            {"ontology": {"id": "ontology-1"}, "workspace": {"workspace_version": "workspace-1"}},
+            {"ontology": {"id": "ontology-1"}, "workspace": {"model_revision": 1}},
         ),
     }
     records: dict[str, dict[str, object]] = {}

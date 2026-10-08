@@ -159,7 +159,7 @@ def _seed_graph_set(
     members: list[tuple[str, str]],
     scope_type: str = "ontology",
     scope_id: str = "ont-stage3",
-    source_signature: str = "sig-stage3",
+    model_revision: int = 3,
 ) -> str:
     return seed_model(session, ontology_id, next(iri for iri, role in members if role in {"asserted_ontology", "asserted_data"}), name).id
 

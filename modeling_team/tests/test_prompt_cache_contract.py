@@ -42,7 +42,7 @@ SOURCE_PREFIX = "/agent/home/sources/"
 PROTOCOL_CONTEXT = {
     "project_id": "project-1",
     "ontology_id": "ontology-1",
-    "workspace_version": "v1",
+    "model_revision": 1,
 }
 
 # One spec per schema-v2 return branch: acceptance, coordinator, modeling,
@@ -201,7 +201,7 @@ def test_protocol_scope_context_stays_before_the_trailing_objective() -> None:
         protocol_context=PROTOCOL_CONTEXT,
     )
 
-    assert '"workspace_version": "v1"' in text
+    assert '"model_revision": 1' in text
     assert text.index("Mechanical platform scope") < text.index(OBJECTIVE_SUFFIX)
     assert text.endswith(OBJECTIVE_SUFFIX + objective)
 

@@ -16,7 +16,7 @@ from app.repositories.models import OntologyModel, ProjectModel
 from app.repositories.rdf_store import GraphWriteResult
 from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchService, _hash
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 
@@ -106,7 +106,7 @@ def _complete_receipt(
     *,
     project_id: str,
     ontology_id: str,
-    workspace_version: str,
+    model_revision: int,
     entity_iri: str,
 ) -> dict:
     ordered = sorted(statements, key=_hash)
@@ -115,7 +115,7 @@ def _complete_receipt(
         "target_semantic_id": "unknown-cross-release-output-meaning",
         "project_id": project_id,
         "ontology_id": ontology_id,
-        "workspace_version": workspace_version,
+        "model_revision": model_revision,
         "candidate_digest": "r23003-candidate",
         "entity_iri": entity_iri,
         "snapshot_digest": _hash(ordered),
@@ -132,7 +132,7 @@ def _receipt(statements: list[dict]) -> dict:
         "target_semantic_id": "unknown-cross-release-output-meaning",
         "project_id": "r23003-project",
         "ontology_id": "r23003-ontology",
-        "workspace_version": "workspace-v1",
+        "model_revision": 1,
         "candidate_digest": "candidate-digest",
         "entity_iri": TARGET,
         "snapshot_digest": "snapshot-digest",
@@ -249,7 +249,7 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
         ontology_id,
         OntologyLeaseAcquire(client_request_id="r23003-recovery-lease", expected_session_revision=1),
     )
-    version = ModelingWorkspaceVersionService(in_memory_session, settings).version_for(ontology_id)
+    version = OntologyModelRevisionService(in_memory_session, settings).version_for(ontology_id)
     graph_iri = f"{settings.semantic_graph_iri_prefix.rstrip('/')}/ontology/{ontology_id}"
     target = f"{settings.semantic_base_iri.rstrip('/')}/entity/unknown-cross-release-output-meaning"
     source = f"{settings.semantic_base_iri.rstrip('/')}/entity/source"
@@ -274,7 +274,7 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
         statements,
         project_id=project_id,
         ontology_id=ontology_id,
-        workspace_version=version,
+        model_revision=version,
         entity_iri=target,
     )
     store = _InjectedDeleteStore(graph_iri, statements)
@@ -294,7 +294,7 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
         ontology_id=ontology_id,
         idempotency_key="r23003-recovery-attempt",
         mode="apply_atomic",
-        expected_workspace_version=version,
+        expected_model_revision=version,
         lease_token=lease["lease_token"],
         items=[item],
     )
@@ -313,5 +313,6 @@ def test_injected_post_rdf_pre_sql_failure_recovers_delete_without_reapplying(
     second = service.submit(session_id, request)
     assert second["attempt_status"] == "applied"
     assert second["recovery"]["state"] == "converged"
+    assert second["workspace"]["after_version"] == version + 1
     assert len(store.deltas) == 1
     assert len(store.graph) == 1

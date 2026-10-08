@@ -98,7 +98,7 @@ class SemanticVectorProjectionService(ProjectionWriter):
                     "model_graph_iris": [str(graph)],
                     "embedding_config_hash": config_hash,
                     "embedding_config": dict(self.embedding_config),
-                    "source_signature": scope.source_signature,
+                    "model_revision": scope.model_revision,
                     "ontology_id": scope.ontology_id,
                     "assertion_kind": self._assertion_kind(str(graph), scope),
                     "is_stale": is_stale,

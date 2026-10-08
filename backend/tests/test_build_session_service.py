@@ -122,14 +122,14 @@ def _assert_error(exc: pytest.ExceptionInfo[BuildSessionError], code: str, statu
     assert exc.value.status_code == status
 
 
-def _workspace_version(context: dict[str, Any], ontology_id: str) -> str:
+def _model_revision(context: dict[str, Any], ontology_id: str) -> str:
     ontology = next(
         item
         for item in context["platform_state"]["ontologies"]
         if item["id"] == ontology_id
     )
-    version = ontology["workspace"]["workspace_version"]
-    assert isinstance(version, str) and version
+    version = ontology["workspace"]["model_revision"]
+    assert type(version) is int and version >= 0
     return version
 
 
@@ -402,7 +402,7 @@ def test_authorize_apply_accepts_current_workspace_and_rejects_changed_revision(
 ) -> None:
     build_service, db_session = service
     session, _created = _create(build_service, "authorize-apply-session")
-    version = _workspace_version(
+    version = _model_revision(
         build_service.get_project_build_context(PROJECT_ID), ONTOLOGY_ID
     )
     lease = _dump(
@@ -419,11 +419,11 @@ def test_authorize_apply_accepts_current_workspace_and_rejects_changed_revision(
         session_id=session["id"],
         ontology_id=ONTOLOGY_ID,
         lease_token=lease["lease_token"],
-        expected_workspace_version=version,
+        expected_model_revision=version,
     )
     assert guard["build_session_id"] == session["id"]
     assert guard["ontology_id"] == ONTOLOGY_ID
-    assert guard["workspace_version"] == version
+    assert guard["model_revision"] == version
     assert guard["ontology_id"]
 
     _advance_one_graph_revision(db_session, ONTOLOGY_ID)
@@ -432,20 +432,20 @@ def test_authorize_apply_accepts_current_workspace_and_rejects_changed_revision(
             session_id=session["id"],
             ontology_id=ONTOLOGY_ID,
             lease_token=lease["lease_token"],
-            expected_workspace_version=version,
+            expected_model_revision=version,
         )
     _assert_error(stale, "workspace_revision_conflict", 409)
-    assert stale.value.detail["current_workspace_version"] != version
+    assert stale.value.detail["current_model_revision"] != version
 
 
-def test_build_context_workspace_version_is_recomputed_from_graph_revisions(service) -> None:
+def test_build_context_model_revision_tracks_committed_model_writes(service) -> None:
     build_service, db_session = service
-    before = _workspace_version(
+    before = _model_revision(
         build_service.get_project_build_context(PROJECT_ID), ONTOLOGY_ID
     )
 
     _advance_one_graph_revision(db_session, ONTOLOGY_ID)
-    after = _workspace_version(
+    after = _model_revision(
         build_service.get_project_build_context(PROJECT_ID), ONTOLOGY_ID
     )
 

@@ -13,7 +13,7 @@ test("T01 five sibling links normalize retired URL and storage, with history nav
   });
   await page.goto("/?project=forbidden&ontology=secret&tab=classes&batch=b1&graph=g1");
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
-  expect(new URL(page.url()).search).toBe("?project=p1&tab=overview");
+  await expect.poll(() => new URL(page.url()).search).toBe("?project=p1&tab=overview");
   expect(await page.getByRole("navigation").getByRole("link").allTextContents()).toEqual(["Overview", "Model browser", "Recall test", "Member permissions", "Settings"]);
   expect(await page.evaluate(() => Object.keys(localStorage).sort())).toEqual(["ontology-platform-ui-selected-project", "ontology-platform-ui-workspace-tab-v4.2", "unrelated"]);
   await page.getByRole("link", { name: "Model browser" }).click();
@@ -246,17 +246,17 @@ test("T05 structured references remain separate from asserted edges and follow v
   await page.getByRole("button", { name: "Clear filters" }).click();
   await expect(graph).toHaveAttribute("data-reference-count", "1");
 });
-test("T07 bounded partial data, failed scope and mismatched signatures retain successful nodes", async ({ page }) => {
+test("T07 bounded partial data, failed scope and mismatched revisions retain successful nodes", async ({ page }) => {
   await mockWorkspace(page, { handler: async (path, route) => {
     if (path.includes("o2/workspace-context")) { await route.fulfill({ status: 403, json: { detail: { code: "forbidden" } } }); return true; }
-    if (path.endsWith("resource-list")) { await route.fulfill({ json: envelope(resources, "sig1", false) }); return true; }
-    if (path.endsWith("resource-relations")) { await route.fulfill({ json: envelope(relations, "sig2", false) }); return true; }
+    if (path.endsWith("resource-list")) { await route.fulfill({ json: envelope(resources, 1, false) }); return true; }
+    if (path.endsWith("resource-relations")) { await route.fulfill({ json: envelope(relations, 2, false) }); return true; }
     return false;
   } });
   await page.goto("/?tab=model");
   await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "11");
   await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-edge-count", "0");
-  await expect(page.getByText(/Source versions differ/)).toBeVisible();
+  await expect(page.getByText(/Model revisions differ/)).toBeVisible();
   await expect(page.getByText(/Integration: Scope not loaded/)).toBeVisible();
   await expect(page.getByText(/Resource window is incomplete/)).toBeVisible();
 });

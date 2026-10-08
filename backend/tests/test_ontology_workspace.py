@@ -60,7 +60,7 @@ def test_creation_initializes_one_owned_model(in_memory_session):
     before = service.context(ontology.id)
     assert before["state"] == "ready"
     assert before["model_revision"] == 0
-    assert len(before["source_signature"]) == 64
+    assert "source_signature" not in before
     assert before["editable"]
     assert "members" not in before
     assert "graph_set_id" not in before

@@ -65,7 +65,7 @@ class PlatformScope:
     existing_strict: bool = False
     terminal_results: dict[str, dict[str, Any]] | None = None
     final_workspace_context: dict[str, Any] | None = None
-    final_workspace_version: str | None = None
+    final_model_revision: int | None = None
     completed_session_id: str | None = None
     scope_disposition: str | None = None
     # R3.0-006 M3: the full planned Ontology set once a topology decision's
@@ -496,7 +496,7 @@ class PlatformScope:
             if session_status in {"active", "running", "in_progress", "applying", "recovering", "leased"}:
                 raise PlatformScopeError("existing scope has an in-flight Build Session")
         workspace = context.get("workspace") if isinstance(context.get("workspace"), dict) else {}
-        version = workspace.get("workspace_version") or context.get("workspace_version") or context.get("version")
+        version = workspace.get("model_revision", context.get("model_revision"))
         if version is None and isinstance(build, dict):
             platform_state = build.get("platform_state")
             ontologies = platform_state.get("ontologies", []) if isinstance(platform_state, dict) else []
@@ -505,12 +505,12 @@ class PlatformScope:
                     continue
                 ontology_workspace = ontology.get("workspace")
                 if isinstance(ontology_workspace, dict):
-                    version = ontology_workspace.get("workspace_version")
+                    version = ontology_workspace.get("model_revision")
                 break
         ontology_id = context.get("ontology_id")
         return {
             "workspace_state": context["state"],
-            **({"workspace_version": version} if isinstance(version, str) and version else {}),
+            **({"model_revision": version} if type(version) is int and version >= 0 else {}),
             **({"ontology_id": ontology_id} if ontology_id is not None else {}),
             "modeling_batch_count": len(items),
             "recent_session_count": len(recent),
@@ -526,7 +526,7 @@ class PlatformScope:
             raise PlatformScopeError("existing scope identity is unavailable")
         result = self._single_ontology_context(self.ontology_id)
         strict = self.existing_strict if strict is None else strict
-        if strict and not result.get("workspace_version"):
+        if strict and result.get("model_revision") is None:
             raise PlatformScopeError("workspace context has no version")
         if strict and result.get("ontology_id") is None:
             raise PlatformScopeError("workspace context has no Ontology identity")
@@ -622,15 +622,15 @@ class PlatformScope:
                             for ontology_id in self.ontology_ids
                         }
                         versions = {
-                            ontology_id: self._workspace_version(context)
+                            ontology_id: self._model_revision(context)
                             for ontology_id, context in contexts.items()
                         }
                         self.final_workspace_context = contexts[self.ontology_id]
-                        self.final_workspace_version = versions[self.ontology_id]
+                        self.final_model_revision = versions[self.ontology_id]
                         self.scope_disposition = "retained-pending-acceptance"
                         evidence["scope_disposition"] = self.scope_disposition
                         evidence["ontology_ids"] = list(self.ontology_ids)
-                        evidence["workspace_versions"] = versions
+                        evidence["model_revisions"] = versions
                         evidence["completed_session_ids"] = dict(
                             self.completed_session_ids
                         )
@@ -638,9 +638,9 @@ class PlatformScope:
                         context = self._modeling_context()
                         self.final_workspace_context = context
                         self.scope_disposition = "retained-pending-acceptance"
-                        self.final_workspace_version = self._workspace_version(context)
+                        self.final_model_revision = self._model_revision(context)
                         evidence["scope_disposition"] = self.scope_disposition
-                        evidence["workspace_version"] = self.final_workspace_version
+                        evidence["model_revision"] = self.final_model_revision
                         evidence["completed_session_id"] = self.completed_session_id
                 elif nonempty:
                     self.scope_disposition = "failed-written-retained"
@@ -905,9 +905,9 @@ class PlatformScope:
         ontology = context.get("ontology", {})
         if project.get("id") != self.project_id or ontology.get("id") != ontology_id:
             raise PlatformScopeError("modeling context ownership drifted")
-        version = self._workspace_version(context)
-        if not version:
-            raise PlatformScopeError("modeling context has no workspace version")
+        version = self._model_revision(context)
+        if version is None:
+            raise PlatformScopeError("modeling context has no model revision")
         return context
 
     def read_protocol_context(self) -> dict[str, str]:
@@ -915,13 +915,13 @@ class PlatformScope:
         if not self.project_id or not self.ontology_id:
             raise PlatformScopeError("Protocol scope context is unavailable")
         context = self._modeling_context()
-        workspace_version = self._workspace_version(context)
-        if not workspace_version:
+        model_revision = self._model_revision(context)
+        if model_revision is None:
             raise PlatformScopeError("Protocol scope context has no workspace version")
         values: dict[str, str] = {
             "project_id": self.project_id,
             "ontology_id": self.ontology_id,
-            "workspace_version": workspace_version,
+            "model_revision": model_revision,
         }
         # R4.0-010: Protocol must use the host's actual semantic namespace
         # when translating an isolated workspace.  Keep it in mechanical
@@ -937,10 +937,10 @@ class PlatformScope:
         return values
 
     @staticmethod
-    def _workspace_version(context: dict[str, Any]) -> str | None:
+    def _model_revision(context: dict[str, Any]) -> int | None:
         workspace = context.get("workspace")
-        value = workspace.get("workspace_version") if isinstance(workspace, dict) else None
-        return value if isinstance(value, str) and value else None
+        value = workspace.get("model_revision") if isinstance(workspace, dict) else None
+        return value if type(value) is int and value >= 0 else None
 
     def _terminal_state(self, *, allow_cancel: bool, require_completed: bool) -> dict[str, Any]:
         """Cancel safe failed Sessions before any scope disposition is considered."""
@@ -1094,13 +1094,13 @@ class PlatformScope:
                 raise PlatformScopeError(terminal.get("cleanup_blocker") or terminal["success_blocker"])
             if terminal.get("completed_session_id") != self.completed_session_id:
                 raise PlatformScopeError("retained Build Session identity drifted")
-            version = self._workspace_version(context)
-            if version != self.final_workspace_version:
+            version = self._model_revision(context)
+            if version != self.final_model_revision:
                 raise PlatformScopeError("retained workspace version drifted")
             return {
                 "project_id": self.project_id,
                 "ontology_id": self.ontology_id,
-                "workspace_version": version,
+                "model_revision": version,
                 "scope_disposition": self.scope_disposition,
             }
         finally:

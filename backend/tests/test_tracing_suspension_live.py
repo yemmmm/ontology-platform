@@ -108,7 +108,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
             {"client_request_id": suffix, "expected_session_revision": build["revision"]},
         )
         version = get(f"/ontologies/{ontology_id}/modeling-context")["workspace"][
-            "workspace_version"
+            "model_revision"
         ]
         items = [
             {
@@ -122,7 +122,7 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
             "ontology_id": ontology_id,
             "idempotency_key": f"dry-{suffix}",
             "mode": "dry_run",
-            "expected_workspace_version": version,
+            "expected_model_revision": version,
             "items": items,
         }
         path = f"/build-sessions/{session_id}/modeling-batches"

@@ -35,7 +35,7 @@ from app.services.build_sessions import BuildSessionService
 from app.services.modeling_batches import ModelingBatchError, ModelingBatchService
 from app.services.modeling_handlers import ModelingCommandHandlerRegistry
 from app.services.semantic_command_compiler import InvalidCommandPayload
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.ontology_lineage import OntologyLineageService
 from app.services.semantic_canonical_write import (
@@ -152,7 +152,7 @@ def modeling(in_memory_session: Session):
     )
     rdf = FakeRdfStore()
     service = ModelingBatchService(in_memory_session, settings, rdf)  # type: ignore[arg-type]
-    version = ModelingWorkspaceVersionService(in_memory_session, settings).version_for(ONTOLOGY_ID)
+    version = OntologyModelRevisionService(in_memory_session, settings).version_for(ONTOLOGY_ID)
     return service, in_memory_session, rdf, session_id, lease, version
 
 
@@ -173,7 +173,7 @@ def _request(version, items, *, key="attempt-1", batch="batch-1", mode="dry_run"
         ontology_id=ONTOLOGY_ID,
         idempotency_key=key,
         mode=mode,
-        expected_workspace_version=version,
+        expected_model_revision=version,
         lease_token=token,
         items=items,
     )
@@ -581,6 +581,8 @@ def test_partial_applies_stable_subset_without_evidence_side_effects(modeling):
     )
     status = {item["client_item_id"]: item["status"] for item in result["items"]}
     assert result["attempt_status"] == "partially_applied"
+    assert result["workspace"]["after_version"] == version + 1
+    assert db.get(OntologyModel, ONTOLOGY_ID).model_revision == version + 1
     assert "operation_plan" not in result
     assert status == {"bad": "failed", "dependent": "blocked", "good": "applied"}
     assert len(rdf.deltas) == 1
@@ -650,7 +652,7 @@ def test_rule_only_apply_is_retired_without_side_effects(modeling):
     assert any("Unsupported Modeling command" in str(f) for f in result["findings"])
     assert db.scalar(select(func.count(SemanticRuleModel.id))) == 0
     assert db.scalar(select(func.count(SemanticRuleDefinitionModel.id))) == 0
-    assert ModelingWorkspaceVersionService(db, service.settings).version_for(ONTOLOGY_ID) == version
+    assert OntologyModelRevisionService(db, service.settings).version_for(ONTOLOGY_ID) == version
 
 
 def test_modeling_context_and_cross_session_history_hide_internal_targets(modeling):
@@ -660,7 +662,7 @@ def test_modeling_context_and_cross_session_history_hide_internal_targets(modeli
     history = service.list_ontology_batches(ONTOLOGY_ID)
     detail = service.get_batch(submitted["batch_id"])
 
-    assert context["workspace"]["workspace_version"] == version
+    assert context["workspace"]["model_revision"] == version
     assert context["query_entries"]["classes"]["rest"].startswith("/api/ontologies/")
     assert context["recent_batches"][0]["batch_id"] == submitted["batch_id"]
     assert context["recent_batches_next_cursor"] is None
@@ -836,7 +838,7 @@ def test_apply_marks_projection_manifest_stale_immediately(modeling):
             "ontology_id"
         ],
         projection_kind="search",
-        source_signature=version,
+        model_revision=version,
         projection_version="v1",
         target_partition="r004",
         status="current",
@@ -1063,9 +1065,13 @@ def test_recovery_observes_applied_rdf_and_finalizes_without_rewriting(modeling)
     first = service.submit(session_id, payload)
     assert first["attempt_status"] == "recovering"
     assert "operation_plan" not in first
+    from app.services.semantic_read_scope import ReadScopeError, SemanticReadScopeResolver
+    with pytest.raises(ReadScopeError, match="reconcile attempt"):
+        SemanticReadScopeResolver(db).resolve(ONTOLOGY_ID)
     retry = service.submit(session_id, payload)
 
     assert retry["attempt_status"] == "applied"
+    assert retry["workspace"]["after_version"] == version + 1
     assert "operation_plan" not in retry
     assert uncertain.failures == 1
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
@@ -1073,6 +1079,7 @@ def test_recovery_observes_applied_rdf_and_finalizes_without_rewriting(modeling)
     origin_count = db.scalar(select(func.count(SemanticStatementOriginModel.id)))
     terminal_retry = service.submit(session_id, payload)
     assert terminal_retry["attempt_status"] == "applied"
+    assert terminal_retry["workspace"]["after_version"] == version + 1
     assert db.scalar(select(func.count(SemanticStatementOccurrenceModel.id))) == occurrence_count
     assert db.scalar(select(func.count(SemanticStatementOriginModel.id))) == origin_count
 

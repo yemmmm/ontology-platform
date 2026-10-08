@@ -152,7 +152,7 @@ class R23002Tests(unittest.TestCase):
         def batch(mode: str, lease_token: str | None) -> ModelingBatchSubmit:
             return ModelingBatchSubmit(
                 client_batch_id="batch", ontology_id="ontology", idempotency_key=f"{mode}-{lease_token}",
-                expected_workspace_version="version", mode=mode, lease_token=lease_token,
+                expected_model_revision=1, mode=mode, lease_token=lease_token,
                 items=[{"client_item_id": "item", "command_kind": "create_class", "payload": {"name": "name"}}],
             )
 
@@ -187,11 +187,11 @@ class R23002Tests(unittest.TestCase):
                 root / "modeling_team/tasks/new-scope-business-slice.yaml",
                 root=root,
             ),
-            protocol_context={"project_id": "project-1", "ontology_id": "ontology-1", "workspace_version": "v1"},
+            protocol_context={"project_id": "project-1", "ontology_id": "ontology-1", "model_revision": 1},
         )
         protocol = runner._task_text("protocol")
         self.assertIn('"project_id": "project-1"', protocol)
-        self.assertIn('"workspace_version": "v1"', protocol)
+        self.assertIn('"model_revision": 1', protocol)
         self.assertNotIn("project-1", runner._task_text("coordinator"))
         self.assertNotIn("ontology-1", runner._task_text("modeling"))
         self.assertNotIn("admin", protocol.lower())
@@ -318,7 +318,7 @@ class R23002Tests(unittest.TestCase):
                 for stage in contract["applied_stages"].values()
             )
         )
-        self.assertIn("formal apply receipt or required platform read", contract["formal_binding"]["workspace_version"])
+        self.assertIn("formal apply receipt or required platform read", contract["formal_binding"]["model_revision"])
         self.assertIn("never guess, synthesize, or forward-reference", contract["formal_binding"]["generated_identifiers"])
         self.assertIn("must not mutate candidate meaning or reorder candidate semantics", contract["candidate_invariant"])
         self.assertEqual(
@@ -1177,7 +1177,7 @@ class R23002Tests(unittest.TestCase):
                 return {
                     "project_id": "project-1",
                     "ontology_id": "ontology-1",
-                    "workspace_version": "revision-1",
+                    "model_revision": 1,
                     "scope_disposition": "retained-pending-acceptance",
                 }
 
@@ -1208,7 +1208,7 @@ class R23002Tests(unittest.TestCase):
                 return {
                     "project_id": "project-1",
                     "ontology_id": "ontology-1",
-                    "workspace_version": "revision-1",
+                    "model_revision": 1,
                     "scope_disposition": "retained-pending-acceptance",
                 }
 
@@ -1344,7 +1344,7 @@ class R23002Tests(unittest.TestCase):
             scope = {
                 "mode": "create", "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
                 "sessions_terminal": True, "protocol_key_revoked": True, "admin_key_revoked": True,
-                "workspace_version": "version-1", "completed_session_id": "session-1",
+                "model_revision": 1, "completed_session_id": "session-1",
                 "scope_disposition": "retained-pending-acceptance",
                 "cleanup_metadata": {"source": "platform cleanup"},
                 "secret_canary": "must-not-persist",
@@ -1359,7 +1359,7 @@ class R23002Tests(unittest.TestCase):
                 payload["scope"],
                 {
                     "project_id": "project-1", "ontology_id": "ontology-1",
-                    "workspace_version": "version-1", "completed_session_id": "session-1",
+                    "model_revision": 1, "completed_session_id": "session-1",
                     "scope_disposition": "retained-pending-acceptance", "owned": True,
                 },
             )
@@ -1382,7 +1382,7 @@ class R23002Tests(unittest.TestCase):
             deleted = {
                 "mode": "create", "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
                 "sessions_terminal": True, "protocol_key_revoked": True, "admin_key_revoked": True,
-                "workspace_version": "version-1", "completed_session_id": "session-1",
+                "model_revision": 1, "completed_session_id": "session-1",
                 "scope_disposition": "deleted-empty",
             }
             with self.assertRaisesRegex(TeamConfigurationError, "successful owned producer"):
@@ -1405,7 +1405,7 @@ class R23002Tests(unittest.TestCase):
             successful_cleanup = {
                 "mode": "create", "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
                 "sessions_terminal": True, "protocol_key_revoked": True, "admin_key_revoked": True,
-                "workspace_version": "version-1", "completed_session_id": "session-1",
+                "model_revision": 1, "completed_session_id": "session-1",
                 "scope_disposition": "retained-pending-acceptance", "extra_cleanup_metadata": "accepted",
             }
             for field in ("mode", "sessions_terminal", "protocol_key_revoked", "admin_key_revoked"):
@@ -1428,14 +1428,14 @@ class R23002Tests(unittest.TestCase):
     def test_offline_handoff_rechecks_retained_scope_without_runtime(self) -> None:
         class Client:
             def __init__(self) -> None:
-                self.version = "version-1"
+                self.version = 1
 
             def __call__(self, method, path, body, key):
                 if path.endswith("/modeling-context"):
                     return 200, {
                         "project": {"id": "project-1"},
                         "ontology": {"id": "ontology-1"},
-                        "workspace": {"state": "ready", "workspace_version": self.version},
+                        "workspace": {"state": "ready", "model_revision": self.version},
                     }
                 if path.endswith("/build-context"):
                     return 200, {"agent_state": {"active_sessions": [], "recent_sessions": [{"id": "session-1"}]}}
@@ -1455,7 +1455,7 @@ class R23002Tests(unittest.TestCase):
                 "terminal_results": results or {role: {"status": "completed"} for role in ("coordinator", "modeling", "protocol", "acceptance")},
                 "cleanup": {"scope": {
                     "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
-                    "workspace_version": "version-1", "completed_session_id": "session-1",
+                    "model_revision": 1, "completed_session_id": "session-1",
                     "scope_disposition": "retained-pending-acceptance",
                 }},
             }
@@ -1494,7 +1494,7 @@ class R23002Tests(unittest.TestCase):
 
             with ThreadPoolExecutor(max_workers=2) as executor:
                 self.assertEqual(sorted(executor.map(lambda _: publish_once(), range(2))), ["published", "rejected"])
-            self.assertEqual(json.loads(destination.read_text())["workspace_version"], "version-1")
+            self.assertEqual(json.loads(destination.read_text())["model_revision"], 1)
             verdict.write_text('{"verdict":"PHASE_A_FAIL"}', encoding="utf-8")
             with self.assertRaisesRegex(TeamConfigurationError, "PHASE_A_PASS"):
                 publish()
@@ -1504,7 +1504,7 @@ class R23002Tests(unittest.TestCase):
             destination.unlink()
             with self.assertRaisesRegex(TeamConfigurationError, "already published"):
                 publish()
-            client.version = "version-2"
+            client.version = 2
             second = Path(directory) / "drifted.json"
             with self.assertRaisesRegex(TeamConfigurationError, "scope recheck failed"):
                 publish_offline_scope_handoff(
@@ -1512,7 +1512,7 @@ class R23002Tests(unittest.TestCase):
                     destination=second, bootstrap_admin=lambda: ("admin", "admin-id"),
                     revoke_admin=lambda _: True, request=client,
                 )
-            client.version = "version-1"
+            client.version = 1
             (run_root / "state.json").write_text(
                 json.dumps(state({"coordinator": {"status": "completed"}, "modeling": {"status": "completed"}, "protocol": {"status": "blocked"}, "acceptance": {"status": "completed"}})),
                 encoding="utf-8",
@@ -1541,7 +1541,7 @@ class R23002Tests(unittest.TestCase):
             statuses = {role: {"status": "completed", "summary": "state may retain details"} for role in ("coordinator", "modeling", "protocol", "acceptance")}
             scope = {
                 "owned": True, "project_id": "project-1", "ontology_id": "ontology-1",
-                "workspace_version": "version-1", "completed_session_id": "session-1",
+                "model_revision": 1, "completed_session_id": "session-1",
                 "scope_disposition": "blocked",
             }
             (run_root / "state.json").write_text(

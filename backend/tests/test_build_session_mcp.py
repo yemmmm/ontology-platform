@@ -159,8 +159,11 @@ def test_mcp_create_checkpoint_resume_and_get_use_shared_revision_semantics(mcp_
 def test_new_and_compatibility_build_context_tools_return_same_shape(mcp_scope) -> None:
     new = _data(_tool("get_project_build_context").fn(project_id="mcp-build-project"))
     compatibility = _data(_tool("get_build_context").fn(project_id="mcp-build-project"))
+    # Generation times can cross a wall-clock second between the two reads.
+    assert compatibility.pop("generated_at")
+    assert new.pop("generated_at")
     assert compatibility == new
-    assert set(new) == {"project", "generated_at", "platform_state", "agent_state"}
+    assert set(new) == {"project", "platform_state", "agent_state"}
 
 
 def test_mcp_preserves_structured_service_error_code(mcp_scope) -> None:

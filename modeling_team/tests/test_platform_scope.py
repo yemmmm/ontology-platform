@@ -88,7 +88,7 @@ class RetainedProducerClient(ScopeClient):
                 "semantic_base_iri": "https://example/resource/",
                 "project": {"id": "project-1"},
                 "ontology": {"id": "ontology-1"},
-                "workspace": {"state": "ready", "workspace_version": "version-1"},
+                "workspace": {"state": "ready", "model_revision": 1},
             }
         return super().__call__(method, path, body, key)
 
@@ -238,9 +238,9 @@ class PlatformScopeTests(unittest.TestCase):
         client.written = True
         cleanup = scope.cleanup()
         self.assertEqual(cleanup["scope_disposition"], "retained-pending-acceptance")
-        self.assertEqual(cleanup["workspace_version"], "version-1")
+        self.assertEqual(cleanup["model_revision"], 1)
         self.assertEqual(cleanup["completed_session_id"], "session-1")
-        self.assertEqual(scope.recheck_retained_producer()["workspace_version"], "version-1")
+        self.assertEqual(scope.recheck_retained_producer()["model_revision"], 1)
 
     def test_protocol_context_contains_only_mechanical_scope_identifiers(self) -> None:
         client = RetainedProducerClient()
@@ -253,7 +253,7 @@ class PlatformScopeTests(unittest.TestCase):
             {
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
-                "workspace_version": "version-1",
+                "model_revision": 1,
                 "semantic_base_iri": "https://example/resource/",
             },
         )

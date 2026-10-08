@@ -249,4 +249,4 @@ def test_entity_endpoint_returns_scope_bound_canonical_identity(in_memory_sessio
     assert item["class_iri"] == "https://example.test/class/ExplicitUnknown"
     assert item["project_id"] == "project-public-search"
     assert item["ontology_id"] == ontology_id
-    assert isinstance(item["workspace_version"], str) and item["workspace_version"]
+    assert type(item["model_revision"]) is int and item["model_revision"] >= 0

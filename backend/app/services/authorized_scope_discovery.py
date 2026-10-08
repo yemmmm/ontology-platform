@@ -16,7 +16,6 @@ from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.repositories.models import OntologyModel, OntologyStatus, ProjectModel
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_read_scope import ScopeResolution, SemanticReadScopeResolver
 
@@ -37,7 +36,7 @@ class ScopeDiscoveryCursorError(ScopeDiscoveryError):
 class OntologyQueryReadiness:
     queryable: bool
     unavailable_reason: str | None
-    workspace_version: str | None
+    model_revision: int | None
     derived_warnings: tuple[dict[str, str], ...] = ()
     ontology_id: str | None = None
     read_scope: ScopeResolution | None = None
@@ -49,7 +48,6 @@ class OntologyQueryReadinessEvaluator:
     def __init__(self, session: Session, settings: Settings) -> None:
         self.workspace_service = OntologyWorkspaceService(session, settings)
         self.read_scope_resolver = SemanticReadScopeResolver(session)
-        self.version_service = ModelingWorkspaceVersionService(session, settings)
 
     def evaluate(self, ontology: OntologyModel) -> OntologyQueryReadiness:
         if ontology.status == OntologyStatus.ARCHIVED.value:
@@ -64,14 +62,14 @@ class OntologyQueryReadinessEvaluator:
                 include="full-working-view",
                 allow_stale_derived=True,
             )
-            workspace_version = self.version_service.version_for(ontology.id)
+            model_revision = read_scope.model_revision
         except (LookupError, RuntimeError):
             return OntologyQueryReadiness(False, "workspace_not_ready", None)
         warnings = tuple(self._public_warning(item) for item in read_scope.warnings)
         return OntologyQueryReadiness(
             True,
             None,
-            workspace_version,
+            model_revision,
             warnings,
             ontology_id,
             read_scope,
@@ -279,7 +277,7 @@ class AuthorizedScopeDiscoveryService:
             "status": ontology.status,
             "queryable": readiness.queryable,
             "unavailable_reason": readiness.unavailable_reason,
-            "workspace_version": readiness.workspace_version,
+            "model_revision": readiness.model_revision,
             "ontology_id": readiness.ontology_id,
             "derived_warnings": list(readiness.derived_warnings),
             "matched_on": matched_on,

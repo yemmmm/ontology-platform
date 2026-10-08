@@ -60,8 +60,7 @@ def reader(in_memory_session, rows):
             SimpleNamespace(
                 ontology_id="o",
 
-                workspace_version="wv",
-                source_signature="ss",
+                model_revision=1,
             ),
         )
     )

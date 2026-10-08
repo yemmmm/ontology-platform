@@ -425,7 +425,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
         )
         project_id = "project-003"
         ontology_id = "ontology-003"
-        workspace_version = "workspace-v1"
+        model_revision = 1
         target_ids = (
             "unknown-cross-release-output-meaning",
             "unknown-b-no-score-behavior",
@@ -485,7 +485,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 "class_iri": "http://ontology-platform.local/semantic/class/ExplicitUnknown",
                 "project_id": project_id,
                 "ontology_id": ontology_id,
-                "workspace_version": workspace_version,
+                "model_revision": model_revision,
                 "read_evidence": {"source": "live-read"},
             }
             for semantic_id in sorted(target_ids)
@@ -495,7 +495,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
             {"entities": rows},
             project_id=project_id,
             ontology_id=ontology_id,
-            workspace_version=workspace_version,
+            model_revision=model_revision,
         )
         candidate_digest = canonical_digest(candidate)
         impact_receipts = {}
@@ -508,7 +508,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                         "project_id": project_id,
                         "ontology_id": ontology_id,
                         "entity_iri": entity_iri,
-                        "workspace_version": workspace_version,
+                        "model_revision": model_revision,
                         "statements": [],
                         "page_digest": empty_statements_digest,
                         "snapshot_digest": empty_statements_digest,
@@ -520,7 +520,7 @@ class ProtocolRetrievalMcpTests(unittest.TestCase):
                 candidate_digest=candidate_digest,
                 project_id=project_id,
                 ontology_id=ontology_id,
-                workspace_version=workspace_version,
+                model_revision=model_revision,
             )
 
         def call(arguments: dict[str, object]) -> dict[str, object]:

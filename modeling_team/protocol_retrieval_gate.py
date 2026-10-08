@@ -644,8 +644,8 @@ class ProtocolRetrievalGate:
                     for field in (
                         "project_id",
                         "ontology_id",
-                        "workspace_version",
-                        "source_signature",
+                        "model_revision",
+                        "model_revision",
                         "build_session_id",
                         "ontology_id",
                     )

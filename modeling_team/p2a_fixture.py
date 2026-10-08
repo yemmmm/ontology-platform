@@ -30,7 +30,7 @@ GRAPH_ASSERTED_DATA = "https://p2a.example.test/graph/asserted-data"
 GRAPH_ASSERTED_ONTOLOGY = GRAPH_ASSERTED_DATA
 GRAPH_SHAPES = "https://p2a.example.test/graph/shapes"
 ONTOLOGY_ID = "p2a-generated-ontology"
-SOURCE_SIGNATURE = "p2a-generated-source-signature"
+MODEL_REVISION = 1
 
 
 class P2AFixtureError(RuntimeError):
@@ -207,8 +207,7 @@ def _proof(matrix: dict[str, Any], candidate: dict[str, Any], rows: list[dict[st
         {
             "state": "ready",
             "ontology_id": ONTOLOGY_ID,
-            "source_signature": SOURCE_SIGNATURE,
-            "model_revision": 1,
+            "model_revision": MODEL_REVISION,
         }
     )
     fact_items = [{"fact_id": fact_ids[row["assertion_id"]], "id": fact_ids[row["assertion_id"]]} for row in rows]
@@ -216,7 +215,7 @@ def _proof(matrix: dict[str, Any], candidate: dict[str, Any], rows: list[dict[st
         "response": _envelope(
             {
                 "ontology_id": ONTOLOGY_ID,
-                "source_signature": SOURCE_SIGNATURE,
+                "model_revision": MODEL_REVISION,
                 "model_name": "statement-list",
                 "include": "asserted",
                 "items": fact_items,

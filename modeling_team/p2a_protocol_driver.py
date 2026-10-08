@@ -101,7 +101,7 @@ _PROOF_V2_ASSET = {
     "mount_path": "/opt/proof_v2.py",
     "mode": "0600",
     "parent_mode": "0700",
-    "sha256": "1b4dfc2fc7c1a61de02300477eb3652b15462e5065a8c768c5017d86dd088d0d",
+    "sha256": "4bfae65df941c68951c442b670a52e95dc7caa91cf4e68655ca980d634e859a4",
 }
 
 _CONTRACT_FIELDS = {
@@ -850,13 +850,13 @@ def _read_continuation_baseline(
     if (
         not isinstance(workspace, dict)
         or workspace.get("state") != "ready"
-        or not isinstance(workspace.get("workspace_version"), str)
+        or type(workspace.get("model_revision")) is not int
         or not isinstance(modeling, dict)
         or modeling.get("project", {}).get("id") != project_id
         or modeling.get("ontology", {}).get("id") != ontology_id
         or not isinstance(modeling_workspace, dict)
         or modeling_workspace.get("state") != "ready"
-        or modeling_workspace.get("workspace_version") != workspace["workspace_version"]
+        or modeling_workspace.get("model_revision") != workspace["model_revision"]
     ):
         raise P2AProtocolDriverError("continuation workspace baseline is invalid")
     return {
@@ -885,7 +885,7 @@ def _read_continuation_baseline(
         "apply_attempt_id": apply_attempt_id,
         "batch_snapshot": _batch_safe_snapshot(batch_detail),
         "workspace_state": workspace["state"],
-        "workspace_version": workspace["workspace_version"],
+        "model_revision": workspace["model_revision"],
     }
 
 

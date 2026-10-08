@@ -226,14 +226,14 @@ def test_public_four_kind_write_receipt_exact_read_context_and_export():
                 }
             )
             version = get(f"/ontologies/{ontology_id}/modeling-context")["workspace"][
-                "workspace_version"
+                "model_revision"
             ]
             request = {
                 "client_batch_id": token,
                 "ontology_id": ontology_id,
                 "mode": "dry_run",
                 "idempotency_key": "dry-" + token,
-                "expected_workspace_version": version,
+                "expected_model_revision": version,
                 "items": items,
             }
             path = f"/build-sessions/{build['id']}/modeling-batches"
@@ -329,7 +329,7 @@ def test_public_four_kind_write_receipt_exact_read_context_and_export():
             scope = dict(
                 project_id=project_id,
                 ontology_id=ontology_id,
-                workspace_version=scope_context["workspace"]["workspace_version"],
+                model_revision=scope_context["workspace"]["model_revision"],
             )
             bound = facade.handle(
                 {

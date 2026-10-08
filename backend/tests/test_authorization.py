@@ -13,7 +13,7 @@ from app.security.http import (
     _collect_resource_ids,
 )
 from app.services.build_sessions import BuildSessionService
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_crud import create_ontology
 
 
@@ -167,7 +167,7 @@ def _project_modeling_rule_context(r008_client):
             r008_client["ids"]["p1"],
             BuildSessionCreate(client_session_id="project-rule-auth"),
         )
-        workspace_version = ModelingWorkspaceVersionService(session, settings).version_for(
+        model_revision = OntologyModelRevisionService(session, settings).version_for(
             owned_ontology.id
         )
         _record, project_key = create_api_key(
@@ -179,7 +179,7 @@ def _project_modeling_rule_context(r008_client):
         return {
             "build_session_id": build["id"],
             "ontology_id": owned_ontology.id,
-            "workspace_version": workspace_version,
+            "model_revision": model_revision,
             "foreign_rule_id": foreign_rule.id,
             "project_key": project_key,
         }
@@ -204,7 +204,7 @@ def _rule_batch_payload(context, command_kind: str, rule_id: str, suffix: str):
         "ontology_id": context["ontology_id"],
         "idempotency_key": f"rule-auth-{suffix}",
         "mode": "dry_run",
-        "expected_workspace_version": context["workspace_version"],
+        "expected_model_revision": context["model_revision"],
         "items": [
             {
                 "client_item_id": "rule",

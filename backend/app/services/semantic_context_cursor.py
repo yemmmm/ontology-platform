@@ -24,7 +24,7 @@ from app.core.config import Settings
 from app.security.auth import AuthPrincipal
 
 
-CURSOR_VERSION = 2
+CURSOR_VERSION = 3
 CURSOR_KIND_MATCH = "match"
 CURSOR_KIND_CONTEXT = "context"
 CURSOR_KINDS = (CURSOR_KIND_MATCH, CURSOR_KIND_CONTEXT)
@@ -73,8 +73,7 @@ class CursorBinding:
     depth: int
     limit: int
     context_limit: int
-    workspace_versions: tuple[tuple[str, str], ...]
-    source_signatures: tuple[tuple[str, str], ...]
+    model_revisions: tuple[tuple[str, int], ...]
     semantic_roles: tuple[str, ...] = ()
 
 
@@ -84,8 +83,7 @@ class CursorPayload:
 
     kind: str
     binding_digest: str
-    workspace_versions: tuple[tuple[str, str], ...]
-    source_signatures: tuple[tuple[str, str], ...]
+    model_revisions: tuple[tuple[str, int], ...]
     resume_key: tuple[Any, ...] = ()
     root_match_ids: tuple[str, ...] = ()
     match_page_start_key: tuple[Any, ...] = ()
@@ -134,8 +132,7 @@ class ContextCursorCodec:
             "v": payload.version,
             "k": payload.kind,
             "b": payload.binding_digest,
-            "wv": [list(item) for item in payload.workspace_versions],
-            "ss": [list(item) for item in payload.source_signatures],
+            "mr": [list(item) for item in payload.model_revisions],
             "r": list(payload.resume_key),
             "ms": list(payload.match_page_start_key),
             "rd": payload.root_match_digest,
@@ -182,29 +179,22 @@ class ContextCursorCodec:
         binding_digest = _binding_digest(binding)
         if not hmac.compare_digest(str(payload.get("b") or ""), binding_digest):
             raise ContextCursorMismatch("Cursor no longer matches the request parameters")
-        workspace_versions = tuple(
-            (str(pair[0]), str(pair[1]))
-            for pair in payload.get("wv") or []
-            if isinstance(pair, list) and len(pair) == 2
-        )
-        source_signatures = tuple(
-            (str(pair[0]), str(pair[1]))
-            for pair in payload.get("ss") or []
-            if isinstance(pair, list) and len(pair) == 2
-        )
-        if workspace_versions != binding.workspace_versions:
+        pairs = payload.get("mr")
+        if not isinstance(pairs, list) or any(
+            not isinstance(pair, list) or len(pair) != 2
+            or not isinstance(pair[0], str) or type(pair[1]) is not int or pair[1] < 0
+            for pair in pairs
+        ):
+            raise ContextCursorInvalid("Cursor model revisions are malformed")
+        model_revisions = tuple((pair[0], pair[1]) for pair in pairs)
+        if model_revisions != binding.model_revisions:
             raise ContextSnapshotChanged(
-                "Ontology workspace_version no longer matches the cursor"
-            )
-        if source_signatures != binding.source_signatures:
-            raise ContextSnapshotChanged(
-                "Ontology source signature no longer matches the cursor"
+                "Ontology model_revision no longer matches the cursor"
             )
         return CursorPayload(
             kind=kind,
             binding_digest=binding_digest,
-            workspace_versions=workspace_versions,
-            source_signatures=source_signatures,
+            model_revisions=model_revisions,
             resume_key=tuple(_normalise_resume_key(item) for item in payload.get("r") or []),
             root_match_ids=tuple(str(item) for item in payload.get("rm") or []),
             match_page_start_key=tuple(
@@ -237,8 +227,7 @@ def make_binding(
     depth: int,
     limit: int,
     context_limit: int,
-    workspace_versions: list[tuple[str, str]] | tuple[tuple[str, str], ...],
-    source_signatures: list[tuple[str, str]] | tuple[tuple[str, str], ...],
+    model_revisions: list[tuple[str, int]] | tuple[tuple[str, int], ...],
     semantic_roles: list[str] | None = None,
 ) -> CursorBinding:
     return CursorBinding(
@@ -254,8 +243,7 @@ def make_binding(
         depth=depth,
         limit=limit,
         context_limit=context_limit,
-        workspace_versions=tuple(workspace_versions),
-        source_signatures=tuple(source_signatures),
+        model_revisions=tuple(model_revisions),
         semantic_roles=tuple(semantic_roles or ()),
     )
 

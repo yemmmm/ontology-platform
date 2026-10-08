@@ -612,7 +612,7 @@ class TeamRunner:
         # cannot emit a second receipt/conflict for the same delivery.
         self._protocol_candidate_responses: dict[str, str] = {}
         self._protocol_candidate_receipt_digests: dict[str, str] = {}
-        self._formal_workspace_version: str | None = None
+        self._formal_model_revision: int | None = None
         self._task_overlay: TaskInputOverlay | None = None
         self._validated_candidate_publication: ValidatedCandidatePublication | None = None
         self._candidate_publication: StagedCandidatePublication | None = None
@@ -917,9 +917,9 @@ class TeamRunner:
                 )
                 live_scope = preflight_evidence.get("live") if isinstance(preflight_evidence, dict) else None
                 if isinstance(live_scope, dict) and isinstance(
-                    live_scope.get("workspace_version"), str
+                    live_scope.get("model_revision"), int
                 ):
-                    self._formal_workspace_version = live_scope["workspace_version"]
+                    self._formal_model_revision = live_scope["model_revision"]
             else:
                 preflight_evidence = run_prestart_preflight(
                     repository_root=self.repository_root,
@@ -2980,7 +2980,7 @@ class TeamRunner:
             "modeling-context-receipt",
             {
                 "receipt_digest": gate.receipt.receipt_digest if gate.receipt else None,
-                "workspace_version": gate.receipt.workspace_version if gate.receipt else None,
+                "model_revision": gate.receipt.model_revision if gate.receipt else None,
                 "revalidation_receipt_digest": (
                     gate.revalidation_receipt.get("revalidation_receipt_digest")
                     if gate.revalidation_receipt
@@ -3274,12 +3274,12 @@ class TeamRunner:
         formal_contract = formal_run_contract_for(self.run.configuration)
         if formal_contract is not None and formal_contract.requirement_id == "R2.3-003":
             receipt_digest = self._protocol_candidate_receipt_digests.get(delivery_id)
-            workspace_version = self._formal_workspace_version or self.run.scope.get(
-                "workspace_version"
+            model_revision = self._formal_model_revision if self._formal_model_revision is not None else self.run.scope.get(
+                "model_revision"
             )
             if not isinstance(receipt_digest, str) or not receipt_digest:
                 raise TeamConfigurationError("typed candidate conflict has no accepted receipt digest")
-            if not isinstance(workspace_version, str) or not workspace_version:
+            if type(model_revision) is not int or model_revision < 0:
                 raise TeamConfigurationError("typed candidate conflict has no workspace version")
             try:
                 conflict = build_existing_scope_candidate_conflict(
@@ -3288,7 +3288,7 @@ class TeamRunner:
                     conflict_detail,
                     original_delivery_id=identity.original_delivery_id,
                     receipt_digest=receipt_digest,
-                    workspace_version=workspace_version,
+                    model_revision=model_revision,
                 )
             except ProtocolRetrievalFallbackError as exc:
                 raise TeamConfigurationError(str(exc)) from exc
@@ -3574,8 +3574,8 @@ class TeamRunner:
                         " Before invoking any Session, Lease, batch, validation, reasoning, or other stateful "
                         "ontology_platform tool after an accepted candidate receipt, call the exact-O "
                         "`get_modeling_context` read through the configured Protocol surface and verify the same "
-                        "Project/Ontology, ready workspace, non-empty workspace_version, no issues, and no stale "
-                        "derived state. An unequal workspace_version invalidates the old context and candidate "
+                        "Project/Ontology, ready workspace, non-empty model_revision, no issues, and no stale "
+                        "derived state. An unequal model_revision invalidates the old context and candidate "
                         "receipt; make the typed zero-mutation full-revision conflict path and wait for a complete "
                         "revised candidate before any mutation. Never reuse a stale receipt or send a patch."
                     )
@@ -3639,7 +3639,7 @@ class TeamRunner:
                             "later live binding read exposes a pre-mutation mismatch, call the typed conflict builder "
                             "with the original delivery_id, then send its unchanged conflict_json as a new standalone "
                             "Protocol-to-Modeling delivery with expects_reply=true and reply_to_delivery_id=None. The "
-                            "typed conflict must retain original_delivery_id, receipt_digest, workspace_version, and "
+                            "typed conflict must retain original_delivery_id, receipt_digest, model_revision, and "
                             "mutation_state=zero-mutation; Modeling replies with one full revised candidate bound to "
                             "this standalone conflict delivery_id. Pre-receipt conflicts and all R2.3-005 candidates keep "
                             "the original reply-bound semantics. "
@@ -3821,7 +3821,7 @@ class TeamRunner:
                         "scope supplied by the proxy; read only model_name classes, entities, facts, or rules, "
                         "and use ontologies scope with ontology_ids containing exactly this ontology. Do not call "
                         "history/delta, writes, validation, reasoning, or any other platform tool. First call "
-                        "`get_modeling_context` and require a ready workspace, non-empty workspace_version, "
+                        "`get_modeling_context` and require a ready workspace, non-empty model_revision, "
                         "non-negative resource counts, no issues, and no stale derived state. The Runner keeps an "
                         "immutable context receipt; direct candidate Transport and the staged candidate capability "
                         "remain closed until that exact context call succeeds. After a receipt or before any later "
@@ -5795,7 +5795,7 @@ class TeamRunner:
                             gate_identity["modeling_context"] = {
                                 "project_id": context_gate.project_id,
                                 "ontology_id": context_gate.ontology_id,
-                                "workspace_version": context_receipt.workspace_version,
+                                "model_revision": context_receipt.model_revision,
                                 "context_receipt_digest": context_receipt.receipt_digest,
                                 "response_digest": context_receipt.response_digest,
                                 "call_receipt_digest": context_receipt.call_receipt_digest,
@@ -10364,7 +10364,7 @@ class TeamRunner:
     def _write_retained_handoff_evidence(self, scope: dict[str, Any]) -> None:
         """Freeze the non-semantic offline-handoff inputs exactly once after cleanup."""
         assert self.run
-        required = ("project_id", "ontology_id", "workspace_version", "completed_session_id")
+        required = ("project_id", "ontology_id", "model_revision", "completed_session_id")
         if scope.get("owned") is not True or scope.get("scope_disposition") != "retained-pending-acceptance":
             raise TeamConfigurationError("retained scope evidence is not a successful owned producer")
         if (
@@ -10379,7 +10379,7 @@ class TeamRunner:
         # planned Ontology) instead of the single-Ontology tuple.
         ontology_ids = scope.get("ontology_ids")
         if isinstance(ontology_ids, list) and len(ontology_ids) > 1:
-            versions = scope.get("workspace_versions")
+            versions = scope.get("model_revisions")
             sessions = scope.get("completed_session_ids")
             if (
                 not isinstance(scope.get("project_id"), str)
@@ -10389,8 +10389,8 @@ class TeamRunner:
                 or set(versions) != set(ontology_ids)
                 or set(sessions) != set(ontology_ids)
                 or any(
-                    not isinstance(versions.get(ontology_id), str)
-                    or not versions[ontology_id]
+                    type(versions.get(ontology_id)) is not int
+                    or versions[ontology_id] < 0
                     or not isinstance(sessions.get(ontology_id), str)
                     or not sessions[ontology_id]
                     for ontology_id in ontology_ids
@@ -10401,13 +10401,17 @@ class TeamRunner:
                 "project_id": scope["project_id"],
                 "ontology_id": scope["ontology_id"],
                 "ontology_ids": list(ontology_ids),
-                "workspace_versions": {key: versions[key] for key in ontology_ids},
+                "model_revisions": {key: versions[key] for key in ontology_ids},
                 "completed_session_ids": {key: sessions[key] for key in ontology_ids},
                 "scope_disposition": scope["scope_disposition"],
                 "owned": True,
             }
         else:
-            if any(not isinstance(scope.get(field), str) or not scope[field] for field in required):
+            if any(
+                (type(scope.get(field)) is not int or scope[field] < 0) if field == "model_revision"
+                else (not isinstance(scope.get(field), str) or not scope[field])
+                for field in required
+            ):
                 raise TeamConfigurationError("retained scope evidence is incomplete")
             scope_fields = {
                 field: scope[field] for field in (*required, "scope_disposition", "owned")

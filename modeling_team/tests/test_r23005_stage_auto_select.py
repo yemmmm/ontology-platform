@@ -5,9 +5,8 @@
 final-state observed calls instead of asking the Protocol role to hand-pick
 them.  These tests cover:
 
-* a golden reconstruction from the retained start53 run evidence, asserting
-  the auto-selected five stages equal start53's actually-succeeded handoff
-  (delivery-7); and
+* rejection of retained start53 hash bindings under the new integer revision
+  contract, with all original evidence preserved; and
 * focused synthetic tests that encode the observed ambiguities (a stale earlier
   ``apply_atomic``, a later unsuccessful dry-run over the live workspace
   version, and repeated readbacks whose responses changed) plus the structured
@@ -43,15 +42,15 @@ RUN_ID = "r23005-real-20260807-deepseek-start53"
 # start53's actually-succeeded handoff (delivery-7) live model state and
 # candidate identity.  These are read directly from the retained delivery
 # evidence so the golden assertion tracks the real run, not a hand-typed copy.
-START53_LIVE_STATE = {
+# Synthetic current binding, never a translation of start53's historical hashes.
+CURRENT_REBIND_TEST_STATE = {
     "build_session_id": "40cbe906-6478-4b79-aaf8-e99232de66ad",
     "ontology_id": "ef6706df-9411-4a0b-afbc-85f7af27b840",
 
     "project_id": "b5dc5ade-b274-480d-aad6-b1b59c60e637",
-    "source_signature": "a8c5cfa4bee7504c77f94d0b7b5f77d5",
-    "workspace_version": "3a97f9d5b6733d068690529bb6bf4488089f5c11255f7084104620ae50ed61c0",
+    "model_revision": 0,
 }
-START53_LIVE_STATE["state_digest"] = model_state_digest(START53_LIVE_STATE)
+CURRENT_REBIND_TEST_STATE["state_digest"] = model_state_digest(CURRENT_REBIND_TEST_STATE)
 START53_CANDIDATE_DIGEST = (
     "7a131d3b3c65619e2126c17b0e2d11e04dc85abdc8ef13b2eff60a70ca854998"
 )
@@ -124,13 +123,13 @@ def _reconstruct_records(run_root: Path) -> dict[str, dict[str, Any]]:
         if tool == "submit_modeling_batch":
             arguments = {
                 "mode": data.get("mode") if data else None,
-                "ontology_id": START53_LIVE_STATE["ontology_id"],
-                "session_id": START53_LIVE_STATE["build_session_id"],
+                "ontology_id": CURRENT_REBIND_TEST_STATE["ontology_id"],
+                "session_id": CURRENT_REBIND_TEST_STATE["build_session_id"],
             }
         elif tool == "get_modeling_context":
-            arguments = {"ontology_id": START53_LIVE_STATE["ontology_id"]}
+            arguments = {"ontology_id": CURRENT_REBIND_TEST_STATE["ontology_id"]}
         elif tool in {"run_semantic_validation", "run_semantic_reasoning"}:
-            arguments = {"ontology_id": START53_LIVE_STATE["ontology_id"]}
+            arguments = {"ontology_id": CURRENT_REBIND_TEST_STATE["ontology_id"]}
         else:
             arguments = {}
         sequence += 1
@@ -152,7 +151,7 @@ def _golden_carrier(run_root: Path) -> RunnerAcceptanceCarrier:
         task_id="r2-3-005-formal-acceptance",
         acceptance_id="acceptance",
     )
-    carrier.bind_model_state(START53_LIVE_STATE)
+    carrier.bind_model_state(CURRENT_REBIND_TEST_STATE)
     carrier.register_accepted_candidate(
         candidate_revision=START53_CANDIDATE_REVISION,
         candidate_digest=START53_CANDIDATE_DIGEST,
@@ -169,96 +168,28 @@ def _golden_carrier(run_root: Path) -> RunnerAcceptanceCarrier:
     "start53 retained evidence is not available; golden reconstruction skipped",
 )
 class Start53GoldenAutoSelectTests(unittest.TestCase):
-    """Auto-select (no ``stage_calls``) must reproduce start53's golden handoff."""
+    """Old retained evidence cannot be treated as a numbered current handoff."""
 
-    def test_auto_select_matches_start53_golden_stages(self) -> None:
-        golden = _start53_golden_stages()
-        assert golden is not None
+    def test_legacy_start53_cannot_be_promoted_to_numbered_stage_handoff(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             run_root = Path(directory) / "modeling-runs" / RUN_ID
             evidence_dst = run_root / "evidence"
             evidence_dst.mkdir(parents=True)
-            shutil.copy2(
-                START53_RUN_DIR / "evidence" / "platform-response-artifacts.jsonl",
-                evidence_dst / "platform-response-artifacts.jsonl",
-            )
-            shutil.copytree(
-                START53_RUN_DIR / "evidence" / "platform-responses",
-                evidence_dst / "platform-responses",
-            )
+            shutil.copy2(START53_RUN_DIR / "evidence/platform-response-artifacts.jsonl",
+                         evidence_dst / "platform-response-artifacts.jsonl")
+            shutil.copytree(START53_RUN_DIR / "evidence/platform-responses",
+                            evidence_dst / "platform-responses")
             carrier = _golden_carrier(run_root)
             try:
-                built = carrier.protocol_build_acceptance_stage_handoff(
-                    protocol_id="protocol",
-                    capability=carrier.capability_token("protocol"),
-                )
+                with self.assertRaisesRegex(AcceptanceContractError, "no apply call"):
+                    carrier.protocol_build_acceptance_stage_handoff(
+                        protocol_id="protocol", capability=carrier.capability_token("protocol")
+                    )
             finally:
                 carrier.cleanup()
 
-        handoff = built["handoff_json"]
-        self.assertEqual(handoff["producer_run_id"], RUN_ID)
-        self.assertEqual(handoff["candidate_digest"], START53_CANDIDATE_DIGEST)
-        self.assertEqual(handoff["slice_revision"], START53_CANDIDATE_REVISION)
-        self.assertEqual(len(handoff["modeling_receipts"]), len(MODELING_STAGES))
-        by_stage = {r["stage"]: r for r in handoff["modeling_receipts"]}
-        self.assertEqual(set(by_stage), set(MODELING_STAGES))
-        for stage, expected in golden.items():
-            if stage not in MODELING_STAGES:
-                continue
-            evidence = by_stage[stage]["evidence_ref"]
-            self.assertEqual(evidence["tool"], expected["tool"], msg=f"stage={stage}")
-            self.assertEqual(
-                evidence["artifact_path"], expected["artifact_path"], msg=f"stage={stage}"
-            )
-            self.assertEqual(
-                evidence["request_digest"], expected["request_digest"], msg=f"stage={stage}"
-            )
-            self.assertEqual(
-                evidence["response_digest"], expected["response_digest"], msg=f"stage={stage}"
-            )
 
-    def test_auto_select_dry_run_is_not_the_stale_live_version_dry_run(self) -> None:
-        """The stale later dry_run over the live workspace version must NOT win.
-
-        start53 observed ``e0d4b85b…`` (mode=dry_run, attempt_status=
-        validation_failed, before_version==live workspace_version) AFTER the
-        final apply.  The golden dry-run is the validated ``0555e917…`` paired
-        with the final apply.  Auto-select must pick the latter.
-        """
-
-        golden = _start53_golden_stages()
-        assert golden is not None
-        stale_dry_run_path = (
-            "evidence/platform-responses/"
-            "e0d4b85b318734b3e38e18cd6672ac471a0017c0427a19e54b27b02f366e41d0-"
-            "29f77a72060d11d3ea8ae256ec706decf81c5d428cf96e756c1baae27a4d54d2.json"
-        )
-        self.assertNotEqual(golden["dry-run"]["artifact_path"], stale_dry_run_path)
-        with tempfile.TemporaryDirectory() as directory:
-            run_root = Path(directory) / "modeling-runs" / RUN_ID
-            evidence_dst = run_root / "evidence"
-            evidence_dst.mkdir(parents=True)
-            shutil.copy2(
-                START53_RUN_DIR / "evidence" / "platform-response-artifacts.jsonl",
-                evidence_dst / "platform-response-artifacts.jsonl",
-            )
-            shutil.copytree(
-                START53_RUN_DIR / "evidence" / "platform-responses",
-                evidence_dst / "platform-responses",
-            )
-            carrier = _golden_carrier(run_root)
-            try:
-                state = carrier._observed_model_state(None)
-                selected = carrier._auto_select_stage_calls(state)
-            finally:
-                carrier.cleanup()
-        self.assertEqual(
-            selected["dry-run"]["artifact_path"], golden["dry-run"]["artifact_path"]
-        )
-        self.assertNotEqual(selected["dry-run"]["artifact_path"], stale_dry_run_path)
-
-
-def _submit_result(*, mode: str, attempt_status: str, before: str, after: str | None) -> dict:
+def _submit_result(*, mode: str, attempt_status: str, before: int, after: int | None) -> dict:
     return {
         "structuredContent": {
             "ok": True,
@@ -271,10 +202,10 @@ def _submit_result(*, mode: str, attempt_status: str, before: str, after: str | 
     }
 
 
-def _readback_result(workspace_version: str, *, lease_active: bool | None = None) -> dict:
+def _readback_result(model_revision: int, *, lease_active: bool | None = None) -> dict:
     data: dict[str, Any] = {
         "ontology": {"id": "ontology-syn"},
-        "workspace": {"workspace_version": workspace_version},
+        "workspace": {"model_revision": model_revision},
     }
     if lease_active is not None:
         data["lease"] = {"active": lease_active}
@@ -300,8 +231,7 @@ def _synthetic_carrier(tmp: Path) -> RunnerAcceptanceCarrier:
     state = {
         "project_id": "project-syn",
         "ontology_id": "ontology-syn",
-        "workspace_version": "ws-live",
-        "source_signature": "source-syn",
+        "model_revision": 1,
         "build_session_id": "session-syn",
 
     }
@@ -336,15 +266,15 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="apply_atomic") | {"client_batch_id": "old-apply"},
                     result=_submit_result(
-                        mode="apply_atomic", attempt_status="applied", before="ws-0", after="ws-stale"
+                        mode="apply_atomic", attempt_status="applied", before=0, after=2
                     ),
                 )
-                # Final apply that produced the live workspace_version.
+                # Final apply that produced the live model_revision.
                 final_apply = carrier.register_platform_tool_result(
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="apply_atomic") | {"client_batch_id": "final-apply"},
                     result=_submit_result(
-                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
+                        mode="apply_atomic", attempt_status="applied", before=0, after=1
                     ),
                 )
                 # Paired validated dry-run before that final apply.
@@ -352,7 +282,7 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="dry_run") | {"client_batch_id": "paired-dry"},
                     result=_submit_result(
-                        mode="dry_run", attempt_status="validated", before="ws-prev", after=None
+                        mode="dry_run", attempt_status="validated", before=0, after=None
                     ),
                 )
                 # Later stale dry-run over the live version that failed validation.
@@ -360,19 +290,19 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="dry_run") | {"client_batch_id": "stale-dry"},
                     result=_submit_result(
-                        mode="dry_run", attempt_status="validation_failed", before="ws-live", after=None
+                        mode="dry_run", attempt_status="validation_failed", before=1, after=None
                     ),
                 )
                 # Two readbacks; only the second reflects the live workspace.
                 carrier.register_platform_tool_result(
                     tool="get_modeling_context",
                     arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-stale"),
+                    result=_readback_result(2),
                 )
                 live_readback = carrier.register_platform_tool_result(
                     tool="get_modeling_context",
                     arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-live"),
+                    result=_readback_result(1),
                 )
                 validation = carrier.register_platform_tool_result(
                     tool="run_semantic_validation",
@@ -409,20 +339,20 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="apply_atomic"),
                     result=_submit_result(
-                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
+                        mode="apply_atomic", attempt_status="applied", before=0, after=1
                     ),
                 )
                 paired_dry = carrier.register_platform_tool_result(
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="dry_run"),
                     result=_submit_result(
-                        mode="dry_run", attempt_status="validated", before="ws-prev", after=None
+                        mode="dry_run", attempt_status="validated", before=0, after=None
                     ),
                 )
                 readback = carrier.register_platform_tool_result(
                     tool="get_modeling_context",
                     arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-live"),
+                    result=_readback_result(1),
                 )
                 validation = carrier.register_platform_tool_result(
                     tool="run_semantic_validation",
@@ -469,7 +399,7 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
         """R2.3-009 start17: mid-lease and settled reads can both show live.
 
         Two ``get_modeling_context`` observations may both report the live
-        workspace_version and differ only in the transient ``lease.active``
+        model_revision and differ only in the transient ``lease.active``
         field (the first read happened while the mutation lease was still
         active).  The settled read — no active lease — is the final-state
         readback and auto-select must resolve to it instead of raising
@@ -483,26 +413,26 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="apply_atomic"),
                     result=_submit_result(
-                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
+                        mode="apply_atomic", attempt_status="applied", before=0, after=1
                     ),
                 )
                 carrier.register_platform_tool_result(
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="dry_run"),
                     result=_submit_result(
-                        mode="dry_run", attempt_status="validated", before="ws-prev", after=None
+                        mode="dry_run", attempt_status="validated", before=0, after=None
                     ),
                 )
                 # Mid-lease read: live workspace version but lease still active.
                 carrier.register_platform_tool_result(
                     tool="get_modeling_context",
                     arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-live", lease_active=True),
+                    result=_readback_result(1, lease_active=True),
                 )
                 settled_readback = carrier.register_platform_tool_result(
                     tool="get_modeling_context",
                     arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-live", lease_active=False),
+                    result=_readback_result(1, lease_active=False),
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_validation",
@@ -539,8 +469,8 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                         result=_submit_result(
                             mode="apply_atomic",
                             attempt_status="applied",
-                            before="ws-prev",
-                            after="ws-live",
+                            before=0,
+                            after=1,
                         ),
                     )
                 with self.assertRaises(AcceptanceContractError) as ctx:
@@ -562,20 +492,20 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="apply_atomic"),
                     result=_submit_result(
-                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
+                        mode="apply_atomic", attempt_status="applied", before=0, after=1
                     ),
                 )
                 carrier.register_platform_tool_result(
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="dry_run"),
                     result=_submit_result(
-                        mode="dry_run", attempt_status="validated", before="ws-prev", after=None
+                        mode="dry_run", attempt_status="validated", before=0, after=None
                     ),
                 )
                 carrier.register_platform_tool_result(
                     tool="get_modeling_context",
                     arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-live"),
+                    result=_readback_result(1),
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_reasoning",
@@ -600,7 +530,7 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                     tool="submit_modeling_batch",
                     arguments=_submit_args(mode="apply_atomic"),
                     result=_submit_result(
-                        mode="apply_atomic", attempt_status="applied", before="ws-prev", after="ws-live"
+                        mode="apply_atomic", attempt_status="applied", before=0, after=1
                     ),
                 )
                 # Dry-run paired with an EARLIER apply, not the final one.
@@ -614,7 +544,7 @@ class StageAutoSelectSyntheticTests(unittest.TestCase):
                 carrier.register_platform_tool_result(
                     tool="get_modeling_context",
                     arguments={"ontology_id": "ontology-syn"},
-                    result=_readback_result("ws-live"),
+                    result=_readback_result(1),
                 )
                 carrier.register_platform_tool_result(
                     tool="run_semantic_validation",

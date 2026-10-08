@@ -3,6 +3,20 @@
 本文档描述当前运行时实际注册的 HTTP API。完整操作清单由 FastAPI `app.openapi()` 生成；业务
 契约、边界和示例由人工维护。
 
+## R4.0-027 模型状态绑定
+
+当前读取、索引、分页与交接使用 Ontology 的非负整数 `model_revision`（包括 `0`）。
+Batch 必须提交整数 `expected_model_revision`；旧 `expected_workspace_version` 字段与
+字符串哈希不再有效。漂移仍返回 `workspace_revision_conflict`，详情包含
+`current_model_revision`；重新读取后使用新的幂等键继续。Attempt 的
+`workspace.expected_version/before_version/after_version` 保留现有回执结构，值均为编号。
+模型写入已提交才推进编号，dry-run、失败未写入、索引重建和搜索配置变化不推进。
+Embedding／投影配置仍单独校验；旧索引降级为词面召回，重建成功后恢复当前向量索引。
+恢复未收敛时，现有写入围栏阻止将不确定 RDF 内容作为稳定模型读取；反馈指向待协调 Attempt。
+迁移 `0035_ontology_model_revision` 保留原 Ontology 编号与历史哈希列，不翻译旧回执。
+旧分页游标须从第一页重读；旧交接与未完成 Attempt 须重新读取并准备新的编号绑定。
+检查点和冻结证据保留原样，不改写历史记录为新状态。
+
 ## 地址与认证
 
 - `./scripts/start-local.sh` 与本地 systemd 服务：`http://127.0.0.1:8001/api`
@@ -123,7 +137,7 @@ R1.2-004 起 Context Query 支持一次提交一组同主题的相关表达式�
 （`limit` 默认 20/最大 100；`context_limit` 默认 100/最大 1000）和独立的游标：`match_cursor`
 继续下一页匹配，`context_cursor` 只在当前匹配页内继续上下文。请求同时只能携带其中一种 cursor，
 且 cursor 必须与当前 principal、Project/Ontology 范围、原始 `queries`、过滤、深度、页大小以及
-绑定的 `workspace_version`/source signature 完全匹配；否则返回 `400 invalid_context_cursor`、
+绑定的 `model_revision` 完全匹配；否则返回 `400 invalid_context_cursor`、
 `400 context_cursor_mismatch` 或 `409 context_snapshot_changed`。响应新增 `query.queries`、
 `query.normalized_queries`、`primary_matches[*].matched_queries`、`primary_matches[*].fusion`、
 `related_context[*].root_paths`、`matches_page`、`context_page`，顶层 `truncated` 等于两页
@@ -231,7 +245,7 @@ Protocol 以该 namespace 构造当前平台引用，不从业务候选猜测 IR
 消费 Agent 新会话可先调用范围发现。无筛选时它以稳定游标分页返回当前主体可访问的 Project 与
 Ontology；`query` 仅匹配稳定 ID 或名称（trim + case-insensitive contains），`queryable` 仅筛选
 Ontology。Project 项返回 `complete/partial/unavailable` 和排除清单，Ontology 项分别返回业务
-`status`、技术 `queryable`、不可用原因、当前 `workspace_version` 和简要派生警告。响应中的
+`status`、技术 `queryable`、不可用原因、当前 `model_revision` 和简要派生警告。响应中的
 `query_scope` 可直接用于 Context Query/scoped SPARQL；实际查询仍会重新校验授权、就绪性和版本。
 Cursor 同时绑定筛选条件和当前授权 Project 边界，不能在 Project-bound 与组织管理员主体之间或
 不同 Project 主体之间复用。配置 `SECRET_KEY` 时 cursor 可跨进程重启继续验证；未配置时后端使用
@@ -624,6 +638,6 @@ definition_ref 按同一获准 resource-list 窗口内唯一的 semantic_id 解�
 端点窗口在实际 RDF 查询前限定；受限 predicate 在查询端排除，可选 label 经过原有嵌套
 引用授权检查，不能公开的标签省略而保留已获准关系，客户端可用 predicate IRI 显示。
 
-`source_signature` 与该 Ontology 资源读取范围保持一致。`paging.complete` 必须同时满足
+`model_revision` 与该 Ontology 资源读取范围保持一致。`paging.complete` 必须同时满足
 端点窗口、关系窗口和底层读取完整；部分结果及相关 warnings 不能被解释为全项目没有
 其他模型内容。本接口只读，不增加图写入、推理、业务执行或 Evidence／lineage 功能。

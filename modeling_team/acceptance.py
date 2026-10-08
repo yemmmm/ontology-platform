@@ -101,8 +101,7 @@ MODELING_STAGES: tuple[str, ...] = ("dry-run", "apply", "readback")
 MODEL_STATE_FIELDS: tuple[str, ...] = (
     "project_id",
     "ontology_id",
-    "workspace_version",
-    "source_signature",
+    "model_revision",
     "build_session_id",
     "ontology_id",
 )
@@ -527,7 +526,7 @@ def validate_model_state(value: Any, *, allow_runner_bound: bool = True) -> dict
     fields = set(MODEL_STATE_FIELDS) | {"state_digest"}
     data = _require_exact_keys(value, fields, "model_state")
     for field in MODEL_STATE_FIELDS:
-        if not isinstance(data[field], str) or not data[field]:
+        if (type(data[field]) is not int or data[field] < 0) if field == "model_revision" else (not isinstance(data[field], str) or not data[field]):
             _error(f"model_state.{field} is invalid")
         if not allow_runner_bound and data[field] == "runner-bound":
             _error("model_state must be resolved before child start")
@@ -2622,14 +2621,16 @@ class RunnerAcceptanceCarrier:
             workspace = context.get("workspace")
             project_id = project.get("id") if isinstance(project, Mapping) else None
             ontology_id = ontology.get("id") if isinstance(ontology, Mapping) else None
-            workspace_version = workspace.get("workspace_version") if isinstance(workspace, Mapping) else None
+            model_revision = workspace.get("model_revision") if isinstance(workspace, Mapping) else None
             ontology_id = workspace_context.get("ontology_id")
-            source_signature = workspace_context.get("source_signature")
+            model_revision = workspace_context.get("model_revision")
             if not all(
                 isinstance(value, str) and value
-                for value in (project_id, ontology_id, workspace_version, ontology_id, source_signature)
+                for value in (project_id, ontology_id)
             ):
                 raise AcceptanceContractError("formal platform state is incomplete")
+            if type(model_revision) is not int or model_revision < 0:
+                raise AcceptanceContractError("formal platform state model revision is invalid")
             build_session_id = getattr(scope, "completed_session_id", None)
             if not isinstance(build_session_id, str) or not build_session_id:
                 batches = context.get("recent_batches")
@@ -2642,8 +2643,7 @@ class RunnerAcceptanceCarrier:
                 raise AcceptanceContractError("formal platform state has no Producer Build Session")
             state = {
                 "project_id": project_id,
-                "workspace_version": workspace_version,
-                "source_signature": source_signature,
+                "model_revision": model_revision,
                 "build_session_id": build_session_id,
                 "ontology_id": ontology_id,
             }
@@ -2882,27 +2882,27 @@ class RunnerAcceptanceCarrier:
                 actual_after = workspace.get("after_version") if isinstance(workspace, Mapping) else None
                 if (
                     not isinstance(workspace, Mapping)
-                    or actual_after != live_state["workspace_version"]
+                    or actual_after != live_state["model_revision"]
                 ):
                     _error(
                         "stage receipt apply workspace version is stale",
                         data={
-                            "reason": "apply_workspace_version_stale",
+                            "reason": "apply_model_revision_stale",
                             "stage": stage,
-                            "expected_after_version": live_state["workspace_version"],
+                            "expected_after_version": live_state["model_revision"],
                             "actual_after_version": actual_after,
                         },
                     )
                 target_snapshot = data.get("target")
-                if isinstance(target_snapshot, Mapping) and "source_signature_after" in target_snapshot:
-                    if target_snapshot.get("source_signature_after") != live_state["source_signature"]:
+                if isinstance(target_snapshot, Mapping) and "model_revision_after" in target_snapshot:
+                    if target_snapshot.get("model_revision_after") != live_state["model_revision"]:
                         _error(
-                            "stage receipt apply source signature is stale",
+                            "stage receipt apply model revision is stale",
                             data={
-                                "reason": "apply_source_signature_stale",
+                                "reason": "apply_model_revision_stale",
                                 "stage": stage,
-                                "expected_source_signature": live_state["source_signature"],
-                                "actual_source_signature": target_snapshot.get("source_signature_after"),
+                                "expected_model_revision": live_state["model_revision"],
+                                "actual_model_revision": target_snapshot.get("model_revision_after"),
                             },
                         )
         elif stage == "readback":
@@ -2912,7 +2912,7 @@ class RunnerAcceptanceCarrier:
                 not isinstance(ontology, Mapping)
                 or ontology.get("id") != live_state["ontology_id"]
                 or not isinstance(workspace, Mapping)
-                or workspace.get("workspace_version") != live_state["workspace_version"]
+                or workspace.get("model_revision") != live_state["model_revision"]
             ):
                 _error("stage receipt readback ontology binding is invalid")
         if stage in {"dry-run", "apply"}:
@@ -3288,7 +3288,7 @@ class RunnerAcceptanceCarrier:
         never silently guessed.
         """
 
-        live_workspace = state["workspace_version"]
+        live_workspace = state["model_revision"]
         records = list(self._platform_read_artifacts.values())
         data_cache: dict[str, Mapping[str, Any] | None] = {}
 
@@ -3353,7 +3353,7 @@ class RunnerAcceptanceCarrier:
             return candidates[0]
 
         # apply: the final apply_atomic whose workspace.after_version is the
-        # live workspace_version.  Cross-batch application produces several
+        # live model_revision.  Cross-batch application produces several
         # applies; only the last one matches the live state.
         apply_candidates: list[Mapping[str, Any]] = []
         for record in records:
@@ -3385,7 +3385,7 @@ class RunnerAcceptanceCarrier:
         # one whose workspace.before_version equals the final apply's
         # before_version.  A later stale dry_run over the live version (e.g. an
         # unsuccessful re-check) is excluded because its before_version is the
-        # live workspace_version and its attempt_status is not "validated".
+        # live model_revision and its attempt_status is not "validated".
         dry_candidates: list[Mapping[str, Any]] = []
         for record in records:
             if record["tool"] != "submit_modeling_batch" or _submit_mode(record) != "dry_run":
@@ -3406,8 +3406,8 @@ class RunnerAcceptanceCarrier:
             "workspace.before_version==final apply before_version",
         )
 
-        # readback: the get_modeling_context whose workspace.workspace_version
-        # is the live workspace_version.  Repeated reads whose response changed
+        # readback: the get_modeling_context whose workspace.model_revision
+        # is the live model_revision.  Repeated reads whose response changed
         # remain distinct artifact paths; only the final-state read matches.
         # A mid-lease read can also report the live version (R2.3-009 start17:
         # two reads differed only in lease.active), so when several live reads
@@ -3425,7 +3425,7 @@ class RunnerAcceptanceCarrier:
             workspace = data.get("workspace") if isinstance(data, Mapping) else None
             if (
                 isinstance(workspace, Mapping)
-                and workspace.get("workspace_version") == live_workspace
+                and workspace.get("model_revision") == live_workspace
             ):
                 readback_candidates.append(record)
         if len(readback_candidates) > 1:
@@ -3439,7 +3439,7 @@ class RunnerAcceptanceCarrier:
         readback_record = _select(
             "readback",
             readback_candidates,
-            selector="get_modeling_context workspace.workspace_version==live",
+            selector="get_modeling_context workspace.model_revision==live",
         )
 
         def _triple(record: Mapping[str, Any]) -> dict[str, Any]:
@@ -5873,7 +5873,7 @@ class RunnerAcceptanceCarrier:
         state = self._model_state_boundary.current
         cas = SettlementCAS.create(
             expected_state_digest=state["state_digest"],
-            workspace_version=state["workspace_version"],
+            model_revision=state["model_revision"],
         )
         observed = {
             **state,
@@ -5895,7 +5895,7 @@ class RunnerAcceptanceCarrier:
             {
                 **decision,
                 "expected_state_digest": cas.expected_state_digest,
-                "workspace_version": cas.workspace_version,
+                "model_revision": cas.model_revision,
                 "token": cas.token,
             },
         )
@@ -5913,11 +5913,11 @@ class RunnerAcceptanceCarrier:
             "settlement_cas": {
                 "cas_digest": cas.cas_digest,
                 "expected_state_digest": cas.expected_state_digest,
-                "workspace_version": cas.workspace_version,
+                "model_revision": cas.model_revision,
             },
             "final_readback": {
                 "state_digest": post_cleanup.get("state_digest"),
-                "workspace_version": post_cleanup.get("workspace_version"),
+                "model_revision": post_cleanup.get("model_revision"),
                 "matched": True,
             },
         }
@@ -6166,24 +6166,24 @@ class ModelStateBoundary:
 @dataclass(frozen=True)
 class SettlementCAS:
     expected_state_digest: str
-    workspace_version: str
+    model_revision: int
     phase: str
     token: str
     cas_digest: str
 
     @classmethod
-    def create(cls, *, expected_state_digest: str, workspace_version: str, phase: str = "SETTLED") -> "SettlementCAS":
+    def create(cls, *, expected_state_digest: str, model_revision: int, phase: str = "SETTLED") -> "SettlementCAS":
         _safe_digest(expected_state_digest, "settlement expected_state_digest")
-        if not isinstance(workspace_version, str) or not workspace_version or phase != "SETTLED":
+        if type(model_revision) is not int or model_revision < 0 or phase != "SETTLED":
             _error("settlement CAS fields are invalid")
         token = secrets.token_hex(12)
-        payload = {"expected_state_digest": expected_state_digest, "workspace_version": workspace_version, "phase": phase, "token": token}
+        payload = {"expected_state_digest": expected_state_digest, "model_revision": model_revision, "phase": phase, "token": token}
         return cls(**payload, cas_digest=_sha256_bytes(_canonical_json(payload)))
 
     def verify(self, observed: Mapping[str, Any]) -> bool:
         return (
             observed.get("state_digest") == self.expected_state_digest
-            and observed.get("workspace_version") == self.workspace_version
+            and observed.get("model_revision") == self.model_revision
             and observed.get("phase") == self.phase
             and observed.get("token", self.token) == self.token
         )

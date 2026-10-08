@@ -136,7 +136,7 @@ def test_export_has_no_dedicated_shape_or_reasoning_branch():
     from app.services.semantic_ontology_export import SemanticExportService
     from app.services.semantic_read_scope import ScopeResolution
     from test_semantic_export_graph_set import FakeScopeResolver, FakeStore
-    scope = ScopeResolution(ontology_id="g", source_signature="s", include="full-working-view",
+    scope = ScopeResolution(ontology_id="g", model_revision=1, include="full-working-view",
         model_graph_iris=[], shape_graph_iris=["https://old.test/shapes"],
         governance_graph_iris=[], reasoning_result_graph_iri="https://old.test/reasoning-result",
         derived_state={"reasoning": {"status": "current"}})

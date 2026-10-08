@@ -81,7 +81,7 @@ def test_candidate_platform_gate_binds_modeling_context_for_r23003_only(tmp_path
         "modeling_context": {
             "project_id": "project-1",
             "ontology_id": "ontology-1",
-            "workspace_version": "workspace-v1",
+            "model_revision": 1,
             "context_receipt_digest": "context-receipt",
             "response_digest": "modeling-response",
             "call_receipt_digest": "modeling-call",
@@ -90,7 +90,7 @@ def test_candidate_platform_gate_binds_modeling_context_for_r23003_only(tmp_path
     gate.open(identity)
     state = _state(gate.state_path)
     assert state["modeling_context"]["project_id"] == "project-1"
-    assert state["modeling_context"]["workspace_version"] == "workspace-v1"
+    assert state["modeling_context"]["model_revision"] == 1
     assert state["protocol_revalidation"] == {"state": "required"}
 
 

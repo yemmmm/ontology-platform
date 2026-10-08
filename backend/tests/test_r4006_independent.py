@@ -324,11 +324,11 @@ def test_independent_cursor_effective_permissions(independent_env):
         return CursorBinding(principal=principal, project_id="p", scope_mode="project",
             ontology_ids=("o",), original_queries=("q",), normalized_queries=("q",),
             resource_types=(), assertion_types=(), search_mode="lexical", depth=0,
-            limit=1, context_limit=1, workspace_versions=(), source_signatures=())
+            limit=1, context_limit=1, model_revisions=())
     original = binding()
     codec = ContextCursorCodec(secret="acceptance-secret", lifetime_seconds=3600, stable_secret=True)
     cursor = codec.encode(CursorPayload(kind="match", binding_digest=binding_digest(original),
-                                        workspace_versions=(), source_signatures=()))
+                                        model_revisions=()))
     assign(env, uid, [r2["id"]])
     codec.decode(cursor, binding=binding(), expected_kind="match")
     assign(env, uid, [])

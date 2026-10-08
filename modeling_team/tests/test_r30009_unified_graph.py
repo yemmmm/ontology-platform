@@ -513,7 +513,7 @@ def test_matching_batch_projection_is_accepted(candidate, projection, plan):
         "ontology_id": projection["ontology_id"],
         "mode": "apply_atomic",
         "idempotency_key": "key-1",
-        "expected_workspace_version": "w1",
+        "expected_model_revision": 1,
         "items": projection["items"],
     }
     assert unified_plan_issue(plan=plan, batch=batch, task_id=projection["task_id"]) is None
@@ -801,7 +801,7 @@ def _candidate_for(refs):
     }
 
 
-def _row(semantic_id, iri, class_semantic_id, class_iri, *, project="proj-1", ontology="ont-1", version="v1"):
+def _row(semantic_id, iri, class_semantic_id, class_iri, *, project="proj-1", ontology="ont-1", version=1):
     return {
         "semantic_id": semantic_id,
         "entity_iri": iri,
@@ -809,7 +809,7 @@ def _row(semantic_id, iri, class_semantic_id, class_iri, *, project="proj-1", on
         "class_iri": class_iri,
         "project_id": project,
         "ontology_id": ontology,
-        "workspace_version": version,
+        "model_revision": version,
         "read_evidence": {"receipt": f"receipt-{semantic_id}"},
     }
 
@@ -821,13 +821,13 @@ def test_zero_class_ref_binds_only_a_genuinely_unclassified_row():
         [_row("ent-zero", "http://example.test/e/0", None, None)],
         project_id="proj-1",
         ontology_id="ont-1",
-        workspace_version="v1",
+        model_revision=1,
     )
     assert receipt["schema_version"] == "r3-0-009-existing-entity-binding/v1"
     assert receipt["bindings"][0]["class_state"] == "unclassified"
     assert receipt["bindings"][0]["expected_class"] is None
     assert validate_unified_entity_binding_receipt(
-        candidate, receipt, project_id="proj-1", ontology_id="ont-1", workspace_version="v1"
+        candidate, receipt, project_id="proj-1", ontology_id="ont-1", model_revision=1
     ) == receipt
 
 
@@ -838,7 +838,7 @@ def test_classified_and_incomplete_rows_are_bound_by_state():
         [_row("ent-full", "http://example.test/e/2", "EntFull", "http://example.test/class/EntFull")],
         project_id="proj-1",
         ontology_id="ont-1",
-        workspace_version="v1",
+        model_revision=1,
     )
     assert receipt["bindings"][0]["class_state"] == "classified"
     assert validate_unified_entity_binding_receipt(candidate, receipt) == receipt
@@ -852,7 +852,7 @@ def test_incomplete_class_identity_is_reported_and_never_proves_a_class():
             [incomplete_row],
             project_id="proj-1",
             ontology_id="ont-1",
-            workspace_version="v1",
+            model_revision=1,
         )
     with pytest.raises(ProtocolRetrievalFallbackError):
         build_unified_entity_binding_receipt(
@@ -860,7 +860,7 @@ def test_incomplete_class_identity_is_reported_and_never_proves_a_class():
             [incomplete_row],
             project_id="proj-1",
             ontology_id="ont-1",
-            workspace_version="v1",
+            model_revision=1,
         )
 
 
@@ -872,7 +872,7 @@ def test_zero_class_ref_rejects_a_row_that_still_carries_class_identity():
             [_row("ent-zero", "http://example.test/e/0", "K", "http://example.test/class/K")],
             project_id="proj-1",
             ontology_id="ont-1",
-            workspace_version="v1",
+            model_revision=1,
         )
     assert "Class identity" in str(excinfo.value)
 
@@ -880,28 +880,28 @@ def test_zero_class_ref_rejects_a_row_that_still_carries_class_identity():
 def test_projection_validator_states_and_drift():
     base = _row("ent-zero", "http://example.test/e/0", None, None)
     assert validate_unified_entity_projection(
-        base, project_id="proj-1", ontology_id="ont-1", workspace_version="v1"
+        base, project_id="proj-1", ontology_id="ont-1", model_revision=1
     )["class_iri"] is None
     with pytest.raises(ValueError):
         validate_unified_entity_projection(
             {**base, "class_semantic_id": "K"},
             project_id="proj-1",
             ontology_id="ont-1",
-            workspace_version="v1",
+            model_revision=1,
         )
     with pytest.raises(ValueError):
         validate_unified_entity_projection(
-            {**base, "workspace_version": "v2"},
+            {**base, "model_revision": 2},
             project_id="proj-1",
             ontology_id="ont-1",
-            workspace_version="v1",
+            model_revision=1,
         )
     with pytest.raises(ValueError):
         validate_unified_entity_projection(
             {key: value for key, value in base.items() if key != "class_iri"},
             project_id="proj-1",
             ontology_id="ont-1",
-            workspace_version="v1",
+            model_revision=1,
         )
 
 
@@ -912,7 +912,7 @@ def test_binding_receipt_rejects_digest_and_state_drift():
         _row("ent-full", "http://example.test/e/2", "EntFull", "http://example.test/class/EntFull"),
     ]
     receipt = build_unified_entity_binding_receipt(
-        candidate, rows, project_id="proj-1", ontology_id="ont-1", workspace_version="v1"
+        candidate, rows, project_id="proj-1", ontology_id="ont-1", model_revision=1
     )
     body = dict(receipt)
     body.pop("receipt_digest")

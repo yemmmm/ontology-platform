@@ -189,14 +189,15 @@ class CanonicalSemanticWriteService:
                 content = self.rdf_store.get_graph(iri, "turtle") if exists else ""
                 graph = Graph().parse(data=content, format="turtle") if content else Graph()
                 hashes[iri] = model_content_hash(graph)
+        changed_graphs = affected if write_result.applied and not compiled.delta.is_empty else []
         revision_bumps = self.revision_service.bump_revisions(
-            affected,
+            changed_graphs,
             content_hashes=hashes,
             audit_id=audit.id,
             actor=actor,
         )
         stale_rows = self.derived_state_service.mark_stale_after_edit(
-            affected, audit_id=audit.id, commit=False
+            changed_graphs, audit_id=audit.id, commit=False
         )
         stale_pointers = [
             {

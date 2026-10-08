@@ -145,7 +145,7 @@ class _FakePlanScope:
         context = {
             "project_id": "project-1",
             "ontology_id": self.ontology_ids[0],
-            "workspace_version": "version-1",
+            "model_revision": 1,
         }
         if len(self.ontology_ids) > 1:
             context["ontology_ids"] = ",".join(self.ontology_ids)
@@ -773,7 +773,7 @@ class PlatformScopeOntologyPlanTests(unittest.TestCase):
             {
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
-                "workspace_version": "version-ontology-1",
+                "model_revision": 1,
             },
         )
         scope.apply_ontology_plan(
@@ -787,7 +787,7 @@ class PlatformScopeOntologyPlanTests(unittest.TestCase):
             {
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
-                "workspace_version": "version-ontology-1",
+                "model_revision": 1,
                 "ontology_ids": "ontology-1,ontology-2",
             },
         )
@@ -827,7 +827,7 @@ class _MultiOntologyClient:
             return 200, {
                 "project": {"id": "project-1"},
                 "ontology": {"id": ontology_id},
-                "workspace": {"state": "ready", "workspace_version": f"version-{ontology_id}"},
+                "workspace": {"state": "ready", "model_revision": int(ontology_id.rsplit("-", 1)[1])},
             }
         if path.endswith("build-context"):
             recent = []
@@ -888,14 +888,14 @@ class MultiOntologyTerminalAggregateTests(unittest.TestCase):
         self.assertEqual(cleanup["scope_disposition"], "retained-pending-acceptance")
         self.assertEqual(cleanup["ontology_ids"], ["ontology-1", "ontology-2"])
         self.assertEqual(
-            cleanup["workspace_versions"],
-            {"ontology-1": "version-ontology-1", "ontology-2": "version-ontology-2"},
+            cleanup["model_revisions"],
+            {"ontology-1": 1, "ontology-2": 2},
         )
         self.assertEqual(
             cleanup["completed_session_ids"],
             {"ontology-1": "session-1", "ontology-2": "session-2"},
         )
-        self.assertNotIn("workspace_version", cleanup)
+        self.assertNotIn("model_revision", cleanup)
 
     def test_foreign_or_missing_ontology_involvement_blocks_cleanup(self) -> None:
         for mode in ("foreign", "uncovered"):
@@ -962,9 +962,9 @@ class MultiOntologyTerminalAggregateTests(unittest.TestCase):
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
                 "ontology_ids": ["ontology-1", "ontology-2"],
-                "workspace_versions": {
-                    "ontology-1": "version-ontology-1",
-                    "ontology-2": "version-ontology-2",
+                "model_revisions": {
+                    "ontology-1": 1,
+                    "ontology-2": 2,
                 },
                 "completed_session_ids": {
                     "ontology-1": "session-1",
@@ -985,9 +985,9 @@ class MultiOntologyTerminalAggregateTests(unittest.TestCase):
                     "project_id": "project-1",
                     "ontology_id": "ontology-1",
                     "ontology_ids": ["ontology-1", "ontology-2"],
-                    "workspace_versions": {
-                        "ontology-1": "version-ontology-1",
-                        "ontology-2": "version-ontology-2",
+                    "model_revisions": {
+                        "ontology-1": 1,
+                        "ontology-2": 2,
                     },
                     "completed_session_ids": {
                         "ontology-1": "session-1",
@@ -1028,9 +1028,9 @@ class MultiOntologyTerminalAggregateTests(unittest.TestCase):
                 "project_id": "project-1",
                 "ontology_id": "ontology-1",
                 "ontology_ids": ["ontology-1", "ontology-2"],
-                "workspace_versions": {
-                    "ontology-1": "version-ontology-1",
-                    "ontology-2": "version-ontology-2",
+                "model_revisions": {
+                    "ontology-1": 1,
+                    "ontology-2": 2,
                 },
                 "completed_session_ids": {
                     "ontology-1": "session-1",
@@ -1042,7 +1042,7 @@ class MultiOntologyTerminalAggregateTests(unittest.TestCase):
                 "scope_disposition": "retained-pending-acceptance",
             }
             for mutation in (
-                {"workspace_versions": {"ontology-1": "version-ontology-1"}},
+                {"model_revisions": {"ontology-1": 1}},
                 {"completed_session_ids": {"ontology-1": "session-1", "ontology-2": ""}},
                 {"ontology_ids": ["ontology-1", "ontology-3"]},
             ):

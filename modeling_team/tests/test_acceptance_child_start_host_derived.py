@@ -44,8 +44,7 @@ def _ticket_with_platform_project_id(project_id: str, round_suffix: str = "1") -
     state = {
         "project_id": project_id,
         "ontology_id": "3c52a819-feb6-468d-a6dc-2e9dbf5f9b24",
-        "workspace_version": "workspace-1",
-        "source_signature": "source-1",
+        "model_revision": 1,
         "build_session_id": "session-r23005",
 
     }

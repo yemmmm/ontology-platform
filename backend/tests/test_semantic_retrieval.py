@@ -15,7 +15,7 @@ from app.repositories.models import (
     SemanticRetrievalDocumentModel,
 )
 from app.repositories.rdf_store import RdfStoreUnavailable
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 from app.services.semantic_projection_job import SemanticProjectionJobService
 from app.services.semantic_retrieval import (
@@ -29,7 +29,6 @@ from app.services.semantic_retrieval import (
     mark_retrieval_stale,
     normalize_retrieval_text,
     recall_summary,
-    rule_set_signature,
 )
 from app.services.semantic_read_scope import SemanticReadScopeResolver
 
@@ -99,9 +98,7 @@ def test_metadata_document_allow_list_keeps_mapping_key_names_not_values(in_memo
         ],
         ontology_id="ontology-1",
 
-        workspace_version="workspace-v1",
-        source_signature="source-v1",
-        rule_signature="rules-v1",
+        model_revision=1,
         job_id="job-1",
         partition="set-1/vector/semantic-retrieval-v1/job-1",
     )
@@ -211,20 +208,16 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     config = RetrievalConfig.from_settings(settings)
     reader_identity = {
         "ontology_id": ontology.id,
-        "workspace_version": ModelingWorkspaceVersionService(
+        "model_revision": OntologyModelRevisionService(
             in_memory_session, settings
         ).version_for(ontology.id),
-        "source_signature": graph_set.source_signature,
-        "rule_set_signature": rule_set_signature(in_memory_session, ontology.id),
         "projection_version": config.projection_version,
         "embedding_config_hash": config.config_hash,
         "build_job_id": manifest.active_job_id,
     }
     persisted_identity = {
         "ontology_id": document.ontology_id,
-        "workspace_version": document.workspace_version,
-        "source_signature": document.source_signature,
-        "rule_set_signature": document.rule_set_signature,
+        "model_revision": document.model_revision,
         "projection_version": document.projection_version,
         "embedding_config_hash": document.embedding_config_hash,
         "build_job_id": document.build_job_id,
@@ -236,9 +229,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
     status = repository.index_status(
         ontology_id=reader_identity["ontology_id"],
 
-        workspace_version=reader_identity["workspace_version"],
-        source_signature=reader_identity["source_signature"],
-        current_rule_signature=reader_identity["rule_set_signature"],
+        model_revision=reader_identity["model_revision"],
     )
     assert status["status"] == "current"
 
@@ -273,8 +264,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
                 SimpleNamespace(
                     ontology_id=ontology.id,
 
-                    workspace_version=reader_identity["workspace_version"],
-                    source_signature=reader_identity["source_signature"],
+                    model_revision=reader_identity["model_revision"],
                 ),
             )
         ),
@@ -286,9 +276,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
 
     assert scanned_identity == {
         "ontology_id": reader_identity["ontology_id"],
-        "workspace_version": reader_identity["workspace_version"],
-        "source_signature": reader_identity["source_signature"],
-        "rule_signature": reader_identity["rule_set_signature"],
+        "model_revision": reader_identity["model_revision"],
         "resource_kinds": {"concept"},
         "query_vector": [0.25] * settings.embedding_dimensions,
         "limit": 50,
@@ -314,7 +302,7 @@ def test_persisted_backfill_identity_matches_public_reader_and_enters_candidate_
         limit=10,
     )
 
-    assert scanned_identity["workspace_version"] == reader_identity["workspace_version"]
+    assert scanned_identity["model_revision"] == reader_identity["model_revision"]
     assert entity_result["indexes"][0]["status"] == "current"
     assert [item["iri"] for item in entity_result["candidates"]] == [
         "https://example.test/CustomerSupportWorkflow"
@@ -472,9 +460,7 @@ def test_exact_scan_uses_transaction_scoped_timeout_before_vector_query() -> Non
     rows = PgVectorRetrievalRepository(session, config).exact_cosine_candidates(
         ontology_id="ontology-1",
 
-        workspace_version="workspace-v1",
-        source_signature="source-v1",
-        rule_signature="rules-v1",
+        model_revision=1,
         resource_kinds={"concept"},
         query_vector=[1.0] * config.dimensions,
         limit=5,
@@ -496,7 +482,7 @@ def test_rule_transaction_marks_current_retrieval_manifests_stale(in_memory_sess
             ontology_id="ontology-1",
             projection_kind="vector",
             active_job_id="job-1",
-            source_signature="source-v1",
+            model_revision=1,
             projection_version="semantic-retrieval-v1",
             target_partition="set-1/vector/semantic-retrieval-v1/job-1",
             status="current",
@@ -522,7 +508,7 @@ def test_rebuild_failure_keeps_prior_retrieval_manifest_stale(
             ontology_id="ontology-rebuild",
             projection_kind="vector",
             active_job_id="job-before-write",
-            source_signature="source-v1",
+            model_revision=1,
             projection_version="semantic-retrieval-v1",
             target_partition="set-rebuild/vector/before-write",
             status="current",

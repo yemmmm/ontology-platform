@@ -156,7 +156,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "protocol_id": {"type": "string"},
             # ``batch`` mirrors the real submit_modeling_batch envelope
             # (session_id, client_batch_id, ontology_id, idempotency_key,
-            # expected_workspace_version, items[{command_kind, payload}],
+            # expected_model_revision, items[{command_kind, payload}],
             # mode, lease_token).  value_traces and l3_nodes are Runner-side
             # trace attachments and are never forwarded to the backend.
             "batch": {"type": "object"},

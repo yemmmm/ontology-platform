@@ -218,7 +218,7 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
             },
         )
         context = _request(client, "GET", f"/ontologies/{o1['id']}/modeling-context")
-        version = context["workspace"]["workspace_version"]
+        version = context["workspace"]["model_revision"]
         items = [
             {
                 "client_item_id": "customer",
@@ -241,7 +241,7 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
                 "ontology_id": o1["id"],
                 "idempotency_key": f"dry-{suffix}",
                 "mode": "dry_run",
-                "expected_workspace_version": version,
+                "expected_model_revision": version,
                 "items": items,
             },
         )
@@ -251,7 +251,7 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
             "ontology_id": o1["id"],
             "idempotency_key": f"apply-{suffix}",
             "mode": "apply_atomic",
-            "expected_workspace_version": version,
+            "expected_model_revision": version,
             "lease_token": lease["lease_token"],
             "actor": "forged-client-actor",
             "items": items,
@@ -360,7 +360,7 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
                 "ontology_id": o1["id"],
                 "idempotency_key": f"partial-{suffix}",
                 "mode": "apply_partial",
-                "expected_workspace_version": partial_context["workspace"]["workspace_version"],
+                "expected_model_revision": partial_context["workspace"]["model_revision"],
                 "lease_token": lease["lease_token"],
                 "items": [
                     {

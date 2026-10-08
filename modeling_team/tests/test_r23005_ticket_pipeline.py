@@ -59,8 +59,7 @@ def _handoff(
     state = {
         "project_id": "project-r23005-e",
         "ontology_id": "ontology-r23005-e",
-        "workspace_version": "workspace-e-1",
-        "source_signature": "source-e-1",
+        "model_revision": 1,
         "build_session_id": "session-r23005-e",
 
     }
@@ -141,7 +140,7 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
         mode: str,
         client_batch_id: str,
         idempotency_key: str,
-        expected_workspace_version: str,
+        expected_model_revision: int,
         include_lease: bool,
     ) -> dict[str, object]:
         arguments: dict[str, object] = {
@@ -149,7 +148,7 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
             "client_batch_id": client_batch_id,
             "ontology_id": state["ontology_id"],
             "idempotency_key": idempotency_key,
-            "expected_workspace_version": expected_workspace_version,
+            "expected_model_revision": expected_model_revision,
             "items": [
                 {
                     "client_item_id": f"{client_batch_id}-item",
@@ -170,7 +169,7 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
                 mode="dry_run",
                 client_batch_id="batch-e-dry",
                 idempotency_key="idempotency-e-dry",
-                expected_workspace_version="workspace-e-0",
+                expected_model_revision=0,
                 include_lease=False,
             ),
             {"mode": "dry_run", "attempt_status": "validated"},
@@ -181,17 +180,17 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
                 mode="apply_atomic",
                 client_batch_id="batch-e-apply",
                 idempotency_key="idempotency-e-apply",
-                expected_workspace_version="workspace-e-0",
+                expected_model_revision=0,
                 include_lease=True,
             ),
             {
                 "mode": "apply_atomic",
                 "attempt_status": "applied",
                 "workspace": {
-                    "before_version": "workspace-e-0",
-                    "after_version": "workspace-e-1",
+                    "before_version": 0,
+                    "after_version": 1,
                 },
-                "target": {"source_signature_after": "source-e-1"},
+                "target": {"model_revision_after": 1},
             },
         ),
         "readback": (
@@ -199,7 +198,7 @@ def _register_stage_artifacts(carrier: RunnerAcceptanceCarrier) -> dict[str, dic
             {"ontology_id": state["ontology_id"]},
             {
                 "ontology": {"id": state["ontology_id"]},
-                "workspace": {"workspace_version": "workspace-e-1"},
+                "workspace": {"model_revision": 1},
             },
         ),
     }
@@ -877,7 +876,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                                     "ok": True,
                                     "data": {
                                         "ontology": {"id": "ontology-r23005-e"},
-                                        "workspace": {"workspace_version": "workspace-e-1"},
+                                        "workspace": {"model_revision": 1},
                                     },
                                 }
                             },
@@ -1002,7 +1001,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                             "ok": True,
                             "data": {
                                 "ontology": {"id": "ontology-r23005-e"},
-                                "workspace": {"workspace_version": "workspace-old"},
+                                "workspace": {"model_revision": 1},
                             },
                         }
                     },
@@ -1019,7 +1018,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                         "client_batch_id": "batch-e-bad",
                         "ontology_id": "ontology-r23005-e",
                         "idempotency_key": "idempotency-e-bad",
-                        "expected_workspace_version": "workspace-e-0",
+                        "expected_model_revision": 0,
                         "items": [
                             {
                                 "client_item_id": "batch-e-bad-item",
@@ -1068,7 +1067,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                         "client_batch_id": "batch-e-status",
                         "ontology_id": "ontology-r23005-e",
                         "idempotency_key": "idempotency-e-status",
-                        "expected_workspace_version": "workspace-e-0",
+                        "expected_model_revision": 0,
                         "items": [
                             {
                                 "client_item_id": "batch-e-status-item",
@@ -1112,7 +1111,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                         "client_batch_id": "batch-e-apply",
                         "ontology_id": "ontology-r23005-e",
                         "idempotency_key": "idempotency-e-apply",
-                        "expected_workspace_version": "workspace-e-0",
+                        "expected_model_revision": 0,
                         "items": [
                             {
                                 "client_item_id": "batch-e-apply-item",
@@ -1130,10 +1129,10 @@ class R23005TicketPipelineTests(unittest.TestCase):
                                 "mode": "apply_atomic",
                                 "attempt_status": "applied",
                                 "workspace": {
-                                    "before_version": "workspace-e-0",
-                                    "after_version": "workspace-old",
+                                    "before_version": 0,
+                                    "after_version": 0,
                                 },
-                                "target": {"source_signature_after": "source-old"},
+                                "target": {"model_revision_after": 0},
                             },
                         }
                     },
@@ -1173,7 +1172,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                         "client_batch_id": "batch-e-apply",
                         "ontology_id": "ontology-r23005-e",
                         "idempotency_key": "idempotency-e-apply",
-                        "expected_workspace_version": "workspace-e-0",
+                        "expected_model_revision": 0,
                         "items": [
                             {
                                 "client_item_id": "batch-e-apply-item",
@@ -1191,10 +1190,10 @@ class R23005TicketPipelineTests(unittest.TestCase):
                                 "mode": "apply_atomic",
                                 "attempt_status": "applied",
                                 "workspace": {
-                                    "before_version": "workspace-e-0",
-                                    "after_version": "workspace-e-1",
+                                    "before_version": 0,
+                                    "after_version": 1,
                                 },
-                                "target": {"source_signature_after": "source-old"},
+                                "target": {"model_revision_after": 0},
                             },
                         }
                     },
@@ -1217,7 +1216,7 @@ class R23005TicketPipelineTests(unittest.TestCase):
                     sender_role="protocol",
                     recipient_role="coordinator",
                 )
-                with self.assertRaisesRegex(AcceptanceContractError, "source signature"):
+                with self.assertRaisesRegex(AcceptanceContractError, "model revision"):
                     carrier.coordinator_ticket_draft(
                         stale_source_handoff,
                         handoff_delivery_id="delivery-stale-source",

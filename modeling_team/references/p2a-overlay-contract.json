@@ -15,7 +15,7 @@
     {
       "mode": "0600",
       "mount_path": "/opt/proof_v2.py",
-      "sha256": "1b4dfc2fc7c1a61de02300477eb3652b15462e5065a8c768c5017d86dd088d0d",
+      "sha256": "4bfae65df941c68951c442b670a52e95dc7caa91cf4e68655ca980d634e859a4",
       "source_path": "modeling_team/proof_v2.py"
     }
   ],
@@ -27,5 +27,5 @@
     "build_p2a_batch_plan",
     "verify_p2a_dry_run_evidence_projection"
   ],
-  "contract_digest": "85117bcf319e55098e94ed7b2b0fdfaf11fb767108f4f17feee3b3a6dfa1b8ce"
+  "contract_digest": "ebead94420a09a644f25d5495a41bd77376aea4969882672b3b9b378d79cc297"
 }

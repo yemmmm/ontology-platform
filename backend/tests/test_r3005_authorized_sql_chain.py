@@ -55,7 +55,7 @@ from app.repositories.models import (
 from app.repositories.postgres import Base
 from app.repositories.rdf_store import RdfStoreRepository
 from app.security.auth import create_api_key
-from app.services.modeling_workspace import ModelingWorkspaceVersionService
+from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.ontology_workspace import OntologyWorkspaceService
 
 pytestmark = [
@@ -441,7 +441,7 @@ def chain_env():
             )
             keys[name] = plaintext
         session.commit()
-        workspace_version = ModelingWorkspaceVersionService(session, settings).version_for(
+        model_revision = OntologyModelRevisionService(session, settings).version_for(
             ontology_id
         )
 
@@ -453,7 +453,7 @@ def chain_env():
 
     with TestClient(app) as client:
         env = ChainEnv(client, project_id, ontology_id, ontology_id, base, keys)
-        _seed_fixture(env, workspace_version)
+        _seed_fixture(env, model_revision)
         yield env
 
     # Cleanup: drop the token-scoped Oxigraph graphs; the SQLite control
@@ -463,7 +463,7 @@ def chain_env():
     engine.dispose()
 
 
-def _seed_fixture(env: ChainEnv, workspace_version: str) -> None:
+def _seed_fixture(env: ChainEnv, model_revision: int) -> None:
     client, headers = env.client, env.headers("model")
 
     created = client.post(
@@ -490,7 +490,7 @@ def _seed_fixture(env: ChainEnv, workspace_version: str) -> None:
                 "ontology_id": env.ontology_id,
                 "idempotency_key": key,
                 "mode": mode,
-                "expected_workspace_version": workspace_version,
+                "expected_model_revision": model_revision,
                 "lease_token": token,
                 "items": _seed_items(env.base),
             },

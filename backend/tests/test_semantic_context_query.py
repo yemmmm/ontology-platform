@@ -315,7 +315,7 @@ def test_unified_query_returns_primary_related_without_trace_fields(in_memory_se
     assert result["scope"]["mode"] == "ontologies"
     assert result["scope"]["status"] == "complete"
     assert result["scope"]["ontologies"][0]["ontology_id"] == "ontology-1"
-    assert set(result["scope"]["ontologies"][0]) == {"ontology_id", "workspace_version"}
+    assert set(result["scope"]["ontologies"][0]) == {"ontology_id", "model_revision"}
     assert set(result["recall"]) <= {"mode", "match_status", "completeness"}
     statement = next(item for item in facts if item["data"]["object"] == "datasetId")
     assert statement["data"]["subject_label"] == "发布工作流"

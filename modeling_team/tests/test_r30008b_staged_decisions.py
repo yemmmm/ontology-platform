@@ -564,7 +564,7 @@ def test_b12_capability_envelope_mirrors_real_submit_modeling_batch():
         "client_batch_id",
         "ontology_id",
         "idempotency_key",
-        "expected_workspace_version",
+        "expected_model_revision",
         "items",
         "mode",
         "lease_token",
@@ -638,7 +638,7 @@ def _envelope(items, *, mode="apply_atomic", lease_token="placeholder-lease") ->
         "client_batch_id": "placeholder-batch-1",
         "ontology_id": "https://example.test/ontology/placeholder",
         "idempotency_key": "placeholder-key-1",
-        "expected_workspace_version": "1",
+        "expected_model_revision": 1,
         "items": items,
         "mode": mode,
         **({"lease_token": lease_token} if mode == "apply_atomic" else {}),
@@ -925,7 +925,7 @@ def test_b6_envelope_schema_violations():
     del missing_key["idempotency_key"]
     assert check(missing_key) == ["staged_submit_schema_mismatch"]
     missing_version = _envelope([_enum_command()])
-    del missing_version["expected_workspace_version"]
+    del missing_version["expected_model_revision"]
     assert check(missing_version) == ["staged_submit_schema_mismatch"]
     no_items = _envelope([])
     assert check(no_items) == ["staged_submit_schema_mismatch"]

@@ -67,11 +67,11 @@ For cross-Batch application, use that contract's platform-mechanical schedule ex
 property/relation type, then entity, then receipt/read binding of generated IDs/IRIs, then relation,
 Each applied stage is its own `dry_run` followed immediately by
 its `apply_atomic` — never batch all stages' dry-runs before the first apply — and obtain the next
-workspace version and every generated ID/IRI only from the formal
+model revision and every generated ID/IRI only from the formal
 receipt or required platform read. Submit each batch's `dry_run` with the plan's `idempotency_key`
 and its `apply_atomic` with the plan's `apply_idempotency_key`; the platform binds one key to one
-request hash (content, mode, expected workspace version), so a key is burned once any of those
-changes. If a submission returns `idempotency_conflict` or the expected workspace version moved,
+request hash (content, mode, expected model revision), so a key is burned once any of those
+changes. If a submission returns `idempotency_conflict` or the expected model revision moved,
 retry the affected mode alone with the key's trailing `-vN` incremented (`v1` -> `v2`) and identical
 request content; never invent a different key shape. The same burn rule governs `client_batch_id`:
 the platform binds one `client_batch_id` to one immutable batch content, so when you republish a
@@ -350,7 +350,7 @@ For formal R2.3-003 only, when the accepted receipt has already been sent and re
 later live binding read exposes a pre-mutation mismatch, call the typed conflict builder with the
 original Modeling `delivery_id`, then send its unchanged `conflict_json` as a new standalone
 Protocol-to-Modeling delivery with `expects_reply=true` and `reply_to_delivery_id` omitted. The typed
-conflict must retain `original_delivery_id`, `receipt_digest`, `workspace_version`, and
+conflict must retain `original_delivery_id`, `receipt_digest`, `model_revision`, and
 `mutation_state=zero-mutation`. Modeling replies with one full revised candidate bound to this new
 conflict delivery ID. Pre-receipt conflicts and all R2.3-005 candidates keep the original
 reply-bound semantics; never retry a second reply to the receipt's original delivery.
@@ -539,7 +539,7 @@ The Runner task text supplies a non-secret Runner-issued `handoff_nonce`; the Ru
 `protocol_build_acceptance_stage_handoff` capability owns that nonce and all mechanical fields. Call
 that capability with exactly `protocol_id=protocol` and DO NOT supply `stage_calls`: the carrier
 auto-selects the three canonical final-state observed calls (the final `apply_atomic` whose
-`workspace.after_version` equals the live workspace version, the validated `dry_run` paired with
+`workspace.after_version` equals the live model revision, the validated `dry_run` paired with
 that apply, the final `get_modeling_context` readback over the live workspace). `protocol_list_platform_artifacts` is for your awareness only; never
 hand-pick stages, copy request arguments, or compute any digest, path, page, receipt, or handoff
 field yourself. The auto-select encodes the "each stage receipt must reflect the FINAL live model
@@ -601,7 +601,7 @@ candidate.
 
 For `r2-3-003-existing-scope-incremental`, read the live ontology read model before translation and
 build a binding receipt for every `existing_entity_ref`. The receipt binds candidate digest,
-Project/Ontology, workspace version, semantic ID, actual IRI/Class, and read evidence. Missing,
+Project/Ontology, model revision, semantic ID, actual IRI/Class, and read evidence. Missing,
 duplicate, or Class-mismatched refs fail closed before mutation. Existing refs never become
 create/update commands; only new relations may consume receipt IRIs. The initial candidate must contain
 two independent standalone items with unique `item_id` and
@@ -623,7 +623,7 @@ boolean `phase_a_readback`. Do not hand-construct a Batch, delete command, impac
 field after a candidate-only call is rejected. The native translator is the only source of the
 ordered plan: an initial pre-barrier plan may report `phase_a_readback_required` for its delete
 items; apply only its returned create stages in order, obtain durable Phase-A readback, refresh
-the binding/impact receipts against the new workspace version, then call it with
+the binding/impact receipts against the new model revision, then call it with
 `phase_a_readback=true` and apply its final `delete-only` Phase-B batch last. If the native plan
 returns multiple delete-only Phase-B batches, apply each single-target batch in the returned order;
 never combine or reorder them. Missing binding or
@@ -732,7 +732,7 @@ plan's own future `receipt_ref` bindings and every dependent stage's future `rec
 the current creating plan/batch/item, and a superseded dry-run-only plan stays retained history
 that never claims an apply and never sources a dependent binding. A current `plan_ref` needs its
 own Runner-recorded validated dry-run before its `apply_atomic`, even when commands, content hash
-and workspace version are identical to an earlier plan's; the earlier proof is retained as history
+and model revision are identical to an earlier plan's; the earlier proof is retained as history
 and never reused, and an already applied resource is never replayed to produce one.
 
 The v2 materialization plan root is closed: exactly `schema_version`, `plan_id`, `revision`,
@@ -936,7 +936,7 @@ reads; truncation/filtering does not prove absence. Do not invoke business APIs 
 
 
 R4.0-026 storage contract: each Ontology owns one current business model. Submit and read with
-`ontology_id` / `ontology_ids`; bind the actual model revision and workspace version. Do not author,
+`ontology_id` / `ontology_ids`; bind the actual model revision. Do not author,
 request or carry GraphSet identifiers, member roles, or source-graph selectors in business candidates
 and handoffs. Definitions, ordinary nodes and relations share that model. Internal RDF locators in
 technical write receipts are host storage details. Keep original business sources and external mapping

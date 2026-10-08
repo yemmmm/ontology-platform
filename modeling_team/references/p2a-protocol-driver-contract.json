@@ -119,7 +119,7 @@
       "mode": "0600",
       "mount_path": "/opt/proof_v2.py",
       "parent_mode": "0700",
-      "sha256": "1b4dfc2fc7c1a61de02300477eb3652b15462e5065a8c768c5017d86dd088d0d",
+      "sha256": "4bfae65df941c68951c442b670a52e95dc7caa91cf4e68655ca980d634e859a4",
       "source_path": "modeling_team/proof_v2.py",
       "staged_path": "runtime-assets/protocol/proof_v2.py"
     },
