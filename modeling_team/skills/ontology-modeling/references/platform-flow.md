@@ -14,6 +14,15 @@ Modeling or introduce a universal execution sequence.
 | Retrieval | Public consumer questions and required semantic relationships | Scoped facts, relations, pagination and explicit completeness |
 | Handoff | Own artifacts, outstanding unknowns and semantic findings | Bound execution results required by the Task |
 
+For a Task mounting R4.0-024, perform the production association self-check before whole-run
+terminal and handoff. Protocol supplies actual governed scan candidates and read completeness;
+Modeling distinguishes grounded defects, justified independent resources, business unknowns and
+unread scope. Correct confirmed defects through the same reviewed revision/application flow and
+inspect affected rechecks before completion. Degree zero is a candidate, not an automatic defect;
+RDF incoming/outgoing links, predicate usage and formal structural references all matter. The
+Coordinator records scope, dispositions and remaining work through the existing sidecar/messages.
+The self-check does not grant independent acceptance PASS or reinstate tracing-package duties.
+
 Build Session creation, leases, Batch envelopes, request schemas, idempotency and platform calls
 belong to Protocol. Do not reconstruct these from a high-level recipe or change business meaning
 in response to a purely mechanical translation failure.

@@ -555,6 +555,7 @@ class CodexIsolationTests(unittest.TestCase):
                     {"name": "build_candidate_receipt"},
                     {"name": "build_unified_resource_binding_receipt"},
                     {"name": "translate_candidate_to_batches"},
+                    {"name": "inspect_model_associations"},
                 ],
             },
         ]
@@ -2374,6 +2375,7 @@ class CodexIsolationTests(unittest.TestCase):
                 [
                     "build_candidate_receipt",
                     "build_unified_resource_binding_receipt",
+                    "inspect_model_associations",
                     "translate_candidate_to_batches",
                 ],
             )

@@ -786,6 +786,7 @@ class R23002Tests(unittest.TestCase):
                             "build_candidate_receipt",
                             "build_unified_resource_binding_receipt",
                             "translate_candidate_to_batches",
+                            "inspect_model_associations",
                         ],
                     },
                 )

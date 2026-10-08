@@ -1,0 +1,49 @@
+{
+  "schema_version": "r4-0-024-model-check-contract/v1",
+  "requirement_id": "R4.0-024",
+  "purpose": "Production association self-check before role terminal and production handoff. Candidates are not defects; no new platform gate.",
+  "semantic_verdict_owner": "modeling",
+  "roles": {
+    "coordinator": "Assign the pre-terminal check in initial bounded work. Route Protocol's unchanged scan to Modeling. Track dispositions and affected rechecks in a model-check sidecar under /agent/work/scenario-map, then synchronize existing progress. Terminal or orderly partial stop follows only after pending obligations are settled. Never decide missing business relations, use platform tools or await independent CQ results to finish production.",
+    "modeling": "Interpret each candidate and unresolved reference using approved business input and actual resource/read locators. Distinguish confirmed defect, suspected duplicate, supported independent definition, explicit business unknown and incomplete read. Submit source-grounded complete revisions, preserve unknowns and wait for actual recheck before whole-run terminal. Do not write scan receipts, platform IDs, tracing packages or hidden-answer-driven fixes.",
+    "protocol": "Collect unchanged governed reads, invoke protocol_mechanics.inspect_model_associations, and deliver coverage/candidates plus exact read locators to Modeling and Coordinator. Stay available for approved revisions, dry-run/apply/readback and affected rechecks before terminal. Mechanical coverage is not semantic PASS."
+  },
+  "scan": {
+    "tool": "semantic_sparql_query",
+    "scope_mode": "ontologies",
+    "graph_binding": "Use actual workspace members with role asserted_ontology or asserted_data from get_ontology_workspace_context for every authorized Ontology. Include approved shared/reference Ontologies needed for incoming and outgoing associations; enumerate actual scope, not just nodes created by the last Batch. Never guess graph IRIs or silently omit an authorized graph. No shapes, policy, evidence or inferred graphs.",
+    "query": "SELECT ?graph ?subject ?predicate ?object WHERE {\n  VALUES ?graph { {asserted_graphs} }\n  GRAPH ?graph { ?subject ?predicate ?object . }\n}\nORDER BY STR(?graph) STR(?subject) STR(?predicate) STR(?object)\n         (isIRI(?object)) (isBlank(?object))\n         (COALESCE(STR(DATATYPE(?object)), \"\")) (COALESCE(LANG(?object), \"\"))",
+    "pagination": "Bind {asserted_graphs} with unchanged absolute workspace graph IRIs in the supplied order, append a newline OFFSET 0, set result_limit (normally 1000), and do not add a smaller query LIMIT. The service bounds at result_limit+1 and reports truncated. Advance OFFSET by returned binding count; preserve ordered {request,response} pages until truncated=false. Do not silently skip a failed page. On elapsed/permission/read limits retain PARTIAL and the next offset, without infinite scanning.",
+    "final_read": "After the last page, repeat the same bound query at OFFSET 0 with result_limit=1. Its result may be truncated; compare its current workspace/version/signature via the native helper, not its row count.",
+    "helper_arguments": [
+      "project_id",
+      "ontology_ids",
+      "asserted_graph_iris",
+      "read_pages",
+      "final_read",
+      "semantic_base_iri",
+      "focus_iris (optional)"
+    ],
+    "focus": "Omit focus_iris to check all observed business resources in the authorized scan. For incremental work only, an explicitly complete approved scope may select actual existing/new/shared IRIs; include every affected definition and keep other nodes available as association endpoints. Neither a missing focus node nor partial inventory proves nonexistence.",
+    "output": "coverage=complete means only the supplied governed read is complete and stable. semantic_verdict=not_evaluated always. Coordinator must separately verify full approved graph/resource coverage; Modeling supplies candidate dispositions and business correctness. No scan grants apply or production completion.",
+    "recognized_resources": "Business IRIs carrying the platform id predicate or declared as NamedIndividual, Class, RDF Property, OWL ObjectProperty/DatatypeProperty/AnnotationProperty, Operation, TableMapping, JoinMapping, EnumValueMeaning or MetricDefinition. Auxiliary blank nodes and generic vocabulary are not independent business resources. Compare against actual applied scope; an unrecognized business kind is a coverage gap, not silently out of scope.",
+    "references": "Incoming/outgoing RDF to other business resources and use of a declared business predicate count. Self references, generic meta-type declarations, labels and arbitrary literals do not. Only actual formal annotation predicates columnMappings, joinPath, mappingDefinition, actionDefinition, parameterDefinition, ruleDefinition, parameters, preconditions, effects and legacy property/mapping_payload are parsed; nested *_iri, *_iris and uniquely resolvable definition_ref use real observed identities. Invalid, absent or ambiguous targets are actionable unresolved references, never invented connections. The legacy mapping payload is read with literal parsing, never execution."
+  },
+  "report": {
+    "location": "/agent/work/scenario-map/model-check.json",
+    "owner": "coordinator",
+    "minimum_content": [
+      "approved business scope and current candidate/revision",
+      "applied Project/Ontology/workspace signatures and read locators",
+      "actual checked graph/resource scope and remaining gaps",
+      "unchanged mechanical scan locator",
+      "per-candidate Modeling disposition and business basis",
+      "approved repair/readback/recheck locators and remaining items",
+      "check-only outcome and next responsible action"
+    ],
+    "preservation": "Keep prior snapshot/results as history on a substantive revision; do not overwrite independent reports or inject this production self-check into Judge business evidence. Reuse messages and existing artifacts; no dedicated Evidence/lineage record.",
+    "outcomes": "Confirmed unresolved defect => REVISE; unexamined scope, unreadable data or unresolved cause => PARTIAL; complete approved coverage with every candidate soundly disposed and no known unresolved defect => bounded self-check PASS. Business unknown or justified independent resource need not be a defect, but remains disclosed."
+  },
+  "recovery": "Malformed tool inputs are correctable; partial/missing pages, scope mismatch and drift return typed feedback. Correct and continue the same authorized goal. Never add fixed retry counts, permanent candidate rejection, terminal resurrection, automatic deletion/merging/link fabrication or an independent-checker role.",
+  "boundary": "No new production start, external SQL/API call, independent acceptance result, semantic grading or platform permission is granted by this contract."
+}

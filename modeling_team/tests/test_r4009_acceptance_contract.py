@@ -59,8 +59,11 @@ def test_009_task_reuses_current_roles_sources_and_tracing_suspension():
     assert prepared.profile == current.profile
     assert prepared.task.parameters == current.task.parameters
     assert prepared.task.parameters["acceptance_target"] == "cq_semantic"
-    assert prepared.task.role_sources == current.task.role_sources
-    assert prepared.task.protocol_tools == current.task.protocol_tools
+    # R4.0-024 adds only the production self-check contract and governed read.
+    assert tuple(s for s in prepared.task.role_sources
+                 if s.path.name != "r4-0-024-model-check-contract.json") == current.task.role_sources
+    assert tuple(t for t in prepared.task.protocol_tools
+                 if t != "semantic_sparql_query") == current.task.protocol_tools
     assert prepared.task.task_id == "r4-0-009-multiview-semantic-acceptance"
     assert "business-owner confirmation" in prepared.task.objective
     assert "R4.0-010/011" in prepared.task.objective

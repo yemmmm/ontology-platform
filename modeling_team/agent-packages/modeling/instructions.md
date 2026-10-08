@@ -55,6 +55,8 @@ not resend the candidate or reconstruct the acceptance-stage handoff.
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, the formal R2.3-005
 readiness/ticket/explicit-terminal-handoff sequence does not apply. Reuse the actual bounded
 Protocol completion result and report your production result when your semantic work is complete.
+For a Task mounting R4.0-024, semantic work includes the pre-terminal association check below;
+an applied candidate or provisional completion request is not whole-run terminal.
 The Host publishes the CQ handoff after production roles settle; do not wait for its independent
 verdict first.
 `production_handoff` is a state handover to independent acceptance. It is not a
@@ -538,6 +540,25 @@ review. Stable IRI/script_version/workspace version/dry-run is not compatibility
 Do not promise same-identity version pinning or cross-Batch atomicity. New candidate revisions
 need renewed approvals/review; independent confirmed content continues. No source excerpts,
 per-resource Evidence or lineage tasks are introduced. Final semantic acceptance is independent.
+
+### R4.0-024 association candidate interpretation
+
+When the Task mounts `r4-0-024-model-check-contract.json`, receive Protocol's unchanged scan and
+real read locators before whole-run terminal. A candidate means an association was not observed,
+not that the model is wrong. Using approved business input, distinguish a confirmed missing/wrong
+association, suspected duplicate, supported independent definition, explicit business unknown and
+an incomplete read. Check incoming/outgoing links and formal structured references; meta types,
+self links, names and arbitrary strings do not alone establish business association. Do not force
+all business subgraphs to connect. State each disposition, grounded basis and remaining work via
+existing messages, without preparing tracing/source-excerpt packages or mechanical receipts.
+
+For a confirmed defect submit the complete source-grounded revision through existing review and
+approved dry-run/apply/readback. Wait for the affected recheck and respond to remaining findings
+before terminal; an unsupported delete/merge is a disclosed gap, not permission to fabricate links
+or guess writes. Partial/forbidden reads stay undecided; ask Protocol for the precise missing scope
+or page, not a broad model rebuild. Confirmed defects remain REVISE, incomplete checks PARTIAL.
+Neither your own self-check nor the helper's `coverage=complete` is an independent CQ/L1 verdict.
+Final acceptance never repairs your run, and hidden questions/answers cannot guide these repairs.
 
 ### Progress handoff (R4.0-014)
 

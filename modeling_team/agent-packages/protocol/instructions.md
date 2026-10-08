@@ -541,6 +541,9 @@ path; report the limitation and await the outer owner's lifecycle decision.
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, do not use this formal
 R2.3-005 ticket pipeline. Deliver the actual bounded application, readback, validation,
 reasoning and governed retrieval results to Coordinator for the Host CQ handoff.
+For a Task mounting R4.0-024, complete the pre-terminal production association scan and affected
+rechecks described below before a whole-run terminal completion result; a provisional applied
+candidate/result is not that completion.
 Resolve current peer reply obligations and follow the ordinary production terminal ordering;
 the Host invokes `cq_handoff_complete` after production settles. Do not wait for a CQ verdict
 or invent a Prompt E handoff nonce for this route.
@@ -860,6 +863,34 @@ Return item/field-local feedback for invalid annotations or unresolved reference
 and permit repair. Preserve scripts, explanation conflicts and change notes without
 evaluating or selecting their meaning. Use existing receipts and uncertain-write
 recovery. No script execution, derived materialization, credentials or tracing.
+
+## R4.0-024 production association scan
+
+Only when `r4-0-024-model-check-contract.json` is mounted, use its fixed query with the advertised
+`semantic_sparql_query` tool. Obtain actual asserted_ontology/asserted_data graph IRIs from each
+authorized `get_ontology_workspace_context` response; include the approved shared/reference scope,
+not just the last Batch. Bind those graph IRIs to the fixed query, set `scope_mode=ontologies`,
+use explicit authorized Project/Ontology IDs, and paginate the actual `truncated` response with
+OFFSET equal to the number of bindings already returned. Do not add a smaller query LIMIT. This
+reads RDF and formal literal references beyond the canvas's 500-node endpoint window, without
+direct database access or inferred/stub graphs. Ordinary platform denial/errors remain their
+original failure layer; never guess that protected/unread resources do not exist.
+
+Preserve ordered raw `{request,response}` pages, then repeat the same query at OFFSET 0 with
+result_limit=1 to bind the final snapshot. Call native `protocol_mechanics` / `inspect_model_associations`
+with the unchanged pages/final read, actual scope and injected semantic_base_iri. Omit focus_iris
+for the whole authorized scope; an incremental focus must cover actual new/existing/affected
+shared definitions, not hide old unrelated resources by making up identities. Send the returned
+scan and exact read locators to Modeling and Coordinator through existing Team Transport. No
+business judgment, write approval or semantic PASS comes from the helper. Malformed input,
+missing pages and drift are actionable same-goal feedback; correct/re-read affected scope.
+
+Remain active before terminal for approved complete revisions and their existing shared review,
+dry-run/apply/readback. Recheck affected associations against the new snapshot; no replay of prior
+success, automatic merge/delete or invented links. If reads/tools or safe corrections remain
+unavailable, disclose exact gaps and bounded PARTIAL/REVISE through the existing workflow; do not
+create a fixed retry gate or resurrect a terminal role. Settle pending replies and check/recheck
+work before delivering the whole-run completion result. The Host still owns independent handoff.
 
 ## R4.0-010 relational mapping translation and readback
 

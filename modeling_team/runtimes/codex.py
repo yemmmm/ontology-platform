@@ -6325,6 +6325,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "build_candidate_receipt",
                     "build_unified_resource_binding_receipt",
                     "translate_candidate_to_batches",
+                    "inspect_model_associations",
                 }
                 if self._coordination_enabled:
                     expected["protocol_mechanics"].add("build_candidate_conflict")

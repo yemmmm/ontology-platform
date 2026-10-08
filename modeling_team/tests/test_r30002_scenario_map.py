@@ -276,9 +276,11 @@ def test_safe_protocol_tools_are_byte_unchanged():
     assert SAFE_PROTOCOL_TOOLS == HISTORICAL_SAFE_PROTOCOL_TOOLS
 
 
-def test_r30002_tool_superset_is_exactly_the_protection_extension():
+def test_multi_slice_tool_superset_adds_only_protection_and_governed_scan_read():
     assert SEMANTIC_PROTECTION_SET_TOOLS == PROTECTION_SET_TOOL_NAMES
-    assert SAFE_PROTOCOL_TOOLS_R30002 == SAFE_PROTOCOL_TOOLS | PROTECTION_SET_TOOL_NAMES
+    assert SAFE_PROTOCOL_TOOLS_R30002 == (
+        SAFE_PROTOCOL_TOOLS | PROTECTION_SET_TOOL_NAMES | {"semantic_sparql_query"}
+    )
     assert not (SEMANTIC_PROTECTION_SET_TOOLS & SAFE_PROTOCOL_TOOLS)
     # The R2.3-003 superset is untouched by this requirement.
     assert SAFE_PROTOCOL_TOOLS_R23003 == SAFE_PROTOCOL_TOOLS | {
@@ -357,7 +359,10 @@ def test_multi_slice_real_task_role_sources_are_exactly_the_manifest_whitelist()
 
 def test_multi_slice_real_task_permits_exactly_the_r30002_toolset():
     configuration = load_multi_slice_team_configuration(PROFILE, REAL_TASK)
-    assert set(configuration.task.protocol_tools) == set(SAFE_PROTOCOL_TOOLS_R30002)
+    # The historical Task does not advertise the later R4.0-024 opt-in read.
+    assert set(configuration.task.protocol_tools) == set(SAFE_PROTOCOL_TOOLS_R30002) - {
+        "semantic_sparql_query"
+    }
 
 
 def test_multi_slice_profile_is_not_a_formal_profile():

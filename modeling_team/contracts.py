@@ -84,7 +84,11 @@ SEMANTIC_PROTECTION_SET_TOOLS = frozenset(
         "remove_semantic_protection_set_members",
     }
 )
-SAFE_PROTOCOL_TOOLS_R30002 = SAFE_PROTOCOL_TOOLS | SEMANTIC_PROTECTION_SET_TOOLS
+# R4.0-024 uses the existing authorized read-only SPARQL boundary for scans
+# beyond the canvas window. Only Tasks explicitly naming it advertise it.
+SAFE_PROTOCOL_TOOLS_R30002 = (
+    SAFE_PROTOCOL_TOOLS | SEMANTIC_PROTECTION_SET_TOOLS | {"semantic_sparql_query"}
+)
 SOURCE_CLASSIFICATIONS = {"business-source", "coordination", "protocol", "consumer-question"}
 _FORMAL_PROFILE_IDS = frozenset(
     {"r2-3-005-modeling-team", "r2-3-003-modeling-team", "r2-3-008-modeling-team",

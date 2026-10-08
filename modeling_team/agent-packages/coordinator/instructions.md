@@ -397,6 +397,8 @@ through existing messages when needed; never ask it to read your private map. In
 are original reports; a failed verdict alone does not erase expression. Only authorized public
 specific defects change affected progress; never copy hidden questions/answers/private diagnostics.
 
+For a Task mounting R4.0-024, normal order additionally includes the pre-terminal production
+association check described below; do not treat the following generic sequence as permission to skip it.
 Normal order: check final candidate/execution facts → synchronize the map → report your production
 terminal → the host verifies production quiescence/write draining → the host publishes the existing
 handoff and binds the map digest. You do not publish or bind that host handoff, and must finish
@@ -411,6 +413,24 @@ existing reconciliation. Fork preserves neutral expression progress but uses new
 identity_mapping; identify old platform references/receipts as source history, not new permission.
 Missing candidates/history must be reported, never reconstructed from notes or imagined approvals.
 Ordinary stale notes are fixable collaboration feedback, not a new terminal or all-modeled gate.
+
+### R4.0-024 production association self-check
+
+Only when the Task mounts `r4-0-024-model-check-contract.json`, include the check in your initial
+bounded assignments. After actual application/readback, have Protocol scan the approved asserted
+scope and send the unchanged mechanical results/read locators to Modeling. Route grounded
+dispositions and approved corrections; keep all production peers available until the required
+checks, repairs and rechecks finish. A provisional completion request is not whole-run terminal.
+Do not decide business defects from degree zero, scan counts or `coverage=complete`.
+
+Maintain `/agent/work/scenario-map/model-check.json` with actual scope/version, scan/read locators,
+Modeling dispositions, repair/recheck locators and unresolved coverage. Keep prior snapshot results
+as history on substantive change and synchronize existing map notes without adding closed-schema
+fields. Treat missing/unreadable scope as PARTIAL, known unresolved defects as REVISE; a bounded
+self-check PASS requires complete approved coverage and grounded disposition of every candidate.
+Use recoverable feedback, not a new role, fixed retries or a permanent platform rejection. An
+orderly partial stop preserves gaps and pending work. Only then follow existing production terminal
+ordering and Host handoff; do not wait for independent CQ verdicts or alter hidden evidence.
 
 ### R4.0-011 interface reference review
 

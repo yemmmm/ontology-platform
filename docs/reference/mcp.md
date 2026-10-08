@@ -142,6 +142,16 @@ bridge 成员／supersedes 修改若破坏存量引用，返回 `mapping_referen
 resource kind／id／IRI 与读证据绑定。`translate_candidate_to_batches` 使用该 receipt，并接受宿主
 提供的 `semantic_base_iri`；该值来自注入的 modeling-context，不是 Modeling 候选字段。
 
+R4.0-024 在同一 Team facade 增加只读 `inspect_model_associations`。Protocol 按挂载的
+[检查合同](../../modeling_team/references/r4-0-024-model-check-contract.json)，使用现有
+`semantic_sparql_query` 对获准 workspace 的 asserted 图执行固定四列 RDF 查询，分页至
+`truncated=false`，最后以同一查询、`OFFSET 0`、`result_limit=1` 核对来源快照。Native 工具
+消费未经改写的 `{request,response}` 页及最终读取、Project／Ontology／asserted graph scope、
+注入的 `semantic_base_iri` 和可选增量 `focus_iris`，返回候选、未解析正式引用及可恢复的
+覆盖／快照反馈。`coverage=complete` 只证明所提供读取完整且稳定，仍须核对完整获准成果
+范围；`semantic_verdict` 始终为 `not_evaluated`。它不写资源、不授予生产完成或独立验收
+PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并复查。
+
 <!-- BEGIN GENERATED MCP TOOL INVENTORY -->
 
 | Category | Tool | Description | Required parameters | All parameters | Source |

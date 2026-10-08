@@ -20,6 +20,7 @@ from protocol_mechanics import (
     build_candidate_receipt,
     build_candidate_item_evidence_map,
     build_unified_resource_binding_receipt,
+    inspect_model_associations,
     protocol_mechanics_contract_bytes,
     translate_candidate_to_batches,
     validate_candidate_item_evidence_map,
@@ -33,6 +34,7 @@ CANDIDATE_RECEIPT_TOOL_NAME = "build_candidate_receipt"
 CANDIDATE_CONFLICT_TOOL_NAME = "build_candidate_conflict"
 TRANSLATE_CANDIDATE_TOOL_NAME = "translate_candidate_to_batches"
 RESOURCE_BINDING_RECEIPT_TOOL_NAME = "build_unified_resource_binding_receipt"
+MODEL_ASSOCIATION_TOOL_NAME = "inspect_model_associations"
 EVIDENCE_MAP_RELATIVE_PATH = Path("evidence/candidate-item-evidence-map.json")
 RUNTIME_RUN_ID_ENV = "PROTOCOL_RUNTIME_RUN_ID"
 # Historical environment name retained only so offline fixtures can refer to
@@ -1229,6 +1231,35 @@ def _validate_arguments(arguments: object) -> str | None:
     return None
 
 
+def _model_association_tool() -> dict[str, Any]:
+    return {
+        "name": MODEL_ASSOCIATION_TOOL_NAME,
+        "description": (
+            "R4.0-024 read-only association scan over unchanged governed SPARQL page responses. "
+            "Use the mounted fixed query over all authorized asserted graphs, followed by a "
+            "bounded final snapshot read. Reports candidates and repairable coverage feedback; "
+            "never judges business meaning, writes resources or grants completion."
+        ),
+        "inputSchema": {
+            "type": "object", "additionalProperties": False,
+            "required": ["project_id", "ontology_ids", "asserted_graph_iris", "read_pages",
+                         "final_read", "semantic_base_iri"],
+            "properties": {
+                "project_id": {"type": "string", "minLength": 1},
+                "ontology_ids": {"type": "array", "items": {"type": "string"}, "minItems": 1},
+                "asserted_graph_iris": {"type": "array", "items": {"type": "string"},
+                                        "minItems": 1},
+                "read_pages": {"type": "array", "items": {"type": "object"},
+                               "description": "Ordered {request, response} reads; preserve MCP envelopes."},
+                "final_read": {"type": "object", "description": "Same fixed query at OFFSET 0, result_limit=1, after the last page."},
+                "semantic_base_iri": {"type": "string", "minLength": 1},
+                "focus_iris": {"type": "array", "items": {"type": "string"},
+                               "description": "Optional approved modeling scope. Omit to inspect all observed business resources; includes existing/shared definitions when applicable."},
+            },
+        },
+    }
+
+
 def handle(request: object) -> dict[str, Any] | None:
     if not isinstance(request, dict):
         return _error(None, -32600, "invalid request")
@@ -1250,6 +1281,7 @@ def handle(request: object) -> dict[str, Any] | None:
         # variable or an archived Task.
         tools = [_candidate_receipt_tool(), _resource_binding_receipt_tool()]
         tools.append(_translate_candidate_tool())
+        tools.append(_model_association_tool())
         if _formal_candidate_gate_enabled():
             tools.insert(1, _candidate_conflict_tool())
         return _result(
@@ -1259,6 +1291,19 @@ def handle(request: object) -> dict[str, Any] | None:
     if method != "tools/call" or not isinstance(params, dict):
         return _error(request_id, -32601, "method or tool is unavailable")
     arguments = params.get("arguments")
+    if params.get("name") == MODEL_ASSOCIATION_TOOL_NAME:
+        schema = _model_association_tool()["inputSchema"]
+        if (not isinstance(arguments, dict) or not set(schema["required"]) <= set(arguments)
+                or set(arguments) - set(schema["properties"])):
+            return _error(request_id, -32602, "Use the mounted model-check required fields; raw reads are unchanged {request, response} envelopes")
+        try:
+            scan = inspect_model_associations(**arguments)
+        except (ValueError, TypeError, KeyError, AttributeError) as exc:
+            return _error(request_id, -32602, f"Correct the model-check input: {exc}")
+        return _result(request_id, {
+            "content": [{"type": "text", "text": json.dumps(scan, ensure_ascii=False)}],
+            "structuredContent": scan,
+        })
     if params.get("name") == CANDIDATE_RECEIPT_TOOL_NAME:
         error = _validate_candidate_receipt_arguments(arguments)
         if error is not None:

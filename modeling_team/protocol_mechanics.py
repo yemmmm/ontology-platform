@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import base64
+import ast
 from collections.abc import Mapping
 from contextvars import ContextVar
 from typing import Any
@@ -14,6 +15,224 @@ from urllib.parse import urlparse
 _TRANSLATION_BASE_OVERRIDE: ContextVar[str | None] = ContextVar(
     "protocol_translation_base_override", default=None
 )
+
+
+# R4.0-024: a fixed read recipe, with only governed graph bindings and OFFSET
+# substituted by Protocol. The platform owns the result bound (limit + 1).
+MODEL_CHECK_QUERY = """SELECT ?graph ?subject ?predicate ?object WHERE {
+  VALUES ?graph { {asserted_graphs} }
+  GRAPH ?graph { ?subject ?predicate ?object . }
+}
+ORDER BY STR(?graph) STR(?subject) STR(?predicate) STR(?object)
+         (isIRI(?object)) (isBlank(?object))
+         (COALESCE(STR(DATATYPE(?object)), "")) (COALESCE(LANG(?object), ""))"""
+
+
+def inspect_model_associations(
+    *, project_id: str, ontology_ids: list[str], asserted_graph_iris: list[str],
+    read_pages: list[dict[str, Any]], final_read: dict[str, Any],
+    semantic_base_iri: str, focus_iris: list[str] | None = None,
+) -> dict[str, Any]:
+    """Find association candidates, never decide business correctness or write.
+
+    Consume unchanged governed SPARQL reads. A final bounded re-read binds the
+    snapshot after pagination. Missing pages, failed reads and drift produce
+    recoverable feedback, not a new run/application gate.
+    """
+    if not project_id or not ontology_ids or not asserted_graph_iris:
+        raise ValueError("project_id, ontology_ids and asserted_graph_iris are required")
+    for iri in [semantic_base_iri, *asserted_graph_iris, *(focus_iris or [])]:
+        if not isinstance(iri, str) or not urlparse(iri).scheme or any(
+            c.isspace() or c in '<>"{}\\' for c in iri
+        ):
+            raise ValueError("Use absolute IRIs from the governed workspace/read, without delimiters")
+    query = MODEL_CHECK_QUERY.replace(
+        "{asserted_graphs}", " ".join(f"<{g}>" for g in asserted_graph_iris)
+    )
+    issues: list[dict[str, Any]] = []
+    rows: list[dict[str, Any]] = []
+    snapshot = None
+    offset = 0
+    terminal_page = False
+
+    def unpack(read: Any, page: int, expected_offset: int) -> dict[str, Any] | None:
+        nonlocal snapshot
+        if not isinstance(read, dict):
+            issues.append({"code": "invalid_read", "page": page})
+            return None
+        request, response = read.get("request", {}), read.get("response", {})
+        if (not isinstance(request, dict) or request.get("project_id") != project_id
+                or request.get("scope_mode") != "ontologies"
+                or set(request.get("ontology_ids", [])) != set(ontology_ids)
+                or request.get("query") != query + f"\nOFFSET {expected_offset}"):
+            issues.append({"code": "read_request_mismatch", "page": page,
+                           "next_offset": expected_offset})
+            return None
+        if not isinstance(response, dict) or response.get("ok") is not True:
+            issues.append({"code": "governed_read_failed", "page": page})
+            return None
+        data = response.get("data", {})
+        scope = data.get("scope", {})
+        scopes = scope.get("ontologies", [])
+        if (scope.get("project_id") != project_id or scope.get("mode") != "ontologies"
+                or scope.get("status") != "complete" or scope.get("excluded_ontologies")
+                or {s.get("ontology_id") for s in scopes} != set(ontology_ids)):
+            issues.append({"code": "read_scope_incomplete_or_mismatched", "page": page})
+            return None
+        current = sorted((s["ontology_id"], s.get("workspace_version"),
+                          s.get("source_signature")) for s in scopes)
+        if any(not version or not signature for _, version, signature in current):
+            issues.append({"code": "read_snapshot_missing", "page": page})
+            return None
+        if snapshot is None:
+            snapshot = current
+        elif snapshot != current:
+            issues.append({"code": "read_snapshot_drift", "page": page})
+            return None
+        result = data.get("result", {})
+        if (data.get("query_type") != "select" or not isinstance(result, dict)
+                or not isinstance(result.get("results", {}).get("bindings"), list)
+                or not isinstance(data.get("truncated"), bool)):
+            issues.append({"code": "invalid_sparql_result", "page": page})
+            return None
+        return data
+
+    for index, read in enumerate(read_pages):
+        data = unpack(read, index, offset)
+        if data is None:
+            break
+        if terminal_page:
+            issues.append({"code": "page_after_terminal", "page": index})
+            break
+        bindings = data["result"]["results"]["bindings"]
+        limit = read["request"].get("result_limit")
+        if (not isinstance(limit, int) or isinstance(limit, bool) or limit < 1
+                or len(bindings) > limit or (data["truncated"] and len(bindings) != limit)):
+            issues.append({"code": "read_page_bound_mismatch", "page": index})
+            break
+        for row_index, row in enumerate(bindings):
+            if (not isinstance(row, dict) or any(not isinstance(row.get(k), dict)
+                                               for k in ("graph", "subject", "predicate", "object"))
+                    or row["graph"].get("value") not in asserted_graph_iris):
+                issues.append({"code": "invalid_statement_binding", "page": index})
+                break
+            rows.append({"binding": row, "read_ref": {"page": index, "row": row_index}})
+        offset += len(bindings)
+        terminal_page = not data["truncated"]
+    if not read_pages or not terminal_page:
+        issues.append({"code": "read_window_incomplete", "next_offset": offset})
+    unpack(final_read, len(read_pages), 0)
+    fatal = any(issue["code"] != "read_window_incomplete" for issue in issues)
+    # Never turn a foreign scope, a failed read or mixed snapshots into
+    # candidate data. A valid partial prefix may still guide bounded next reads.
+    if fatal:
+        rows = []
+    vocab = semantic_base_iri.rstrip("/") + "/vocab/"
+    rdf_type = "http://www.w3.org/1999/02/22-rdf-syntax-ns#type"
+    business_types = {
+        "http://www.w3.org/2002/07/owl#" + t for t in
+        ("Class", "NamedIndividual", "ObjectProperty", "DatatypeProperty", "AnnotationProperty")
+    } | {"http://www.w3.org/2000/01/rdf-schema#Class",
+         "http://www.w3.org/1999/02/22-rdf-syntax-ns#Property"} | {
+        vocab + t for t in ("Operation", "TableMapping", "JoinMapping", "EnumValueMeaning",
+                            "MetricDefinition")
+    }
+    resources: set[str] = set()
+    definitions: dict[str, set[str]] = {}
+    vocabulary_prefixes = (
+        "http://www.w3.org/1999/02/22-rdf-syntax-ns#",
+        "http://www.w3.org/2000/01/rdf-schema#", "http://www.w3.org/2002/07/owl#",
+        "http://www.w3.org/2001/XMLSchema#", "http://www.w3.org/ns/shacl#", vocab,
+    )
+    for entry in rows:
+        row = entry["binding"]
+        s, p, o = (row[k] for k in ("subject", "predicate", "object"))
+        if s.get("type") != "uri" or s["value"].startswith(vocabulary_prefixes):
+            continue
+        if p.get("value") == vocab + "id" and o.get("type") in {"literal", "typed-literal"}:
+            resources.add(s["value"])
+            definitions.setdefault(o["value"], set()).add(s["value"])
+        if p.get("value") == rdf_type and o.get("value") in business_types:
+            resources.add(s["value"])
+    connected: set[str] = set()
+    unresolved = []
+    reference_predicates = {vocab + name for name in (
+        "columnMappings", "joinPath", "mappingDefinition", "actionDefinition",
+        "parameterDefinition", "ruleDefinition", "parameters", "preconditions", "effects",
+    )} | {semantic_base_iri.rstrip("/") + "/property/mapping_payload"}
+
+    def link(source: str, target: str, predicate: str) -> None:
+        if source in resources and target in resources and source != target:
+            connected.update((source, target))
+            if predicate in resources:
+                connected.add(predicate)
+
+    def references(value: Any, path: str = ""):
+        if isinstance(value, dict):
+            for key, child in value.items():
+                field = f"{path}.{key}" if path else key
+                if key == "definition_ref" and isinstance(child, str):
+                    targets = definitions.get(child, set())
+                    yield (next(iter(targets)) if len(targets) == 1 else None, field)
+                elif key.endswith("_iri") and isinstance(child, str):
+                    yield child, field
+                elif key.endswith("_iris") and isinstance(child, list):
+                    for i, target in enumerate(child):
+                        if isinstance(target, str):
+                            yield target, f"{field}[{i}]"
+                elif isinstance(child, (dict, list)):
+                    yield from references(child, field)
+        elif isinstance(value, list):
+            for i, child in enumerate(value):
+                yield from references(child, f"{path}[{i}]")
+
+    for entry in rows:
+        row = entry["binding"]
+        s, p, o = (row[k] for k in ("subject", "predicate", "object"))
+        source, predicate, target = (v.get("value") for v in (s, p, o))
+        if s.get("type") != "uri":
+            continue
+        # Predicate use associates a declared business property even if its
+        # object is a literal. Meta vocabulary is not itself in resources.
+        if source in resources and predicate in resources and source != predicate:
+            connected.update((source, predicate))
+        if o.get("type") == "uri":
+            link(source, target, predicate)
+        elif predicate in reference_predicates and o.get("type") in {"literal", "typed-literal"}:
+            try:
+                payload = json.loads(target)
+            except (TypeError, ValueError):
+                try:
+                    payload = ast.literal_eval(target) if predicate.endswith("/property/mapping_payload") else None
+                except (ValueError, TypeError, SyntaxError, RecursionError):
+                    payload = None
+            if payload is None:
+                unresolved.append({"resource_iri": source, "field_path": predicate,
+                                   "reason": "invalid_reference_payload", "read_ref": entry["read_ref"]})
+            for ref, field in references(payload):
+                if ref not in resources:
+                    unresolved.append({"resource_iri": source, "field_path": field,
+                                       "reason": "unresolved_reference", "read_ref": entry["read_ref"]})
+                else:
+                    link(source, ref, predicate)
+    focus = set(focus_iris) if focus_iris is not None else resources
+    missing = focus - resources if not fatal else set()
+    if missing:
+        issues.append({"code": "focus_resources_unobserved", "resource_iris": sorted(missing)})
+    checked = resources & focus
+    complete = not issues
+    return {
+        "schema_version": "r4-0-024-association-scan/v1", "project_id": project_id,
+        "ontology_ids": ontology_ids, "asserted_graph_iris": asserted_graph_iris,
+        "snapshot": snapshot or [], "coverage": "complete" if complete else "partial",
+        "checked_count": len(checked), "statement_count": len(rows), "issues": issues,
+        "connected_resource_iris": sorted(checked & connected),
+        "candidates": [{"resource_iri": iri, "reason": "no_observed_association" if complete
+                        else "association_not_observed_in_partial_read"}
+                       for iri in sorted(checked - connected)],
+        "unresolved_references": [r for r in unresolved if r["resource_iri"] in checked],
+        "semantic_verdict": "not_evaluated",
+    }
 
 try:
     from .r23003_contract import (

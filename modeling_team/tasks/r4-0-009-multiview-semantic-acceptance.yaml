@@ -36,6 +36,13 @@ objective: >-
   does not create, attach or complete source-tracing records and does not use
   their absence as a semantic failure.  Relational source rows remain in the
   source database and are not copied into RDF individuals.
+  Before whole-run terminal and production handoff, perform the mounted R4.0-024
+  production association self-check over the actual authorized model. Coordinator
+  organizes it, Protocol reads and supplies mechanical association candidates,
+  and Modeling judges business meaning and revises confirmed defects. Complete
+  required repair/readback/rechecks while all production roles remain active.
+  Retain partial coverage, explicit unknowns and unresolved defects; this check
+  is not independent acceptance or a new irreversible platform gate.
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source
@@ -67,6 +74,9 @@ role_sources:
   - path: modeling_team/references/r4-0-010-relational-mapping-contract.json
     classification: coordination
     roles: [modeling, protocol]
+  - path: modeling_team/references/r4-0-024-model-check-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/platform-neutral-candidate-authoring.json
     classification: protocol
     roles: [modeling, protocol]
@@ -97,6 +107,7 @@ protocol_tools:
   - get_modeling_context
   - get_ontology_read_model
   - query_semantic_context
+  - semantic_sparql_query
   - run_semantic_validation
   - run_semantic_reasoning
   - list_semantic_protection_sets
