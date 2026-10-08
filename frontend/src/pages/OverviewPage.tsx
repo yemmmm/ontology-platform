@@ -11,94 +11,76 @@ function text(value: unknown): string {
   if (typeof value === "object") return Object.entries(value).map(([key, item]) => `${key}: ${text(item)}`).join(" · ");
   return String(value);
 }
-function Source({ artifact }: { artifact: Artifact }) {
-  const t = useT();
-  return <p className="sourceHint">{t("Source")}: {artifact.source.path || artifact.artifact_id}<br />{t("Updated")}: {artifact.source.updated_at || t("Unknown")}</p>;
+function latestArtifact(artifacts: Artifact[]): Artifact | undefined {
+  return [...artifacts].sort((a, b) => (b.source.updated_at ?? "").localeCompare(a.source.updated_at ?? ""))[0];
 }
-function Questions({ run, historical }: { run: Run | null; historical: boolean }) {
+function Questions({ run }: { run: Run | null }) {
   const t = useT();
-  const [selected, setSelected] = useState("");
-  const [expanded, setExpanded] = useState(false);
   const artifacts = (run?.artifacts.competency_questions ?? []).filter(item => item.availability === "available");
   const freeze = (run?.artifacts.host ?? []).filter(item => item.kind === "cq-freeze" && item.availability === "available").flatMap(item => objects(item.data.records)).filter(item => item.snapshot_digest).slice(-1)[0];
   const matches = freeze ? artifacts.filter(item => item.data.snapshot_digest === freeze.snapshot_digest && item.data.batch_id === freeze.batch_id) : [];
-  const current = !historical && matches.length === 1 ? matches[0] : null;
-  const groups = new Map<string, { artifacts: Artifact[]; questions: JsonObject[] }>();
-  for (const artifact of artifacts) {
-    const key = `${text(artifact.data.batch_id)} · ${text(artifact.data.snapshot_digest)}`;
-    const group = groups.get(key) ?? { artifacts: [], questions: [] };
-    group.artifacts.push(artifact);
-    group.questions.push(...objects(artifact.data.questions));
-    groups.set(key, group);
-  }
-  const currentKey = current ? `${text(current.data.batch_id)} · ${text(current.data.snapshot_digest)}` : "";
-  const chosenKey = groups.has(selected) ? selected : currentKey || [...groups.keys()][0] || "";
-  const chosen = groups.get(chosenKey);
-  const questions = [...new Map((chosen?.questions ?? []).map((item, i) => [item.question_id ?? i, item])).values()];
-  return <section className="panel" aria-label={t("Competency questions")}><h2>{t("Competency questions")}</h2>
-    {!run ? <p>{t("Current questions cannot be determined")}</p> : !groups.size ? <p>{t("No public competency questions recorded")}</p> : <>
-      <label>{t("Question version")}<select value={chosenKey} onChange={event => { setSelected(event.target.value); setExpanded(false); }}>{[...groups.keys()].map(key => <option key={key}>{key}</option>)}</select></label>
-      <p className="tag">{historical ? t("Historical questions") : chosenKey === currentKey ? t("Current frozen version") : t("Version applicability unverified")}</p>
-      <ol className="questionList">{(expanded ? questions : questions.slice(0, 10)).map((item, i) => <li key={String(item.question_id ?? i)}><strong>{text(item.question)}</strong><p>{text(item.scope) || t("Scope not recorded")}</p><small>{text(item.question_id)} · {t("Version")}: {text(item.review_content_version ?? item.content_version) || t("Not recorded")} · {text(item.status) || t("Status not recorded")}</small></li>)}</ol>
-      {questions.length > 10 && <button onClick={() => setExpanded(value => !value)}>{t(expanded ? "Show fewer questions" : "Expand remaining questions")}</button>}
-      {chosen?.artifacts.map(item => <Source key={item.artifact_id} artifact={item} />)}
-    </>}
-  </section>;
-}
-function Reports({ run, historical }: { run: Run | null; historical: boolean }) {
-  const t = useT();
-  const [selected, setSelected] = useState("");
-  const reports = (run?.artifacts.reports ?? []).filter(item => item.kind === "reports" && item.availability === "available").sort((a, b) => (b.source.updated_at ?? "").localeCompare(a.source.updated_at ?? ""));
-  const current = reports.filter(item => item.data.applicability === "verified_current");
-  const report = reports.find(item => item.artifact_id === selected) ?? (current.length === 1 ? current[0] : reports[0]);
-  const data = report?.data ?? {};
-  const verdicts = objects(data.verdicts);
-  const unique = new Map<string, string>();
+  const latest = latestArtifact(artifacts);
+  const latestMatches = latest ? artifacts.filter(item => item.source.updated_at === latest.source.updated_at) : [];
+  const chosen = freeze ? (matches.length === 1 ? matches[0] : undefined) : latestMatches.length === 1 ? latest : undefined;
+  const questions = [...new Map(objects(chosen?.data.questions).map(item => [item.question_id, item])).values()];
+  const reports = (run?.artifacts.reports ?? []).filter(item => item.kind === "reports" && item.availability === "available" && item.data.applicability === "verified_current" && item.data.batch_id === chosen?.data.batch_id && item.data.freeze_digest === chosen?.data.snapshot_digest);
+  const report = latestArtifact(reports);
+  const verdicts = new Map<string, string>();
   let conflict = false;
-  for (const item of verdicts) {
+  for (const item of objects(report?.data.verdicts)) {
     if (typeof item.question_id !== "string" || typeof item.verdict !== "string") { conflict = true; continue; }
-    if (unique.has(item.question_id) && unique.get(item.question_id) !== item.verdict) conflict = true;
-    unique.set(item.question_id, item.verdict);
+    if (verdicts.has(item.question_id) && verdicts.get(item.question_id) !== item.verdict) conflict = true;
+    verdicts.set(item.question_id, item.verdict);
   }
-  const counts = new Map<string, number>();
-  unique.forEach(verdict => counts.set(verdict, (counts.get(verdict) ?? 0) + 1));
+  const data = report?.data ?? {};
   const hidden = data.hidden_summary as { verdict_counts?: Record<string, number>; unexecuted_count?: number } | undefined;
-  const unexecuted = new Set(Array.isArray(data.unexecuted_question_ids) ? data.unexecuted_question_ids : []);
-  if ([...unexecuted].some(id => unique.has(String(id)))) conflict = true;
   const hiddenCounts = hidden?.verdict_counts ?? {};
-  const hiddenTotal = Object.values(hiddenCounts).reduce((sum, count) => sum + count, 0);
+  const unexecuted = new Set(Array.isArray(data.unexecuted_question_ids) ? data.unexecuted_question_ids : []);
+  if ([...unexecuted].some(id => verdicts.has(String(id)))) conflict = true;
   const validCounts = Object.values(hiddenCounts).every(count => Number.isInteger(count) && count >= 0) && Number.isInteger(hidden?.unexecuted_count) && (hidden?.unexecuted_count ?? -1) >= 0;
+  const accounted = verdicts.size + unexecuted.size + Object.values(hiddenCounts).reduce((sum, count) => sum + count, 0) + (hidden?.unexecuted_count ?? 0);
   const denominator = data.denominator;
-  const accounted = unique.size + unexecuted.size + hiddenTotal + (hidden?.unexecuted_count ?? 0);
-  const incomplete = !Number.isInteger(denominator) || !validCounts || conflict || accounted !== denominator || typeof data.public_count !== "number" || data.public_count !== unique.size + unexecuted.size;
-  return <section className="panel" aria-label={t("Acceptance progress")}><h2>{t("Acceptance progress")}</h2>
-    {!run ? <p>{t("Current acceptance cannot be determined")}</p> : !report ? <p>{t("No formal acceptance results yet")}</p> : <>
-      <label>{t("Acceptance record")}<select value={report.artifact_id} onChange={event => setSelected(event.target.value)}>{reports.map(item => <option value={item.artifact_id} key={item.artifact_id}>{item.source.updated_at || item.artifact_id}</option>)}</select></label>
-      <p className="tag">{historical ? `${t("Historical record")} · ` : ""}{t("Applicability")}: {text(data.applicability) || t("Unknown")}</p>
-      <p>{t("Report scope")}: {text(report.scope) || t("Scope not recorded")}</p>
-      {data.summary_by_scope && typeof data.summary_by_scope === "object" && !Array.isArray(data.summary_by_scope) ? <div aria-label={t("Recorded scope counts")}>{Object.entries(data.summary_by_scope).map(([scope, counts]) => <p key={scope}>{scope}: {text(counts)}</p>)}</div> : null}
-      <p>{t("Denominator")}: {typeof denominator === "number" ? denominator : t("Not recorded")}</p>
-      <div className="reportCounts"><div><h3>{t("Public verdicts")}</h3>{counts.size ? [...counts].map(([verdict, count]) => <p key={verdict}>{verdict}: {count}</p>) : <p>{t("Not recorded")}</p>}<p>{t("Not executed")}: {unexecuted.size}</p></div><div><h3>{t("Authorized hidden summary")}</h3>{Object.entries(hiddenCounts).map(([verdict, count]) => <p key={verdict}>{verdict}: {count}</p>)}<p>{t("Not executed")}: {hidden?.unexecuted_count ?? t("Not recorded")}</p></div></div>
-      {incomplete && <p className="notice">{t("Progress data is incomplete")}</p>}
-      <p>{t("Original full_pass")}: {typeof data.full_pass === "boolean" ? String(data.full_pass) : t("Not recorded")}</p>
-      <p className="inlineHint">{t("A report verdict does not establish whole-project semantic acceptance")}</p>
-      {text(data.coverage_gaps) && <p>{t("Coverage gaps")}: {text(data.coverage_gaps)}</p>}
-      {[...(report.limitations ?? []), ...(Array.isArray(data.applicability_limitations) ? data.applicability_limitations : [])].map((item, i) => <p className="notice" key={i}>{text(item)}</p>)}
-      <Source artifact={report} />
+  let incomplete = !Number.isInteger(denominator) || Number(denominator) <= 0 || !validCounts || conflict || accounted !== denominator || data.public_count !== verdicts.size + unexecuted.size;
+  const completedVerdicts = new Set(["pass", "model-recall-insufficient"]);
+  const completed = [...verdicts.values()].filter(value => completedVerdicts.has(value)).length + Object.entries(hiddenCounts).reduce((sum, [value, count]) => sum + (completedVerdicts.has(value) ? count : 0), 0);
+  const passed = [...verdicts.values()].filter(value => value === "pass").length + (hiddenCounts.pass ?? 0);
+  const questionVerdicts = new Map<string, string>();
+  for (const item of objects(data.question_verdicts ?? data.verdicts)) {
+    const id = String(item.question_id);
+    if (questionVerdicts.has(id) && questionVerdicts.get(id) !== item.verdict) conflict = true;
+    questionVerdicts.set(id, String(item.verdict));
+  }
+  incomplete ||= conflict;
+  function verdictLabel(question: JsonObject): string {
+    if (!report || conflict) return t("Not accepted yet");
+    const verdict = questionVerdicts.get(String(question.question_id));
+    if (verdict === "pass") return t("Acceptance passed");
+    if (verdict === "model-recall-insufficient") return t("Acceptance not passed");
+    if (verdict === "question-answer-review" || verdict === "pending-review") return t("Acceptance needs review");
+    if (verdict === "platform-runtime-incomplete" || verdict === "incomplete") return t("Acceptance incomplete");
+    return t("Not accepted yet");
+  }
+  const progressText = !run || !chosen ? t("Current acceptance cannot be determined") : !report ? t("No current acceptance results") : incomplete ? t("Progress data is incomplete") : t("Accepted {completed} / {total}; passed {passed}", { completed, total: Number(denominator), passed });
+  return <section className="panel questionsPanel" aria-label={t("Competency questions")}><h2>{t("Competency questions")}</h2>
+    {!run || run.current_questions_available === false || (artifacts.length > 0 && !chosen) ? <p>{t("Current questions cannot be determined")}</p> : !questions.length ? <p>{t("No competency questions recorded")}</p> : <>
+      {!freeze && <p className="inlineHint">{t("Latest recorded questions; freeze unverified")}</p>}
+      <ol className="questionList">{questions.map(item => <li key={String(item.question_id)}><strong>{text(item.question)}</strong>{item.visibility === "hidden" && <span className="inlineHint"> ({t("Hidden question")})</span>}<div className="questionTags"><span className="tag" data-verdict={conflict ? undefined : questionVerdicts.get(String(item.question_id))}>{verdictLabel(item)}</span></div></li>)}</ol>
     </>}
+    <div className="acceptanceProgress"><p id="cq-progress-label">{t("Acceptance progress")} · {progressText}</p><progress aria-labelledby="cq-progress-label" max={100} {...(report && !incomplete ? { value: completed / Number(denominator) * 100 } : {})} /></div>
   </section>;
 }
 export function OverviewPage({ project }: { project: Project }) {
   const t = useT();
   const [index, setIndex] = useState<RunIndex | null>(null);
   const [run, setRun] = useState<Run | null>(null);
+  const [questionRun, setQuestionRun] = useState<Run | null>(null);
   const [historical, setHistorical] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [revision, setRevision] = useState(0);
   useEffect(() => {
     let active = true;
-    setRun(null); setIndex(null); setError(""); setLoading(true); setHistorical(false);
+    setRun(null); setQuestionRun(null); setIndex(null); setError(""); setLoading(true); setHistorical(false);
     async function load() {
       try {
         const value = await workspaceApi.index(project.id);
@@ -114,8 +96,10 @@ export function OverviewPage({ project }: { project: Project }) {
           }
         }
         if (chosen) {
-          const detail = await workspaceApi.run(project.id, chosen);
-          if (active) { setRun(detail); setHistorical(history); }
+          const [detail, questions] = await Promise.all([
+            workspaceApi.run(project.id, chosen), workspaceApi.questions(project.id, chosen),
+          ]);
+          if (active) { setRun(detail); setQuestionRun(questions); setHistorical(history); }
         }
       } catch (reason) { if (active) setError(String(reason)); }
       finally { if (active) setLoading(false); }
@@ -129,6 +113,6 @@ export function OverviewPage({ project }: { project: Project }) {
     {loading && <p role="status">{t("Loading…")}</p>}{error && <p className="errorMessage" role="alert">{t("Overview could not be read")}: {error}</p>}
     <div className="overviewGrid"><section className="panel" aria-label={t("Project introduction")}><p className="eyebrow">{t("Project introduction")}</p><h2>{project.name}</h2><p>{project.description || t("Project introduction has not been recorded")}</p></section>
     <section className="panel" aria-label={t("Project progress")}><h2>{t("Project progress")}</h2><p className="progressSentence">{progress}</p>{run && <p className="sourceHint">{t(historical ? "Latest record (historical)" : "Current record")}: {run.run_id}</p>}{index && !index.completeness.complete && <p className="notice">{t("Run enumeration is incomplete")}</p>}{index && !index.runs.length && <p>{t("No run records")}</p>}<small>{t("Observed")}: {run?.observed_at || index?.observed_at || t("Unknown")}</small></section>
-    <Questions key={`questions:${run?.run_id ?? "none"}:${revision}`} run={run} historical={historical} /><Reports key={`reports:${run?.run_id ?? "none"}:${revision}`} run={run} historical={historical} /></div>
+    <Questions key={`questions:${questionRun?.run_id ?? "none"}:${revision}`} run={questionRun} /></div>
   </section>;
 }

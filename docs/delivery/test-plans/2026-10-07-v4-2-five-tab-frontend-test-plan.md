@@ -10,9 +10,9 @@
 | 用例 | 条目 | 行为与关键反例 |
 | --- | --- | --- |
 | T01 | 001 | 恰好五个 Tab、固定顺序、默认概览；旧直接链接／非法 tab／旧 localStorage／仅 ontology 参数／返回前进均不能进入退役页；无项目与无 Ontology 可用状态 |
-| T02 | 002 | 四块概览真实来源；有唯一当前 run、只有终态历史 run、多个非终态、枚举不完整、无记录、403／读取失败分别展示；进程状态和模型数量不推出业务完成 |
-| T03 | 002 | 当前 CQ 通过 snapshot_digest＋batch_id 唯一绑定；两冻结版本复用 question_id 不混合；无冻结／匹配歧义／历史 run 正确标注；原状态未记录不推断已审核；隐藏 sentinel 不进响应、DOM、浏览器存储 |
-| T04 | 002 | 单份／多份正式报告、公开回归、verified_current／stale／binding_unknown、局部 PASS、未执行、分母缺失或矛盾；保留原 verdict；去重不重复计数，不拼历史 PASS，不重新裁决 full_pass |
+| T02 | 002 | 项目介绍、进度、CQ 及列表下方唯一验收条真实来源；有唯一当前 run、只有终态历史 run、多个非终态、枚举不完整、无记录、403／读取失败分别展示；进程状态和模型数量不推出业务完成 |
+| T03 | 002 | 全景／切片完整统一列表，无覆盖类型分组、版本选择及旧题回流；当前冻结优先，缺绑定选择唯一最新完整冻结，损坏／歧义不回退旧题；管理员隐藏题标记，read／model Key 及跨项目拒绝；答案／私有诊断不进响应、DOM 或存储 |
+| T04 | 002 | 同批次同快照 verified_current 正式报告逐题通过／未通过／待复核／未完成标记；仅一个完成比例进度条，公开裁决和隐藏摘要不重复计数；过期／未绑定／公开回归不生成当前通过，分母缺失／计数冲突保留未知，无报告选择器 |
 | T05 | 003 | 首屏主体为画布；Class、属性、关系类型、无 Class／多 Class 实体、Operation、映射／指标；同 IRI 跨 Ontology 一个节点保留位置，不因同名合并；有显式 RDF 关系才画边 |
 | T06 | 003 | 全部＋七视角过滤、未知角色、跨位置角色差异、搜索和视角叠加、清除、键盘选择与定位、缩放／拖动、节点详情；搜索标明已加载范围，无匹配不声称项目无模型 |
 | T07 | 003 | 资源或关系窗口受限、默认 GraphSet 未就绪、一个范围失败、签名不一致；部分加载提示，成功范围仍可读；空图与未加载不同，不自动无限续读 |
@@ -159,3 +159,31 @@
 - 通过轮：build PASS；全 Playwright **32 passed（8.7s）**；服务重启、health 和前端
   HTTP 200 后，新增回归再测 **1 passed**，确认正在服务的构建使用新尺寸映射。
 - 结论：开发验证 PASS；本增量未执行独立功能验收或真实语义验收。
+
+### 2026-10-08 — CQ 列表与验收进度精简 — 主 Agent 开发验证
+
+- 用户要求全景／切片统一展示、隐藏题题干后追加“(隐藏题)”文字、逐题验收标记、
+  CQ 下方单一进度条，并取消历史 CQ 与版本选择；不启动建模，不修改原冻结证据。
+- 新增管理员专用 competency-questions 读取：当前冻结绑定优先，无 host 绑定时读取
+  唯一最新完整冻结文件；损坏／歧义不回退旧题。题干与可见性进入管理页面，参考答案、
+  答案点、私有回答与诊断不返回；原 run 公开投影及生产角色输入保持隐藏题隔离。
+- 当前报告必须同批次、同快照且 verified_current；进度统计已获得 pass 或
+  model-recall-insufficient 裁决的题数及通过数，公开裁决与隐藏摘要不重复计数。
+  待复核／运行未完成／未执行不计作完成，100% 不表示全部通过或全项目语义 PASS。
+- 定向回归 16 passed（包含旧 Build Context 复跑与 15 项 workbench 测试）；最终完整
+  backend pytest **1150 passed／54 skipped／18960 warnings，228.35s**。
+  首轮完整测试 **1 failed／1148 passed／54 skipped**：旧兼容性测试的 generated_at
+  分别为 02:31:26 与 02:31:27，其他三个字段相同；独立重跑通过，不改无关测试或产品，
+  最终完整复跑通过。原始日志保留在 /tmp/cq-overview-backend-pytest{,-final}.log。
+- 最终 frontend build PASS；全 Playwright **33 passed（9.2s）**，覆盖 18 条统一列表、
+  旧题隔离、隐藏题文字、逐题裁决、正式报告绑定及唯一进度条。桌面／390px 截图已查看，
+  无文档横溢；原始日志 /tmp/cq-overview-playwright-final.log。
+- Ruff、接口文档生成／同步检查、相关文档链接与 git diff --check PASS。
+  GitNexus 未找到当前 OverviewPage／ModelingWorkbenchService.detail 符号，
+  detect_changes 只识别翻译常量、报告 low；实际影响检查采用引用、diff 与测试，不宣称图覆盖。
+- systemd 重启后 active，backend health=ok，frontend HTTP 200；真实管理员 CQ HTTP 200
+  且 Cache-Control=no-store，返回 **26 条／8 条隐藏题**，不包含答案点，报告
+  applicability=verified_current；原公开投影保持隔离。未认证访问返回 401，
+  read/model Key 与跨项目访问的 403 由 API 回归验证。
+- 结论：本增量开发验证和运行读取验证 PASS；未执行独立功能验收或真实语义建模验收，
+  历史独立 Round 1 结果不升级为本次增量的独立验收。

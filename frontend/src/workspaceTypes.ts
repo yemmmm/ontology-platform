@@ -8,7 +8,7 @@ export type Artifact = {
 };
 export type RunSummary = { run_id: string; state: string | JsonObject; source_updated_at: string };
 export type RunIndex = { current_run_id: string | null; runs: RunSummary[]; completeness: { complete: boolean }; observed_at: string };
-export type Run = { run_id: string; state: string | JsonObject; observed_at: string; artifacts: Record<string, Artifact[]> };
+export type Run = { run_id: string; state: string | JsonObject; observed_at: string; current_questions_available?: boolean; artifacts: Record<string, Artifact[]> };
 export type Resource = {
   id?: string; iri: string; label?: string | null; description?: string;
   kind?: string; type_iri?: string; ontology_id?: string; source_graph_iri?: string;

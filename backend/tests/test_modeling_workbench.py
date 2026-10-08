@@ -546,3 +546,129 @@ def test_rest_project_admin_and_run_scope(tmp_path, r008_client):
         == 403
     )
     assert client.get(path + "/runs/absent", headers=h).status_code == 404
+
+
+def frozen(root, revision=1):
+    value = {
+        "schema_version": "r3-0-011-cq-freeze/v1", "batch_id": "b",
+        "questions": [
+            {"question_id": "Q", "question": "Public panorama question",
+             "visibility": "public", "content_version": revision,
+             "scope": {"kind": "panorama"}, "answer_points": ["PRIVATE-ANSWER"]},
+            {"question_id": "secret", "question": "Hidden slice question",
+             "visibility": "hidden", "content_version": revision,
+             "scope": {"kind": "slice"}, "answer_points": ["PRIVATE-ANSWER"]},
+            {"question_id": "unexecuted-hidden", "question": "Pending hidden question",
+             "visibility": "hidden", "content_version": revision},
+        ],
+    }
+    value["snapshot_digest"] = content_digest(value)
+    path = write(root, f"competency-questions/frozen/freeze-{revision:04d}.json", value)
+    return path, value
+
+
+def test_admin_cq_baseline_includes_hidden_text_without_answers_or_diagnostics(tmp_path):
+    root = run_fixture(tmp_path)
+    public(root)
+    path, value = frozen(root)
+    report(root, value["snapshot_digest"])
+    before = path.read_bytes()
+    service = ModelingWorkbenchService(tmp_path)
+    overview = service.competency_questions("p", "running")
+    questions = overview["artifacts"]["competency_questions"][0]["data"]["questions"]
+    assert [q["visibility"] for q in questions] == ["public", "hidden", "hidden"]
+    assert questions[1]["question"] == "Hidden slice question"
+    assert all("scope" not in q and "answer_points" not in q for q in questions)
+    result = overview["artifacts"]["reports"][0]["data"]
+    assert result["question_verdicts"][1] == {"question_id": "secret", "verdict": "pass"}
+    assert result["denominator"] == 3 and result["public_count"] == 1
+    assert result["hidden_summary"] == {"verdict_counts": {"pass": 1}, "unexecuted_count": 1}
+    assert result["applicability"] != "verified_current"  # No live model binding evidence.
+    assert "PRIVATE-ANSWER" not in json.dumps(overview)
+    assert "PRIVATE-SENTINEL" not in json.dumps(overview)
+    assert "Hidden slice question" not in json.dumps(service.detail("p", "running"))
+    assert path.read_bytes() == before
+
+
+def test_admin_cq_before_freeze_keeps_only_public_question_text(tmp_path):
+    root = run_fixture(tmp_path)
+    public(root)
+    result = ModelingWorkbenchService(tmp_path).competency_questions("p", "running")
+    question = result["artifacts"]["competency_questions"][0]["data"]["questions"][0]
+    assert question["visibility"] == "public"
+    assert "answer_points" not in question and "unknown" not in question
+    assert result["artifacts"]["reports"] == []
+
+
+def test_admin_cq_current_freeze_wins_and_corrupt_freeze_never_falls_back(tmp_path):
+    root = run_fixture(tmp_path)
+    _, old = frozen(root, 1)
+    newest, value = frozen(root, 2)
+    service = ModelingWorkbenchService(tmp_path)
+    assert service.competency_questions("p", "running")["artifacts"][
+        "competency_questions"
+    ][0]["data"]["questions"][0]["content_version"] == 2
+    freeze_event = root / "evidence/cq-freeze.jsonl"
+    freeze_event.parent.mkdir(exist_ok=True)
+    freeze_event.write_text(json.dumps({
+        "batch_id": "b", "snapshot_digest": old["snapshot_digest"],
+    }) + "\n")
+    assert service.competency_questions("p", "running")["artifacts"][
+        "competency_questions"
+    ][0]["data"]["questions"][0]["content_version"] == 1
+    freeze_event.unlink()
+    value["questions"][0]["question"] = "Tampered text"
+    newest.write_text(json.dumps(value))
+    result = service.competency_questions("p", "running")
+    assert result["current_questions_available"] is False
+    assert result["artifacts"]["competency_questions"] == []
+
+
+def test_admin_cq_rest_rejects_production_keys_and_cross_project(tmp_path, r008_client):
+    app = r008_client["client"].app
+    project = r008_client["ids"]["p1"]
+    root = run_fixture(tmp_path, project=project)
+    frozen(root)
+    app.dependency_overrides[get_workbench_service] = lambda: ModelingWorkbenchService(tmp_path)
+    client = r008_client["client"]
+    path = f"/api/projects/{project}/workbench/runs/running/competency-questions"
+    for name in ("p1_read_key", "p1_model_key"):
+        response = client.get(path, headers={"Authorization": "Bearer " + r008_client[name]})
+        assert response.status_code == 403 and "Hidden slice question" not in response.text
+    headers = {"Authorization": "Bearer " + r008_client["p1_admin_key"]}
+    response = client.get(path, headers=headers)
+    assert response.status_code == 200 and response.headers["cache-control"] == "no-store"
+    assert "Hidden slice question" in response.text and "PRIVATE-ANSWER" not in response.text
+    other = path.replace(project, r008_client["ids"]["p2"])
+    assert client.get(other, headers=headers).status_code == 403
+    assert client.get(path.replace("/running/", "/absent/"), headers=headers).status_code == 404
+
+
+def test_admin_cq_report_verifies_latest_freeze_and_live_model_without_host_event(tmp_path):
+    root = run_fixture(tmp_path)
+    _, snapshot = frozen(root)
+    context = {
+        "state": "ready", "default_graph_set_id": "gs", "graph_set_status": "active",
+        "source_signature": "source",
+        "members": [{"role": "asserted_data", "revision": 2, "content_hash": "content"}],
+    }
+    ws, gs = workspace_digests(context)
+    binding = {
+        "batch_id": "b", "freeze_digest": snapshot["snapshot_digest"],
+        "ontologies": [{"project_id": "p", "ontology_id": "o",
+                        "workspace_state": ws, "graph_state": gs}],
+    }
+    path = report(root, snapshot["snapshot_digest"])
+    value = json.loads(path.read_text())
+    value["sessions"] = {"batch_model_binding": binding, "post_batch_model_binding": binding}
+    value["model_binding_digest"] = content_digest(binding)
+    value["report_digest"] = content_digest({k: v for k, v in value.items() if k != "report_digest"})
+    path.write_text(json.dumps(value))
+    service = ModelingWorkbenchService(tmp_path, workspace_reader=lambda *_: context)
+    result = service.competency_questions("p", "running")["artifacts"]["reports"][0]["data"]
+    assert result["applicability"] == "verified_current"
+    assert result["question_verdicts"][1]["verdict"] == "pass"
+    context["source_signature"] = "changed"
+    assert service.competency_questions("p", "running")["artifacts"]["reports"][0][
+        "data"
+    ]["applicability"] == "stale"

@@ -64,3 +64,20 @@ def workbench_run(
         return service.detail(project_id, team_run_id)
     except WorkbenchNotFound as exc:
         raise HTTPException(404, detail={"code": "not_found"}) from exc
+
+
+@router.get("/projects/{project_id}/workbench/runs/{team_run_id}/competency-questions")
+def workbench_competency_questions(
+    project_id: str,
+    team_run_id: str,
+    response: Response,
+    principal: AuthPrincipal = Depends(principal_dependency),
+    session: Session = Depends(get_db_session),
+    service: ModelingWorkbenchService = Depends(get_workbench_service),
+) -> dict:
+    require_project(principal, session, project_id)
+    response.headers["Cache-Control"] = "no-store"
+    try:
+        return service.competency_questions(project_id, team_run_id)
+    except WorkbenchNotFound as exc:
+        raise HTTPException(404, detail={"code": "not_found"}) from exc

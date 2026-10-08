@@ -208,3 +208,31 @@
 - GitNexus impact 找不到当前组件符号，detect_changes 返回旧 GROUP_PALETTE 符号；
   依据当前源码调用点和 diff 确认唯一消费者为 ModelBrowserPage，不宣称图分析完整覆盖。
 - 本轮为开发侧展示功能验证；未执行独立功能验收或真实语义建模验收，不继承原版 PASS。
+
+### 2026-10-08 — CQ 列表与验收进度精简 — 主 Agent 开发验证
+
+- 用户要求全景／切片统一展示、隐藏题题干后追加“(隐藏题)”文字、逐题验收标记、
+  CQ 下方单一进度条，并取消历史 CQ 与版本选择；不启动建模，不修改原冻结证据。
+- 新增管理员专用 competency-questions 读取：当前冻结绑定优先，无 host 绑定时读取
+  唯一最新完整冻结文件；损坏／歧义不回退旧题。题干与可见性进入管理页面，参考答案、
+  答案点、私有回答与诊断不返回；原 run 公开投影及生产角色输入保持隐藏题隔离。
+- 当前报告必须同批次、同快照且 verified_current；进度统计已获得 pass 或
+  model-recall-insufficient 裁决的题数及通过数，公开裁决与隐藏摘要不重复计数。
+  待复核／运行未完成／未执行不计作完成，100% 不表示全部通过或全项目语义 PASS。
+- 定向回归 16 passed（包含旧 Build Context 复跑与 15 项 workbench 测试）；最终完整
+  backend pytest **1150 passed／54 skipped／18960 warnings，228.35s**。
+  首轮完整测试 **1 failed／1148 passed／54 skipped**：旧兼容性测试的 generated_at
+  分别为 02:31:26 与 02:31:27，其他三个字段相同；独立重跑通过，不改无关测试或产品，
+  最终完整复跑通过。原始日志保留在 /tmp/cq-overview-backend-pytest{,-final}.log。
+- 最终 frontend build PASS；全 Playwright **33 passed（9.2s）**，覆盖 18 条统一列表、
+  旧题隔离、隐藏题文字、逐题裁决、正式报告绑定及唯一进度条。桌面／390px 截图已查看，
+  无文档横溢；原始日志 /tmp/cq-overview-playwright-final.log。
+- Ruff、接口文档生成／同步检查、相关文档链接与 git diff --check PASS。
+  GitNexus 未找到当前 OverviewPage／ModelingWorkbenchService.detail 符号，
+  detect_changes 只识别翻译常量、报告 low；实际影响检查采用引用、diff 与测试，不宣称图覆盖。
+- systemd 重启后 active，backend health=ok，frontend HTTP 200；真实管理员 CQ HTTP 200
+  且 Cache-Control=no-store，返回 **26 条／8 条隐藏题**，不包含答案点，报告
+  applicability=verified_current；原公开投影保持隔离。未认证访问返回 401，
+  read/model Key 与跨项目访问的 403 由 API 回归验证。
+- 结论：本增量开发验证和运行读取验证 PASS；未执行独立功能验收或真实语义建模验收，
+  历史独立 Round 1 结果不升级为本次增量的独立验收。

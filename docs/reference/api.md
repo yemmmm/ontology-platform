@@ -312,6 +312,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | modeling batches | `POST` | `/api/build-sessions/{session_id}/modeling-batches` | Submit Modeling Batch |
 | modeling workbench | `GET` | `/api/projects/{project_id}/workbench` | Workbench |
 | modeling workbench | `GET` | `/api/projects/{project_id}/workbench/runs/{team_run_id}` | Workbench Run |
+| modeling workbench | `GET` | `/api/projects/{project_id}/workbench/runs/{team_run_id}/competency-questions` | Workbench Competency Questions |
 | modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-execution-events` | List Modeling Execution Events |
 | modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-workflow-artifacts` | List Modeling Workflow Artifacts |
 | modeling workflow | `GET` | `/api/build-sessions/{session_id}/modeling-workflow:export` | Export Modeling Workflow Record |
@@ -593,6 +594,18 @@ OWL run 的 `implementation_mode`、`engine_name` 来源于实际引擎声明，
 提供 Team/宿主产物的只读投影。普通 read/model Key 不可读取；跨项目访问沿用现有
 `forbidden_scope` 合同。响应设置 `Cache-Control: no-store`，不创建/继续 run、不运行模型、不写产物。
 Team run ID 与平台 Session、旧数据库 Run ID 相互独立。
+
+`GET /api/projects/{project_id}/workbench/runs/{team_run_id}/competency-questions`
+为 v4.2 概览提供管理员专用当前 CQ 视图，沿用上述项目管理员授权、no-store 和 run 绑定检查。
+封套沿用 run 详情，artifacts 仅包含 competency_questions、reports、host；仅一个当前题集，
+全景／切片统一展示。优先匹配 host 冻结绑定，无绑定时选择唯一最新完整冻结文件；摘要损坏、
+歧义、枚举超过上限时 current_questions_available=false，不回退旧题。没有冻结文件时仅返回
+公开投影供前端选择唯一最新记录。隐藏题仅提供 question_id、question、visibility、content_version，
+不提供参考答案、答案点、私有回答或诊断。原 workbench run 投影继续不读取冻结隐藏题。
+报告绑定同一 batch_id／snapshot_digest，沿用实时模型适用性核实；question_verdicts 仅含
+获准当前题的 question_id／verdict，包含隐藏题用于逐题标记。verdicts 保留公开裁决，
+hidden_summary 保留隐藏汇总，两者与 denominator／public_count 用于进度条，不能重复计数。
+不加入建模角色工具；普通 read／model Key 不可访问，管理员视图不改变生产侧盲测隔离。
 
 列表封套：`schema_version=v4.1-workbench/v1`、`project_id`、`observed_at`、`current_run_id`、
 `runs[]`、`completeness {complete,limit}`、`limitations[]`。run 摘要包含 `run_id`、记录的 `state`、

@@ -6,7 +6,7 @@ export function artifact(kind: string, data: Record<string, unknown>, id = kind,
   return { artifact_id: id, kind, availability: "available", data, source: { path: `public/${id}`, updated_at: time }, limitations: [], scope: { phase: "L1", slices: ["maintenance"] } };
 }
 export function report(id = "report-current", applicability = "verified_current") {
-  return artifact("reports", { applicability, denominator: 3, public_count: 2, full_pass: false,
+  return artifact("reports", { applicability, batch_id: "batch2", freeze_digest: "digest2", denominator: 3, public_count: 2, full_pass: false,
     verdicts: [{ question_id: "Q1", verdict: "pass" }, { question_id: "Q1", verdict: "pass" }], unexecuted_question_ids: ["Q2"],
     hidden_summary: { verdict_counts: { "pending-review": 1 }, unexecuted_count: 0 }, summary_by_scope: { slice: { pass: 1, "not-executed": 1 } }, coverage_gaps: { cross_slice_projection_gap: true },
   }, id);

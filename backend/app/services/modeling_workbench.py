@@ -1,6 +1,7 @@
 """Fixed, administrator-only public projection of existing Team run artifacts.
 
-This reader never imports a Runner, mutates an artifact or reads CQ private data.
+The general projection never reads CQ private data. The administrator CQ overview
+reads frozen question text and visibility only, without answers or diagnostics.
 Source files remain authoritative; no second state store is introduced.
 """
 
@@ -734,6 +735,118 @@ class ModelingWorkbenchService:
             "artifacts": groups,
             "limitations": limitations,
         }
+
+    def competency_questions(self, project_id: str, run_id: str) -> dict:
+        """Latest CQ baseline for administrators; never a production-role input."""
+        detail = self.detail(project_id, run_id)
+        run = self.root / run_id
+        binding = detail["platform_binding"]
+        host = detail["artifacts"]["host"]
+        freezes = [
+            record
+            for artifact in host
+            if artifact["kind"] == "cq-freeze" and artifact["availability"] == "available"
+            for record in artifact["data"].get("records", [])
+            if record.get("snapshot_digest")
+        ]
+
+        def frozen_questions(value):
+            if value.get("schema_version") != "r3-0-011-cq-freeze/v1" or value.get(
+                "snapshot_digest"
+            ) != content_digest({k: v for k, v in value.items() if k != "snapshot_digest"}):
+                raise ValueError("frozen_question_digest_mismatch")
+            questions = value.get("questions")
+            if not isinstance(questions, list) or any(
+                not isinstance(q, dict) or not isinstance(q.get("question_id"), str)
+                or not isinstance(q.get("question"), str)
+                or q.get("visibility") not in {"public", "hidden"}
+                for q in questions
+            ) or len({q["question_id"] for q in questions}) != len(questions):
+                raise ValueError("frozen_question_schema_invalid")
+            return {
+                **scalars(value, "batch_id snapshot_digest"),
+                "questions": [
+                    scalars(q, "question_id question visibility content_version")
+                    for q in value["questions"]
+                ],
+            }
+
+        paths = self._paths(run, "competency-questions/frozen/freeze-*.json")
+        if len(paths) > ARTIFACT_LIMIT:
+            return {**detail, "current_questions_available": False,
+                    "artifacts": {"competency_questions": [], "reports": [], "host": []}}
+        snapshots = [
+            self._artifact(run, path, "competency_questions", binding, frozen_questions)
+            for path in paths
+        ]
+        if freezes:
+            freeze = freezes[-1]
+            matches = [
+                a for a in snapshots
+                if a["data"].get("batch_id") == freeze.get("batch_id")
+                and a["data"].get("snapshot_digest") == freeze["snapshot_digest"]
+            ]
+            chosen = matches[0] if len(matches) == 1 else None
+        else:
+            chosen = max(snapshots, key=lambda a: a["source"].get("updated_at", ""), default=None)
+            latest = [
+                a for a in snapshots if chosen and a["source"].get("updated_at")
+                == chosen["source"].get("updated_at")
+            ]
+            if len(latest) != 1:
+                chosen = None
+        if not snapshots and not freezes:
+            # Before a full freeze exists, show only the latest public record.
+            return {
+                **detail,
+                "artifacts": {
+                    "competency_questions": [{
+                        **a, "data": {
+                            **scalars(a["data"], "batch_id snapshot_digest"),
+                            "questions": [{
+                                **scalars(q, "question_id question content_version review_content_version"),
+                                "visibility": "public",
+                            } for q in a["data"].get("questions", [])],
+                        },
+                    } for a in detail["artifacts"]["competency_questions"]],
+                    "reports": [], "host": [],
+                },
+            }
+        groups = {"competency_questions": [], "reports": [], "host": []}
+        if chosen is None or chosen["availability"] != "available":
+            return {**detail, "current_questions_available": False, "artifacts": groups}
+        groups["competency_questions"] = [chosen]
+        current_freeze = scalars(chosen["data"], "batch_id snapshot_digest")
+        groups["host"] = [{
+            **chosen, "kind": "cq-freeze", "data": {"records": [current_freeze]},
+        }]
+        public_ids = {
+            q["question_id"]: q for q in chosen["data"]["questions"]
+            if q.get("visibility") == "public"
+        }
+        all_ids = {q["question_id"] for q in chosen["data"]["questions"]}
+
+        def acceptance(value):
+            if value.get("batch_id") != current_freeze["batch_id"] or value.get(
+                "freeze_digest"
+            ) != current_freeze["snapshot_digest"]:
+                return {}
+            result = self._report(value, public_ids, True, binding, current_freeze)
+            # Per-question badges need verdicts, never hidden answers or notes.
+            result["question_verdicts"] = [
+                scalars(q, "question_id verdict") for q in value.get("verdicts", [])
+                if isinstance(q, dict) and q.get("question_id") in all_ids
+            ]
+            return {k: result[k] for k in (
+                "batch_id", "freeze_digest", "applicability", "denominator", "public_count",
+                "verdicts", "unexecuted_question_ids", "hidden_summary", "question_verdicts",
+            )} | {"verdicts": [scalars(q, "question_id verdict") for q in result["verdicts"]]}
+
+        groups["reports"] = [
+            self._artifact(run, path, "reports", binding, acceptance)
+            for path in self._paths(run, "acceptance-v3/reports/*/*/batch-report.json")[:ARTIFACT_LIMIT]
+        ]
+        return {**detail, "artifacts": groups}
 
     @staticmethod
     def _feedback(value: dict, public_ids: dict, projection_bound: bool = True) -> dict:

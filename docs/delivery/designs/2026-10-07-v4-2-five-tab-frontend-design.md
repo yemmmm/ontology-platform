@@ -74,15 +74,16 @@
 
 ### 概览
 
-按四块内容排布：项目介绍和一句话进度在上；CQ 与验收进度在下。只有刷新和展示所需的
-版本／报告选择控件，不出现运行、审核、冻结、修复、完整诊断或原始 JSON 面板。
+2026-10-08 用户调整：项目介绍和一句话进度在上；CQ 合并为下方全宽卡片，验收只保留
+CQ 列表下方的进度条。不保留 CQ 版本选择、历史题浏览、报告选择或独立验收详情面板。
+全景／切片题统一列表完整展示，不展示覆盖类型或逐题技术版本号。
 
 | 内容 | 读取与呈现 |
 | --- | --- |
-| 项目介绍 | 当前 Project 的 name／description；description 为空显示“项目介绍尚未记录”，不从表名或模型节点自动生成 |
-| 一句话进度 | workbench 索引与 run 公开 state／host 事件；仅将明确记录的业务阶段／阻塞组织成一句话。只有 RUNNING 等生命周期状态时显示“最近记录已进入运行阶段，业务进度尚未核实”，不推出建模中、进程存活或业务完成 |
-| CQ | run 的 artifacts.competency_questions：question_id、question、scope、review_content_version／content_version，以及冻结绑定；不展示参考答案和答案点，原状态缺失显示“状态未记录” |
-| 验收进度 | artifacts.reports 中 kind=reports 的正式报告；逐报告显示适用性、范围、分母、原 verdict 计数、未执行、缺口与时点；public_regression_report 不计作正式验收 |
+| 项目介绍 | 当前 Project 的 name／description，缺失时不自动生成 |
+| 一句话进度 | workbench 索引与 run 公开 state／host 事件；不从 RUNNING 推导业务进度 |
+| CQ | 管理员 CQ 接口选择当前冻结绑定的题集；无绑定时选择唯一最新完整冻结文件，尚无冻结文件时选择唯一最新公开记录并注明冻结未核实。题干与逐题验收状态，不提供历史切换 |
+| 验收进度 | 只使用同批次、同快照且 verified_current 的正式报告；按公开裁决与隐藏汇总计算，不显示历史或公开回归结果 |
 
 先请求 `GET /projects/{id}/workbench`。枚举完整且 `current_run_id` 非空时读其
 `GET /projects/{id}/workbench/runs/{run_id}`，不使用宿主或 Runner 接口。
@@ -91,20 +92,25 @@
 多个非终态记录、枚举不完整或无记录时不猜当前，进度显示“当前进度尚未核实”，CQ／验收
 显示当前数据不可确定。无记录与 HTTP 失败分别表达，不从私有日志生成摘要。
 
-当前 CQ 版本只按公开 host `cq-freeze` 中最后一条有 snapshot_digest 的记录匹配公开投影的
-snapshot_digest 和 batch_id；匹配唯一才标“当前冻结版本”。没有匹配或无冻结记录时，已有
-投影按 batch_id／digest 分组显示“版本适用性未核实”；历史 run 的投影始终标为历史。
-不把不同版本的同名 question_id 合并成当前题集，不把隐藏数量展开成题干。
-列表默认前 10 项，超出可“展开其余能力问题”，仍属于概览只读展示。
+当前题集优先按公开 host `cq-freeze` 中最后一条有 snapshot_digest 的记录匹配
+snapshot_digest 与 batch_id；有绑定但匹配不唯一时显示当前题集不可确定。
+管理员 CQ 接口从固定 competency-questions/frozen/freeze-*.json 读取题干、可见性和内容版本，
+先核对冻结摘要；无 host 绑定时选择更新时间唯一最新冻结文件。损坏、歧义或不完整枚举不回退
+旧题集。尚无冻结文件时仅显示唯一最新公开投影，注明冻结未核实。
+GET /projects/{id}/workbench/runs/{run_id}/competency-questions 沿用 require_project 管理员门，
+普通 read／model Key 与跨项目管理员均拒绝。原 run 详情仍只返回公开 CQ；新接口不提供
+答案点、参考答案、私有回答或诊断，不加入生产角色工具或模型输入。隐藏题题干后仅追加“(隐藏题)”文字标记。
+历史运行只读取最近一条的最新题集，不展示旧快照或历史题集菜单。
 
-有多份正式报告时使用卡片内的“验收记录”选择：唯一 `verified_current` 优先；否则按
-source.updated_at 选最近的可读正式报告并标历史／适用性未知；多份 verified_current 也不
-合并，以时间选择并保留各自范围。报告 mtime 只用于展示顺序，不赋予当前有效性。
-如不存在正式报告，显示“尚无正式验收结果”，不以公开回归替代。
-公开 verdicts 按 question_id 在本报告内去重计数，与服务端 hidden_summary.verdict_counts
-和 unexecuted_count 分组展示。保留原 verdict 名称，不把 model-recall-insufficient 直接改成
-“模型缺失”。分母缺失、计数矛盾或未知状态时不计算百分比，显示“进度数据不完整”。
-禁止将 `full_pass`、某一局部范围或当前适用性当成全项目语义 PASS；不重新裁决报告。
+逐题标记只来自匹配所展示题集且 verified_current 的正式报告：pass 为验收通过，
+model-recall-insufficient 为验收未通过，question-answer-review／pending-review 为待复核，
+platform-runtime-incomplete／incomplete 为未完成，缺失结果为尚未验收。
+验收不按节点数、题集规模、旧 PASS、公开回归或 full_pass 自行生成裁决。
+
+进度条为已取得 pass／model-recall-insufficient 裁决题数除以报告应验收题数，附已验收、
+应验收与通过数量。公开裁决按 ID 去重，隐藏部分按服务端汇总计数；两部分不得重复计算。
+缺失分母、裁决冲突、重复执行状态或计数不一致时保留未知状态，不生成百分比。
+待复核、运行未完成、未执行不计作完成；100% 不等于全部通过或全项目语义 PASS。
 
 ### 模型浏览
 

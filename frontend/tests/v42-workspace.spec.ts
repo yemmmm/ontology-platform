@@ -32,13 +32,13 @@ test("T01 settings works without a project or ontology; ontology-only links fall
   await expect(page.getByText("user:test-admin")).toBeVisible();
   await expect(page.getByLabel("Language preference")).toBeVisible();
 });
-test("T02 four overview blocks do not infer business progress from RUNNING", async ({ page }) => {
+test("T02 overview has CQ and one progress bar without inferring business progress from RUNNING", async ({ page }) => {
   await mockWorkspace(page);
   await page.goto("/");
-  for (const name of ["Project introduction", "Project progress", "Competency questions", "Acceptance progress"]) await expect(page.getByRole("region", { name, exact: true })).toBeVisible();
+  for (const name of ["Project introduction", "Project progress", "Competency questions"]) await expect(page.getByRole("region", { name, exact: true })).toBeVisible();
   await expect(page.getByText("The latest record is running; business progress is unverified")).toBeVisible();
   await expect(page.getByText("维修业务与外部接口的语义范围。")).toBeVisible();
-  await expect(page.getByText("Current frozen version", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveCount(1);
 });
 test("T02 latest all-terminal history stays historical; events choose timestamp not artifact order", async ({ page }) => {
   const value = run();
@@ -49,7 +49,9 @@ test("T02 latest all-terminal history stays historical; events choose timestamp 
   await page.route("**/workbench", route => route.fulfill({ json: index([{ run_id: "r1", state: "FAILED", source_updated_at: "2026-10-07T10:00:00Z" }], null) }));
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByText("The latest run ended; current project progress needs verification")).toBeVisible();
-  await expect(page.getByText("Historical questions", { exact: true })).toBeVisible();
+  await expect(page.getByText("复查工单如何保持独立？")).toBeVisible();
+  await expect(page.getByText("谁可以关闭工单？")).toHaveCount(0);
+  await expect(page.getByLabel("Question version")).toHaveCount(0);
   await expect(page.getByText("Current frozen version", { exact: true })).toHaveCount(0);
 });
 for (const [name, data] of [
@@ -64,46 +66,74 @@ for (const [name, data] of [
   await expect(page.getByText("Current questions cannot be determined")).toBeVisible();
   expect(calls.some(path => path.includes("/workbench/runs/"))).toBe(false);
 });
-test("T03 snapshot plus batch selects a unique CQ version; no answer DOM or storage", async ({ page }) => {
-  await mockWorkspace(page);
-  await page.goto("/");
-  await expect(page.getByText("复查工单如何保持独立？")).toBeVisible();
-  await expect(page.getByText("谁可以关闭工单？")).toHaveCount(0);
-  await expect(page.getByText(/Status not recorded/)).toBeVisible();
-  await page.getByLabel("Question version").selectOption("batch1 · digest1");
-  await expect(page.getByText("Version applicability unverified", { exact: true })).toBeVisible();
-  await expect(page.getByText("谁可以关闭工单？")).toBeVisible();
-  expect(await page.locator("body").textContent()).not.toContain("ANSWER_SENTINEL");
-  expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain("ANSWER_SENTINEL");
-});
-test("T03 no freeze and ambiguous duplicate projection never claims current frozen", async ({ page }) => {
-  const value = run(); value.artifacts.competency_questions.push({ ...value.artifacts.competency_questions[1], artifact_id: "duplicate" });
+test("T03 shows all panorama and slice questions together without historical selection or answers", async ({ page }) => {
+  const value = run();
+  value.artifacts.competency_questions[1].data.questions = Array.from({ length: 18 }, (_, i) => ({ question_id: `Q${i + 1}`, question: `当前业务问题 ${i + 1}`, scope: { kind: i < 5 ? "panorama" : "slice" }, review_content_version: 2 }));
   await mockWorkspace(page, { run: value });
   await page.goto("/");
-  await expect(page.getByText("Version applicability unverified", { exact: true })).toBeVisible();
-  await expect(page.getByText("Current frozen version", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("region", { name: "Competency questions", exact: true }).getByRole("listitem")).toHaveCount(18);
+  await expect(page.getByText("当前业务问题 18", { exact: true })).toBeVisible();
+  await expect(page.getByText("谁可以关闭工单？")).toHaveCount(0);
+  await expect(page.getByLabel("Question version")).toHaveCount(0);
+  expect(await page.locator("body").textContent()).not.toMatch(/ANSWER_SENTINEL|panorama|slice|digest2/);
 });
-test("T04 formal records remain separate, deduplicate verdicts and preserve scope statistics", async ({ page }) => {
+test("T03 without freeze selects latest unique record; duplicate bindings never guess", async ({ page }) => {
+  const value = run(); value.artifacts.host = [];
+  value.artifacts.competency_questions[0].source.updated_at = "2026-10-06T10:00:00Z";
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  await expect(page.getByText("复查工单如何保持独立？")).toBeVisible();
+  await expect(page.getByText("Latest recorded questions; freeze unverified")).toBeVisible();
+  const ambiguous = run(); ambiguous.artifacts.competency_questions.push({ ...ambiguous.artifacts.competency_questions[1], artifact_id: "duplicate" });
+  await page.route("**/workbench/runs/**", route => route.fulfill({ json: ambiguous }));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Current questions cannot be determined")).toBeVisible();
+  await expect(page.getByText("复查工单如何保持独立？")).toHaveCount(0);
+});
+test("T04 current report marks acceptance and counts public plus hidden once", async ({ page }) => {
   const value = run(); value.artifacts.reports.push(report("report-stale", "stale"));
   await mockWorkspace(page, { run: value });
   await page.goto("/");
-  await expect(page.getByLabel("Acceptance record")).toHaveValue("report-current");
-  await expect(page.getByText("pass: 1", { exact: true })).toBeVisible();
-  await expect(page.getByText("slice: pass: 1 · not-executed: 1", { exact: true })).toBeVisible();
-  await expect(page.getByText(/Original full_pass: false/)).toBeVisible();
-  await expect(page.getByText("Progress data is incomplete")).toHaveCount(0);
-  await page.getByLabel("Acceptance record").selectOption("report-stale");
-  await expect(page.getByText("Applicability: stale", { exact: true })).toBeVisible();
+  await expect(page.getByText("Acceptance passed", { exact: true })).toHaveCount(1);
+  await expect(page.getByRole("progressbar")).toHaveAttribute("value", String(1 / 3 * 100));
+  await expect(page.getByText("Acceptance progress · Accepted 1 / 3; passed 1", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Acceptance record")).toHaveCount(0);
+  const stale = run(); stale.artifacts.reports[0].data.applicability = "stale";
+  await page.route("**/workbench/runs/**", route => route.fulfill({ json: stale }));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Acceptance passed", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("Not accepted yet", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar")).not.toHaveAttribute("value");
 });
-test("T04 public regression cannot replace a formal report; missing denominator is incomplete", async ({ page }) => {
+test("T04 regression, mismatched freeze and incomplete counts cannot imply accepted progress", async ({ page }) => {
   const value = run(); value.artifacts.reports = [artifact("public_regression_report", { full_pass: true })];
   await mockWorkspace(page, { run: value });
   await page.goto("/");
-  await expect(page.getByText("No formal acceptance results yet")).toBeVisible();
+  await expect(page.getByText(/No current acceptance results/)).toBeVisible();
   const broken = run(); delete (broken.artifacts.reports[0].data as Record<string, unknown>).denominator;
-  await page.route("**/workbench/runs/*", route => route.fulfill({ json: broken }));
+  await page.route("**/workbench/runs/**", route => route.fulfill({ json: broken }));
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
-  await expect(page.getByText("Progress data is incomplete")).toBeVisible();
+  await expect(page.getByText(/Progress data is incomplete/)).toBeVisible();
+  await expect(page.getByRole("progressbar")).not.toHaveAttribute("value");
+  const mismatch = run(); mismatch.artifacts.reports[0].data.freeze_digest = "different";
+  await page.route("**/workbench/runs/**", route => route.fulfill({ json: mismatch }));
+  await page.getByRole("button", { name: "Refresh", exact: true }).click();
+  await expect(page.getByText("Acceptance passed", { exact: true })).toHaveCount(0);
+});
+test("T04 hidden question gets its own verdict badge without double counting progress", async ({ page }) => {
+  const value = run();
+  const questions = value.artifacts.competency_questions[1].data.questions as Record<string, unknown>[];
+  questions.push({ question_id: "H1", question: "隐藏业务验证问题", visibility: "hidden", content_version: 1 });
+  const data = value.artifacts.reports[0].data;
+  data.question_verdicts = [{ question_id: "Q1", verdict: "pass" }, { question_id: "H1", verdict: "model-recall-insufficient" }];
+  data.hidden_summary = { verdict_counts: { "model-recall-insufficient": 1 }, unexecuted_count: 0 };
+  await mockWorkspace(page, { run: value });
+  await page.goto("/");
+  const hidden = page.getByRole("listitem").filter({ hasText: "隐藏业务验证问题" });
+  await expect(hidden.getByText("(Hidden question)", { exact: true })).toBeVisible();
+  await expect(hidden.getByText("Acceptance not passed", { exact: true })).toBeVisible();
+  await expect(page.getByText("Acceptance progress · Accepted 2 / 3; passed 1", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveAttribute("value", String(2 / 3 * 100));
 });
 test("T05 unified IRI canvas excludes property definitions, retains actual edges and multiple locations", async ({ page }) => {
   const requests: string[] = [];
@@ -276,7 +306,7 @@ test("T14 retired source files, CRUD API and class-specific pages are physically
 });
 test("T15 desktop and 390px preserve brand, keyboard focus and no document overflow", async ({ page }) => {
   await mockWorkspace(page); await page.setViewportSize({ width: 1440, height: 1000 });
-  await page.goto("/"); await expect(page.getByText("Current frozen version", { exact: true })).toBeVisible();
+  await page.goto("/"); await expect(page.getByRole("progressbar")).toHaveCount(1);
   await page.screenshot({ path: "/tmp/v42-development-overview-desktop.png", fullPage: true });
   await page.getByRole("link", { name: "Model browser" }).click();
   await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "11");
@@ -289,7 +319,7 @@ test("T15 desktop and 390px preserve brand, keyboard focus and no document overf
   expect(height).toBeGreaterThanOrEqual(420);
   await page.screenshot({ path: "/tmp/v42-development-model-mobile.png", fullPage: true });
   await page.getByRole("link", { name: "Overview", exact: true }).click();
-  await expect(page.getByText("Current frozen version", { exact: true })).toBeVisible();
+  await expect(page.getByRole("progressbar")).toHaveCount(1);
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
   await page.screenshot({ path: "/tmp/v42-development-overview-mobile.png", fullPage: true });
 });
