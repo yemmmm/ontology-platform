@@ -111,8 +111,11 @@ source.updated_at 选最近的可读正式报告并标历史／适用性未知�
    仅使用其明确返回的 default_graph_set_id；未就绪时显示该读取范围不可用，不改用其他 GraphSet。
 2. 每个默认 GraphSet 读取 `resource-list?include=asserted&field_set=detail&limit=500` 与下节
    resource-relations 投影；按 `source_signature` 核对同一读取范围。签名不同时不拼接图，提示刷新。
-3. 资源按完整 IRI 去重成一个节点，保存各 Ontology／GraphSet 位置及其真实字段；不按名称
-   或 Class 合并。跨位置字段不同不覆盖，节点详情可选择已有位置读取，不创建新的 Ontology 页。
+3. 按 2026-10-08 用户确认的画布修正，先依据 `type_iri` 排除 `owl:DatatypeProperty`／
+   `owl:ObjectProperty` 定义，避免把边的谓词另画成游离节点；其余资源按完整 IRI 去重成一个
+   节点，保存各 Ontology／GraphSet 位置及其真实字段，不按名称或 Class 合并。跨位置字段
+   不同不覆盖，节点详情可选择已有位置读取，不创建新的 Ontology 页。定义仍保留在读取
+   接口中，谓词继续作为边标签，关系仅在两端均为画布节点时绘制。
 4. 关系仅来自同一位置已返回的真实 RDF 三元组，按 source／predicate／target 去重绘制并
    保留各位置；两端必须是已加载节点。不能从名称、画布距离或 JSON 文本猜边。
 5. 七视角读取 detail_fields.semantic_definition.semantic_role；角色为

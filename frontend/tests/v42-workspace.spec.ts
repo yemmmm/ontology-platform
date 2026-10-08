@@ -105,13 +105,18 @@ test("T04 public regression cannot replace a formal report; missing denominator 
   await page.getByRole("button", { name: "Refresh", exact: true }).click();
   await expect(page.getByText("Progress data is incomplete")).toBeVisible();
 });
-test("T05 unified IRI canvas includes all resource kinds, actual edges, multiple locations", async ({ page }) => {
+test("T05 unified IRI canvas excludes property definitions, retains actual edges and multiple locations", async ({ page }) => {
   const requests: string[] = [];
   await mockWorkspace(page, { handler: async (path, route) => { requests.push(route.request().url()); return false; } });
   await page.goto("/?tab=model");
   const graph = page.getByRole("img", { name: "Model graph" });
-  await expect(graph).toHaveAttribute("data-node-count", "13");
+  await expect(graph).toHaveAttribute("data-node-count", "11");
   await expect(graph).toHaveAttribute("data-edge-count", "1");
+  await expect(page.getByRole("button", { name: "Select node 状态属性", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Select node 父单关系", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Select node 无分类节点", exact: true })).toHaveCount(1);
+  await page.getByLabel("Search loaded model").fill("状态属性");
+  await expect(page.getByText("No matches in the loaded viewpoint")).toBeVisible();
   expect(requests.filter(url => url.includes("resource-list")).every(url => url.includes("field_set=detail&limit=500"))).toBe(true);
   expect(requests.filter(url => url.includes("resource-relations")).every(url => url.includes("limit=1000"))).toBe(true);
   await page.getByLabel("Search loaded model").fill("urn:work");
@@ -124,7 +129,7 @@ test("T05 unified IRI canvas includes all resource kinds, actual edges, multiple
 });
 test("T06 seven explicit views and loaded search intersect without removing other view nodes", async ({ page }) => {
   await mockWorkspace(page); await page.goto("/?tab=model");
-  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "11");
   await expect(page.getByLabel("Viewpoint").locator("option")).toHaveCount(8);
   await page.getByLabel("Viewpoint").selectOption("process");
   await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "2");
@@ -134,7 +139,7 @@ test("T06 seven explicit views and loaded search intersect without removing othe
   await page.getByLabel("Search loaded model").fill("no match");
   await expect(page.getByText("No matches in the loaded viewpoint")).toBeVisible();
   await page.getByRole("button", { name: "Clear filters" }).click();
-  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "11");
   const nodeButton = page.getByRole("button", { name: "Select node 无分类节点", exact: true });
   await nodeButton.focus(); await page.keyboard.press("Enter");
   await expect(page.getByRole("heading", { name: "无分类节点", exact: true })).toBeVisible();
@@ -150,7 +155,7 @@ test("T07 bounded partial data, failed scope and mismatched signatures retain su
     return false;
   } });
   await page.goto("/?tab=model");
-  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "11");
   await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-edge-count", "0");
   await expect(page.getByText(/Source versions differ/)).toBeVisible();
   await expect(page.getByText(/Integration: Scope not loaded/)).toBeVisible();
@@ -257,7 +262,7 @@ test("T15 desktop and 390px preserve brand, keyboard focus and no document overf
   await page.goto("/"); await expect(page.getByText("Current frozen version", { exact: true })).toBeVisible();
   await page.screenshot({ path: "/tmp/v42-development-overview-desktop.png", fullPage: true });
   await page.getByRole("link", { name: "Model browser" }).click();
-  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "13");
+  await expect(page.getByRole("img", { name: "Model graph" })).toHaveAttribute("data-node-count", "11");
   await page.screenshot({ path: "/tmp/v42-development-model-desktop.png", fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.getByLabel("Search loaded model").fill("urn:work"); await page.getByRole("button", { name: "工单", exact: true }).click();

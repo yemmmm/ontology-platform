@@ -11,7 +11,7 @@ export type RunIndex = { current_run_id: string | null; runs: RunSummary[]; comp
 export type Run = { run_id: string; state: string | JsonObject; observed_at: string; artifacts: Record<string, Artifact[]> };
 export type Resource = {
   id?: string; iri: string; label?: string | null; description?: string;
-  kind?: string; ontology_id?: string; source_graph_iri?: string;
+  kind?: string; type_iri?: string; ontology_id?: string; source_graph_iri?: string;
   detail_fields?: JsonObject; properties?: JsonObject; data?: JsonObject;
 };
 export type Relation = { id: string; source: string; target: string; relation: string; label?: string; source_graph_iri: string; assertion_kind: string };

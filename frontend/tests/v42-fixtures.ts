@@ -27,12 +27,14 @@ export function resource(iri: string, label: string, role?: string, meaning = "�
 export const resources = [
   resource("urn:work", "工单", "object"), resource("urn:process", "关闭流程", "process"),
   resource("urn:unknown", "未知声明", "custom"), resource("urn:class", "工单定义"),
-  resource("urn:property", "状态属性"), resource("urn:relation", "父单关系"), resource("urn:loose", "无分类节点"),
+  { ...resource("urn:property", "状态属性"), type_iri: "http://www.w3.org/2002/07/owl#DatatypeProperty" },
+  { ...resource("urn:relation", "父单关系"), type_iri: "http://www.w3.org/2002/07/owl#ObjectProperty" },
+  resource("urn:loose", "无分类节点"),
   resource("urn:operation", "关闭操作", "behavior"), resource("urn:mapping", "字段映射", "data_mapping"), resource("urn:metric", "完成时长"),
   resource("urn:same-name", "工单", "rule"), resource("urn:role", "维修责任", "business_role"), resource("urn:interface", "关闭接口", "interface_mapping"),
 ];
 export function envelope(items: unknown[], signature = "sig1", complete = true) { return { items, source_signature: signature, paging: { complete }, warnings: [] }; }
-export const relations = [{ id: "e1", source: "urn:work", target: "urn:process", relation: "urn:hasProcess", source_graph_iri: "urn:graph:data", assertion_kind: "asserted" }];
+export const relations = [{ id: "e1", source: "urn:work", target: "urn:process", relation: "urn:relation", label: "父单关系", source_graph_iri: "urn:graph:data", assertion_kind: "asserted" }];
 export function recall(items: unknown[], cursor: string | null = null) { return { primary_matches: items, related_context: [{ kind: "fact", id: "FACT_SENTINEL" }], result_status: "matched", matches_page: { complete: !cursor, next_match_cursor: cursor }, recall: { completeness: "complete" }, warnings: [] }; }
 export function match(id: string, label = id) { return { id, iri: `urn:${id}`, label, ontology_id: "o1", kind: "instance", description: "已记录摘要" }; }
 type Options = { projects?: unknown[]; ontologies?: unknown[]; index?: unknown; run?: unknown; roles?: unknown; handler?: (path: string, route: Route) => Promise<boolean> };

@@ -48,7 +48,10 @@ export function ModelBrowserPage({ project }: { project: Project }) {
             const [resourceResult, relationResult] = await Promise.allSettled([workspaceApi.resources(graphSetId), workspaceApi.relations(graphSetId)]);
             if (resourceResult.status === "rejected") throw resourceResult.reason;
             const resources = resourceResult.value;
-            items = resources.items.filter(item => item.iri).map(resource => ({ ontologyId: ontology.id, ontologyName: ontology.name, graphSetId, signature: resources.source_signature, resource }));
+            items = resources.items.filter(item => item.iri
+              && item.type_iri !== "http://www.w3.org/2002/07/owl#DatatypeProperty"
+              && item.type_iri !== "http://www.w3.org/2002/07/owl#ObjectProperty"
+            ).map(resource => ({ ontologyId: ontology.id, ontologyName: ontology.name, graphSetId, signature: resources.source_signature, resource }));
             if (resources.paging?.complete === false) warnings.push({ name: ontology.name, code: "Resource window is incomplete" });
             for (const warning of resources.warnings ?? []) warnings.push({ name: ontology.name, code: "Partial loading", detail: warning.message || warning.code });
             if (relationResult.status === "rejected") warnings.push({ name: ontology.name, code: "Relations could not be read", detail: String(relationResult.reason) });
