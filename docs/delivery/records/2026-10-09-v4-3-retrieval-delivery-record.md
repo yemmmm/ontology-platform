@@ -187,3 +187,13 @@ opencode-jev-support-report.md 为可转交服务方的无凭据复现材料，�
 正对照证明当前 key、网络和 OpenCode 至少一条实际推理链路可用，不能将此前 Jev
 失败解释成整个 OpenCode API 或普通凭据故障。Jev 与该成功请求并非同分钟复测，
 不据此断言其此刻状态或具体根因；Jev 评分效果仍未验证。
+
+### 用户切换模型开关后复测
+
+用户重新开关模型后授权重试，两种 Jev 保持原最小请求与最新 key，于
+2026-10-09 11:21:43 UTC 直连同一 System One 地址。free 为 HTTP451、1.007秒，
+付费为 HTTP451、0.423秒，均返回 Upstream request failed: Endpoint is unavailable，
+未获得答案或 usage。开关调整尚未恢复本次请求可用性，不推断其传播延迟或内部原因。
+证据另存 jev-after-model-toggle-results.json/py，保留开关前的原始记录，key 未保存。
+本次日志ID：free fb5893ef-4c05-4e46-9c02-89ebc888d47f，付费
+74ccba28-1120-47b3-99b3-604705754783。Jev 验证继续处于外部接口阻塞。
