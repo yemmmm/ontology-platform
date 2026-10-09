@@ -1,7 +1,8 @@
 # v4.3 R4.3-008—012 工程交付记录
 
 权威范围：[需求](../../requirements/requirements-v4.3.md)，[增量设计](../designs/2026-10-09-v4-3-retrieval-design.md)。
-用户授权实现；Jev 验证按用户指令暂停，待 API key。真实建模、Consumer/Judge 独立语义
+用户授权实现；Jev 验证初始按用户指令暂停，同日提供 key 后恢复但外部推理 HTTP 451，
+详见文末后续记录。真实建模、Consumer/Judge 独立语义
 验收仍暂停，未消耗启动额度。本轮开发检查不属于独立功能或独立语义验收。
 
 ## 实现
@@ -87,3 +88,34 @@
   未修改平台结果或放宽平台校验，临时测试身份全部删除。
 - Ruff、接口文档同步、需求/设计/交付链接及 git diff --check 最终通过。
   Jev、真实 Consumer/Judge 与27题/120分钟验收停止于用户指定的暂停边界。
+
+## Jev 验证恢复与外部阻塞
+
+2026-10-09 用户提供 OpenCode API key，指定 OpenCode 推理入口和 `jev-1.13-free`，
+恢复本项有界验证；没有恢复真实建模或 Consumer/Judge，没有消耗启动额度。
+key 通过不回显终端输入，仅存在探针进程内存，不写文件、仓库或请求/响应证据。
+
+- [用户指定推理文档](https://opencode.ai/v2/docs/console/api/inference/)没有列出 Jev 专用协议；
+  [OpenCode 模型文档](https://opencode.ai/v2/docs/console/models/#jev)列出 System One
+  state/questions 协议与 `https://opencode.ai/zen/v1/systemone`。
+  [当前路由源码](https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/lib/inference-proxy.ts)
+  明确把该旧路径转发至 `/systemone/v1/systemone`，据此直接测试用户指定的 inference
+  base 下 `https://opencode.ai/inference/systemone/v1/systemone`。未调用 TypeSafe 官网。
+- 中文受控候选保留完整口径、条件/未知、关系入口以及同名无关项，使用四档相关性 rubric；
+  [Score 文档](https://docs.typesafe.ai/primitives/score)说明 score 是等级概率的期望值，
+  confidence 是另一个字段，本项不混用两者。请求已冻结，但未取得任何评分。
+- 旧 `/zen` 接口：HTTP **451**，0.867 秒；直接 `/inference/systemone/v1/systemone`：
+  HTTP **451**，0.863 秒。两者原始错误均为
+  `{"error":{"type":"server_error","message":"Upstream request failed: Endpoint is unavailable."}}`。
+- 再以单个英文 noul 问题验证最小协议，直接推理仍 HTTP **451**（0.358 秒）。
+  同一 key 请求 `/inference/v1/models` 为 HTTP **200**（0.689 秒），列出指定模型。
+  模型目录可读不证明推理可用或 key 已通过付费/模型权限校验；不推断错误为 key 无效、
+  中文质量差或免费层限制。失败响应延迟也不是模型评分延迟。
+- 原始证据：jev-control-request.json、jev-legacy-endpoint-response.json、
+  jev-control-response.json、jev-minimal-probe.json；探针脚本保留在同一 gitignored 目录。
+  已准备的17道公开题候选未发送做批量评分，不读取隐藏材料，不用模型自评分充当业务评级。
+
+当前结论：**BLOCKED（runtime/infrastructure，OpenCode 上游推理接口不可用）**。
+Jev 中文质量、重排收益、推理延迟/成本/稳定性均未取得证据，保持待评估，不接入生产，
+保留现有 max 排序。恢复条件为该专用接口恢复可用，或用户提供另一个可用 OpenCode
+System One 地址；无需重复提供当前 key，不切换模型或服务商。
