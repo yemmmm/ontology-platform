@@ -9,11 +9,15 @@ test_semantic_canonical_write.py.
 from __future__ import annotations
 
 import pytest
+from rdflib import Dataset, Graph
+from rdflib.plugins.parsers.notation3 import BadSyntax
+from rdflib.plugins.sparql import prepareUpdate
 
 from app.core.config import Settings
 from app.services.semantic_command_compiler import (
     InvalidCommandPayload,
     UnsupportedCommandKind,
+    _literal_term,
     compile_command,
 )
 
@@ -856,3 +860,134 @@ def test_bind_and_unbind_fact_evidence_are_retired_command_kinds():
             },
             _settings(),
         )
+
+
+# ---------------------------------------------------------------------------
+# Literal control-character escaping (Turtle/SPARQL safety)
+#
+# Regression guard: ``_literal_term`` used to escape only backslash and double
+# quote, so string values containing newline, carriage return, tab or other C0
+# control characters serialized into illegal Turtle/SPARQL (raw newline inside
+# a quoted literal fails both the SPARQL update parser and the Turtle parser).
+# The fix escapes backslash first, then double quotes, then the ``\n`` ``\r``
+# ``\t`` short escapes (matching the canonical N-Triples serialization in
+# ``fact_id``), and emits ``\u00XX`` for remaining C0 controls. All values
+# below are generic examples.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("Student v2", '"Student v2"'),
+        ("first line\nsecond line", '"first line\\nsecond line"'),
+        ("carriage\rreturn", '"carriage\\rreturn"'),
+        ("tab\there", '"tab\\there"'),
+        ('has "quote" inside', '"has \\"quote\\" inside"'),
+        ("back\\slash", '"back\\\\slash"'),
+        ('a\nb"c\\d', '"a\\nb\\"c\\\\d"'),
+        ("ctrl\x0bvertical", '"ctrl\\u000Bvertical"'),
+        ("\x00\x1f", '"\\u0000\\u001F"'),
+    ],
+)
+def test_literal_term_escapes_control_characters(raw, expected):
+    assert _literal_term(raw) == expected
+
+
+def test_literal_term_backslash_escaped_before_short_escapes():
+    # A literal backslash followed by 'n' must stay an escaped backslash,
+    # not be reinterpreted as a \n short escape (backslash escaping first).
+    assert _literal_term("a\\nb") == '"a\\\\nb"'
+
+
+def test_literal_term_scalar_types_unchanged():
+    assert _literal_term(True) == '"true"^^<http://www.w3.org/2001/XMLSchema#boolean>'
+    assert _literal_term(False) == '"false"^^<http://www.w3.org/2001/XMLSchema#boolean>'
+    assert _literal_term(7) == '"7"^^<http://www.w3.org/2001/XMLSchema#integer>'
+    assert _literal_term(1.5) == '"1.5"^^<http://www.w3.org/2001/XMLSchema#decimal>'
+
+
+def _insert_data_update(compiled):
+    """Render compiled inserts exactly like the RDF store does:
+    ``INSERT DATA { GRAPH <g> { s p o . s p o } }``."""
+    graph_iri = compiled.target_graph_iris[0]
+    block = " . ".join(
+        f"{s} {p} {o}" for s, p, o, g in compiled.delta.inserts if g == graph_iri
+    )
+    return f"INSERT DATA {{ GRAPH <{graph_iri}> {{ {block} }} }}"
+
+
+def test_compiled_command_control_char_literals_roundtrip_in_sparql():
+    """Command literals with newline/tab/quote/backslash survive a real
+    SPARQL INSERT DATA parse with values identical to the input payload."""
+    description = "first line\nsecond line"
+    alias = 'a\nb"c\\d'
+    payload = {
+        "ontology_id": "ont-1",
+        "class_id": "class-esc",
+        "name": "tab\tname",
+        "description": description,
+        "aliases": [alias],
+    }
+    compiled = compile_command("create_class", payload, _settings())
+
+    dataset = Dataset()
+    dataset.update(prepareUpdate(_insert_data_update(compiled)))
+    stored = {
+        str(p): str(o) for _s, p, o, _g in dataset.quads((None, None, None, None))
+    }
+    assert stored["http://www.w3.org/2000/01/rdf-schema#comment"] == description
+    assert stored["http://www.w3.org/2000/01/rdf-schema#label"] == "tab\tname"
+    assert stored["http://www.w3.org/2004/02/skos/core#altLabel"] == alias
+
+
+def test_unescaped_newline_literal_is_rejected_by_sparql_parser():
+    """Documents the pre-fix defect: escaping only backslash and double quote
+    leaves a raw newline inside the quoted literal, which is not legal SPARQL
+    and fails the update parser."""
+    legacy = "first line\nsecond line".replace("\\", "\\\\").replace('"', '\\"')
+    update = (
+        "INSERT DATA { GRAPH <http://op.local/graph/ontology/ont-1> { "
+        "<http://op.local/ns/class/class-esc> "
+        f'<http://www.w3.org/2000/01/rdf-schema#comment> "{legacy}" . '
+        "} }"
+    )
+    with pytest.raises(Exception):
+        prepareUpdate(update)
+
+
+def test_compiled_command_control_char_literals_roundtrip_in_trig():
+    """Compiled inserts also parse as a Turtle/TriG document with exact
+    value round trip."""
+    description = "first line\nsecond line"
+    payload = {
+        "ontology_id": "ont-1",
+        "class_id": "class-esc",
+        "name": "tab\tname",
+        "description": description,
+    }
+    compiled = compile_command("create_class", payload, _settings())
+    graph_iri = compiled.target_graph_iris[0]
+    lines = "\n".join(
+        f"{s} {p} {o} ." for s, p, o, g in compiled.delta.inserts if g == graph_iri
+    )
+    trig = f"<{graph_iri}> {{\n{lines}\n}}"
+
+    dataset = Dataset()
+    dataset.parse(data=trig, format="trig")
+    stored = {
+        str(p): str(o) for _s, p, o, _g in dataset.quads((None, None, None, None))
+    }
+    assert stored["http://www.w3.org/2000/01/rdf-schema#comment"] == description
+
+
+def test_unescaped_newline_literal_is_rejected_by_turtle_parser():
+    """Same pre-fix defect against the Turtle document parser
+    (rdflib reports the newline inside the quoted literal)."""
+    legacy = "first line\nsecond line".replace("\\", "\\\\").replace('"', '\\"')
+    doc = (
+        "<http://op.local/ns/class/class-esc> "
+        f'<http://www.w3.org/2000/01/rdf-schema#comment> "{legacy}" .'
+    )
+    with pytest.raises(BadSyntax):
+        Graph().parse(data=doc, format="turtle")

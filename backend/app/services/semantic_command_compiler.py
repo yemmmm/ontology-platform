@@ -111,6 +111,25 @@ def _property_iri(property_key: object, ns: SemanticNamespace) -> str:
     return property_key if ":" in property_key else str(ns.resource("property", property_key))
 
 
+def _escape_literal_text(text: str) -> str:
+    """Escape a string for a Turtle/SPARQL quoted literal.
+
+    Backslash first (so existing escapes are not double-escaped), then double
+    quotes, then the short escapes already used by the canonical N-Triples
+    serialization in ``fact_id`` (``\\n`` ``\\r`` ``\\t``). Remaining C0
+    control characters get ``\\u00XX`` numeric escapes so the emitted term
+    always stays a legal single-line quoted literal.
+    """
+    escaped = (
+        text.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
+        .replace("\t", "\\t")
+    )
+    return re.sub(r"[\x00-\x1f]", lambda m: f"\\u{ord(m.group()):04X}", escaped)
+
+
 def _literal_term(value: Any) -> str:
     if isinstance(value, bool):
         return f'"{str(value).lower()}"^^<http://www.w3.org/2001/XMLSchema#boolean>'
@@ -118,7 +137,7 @@ def _literal_term(value: Any) -> str:
         return f'"{int(value)}"^^<http://www.w3.org/2001/XMLSchema#integer>'
     if isinstance(value, float):
         return f'"{float(value)}"^^<http://www.w3.org/2001/XMLSchema#decimal>'
-    text = str(value).replace("\\", "\\\\").replace('"', '\\"')
+    text = _escape_literal_text(str(value))
     return f'"{text}"'
 
 
