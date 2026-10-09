@@ -17,6 +17,11 @@ delivery evidence. Use the following locations for new documentation.
 
 ## Current requirement entry points
 
+- [v4.3 modeling efficiency and rapid iteration](requirements/requirements-v4.3.md): registered
+  target of at most two hours from a fresh start to complete independent semantic acceptance,
+  with a later one-hour goal. Covers continuous approved execution, deterministic artifact handling,
+  early public feedback, selective Delivery wakeups, and reference-based Judge evidence access.
+  Requirement registration only; modeling remains paused and no performance PASS is claimed.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
