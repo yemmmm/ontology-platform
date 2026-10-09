@@ -41,6 +41,13 @@ class Settings(BaseSettings):
     semantic_retrieval_ambiguity_margin: float = Field(default=0.03, ge=0, le=1)
     semantic_retrieval_build_batch_size: int = Field(default=16, ge=1, le=128)
     semantic_retrieval_query_timeout_seconds: float = Field(default=8, gt=0, le=120)
+    semantic_jev_enabled: bool = False
+    semantic_jev_api_key: str = ""
+    semantic_jev_endpoint: str = "https://opencode.ai/inference/systemone/v1/systemone"
+    semantic_jev_model: str = "jev-1.13-free"
+    semantic_jev_proxy: str = "http://127.0.0.1:1080"
+    semantic_jev_timeout_seconds: float = Field(default=15, gt=0, le=120)
+    semantic_jev_min_score: float = Field(default=0.5, ge=0, le=3)
 
     # R1.2-004 related-query aggregation public safety limits and cursor policy.
     semantic_context_query_min_queries: int = Field(default=1, ge=1, le=8)

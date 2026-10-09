@@ -169,9 +169,35 @@ R4.3 索引/文档模板为 `semantic-retrieval-v2` / `semantic-retrieval-docume
 已有 semantic/action/parameter 定义的合同字段增加到资源文档，返回原始定义及词面字段依据。
 旧模板向量索引保持降级，须沿现有投影重建流程恢复。`query.ranking_version` 和
 `match.ranking_version/rank_score/semantic_similarity` 声明排序版本、排序值及向量相似度；旧 `score/lexical_score` 不改作
-业务相关性证明。默认 `exact-expression-max-v2` 修复局部词项误判整句精确，保留可用 max
+业务相关性证明。基线 `exact-expression-max-v2` 修复局部词项误判整句精确，保留可用 max
 融合；`evidence-rrf-v2` 是待公开题效果验证的可选方案，不默认启用。查询向量可短时复用，
 每次请求仍检查授权/模型修订/索引/分页完整性；邻接复用只限当前请求。
+
+启用 `SEMANTIC_JEV_ENABLED` 时，自然语言查询在授权和去重后、截页前进行完整候选重排。
+成功时 `query.ranking_version=jev-evidence-relevance-v1`；主命中的 `match` 另返回：
+
+```json
+{
+  "relevance_score": 2.7,
+  "relevance_scale": [0, 3],
+  "relevance_model": "jev-1.13.0",
+  "relevance_version": "jev-evidence-relevance-v1",
+  "relevance_status": "scored"
+}
+```
+
+0分无关，1分包含必要背景／关系入口，2分直接支持部分事实、条件或未知，3分充分支持主要必答事实。
+分数为回答价值参考，不是概率、置信度或业务真实性证明。既有match.score／rank_score仍为基线指标。
+默认低于0.5的候选被过滤，0.5保留；完整表达式精确匹配保留且优先，精确IRI查询绕过评分。
+周边未评分，不按该阈值过滤。`recall.ranking` 返回 `status`（applied／degraded）、`version`、
+成功时的`model`、`score_scale`、`min_score`、`candidate_count`、`filtered_count`、`cache_hit`。
+外部不可用／超时／响应无效时不做相关性过滤，沿基线排序；relevance_score=null、
+relevance_status=unavailable，并带 `jev_reranking_degraded` warning及ranking.reason。
+
+首次查询保存完整排序与分数，match和context翻页复用，同一绑定的首查也可复用；
+进程内64项、TTL默认600秒（沿cursor寿命），降级结果同样缓存。每次请求重新授权并校验修订／索引。
+快照过期、被淘汰、服务重启或配置／权限变化时，续页返回409 snapshot_changed，需无cursor重查；
+不在旧cursor下重新召回／评分。上下文邻域仍按当前页读取。
 
 compact 保留普通业务解释、身份和 statement 信息；R4.0-025 不再投影专用规则注解，也不维护专用脚本省略合同。
 无效／多值现有普通注解给出可定位读取诊断并保留获准原始 statement。

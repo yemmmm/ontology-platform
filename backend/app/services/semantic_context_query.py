@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from dataclasses import asdict
 import hashlib
 import json
 import re
@@ -19,6 +20,10 @@ from app.repositories.models import OntologyModel
 from app.repositories.rdf_store import RdfStoreRepository
 from app.security.auth import AuthPrincipal
 from app.services.semantic_access import SemanticAccessView
+from app.services.semantic_jev import (
+    JEV_RANKING_VERSION, JevReranker, JevScoringError, apply_jev_ranking,
+    get_ranking_snapshot, ranking_cache_key, save_ranking_snapshot,
+)
 from app.services.semantic_context_cursor import (
     CURSOR_KIND_CONTEXT,
     CURSOR_KIND_MATCH,
@@ -163,6 +168,7 @@ class SemanticContextQueryService:
         self.settings = scope_resolver.settings
         self.cursor_codec = cursor_codec
         self._semantic_roles = None
+        self._jev_ranking = None
         self._description_cache = {}
         self._resource_cache = {}
         self._request_assertions = set(ASSERTION_TYPES)
@@ -239,6 +245,7 @@ class SemanticContextQueryService:
         """
         semantic_roles = _normalize_semantic_roles(semantic_roles)
         self._semantic_roles = semantic_roles
+        self._jev_ranking = None
         self._description_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._resource_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._adjacency_cache = {}
@@ -347,91 +354,159 @@ class SemanticContextQueryService:
                 context_detail=context_detail,
             )
 
-        candidate_limit = min(5000, max(500, limit * 50))
-        lexical_by_expression: list[list[dict[str, Any]]] = []
-        retrieval_warnings: list[dict[str, str]] = []
-        retrieval_indexes: list[dict[str, Any]] = []
-        retrieval_completeness = "complete"
-        for expression in execution_set:
-            candidates = self._qualified_lexical_candidates(
-                scope, expression.text, expression.terms, candidate_limit,
-                selected_resource_types, selected_assertion_types,
-            )
-            if "operation" in selected_resource_types:
-                candidates.extend(self._operation_candidates(scope, expression.text, expression.terms))
-            if "mapping" in selected_resource_types:
-                candidates.extend(self._mapping_candidates(scope, expression.text, expression.terms))
-            if "metric" in selected_resource_types:
-                candidates.extend(self._metric_candidates(scope, expression.text, expression.terms))
-            candidates.extend(
-                governed_mapping_lexical_candidates(
-                    self.session,
-                    ontology_ids=(entry.ontology_id for entry in scope.ontologies),
-                    query=expression.text,
-                    resource_kinds=selected_resource_types,
+        payload = context_payload or match_payload
+        snapshot_key = ranking_cache_key(
+            binding_digest(binding), scope.public_dict(), asdict(self.access_view), self.settings,
+        )
+        cached = get_ranking_snapshot(snapshot_key) if self.settings.semantic_jev_enabled else None
+        if payload is not None and payload.ranking_snapshot_id:
+            if cached is None or cached["snapshot_id"] != payload.ranking_snapshot_id:
+                raise SemanticContextSnapshotChanged(
+                    "Ranking snapshot expired or changed; restart the query without a cursor"
                 )
-            )
-            # R3.0-004: apply the authorization view to every candidate source
-            # (lexical RDF, rules, operations, governed mappings) before
-            # fusion so ranking, fusion summaries, truncation, and cursors
-            # are computed on the authorized subset only.
-            candidates = self._qualified_candidates(
-                candidates, scope, selected_resource_types, selected_assertion_types
-            )
-            for item in candidates:
-                item.setdefault("_expression_indexes", set()).update(expression.original_indexes)
-            lexical_by_expression.append(candidates)
-
-        retrieval = SemanticResourceRetrievalService(self.session, self.settings).recall_multi(
-            scope=scope,
-            queries=[item.text for item in execution_set],
-            resource_kinds=selected_resource_types - {"fact"},
-            search_mode=search_mode,
-            limit=limit,
-            candidate_filter=lambda items: self._qualified_candidates(
-                items, scope, selected_resource_types, selected_assertion_types
-            ),
-        )
-        retrieval_warnings = list(retrieval.get("warnings") or [])
-        retrieval_indexes = list(retrieval.get("indexes") or [])
-        retrieval_completeness = retrieval.get("completeness", "complete")
-        for expression_index, candidates in enumerate(retrieval.get("candidates_by_query") or []):
-            promoted = promote_exact_label_candidates(
-                candidates, execution_set[expression_index].text
-            )
-            promoted = self._qualified_candidates(
-                promoted, scope, selected_resource_types, selected_assertion_types
-            )
-            for item in promoted:
-                item.setdefault("_expression_indexes", set()).update(
-                    execution_set[expression_index].original_indexes
+        elif payload is not None:
+            # Legacy cursors stay on the historical deterministic ranking path.
+            cached = None
+        if cached is not None:
+            repository = SemanticResourceRetrievalService(self.session, self.settings).repository
+            indexes = [repository.index_status(
+                ontology_id=entry.ontology_id, model_revision=entry.model_revision,
+            ) for entry in scope.ontologies]
+            if indexes != cached["indexes"]:
+                if payload is not None:
+                    raise SemanticContextSnapshotChanged("Retrieval indexes changed; restart the query")
+                cached = None
+        if cached is not None:
+            fused = cached["fused"]
+            matched_queries_by_item = cached["matched_queries"]
+            fusion_by_item = cached["fusion"]
+            retrieval_completeness = cached["completeness"]
+            retrieval_indexes = cached["indexes"]
+            warnings.extend(cached["warnings"])
+            self._jev_ranking = {**cached["ranking"], "cache_hit": True}
+            self._ranking_version = cached["ranking_version"]
+            if any(not self.access_view.filter_candidate(item) for item in fused):
+                raise SemanticContextSnapshotChanged("Visible candidates no longer match the cursor")
+        else:
+            candidate_limit = min(5000, max(500, limit * 50))
+            lexical_by_expression: list[list[dict[str, Any]]] = []
+            retrieval_warnings: list[dict[str, str]] = []
+            retrieval_indexes: list[dict[str, Any]] = []
+            retrieval_completeness = "complete"
+            for expression in execution_set:
+                candidates = self._qualified_lexical_candidates(
+                    scope, expression.text, expression.terms, candidate_limit,
+                    selected_resource_types, selected_assertion_types,
                 )
-            lexical_by_expression[expression_index] = fuse_context_candidates(
-                lexical_by_expression[expression_index], promoted,
-                ranking_version=self._ranking_version,
-            )
+                if "operation" in selected_resource_types:
+                    candidates.extend(self._operation_candidates(scope, expression.text, expression.terms))
+                if "mapping" in selected_resource_types:
+                    candidates.extend(self._mapping_candidates(scope, expression.text, expression.terms))
+                if "metric" in selected_resource_types:
+                    candidates.extend(self._metric_candidates(scope, expression.text, expression.terms))
+                candidates.extend(
+                    governed_mapping_lexical_candidates(
+                        self.session,
+                        ontology_ids=(entry.ontology_id for entry in scope.ontologies),
+                        query=expression.text,
+                        resource_kinds=selected_resource_types,
+                    )
+                )
+                # R3.0-004: apply the authorization view to every candidate source
+                # (lexical RDF, rules, operations, governed mappings) before
+                # fusion so ranking, fusion summaries, truncation, and cursors
+                # are computed on the authorized subset only.
+                candidates = self._qualified_candidates(
+                    candidates, scope, selected_resource_types, selected_assertion_types
+                )
+                for item in candidates:
+                    item.setdefault("_expression_indexes", set()).update(expression.original_indexes)
+                lexical_by_expression.append(candidates)
 
-        if self._candidate_window_incomplete:
-            retrieval_completeness = "degraded"
-            warnings.append({
-                "code": "candidate_window_incomplete",
-                "message": "Qualified candidate window is incomplete; narrow the query or use an IRI.",
-            })
-        warnings.extend(retrieval_warnings)
-        fused, matched_queries_by_item, support_count_by_item = self._fuse_multi_expression(
-            lexical_by_expression, execution_set
-        )
-        fused = [
-            item
-            for item in fused
-            if item["kind"] in selected_resource_types
-            and _assertion_filter_value(item["assertion_kind"]) in selected_assertion_types
-        ]
-        fusion_by_item = self._fusion_summary(
-            fused, matched_queries_by_item, support_count_by_item
-        )
-        fused.sort(key=lambda item: _multi_sort_key(item, scope, fusion_by_item))
-        fused = _dedupe_multi(fused)
+            retrieval = SemanticResourceRetrievalService(self.session, self.settings).recall_multi(
+                scope=scope,
+                queries=[item.text for item in execution_set],
+                resource_kinds=selected_resource_types - {"fact"},
+                search_mode=search_mode,
+                limit=limit,
+                candidate_filter=lambda items: self._qualified_candidates(
+                    items, scope, selected_resource_types, selected_assertion_types
+                ),
+            )
+            retrieval_warnings = list(retrieval.get("warnings") or [])
+            retrieval_indexes = list(retrieval.get("indexes") or [])
+            retrieval_completeness = retrieval.get("completeness", "complete")
+            for expression_index, candidates in enumerate(retrieval.get("candidates_by_query") or []):
+                promoted = promote_exact_label_candidates(
+                    candidates, execution_set[expression_index].text
+                )
+                promoted = self._qualified_candidates(
+                    promoted, scope, selected_resource_types, selected_assertion_types
+                )
+                for item in promoted:
+                    item.setdefault("_expression_indexes", set()).update(
+                        execution_set[expression_index].original_indexes
+                    )
+                lexical_by_expression[expression_index] = fuse_context_candidates(
+                    lexical_by_expression[expression_index], promoted,
+                    ranking_version=self._ranking_version,
+                )
+
+            if self._candidate_window_incomplete:
+                retrieval_completeness = "degraded"
+                warnings.append({
+                    "code": "candidate_window_incomplete",
+                    "message": "Qualified candidate window is incomplete; narrow the query or use an IRI.",
+                })
+            warnings.extend(retrieval_warnings)
+            fused, matched_queries_by_item, support_count_by_item = self._fuse_multi_expression(
+                lexical_by_expression, execution_set
+            )
+            fused = [
+                item
+                for item in fused
+                if item["kind"] in selected_resource_types
+                and _assertion_filter_value(item["assertion_kind"]) in selected_assertion_types
+            ]
+            fusion_by_item = self._fusion_summary(
+                fused, matched_queries_by_item, support_count_by_item
+            )
+            fused.sort(key=lambda item: _multi_sort_key(item, scope, fusion_by_item))
+            fused = _dedupe_multi(fused)
+
+            if self.settings.semantic_jev_enabled and payload is None:
+                try:
+                    scores, model = JevReranker(self.settings).score(
+                        original_queries, [_public_item(item) for item in fused],
+                    )
+                    # Fusion annotations identify exact full-expression matches, not term matches.
+                    for item in fused:
+                        item["fusion"] = fusion_by_item[self._identity_key(item)]
+                    fused, self._jev_ranking = apply_jev_ranking(
+                        fused, scores, model, self.settings.semantic_jev_min_score,
+                    )
+                    self._ranking_version = JEV_RANKING_VERSION
+                except JevScoringError as exc:
+                    for item in fused:
+                        item["match"].update(relevance_score=None, relevance_scale=[0, 3],
+                                             relevance_status="unavailable")
+                    self._jev_ranking = {
+                        "status": "degraded", "reason": str(exc),
+                        "version": self._ranking_version, "score_scale": [0, 3],
+                        "min_score": self.settings.semantic_jev_min_score,
+                        "filtered_count": 0, "candidate_count": len(fused),
+                    }
+                    warnings.append({"code": "jev_reranking_degraded",
+                                     "message": "Jev scoring unavailable; baseline order retained without relevance filtering."})
+                self._jev_ranking["cache_hit"] = False
+                self._verify_scope_snapshot(scope)
+                cached = save_ranking_snapshot(snapshot_key, {
+                    "fused": fused, "matched_queries": matched_queries_by_item,
+                    "fusion": fusion_by_item, "completeness": retrieval_completeness,
+                    "indexes": retrieval_indexes, "warnings": warnings,
+                    "ranking": self._jev_ranking, "ranking_version": self._ranking_version,
+                }, self.settings.semantic_context_query_cursor_lifetime_seconds)
+        ranking_snapshot_id = cached["snapshot_id"] if cached is not None else ""
 
         candidate_digest = _visible_digest(fused)
         payload = context_payload or match_payload
@@ -457,6 +532,7 @@ class SemanticContextQueryService:
                     model_revisions=model_revisions,
                     resume_key=_match_resume_key(fused[limit]),
                     candidate_digest=candidate_digest,
+                    ranking_snapshot_id=ranking_snapshot_id,
                 ),
             )
 
@@ -489,6 +565,7 @@ class SemanticContextQueryService:
                     match_page_start_key=_match_resume_key(primary[0]),
                     root_match_digest=root_digest,
                     candidate_digest=candidate_digest,
+                    ranking_snapshot_id=ranking_snapshot_id,
                     context_digest=context_digest,
                 ),
             )
@@ -1382,6 +1459,8 @@ class SemanticContextQueryService:
         context_detail: str = "full",
     ) -> dict[str, Any]:
         self._verify_scope_snapshot(scope)
+        if self._jev_ranking is not None:
+            recall["ranking"] = dict(self._jev_ranking)
         decorated_primary: list[dict[str, Any]] = []
         for item in primary:
             key = self._identity_key(item)
@@ -2377,7 +2456,8 @@ def _origin_for(item: Mapping[str, Any], data: Mapping[str, Any]) -> str:
 def _public_match(item: Mapping[str, Any]) -> dict[str, Any]:
     match = item.get("match") if isinstance(item.get("match"), Mapping) else {}
     result: dict[str, Any] = {}
-    for key in ("score", "candidate_level", "lexical_score", "semantic_similarity", "rank_score", "ranking_version"):
+    for key in ("score", "candidate_level", "lexical_score", "semantic_similarity", "rank_score", "ranking_version",
+                "relevance_score", "relevance_scale", "relevance_model", "relevance_version", "relevance_status"):
         value = match.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             result[key] = value
@@ -2387,6 +2467,10 @@ def _public_match(item: Mapping[str, Any]) -> dict[str, Any]:
         value = match.get(key)
         if isinstance(value, list):
             result[key] = [str(item) for item in value]
+    if "relevance_score" in match and match["relevance_score"] is None:
+        result["relevance_score"] = None
+    if match.get("relevance_scale") == [0, 3]:
+        result["relevance_scale"] = [0, 3]
     return result
 
 
@@ -2443,7 +2527,7 @@ def _public_scope(scope: Mapping[str, Any]) -> dict[str, Any]:
 def _public_recall(recall: Mapping[str, Any]) -> dict[str, Any]:
     return {
         key: recall.get(key)
-        for key in ("mode", "match_status", "completeness")
+        for key in ("mode", "match_status", "completeness", "ranking")
         if recall.get(key) is not None
     }
 

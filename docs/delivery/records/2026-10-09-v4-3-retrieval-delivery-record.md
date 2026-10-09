@@ -298,3 +298,67 @@ summary.json与summarize.py复用既有指标函数，记录全部49次结果及
 原公开候选SHA256复核、答案ID／分数范围／候选不丢失、汇总一致性和凭据扫描通过；
 key仍仅在不回显终端输入和请求进程内存中使用，没有保存。仅修改文档，无运行服务变更，
 不需要重跑后端/前端套件或重启。
+
+
+## 2026-10-10 用户授权 Jev 排序、过滤与相关度返回
+
+本节更新上节“尚未采用”的工程状态，不改写原始试验、退步和质量边界。用户明确授权
+引入Jev进行候选排序，选择低于0.5分过滤，并要求在返回数据中呈现相关度供Agent参考。
+
+### 实现与合同
+
+- 本地已启用OpenCode `jev-1.13-free`，显式代理 `http://127.0.0.1:1080`；key仅存
+  gitignored的backend/.env，权限600，不进入代码、提交或证据。沿已验证的System One入口。
+- 授权、种类／角色筛选及身份去重后，对完整候选语义评分，先评分／过滤再截页。
+  state只放查询，各问题内联自身完整候选，排除旧分数和fusion诊断；按60000字节请求体分批，
+  单候选加state超过30000字节则明确回退。响应校验有限0—3分和一致的实际模型版本。
+- 评分版本 `jev-evidence-relevance-v1`；完整表达式精确匹配保持优先及免过滤，其他候选
+  按相关度降序，同分沿基线顺序；低于0.5过滤，0.5及约1分关系入口保留。
+  精确IRI查询和未评分的邻域展开不按该阈值过滤。
+- 主命中match返回relevance_score／relevance_scale／relevance_model／relevance_version／
+  relevance_status；旧score、lexical_score、rank_score仍表达基线指标。recall.ranking
+  返回评分状态、版本、实际模型、阈值、候选／过滤数和cache_hit。
+- 首次完整排序、评分和过滤保存为进程内快照，最多64项、TTL沿cursor默认600秒，返回副本。
+  绑定主体、授权、查询、筛选、页配置、scope修订以及检索／评分配置、凭据哈希。
+  match及context续页跳过候选召回和模型评分；仍重新授权并检查scope修订、索引及邻域。
+  同一绑定重复首查也复用，过期／淘汰／重启后旧cursor返回409要求重查。
+- 不可用、超时或无效评分保持基线且不过滤，相关度null／unavailable并明确warning；
+  该次降级分页结果也缓存，避免翻页时恢复评分导致跳项。默认评分超时15秒，可配置。
+
+### 验证证据
+
+- 新增测试17 passed（26.29秒）：真实SPARQL fixture上验证分数／尺度／模型返回、0.5边界、
+  精确表达式免过滤和IRI绕过、全过滤、仅授权内容进入评分、权限／修订／凭据／阈值变化、
+  TTL／淘汰、主命中和周边续页复用、响应副本、所有候选分批及非法外部评分回退。
+  开发过程首次fixture的空格IRI／事实候选标签错误已修正；未以失败轮次宣称通过。
+- 当前代码后端完整 `SEMANTIC_JEV_ENABLED=false uv run pytest -q`：
+  **1033 passed, 56 skipped**（275.08秒）。禁用非受控外部调用；Jev行为由上述测试明确开启。
+  Team受影响读取合同 **6 passed**（0.13秒）。Ruff与接口文档同步检查通过。
+- 重启ontology-platform.service后active；backend `/api/health`返回ok，frontend HTTP200。
+  启动脚本前端构建成功；本次没有前端代码变更。
+- 重启服务后的REST真实公开模型读取，全5次请求HTTP200：
+
+| 请求 | 总耗时 | 原候选／过滤数 | 缓存 | 说明 |
+| --- | --- | --- | --- | --- |
+| 英文公开题首次 | 12.206秒 | 224／95 | miss | 实际模型jev-1.13.0，前5分2.03／1.77／1.71／1.70／1.69 |
+| 主命中第二页 | 0.506秒 | 224／95 | hit | 无重复主命中，复用首次分数及过滤结果 |
+| 同查询重复首查 | 0.446秒 | 224／95 | hit | 主命中身份和分数与首次一致 |
+| 周边下一页 | 0.452秒 | 224／95 | hit | 保留原根身份和相关度，邻域按页读取 |
+| 对应中文问题首次 | 8.547秒 | 74／49 | miss | 实际模型jev-1.13.0，返回0—3范围与相关度 |
+
+真实读取只使用既有公开问题及当前保存模型，不创建／继续semantic start，不改Ontology；
+临时只读验证用身份key在finally删除。证据在gitignored
+workspaces/v4-3-retrieval-20261010-jev/：jev-tests.log、backend-full.log、team-read-contracts.log、
+runtime-*.json、runtime-query.log、service-status.log及两侧health文件。
+
+### 影响与剩余边界
+
+REST／MCP／Consumer共享Context服务，但不改请求签名，响应只增加可选诊断字段。
+GitNexus影响与detect_changes均给出CRITICAL，已在编辑前告知用户；其同名query_multi／
+next_context_cursor误关联大量无关流程，精确文件定位失败，不能作为完整图覆盖证据。
+采用实际REST／MCP调用点、git diff、完整后端测试和真实接口读取核验。
+
+本节证明工程接入、相关度返回、过滤和评分分页复用可用，不证明过滤后的业务召回率或
+Consumer必答点覆盖提升。固定公开候选业务评级仍未完成，独立语义质量保持PARTIAL。
+首次完整候选分批评分比此前100候选实验耗时高，已如实记录，不宣称首次查询提速。
+真实建模及Consumer／Judge仍暂停，原剩余四次启动额度不变。

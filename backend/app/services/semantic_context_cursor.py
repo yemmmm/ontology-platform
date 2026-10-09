@@ -90,6 +90,7 @@ class CursorPayload:
     root_match_digest: str = ""
     candidate_digest: str = ""
     context_digest: str = ""
+    ranking_snapshot_id: str = ""
     issued_at: int = 0
     version: int = CURSOR_VERSION
 
@@ -138,6 +139,7 @@ class ContextCursorCodec:
             "rd": payload.root_match_digest,
             "cd": payload.candidate_digest,
             "xd": payload.context_digest,
+            "rs": payload.ranking_snapshot_id,
             "i": int(payload.issued_at or time.time()),
         }
         raw = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -203,6 +205,7 @@ class ContextCursorCodec:
             root_match_digest=str(payload.get("rd") or ""),
             candidate_digest=str(payload.get("cd") or ""),
             context_digest=str(payload.get("xd") or ""),
+            ranking_snapshot_id=str(payload.get("rs") or ""),
             issued_at=issued_at,
             version=int(payload.get("v") or CURSOR_VERSION),
         )
