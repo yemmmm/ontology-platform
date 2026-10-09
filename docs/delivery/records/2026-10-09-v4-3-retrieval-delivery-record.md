@@ -134,3 +134,37 @@ System One 地址；无需重复提供当前 key，不切换模型或服务商�
 gitignored 目录。两种模型都未取得答案或 usage，无法据此确认推理费用、key 权限或
 服务端具体故障点；没有扩大到批量候选评分。原外部接口阻塞结论保持，免费/付费模型
 质量均未验证，不改变生产排序或真实建模暂停状态。
+
+### 错误来源进一步定位
+
+用户授权排查后进行有界对照，不修改服务配置或平台代码。证据为
+jev-routing-diagnosis.json、jev-workspace-config-diagnosis.json、jev-public-tls-diagnosis.log；
+opencode-jev-support-report.md 为可转交服务方的无凭据复现材料，未对外发送。
+
+- 本机无 HTTP(S)/ALL_PROXY 环境变量；HTTPX trust_env=False 直连仍复现。
+  curl 连接 opencode.ai 的 TLS 域名及 Google Trust Services WE1 证书校验通过，
+  HTTP/2 响应来自 Cloudflare。不是本地 ontology-platform 或代理环境生成的报错。
+- 同一 Jev 路径，无 key 为451；故意无效 key 为401 Invalid credential；用户新 key 为451。
+  用户 key 读取 `/console/api/v2/config` 为200，确认凭据可以通过鉴权。
+  不存在模型名返回400 Model is unavailable，而存在的 Jev 返回451 Endpoint is unavailable，
+  把失败收窄到服务端模型端点选择/上游处理，不能据此确认付费模型的余额或全部权限。
+- 另一个免费模型 big-pickle 的最小8-token Chat 请求返回403 FreeTierError，明确写
+  “OpenCode's free tier can only be used from within OpenCode”。该控制证明普通端点能够
+  返回具体策略错误，但没有获得成功推理；没有伪装客户端或绕过该限制。
+  Jev 返回不同错误，不能把403的免费层政策当成451的已证实原因。
+- 工作区配置为一个 OpenAI-compatible provider、84个模型，全体配置未出现 Jev。
+  公共目录却列出两个 Jev ID。该配置面向 OpenCode 客户端，不支持直接推断为缺权限；
+  与新 inference 的 System One 端点未接通/未开放的假设相容，尚非根因证明。
+- [OpenCode 路由源码](https://github.com/anomalyco/opencode/blob/dev/packages/console/app/src/lib/inference-proxy.ts)
+  验证了直接路径与旧 `/zen` 转发关系，新 `oc_sk_` key 由新 inference 服务处理。
+  因此改旧URL不能绕开同一服务端失败。已有公开同类报错报告不能证明本次相同根因。
+- 本次有效 key 的失败请求：2026-10-09 10:47:15 UTC，
+  x-opencode-log-id=`65f7546e-2ad8-4bda-860e-0c738468d35a`，
+  cf-ray=`a47cce6258753d78-LAX`，cf-placement=`remote-IAD`。
+  边缘节点/执行位置不是用户所在地或地域封锁证明，也不从451数值独自推导法律限制。
+
+结论更新：本地网络/TLS和普通凭据鉴权已排除；故障边界为 **OpenCode 新 inference
+服务的 Jev System One 端点选择或其上游处理**。可疑原因是该模型端点配置/协议支持
+未就绪，或上游/策略将端点置为不可用；两者须服务方用上述日志ID确认。
+没有服务端日志，不能把“缺路由配置”或“TypeSafe宕机”写成已确定根因。
+当前保留 BLOCKED，不继续无意义重试、不换key、不改变业务质量结论。
