@@ -168,3 +168,22 @@ opencode-jev-support-report.md 为可转交服务方的无凭据复现材料，�
 未就绪，或上游/策略将端点置为不可用；两者须服务方用上述日志ID确认。
 没有服务端日志，不能把“缺路由配置”或“TypeSafe宕机”写成已确定根因。
 当前保留 BLOCKED，不继续无意义重试、不换key、不改变业务质量结论。
+
+### DeepSeek Flash 推理正对照
+
+同日用户要求测试 OpenCode DeepSeek Flash，使用最近提供的同一 key；公开模型目录
+包含 deepseek-v4-flash 和 deepseek-v4.1-flash。各调用一次同一最小 Chat 请求，
+关闭 thinking、max_tokens=32，目标返回 OK。
+
+- deepseek-v4-flash：HTTP403，0.845秒，Model access is disabled。
+- deepseek-v4.1-flash：HTTP200，1.431秒，真实返回 OK、finish_reason=stop；usage
+  为9 input + 2 output = 11 tokens，reasoning_tokens=0。
+  x-opencode-endpoint-id=fireworks，upstream model 为
+  accounts/fireworks/models/deepseek-v4p1-flash。
+- 请求地址为 https://opencode.ai/inference/openai/v1/chat/completions；时间
+  2026-10-09 11:16:05 UTC，成功日志ID c0abea11-5f9c-473f-a458-c32ff2de81f3。
+  证据为 opencode-deepseek-flash-probe.json/py；key 未持久化。
+
+正对照证明当前 key、网络和 OpenCode 至少一条实际推理链路可用，不能将此前 Jev
+失败解释成整个 OpenCode API 或普通凭据故障。Jev 与该成功请求并非同分钟复测，
+不据此断言其此刻状态或具体根因；Jev 评分效果仍未验证。
