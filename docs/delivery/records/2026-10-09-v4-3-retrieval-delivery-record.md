@@ -119,3 +119,18 @@ key 通过不回显终端输入，仅存在探针进程内存，不写文件、�
 Jev 中文质量、重排收益、推理延迟/成本/稳定性均未取得证据，保持待评估，不接入生产，
 保留现有 max 排序。恢复条件为该专用接口恢复可用，或用户提供另一个可用 OpenCode
 System One 地址；无需重复提供当前 key，不切换模型或服务商。
+
+### 第二个 key 与付费模型复测
+
+同日用户指定新 key，并授权同时测试 `jev-1.13`。沿同一直接 inference 地址，
+保持相同最小英文 noul 请求，仅切换模型；各调用一次，不保存 key。
+
+| 模型 | HTTP | 请求耗时 | 结果 |
+| --- | ---: | ---: | --- |
+| jev-1.13-free | 451 | 0.857 秒 | Upstream request failed: Endpoint is unavailable. |
+| jev-1.13 | 451 | 0.414 秒 | Upstream request failed: Endpoint is unavailable. |
+
+证据：jev-second-key-two-model-results.json 与 jev-two-model-probe.py，仍位于同一
+gitignored 目录。两种模型都未取得答案或 usage，无法据此确认推理费用、key 权限或
+服务端具体故障点；没有扩大到批量候选评分。原外部接口阻塞结论保持，免费/付费模型
+质量均未验证，不改变生产排序或真实建模暂停状态。
