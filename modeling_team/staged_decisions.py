@@ -2474,9 +2474,11 @@ def load_materialization_plan_ref(
             "missing_candidate_reference", f"plan_ref must live under {prefix}", ""
         )
     path = Path(run_root) / str(plan_ref)
-    if path.is_symlink() or not path.is_file():
+    if (path.is_symlink() or not path.is_file()
+            or path.resolve().parent != (Path(run_root) / prefix).resolve()
+            or not path.resolve().is_relative_to(Path(run_root).resolve())):
         return None, StagedDecisionIssue(
-            "missing_candidate_reference", f"materialization plan {plan_ref} is missing", ""
+            "missing_candidate_reference", f"materialization plan {plan_ref} is missing or outside this run", ""
         )
     plan, issue = _try_load(load_materialization_plan, path)
     if issue is not None or plan is None:

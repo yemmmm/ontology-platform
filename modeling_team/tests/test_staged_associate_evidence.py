@@ -29,6 +29,8 @@ from modeling_team.capability_mcp import (
     STAGED_PROTOCOL_OPERATION,
     STAGED_PROTOCOL_OPERATIONS,
     STAGED_PROTOCOL_RUN_OPERATIONS,
+    UNIFIED_PROTOCOL_RUN_OPERATIONS,
+    UNIFIED_PROTOCOL_OPERATIONS,
 )
 from modeling_team.contracts import repository_root
 from modeling_team.runner import TeamRunner
@@ -84,8 +86,16 @@ def test_staged_protocol_operation_set_pairs_submission_with_evidence_repost():
         STAGED_PROTOCOL_OPERATION,
     )
     assert STAGED_PROTOCOL_OPERATIONS == (*PROTOCOL_OPERATIONS, *STAGED_PROTOCOL_RUN_OPERATIONS)
-    assert ROLE_OPERATIONS["protocol"] == STAGED_PROTOCOL_OPERATIONS
-    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION not in STAGED_PROTOCOL_OPERATIONS
+    assert UNIFIED_PROTOCOL_RUN_OPERATIONS == (
+        *STAGED_PROTOCOL_RUN_OPERATIONS,
+        "protocol_execute_approved_plans",
+        "protocol_inspect_associations",
+        "protocol_check_plan_coverage",
+    )
+    assert UNIFIED_PROTOCOL_OPERATIONS == (*PROTOCOL_OPERATIONS, *UNIFIED_PROTOCOL_RUN_OPERATIONS)
+    # The role registry is a validation superset, not an endpoint permission grant.
+    assert ROLE_OPERATIONS["protocol"] == UNIFIED_PROTOCOL_OPERATIONS
+    assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION not in UNIFIED_PROTOCOL_OPERATIONS
     assert STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION not in CAPABILITY_TOOL_SCHEMAS
 
 
@@ -115,6 +125,28 @@ def test_capability_endpoint_declares_and_dispatches_the_evidence_operation(tmp_
     )
     names = [tool["name"] for tool in listing["result"]["tools"]]
     assert names == list(STAGED_PROTOCOL_RUN_OPERATIONS)
+
+    for operation in set(UNIFIED_PROTOCOL_RUN_OPERATIONS) - set(STAGED_PROTOCOL_RUN_OPERATIONS):
+        denied = endpoint.handle({
+            "jsonrpc": "2.0", "id": operation, "token": token, "method": "tools/call",
+            "params": {"name": operation, "arguments": {"protocol_id": "protocol"}},
+        })
+        assert denied["error"]["code"] == -32001
+
+    unified = RunnerAcceptanceCarrier(
+        tmp_path / "unified", task_id="staged-unified", acceptance_id="acceptance",
+        staged_submission_handler=submission_handler, staged_protocol_capability=True,
+        staged_plan_handler=lambda args: {"status": "COMPLETE"},
+    )
+    unified_endpoint = unified.capability_endpoint("protocol")
+    assert unified_endpoint.operations == UNIFIED_PROTOCOL_RUN_OPERATIONS
+    unified_listing = unified_endpoint.handle({
+        "jsonrpc": "2.0", "id": "list", "token": unified.capability_token("protocol"),
+        "method": "tools/list",
+    })
+    assert [tool["name"] for tool in unified_listing["result"]["tools"]] == list(
+        UNIFIED_PROTOCOL_RUN_OPERATIONS
+    )
 
     retired = endpoint.handle(
         {

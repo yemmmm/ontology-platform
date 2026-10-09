@@ -873,7 +873,10 @@ def test_s4_judge_reads_checkpoint_interview_after_real_private_cleanup(monkeypa
         assert code == 0
         entry = state["judge_payload"]["evidence_bundle"]["entries"][0]
         archived = run_root / "checkpoints" / checkpoint_id / "host-private/competency-questions/private/interview-0001.json"
-        assert entry["content"] == archived.read_text()
+        assert "content" not in entry
+        read = state["judge_source_reads"][entry["reference_id"]]
+        assert read["content"] == archived.read_text()
+        assert read["receipt"]["content_digest"] == entry["content_digest"]
         assert entry["content_digest"] == main_module.content_digest(archived.read_text())
         assert "Approved generic interview fixture." not in json.dumps(examiner_packets)
         assert _tree_state(run_root) == before

@@ -68,7 +68,6 @@ from .preflight import (
     run_prestart_preflight,
 )
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery, RuntimeDispatchReceipt
-from .capability_mcp import STAGED_PROTOCOL_OPERATION, STAGED_PROTOCOL_RUN_OPERATIONS
 from .candidate_progress import (
     FormalCandidateError,
     FormalCandidatePlatformContractError,
@@ -125,6 +124,10 @@ from .staged_decisions import (
     load_analysis_conclusions,
     load_approvals,
     load_materialization_plan_ref,
+    load_unified_candidate,
+    validate_unified_candidate,
+    read_attempt_proofs,
+    applied_attempt_proof,
     load_materialization_unlock,
     mark_intent_status,
     next_intent_ordinal,
@@ -499,6 +502,7 @@ class TeamRunner:
         # ``staged_batch_forward_failed`` reason code.  It must NOT reuse the
         # read-only McpReadForwarder/PLATFORM_PROXY_READ_TOOLS surface.
         self.staged_batch_forwarder = staged_batch_forwarder
+        self.staged_plan_read_forwarder = None
         # These paths are constructor-only test seams.  Production callers leave
         # them unset and therefore bind each route's fixed external credential
         # location; a profile only ever reads the routes it actually names.
@@ -1245,6 +1249,8 @@ class TeamRunner:
             cq_draft_handler=(
                 self._publish_cq_question_draft if self._competency_questions else None
             ),
+            staged_plan_handler=(self._handle_execute_approved_plans if self._unified_graph else None),
+            staged_coverage_handler=(self._handle_check_plan_coverage if self._unified_graph else None),
             staged_protocol_capability=self._staged_decisions,
         )
         self.coordinator_phase = CoordinatorPhaseController()
@@ -2346,7 +2352,7 @@ class TeamRunner:
                     "staged-decisions",
                     {
                         "event": "protocol-capability-endpoint-started",
-                        "operations": list(STAGED_PROTOCOL_RUN_OPERATIONS),
+                        "operations": list(self.acceptance.capability_endpoint("protocol").operations),
                     },
                 )
             if self._competency_questions and self.acceptance is not None:
@@ -4971,6 +4977,224 @@ class TeamRunner:
             return False
         return True
 
+    def _reference_plan(self, plan_ref: str) -> Mapping[str, Any]:
+        if not self._unified_graph or self.run is None:
+            raise StagedSubmissionRejection("staged_gate_closed", "unified plans are unavailable")
+        plan, issue = load_materialization_plan_ref(self.run.root, plan_ref)
+        if issue is not None or plan is None:
+            raise StagedSubmissionRejection(
+                issue.reason_code if issue else "missing_candidate_reference",
+                issue.detail if issue else "plan is unavailable",
+            )
+        projection = plan["projection"]
+        issue = unified_candidate_issue(
+            self.run.root, projection,
+            check_existing_identity=any(
+                source.path.name == "r4-0-007-scenario-map-contract.json"
+                for source in self.run.configuration.task.role_sources
+            ),
+        )
+        if issue is not None:
+            raise StagedSubmissionRejection(issue.reason_code, issue.detail)
+        paths = staged_decision_artifact_paths(self.run.root, unified=True)
+        try:
+            approvals = load_approvals(paths["approvals"])
+        except StagedDecisionArtifactError as exc:
+            raise StagedSubmissionRejection(exc.reason_code, exc.detail) from exc
+        issue = unified_approval_issue(approvals, projection)
+        if issue is not None:
+            raise StagedSubmissionRejection(issue.reason_code, issue.detail)
+        issue = unified_translation_issue(
+            approvals, plan_ref=plan_ref, projection_digest=plan["projection_digest"],
+            coordinator_id=self._multi_slice_role_ids().get("coordinator") or "",
+        )
+        if issue is not None:
+            raise StagedSubmissionRejection(issue.reason_code, issue.detail)
+        return plan
+
+    def _handle_execute_approved_plans(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """Execute each exact approved projection in dependency order, without replay."""
+        refs = args.get("plan_refs")
+        if not isinstance(refs, list) or not refs or len(set(refs)) != len(refs):
+            raise StagedSubmissionRejection("staged_submit_schema_mismatch", "use unique ordered plan_refs")
+        completed: list[dict[str, Any]] = []
+        current_ref = None
+        stage = "approval"
+
+        def context(ontology_id: str) -> tuple[Mapping[str, Any], Mapping[str, Any]]:
+            forwarder = self.staged_plan_read_forwarder
+            if not callable(forwarder):
+                raise StagedSubmissionRejection("staged_plan_read_failed", "Host plan read forwarder is unavailable")
+            request = {"ontology_id": ontology_id}
+            try:
+                envelope = forwarder("get_modeling_context", request)
+            except Exception as exc:
+                raise StagedSubmissionRejection("staged_plan_read_failed", str(exc)) from exc
+            if not isinstance(envelope, Mapping) or envelope.get("ok") is not True:
+                raise StagedSubmissionRejection("staged_plan_read_failed", str(envelope))
+            data = envelope.get("data", {})
+            ontology = data.get("ontology") if isinstance(data, Mapping) else None
+            workspace = data.get("workspace") if isinstance(data, Mapping) else None
+            if (not isinstance(ontology, Mapping) or ontology.get("id") != ontology_id
+                    or not isinstance(workspace, Mapping)
+                    or type(workspace.get("model_revision")) is not int
+                    or workspace.get("state") != "ready"):
+                raise StagedSubmissionRejection("staged_plan_read_failed", "current workspace identity/version is missing")
+            ref = self.acceptance.register_platform_tool_result(
+                tool="get_modeling_context", arguments=request,
+                result={"structuredContent": dict(envelope)},
+            )
+            return data, ref
+
+        try:
+            if self._staged_gate_killed:
+                raise StagedSubmissionRejection("staged_unreconciled_batch", "reconcile pending write integrity before plan execution")
+            if self.run is None or not candidate_gate_open(self.run.root):
+                raise StagedSubmissionRejection("staged_gate_closed", "wait for the existing topology/candidate gate before execution or platform reads")
+            # Check the whole requested scope before its first write. Each batch's
+            # existing submission gate re-reads its plan and approvals again.
+            for ref in refs:
+                current_ref = ref
+                self._reference_plan(ref)
+            for ref in refs:
+                current_ref = ref
+                plan = self._reference_plan(ref)
+                projection = plan["projection"]
+                receipts = read_submission_receipts(self.run.root)
+                intents = read_submission_intents(self.run.root)
+                if any(intent.get("status") in {"unknown", "submitted"} for intent in intents):
+                    raise StagedSubmissionRejection("staged_unreconciled_batch", "reconcile pending write intents before retrying plans")
+                applied = None
+                for intent in intents:
+                    if (intent.get("plan_ref") == ref
+                            and intent.get("projection_digest") == plan["projection_digest"]):
+                        receipt = next((r for r in receipts if r["intent_ordinal"] == intent["ordinal"]), None)
+                        if intent.get("mode") == "apply_atomic" and intent.get("status") == "receipted":
+                            terminal = bound_attempt_proof(self.run.root, intent=intent, receipt=receipt)
+                            if terminal is None or terminal.get("attempt_status") not in {
+                                "applied", "validation_failed", "failed",
+                            }:
+                                raise StagedSubmissionRejection(
+                                    "staged_unreconciled_batch", "receipted apply has no bound terminal Attempt; reconcile it before continuing",
+                                )
+                        proof = applied_attempt_proof(self.run.root, intent=intent, receipt=receipt)
+                        if proof is not None:
+                            applied = proof
+                            break
+                stage = "readback" if applied else "current-version"
+                data, read_ref = context(projection["ontology_id"])
+                if applied is not None:
+                    completed.append({"plan_ref": ref, "projection_digest": plan["projection_digest"],
+                                      "status": "already_applied", "version_readback_ref": read_ref,
+                                      "resource_readback_status": "pending_protocol_governed_read",
+                                      "attempt_id": applied["attempt_id"]})
+                    continue
+                version = data["workspace"]["model_revision"]
+                token = args.get("lease_tokens", {}).get(projection["ontology_id"])
+                if not token:
+                    raise StagedSubmissionRejection("staged_submit_schema_mismatch", "lease_tokens must cover each approved ontology")
+                batch = {key: projection[key] for key in ("session_id", "client_batch_id", "ontology_id", "items")}
+                batch["expected_model_revision"] = version
+                attachment = args.get("trace_attachments", {}).get(ref, {})
+                submission = {"protocol_id": args["protocol_id"], "plan_ref": ref, "batch": batch,
+                              "value_traces": attachment.get("value_traces", []),
+                              "l3_nodes": attachment.get("l3_nodes", [])}
+                # Fresh keys after definite rejection; persisted successful stages
+                # are reused only when exact content and current version match.
+                key_seed = hashlib.sha256(json.dumps([ref, plan["projection_digest"], version,
+                                                       len(intents)], sort_keys=True).encode()).hexdigest()
+                proofs = read_attempt_proofs(self.run.root)
+                dry = next((proof for proof in reversed(proofs)
+                            if proof.get("plan_ref") == ref
+                            and proof.get("projection_digest") == plan["projection_digest"]
+                            and proof.get("workspace_before_version") == version
+                            and proof.get("mode") == "dry_run"
+                            and proof.get("attempt_status") == "validated"), None)
+                stage = "dry-run"
+                if dry is None:
+                    batch.update(mode="dry_run", idempotency_key=f"ref-{key_seed}-dry")
+                    dry = self._handle_staged_submit_modeling_batch(submission)
+                    if dry.get("attempt_status") != "validated":
+                        raise StagedSubmissionRejection("dry_run_proof_not_validated", json.dumps(dry))
+                stage = "apply"
+                batch.update(mode="apply_atomic", idempotency_key=f"ref-{key_seed}-apply", lease_token=token)
+                apply = self._handle_staged_submit_modeling_batch(submission)
+                if apply.get("attempt_status") != "applied":
+                    raise StagedSubmissionRejection("staged_plan_apply_incomplete", json.dumps(apply))
+                stage = "readback"
+                after, read_ref = context(projection["ontology_id"])
+                if after["workspace"]["model_revision"] < version:
+                    raise StagedSubmissionRejection("staged_plan_read_failed", "readback revision precedes apply")
+                completed.append({"plan_ref": ref, "projection_digest": plan["projection_digest"],
+                                  "status": "applied", "dry_run": dict(dry), "apply": apply,
+                                  "version_readback_ref": read_ref,
+                                  "resource_readback_status": "pending_protocol_governed_read",
+                                  "model_revision": after["workspace"]["model_revision"]})
+        except (StagedSubmissionRejection, StagedDecisionArtifactError) as exc:
+            detail = exc.data if isinstance(exc, StagedSubmissionRejection) else {
+                "reason_code": exc.reason_code, "detail": exc.detail,
+            }
+            return {"ok": False, "status": "PARTIAL", "completed": completed,
+                    "error": {**detail, "plan_ref": current_ref, "stage": stage},
+                    "retry": "correct the named reference/approval/read or reconcile unknown writes, then retry; applied plans are not replayed"}
+        return {"ok": True, "status": "COMPLETE", "completed": completed,
+                "resource_readback_status": "pending_protocol_governed_read",
+                "required_next_step": "Protocol must read actual authorized resources/relations with existing governed reads, retain complete pages, then inspect associations by read_refs before chain handoff",
+                "semantic_verdict": "not_evaluated"}
+
+    def _handle_check_plan_coverage(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """Candidate/command identity coverage only; business decisions stay with Agents."""
+        ref = args["candidate_ref"]
+        if self.run is None or not self._unified_graph:
+            raise StagedSubmissionRejection("staged_gate_closed", "unified candidates are unavailable")
+        prefix = "stage3-neutral-graph/candidates/"
+        path = self.run.root / ref
+        if (not isinstance(ref, str) or not ref.startswith(prefix)
+                or path.is_symlink() or not path.is_file()
+                or path.resolve().parent != (self.run.root / prefix).resolve()
+                or not path.resolve().is_relative_to(self.run.root.resolve())):
+            raise StagedSubmissionRejection("missing_candidate_reference", "candidate_ref must name this run's published candidate")
+        candidate = load_unified_candidate(path)
+        issues = validate_unified_candidate(candidate)
+        if issues:
+            raise StagedSubmissionRejection(issues[0].reason_code, issues[0].detail)
+        planned: dict[str, list[str]] = {}
+        applied: dict[str, list[str]] = {}
+        proofs = read_attempt_proofs(self.run.root)
+        for plan_ref in args["plan_refs"]:
+            plan = self._reference_plan(plan_ref)
+            projection = plan["projection"]
+            if (projection["candidate_id"] != candidate["candidate_id"]
+                    or projection["candidate_revision"] != candidate["revision"]):
+                raise StagedSubmissionRejection("approval_stale", "coverage plans must bind the same candidate revision")
+            is_applied = any(p.get("plan_ref") == plan_ref
+                             and p.get("projection_digest") == plan["projection_digest"]
+                             and p.get("mode") == "apply_atomic" and p.get("attempt_status") == "applied"
+                             for p in proofs)
+            for binding in projection["decision_bindings"]:
+                for item_id in binding["candidate_item_ids"]:
+                    planned.setdefault(item_id, []).append(plan_ref)
+                    if is_applied:
+                        applied.setdefault(item_id, []).append(plan_ref)
+        item_ids = {item["item_id"] for item in candidate["items"]}
+        dispositions = {}
+        for entry in args["dispositions"]:
+            item_id = entry["candidate_item_id"]
+            if (item_id not in item_ids or item_id in dispositions or item_id in planned
+                    or entry["disposition"] not in {"unknown", "out_of_scope", "deferred"}
+                    or not entry["reason"].strip()):
+                raise StagedSubmissionRejection("approval_content_mismatch", "disposition must uniquely name an unplanned candidate item and its business reason")
+            dispositions[item_id] = dict(entry)
+        rows = [{"candidate_item_id": item["item_id"], "item_kind": item["item_kind"],
+                 "plan_refs": planned.get(item["item_id"], []),
+                 "applied_plan_refs": applied.get(item["item_id"], []),
+                 "disposition": dispositions.get(item["item_id"])} for item in candidate["items"]]
+        missing = sorted(item_ids - set(planned) - set(dispositions))
+        return {"status": "PARTIAL" if missing else "COMPLETE", "candidate_ref": ref,
+                "items": rows, "unaccounted_item_ids": missing,
+                "semantic_verdict": "not_evaluated",
+                "remediation": "review missing definitions/relations/shared identities/cross-Ontology dependencies; add plans or explicit business dispositions"}
+
     def _handle_staged_submit_modeling_batch(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """The Runner-private staged Modeling Batch submission capability.
 
@@ -5338,6 +5562,11 @@ class TeamRunner:
             "receipt_ordinal": receipt["ordinal"],
             "response_digest": response_digest,
         }
+        if self.acceptance is not None:
+            response["platform_ref"] = self.acceptance.register_platform_tool_result(
+                tool="submit_modeling_batch", arguments=dict(batch),
+                result={"structuredContent": {"ok": True, "data": dict(result)}},
+            )
         for field in ("mode", "attempt_id", "attempt_status", "content_hash"):
             if result.get(field) is not None:
                 response[field] = result.get(field)

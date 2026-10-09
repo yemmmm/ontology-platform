@@ -35,6 +35,8 @@ CQ_FREEZE_SCHEMA = "r3-0-011-cq-freeze/v1"
 CQ_BATCH_PACKET_SCHEMA = "r3-0-011-acceptance-batch-packet/v1"
 CQ_BATCH_REPORT_SCHEMA = "r3-0-011-acceptance-batch-report/v1"
 CQ_EVIDENCE_BUNDLE_SCHEMA = "r3-0-011-acceptance-evidence/v1"
+CQ_EVIDENCE_REFERENCE_SCHEMA = "r4-3-006-acceptance-evidence-refs/v2"
+CQ_REFERENCE_PACKET_SCHEMA = "r4-3-006-acceptance-batch-packet/v2"
 
 # Round 4 follow-up (e): acceptance-batch LLM calls are attributed in evidence
 # with this mode label.  It is recorded by the read-only acceptance path only;
@@ -1124,7 +1126,8 @@ def validate_evidence_bundle(payload: Any) -> dict[str, Any]:
         obj,
         "cq_freeze_schema_mismatch",
     )
-    if bundle["schema_version"] != CQ_EVIDENCE_BUNDLE_SCHEMA:
+    reference_mode = bundle["schema_version"] == CQ_EVIDENCE_REFERENCE_SCHEMA
+    if bundle["schema_version"] not in {CQ_EVIDENCE_BUNDLE_SCHEMA, CQ_EVIDENCE_REFERENCE_SCHEMA}:
         raise CQContractError(
             "cq_freeze_schema_mismatch",
             f"{obj}.schema_version is invalid",
@@ -1158,7 +1161,7 @@ def validate_evidence_bundle(payload: Any) -> dict[str, Any]:
                 "question_id",
                 "source",
                 "locator",
-                "content",
+                *( {"reference_id"} if reference_mode else {"content"} ),
                 "content_digest",
                 "review_content_version",
             },
@@ -1175,6 +1178,20 @@ def validate_evidence_bundle(payload: Any) -> dict[str, Any]:
                 retry="attach only approved business or interview material",
             )
         _text(item["locator"], obj, "locator", "cq_freeze_schema_mismatch")
+        if reference_mode:
+            identity = {key: item[key] for key in (
+                "source", "locator", "content_digest", "review_content_version"
+            )}
+            if item["reference_id"] != content_digest(identity):
+                raise CQContractError("cq_freeze_schema_mismatch", "evidence reference identity changed",
+                                      obj=obj, retry="restore the frozen reference identity")
+            digest = item["content_digest"]
+            if not isinstance(digest, str) or not digest.startswith("sha256:") or len(digest) != 71:
+                raise CQContractError("cq_freeze_schema_mismatch", "evidence content digest invalid",
+                                      obj=obj, retry="restore the frozen content digest")
+            _positive_int(item["review_content_version"], obj, "review_content_version",
+                          "cq_freeze_schema_mismatch")
+            continue
         content = item["content"]
         if not isinstance(content, str) or not content:
             raise CQContractError(
@@ -1199,6 +1216,26 @@ def validate_evidence_bundle(payload: Any) -> dict[str, Any]:
     normalized = dict(bundle)
     normalized["bundle_digest"] = content_digest({"entries": entries})
     return normalized
+
+
+def referenced_evidence_bundle(payload: Any) -> tuple[dict[str, Any], dict[str, str]]:
+    """Project verified frozen bytes to a manifest and a Host-only body registry."""
+    bundle = validate_evidence_bundle(payload)
+    if bundle["schema_version"] != CQ_EVIDENCE_BUNDLE_SCHEMA:
+        raise ValueError("reference projection requires verified inline frozen material")
+    manifest = {key: value for key, value in bundle.items() if key != "bundle_digest"}
+    manifest["schema_version"] = CQ_EVIDENCE_REFERENCE_SCHEMA
+    entries, registry = [], {}
+    for entry in bundle["entries"]:
+        projected = {key: value for key, value in entry.items() if key != "content"}
+        identity = {key: projected[key] for key in (
+            "source", "locator", "content_digest", "review_content_version"
+        )}
+        projected["reference_id"] = content_digest(identity)
+        registry[projected["reference_id"]] = entry["content"]
+        entries.append(projected)
+    manifest["entries"] = entries
+    return manifest, registry
 
 
 # --- D5 model binding and batch scope ----------------------------------------

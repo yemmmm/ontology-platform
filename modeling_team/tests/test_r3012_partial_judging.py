@@ -111,6 +111,15 @@ def _batch_adapter(
                 )
             if kwargs.get("platform_forwarder") is None:
                 state["judge_payload"] = packet.to_dict()["payload"]
+                if packet.source_registry is not None:
+                    from modeling_team.acceptance_runtime import V3BatchReportContract
+                    source_contract = V3BatchReportContract(role="acceptance", packet=packet)
+                    state["judge_source_reads"] = {
+                        entry["reference_id"]: source_contract.read_frozen_evidence({
+                            "run_id": packet.payload["run_id"], "batch_id": packet.batch_id,
+                            "freeze_digest": packet.freeze_digest, "reference_id": entry["reference_id"],
+                        }) for entry in state["judge_payload"]["evidence_bundle"]["entries"]
+                    }
                 questions = state["judge_payload"]["questions"]
                 if judge_verdicts is None:
                     return [_passing_verdict(str(item["question_id"])) for item in questions]
@@ -1010,6 +1019,13 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
     from modeling_team.acceptance_runtime import ReportSinkServer, _packet_canonical
     from modeling_team.runtimes.codex import CodexRuntimeAdapter, CodexRuntimeRPCError
     from modeling_team.tests.test_r3011_acceptance_runtime import _submit
+    from modeling_team.report_sink_mcp import read_frozen_evidence
+    from modeling_team import __main__ as cli
+    # Reference source transport removes repeated source padding. Exercise proactive
+    # input grouping through a smaller soft target instead of relying on source bloat.
+    original_grouping = cli._cq_judge_input_packets
+    monkeypatch.setattr(cli, "_cq_judge_input_packets", lambda packet, **kwargs:
+                        original_grouping(packet, soft_target_bytes=15_000, **kwargs))
 
     questions = [_question(f"cq-{index}") for index in range(11)]
     oversized_ids = set()
@@ -1067,6 +1083,7 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
             if method == "mcpServerStatus/list":
                 return {"data": [{"name": "examiner_report", "tools": [
                     {"name": "submit_examiner_report"},
+                    {"name": "read_frozen_evidence"},
                 ]}]}
             if method == "turn/start":
                 text = "".join(item["text"] for item in params["input"])
@@ -1076,7 +1093,7 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
                 ids = [q["question_id"] for q in payload["questions"]]
                 assert ids == list(sinks[-1].batch_contract.question_ids)
                 assert set(payload["platform_read_responses"]) == set(ids)
-                assert all(e["content"] == content for e in payload["evidence_bundle"]["entries"])
+                assert all("content" not in e for e in payload["evidence_bundle"]["entries"])
                 assert len(payload["examiner_reports"]) == len(ids)
                 assert "verdicts" not in payload
                 assert _packet_canonical(payload) == (agent.home / "input.json").read_bytes()
@@ -1084,7 +1101,14 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
                 if len(observed) == failed_group:
                     raise CodexRuntimeRPCError(method, -32602, "rpc_error")
                 for question_id in ids:
-                    assert _submit(sinks[-1].socket_path, _passing_verdict(question_id),
+                    entry = next(e for e in payload["evidence_bundle"]["entries"] if e["question_id"] == question_id)
+                    read = read_frozen_evidence(str(sinks[-1].socket_path), sinks[-1].token,
+                        {"run_id": payload["run_id"], "batch_id": payload["batch_id"],
+                         "freeze_digest": payload["freeze_digest"], "reference_id": entry["reference_id"]})
+                    assert json.loads(read["content"][0]["text"])["content"] == content
+                    passing = _passing_verdict(question_id)
+                    passing["note"] += " " + entry["reference_id"]
+                    assert _submit(sinks[-1].socket_path, passing,
                                    token=sinks[-1].token)["ok"] is True
                 return {"turn": {"id": "generic-turn"}}
             raise AssertionError(method)

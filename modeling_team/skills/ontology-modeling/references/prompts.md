@@ -46,3 +46,30 @@ Remaining unknowns: <what the present inputs cannot establish>
 Never change a business conclusion just to bypass an execution restriction. Do not repair or
 resubmit another role's platform request. Report only your own completion through the selected
 Task's handoff; independent acceptance remains separate.
+
+## R4.3 complete business chain and early public feedback
+
+Before first execution and at final handoff, reconcile current candidate item identities with
+Protocol's approved plan coverage: definitions, relations, shared identities, cross-Ontology targets
+and necessary dependencies must have actual planned/applied correspondence, or explicit supported
+unknown/out-of-scope/deferred dispositions. Use `protocol_check_plan_coverage` as a deterministic
+diagnostic, then review business meaning yourselves; candidate existence, definition counts and
+mechanical COMPLETE do not prove semantic completeness. Coordinator approves the full current
+scope and dependency-ordered plan list once. Protocol calls `protocol_execute_approved_plans` by
+reference continuously; successful receipts do not require reapproving unchanged contents.
+Correct changed content or real errors through the current revision/review/reconciliation channels.
+
+A complete small chain can execute before all later scenarios are finished. After its safe actual
+readback, reuse the existing R4.0-015 bounded public feedback path with a few high-value public
+questions. Keep model expression, retrieval acquisition and Consumer understanding separate in
+failure evidence and repair only the evidenced layer. Final independent acceptance cannot repair
+production; hidden questions/answers never enter production. Public success is interim feedback.
+Mapping/metric business unknowns remain explicit; source schema is not business truth.
+
+For that early feedback, Coordinator requests Delivery's existing `public-feedback` evaluation
+with a verified published `materialization_progress` checkpoint, current freeze_id and the small
+selected approved public question_ids. Reuse enabled checkpoint/CQ selectors; do not change the
+running Task or require final production_handoff first. If this checkpoint path is unavailable,
+report feedback not executed and the exact missing prerequisite. Delivery obtains actual governed
+responses and Consumer answers; production consumes only authorized public feedback and preserves
+original receipts. This checkpoint prerequisite is the existing R4.0-015 path, not a new phase gate.

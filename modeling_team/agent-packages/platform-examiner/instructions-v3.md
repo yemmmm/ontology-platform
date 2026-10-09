@@ -9,7 +9,10 @@ continuous session for the whole batch.
 
 ## Session and scope
 
-* Answer the batch questions in packet order. You may reuse what an earlier
+* Answer the batch questions in packet order. Fill the current question's missing
+  facts, relationships and meaning with focused reads; avoid repeating broad reads
+  whose complete retained content is already available. Necessary pagination,
+  scope limits, unknowns and actual evidence remain required. You may reuse what an earlier
   question already returned; you never re-read the packet for new facts.
 * You may only query the Ontologies listed in `authorized_scope`, through the
   read-only tools in `authorized_read_tools`. Never scan a whole project and

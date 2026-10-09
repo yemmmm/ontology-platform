@@ -69,6 +69,7 @@ from ..capability_mcp import (
     CQ_OPERATION,
     ROLE_OPERATIONS,
     STAGED_PROTOCOL_RUN_OPERATIONS,
+    UNIFIED_PROTOCOL_RUN_OPERATIONS,
 )
 from ..candidate_platform_gate import (
     CANDIDATE_PLATFORM_GATE_DIR_MOUNT,
@@ -136,22 +137,22 @@ def _v3_acceptance_first_turn_text(packet, role_instructions: str) -> str:
     else:
         isolation = (
             "One independent judging session per batch, questions in packet order; "
-            "this packet already carries the frozen answer points, the approved "
-            "evidence material and the Examiner reports, and no platform read is "
+            "this packet carries the frozen answer points, approved evidence "
+            "or its frozen references, and the Examiner reports, and no platform read is "
             "available to you."
         )
     first_turn_text = (
         "R3.0-011 v3 hidden-batch acceptance session. Use only this serialized packet "
-        "and submit per-question v3 reports through the report-only acceptance MCP "
+        "and its authorized frozen references, and submit per-question v3 reports through the acceptance MCP "
         "server. "
         + isolation
         + " PACKET_JSON="
         + _packet_canonical(payload).decode("utf-8")
         + " "
         + role_instructions
-        + f" PACKET_DIGEST={packet.canonical_digest}"
+        + f" PACKET_SCHEMA={packet.schema_version} PACKET_DIGEST={packet.canonical_digest}"
     )
-    if not platform_role and len(first_turn_text) > _CODEX_MAX_INPUT_TEXT_CHARS:
+    if not platform_role:
         transport = _v3_judge_lossless_transport(packet.payload)
         # This is explicitly a transport JSON, not the original packet schema.
         # The native sink and private input remain bound to the full packet.
@@ -167,6 +168,15 @@ def _v3_acceptance_first_turn_text(packet, role_instructions: str) -> str:
             + _packet_canonical(transport).decode("utf-8")
         )
         first_turn_text = first_turn_text.replace(original_input, transport_input, 1)
+        if packet.source_registry is not None:
+            first_turn_text += (
+                " Frozen source reference contract v2: business material is a manifest only. "
+                "Call examiner_report.read_frozen_evidence with run_id, batch_id, freeze_digest "
+                "and reference_id from the manifest to obtain original text. Reuse same frozen "
+                "source/content digest/review version already read in this session; rereads "
+                "are allowed. Cite a relevant reference_id in each pass note. Manifest alone "
+                "cannot support pass. No filesystem, platform or database reads are authorized."
+            )
     return first_turn_text
 
 
@@ -951,6 +961,9 @@ def _v3_child_teardown_evidence(
         "proxy_stopped": _stopped(proxy),
         "private_root_removed": _removed(private_root),
         "socket_root_removed": _removed(socket_root),
+        **({"frozen_source_read_receipts": list(report_sink.batch_contract.source_read_receipts)}
+           if getattr(getattr(report_sink, "batch_contract", None), "packet", None) is not None
+           and report_sink.batch_contract.packet.source_registry is not None else {}),
     }
 
 
@@ -3301,6 +3314,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     ",".join(batch_contract.question_ids),
                 ]
             )
+            if v3_packet.source_registry is not None:
+                report_sink_args.append("--frozen-evidence-reads")
         config_lines.extend(
             [
                 "[mcp_servers.examiner_report]",
@@ -3456,6 +3471,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         # model-selected dispatch.  Non-formal children keep file auth.
         child_agent.auth_path = (
             home / "auth.json" if (not formal or formal_codex_builtin) else None
+        )
+        child_agent.frozen_evidence_reads = (
+            batch_contract is not None and v3_packet.source_registry is not None
         )
         child_agent.auth_barrier_pending = formal
         child_agent.credential_mode = (
@@ -3728,6 +3746,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # protocol set stays formal-only.  This tuple must equal the
                 # live socket's ``tools/list`` exactly -- ``_require_mcp_surface``
                 # asserts that equality against the carrier's own assembly.
+                active_run = run or getattr(self, "_active_run", None)
+                configuration = getattr(active_run, "configuration", None)
+                parameters = getattr(getattr(configuration, "task", None), "parameters", {})
+                if getattr(self, "_unified_graph", False) or parameters.get("unified_semantic_graph") is True:
+                    return UNIFIED_PROTOCOL_RUN_OPERATIONS
                 return STAGED_PROTOCOL_RUN_OPERATIONS
             if (
                 role == COMPETENCY_QUESTION_ROLE
@@ -4766,7 +4789,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 [
                     operation
                     for operation in ROLE_OPERATIONS.get(agent.package.role, ())
-                    if operation not in STAGED_PROTOCOL_RUN_OPERATIONS
+                    if operation not in UNIFIED_PROTOCOL_RUN_OPERATIONS
                 ]
                 if agent.package.role != "modeling"
                 else []
@@ -6277,8 +6300,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
 
     def _require_expected_mcp_servers(self, agent: _Agent) -> None:
         """Fail before the first turn unless the frozen per-role MCP surface is live."""
-        if agent.package.package_id in {"source-examiner", "platform-examiner"}:
+        if agent.package.package_id in {"source-examiner", "platform-examiner", "acceptance"}:
             expected = {"examiner_report": {"submit_examiner_report"}}
+            if getattr(agent, "frozen_evidence_reads", False) is True:
+                expected["examiner_report"].add("read_frozen_evidence")
             if agent.package.package_id == "platform-examiner":
                 expected["platform_read_proxy"] = set(agent.platform_tools)
             self._require_mcp_surface(agent, expected)
@@ -6319,6 +6344,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Check the deliberately tiny R2.3-006 surface for all three fresh roles."""
 
         expected = {"examiner_report": {"submit_examiner_report"}}
+        if getattr(agent, "frozen_evidence_reads", False) is True:
+            expected["examiner_report"].add("read_frozen_evidence")
         if agent.package.package_id == "platform-examiner":
             expected["platform_read_proxy"] = set(agent.platform_tools)
         self._require_mcp_surface(agent, expected)

@@ -206,6 +206,14 @@ def _mcp_call(name: str, tool: str, arguments: dict[str, Any], *, typed: bool = 
 
 
 def _parse_packet(text: str) -> dict[str, Any]:
+    if "TRANSPORT_JSON=" in text:
+        start = text.index("TRANSPORT_JSON=") + len("TRANSPORT_JSON=")
+        transport, _ = json.JSONDecoder().raw_decode(text, start)
+        payload = transport["packet"]
+        for entries in payload.get("platform_read_responses", {}).values():
+            for entry in entries:
+                entry["result"] = transport["result_body_registry"][entry.pop("result_ref")]
+        return payload
     key = "PACKET_JSON="
     start = text.index(key) + len(key)
     payload, _ = json.JSONDecoder().raw_decode(text, start)
@@ -341,8 +349,19 @@ def _judge_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dict[s
             for entry in question_entries
         )
         basis = ""
+        references = []
         for entry in question_entries:
-            match = re.search(r"basis:([a-f0-9]{12})", str(entry.get("content", "")))
+            content = entry.get("content", "")
+            if "reference_id" in entry:
+                read = _mcp_call("examiner_report", "read_frozen_evidence", {
+                    "run_id": payload["run_id"], "batch_id": payload["batch_id"],
+                    "freeze_digest": payload["freeze_digest"], "reference_id": entry["reference_id"],
+                })
+                if not read["ok"]:
+                    raise RuntimeError("fixture frozen source read failed: " + str(read))
+                content = read["payload"]["content"]
+                references.append(entry["reference_id"])
+            match = re.search(r"basis:([a-f0-9]{12})", str(content))
             if match:
                 basis = match.group(1)
         answer = str(examiner.get(question_id, {}).get("answer", ""))
@@ -358,6 +377,7 @@ def _judge_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dict[s
             f"prompt_markers={','.join(mounted['prompt_markers'])};"
             f"prompt_legacy_markers={','.join(mounted['prompt_legacy_markers'])};"
             f"evidence={evidence};basis={basis};examiner_reports={len(examiner)};"
+            f"source_references={','.join(references)};"
             f"spawned={'+'.join(sorted(SPAWNED))}"
         )
         report = {

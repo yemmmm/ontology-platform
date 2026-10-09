@@ -670,8 +670,9 @@ the rejected plan and create fresh part plans, without raising the platform limi
 already applied parts.
 
 When the task additionally declares `staged_modeling_decisions`, every Modeling Batch submission
-goes exclusively through the `protocol_staged_submit_modeling_batch` capability on the
-`runner_capability` MCP server per
+goes exclusively through Runner's staged capabilities on the `runner_capability` MCP server.
+For unified approved plans use `protocol_execute_approved_plans` below, which invokes the same
+staged submission gate internally. Older/manual submission uses `protocol_staged_submit_modeling_batch` per
 `modeling_team/references/r3-0-008b-staged-decisions-contract.json`: pass the verbatim batch
 envelope (the same fields as `submit_modeling_batch`) plus `value_traces` naming the confirmed
 conclusion behind each enum command and `l3_nodes` listing each L3 entity command — those trace
@@ -687,8 +688,10 @@ receipt, and the findings name the repair. Never call `apply_atomic` on a batch 
 attempt you have not read back clean.
 Maintain the materialization ledger in `value-semantics/ledger/materialization-ledger.json`,
 closing each materialized value conclusion against an authoritative Runner receipt. Closure timing
-is per receipt, not deferred: after verifying the clean `applied` attempt, append entries for the
-plan's materialized value conclusions before reporting it complete. Ordinary commands with no
+is per receipt: after verifying the clean `applied` attempt, append entries for the
+plan's materialized value conclusions before reporting it complete. For the reference operation,
+close every returned applied receipt after the continuous tool execution and before the Agent's
+completion report; do not add a Coordinator approval round between unchanged approved plans. Ordinary commands with no
 materialized value conclusion require no new entries; `entries: []` is valid when none has been
 materialized. Their execution still closes against the actual Batch/Attempt and Runner receipt;
 never invent a `conclusion_id` merely to make the ledger nonempty. `command_digest` is the
@@ -703,41 +706,33 @@ or a direct `submit_modeling_batch` call. If a submission result is reported as
 `staged_batch_forward_unknown` or `staged_unreconciled_batch`, stop submitting and surface it:
 manual adjudication is required before anything else can be submitted.
 
-Once you have saved a materialization plan under
-`stage3-neutral-graph/materialization-plans/`, the items you forward when calling the
-capability for it are that saved plan's complete `projection.items` copied exactly — field
-by field and text by text, including `rationale`, `depends_on`,
-`competency_question_ids` and every optional field, in the same order. Regenerating the
-items by hand at call time is where drift enters: rewording a `rationale` as a synonym
-(for example saving "A service contract is held by a customer." but submitting "A service
-contract belongs to a customer."), adding or dropping default fields, or abbreviating a
-list can look semantically equivalent yet is not the approved content. Per the mounted
-`modeling_team/references/r3-0-009-unified-graph-contract.json`, the projection is rebuilt
-from the payloads actually forwarded and compared field by field, and the digest covers
-exactly what is forwarded — so any such difference returns `approval_content_mismatch`
-even with identical ids, payloads and endpoints and no missing or extra items.
-Request-level fields follow the mounted contract's own treatment of each one: keep every
-actual top-level projection binding — including `session_id` — consistent with the saved
-plan, and never treat an envelope-level difference as a reason to rewrite
-`projection.items`. That rejection is recoverable: re-copy the differing items verbatim
-from the saved plan and call again for the same target; do not rewrite the approved plan
-to match a mutated submission.
-Exact-copy fidelity is per item, not a one-call completeness gate. The staged capability
-carries a batch inline, so a real transport bound — the deployment's
-`modeling_batch_max_items`, dependency order, or the current model's call output budget
-for one payload — is a legitimate reason to execute a saved plan as Coordinator-approved
-bounded parts. When you cannot safely emit a plan's full item set in one call, do not
-request a new file-backed or reference-based batch tool, do not wait for a tool
-extension, and do not treat submitting every item in a single call as a hard gate:
-surface the bound as a recoverable issue to the Coordinator and propose the split, with
-parts sized to the actual bound rather than an arbitrary fixed chunk. Each approved part
-is a new plan version/batch under the revision and `client_batch_id` burn rules above,
-and its items are still copied verbatim from the saved plan so the parts together cover
-the saved projection exactly — no item dropped, duplicated, reworded or reordered past
-the approved boundaries — with each part keeping its own review, dry-run, apply and
-readback. Old plan evidence is never overwritten and an already applied part is never
-replayed. If a submission already went out or a write is unknown, stop and use the
-staged failure handling above before proposing any split.
+For unified staged runs, use Runner capability `protocol_execute_approved_plans` after approval.
+Supply `protocol_id`, the complete dependency-ordered `plan_refs` list and current `lease_tokens`
+by Ontology ID; optional `trace_attachments` carries only existing `value_traces`/`l3_nodes` per
+plan reference. Do not transcribe `projection.items` into tool calls. The Runner reads each exact
+immutable plan and forwards the complete approved `projection.items` exactly, including `rationale`,
+`depends_on` and `competency_question_ids`, in approved order. It validates current candidate/semantic/translation
+approval, then obtains current-version dry-run, applies and retains workspace version readback
+before the next plan. `get_modeling_context` carries revision/counts, not complete resource or
+relation content. An execution COMPLETE never closes `resource_readback_status`, chain readback
+or semantic acceptance: afterward continue existing governed SPARQL pagination over the applied
+and approved shared scope and `protocol_inspect_associations` by retained refs. Preserve exact
+resource/relationship rows and compare with approved candidate/plan scope before chain handoff. One approved reference is one actual batch; form plans before approval using deployment
+limits, input size and real dependencies. The tool never internally rechunks an approved projection.
+If an actual deployment/input bound requires parts, propose dependency-ordered successor plans to
+Coordinator before approval. Each part keeps distinct plan/client batch IDs, exact item fields and
+its existing review/dry-run/apply/readback; preserve the full approved semantic scope across parts.
+Use actual bounds, never an arbitrary fixed chunk. Retain old plan evidence and never replay applied
+parts. Unknown/submitted writes must be reconciled before proposing a changed execution plan.
+
+Normal receipts do not require Coordinator to approve the same semantic scope again. Continue
+within the approved dependency list. Changed content, candidate revision, binding or plan identity
+requires its existing approval again. An `approval_content_mismatch` is actionable drift: restore
+the exact approved content or publish/review a real successor; never rewrite approval to fit a
+mutated submission. A returned PARTIAL names the failing plan and stage and preserves completed
+plans. Correct that cause and retry references; proven applied plans are read back, never replayed.
+Unknown/submitted writes require existing reconciliation first. No cross-batch transaction is implied.
+The legacy inline staged submit remains for older contracts and exact bounded manual submissions.
 
 Historical cumulative token counts or estimates are not a hard run budget:
 keep executing the approved bounded parts across normal same-thread turns, and
@@ -874,9 +869,13 @@ reads RDF and formal literal references beyond the canvas's 500-node endpoint wi
 direct database access or inferred/stub graphs. Ordinary platform denial/errors remain their
 original failure layer; never guess that protected/unread resources do not exist.
 
-Preserve ordered raw `{request,response}` pages, then repeat the same query at OFFSET 0 with
-result_limit=1 to bind the final snapshot. Call native `protocol_mechanics` / `inspect_model_associations`
-with the unchanged pages/final read, actual scope and injected semantic_base_iri. Omit focus_iris
+Retain each governed response through the existing Runner observation channel, then repeat the
+same query at OFFSET 0 with result_limit=1 to bind the final snapshot. For staged runs, obtain
+observation references from `protocol_list_platform_artifacts` when advertised (otherwise use the
+observed native call references) and call `protocol_inspect_associations` with ordered `read_refs`,
+`final_read_ref`, actual scope and injected semantic_base_iri. This reads original retained pages;
+do not retype bindings. The legacy `protocol_mechanics` / `inspect_model_associations` raw-page
+entry remains for non-staged runs. Omit focus_iris
 for the whole authorized scope; an incremental focus must cover actual new/existing/affected
 shared definitions, not hide old unrelated resources by making up identities. Send the returned
 scan and exact read locators to Modeling and Coordinator through existing Team Transport. No
@@ -969,3 +968,25 @@ request or carry GraphSet identifiers, member roles, or source-graph selectors i
 and handoffs. Definitions, ordinary nodes and relations share that model. Internal RDF locators in
 technical write receipts are host storage details. Keep original business sources and external mapping
 provenance intact; shared references require explicitly approved Ontology scope.
+
+## R4.3 complete chain coverage and bounded early feedback
+
+Before first execution and before final handoff, call `protocol_check_plan_coverage` with the
+published candidate_ref, approved plan_refs and explicit dispositions for unplanned candidate
+items (`unknown`, `out_of_scope`, `deferred`, with a business reason). Review its identity-level
+rows with Modeling and Coordinator: definitions, relations, shared identity, cross-Ontology targets
+and real dependencies must be in plans or explicitly accounted for. COMPLETE is diagnostic
+coverage only; an applied entity count or receipt never proves the business chain is correct.
+An already complete small chain can execute while later slices are refined. After its safe actual
+readback, ask Coordinator to use the existing R4.0-015 public feedback path for a small useful
+question subset. Keep actual model-expression, retrieval and Consumer-understanding failures
+distinct; public feedback does not replace final independent acceptance. Hidden questions/answers
+remain outside production. Preserve mapping/metric unknowns and authorized scope.
+
+For that early feedback, Coordinator requests Delivery's existing `public-feedback` evaluation
+with a verified published `materialization_progress` checkpoint, current freeze_id and the small
+selected approved public question_ids. Reuse enabled checkpoint/CQ selectors; do not change the
+running Task or require final production_handoff first. If this checkpoint path is unavailable,
+report feedback not executed and the exact missing prerequisite. Delivery obtains actual governed
+responses and Consumer answers; production consumes only authorized public feedback and preserves
+original receipts. This checkpoint prerequisite is the existing R4.0-015 path, not a new phase gate.

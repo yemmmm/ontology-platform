@@ -34,8 +34,8 @@ from .capability_mcp import (
     PROTOCOL_OPERATIONS,
     PROTOCOL_STAGE_OPERATIONS,
     ROLE_OPERATIONS,
-    STAGED_PROTOCOL_OPERATION,
     STAGED_PROTOCOL_RUN_OPERATIONS,
+    UNIFIED_PROTOCOL_RUN_OPERATIONS,
     RunnerCapabilityEndpoint,
     token_digest,
 )
@@ -1441,6 +1441,8 @@ class RunnerAcceptanceCarrier:
         candidate_receipt_builder: Callable[[str, str], Mapping[str, Any]] | None = None,
         candidate_conflict_builder: Callable[[str, str, str, str], Mapping[str, Any]] | None = None,
         staged_submission_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        staged_plan_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        staged_coverage_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         staged_protocol_capability: bool = False,
         cq_draft_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
     ):
@@ -1490,6 +1492,8 @@ class RunnerAcceptanceCarrier:
         # the boolean only widens the protocol capability operation set for
         # staged runs, leaving every non-staged assembly byte-identical.
         self._staged_submission_handler = staged_submission_handler
+        self._staged_plan_handler = staged_plan_handler
+        self._staged_coverage_handler = staged_coverage_handler
         # R3.0-008B/#17: the staged evidence-repost path.  It is Runner-owned for
         # the same reason as the submission handler (the Runner, not the Protocol
         # agent, holds the platform credential) but carries no durable attempt
@@ -1629,10 +1633,13 @@ class RunnerAcceptanceCarrier:
                 # and the runtime asserts the private MCP surface by exact
                 # equality); a formal carrier keeps its full protocol surface
                 # plus the staged operations.
-                operations = (
-                    (*operations, *STAGED_PROTOCOL_RUN_OPERATIONS)
-                    if formal_protocol_capability
+                staged_operations = (
+                    UNIFIED_PROTOCOL_RUN_OPERATIONS if staged_plan_handler is not None
                     else STAGED_PROTOCOL_RUN_OPERATIONS
+                )
+                operations = (
+                    (*operations, *staged_operations) if formal_protocol_capability
+                    else staged_operations
                 )
             elif role == COMPETENCY_QUESTION_ROLE:
                 # R3.0-011: exactly one Runner-private CQ operation.
@@ -3617,6 +3624,62 @@ class RunnerAcceptanceCarrier:
             "handoff_delivery_text": token,
         }
 
+    def protocol_inspect_associations(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        """Resolve this run's observed pages without Agent transcription."""
+        from .protocol_mechanics import inspect_model_associations
+
+        def resolve(ref: str) -> dict[str, Any]:
+            observed = self._platform_read_artifacts.get(ref)
+            if observed is None or observed["tool"] != "semantic_sparql_query":
+                _error("association read reference was not observed in this run",
+                       data={"reason_code": "association_read_ref_invalid", "read_ref": ref})
+            target = self.root.parent / ref
+            try:
+                if target.is_symlink() or not target.resolve().is_relative_to(self.root.parent.resolve()):
+                    raise ValueError("reference escapes retained run")
+                raw = target.read_bytes()
+                if _sha256_bytes(raw) != observed["response_digest"]:
+                    raise ValueError("retained response digest changed")
+                response = json.loads(raw)
+                if isinstance(response, Mapping) and isinstance(response.get("structuredContent"), Mapping):
+                    response = response["structuredContent"]
+                return {"request": _safe_copy(observed["request_arguments"]), "response": response}
+            except (OSError, ValueError) as exc:
+                _error("association read reference is unavailable or changed",
+                       data={"reason_code": "association_read_ref_invalid", "read_ref": ref,
+                             "detail": str(exc)})
+
+        pages = [resolve(ref) for ref in args["read_refs"]]
+        final = resolve(args["final_read_ref"])
+        try:
+            result = inspect_model_associations(
+                project_id=args["project_id"], ontology_ids=args["ontology_ids"],
+                read_pages=pages, final_read=final, semantic_base_iri=args["semantic_base_iri"],
+                focus_iris=args.get("focus_iris"),
+            )
+        except (ValueError, TypeError, AttributeError, KeyError) as exc:
+            _error(str(exc), data={"reason_code": "association_scan_input_invalid"})
+        result["read_refs"] = list(args["read_refs"])
+        result["final_read_ref"] = args["final_read_ref"]
+        result["status"] = "COMPLETE" if result["coverage"] == "complete" else "PARTIAL"
+        # Page/row locators are joined to their immutable observation identities.
+        for entry in result["unresolved_references"]:
+            locator = entry.get("read_ref", {})
+            if isinstance(locator.get("page"), int) and locator["page"] < len(args["read_refs"]):
+                locator["artifact_path"] = args["read_refs"][locator["page"]]
+        for candidate in result["candidates"]:
+            locators = []
+            for page_index, page in enumerate(pages):
+                bindings = page.get("response", {}).get("data", {}).get("result", {}).get("results", {}).get("bindings", [])
+                for row_index, row in enumerate(bindings):
+                    if row.get("subject", {}).get("value") == candidate["resource_iri"]:
+                        observed = self._platform_read_artifacts[args["read_refs"][page_index]]
+                        locators.append({"page": page_index, "row": row_index,
+                                         "artifact_path": observed["artifact_path"],
+                                         "response_digest": observed["response_digest"]})
+            candidate["read_locators"] = locators
+        return result
+
     def protocol_list_platform_artifacts(
         self,
         *,
@@ -3754,6 +3817,18 @@ class RunnerAcceptanceCarrier:
                 conflict_detail=args["conflict_detail"],
                 capability=capability,
             )
+        if role == "protocol" and operation in {
+            "protocol_execute_approved_plans", "protocol_check_plan_coverage",
+            "protocol_inspect_associations",
+        }:
+            self._check_capability("protocol", args["protocol_id"], capability)
+            if operation == "protocol_inspect_associations":
+                return self.protocol_inspect_associations(args)
+            handler = (self._staged_plan_handler if operation == "protocol_execute_approved_plans"
+                       else self._staged_coverage_handler)
+            if handler is None:
+                _error("staged plan reference capability is unavailable")
+            return handler(args)
         if role == "protocol" and operation == "protocol_staged_submit_modeling_batch":
             self._check_capability("protocol", args["protocol_id"], capability)
             if self._staged_submission_handler is None:

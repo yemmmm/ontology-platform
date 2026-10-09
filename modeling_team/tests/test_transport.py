@@ -767,7 +767,7 @@ class TransportTests(unittest.TestCase):
         self.assertIn("no new per-batch full-audit gate", protocol)
         self.assertIn("is created, and no replay, delete or payload change is implied.", protocol)
 
-    def test_transport_budget_splits_route_through_the_coordinator_not_new_tools(self) -> None:
+    def test_transport_budget_splits_keep_review_and_exact_reference_projection(self) -> None:
         root = Path(__file__).resolve().parents[2]
         protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text(
             encoding="utf-8"
@@ -775,21 +775,27 @@ class TransportTests(unittest.TestCase):
         coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
             encoding="utf-8"
         )
-        # The exact-copy rule stays and is refined, not replaced, by the split rule.
-        self.assertIn("complete `projection.items` copied exactly", protocol)
-        self.assertIn("not a one-call completeness gate", protocol)
-        self.assertIn(
-            "request a new file-backed or reference-based batch tool", protocol
-        )
-        self.assertIn("do not treat submitting every item in a single call as a hard gate", protocol)
-        self.assertIn("recoverable issue to the Coordinator and propose the split", protocol)
-        self.assertIn("copied verbatim from the saved plan", protocol)
-        self.assertIn("an arbitrary fixed chunk", protocol)
-        self.assertIn("Old plan evidence is never overwritten", protocol)
-        self.assertIn("already applied part is never", protocol)
-        self.assertIn(
-            "staged failure handling above before proposing any split", protocol
-        )
+        # v4.3 removes Agent transcription while retaining the exact approved
+        # projection. Splits remain reviewed successor plans made before approval;
+        # the execution helper never slices an already approved projection.
+        self.assertIn("use Runner capability `protocol_execute_approved_plans` after approval", protocol)
+        self.assertIn("Do not transcribe `projection.items` into tool calls", protocol)
+        self.assertIn("forwards the complete approved `projection.items` exactly", protocol)
+        for field in ("`rationale`", "`depends_on`", "`competency_question_ids`"):
+            self.assertIn(field, protocol)
+        self.assertIn("in approved order", protocol)
+        self.assertIn("One approved reference is one actual batch", protocol)
+        self.assertIn("The tool never internally rechunks an approved projection", protocol)
+        self.assertIn("propose dependency-ordered successor plans to", protocol)
+        self.assertIn("Coordinator before approval", protocol)
+        self.assertIn("actual deployment/input bound requires parts", protocol)
+        self.assertIn("distinct plan/client batch IDs, exact item fields", protocol)
+        self.assertIn("existing review/dry-run/apply/readback", protocol)
+        self.assertIn("preserve the full approved semantic scope across parts", protocol)
+        self.assertIn("never an arbitrary fixed chunk", protocol)
+        self.assertIn("Retain old plan evidence and never replay applied", protocol)
+        self.assertIn("Unknown/submitted writes must be reconciled before proposing", protocol)
+        self.assertIn("current candidate/semantic/translation", protocol)
         self.assertIn("not a tool gap", coordinator)
         self.assertIn("execute the saved projection as bounded parts", coordinator)
         self.assertIn("part's items copied exactly from the saved projection", coordinator)

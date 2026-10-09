@@ -1696,7 +1696,10 @@ _CQ_JUDGE_ROLE_INSTRUCTIONS = (
     "never semantic evidence or a completion verdict. Preserve unknown/conflict and incomplete "
     "review boundaries; omitted definitions do not establish absence. "
     "Judge every frozen question independently against the attached answer points, "
-    "evidence bundle and Examiner reports. Judge the necessary business meaning of "
+    "frozen evidence and Examiner reports. In v2 reference packets, read relevant originals "
+    "through examiner_report.read_frozen_evidence; reuse same source/digest/review version "
+    "already read in this session and reread when needed. Cite the relevant reference_id "
+    "in each pass note; the manifest alone cannot support pass. Judge the necessary business meaning of "
     "each answer, not verbatim equality; a supported explicit_unknown passes. The "
     "packet's platform_read_responses carry the host-validated retained read-only "
     "responses with their digests, tool and page for each question; judge the answer "
@@ -2173,12 +2176,16 @@ def _cq_read_tools(binding: dict[str, object]) -> list[str]:
     return list(tools)
 
 
-def _cq_judge_input_packets(packet, *, input_failures=None):
-    """Partition only an oversized Judge input, preserving ordered full evidence."""
+def _cq_judge_input_packets(packet, *, input_failures=None, soft_target_bytes=524_288):
+    """Group by actual serialized input volume before the native hard limit."""
     def size(candidate):
         return len(_v3_acceptance_first_turn_text(candidate, _CQ_JUDGE_ROLE_INSTRUCTIONS))
 
-    if size(packet) <= _CODEX_MAX_INPUT_TEXT_CHARS:
+    def volume(candidate):
+        return len(_v3_acceptance_first_turn_text(candidate, _CQ_JUDGE_ROLE_INSTRUCTIONS).encode("utf-8"))
+
+    soft_target_bytes = min(soft_target_bytes, _CODEX_MAX_INPUT_TEXT_CHARS // 2)
+    if volume(packet) <= soft_target_bytes and size(packet) <= _CODEX_MAX_INPUT_TEXT_CHARS:
         return [packet]
     payload = _unfreeze_packet(packet.payload)
 
@@ -2201,13 +2208,13 @@ def _cq_judge_input_packets(packet, *, input_failures=None):
             entry for entry in payload["evidence_bundle"]["entries"]
             if entry["question_id"] in ids
         ]
-        return build_acceptance_judge_packet(**selected)
+        return build_acceptance_judge_packet(**selected, source_registry=packet.source_registry)
 
     groups = []
     current = []
     for question in payload["questions"]:
         candidate = subset([*current, question])
-        if size(candidate) > _CODEX_MAX_INPUT_TEXT_CHARS and current:
+        if (volume(candidate) > soft_target_bytes or size(candidate) > _CODEX_MAX_INPUT_TEXT_CHARS) and current:
             groups.append(subset(current))
             current = []
             candidate = subset([question])
@@ -2227,6 +2234,41 @@ def _cq_judge_input_packets(packet, *, input_failures=None):
     if current:
         groups.append(subset(current))
     return groups
+
+
+def _cq_judge_transport_statistics(packet, groups):
+    """Disclose independent source and platform prompt volumes, retaining all bodies."""
+    from .runtimes.codex import _v3_judge_lossless_transport
+    def encoded(value):
+        return len(json.dumps(value, ensure_ascii=False, sort_keys=True,
+                              separators=(",", ":")).encode("utf-8"))
+    payload = _unfreeze_packet(packet.payload)
+    entries = payload["evidence_bundle"]["entries"]
+    registry = packet.source_registry
+    source_before = sum(encoded(registry[e["reference_id"]]) for e in entries) if registry else sum(
+        encoded(e["content"]) for e in entries)
+    platform_before = sum(encoded(e["result"]) for responses in
+                          payload.get("platform_read_responses", {}).values() for e in responses)
+    transport = _v3_judge_lossless_transport(packet.payload)
+    return {
+        "source_original_body_bytes": source_before,
+        "source_prompt_body_bytes": 0 if registry is not None else source_before,
+        "source_manifest_bytes": encoded(payload["evidence_bundle"]),
+        "source_retained_unique_body_bytes": sum(encoded(v) for v in set(registry.values())) if registry else source_before,
+        "platform_original_body_bytes": platform_before,
+        "platform_registry_body_bytes": sum(encoded(v) for v in transport["result_body_registry"].values()),
+        "full_input_bytes": len(_v3_acceptance_first_turn_text(packet, _CQ_JUDGE_ROLE_INSTRUCTIONS).encode("utf-8")),
+        "group_count": len(groups),
+        "grouped_platform_registry_body_bytes": sum(
+            encoded(v) for p in groups for v in
+            _v3_judge_lossless_transport(p.payload)["result_body_registry"].values()),
+        "grouped_source_manifest_bytes": sum(encoded(
+            _unfreeze_packet(p.payload)["evidence_bundle"]) for p in groups),
+        "groups": [{"ordinal": i, "question_ids": [q["question_id"] for q in p.payload["questions"]],
+                    "input_bytes": len(_v3_acceptance_first_turn_text(p, _CQ_JUDGE_ROLE_INSTRUCTIONS).encode("utf-8")),
+                    "input_chars": len(_v3_acceptance_first_turn_text(p, _CQ_JUDGE_ROLE_INSTRUCTIONS))}
+                   for i, p in enumerate(groups, 1)],
+    }
 
 
 def _cq_platform_packet(contract, questions, binding, observed, read_tools):
@@ -2531,6 +2573,7 @@ def _cq_execute_batch(
             # handler as the session itself: a setup failure is serialized into
             # the retained report instead of discarding the examiner reports.
             judge_stage = "acceptance-judge-setup"
+            transport_statistics = None
             try:
                 collaboration, collaboration_warnings = _cq_collaboration_context(
                     run_root, {question_id: response_projection[question_id]
@@ -2551,7 +2594,11 @@ def _cq_execute_batch(
                     freeze_digest=freeze_digest,
                     questions=judge_questions,
                     model_binding_digest=content_digest(pre_binding or binding),
-                    evidence_bundle=evidence_bundle,
+                    frozen_evidence_bundle={
+                        **evidence_bundle,
+                        "entries": [entry for entry in evidence_bundle["entries"]
+                                    if entry["question_id"] in judgeable_set],
+                    },
                     examiner_reports=[
                         dict(report)
                         for report in reports
@@ -2574,6 +2621,7 @@ def _cq_execute_batch(
                 judge_packets = _cq_judge_input_packets(
                     judge_packet, input_failures=input_failures,
                 )
+                transport_statistics = _cq_judge_transport_statistics(judge_packet, judge_packets)
                 for question_id in input_failures:
                     judging_skips[question_id] = "judge-input-too-large"
                 judgeable = [qid for qid in judgeable if qid not in input_failures]
@@ -2668,6 +2716,8 @@ def _cq_execute_batch(
                     }
                 )
             finally:
+                if transport_statistics is not None:
+                    sessions.setdefault("acceptance_judge", {})["transport_statistics"] = transport_statistics
                 if input_failures:
                     sessions["acceptance_judge"]["input_failures"] = input_failures
                 if judge_single_called:
@@ -4086,6 +4136,18 @@ def main() -> int:
                 )
 
             runner.staged_batch_forwarder = staged_batch_write_forwarder
+            def staged_plan_read_forwarder(tool, arguments):
+                key = runner.run.protocol_key
+                forwarder = McpReadForwarder(
+                    repository_root=root, read_key=key,
+                    expected_tools=["get_modeling_context"],
+                )
+                try:
+                    forwarder.start()
+                    return forwarder.forward(tool, arguments, key)
+                finally:
+                    forwarder.stop()
+            runner.staged_plan_read_forwarder = staged_plan_read_forwarder
 
         # Host auth is no longer probed unconditionally here.  TeamRunner's
         # prepare already ran the profile-scoped credential preflights

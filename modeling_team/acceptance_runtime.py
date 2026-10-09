@@ -31,6 +31,10 @@ from .competency_questions import (
     CQ_BATCH_REPORT_SCHEMA,
     validate_acceptance_verdict,
     validate_evidence_bundle,
+    referenced_evidence_bundle,
+    CQ_EVIDENCE_REFERENCE_SCHEMA,
+    CQ_REFERENCE_PACKET_SCHEMA,
+    content_digest,
     validate_examiner_report,
     validate_model_binding,
 )
@@ -389,7 +393,7 @@ PLATFORM_READ_ARTIFACT_SCHEMA = "r3-0-012-platform-read-artifact/v1"
 def acceptance_branch_for(schema_version: Any) -> str:
     """Return the explicit acceptance branch for a packet schema version."""
 
-    if schema_version == CQ_BATCH_PACKET_SCHEMA:
+    if schema_version in {CQ_BATCH_PACKET_SCHEMA, CQ_REFERENCE_PACKET_SCHEMA}:
         return CQ_ACCEPTANCE_BRANCH_V3
     if schema_version == "ExaminerRolePacket/v1":
         return CQ_ACCEPTANCE_BRANCH_LEGACY
@@ -415,6 +419,7 @@ class AcceptanceBatchPacket:
     freeze_digest: str
     field_inventory: tuple[str, ...]
     schema_version: str = CQ_BATCH_PACKET_SCHEMA
+    source_registry: Mapping[str, str] | None = None
 
     @classmethod
     def build(cls, role: str, payload: Mapping[str, Any]) -> "AcceptanceBatchPacket":
@@ -516,6 +521,18 @@ class AcceptanceBatchPacket:
                 bundle = validate_evidence_bundle(normalized["evidence_bundle"])
             except ValueError as exc:
                 raise ChildRuntimeError(f"v3 acceptance evidence bundle is invalid: {exc}") from exc
+            if bundle["schema_version"] == CQ_EVIDENCE_REFERENCE_SCHEMA:
+                if (bundle["batch_id"] != normalized["batch_id"]
+                    or bundle["freeze_digest"] != normalized["freeze_digest"]):
+                    raise ChildRuntimeError("frozen source manifest is bound to another snapshot")
+                questions = {q["question_id"]: q for q in normalized["questions"]}
+                for entry in bundle["entries"]:
+                    question = questions.get(entry["question_id"])
+                    if question is None or not any(
+                        ref.get("source") == entry["source"] and ref.get("locator") == entry["locator"]
+                        for ref in question["evidence_refs"] if isinstance(ref, Mapping)
+                    ):
+                        raise ChildRuntimeError("frozen source manifest is not bound to its question references")
             reports = normalized["examiner_reports"]
             if not isinstance(reports, list):
                 raise ChildRuntimeError("v3 acceptance examiner_reports is invalid")
@@ -561,6 +578,9 @@ class AcceptanceBatchPacket:
             str(normalized["batch_id"]),
             str(normalized["freeze_digest"]),
             tuple(sorted(str(key) for key in normalized)),
+            schema_version=(CQ_REFERENCE_PACKET_SCHEMA if role == CQ_ACCEPTANCE_JUDGE_ROLE
+                            and normalized["evidence_bundle"]["schema_version"] == CQ_EVIDENCE_REFERENCE_SCHEMA
+                            else CQ_BATCH_PACKET_SCHEMA),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -727,7 +747,26 @@ def build_platform_batch_packet(**payload: Any) -> AcceptanceBatchPacket:
 def build_acceptance_judge_packet(**payload: Any) -> AcceptanceBatchPacket:
     """Build the v3 independent read-only Acceptance judge packet."""
 
-    return AcceptanceBatchPacket.build(CQ_ACCEPTANCE_JUDGE_ROLE, payload)
+    frozen_bundle = payload.pop("frozen_evidence_bundle", None)
+    registry = payload.pop("source_registry", None)
+    if frozen_bundle is not None:
+        payload["evidence_bundle"], registry = referenced_evidence_bundle(frozen_bundle)
+    packet = AcceptanceBatchPacket.build(CQ_ACCEPTANCE_JUDGE_ROLE, payload)
+    if payload["evidence_bundle"]["schema_version"] == CQ_EVIDENCE_REFERENCE_SCHEMA:
+        from dataclasses import replace
+        entries = payload["evidence_bundle"]["entries"]
+        if not isinstance(registry, Mapping):
+            raise ChildRuntimeError("frozen source registry unavailable; restore verified frozen copies")
+        selected = {}
+        for entry in entries:
+            ref = entry["reference_id"]
+            body = registry.get(ref)
+            if not isinstance(body, str) or content_digest(body) != entry["content_digest"]:
+                raise ChildRuntimeError(f"frozen source content missing or changed: {ref}")
+            selected[ref] = body
+        packet = replace(packet, schema_version=CQ_REFERENCE_PACKET_SCHEMA,
+                         source_registry=MappingProxyType(selected))
+    return packet
 
 
 def v3_ticket_digest(value: Any) -> str:
@@ -807,6 +846,8 @@ class V3BatchReportContract:
             raise ChildRuntimeError("v3 report sink contract requires the v3 branch")
         self.role = role
         self.packet = packet
+        if packet.schema_version == CQ_REFERENCE_PACKET_SCHEMA and packet.source_registry is None:
+            raise ChildRuntimeError("reference packet requires its verified frozen source registry")
         payload = _unfreeze_packet(packet.payload)
         self.batch_id = str(payload["batch_id"])
         self.question_ids = list(_v3_batch_questions(payload["questions"], role=role))
@@ -815,6 +856,34 @@ class V3BatchReportContract:
             for item in payload["questions"]
         }
         self._reported: list[dict[str, Any]] = []
+        self.source_read_receipts: list[dict[str, Any]] = []
+
+    def read_frozen_evidence(self, arguments: Any) -> dict[str, Any]:
+        """Read only this packet's verified frozen identities, never a file path."""
+        payload = _unfreeze_packet(self.packet.payload)
+        if self.role != CQ_ACCEPTANCE_JUDGE_ROLE or self.packet.source_registry is None:
+            raise ChildRuntimeError("frozen source reads are not authorized for this packet")
+        fields = {"run_id", "batch_id", "freeze_digest", "reference_id"}
+        if not isinstance(arguments, Mapping) or set(arguments) != fields:
+            raise ChildRuntimeError("frozen source read fields invalid; use run/batch/freeze/reference identity")
+        for key in ("run_id", "batch_id", "freeze_digest"):
+            if arguments[key] != payload[key]:
+                raise ChildRuntimeError(f"frozen source read {key} is bound to another snapshot")
+        ref = arguments["reference_id"]
+        entry = next((entry for entry in payload["evidence_bundle"]["entries"]
+                      if entry["reference_id"] == ref), None)
+        if entry is None:
+            raise ChildRuntimeError("frozen source reference unknown or unauthorized")
+        content = self.packet.source_registry.get(ref)
+        if not isinstance(content, str) or content_digest(content) != entry["content_digest"]:
+            raise ChildRuntimeError("frozen source content changed; restore the verified copy")
+        receipt = {**dict(arguments), "content_digest": entry["content_digest"],
+                   "source": entry["source"], "locator": entry["locator"],
+                   "review_content_version": entry["review_content_version"],
+                   "ordinal": len(self.source_read_receipts) + 1}
+        receipt["receipt_digest"] = content_digest(receipt)
+        self.source_read_receipts.append(receipt)
+        return {"content": content, "receipt": receipt}
 
     @property
     def schema_version(self) -> str:
@@ -878,6 +947,18 @@ class V3BatchReportContract:
             raise ChildRuntimeError(
                 f"v3 acceptance batch report for {question_id} cites another content version"
             )
+        if self.packet.source_registry is not None and validated.get("verdict") == "pass":
+            payload = _unfreeze_packet(self.packet.payload)
+            relevant = [entry for entry in payload["evidence_bundle"]["entries"]
+                        if entry["question_id"] == question_id]
+            read_identities = {(r["source"], r["content_digest"], r["review_content_version"])
+                               for r in self.source_read_receipts}
+            cited = [entry for entry in relevant if entry["reference_id"] in validated["note"]
+                     and (entry["source"], entry["content_digest"], entry["review_content_version"])
+                     in read_identities]
+            if not cited:
+                raise ChildRuntimeError("pass requires a cited relevant frozen reference actually read "
+                                        "in this session; call read_frozen_evidence or cite reused content")
         return validated
 
     def record(self, report: Mapping[str, Any]) -> None:
@@ -3347,6 +3428,14 @@ class ReportSinkServer:
                         response = {"ok": False, "code": "report-invalid"}
                     elif request.get("token") != self.token:
                         response = {"ok": False, "code": "report-token-invalid"}
+                    elif request.get("operation") == "read_frozen_evidence":
+                        try:
+                            if self._submitted or self.batch_contract is None:
+                                raise ChildRuntimeError("frozen source read session is closed or unavailable")
+                            result = self.batch_contract.read_frozen_evidence(request.get("arguments"))
+                            response = {"ok": True, "result": result}
+                        except (ChildRuntimeError, TypeError) as exc:
+                            response = {"ok": False, "code": "frozen-source-read-rejected", "detail": str(exc)}
                     elif self._submitted:
                         response = {"ok": False, "code": "report-already-submitted"}
                     elif (

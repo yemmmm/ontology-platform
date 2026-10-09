@@ -1802,6 +1802,23 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             adapter._require_lean_examiner_mcp_servers(agent)
         required.assert_called_once_with(agent, {"examiner_report": {"submit_examiner_report"}})
 
+    def test_frozen_evidence_inventory_requires_explicit_boolean_opt_in(self) -> None:
+        adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
+        for checker in (adapter._require_lean_examiner_mcp_servers,
+                        adapter._require_expected_mcp_servers):
+            for enabled in (False, None, 1, "true", mock.Mock(), True):
+                with self.subTest(checker=checker.__name__, enabled=enabled):
+                    agent = SimpleNamespace(
+                        package=SimpleNamespace(package_id="acceptance"),
+                        frozen_evidence_reads=enabled,
+                    )
+                    tools = {"submit_examiner_report"}
+                    if enabled is True:
+                        tools.add("read_frozen_evidence")
+                    with mock.patch.object(adapter, "_require_mcp_surface") as required:
+                        checker(agent)
+                    required.assert_called_once_with(agent, {"examiner_report": tools})
+
 
 if __name__ == "__main__":
     unittest.main()

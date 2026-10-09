@@ -56,7 +56,14 @@ STAGED_PROTOCOL_ASSOCIATE_EVIDENCE_OPERATION = "protocol_staged_associate_eviden
 STAGED_PROTOCOL_RUN_OPERATIONS: tuple[str, ...] = (
     STAGED_PROTOCOL_OPERATION,
 )
+UNIFIED_PROTOCOL_RUN_OPERATIONS: tuple[str, ...] = (
+    *STAGED_PROTOCOL_RUN_OPERATIONS,
+    "protocol_execute_approved_plans",
+    "protocol_inspect_associations",
+    "protocol_check_plan_coverage",
+)
 STAGED_PROTOCOL_OPERATIONS: tuple[str, ...] = (*PROTOCOL_OPERATIONS, *STAGED_PROTOCOL_RUN_OPERATIONS)
+UNIFIED_PROTOCOL_OPERATIONS: tuple[str, ...] = (*PROTOCOL_OPERATIONS, *UNIFIED_PROTOCOL_RUN_OPERATIONS)
 MODELING_OPERATIONS: tuple[str, ...] = ("modeling_publish_staged_candidate",)
 ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_get_ticket",
@@ -74,7 +81,7 @@ ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
     # advertising the delivery-bound capability to an unbound carrier.
     "coordinator": COORDINATOR_FORMAL_OPERATIONS,
     "modeling": MODELING_OPERATIONS,
-    "protocol": STAGED_PROTOCOL_OPERATIONS,
+    "protocol": UNIFIED_PROTOCOL_OPERATIONS,
     "acceptance": ACCEPTANCE_OPERATIONS,
 }
 
@@ -195,6 +202,56 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "plan_ref": {"type": "string"},
         },
         "required": ["protocol_id", "batch", "value_traces", "l3_nodes"],
+        "additionalProperties": False,
+    },
+    "protocol_execute_approved_plans": {
+        "type": "object",
+        "properties": {
+            "protocol_id": {"type": "string"},
+            "plan_refs": {"type": "array", "minItems": 1, "uniqueItems": True,
+                          "items": {"type": "string"}},
+            "lease_tokens": {"type": "object", "additionalProperties": {"type": "string"}},
+            "trace_attachments": {"type": "object", "additionalProperties": {
+                "type": "object", "properties": {
+                    "value_traces": {"type": "array", "items": {"type": "object"}},
+                    "l3_nodes": {"type": "array", "items": {"type": "object"}},
+                }, "additionalProperties": False,
+            }},
+        },
+        "required": ["protocol_id", "plan_refs", "lease_tokens"],
+        "additionalProperties": False,
+    },
+    "protocol_inspect_associations": {
+        "type": "object",
+        "properties": {
+            "protocol_id": {"type": "string"},
+            "project_id": {"type": "string"},
+            "ontology_ids": {"type": "array", "items": {"type": "string"}},
+            "read_refs": {"type": "array", "items": {"type": "string"}},
+            "final_read_ref": {"type": "string"},
+            "semantic_base_iri": {"type": "string"},
+            "focus_iris": {"type": "array", "items": {"type": "string"}},
+        },
+        "required": ["protocol_id", "project_id", "ontology_ids", "read_refs",
+                     "final_read_ref", "semantic_base_iri"],
+        "additionalProperties": False,
+    },
+    "protocol_check_plan_coverage": {
+        "type": "object",
+        "properties": {
+            "protocol_id": {"type": "string"},
+            "candidate_ref": {"type": "string"},
+            "plan_refs": {"type": "array", "items": {"type": "string"}},
+            "dispositions": {"type": "array", "items": {
+                "type": "object", "properties": {
+                    "candidate_item_id": {"type": "string"},
+                    "disposition": {"type": "string", "enum": ["unknown", "out_of_scope", "deferred"]},
+                    "reason": {"type": "string"},
+                }, "required": ["candidate_item_id", "disposition", "reason"],
+                "additionalProperties": False,
+            }},
+        },
+        "required": ["protocol_id", "candidate_ref", "plan_refs", "dispositions"],
         "additionalProperties": False,
     },
     "coordinator_ticket_draft": {
@@ -881,6 +938,8 @@ __all__ = [
     "STAGED_PROTOCOL_OPERATION",
     "STAGED_PROTOCOL_OPERATIONS",
     "STAGED_PROTOCOL_RUN_OPERATIONS",
+    "UNIFIED_PROTOCOL_RUN_OPERATIONS",
+    "UNIFIED_PROTOCOL_OPERATIONS",
     "RunnerCapabilityEndpoint",
     "run_stdio_client",
     "token_digest",

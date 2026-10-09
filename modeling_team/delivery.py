@@ -27,6 +27,7 @@ from .model_routing import (
 )
 from .runtimes.delivery import DeliveryRuntime, DeliveryRuntimeError
 from .delivery_verification import start_verification, verification_status, stop_verification
+from .efficiency import begin_round, summarize_round
 
 _PUBLIC_KINDS = {"status", "business_question", "decision_request", "final"}
 _READ = {
@@ -35,7 +36,42 @@ _READ = {
     "read_platform_record", "reconcile_write_state",
 }
 _PRODUCTION = {"start_run", "resume_from_checkpoint"}
+
+
+def _decision_observation(observation: dict) -> dict:
+    """Keep decisions and their bindings, while ignoring observation-only traffic."""
+    noise = {
+        "observed_at", "events_cursor", "last_verifiable_activity",
+        "heartbeat_at", "last_heartbeat_at", "heartbeat_count",
+        "log_bytes", "stdout_bytes", "stderr_bytes", "log_tails",
+        "stdout_tail", "stderr_tail", "staged_decision_count", "latest_staged_decision_at",
+    }
+
+    def clean(value):
+        if isinstance(value, dict):
+            return {key: clean(item) for key, item in value.items() if key not in noise}
+        if isinstance(value, list):
+            return [clean(item) for item in value]
+        return value
+
+    projected = clean(observation)
+    # Stage timestamp/ordinal alone may advance as the same phase emits more
+    # progress. The phase, batch/review identity and classification are decisions.
+    for run in projected.get("runs", {}).values():
+        status = run.get("status", {}).get("data", {})
+        stage = status.get("stage")
+        if isinstance(stage, dict):
+            stage.pop("recorded_at", None)
+            stage.pop("ordinal", None)
+    return projected
+
+
 _LOCAL_SPECS = [
+    {"name": "record_efficiency_progress", "description": "Append evidence-backed timing intervals or verified completion to the Host-configured round; never resets its start or judges semantic PASS.",
+     "inputSchema": {"type": "object", "properties": {
+         "intervals": {"type": "array", "items": {"type": "object"}},
+         "completion": {"type": "object"}, "counts": {"type": "object"},
+         "question_set": {"type": "string"}}, "additionalProperties": False}},
     {"name": "emit_user_message", "description": "Publish a business-facing message only.",
      "inputSchema": {"type": "object", "properties": {
          "kind": {"enum": sorted(_PUBLIC_KINDS)}, "text": {"type": "string"},
@@ -108,6 +144,16 @@ class DeliverySession:
             self.allowed_operations.intersection_update(previous["allowed_operations"])
         else:
             self.session_root.mkdir(parents=True, exist_ok=False, mode=0o700)
+        timing = config.get("efficiency_round")
+        if timing is not None:
+            timing_path = self.session_root / "efficiency-round.json"
+            if not timing_path.exists():
+                begin_round(timing_path, **timing)
+            else:
+                recorded = json.loads(timing_path.read_text())
+                if (recorded["started_at"] != timing["started_at"]
+                        or recorded["start_reference"] != timing["start_reference"]):
+                    raise ValueError("resumption cannot reset the efficiency round start")
         self._tools: dict[str, dict] = {}
         for tool in asyncio.run(host_ops_mcp.mcp.list_tools()):
             schema = copy.deepcopy(tool.inputSchema)
@@ -197,7 +243,7 @@ class DeliverySession:
     def _read_artifact(self, value: str) -> dict:
         path = self._path(value)
         approved = path in self.sources or path in {
-            self.session_root / name for name in ("session.json", "session-events.jsonl", "user-input.jsonl", "public-messages.jsonl")
+            self.session_root / name for name in ("session.json", "session-events.jsonl", "user-input.jsonl", "public-messages.jsonl", "observation.json", "efficiency-round.json", "efficiency-progress.jsonl")
         }
         approved = approved or path in {
             self.repository_root / '.delivery-ops' / f'{operation_id}.{suffix}'
@@ -257,6 +303,25 @@ class DeliverySession:
             if name not in self._tools:
                 raise ValueError("undeclared Delivery tool")
             validate(arguments, self._tools[name]["inputSchema"])
+            if name == "record_efficiency_progress":
+                from datetime import datetime, timezone
+                path = self.session_root / "efficiency-round.json"
+                if not path.exists():
+                    raise ValueError("Host configuration contains no authorized efficiency round")
+                record = json.loads(path.read_text())
+                record["run_ids"] = sorted(set(record["run_ids"]) | self.run_ids)
+                record["intervals"].extend(arguments.get("intervals", []))
+                if "question_set" in arguments:
+                    record["identity"]["question_set"] = arguments["question_set"]
+                for key in ("counts", "completion"):
+                    if key in arguments:
+                        record[key] = arguments[key]
+                report = summarize_round(record, observed_at=datetime.now(timezone.utc).isoformat())
+                self._append("efficiency-progress.jsonl", dict(arguments))
+                temporary = path.with_suffix(".tmp")
+                temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2))
+                temporary.replace(path)
+                return {"ok": True, "data": report}
             if name == "emit_user_message":
                 message = dict(arguments)
                 self.messages.append(message)
@@ -424,6 +489,25 @@ class DeliverySession:
             for operation_id in sorted(self.verification_ids)
         }}
 
+    def record_observation(self, observation: dict) -> bool:
+        """Persist the full observation; wake the model only for decision changes."""
+        path = self.session_root / "observation.json"
+        previous = json.loads(path.read_text()) if path.exists() else {}
+        decision = json.dumps(_decision_observation(observation), ensure_ascii=False, sort_keys=True)
+        digest = hashlib.sha256(decision.encode()).hexdigest()
+        changed = digest != getattr(self, "_last_decision_digest", None)
+        self._last_decision_digest = digest
+        record = {
+            "observation_count": previous.get("observation_count", 0) + 1,
+            "wake_count": previous.get("wake_count", 0) + int(changed),
+            "decision_digest": digest,
+            "data": observation,
+        }
+        temporary = path.with_suffix(".tmp")
+        temporary.write_text(json.dumps(record, ensure_ascii=False))
+        temporary.replace(path)
+        return changed
+
 
 def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", config["session_id"]):
@@ -436,6 +520,10 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
     package = repository_root / "modeling_team/agent-packages/delivery"
     instructions = (package / "instructions.md").read_text()
     instructions += "\n" + (repository_root / "modeling_team/skills/delivery/SKILL.md").read_text()
+    # The restricted Delivery has no shell or arbitrary repository reader.
+    # Mount the timing method as instructions only when this Host configured it.
+    if config.get("efficiency_round") is not None:
+        instructions += "\n" + (repository_root / "modeling_team/references/efficiency-round-record.md").read_text()
     providers = None
     runtime = None
     incoming: queue.Queue[str | None] = queue.Queue()
@@ -467,9 +555,9 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         runtime.send(json.dumps({"kind": "delivery_resume" if resume else "delivery_start", "config": config,
                                   "observed_state": session.observe() if resume else None,
                                   "session_reference": str(session_root / "session.json")}, ensure_ascii=False))
-        last_observation = None
         next_observation = 0.0
         pending_input: list[dict] = []
+        pending_observation: dict | None = None
         steer_blocked_turn: str | None = None
         eof = False
         while not session.finished:
@@ -505,16 +593,34 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         steer_blocked_turn = runtime.turn_id
                         break
                     pending_input.pop(0)
+            # Continue program observation during an active inference too. Send
+            # decisions on its current turn; a heartbeat never starts a turn.
+            if (runtime.busy and (session.run_ids or session.operation_ids or session.verification_ids)
+                    and time.monotonic() >= next_observation):
+                observation = session.observe()
+                next_observation = time.monotonic() + 2
+                if session.record_observation(observation):
+                    pending_observation = {"kind": "host_observation", "data": observation}
+            if (runtime.busy and not pending_input and pending_observation is not None
+                    and steer_blocked_turn != runtime.turn_id):
+                try:
+                    runtime.steer(json.dumps(pending_observation, ensure_ascii=False))
+                except DeliveryRuntimeError:
+                    steer_blocked_turn = runtime.turn_id
+                else:
+                    pending_observation = None
             if not runtime.busy:
                 if pending_input:
                     runtime.send(json.dumps(pending_input.pop(0), ensure_ascii=False))
                     steer_blocked_turn = None
+                elif pending_observation is not None:
+                    runtime.send(json.dumps(pending_observation, ensure_ascii=False))
+                    pending_observation = None
+                    steer_blocked_turn = None
                 elif time.monotonic() >= next_observation:
                     observation = session.observe()
-                    serialized = json.dumps(observation, ensure_ascii=False, sort_keys=True)
                     next_observation = time.monotonic() + 2
-                    if serialized != last_observation:
-                        last_observation = serialized
+                    if session.record_observation(observation):
                         runtime.send(json.dumps({"kind": "host_observation", "data": observation}, ensure_ascii=False))
                     elif eof:
                         session._save("supervision_interrupted", reason="business input closed", observation=observation)

@@ -69,6 +69,25 @@ independent acceptance. After production completes, continue the authorized
 live cq-acceptance/public-feedback or the existing checkpoint acceptance
 resume. Do not stop supervision just because Coordinator/source is terminal.
 
+For R4.3, Host observation continues in program code and retains the full latest
+snapshot in observation.json, with separate observation_count and wake_count.
+Unchanged decisions, heartbeats, log growth and unrelated staged counts do not
+request another inference. A host_observation means a decision, binding, pending
+item, result, failure or lifecycle changed: inspect it and take the authorized
+next action in this turn. Do not ask for another identical observation to confirm
+waiting. When all selected CQ drafting/review phases are complete, freeze promptly;
+when production handoff is ready, continue the authorized evaluation promptly.
+Do not infer missing approvals or scope decisions from elapsed time.
+
+For an authorized R4.3 efficiency comparison, follow the Host-only
+[round record](../../references/efficiency-round-record.md). Start timing when
+approved inputs are ready and execution is requested, before preparation;
+keep that start across quality repairs, fresh starts and re-acceptance.
+Record the same scope, input/question versions, model/effort, configuration and
+code identity. Verify full independent acceptance and necessary cleanup before
+recording completion. The timing utility does not judge semantic PASS or
+performance acceptance; blocked-fault estimates and human waits stay explicit.
+
 Classify the first failure as modeling-quality, platform-contract,
 collaboration/routing, or runtime/infrastructure. Judge diagnosis uses only
 its existing evidence (plan A). Do not add platform root-cause queries to

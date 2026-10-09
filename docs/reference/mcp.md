@@ -281,3 +281,24 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 运行固定 repo 检查与明确授权的本地服务部署。它们不属于上述 stdio MCP 的 28 项清单，
 不开放通用 shell；实际命令、退出码、健康与目标摘要保存在交付私有回执中，不能代替语义验收。
 部署、授权、业务输入和证据边界见 [实施记录](../delivery/records/2026-10-08-r4-0-023-delivery-agent.md)。
+
+## v4.3 Team 引用与效率工具
+
+这些工具属于隔离 Team／Host 合同，不进入业务平台 MCP inventory，不新增平台 REST API。
+
+| 工具 | 调用者与输入 | 输出及边界 |
+| --- | --- | --- |
+| `protocol_execute_approved_plans` | unified Protocol；有序已批准 plan_refs、ontology lease_tokens、可选既有 trace attachments | 当前版本逐批 dry-run/apply，原 gate 与每批原子性不变；完成执行不等于实际资源语义读回，后续按原治理读取核对资源／关系 |
+| `protocol_check_plan_coverage` | unified Protocol；同轮 candidate_ref、plan_refs、明确不落地 dispositions | 候选与命令身份覆盖、applied 记录和缺口；不推断业务依赖或模型质量 |
+| `protocol_inspect_associations` | unified Protocol；本轮已观察 semantic_sparql_query read_refs、final_read_ref、project／ontology scope | 保留多页原文按引用进入现有关联扫描，定位／摘要可核对，缺页 PARTIAL；任意路径或其他 run 引用不可读 |
+| `examiner_report.read_frozen_evidence` | v2 引用 Judge；run_id、batch_id、freeze_digest、reference_id | 仅返回已绑定冻结业务原文；同文可复用及重读，记录实际读取回执；无仓库／DB／平台读取权限 |
+| `record_efficiency_progress` | 原生 Delivery；追加 intervals、counts、题集冻结身份或已核对 completion | 仅作用于 Host 配置 efficiency_round 的私有本地记录，不能改变原始起点；计算墙钟与故障并集，不裁决语义／性能 PASS |
+
+Judge 初始 packet 只传冻结资料清单和题目对应；完整获准副本保留 Host，PASS 需要实际读取
+并引用相关原文。平台响应采用无损正文注册表并主动按实际输入体积分组，各组覆盖同一
+冻结完整题集，报告分别披露业务资料和平台响应字节量。
+Delivery 程序持续观察并保留 observation.json；无关日志／心跳增长不启动重复推理，
+有意义变化可 steer 当前活跃 turn，用户控制仍优先。
+
+详细记录格式见 [同轮计时方法](../../modeling_team/references/efficiency-round-record.md)，
+合同与工程／真实验证边界见 [v4.3 设计](../delivery/designs/2026-10-09-v4-3-modeling-efficiency-design.md)。

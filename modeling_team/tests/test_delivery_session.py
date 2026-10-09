@@ -176,7 +176,7 @@ class _StubProcess:
         return 0
 
 
-def _run_delivery_with_stub(tmp_path, monkeypatch, lines, **stub_kwargs):
+def _run_delivery_with_stub(tmp_path, monkeypatch, lines, *, run_ids=None, **stub_kwargs):
     import shutil
     module = importlib.import_module('modeling_team.delivery')
     # Minimal repository layout under tmp_path: the real profile (the loader
@@ -201,7 +201,7 @@ def _run_delivery_with_stub(tmp_path, monkeypatch, lines, **stub_kwargs):
     os.close(write_fd)
     config = {'session_id': 'steer-probe', 'model_profile': 'openai-sol-medium',
               'authorization_reference': 'user-test', 'allowed_sources': [],
-              'allowed_operations': ['read'], 'run_ids': []}
+              'allowed_operations': ['read'], 'run_ids': run_ids or []}
     result = module._run_delivery(config, repository_root=tmp_path, resume=False)
     return stub, result, json.loads(
         (tmp_path / 'workspaces/delivery-sessions/steer-probe/session.json').read_text())

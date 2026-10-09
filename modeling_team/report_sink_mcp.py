@@ -1,4 +1,4 @@
-"""Child-local MCP write-only Examiner report sink bridge.
+"""Child-local Examiner report bridge and explicitly enabled frozen Judge reads.
 
 The child may submit exactly six semantic fields.  Runner-owned task, ticket,
 session, source, and model-state bindings are deliberately not present in the
@@ -410,6 +410,36 @@ def _json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":"))
 
 
+def frozen_evidence_tool() -> dict[str, Any]:
+    fields = ["run_id", "batch_id", "freeze_digest", "reference_id"]
+    return {"name": "read_frozen_evidence",
+            "description": "Read approved frozen business original by manifest identity; reuse or reread allowed.",
+            "inputSchema": {"type": "object", "required": fields, "additionalProperties": False,
+                            "properties": {key: {"type": "string", "minLength": 1} for key in fields}}}
+
+
+def read_frozen_evidence(socket_path: str, token: str, arguments: Any) -> dict[str, Any]:
+    """Standalone child facade. Authorization and frozen digest checks stay Host-side."""
+    fields = {"run_id", "batch_id", "freeze_digest", "reference_id"}
+    if not isinstance(arguments, Mapping) or set(arguments) != fields:
+        raise ValueError("frozen source read fields invalid")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(10)
+        client.connect(socket_path)
+        client.sendall(_json({"token": token, "operation": "read_frozen_evidence",
+                              "arguments": dict(arguments)}).encode("utf-8"))
+        chunks = []
+        while True:
+            chunk = client.recv(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    response = json.loads(b"".join(chunks).decode("utf-8"))
+    if not response.get("ok"):
+        raise RuntimeError(f"{response.get('code')}: {response.get('detail', '')}")
+    return {"content": [{"type": "text", "text": _json(response["result"])}], "isError": False}
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stdio", action="store_true")
@@ -423,6 +453,7 @@ def main() -> int:
         help="select the v3 batch report branch (platform/acceptance only)",
     )
     parser.add_argument("--batch-id", default="")
+    parser.add_argument("--frozen-evidence-reads", action="store_true")
     parser.add_argument("--role", choices=("platform-examiner", "acceptance"), default=None)
     parser.add_argument(
         "--question-ids",
@@ -466,8 +497,15 @@ def main() -> int:
                         }
                     ]
                 }
+                if args.frozen_evidence_reads and args.kind == "acceptance" and v3_batch:
+                    result["tools"].append(frozen_evidence_tool())
             elif method == "tools/call":
                 params = request.get("params", {})
+                if (isinstance(params, Mapping) and params.get("name") == "read_frozen_evidence"
+                    and args.frozen_evidence_reads and args.kind == "acceptance" and v3_batch):
+                    result = read_frozen_evidence(args.socket, token, params.get("arguments"))
+                    print(_json({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+                    continue
                 if not isinstance(params, Mapping) or params.get("name") != "submit_examiner_report":
                     raise RuntimeError("report-tool-denied")
                 if args.schema is not None:
