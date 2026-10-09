@@ -179,7 +179,7 @@ def register_semantic(server: FastMCP) -> None:
         depth: int = 1,
         limit: int = 20,
         context_limit: int = 100,
-        context_detail: Literal["full", "compact"] = "compact",
+        context_detail: Literal["full", "compact", "preview"] = "compact",
         match_cursor: str | None = None,
         context_cursor: str | None = None,
     ) -> dict[str, Any]:

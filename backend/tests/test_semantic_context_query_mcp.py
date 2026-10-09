@@ -433,7 +433,7 @@ def test_context_mcp_defaults_to_compact_related_context():
     # R2.3-009 (2026-08-21): MCP consumers (Examiner/Protocol) default to the
     # compact related-context projection; REST keeps ``full`` as default.
     assert detail["default"] == "compact"
-    assert detail["enum"] == ["full", "compact"]
+    assert detail["enum"] == ["full", "compact", "preview"]
 
 
 def test_r4008_mcp_roles_are_forwarded_and_discoverable(scoped_mcp, monkeypatch):

@@ -31,6 +31,8 @@ from app.services.semantic_context_cursor import (
     binding_digest,
     make_binding,
 )
+from app.services.semantic_ranking import RANKING_VERSION
+from app.services.semantic_retrieval_text import DEFINITION_PREDICATES, definition_text_fields
 from app.services.semantic_export import namespace_from_settings
 from app.services.semantic_lineage_identity import (
     statement_id_for_quad,
@@ -239,16 +241,19 @@ class SemanticContextQueryService:
         self._semantic_roles = semantic_roles
         self._description_cache: dict[tuple[str, str], dict[str, Any]] = {}
         self._resource_cache: dict[tuple[str, str], dict[str, Any]] = {}
+        self._adjacency_cache = {}
         self._candidate_window_incomplete = False
         self._expansion = {"status": "not_requested"}
         self._request_depth = depth
+        self._context_detail = context_detail
+        self._ranking_version = self.settings.semantic_retrieval_fusion_version
         self._request_assertions = set(assertion_types or ASSERTION_TYPES)
         if principal is None:
             raise SemanticContextQueryError(
                 "A server-derived principal binding is required for Context Query"
             )
-        if context_detail not in {"full", "compact"}:
-            raise SemanticContextQueryError("context_detail must be full or compact")
+        if context_detail not in {"full", "compact", "preview"}:
+            raise SemanticContextQueryError("context_detail must be full, compact or preview")
         if (match_cursor is not None) and (context_cursor is not None):
             raise SemanticContextQueryError(
                 "Provide at most one of match_cursor or context_cursor"
@@ -402,7 +407,8 @@ class SemanticContextQueryService:
                     execution_set[expression_index].original_indexes
                 )
             lexical_by_expression[expression_index] = fuse_context_candidates(
-                lexical_by_expression[expression_index], promoted
+                lexical_by_expression[expression_index], promoted,
+                ranking_version=self._ranking_version,
             )
 
         if self._candidate_window_incomplete:
@@ -563,8 +569,8 @@ class SemanticContextQueryService:
         _validate_context_limit(context_limit)
         if search_mode not in {"hybrid", "lexical"}:
             raise SemanticContextQueryError("search_mode must be hybrid or lexical")
-        if context_detail not in {"full", "compact"}:
-            raise SemanticContextQueryError("context_detail must be full or compact")
+        if context_detail not in {"full", "compact", "preview"}:
+            raise SemanticContextQueryError("context_detail must be full, compact or preview")
         selected_resource_types = set(resource_types or RESOURCE_TYPES)
         selected_assertion_types = set(assertion_types or ASSERTION_TYPES)
         scope = self.scope_resolver.resolve(
@@ -862,6 +868,10 @@ class SemanticContextQueryService:
             semantic_context_candidates_query(
                 scope.graph_to_ontology, terms, chunk_limit, self.operation_type,
                 self.operation_predicates, after,
+                annotation_predicates=[
+                    str(namespace_from_settings(self.settings).vocab) + name
+                    for name in DEFINITION_PREDICATES.values()
+                ],
             )
         )):
             items = self._rdf_candidates(rows, scope, text, terms)
@@ -995,11 +1005,17 @@ class SemanticContextQueryService:
     ]:
         by_key: dict[tuple[str, str], dict[str, Any]] = {}
         expression_indexes_by_key: dict[tuple[str, str], set[int]] = defaultdict(set)
+        rank_scores_by_key = defaultdict(float)
         per_expression_evidence: dict[tuple[str, str], dict[int, dict[str, Any]]] = defaultdict(dict)
 
         for expression_index, candidates in enumerate(lexical_by_expression):
             for item in candidates:
                 key = (item["ontology_id"], item["kind"], item["id"])
+                rank_score = float(item.get("match", {}).get("rank_score", 0))
+                if self._ranking_version == RANKING_VERSION:
+                    rank_scores_by_key[key] += rank_score
+                else:
+                    rank_scores_by_key[key] = max(rank_scores_by_key[key], rank_score)
                 existing = by_key.get(key)
                 tagged = dict(item)
                 tagged.pop("_expression_indexes", None)
@@ -1014,8 +1030,8 @@ class SemanticContextQueryService:
                 )
                 per_expression_evidence[key][expression_index] = {
                     "indexes": sorted(execution_set[expression_index].original_indexes),
-                    "evidence_tier": _evidence_tier_for(existing),
-                    "evidence": _evidence_payload(existing),
+                    "evidence_tier": _evidence_tier_for(item),
+                    "evidence": _evidence_payload(item),
                 }
 
         support_count_by_item: dict[tuple[str, str], int] = {}
@@ -1047,6 +1063,9 @@ class SemanticContextQueryService:
         for key, item in by_key.items():
             item.setdefault("_expression_indexes", set()).update(expression_indexes_by_key[key])
 
+        for key, item in by_key.items():
+            item["match"]["rank_score"] = round(rank_scores_by_key[key], 10)
+            item["match"]["ranking_version"] = self._ranking_version
         return list(by_key.values()), matched_queries_by_item, support_count_by_item
 
     def _merge_into(self, existing: dict[str, Any], incoming: dict[str, Any]) -> dict[str, Any]:
@@ -1131,6 +1150,7 @@ class SemanticContextQueryService:
                     continue
                 root_paths_by_item[key].append({
                     "root_match_id": root["id"],
+                    **({"root_ontology_id": root["ontology_id"]} if self._context_detail == "preview" else {}),
                     "graph_distance": int(item.get("distance") or 1), "_root_rank": rank,
                 })
                 related_raw.append(item)
@@ -1144,9 +1164,29 @@ class SemanticContextQueryService:
                 if rank not in shortest or path["graph_distance"] < shortest[rank]["graph_distance"]:
                     shortest[rank] = path
             root_paths_by_item[key] = [
-                {"root_match_id": path["root_match_id"], "graph_distance": path["graph_distance"]}
+                {key: value for key, value in path.items() if key != "_root_rank"}
                 for _, path in sorted(shortest.items())
             ]
+        if self._context_detail == "preview":
+            edges_by_endpoint = defaultdict(list)
+            roots_by_iri = {root.get("iri"): root for root in primary}
+            for edge in deduped.values():
+                if not _is_statement(edge) and edge.get("target_kind") != "derived_reference":
+                    continue
+                data = edge.get("data") or {}
+                subject = data.get("subject") or data.get("source_iri")
+                target = data.get("object") or data.get("target_iri")
+                if data.get("object_type") not in {"uri", "bnode"} and not data.get("derived_reference"):
+                    continue
+                link = {"subject": subject, "predicate": data.get("predicate"), "object": target,
+                        "root_paths": root_paths_by_item[self._identity_key(edge)],
+                        "derived_reference": data.get("derived_reference", False)}
+                for endpoint, other in ((subject, target), (target, subject)):
+                    if other in roots_by_iri:
+                        edges_by_endpoint[endpoint].append(link)
+            for item in deduped.values():
+                if not _is_statement(item):
+                    item["_preview_relationships"] = edges_by_endpoint.get(item.get("iri"), [])
         ordered = sorted(deduped.values(), key=lambda item: _context_sort_key(
             item, scope, root_paths_by_item,
         ))
@@ -1363,6 +1403,8 @@ class SemanticContextQueryService:
             item_copy = _public_item(item)
             key = self._identity_key(item)
             item_copy["root_paths"] = list(root_paths_by_item.get(key, []))
+            if context_detail == "preview" and item.get("_preview_relationships"):
+                item_copy["relationships"] = item["_preview_relationships"]
             decorated_related.append(item_copy)
         if context_detail == "compact":
             decorated_related = [
@@ -1373,6 +1415,27 @@ class SemanticContextQueryService:
                 "code": "context_expansion_incomplete",
                 "message": "Context expansion is incomplete; narrow the query or continue from an IRI.",
             })
+        if context_detail == "preview":
+            decorated_related = [_preview_related_row(row) for row in decorated_related]
+            for root in decorated_primary:
+                root["neighbors"] = [
+                    _neighbor_reference(row, root, index) for index, row in enumerate(decorated_related)
+                    if any(_preview_path_for_root(path, root) for path in row["root_paths"])
+                ]
+            # Root and neighbor identities already exist in the two public arrays.
+            # References index this response only; stable IDs remain on the canonical rows.
+            root_indexes = {(root["ontology_id"], root["id"]): index
+                            for index, root in enumerate(decorated_primary)}
+            def preview_paths(paths):
+                return [{"root_index": root_indexes[(path["root_ontology_id"], path["root_match_id"])],
+                         "graph_distance": path["graph_distance"]} for path in paths]
+            for row in decorated_related:
+                row["root_paths"] = preview_paths(row["root_paths"])
+                if row.get("relationships"):
+                    row["relationships"] = [
+                        {**link, "root_paths": preview_paths(link["root_paths"])}
+                        for link in row["relationships"]
+                    ]
         truncated = bool(matches_truncated or context_truncated)
         # The consumer already knows what it asked for.  Keep only the stable
         # echo needed by multi-expression callers and cursor binding.
@@ -1382,6 +1445,8 @@ class SemanticContextQueryService:
             "semantic_roles": self._semantic_roles,
             "depth": self._request_depth,
             "result_scope": "authorized_query_scope",
+            "context_detail": context_detail,
+            "ranking_version": self._ranking_version,
         }
         return {
             "query": query_echo,
@@ -1509,6 +1574,10 @@ class SemanticContextQueryService:
                 resource["kind"] = "concept"
             elif types & _RELATION_TYPES:
                 resource["kind"] = "relation"
+            elif {_local_name(value) for value in types} & {"TableMapping", "JoinMapping", "EnumValueMeaning"}:
+                resource["kind"] = "mapping"
+            elif "MetricDefinition" in {_local_name(value) for value in types}:
+                resource["kind"] = "metric"
             exact_label = next(
                 (value for value in labels if _normalize_value(value) == _normalize_value(text)),
                 None,
@@ -1527,6 +1596,9 @@ class SemanticContextQueryService:
                     *(("alias", alias, 900, "exact_alias") for alias in resource["aliases"]),
                     ("identifier", resource["iri"], 600, "identifier"),
                     ("description", resource["description"], 450, "description"),
+                    *((path, value, 650, "structured_definition")
+                      for field in DEFINITION_PREDICATES
+                      for path, value in definition_text_fields(field, resource["data"].get(field))),
                 ],
             )
             if match:
@@ -1900,6 +1972,36 @@ LIMIT 5000
         return result
 
 
+    def _neighborhood_chunks(self, scope, frontier):
+        missing = [iri for iri in frontier if iri not in self._adjacency_cache]
+        pending = {iri: [] for iri in missing}
+        emitted = set()
+        if missing:
+            for rows in self._read_chunks(lambda chunk_limit, after: (
+                semantic_context_neighborhood_query(
+                    self._selected_graphs(scope), missing, chunk_limit,
+                    self.operation_type, self.operation_predicates, after,
+                )
+            )):
+                for row in rows:
+                    for iri in {_value(row, "subject"), _value(row, "object")} & pending.keys():
+                        pending[iri].append(row)
+                for row in rows:
+                    emitted.add(_json_digest(row))
+                yield rows
+            self._adjacency_cache.update(pending)
+        cached = []
+        for iri in frontier:
+            if iri in missing:
+                continue
+            for row in self._adjacency_cache[iri]:
+                key = _json_digest(row)
+                if key not in emitted:
+                    emitted.add(key)
+                    cached.append(row)
+        if cached:
+            yield cached
+
     def _expand_neighborhood(
         self, primary, scope, *, depth, limit, resource_types, assertion_types,
     ):
@@ -1921,12 +2023,7 @@ LIMIT 5000
             if not frontier or self._work_stopped:
                 break
             next_frontier = set()
-            for rows in self._read_chunks(lambda chunk_limit, after: (
-                semantic_context_neighborhood_query(
-                    self._selected_graphs(scope), frontier, chunk_limit,
-                    self.operation_type, self.operation_predicates, after,
-                )
-            )):
+            for rows in self._neighborhood_chunks(scope, frontier):
                 statements = [item for row in rows
                               if (item := self._statement_item(row, scope, distance=distance))]
                 # Batch hydration of endpoint descriptions before authorization,
@@ -2280,7 +2377,7 @@ def _origin_for(item: Mapping[str, Any], data: Mapping[str, Any]) -> str:
 def _public_match(item: Mapping[str, Any]) -> dict[str, Any]:
     match = item.get("match") if isinstance(item.get("match"), Mapping) else {}
     result: dict[str, Any] = {}
-    for key in ("score", "candidate_level", "lexical_score"):
+    for key in ("score", "candidate_level", "lexical_score", "semantic_similarity", "rank_score", "ranking_version"):
         value = match.get(key)
         if isinstance(value, (int, float)) and not isinstance(value, bool):
             result[key] = value
@@ -2392,9 +2489,10 @@ def _best_match(
         matched_terms = [term for term in terms if term == value or term in value or value in term]
         if not matched_terms:
             continue
-        exact = value == normalized_query or value in terms
-        score = base_score if exact else max(1, base_score - 250)
-        reason = exact_reason if exact else f"{field}_contains"
+        exact = value == normalized_query
+        token_exact = not exact and value in terms
+        score = base_score if exact else max(1, base_score - (150 if token_exact else 250))
+        reason = exact_reason if exact else f"{field}_{'term_equal' if token_exact else 'contains'}"
         for term in matched_terms:
             matches.append((score, term, field, reason))
     if not matches:
@@ -2704,6 +2802,8 @@ def _multi_sort_key(
     score = (item.get("match") or {}).get("score", 0) or 0
     return (
         tier_rank,
+        -float((item.get("match") or {}).get("rank_score", 0))
+        if (item.get("match") or {}).get("ranking_version") == RANKING_VERSION else 0,
         -(int(score) - stale_penalty),
         -int(fusion.get("support_count", 0)),
         ontology_order.get(item["ontology_id"], len(ontology_order)),
@@ -2943,3 +3043,60 @@ def _root_digest(items: list[dict[str, Any]]) -> str:
 def _compact_related_row(row: Mapping[str, Any]) -> dict[str, Any]:
     """Keep ordinary semantic values while omitting ranking diagnostics."""
     return {key: value for key, value in row.items() if key != "match"}
+
+
+def _preview_related_row(row: Mapping[str, Any]) -> dict[str, Any]:
+    """Bounded excerpts from authorized full content, never a complete definition."""
+    result = {key: value for key, value in row.items() if key not in {"data", "match", "description"}}
+    data = row.get("data") or {}
+    definition = data.get("semantic_definition") or {}
+    excerpt = definition.get("business_meaning") or row.get("description") or ""
+    if not isinstance(excerpt, str):
+        excerpt = ""
+    result["semantic_role"] = definition.get("semantic_role")
+    result["excerpt"] = excerpt[:160]
+    result["preview"] = True
+    result["truncated"] = len(excerpt) > 160
+    result["details_omitted"] = bool(data or row.get("description"))
+    result["detail_query"] = row.get("iri") if row.get("target_kind") == "resource" else None
+    if row.get("target_kind") in {"statement", "derived_reference"}:
+        result["data"] = {key: value for key, value in data.items() if key != "object"}
+        value = data.get("object")
+        if data.get("object_type") in {"uri", "bnode"}:
+            result["data"]["object"] = value
+        elif value is not None:
+            # Structured literals must not smuggle full definitions back into preview.
+            predicate = data.get("predicate", "")
+            structured = any(predicate.endswith("/" + name) for name in _ANNOTATION_NAMES.values())
+            result["data"]["object_preview"] = None if structured else str(value)[:160]
+            result["truncated"] = structured or len(str(value)) > 160
+        result["detail_query"] = data.get("subject") or data.get("source_iri")
+    return result
+
+
+def _neighbor_reference(row: Mapping[str, Any], root: Mapping[str, Any], index: int) -> dict[str, Any]:
+    """One page-local reference; full stable identity and excerpt occur once."""
+    path = next(path for path in row["root_paths"] if _preview_path_for_root(path, root))
+    result = {"preview_ref": index, "graph_distance": path["graph_distance"]}
+    links = [
+        {"index": link_index, "direction": "outgoing" if link["subject"] == root.get("iri") else (
+            "incoming" if link["object"] == root.get("iri") else "indirect"
+        )} for link_index, link in enumerate(row.get("relationships", []))
+        if any(_preview_path_for_root(path, root) for path in link["root_paths"])
+    ]
+    if links:
+        result["relationships"] = links
+    data = row.get("data") or {}
+    if row.get("target_kind") in {"statement", "derived_reference"}:
+        subject = data.get("subject") or data.get("source_iri")
+        target = data.get("object") or data.get("target_iri")
+        result["direction"] = "outgoing" if subject == root.get("iri") else (
+            "incoming" if target == root.get("iri") else "indirect"
+        )
+    return result
+
+
+def _preview_path_for_root(path, root):
+    return path["root_match_id"] == root["id"] and (
+        path.get("root_ontology_id", root["ontology_id"]) == root["ontology_id"]
+    )

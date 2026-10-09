@@ -218,7 +218,7 @@ class ModelingReadProxy:
                     or arguments[field] < (1 if field == "limit" else 0)
                 ):
                     raise ModelingReadError(f"semantic query {field} is invalid")
-            if arguments.get("context_detail", "compact") not in {"full", "compact"}:
+            if arguments.get("context_detail", "compact") not in {"full", "compact", "preview"}:
                 raise ModelingReadError("semantic query context_detail is invalid")
             if "query" not in arguments and "queries" not in arguments:
                 raise ModelingReadError("semantic query requires a non-empty query")

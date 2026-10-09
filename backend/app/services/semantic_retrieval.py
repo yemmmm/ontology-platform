@@ -12,6 +12,9 @@ import json
 import math
 import re
 import unicodedata
+import time
+from collections import OrderedDict
+from threading import Lock
 from dataclasses import dataclass
 from types import SimpleNamespace
 from typing import Any, Callable, Iterable
@@ -29,6 +32,9 @@ from app.repositories.models import (
     SemanticMappingModel,
 )
 from app.repositories.rdf_store import RdfFormat, RdfStoreRepository
+from app.services.semantic_ranking import rank_context_candidates
+from app.services.semantic_retrieval_text import DEFINITION_PREDICATES, definition_text_fields
+from app.services.semantic_export import namespace_from_settings
 from app.services.embedding import EmbeddingClient, EmbeddingServiceError
 from app.services.modeling_workspace import OntologyModelRevisionService
 from app.services.semantic_projection_job import SemanticProjectionJobService
@@ -39,6 +45,12 @@ from app.services.semantic_read_scope import SemanticReadScopeResolver
 SKOS_ALT_LABEL = "http://www.w3.org/2004/02/skos/core#altLabel"
 DCTERMS_DESCRIPTION = "http://purl.org/dc/terms/description"
 RETRIEVAL_KIND = "vector"
+# Query vectors only: authorization and current graph state are always checked anew.
+_QUERY_VECTORS: OrderedDict[tuple[str, str, str], tuple[float, tuple[float, ...]]] = OrderedDict()
+_QUERY_VECTOR_LOCK = Lock()
+_QUERY_VECTOR_TTL = 300
+_QUERY_VECTOR_CAPACITY = 256
+
 EXACT_EVIDENCE_REASONS = {"exact_label", "exact_alias", "exact_mapping", "identifier"}
 
 
@@ -327,6 +339,8 @@ class SemanticRetrievalProjectionService:
             content = self.rdf_store.get_graph(graph_iri, RdfFormat.TRIG.value)
             if content:
                 dataset.parse(data=content, format=RdfFormat.TRIG.value)
+        vocab = str(namespace_from_settings(self.settings).vocab)
+        definitions = {vocab + name: field for field, name in DEFINITION_PREDICATES.items()}
         metadata: dict[str, dict[str, Any]] = {}
         for subject, predicate, obj, _graph in dataset.quads((None, None, None, None)):
             if not isinstance(subject, URIRef):
@@ -344,6 +358,12 @@ class SemanticRetrievalProjectionService:
                 record["aliases"].append(_evidence(predicate_iri, obj))
             elif predicate_iri in {str(RDFS.comment), DCTERMS_DESCRIPTION} and isinstance(obj, Literal):
                 record["descriptions"].append(_evidence(predicate_iri, obj))
+            elif predicate_iri in definitions and isinstance(obj, Literal):
+                record["descriptions"].extend(
+                    {"predicate": predicate_iri, "value": f"{path}: {value}",
+                     "language": obj.language or ""}
+                    for path, value in definition_text_fields(definitions[predicate_iri], str(obj))
+                )
         mappings = self._mappings_by_resource(ontology_id)
         documents = [
             self._document_from_metadata(
@@ -398,7 +418,10 @@ class SemanticRetrievalProjectionService:
         rdf_types = sorted(set(value["types"]))
         resource_kind = _resource_kind(rdf_types)
         if resource_kind is None:
-            return None
+            if any("Definition" in item["predicate"] for item in value["descriptions"]):
+                resource_kind = "instance"
+            else:
+                return None
         labels = _sorted_evidence(value["labels"])
         aliases = _sorted_evidence(value["aliases"])
         descriptions = _sorted_evidence(value["descriptions"])
@@ -569,6 +592,36 @@ class SemanticResourceRetrievalService:
         self.embedding_client = embedding_client or EmbeddingClient(settings)
         self.repository = PgVectorRetrievalRepository(session, self.config)
 
+    def _query_vectors(self, queries: list[str]) -> list[list[float]]:
+        # Alternate/injected clients own their caching policy.
+        if type(self.embedding_client) is not EmbeddingClient:
+            return self.embedding_client.embed(queries)
+        credential = hashlib.sha256(self.settings.embedding_api_key.encode()).hexdigest()
+        keys = [(self.config.config_hash, credential, query) for query in queries]
+        now = time.monotonic()
+        found = {}
+        with _QUERY_VECTOR_LOCK:
+            for key in keys:
+                cached = _QUERY_VECTORS.get(key)
+                if cached is not None and now - cached[0] < _QUERY_VECTOR_TTL:
+                    found[key] = cached[1]
+                    _QUERY_VECTORS.move_to_end(key)
+        missing = list(dict.fromkeys(key for key in keys if key not in found))
+        if missing:
+            vectors = self.embedding_client.embed([key[2] for key in missing])
+            if len(vectors) != len(missing):
+                raise SemanticRetrievalError("Embedding provider returned an invalid document count")
+            for vector in vectors:
+                _validate_vector(vector, self.config.dimensions)
+            with _QUERY_VECTOR_LOCK:
+                for key, vector in zip(missing, vectors, strict=True):
+                    found[key] = tuple(vector)
+                    _QUERY_VECTORS[key] = (time.monotonic(), tuple(vector))
+                    _QUERY_VECTORS.move_to_end(key)
+                while len(_QUERY_VECTORS) > _QUERY_VECTOR_CAPACITY:
+                    _QUERY_VECTORS.popitem(last=False)
+        return [list(found[key]) for key in keys]
+
     def recall(
         self,
         *,
@@ -600,9 +653,9 @@ class SemanticResourceRetrievalService:
                 "completeness": "degraded",
             }
         try:
-            vector = self.embedding_client.embed([query])[0]
+            vector = self._query_vectors([query])[0]
             _validate_vector(vector, self.config.dimensions)
-        except (EmbeddingServiceError, IndexError, TypeError, ValueError):
+        except (EmbeddingServiceError, SemanticRetrievalError, IndexError, TypeError, ValueError):
             return {
                 "candidates": [],
                 "indexes": indexes,
@@ -689,14 +742,14 @@ class SemanticResourceRetrievalService:
                 "completeness": "degraded",
             }
         try:
-            vectors = self.embedding_client.embed(list(queries))
+            vectors = self._query_vectors(list(queries))
             if len(vectors) != len(queries):
                 raise SemanticRetrievalError(
                     "Embedding provider returned an invalid document count"
                 )
             for vector in vectors:
                 _validate_vector(vector, self.config.dimensions)
-        except (EmbeddingServiceError, IndexError, TypeError, ValueError):
+        except (EmbeddingServiceError, SemanticRetrievalError, IndexError, TypeError, ValueError):
             return {
                 "candidates_by_query": [[] for _ in queries],
                 "indexes": indexes,
@@ -851,7 +904,8 @@ class SemanticResourceRetrievalService:
 
 
 def fuse_context_candidates(
-    lexical: list[dict[str, Any]], semantic: list[dict[str, Any]]
+    lexical: list[dict[str, Any]], semantic: list[dict[str, Any]],
+    *, ranking_version: str = "exact-expression-max-v2",
 ) -> list[dict[str, Any]]:
     """Fuse scoped lexical, governed-mapping, and semantic candidates by identity."""
     by_key = {(item["ontology_id"], item["kind"], item["id"]): item for item in lexical}
@@ -875,7 +929,14 @@ def fuse_context_candidates(
         else:
             _merge_lexical_match(existing, item)
         _merge_mapping_evidence(existing, item)
-    return list(by_key.values())
+    fused = list(by_key.values())
+    if ranking_version == "evidence-rrf-v2":
+        rank_context_candidates(fused)
+    else:
+        for item in fused:
+            item["match"]["rank_score"] = item["match"]["score"] / 1000
+            item["match"]["ranking_version"] = ranking_version
+    return fused
 
 
 def promote_exact_label_candidates(
@@ -1225,7 +1286,7 @@ def _document_text(
             ),
         ),
     ]
-    return "\n".join(f"{name}: {value}" for name, value in fields if value)[:12000]
+    return "\n".join(f"{name}: {value}" for name, value in fields if value)
 
 
 def _resource_kind(rdf_types: list[str]) -> str | None:
@@ -1236,6 +1297,11 @@ def _resource_kind(rdf_types: list[str]) -> str | None:
         return "relation"
     if "operation" in lowered:
         return "operation"
+    names = {_local_name(value) for value in rdf_types}
+    if names & {"TableMapping", "JoinMapping", "EnumValueMeaning"}:
+        return "mapping"
+    if "MetricDefinition" in names:
+        return "metric"
     if rdf_types:
         return "instance"
     return None

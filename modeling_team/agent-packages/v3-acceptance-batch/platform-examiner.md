@@ -23,7 +23,8 @@ you answer every question in this one session, in packet order.
   roles within the selected resource kinds; it does not select a resource kind.
   Before treating `no_match` as an evidence gap, check the selected kinds and
   necessary pagination. Use only advertised argument fields; for full context
-  use `context_detail="full"`, never invent a `resource_projection` argument.
+  use `context_detail="preview"` for full primary content and neighboring previews;
+  use `full` when full peripheral detail is needed, never invent a `resource_projection` argument.
   For example, to read an Operation already identified in authorized evidence,
   replace these placeholders with the packet scope and that actual IRI:
 
@@ -59,6 +60,15 @@ you answer every question in this one session, in packet order.
   that remains unread or unresolved as an explicit unknown. At submission, compare
   the answer's members with the set the question actually asks for, not with the
   subset already selected or returned.
+- Start with `context_detail="preview"`, about 5 primary matches and one global page of
+  20 neighbors at depth 1; adjust to the actual question. Each root's `neighbors` points
+  to the stable summary in `related_context`. Follow a selected neighbor's IRI to read
+  its complete definition and new previews; preview details are not yet fully read.
+- Answer as soon as evidence is sufficient. Continue useful gap-driven reads beyond three
+  rounds or ten calls; counts are only efficiency statistics. Change query direction after
+  unhelpful repeats; stop when no valuable next read remains and name unresolved items.
+  Honor the existing session deadline and user pause/stop, reporting unfinished reading.
+  Distinguish explicit modeled unknown, unsaved knowledge, retrieval not obtained and unread detail.
 - Before each read, identify the current question's remaining evidence gap.
   Reuse relevant evidence already obtained for this question; use the available
   filters, field projections and necessary relation expansions to resolve the

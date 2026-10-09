@@ -2249,9 +2249,9 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "assertion_types": {"type": ["array", "null"], "items": {"type": "string"}}, "search_mode": {"type": "string"},
         "depth": {"type": "integer", "minimum": 0, "maximum": 3},
         "limit": {"type": "integer", "minimum": 1, "maximum": 10},
-        "context_limit": {"type": "integer", "minimum": 0, "maximum": 3},
+        "context_limit": {"type": "integer", "minimum": 0, "maximum": 1000},
         "match_cursor": {"type": "string"}, "context_cursor": {"type": "string"},
-        "context_detail": {"type": "string", "enum": ["full", "compact"]},
+        "context_detail": {"type": "string", "enum": ["full", "compact", "preview"]},
     },
     "semantic_sparql_query": {
         "scope_mode": {"type": "string", "const": "ontologies"}, "query": {"type": "string"},
@@ -2420,19 +2420,12 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
                 raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         else:
             arguments = {**arguments, "resource_types": ["fact", "instance", "relation", "rule"]}
-        # Mechanical small-retrieval defaults.  The prompt prefers small pages,
-        # but a missing optional field must not silently fall back to the broad
-        # backend defaults (limit 20 / context_limit 100).  The consumer can
-        # still opt in to related context explicitly with ``context_limit=3``.
+        # R4.3-009: one global context page of previews, including exact IRI navigation.
         arguments = {**arguments}
         arguments.setdefault("depth", 1)
-        arguments.setdefault("limit", 10)
-        if _looks_like_absolute_iri(arguments.get("query")):
-            # Exact-anchor navigation needs the direct neighborhood; a zero
-            # context page would return only the node label/types.
-            arguments.setdefault("context_limit", 3)
-        else:
-            arguments.setdefault("context_limit", 0)
+        arguments.setdefault("limit", 5)
+        arguments.setdefault("context_limit", 20)
+        arguments.setdefault("context_detail", "preview")
     return dict(arguments)
 
 

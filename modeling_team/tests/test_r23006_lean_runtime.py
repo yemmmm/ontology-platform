@@ -230,8 +230,8 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(normalized["query"], "release")
         self.assertEqual(normalized["resource_types"], ["fact", "instance", "relation", "rule"])
         self.assertEqual(normalized["depth"], 1)
-        self.assertEqual(normalized["limit"], 10)
-        self.assertEqual(normalized["context_limit"], 0)
+        self.assertEqual(normalized["limit"], 5)
+        self.assertEqual(normalized["context_limit"], 20)
         for changed in (
             {**valid, "extra": True},
             {key: value for key, value in valid.items() if key != "query"},
@@ -257,8 +257,8 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         self.assertEqual(normalized_nullable["queries"], ["a", "b"])
         self.assertEqual(normalized_nullable["resource_types"], ["fact", "instance", "relation", "rule"])
         self.assertEqual(normalized_nullable["depth"], 1)
-        self.assertEqual(normalized_nullable["limit"], 10)
-        self.assertEqual(normalized_nullable["context_limit"], 0)
+        self.assertEqual(normalized_nullable["limit"], 5)
+        self.assertEqual(normalized_nullable["context_limit"], 20)
         with self.assertRaises(ChildRuntimeError):
             validate_examiner_proxy_arguments(
                 "query_semantic_context",
@@ -837,8 +837,9 @@ class R23006LeanRuntimeTests(unittest.TestCase):
             "proxy applies small defaults",
             "Exact navigation",
             "exact-anchor mode",
-            "Prefer 2-3",
-            "no more than 10 successful proxy calls",
+            "information is sufficient",
+            "counts are efficiency statistics only",
+            'context_detail="preview"',
             "yields exactly one",
             "receipt-count-mismatch",
             "p<call_ordinal>",

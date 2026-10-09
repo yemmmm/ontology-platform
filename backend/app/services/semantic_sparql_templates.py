@@ -983,6 +983,7 @@ def semantic_context_candidates_query(
     operation_type: str | None = None,
     operation_predicates: set[str] | None = None,
     after_key: str | None = None,
+    annotation_predicates: list[str] | None = None,
 ) -> str:
     """Return the fixed lexical corpus query for a resolved current scope."""
     graph_scope_values = _graph_scope_values(graph_to_ontology)
@@ -999,6 +1000,15 @@ def semantic_context_candidates_query(
         "?graph", "?subject", "?predicate", "?object", "?candidateType",
         "?matchedField", "?matchedValue",
     ))
+    annotations = ""
+    if annotation_predicates:
+        annotations = f"""UNION {{ GRAPH ?graph {{
+          VALUES ?annotationPredicate {{ {_iri_values(annotation_predicates)} }}
+          ?subject ?annotationPredicate ?annotationValue .
+        }} FILTER(ISLITERAL(?annotationValue))
+        BIND("resource" AS ?candidateType)
+        BIND("definition" AS ?matchedField)
+        BIND(STR(?annotationValue) AS ?matchedValue) }}"""
     continuation = f"FILTER(?rowKey > {Literal(after_key).n3()})" if after_key else ""
     return f"""# template: semantic-context-candidates
 PREFIX rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#>
@@ -1061,6 +1071,7 @@ WHERE {{
                  BIND("statement" AS ?candidateType)
                  BIND("predicate" AS ?matchedField)
                  BIND(STR(?lexicalPredicateLabel) AS ?matchedValue) }}
+      {annotations}
       {operation_filters}
     }}
   }}

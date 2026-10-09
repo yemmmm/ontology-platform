@@ -131,7 +131,7 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "assertion_types": {"type": "array", "items": {"type": "string", "minLength": 1}},
                 "semantic_roles": {"type": ["array", "null"], "minItems": 1,
                                    "items": {"type": "string", "minLength": 1}},
-                "context_detail": {"type": "string", "enum": ["full", "compact"]},
+                "context_detail": {"type": "string", "enum": ["full", "compact", "preview"]},
                 "search_mode": {"type": "string", "default": "hybrid"},
                 "depth": {"type": "integer", "minimum": 0, "maximum": 3, "default": 1},
                 "limit": {"type": "integer", "minimum": 1, "default": 20},

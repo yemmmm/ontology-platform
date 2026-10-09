@@ -35,14 +35,12 @@ You may query as many times as needed; there is no single-wave limit and no per-
 once" rule. A follow-up query driven by a returned cursor or referenced IRI is normal, not a
 mistake. Do not guess facts you did not receive.
 
-Keep each query small: use `limit` at most 10, `context_limit` at most 3, and `depth` of 1.
-The proxy applies small defaults (`depth=1`, `limit=10`, `context_limit=0`) when you omit
-them; set `context_limit=3` only when you deliberately need `related_context`. Use the
-default `limit=10` for the initial direction query, then prefer several focused queries
-(one per fact you need); use `match_cursor`/`context_cursor` to page through a result
-instead of raising the limit. If a query returns irrelevant concept matches, rephrase with
-more specific terms (entity names, relation names, or property names) rather than accepting
-noise.
+The proxy applies small defaults (`depth=1`, `limit=5`, `context_limit=20`,
+`context_detail="preview"`) for both initial queries and exact IRI navigation. This is
+one global neighbor page, not 20 neighbors per root. Adjust the selection to the evidence
+gap; page with `match_cursor`/`context_cursor` and use kind-focused reads. If a query
+returns irrelevant matches, use more specific terms or a returned IRI. Preserve valuable
+type nodes as possible paths to related resources.
 
 Exact navigation: after any returned item gives you an absolute IRI, you may use that
 IRI itself as the next `query` value. The interface then enters exact-anchor mode and
@@ -61,19 +59,20 @@ needed `data.object`: a fact-primary result puts each asserted literal in a prim
 with its `data.object` value. That is usually much smaller than paging through
 `related_context`, where schema shape constraints can appear alongside asserted facts.
 
-Batched rounds: in each round you may issue several independent queries together in one
-inference instead of one at a time. Group queries that target different parts of the question
-into the same round; only queries that depend on an earlier answer must wait. Prefer 2-3
-batched rounds over many single-query rounds.
+Batch independent reads that resolve distinct information gaps; dependent navigation waits
+for its earlier result. Before each read, identify what fact, condition, exception or boundary
+is still missing and what the next query will resolve. Use `context_detail="preview"` to
+obtain full primary definitions and a global page of neighboring previews; follow a selected
+neighbor's IRI for its complete definition and further neighborhood. A preview is unread detail,
+not proof that its conditions or unknowns have been fully read. Follow necessary pagination.
 
-Converge and submit: iterate until the retrieved facts answer the question or an explicit
-unknown is warranted. You decide when the evidence is sufficient; a typical complete answer
-needs no more than 2-3 batched rounds and no more than 10 successful proxy calls. Submit the
-terminal report as soon as the facts answer the question; do not keep querying for its own
-sake, and do not re-query the same fact with slightly different wording. If after the third
-round or the tenth successful proxy call the evidence is still incomplete, stop querying and
-submit an explicit incomplete result with a named gap or an unknown: more calls also make the
-required `evidence_refs` locator list longer and harder to bind correctly.
+Converge and submit as soon as evidence answers the question. Continue when a necessary gap
+has a relevant next node, relation or page, even beyond three rounds or ten calls. Counts are
+only efficiency statistics. If repeated results do not resolve the gap, change direction;
+when no useful next read remains, submit the supported answer and name unresolved items.
+Distinguish explicit modeled unknown, unsaved knowledge, retrieval not obtained and unfinished
+reading. Keep the existing session deadline and user pause/stop controls; at the deadline
+report unread evidence accurately rather than declaring the model lacks it.
 
 Each successful proxy call yields exactly one `evidence_refs` locator. Copy the returned
 `request_digest`, `response_digest`, and `artifact_path` exactly into that locator; do not

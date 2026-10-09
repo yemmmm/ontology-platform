@@ -153,6 +153,26 @@ AND，只筛主命中。null／缺省不筛选，未知角色返回正常空匹�
 language、图／Ontology 身份及方向。`root_paths` 仅表示根与距离，逐边路径需从实际 statement 还原。
 
 `context_detail` 仅控制关联行：REST 默认 full，MCP 默认 compact；主命中保持 full。
+R4.3 增加显式 `preview`，主命中完整且有 `neighbors`：每根引用同一全局周边页的
+摘要，`preview_ref` 为当前 `related_context` 的零基下标；稳定 `(ontology_id,kind,id)` 保存于
+对应摘要，跨页按该稳定身份累计，不能复用另一页的下标。preview 的 `root_paths.root_index`
+引用当前 `primary_matches`，保留每根距离及 Ontology 身份。该注册表保存名称、
+IRI、资源类型、已声明角色、最长160字业务含义原文摘录，以及关系/事实身份与读详情入口。
+关系保留谓词、端点、相对根方向与距离；资源的 `relationships` 保存直接根边，邻居引用的
+`relationships.index` 定位它。多跳不伪装成直接边，完整路径从实际 statement/续页读取。
+`preview/details_omitted/truncated` 显式表示省略，原始 JSON literal 不带回完整定义；用
+`detail_query` 的 IRI 查主命中取得完整内容。`context_page.returned` 只计唯一摘要，
+neighbors 引用不再计额；每页预算全局共享，续页主命中定义不变、邻居为当前页，可按身份累计。
+授权先于投影。短定义可能因关联引用增加体积，preview 不保证每次更小。
+
+R4.3 索引/文档模板为 `semantic-retrieval-v2` / `semantic-retrieval-document-v2`，只把
+已有 semantic/action/parameter 定义的合同字段增加到资源文档，返回原始定义及词面字段依据。
+旧模板向量索引保持降级，须沿现有投影重建流程恢复。`query.ranking_version` 和
+`match.ranking_version/rank_score/semantic_similarity` 声明排序版本、排序值及向量相似度；旧 `score/lexical_score` 不改作
+业务相关性证明。默认 `exact-expression-max-v2` 修复局部词项误判整句精确，保留可用 max
+融合；`evidence-rrf-v2` 是待公开题效果验证的可选方案，不默认启用。查询向量可短时复用，
+每次请求仍检查授权/模型修订/索引/分页完整性；邻接复用只限当前请求。
+
 compact 保留普通业务解释、身份和 statement 信息；R4.0-025 不再投影专用规则注解，也不维护专用脚本省略合同。
 无效／多值现有普通注解给出可定位读取诊断并保留获准原始 statement。
 平台不执行脚本、SQL 或外部 API，不自动判定业务兼容或说明／脚本一致。
