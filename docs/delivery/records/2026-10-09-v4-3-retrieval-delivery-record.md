@@ -1,8 +1,8 @@
 # v4.3 R4.3-008—012 工程交付记录
 
 权威范围：[需求](../../requirements/requirements-v4.3.md)，[增量设计](../designs/2026-10-09-v4-3-retrieval-design.md)。
-用户授权实现；Jev 验证初始按用户指令暂停，同日提供 key 后恢复但外部推理 HTTP 451，
-详见文末后续记录。真实建模、Consumer/Judge 独立语义
+用户授权实现；Jev 验证初始按用户指令暂停，同日提供 key 后直连 HTTP 451，
+后经用户指定显式代理取得两个模型的真实成功响应，详见文末后续记录。真实建模、Consumer/Judge 独立语义
 验收仍暂停，未消耗启动额度。本轮开发检查不属于独立功能或独立语义验收。
 
 ## 实现
@@ -197,3 +197,32 @@ opencode-jev-support-report.md 为可转交服务方的无凭据复现材料，�
 证据另存 jev-after-model-toggle-results.json/py，保留开关前的原始记录，key 未保存。
 本次日志ID：free fb5893ef-4c05-4e46-9c02-89ebc888d47f，付费
 74ccba28-1120-47b3-99b3-604705754783。Jev 验证继续处于外部接口阻塞。
+
+### 显式代理成功与同时间直连对照
+
+用户要求在请求中添加代理后复测。使用本机实际监听且通过 HTTPS 模型目录请求验证的
+`http://127.0.0.1:1080`，HTTPX 显式 `proxy`、`trust_env=False`，保持最新 key、
+同一 System One 地址和原最小英文 noul 请求；未修改全局代理或生产服务配置。
+
+| 模型与路径 | 时间（UTC，2026-10-09） | HTTP | 请求耗时 | 结果 |
+| --- | --- | ---: | ---: | --- |
+| jev-1.13-free，显式代理 | 15:26:38 | 200 | 1.769 秒 | is_urgent.noul=0.96 |
+| jev-1.13，显式代理 | 15:26:40 | 200 | 0.632 秒 | is_urgent.noul=0.96 |
+| jev-1.13-free，同时间直连对照 | 15:27:10 | 451 | 1.397 秒 | Endpoint is unavailable |
+
+两个成功响应均有真实答案、usage（289 input / 23 output tokens），上游 endpoint
+为 typesafe、model 为 jev-1.13.0；代理首个连接的 transport trace 明确为
+127.0.0.1:1080，付费请求复用该客户端连接。直连对照 trace 为 opencode.ai:443。
+TLS 校验保持开启；目录 curl 对照报告代理连接地址和 ssl_verify_result=0。
+日志ID分别为293a2a93-4ef1-470c-ac7d-6dc0bf48d2dc、
+fff5bf96-c6ef-4513-880d-228ab2862a85、8702ee7b-18df-4d17-8c98-ec8cf581771c。
+
+本次证据修正此前过宽的“本地网络已排除/服务端 Jev 接口不可用”结论：普通直连网络
+和 TLS 可达不能排除请求路径、出口或边缘路由造成的可用性差异。当前同一 key/body
+经代理可以推理、直连仍451，说明故障与请求路径有关；不能据此确认地域策略、出口
+封禁、特定节点配置或其他服务端内部根因，也不支持 TypeSafe API 已停止供应的判断。
+
+证据另存 jev-explicit-proxy-results.json/py 与
+jev-direct-control-after-proxy-results.json/py；原始失败证据保留，key 未持久化。
+Jev 最小推理连通性已通过代理解锁；中文相关性评分、稳定性、实际费用及质量选型仍
+未验证，未开展批量候选评分、真实建模或 Consumer/Judge，未变更生产排序。
