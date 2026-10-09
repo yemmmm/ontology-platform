@@ -17,11 +17,15 @@ delivery evidence. Use the following locations for new documentation.
 
 ## Current requirement entry points
 
-- [v4.3 modeling efficiency and rapid iteration](requirements/requirements-v4.3.md): registered
+- [v4.3 modeling efficiency, semantic retrieval, and rapid iteration](requirements/requirements-v4.3.md):
   target of at most two hours from a fresh start to complete independent semantic acceptance,
   with a later one-hour goal. Covers continuous approved execution, deterministic artifact handling,
   early public feedback, selective Delivery wakeups, and reference-based Judge evidence access.
-  Requirement registration only; modeling remains paused and no performance PASS is claimed.
+  R4.3-001—007 have engineering acceptance evidence; complete semantic acceptance and the
+  two-hour target remain unverified. Newly registered R4.3-008—012 cover structured semantic
+  retrieval, nested neighbor previews, evidence-driven Consumer stopping, scoring evaluation
+  before deciding on Jev, and reduced repeated computation. Their design and validation are pending;
+  modeling remains paused.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
