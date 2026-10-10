@@ -5,8 +5,10 @@
 - 权威范围：[R4.2-008](../../requirements/requirements-v4.2.md#r42-008-delivery-建模对话与统一历史)。
   Q1—Q5 已由用户确认；2026-10-10 用户要求继续完成详细设计。本文件不授权开发或运行。
 - 代码基线：`main@bd42416`，2026-10-10 静态核对；此前五 Tab 的功能 PASS 不覆盖对话。
-- 本轮结果：详细设计完成，需求与设计一致性自查完成；尚未独立审阅、实现或功能验收，
-  没有服务变更、真实模型调用或 semantic start。
+- 初版独立审阅：REVISE（0 Critical／1 High，暂停复用缺少 Runner 调度／恢复接线）。
+  用户随后明确改为消息协作式暂停／恢复，本轮修订覆盖初版硬暂停方案；该 High 的
+  前提不再适用，不能将需求变更说成原硬暂停能力已修复。修订版尚未独立复审、实现或
+  功能验收；没有服务变更、真实模型调用或 semantic start。
 - 复用 [R4.0-023](../../requirements/requirements-v4.0.md#r40-023-独立-delivery-agent-与统一用户交互)
   的 Delivery、Host 操作、授权及私有材料边界，复用
   [R4.3-005](../../requirements/requirements-v4.3.md#r43-005-delivery-按需唤醒与及时阶段推进)
@@ -29,7 +31,7 @@ Delivery 接收，保存各自原文和来源，Delivery 的明确对外回复�
 | [delivery.py](../../../modeling_team/delivery.py) 的 `run_delivery`／`_run_delivery` | 每会话 supervisor 文件锁；stdin 队列；忙时 steer、空闲时 start；程序观察 | 为原进程增加本机消息入口、统一元数据与持久回执；stdin 共用该接收路径 |
 | `DeliverySession.accept_user_input`／`emit_user_message` | 分别追加 user-input 与 public-messages；输入 source_reference | 新统一历史不从旧文件拼接；对外工具返回稳定 message_id，保存真实问题和答复关联 |
 | [runtimes/delivery.py](../../../modeling_team/runtimes/delivery.py) | 同一 thread 的 turn/start、turn/steer、turn/interrupt；内部输出不公开 | RPC 错误须区分明确拒绝与结果未知；公开输出去重需取得原 tool-call 身份 |
-| `apply_user_control` | 暂停、取消、撤回预算均撤回启动权限；控制不依赖模型理解 | 暂停改为临时门，继续不扩权；控制回执区分提交与实际生效 |
+| `apply_user_control` | 暂停、取消、撤回预算均撤回启动权限；原 run 暂停接口会 interrupt | 暂停／继续改由 Delivery 转达 Agent，不走旧硬控制分支；取消／撤回／stop 保留确定性操作，回执区分送达和实际确认 |
 | `finish_delivery`／stdin EOF | 完成后退出并关闭 runtime；EOF 可退出监督 | 正常完成后的全 Team 待命由 028 实现；EOF 不再因浏览器／CLI 脱离而销毁在线消息服务 |
 | [modeling_workbench.py](../../../backend/app/api/modeling_workbench.py) | 公开运行投影；访问需要管理员 | 只参考目录和投影方式，不复用其管理员守卫或公开隐藏题题干的接口 |
 | [App.tsx](../../../frontend/src/App.tsx)／workspaceApi | 五 Tab、项目上下文、登录与 JSON／CSRF 请求 | 增加 conversation Tab、对话 DTO 和页面；原页面布局及项目选择规则沿用 |
@@ -51,7 +53,7 @@ Q1—Q5 的用户决定仍以权威需求记录为准，不重新评分。
 | D4 | 客户端稳定 message_id、服务端 event_seq、UTC 时间、来源及入口；保存 dispatch 和 control 回执；问题关联真实对外消息 | 沿用 D4／Q3；回执细节按授权采用。超时未知不自动重放，不能声称端到端 exactly-once |
 | D5 | 概览后新增建模对话 Tab；会话选择、状态、时间线、待答问题与输入；增量轮询，不用模型刷新进度 | 沿用页面方向；布局／轮询按授权采用，复用现有视觉和项目切换规则 |
 | D6 | 独立 conversation 路由复用现有登录、read scope、项目绑定及 CSRF；消息 POST 不继承默认 model／workbench admin 门 | Q5 用户确认暂不细化权限；窄路由映射按授权采用，不创建权限种类或角色分级，现有权限缺口不在本轮解决 |
-| D7 | 只接入已有会话；离线只读；临时暂停保留授权；完成后的全 Team 待命消费 028 实际状态 | Q1／Q2 和首版范围沿用用户确认；不以保留 Delivery 一个进程代替全 Team 待命 |
+| D7 | 只接入已有会话；离线只读；暂停／继续由 Delivery 向 Coordinator／Judge 传达并由 Agent 自行等待／恢复；完成后消费 028 状态 | Q2 用户后续明确覆盖硬暂停，原授权保留；不以保留 Delivery 一个进程代替全 Team 待命 |
 
 ## 4. 责任及数据流
 
@@ -130,7 +132,7 @@ stdin EOF 仅表示该输入适配器断开；已开放统一入口时，不再�
 | 字段 | 值及含义 |
 | --- | --- |
 | connection | online：ping 身份一致且原 native 可用；offline：当前无可用端点；unknown：探测超时或状态无法核实 |
-| activity | active／pause_pending／paused／standby／stopping／stopped／interrupted；来自实际 supervisor／028 生命周期记录 |
+| activity | active／pause_pending／paused／standby／stopping／stopped／interrupted；pause_pending／paused 表达 Agent 等待确认／已确认等待，其他状态来自实际 supervisor／028 生命周期记录；不是执行开关 |
 | delivery_result | 当前公开交付结果和限制；独立于 connection 和 activity，不由 final 消息自动转换 |
 | observed_at／basis | 状态观测时间及公开回执／状态事件引用；离线时只展示最后可核实值及其时点 |
 
@@ -195,7 +197,7 @@ session.json 仅增加当前公开对话摘要；统一事件文件是消息和�
 | dispatch_result | accepted_by_native／rejected／unknown 与可操作原因；只证明 native 接收状态 |
 | delivery_message | 明确对外 kind、text、message_id、reply_to_message_ids、question_delivery_id（若实际存在） |
 | question_resolved | Delivery 明确确认哪些实际问题已解决；保留确认消息引用 |
-| control_result | 控制 action、pending／effective／failed／unknown、实际 Host 请求及回执引用 |
+| control_result | action、pending／effective／failed／unknown；暂停／继续关联实际转达及负责人确认，其他控制关联实际 Host 请求／回执；effective 不是平台冻结保证 |
 | session_state | 公开状态及依据；不写入私有工具结果或完整运行配置 |
 
 统一追加函数加锁分配序号并写一整行，flush／fsync 成功后才返回已接收／已发布。
@@ -255,32 +257,61 @@ unknown 消息不能自动重放。公开对话可作为带状态的上下文读
 
 ## 8. 控制语义与生命周期接线
 
-控制与普通输入共用身份和记录，实际控制由原 Host 通道完成，不等待模型把自然语言
-转换为操作。接收线程先设置暂停／取消等启动门，原主循环优先执行控制并按需要 interrupt。
-native RPC 仍只由原循环持有；控制已接收但尚到安全执行点时明确为 pending，不能宣称
-实时生效。已发生原子写入按现有完整性规则完成或核对，不能为即时反馈破坏原子性。
+暂停／继续是用户给 Agent 的流程指示，kind=control 只用于准确表达意图、路由与记录。
+原接收循环将指示及时送达同一 Delivery native thread，Delivery 自行停止阶段推进并通知
+当前负责人；不设置全局 paused 执行开关，不以工具拒绝、Runner 调度硬门或强制
+turn/interrupt 实现暂停。pause_pending／paused 只是观测投影，不作为工具能力守卫。
 
-每个目标的 Host request_id 由会话、message_id、action 与目标 ID 确定性生成，在调用前
-写入 pending 控制事件，复用现有 Host 提交账本和 get_request_result。HTTP 重试查询同一
-控制记录；缺少结果时先核对原 request_id，不重复生成控制动作。只有全部目标均有实际
-生效依据才报告全会话 effective；部分失败或未知保留逐目标结果及准确限制。
+生产阶段 Delivery 复用 `submit_instruction(kind=delivery_guidance)` 向原 Coordinator
+发送用户原话、message_id 与授权引用。验收阶段沿当前评价 owner 的原控制入口向实际
+运行的 Judge 传达；生产与验收都有在办工作时分别通知其负责人，不广播冻结全部 Agent。
+Coordinator 经原 Team Transport 通知参与成员，Judge 协调当前 Consumer／验收步骤；
+负责人说明停留点、未完成工作、参与对象的等待确认及仍在途的调用，再等待用户下一步指示。
+暂停通知不是业务答案、证据补充或判定指引，不能携带 hidden answer points 或改变裁决。
+当前一次性 Judge 尚无此消息入口，后续需在原 owner/native 通知循环补入窄转达接线，
+忙时 steer、空闲时在仍存活的原 thread 发消息；不创建替代 Judge 或借机重跑已结束题目。
+等待确认与正式报告分开读取，不把暂停答复解析为 PASS／FAIL 或补全原题的回答；
+对外仅披露阶段、等待／未确认对象及在途限制，不公开 Judge 的题干、判定思路或答案。
+
+例：用户说“先暂停，我要确认退货口径”。Delivery 转达原话，Coordinator 通知正在
+建模的成员先停下任务，汇总“已等指示；一笔已提交写入仍待核对”。Delivery 如实反馈。
+用户说“继续，口径已确认”后，Delivery 转达，负责人在原上下文中安排继续，不能由
+状态轮询、闲置催促或机械 continuation 消息代替用户指示。此行为写入活跃角色提示合同；
+Agent 对非用户恢复消息保持等待并反馈原因，不为暂停新增全局调度开关。
+
+原 runtime 和消息通道继续工作，Agent 可接收对话、协作及状态通知。负责人收到指示后
+不再主动开展下一步工具调用、判定或生产任务；已经发出的工具调用／原子写入按原完整性
+合同完成或核对，不承诺消息送达即瞬时撤销已发出的动作。没有确认、对象未收到消息或
+仍有在途调用时保留 pause_pending 和限制，Delivery 跟进消息／请用户指示，不自动升级
+成强制中断。负责人确认参与对象已等待且在途状态已说明后才显示 paused，并标明依据
+是 Agent 确认，不能用它证明平台已封闭写入或替代独立验收的只读封口。
+
+继续也经同一 Delivery 和负责人消息路径处理，负责人核对原范围、剩余额度、有效期
+及实际停留点后安排恢复；已结束或已退出对象准确披露，不创建 fresh start 冒充恢复。
+原 owner 对 Agent 明确确认的等待时段按现有等待计时方式记录，避免闲置催促或工作
+watchdog 将“等待用户”误判为任务故障；不延长原授权绝对期限，不重置已消耗额度。
+等待不计业务工作的有效处理时长，通知与确认实际发生的推理／费用仍如实记账。
+不能从原单次 Judge turn 的结束直接认定完成裁决或销毁：其说明正在等待时保留原会话
+及待办，继续后仍沿原题集和报告身份完成真实判定；正式报告已发布后不重开该 Judge。
+
+每个目标的 Host request_id 由会话、message_id、action 与目标 ID 确定性生成，复用
+提交账本及实际投递回执。暂停／继续还须关联负责人回复；仅 delivered 不标 effective。
+HTTP 重试查询同一记录，缺结果先核对原 request_id；部分失败／未知如实保留逐目标结果。
 
 | action | 原会话行为 | 对外生效依据 |
 | --- | --- | --- |
-| pause | 设置临时 paused 门，不删除 allowed_operations；禁止新生产／验收／修复及自动阶段推进；活跃 run 用 pause_run | 提交不等于生效，沿 get_request_result／运行状态核对；全会话暂停仍有未排空操作时为 pause_pending |
-| resume | 只解除临时门，核对原授权有效期、未撤回权限及剩余实际额度；已暂停且仍活着的 run 用 resume_live_run | 原 run 恢复回执；终态 run 不假装同线程恢复，不因继续创建 fresh start |
+| pause | Delivery 转达给 Coordinator／Judge，负责人协调参与成员停止继续任务、反馈停留点并等待指示；原授权保留，不调用 pause_run | 原消息投递、负责人及参与对象确认、在途调用说明；未确认为 pause_pending，已确认等待为 paused |
+| resume | Delivery 转达明确继续，负责人按原授权／剩余额度／期限在原上下文安排恢复，不调用 resume_live_run | 负责人实际恢复确认及工作记录；不凭开关或消息送达宣称全部恢复 |
 | cancel | 沿既有取消通道停止当前获准工作并保留证据，撤回当前推进能力；不等于用户明确销毁全 Team | 各受控动作的真实终止／清理结果；普通继续不恢复被撤回权限 |
 | revoke_budget | 保留既有预算撤回行为和证据核对，撤回对应启动能力 | 实际动作结果及撤回记录；继续不新增额度或恢复权限 |
 | stop | 调用 028 的显式全 Team 停止／销毁通道；完成报告／结果认可不能代替此指令 | 所有关联成员／进程退出和必要清理证据，最后更新 stopped；不能只关闭 socket 就报成功 |
 
-原评价／修复／本地 verification 子进程没有通用暂停接口：本期不能用 stop 冒充 pause，
-也不新增 OS 冻结机制。暂停立即阻止后续阶段启动，正在执行的不可暂停操作完成当前安全
-单元后不推进，期间显示 pause_pending、未暂停对象和依据；排空后显示 paused。其副作用
-仍按既有原子性及实际读回规则核对。继续不会重置费用／额度或原截止时间。
-
-Delivery 对话、公开读取与状态核对在 paused 时可用；临时门不能阻止纠正输入或必要恢复
-核对。工具启动检查不能仅靠给模型一段暂停提示；取消／预算撤回的权限集合仍持久保存。
-授权到期时允许解释状态，禁止继续启动原授权已到期的操作，返回准确限制，不自动续期。
+本地 verification／修复脚本等无 Agent 消息接收能力的执行单元，Delivery 说明无法靠
+此指示中途暂停，等待当前调用返回并自行暂缓下一步，不新增 OS 冻结。若用户要实际
+终止，沿其明确 cancel／stop 指令处理，不由暂停暗中升级。暂停和继续的约束落在
+Delivery、Coordinator、Judge 及参与角色的消息／提示合同，平台只保证准确送达与记录。
+取消／预算撤回仍保留现有持久撤权，显式 stop 和授权／额度硬边界、原子性及独立验收
+封口继续按原要求执行；本次用户变更只调整临时暂停／恢复机制。
 
 ### R4.0-028 接入要求与未交付依赖
 
@@ -353,14 +384,15 @@ conversation_write_failed。返回 code、对象与下一步；网络超时不�
 | 范围 | 拟改位置与责任 |
 | --- | --- |
 | 消息记录／本机协议 | 新 modeling_team/delivery_conversation.py：事件追加、去重、投影、socket／客户端；不含模型调用、运行编排或语义裁判 |
-| 原进程接线与控制 | modeling_team/delivery.py、modeling_team/runtimes/delivery.py：统一入口、原输入队列、回执、临时暂停和最小 RPC 分类；原 Host 操作优先复用 |
+| 原进程接线与控制 | modeling_team/delivery.py、modeling_team/runtimes/delivery.py：统一入口、原输入队列、回执与最小 RPC 分类；pause／resume 送给 Delivery，由其转达，不进入旧撤权／interrupt 分支 |
+| 流程负责人消息 | modeling_team/host_ops.py、host_ops_mcp.py 复用生产 delivery_guidance；__main__.py、delivery_ops.py、runtimes/codex.py 在原评价 owner 控制／native 通知循环提供当前 Judge 消息转达与等待回执；消息中继不执行暂停调度硬门，同步实际接口文档 |
 | CLI 接入 | modeling_team/__main__.py：增加 delivery-conversation 子入口，send／status／history 均不启动 runtime；原 delivery 启动／接续行为保留 |
 | 后端适配 | 新 backend/app/api/delivery_conversations.py 与 services/delivery_conversations.py，api/routes.py 注册，security/http.py 窄 namespace scope 映射；同步 docs/reference/api.md 的实际接口章节 |
 | 前端 | 新 frontend/src/pages/DeliveryConversationPage.tsx；App.tsx、workspaceApi.ts、workspaceTypes.ts、styles.css、i18n/translations.ts 和 i18n/zh.ts |
-| 活跃合同同步 | modeling_team/agent-packages/delivery/instructions.md、modeling_team/skills/delivery/SKILL.md、skills/modeling-dev-loop/SKILL.md 中对应消息／控制段；不得把隐藏答案带入新入口 |
+| 活跃合同同步 | Delivery instructions／Skill、Coordinator 及参与成员指令、原 acceptance-judge／Consumer 指令、modeling-dev-loop 对应消息／控制段；收到暂停停下当前任务并反馈等待，只有用户下一步指示才安排继续，不向生产传播隐藏答案 |
 | 验证 | modeling_team/tests 的 Delivery 测试、backend/tests 对话 API 测试、frontend/tests 页面功能测试；028 生命周期验证由其拥有范围承担并在 A5 联测 |
 
-实施先完成统一事件／ID 与接收入口，再接原 loop 的投递和临时控制，再提供 HTTP 与页面。
+实施先完成统一事件／ID 与接收入口，再接原 loop 投递、负责人消息及等待记录，再提供 HTTP 与页面。
 最后联调 028 待命／停止合同；普通收发开发不必前置全 Team 生命周期重写。接口、提示、
 DTO 与测试使用同一状态词，避免后端回 accepted、页面显示“业务已处理”。
 
@@ -377,7 +409,7 @@ DTO 与测试使用同一状态词，避免后端回 accepted、页面显示“�
 | A1 | 无会话、多个会话、单会话多 run、未绑定和损坏绑定；项目切换后不混消息，不把终态 run 隐藏整项会话 |
 | A2 | 网页和真实 Host 客户端向同一在线进程提交；忙时实际 steer，空闲实际 start；统一事件及 native 接收回执一致，刷新不调用模型 |
 | A3 | 多待答问题、真实引用、主动补充、同 ID 相同／不同 payload；stale 明确拒绝后重试、投递前／后崩溃、超时 unknown 不重放；模拟只能证明合同，实际通道需联测 |
-| A4 | 暂停不改权限／额度／期限；活 run 暂停回执、不可暂停操作 pause_pending、继续原 thread；取消／预算撤回后继续不扩权；明确到期的授权不能启动新操作 |
+| A4 | 生产与验收分别经 Delivery 向实际 Coordinator／Judge 送达暂停／继续；有排队协作、闲置催促或机械 continuation 时 Agent 保持等待，不继续任务；在途调用／未确认准确 pause_pending；继续原上下文，权限／额度／期限不重置。检查无全局暂停开关／工具硬拒绝／强制 interrupt；取消、撤回、到期边界继续适用。真实 Agent 遵循和回复必须联测，消息 fake 不能证明协作成立 |
 | A5 | 依赖 028 的真实全 Team 完成后待命、追问、认可但未 stop、用户／Host 显式 stop；实际所有成员存活／退出及保留证据，不能只测 Delivery 或 mock |
 | A6 | 真离线与 ping unknown、断线前后提交状态、关闭 stdin／网页、刷新／多窗口；无网页启动、离线队列或第二 supervisor，历史仍可读 |
 | A7 | 两端各发送普通输入、回答及相同控制；来源／转交／测试代答显示准确，能力相同；不要求冲突仲裁 |
@@ -391,4 +423,5 @@ DTO 与测试使用同一状态词，避免后端回 accepted、页面显示“�
 
 本轮文档检查包括本地链接／需求锚点、Markdown 围栏、JSON 示例解析、D1—D7／Q1—Q5
 与 A1—A10 对应及 diff；检查通过仅证明设计文档可读且合同自洽。无待用户确认的业务选择，
-028 接入按其已形成的详细设计机械对齐；A5 依赖未实现及当前暂停实现缺口保持明确披露。
+028 接入按其详细设计对齐；A5 依赖未实现，协作式暂停的负责人消息接线及真实 Agent
+等待行为尚未验证。初版审阅 High 按用户目标变更留档，修订版仍待独立复审。

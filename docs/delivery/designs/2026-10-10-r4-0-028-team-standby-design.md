@@ -9,8 +9,9 @@
 - 代码基线 `main@1ffd4aa`，静态核对 Delivery、Runner、Codex adapter、CQ 验收、Host
   操作、PlatformScope、checkpoint recovery 及宿主合同。代码没有在本轮改变。
   收尾时另有并行生产引用相关代码改动，其 diff 未改变上述生命周期依据；不纳入本轮提交。
-- 本轮状态：需求细化与详细设计完成，文档合同自查；尚未独立设计审阅、实现或功能验收。
-  不回填相邻需求的历史 PASS，也不宣称真实 L0／L1 通过。
+- 初版独立设计审阅 PASS（0 Critical／0 High）；组合方案因 008 的硬暂停接线为 REVISE。
+  用户随后明确将暂停／恢复改为 Agent 消息协作，本设计同步相邻依赖与验收；修订版
+  尚未独立复审、实现或功能验收，不回填历史 PASS，不宣称真实 L0／L1 通过。
 
 例：生产成员已经报告完成，独立 Consumer／Judge 正在验收。生产线程先进入只读等待，
 继续保留；已启动 Consumer 完成原题集后保留原会话。最终汇报及用户说“认可”都不销毁。
@@ -50,7 +51,7 @@ Q1（Consumer 范围）已按用户补充关闭。其余技术选择按本轮设
 | D4 | Consumer 原验收任务封口，原报告固定；原 native／私有上下文由原 owner 保留。任务资源回执与最终销毁回执分开 | 用户 Q1；按授权采用接线。保留会话不算资源泄漏，但必须具备 owner、实际存活及范围依据 |
 | D5 | 新只读 consult 外层动作复用 FIFO、request ledger、RuntimeDelivery 与 Team Transport；不复用 terminal 被拒的生产 instruction | 按授权采用；原 report_task_result、候选、写入及裁决不被重开，原两种 instruction kind 不增加第三种 |
 | D6 | 显式 stop 覆盖绑定 run、保留 Consumer 的 owner、相关操作及 Delivery；最后才关闭 Delivery，保留模型／历史／证据 | 沿用用户确认，具体顺序按授权采用；结果认可、EOF、浏览器关闭和自然完成都不等于 stop |
-| D7 | 暂停、授权到期、预算撤回与待命分开；无输入不启动推理，不因保活增加 fresh start，不自动扩权或续期 | 沿用 R4.2-008 Q2 和原额度／授权合同；计时及状态接线按授权采用 |
+| D7 | 暂停／继续经 Delivery 消息转达 Coordinator／Judge，由 Agent 自行等待／恢复；与到期、撤回及待命分开，无输入不推理、不扩权 | 用户后续明确覆盖硬暂停；复用 R4.2-008 Q2 及原额度／授权边界 |
 
 ## 4. 保留对象、生命周期与证据
 
@@ -85,7 +86,8 @@ Consumer 时应用同一规则。启动失败／已退出的不复活，失败�
 原 `TERMINAL_REPORT_COMPLETE` 表达工作最终汇报事实，不能继续作为“必须退出”的唯一条件。
 可保留对应历史事件，并在 state.json 用生命周期当前状态和 work_state 分开呈现。
 `read_only_wait` 表示生产已封口、还有授权内验收／其他待办；`standby` 表示本轮已完成
-或无当前可推进工作，等待真实输入，不代表业务语义 PASS。暂停仍按临时控制单独记录。
+或无当前可推进工作，等待真实输入，不代表业务语义 PASS。暂停单独记录 Agent 等待
+指示及确认依据，不作为全局执行开关；消息协作方式见 008 §8。
 现有调用方若依赖 terminal／进程退出触发成果提取，须按工作完成及实际封口回执提取，
 正常销毁核对留到 stop；当前入口配置了 foreground monitor 时，同步其 phase 读取，
 不能让保活阻塞原报告交接，也不能伪造 cleanup_pending／已退出来解锁读者。
@@ -195,6 +197,12 @@ child 都推广为常驻成员。对原已实际启动且仍健康的 Consumer�
 并固定未完成证据，再保留为 blocked／只读会话，不宣称健康验收完成。已退出或不可安全
 保留时仍沿必要故障清理，不复活、不掩盖坏进程或隐瞒首个失败。
 
+用户在验收中要求暂停时，Delivery 按 008 §8 通知当前 Judge；Judge 协调参与者停止
+继续任务、说明当前判定位置并等待。未提交正式报告的等待不算验收完成，不因 turn
+暂时结束执行上述正常销毁。原 owner 保留原会话／任务身份及待办，以 Agent 确认记录
+等待时段，继续后仍判定原题集；不延长授权绝对期限、不修改已提交报告，判定真正结束
+后 Judge 仍沿原一次性合同收尾。此接线归 008，028 不增加硬暂停开关。
+
 ### 6.2 回执与 full_pass 边界
 
 原 `children_destroyed=true` 只在真的销毁时使用。新增 Consumer 正常收尾回执：
@@ -238,7 +246,7 @@ Runner 在 read_only_wait／standby 中执行专用只读 drain：仅处理实�
 相关普通协作、runtime 状态及控制；不执行候选推进、闲置催促、CQ 冻结或写入。
 
 保留 Consumer 的 consultation 沿其原 owner 的 control FIFO，使用相同原 native thread。
-原批次的一次 acceptance turn 合同保持；新的 turn 标记为 consultation，与原报告 latch
+原已完成批次的报告合同保持；新的 turn 标记为 consultation，与原报告 latch
 和 watchdog 分开，不打开旧 report sink。若需要只读工具，只使用其现有授权 scope；
 不注入 Judge 答案／hidden answer points。回到 Delivery 的内部回答仍私有，Delivery
 仅发布获准对外内容，不把隐藏题及参考答案转发给生产或测试代答者。
@@ -247,9 +255,11 @@ Runner 在 read_only_wait／standby 中执行专用只读 drain：仅处理实�
 不重放；与 R4.2-008 已设计的稳定消息 ID 对应。consultation 记录独立于冻结验收证据，
 读取消息或状态不启动新模型 turn。只有实际追问触发必要角色推理，回复结束后原会话待命。
 待命 drain 不运行闲置催促／候选进度超时，不因原工作截止时间已过再次杀死空闲线程；
-原验收推理期限、真实咨询的有界处理和授权到期仍适用，不能借保活延长工作授权。
+原验收有效推理时长、真实咨询的有界处理和授权到期仍适用；用户暂停等待按 008
+单独记时，不重置实际费用／额度或延长授权绝对期限，不能借保活延长工作授权。
 
-暂停期间可读及对话；原只读封口不会被 resume 解除。用户纠正业务信息先如实记录，
+暂停／继续按 008 的消息协作合同，由负责人及参与成员自行等待／恢复，支持对话；
+等待状态不作为调度硬门，原只读封口不会被 resume 解除。用户纠正业务信息先如实记录，
 Delivery 判断影响并按原授权流程安排实际修订／重验，不能由一句追问自动扩大范围、
 刷新旧报告 PASS 或重开 write admission。需要新的生产 run／thread 时按原 fresh-start
 口径消耗额度，保留老 Team 不赋予额外额度；普通咨询本身不是新的 semantic start。
@@ -327,7 +337,7 @@ carrier 的 source/platform 一次性 Examiner 不因本条被改成 Consumer；
 | A2 | Delivery 追问经原 Coordinator／必要成员及已保留 Consumer 实际回复；新咨询不覆盖原 terminal、freeze、回答、Judge／batch-report；隐藏材料哨兵不进入生产／公开消息 |
 | A3 | 认可、EOF、浏览器关闭、状态轮询、预算到期不自动 stop；无输入的观测窗口内 native turn／fresh-start 计数不增长，不为证明存活发推理 heartbeat |
 | A4 | 用户／Host 各发显式 stop，受管对象全部实际退出、读／报告／provider 资源关闭；重复请求不重复副作用，单对象失败／未知写清理准确保留 partial |
-| A5 | pause／resume 保留原授权／额度／期限；cancel／revoke 后继续不扩权；咨询不自动写模型，封口 run 的 write gate 不被继续打开 |
+| A5 | 暂停／继续经 Delivery 向 Coordinator／Judge 转达，实际 Agent 停止继续任务并确认等待，明确继续后恢复原上下文；等待中的 Judge 不假报完成／自动销毁；无全局暂停开关／强制 interrupt。权限／额度／期限保留，撤回不由继续恢复；封口 run 不重新开放写门 |
 | A6 | staged 排空与 direct key 撤回均有实际证据；pending／unknown／未撤回 write key 拒绝 live-source 验收且反馈可修正，不能靠 STANDBY 文案过门 |
 | A7 | S4 live 源不停止／释放生产 root lock；同源两批验收按任务封口串行，第一 Consumer owner 待命仍可启动第二批；原退出源路径及生产恢复 source_active 门不退化 |
 | A8 | Consumer closure 准确 retained_idle，Judge 正常 destroyed；旧 sink 关闭、原证据固定、owner 明确；保留对象失联或 closure 不完整不发布 full_pass；已有报告不回填 |
@@ -344,4 +354,5 @@ L0 PASS 也不能代替独立业务语义 L1 PASS，真实建模仍须另有用�
 
 Q1 已按用户 Consumer 补充关闭；其余设计取舍已记录，没有待用户确认的业务选择。
 R4.2-008 与本条仍待实现，最终整个 Team 待命与显式 stop 的 A5 联测不能仅凭两份
-设计文档宣称完成；本轮状态严格为“细化与设计完成，未独立审阅／实现／验收”。
+设计文档宣称完成；状态为“初版已独立审阅；协作式暂停修订完成，修订版待独立复审；
+未实现／验收”。
