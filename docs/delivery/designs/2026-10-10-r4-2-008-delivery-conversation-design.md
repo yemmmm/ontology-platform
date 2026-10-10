@@ -7,8 +7,10 @@
 - 代码基线：`main@bd42416`，2026-10-10 静态核对；此前五 Tab 的功能 PASS 不覆盖对话。
 - 初版独立审阅：REVISE（0 Critical／1 High，暂停复用缺少 Runner 调度／恢复接线）。
   用户随后明确改为消息协作式暂停／恢复，本轮修订覆盖初版硬暂停方案；该 High 的
-  前提不再适用，不能将需求变更说成原硬暂停能力已修复。修订版尚未独立复审、实现或
-  功能验收；没有服务变更、真实模型调用或 semantic start。
+  前提不再适用，不能将需求变更说成原硬暂停能力已修复。
+- 消息协作修订版 `3dd2774` 独立审阅仍为 REVISE（0 Critical／1 High：Consumer 阶段
+  尚无 Judge，消息目标和未完任务等待收尾遗漏）。本轮补齐按阶段转达及 Consumer／Judge
+  等待与完成区分，再交独立复审；没有实现、服务变更或真实模型调用。
 - 复用 [R4.0-023](../../requirements/requirements-v4.0.md#r40-023-独立-delivery-agent-与统一用户交互)
   的 Delivery、Host 操作、授权及私有材料边界，复用
   [R4.3-005](../../requirements/requirements-v4.3.md#r43-005-delivery-按需唤醒与及时阶段推进)
@@ -53,7 +55,7 @@ Q1—Q5 的用户决定仍以权威需求记录为准，不重新评分。
 | D4 | 客户端稳定 message_id、服务端 event_seq、UTC 时间、来源及入口；保存 dispatch 和 control 回执；问题关联真实对外消息 | 沿用 D4／Q3；回执细节按授权采用。超时未知不自动重放，不能声称端到端 exactly-once |
 | D5 | 概览后新增建模对话 Tab；会话选择、状态、时间线、待答问题与输入；增量轮询，不用模型刷新进度 | 沿用页面方向；布局／轮询按授权采用，复用现有视觉和项目切换规则 |
 | D6 | 独立 conversation 路由复用现有登录、read scope、项目绑定及 CSRF；消息 POST 不继承默认 model／workbench admin 门 | Q5 用户确认暂不细化权限；窄路由映射按授权采用，不创建权限种类或角色分级，现有权限缺口不在本轮解决 |
-| D7 | 只接入已有会话；离线只读；暂停／继续由 Delivery 向 Coordinator／Judge 传达并由 Agent 自行等待／恢复；完成后消费 028 状态 | Q2 用户后续明确覆盖硬暂停，原授权保留；不以保留 Delivery 一个进程代替全 Team 待命 |
+| D7 | 只接入已有会话；离线只读；暂停／继续由 Delivery 向 Coordinator／Consumer／Judge 传达并由 Agent 自行等待／恢复；完成后消费 028 状态 | Q2 用户后续明确覆盖硬暂停，原授权保留；不以保留 Delivery 一个进程代替全 Team 待命 |
 
 ## 4. 责任及数据流
 
@@ -263,15 +265,26 @@ unknown 消息不能自动重放。公开对话可作为带状态的上下文读
 turn/interrupt 实现暂停。pause_pending／paused 只是观测投影，不作为工具能力守卫。
 
 生产阶段 Delivery 复用 `submit_instruction(kind=delivery_guidance)` 向原 Coordinator
-发送用户原话、message_id 与授权引用。验收阶段沿当前评价 owner 的原控制入口向实际
-运行的 Judge 传达；生产与验收都有在办工作时分别通知其负责人，不广播冻结全部 Agent。
-Coordinator 经原 Team Transport 通知参与成员，Judge 协调当前 Consumer／验收步骤；
+发送用户原话、message_id 与授权引用。验收按真实阶段选择收件者：当前 CQ 先执行
+Consumer 检索／作答及读回，之后才启动 Judge；不能把尚未启动的 Judge 当作暂停接收者。
+
+| 实际阶段 | 消息路径与接收者 |
+| --- | --- |
+| 生产在办 | Delivery → 原 Coordinator → 原 Team Transport 中参与成员 |
+| Consumer 检索／作答在办，Judge 未启动 | Delivery → 原评价 owner 的控制入口 → 当前实际 Consumer 原 native thread |
+| Judge 判定在办 | Delivery → 同一评价 owner → 当前实际 Judge 原 native thread |
+| 阶段交接中无在办 Agent | owner 返回真实阶段及无当前收件者；Delivery 自行暂缓下一阶段安排并反馈，不为接收暂停预建 Judge；用户明确继续后再按原授权安排 |
+
+owner 依据原任务／批次及实际 child/thread 绑定转达，不按角色名或最新 PID 猜对象。
+若有多个在办批次分别核对目标和确认；生产与验收都有在办工作时分别通知负责人。
+Coordinator 经原 Team Transport 通知参与成员，Consumer／Judge 分别停下自身当前任务；
 负责人说明停留点、未完成工作、参与对象的等待确认及仍在途的调用，再等待用户下一步指示。
 暂停通知不是业务答案、证据补充或判定指引，不能携带 hidden answer points 或改变裁决。
-当前一次性 Judge 尚无此消息入口，后续需在原 owner/native 通知循环补入窄转达接线，
+当前 Consumer／一次性 Judge 的同步 child 调用尚无此消息入口，后续需在原评价 owner、
+`_cq_run_platform_session` 及 Consumer／Judge native 通知循环补入窄转达与等待接线，
 忙时 steer、空闲时在仍存活的原 thread 发消息；不创建替代 Judge 或借机重跑已结束题目。
 等待确认与正式报告分开读取，不把暂停答复解析为 PASS／FAIL 或补全原题的回答；
-对外仅披露阶段、等待／未确认对象及在途限制，不公开 Judge 的题干、判定思路或答案。
+对外仅披露阶段、等待／未确认对象及在途限制，不公开隐藏题、答案、检索正文或 Judge 思路。
 
 例：用户说“先暂停，我要确认退货口径”。Delivery 转达原话，Coordinator 通知正在
 建模的成员先停下任务，汇总“已等指示；一笔已提交写入仍待核对”。Delivery 如实反馈。
@@ -291,8 +304,15 @@ Agent 对非用户恢复消息保持等待并反馈原因，不为暂停新增�
 原 owner 对 Agent 明确确认的等待时段按现有等待计时方式记录，避免闲置催促或工作
 watchdog 将“等待用户”误判为任务故障；不延长原授权绝对期限，不重置已消耗额度。
 等待不计业务工作的有效处理时长，通知与确认实际发生的推理／费用仍如实记账。
-不能从原单次 Judge turn 的结束直接认定完成裁决或销毁：其说明正在等待时保留原会话
-及待办，继续后仍沿原题集和报告身份完成真实判定；正式报告已发布后不重开该 Judge。
+Consumer 和 Judge 的 turn 结束都不等于任务完成。owner 在原任务记录中关联本次暂停
+消息及 Agent 的明确等待确认；确认后转入原进程消息等待循环，保留原 thread、未完成
+题目、已完成响应、原报告身份及未完成任务仍需的 sink／proxy／read capability，不执行
+`batch-incomplete`、自动补交报告、任务封口、下一阶段或正常销毁。等待不是正式答案／
+裁决，也不是完成后的 consultation，不修改已提交回答、冻结证据或独立判定材料。
+明确继续送达同一实际 Agent 后，沿原 task/thread 处理尚未完成题目；不是新验收批次。
+正式任务完成或扣除确认等待后的有效处理超时才走原报告封口／正常收尾；没有实际等待
+确认的未完成结束仍按原失败合同处理，不用任意文本结束绕过报告完整性。授权／read key
+到期不自动续期，先反馈限制，不能为继续暗中换 thread、key 或重做已提交题目。
 
 每个目标的 Host request_id 由会话、message_id、action 与目标 ID 确定性生成，复用
 提交账本及实际投递回执。暂停／继续还须关联负责人回复；仅 delivered 不标 effective。
@@ -300,7 +320,7 @@ HTTP 重试查询同一记录，缺结果先核对原 request_id；部分失败�
 
 | action | 原会话行为 | 对外生效依据 |
 | --- | --- | --- |
-| pause | Delivery 转达给 Coordinator／Judge，负责人协调参与成员停止继续任务、反馈停留点并等待指示；原授权保留，不调用 pause_run | 原消息投递、负责人及参与对象确认、在途调用说明；未确认为 pause_pending，已确认等待为 paused |
+| pause | Delivery 按真实阶段转达 Coordinator／Consumer／Judge，Agent 停下任务、反馈停留点并等待；原授权保留，不调用 pause_run | 原消息投递、实际 Agent／参与对象确认、在途说明；未确认为 pause_pending，已确认等待为 paused |
 | resume | Delivery 转达明确继续，负责人按原授权／剩余额度／期限在原上下文安排恢复，不调用 resume_live_run | 负责人实际恢复确认及工作记录；不凭开关或消息送达宣称全部恢复 |
 | cancel | 沿既有取消通道停止当前获准工作并保留证据，撤回当前推进能力；不等于用户明确销毁全 Team | 各受控动作的真实终止／清理结果；普通继续不恢复被撤回权限 |
 | revoke_budget | 保留既有预算撤回行为和证据核对，撤回对应启动能力 | 实际动作结果及撤回记录；继续不新增额度或恢复权限 |
@@ -309,7 +329,7 @@ HTTP 重试查询同一记录，缺结果先核对原 request_id；部分失败�
 本地 verification／修复脚本等无 Agent 消息接收能力的执行单元，Delivery 说明无法靠
 此指示中途暂停，等待当前调用返回并自行暂缓下一步，不新增 OS 冻结。若用户要实际
 终止，沿其明确 cancel／stop 指令处理，不由暂停暗中升级。暂停和继续的约束落在
-Delivery、Coordinator、Judge 及参与角色的消息／提示合同，平台只保证准确送达与记录。
+Delivery、Coordinator、Consumer、Judge 及参与角色的消息／提示合同，平台只保证准确送达与记录。
 取消／预算撤回仍保留现有持久撤权，显式 stop 和授权／额度硬边界、原子性及独立验收
 封口继续按原要求执行；本次用户变更只调整临时暂停／恢复机制。
 
@@ -385,7 +405,7 @@ conversation_write_failed。返回 code、对象与下一步；网络超时不�
 | --- | --- |
 | 消息记录／本机协议 | 新 modeling_team/delivery_conversation.py：事件追加、去重、投影、socket／客户端；不含模型调用、运行编排或语义裁判 |
 | 原进程接线与控制 | modeling_team/delivery.py、modeling_team/runtimes/delivery.py：统一入口、原输入队列、回执与最小 RPC 分类；pause／resume 送给 Delivery，由其转达，不进入旧撤权／interrupt 分支 |
-| 流程负责人消息 | modeling_team/host_ops.py、host_ops_mcp.py 复用生产 delivery_guidance；__main__.py、delivery_ops.py、runtimes/codex.py 在原评价 owner 控制／native 通知循环提供当前 Judge 消息转达与等待回执；消息中继不执行暂停调度硬门，同步实际接口文档 |
+| 流程负责人消息 | host_ops.py、host_ops_mcp.py 复用生产 delivery_guidance；__main__.py 的 _cq_run_platform_session／评价阶段接线、delivery_ops.py、runtimes/codex.py 的 Consumer／Judge child 循环：原 owner 按实际任务转达，区分已确认等待与任务完成／batch-incomplete，保留未完成任务 sink，沿原 thread 继续；消息中继不执行暂停调度硬门，同步接口文档 |
 | CLI 接入 | modeling_team/__main__.py：增加 delivery-conversation 子入口，send／status／history 均不启动 runtime；原 delivery 启动／接续行为保留 |
 | 后端适配 | 新 backend/app/api/delivery_conversations.py 与 services/delivery_conversations.py，api/routes.py 注册，security/http.py 窄 namespace scope 映射；同步 docs/reference/api.md 的实际接口章节 |
 | 前端 | 新 frontend/src/pages/DeliveryConversationPage.tsx；App.tsx、workspaceApi.ts、workspaceTypes.ts、styles.css、i18n/translations.ts 和 i18n/zh.ts |
@@ -409,7 +429,7 @@ DTO 与测试使用同一状态词，避免后端回 accepted、页面显示“�
 | A1 | 无会话、多个会话、单会话多 run、未绑定和损坏绑定；项目切换后不混消息，不把终态 run 隐藏整项会话 |
 | A2 | 网页和真实 Host 客户端向同一在线进程提交；忙时实际 steer，空闲实际 start；统一事件及 native 接收回执一致，刷新不调用模型 |
 | A3 | 多待答问题、真实引用、主动补充、同 ID 相同／不同 payload；stale 明确拒绝后重试、投递前／后崩溃、超时 unknown 不重放；模拟只能证明合同，实际通道需联测 |
-| A4 | 生产与验收分别经 Delivery 向实际 Coordinator／Judge 送达暂停／继续；有排队协作、闲置催促或机械 continuation 时 Agent 保持等待，不继续任务；在途调用／未确认准确 pause_pending；继续原上下文，权限／额度／期限不重置。检查无全局暂停开关／工具硬拒绝／强制 interrupt；取消、撤回、到期边界继续适用。真实 Agent 遵循和回复必须联测，消息 fake 不能证明协作成立 |
+| A4 | 分别在生产、Consumer 检索且 Judge 未启动、Judge 判定及无在办 Agent 的阶段交接发暂停／继续；只通知实际对象、不预建 Judge。等待确认后 turn 结束不报 batch-incomplete、不关闭未完任务 sink，不自动补交报告或进入下一阶段；沿原 thread 完成剩余题目，不重做已提交响应／裁决。排队协作／闲置催促／机械 continuation 不作为继续指示，在途／未确认准确披露；有效等待计时、原授权／额度／绝对期限正确，无全局暂停开关／工具硬拒绝／强制 interrupt。真实 Agent 等待与恢复须联测，消息 fake 不证明成立 |
 | A5 | 依赖 028 的真实全 Team 完成后待命、追问、认可但未 stop、用户／Host 显式 stop；实际所有成员存活／退出及保留证据，不能只测 Delivery 或 mock |
 | A6 | 真离线与 ping unknown、断线前后提交状态、关闭 stdin／网页、刷新／多窗口；无网页启动、离线队列或第二 supervisor，历史仍可读 |
 | A7 | 两端各发送普通输入、回答及相同控制；来源／转交／测试代答显示准确，能力相同；不要求冲突仲裁 |
