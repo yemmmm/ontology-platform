@@ -63,6 +63,16 @@ UNIFIED_PROTOCOL_RUN_OPERATIONS: tuple[str, ...] = (
     "protocol_check_plan_coverage",
 )
 STAGED_PROTOCOL_OPERATIONS: tuple[str, ...] = (*PROTOCOL_OPERATIONS, *STAGED_PROTOCOL_RUN_OPERATIONS)
+# R4.0-024: a staged unified surface also advertises the existing artifact
+# listing capability.  ``protocol_inspect_associations`` resolves read refs
+# only from Runner-observed platform records, so Protocol must be able to
+# discover canonical ``artifact_path`` values instead of transcribing pages or
+# inventing aliases.  Kept duplicate-free so a formal assembly that already
+# includes ``PROTOCOL_OPERATIONS`` never lists one operation twice.
+STAGED_UNIFIED_PROTOCOL_OPERATIONS: tuple[str, ...] = (
+    *UNIFIED_PROTOCOL_RUN_OPERATIONS,
+    "protocol_list_platform_artifacts",
+)
 UNIFIED_PROTOCOL_OPERATIONS: tuple[str, ...] = (*PROTOCOL_OPERATIONS, *UNIFIED_PROTOCOL_RUN_OPERATIONS)
 MODELING_OPERATIONS: tuple[str, ...] = ("modeling_publish_staged_candidate",)
 ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
@@ -938,6 +948,7 @@ __all__ = [
     "STAGED_PROTOCOL_OPERATION",
     "STAGED_PROTOCOL_OPERATIONS",
     "STAGED_PROTOCOL_RUN_OPERATIONS",
+    "STAGED_UNIFIED_PROTOCOL_OPERATIONS",
     "UNIFIED_PROTOCOL_RUN_OPERATIONS",
     "UNIFIED_PROTOCOL_OPERATIONS",
     "RunnerCapabilityEndpoint",

@@ -69,6 +69,7 @@ from ..capability_mcp import (
     CQ_OPERATION,
     ROLE_OPERATIONS,
     STAGED_PROTOCOL_RUN_OPERATIONS,
+    STAGED_UNIFIED_PROTOCOL_OPERATIONS,
     UNIFIED_PROTOCOL_RUN_OPERATIONS,
 )
 from ..candidate_platform_gate import (
@@ -3750,7 +3751,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 configuration = getattr(active_run, "configuration", None)
                 parameters = getattr(getattr(configuration, "task", None), "parameters", {})
                 if getattr(self, "_unified_graph", False) or parameters.get("unified_semantic_graph") is True:
-                    return UNIFIED_PROTOCOL_RUN_OPERATIONS
+                    # R4.0-024: the staged unified surface also advertises the
+                    # existing artifact listing capability so Protocol can
+                    # resolve canonical read refs; this tuple must equal the
+                    # live socket's ``tools/list`` exactly.
+                    return STAGED_UNIFIED_PROTOCOL_OPERATIONS
                 return STAGED_PROTOCOL_RUN_OPERATIONS
             if (
                 role == COMPETENCY_QUESTION_ROLE
@@ -6810,6 +6815,21 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 if agent.provider_wait is None:
                     agent.state = "failed"
 
+    def _staged_unified_observation_enabled(self) -> bool:
+        """R4.0-024: staged unified runs retain Protocol platform reads too.
+
+        The model-check association scan consumes this round's governed reads
+        by reference, so a staged unified run must observe the same completed
+        ``ontology_platform`` results the formal path retains.  Both flags are
+        set by ``start_roster`` before any turn runs; staged runs without the
+        unified capability keep their prior no-recording boundary.
+        """
+
+        return bool(
+            getattr(self, "_staged_decisions_enabled", False)
+            and getattr(self, "_unified_graph", False)
+        )
+
     def _record_protocol_platform_artifact(
         self, agent: _Agent, params: Mapping[str, Any]
     ) -> None:
@@ -6820,7 +6840,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         create this registry entry or write the immutable artifact itself.
         """
 
-        if not self._coordination_enabled or self._acceptance is None:
+        if self._acceptance is None:
+            return
+        if not self._coordination_enabled and not self._staged_unified_observation_enabled():
             return
         if agent.package.role != "protocol" or not isinstance(params, Mapping):
             return

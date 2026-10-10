@@ -14,7 +14,11 @@ from __future__ import annotations
 
 from modeling_team.capability_mcp import (
     CAPABILITY_TOOL_SCHEMAS,
+    PROTOCOL_OPERATIONS,
     ROLE_OPERATIONS,
+    STAGED_UNIFIED_PROTOCOL_OPERATIONS,
+    UNIFIED_PROTOCOL_OPERATIONS,
+    UNIFIED_PROTOCOL_RUN_OPERATIONS,
 )
 
 # ``mcp__`` + server name + ``__`` + operation, as constructed by codex.
@@ -47,3 +51,23 @@ def test_every_advertised_operation_has_a_schema() -> None:
     assert advertised == set(CAPABILITY_TOOL_SCHEMAS), (
         "ROLE_OPERATIONS and CAPABILITY_TOOL_SCHEMAS must stay in sync"
     )
+
+
+def test_staged_unified_surface_keeps_the_association_catalog_advertised() -> None:
+    # R4.0-024: ``protocol_inspect_associations`` resolves read refs only from
+    # Runner-observed platform records, so the staged unified run surface must
+    # also advertise the pre-existing catalog read that publishes those
+    # observed artifact identities.  The tuple stays duplicate-free and the
+    # formal protocol assembly (PROTOCOL_OPERATIONS first) never lists one
+    # operation twice.
+    assert STAGED_UNIFIED_PROTOCOL_OPERATIONS == (
+        *UNIFIED_PROTOCOL_RUN_OPERATIONS,
+        "protocol_list_platform_artifacts",
+    )
+    assert "protocol_inspect_associations" in STAGED_UNIFIED_PROTOCOL_OPERATIONS
+    assert len(set(STAGED_UNIFIED_PROTOCOL_OPERATIONS)) == len(
+        STAGED_UNIFIED_PROTOCOL_OPERATIONS
+    )
+    assert UNIFIED_PROTOCOL_OPERATIONS == (*PROTOCOL_OPERATIONS, *UNIFIED_PROTOCOL_RUN_OPERATIONS)
+    assert len(set(UNIFIED_PROTOCOL_OPERATIONS)) == len(UNIFIED_PROTOCOL_OPERATIONS)
+    assert ROLE_OPERATIONS["protocol"] == UNIFIED_PROTOCOL_OPERATIONS

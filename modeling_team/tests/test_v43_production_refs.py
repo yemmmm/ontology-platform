@@ -5,11 +5,18 @@ The staged submission gates and durable proof/read retention paths are real.
 """
 from copy import deepcopy
 import json
+import threading
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
-from modeling_team.acceptance import AcceptanceContractError
-from modeling_team.capability_mcp import CAPABILITY_TOOL_SCHEMAS
+from modeling_team.acceptance import AcceptanceContractError, RunnerAcceptanceCarrier
+from modeling_team.capability_mcp import (
+    CAPABILITY_TOOL_SCHEMAS, PROTOCOL_OPERATIONS, STAGED_UNIFIED_PROTOCOL_OPERATIONS,
+    UNIFIED_PROTOCOL_RUN_OPERATIONS,
+)
+from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.staged_decisions import (
     StagedBatchForwardUnknown, canonical_json_digest, candidate_item_digest,
     projection_digest, platform_content_hash, staged_decision_artifact_paths,
@@ -377,3 +384,278 @@ def test_role_contracts_preserve_coverage_and_existing_bounded_public_feedback()
     protocol = (root / "modeling_team/agent-packages/protocol/instructions.md").read_text()
     assert "protocol_inspect_associations" in protocol and "Do not transcribe" in protocol
     assert "resource_readback_status" in protocol
+
+
+# --- R4 staged native reads: real runtime retention and the association catalog ---
+
+
+class _StagedAssociationRun:
+    """A real staged non-formal carrier plus the runtime sink bound to it.
+
+    No docs fixtures, live platform, Agent start, or semantic verdict: the
+    carrier, its unified capability endpoint, and the runtime notification
+    sink are the production objects under test.
+    """
+
+    def __init__(self, tmp_path) -> None:
+        self.run_root = tmp_path / "modeling-runs" / "staged-association-run"
+        self.run_root.mkdir(parents=True)
+        self.carrier = RunnerAcceptanceCarrier(
+            self.run_root / "acceptance-carrier",
+            task_id="staged-association-run",
+            acceptance_id="acceptance",
+            staged_protocol_capability=True,
+            staged_plan_handler=lambda args: {"status": "COMPLETE"},
+        )
+        self.endpoint = self.carrier.capability_endpoint("protocol")
+        self.endpoint.start()
+        self.runtime = CodexRuntimeAdapter(
+            repository_root=Path(__file__).resolve().parents[2], use_bwrap=False
+        )
+        self.runtime._run_root = self.run_root
+        self.runtime._acceptance = self.carrier
+        self.runtime._coordination_enabled = False
+        # start_roster binds exactly these two flags for a staged unified run;
+        # the notification sink keys its staged observation on both.
+        self.runtime._staged_decisions_enabled = True
+        self.runtime._unified_graph = True
+        self.runtime._active_run = SimpleNamespace(
+            root=self.run_root,
+            run_id="staged-association-run",
+            configuration=SimpleNamespace(
+                task=SimpleNamespace(
+                    schema_version=2,
+                    task_id="staged-association-run",
+                    parameters={
+                        "multi_slice_workflow": True,
+                        "staged_modeling_decisions": True,
+                        "unified_semantic_graph": True,
+                    },
+                )
+            ),
+        )
+
+    def cleanup(self) -> None:
+        self.endpoint.stop()
+        self.runtime.stop()
+        self.carrier.cleanup()
+
+
+@pytest.fixture
+def staged_run(tmp_path):
+    staged = _StagedAssociationRun(tmp_path)
+    yield staged
+    staged.cleanup()
+
+
+def _notification_agent(role="protocol"):
+    # The real _Agent carries a reentrant RLock and _notification holds it
+    # while it calls the completed-item hooks; a plain Lock would deadlock.
+    return SimpleNamespace(
+        agent_id=role,
+        package=SimpleNamespace(role=role, package_id=role),
+        state_lock=threading.RLock(),
+        fallback_eligible=False,
+    )
+
+
+def _completed_sparql_item(item_id, page, *, status="completed", server="ontology_platform"):
+    return {
+        "method": "item/completed",
+        "params": {
+            "item": {
+                "id": item_id,
+                "type": "mcpToolCall",
+                "server": server,
+                "tool": "semantic_sparql_query",
+                "status": status,
+                "arguments": page["request"],
+                "result": {"structuredContent": page["response"]},
+            }
+        },
+    }
+
+
+def _sparql_pages():
+    store = Store()
+    node(store, "orphan")
+    pages = [read(store, offset=0, limit=1), read(store, offset=1, limit=1)]
+    final = read(store, limit=1)
+    assert final["request"] == pages[0]["request"]
+    return pages, final
+
+
+def _sparql_read_records(carrier):
+    return [
+        record
+        for record in carrier._platform_read_artifacts.values()
+        if record["tool"] == "semantic_sparql_query"
+    ]
+
+
+def test_staged_runtime_retains_completed_ontology_platform_reads(staged_run):
+    """Non-formal staged Protocol runs with a carrier keep their real reads.
+
+    The app-server ``item/completed`` notification is the trusted owner of the
+    native ``ontology_platform`` request/result bytes.  A staged R4 run binds a
+    real RunnerAcceptanceCarrier even though formal coordination stays off, so
+    completed governed SPARQL pages must land in the immutable registry;
+    failed, non-Protocol, other-server, and carrier-less events stay excluded.
+    """
+
+    pages, final = _sparql_pages()
+    runtime, carrier = staged_run.runtime, staged_run.carrier
+    agent = _notification_agent()
+    for index, page in enumerate([*pages, final]):
+        runtime._notification(agent, _completed_sparql_item(f"native-{index}", page))
+    reads = _sparql_read_records(carrier)
+    assert len(reads) == 2  # page0 and the final snapshot share one identity
+    evidence = staged_run.run_root / "evidence" / "platform-response-artifacts.jsonl"
+    # The sink appends one evidence line per processed completed item; the
+    # registry itself dedupes the identical final snapshot observation.
+    assert len(evidence.read_text().splitlines()) == 3
+    for record in reads:
+        artifact = staged_run.run_root / record["artifact_path"]
+        assert artifact.is_file()
+        assert record["request_digest"] in record["artifact_path"]
+        assert record["response_digest"] in record["artifact_path"]
+        assert record["successful"] is True
+    # Replaying the same completed item keeps exactly one observation.
+    runtime._notification(agent, _completed_sparql_item("native-0", pages[0]))
+    assert len(_sparql_read_records(carrier)) == 2
+    assert len(evidence.read_text().splitlines()) == 4
+
+    # Existing boundaries: failed, non-Protocol, and other-server events are
+    # still not retained.
+    runtime._notification(
+        agent, _completed_sparql_item("native-failed", pages[0], status="failed")
+    )
+    runtime._notification(
+        _notification_agent(role="modeling"),
+        _completed_sparql_item("native-modeling", pages[0]),
+    )
+    runtime._notification(
+        agent,
+        _completed_sparql_item("native-other", pages[0], server="protocol_mechanics"),
+    )
+    assert len(_sparql_read_records(carrier)) == 2
+    assert len(evidence.read_text().splitlines()) == 4
+
+
+def test_runtime_sink_without_carrier_or_staged_unified_records_nothing(tmp_path):
+    """No carrier, or staged without the unified capability: prior boundary.
+
+    A staged 008B run without the R4.0-024 unified surface keeps the old
+    no-recording behavior even though it binds a carrier.
+    """
+
+    pages, _ = _sparql_pages()
+    for carrier_bound, staged_unified in ((False, False), (True, False)):
+        label = "carrier-less" if not carrier_bound else "staged-not-unified"
+        run_root = tmp_path / "modeling-runs" / label
+        run_root.mkdir(parents=True)
+        runtime = CodexRuntimeAdapter(
+            repository_root=Path(__file__).resolve().parents[2], use_bwrap=False
+        )
+        runtime._run_root = run_root
+        runtime._coordination_enabled = False
+        runtime._staged_decisions_enabled = True
+        runtime._unified_graph = staged_unified
+        if carrier_bound:
+            runtime._acceptance = SimpleNamespace()
+        try:
+            runtime._notification(
+                _notification_agent(),
+                _completed_sparql_item(f"native-{label}", pages[0]),
+            )
+            assert not (
+                run_root / "evidence" / "platform-response-artifacts.jsonl"
+            ).exists(), label
+        finally:
+            runtime.stop()
+
+
+def test_formal_coordination_runtime_sink_keeps_recording(staged_run):
+    """The formal coordination semantics of the sink are unchanged."""
+
+    pages, _ = _sparql_pages()
+    staged_run.runtime._coordination_enabled = True
+    staged_run.runtime._notification(
+        _notification_agent(), _completed_sparql_item("native-formal", pages[0])
+    )
+    assert len(_sparql_read_records(staged_run.carrier)) == 1
+
+
+def test_formal_capability_assembly_stays_duplicate_free_with_staged_handlers(tmp_path):
+    """A formal carrier that also mounts the staged handlers never duplicates
+    the listing operation: PROTOCOL_OPERATIONS already advertises it, and the
+    staged run operations add no second copy."""
+
+    carrier = RunnerAcceptanceCarrier(
+        tmp_path / "formal-staged",
+        task_id="formal-staged-assembly",
+        acceptance_id="acceptance",
+        candidate_receipt_builder=lambda protocol_id, delivery_id: {},
+        candidate_conflict_builder=lambda *args, **kwargs: {},
+        staged_submission_handler=lambda args: {"ok": True},
+        staged_plan_handler=lambda args: {"status": "COMPLETE"},
+        staged_protocol_capability=True,
+    )
+    operations = carrier.capability_endpoint("protocol").operations
+    assert operations == (*PROTOCOL_OPERATIONS, *UNIFIED_PROTOCOL_RUN_OPERATIONS)
+    assert operations.count("protocol_list_platform_artifacts") == 1
+    assert len(set(operations)) == len(operations)
+
+
+def test_staged_association_scan_uses_runtime_retained_refs_from_catalog(staged_run):
+    """Staged scans take observation metadata from the advertised catalog.
+
+    ``protocol_inspect_associations`` resolves only retained read references,
+    so the staged unified Protocol surface must also advertise the existing
+    ``protocol_list_platform_artifacts`` catalog read that publishes those
+    observed artifact identities; the scan then completes on actual
+    references instead of Agent-transcribed pages.
+    """
+
+    pages, final = _sparql_pages()
+    runtime = staged_run.runtime
+    agent = _notification_agent()
+    for index, page in enumerate([*pages, final]):
+        runtime._notification(agent, _completed_sparql_item(f"native-{index}", page))
+    endpoint = staged_run.endpoint
+    listing = _socket_request(
+        endpoint.socket_path, endpoint.token, "tools/list"
+    )
+    names = [tool["name"] for tool in listing["result"]["tools"]]
+    assert set(names) == set(STAGED_UNIFIED_PROTOCOL_OPERATIONS)
+    assert "protocol_list_platform_artifacts" in names
+    assert "protocol_inspect_associations" in names
+    # The runtime's declared preflight surface matches the live socket exactly.
+    assert staged_run.runtime._role_capability_operations(
+        "protocol", run=staged_run.runtime._active_run
+    ) == tuple(names)
+
+    catalog = call(endpoint, "protocol_list_platform_artifacts", {"protocol_id": "protocol"})
+    reads = [
+        artifact for artifact in catalog["artifacts"]
+        if artifact["tool"] == "semantic_sparql_query"
+    ]
+    assert len(reads) == 2
+    assert all(artifact["successful"] is True for artifact in reads)
+    assert reads[0]["request_arguments"] == pages[0]["request"]
+    assert reads[1]["request_arguments"] == pages[1]["request"]
+    read_refs = [artifact["artifact_path"] for artifact in reads]
+    final_ref = next(
+        artifact["artifact_path"] for artifact in reads
+        if artifact["request_arguments"] == final["request"]
+    )
+    scan = call(endpoint, "protocol_inspect_associations", {
+        "protocol_id": "protocol", "project_id": "project-1",
+        "ontology_ids": ["ontology-1"], "read_refs": read_refs,
+        "final_read_ref": final_ref, "semantic_base_iri": EX,
+    })
+    assert scan["status"] == "COMPLETE", scan
+    assert scan["candidates"][0]["resource_iri"] == EX + "orphan"
+    assert scan["candidates"][0]["read_locators"][0]["artifact_path"] in read_refs
+    assert scan["candidates"][0]["read_locators"][0]["response_digest"]
+    assert scan["final_read_ref"] == final_ref

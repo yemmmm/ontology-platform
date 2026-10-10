@@ -35,6 +35,7 @@ from .capability_mcp import (
     PROTOCOL_STAGE_OPERATIONS,
     ROLE_OPERATIONS,
     STAGED_PROTOCOL_RUN_OPERATIONS,
+    STAGED_UNIFIED_PROTOCOL_OPERATIONS,
     UNIFIED_PROTOCOL_RUN_OPERATIONS,
     RunnerCapabilityEndpoint,
     token_digest,
@@ -1634,9 +1635,20 @@ class RunnerAcceptanceCarrier:
                 # equality); a formal carrier keeps its full protocol surface
                 # plus the staged operations.
                 staged_operations = (
-                    UNIFIED_PROTOCOL_RUN_OPERATIONS if staged_plan_handler is not None
+                    (
+                        UNIFIED_PROTOCOL_RUN_OPERATIONS
+                        if formal_protocol_capability
+                        else STAGED_UNIFIED_PROTOCOL_OPERATIONS
+                    )
+                    if staged_plan_handler is not None
                     else STAGED_PROTOCOL_RUN_OPERATIONS
                 )
+                # R4.0-024: a non-formal staged unified surface also advertises
+                # the existing artifact listing capability so Protocol can
+                # discover canonical ``artifact_path`` values for its governed
+                # reads.  The formal assembly above is unchanged: it already
+                # advertises ``protocol_list_platform_artifacts`` through
+                # ``PROTOCOL_OPERATIONS``.
                 operations = (
                     (*operations, *staged_operations) if formal_protocol_capability
                     else staged_operations

@@ -319,6 +319,13 @@ source. The current `plan_ref` needs its own Runner-recorded validated dry-run b
 when commands, content hash and workspace are identical to an earlier plan's; never authorize an
 apply on an earlier plan's dry-run proof, and never commission replaying an already applied
 resource to produce one.
+Pending entries for earlier materialization attempts in restored checkpoints or retained
+history are not evidence that their content is still unmaterialized. Before assigning such an
+attempt as remaining work, check the later successful receipts and the actually applied
+coverage for that content; an attempt already covered by a successful successor stays
+retained history. Do not rebuild, re-approve or replay covered attempts, and do not expect
+the platform to judge semantic equivalence between attempts — compare actual receipts and
+readback yourself.
 When Protocol's report of an applied staged part is lost to a Team Transport delivery-parameter
 rejection (for example a placeholder `reply_to_delivery_id`), reconcile the applied receipts
 yourself and direct only the corrected resend of that same report: the write already closed, so a

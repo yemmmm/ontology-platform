@@ -29,6 +29,7 @@ from modeling_team.capability_mcp import (
     STAGED_PROTOCOL_OPERATION,
     STAGED_PROTOCOL_OPERATIONS,
     STAGED_PROTOCOL_RUN_OPERATIONS,
+    STAGED_UNIFIED_PROTOCOL_OPERATIONS,
     UNIFIED_PROTOCOL_RUN_OPERATIONS,
     UNIFIED_PROTOCOL_OPERATIONS,
 )
@@ -139,13 +140,15 @@ def test_capability_endpoint_declares_and_dispatches_the_evidence_operation(tmp_
         staged_plan_handler=lambda args: {"status": "COMPLETE"},
     )
     unified_endpoint = unified.capability_endpoint("protocol")
-    assert unified_endpoint.operations == UNIFIED_PROTOCOL_RUN_OPERATIONS
+    # R4.0-024: a staged unified surface also advertises the association catalog,
+    # matching what the runtime advertises for the same run shape.
+    assert unified_endpoint.operations == STAGED_UNIFIED_PROTOCOL_OPERATIONS
     unified_listing = unified_endpoint.handle({
         "jsonrpc": "2.0", "id": "list", "token": unified.capability_token("protocol"),
         "method": "tools/list",
     })
     assert [tool["name"] for tool in unified_listing["result"]["tools"]] == list(
-        UNIFIED_PROTOCOL_RUN_OPERATIONS
+        STAGED_UNIFIED_PROTOCOL_OPERATIONS
     )
 
     retired = endpoint.handle(
