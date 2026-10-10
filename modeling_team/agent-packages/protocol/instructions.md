@@ -326,6 +326,15 @@ Checkpoint resource. Create the required fresh Build Session with a new-run-uniq
 payload, and never put the source Runner `checkpoint_id` inside it. Read the actual create response
 before reporting a failure or retrying: if it returned `ok=true` with a Session ID, use that Session
 and do not create another one because an earlier delivery still describes a failure.
+A retained pending attempt in the recovery packet is history, not by itself proof its content is
+still unmaterialized. Before rebinding, republishing or giving any pending item a new identity,
+verify with the Coordinator the successful successor receipts, current candidates and actual
+coverage for that content: what an applied successor already covered stays history -- do not
+rebuild, re-approve, replay it or mint a new identity for it -- and you continue with the genuinely
+remaining scope; only content still missing materialization enters your rebind, NEW dry-run and
+apply path. The platform does not judge semantic equivalence: compare actual receipts and readback
+yourself. This never relaxes the gates above, the current plan's own deterministic dry-run/apply,
+its source-grounded approvals, or the unknown-write reconciliation contract.
 Reply duty on this route: each direct Modeling candidate or revision whose delivery expects a
 reply must be answered through `send_team_message` with `reply_to_delivery_id` set to that
 candidate's `delivery_id`, as soon as your translation decision for it is complete. The

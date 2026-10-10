@@ -659,3 +659,187 @@ def test_staged_association_scan_uses_runtime_retained_refs_from_catalog(staged_
     assert scan["candidates"][0]["read_locators"][0]["artifact_path"] in read_refs
     assert scan["candidates"][0]["read_locators"][0]["response_digest"]
     assert scan["final_read_ref"] == final_ref
+
+
+def _wrapped_native_result(page, *, inner_error=False, ok_payload=True, raw_text=None):
+    """The production native CallToolResult shape for a large governed read.
+
+    ``structuredContent`` is null and the whole result rides as JSON inside a
+    text content item; that wrapper carries the payload twice (its own
+    ``content[0].text`` JSON and its ``structuredContent``), matching the
+    observed ~1MB pages byte-for-byte in shape.
+    """
+    if raw_text is not None:
+        inner = {"isError": inner_error, "content": [{"type": "text", "text": raw_text}]}
+    else:
+        payload = page["response"] if ok_payload else {
+            "ok": False, "error": {"code": "scope_not_ready"}}
+        inner = {
+            "isError": inner_error,
+            "content": [{"type": "text", "text": json.dumps(payload, sort_keys=True)}],
+            "structuredContent": payload,
+        }
+    return {
+        "structuredContent": None,
+        "content": [{"type": "text", "text": json.dumps(inner, sort_keys=True)}],
+    }
+
+
+def _retained_native_result(staged_run, agent, label, request, result):
+    """Observe one completed native item through the real runtime sink."""
+    before = set(staged_run.carrier._platform_read_artifacts)
+    staged_run.runtime._notification(agent, {
+        "method": "item/completed",
+        "params": {"item": {
+            "id": f"native-{label}", "type": "mcpToolCall", "server": "ontology_platform",
+            "tool": "semantic_sparql_query", "status": "completed",
+            "arguments": request, "result": result,
+        }},
+    })
+    registry = staged_run.carrier._platform_read_artifacts
+    fresh = sorted(set(registry) - before)
+    assert len(fresh) == 1
+    return registry[fresh[0]]
+
+
+def test_staged_association_scan_unwraps_native_text_envelope_pages(staged_run):
+    """Large native pages ride as text-JSON MCP envelopes; the scan still sees {ok,data}.
+
+    The retained, hash-verified bytes stay authoritative: both supported
+    native shapes (the plain ``structuredContent`` mapping and the
+    CallToolResult whose governed read is JSON-encoded inside a text content
+    item) resolve to the same original payload, so a mixed plain/wrapped
+    scan completes on real references with unchanged artifact bytes and the
+    same candidates as an all-plain scan.  An error wrapper, a malformed
+    text item or a non-MCP payload never becomes a success: the scan stays
+    PARTIAL with ``governed_read_failed`` and zero statements, and
+    unobserved references keep their rejection.
+    """
+    import hashlib
+
+    store = Store()
+    node(store, "orphan")
+    node(store, "linked")
+    # limit-2 pages keep the final read (limit 1, OFFSET 0) a distinct
+    # observation: the ~1MB page shape and the small final shape coexist in
+    # one registry exactly as in production.
+    wrapped_page = read(store, offset=0, limit=2)
+    plain_page = read(store, offset=2, limit=2)
+    final = read(store, limit=1)
+    assert len(wrapped_page["response"]["data"]["result"]["results"]["bindings"]) == 2
+    assert wrapped_page["request"] != final["request"]
+
+    runtime, carrier = staged_run.runtime, staged_run.carrier
+    agent = _notification_agent()
+    wrapped_record = _retained_native_result(
+        staged_run, agent, "wrapped-0", wrapped_page["request"],
+        _wrapped_native_result(wrapped_page))
+    _retained_native_result(
+        staged_run, agent, "plain-1", plain_page["request"], plain_page["response"])
+    _retained_native_result(
+        staged_run, agent, "plain-final", final["request"], final["response"])
+    assert len(_sparql_read_records(carrier)) == 3
+    assert wrapped_record["successful"] is True
+    artifact = staged_run.run_root / wrapped_record["artifact_path"]
+    assert artifact.stat().st_mode & 0o777 == 0o440
+    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == wrapped_record["response_digest"]
+
+    endpoint = staged_run.endpoint
+    listing = _socket_request(endpoint.socket_path, endpoint.token, "tools/list")
+    names = [tool["name"] for tool in listing["result"]["tools"]]
+    assert set(names) == set(STAGED_UNIFIED_PROTOCOL_OPERATIONS)
+    assert staged_run.runtime._role_capability_operations(
+        "protocol", run=staged_run.runtime._active_run
+    ) == tuple(names)
+
+    catalog = call(endpoint, "protocol_list_platform_artifacts", {"protocol_id": "protocol"})
+    by_request = {
+        json.dumps(a["request_arguments"], sort_keys=True): a["artifact_path"]
+        for a in catalog["artifacts"] if a["tool"] == "semantic_sparql_query"
+    }
+    wrapped_ref = by_request[json.dumps(wrapped_page["request"], sort_keys=True)]
+    plain_ref = by_request[json.dumps(plain_page["request"], sort_keys=True)]
+    final_ref = by_request[json.dumps(final["request"], sort_keys=True)]
+    assert wrapped_ref == wrapped_record["artifact_path"]
+    scan = call(endpoint, "protocol_inspect_associations", {
+        "protocol_id": "protocol", "project_id": "project-1",
+        "ontology_ids": ["ontology-1"], "read_refs": [wrapped_ref, plain_ref],
+        "final_read_ref": final_ref, "semantic_base_iri": EX,
+    })
+    # The wrapped page and the plain page resolve to the same payload: the
+    # mixed-shape scan is identical to an all-plain scan.
+    assert scan["status"] == "COMPLETE", scan
+    assert scan["issues"] == []
+    assert {c["resource_iri"] for c in scan["candidates"]} == {EX + "orphan", EX + "linked"}
+    # The wrapped page's rows are actually consumed: the subject sorted first
+    # lives on the wrapped page and its locator binds to that artifact.
+    linked = next(c for c in scan["candidates"] if c["resource_iri"] == EX + "linked")
+    locator = linked["read_locators"][0]
+    assert locator["page"] == 0
+    assert locator["artifact_path"] == wrapped_ref
+    assert locator["response_digest"] == wrapped_record["response_digest"]
+    orphan = next(c for c in scan["candidates"] if c["resource_iri"] == EX + "orphan")
+    assert orphan["read_locators"][0]["page"] == 1
+    # Scanning never rewrites the retained bytes.
+    assert hashlib.sha256(artifact.read_bytes()).hexdigest() == wrapped_record["response_digest"]
+    assert artifact.stat().st_mode & 0o777 == 0o440
+
+    # Failure shapes stay failures: an outer isError wrapper (with a success
+    # payload behind structuredContent AND with a success payload nested in
+    # the text item), an inner isError wrapper, inner ok=false, malformed
+    # JSON text, a non-MCP text payload, an arbitrary object and a malformed
+    # non-list inner content type each keep the scan PARTIAL with
+    # governed_read_failed and zero statements.  (Shapes beyond these eight
+    # cases are not exercised here and are not claimed as covered.)
+    failure_results = [
+        {"isError": True, "structuredContent": wrapped_page["response"]},
+        {"isError": True, "content": [
+            {"type": "text", "text": json.dumps(wrapped_page["response"], sort_keys=True)}]},
+        _wrapped_native_result(wrapped_page, inner_error=True),
+        _wrapped_native_result(wrapped_page, ok_payload=False),
+        _wrapped_native_result(wrapped_page, raw_text="{definitely not json"),
+        _wrapped_native_result(wrapped_page, raw_text=json.dumps("a bare string")),
+        {"foo": {"bar": 1}},
+        {"structuredContent": None, "content": [{"type": "text", "text": json.dumps(
+            {"isError": False, "structuredContent": None, "content": 5}, sort_keys=True)}]},
+    ]
+    for index, failure_result in enumerate(failure_results):
+        # OFFSET 0 with a per-variant result_limit keeps the request shape
+        # valid (so only the response can fail) while every variant stays a
+        # distinct observation identity.
+        variant = read(Store(), offset=0, limit=2 + index)
+        record = _retained_native_result(
+            staged_run, agent, f"failure-{index}", variant["request"], failure_result)
+        failed_artifact = staged_run.run_root / record["artifact_path"]
+        assert hashlib.sha256(failed_artifact.read_bytes()).hexdigest() == record["response_digest"]
+        scan = call(endpoint, "protocol_inspect_associations", {
+            "protocol_id": "protocol", "project_id": "project-1",
+            "ontology_ids": ["ontology-1"], "read_refs": [record["artifact_path"]],
+            "final_read_ref": final_ref, "semantic_base_iri": EX,
+        })
+        assert scan["status"] == "PARTIAL", scan
+        assert any(issue["code"] == "governed_read_failed" for issue in scan["issues"])
+        assert scan["statement_count"] == 0
+        assert hashlib.sha256(failed_artifact.read_bytes()).hexdigest() == record["response_digest"]
+
+    # Unobserved references keep their existing rejection.
+    with pytest.raises(AcceptanceContractError) as error:
+        carrier.protocol_inspect_associations({
+            "project_id": "project-1", "ontology_ids": ["ontology-1"],
+            "read_refs": ["evidence/platform-responses/unobserved-0-0.json"],
+            "final_read_ref": final_ref, "semantic_base_iri": EX,
+        })
+    assert error.value.data["reason_code"] == "association_read_ref_invalid"
+
+    # A tampered retained file keeps its digest rejection.
+    tampered = staged_run.run_root / wrapped_record["artifact_path"]
+    tampered.chmod(0o640)
+    tampered.write_text("{}")
+    with pytest.raises(AcceptanceContractError) as error:
+        carrier.protocol_inspect_associations({
+            "project_id": "project-1", "ontology_ids": ["ontology-1"],
+            "read_refs": [wrapped_ref, plain_ref],
+            "final_read_ref": final_ref, "semantic_base_iri": EX,
+        })
+    assert error.value.data["reason_code"] == "association_read_ref_invalid"
+    assert "changed" in str(error.value.args[0])

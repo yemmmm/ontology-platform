@@ -2678,10 +2678,12 @@ def test_pending_items_next_steps_stay_inside_each_existing_role_contract(tmp_pa
         assert any(
             "grants no role any capability" in line for line in packet["instructions"]
         )
-    # Only the host packet carries the host-level execution summary.
-    assert "execute pending_items first" in packets["host"]["next_step"]
+    # Only the host packet carries the host-level review summary; no role
+    # packet repeats the pending_items summary in any phrasing.
+    assert "review pending_items first" in packets["host"]["next_step"]
+    assert "execute pending_items first" not in packets["host"]["next_step"]
     for role in ("coordinator", "modeling", "protocol", "competency-question"):
-        assert "execute pending_items first" not in packets[role]["next_step"]
+        assert "pending_items first" not in packets[role]["next_step"]
         assert "rebind each plan" not in packets[role]["next_step"]
 
     # Modeling: candidate channel only, never a platform write interface.
@@ -2760,7 +2762,122 @@ def test_pending_items_next_steps_stay_inside_each_existing_role_contract(tmp_pa
     assert "already restored" in frozen_cq
     assert "without re-interviewing, re-reviewing or re-freezing" in frozen_cq
     assert "never assigns you platform rebind, dry-run or apply work" in frozen_cq
-    assert "execute pending_items first" not in frozen_cq
+    assert "pending_items first" not in frozen_cq
+
+
+def test_pending_next_steps_check_successor_coverage_before_rebind(tmp_path):
+    """Field regression (start3): a retained pending attempt is history.
+
+    The recovery prompts previously ordered an unconditional rebind / NEW
+    dry-run / apply for every listed pending attempt, so a pending attempt
+    whose content a later, successfully applied successor already covered
+    was re-published under a new identity and re-requested approval.  The
+    authoritative recovery prompts must make the successful-successor and
+    actual-coverage check come first: covered content stays retained
+    history (no rebuild, replay or new identity) and only content still
+    missing materialization enters the existing rebind + NEW dry-run/apply
+    path.  The prompts stay guidance, not a new gate: the platform never
+    judges semantic equivalence, and nothing relaxes the current plan's
+    own deterministic dry-run/apply, its source-grounded approvals, the
+    Runner-validated candidate/topology gate, or unknown-write
+    reconciliation.
+    """
+
+    def pending_reconciliation():
+        return {
+            "completed": [],
+            "completed_client_batches": {},
+            "pending_new_dry_run": [
+                {
+                    "origin_run_id": "r3015-src",
+                    "ordinal": 11,
+                    "client_batch_id": "cb-b010",
+                    "idempotency_key": "key-b010",
+                    "mode": "dry_run",
+                    "detail": "dry-run validated, never applied; reuse the "
+                    "plan/semantic approvals and enter a NEW dry-run",
+                }
+            ],
+            "recoverable_new_batch": [],
+        }
+
+    package, run_root = _plan_mapping_manifest(tmp_path)
+    saved = save_checkpoint(
+        run_root, package, source_run_id="r3015-pd", configuration=dict(CONFIGURATION)
+    )
+    manifest = _manifest_of(run_root, saved["checkpoint_id"])
+    packets = build_role_packets(
+        manifest,
+        pending_reconciliation(),
+        [],
+        {"present": False, "valid": [], "invalidated": []},
+        dict(CONFIGURATION),
+    )
+
+    # The attempt is retained as pending history in every packet: the
+    # coverage-first guidance never drops or clears the pending list.
+    for packet in packets.values():
+        ids = {item.get("client_batch_id") for item in packet["pending_items"]}
+        assert "cb-b010" in ids
+
+    # Host summary: a review-first instruction -- the ambiguous blanket
+    # "execute" command is gone -- and successor receipts / actual coverage
+    # are verified before any rebind or NEW dry-run; covered content stays
+    # history.
+    host = packets["host"]["next_step"]
+    assert "review pending_items first" in host
+    assert "execute pending_items first" not in host
+    assert "not by itself proof" in host
+    assert "successful successor receipts" in host
+    assert "actual coverage" in host
+    assert "stays history" in host
+    assert "still missing materialization" in host
+    assert "does not judge semantic equivalence" in host
+
+    # Coordinator: adjudicate coverage first, keep covered attempts as
+    # history, steer to the remaining scope; write boundaries unchanged.
+    coordinator = packets["coordinator"]["next_step"]
+    assert "not by itself proof" in coordinator
+    assert "successful successor receipts" in coordinator
+    assert "actual coverage" in coordinator
+    assert "stays history" in coordinator
+    assert "remaining scope" in coordinator
+    assert "Protocol alone performs" in coordinator
+    assert "still missing materialization" in coordinator
+    assert "never call a platform write interface or submit a Modeling" in coordinator
+
+    # Protocol: the coverage check precedes any rebind, new identity or NEW
+    # dry-run; covered content is not rebuilt or replayed; the gate, the
+    # current plan's own deterministic dry-run/apply, its source-grounded
+    # approvals and unknown-write reconciliation all stay intact.
+    protocol = packets["protocol"]["next_step"]
+    assert "not by itself proof" in protocol
+    assert "successful successor receipts" in protocol
+    assert "actual coverage" in protocol
+    assert "do not mint a new identity" in protocol
+    assert "still missing materialization" in protocol
+    assert "does not judge semantic equivalence" in protocol
+    assert (
+        "never bypasses the current plan's own deterministic dry-run/apply"
+        in protocol
+    )
+    assert "unknown-write reconciliation" in protocol
+    # The unconditional per-attempt ordering is gone: rebind is scoped to
+    # the remaining content, not "each" listed attempt.
+    assert "rebind each plan/client_batch_id/idempotency key" not in protocol
+    # The start2 gate contract survives verbatim.
+    assert "candidate/topology gate the selected Task's Runner validates" in protocol
+    assert "you make no platform write" in protocol
+
+    # Modeling and competency-question boundaries are untouched: modeling
+    # keeps its candidate-only channel and the CQ role never receives
+    # coverage or platform duties through these prompts.
+    modeling = packets["modeling"]["next_step"]
+    assert "not by itself proof" not in modeling
+    assert "direct candidate delivery" in modeling
+    cq = packets["competency-question"]["next_step"]
+    assert "not by itself proof" not in cq
+    assert "never assigns you platform rebind, dry-run or apply work" in cq
 
 
 def test_global_stage_next_step_is_shared_context_not_a_role_duty(tmp_path):
@@ -2836,7 +2953,7 @@ def test_global_stage_next_step_is_shared_context_not_a_role_duty(tmp_path):
     packets = build_role_packets(manifest, pending, [], approvals, dict(CONFIGURATION))
 
     # The host alone keeps the global stage step as its own summary.
-    assert "execute pending_items first" in packets["host"]["next_step"]
+    assert "review pending_items first" in packets["host"]["next_step"]
     assert global_step in packets["host"]["next_step"]
 
     # Every role keeps its own contract's duty first; the global sentence

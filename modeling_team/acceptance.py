@@ -3653,13 +3653,59 @@ class RunnerAcceptanceCarrier:
                 if _sha256_bytes(raw) != observed["response_digest"]:
                     raise ValueError("retained response digest changed")
                 response = json.loads(raw)
-                if isinstance(response, Mapping) and isinstance(response.get("structuredContent"), Mapping):
-                    response = response["structuredContent"]
-                return {"request": _safe_copy(observed["request_arguments"]), "response": response}
             except (OSError, ValueError) as exc:
                 _error("association read reference is unavailable or changed",
                        data={"reason_code": "association_read_ref_invalid", "read_ref": ref,
                              "detail": str(exc)})
+
+            def unwrap_read_envelope(envelope: Any) -> Any:
+                # Transport-envelope interpretation only (AGENTS T0): the
+                # retained, hash-verified bytes stay authoritative and the
+                # payload is never copied, truncated or recomposed.  Both
+                # supported native shapes -- the plain ``structuredContent``
+                # mapping and the CallToolResult whose governed read rides
+                # as JSON inside a text content item -- resolve to the same
+                # original {ok, data} read.  A failed CallToolResult
+                # (``isError`` at either level) or any unrecognised object is
+                # returned unchanged so the checker, not this helper, keeps
+                # the failure verdict.
+                if not isinstance(envelope, Mapping):
+                    return envelope
+                if envelope.get("isError") is True:
+                    return envelope
+                structured = envelope.get("structuredContent")
+                if isinstance(structured, Mapping):
+                    return structured
+                items = envelope.get("content")
+                if not isinstance(items, list):
+                    return envelope
+                for item in items:
+                    if not isinstance(item, Mapping) or item.get("type") != "text" or not isinstance(item.get("text"), str):
+                        continue
+                    try:
+                        wrapped = json.loads(item["text"])
+                    except (UnicodeDecodeError, json.JSONDecodeError):
+                        return envelope
+                    if not isinstance(wrapped, Mapping) or wrapped.get("isError") is True:
+                        return envelope
+                    inner = wrapped.get("structuredContent")
+                    if isinstance(inner, Mapping):
+                        return inner
+                    nested_items = wrapped.get("content")
+                    for nested in (nested_items if isinstance(nested_items, list) else []):
+                        if not isinstance(nested, Mapping) or nested.get("type") != "text" or not isinstance(nested.get("text"), str):
+                            continue
+                        try:
+                            payload = json.loads(nested["text"])
+                        except (UnicodeDecodeError, json.JSONDecodeError):
+                            return envelope
+                        if isinstance(payload, Mapping):
+                            return payload
+                    return envelope
+                return envelope
+
+            return {"request": _safe_copy(observed["request_arguments"]),
+                    "response": unwrap_read_envelope(response)}
 
         pages = [resolve(ref) for ref in args["read_refs"]]
         final = resolve(args["final_read_ref"])

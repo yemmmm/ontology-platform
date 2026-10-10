@@ -1990,7 +1990,12 @@ def unfinished_items(reconciliation: Mapping[str, Any]) -> list[dict[str, Any]]:
 def next_step_with_pending(
     base_next_step: Any, reconciliation: Mapping[str, Any]
 ) -> Any:
-    """Name the unfinished items in the next step when reconciliation found any."""
+    """Name the unfinished items in the next step when reconciliation found any.
+
+    The step is a review-first instruction, not an execution order: the host
+    summary names the entries so the team verifies successor coverage before
+    any rebind or apply.
+    """
 
     pending = unfinished_items(reconciliation)
     if not pending:
@@ -2000,11 +2005,18 @@ def next_step_with_pending(
         for item in pending
     )
     return (
-        "execute pending_items first ("
+        "review pending_items first ("
         + named
-        + "): rebind each plan/client_batch_id/idempotency key to the fresh "
-        "session, enter a NEW dry-run, then apply on a clean dry run, before "
-        "any production conclusion"
+        + "): a listed pending attempt is retained history, not by itself "
+        "proof its content is still unmaterialized -- first verify the "
+        "successful successor receipts, current candidates and actual "
+        "coverage for it; what an applied successor already covered stays "
+        "history and is not rebuilt, re-approved or replayed, and only "
+        "content still missing materialization is rebound: rebind each "
+        "remaining plan/client_batch_id/idempotency key to the fresh "
+        "session, enter a NEW dry-run, then apply on a clean dry run, "
+        "before any production conclusion; the platform does not judge "
+        "semantic equivalence -- compare actual receipts and readback"
         + (f"; then {base_next_step}" if isinstance(base_next_step, str) else "")
     )
 
@@ -2024,13 +2036,21 @@ def next_step_with_pending(
 _PENDING_NEXT_STEP_BY_ROLE = {
     "coordinator": (
         "coordinate the outstanding pending_items inside the existing role "
-        "contracts: Modeling continues the work through its direct candidate "
-        "delivery, Protocol alone performs the platform rebind, NEW dry-run "
-        "and apply through its authorized mechanical calls behind the "
-        "candidate/topology gate the selected Task's Runner validates for "
-        "this run, and competency-question continues its stage-appropriate "
-        "CQ lifecycle; you coordinate and adjudicate, and still never call "
-        "a platform write interface or submit a Modeling Batch yourself"
+        "contracts: a listed pending attempt is retained history, not by "
+        "itself proof its content is still unmaterialized, so before any "
+        "rebind or republish adjudicate from the successful successor "
+        "receipts, current candidates and actual coverage -- content an "
+        "applied successor already covered stays history and is not "
+        "rebuilt, re-approved or replayed, and the team moves to the "
+        "genuinely remaining scope. Modeling continues the work through "
+        "its direct candidate delivery, Protocol alone performs the "
+        "platform rebind, NEW dry-run and apply -- for content still "
+        "missing materialization -- through its authorized mechanical "
+        "calls behind the candidate/topology gate the selected Task's "
+        "Runner validates for this run, and competency-question continues "
+        "its stage-appropriate CQ lifecycle; you coordinate and "
+        "adjudicate, and still never call a platform write interface or "
+        "submit a Modeling Batch yourself"
     ),
     "modeling": (
         "continue the outstanding work through your existing candidate "
@@ -2050,12 +2070,23 @@ _PENDING_NEXT_STEP_BY_ROLE = {
         "route's Runner-validated slot, source-grounded approvals and "
         "topology decision together with Modeling's direct candidate "
         "handoff are that gate, and no extra R2.3 receipt exists to wait "
-        "for. A candidate_receipt_required rejection only reports the "
-        "Task's gate still closed: follow the Task's advertised contract "
-        "for the real opening path, never invent a legacy receipt, never "
-        "treat the gate as open or substitute host confirmation for the "
-        "Runner gate, and you make no platform write while the gate is "
-        "closed"
+        "for. A listed pending attempt is retained history, not by itself "
+        "proof its content is still unmaterialized: before any rebind, new "
+        "identity or NEW dry-run verify the successful successor receipts, "
+        "current candidates and actual coverage; what an applied successor "
+        "already covered stays history -- do not rebuild, re-approve or "
+        "replay it, and do not mint a new identity for it -- and only "
+        "content still missing materialization enters the rebind, NEW "
+        "dry-run and apply path. The platform does not judge semantic "
+        "equivalence: compare actual receipts and readback yourself; this "
+        "never bypasses the current plan's own deterministic dry-run/apply, "
+        "its source-grounded approvals, or the unknown-write "
+        "reconciliation contract. A candidate_receipt_required rejection "
+        "only reports the Task's gate still closed: follow the Task's "
+        "advertised contract for the real opening path, never invent a "
+        "legacy receipt, never treat the gate as open or substitute host "
+        "confirmation for the Runner gate, and you make no platform write "
+        "while the gate is closed"
     ),
 }
 
