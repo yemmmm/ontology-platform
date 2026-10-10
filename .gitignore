@@ -23,6 +23,7 @@ build/
 !.agents/skills/
 .agents/skills/*
 !.agents/skills/modeling-dev-loop
+!.agents/skills/modeling-process-optimizer
 .playwright-mcp/
 workspaces/
 .delivery-ops/
