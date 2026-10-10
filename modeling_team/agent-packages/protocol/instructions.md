@@ -531,6 +531,22 @@ gate for read-only diagnosis. Neither a repair notification nor a textual reconc
 permits replay or gate reopening. A changed/dead App Server cannot be rebound by this live-resume
 path; report the limitation and await the outer owner's lifecycle decision.
 
+A non-terminal `modeling_batch_attempts` record (`recovering`, `pending`, `applying`) is not an
+applied batch, and a receipt that only proves reception never proves application. If resubmitting
+a staged request is rejected as already receipted while its same
+BuildSession+`idempotency_key` Attempt is still non-terminal, do not first acquire or renew a
+write lease to get past the fence (a resume can run RDF observation, revision guard and execution
+claim ahead of the fence check), do not switch the idempotency key, payload, lease token or any
+recorded state, and never report the batch applied: call
+`mcp__team_transport__report_issue` with the genuine `mutation_state` and pause. The only
+remediation is the host's existing canonical original-request recovery path for that exact
+original request and receipt, which Delivery explicitly approves and coordinates after confirming
+no drift and the actual write state; do not call hidden or host-only capabilities yourself. Keep
+all other writes closed until an actual new receipt plus governed readback exists, and never
+treat a verbal "reconciled" as an unlock. This paragraph records the usage and escalation path
+for a known current Runner-side defect; adding it here does not fix the Runner and promises no
+specific recovery outcome.
+
 ## Prompt E acceptance-stage handoff
 
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, do not use this formal
