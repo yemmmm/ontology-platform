@@ -74,8 +74,10 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 5. Delivery 负责状态查询、真实问题绑定答复、`submit_instruction` 主动补充、委托 CQ
    审核／冻结、交接、验收及修复。live 验收由 `start_evaluation/get_evaluation_status`
    托管并按原合同收口；S4 由其完成 checkpoint 核对、源 writer 停止及
-   `resume_from_checkpoint(mode=acceptance)`。外层保持对话与进程承载，不代它选择阶段、
-   发送 Host 指令或用脚本安排冻结／修复／验收。实际需要技术补位时记录首阻塞、动作和证据，
+   `resume_from_checkpoint(mode=acceptance)`。外层保持对话、进程承载与主动监督，按
+   [保持观察和推进](../SKILL.md#保持观察和推进) 检查实际成果、首阻塞和 Delivery 处理结果，
+   不因已启动就退出观察。通常由 Delivery 发送 Host 指令和安排冻结／修复／验收；
+   实际需要技术补位时记录首阻塞、动作和证据，
    A13 保持失败／未验证，不能借外层完成了流程宣称 Delivery 自主交付 PASS。
 6. 中断后使用同一配置加 `--resume`，先由 Delivery 核对真实 run／operation、请求台账与
    回执，不重放未知请求、不另开生产或第二监督者。状态及监督空档保留在
@@ -84,7 +86,8 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
    按现有配置合同建立明确获准的新 session，旧证据保留。
 
 下文记录共用的运行、授权和证据规则。独立模式由 Delivery 按其实际 Host 工具执行；外层
-不依照旧 CLI／FIFO 示例再开一条控制链。保留旧手动入口不构成独立 Delivery 的完成证据。
+不依照旧 CLI／FIFO 示例再开相互竞争的控制链，但仍持续发现问题、交接和核验恢复结果。
+保留旧手动入口不构成独立 Delivery 的完成证据。
 
 ## 授权时的模型调度
 
@@ -330,7 +333,8 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
 
 ## 外层输入与恢复边界
 
-以下 FIFO 用法供旧手动模式；独立模式通过 Delivery 的 Host 工具提交，不由外层写 FIFO。
+以下 FIFO 用法供旧手动模式；独立模式通常通过 Delivery 的 Host 工具提交。确需外层技术
+补位时遵循入口节的记录和授权边界，明确由谁执行，避免同时向同一 run 重复投递。
 `run --enable-outer-input-fifo` 创建 `<run-root>/control/outer-input.fifo`。用当前
 [CLI](../../../modeling_team/__main__.py) 与 [Runner](../../../modeling_team/runner.py)
 已接受的 action，每条消息恰一条换行结尾的 JSON；使用 JSON 序列化或预先写好的消息文件，

@@ -1,13 +1,14 @@
 ---
 name: modeling-dev-loop
-description: "Start or resume an authorized ontology-platform modeling delivery: hand R4.0-023 lifecycle work to the independent Delivery session, or continue an existing manual Host workflow. Covers configuration, supervision, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
+description: "Start, resume and actively supervise authorized ontology-platform modeling with independent Delivery or an existing manual Host workflow. Covers progress checks, blocker follow-through, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
 ---
 
 # 建模开发推进
 
-本 Skill 供技术宿主选择入口、交接配置和接续已有任务。采用独立 Delivery 时，由 Delivery
-负责启动、观察、故障归因、修复协调、恢复和证据交接；旧手动模式仍由外层主智能体承担这些
-职责。语义判断与候选内容归建模 Team；平台调用遵循选定 Profile 的 Protocol 边界。
+本 Skill 供技术宿主选择入口、交接配置、持续监看和接续已有任务。采用独立 Delivery 时，
+Delivery 执行启动、故障归因、修复协调、恢复和证据交接；外层主智能体仍负责主动观察实际
+建模进展、发现问题并跟踪处理结果。委派不解除监督责任。旧手动模式由外层承担执行与监督。
+语义判断与候选内容归建模 Team；平台调用遵循选定 Profile 的 Protocol 边界。
 Team 内部的 [ontology-modeling](../../modeling_team/skills/ontology-modeling/SKILL.md) 提供 Modeling 角色的
 语义建模方法，各成员的技能对应关系见 [Team 技能目录](../../modeling_team/skills/README.md)。
 Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧工作流，不加入生产角色的挂载输入。
@@ -18,7 +19,8 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
   或本轮已有 Delivery 配置／session 时，按[独立 Delivery 启动与接续](references/team-runbook.md#独立-delivery-启动与接续r40-023)
   准备获准配置、建立或接续 `modeling_team delivery` 会话。独立角色加载
   [delivery 技能](../../modeling_team/skills/delivery/SKILL.md)，通过受限 Host 工具推进全程。
-  外层负责部署准备和业务输入转接，不再手动替它启动生产、冻结 CQ、派修复或切换验收。
+  外层负责部署准备、业务输入转接和持续监督；通常通过 Delivery 推进启动、冻结、修复与验收，
+  主动检查其处理结果，不等待 Delivery 通知或用户询问才看进度。
   真实运行若需要外层技术补位，保留原因和实际动作，不能记为 Delivery 自主交付通过。
 - 未采用独立 Delivery 的已有手动 run，或本轮明确选择旧手动入口时，保留原 run、授权、冻结和证据，按下文宿主流程
   接续；不为升级角色重新消费 start，也不把旧人工审核回填为 Delivery 自动审核。
@@ -27,8 +29,9 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
   读取隐藏材料的监督会话不能切换身份充当代答者。回答可为未知，并保留测试来源。
 
 下文“宿主／主智能体”指技术交付责任方，不指业务用户或测试代答者。旧手动模式由外层执行；
-独立模式中相应职责归 Delivery，外层只核对交接是否到位，不另建第二条推进链。通用方法可
-复用，具体动作以 Delivery 已声明工具为准，不把整份宿主手册注入其会话。
+独立模式中执行职责归 Delivery，外层持续核对进展、第一阻塞与下一动作，并协调必要的技术
+补位，不另建相互竞争的写入或修复链。通用方法可复用，具体动作以 Delivery 已声明工具为准，
+不把整份宿主手册注入其会话。
 
 ## 开始或接续任务
 
@@ -73,11 +76,27 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 
 ## 保持观察和推进
 
-旧手动模式通过可返回控制权的进程会话启动 Team，由主智能体继续观察；独立模式保持 Delivery
-进程和业务输入通道，由 Delivery 观察 Team。默认每 30～60 秒读取新增事件，
-立即处理错误、审核请求和阶段变化；根据当前工作调整频率，不把轮询次数或时间写成平台硬门。
-长工具调用尽可能每 60 秒内返回一次控制权。Skill 不提供后台调度能力，会话结束后不能声称
-仍在监控；必须交接真实进程、日志位置、待办与下一次观察责任。
+两种模式都由外层主智能体保持当前任务并主动观察。独立模式同时保持 Delivery 进程和业务
+输入通道，但进程存活或 Delivery 已接手不表示外层监督完成。默认每 30～60 秒读取新增
+事件，立即处理错误、审核请求和阶段变化；根据当前工作调整频率，不把轮询次数或时间写成
+平台硬门。长工具调用尽可能每 60 秒内返回一次控制权。不因启动成功、发布阶段报告或委派
+修复就结束当前监督，也不等待用户再次说“继续”才检查。
+
+每次观察核对实际进程／角色工具活动、最近有效产物、待答问题、第一阻塞和下一责任人。
+发现问题后保留证据，向 Delivery 交接具体失败与处理目标，随后检查其动作、新回执和原失败
+步骤是否恢复。发送通知、修复任务已启动或进程仍在运行都不是问题已解决。Delivery 无法
+读取必要日志或执行获准操作时，外层在已有授权内补充最窄技术证据／动作并记录边界；平台
+优化与实现修复仍交本轮指定执行者，不由监督者改写业务语义或扩展平台范围。
+
+用户要求定时检查时，使用当前环境真实可用的调度能力，按指定频率创建或复用任务；未指定
+频率的定时检查可用每 15 分钟。核实下一触发时间、一次实际执行记录、检查／分析结果和后续
+动作承接方。仅采集状态快照不等于分析推进。当前主动监督与定时检查共用已有待办，避免
+重复发指令、重放写入或并发派修复。定时检查是补充，不代替当前任务中的持续观察。
+
+Skill 本身不能建立后台任务，也不能保证唤醒当前 Codex 会话。后台进程、调度触发、独立
+分析进程和当前会话收到输入分别核实；不能把 systemd timer 成功说成当前会话已被唤醒。
+没有实际调度能力时说明限制并保持当前任务观察，不声称已安排。必须结束监督时交接真实
+进程、日志位置、待办、下一检查时间与处理责任；无人接手则明确写监督空档。
 
 观察记录沿用事件 `recorded_at`（UTC）或本次核实时间，显示时声明时区；不逐字段取时。
 日常巡检只追加新增事件与待办，无实质变化不重填顶部摘要。观察比较：进程/工具活动、当前阶段、
