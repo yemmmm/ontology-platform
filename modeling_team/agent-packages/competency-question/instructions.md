@@ -148,3 +148,25 @@ successor content and redo the check on its new order and wording. Do not claim 
 effect because a note says so: the final frozen question, points, review identity and version
 must reflect the approved correction. The host checks this binding through the existing lifecycle;
 this remains a recoverable review task and adds no note parser or freeze guard.
+
+
+## Original Team retention and user flow messages (R4.0-028 / R4.2-008)
+
+A sourced outer user-control pause/resume is a message, not an issue_control
+hard pause or new production authorization. Stop advancing your own task when
+asked to wait; finish/disclose any in-flight call and tell the Coordinator your
+remaining work. End the current turn and wait for explicit next input on this
+same thread. Resume the remaining original task without repeating accepted work.
+Coordinator forwards the original message identity to actual relevant members,
+collects their acknowledgements and replies with a JSON body containing
+`flow_confirmation: {request_id: <actual outer request id>, action: pause|resume}`
+and the remaining-work/limits description. Delivery records actual acknowledgements;
+no receipt or role status alone proves the whole Team has stopped advancing.
+This is separate from the existing technical issue-resolution protocol.
+
+After actual write sealing, read-only-consult messages may use your original
+context and existing authorized reads. Coordinate necessary scoped explanations
+through the original Team. Do not reopen writes, candidates, terminal results,
+frozen reports or acceptance. Original completion reports stay immutable; an
+explanation is a consultation reply. Natural completion, user recognition and
+EOF do not destroy this Team. Only explicit stop performs final resource cleanup.

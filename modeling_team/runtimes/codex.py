@@ -1040,7 +1040,12 @@ class _CodexChildResource:
 
         def watch() -> None:
             deadline = time.monotonic() + timeout
+            last_tick = time.monotonic()
             while not self._watchdog_stop.wait(0.05):
+                tick = time.monotonic()
+                if getattr(self, "user_waiting", False):
+                    deadline += tick - last_tick
+                last_tick = tick
                 process = self.process
                 poll = getattr(process, "poll", None)
                 if callable(poll):
@@ -1149,6 +1154,7 @@ class _CodexChildResource:
                     item = params.get("item") if isinstance(params, Mapping) else None
                     lean_message = (
                         bool(self.spec.get("lean_examiner"))
+                        and not getattr(self, "task_closed", False)
                         and isinstance(method, str)
                         and (
                             method.startswith("item/agentMessage/")
@@ -2215,6 +2221,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         teardown: dict[str, Any] | None = None,
         response_persistence: Callable[[str, Mapping[str, Any]], None] | None = None,
         examiner_observables: dict[str, Any] | None = None,
+        cooperative_owner: Any | None = None,
     ) -> list[Mapping[str, Any]]:
         """Run one v3 batch child to batch completion and return its reports.
 
@@ -2234,6 +2241,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         to name the questions that did land.
         """
 
+        self._cooperative_owner = cooperative_owner
+        if cooperative_owner is not None:
+            cooperative_owner.before_next_task()
         resource = self.launch_v3_acceptance_child(
             packet,
             role_instructions=role_instructions,
@@ -2252,6 +2262,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         report_sink = getattr(resource, "report_sink", None)
         private_root = str(resource.spec.get("private_root") or "")
         socket_root = str(resource.spec.get("_runtime_socket_root") or "")
+        task_complete = False
+        if cooperative_owner is not None:
+            cooperative_owner.bind(self, resource)
         try:
             sink = getattr(resource, "report_sink", None)
             contract = getattr(sink, "batch_contract", None)
@@ -2273,7 +2286,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             expected = len(contract.question_ids)
             deadline = time.monotonic() + max(0.1, float(timeout_seconds))
             terminal_seen_at: float | None = None
+            last_tick = time.monotonic()
             while time.monotonic() < deadline:
+                tick = time.monotonic()
+                if getattr(resource, "user_waiting", False):
+                    deadline += tick - last_tick
+                    terminal_seen_at = None
+                last_tick = tick
+                if cooperative_owner is not None:
+                    cooperative_owner.poll()
                 blocked = getattr(resource, "blocked", None)
                 if isinstance(blocked, ExaminerRuntimeBlocked):
                     raise blocked
@@ -2285,13 +2306,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     )
                 received = getattr(resource, "submitted_reports", None)
                 count = len(received) if isinstance(received, (list, tuple)) else 0
-                if count >= expected:
+                if count >= expected and not getattr(resource, "user_waiting", False):
                     process = getattr(resource, "process", None)
                     poll = getattr(process, "poll", None)
                     if callable(poll) and poll() is None:
                         # Reports are in; let the App Server turn settle so the
                         # child is destroyed from a quiet state, not mid-write.
                         time.sleep(0.2)
+                    task_complete = True
                     return list(received)
                 process = getattr(resource, "process", None)
                 poll = getattr(process, "poll", None)
@@ -2307,7 +2329,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # produce (partial reports stay preserved by the ``finally``
                 # below) instead of waiting out the session over a finished
                 # child (2026-10-05 public judge contract failure).
-                if bool(getattr(resource, "terminal_event", False)):
+                if bool(getattr(resource, "terminal_event", False)) and not getattr(resource, "user_waiting", False):
                     now = time.monotonic()
                     if terminal_seen_at is None:
                         terminal_seen_at = now
@@ -2351,10 +2373,23 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             # thread handle must be captured before destroy for liveness to be
             # a meaningful "is it still running" signal.
             sink_thread = getattr(report_sink, "_thread", None)
+            process_alive = resource.process is not None and resource.process.poll() is None
+            safe_incomplete = (not task_complete and process_alive and bool(getattr(resource, "terminal_event", False))
+                               and getattr(resource, "blocked", None) is None
+                               and getattr(resource._child_agent, "runtime_failure", None) is None
+                               and cooperative_owner is not None and not cooperative_owner.stopping)
+            retained = (task_complete or safe_incomplete) and packet.role == "platform-examiner" and cooperative_owner is not None
             try:
-                destroy = getattr(resource, "destroy", None)
-                if callable(destroy):
-                    destroy()
+                if retained:
+                    resource.blocked_task = not task_complete
+                    cooperative_owner.retain(resource)
+                else:
+                    destroy = getattr(resource, "destroy", None)
+                    if callable(destroy):
+                        destroy()
+                    if cooperative_owner is not None and cooperative_owner.current is resource:
+                        cooperative_owner.current = None
+                        cooperative_owner._save()
             except Exception as exc:
                 # Legacy ``destroy`` stays unmodified; its failure is teardown
                 # evidence, never a reason to skip restoring the caller's
@@ -2378,9 +2413,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 )
                 if destroy_error is not None:
                     teardown["destroy_error"] = destroy_error
+                if retained:
+                    teardown.update(consumer_retained=True, task_closed=True, disposition="retained_idle",
+                                    work_state="completed" if task_complete else "blocked",
+                                    owner_pid=os.getpid(), thread_id=resource.thread_id,
+                                    pid=getattr(resource.process, "pid", None),
+                                    child_alive=resource.process.poll() is None if resource.process else False)
             # Last teardown step: the batch is over, so the standalone carrier
             # stops the sessions it opened for this one child.
-            self._stop_standalone_provider_sessions()
+            if not retained:
+                self._stop_standalone_provider_sessions()
 
     def run_lean_examiner_child(
         self,
@@ -3317,6 +3359,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             )
             if v3_packet.source_registry is not None:
                 report_sink_args.append("--frozen-evidence-reads")
+            if getattr(self, "_cooperative_owner", None) is not None:
+                report_sink_args.append("--cooperative-control")
         config_lines.extend(
             [
                 "[mcp_servers.examiner_report]",
@@ -3476,6 +3520,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         child_agent.frozen_evidence_reads = (
             batch_contract is not None and v3_packet.source_registry is not None
         )
+        child_agent.cooperative_control = batch_contract is not None and getattr(self, "_cooperative_owner", None) is not None
         child_agent.auth_barrier_pending = formal
         child_agent.credential_mode = (
             "provider_proxy" if (formal and not formal_codex_builtin) else "file_auth"
@@ -6307,6 +6352,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Fail before the first turn unless the frozen per-role MCP surface is live."""
         if agent.package.package_id in {"source-examiner", "platform-examiner", "acceptance"}:
             expected = {"examiner_report": {"submit_examiner_report"}}
+            if getattr(agent, "cooperative_control", False) is True:
+                expected["examiner_report"].add("record_flow_confirmation")
             if getattr(agent, "frozen_evidence_reads", False) is True:
                 expected["examiner_report"].add("read_frozen_evidence")
             if agent.package.package_id == "platform-examiner":
@@ -6349,6 +6396,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Check the deliberately tiny R2.3-006 surface for all three fresh roles."""
 
         expected = {"examiner_report": {"submit_examiner_report"}}
+        if getattr(agent, "cooperative_control", False) is True:
+            expected["examiner_report"].add("record_flow_confirmation")
         if getattr(agent, "frozen_evidence_reads", False) is True:
             expected["examiner_report"].add("read_frozen_evidence")
         if agent.package.package_id == "platform-examiner":

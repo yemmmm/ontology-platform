@@ -1057,7 +1057,13 @@ class ExaminerRunMetrics:
     _turn_id: str | None = field(default=None, repr=False)
     _accepted_turn_ids: set[str] = field(default_factory=set, repr=False)
     _allow_continuation_turn: bool = False
+    _pending_control_turn: bool = False
     terminal_event: bool = False
+
+    def allow_control_turn(self) -> None:
+        """Account one explicit owner message on the original thread, without resetting usage."""
+        self._pending_control_turn = True
+        self.terminal_event = False
 
     def record_turn_start(self) -> None:
         """Record the Host-issued fresh turn exactly once."""
@@ -1127,7 +1133,11 @@ class ExaminerRunMetrics:
                 self.blocked = ExaminerRuntimeBlocked("runtime-metrics", role=self.role)
                 raise self.blocked
             if self._turn_id is not None and event_turn_id != self._turn_id:
-                if self._allow_continuation_turn and len(self._accepted_turn_ids) < 2:
+                if self._pending_control_turn:
+                    self._pending_control_turn = False
+                    self._accepted_turn_ids.add(event_turn_id)
+                    self._turn_id = event_turn_id
+                elif self._allow_continuation_turn and len(self._accepted_turn_ids) < 2:
                     self._accepted_turn_ids.add(event_turn_id)
                     self._turn_id = event_turn_id
                 else:
@@ -3421,6 +3431,14 @@ class ReportSinkServer:
                         response = {"ok": False, "code": "report-invalid"}
                     elif request.get("token") != self.token:
                         response = {"ok": False, "code": "report-token-invalid"}
+                    elif request.get("operation") == "record_flow_confirmation":
+                        callback = getattr(self, "flow_confirmation", None)
+                        try:
+                            if not callable(callback):
+                                raise ValueError("no cooperative owner is bound")
+                            response = {"ok": True, "result": callback(request.get("arguments"))}
+                        except ValueError as exc:
+                            response = {"ok": False, "code": "flow-confirmation-rejected", "detail": str(exc)}
                     elif request.get("operation") == "read_frozen_evidence":
                         try:
                             if self._submitted or self.batch_contract is None:

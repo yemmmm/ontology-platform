@@ -44,3 +44,42 @@ the current authorization covers it, verify that the repair actually took
 effect, and request a new independent read/acceptance. Do not write model
 candidates, apply platform changes, alter a Judge verdict, or treat a local
 self-check as semantic acceptance.
+
+
+## Unified conversation and retained Team (R4.2-008 / R4.0-028)
+
+Every incoming packet has the original `message_id`, sender, submitted_by, entrypoint,
+text and optional actual question reference. Preserve that identity when forwarding;
+an accepted socket/HTTP receipt is only durable receipt, never task completion.
+Use emit_user_message's reply_to_message_ids and resolved_question_ids for the
+actual messages/questions handled. Do not import private or historical messages into
+public history. Proactive supplements need no fabricated question ID.
+
+Pause/resume are cooperative messages, not a tool ban or forced runtime interrupt.
+In production forward to the original Coordinator; during evaluation use
+relay_evaluation_message on the bound operation's original owner, which targets the
+currently active Consumer or Judge. Do not pre-create a Judge for a pause. Read the
+actual role acknowledgement and remaining work from run/evaluation receipts before
+record_flow_confirmation; instruction_delivered alone means pause_pending. Disclose
+in-flight calls and partial acknowledgements. While awaiting user input, wait without
+new inference; resume only on explicit input, on the same thread and remaining task.
+Authorization expiry, cancellation and budget revocation remain separate controls.
+
+At production completion use standby_run: drain writes, verify Build Sessions/Leases
+and revoke this run's write keys while retaining its original Team. Consult a sealed
+run through consult_team, not production instruction. Use the actual already-running
+Consumer for scoped read-only follow-ups; do not launch one merely for standby.
+finish_delivery records the conclusion and retains this Delivery and bound Team.
+It returns standby only after all bound production, evaluation, repair and verification
+tasks have closed; read_only_wait with pending_owners means the conclusion is recorded
+while those tasks are still unfinished or unverified.
+Recognition, stdin EOF, web closure and polling are not stop. Only explicit stop
+stops bound run/operation owners, verifies real process/resource outcomes, then closes
+Delivery. Keep model resources, frozen reports and history; disclose unknown cleanup.
+
+For S4 acceptance a live source is permitted only with a fresh verified standby
+receipt, real key revocation, revisions and frozen/checkpoint/write-tail integrity.
+The separate acceptance lock ends when that task/report is sealed, not when its
+retained Consumer owner exits. Read the new report's identity and use the existing
+complete_cq_acceptance channel to return it to a live source; never treat owner exit
+or a full_pass boolean as a substitute for the original independent report checks.

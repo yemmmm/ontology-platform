@@ -319,7 +319,7 @@ def test_three_lifecycle_actions_submit_and_correlate(tmp_path):
             "request_id": "req-pause-1",
             "action": "pause",
             "status": "submitted",
-            "consumption_evidence": "state.json",
+            "consumption_evidence": "evidence/team-lifecycle.jsonl",
             "next_action": "get_request_result",
         }
         assert paused["note"]
@@ -938,10 +938,12 @@ def test_launch_records_and_logs_never_carry_a_credential(tmp_path, monkeypatch)
 
 def test_lifecycle_and_checkpoint_consumption_evidence_is_declared():
     assert host_ops.LIFECYCLE_CONSUMPTION_EVIDENCE == {
-        "pause": "state.json",
-        "resume": "state.json",
+        "pause": "evidence/team-lifecycle.jsonl",
+        "resume": "evidence/team-lifecycle.jsonl",
         "stop": "state.json",
         "checkpoint": "evidence/checkpoints.jsonl",
+        "standby": "state.json",
+        "consult": "evidence/team-lifecycle.jsonl",
     }
     assert set(host_ops.RUN_SUBCOMMAND_FLAGS) == {
         "--profile",

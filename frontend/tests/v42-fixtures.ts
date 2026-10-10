@@ -47,6 +47,7 @@ export async function mockWorkspace(page: Page, options: Options = {}) {
     else if (path === "/auth/logout") { await route.fulfill({ status: 204, body: "" }); return; }
     else if (path === "/projects") data = options.projects ?? [project, secondProject];
     else if (path.endsWith("/workbench")) data = options.index ?? index();
+    else if (path.endsWith("/delivery-conversations")) data = { items: [], enumeration_complete: true };
     else if (path.includes("/workbench/runs/")) data = options.run ?? run();
     else if (path.endsWith("/ontologies")) data = options.ontologies ?? ontologies;
     else if (path.endsWith("/workspace-context")) data = { ontology_id: path.includes("o2") ? "o2" : "o1", state: "ready", model_revision: 0 };

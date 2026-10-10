@@ -63,6 +63,33 @@ def test_artifact_reader_returns_exact_approved_business_source(tmp_path):
     assert result['ok'] and result['data']['text'] == '经确认：退货不计入销售额。'
 
 
+@pytest.mark.parametrize("kind", ["evaluation", "repair", "verification"])
+def test_finish_conclusion_cannot_hide_unfinished_bound_owner(tmp_path, kind):
+    host = session(tmp_path)
+    original = host.call_tool
+    operation_id = "unfinished"
+    if kind == "verification":
+        host.verification_ids.add(operation_id)
+    else:
+        host.operation_ids.add(operation_id)
+        host.operation_kinds[operation_id] = kind
+    closed = False
+    def call(name, arguments, **kwargs):
+        if name in {"get_evaluation_status", "get_repair_status", "get_repair_verification_status"}:
+            data = {"status": "running", "work_state": "working", "process": {"state": "running"}}
+            if closed:
+                data.update(status="exited", exit_code=0, work_state="completed", process={"state": "exited"})
+            return {"ok": True, "data": data}
+        return original(name, arguments, **kwargs)
+    host.call_tool = call
+    result = host.call_tool("finish_delivery", {"conclusion": "known conclusion"})
+    assert result["ok"] and result["data"]["pending_owners"] == [operation_id]
+    assert host.activity == "read_only_wait" and host.work_result == "known conclusion"
+    closed = True
+    assert host.call_tool("finish_delivery", {"conclusion": "known conclusion"})["ok"]
+    assert host.activity == "standby"
+
+
 def test_resumption_preserves_revocation_and_interruption_history(tmp_path):
     host = session(tmp_path)
     host.allowed_operations.update({'supervise', 'evaluation', 'repair'})
@@ -228,17 +255,16 @@ def test_run_delivery_steers_queued_input_into_the_active_turn_in_order(tmp_path
     assert record['native_thread_id'] == 'stub-thread'
 
 
-def test_run_delivery_control_keeps_priority_while_turn_is_busy(tmp_path, monkeypatch):
+def test_run_delivery_pause_is_sourced_guidance_without_forced_interrupt(tmp_path, monkeypatch):
     stub, result, record = _run_delivery_with_stub(tmp_path, monkeypatch, ['暂停'])
-    # The host control fired before the packet was delivered onto the turn.
-    assert stub.events.index('interrupt') < stub.events.index('steer')
+    assert 'interrupt' not in stub.events
     packet = json.loads(stub.steered[0])
     assert packet['text'] == '暂停'
-    assert packet['host_control_result']['launch_permissions_revoked'] is True
+    assert 'host_control_result' not in packet
     events = [json.loads(line) for line in (
         tmp_path / 'workspaces/delivery-sessions/steer-probe/session-events.jsonl'
     ).read_text().splitlines()]
-    assert any(entry.get('state') == 'paused' for entry in events)
+    assert not any(entry.get('state') == 'paused' for entry in events)
 
 
 def test_run_delivery_keeps_packet_queued_when_steer_hits_completed_turn(tmp_path, monkeypatch):

@@ -27,3 +27,34 @@ export const semanticViews = [
   ["object", "Object"], ["behavior", "Behavior"], ["rule", "Rule"], ["business_role", "Business role"],
   ["process", "Process"], ["data_mapping", "Data mapping"], ["interface_mapping", "Interface mapping"],
 ] as const;
+export type ConversationMessage = {
+  message_id: string; kind: string; text: string;
+  sender?: { kind: string; reference: string }; entrypoint?: string;
+  submitted_by?: { kind: string; reference: string };
+  recorded_at?: string; received_seq?: number; dispatch?: string; dispatch_reason?: string;
+  control?: { action: string; status: string; basis?: unknown };
+  reply_to_message_id?: string | null; reply_to_message_ids?: string[];
+};
+export type ConversationEvent = {
+  event_seq: number; event_type: string; recorded_at: string; message_id?: string;
+  message?: ConversationMessage; status?: string; action?: string; basis?: unknown;
+};
+export type ConversationIndex = {
+  items: { delivery_session_id: string; history_started_at: string | null; history_complete: boolean }[];
+  enumeration_complete: boolean;
+};
+export type ConversationStatus = {
+  delivery_session_id: string; connection: "online" | "offline" | "unknown";
+  activity: string; observed_at: string | null; history_started_at: string | null;
+  pending_questions: ConversationMessage[]; latest_event_seq: number;
+  basis?: unknown;
+  history_complete: boolean; read_error?: string; delivery_result?: string;
+};
+export type ConversationInput = {
+  message_id: string; kind: "message" | "answer" | "control"; text: string;
+  reply_to_message_id?: string; action?: "pause" | "resume" | "cancel" | "revoke_budget" | "stop";
+};
+export type ConversationEvents = {
+  items: ConversationEvent[]; next_after_seq: number; has_more: boolean;
+  history_complete: boolean; read_error?: string;
+};

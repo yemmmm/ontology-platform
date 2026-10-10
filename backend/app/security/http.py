@@ -95,6 +95,8 @@ _ADMIN_PATHS = (
 
 
 def required_scope(method: str, path: str) -> str:
+    if re.fullmatch(r"/api/projects/[^/]+/delivery-conversations(/.*)?", path):
+        return "read"
     if re.fullmatch(r"/api/projects/[^/]+/workbench(/.*)?", path):
         return "admin"
     if any(path.startswith(prefix) for prefix in _ADMIN_PATHS):

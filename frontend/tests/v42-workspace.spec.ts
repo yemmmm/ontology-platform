@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import { readFileSync, existsSync } from "node:fs";
 import { artifact, envelope, index, match, mockWorkspace, recall, relations, report, resources, run } from "./v42-fixtures";
 
-test("T01 five sibling links normalize retired URL and storage, with history navigation", async ({ page }) => {
+test("T01 six sibling links normalize retired URL and storage, with history navigation", async ({ page }) => {
   await mockWorkspace(page);
   await page.addInitScript(() => {
     localStorage.setItem("ontology-platform-ui-workspace-tab-v4", "classes");
@@ -14,7 +14,7 @@ test("T01 five sibling links normalize retired URL and storage, with history nav
   await page.goto("/?project=forbidden&ontology=secret&tab=classes&batch=b1&graph=g1");
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect.poll(() => new URL(page.url()).search).toBe("?project=p1&tab=overview");
-  expect(await page.getByRole("navigation").getByRole("link").allTextContents()).toEqual(["Overview", "Model browser", "Recall test", "Member permissions", "Settings"]);
+  expect(await page.getByRole("navigation").getByRole("link").allTextContents()).toEqual(["Overview", "Modeling conversation", "Model browser", "Recall test", "Member permissions", "Settings"]);
   expect(await page.evaluate(() => Object.keys(localStorage).sort())).toEqual(["ontology-platform-ui-selected-project", "ontology-platform-ui-workspace-tab-v4.2", "unrelated"]);
   await page.getByRole("link", { name: "Model browser" }).click();
   await page.getByRole("link", { name: "Recall test" }).click();
@@ -27,7 +27,7 @@ test("T01 project switching requires returning to overview from every other tab"
   await mockWorkspace(page);
   await page.goto("/?project=p1&tab=overview");
   await expect(page.getByLabel("Project", { exact: true })).toHaveValue("p1");
-  for (const name of ["Model browser", "Recall test", "Member permissions", "Settings"]) {
+  for (const name of ["Modeling conversation", "Model browser", "Recall test", "Member permissions", "Settings"]) {
     await page.getByRole("link", { name, exact: true }).click();
     await expect(page.getByRole("heading", { name, exact: true })).toBeVisible();
     await expect(page.getByLabel("Project", { exact: true })).toHaveCount(0);

@@ -107,6 +107,7 @@ STAGE_SOURCES = (
     "cq-handoff-complete",
     "cq-acceptance-complete",
     "settled",
+    "team-lifecycle",
     "terminal-classification",
 )
 
@@ -123,6 +124,10 @@ ACTION_EVIDENCE: dict[str, str] = {
     "cq_acceptance_complete": "evidence/cq-acceptance-complete.jsonl",
     "issue_resolution": "evidence/issue-resolution.jsonl",
     "recover_provider": "evidence/provider-wait.jsonl",
+    "standby": "evidence/team-lifecycle.jsonl",
+    "consult": "evidence/team-lifecycle.jsonl",
+    "pause": "evidence/team-lifecycle.jsonl",
+    "resume": "evidence/team-lifecycle.jsonl",
 }
 
 RECEIPTS_EVIDENCE = "evidence/outer-input-receipts.jsonl"
@@ -185,14 +190,15 @@ CHECKPOINT_RESUME_FLAGS = (
 )
 
 # Where the Runner records the consumption of a lifecycle/checkpoint action
-# (design §5.2/§5.4 return contract).  ``pause``/``resume``/``stop`` surface
-# through ``state.json`` (no per-action evidence file exists), a checkpoint
-# save appends to the checkpoint evidence stream.
+# (design §5.2/§5.4 return contract). Cooperative controls and consultation
+# append actual acknowledgements to the lifecycle evidence stream.
 LIFECYCLE_CONSUMPTION_EVIDENCE = {
-    "pause": "state.json",
-    "resume": "state.json",
+    "pause": "evidence/team-lifecycle.jsonl",
+    "resume": "evidence/team-lifecycle.jsonl",
     "stop": "state.json",
     "checkpoint": "evidence/checkpoints.jsonl",
+    "standby": "state.json",
+    "consult": "evidence/team-lifecycle.jsonl",
 }
 
 
@@ -1148,6 +1154,10 @@ def get_run_status(run_id: str, *, repository_root: Path | None = None) -> dict[
         "first_blocker": _first_blocker(run_root, items),
         "pending_summary": {"counts": counts, "detail_tool": "get_pending_actions"},
         "terminal_conclusion": terminal_conclusion,
+        "lifecycle": recorded_state.get("lifecycle") if recorded_state else None,
+        "work_state": recorded_state.get("work_state") if recorded_state else None,
+        "write_phase": recorded_state.get("write_phase") if recorded_state else None,
+        "retained_members": recorded_state.get("retained_members", []) if recorded_state else [],
         "liveness": {
             "recorded_state": recorded_state.get("state") if recorded_state else None,
             "process_observation": _process_observation(run_root, runs_root),
@@ -2208,6 +2218,7 @@ def complete_cq_acceptance(
     run_id: str,
     *,
     acceptance_attempt_id: str | None = None,
+    continuation_run_id: str | None = None,
     request_id: str | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
@@ -2223,6 +2234,14 @@ def complete_cq_acceptance(
     run_root, _runs_root = resolve_run_root(run_id, repository_root=repository_root)
     binding = _cq_completion_binding(run_root, acceptance_attempt_id)
     report_path = run_root / binding["report_directory"] / "batch-report.json"
+    if continuation_run_id is not None:
+        from .checkpoint_recovery import acceptance_continuation_report
+        output_root, _ = resolve_run_root(continuation_run_id, repository_root=repository_root)
+        try:
+            report_path = acceptance_continuation_report(run_root, output_root)
+        except (CheckpointError, OSError, ValueError) as exc:
+            raise HostOpError("cq_acceptance_report_mismatch", str(exc), obj=continuation_run_id,
+                              retryable=True, next_action="verify the closed S4 continuation report and source binding") from exc
     if not report_path.is_file() or report_path.is_symlink():
         raise HostOpError(
             "cq_acceptance_report_mismatch",
@@ -2279,7 +2298,9 @@ def complete_cq_acceptance(
         "report_digest": report_digest,
         "cq_verdict": cq_verdict,
     }
-    if set(envelope) != set(CQ_ACCEPTANCE_COMPLETE_FIELDS):
+    if continuation_run_id is not None:
+        envelope["continuation_run_id"] = continuation_run_id
+    if set(envelope) - {"continuation_run_id"} != set(CQ_ACCEPTANCE_COMPLETE_FIELDS):
         raise HostOpError(
             "cq_acceptance_report_mismatch",
             "internal error: the assembled envelope does not match the "
@@ -3185,12 +3206,15 @@ def pause_run(
     run_id: str,
     *,
     request_id: str | None = None,
+    text: str | None = None,
+    source_reference: str | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """Design §5.2: the outer ``pause`` envelope -- a pause is not a stop."""
 
     return _submit_lifecycle_action(
-        run_id, "pause", {"action": "pause"},
+        run_id, "pause", {"action": "pause", **({"text": text} if text is not None else {}),
+                              **({"source_reference": source_reference} if source_reference is not None else {})},
         request_id=request_id, repository_root=repository_root,
     )
 
@@ -3199,12 +3223,15 @@ def resume_live_run(
     run_id: str,
     *,
     request_id: str | None = None,
+    text: str | None = None,
+    source_reference: str | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """Design §5.2: continue the same live thread, never rebuild or hot-load."""
 
     return _submit_lifecycle_action(
-        run_id, "resume", {"action": "resume"},
+        run_id, "resume", {"action": "resume", **({"text": text} if text is not None else {}),
+                              **({"source_reference": source_reference} if source_reference is not None else {})},
         request_id=request_id, repository_root=repository_root,
     )
 
@@ -3238,6 +3265,22 @@ def stop_run(
         run_id, "stop", envelope,
         request_id=request_id, repository_root=repository_root,
     )
+
+
+def standby_run(run_id: str, *, request_id: str | None = None,
+                repository_root: Path | None = None) -> dict[str, Any]:
+    """Request actual write sealing while retaining the original Team owner."""
+    return _submit_lifecycle_action(run_id, "standby", {"action": "standby"},
+                                    request_id=request_id, repository_root=repository_root)
+
+
+def consult_team(run_id: str, *, text: str, request_id: str | None = None,
+                 repository_root: Path | None = None) -> dict[str, Any]:
+    if not isinstance(text, str) or not text.strip():
+        raise HostOpError("consult_text_missing", "consult needs original text", obj="text",
+                          retryable=True, next_action="supply the user's question")
+    return _submit_lifecycle_action(run_id, "consult", {"action": "consult", "text": text},
+                                    request_id=request_id, repository_root=repository_root)
 
 
 def inspect_checkpoints(

@@ -121,6 +121,8 @@ POSSIBLY_LIVE_STATES = frozenset(
         "CLEANING",
         "ABORTING",
         "POST_SETTLEMENT_REPORTING",
+        "READ_ONLY_WAIT",
+        "STANDBY",
     }
 )
 # The real backend accepts ``dry_run | apply_atomic | apply_partial`` (there is
@@ -287,6 +289,66 @@ def acquire_root_run_lock(root_run_id: str, runs_root: Path) -> RootRunLock:
     lock = RootRunLock(path, root_run_id)
     lock.acquire()
     return lock
+
+
+def acquire_acceptance_lock(root_run_id: str, runs_root: Path) -> RootRunLock:
+    lock = RootRunLock(Path(runs_root) / _RECOVERY_LOCK_DIRECTORY / f"{root_run_id}.acceptance.lock", root_run_id)
+    lock.acquire()
+    return lock
+
+
+def source_safe_for_acceptance(source_run_root: Path, readback: PlatformReadback,
+                               request_id: str, root_run_id: str) -> dict[str, Any]:
+    """Verify a fresh owner receipt and live platform state; never settles a producer for recovery."""
+    from .host_ops import get_request_result, get_run_status
+    source_run_root = Path(source_run_root)
+    state = read_run_state(source_run_root) or {}
+    status = get_run_status(source_run_root.name, repository_root=source_run_root.parents[2])
+    owner = status["liveness"]["process_observation"]
+    owner_pid = owner.get("pid")
+    if owner.get("basis") == "chain_writer_lock":
+        owner_pid = owner.get("report", {}).get("holder_pid")
+    receipt = get_request_result(source_run_root.name, request_id=request_id,
+                                 repository_root=source_run_root.parents[2])
+    consumed = receipt if receipt.get("outcome") in {"accepted", "rejected"} else {}
+    if not isinstance(consumed, dict):
+        consumed = {}
+    origin = load_origin_record(source_run_root) or {}
+    sealed = state.get("write_seal", {})
+    ready = state.get("readiness", {})
+    if (state.get("standby_request_id") != request_id or consumed.get("outcome") != "accepted"
+            or consumed.get("action") != "standby" or state.get("state") not in {"READ_ONLY_WAIT", "STANDBY"}
+            or state.get("owner_pid") != owner_pid or pid_is_alive(owner_pid) is not True
+            or (origin.get("root_run_id") or source_run_root.name) != root_run_id
+            or state.get("write_phase") != "read-only" or ready.get("in_flight_writes")
+            or ready.get("unknown_writes") or sealed.get("write_credentials_non_active") is not True):
+        raise _acceptance_reject(REASON_SOURCE_ACTIVE, "fresh live-source sealing receipt is incomplete",
+                                 obj=f"request_id:{request_id}", retryable=True,
+                                 retry="query the original standby request and reconcile pending writes; retry without stopping the source")
+    key_receipts = list(sealed.get("project_scoped_keys", []))
+    admin = sealed.get("second_stage", {}).get("org_admin_key")
+    if admin:
+        key_receipts.append(admin)
+    for key in key_receipts:
+        detail = readback._get(f"/api/api-keys/{key['id']}")
+        if not isinstance(detail, dict) or not detail.get("revoked_at"):
+            raise _acceptance_reject(REASON_SOURCE_ACTIVE, "source write key is not revoked", obj=str(key["id"]),
+                                     retryable=True, retry="verify the actual owned key revocation")
+    revisions = sealed.get("model_revisions", {})
+    if not revisions:
+        raise _acceptance_reject(REASON_SOURCE_ACTIVE, "source model revision seal is missing", obj="model_revisions", retryable=True)
+    for ontology_id, revision in revisions.items():
+        context = readback._get(f"/api/ontologies/{ontology_id}/workspace-context")
+        workspace = context.get("workspace", {}) if isinstance(context, dict) else {}
+        actual = workspace.get("model_revision", context.get("model_revision"))
+        if actual != revision:
+            raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "live-source model revision changed", obj=ontology_id)
+    handoff = source_run_root / _PUBLISHED_HANDOFF_SOURCE
+    if state.get("handoff_digest") != file_digest(handoff):
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "live-source handoff digest changed", obj=_PUBLISHED_HANDOFF_SOURCE)
+    return {"source_run_id": source_run_root.name, "root_run_id": root_run_id, "request_id": request_id,
+            "owner_pid": owner_pid, "write_phase": "read-only", "model_revisions": revisions,
+            "handoff_digest": state["handoff_digest"]}
 
 
 def lock_record_path(runs_root: Path, root_run_id: str) -> Path:
@@ -3185,6 +3247,7 @@ def prepare_acceptance_continuation(
     readback: PlatformReadback,
     authorization_reference: str | None = None,
     question_visibility: str = "hidden",
+    live_source_request_id: str | None = None,
 ) -> AcceptanceContinuation:
     """Design §7 paragraph 1: the read-only S4 entry verification.
 
@@ -3244,7 +3307,10 @@ def prepare_acceptance_continuation(
     )
     if writer["source_settlement"]["verdict"] == "writer_process_exited":
         writer["verdict"] = "writer_process_exited"
-    if not source_writer_settles_recovery(writer):
+    if not source_writer_settles_recovery(writer) and live_source_request_id:
+        writer["live_source_seal"] = source_safe_for_acceptance(source_run_root, readback, live_source_request_id,
+                                                               str(manifest.get("root_run_id") or manifest.get("source_run_id")))
+    if not source_writer_settles_recovery(writer) and not writer.get("live_source_seal"):
         obj, retry = source_active_evidence(writer, source_run_root)
         raise _acceptance_reject(
             REASON_SOURCE_ACTIVE,
@@ -3508,6 +3574,40 @@ def write_acceptance_origin(continuation: AcceptanceContinuation, output_root: P
     )
     os.chmod(path, 0o600)
     return path
+
+
+def acceptance_continuation_report(source_root: Path, output_root: Path) -> Path:
+    """Resolve a closed S4 report without copying or rewriting any source evidence."""
+    if output_root.is_symlink():
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "continuation root changed", obj=output_root.name)
+    origin = load_origin_record(output_root) or {}
+    closing = json.loads((output_root / RECOVERY_DIRECTORY / ACCEPTANCE_CONTINUATION_RECORD).read_text())
+    handoff = source_root / _PUBLISHED_HANDOFF_SOURCE
+    if (origin.get("kind") != "acceptance_continuation"
+            or origin.get("source_run_id") != source_root.name
+            or origin.get("new_run_id") != output_root.name
+            or origin.get("handoff_digest") != file_digest(handoff)
+            or closing.get("source_run_id") != source_root.name
+            or closing.get("new_run_id") != output_root.name
+            or closing.get("report_published") is not True):
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED,
+                                 "closed continuation is not bound to this source", obj=output_root.name)
+    checkpoint = str(origin.get("checkpoint_id", ""))
+    if origin.get("checkpoint_digest") != manifest_digest(manifest_path(source_root, checkpoint)):
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "source checkpoint changed", obj=checkpoint)
+    batch, attempt = closing.get("batch_id"), closing.get("attempt_id")
+    if not all(isinstance(value, str) and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", value)
+               for value in (batch, attempt)):
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "continuation report identity is invalid", obj=output_root.name)
+    report_path = output_root / "acceptance-v3" / "reports" / batch / attempt / "batch-report.json"
+    if report_path.is_symlink() or not report_path.resolve().is_relative_to(output_root.resolve()):
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "continuation report path changed", obj=output_root.name)
+    report = json.loads(report_path.read_text())
+    if (report.get("run_id") != source_root.name or report.get("batch_id") != origin.get("batch_id")
+            or report.get("freeze_digest") != origin.get("freeze_digest")
+            or report.get("sessions", {}).get("cleanup", {}).get("tasks_closed") is not True):
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "continuation task/report is not sealed", obj=output_root.name)
+    return report_path
 
 
 def write_acceptance_continuation_record(

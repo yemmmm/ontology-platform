@@ -179,10 +179,11 @@ issue、写入已排空且没有 unknown write；若已有 Runner 发布的 hand
   独立验收。报告落盘后向存活源 run 调用 `complete_cq_acceptance`，核对报告 digest、
   `cq_verdict` 和完整题目分母；不要为“生产已完成”提前 stop。
 - **S4 checkpoint acceptance continuation**：先用 `inspect_checkpoints` 确认显式、有效且
-  COMPLETE 的 `production_handoff` 检查点和所需资源可安全保留，再经 stop/receipt/managed
-  exit 释放源 writer，随后复核绑定并在全新输出目录启动只读验收。不要先 stop 后才发现
-  没有可用检查点，也不向已死源 FIFO 投递验收收口消息。同 root 的公开/隐藏 continuation
-  等前一托管进程退出，顺序由获准任务安排。
+  COMPLETE 的 `production_handoff` 检查点和安全资源保留。存活源用 `standby_run` 的新
+  request receipt 核实写入排空、实际 key 撤回、模型修订与交接摘要；已退出源继续沿旧退出
+  证据。随后在全新输出目录启动只读验收，不停止可信只读源、不释放生产 root lock。
+  同 root acceptance 使用独立任务锁，上一任务报告和能力封口后即可继续下一批；保留的
+  Consumer owner 不必退出。新报告由 Delivery 沿 `complete_cq_acceptance` 交回存活源。
 
 unknown write 先对账，不能靠停止或删锁掩盖。两条路径均保留 PASS、PARTIAL 或失败结果；
 交接或收口成功不等于 CQ PASS。具体绑定与收口步骤见
@@ -214,8 +215,9 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 `production_handoff` 检查点做验收-only 续跑（S3 按设计延后，S4 不依赖 S3）：
 `production_handoff` 只是把当前已验证状态和已知缺口交给独立验收，不是业务 Class，也不表示
 未完成的值语义已自动完成或应挪到验收之后；正常阶段顺序仍由当前 Task/需求决定。
-先确认完整可用的交接检查点与安全资源保留，再停止源 writer 并确认退出；入口继续做只读
-复核（沿用 S2 的 cursor 回读纪律：全链写尾闭合、原写者已停、冻结池按
+先确认完整可用的交接检查点与安全资源保留；存活源须有本次可信只读封口回执，已退出源
+沿原退出证据。入口继续只读复核（沿用 S2 cursor 回读纪律：全链写尾闭合、真实写能力
+封口或原写者已停、冻结池按
 快照摘要重校验、打包与已发布 handoff 一致），漂移得到类型化拒绝
 （`acceptance_binding_changed` 等），绝不改模型或源 run。输入/输出分离：证据根
 永远是原 run（旧 run_id、handoff 尝试字段与旧报告一字不动），新尝试、新报告与宿主
@@ -299,8 +301,8 @@ live Runner、原 Agent thread 和已完成产物。用户告知“接口已经�
 
 阶段变化、新阻塞、配置/授权变化或接续交接时，在已有记录顶部更新[最新摘要](references/progress-report.md#最新摘要r40-021)，
 列 `completed/remaining/next/authorization/wait/resource/handoff`。仍有授权内明确待办且条件
-满足时，汇报后继续：live 验收保持源 Runner 存活，S4 按安全 checkpoint→stop/exit→新目录
-验收切换；隐藏完成且公开仍待办也继续，
+满足时，汇报后继续：live 验收保持源 Runner 存活；S4 以安全 checkpoint、可信只读封口
+（或原退出证据）进入新目录验收。任务封口后继续另一获准批次；隐藏完成且公开仍待办也继续，
 不等待用户反复说“继续”。缺业务定义、权限、兼容性决定或新 start 额度时，只等待受影响
 动作，完成独立可做项；不扩权、不把余额当必须耗尽的目标。
 
@@ -327,3 +329,16 @@ quality、L2 Repeatability、L3 Productization 分开取证，后阶段不成为
 仅验收 L0 也不能跳过当前候选/写入所必需的业务确认；未知项按所选合同澄清或保留为明确未知，
 不能因尚不验收 L1 而猜测并写入。L0 证据收口见运行参考，服务健康不是完整运行通过。
 达到获准阶段且没有必要工作剩余时停止，交付结论、证据、相关提交、资源状态与后续缺口。
+
+
+## 原 Team 待命与统一会话（R4.0-028 / R4.2-008）
+
+正常业务完成及认可保留原 Delivery、常驻 Team 与已经启动的 Consumer，不预建尚未启动
+Consumer。通过 `standby_run` 核实只读封口，`consult_team` 沿原 Coordinator/Team 追问；
+结论、freeze、回答与 Judge 报告不改。暂停/继续是发给当前 Coordinator 或实际 Consumer/
+Judge 的消息，由 Agent 自行等待/恢复，Delivery 依据真实确认展示 pending/effective，
+不置全局执行开关、不强制 interrupt、不把等待 turn 当任务完成。授权到期和撤回独立。
+stdin EOF、网页关闭、轮询和余额到期不等于显式 stop。明确 stop 才按绑定归属停止原
+owner、核对实际线程/进程退出与资源清理，最后停止 Delivery；未知清理如实保留 partial。
+网页与 CLI 只连接已有 Delivery 的本机入口，保持 original message_id/source/question
+reference；离线只读，不自动唤醒或重放 unknown 消息，业务结果与投递回执分开。

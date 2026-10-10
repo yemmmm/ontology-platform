@@ -51,6 +51,9 @@ def _forbid_network_socket(*_args: object, **_kwargs: object) -> "_socket.socket
 _socket.socket = _forbid_network_socket  # type: ignore[assignment]
 
 SPAWNED: dict[str, dict[str, Any]] = {}
+ORIGINAL_PACKET = None
+COMPLETED_QUESTIONS = set()
+WAIT_DIRECTIVE_USED = False
 
 
 def _sha16(payload: bytes) -> str:
@@ -290,6 +293,8 @@ def _platform_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dic
     submitted: list[dict[str, Any]] = []
     for question in payload["questions"]:
         question_id = str(question["question_id"])
+        if question_id in COMPLETED_QUESTIONS:
+            continue
         needed = _needs(str(question["question"])) or scope[0]
         fact = facts.get(needed)
         read = next((item for item in reads if needed in item["ontology_ids"].split("+") and item["ok"]), None)
@@ -330,6 +335,12 @@ def _platform_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dic
             "reason": marker,
         }
         submitted.append(_submit_report("submit_examiner_report", report))
+        COMPLETED_QUESTIONS.add(question_id)
+        global WAIT_DIRECTIVE_USED
+        directive = "wait-judge-control" if "evidence_bundle" in payload else "wait-consumer-control"
+        if directive in _directives(str(question["question"])) and not WAIT_DIRECTIVE_USED:
+            WAIT_DIRECTIVE_USED = True
+            break
         if "exit-after-first-report" in _directives(str(question["question"])):
             # T-G4-7: die mid-batch after one accepted report, like a crashed child.
             sys.stdout.flush()
@@ -343,6 +354,8 @@ def _judge_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dict[s
     submitted: list[dict[str, Any]] = []
     for question in payload["questions"]:
         question_id = str(question["question_id"])
+        if question_id in COMPLETED_QUESTIONS:
+            continue
         question_entries = [entry for entry in entries if str(entry.get("question_id")) == question_id]
         evidence = ",".join(
             f"{Path(str(entry.get('source'))).name}:{str(entry.get('content_digest'))[7:19]}"
@@ -390,12 +403,37 @@ def _judge_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dict[s
             "note": note,
         }
         submitted.append(_submit_report("submit_examiner_report", report))
+        COMPLETED_QUESTIONS.add(question_id)
+        global WAIT_DIRECTIVE_USED
+        directive = "wait-judge-control" if "evidence_bundle" in payload else "wait-consumer-control"
+        if directive in _directives(str(question["question"])) and not WAIT_DIRECTIVE_USED:
+            WAIT_DIRECTIVE_USED = True
+            break
     return submitted
 
 
 def _serve_turn(text: str) -> dict[str, Any]:
     mounted = _mounted_prompts()
-    payload = _parse_packet(text)
+    global ORIGINAL_PACKET
+    if "PACKET_JSON=" not in text and "TRANSPORT_JSON=" not in text:
+        outer = json.loads(text)
+        control = json.loads(outer["text"])
+        action = control["action"]
+        if action in {"pause", "resume"}:
+            acknowledgement = {"request_id": control["request_id"], "action": action}
+            if len(COMPLETED_QUESTIONS) == len(ORIGINAL_PACKET["questions"]):
+                return {"flow_confirmation": acknowledgement, "text": "original retained Consumer"}
+            result = _mcp_call("examiner_report", "record_flow_confirmation", acknowledgement, typed=False)
+            if not result["ok"]:
+                raise RuntimeError("fixture flow acknowledgement failed: " + str(result))
+            if action == "pause":
+                return {"waiting": True, "remaining_questions": [q["question_id"] for q in ORIGINAL_PACKET["questions"] if q["question_id"] not in COMPLETED_QUESTIONS]}
+        elif action == "consult":
+            return {"text": "scoped read-only reply on the original Consumer thread", "completed_questions": sorted(COMPLETED_QUESTIONS)}
+        payload = ORIGINAL_PACKET
+    else:
+        payload = _parse_packet(text)
+        ORIGINAL_PACKET = payload
     is_judge = "evidence_bundle" in payload
     submitted = _judge_turn(payload, mounted) if is_judge else _platform_turn(payload, mounted)
     rejected = [item for item in submitted if not item["ok"]]
@@ -418,6 +456,7 @@ def _serve_turn(text: str) -> dict[str, Any]:
 def main() -> int:
     _spawn_mounted_mcp_servers()
     thread_id = "thr-fixture-acceptance"
+    turn_number = 0
     for line in sys.stdin:
         try:
             request = json.loads(line)
@@ -444,8 +483,10 @@ def main() -> int:
                 ]
             }
         elif method == "turn/start":
+            turn_number += 1
+            turn_id = "turn-fixture-" + str(turn_number)
             sys.stdout.write(
-                json.dumps({"jsonrpc": "2.0", "id": request_id, "result": {"turn": {"id": "turn-fixture-1"}}})
+                json.dumps({"jsonrpc": "2.0", "id": request_id, "result": {"turn": {"id": turn_id}}})
                 + "\n"
             )
             sys.stdout.flush()
@@ -454,13 +495,15 @@ def main() -> int:
                 if isinstance(item, dict) and isinstance(item.get("text"), str):
                     text += item["text"]
             summary = _serve_turn(text)
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": "thread/tokenUsage/updated", "params": {"threadId": thread_id, "turnId": turn_id, "tokenUsage": {"total": {"inputTokens": turn_number * 100, "outputTokens": turn_number * 20}}}}) + "\n")
+            sys.stdout.write(json.dumps({"jsonrpc": "2.0", "method": "item/completed", "params": {"threadId": thread_id, "turnId": turn_id, "item": {"id": "message-" + turn_id, "type": "agentMessage", "text": json.dumps(summary)}}}) + "\n")
             for method_name in ("turn/completed", "turn/finished"):
                 sys.stdout.write(
                     json.dumps(
                         {
                             "jsonrpc": "2.0",
                             "method": method_name,
-                            "params": {"threadId": thread_id, "turnId": "turn-fixture-1"},
+                            "params": {"threadId": thread_id, "turnId": turn_id},
                         }
                     )
                     + "\n"

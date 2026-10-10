@@ -553,7 +553,70 @@ class PlatformScope:
         ):
             raise PlatformScopeError("Protocol key creation failed")
 
+    def seal_work(self, session_ids: list[str] | None = None) -> dict[str, Any]:
+        """Close this run's write authority without deleting its model or read owner."""
+        cached = getattr(self, "_work_seal", None)
+        if cached is not None:
+            return dict(cached)
+        terminal = self._work_terminal_state(session_ids or [])
+        if terminal.get("cleanup_blocker") or terminal.get("success_blocker"):
+            raise PlatformScopeError(str(terminal))
+        evidence = {"project_id": self.project_id, "ontology_ids": list(self.ontology_ids),
+                    "terminal": terminal, "resources_retained": True}
+        evidence["model_revisions"] = {ontology_id: self._single_ontology_context(ontology_id).get("model_revision")
+                                       for ontology_id in self.ontology_ids}
+        if any(revision is None for revision in evidence["model_revisions"].values()):
+            raise PlatformScopeError("model revision readback is unavailable")
+        keys = (self.protocol_key_id, self.protocol_key, self.admin_key_id, self.admin_key)
+        if self.protocol_key_id and not self._revoke_project_key(evidence):
+            self.protocol_key_id, self.protocol_key = keys[:2]
+            raise PlatformScopeError("owned protocol write key revocation is unconfirmed")
+        self._revoke_keys(evidence)
+        if evidence.get("admin_key_revoked") is False:
+            self.admin_key_id, self.admin_key = keys[2:]
+            raise PlatformScopeError("owned admin write key revocation is unconfirmed")
+        evidence["write_credentials_non_active"] = True
+        self._work_seal = evidence
+        return dict(evidence)
+
+    def _work_terminal_state(self, session_ids: list[str]) -> dict[str, Any]:
+        # Work sealing applies to owned, existing and checkpoint scopes alike. It
+        # only observes terminal resources; it neither cancels nor deletes them.
+        build = self._ok("GET", f"/api/projects/{self.project_id}/build-context")
+        state = build.get("agent_state", {})
+        active, recent = state.get("active_sessions", []), state.get("recent_sessions", [])
+        if not isinstance(active, list) or not isinstance(recent, list):
+            raise PlatformScopeError("work Build Session inventory is malformed")
+        summaries = active + recent
+        if any(not isinstance(item, dict) or not isinstance(item.get("id"), str) for item in summaries):
+            raise PlatformScopeError("work Build Session identity is malformed")
+        identities = set(session_ids)
+        identities.update(item["id"] for item in summaries)
+        observed = []
+        for identity in sorted(identities):
+            detail = self._ok("GET", f"/api/build-sessions/{identity}")
+            involved = set(detail.get("involved_ontology_ids", []))
+            if not involved.intersection(self.ontology_ids) and identity not in session_ids:
+                continue
+            session = detail.get("session", {})
+            if session.get("project_id") != self.project_id:
+                raise PlatformScopeError("work Build Session project binding changed")
+            if session.get("status") not in {"completed", "cancelled"}:
+                raise PlatformScopeError(f"work Build Session {identity} is not terminal")
+            leases, batches = detail.get("leases", []), detail.get("modeling_batches", [])
+            if not isinstance(leases, list) or not isinstance(batches, list):
+                raise PlatformScopeError(f"work Build Session {identity} resource inventory is malformed")
+            if any(not isinstance(lease, dict) or lease.get("state") != "released" for lease in leases):
+                raise PlatformScopeError(f"work Build Session {identity} has an unreleased Lease")
+            if any(batch.get("latest_attempt", {}).get("attempt_status") in {"applying", "recovering"}
+                   for batch in batches):
+                raise PlatformScopeError(f"work Build Session {identity} has an in-flight Attempt")
+            observed.append(identity)
+        return {"sessions_terminal": True, "session_ids": observed}
+
     def cleanup(self) -> dict[str, Any]:
+        if getattr(self, "_work_seal", None) is not None:
+            return {**self._work_seal, "scope_disposition": "sealed-retained"}
         evidence: dict[str, Any] = {
             "mode": self.mode,
             "project_id": self.project_id,

@@ -28,6 +28,7 @@ from .model_routing import (
 from .runtimes.delivery import DeliveryRuntime, DeliveryRuntimeError
 from .delivery_verification import start_verification, verification_status, stop_verification
 from .efficiency import begin_round, summarize_round
+from .delivery_conversation import ConversationLog, ConversationServer, ConversationError, now
 
 _PUBLIC_KINDS = {"status", "business_question", "decision_request", "final"}
 _READ = {
@@ -75,12 +76,14 @@ _LOCAL_SPECS = [
     {"name": "emit_user_message", "description": "Publish a business-facing message only.",
      "inputSchema": {"type": "object", "properties": {
          "kind": {"enum": sorted(_PUBLIC_KINDS)}, "text": {"type": "string"},
-         "question_delivery_id": {"type": "string"}}, "required": ["kind", "text"],
+         "question_delivery_id": {"type": "string"},
+         "reply_to_message_ids": {"type": "array", "items": {"type": "string"}},
+         "resolved_question_ids": {"type": "array", "items": {"type": "string"}}}, "required": ["kind", "text"],
          "additionalProperties": False}},
     {"name": "read_delivery_artifact", "description": "Read approved sources or bound private run evidence.",
      "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}},
                      "required": ["path"], "additionalProperties": False}},
-    {"name": "finish_delivery", "description": "End supervision after reporting final verified result and limits.",
+    {"name": "finish_delivery", "description": "Record verified result and limits, then retain this Delivery and the existing Team in standby. Only explicit user/Host stop destroys them.",
      "inputSchema": {"type": "object", "properties": {"conclusion": {"type": "string"}},
                      "required": ["conclusion"], "additionalProperties": False}},
     {"name": "prepare_repair_task", "description": "Create a narrow, publicly evidenced repair task under the selected repair scope.",
@@ -96,6 +99,14 @@ _LOCAL_SPECS = [
     {"name": "get_repair_verification_status", "description": "Read actual fixed-check, deployment and health receipts; drift invalidates retained PASS.",
      "inputSchema": {"type": "object", "properties": {"operation_id": {"type": "string"}},
                      "required": ["operation_id"], "additionalProperties": False}},
+    {"name": "record_flow_confirmation", "description": "Record actual sourced Agent acknowledgements of pause/resume. A delivered instruction alone is not a confirmation or a write seal.",
+     "inputSchema": {"type": "object", "properties": {
+         "message_id": {"type": "string"}, "action": {"enum": ["pause", "resume"]},
+         "status": {"enum": ["pending", "effective", "failed", "unknown"]},
+         "evidence_references": {"type": "array", "items": {"type": "string"}},
+         "limitations": {"type": "string"}},
+         "required": ["message_id", "action", "status", "evidence_references"],
+         "additionalProperties": False}},
 ]
 
 
@@ -105,6 +116,12 @@ class DeliverySession:
         self.repository_root = repository_root.resolve()
         self.session_root = session_root.resolve()
         self.config = copy.deepcopy(config)
+        self.project_id = config.get("project_id") or config.get("readback_scope", {}).get("project_id")
+        self.authorization_valid_until = config.get("authorization_valid_until")
+        self.activity = "active"
+        self.work_result = None
+        self.conversation = None
+        self.flow_confirmation = None
         self.session_id = config["session_id"]
         if not isinstance(self.session_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}", self.session_id):
             raise ValueError("session_id is required")
@@ -136,14 +153,28 @@ class DeliverySession:
                 raise ValueError("resumption requires the original authorization reference")
             if previous["model_binding"] != self.binding.as_dict():
                 raise ValueError("resumption requires the original model binding")
+            if previous.get("project_id") and previous["project_id"] != self.project_id:
+                raise ValueError("resumption requires the original project binding")
+            if previous.get("authorization_valid_until") != self.authorization_valid_until:
+                raise ValueError("resumption cannot change the original authorization deadline")
             self.run_ids.update(previous["run_ids"])
             self.operation_ids.update(previous["operation_ids"])
             self.operation_kinds.update(previous.get("operation_kinds", {}))
             self.verification_ids.update(previous.get("verification_ids", []))
             self.repair_task_files.update(Path(x) for x in previous.get("repair_task_files", []))
             self.allowed_operations.intersection_update(previous["allowed_operations"])
+            self.activity = previous.get("activity", "active")
+            self.work_result = previous.get("work_result")
         else:
             self.session_root.mkdir(parents=True, exist_ok=False, mode=0o700)
+        if self.project_id:
+            if not isinstance(self.project_id, str):
+                raise ValueError("project_id must be an explicit string binding")
+            for scope in self._readback_scopes():
+                if scope.get("project_id") and scope["project_id"] != self.project_id:
+                    raise ValueError("bound runs must belong to the same project")
+            self.conversation = ConversationLog(self.session_root, project_id=self.project_id,
+                                                delivery_session_id=self.session_id)
         timing = config.get("efficiency_round")
         if timing is not None:
             timing_path = self.session_root / "efficiency-round.json"
@@ -172,6 +203,9 @@ class DeliverySession:
 
     def _save(self, state: str, **extra: Any) -> None:
         record = {"schema_version": 1, "session_id": self.session_id,
+                  "project_id": self.project_id, "activity": self.activity,
+                  "work_result": self.work_result,
+                  "authorization_valid_until": self.authorization_valid_until,
                   "authorization_reference": self.authorization, "state": state,
                   "run_ids": sorted(self.run_ids), "operation_ids": sorted(self.operation_ids),
                   "operation_kinds": self.operation_kinds,
@@ -189,6 +223,12 @@ class DeliverySession:
         temporary.write_text(json.dumps(record, ensure_ascii=False, indent=2))
         self._append("session-events.jsonl", record)
         temporary.replace(self.session_root / "session.json")
+        if self.conversation:
+            state = {"activity": self.activity, "observed_at": now(), "basis": "delivery_state",
+                     "delivery_result": self.work_result}
+            if state != getattr(self, "_public_state", None):
+                self.conversation.append("session_state", state=state)
+                self._public_state = state
 
     def _append(self, filename: str, value: dict) -> None:
         with (self.session_root / filename).open("a") as handle:
@@ -203,15 +243,43 @@ class DeliverySession:
                   "input_role": self.business_input_role,
                   "source_reference": f"delivery:{self.session_id}:{self.business_input_role}:{uuid.uuid4().hex}",
                   "authorization_reference": self.authorization}
-        self._append("user-input.jsonl", packet)
+        if not self.conversation:
+            self._append("user-input.jsonl", packet)
+        return packet
+
+    def sourced_packet(self, message: dict) -> dict:
+        packet = {**message, "kind": "user_input", "message_kind": message["kind"],
+                  "input_role": "test-answerer" if message["sender"]["kind"] == "test_answerer" else "user",
+                  "authorization_reference": self.authorization,
+                  "source_reference": message.get("source_reference") or f"delivery:{self.session_id}:{message['message_id']}"}
+        if message.get("reply_to_message_id"):
+            original = self.conversation.receipt(message["reply_to_message_id"])
+            packet["question"] = {"message_id": original["message_id"], "text": original["text"],
+                                  "question_delivery_id": original.get("question_delivery_id")}
+        if message.get("action") in {"pause", "resume"}:
+            self.flow_confirmation = message["message_id"]
+            self.activity = "pause_pending" if message["action"] == "pause" else self.activity
+            packet["flow_instruction"] = (
+                "Relay this user/Host instruction to the actual current Coordinator, or evaluation owner "
+                "and current Consumer/Judge. Agents stop continuing their tasks and acknowledge waiting. "
+                "Resume only on the explicit next instruction, using the original task/thread; do not use "
+                "pause_run/resume_live_run, revoke permissions, freeze processes or interrupt inference. "
+                "Record actual acknowledgements separately from mere delivery and disclose in-flight calls."
+            )
+            self.conversation.append("control_result", message_id=message["message_id"],
+                                     action=message["action"], status="pending", basis="awaiting_agent_confirmation")
+            self._save("active")
         return packet
 
     def apply_user_control(self, text: str) -> dict | None:
-        if text not in {"暂停", "取消", "撤回预算"}:
+        if text in {"暂停", "继续"}:
+            # Cooperative instructions are handled by Delivery, never a launch gate.
+            return None
+        if text not in {"取消", "撤回预算", "停止"}:
             return None
         # Business controls prevent new launches before the native model replies.
         self.allowed_operations -= {"production", "evaluation", "repair"}
-        name = "pause_run" if text == "暂停" else "stop_run"
+        name = "stop_run"
         results = {}
         if text != "撤回预算":
             for run_id in sorted(self.run_ids):
@@ -223,7 +291,7 @@ class DeliverySession:
                         **arguments, repository_root=self.repository_root)}
                 except HostOpError as exc:
                     results[run_id] = {"ok": False, "error": exc.as_envelope()}
-        if text in {"取消", "撤回预算"}:
+        if text in {"取消", "撤回预算", "停止"}:
             for operation_id in sorted(self.verification_ids):
                 results["verification:" + operation_id] = stop_verification(
                     operation_id=operation_id, session_root=self.session_root)
@@ -233,7 +301,10 @@ class DeliverySession:
                         operation_id=operation_id, reason=text, repository_root=self.repository_root)}
                 except HostOpError as exc:
                     results[operation_id] = {"ok": False, "error": exc.as_envelope()}
-        self._save("paused" if text == "暂停" else "cancelled" if text == "取消" else "budget_revoked")
+        if text == "停止":
+            self.activity = "stopping"
+            self.stop_pending = True
+        self._save("stopping" if text == "停止" else "cancelled" if text == "取消" else "budget_revoked")
         return {"control": text, "launch_permissions_revoked": True, "results": results}
 
     def drain_messages(self) -> list[dict]:
@@ -298,7 +369,7 @@ class DeliverySession:
                 continue
         return scopes
 
-    def call_tool(self, name: str, arguments: dict) -> dict:
+    def call_tool(self, name: str, arguments: dict, *, call_identity: str | None = None) -> dict:
         try:
             if name not in self._tools:
                 raise ValueError("undeclared Delivery tool")
@@ -324,14 +395,54 @@ class DeliverySession:
                 return {"ok": True, "data": report}
             if name == "emit_user_message":
                 message = dict(arguments)
+                if self.conversation:
+                    published = self.conversation.publish(message, call_identity)
+                    self.messages.append(published)
+                    return {"ok": True, "data": {"message_id": published["message_id"]}}
                 self.messages.append(message)
                 self._append("public-messages.jsonl", message)
                 return {"ok": True}
             if name == "read_delivery_artifact":
                 return {"ok": True, "data": self._read_artifact(arguments["path"])}
             if name == "finish_delivery":
-                self.finished = True
-                self._save("completed", conclusion=arguments["conclusion"])
+                self.work_result = arguments["conclusion"]
+                results = {}
+                for run_id in sorted(self.run_ids):
+                    results[run_id] = self.call_tool("standby_run", {"run_id": run_id})
+                observation = self.observe()
+                runs_closed = all(x["status"].get("ok") and x["status"].get("data", {}).get("recorded_state", {}).get("lifecycle") == "standby"
+                                  for x in observation["runs"].values())
+                pending_owners = []
+                for operation_id, status in observation["operations"].items():
+                    data = status.get("data", {})
+                    closed = data.get("work_state") == "completed" or (
+                        data.get("status") in {"exited", "stopped", "failed"}
+                        and isinstance(data.get("exit_code"), int))
+                    if not status.get("ok") or not closed:
+                        pending_owners.append(operation_id)
+                for operation_id, status in observation["repair_verifications"].items():
+                    if not status.get("ok") or status.get("data", {}).get("process", {}).get("state") != "exited":
+                        pending_owners.append(operation_id)
+                self.activity = "standby" if runs_closed and not pending_owners else "read_only_wait"
+                self._save(self.activity, conclusion=self.work_result)
+                return {"ok": True, "data": {"activity": self.activity, "runs": results,
+                    "pending_owners": pending_owners,
+                    "note": "Work result recorded; original Team retained until explicit stop. This is not semantic PASS."}}
+            if name == "record_flow_confirmation":
+                if not self.conversation:
+                    raise ValueError("unified conversation has not been enabled")
+                original = self.conversation.receipt(arguments["message_id"])
+                if not original or original.get("action") != arguments["action"]:
+                    raise ValueError("confirmation must bind the actual control message")
+                if arguments["status"] == "effective" and not arguments["evidence_references"]:
+                    raise ValueError("effective requires actual Agent acknowledgement references")
+                self.conversation.append("control_result", message_id=arguments["message_id"],
+                    action=arguments["action"], status=arguments["status"],
+                    basis={"evidence_references": arguments["evidence_references"],
+                           "limitations": arguments.get("limitations")})
+                if arguments["status"] == "effective":
+                    self.activity = "paused" if arguments["action"] == "pause" else "active"
+                self._save("active")
                 return {"ok": True}
             if name == "prepare_repair_task":
                 if "repair" not in self.allowed_operations:
@@ -398,6 +509,11 @@ class DeliverySession:
                 return {'ok': True, 'data': data}
             if self._permission(name) not in self.allowed_operations:
                 raise ValueError("operation is outside the recorded authorization")
+            if self._permission(name) in {"production", "evaluation", "repair"} and self.authorization_valid_until:
+                from datetime import datetime, UTC
+                deadline = datetime.fromisoformat(self.authorization_valid_until.replace("Z", "+00:00"))
+                if deadline.tzinfo is None or datetime.now(UTC) >= deadline:
+                    raise ValueError("original authorization expired; no automatic renewal")
             args = dict(arguments)
             if "base_url" in inspect.signature(getattr(host_ops_mcp, name)).parameters:
                 args["base_url"] = self.config.get("base_url")
@@ -405,7 +521,7 @@ class DeliverySession:
                 value = args.get(key)
                 if value and not (key == "run_id" and name == "start_run") and value not in self.run_ids:
                     raise ValueError("run is outside this Delivery session")
-            if name in {"get_evaluation_status", "get_repair_status", "stop_delivery_operation"}:
+            if name in {"get_evaluation_status", "get_repair_status", "stop_delivery_operation", "relay_evaluation_message"}:
                 if args["operation_id"] not in self.operation_ids:
                     raise ValueError("operation is outside this Delivery session")
             if name in _PRODUCTION:
@@ -526,7 +642,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         instructions += "\n" + (repository_root / "modeling_team/references/efficiency-round-record.md").read_text()
     providers = None
     runtime = None
-    incoming: queue.Queue[str | None] = queue.Queue()
+    server = None
+    incoming: queue.Queue = queue.Queue()
 
     def read_input() -> None:
         import sys
@@ -551,6 +668,16 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         session.native_pid = runtime.process.pid
         session._save("active", native_thread_id=runtime.thread_id,
                       native_pid=runtime.process.pid, service_tier=config.get("service_tier", "unset"))
+        if session.conversation:
+            server = ConversationServer(repository_root, session.conversation, incoming.put,
+                lambda: {"native_available": runtime.process.poll() is None,
+                         "activity": session.activity})
+            server.start()
+            # Only never-attempted accepted messages can be requeued on explicit Host resume.
+            for message in session.conversation.snapshot()["messages"]:
+                if message.get("dispatch") == "pending":
+                    incoming.put({key: value for key, value in message.items() if key not in {
+                        "received_seq", "recorded_at", "dispatch", "dispatch_reason", "control"}})
         threading.Thread(target=read_input, daemon=True).start()
         runtime.send(json.dumps({"kind": "delivery_resume" if resume else "delivery_start", "config": config,
                                   "observed_state": session.observe() if resume else None,
@@ -571,20 +698,80 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 if text is None:
                     eof = True
                 else:
-                    packet = session.accept_user_input(text)
-                    control = session.apply_user_control(text)
+                    if session.conversation:
+                        if isinstance(text, str):
+                            import uuid
+                            action = {"暂停": "pause", "继续": "resume", "取消": "cancel", "撤回预算": "revoke_budget", "停止": "stop"}.get(text)
+                            actor = {"kind": "test_answerer" if session.business_input_role == "test-answerer" else "user",
+                                     "reference": session.session_id}
+                            message = {"message_id": str(uuid.uuid4()), "kind": "control" if action else "message",
+                                       "text": text, "sender": actor, "submitted_by": actor, "entrypoint": "stdin"}
+                            if action:
+                                message["action"] = action
+                            try:
+                                _, created = session.conversation.receive(message)
+                            except ConversationError as exc:
+                                print(f"Delivery input not accepted: {exc.code}", flush=True)
+                                continue
+                            if not created:
+                                continue
+                        else:
+                            message = text
+                        packet = session.sourced_packet(message)
+                        control_text = {"cancel": "取消", "revoke_budget": "撤回预算", "stop": "停止"}.get(message.get("action"), "")
+                    else:
+                        packet = session.accept_user_input(text)
+                        control_text = text
+                    control = session.apply_user_control(control_text)
                     if control is not None:
                         packet["host_control_result"] = control
+                        if session.conversation:
+                            session.conversation.append("control_result", message_id=packet["message_id"],
+                                action=message["action"], status="pending", basis="host_control_submitted")
                         runtime.interrupt()
                     pending_input.append(packet)
+                    if control_text == "停止":
+                        session.stop_message_id = packet.get("message_id")
+            if getattr(session, "stop_pending", False):
+                # Submission is not process exit. Keep the Delivery owner online until bound
+                # owners have actually stopped; do not start inference while collecting exits.
+                observation = session.observe()
+                runs_stopped = all(
+                    result.get("status", {}).get("data", {}).get("recorded_state", {}).get("state") in {"CLEANED", "STOPPED"}
+                    and (result.get("status", {}).get("data", {}).get("liveness", {}).get("process_observation", {}).get("pid_alive") is False
+                         or result.get("status", {}).get("data", {}).get("liveness", {}).get("process_observation", {}).get("report", {}).get("writer_process_exited") is True)
+                    for result in observation.get("runs", {}).values())
+                operations_stopped = all(result.get("data", {}).get("status") in {"exited", "stopped", "launch_failed"}
+                                         for result in observation.get("operations", {}).values())
+                verifications_stopped = all(result.get("data", {}).get("process", {}).get("state") != "running"
+                                             and result.get("ok") is True
+                                             for result in observation.get("repair_verifications", {}).values())
+                if runs_stopped and operations_stopped and verifications_stopped:
+                    session.finished = True
+                    session.activity = "stopped"
+                    session._save("stopped")
+                    if session.conversation and getattr(session, "stop_message_id", None):
+                        session.conversation.append("control_result", message_id=session.stop_message_id,
+                                                    action="stop", status="effective", basis="bound_owners_exited")
+                continue
             if runtime.busy and pending_input and steer_blocked_turn != runtime.turn_id:
                 # An active turn must not starve later sourced input: deliver
                 # the original packets promptly onto the same live thread and
                 # turn through the supported turn/steer API, in queue order.
                 while pending_input and runtime.busy and steer_blocked_turn != runtime.turn_id:
+                    current = pending_input[0]
+                    if session.conversation:
+                        session.conversation.append("dispatch_started", message_id=current["message_id"],
+                            dispatch_attempt_id=__import__("uuid").uuid4().hex)
                     try:
-                        runtime.steer(json.dumps(pending_input[0], ensure_ascii=False))
-                    except DeliveryRuntimeError:
+                        runtime.steer(json.dumps(current, ensure_ascii=False))
+                    except DeliveryRuntimeError as exc:
+                        if session.conversation:
+                            rejected = exc.category == "rejected"
+                            session.conversation.append("dispatch_result", message_id=current["message_id"],
+                                status="rejected" if rejected else "unknown", reason="native_rejected" if rejected else "native_receipt_unknown")
+                            if not rejected:
+                                pending_input.pop(0)
                         # End-of-turn race: the turn completed server-side
                         # between the busy check and the steer request.  Keep
                         # the packet queued; the idle branch below delivers it
@@ -593,6 +780,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         steer_blocked_turn = runtime.turn_id
                         break
                     pending_input.pop(0)
+                    if session.conversation:
+                        session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native")
             # Continue program observation during an active inference too. Send
             # decisions on its current turn; a heartbeat never starts a turn.
             if (runtime.busy and (session.run_ids or session.operation_ids or session.verification_ids)
@@ -611,7 +800,20 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     pending_observation = None
             if not runtime.busy:
                 if pending_input:
-                    runtime.send(json.dumps(pending_input.pop(0), ensure_ascii=False))
+                    current = pending_input.pop(0)
+                    if session.conversation:
+                        session.conversation.append("dispatch_started", message_id=current["message_id"],
+                            dispatch_attempt_id=__import__("uuid").uuid4().hex)
+                    try:
+                        runtime.send(json.dumps(current, ensure_ascii=False))
+                    except DeliveryRuntimeError:
+                        if session.conversation:
+                            session.conversation.append("dispatch_result", message_id=current["message_id"], status="unknown", reason="native_receipt_unknown")
+                        else:
+                            raise
+                    else:
+                        if session.conversation:
+                            session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native")
                     steer_blocked_turn = None
                 elif pending_observation is not None:
                     runtime.send(json.dumps(pending_observation, ensure_ascii=False))
@@ -622,7 +824,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     next_observation = time.monotonic() + 2
                     if session.record_observation(observation):
                         runtime.send(json.dumps({"kind": "host_observation", "data": observation}, ensure_ascii=False))
-                    elif eof:
+                    elif eof and server is None:
                         session._save("supervision_interrupted", reason="business input closed", observation=observation)
                         return 2
         return 0
@@ -634,6 +836,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                       error_type=type(exc).__name__, observation=session.observe())
         raise
     finally:
+        if server is not None:
+            server.close()
         if runtime is not None:
             runtime.close()
             session._append("session-events.jsonl", {

@@ -295,9 +295,9 @@ def _build_scenario(tmp: Path, *, drift_after: int = 0, fail_read_after: int = 0
     }
 
 
-def _run_cli(scenario: dict, *extra: str, timeout: float = 45.0) -> dict:
+def _run_cli(scenario: dict, *extra: str, timeout: float = 45.0, flow_role: str | None = None, consult: bool = False) -> dict:
     preexisting = {item.name for item in Path("/tmp").glob("r3011-acceptance-*")}
-    completed = subprocess.run(
+    process = subprocess.Popen(
         [
             sys.executable,
             str(CLI_ENTRY),
@@ -315,11 +315,80 @@ def _run_cli(scenario: dict, *extra: str, timeout: float = 45.0) -> dict:
             *extra,
         ],
         env=scenario["env"],
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=timeout,
         cwd=str(scenario["tmp"]),
     )
+    import time
+    import uuid
+    deadline = time.monotonic() + timeout
+    owner_path = scenario["run_root"] / "control" / ("evaluation-" + scenario["batch_id"])
+    scenario["retained_owner"] = None
+    pause_id, resume_id, consult_id = None, None, None
+    waiting_since = None
+    waiting_identity = None
+    fixed_report = None
+
+    def send(action, identity):
+        with (owner_path / "input.fifo").open("w") as handle:
+            handle.write(json.dumps({"request_id": identity, "action": action, "text": "explicit fixture Host " + action}) + "\n")
+
+    while process.poll() is None and time.monotonic() < deadline:
+        try:
+            owner = json.loads((owner_path / "state.json").read_text())
+        except (OSError, ValueError):
+            owner = {}
+        current = owner.get("current") or {}
+        if flow_role and current.get("role") == flow_role and pause_id is None:
+            pause_id = str(uuid.uuid4())
+            waiting_identity = (current["thread_id"], current["pid"])
+            send("pause", pause_id)
+        if pause_id and owner.get("receipts", {}).get(pause_id, {}).get("status") == "effective" and resume_id is None:
+            assert current.get("user_waiting") is True
+            assert (current["thread_id"], current["pid"]) == waiting_identity
+            assert not owner.get("task_closed")
+            waiting_since = waiting_since or time.monotonic()
+            if time.monotonic() - waiting_since > 2.5:
+                resume_id = str(uuid.uuid4())
+                scenario["waiting_identity"] = waiting_identity
+                scenario["waiting_confirmed"] = owner
+                send("resume", resume_id)
+        if owner.get("task_closed"):
+            if flow_role:
+                assert resume_id and owner["receipts"][resume_id]["status"] == "effective", owner
+            scenario["retained_owner"] = owner
+            report_path = scenario["run_root"] / "acceptance-v3/reports" / scenario["batch_id"] / "batch-report.json"
+            if consult and consult_id is None:
+                fixed_report = report_path.read_bytes()
+                consult_id = str(uuid.uuid4())
+                send("consult", consult_id)
+                continue
+            if consult:
+                if not any("scoped read-only reply" in entry.get("text", "") for entry in owner.get("consult_replies", [])):
+                    time.sleep(0.02)
+                    continue
+                assert report_path.read_bytes() == fixed_report
+                scenario["consult_owner"] = owner
+                assert owner["retained_members"][0]["alive"] is True
+            if (owner_path / "input.fifo").exists():
+                with (owner_path / "input.fifo").open("w") as handle:
+                    handle.write(json.dumps({"request_id": str(uuid.uuid4()), "action": "stop", "text": "explicit fixture Host stop"}) + "\n")
+            break
+        time.sleep(0.02)
+    try:
+        stdout, stderr = process.communicate(timeout=max(0.1, deadline - time.monotonic()))
+    except subprocess.TimeoutExpired:
+        if (owner_path / "input.fifo").exists() and process.poll() is None:
+            send("stop", str(uuid.uuid4()))
+        try:
+            stdout, stderr = process.communicate(timeout=3)
+        except subprocess.TimeoutExpired:
+            process.kill()
+            stdout, stderr = process.communicate()
+        raise AssertionError(f"CLI did not publish/stop: {stdout[-1000:]} {stderr[-1000:]}")
+    completed = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+    scenario["final_owner"] = json.loads((owner_path / "state.json").read_text()) if (owner_path / "state.json").exists() else None
     scenario["preexisting_roots"] = preexisting
     scenario["proc"] = completed
     scenario["stdout_json"] = None
@@ -426,12 +495,16 @@ def _assert_batch_cleanup(report: dict, expected_children: int = 2) -> None:
     """
 
     cleanup = report["sessions"]["cleanup"]
-    assert cleanup["forwarder_stopped"] is True, cleanup
-    assert cleanup["forwarder_still_active"] is False
-    assert cleanup["children_destroyed"] is True, cleanup
+    assert cleanup["forwarder_stopped"] is True or cleanup.get("forwarder_retained") is True, cleanup
+    assert cleanup["forwarder_still_active"] is bool(cleanup.get("forwarder_retained"))
+    assert cleanup["tasks_closed"] is True, cleanup
     children = cleanup["children"]
     assert len(children) == expected_children, children
     for child in children:
+        if child.get("consumer_retained"):
+            assert child["task_closed"] and child["child_alive"] and child["thread_id"] and child["owner_pid"], child
+            assert child["child_destroyed"] is False and child["report_sink_stopped"] is True, child
+            continue
         assert child["child_stopped"] is True and child["child_destroyed"] is True, child
         assert child["proxy_stopped"] is True, child
         assert child["report_sink_stopped"] is True, child
@@ -740,3 +813,21 @@ def _patch_first_question_directive(scenario: dict, directive: str) -> None:
     handoff_path.write_text(json.dumps(handoff), encoding="utf-8")
     scenario["handoff"] = handoff_path
     scenario["batch_id"] = reloaded["batch_id"]
+
+
+@pytest.mark.parametrize("role,directive", [("platform-examiner", "wait-consumer-control"), ("acceptance", "wait-judge-control")])
+def test_native_owner_waits_on_original_thread_resumes_remaining_reports_and_retains_consumer(tmp_path, role, directive):
+    scenario = _build_scenario(tmp_path)
+    _patch_first_question_directive(scenario, directive)
+    result = _run_cli(scenario, "--session-timeout", "2", flow_role=role, consult=True)
+    assert result["proc"].returncode == 0, result["proc"].stderr
+    assert result["report"]["full_pass"] is True
+    assert [report["question_id"] for report in result["report"]["examiner_reports"]] == result["question_ids"]
+    assert [report["question_id"] for report in result["report"]["verdicts"]] == result["question_ids"]
+    retained = result["consult_owner"]["retained_members"][0]
+    teardown = next(child for child in result["report"]["sessions"]["cleanup"]["children"] if child.get("consumer_retained"))
+    assert (retained["thread_id"], retained["pid"]) == (teardown["thread_id"], teardown["pid"])
+    final = result["final_owner"]
+    assert final["lifecycle"] == "stopped" and not final["retained_members"]
+    assert all(item["alive"] is False and item["child_destroyed"] and item["private_root_removed"] for item in final["destroyed_members"])
+    assert not result["new_private_roots"]

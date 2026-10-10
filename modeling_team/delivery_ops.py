@@ -1400,6 +1400,8 @@ def start_evaluation(
         argv.extend(["--model-profile", model_profile])
     if timeout is not None:
         argv.extend(["--session-timeout", str(timeout)])
+    if mode == "cq-acceptance":
+        argv.extend(["--owner-root", str(_delivery_dir(repository_root) / (operation_id + ".owner"))])
     request = _evaluation_request(
         run_root=run_root,
         mode=mode,
@@ -1475,6 +1477,13 @@ def get_evaluation_status(
         "ambiguous_new_reports",
     }:
         report_status = "no_new_report"
+    owner_path = _delivery_dir(repository_root) / (operation_id + ".owner") / "state.json"
+    try:
+        owner = json.loads(owner_path.read_text())
+        if owner.get("owner_pid") != record.get("pid"):
+            owner = None
+    except (OSError, ValueError):
+        owner = None
     return {
         "operation_id": operation_id,
         "kind": "evaluation",
@@ -1488,6 +1497,12 @@ def get_evaluation_status(
         "request_binding": record.get("request"),
         "report_status": report_status,
         "report_binding": binding,
+        "work_state": "completed" if owner and owner.get("task_closed") else "working",
+        "lifecycle": owner.get("lifecycle") if owner else "unknown",
+        "retained_members": owner.get("retained_members", []) if owner else [],
+        "current_role": owner.get("current") if owner else None,
+        "control_receipts": owner.get("receipts", {}) if owner else {},
+        "consult_replies": owner.get("consult_replies", []) if owner else [],
         "logs": record.get("log_paths"),
         "record_path": record.get("record_path"),
         "note": "a process exit and a new report do not by themselves prove semantic acceptance",
@@ -1912,6 +1927,42 @@ def _recorded_process_commands(argv: list[Any]) -> tuple[list[str], ...]:
     return tuple(candidates)
 
 
+def relay_evaluation_message(*, operation_id: str, action: str, text: str,
+                             request_id: str | None = None,
+                             repository_root: Path | None = None) -> dict[str, Any]:
+    """Relay sourced controls to the operation's original owner/current role."""
+    import uuid
+    from .host_ops import _write_fifo_line
+    operation_id = _validate_operation_id(operation_id)
+    record = _read_record(operation_id, repository_root)
+    if record.get("kind") != "evaluation" or action not in {"consult", "pause", "resume", "stop"}:
+        raise HostOpError("evaluation_control_invalid", "select a cooperative evaluation action", obj="action",
+                          retryable=True, next_action="use consult, pause, resume, or stop on an evaluation")
+    text = _nonempty(text, "text", max_length=32_000)
+    request_id = _validate_operation_id(request_id or str(uuid.uuid4()))
+    owner_root = _delivery_dir(repository_root) / (operation_id + ".owner")
+    try:
+        owner = json.loads((owner_root / "state.json").read_text())
+    except (OSError, ValueError):
+        raise HostOpError("evaluation_owner_unavailable", "original owner is not online", obj=operation_id,
+                          retryable=True, next_action="query evaluation status; no new owner is started")
+    if owner.get("owner_pid") != record.get("pid"):
+        raise HostOpError("evaluation_owner_mismatch", "owner identity differs", obj=operation_id,
+                          retryable=False, next_action="preserve the operation evidence")
+    message = {"request_id": request_id, "action": action, "text": text}
+    ledger = owner_root / ("request-" + request_id + ".json")
+    if ledger.exists():
+        previous = json.loads(ledger.read_text())
+        if previous["message"] != message:
+            raise HostOpError("request_identity_conflict", "keep the original request payload", obj=request_id,
+                              retryable=False, next_action="use a new ID for a new message")
+        return {"request_id": request_id, **owner.get("receipts", {}).get(request_id, {"status": previous["status"]})}
+    _write_record(ledger, {"message": message, "status": "unknown"}, exclusive=True)
+    _write_fifo_line(owner_root / "input.fifo", (json.dumps(message, ensure_ascii=False) + "\n").encode())
+    _write_record(ledger, {"message": message, "status": "submitted"})
+    return {"request_id": request_id, "status": "submitted", "next_action": "get_evaluation_status"}
+
+
 def stop_delivery_operation(
     *, operation_id: str, reason: str, repository_root: Path | None = None
 ) -> dict[str, Any]:
@@ -1924,6 +1975,11 @@ def stop_delivery_operation(
 
     operation_id = _validate_operation_id(operation_id)
     reason = _nonempty(reason, "reason", max_length=2048)
+    owner_root = _delivery_dir(repository_root) / (operation_id + ".owner")
+    if (owner_root / "input.fifo").exists():
+        result = relay_evaluation_message(operation_id=operation_id, action="stop", text=reason,
+                                          repository_root=repository_root)
+        return {"operation_id": operation_id, "stop_status": "requested", "evidence_retained": True, **result}
     record_path = _record_path(operation_id, repository_root)
     with _RECORD_LOCK:
         record = _read_record(operation_id, repository_root)

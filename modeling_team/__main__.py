@@ -68,6 +68,7 @@ from .competency_questions import (
 )
 from .outer_input import OuterInputFifo, OuterInputFramingError
 from .interventions import RecoverableOuterInputError
+from .host_ops import HostOpError
 from .checkpoints import (
     CHECKPOINT_KIND_PRODUCTION_HANDOFF,
     CheckpointError,
@@ -81,6 +82,8 @@ from .checkpoint_recovery import (
     ACCEPTANCE_CONTINUATION_SCHEMA,
     AcceptanceContinuation,
     acquire_root_run_lock,
+    acquire_acceptance_lock,
+    source_safe_for_acceptance,
     checkpoint_root_run_id,
     http_readback,
     prepare_acceptance_continuation,
@@ -190,6 +193,8 @@ _KNOWN_OUTER_ACTIONS = frozenset(
         "pause",
         "resume",
         "stop",
+        "standby",
+        "consult",
         # 2026-09-14 provider-recovery: host-takeover recovery after the outer
         # owner confirms the external condition lifted.  Bound input errors are
         # typed, no-side-effect rejections; the loop keeps reading.
@@ -280,7 +285,7 @@ def _outer_input_receipt_recorder(runner, message):
     action = message.get("action")
     action_name = action if isinstance(action, str) else None
     digest = content_digest(message)
-    if action_name == "checkpoint":
+    if action_name in {"checkpoint", "standby", "consult", "pause", "resume"}:
         # R3.0-016 S2 (design §3.4): the 015 manifest provenance reads the
         # correlation id back off the envelope, so it is re-injected *after*
         # the digest was taken.  The digest above therefore stays identical on
@@ -472,6 +477,13 @@ def _foreground_event_loop(
         observer = getattr(runner, "observe_foreground_output", None)
         if observer is not None:
             observer(output)
+        if (getattr(runner, "_coordinator_final_captured", False)
+                and getattr(runner, "_standby_receipt", None) is not None
+                and not getattr(runner, "_monitor_work_handed_off", False)):
+            handoff_root = _monitor_handoff_root()
+            if handoff_root is not None:
+                write_runner_phase(handoff_root, "work_completed", run_root=runner.run.root)
+                runner._monitor_work_handed_off = True
 
     def emit_outer_input_rejection(detail: dict[str, object] | None = None) -> None:
         # This is a control-plane error, not a Runner delivery.  Do not route
@@ -487,7 +499,7 @@ def _foreground_event_loop(
         output = runner.drain()
         if output:
             emit_and_observe(output)
-        if _terminal_report_complete(runner):
+        if _terminal_report_complete(runner) and not getattr(runner, "retain_after_work", False):
             return
         if outer_input is None:
             # stdin-only path: behavior is identical to the pre-FIFO loop,
@@ -1681,6 +1693,14 @@ def _cq_collaboration_context(
     return context, collaboration_warnings
 
 
+_CQ_COOPERATIVE_ROLE_INSTRUCTIONS = (
+    " When the owner forwards an actual user pause/resume, acknowledge its original "
+    "request_id/action through record_flow_confirmation. Pause means voluntarily wait "
+    "and end this turn with remaining work disclosed, not submit missing reports. "
+    "On explicit resume continue this same thread and only the remaining questions; "
+    "never repeat accepted reports or change frozen evidence/scope. Waiting preserves "
+    "the unfinished task and does not renew authorization/read-key expiry."
+)
 _CQ_PLATFORM_ROLE_INSTRUCTIONS = (
     "Answer every selected frozen batch question in packet order. For each question use only "
     "the authorized read-only platform reads you need, then call submit_examiner_report "
@@ -1691,6 +1711,7 @@ _CQ_PLATFORM_ROLE_INSTRUCTIONS = (
     "authorized scope; only a genuinely unavailable valid read becomes status "
     "runtime-incomplete with the actual first failure_layer, never a guess."
 )
+_CQ_PLATFORM_ROLE_INSTRUCTIONS += _CQ_COOPERATIVE_ROLE_INSTRUCTIONS
 _CQ_JUDGE_ROLE_INSTRUCTIONS = (
     "Any collaboration_context contains only scoped work states for already visible resources, "
     "never semantic evidence or a completion verdict. Preserve unknown/conflict and incomplete "
@@ -1754,6 +1775,9 @@ _CQ_JUDGE_ROLE_INSTRUCTIONS = (
 )
 
 
+_CQ_JUDGE_ROLE_INSTRUCTIONS += _CQ_COOPERATIVE_ROLE_INSTRUCTIONS
+
+
 def _cq_cleanup_acceptance_resources(
     forwarder: object, child_teardowns: list[dict[str, object]]
 ) -> dict[str, object]:
@@ -1786,6 +1810,15 @@ def _cq_cleanup_acceptance_resources(
             and item.get("private_root_removed") is True
             and item.get("socket_root_removed") is True
             and item.get("destroy_error") is None
+            for item in children
+        ),
+        "tasks_closed": all(
+            (item.get("child_destroyed") is True and item.get("report_sink_stopped") is True
+             and item.get("private_root_removed") is True and item.get("socket_root_removed") is True
+             and item.get("destroy_error") is None)
+            or (item.get("consumer_retained") is True and item.get("task_closed") is True
+                and item.get("child_alive") is True and item.get("thread_id")
+                and item.get("owner_pid") and item.get("report_sink_stopped") is True)
             for item in children
         ),
     }
@@ -2303,6 +2336,7 @@ def _cq_run_platform_session(
         examiner_observables=observables,
         timeout_seconds=float(getattr(args, "session_timeout", 300.0) or 300.0),
         ontology_ids=ontology_ids, teardown=teardown,
+        cooperative_owner=getattr(args, "_retained_owner", None),
     ))
 
 
@@ -2344,6 +2378,9 @@ def _cq_execute_batch(
     """
 
     artifacts = run_root if artifact_root is None else Path(artifact_root)
+    if getattr(args, "_retention_enabled", False) and getattr(args, "_retained_owner", None) is None:
+        from .evaluation_owner import EvaluationOwner
+        args._retained_owner = EvaluationOwner(getattr(args, "owner_root", None) or artifacts / "control" / ("evaluation-" + batch_id))
     read_key = os.environ.get(_CQ_PLATFORM_READ_KEY_ENV)
     if not read_key:
         raise TeamConfigurationError(
@@ -2646,6 +2683,7 @@ def _cq_execute_batch(
                                 getattr(args, "session_timeout", 300.0) or 300.0
                             ),
                             teardown=teardown_judge,
+                            cooperative_owner=getattr(args, "_retained_owner", None),
                         )
                     )
                     sessions["acceptance_judge"] = {
@@ -2677,6 +2715,7 @@ def _cq_execute_batch(
                                 timeout_seconds=float(
                                     getattr(args, "session_timeout", 300.0) or 300.0),
                                 teardown=group_teardown,
+                                cooperative_owner=getattr(args, "_retained_owner", None),
                             )
                             group["status"] = "complete"
                         except (ExaminerRuntimeBlocked, ChildRuntimeError,
@@ -2735,8 +2774,17 @@ def _cq_execute_batch(
     finally:
         # The forwarder is stopped even when a pre-batch gate raised, but the
         # report below records the outcome of the owned-lifecycle teardown.
-        cleanup = _cq_cleanup_acceptance_resources(forwarder, child_teardowns)
-    cleanup_failed = not cleanup["forwarder_stopped"] or not cleanup["children_destroyed"]
+        owner = getattr(args, "_retained_owner", None)
+        if owner is not None and owner.retained:
+            # The Consumer's authorized read proxy still uses this exact forwarder.
+            owner.forwarder = forwarder
+            cleanup = _cq_cleanup_acceptance_resources(None, child_teardowns)
+            cleanup["forwarder_stopped"] = False
+            cleanup["forwarder_retained"] = True
+            cleanup["forwarder_still_active"] = bool(getattr(forwarder, "active", False))
+        else:
+            cleanup = _cq_cleanup_acceptance_resources(forwarder, child_teardowns)
+    cleanup_failed = not (cleanup["forwarder_stopped"] or cleanup.get("forwarder_retained")) or not cleanup["tasks_closed"]
     report = build_batch_report(
         run_id=str(contract["run_id"]),
         batch_id=batch_id,
@@ -2843,7 +2891,8 @@ def _cq_execute_batch(
                 ),
             },
             ensure_ascii=False,
-        )
+        ),
+        flush=True,
     )
     return 0 if report["full_pass"] else 1
 
@@ -3403,11 +3452,35 @@ def _run_checkpoint_resume_acceptance(
     # process per root run on this machine, kernel-released on death.  The
     # conflict is itself a typed §8 rejection (source_active), so it must
     # reach the host as one in this mode too -- never an uncaught traceback.
+    live_request = None
+    resume_lock = None
+    acceptance_lock = None
     try:
-        resume_lock = acquire_root_run_lock(root_run_id, runs_root)
-    except CheckpointError as exc:
+        try:
+            state = _read_json_object(source_root / "state.json")
+        except (OSError, ValueError, TeamConfigurationError):
+            state = {}
+        if state.get("state") in {"READ_ONLY_WAIT", "STANDBY"}:
+            import uuid
+            from .host_ops import standby_run, get_request_result
+            live_request = str(uuid.uuid4())
+            standby_run(args.run_id, request_id=live_request, repository_root=root)
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                result = get_request_result(args.run_id, request_id=live_request, repository_root=root)
+                if result.get("outcome") in {"accepted", "rejected"} or result.get("status") in {"accepted", "rejected"}:
+                    break
+                time.sleep(0.1)
+            source_safe_for_acceptance(source_root, http_readback(args.base_url, os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY", "")),
+                                       live_request, root_run_id)
+        acceptance_lock = acquire_acceptance_lock(root_run_id, runs_root)
+        if live_request is None:
+            resume_lock = acquire_root_run_lock(root_run_id, runs_root)
+    except (CheckpointError, HostOpError) as exc:
+        if acceptance_lock is not None:
+            acceptance_lock.release()
         print(
-            "checkpoint failed: " + json.dumps(exc.data(), ensure_ascii=False),
+            "checkpoint failed: " + json.dumps(exc.data() if isinstance(exc, CheckpointError) else exc.as_envelope(), ensure_ascii=False),
             file=sys.stderr,
         )
         return 2
@@ -3423,6 +3496,7 @@ def _run_checkpoint_resume_acceptance(
                 readback=readback,
                 authorization_reference=args.authorization_reference,
                 question_visibility=getattr(args, "question_visibility", "hidden"),
+                live_source_request_id=live_request,
             )
         except CheckpointError as exc:
             # Typed rejection, host-verbatim; the source run stays untouched.
@@ -3508,6 +3582,8 @@ def _run_checkpoint_resume_acceptance(
             question_visibility=getattr(args, "question_visibility", "hidden"),
             session_timeout=getattr(args, "session_timeout", None) or 300.0,
             unexecuted_report=False,
+            _retention_enabled=getattr(args, "_retention_enabled", False),
+            owner_root=getattr(args, "owner_root", None),
         )
         continuation = {
             "source_run_id": source_run_id,
@@ -3528,6 +3604,7 @@ def _run_checkpoint_resume_acceptance(
                 continuation=continuation,
                 interview_checkpoint=plan,
             )
+            args._retained_owner = getattr(cq_args, "_retained_owner", None)
         finally:
             # The host closing record captures the continuation's final state
             # (pass, fail, or a typed refusal after start): the original
@@ -3574,12 +3651,29 @@ def _run_checkpoint_resume_acceptance(
             )
         return status
     finally:
-        resume_lock.release()
+        if resume_lock is not None:
+            resume_lock.release()
+        if acceptance_lock is not None:
+            acceptance_lock.release()
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    conversation = subparsers.add_parser("delivery-conversation", help="Send/read an existing Delivery without starting inference")
+    conversation.add_argument("conversation_action", choices=["send", "status", "history"])
+    conversation.add_argument("--session-id", required=True)
+    conversation.add_argument("--project-id", required=True)
+    conversation.add_argument("--text")
+    conversation.add_argument("--message-file", type=Path)
+    conversation.add_argument("--message-id")
+    conversation.add_argument("--kind", choices=["message", "answer", "control"], default="message")
+    conversation.add_argument("--control-action", choices=["pause", "resume", "cancel", "revoke_budget", "stop"])
+    conversation.add_argument("--reply-to-message-id")
+    conversation.add_argument("--sender-kind", choices=["user", "host_agent", "test_answerer"], default="host_agent")
+    conversation.add_argument("--sender-reference", default="local-host")
+    conversation.add_argument("--submitted-by", default="local-host")
+    conversation.add_argument("--source-reference")
     delivery = subparsers.add_parser("delivery", help="Independent business-facing Delivery session")
     delivery.add_argument("--config", required=True, type=Path)
     delivery.add_argument("--resume", action="store_true", help="Reconcile and continue an existing delivery session")
@@ -3656,6 +3750,7 @@ def main() -> int:
     cq_acceptance.add_argument("--question-visibility", choices=["hidden", "public"], default="hidden")
     cq_acceptance.add_argument("--model-profile", default=None)
     cq_acceptance.add_argument("--session-timeout", type=float, default=300.0)
+    cq_acceptance.add_argument("--owner-root", type=Path)
     cq_acceptance.add_argument(
         "--unexecuted-report",
         action="store_true",
@@ -3758,10 +3853,20 @@ def main() -> int:
         "comes from --run-id/--checkpoint-id (never auto-selected)",
     )
     checkpoint_resume.add_argument("--enable-outer-input-fifo", action="store_true")
+    checkpoint_resume.add_argument("--owner-root", type=Path)
     checkpoint_resume.add_argument(
         "--fork-reason", help="Explicitly restore saved data into a new Project; record why",
     )
     args = parser.parse_args()
+    if args.command == "delivery-conversation":
+        from .conversation_cli import execute
+        from .delivery_conversation import ConversationError
+        try:
+            print(json.dumps(execute(args, repository_root()), ensure_ascii=False))
+            return 0
+        except (ConversationError, OSError, ValueError) as exc:
+            print(json.dumps({"error": getattr(exc, "code", "conversation_read_failed"), "detail": str(exc)}, ensure_ascii=False))
+            return 2
     if args.command == "delivery":
         from .delivery import run_delivery
 
@@ -3775,7 +3880,17 @@ def main() -> int:
         # R3.0-011: the read-only v3 acceptance entry stays outside the run
         # loader entirely; it never constructs a TeamRunner and never touches
         # the StartLedger.
-        return _run_cq_acceptance(args, repository_root())
+        args._retention_enabled = True
+        try:
+            status = _run_cq_acceptance(args, repository_root())
+            owner = getattr(args, "_retained_owner", None)
+            if owner is not None:
+                owner.wait()
+            return status
+        finally:
+            owner = getattr(args, "_retained_owner", None)
+            if owner is not None:
+                owner.close()
     if args.command == "public-feedback":
         return _run_public_feedback(args, repository_root())
     if args.command == "checkpoint":
@@ -3814,7 +3929,17 @@ def main() -> int:
             # entirely -- no TeamRunner, no Agent, no Build Session or write
             # session -- only the read-only re-verification and the
             # independent cq-acceptance execution under a fresh output root.
-            return _run_checkpoint_resume_acceptance(args, repository_root())
+            args._retention_enabled = True
+            try:
+                status = _run_checkpoint_resume_acceptance(args, repository_root())
+                owner = getattr(args, "_retained_owner", None)
+                if owner is not None:
+                    owner.wait()
+                return status
+            finally:
+                owner = getattr(args, "_retained_owner", None)
+                if owner is not None:
+                    owner.close()
         # Production resume falls through into the shared run flow below with
         # ``resume_requested`` set; the one-process root-run lock is acquired
         # before reconciliation and released when the process exits.
@@ -4172,6 +4297,7 @@ def main() -> int:
             outer_input = OuterInputFifo(fifo_path)
             outer_input.open()
             print(f"outer-input-fifo: {fifo_path}", file=sys.stderr)
+        runner.retain_after_work = callable(getattr(runner, "standby", None))
         runner.start()
         _foreground_event_loop(
             runner,
@@ -4179,7 +4305,7 @@ def main() -> int:
             lambda output: print(json.dumps(output, ensure_ascii=False), flush=True),
             outer_input=outer_input,
         )
-        if not _terminal_report_complete(runner):
+        if not _terminal_report_complete(runner) and not getattr(runner, "_provider_wait_stop_requested", False):
             if formal_acceptance:
                 runner.record_terminal_failure("collaboration/routing", False)
             if formal_acceptance or handoff_root is not None:

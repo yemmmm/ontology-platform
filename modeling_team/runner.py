@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import hashlib
 import os
+import re
 import secrets
 import shutil
 import stat
@@ -68,6 +69,7 @@ from .preflight import (
     run_prestart_preflight,
 )
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery, RuntimeDispatchReceipt
+from .platform_scope import PlatformScope
 from .candidate_progress import (
     FormalCandidateError,
     FormalCandidatePlatformContractError,
@@ -4106,11 +4108,16 @@ class TeamRunner:
                     {"type": "provider-wait-status", "waits": waits}
                 ] + self.drain()
         elif action == "pause":
-            self.adapter.pause()
-            self._state("PAUSED")
+            return self._relay_flow_message("pause", message) + self.drain()
         elif action == "resume":
-            self.adapter.resume()
-            self._state("RUNNING")
+            return self._relay_flow_message("resume", message) + self.drain()
+        elif action == "standby":
+            receipt = self.standby()
+            self._state("STANDBY" if receipt["lifecycle"] == "standby" else "READ_ONLY_WAIT",
+                        **receipt, standby_request_id=message.get("request_id"))
+            return [{"type": "standby", **receipt}]
+        elif action == "consult":
+            return self._consult_retained(message) + self.drain()
         elif action == "recover_provider":
             # 2026-09-14 provider-recovery: host takeover after the user reports
             # the external condition lifted (quota reset, recharge, provider
@@ -4160,6 +4167,118 @@ class TeamRunner:
         else:
             raise TeamConfigurationError("unknown outer Runner action")
         return self.drain()
+
+    def _relay_flow_message(self, action: str, message: dict[str, Any]) -> list[dict[str, Any]]:
+        coordinator = self._issue_coordinator_id()
+        text = message.get("text") or ("请暂停当前工作，通知相关成员，自行等待下一条用户指示。"
+                                      if action == "pause" else "请沿原任务和上下文继续，避免重复已完成工作。")
+        receipt = self.adapter.send_message(coordinator, RuntimeDelivery(
+            sender_id="user/outer", recipient_id=coordinator, kind="user-control",
+            text=json.dumps({**message, "action": action, "text": text}, ensure_ascii=False)))
+        if message.get("request_id"):
+            requests = getattr(self, "_flow_requests", {})
+            requests[message["request_id"]] = action
+            self._flow_requests = requests
+        event = {"action": action, "status": "instruction_delivered", "agent_id": coordinator,
+                 "confirmation": "pending", "request_id": message.get("request_id")}
+        self._append_evidence("team-lifecycle", event)
+        return [{"type": "flow-instruction", **event}]
+
+    def _observe_flow_confirmation(self, message: Any) -> bool:
+        if message.agent_id != self._issue_coordinator_id():
+            return False
+        try:
+            value = json.loads(message.text)
+            confirmation = value.get("flow_confirmation")
+        except (ValueError, TypeError, AttributeError):
+            return False
+        if not isinstance(confirmation, dict):
+            return False
+        identity, action = confirmation.get("request_id"), confirmation.get("action")
+        if getattr(self, "_flow_requests", {}).get(identity) != action or action not in {"pause", "resume"}:
+            return False
+        now = self.monotonic_clock()
+        self._flow_waiting = action == "pause"
+        self._flow_wait_last_tick = now
+        if action == "pause":
+            self._cq_wait_windows.open_window("user-flow-wait", now)
+        else:
+            self._cq_wait_windows.close_window("user-flow-wait", now)
+            self._idle_inquiry_baseline = now
+        self._append_evidence("team-lifecycle", {"event": "flow_confirmed", "request_id": identity,
+            "action": action, "status": "effective", "agent_id": message.agent_id,
+            "acknowledgement": value})
+        return True
+
+    def _retained_members(self) -> list[dict[str, Any]]:
+        members = []
+        for configured in self.run.configuration.profile.agents:
+            native = getattr(self.adapter, "agents", {}).get(configured.agent_id)
+            process = getattr(native, "process", None)
+            members.append({"agent_id": configured.agent_id, "role": configured.package.role,
+                            "thread_id": getattr(native, "thread_id", None),
+                            "pid": getattr(process, "pid", None),
+                            "alive": process.poll() is None if process is not None else None,
+                            "runtime_state": getattr(native, "state", None),
+                            "owner_run_id": self.run.run_id})
+        return members
+
+    def standby(self) -> dict[str, Any]:
+        if getattr(self, "_standby_receipt", None) is not None:
+            receipt = {**self._standby_receipt, "retained_members": self._retained_members()}
+            if self._coordinator_final_captured:
+                receipt.update(work_state="completed", lifecycle="standby")
+            handoff = self.run.root / "acceptance-v3" / "production-handoff.json"
+            if handoff.is_file():
+                receipt["handoff_digest"] = "sha256:" + hashlib.sha256(handoff.read_bytes()).hexdigest()
+            self._standby_receipt = receipt
+            return receipt
+        readiness = self._cq_production_readiness()
+        if readiness["pending_agents"]:
+            raise RecoverableOuterInputError("production members still have work", code="standby_not_ready", run_id=self.run.run_id)
+        self._cq_write_admission.begin_quiescing()
+        self._cq_write_admission.wait_until_drained(_CQ_WRITE_DRAIN_TIMEOUT_SECONDS)
+        readiness = self._cq_production_readiness()
+        if readiness["pending_writes"] or readiness["pending_agents"]:
+            raise RecoverableOuterInputError("production or writes are still pending", code="standby_not_ready",
+                                             run_id=self.run.run_id)
+        try:
+            if isinstance(self.scope, PlatformScope):
+                sessions = sorted({intent["session_id"] for intent in read_submission_intents(self.run.root)
+                                   if isinstance(intent.get("session_id"), str)})
+                sealed = self.scope.seal_work(session_ids=sessions)
+            else:
+                sealed = self.scope.seal_work() if self.scope is not None else {"write_credentials_non_active": True}
+        except Exception as exc:
+            raise RecoverableOuterInputError(str(exc), code="standby_write_seal_unconfirmed",
+                                             run_id=self.run.run_id) from exc
+        self._cq_write_admission.enter_read_only()
+        lifecycle = "standby" if self._coordinator_final_captured else "read_only_wait"
+        receipt = {"run_id": self.run.run_id, "owner_pid": os.getpid(), "lifecycle": lifecycle,
+                   "work_state": "completed" if self._coordinator_final_captured else "working",
+                   "write_phase": "read-only", "readiness": readiness, "write_seal": sealed,
+                   "retained_members": self._retained_members()}
+        handoff = self.run.root / "acceptance-v3" / "production-handoff.json"
+        if handoff.is_file():
+            receipt["handoff_digest"] = "sha256:" + hashlib.sha256(handoff.read_bytes()).hexdigest()
+        self._standby_receipt = receipt
+        self._append_evidence("team-lifecycle", receipt)
+        self._state("STANDBY" if lifecycle == "standby" else "READ_ONLY_WAIT", **receipt)
+        return receipt
+
+    def _consult_retained(self, message: dict[str, Any]) -> list[dict[str, Any]]:
+        if getattr(self, "_standby_receipt", None) is None:
+            raise RecoverableOuterInputError("seal production with standby first", code="consult_requires_read_only",
+                                             run_id=self.run.run_id)
+        text = message.get("text")
+        if not isinstance(text, str) or not text.strip():
+            raise RecoverableOuterInputError("consult requires original text", code="consult_text_missing",
+                                             run_id=self.run.run_id)
+        coordinator = self._issue_coordinator_id()
+        self.adapter.send_message(coordinator, RuntimeDelivery(sender_id="user/outer", recipient_id=coordinator,
+            kind="read-only-consult", text="只读追问；原工作结论和写门已封口，不重新报告生产结果。\n" + text))
+        self._append_evidence("team-lifecycle", {"event": "consult_delivered", "request_id": message.get("request_id")})
+        return [{"type": "consult-delivered", "agent_id": coordinator}]
 
     def _recover_provider_outer(self, message: dict[str, Any]) -> dict[str, Any]:
         """Bind one explicit host recovery to a pending provider wait.
@@ -6435,6 +6554,8 @@ class TeamRunner:
     def _check_formal_candidate_progress(self) -> None:
         """R2.3-009 T1: a candidate deadline miss is a bounded nudge, not a kill."""
 
+        if getattr(self, "_flow_waiting", False) or getattr(self, "_standby_receipt", None):
+            return
         roles = self._formal_candidate_roles()
         if roles is None or self._candidate_progress is None:
             return
@@ -6454,6 +6575,8 @@ class TeamRunner:
         self._maybe_redrive_formal_candidate()
 
     def _maybe_redrive_formal_candidate(self) -> None:
+        if getattr(self, "_flow_waiting", False) or getattr(self, "_standby_receipt", None):
+            return
         roles = self._formal_candidate_roles()
         if roles is None or self._candidate_progress is None:
             return
@@ -7907,7 +8030,16 @@ class TeamRunner:
         # The published record reflects the read-only state at publication
         # time, not the quiescing snapshot the gate above checked against.
         readiness = self._cq_production_readiness()
+        if getattr(self, "retain_after_work", False):
+            try:
+                self.standby()
+            except RecoverableOuterInputError as exc:
+                raise CQContractError("cq_unknown_write_pending", str(exc), obj="write-seal",
+                                      phase="quiescing", retry="verify the owned key/session seal and retry this handoff") from exc
         handoff = self._cq_publish_production_handoff(readiness, message)
+        if getattr(self, "_standby_receipt", None) is not None:
+            sealed = self.standby()
+            self._state("READ_ONLY_WAIT", **sealed)
         self._cq_handoff_complete = True
         self._cq_wait_windows.close_window("cq-handoff-request", now)
         if self._acceptance_target == "cq_semantic":
@@ -8121,7 +8253,8 @@ class TeamRunner:
         """
 
         self._cq_selector_required()
-        if set(message) != CQ_ACCEPTANCE_COMPLETE_FIELDS:
+        continuation_id = message.get("continuation_run_id")
+        if set(message) - {"continuation_run_id"} != CQ_ACCEPTANCE_COMPLETE_FIELDS:
             raise CQContractError(
                 "cq_selector_incompatible",
                 "cq_acceptance_complete envelope has invalid fields",
@@ -8173,7 +8306,7 @@ class TeamRunner:
                 phase=self._cq_acceptance_phase,
                 retry="request a new production handoff to allocate the current attempt",
             )
-        if self._cq_acceptance_phase == "acceptance_complete":
+        if self._cq_acceptance_phase == "acceptance_complete" and continuation_id is None:
             # T1-14: an exactly identical duplicate only confirms; a divergent
             # copy is a mismatch against the retained result, never a second
             # completion or a rewrite of the accepted one.
@@ -8197,6 +8330,16 @@ class TeamRunner:
         report_path = (
             self.run.root / attempt["report_directory"] / "batch-report.json"
         )
+        if continuation_id is not None:
+            from .checkpoint_recovery import acceptance_continuation_report
+            if not isinstance(continuation_id, str) or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", continuation_id):
+                raise CQContractError("cq_acceptance_report_mismatch", "invalid continuation run identity",
+                                      obj="continuation_run_id", retry="use the actual S4 output run id")
+            try:
+                report_path = acceptance_continuation_report(self.run.root, self.run.root.parent / continuation_id)
+            except (OSError, ValueError, CheckpointError) as exc:
+                raise CQContractError("cq_acceptance_report_mismatch", str(exc), obj="continuation_run_id",
+                                      retry="verify the closed continuation and original source binding") from exc
         if not report_path.is_file() or report_path.is_symlink():
             raise CQContractError(
                 "cq_acceptance_report_mismatch",
@@ -8256,6 +8399,13 @@ class TeamRunner:
                 phase=self._cq_acceptance_phase,
                 retry=f"send the recomputed aggregate verdict ({cq_verdict})",
             )
+        if continuation_id is not None and self._cq_acceptance_phase == "acceptance_complete":
+            # A later independent result is new evidence, not a rewrite of the
+            # original frozen conclusion or already accepted completion.
+            result = {"continuation_run_id": continuation_id, "report_digest": report_digest,
+                      "report_directory": str(report_path.parent), "cq_verdict": cq_verdict}
+            self._append_evidence("cq-acceptance-complete", {"event": "continuation_completed", **result})
+            return {"ok": True, **result}
         now = self.monotonic_clock()
         self._cq_acceptance_phase = "acceptance_complete"
         self._cq_acceptance_result = {
@@ -8264,6 +8414,9 @@ class TeamRunner:
             "report_digest": report_digest,
             "cq_verdict": cq_verdict,
         }
+        if continuation_id is not None:
+            self._cq_acceptance_result.update(continuation_run_id=continuation_id,
+                                             report_directory=str(report_path.parent))
         self._cq_wait_windows.close_window("cq-acceptance-wait", now)
         self._append_evidence(
             "cq-acceptance-complete",
@@ -8501,7 +8654,7 @@ class TeamRunner:
     def _check_run_fallback_timeout(self) -> None:
         """R2.3-009 T3: the only run-level timeout latch left in the Runner."""
 
-        if getattr(self, "_formal_failure_latched", False):
+        if getattr(self, "_standby_receipt", None) or getattr(self, "_formal_failure_latched", False):
             return
         started = getattr(self, "_run_fallback_started", None)
         if started is None:
@@ -9678,6 +9831,21 @@ class TeamRunner:
     def drain(self) -> list[dict[str, Any]]:
         if not self.run or not self.transport:
             return []
+        if getattr(self, "_standby_receipt", None) is not None and self._coordinator_final_captured:
+            output = []
+            for delivery in self.transport.drain():
+                self.adapter.send_message(delivery.recipient_id, RuntimeDelivery(
+                    sender_id=delivery.sender_id, recipient_id=delivery.recipient_id,
+                    kind="read-only-consult", text=delivery.text,
+                    delivery_id=delivery.delivery_id, expects_reply=delivery.expects_reply,
+                    reply_to_delivery_id=delivery.reply_to_delivery_id))
+            for message in self.adapter.receive_messages():
+                self._observe_flow_confirmation(message)
+                if isinstance(message.text, str) and message.text.strip():
+                    event = {"type": "consult-reply", "agent_id": message.agent_id, "text": message.text}
+                    self._append_evidence("team-lifecycle", event)
+                    output.append(event)
+            return output
         failures = self._consume_runtime_failures()
         if failures:
             return self._finalize_runtime_failure(failures)
@@ -9689,11 +9857,19 @@ class TeamRunner:
         # Provider waits are reconciled before the fallback clock check so a
         # wait observed on this very tick already excludes its waiting time.
         output: list[dict[str, Any]] = []
+        if getattr(self, "_flow_waiting", False):
+            now = self.monotonic_clock()
+            excluded = max(0.0, now - getattr(self, "_flow_wait_last_tick", now))
+            self._flow_wait_last_tick = now
+            progress = self._candidate_progress
+            if progress is not None and progress.pending is not None and progress.pending.accepted_at is not None:
+                progress.pending.accepted_at += excluded
         self._check_provider_waits(output)
         self._track_issue_pending()
         self._track_provider_wait()
         self._check_run_fallback_timeout()
-        self._check_formal_candidate_progress()
+        if not getattr(self, "_standby_receipt", None):
+            self._check_formal_candidate_progress()
         # R3.0-011: the approved-slice handoff is a map-only check and must
         # not wait for the topology decision, the neutral candidate stage, or
         # the freeze (requirements-v3.0.md:512-535 order).  It runs on every
@@ -9706,7 +9882,8 @@ class TeamRunner:
         # exactly one per drain tick for every run.
         if self._check_staged_decision_gates():
             self._check_multi_slice_topology_gate()
-        self._check_cooperative_idle()
+        if not getattr(self, "_flow_waiting", False) and not getattr(self, "_standby_receipt", None):
+            self._check_cooperative_idle()
         self._wake_acceptance_on_child_terminal()
         self._handle_issue_events(output)
         if self._issue_abort_requested:
@@ -10092,6 +10269,9 @@ class TeamRunner:
             )
             raise
         for message in messages:
+            if self._observe_flow_confirmation(message):
+                output.append({"type": "flow-confirmation", "agent_id": message.agent_id, "text": message.text})
+                continue
             if message.agent_id == coordinator:
                 self._observe_coordinator_message(message)
                 if self._post_settlement_reporting_requested:
@@ -10225,6 +10405,12 @@ class TeamRunner:
         output.append(envelope)
         self._append_evidence("coordinator-final", envelope)
         self._state("TERMINAL_REPORT_COMPLETE")
+        if getattr(self, "retain_after_work", False):
+            try:
+                self.standby()
+            except RecoverableOuterInputError as exc:
+                self._state("READ_ONLY_WAIT", lifecycle="active", work_state="completed", seal_error=str(exc))
+                output.append({"type": "standby-pending", "detail": str(exc)})
 
     def _cleanup_cq_private(self) -> dict[str, Any] | None:
         """Delete owner-provable CQ private temp, keep every durable artifact.

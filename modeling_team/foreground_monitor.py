@@ -448,6 +448,7 @@ def run_foreground(
         prepared = destination is None
 
     return_code = 0
+    retained_owner = False
     process: subprocess.Popen[str] | None = None
     live_root = target_root
     failure: BaseException | None = None
@@ -498,7 +499,8 @@ def run_foreground(
                     elif _monotonic() >= prepared_deadline:
                         raise TimeoutError("P2 monitor prepared handoff timed out")
                 if prepared and not extraction_done:
-                    cleanup = read_phase(handoff_root, "runner", "cleanup_pending")
+                    completed = read_phase(handoff_root, "runner", "work_completed")
+                    cleanup = completed or read_phase(handoff_root, "runner", "cleanup_pending")
                     failed = read_phase(handoff_root, "runner", "failed")
                     if failed is not None:
                         raise RuntimeError("foreground CLI failed before adverse extraction")
@@ -520,10 +522,14 @@ def run_foreground(
                             output_length=length,
                         )
                         extraction_done = True
+                        if completed is not None:
+                            retained_owner = True
+                            record("agent_work_completed", owner_pid=process.pid, resources_retained=True)
+                            break
                     elif foreground_deadline is not None and _monotonic() >= foreground_deadline:
                         raise TimeoutError("P2 monitor foreground run timed out")
                 _sleep(0.05)
-            return_code = process.wait()
+            return_code = 0 if retained_owner else process.wait()
             if not prepared:
                 raise RuntimeError("foreground CLI exited before prepared handoff")
             if not extraction_done:
@@ -549,7 +555,8 @@ def run_foreground(
                     output_length=length,
                 )
                 extraction_done = True
-            record("agent_terminal_settled", returncode=return_code)
+            if not retained_owner:
+                record("agent_terminal_settled", returncode=return_code)
         else:
             if process is not None:
                 return_code = process.wait()
@@ -571,7 +578,7 @@ def run_foreground(
                 pass
         raise
     finally:
-        if process is not None and process.poll() is None:
+        if process is not None and process.poll() is None and not retained_owner:
             if failure is not None:
                 try:
                     process.wait(timeout=3)
@@ -590,7 +597,7 @@ def run_foreground(
             except OSError:
                 pass
         else:
-            if destroy_secrets(live_root, contract["secret_targets"]):
+            if not retained_owner and destroy_secrets(live_root, contract["secret_targets"]):
                 record("secret_absent")
             record("monitor_stopped", returncode=return_code)
     if failure is not None:

@@ -1,6 +1,14 @@
 import { apiRequest } from "./api";
+import type { ConversationIndex, ConversationStatus, ConversationEvents, ConversationMessage, ConversationInput } from "./workspaceTypes";
+
+const conversationPath = (project: string, session?: string) => `/projects/${encodeURIComponent(project)}/delivery-conversations${session ? `/${encodeURIComponent(session)}` : ""}`;
 import type { AccessRole, Envelope, Ontology, Project, RecallResponse, Relation, Resource, Run, RunIndex } from "./workspaceTypes";
 export const workspaceApi = {
+  conversations: (project: string) => apiRequest<ConversationIndex>(conversationPath(project)),
+  conversation: (project: string, session: string) => apiRequest<ConversationStatus>(conversationPath(project, session)),
+  conversationEvents: (project: string, session: string, cursor: number) => apiRequest<ConversationEvents>(`${conversationPath(project, session)}/events?after_seq=${cursor}&limit=100`),
+  conversationReceipt: (project: string, session: string, message: string) => apiRequest<ConversationMessage>(`${conversationPath(project, session)}/messages/${encodeURIComponent(message)}`),
+  conversationSend: (project: string, session: string, message: ConversationInput) => apiRequest<{ message: ConversationMessage; created: boolean }>(`${conversationPath(project, session)}/messages`, { method: "POST", body: JSON.stringify(message) }),
   projects: () => apiRequest<Project[]>("/projects"),
   index: (project: string) => apiRequest<RunIndex>(`/projects/${encodeURIComponent(project)}/workbench`),
   run: (project: string, run: string) => apiRequest<Run>(`/projects/${encodeURIComponent(project)}/workbench/runs/${encodeURIComponent(run)}`),

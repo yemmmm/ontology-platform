@@ -454,6 +454,7 @@ def main() -> int:
     )
     parser.add_argument("--batch-id", default="")
     parser.add_argument("--frozen-evidence-reads", action="store_true")
+    parser.add_argument("--cooperative-control", action="store_true")
     parser.add_argument("--role", choices=("platform-examiner", "acceptance"), default=None)
     parser.add_argument(
         "--question-ids",
@@ -499,8 +500,24 @@ def main() -> int:
                 }
                 if args.frozen_evidence_reads and args.kind == "acceptance" and v3_batch:
                     result["tools"].append(frozen_evidence_tool())
+                if args.cooperative_control and v3_batch:
+                    result["tools"].append({"name": "record_flow_confirmation", "description": "Confirm actual waiting/resumption for a sourced user control; never submit a task report for waiting.",
+                        "inputSchema": {"type": "object", "properties": {"request_id": {"type": "string"}, "action": {"enum": ["pause", "resume"]}},
+                                        "required": ["request_id", "action"], "additionalProperties": False}})
             elif method == "tools/call":
                 params = request.get("params", {})
+                if (isinstance(params, Mapping) and params.get("name") == "record_flow_confirmation"
+                        and args.cooperative_control and v3_batch):
+                    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                        client.settimeout(5)
+                        client.connect(args.socket)
+                        client.sendall(_json({"token": token, "operation": "record_flow_confirmation", "arguments": params.get("arguments")}).encode())
+                        response = json.loads(client.recv(65536).decode())
+                    if not response.get("ok"):
+                        raise RuntimeError(str(response.get("detail", "confirmation rejected")))
+                    result = {"content": [{"type": "text", "text": _json(response["result"])}], "isError": False}
+                    print(_json({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+                    continue
                 if (isinstance(params, Mapping) and params.get("name") == "read_frozen_evidence"
                     and args.frozen_evidence_reads and args.kind == "acceptance" and v3_batch):
                     result = read_frozen_evidence(args.socket, token, params.get("arguments"))

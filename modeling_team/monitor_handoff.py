@@ -24,7 +24,7 @@ HANDOFF_FILE_MODE = 0o600
 NONCE_BYTES = 16
 RUNNER_TO_MONITOR = "runner-to-monitor"
 MONITOR_TO_RUNNER = "monitor-to-runner"
-RUNNER_PHASES = frozenset({"prepared", "cleanup_pending", "failed"})
+RUNNER_PHASES = frozenset({"prepared", "work_completed", "cleanup_pending", "failed"})
 MONITOR_PHASES = frozenset({"extraction_complete", "extraction_failed"})
 PHASE_DEADLINES_SECONDS = {
     "prepared": 30.0,
@@ -38,7 +38,7 @@ def _contract_fields() -> dict[str, Any]:
     return {
         "schema_version": HANDOFF_SCHEMA_VERSION,
         "environment": HANDOFF_ENV,
-        "runner_phases": ["prepared", "cleanup_pending", "failed"],
+        "runner_phases": ["prepared", "work_completed", "cleanup_pending", "failed"],
         "monitor_phases": ["extraction_complete", "extraction_failed"],
         "phase_deadlines_seconds": PHASE_DEADLINES_SECONDS,
         "handoff_root_mode": HANDOFF_ROOT_MODE,

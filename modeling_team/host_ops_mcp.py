@@ -49,6 +49,8 @@ from .host_ops import (
     settle_source_run,
     start_run,
     stop_run,
+    standby_run,
+    consult_team,
     submit_instruction,
     submit_cq_review,
 )
@@ -57,6 +59,7 @@ from .delivery_ops import (
     get_repair_status,
     read_platform_record,
     reconcile_write_state,
+    relay_evaluation_message,
     stop_delivery_operation,
     start_evaluation,
     start_repair,
@@ -279,6 +282,7 @@ def tool_complete_cq_handoff(
 def tool_complete_cq_acceptance(
     run_id: str,
     acceptance_attempt_id: str | None = None,
+    continuation_run_id: str | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
     """Close the acceptance loop after the CLI ``cq-acceptance`` report.
@@ -292,6 +296,7 @@ def tool_complete_cq_acceptance(
         complete_cq_acceptance,
         run_id,
         acceptance_attempt_id=acceptance_attempt_id,
+        continuation_run_id=continuation_run_id,
         request_id=request_id,
     )
 
@@ -426,7 +431,7 @@ def tool_start_run(
 
 
 @mcp.tool(name="pause_run")
-def tool_pause_run(run_id: str, request_id: str | None = None) -> dict[str, Any]:
+def tool_pause_run(run_id: str, request_id: str | None = None, text: str | None = None, source_reference: str | None = None) -> dict[str, Any]:
     """Pause one live run through its outer-input FIFO (design §5.2).
 
     A pause is not a stop: the run keeps its processes, threads and evidence
@@ -434,12 +439,12 @@ def tool_pause_run(run_id: str, request_id: str | None = None) -> dict[str, Any]
     in the host submission ledger and answered by the Runner receipt; poll
     ``get_request_result``.
     """
-    return _call(pause_run, run_id, request_id=request_id)
+    return _call(pause_run, run_id, request_id=request_id, text=text, source_reference=source_reference)
 
 
 @mcp.tool(name="resume_live_run")
 def tool_resume_live_run(
-    run_id: str, request_id: str | None = None
+    run_id: str, request_id: str | None = None, text: str | None = None, source_reference: str | None = None
 ) -> dict[str, Any]:
     """Continue the same live thread of a paused run (design §5.2).
 
@@ -448,7 +453,7 @@ def tool_resume_live_run(
     continuation — a stopped or already ended run continues exclusively
     through ``resume_from_checkpoint``.
     """
-    return _call(resume_live_run, run_id, request_id=request_id)
+    return _call(resume_live_run, run_id, request_id=request_id, text=text, source_reference=source_reference)
 
 
 @mcp.tool(name="stop_run")
@@ -749,6 +754,25 @@ def tool_reconcile_write_state(
 # registers exactly one): the 12 S1 read/submission tools plus the 8 S2
 # start/lifecycle/checkpoint tools and the narrow Delivery host tools.  None
 # of these names is registered on a production or role surface.
+@mcp.tool(name="relay_evaluation_message")
+def tool_relay_evaluation_message(operation_id: str, action: str, text: str,
+                                 request_id: str | None = None) -> dict[str, Any]:
+    """Relay pause/resume/consult to actual Consumer or Judge; read its confirmation separately."""
+    return _call(relay_evaluation_message, operation_id=operation_id, action=action, text=text, request_id=request_id)
+
+
+@mcp.tool(name="standby_run")
+def tool_standby_run(run_id: str, request_id: str | None = None) -> dict[str, Any]:
+    """Seal run writes and retain original members; poll get_request_result for actual receipt."""
+    return _call(standby_run, run_id, request_id=request_id)
+
+
+@mcp.tool(name="consult_team")
+def tool_consult_team(run_id: str, text: str, request_id: str | None = None) -> dict[str, Any]:
+    """Send a read-only question to the retained Coordinator without reopening production."""
+    return _call(consult_team, run_id, text=text, request_id=request_id)
+
+
 S1_TOOL_NAMES = (
     "get_run_status",
     "get_run_events",
@@ -768,6 +792,8 @@ S2_TOOL_NAMES = (
     "pause_run",
     "resume_live_run",
     "stop_run",
+    "standby_run",
+    "consult_team",
     "inspect_checkpoints",
     "save_checkpoint",
     "resume_from_checkpoint",
@@ -777,6 +803,7 @@ DELIVERY_TOOL_NAMES = (
     "submit_instruction",
     "start_evaluation",
     "get_evaluation_status",
+    "relay_evaluation_message",
     "start_repair",
     "get_repair_status",
     "stop_delivery_operation",

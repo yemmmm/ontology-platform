@@ -60,10 +60,12 @@ provider 对 Codex fast 字段写 `not_applicable`，不静默替换。旧线程
 本阶段结束后先填 completed/remaining/next/authorization/wait/resource/handoff，仍有已授权
 明确待办且条件满足则继续；隐藏验收完成而公开待办仍可执行时不报整体完成。live
 `cq-acceptance` 保持源 Runner 存活、生产静默，报告回源 `complete_cq_acceptance`；
-S4 则先确认有效 COMPLETE handoff checkpoint 与安全资源保留，再 stop/receipt/managed exit
-并在新输出目录接续验收，不向已死源 FIFO 收口。不丢失 checkpoint、待办或额度。
+S4 先确认 COMPLETE handoff checkpoint、安全资源保留和可信只读源（或原退出证据），
+在新输出目录接续，单独任务锁按报告/能力封口释放；保留 Consumer owner 无需退出。
+由 Delivery 交回新报告，不向已死源 FIFO 收口。不丢失 checkpoint、待办或额度。
 缺实质业务、权限、兼容性或新额度时仅阻塞相关动作，独立工作继续。目标完成、暂停/取消、
-到期或确无安全动作才收尾；余额不触发无必要 start。结束进程临时密钥及时撤销，连续资源
+到期或确无安全动作才暂停推进；正常完成保留原 Team/Consumer 待命，明确 stop 才最终
+销毁并核对清理。余额不触发无必要 start。结束进程临时密钥及时撤销，连续资源
 按原生命周期保留，已撤销 key 不复活；必要重新准备记录真实时点，不批量改旧清理证据。
 
 ## 分类耗时（R4.0-021）

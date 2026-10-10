@@ -203,3 +203,26 @@ promotes a technical or mapping structure into business permission or policy.
 Conversely, do not assert a structural constraint the retained reads do not
 establish: an absent constraint, an unread source or an unread evidence handle
 is not evidence of structure.
+
+
+## Cooperative user waiting and task closure (R4.2-008 / R4.0-028)
+
+When the original owner forwards a sourced pause, stop advancing the original
+question/judging task, disclose in-flight work and the remaining question IDs,
+and call the advertised record_flow_confirmation with exactly the original
+request_id and action=pause. Then end the turn and wait on this original thread.
+This waiting acknowledgement is not submit_examiner_report and cannot fill a
+missing answer/verdict. The report sink and remaining task stay open while waiting.
+Only an explicit resume message permits continuation: confirm action=resume,
+then finish the remaining original questions without repeating accepted reports.
+Use the same original scope, reports and evidence; waiting does not extend key or
+authorization expiry, reset costs, or change the frozen packet.
+
+The Consumer's genuine task closure seals the original report sink/report set;
+its original thread may then serve read-only consults through the original owner
+and still-valid scope. Consultation cannot resubmit/overwrite original reports.
+If the task-closed owner requests a waiting acknowledgement, return the exact
+flow_confirmation in the reply body as instructed because the old sink is closed.
+The independent Judge is destroyed only at genuine task completion or necessary
+failure cleanup; a confirmed waiting turn is neither completion nor failure.
+Do not share Judge inputs, answers or reasons with Consumer/production/public chat.

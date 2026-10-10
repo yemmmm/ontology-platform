@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import os
 import shutil
 import subprocess
@@ -20,6 +21,9 @@ from modeling_team.runtimes.codex import (
 
 class DeliveryRuntimeError(RuntimeError):
     """Native transport failure, without provider-controlled diagnostic text."""
+    def __init__(self, message: str, *, category: str = "unknown"):
+        super().__init__(message)
+        self.category = category
 
 
 # The installed Codex app-server (verified against /agent/bin/real-codex
@@ -181,7 +185,11 @@ class DeliveryRuntime:
                 continue
             if value.get("id") == request_id and "method" not in value:
                 if "error" in value:
-                    raise DeliveryRuntimeError(f"Delivery native RPC failed: {method}")
+                    detail = value["error"].get("message", "")
+                    category, _ = CodexRuntimeAdapter._classify_steer_message(detail)
+                    raise DeliveryRuntimeError(f"Delivery native RPC failed: {method}",
+                        category="rejected" if method == "turn/steer" and category in {
+                            "no_active_turn_to_steer", "active_turn_mismatch"} else "unknown")
                 return value.get("result", {})
             self._handle(value)
         raise DeliveryRuntimeError(f"Delivery native RPC timed out: {method}")
@@ -229,7 +237,11 @@ class DeliveryRuntime:
                 arguments = params.get("arguments", {})
                 if not isinstance(arguments, dict):
                     raise ValueError("invalid arguments")
-                result = self.tool_handler(name, arguments)
+                if "call_identity" in inspect.signature(self.tool_handler).parameters:
+                    result = self.tool_handler(name, arguments,
+                        call_identity=f"{self.thread_id}:{params.get('callId', value['id'])}")
+                else:
+                    result = self.tool_handler(name, arguments)
                 response = {"success": True, "contentItems": [
                     {"type": "inputText", "text": json.dumps(result, ensure_ascii=False)}
                 ]}
@@ -279,7 +291,7 @@ class DeliveryRuntime:
         dropping the input.
         """
         if not self.busy or self._turn_id is None or self.thread_id is None:
-            raise DeliveryRuntimeError("Delivery active turn is unavailable")
+            raise DeliveryRuntimeError("Delivery active turn is unavailable", category="rejected")
         self._rpc("turn/steer", {
             "threadId": self.thread_id,
             "expectedTurnId": self._turn_id,

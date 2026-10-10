@@ -7,8 +7,9 @@ description: One-continuous-session R3.0-011 v3 acceptance batch rules for the P
 
 This skill covers both R3.0-011 v3 batch sessions (Platform Examiner and
 independent Acceptance judge). It is intentionally limited to the one frozen
-batch packet and its frozen business references. No collaboration, lifecycle control, or
-filesystem writes are available to either role. The Platform Examiner reads the
+batch packet and its frozen business references. Neither role controls another role's lifecycle or writes files. The original
+owner can forward user flow messages; record_flow_confirmation acknowledges
+only that role's actual pause/resume request and never submits a report. The Platform Examiner reads the
 platform only through its authorized `platform_read_proxy` scope; the judge has
 no platform access at all.
 
@@ -37,3 +38,26 @@ no platform access at all.
   question, response digest, locator, pagination and completeness. A reference or
   Consumer answer cannot replace actual response content.
 - Neither role waits for a Source Examiner: this batch has none.
+
+
+## Cooperative user waiting and task closure (R4.2-008 / R4.0-028)
+
+When the original owner forwards a sourced pause, stop advancing the original
+question/judging task, disclose in-flight work and the remaining question IDs,
+and call the advertised record_flow_confirmation with exactly the original
+request_id and action=pause. Then end the turn and wait on this original thread.
+This waiting acknowledgement is not submit_examiner_report and cannot fill a
+missing answer/verdict. The report sink and remaining task stay open while waiting.
+Only an explicit resume message permits continuation: confirm action=resume,
+then finish the remaining original questions without repeating accepted reports.
+Use the same original scope, reports and evidence; waiting does not extend key or
+authorization expiry, reset costs, or change the frozen packet.
+
+The Consumer's genuine task closure seals the original report sink/report set;
+its original thread may then serve read-only consults through the original owner
+and still-valid scope. Consultation cannot resubmit/overwrite original reports.
+If the task-closed owner requests a waiting acknowledgement, return the exact
+flow_confirmation in the reply body as instructed because the old sink is closed.
+The independent Judge is destroyed only at genuine task completion or necessary
+failure cleanup; a confirmed waiting turn is neither completion nor failure.
+Do not share Judge inputs, answers or reasons with Consumer/production/public chat.

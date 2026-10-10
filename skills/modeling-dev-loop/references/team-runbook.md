@@ -73,7 +73,7 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
    不仅改一个 role 字段就把已读私有材料的宿主当作隔离代答者。
 5. Delivery 负责状态查询、真实问题绑定答复、`submit_instruction` 主动补充、委托 CQ
    审核／冻结、交接、验收及修复。live 验收由 `start_evaluation/get_evaluation_status`
-   托管并按原合同收口；S4 由其完成 checkpoint 核对、源 writer 停止及
+   托管并按原合同收口；S4 由其完成 checkpoint 核对、源只读封口或原退出证据及
    `resume_from_checkpoint(mode=acceptance)`。外层保持对话、进程承载与主动监督，按
    [保持观察和推进](../SKILL.md#保持观察和推进) 检查实际成果、首阻塞和 Delivery 处理结果，
    不因已启动就退出观察。通常由 Delivery 发送 Host 指令和安排冻结／修复／验收；
@@ -177,17 +177,17 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 1. 读 `get_run_status/get_run_events/get_pending_actions`，分别定位生产角色 terminal、handoff
    `ready=true/pending_writes=false/write_phase=read-only/unknown_writes=[]` 和实际 managed
    process 状态。三者不是同一事实；进程退出不单独证明写入完整，角色完成不证明 writer 退出。
-2. unknown write 保留原件并按 Batch/Attempt/receipt 对账。已排空且 handoff ready 时，
-   **停止前**用 `inspect_checkpoints` 确认显式、有效且 COMPLETE 的 `production_handoff` 包
-   已发布，所需资源可按已有授权安全保留；缺包或保留条件不满足先处理，不能先 stop 再找包。
-   条件满足后经原 `stop_run` 通道提交 stop，保存 request、Runner receipt、launch/exit 证据。
-   `submitted` 或 stop receipt 不等于退出，继续观察 PID/进程会话和 `.host-launches` exited
-   记录，单次等待 ≤60s；仍活动不因无日志判死，缺证据保持 unknown。
-3. 确认 managed process 已退出后用 `inspect_checkpoints` 再复核已选 COMPLETE
-   `production_handoff` 包，按现有 S4 启动新输出根的 acceptance continuation。源 run、冻结、
-   checkpoint、失败报告只读保留；不要向已死 FIFO 补投收口消息。
-4. 同一 root run 当前共用进程锁，公开/隐藏须等前一 continuation 托管进程退出后启动另一批；
-   哪批先执行由获准任务安排，不固定公开优先，也不外推独立来源全局串行。
+2. unknown write 保留原件并按 Batch/Attempt/receipt 对账。先用 `inspect_checkpoints`
+   核对显式有效 COMPLETE `production_handoff` 与安全资源保留。
+   存活源调用 `standby_run` 并读新 request receipt，核对原 owner 身份、write-phase、
+   排空、实际写 key 撤回、模型修订和 handoff/freeze 摘要；缺证据保持可恢复拒绝。
+   不以 STANDBY 字符串、PID 存在或提交 receipt 代替实际封口。已退出源沿旧退出证据。
+3. 在全新输出根启动 S4 acceptance continuation，源 run/checkpoint/冻结/旧报告只读。
+   live 源继续持有生产 root lock；验收单独持有同源 acceptance 文件锁，不伪造退出或删锁。
+   生产恢复仍必须满足原 writer 退出门，不能借只读封口启动第二个生产者。
+4. 同 root 的公开/隐藏按任务锁串行，前一报告发布、任务能力封口后即释放；即使原
+   Consumer owner 继续待命也可以启动下一获准批次，顺序由任务安排。Delivery 将新报告
+   沿 `complete_cq_acceptance` 返回存活源；已死源仅记录新输出根收尾，不投 dead FIFO。
 
 `source_active` 是可恢复启动拒绝，保留第一错误、原件和 next action，重新核对实际状态；
 不删锁、伪改 state、盲重试或重放不确定 apply。分别记录启动拒绝、实际执行题数、有效裁决
@@ -200,13 +200,15 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 [进度参考](progress-report.md)。读取实际 status/events/pending 与产物后，逐项核对原目标待办、
 依赖、授权及写入状态。条件满足即沿现有入口继续，不把阶段收口当整体完成：live thread 用
 `resume_live_run`，已停用显式 checkpoint；production handoff 按实际入口分流：live 验收
-保持源 Runner 存活，S4 先核对有效 COMPLETE checkpoint 与安全保留，再 stop/exit 接续；
+保持源 Runner 存活；S4 核对 COMPLETE checkpoint 与安全保留后，以可信只读源或原退出
+证据接续；
 隐藏完成而获准公开仍待办时继续公开，窄修复后回原失败步骤。
 
 新业务定义、权限扩大、兼容性决定或新 start 额度实质缺失时，只等待依赖该决定的动作，
 写明原因、影响范围、独立可做项和恢复入口。额度上限不必耗尽；耗尽不再新开 production，
 已有授权内安全核查、只读验收和收尾仍可做。用户暂停/取消、到期、原目标完成或确无安全
-动作时停止并按生命周期清理，保留模型/证据。进程已结束临时 key 及时撤销，仍服务连续任务
+动作时暂停推进并记录待办，正常完成保持原会话待命；明确 stop 才最终销毁并核对清理，
+保留模型/证据。进程已结束临时 key 及时撤销，仍服务连续任务
 的资源按已有授权保留；已撤销 key 不复活，必要重新签发/资源恢复记录新时点和范围。
 
 监督交接先报告真实进程、run/checkpoint、首阻塞、待办/下一动作、授权余额、资源状态和
@@ -495,7 +497,7 @@ skipped／漂移／读取复核失败按宿主原记录呈现，没有 Judge 的
 4. 按实际入口分流：live `cq-acceptance` 保持源 Runner 存活、生产静默，用该 handoff
    的当前绑定启动独立验收，报告落盘后向源 run 调用 `complete_cq_acceptance`；选择 S4
    则先确认有效 COMPLETE `production_handoff` checkpoint 与安全资源保留，再经
-   stop/receipt/exit，在全新输出目录验收，见[同源启动顺序](#同源-checkpoint-只读验收启动)。
+   可信 standby 封口或原退出证据，在全新输出目录验收，见[同源启动顺序](#同源-checkpoint-只读验收启动)。
    S4 不向已死源 FIFO 投递收口。两条路径都核对实际 attempt、`report_digest`、`cq_verdict`、
    已执行／未执行题目和完整分母，保留 PASS、PARTIAL 或失败报告；收口成功不等于语义 PASS，
    不能用角色完成或机械 readiness 覆盖语义缺口。
@@ -551,7 +553,7 @@ pending：coordinator 已 terminal 不代表完成，Runner 在等宿主完成�
 2. 用当前权威入口启动独立验收会话：
    `uv run --project backend python -m modeling_team cq-acceptance --run-root ... --freeze-id ... --model-handoff ...`
    （参数先读 `--help`；独立验收者不得参与生产或修复）。
-3. 验收进程退出后调用 `complete_cq_acceptance`；若直接使用 FIFO，则向仍存活源 Runner
+3. 验收报告发布且任务能力封口后调用 `complete_cq_acceptance`，不等保留 Consumer owner 退出；若直接使用 FIFO，则向仍存活源 Runner
    发送 `cq_acceptance_complete` digest-and-verdict envelope（字段见 Runner 合同
    `CQ_ACCEPTANCE_COMPLETE_FIELDS`）。Runner 自行复读
    batch-report 并复核 digest/verdict 后才释放 terminal report。
@@ -700,7 +702,7 @@ Judge 组数，不称单会话完整证据。全部所选题都有有效裁决�
 
 宿主对一个 COMPLETE `production_handoff` 检查点做验收-only 续跑（design §7）；
 源进程仍存活时，先确认有效完整检查点已发布和安全资源保留，再按
-[同源启动顺序](#同源-checkpoint-只读验收启动) stop/receipt/managed exit，不先停止再寻找检查点。
+[同源启动顺序](#同源-checkpoint-只读验收启动) 可信 standby 封口（或原受控退出证据），不为只读验收强制停止存活 Team。
 S3（翻译类计划自动迁移）按设计延后，S4 不依赖它。入口与 S2 相同的宿主凭据通道
 （`ONTOLOGY_PLATFORM_ADMIN_API_KEY`），显式 checkpoint id 与全新 run id 必填：
 
@@ -1056,3 +1058,18 @@ verdict 不收口整批 PASS。当前原生限制、部分判题、stdout 和故
 新建调度或恢复框架。修复前按 T0 判断必要不变量，最窄修复并回归／独立故障复测后沿既有安全
 同 run 或 acceptance-only 接续，输出新目录。source_active、scope drift、锁和 unknown write
 沿既有反馈处理，不删锁、伪改 state、拼旧报告或隐式增加 fresh start。
+
+
+## 待命消息与最终 stop（R4.0-028 / R4.2-008）
+
+`standby_run(run_id, request_id)` 复用原 FIFO/ledger，核实 owned 写 key 撤回、Session/
+Lease 与写回执终态并保留原线程；`consult_team` 只读追问原 Coordinator。消息暂停/继续
+由原 Coordinator 自行转告成员，实际评价阶段用 `relay_evaluation_message` 给原 owner
+当前 Consumer/Judge；读 actual acknowledgement 才记录 effective。原等待任务、报告入口、
+未完题目和 thread 保持，明确继续只做剩余工作。已封口 write phase 永不被 resume 重开。
+`get_evaluation_status` 的 work_state=completed 与进程 running 可以同时为真：Consumer
+受管保留、Judge 真正销毁、旧 report sink 关闭且原报告固定。`stop_delivery_operation` 给
+原 owner stop，核对其实际退出/资源关闭；全部绑定对象退出后才停止 Delivery。未知清理
+继续披露 partial。认可、自然完成、EOF、关闭网页和轮询均非 stop。
+CLI `delivery-conversation send|status|history` 只读/投递已有 session，稳定 UUID 与原始
+source/text 保留，unknown 收据按原 ID 核对，不重放或唤醒离线 Delivery。

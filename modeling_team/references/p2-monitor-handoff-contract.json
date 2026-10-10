@@ -1,7 +1,7 @@
 {
   "schema_version": "p2-monitor-handoff/v1",
   "environment": "ONTOLOGY_P2_MONITOR_HANDOFF",
-  "runner_phases": ["prepared", "cleanup_pending", "failed"],
+  "runner_phases": ["prepared", "work_completed", "cleanup_pending", "failed"],
   "monitor_phases": ["extraction_complete", "extraction_failed"],
   "phase_deadlines_seconds": {
     "prepared": 30.0,

@@ -158,22 +158,22 @@ def test_host_session_ref_and_repository_root_pass_through_mcp(monkeypatch, tmp_
     assert captured[0]["repository_root"] == tmp_path
 
 
-def test_cold_start_exposes_the_20_s1_plus_s2_tools_and_delivery_extensions():
+def test_cold_start_exposes_s1_s2_and_delivery_extensions():
     async def list_names(client):
         listing = await client.list_tools()
         return [tool.name for tool in listing.tools]
 
     names = _session([list_names])[0]
     assert sorted(names) == sorted(host_ops_mcp.TOOL_NAMES)
-    assert len(names) == 20 + len(host_ops_mcp.DELIVERY_TOOL_NAMES)
+    assert len(names) == len(host_ops_mcp.S1_TOOL_NAMES) + len(host_ops_mcp.S2_TOOL_NAMES) + len(host_ops_mcp.DELIVERY_TOOL_NAMES)
     assert set(names) == (
         set(host_ops_mcp.S1_TOOL_NAMES)
         | set(host_ops_mcp.S2_TOOL_NAMES)
         | set(host_ops_mcp.DELIVERY_TOOL_NAMES)
     )
     assert len(host_ops_mcp.S1_TOOL_NAMES) == 12
-    assert len(host_ops_mcp.S2_TOOL_NAMES) == 8
-    assert len(host_ops_mcp.DELIVERY_TOOL_NAMES) == 8
+    assert len(host_ops_mcp.S2_TOOL_NAMES) == 10
+    assert len(host_ops_mcp.DELIVERY_TOOL_NAMES) == 9
     assert not set(names) & FORBIDDEN_TOOL_NAMES
     # Every registered tool carries a schema, so a host cannot guess names.
     async def schemas(client):

@@ -114,12 +114,29 @@ original issue can support resolve_issue(repair_completed). Then request fresh
 independent semantic acceptance; local checks are not a Judge verdict.
 
 Pause, cancel and budget revocation take priority over new launches. Do not
-treat elapsed waiting time as approval. The local business adapter handles
-the exact controls 暂停 / 取消 / 撤回预算 immediately and passes their original
-text back to you. A host interruption is recorded as supervision interrupted,
+treat elapsed waiting time as approval. The local business adapter preserves the exact control and its original sourced
+message. 暂停/继续 are cooperative instructions: route to the Coordinator during
+production, or via relay_evaluation_message to the actual Consumer/Judge during
+acceptance. Read their actual acknowledgement before record_flow_confirmation;
+a delivery receipt alone stays pending. Do not interrupt or install a global pause
+switch. 取消/撤回预算 preserve their separate authorization-revocation contract. A host interruption is recorded as supervision interrupted,
 not success. Resume from real state without silently relaunching production.
 
 Finish with an explicit final business message stating what is verified and
 what remains unknown, then finish_delivery. Keep functional PASS separate
 from L0 runtime and independent L1 semantic acceptance. No self-review can
 replace Consumer/Judge acceptance.
+
+
+For R4.2-008 preserve the actual incoming message_id/source and explicit question
+reference. Use the unified append-only conversation history; do not expose private
+Judge/tool bodies. For R4.0-028 work completion is not process destruction:
+standby_run closes actual write authority and keeps original members; consult_team
+reuses the Coordinator thread with immutable final evidence. finish_delivery retains
+Delivery, the bound Team and already-running Consumer until explicit stop. Verify
+all bound owners' actual exits and resource cleanup before reporting stopped.
+Consumer/Judge waiting acknowledgements are not reports: preserve the original
+thread, remaining questions and report sink until genuine task completion. Resume
+on explicit input, never resubmit already accepted question reports. S4 permits a
+live sealed source under the fresh receipt/revision/key checks and separate
+acceptance-task lock; production recovery still requires writer exit.

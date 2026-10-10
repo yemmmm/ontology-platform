@@ -345,6 +345,11 @@ uv run python ../scripts/sync-interface-docs.py --write
 | build sessions | `POST` | `/api/projects/{project_id}/build-sessions` | Create Build Session |
 | checkpoint-data | `POST` | `/api/checkpoint-data/capture` | Capture Data |
 | checkpoint-data | `POST` | `/api/checkpoint-data/fork` | Fork Data |
+| delivery conversations | `GET` | `/api/projects/{project_id}/delivery-conversations` | Conversations |
+| delivery conversations | `GET` | `/api/projects/{project_id}/delivery-conversations/{delivery_session_id}` | Conversation |
+| delivery conversations | `GET` | `/api/projects/{project_id}/delivery-conversations/{delivery_session_id}/events` | Events |
+| delivery conversations | `GET` | `/api/projects/{project_id}/delivery-conversations/{delivery_session_id}/messages/{message_id}` | Receipt |
+| delivery conversations | `POST` | `/api/projects/{project_id}/delivery-conversations/{delivery_session_id}/messages` | Submit |
 | mcp-catalog | `GET` | `/api/mcp/tools` | List Mcp Tools |
 | modeling batches | `GET` | `/api/build-sessions/{session_id}/modeling-batches` | List Session Modeling Batches |
 | modeling batches | `GET` | `/api/modeling-batches/{batch_id}` | Get Modeling Batch |
@@ -687,3 +692,55 @@ definition_ref 按同一获准 resource-list 窗口内唯一的 semantic_id 解�
 `model_revision` 与该 Ontology 资源读取范围保持一致。`paging.complete` 必须同时满足
 端点窗口、关系窗口和底层读取完整；部分结果及相关 warnings 不能被解释为全项目没有
 其他模型内容。本接口只读，不增加图写入、推理、业务执行或 Evidence／lineage 功能。
+
+## Delivery 统一会话与 Team 待命（R4.2-008 / R4.0-028）
+
+项目内 `delivery-conversations` 复用现有 read 授权、项目上下文与 UI session CSRF；
+非管理员的可读主体也可发送。HTTP 只连接已有 Delivery，不启动 Agent 或扩大业务授权。
+列表只列显式绑定本项目的新会话；历史从本次新增记录起点开始，无旧会话导入或私有工具/Judge 正文。
+
+| HTTP 操作 | 请求与结果 |
+| --- | --- |
+| `GET /api/projects/{project_id}/delivery-conversations` | items、enumeration_complete、read_errors |
+| `GET /api/projects/{project_id}/delivery-conversations/{delivery_session_id}` | connection=online/offline/unknown，activity/observed_at/basis、delivery_result 与真实待答问题分开；online 来自本机 owner ping |
+| `GET /api/projects/{project_id}/delivery-conversations/{delivery_session_id}/events` | after_seq≥0、limit=1..200；单调事件、next_after_seq、has_more、history_complete/read_error |
+| `GET /api/projects/{project_id}/delivery-conversations/{delivery_session_id}/messages/{message_id}` | 原 UUID 收据；完整历史确实无记录为 404，不完整而不能排除接受为 503 message_receipt_unknown |
+| `POST /api/projects/{project_id}/delivery-conversations/{delivery_session_id}/messages` | message_id、kind=message/answer/control、原始 text，可选真实 reply_to_message_id/source_reference；control 另有 action=pause/resume/cancel/revoke_budget/stop |
+
+sender/submitted_by 从认证主体取得、entrypoint=web，客户端不能伪装 Host/测试回答者。
+answer 关联本会话实际问题；UTF-8 文本至多 64 KiB，原文不改。持久接收新消息为 202，原 ID 原
+payload 重试为 200 且不再次投递，同 ID 改正文/来源/关联为 409 message_identity_conflict。
+相同正文的新 UUID 为新消息；收到/送达/native 接受均非业务完成。离线只读、不排队或自动唤醒；
+unknown/超时先查原 ID，显式重试仍用原 envelope。半行或损坏历史保留不完整边界。
+
+CLI `python -m modeling_team delivery-conversation send|status|history --project-id ... --session-id ...`
+连接已有 owner 本机 socket。send 用 `--text` 或 UTF-8 `--message-file`，可固定 `--message-id`、
+声明实际 `--sender-kind/--sender-reference/--submitted-by/--source-reference` 与真实问题关联，
+不启动模型。stdin/CLI/网页/宿主输入共用 conversation-events.jsonl 的单调事件序列。
+
+| Host 工具 | 合同 |
+| --- | --- |
+| standby_run(run_id, request_id?) | 原 FIFO/ledger 排空与封口；撤回 owned 写 key，核对 Session/Lease/Attempt、实际修订，保留模型和原常驻线程；缺证据可恢复拒绝 |
+| consult_team(run_id, text, request_id?) | 只读追问原 Coordinator/Team，不重开写门/候选/原最终结论 |
+| pause_run / resume_live_run | 可带原 text/source_reference；原 Coordinator 消息协作，实际确认记入 team-lifecycle，不调用 Runtime 硬暂停 |
+| relay_evaluation_message(operation_id, action, text, request_id?) | 原评价 owner FIFO 的 consult/pause/resume/stop；原 request 去重，unknown 不自动重放，针对实际在办 Consumer/Judge |
+| get_run_status / get_evaluation_status | work_state 与 lifecycle、write_phase、原 thread/PID/owner/实际存活分开；报告完成时评价 owner 可仍 running |
+| complete_cq_acceptance(run_id, continuation_run_id?, acceptance_attempt_id?, request_id?) | 复读并重算报告 digest/verdict；S4 可引用新输出 run 的封口报告，核对 source/checkpoint/freeze/handoff，原报告不复制或覆盖 |
+| finish_delivery | 固定结论；核对全部绑定 run、验收／修复／验证 owner，仅全部任务结束才显示 standby，否则 read_only_wait 并返回 pending_owners；不预建 Consumer |
+| stop_run / stop_delivery_operation / explicit Delivery stop | 明确停止绑定 owner，逐项核实退出与资源清理，最后关闭 Delivery；未知清理公开 partial，保留模型/历史/证据 |
+
+暂停/继续由 Agent 自行等待/恢复，无全局工具硬门或强制 interrupt，在途调用按实际情况披露。
+生产通知原 Coordinator；验收经原 owner 通知实际 Consumer/正在判定的 Judge，不为暂停预建
+Judge。确认等待后的 turn 结束保留未完任务、sink、scope、thread 与已提交报告；明确继续只做
+剩余题目。等待不续期授权/read key，不重置费用，也不重开已封口 write phase。
+
+真正完成后 Consumer 原 sink 关闭、报告固定，保留回执含 disposition=retained_idle、task_closed、
+child_alive 与真实 owner/thread/PID；一次性 Judge 正常销毁。children_destroyed 只在实际销毁
+为 true，full_pass 仍要求全分母、独立裁决、冻结/读回及完整任务 closure，不回填旧报告。
+正常完成、认可、EOF、网页关闭、状态轮询均非 stop；无输入不发推理 heartbeat。
+
+S4 接受原已退出源，或经新 standby receipt、实际 key 撤回、修订/交接/checkpoint/全链写尾
+核对的 live 只读源。原生产 root lock 不释放，验收用单独同源 acceptance.lock，按报告/任务能力
+封口释放，不等 retained Consumer owner 退出；生产恢复仍满足旧 writer 退出门。
+foreground monitor 的 work_completed 仅交接完成工作及可信封口，不伪造 cleanup_pending/进程退出。
+EOF/查询不唤醒或补建失联角色；失联与必要故障清理保留 interrupted/部分存活及首失败层。

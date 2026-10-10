@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { BookOpen, Network, Search, ShieldCheck, Settings } from "lucide-react";
+import { BookOpen, MessageSquare, Network, Search, ShieldCheck, Settings } from "lucide-react";
 import { useT } from "./i18n";
 import { workspaceApi } from "./workspaceApi";
 import type { Project } from "./workspaceTypes";
@@ -8,8 +8,9 @@ import { ModelBrowserPage } from "./pages/ModelBrowserPage";
 import { RecallTestPage } from "./pages/RecallTestPage";
 import { MemberPermissionsPage } from "./pages/MemberPermissionsPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { DeliveryConversationPage } from "./pages/DeliveryConversationPage";
 const tabs = [
-  ["overview", "Overview", BookOpen], ["model", "Model browser", Network],
+  ["overview", "Overview", BookOpen], ["conversation", "Modeling conversation", MessageSquare], ["model", "Model browser", Network],
   ["recall", "Recall test", Search], ["access", "Member permissions", ShieldCheck],
   ["settings", "Settings", Settings],
 ] as const;
@@ -86,6 +87,7 @@ export function App() {
       {error && <p className="errorMessage" role="alert">{t("Project list could not be read")}: {error}</p>}
       {selection.tab === "settings" ? <SettingsPage /> : loading ? <p role="status">{t("Loading…")}</p> : !project ? <section className="panel emptyState">{t("No accessible projects")}</section> : <div key={`${project.id}:${selection.tab}`}>
         {selection.tab === "overview" && <OverviewPage project={project} />}
+        {selection.tab === "conversation" && <DeliveryConversationPage project={project} />}
         {selection.tab === "model" && <ModelBrowserPage project={project} />}
         {selection.tab === "recall" && <RecallTestPage project={project} />}
         {selection.tab === "access" && <MemberPermissionsPage project={project} />}

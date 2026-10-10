@@ -15,6 +15,7 @@ from app.api.mcp_catalog import router as mcp_catalog_router
 from app.api.modeling_batches import router as modeling_batches_router
 from app.api.modeling_workflow import router as modeling_workflow_router
 from app.api.modeling_workbench import router as modeling_workbench_router
+from app.api.delivery_conversations import router as delivery_conversations_router
 from app.repositories.rdf_store import RdfStoreRepository
 from app.services.health import check_oxigraph, check_postgres
 
@@ -28,6 +29,7 @@ router.include_router(checkpoint_data_router)
 router.include_router(modeling_batches_router)
 router.include_router(modeling_workflow_router)
 router.include_router(modeling_workbench_router)
+router.include_router(delivery_conversations_router)
 router.include_router(semantic_router)
 router.include_router(protection_sets_router)
 router.include_router(mcp_catalog_router)
