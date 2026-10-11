@@ -5096,7 +5096,9 @@ class TeamRunner:
             return False
         return True
 
-    def _reference_plan(self, plan_ref: str) -> Mapping[str, Any]:
+    def _reference_plan(
+        self, plan_ref: str, *, require_translation: bool = True,
+    ) -> Mapping[str, Any]:
         if not self._unified_graph or self.run is None:
             raise StagedSubmissionRejection("staged_gate_closed", "unified plans are unavailable")
         plan, issue = load_materialization_plan_ref(self.run.root, plan_ref)
@@ -5123,16 +5125,18 @@ class TeamRunner:
         issue = unified_approval_issue(approvals, projection)
         if issue is not None:
             raise StagedSubmissionRejection(issue.reason_code, issue.detail)
-        issue = unified_translation_issue(
-            approvals, plan_ref=plan_ref, projection_digest=plan["projection_digest"],
-            coordinator_id=self._multi_slice_role_ids().get("coordinator") or "",
-        )
-        if issue is not None:
-            raise StagedSubmissionRejection(issue.reason_code, issue.detail)
+        if require_translation:
+            issue = unified_translation_issue(
+                approvals, plan_ref=plan_ref, projection_digest=plan["projection_digest"],
+                coordinator_id=self._multi_slice_role_ids().get("coordinator") or "",
+            )
+            if issue is not None:
+                raise StagedSubmissionRejection(issue.reason_code, issue.detail)
         return plan
 
     def _handle_execute_approved_plans(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """Execute each exact approved projection in dependency order, without replay."""
+        dry_only = args.get("mode", "apply_atomic") == "dry_run"
         refs = args.get("plan_refs")
         if not isinstance(refs, list) or not refs or len(set(refs)) != len(refs):
             raise StagedSubmissionRejection("staged_submit_schema_mismatch", "use unique ordered plan_refs")
@@ -5174,10 +5178,10 @@ class TeamRunner:
             # existing submission gate re-reads its plan and approvals again.
             for ref in refs:
                 current_ref = ref
-                self._reference_plan(ref)
+                self._reference_plan(ref, require_translation=not dry_only)
             for ref in refs:
                 current_ref = ref
-                plan = self._reference_plan(ref)
+                plan = self._reference_plan(ref, require_translation=not dry_only)
                 projection = plan["projection"]
                 receipts = read_submission_receipts(self.run.root)
                 intents = read_submission_intents(self.run.root)
@@ -5210,7 +5214,7 @@ class TeamRunner:
                     continue
                 version = data["workspace"]["model_revision"]
                 token = args.get("lease_tokens", {}).get(projection["ontology_id"])
-                if not token:
+                if not dry_only and not token:
                     raise StagedSubmissionRejection("staged_submit_schema_mismatch", "lease_tokens must cover each approved ontology")
                 batch = {key: projection[key] for key in ("session_id", "client_batch_id", "ontology_id", "items")}
                 batch["expected_model_revision"] = version
@@ -5235,6 +5239,11 @@ class TeamRunner:
                     dry = self._handle_staged_submit_modeling_batch(submission)
                     if dry.get("attempt_status") != "validated":
                         raise StagedSubmissionRejection("dry_run_proof_not_validated", json.dumps(dry))
+                if dry_only:
+                    completed.append({"plan_ref": ref, "projection_digest": plan["projection_digest"],
+                                      "status": "validated", "dry_run": dict(dry),
+                                      "resource_readback_status": "not_applied"})
+                    continue
                 stage = "apply"
                 batch.update(mode="apply_atomic", idempotency_key=f"ref-{key_seed}-apply", lease_token=token)
                 apply = self._handle_staged_submit_modeling_batch(submission)
@@ -5256,6 +5265,11 @@ class TeamRunner:
             return {"ok": False, "status": "PARTIAL", "completed": completed,
                     "error": {**detail, "plan_ref": current_ref, "stage": stage},
                     "retry": "correct the named reference/approval/read or reconcile unknown writes, then retry; applied plans are not replayed"}
+        if dry_only:
+            return {"ok": True, "status": "COMPLETE", "completed": completed,
+                    "resource_readback_status": "not_applied",
+                    "required_next_step": "Obtain current translation approval and apply authorization before apply_atomic; validation is not materialization or semantic acceptance",
+                    "semantic_verdict": "not_evaluated"}
         return {"ok": True, "status": "COMPLETE", "completed": completed,
                 "resource_readback_status": "pending_protocol_governed_read",
                 "required_next_step": "Protocol must read actual authorized resources/relations with existing governed reads, retain complete pages, then inspect associations by read_refs before chain handoff",

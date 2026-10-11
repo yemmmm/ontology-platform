@@ -288,7 +288,7 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 
 | 工具 | 调用者与输入 | 输出及边界 |
 | --- | --- | --- |
-| `protocol_execute_approved_plans` | unified Protocol；有序已批准 plan_refs、ontology lease_tokens、可选既有 trace attachments | 当前版本逐批 dry-run/apply，原 gate 与每批原子性不变；完成执行不等于实际资源语义读回，后续按原治理读取核对资源／关系 |
+| `protocol_execute_approved_plans` | unified Protocol；有序 plan_refs、ontology lease_tokens、可选 mode／既有 trace attachments | 默认 `apply_atomic`：当前版本逐批 dry-run/apply；`dry_run` 配合空 lease_tokens 仅按引用验证，无须翻译批准但保留候选／业务批准。apply 的当前翻译批准、原 gate 与每批原子性不变；完成执行不等于实际资源语义读回，后续按原治理读取核对资源／关系 |
 | `protocol_check_plan_coverage` | unified Protocol；同轮 candidate_ref、plan_refs、明确不落地 dispositions | 候选与命令身份覆盖、applied 记录和缺口；不推断业务依赖或模型质量 |
 | `protocol_inspect_associations` | unified Protocol；本轮已观察 semantic_sparql_query read_refs、final_read_ref、project／ontology scope | 保留多页原文按引用进入现有关联扫描，定位／摘要可核对，缺页 PARTIAL；任意路径或其他 run 引用不可读 |
 | `examiner_report.read_frozen_evidence` | v2 引用 Judge；run_id、batch_id、freeze_digest、reference_id | 仅返回已绑定冻结业务原文；同文可复用及重读，记录实际读取回执；无仓库／DB／平台读取权限 |

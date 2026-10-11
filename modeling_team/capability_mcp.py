@@ -218,6 +218,8 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "protocol_id": {"type": "string"},
+            "mode": {"type": "string", "enum": ["dry_run", "apply_atomic"],
+                     "default": "apply_atomic"},
             "plan_refs": {"type": "array", "minItems": 1, "uniqueItems": True,
                           "items": {"type": "string"}},
             "lease_tokens": {"type": "object", "additionalProperties": {"type": "string"}},
@@ -789,10 +791,26 @@ class RunnerCapabilityEndpoint:
             return self._error(request_id)
         method = request.get("method")
         if method == "tools/list":
+            protocol_descriptions = {
+                "protocol_execute_approved_plans": (
+                    "Execute immutable plan_refs without copying items. Default apply_atomic "
+                    "performs current-version dry-run, approved apply and version readback per plan. "
+                    "For validation only, use mode=dry_run and lease_tokens={}; this never applies "
+                    "model resources and does not require translation approval. Semantic approvals "
+                    "and existing gates remain required. Actual governed resource readback follows apply."
+                ),
+                "protocol_staged_submit_modeling_batch": (
+                    "Legacy/manual inline staged batch submission. Unified plans should use "
+                    "protocol_execute_approved_plans, including mode=dry_run for validation only, "
+                    "to preserve every approved item field without transcription."
+                ),
+            }
             tools = [
                 {
                     "name": operation,
-                    "description": f"Runner-private {self.role} capability",
+                    "description": protocol_descriptions.get(
+                        operation, f"Runner-private {self.role} capability"
+                    ),
                     "inputSchema": CAPABILITY_TOOL_SCHEMAS[operation],
                 }
                 for operation in self.operations

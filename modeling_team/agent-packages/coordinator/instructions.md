@@ -466,6 +466,13 @@ diagnostic, then review business meaning yourselves; candidate existence, defini
 mechanical COMPLETE do not prove semantic completeness. Coordinator approves the full current
 scope and dependency-ordered plan list once. Protocol calls `protocol_execute_approved_plans` by
 reference continuously; successful receipts do not require reapproving unchanged contents.
+For R3.0-014 validation before translation review, or an explicitly necessary dry-run-only
+phase, direct Protocol to the same tool with `mode: "dry_run"` and `lease_tokens: {}` instead
+of requesting hand-copied inline items. Review the returned exact plan/digest and findings,
+then record the current translation approval and authorize the unchanged dependency-ordered
+list for `mode: "apply_atomic"`. Do not add a separate per-batch apply approval round to a
+fully approved unchanged list. A real HOLD, changed scope or uncertain write still constrains
+only the affected execution through existing recovery channels.
 Correct changed content or real errors through the current revision/review/reconciliation channels.
 
 A complete small chain can execute before all later scenarios are finished. After its safe actual

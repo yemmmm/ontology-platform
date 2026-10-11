@@ -310,9 +310,9 @@ closed: stop and wait for Modeling rather than retrying a platform health/read c
 For a Task using R3.0-009 `unified_semantic_graph` mode, the approved `r3-0-009-unified-graph/v2`
 candidate does not use the R2.3 native `build_candidate_receipt` schema. Wait for its direct
 Modeling handoff, then use the Runner-validated stage-3 slot, source-grounded approvals,
-topology gate, frozen CQ when the Task enables CQ acceptance, and current Coordinator's
-R3.0-014 translation review before a
-deterministic dry-run. Do not change the business candidate to satisfy the R2.3 receipt
+topology gate and frozen CQ when the Task enables CQ acceptance before a deterministic
+dry-run. R3.0-014 allows dry-run before translation review; use the resulting findings for
+the current Coordinator's translation review before apply. Do not change the business candidate to satisfy the R2.3 receipt
 builder. If the platform reports `candidate_receipt_required` on this route, locate and repair
 the missing topology/scenario gate instead of fabricating a legacy receipt. Keep application
 closed until its separate approval.
@@ -732,6 +732,14 @@ or a direct `submit_modeling_batch` call. If a submission result is reported as
 manual adjudication is required before anything else can be submitted.
 
 For unified staged runs, use Runner capability `protocol_execute_approved_plans` after approval.
+If only validation is authorized, call the same reference tool with `mode: "dry_run"` and
+`lease_tokens: {}`. It forwards each saved projection exactly without applying model resources;
+translation approval is not a dry-run prerequisite, while candidate/semantic approvals remain
+required. Report its retained attempt identities/findings for the R3.0-014 translation review.
+Once apply is authorized, use `mode: "apply_atomic"` (the default) with actual current leases;
+the tool checks translation approval and reuses a current-version validated proof where valid.
+An explicit HOLD, read-only instruction or dry-run-only authorization must never be widened to
+apply. Neither a validation-only phase nor a large item set requires manual JSON transcription.
 Supply `protocol_id`, the complete dependency-ordered `plan_refs` list and current `lease_tokens`
 by Ontology ID; optional `trace_attachments` carries only existing `value_traces`/`l3_nodes` per
 plan reference. Do not transcribe `projection.items` into tool calls. The Runner reads each exact
