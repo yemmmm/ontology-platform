@@ -26,6 +26,8 @@ delivery evidence. Use the following locations for new documentation.
   retrieval, nested neighbor previews, evidence-driven Consumer stopping, scoring evaluation
   before deciding on Jev, and reduced repeated computation. Their design and validation are pending;
   modeling remains paused.
+  R4.3-013 registers optional file and directory references across existing authorized Agent
+  interactions, with the handoff format chosen by each Agent; design and implementation are pending.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
