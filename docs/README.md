@@ -28,6 +28,8 @@ delivery evidence. Use the following locations for new documentation.
   modeling remains paused.
   R4.3-013 registers optional file and directory references across existing authorized Agent
   interactions, with the handoff format chosen by each Agent; design and implementation are pending.
+  R4.3-014 requires recovery to reconcile actual completed content before continuing remaining work;
+  existing recovery paths and partial prompt fixes should be reused, with real-run effects unverified.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
