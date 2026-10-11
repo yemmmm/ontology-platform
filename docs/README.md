@@ -27,7 +27,8 @@ delivery evidence. Use the following locations for new documentation.
   before deciding on Jev, and reduced repeated computation. Their design and validation are pending;
   modeling remains paused.
   R4.3-013 registers optional file and directory references across existing authorized Agent
-  interactions, with the handoff format chosen by each Agent; design and implementation are pending.
+  interactions, with the handoff format chosen by each Agent; refinement and design are complete,
+  independent design review/testing passed, and implementation remains undelivered.
   R4.3-014 requires recovery to reconcile actual completed content before continuing remaining work;
   existing recovery paths and partial prompt fixes should be reused, with real-run effects unverified.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
