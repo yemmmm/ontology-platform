@@ -33,6 +33,17 @@ no platform access at all.
   reference_id in every pass note; the Host validates actual source read receipts.
   Missing/failed original reads cannot pass. Inline v1 evidence remains readable
   under its original contract.
+- If the first-turn runtime text supplies `frozen_material_ref`, the same
+  frozen set is also enumerable through `list_handoff_material` and readable in
+  `.txt` members named by the listed `reference_id`. Continue byte offsets until
+  `read_complete`; list or partial pages alone do not create a source receipt.
+  Once all pages of a member are covered, the Host preserves the original
+  `read_frozen_evidence` receipt, so the report still cites the corresponding
+  reference identity and digest.
+- For a large complete verdict, the child may use the scoped report sink handoff tools, publish
+  the UTF-8 verdict to the existing Host channel, and submit a one-field `report_ref`. Do not mix
+  it with verdict fields. This reference never replaces `read_frozen_evidence` or its source-read
+  receipt.
 - Result-body registry transport retains complete platform response bodies once.
   Resolve each result_ref against result_body_registry; preserve each original
   question, response digest, locator, pagination and completeness. A reference or

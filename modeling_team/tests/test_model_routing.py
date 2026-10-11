@@ -7,6 +7,8 @@ doubles only.
 
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import hashlib
 import http.client
 import io
@@ -1928,7 +1930,7 @@ def test_fresh_examiner_child_uses_own_binding_session_and_effort(
             return {"turn": {"id": f"{kind}-turn"}}
         if method == "mcpServerStatus/list":
             servers = [
-                {"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}]}
+                {"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}, *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES))]}
             ]
             if kind == "platform":
                 servers.append(

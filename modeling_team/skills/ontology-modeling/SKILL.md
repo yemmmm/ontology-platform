@@ -177,3 +177,22 @@ request or carry GraphSet identifiers, member roles, or source-graph selectors i
 and handoffs. Definitions, ordinary nodes and relations share that model. Internal RDF locators in
 technical write receipts are host storage details. Keep original business sources and external mapping
 provenance intact; shared references require explicitly approved Ontology scope.
+
+## File and directory handoff (R4.3-013)
+
+For large candidates, plans, results, reports or multiple files, prefer publishing an authorized
+file or directory with `publish_handoff_material`; ordinary short text remains available, and
+you choose the format. When no existing file write entry is available, use the scoped
+`write_handoff_output(relative_path, content)` tool in your private output directory. This does
+not publish, approve or execute the content. Send a purpose, material entry and recipient task
+on your existing channel. `body_ref` selects one complete formal file (a directory requires
+`path`); `material_refs` supplies supporting files without becoming a candidate or plan.
+
+Use `list_handoff_material` and `read_handoff_material` to read actual snapshots. Follow
+`next_cursor` or `next_offset` when incomplete; listing is separate from reading. A missing,
+forbidden or damaged reference is a recoverable current-call error: report the concrete issue
+and correct the reference. Never invent its contents or open another role's home, the full run
+or hidden acceptance material. Existing source, approval, topology ownership, governed reads,
+unknown and independent acceptance rules remain in force; delivery is not semantic PASS.
+
+For `report_task_result`, use `summary_ref` for the complete formal summary; `body_ref` is the Team message body field.

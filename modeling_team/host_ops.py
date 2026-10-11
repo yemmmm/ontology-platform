@@ -59,6 +59,7 @@ from .checkpoint_recovery import (
 )
 from .checkpoints import CheckpointError
 from .checkpoints import inspect_checkpoints as inspect_checkpoints_readonly
+from .handoff_materials import HandoffMaterials, MaterialError
 from .competency_questions import (
     CQ_ACCEPTANCE_COMPLETE_FIELDS,
     CQ_FREEZE_DIRECTORY,
@@ -1816,6 +1817,169 @@ def submit_fifo_action(
     }
 
 
+def _material_host_error(exc: MaterialError, *, obj: str = "material") -> HostOpError:
+    """Translate a scoped handoff failure into the existing Host error tuple."""
+
+    return HostOpError(
+        exc.code,
+        str(exc),
+        obj=obj,
+        retryable=exc.code not in {"material_forbidden", "material_media_unsupported"},
+        next_action=(
+            "choose an authorized material reference and retry the same action"
+            if exc.code != "material_forbidden"
+            else "use a reference published for this Host channel"
+        ),
+    )
+
+
+def _open_run_handoff_store(
+    run_id: str, repository_root: Path | None,
+) -> tuple[HandoffMaterials, dict[str, str]]:
+    """Open the existing run-owned store for direct Host/MCP callers.
+
+    Delivery normally transfers a session package into this store before it
+    invokes a FIFO action.  The standalone Host MCP surface has no Python
+    object to pass, so it binds the already published Runner package from the
+    run root and derives the existing role ids from the frozen profile.
+    """
+
+    run_root, _ = resolve_run_root(run_id, repository_root=repository_root)
+    agents: list[dict[str, Any]] = []
+    try:
+        profile = yaml.safe_load(
+            (run_root / "profile.snapshot.yaml").read_text(encoding="utf-8")
+        )
+        agents = profile.get("agents") if isinstance(profile, dict) else []
+    except (OSError, UnicodeDecodeError, yaml.YAMLError):
+        pass
+    recipients = {
+        str(agent.get("agent_id"))
+        for agent in agents
+        if isinstance(agent, dict)
+        and isinstance(agent.get("agent_id"), str)
+        and agent.get("agent_id")
+    }
+    store = HandoffMaterials(run_root / "handoff-materials", run_id)
+    store.register_actor("runner", {}, recipients)
+    role_ids = {
+        str(agent.get("package")): str(agent.get("agent_id"))
+        for agent in agents
+        if isinstance(agent, dict)
+        and isinstance(agent.get("package"), str)
+        and isinstance(agent.get("agent_id"), str)
+        and agent.get("agent_id")
+    }
+    return store, role_ids
+
+
+def _auto_material_binding(
+    run_id: str,
+    *,
+    channel: str | None = None,
+    repository_root: Path | None,
+) -> tuple[HandoffMaterials | None, str | None]:
+    """Resolve a direct Host call's Runner actor and existing role recipient."""
+
+    if repository_root is None:
+        return None, None
+    store, role_ids = _open_run_handoff_store(run_id, repository_root)
+    role = "coordinator"
+    if channel == "user":
+        role = "modeling"
+    elif channel == "cq_interview":
+        role = "competency-question"
+    return store, role_ids.get(role, role)
+
+
+def _material_payload(
+    text: str | None,
+    *,
+    body_ref: dict[str, Any] | None,
+    material_refs: list[dict[str, Any]] | None,
+    display_text: str | None,
+    material_origins: list[dict[str, Any]] | None,
+    handoff_materials: HandoffMaterials | None,
+    material_actor_id: str,
+    material_recipient_id: str,
+) -> tuple[str, dict[str, Any]]:
+    """Return complete formal text plus separate display/reference metadata.
+
+    The in-process Delivery path supplies ``handoff_materials`` so the Host
+    resolves and authorizes the immutable body in the target run before the
+    FIFO write.  A body reference without that recipient-bound resolver is
+    rejected; a path visible only to the sender is never enough.
+    """
+
+    formal_text = text
+    if body_ref is not None:
+        # A ref without a live target-store resolver would leave the Runner
+        # with a path it cannot read.  Inline text is a display hint only in
+        # this mode; require the Host to verify the actual recipient binding.
+        if handoff_materials is None:
+            raise HostOpError(
+                "material_source_unavailable",
+                "body_ref requires the bound recipient material resolver",
+                obj="body_ref",
+                retryable=True,
+                next_action="retry with the run-bound material resolver",
+            )
+        try:
+            handoff_materials.authorize_ref(material_actor_id, material_recipient_id, body_ref)
+            formal_text = handoff_materials.resolve(material_actor_id, body_ref)
+        except MaterialError as exc:
+            raise _material_host_error(exc, obj="body_ref") from exc
+        display = display_text or text or (
+            f"Formal content is in handoff material {body_ref.get('material_id')}"
+        )
+    else:
+        display = display_text
+    if not isinstance(formal_text, str) or not formal_text.strip():
+        raise HostOpError(
+            "invalid_owner_answer",
+            "text must be a non-empty string unless body_ref resolves complete content",
+            obj="text",
+            retryable=True,
+            next_action="resend complete text or an authorized body_ref",
+        )
+    refs = material_refs or []
+    if not isinstance(refs, list) or any(not isinstance(ref, dict) for ref in refs):
+        raise HostOpError(
+            "material_path_invalid",
+            "material_refs must be a list of reference objects",
+            obj="material_refs",
+            retryable=True,
+            next_action="provide material_id references published for this channel",
+        )
+    if handoff_materials is not None:
+        try:
+            for ref in refs:
+                handoff_materials.authorize_ref(material_actor_id, material_recipient_id, ref)
+        except MaterialError as exc:
+            raise _material_host_error(exc, obj="material_refs") from exc
+    metadata: dict[str, Any] = {}
+    if body_ref is not None:
+        metadata["body_ref"] = body_ref
+    if refs:
+        metadata["material_refs"] = refs
+    if material_origins:
+        metadata["material_origins"] = material_origins
+    if display is not None:
+        if not isinstance(display, str) or not display.strip():
+            raise HostOpError(
+                "material_path_invalid",
+                "display_text must be a non-empty string when provided",
+                obj="display_text",
+                retryable=True,
+                next_action="omit display_text or provide its intended short explanation",
+            )
+        metadata["display_text"] = display
+    # ``formal_text`` is returned for pre-write validation only.  A body_ref
+    # keeps the FIFO bounded: the wire text is the short display explanation,
+    # while the Runner resolves the complete immutable body in its run store.
+    return formal_text, metadata
+
+
 # --- per-action submission builders (design §4) ----------------------------------
 
 
@@ -1823,23 +1987,38 @@ def answer_question(
     run_id: str,
     *,
     channel: str,
-    text: str,
+    text: str | None = None,
     question_delivery_id: str | None = None,
     wait_for_draft: bool | None = None,
     request_id: str | None = None,
+    body_ref: dict[str, Any] | None = None,
+    material_refs: list[dict[str, Any]] | None = None,
+    display_text: str | None = None,
+    material_origins: list[dict[str, Any]] | None = None,
+    handoff_materials: HandoffMaterials | None = None,
+    material_actor_id: str = "host",
+    material_recipient_id: str = "runner",
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """``answer_question``: the ``user`` and ``cq_interview`` channels."""
 
-    if not isinstance(text, str) or not text.strip():
-        raise HostOpError(
-            "invalid_owner_answer",
-            "answer text must be a non-empty string; text is passed through "
-            "verbatim (no newline or whitespace normalization)",
-            obj="text",
-            retryable=False,
-            next_action="resend with the answer text exactly as intended",
+    if (body_ref is not None or material_refs) and handoff_materials is None:
+        handoff_materials, auto_recipient = _auto_material_binding(
+            run_id, channel=channel, repository_root=repository_root
         )
+        if handoff_materials is not None:
+            material_actor_id = "runner"
+            material_recipient_id = auto_recipient or material_recipient_id
+    formal_text, material_metadata = _material_payload(
+        text,
+        body_ref=body_ref,
+        material_refs=material_refs,
+        display_text=display_text,
+        material_origins=material_origins,
+        handoff_materials=handoff_materials,
+        material_actor_id=material_actor_id,
+        material_recipient_id=material_recipient_id,
+    )
     if channel == "user":
         if not isinstance(question_delivery_id, str) or not question_delivery_id:
             raise HostOpError(
@@ -1851,13 +2030,16 @@ def answer_question(
                 next_action="call get_pending_actions and resend with the "
                 "displayed question's delivery id",
             )
+        wire_text = material_metadata.get("display_text", formal_text) if body_ref is not None else formal_text
         envelope = {
             "action": "user",
-            "text": text,
+            "text": wire_text,
             "question_delivery_id": question_delivery_id,
+            **material_metadata,
         }
     elif channel == "cq_interview":
-        envelope = {"action": "cq_interview", "text": text}
+        wire_text = material_metadata.get("display_text", formal_text) if body_ref is not None else formal_text
+        envelope = {"action": "cq_interview", "text": wire_text, **material_metadata}
         if wait_for_draft is not None:
             envelope["wait_for_draft"] = wait_for_draft
     else:
@@ -1880,10 +2062,17 @@ def submit_instruction(
     run_id: str,
     *,
     kind: str,
-    text: str,
+    text: str | None = None,
     source_reference: str,
     authorization_reference: str,
     request_id: str | None = None,
+    body_ref: dict[str, Any] | None = None,
+    material_refs: list[dict[str, Any]] | None = None,
+    display_text: str | None = None,
+    material_origins: list[dict[str, Any]] | None = None,
+    handoff_materials: HandoffMaterials | None = None,
+    material_actor_id: str = "host",
+    material_recipient_id: str = "runner",
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
     """Submit a Delivery instruction without impersonating an owner answer.
@@ -1904,14 +2093,23 @@ def submit_instruction(
             retryable=True,
             next_action="choose the instruction kind that matches its source",
         )
-    if not isinstance(text, str) or not text.strip():
-        raise HostOpError(
-            "instruction_invalid",
-            "text must be a non-empty string and is passed through verbatim",
-            obj="text",
-            retryable=True,
-            next_action="resend the complete instruction text",
+    if (body_ref is not None or material_refs) and handoff_materials is None:
+        handoff_materials, auto_recipient = _auto_material_binding(
+            run_id, repository_root=repository_root
         )
+        if handoff_materials is not None:
+            material_actor_id = "runner"
+            material_recipient_id = auto_recipient or material_recipient_id
+    formal_text, material_metadata = _material_payload(
+        text,
+        body_ref=body_ref,
+        material_refs=material_refs,
+        display_text=display_text,
+        material_origins=material_origins,
+        handoff_materials=handoff_materials,
+        material_actor_id=material_actor_id,
+        material_recipient_id=material_recipient_id,
+    )
     for field, value in (
         ("source_reference", source_reference),
         ("authorization_reference", authorization_reference),
@@ -1924,12 +2122,14 @@ def submit_instruction(
                 retryable=True,
                 next_action=f"provide the recorded {field} for this instruction",
             )
+    wire_text = material_metadata.get("display_text", formal_text) if body_ref is not None else formal_text
     envelope = {
         "action": "instruction",
         "kind": kind,
-        "text": text,
+        "text": wire_text,
         "source_reference": source_reference,
         "authorization_reference": authorization_reference,
+        **material_metadata,
     }
     return submit_fifo_action(
         run_id,
@@ -3274,13 +3474,44 @@ def standby_run(run_id: str, *, request_id: str | None = None,
                                     request_id=request_id, repository_root=repository_root)
 
 
-def consult_team(run_id: str, *, text: str, request_id: str | None = None,
+def consult_team(run_id: str, *, text: str | None = None, request_id: str | None = None,
+                 body_ref: dict[str, Any] | None = None,
+                 material_refs: list[dict[str, Any]] | None = None,
+                 display_text: str | None = None,
+                 material_origins: list[dict[str, Any]] | None = None,
+                 handoff_materials: HandoffMaterials | None = None,
+                 material_actor_id: str = "host",
+                 material_recipient_id: str = "runner",
                  repository_root: Path | None = None) -> dict[str, Any]:
-    if not isinstance(text, str) or not text.strip():
-        raise HostOpError("consult_text_missing", "consult needs original text", obj="text",
-                          retryable=True, next_action="supply the user's question")
-    return _submit_lifecycle_action(run_id, "consult", {"action": "consult", "text": text},
-                                    request_id=request_id, repository_root=repository_root)
+    if body_ref is None and (not isinstance(text, str) or not text.strip()):
+        raise HostOpError(
+            "consult_text_missing",
+            "consult requires original text unless a body_ref supplies the complete content",
+            obj="text",
+            retryable=True,
+            next_action="provide the consult text or an authorized body_ref",
+        )
+    if (body_ref is not None or material_refs) and handoff_materials is None:
+        handoff_materials, auto_recipient = _auto_material_binding(
+            run_id, repository_root=repository_root
+        )
+        if handoff_materials is not None:
+            material_actor_id = "runner"
+            material_recipient_id = auto_recipient or material_recipient_id
+    formal_text, material_metadata = _material_payload(
+        text,
+        body_ref=body_ref,
+        material_refs=material_refs,
+        display_text=display_text,
+        material_origins=material_origins,
+        handoff_materials=handoff_materials,
+        material_actor_id=material_actor_id,
+        material_recipient_id=material_recipient_id,
+    )
+    wire_text = material_metadata.get("display_text", formal_text) if body_ref is not None else formal_text
+    return _submit_lifecycle_action(
+        run_id, "consult", {"action": "consult", "text": wire_text, **material_metadata},
+        request_id=request_id, repository_root=repository_root)
 
 
 def inspect_checkpoints(

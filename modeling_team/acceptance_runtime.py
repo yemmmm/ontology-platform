@@ -1652,6 +1652,102 @@ _REPORT_PLATFORM_LOCATOR_FIELDS = frozenset(
     {"ref_id", "tool", "request_digest", "response_digest", "artifact_path", "page"}
 )
 
+# R4.3-013: a report may be supplied as one immutable Host-published text
+# material.  The child bridge repeats this small shape check, while the Host
+# resolves and parses the complete UTF-8 object before applying the existing
+# report validator.  Keep the reference fields deliberately smaller than the
+# material manifest: the receiving identity and source authorization belong to
+# HandoffMaterials, never to a child-supplied visibility claim.
+_REPORT_REFERENCE_FIELDS = frozenset({"material_id", "path"})
+
+
+class ReportReferenceError(ChildRuntimeError):
+    """A report reference could not be resolved before report validation.
+
+    This error is intentionally separate from ordinary report rejection.  A
+    failed material lookup has no report-side effect and must not consume the
+    legacy sink's bounded validation budget.
+    """
+
+    def __init__(self, code: str, detail: str):
+        self.code = str(code) if code else "material_source_unavailable"
+        self.detail = str(detail) if detail else self.code
+        super().__init__(self.detail)
+
+
+def _validate_report_reference(value: Any) -> dict[str, str | None]:
+    """Validate the opaque material identity accepted by the child wire."""
+
+    if not isinstance(value, Mapping):
+        raise ReportReferenceError("material_path_invalid", "report_ref must be an object")
+    if set(value) - _REPORT_REFERENCE_FIELDS or "material_id" not in value:
+        raise ReportReferenceError(
+            "material_path_invalid", "report_ref requires material_id and optional path"
+        )
+    material_id = value.get("material_id")
+    path = value.get("path")
+    if not isinstance(material_id, str) or not material_id:
+        raise ReportReferenceError("material_path_invalid", "report_ref material_id is invalid")
+    if "path" in value and (not isinstance(path, str) or not path):
+        raise ReportReferenceError("material_path_invalid", "report_ref path is invalid")
+    normalized = {"material_id": material_id}
+    if "path" in value:
+        normalized["path"] = path
+    return normalized
+
+
+def _resolve_report_reference(
+    value: Mapping[str, Any],
+    *,
+    handoff_materials: Any | None,
+    material_actor_id: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Resolve one report reference into the original full report object.
+
+    ``HandoffMaterials.resolve`` is the authority for source, recipient,
+    immutable snapshot, member and digest checks.  The sink adds only the
+    content decoding boundary required by the report contract.  The returned
+    receipt is kept separately from the strict report object so the existing
+    callbacks and v3 packet fields remain byte-for-byte compatible.
+    """
+
+    if set(value) != {"report_ref"}:
+        raise ReportReferenceError(
+            "material_path_invalid",
+            "report_ref must be the complete report input; do not mix it with report fields",
+        )
+    reference = _validate_report_reference(value.get("report_ref"))
+    if handoff_materials is None or not isinstance(material_actor_id, str) or not material_actor_id:
+        raise ReportReferenceError(
+            "material_forbidden", "report references are unavailable for this report sink"
+        )
+    resolver = getattr(handoff_materials, "resolve", None)
+    if not callable(resolver):
+        raise ReportReferenceError("material_forbidden", "report material resolver is unavailable")
+    try:
+        content = resolver(material_actor_id, reference)
+    except Exception as exc:
+        code = getattr(exc, "code", None) or "material_source_unavailable"
+        detail = str(exc) or str(code)
+        raise ReportReferenceError(str(code), detail) from exc
+    if not isinstance(content, str):
+        raise ReportReferenceError("material_media_unsupported", "report material is not UTF-8 text")
+    raw = content.encode("utf-8")
+    try:
+        parsed = json.loads(content)
+    except (TypeError, json.JSONDecodeError) as exc:
+        raise ReportReferenceError("material_media_unsupported", "report material is not valid JSON") from exc
+    if not isinstance(parsed, Mapping):
+        raise ReportReferenceError("material_media_unsupported", "report material must contain one JSON object")
+    if "report_ref" in parsed:
+        raise ReportReferenceError("material_path_invalid", "report material cannot contain another report_ref")
+    receipt = {
+        "report_ref": dict(reference),
+        "content_digest": hashlib.sha256(raw).hexdigest(),
+        "bytes": len(raw),
+    }
+    return dict(parsed), receipt
+
 
 def _validate_report_sink_payload(
     value: Any, *, kind: str, batch_contract: "V3BatchReportContract | None" = None
@@ -2579,6 +2675,7 @@ class ScopedReadProxy:
         exact_schemas: Mapping[str, Mapping[str, Any]] | None = None,
         authorized_ontologies: Sequence[Mapping[str, Any]] | None = None,
         persist_response: Callable[[str, Mapping[str, Any]], None] | None = None,
+        response_material: Callable[[Mapping[str, Any]], Mapping[str, Any] | None] | None = None,
     ) -> None:
         self.socket_path = socket_path
         self.token = token
@@ -2633,6 +2730,11 @@ class ScopedReadProxy:
             raise ChildRuntimeError("Examiner proxy exact schema inventory is incomplete")
         self._forward = forward
         self._persist_response = persist_response
+        # Optional Host handoff publication for a governed response.  This is
+        # deliberately separate from the receipt and artifact persistence
+        # callbacks: a material reference is additive and must never replace
+        # the original result, digest or receipt fields returned to the child.
+        self._response_material = response_material
         self.acceptance_round_id = (
             _safe_id(acceptance_round_id, "acceptance_round_id")
             if acceptance_round_id is not None
@@ -2653,6 +2755,7 @@ class ScopedReadProxy:
         self.backend_calls = 0
         self.schema_rejections = 0
         self.persistence_failures = 0
+        self.response_material_failures = 0
 
     @property
     def active(self) -> bool:
@@ -2692,6 +2795,54 @@ class ScopedReadProxy:
 
         with self._lock:
             return tuple(self._call_receipts)
+
+    @staticmethod
+    def _normalize_response_material_ref(value: Any) -> dict[str, str] | None:
+        """Validate one optional Host-published response reference."""
+
+        if value is None:
+            return None
+        if isinstance(value, str):
+            value = {"material_id": value}
+        elif isinstance(value, Mapping) and set(value) == {"result_ref"}:
+            value = value["result_ref"]
+        if not isinstance(value, Mapping):
+            raise ChildRuntimeError("platform response material reference is invalid")
+        if set(value) - {"material_id", "path"} or "material_id" not in value:
+            raise ChildRuntimeError("platform response material reference is invalid")
+        material_id = value.get("material_id")
+        path = value.get("path")
+        if not isinstance(material_id, str) or not material_id:
+            raise ChildRuntimeError("platform response material reference is invalid")
+        if "path" in value and (not isinstance(path, str) or not path):
+            raise ChildRuntimeError("platform response material reference is invalid")
+        normalized = {"material_id": material_id}
+        if "path" in value:
+            normalized["path"] = path
+        return normalized
+
+    def _publish_response_material(
+        self, result: Mapping[str, Any]
+    ) -> dict[str, str] | None:
+        """Publish one governed response after its canonical digests exist.
+
+        The callback receives the exact original result mapping (as a detached
+        copy) used by the read response.  It runs after the proxy has computed
+        the request and response digests and appended the original receipt;
+        callers can publish that result into a role-bound material package.
+        A publication failure is reported as an additive warning by the
+        caller; the inline result and original receipt remain valid.
+        """
+
+        if self._response_material is None:
+            return None
+        try:
+            return self._normalize_response_material_ref(
+                self._response_material(deepcopy(dict(result)))
+            )
+        except Exception as exc:
+            self.response_material_failures += 1
+            raise ChildRuntimeError("platform-response-material-failed") from exc
 
     def start(self) -> ProxyReceipt:
         with self._lock:
@@ -2872,13 +3023,23 @@ class ScopedReadProxy:
                         ontologies=tuple(dict(entry) for entry in selected),
                     )
                 )
+                material_error = None
+                try:
+                    result_ref = self._publish_response_material(result)
+                except ChildRuntimeError:
+                    # Response publication is an optional additive channel.  A
+                    # failure must leave the original governed read and its
+                    # receipt usable; callers may retry the same read when the
+                    # handoff channel is available again.
+                    result_ref = None
+                    material_error = "platform-response-material-failed"
                 # auth018 attempt-0003: the child had to transcribe
                 # ``tool|request_digest|response_digest|artifact_path`` and one
                 # slip cost the question its judging evidence.  The host now
                 # issues one opaque handle per successful read (the ``p<ordinal>``
                 # convention the bounded continuation prompt already names);
                 # digest and locator values never travel through the child.
-                return {
+                response = {
                     "ok": True,
                     "result": result,
                     "evidence_handle": f"p{len(self._call_receipts) - 1}",
@@ -2888,6 +3049,11 @@ class ScopedReadProxy:
                     "call_ordinal": len(self._call_receipts) - 1,
                     "call_total": len(self._call_receipts),
                 }
+                if result_ref is not None:
+                    response["result_ref"] = result_ref
+                if material_error is not None:
+                    response["material_error"] = material_error
+                return response
             required = {
                 "project_id": self.project_id,
                 "ontology_id": self.ontology_id,
@@ -2976,8 +3142,14 @@ class ScopedReadProxy:
                     page=page,
                 )
             )
+            material_error = None
+            try:
+                result_ref = self._publish_response_material(result)
+            except ChildRuntimeError:
+                result_ref = None
+                material_error = "platform-response-material-failed"
             call_total = len(self._call_receipts)
-            return {
+            response = {
                 "ok": True,
                 "result": result,
                 "request_digest": request_digest,
@@ -2986,6 +3158,11 @@ class ScopedReadProxy:
                 "call_ordinal": len(self._call_receipts) - 1,
                 "call_total": call_total,
             }
+            if result_ref is not None:
+                response["result_ref"] = result_ref
+            if material_error is not None:
+                response["material_error"] = material_error
+            return response
 
     def revoke(self) -> dict[str, Any]:
         with self._lock:
@@ -3348,6 +3525,17 @@ class ReportSinkServer:
         validator: Callable[[Mapping[str, Any]], None] | None = None,
         max_attempts: int = 3,
         batch_contract: V3BatchReportContract | None = None,
+        handoff_materials: Any | None = None,
+        material_actor_id: str | None = None,
+        handoff_tool_names: Iterable[str] | None = None,
+        material_root: Path | None = None,
+        material_scope_id: str | None = None,
+        material_sources: Mapping[str, Path] | None = None,
+        material_source_recipients: Mapping[str, set[str]] | None = None,
+        material_recipients: Iterable[str] | None = None,
+        material_host_actor_id: str = "host",
+        material_host_sources: Mapping[str, Path] | None = None,
+        material_host_recipients: Iterable[str] | None = None,
     ):
         self.socket_path = socket_path
         self.token = token
@@ -3367,6 +3555,73 @@ class ReportSinkServer:
             if batch_contract.role != expected_role:
                 raise ChildRuntimeError("v3 batch report contract does not match the sink kind")
         self.batch_contract = batch_contract
+        if material_actor_id is None:
+            material_actor_id = kind or "acceptance"
+        if not isinstance(material_actor_id, str) or not material_actor_id:
+            raise ChildRuntimeError("report sink material actor is invalid")
+        if not isinstance(material_host_actor_id, str) or not material_host_actor_id:
+            raise ChildRuntimeError("report sink material host actor is invalid")
+        if handoff_materials is None:
+            # Standalone and legacy callers historically constructed only the
+            # sink.  Give those callers the same attempt-private material
+            # lifecycle as a Runner-owned sink, while keeping source mappings
+            # explicit.  The socket path is a local, non-secret scope anchor;
+            # no parent/run directory is exposed implicitly.
+            try:
+                from .handoff_materials import HandoffMaterials
+            except ImportError as exc:  # pragma: no cover - package runtime always has the helper
+                raise ChildRuntimeError("report sink handoff materials are unavailable") from exc
+            if material_actor_id == material_host_actor_id:
+                raise ChildRuntimeError("report sink material actor and host actor must differ")
+            root = Path(material_root) if material_root is not None else self.socket_path.parent / "handoff-materials"
+            if material_scope_id is None:
+                scope_digest = hashlib.sha256(str(self.socket_path.absolute()).encode("utf-8")).hexdigest()
+                material_scope_id = "report-sink-" + scope_digest[:24]
+            handoff_materials = HandoffMaterials(root, material_scope_id)
+            actor_recipients = set(material_recipients or ())
+            actor_recipients.add(material_host_actor_id)
+            host_recipients = set(material_host_recipients or ())
+            # A host can read/publish to the child only through an existing
+            # actor binding; the automatic store creates exactly this pair.
+            host_recipients.add(material_actor_id)
+            handoff_materials.register_actor(
+                material_actor_id,
+                dict(material_sources or {}),
+                actor_recipients,
+                dict(material_source_recipients or {}),
+            )
+            handoff_materials.register_actor(
+                material_host_actor_id,
+                dict(material_host_sources or {}),
+                host_recipients,
+            )
+            self.material_root = root
+            self.material_scope_id = material_scope_id
+        else:
+            self.material_root = None
+            self.material_scope_id = None
+        self.handoff_materials = handoff_materials
+        self.material_actor_id = material_actor_id
+        self.material_host_actor_id = material_host_actor_id
+        self.material_recipient_id = material_host_actor_id
+        # Every sink has the complete handoff surface by default.  Source
+        # eligibility still comes from HandoffMaterials registrations and can
+        # therefore remain narrower than the tool manifest.
+        if handoff_tool_names is None:
+            try:
+                from .handoff_materials import HANDOFF_TOOL_NAMES
+            except ImportError as exc:  # pragma: no cover - package runtime always has the helper
+                raise ChildRuntimeError("report sink handoff tools are unavailable") from exc
+            handoff_tool_names = HANDOFF_TOOL_NAMES
+        self.handoff_tool_names = frozenset(str(name) for name in (handoff_tool_names or ()))
+        if self.handoff_tool_names:
+            try:
+                from .handoff_materials import HANDOFF_TOOL_NAMES
+            except ImportError as exc:  # pragma: no cover - package runtime always has the helper
+                raise ChildRuntimeError("report sink handoff tools are unavailable") from exc
+            unknown = self.handoff_tool_names - set(HANDOFF_TOOL_NAMES)
+            if unknown:
+                raise ChildRuntimeError("report sink handoff tool is unknown")
         if isinstance(max_attempts, bool) or not isinstance(max_attempts, int) or max_attempts < 1:
             raise ChildRuntimeError("report sink attempt budget is invalid")
         self.max_attempts = max_attempts
@@ -3375,6 +3630,320 @@ class ReportSinkServer:
         self._stop = threading.Event()
         self._submitted = False
         self._rejections: list[str] = []
+        self._report_ref_receipts: list[dict[str, Any]] = []
+        # A reference-packet Judge gets one Host-published directory whose
+        # members mirror the packet's verified frozen source registry.  The
+        # package itself is an ordinary scoped handoff package, but reads go
+        # through the original frozen-reader contract once the child has
+        # cumulatively covered a complete member.  Keeping that distinction
+        # here prevents list/read success from silently becoming a source
+        # receipt or a report PASS.
+        self._frozen_material_id: str | None = None
+        self._frozen_material_ref: dict[str, str] | None = None
+        self._frozen_material_entries: dict[str, dict[str, Any]] = {}
+        self._frozen_material_binding: dict[str, Any] | None = None
+        self._frozen_read_ranges: dict[str, list[tuple[int, int]]] = {}
+        self._frozen_read_receipts: dict[str, dict[str, Any]] = {}
+        self._prepare_frozen_material_directory()
+
+    @property
+    def report_ref_receipts(self) -> tuple[dict[str, Any], ...]:
+        """Return accepted report-reference receipts without changing reports."""
+
+        return tuple(deepcopy(item) for item in self._report_ref_receipts)
+
+    @property
+    def handoff_tools(self) -> tuple[str, ...]:
+        """Return the explicitly enabled child material tools in stable order."""
+
+        return tuple(sorted(self.handoff_tool_names))
+
+    @property
+    def frozen_material_ref(self) -> dict[str, str] | None:
+        """Return the Judge-only directory reference, without exposing its bytes."""
+
+        return deepcopy(self._frozen_material_ref)
+
+    def _prepare_frozen_material_directory(self) -> None:
+        """Publish the packet registry as a stable, receipt-aware directory.
+
+        ``source_registry`` is already the Host's digest-verified copy.  It is
+        copied into the normal Host -> Judge handoff package directly; this
+        setup never calls ``read_frozen_evidence``.  That reader remains an
+        evidence operation and is invoked only after a child has read every
+        byte of a member through the directory.
+        """
+
+        contract = self.batch_contract
+        if (
+            contract is None
+            or contract.role != CQ_ACCEPTANCE_JUDGE_ROLE
+            or contract.packet.schema_version != CQ_REFERENCE_PACKET_SCHEMA
+            or contract.packet.source_registry is None
+        ):
+            return
+        writer = getattr(self.handoff_materials, "write_output", None)
+        publisher = getattr(self.handoff_materials, "publish", None)
+        if not callable(writer) or not callable(publisher):
+            raise ChildRuntimeError("frozen handoff material publisher is unavailable")
+
+        payload = _unfreeze_packet(contract.packet.payload)
+        bundle = payload.get("evidence_bundle")
+        if not isinstance(bundle, Mapping):
+            raise ChildRuntimeError("frozen handoff evidence bundle is unavailable")
+        entries = bundle.get("entries")
+        if not isinstance(entries, list) or not entries:
+            raise ChildRuntimeError("frozen handoff evidence entries are unavailable")
+        registry = contract.packet.source_registry
+        package_directory = "frozen-evidence-" + contract.packet.canonical_digest[:16]
+        selected: dict[str, dict[str, Any]] = {}
+        for entry in entries:
+            if not isinstance(entry, Mapping):
+                raise ChildRuntimeError("frozen handoff evidence entry is invalid")
+            reference_id = entry.get("reference_id")
+            content = registry.get(reference_id) if isinstance(reference_id, str) else None
+            if not isinstance(reference_id, str) or not reference_id:
+                raise ChildRuntimeError("frozen handoff reference identity is invalid")
+            member_path = reference_id + ".txt"
+            # Reference IDs are content digests.  Keep the check explicit so a
+            # malformed future packet cannot turn the stable member name into
+            # a nested or absolute path.
+            member = PurePosixPath(member_path)
+            if member.is_absolute() or len(member.parts) != 1 or ".." in member.parts:
+                raise ChildRuntimeError("frozen handoff reference path is invalid")
+            if not isinstance(content, str) or content_digest(content) != entry.get("content_digest"):
+                raise ChildRuntimeError("frozen handoff source content changed")
+            previous = selected.get(reference_id)
+            if previous is not None and previous.get("content_digest") != entry.get("content_digest"):
+                raise ChildRuntimeError("frozen handoff reference identity is ambiguous")
+            selected[reference_id] = {
+                "reference_id": reference_id,
+                "path": member_path,
+                "source": entry.get("source"),
+                "locator": entry.get("locator"),
+                "content_digest": entry.get("content_digest"),
+                "review_content_version": entry.get("review_content_version"),
+                "question_id": entry.get("question_id"),
+                "content": content,
+            }
+        self._frozen_material_entries = selected
+        self._frozen_material_binding = {
+            "packet": {
+                "schema_version": contract.packet.schema_version,
+                "canonical_digest": contract.packet.canonical_digest,
+                "run_id": payload.get("run_id"),
+                "batch_id": payload.get("batch_id"),
+                "freeze_digest": payload.get("freeze_digest"),
+            },
+            "evidence_bundle": {
+                key: deepcopy(value)
+                for key, value in bundle.items()
+                if key != "entries"
+            },
+            "entries": [
+                {key: deepcopy(value) for key, value in item.items() if key != "content"}
+                for item in entries
+            ],
+        }
+        for reference_id in sorted(selected):
+            writer(
+                self.material_host_actor_id,
+                f"{package_directory}/{selected[reference_id]['path']}",
+                selected[reference_id]["content"],
+            )
+        published = publisher(
+            self.material_host_actor_id,
+            self.material_actor_id,
+            "/agent/handoff-output/" + package_directory,
+        )
+        material_id = published.get("material_id") if isinstance(published, Mapping) else None
+        if not isinstance(material_id, str) or not material_id:
+            raise ChildRuntimeError("frozen handoff material publication returned no identity")
+        self._frozen_material_id = material_id
+        self._frozen_material_ref = {"material_id": material_id}
+
+    def _is_frozen_material(self, material_id: Any) -> bool:
+        return isinstance(material_id, str) and material_id == self._frozen_material_id
+
+    def _frozen_entry(self, path: Any) -> dict[str, Any]:
+        if path is None:
+            if len(self._frozen_material_entries) != 1:
+                raise ReportReferenceError(
+                    "material_member_required", "select a frozen evidence member from the directory"
+                )
+            return next(iter(self._frozen_material_entries.values()))
+        if not isinstance(path, str):
+            raise ReportReferenceError("material_path_invalid", "frozen evidence member path is invalid")
+        entry = next((item for item in self._frozen_material_entries.values() if item["path"] == path), None)
+        if entry is None:
+            raise ReportReferenceError(
+                "material_member_missing", "path is not a published frozen evidence member"
+            )
+        return entry
+
+    @staticmethod
+    def _frozen_ranges_complete(ranges: Iterable[tuple[int, int]], size: int) -> bool:
+        if size == 0:
+            return True
+        end = 0
+        for start, stop in sorted(ranges):
+            if start > end:
+                return False
+            end = max(end, stop)
+            if end >= size:
+                return True
+        return False
+
+    def _existing_frozen_receipt(self, reference_id: str) -> dict[str, Any] | None:
+        contract = self.batch_contract
+        if contract is None:
+            return None
+        for receipt in contract.source_read_receipts:
+            if receipt.get("reference_id") == reference_id:
+                return deepcopy(receipt)
+        return None
+
+    def _read_frozen_material(self, arguments: Any) -> dict[str, Any]:
+        if self._submitted:
+            raise ReportReferenceError("material_forbidden", "frozen evidence read session is closed")
+        if not isinstance(arguments, Mapping):
+            raise ReportReferenceError("material_path_invalid", "handoff material arguments are invalid")
+        if set(arguments) - {"material_id", "path", "offset", "max_bytes"} or "material_id" not in arguments:
+            raise ReportReferenceError("material_path_invalid", "invalid frozen evidence read fields")
+        material_id = arguments.get("material_id")
+        if not self._is_frozen_material(material_id):
+            raise ReportReferenceError("material_forbidden", "frozen evidence material is unavailable")
+        entry = self._frozen_entry(arguments.get("path"))
+        offset = arguments.get("offset", 0)
+        max_bytes = arguments.get("max_bytes", 16384)
+        if (
+            type(offset) is not int
+            or type(max_bytes) is not int
+            or offset < 0
+            or max_bytes < 1
+            or max_bytes > 16384
+        ):
+            raise ReportReferenceError("material_cursor_invalid", "use a valid byte offset and max_bytes 1..16384")
+        raw = entry["content"].encode("utf-8")
+        if offset > len(raw):
+            raise ReportReferenceError("material_cursor_invalid", "offset is beyond the frozen member")
+        if offset < len(raw) and raw[offset] & 0xC0 == 0x80:
+            raise ReportReferenceError("material_cursor_invalid", "offset must be a UTF-8 boundary; use next_offset")
+        end = min(offset + max_bytes, len(raw))
+        while end < len(raw) and raw[end] & 0xC0 == 0x80:
+            end -= 1
+        if end == offset and offset < len(raw):
+            end = offset + 1
+            while end < len(raw) and raw[end] & 0xC0 == 0x80:
+                end += 1
+        ranges = self._frozen_read_ranges.setdefault(entry["reference_id"], [])
+        if end > offset:
+            ranges.append((offset, end))
+        receipt = self._frozen_read_receipts.get(entry["reference_id"])
+        if receipt is None and self._frozen_ranges_complete(ranges, len(raw)):
+            receipt = self._existing_frozen_receipt(entry["reference_id"])
+            if receipt is None:
+                contract = self.batch_contract
+                if contract is None:
+                    raise ReportReferenceError("material_forbidden", "frozen evidence reader is unavailable")
+                payload = _unfreeze_packet(contract.packet.payload)
+                try:
+                    original = contract.read_frozen_evidence(
+                        {
+                            "run_id": payload["run_id"],
+                            "batch_id": payload["batch_id"],
+                            "freeze_digest": payload["freeze_digest"],
+                            "reference_id": entry["reference_id"],
+                        }
+                    )
+                except (ChildRuntimeError, TypeError) as exc:
+                    raise ReportReferenceError("frozen-source-read-rejected", str(exc)) from exc
+                if not isinstance(original, Mapping) or original.get("content") != entry["content"]:
+                    raise ReportReferenceError("material_digest_mismatch", "frozen reader content changed")
+                candidate = original.get("receipt")
+                if not isinstance(candidate, Mapping):
+                    raise ReportReferenceError("material_source_unavailable", "frozen reader returned no receipt")
+                receipt = dict(candidate)
+            self._frozen_read_receipts[entry["reference_id"]] = deepcopy(receipt)
+        result: dict[str, Any] = {
+            "material_id": material_id,
+            "path": entry["path"],
+            "reference_id": entry["reference_id"],
+            "content": raw[offset:end].decode("utf-8"),
+            "content_digest": entry["content_digest"],
+            "bytes": len(raw),
+            "offset": offset,
+            "next_offset": end,
+            "read_complete": end == len(raw),
+            "truncated": end != len(raw),
+            "binding": deepcopy(self._frozen_material_binding),
+        }
+        if receipt is not None:
+            # Keep the original reader field name so consumers can compare it
+            # directly with a prior ``read_frozen_evidence`` response.
+            result["receipt"] = deepcopy(receipt)
+            result["source_read_receipt"] = deepcopy(receipt)
+        return result
+
+    def _list_frozen_material(self, arguments: Any) -> dict[str, Any]:
+        if self._submitted:
+            raise ReportReferenceError("material_forbidden", "frozen evidence read session is closed")
+        if not isinstance(arguments, Mapping):
+            raise ReportReferenceError("material_path_invalid", "handoff material arguments are invalid")
+        if set(arguments) - {"material_id", "cursor", "max_entries"} or "material_id" not in arguments:
+            raise ReportReferenceError("material_path_invalid", "invalid frozen evidence list fields")
+        if not self._is_frozen_material(arguments.get("material_id")):
+            raise ReportReferenceError("material_forbidden", "frozen evidence material is unavailable")
+        try:
+            listed = self.handoff_materials.list(
+                self.material_actor_id,
+                arguments["material_id"],
+                arguments.get("cursor"),
+                arguments.get("max_entries", 100),
+            )
+        except Exception as exc:
+            code = getattr(exc, "code", None) or "material_source_unavailable"
+            raise ReportReferenceError(str(code), str(exc) or str(code)) from exc
+        result = dict(listed)
+        result["frozen"] = True
+        result["binding"] = {
+            **dict(result.get("binding") or {}),
+            "packet": deepcopy(self._frozen_material_binding["packet"]),
+            "evidence_bundle": deepcopy(self._frozen_material_binding["evidence_bundle"]),
+        }
+        result["entries"] = [
+            {
+                **dict(item),
+                "reference_id": next(
+                    (ref for ref, candidate in self._frozen_material_entries.items()
+                     if candidate["path"] == item.get("path")),
+                    None,
+                ),
+            }
+            for item in result.get("entries", [])
+        ]
+        return result
+
+    def _call_handoff_tool(self, name: Any, arguments: Any) -> dict[str, Any]:
+        if name not in self.handoff_tool_names:
+            raise ReportReferenceError("material_forbidden", "handoff tool is not enabled for this role")
+        if name == "read_handoff_material" and isinstance(arguments, Mapping) and self._is_frozen_material(arguments.get("material_id")):
+            return self._read_frozen_material(arguments)
+        if name == "list_handoff_material" and isinstance(arguments, Mapping) and self._is_frozen_material(arguments.get("material_id")):
+            return self._list_frozen_material(arguments)
+        if self.handoff_materials is None or not isinstance(self.material_actor_id, str):
+            raise ReportReferenceError("material_forbidden", "handoff materials are unavailable")
+        caller = getattr(self.handoff_materials, "call", None)
+        if not callable(caller):
+            raise ReportReferenceError("material_forbidden", "handoff material dispatcher is unavailable")
+        try:
+            result = caller(self.material_actor_id, str(name), arguments)
+        except Exception as exc:
+            code = getattr(exc, "code", None) or "material_source_unavailable"
+            raise ReportReferenceError(str(code), str(exc) or str(code)) from exc
+        if not isinstance(result, Mapping):
+            raise ReportReferenceError("material_source_unavailable", "handoff material result is invalid")
+        return dict(result)
 
     def start(self) -> None:
         self.socket_path.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
@@ -3447,6 +4016,20 @@ class ReportSinkServer:
                             response = {"ok": True, "result": result}
                         except (ChildRuntimeError, TypeError) as exc:
                             response = {"ok": False, "code": "frozen-source-read-rejected", "detail": str(exc)}
+                    elif request.get("operation") == "handoff_material":
+                        # Material list/read (and any explicitly enabled
+                        # scoped output operation) uses the same token-bound
+                        # sink connection as report submission.  It has no
+                        # relationship to frozen-evidence receipts: reading a
+                        # handoff package never satisfies the Judge's original
+                        # source-read contract.
+                        try:
+                            result = self._call_handoff_tool(
+                                request.get("name"), request.get("arguments")
+                            )
+                            response = {"ok": True, "result": result}
+                        except ReportReferenceError as exc:
+                            response = {"ok": False, "code": exc.code, "detail": exc.detail}
                     elif self._submitted:
                         response = {"ok": False, "code": "report-already-submitted"}
                     elif (
@@ -3473,75 +4056,103 @@ class ReportSinkServer:
                         response = {"ok": False, "code": "report-invalid"}
                     else:
                         report = request["report"]
+                        report_ref_receipt: dict[str, Any] | None = None
                         try:
-                            if self.batch_contract is not None:
-                                # v3 branch: one per-question entry, validated and
-                                # latched against the session's batch contract.  The
-                                # entry is recorded only after the Host accepted it,
-                                # so a failed submit still leaves the question open
-                                # for a bounded resubmission.
-                                report = _validate_report_sink_payload(
+                            # Resolve the complete report before any original
+                            # shape/evidence validator.  Material failures are
+                            # side-effect free and deliberately bypass both the
+                            # legacy rejection list and the v3 report contract.
+                            if "report_ref" in report:
+                                report_reference = report.get("report_ref")
+                                if (
+                                    isinstance(report_reference, Mapping)
+                                    and self._is_frozen_material(report_reference.get("material_id"))
+                                ):
+                                    raise ReportReferenceError(
+                                        "material_forbidden",
+                                        "frozen evidence directory cannot be used as a report",
+                                    )
+                                report, report_ref_receipt = _resolve_report_reference(
                                     report,
-                                    kind=self.kind,
-                                    batch_contract=self.batch_contract,
+                                    handoff_materials=self.handoff_materials,
+                                    material_actor_id=self.material_actor_id,
                                 )
-                            elif self.kind is not None:
-                                report = _validate_report_sink_payload(report, kind=self.kind)
-                            if self.validator is not None:
-                                self.validator(report)
-                        except (ChildRuntimeError, ExaminerRuntimeBlocked) as exc:
-                            detail = str(exc)
-                            self._rejections.append(detail)
-                            response = self._rejection_response(
-                                "report-binding-rejected", detail
-                            )
-                        except Exception as exc:
-                            # Preserve the validator's own reason (exception
-                            # type plus message) instead of a bare
-                            # "report-rejected": start11 of R2.3-009 lost the
-                            # real rejection cause for two examiner reports
-                            # this way, leaving the failure undiagnosable.
-                            detail = f"{type(exc).__name__}: {exc}".strip()
-                            self._rejections.append(detail)
-                            response = self._rejection_response("report-rejected", detail)
+                        except ReportReferenceError as exc:
+                            response = {"ok": False, "code": exc.code, "detail": exc.detail}
                         else:
                             try:
-                                self._submit(report)
-                            except Exception as exc:
-                                # The submit callback runs the full Host
-                                # binding (handle lookup, envelope validation,
-                                # receipt binding, persistence); any failure
-                                # there used to escape to the outer handler
-                                # and answer with a bare "report-rejected".
-                                # start13 of R2.3-009 lost the real cause of
-                                # three consecutive examiner reports that way
-                                # (start11 lost two through the twin path
-                                # fixed above), so surface it here with the
-                                # same detail and attempts accounting.
-                                detail = f"{type(exc).__name__}: {exc}".strip()
+                                if self.batch_contract is not None:
+                                    # v3 branch: one per-question entry, validated and
+                                    # latched against the session's batch contract.  The
+                                    # entry is recorded only after the Host accepted it,
+                                    # so a failed submit still leaves the question open
+                                    # for a bounded resubmission.
+                                    report = _validate_report_sink_payload(
+                                        report,
+                                        kind=self.kind,
+                                        batch_contract=self.batch_contract,
+                                    )
+                                elif self.kind is not None:
+                                    report = _validate_report_sink_payload(report, kind=self.kind)
+                                if self.validator is not None:
+                                    self.validator(report)
+                            except (ChildRuntimeError, ExaminerRuntimeBlocked) as exc:
+                                detail = str(exc)
                                 self._rejections.append(detail)
                                 response = self._rejection_response(
-                                    "report-submit-rejected", detail
+                                    "report-binding-rejected", detail
                                 )
+                            except Exception as exc:
+                                # Preserve the validator's own reason (exception
+                                # type plus message) instead of a bare
+                                # "report-rejected": start11 of R2.3-009 lost the
+                                # real rejection cause for two examiner reports
+                                # this way, leaving the failure undiagnosable.
+                                detail = f"{type(exc).__name__}: {exc}".strip()
+                                self._rejections.append(detail)
+                                response = self._rejection_response("report-rejected", detail)
                             else:
-                                if self.batch_contract is not None:
-                                    self.batch_contract.record(report)
-                                    complete = self.batch_contract.is_complete
-                                    # A batch session stays open until its last
-                                    # question is reported; only then is the sink
-                                    # latched and the child told it is done.
-                                    self._submitted = complete
-                                    response = {
-                                        "ok": True,
-                                        "question_id": str(report["question_id"]),
-                                        "reports_remaining": len(
-                                            self.batch_contract.pending_question_ids
-                                        ),
-                                        "batch_complete": complete,
-                                    }
+                                try:
+                                    self._submit(report)
+                                except Exception as exc:
+                                    # The submit callback runs the full Host
+                                    # binding (handle lookup, envelope validation,
+                                    # receipt binding, persistence); any failure
+                                    # there used to escape to the outer handler
+                                    # and answer with a bare "report-rejected".
+                                    # start13 of R2.3-009 lost the real cause of
+                                    # three consecutive examiner reports that way
+                                    # (start11 lost two through the twin path
+                                    # fixed above), so surface it here with the
+                                    # same detail and attempts accounting.
+                                    detail = f"{type(exc).__name__}: {exc}".strip()
+                                    self._rejections.append(detail)
+                                    response = self._rejection_response(
+                                        "report-submit-rejected", detail
+                                    )
                                 else:
-                                    self._submitted = True
-                                    response = {"ok": True}
+                                    if report_ref_receipt is not None:
+                                        self._report_ref_receipts.append(report_ref_receipt)
+                                    if self.batch_contract is not None:
+                                        self.batch_contract.record(report)
+                                        complete = self.batch_contract.is_complete
+                                        # A batch session stays open until its last
+                                        # question is reported; only then is the sink
+                                        # latched and the child told it is done.
+                                        self._submitted = complete
+                                        response = {
+                                            "ok": True,
+                                            "question_id": str(report["question_id"]),
+                                            "reports_remaining": len(
+                                                self.batch_contract.pending_question_ids
+                                            ),
+                                            "batch_complete": complete,
+                                        }
+                                    else:
+                                        self._submitted = True
+                                        response = {"ok": True}
+                                    if report_ref_receipt is not None:
+                                        response["report_ref"] = dict(report_ref_receipt)
                     conn.sendall(_canonical(response))
                 except Exception:
                     try:

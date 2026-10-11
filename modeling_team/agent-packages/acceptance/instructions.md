@@ -69,6 +69,13 @@ semantic evidence sufficiency and the PASS/FAIL/BLOCKED verdict for the frozen t
   (`acceptance_child_start`, `acceptance_child_get_report`, `acceptance_child_recycle`,
   `submit_acceptance_result`). Never reuse a `request_id` across operations or attempts;
   a reused id is rejected.
+
+Examiner children may submit a complete report inline or use the scoped report sink handoff
+tools. A child report reference is valid only after the child writes UTF-8 output, publishes it to
+the existing Host channel, and submits the resulting one-field `report_ref`; it is not a new
+evidence source. Preserve the original Platform proxy receipts and the Judge's required
+`read_frozen_evidence` reads when assembling acceptance evidence. A generic handoff list/read
+result cannot satisfy either receipt requirement.
 - Submit your verdict with a SINGLE `submit_acceptance_result` call that carries ONLY
   your business judgment plus identifiers and a fresh `request_id`. Never hand-assemble
   the 28-field `verdict_json`, never compute `verdict_digest` yourself, and never relay a

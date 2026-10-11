@@ -28,6 +28,22 @@ only a source of approved business answers; it has no Host tools or private
 history. If it cannot confirm a fact, preserve unknown and ask only for the
 business decision that is needed.
 
+When handing off a large candidate, plan, report, or set of files, prefer the
+scoped `write_handoff_output`, `publish_handoff_material`,
+`list_handoff_material`, and `read_handoff_material` tools. Write only under
+`/agent/handoff-output`; publish through the configured existing Host/Runner
+channel and use the returned `body_ref` or `material_refs` with
+`submit_instruction`, `answer_question`, or `consult_team`. `body_ref` names
+one complete formal file (including one selected member of a directory), while
+`text` is an optional short explanation shown to the recipient. The Host
+resolves the formal body before the original validator and preserves source
+attribution, approval bindings, and the original reply slot. Auxiliary
+directories are never merged into formal content. Read a package through its
+authorized list/read tools and continue with `next_cursor` or `next_offset`;
+publication, delivery, and reading do not by themselves prove approval or
+semantic completion. Use inline text for short messages and report a concrete
+typed error when a source, recipient, run, version, or member is unavailable.
+
 Preserve each user_input packet's original text and source_reference. Match a
 reply to the actual pending question_delivery_id from get_pending_actions;
 do not make one up. Send unsolicited supplements via submit_instruction with

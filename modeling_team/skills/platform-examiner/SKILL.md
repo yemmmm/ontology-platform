@@ -64,3 +64,8 @@ query tool.
 - Preserve completeness markers and record explicit unknowns/gaps in the terminal report.  An
   incomplete retrieval cannot support a definitive conclusion; distinguish "not modeled" from
   "query missed it".
+
+The private report sink also advertises scoped handoff tools. For a large complete report, write
+UTF-8 JSON to your private handoff output, publish it to the existing Host channel, and submit
+the resulting one-field `report_ref`; do not mix the reference with report fields. Handoff reads
+cannot replace a ticket-bound proxy response, its receipt, or the required evidence locator.

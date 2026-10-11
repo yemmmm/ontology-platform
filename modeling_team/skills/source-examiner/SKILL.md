@@ -14,3 +14,8 @@ guess, call a platform interface, communicate with another Agent, or spawn a chi
 For each approved-source evidence ref, use only the inline approved path in the required
 location-only object. Keep the manifest digest bound in the packet; do not add a digest field,
 host path, raw bundle path, or invented value to the report locator.
+
+The private report sink also advertises scoped handoff tools. For a large complete report, write
+UTF-8 JSON to your private handoff output, publish it to the existing Host channel, and submit
+the resulting one-field `report_ref`; do not mix the reference with report fields. Handoff reads
+never add source evidence or replace the immutable packet boundary.

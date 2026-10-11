@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import base64
 import hashlib
 import json
@@ -1801,7 +1803,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         agent.package.package_id = "acceptance"
         with mock.patch.object(adapter, "_require_mcp_surface") as required:
             adapter._require_lean_examiner_mcp_servers(agent)
-        required.assert_called_once_with(agent, {"examiner_report": {"submit_examiner_report"}})
+        required.assert_called_once_with(agent, {"examiner_report": {"submit_examiner_report", *HANDOFF_TOOL_NAMES}})
 
     def test_frozen_evidence_inventory_requires_explicit_boolean_opt_in(self) -> None:
         adapter = CodexRuntimeAdapter(repository_root=repository_root(), use_bwrap=False)
@@ -1813,7 +1815,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
                         package=SimpleNamespace(package_id="acceptance"),
                         frozen_evidence_reads=enabled,
                     )
-                    tools = {"submit_examiner_report"}
+                    tools = {"submit_examiner_report", *HANDOFF_TOOL_NAMES}
                     if enabled is True:
                         tools.add("read_frozen_evidence")
                     with mock.patch.object(adapter, "_require_mcp_surface") as required:

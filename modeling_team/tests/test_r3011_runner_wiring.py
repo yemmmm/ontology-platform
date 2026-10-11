@@ -21,6 +21,7 @@ import pytest
 from modeling_team.capability_mcp import (
     COMPETENCY_QUESTION_ROLE,
     CQ_OPERATION,
+    CQ_OPERATIONS,
     _stdio_request,
 )
 from modeling_team.competency_questions import (
@@ -112,6 +113,62 @@ def cq_runner():
     harness.cleanup()
 
 
+def test_cq_reference_tools_reach_original_socket_and_preserve_private_scope(cq_runner):
+    from modeling_team.handoff_materials import MaterialError
+
+    endpoint = cq_runner.acceptance.capability_endpoint(COMPETENCY_QUESTION_ROLE)
+    token = cq_runner.acceptance.capability_token(COMPETENCY_QUESTION_ROLE)
+    endpoint.start()
+
+    def call(name, arguments):
+        response = _stdio_request(str(endpoint.socket_path), token, {
+            "jsonrpc": "2.0", "id": name, "method": "tools/call",
+            "params": {"name": name, "arguments": arguments}})
+        assert "error" not in response, response
+        return response["result"]
+
+    try:
+        document = _draft([_question("cq-ref-private", visibility="hidden")])
+        call("write_handoff_output", {"relative_path": "draft.json", "content": json.dumps(document)})
+        publication = call("publish_handoff_material", {
+            "recipient_id": "runner", "source_path": "/agent/handoff-output/draft.json"})
+        # Capability returns the operation's original payload, independent of transport JSON-RPC.
+        if "content" in publication:
+            publication = json.loads(publication["content"][0]["text"])
+        ref = {"material_id": publication["material_id"]}
+        call(CQ_OPERATION, {"cq_id": COMPETENCY_QUESTION_ROLE, "body_ref": ref})
+        assert any(cq_runner._cq_directories["private"].glob("draft-*.json"))
+        store = cq_runner.run.handoff_materials
+        production = next(a.agent_id for a in cq_runner.run.configuration.profile.agents
+                          if a.package.role == "modeling")
+        with pytest.raises(MaterialError, match="material_forbidden"):
+            store.resolve(production, ref)
+        with pytest.raises(MaterialError, match="material_forbidden"):
+            store.publish(cq_runner._cq_agent_id(), production, "/agent/handoff-output/draft.json")
+    finally:
+        endpoint.stop()
+
+
+def test_coordinator_private_map_publication_requires_decision_output(cq_runner):
+    from modeling_team.handoff_materials import MaterialError
+
+    store = cq_runner.run.handoff_materials
+    agents = cq_runner.run.configuration.profile.agents
+    coordinator = next(a.agent_id for a in agents if a.package.role == "coordinator")
+    protocol = next(a.agent_id for a in agents if a.package.role == "protocol")
+    alias = "/agent/work/scenario-map"
+    if alias not in store.actors[coordinator]["sources"]:
+        pytest.fail("Coordinator's mounted scenario map needs its original private source binding")
+    private = store.actors[coordinator]["sources"][alias]
+    (private / "private-map.txt").write_text("完整私有全景图")
+    with pytest.raises(MaterialError, match="material_forbidden"):
+        store.publish(coordinator, protocol, alias)
+    store.publish(coordinator, "runner", alias)
+    output = store.write_output(coordinator, "decided.txt", "Protocol需要的已决定事项")
+    publication = store.publish(coordinator, protocol, output["source_path"])
+    assert store.resolve(protocol, {"material_id": publication["material_id"]}) == "Protocol需要的已决定事项"
+
+
 # --- M1 / §3.4: run-root directories and the configuration snapshot -----------
 
 
@@ -146,7 +203,7 @@ def test_m5_cq_capability_is_enabled_and_isolated(cq_runner):
     descriptors = carrier.capability_descriptors() if callable(getattr(carrier, "capability_descriptors", None)) else None
     if descriptors is not None:
         entry = descriptors.get("competency-question")
-        assert entry is not None and entry["operations"] == ["cq_publish_question_draft"]
+        assert entry is not None and entry["operations"] == list(CQ_OPERATIONS)
 
 
 def test_m5_cq_draft_publication_is_immutable_and_opens_a_review_window(cq_runner):
@@ -192,7 +249,7 @@ def test_m5_cq_socket_tools_call_publishes_through_the_real_runner_handler(cq_ru
     carrier = cq_runner.acceptance
     assert carrier.cq_capability_enabled is True
     endpoint = carrier.capability_endpoint(COMPETENCY_QUESTION_ROLE)
-    assert endpoint.operations == (CQ_OPERATION,)
+    assert endpoint.operations == CQ_OPERATIONS
     document = _draft([_question("cq-1")])
 
     carrier.start_cq_endpoint()

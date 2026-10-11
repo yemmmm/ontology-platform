@@ -1446,6 +1446,7 @@ class RunnerAcceptanceCarrier:
         staged_coverage_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         staged_protocol_capability: bool = False,
         cq_draft_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        handoff_handler: Callable[..., Mapping[str, Any]] | None = None,
     ):
         self.root = root
         self.task_id = _safe_id(task_id, "task_id")
@@ -1504,6 +1505,7 @@ class RunnerAcceptanceCarrier:
         # capability.  ``None`` keeps every non-011 carrier byte-identical: no
         # token, no socket, no advertised operation for the CQ role.
         self._cq_draft_handler = cq_draft_handler
+        self._handoff_handler = handoff_handler
         # Prompt E state is Runner-private.  The nonce is surfaced to Protocol
         # as a non-secret binding in its task text, while exact delivery bytes
         # are recorded only as a digest by TeamRunner before Coordinator can
@@ -1655,7 +1657,7 @@ class RunnerAcceptanceCarrier:
                 )
             elif role == COMPETENCY_QUESTION_ROLE:
                 # R3.0-011: exactly one Runner-private CQ operation.
-                operations = CQ_OPERATIONS
+                operations = CQ_OPERATIONS if self._handoff_handler is not None else (CQ_OPERATION,)
             self._capability_endpoints[role] = RunnerCapabilityEndpoint(
                 role=role,
                 socket_path=self.capability_socket_path(role),
@@ -2750,7 +2752,7 @@ class RunnerAcceptanceCarrier:
             # R3.0-011: advertised only for runs that selected the CQ stage.
             descriptors[COMPETENCY_QUESTION_ROLE] = {
                 "token_digest": token_digest(self._capability_tokens[COMPETENCY_QUESTION_ROLE]),
-                "operations": list(CQ_OPERATIONS),
+                "operations": list(CQ_OPERATIONS if self._handoff_handler is not None else (CQ_OPERATION,)),
                 "socket_mode": "0600",
                 "token_file_mode": "0400",
             }
@@ -3827,6 +3829,10 @@ class RunnerAcceptanceCarrier:
             _error("Runner capability operation is not available to this role")
         args = dict(arguments)
         capability = self.capability_token(role)
+        if role == COMPETENCY_QUESTION_ROLE and operation != CQ_OPERATION:
+            if self._handoff_handler is None:
+                _error("competency-question material capability is unavailable")
+            return self._handoff_handler(operation, args)
         if role == COMPETENCY_QUESTION_ROLE and operation == CQ_OPERATION:
             # R3.0-011: a rejected draft rejects only this call.  The handler
             # raises ``CQContractError`` whose Mapping ``data`` is surfaced as a

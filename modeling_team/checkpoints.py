@@ -79,6 +79,13 @@ _DENY_SOURCE_PREFIXES = (
     f"{CHECKPOINT_DIRECTORY}/",
     "recovery/",
 )
+# R4.3-013 handoff snapshots are packageable only from the already scoped
+# immutable stores.  A checkpoint never turns an arbitrary run path into a
+# handoff source, and acceptance-private trees stay outside production
+# recovery packages.  They use the existing ``artifacts`` list and its
+# CheckpointArtifactSpec visibility binding; there is no second StagePackage
+# selection path.
+_HANDOFF_SOURCE_PREFIXES = ("handoff-materials/", "handoff-output/")
 
 #: Manifest fields excluded from the dedup signature: timestamps, the request
 #: id and checkpoint-save events must never turn saving itself into new
@@ -244,6 +251,20 @@ def _safe_source(run_root: Path, source: str) -> Path:
             obj="artifact_source",
         )
     return candidate
+
+
+def _is_handoff_source(source: Any) -> bool:
+    return isinstance(source, str) and source.startswith(_HANDOFF_SOURCE_PREFIXES)
+
+
+def _handoff_manifest_entries(manifest: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    """Select helper-owned handoff snapshots from ordinary artifact entries."""
+
+    entries = manifest.get("artifacts") or []
+    return [
+        entry for entry in entries
+        if isinstance(entry, Mapping) and _is_handoff_source(entry.get("source"))
+    ]
 
 
 def _signature_payload(manifest: Mapping[str, Any]) -> Any:
@@ -427,6 +448,13 @@ def save_checkpoint(
     resolved: list[ResolvedArtifact] = []
     for spec in package.artifacts:
         source = _safe_source(run_root, spec.source)
+        if _is_handoff_source(spec.source) and spec.host_private and spec.owner != "competency-question":
+            raise CheckpointError(
+                "checkpoint_private_material",
+                "only CQ-private handoff material may enter a production checkpoint",
+                obj="artifact_source",
+                retryable=False,
+            )
         resolved.append(ResolvedArtifact(spec=spec, digest=file_digest(source)))
     manifest_payload = {
         "schema_version": CHECKPOINT_SCHEMA,
@@ -479,6 +507,7 @@ def save_checkpoint(
                 "checkpoint_id": existing_id,
                 "manifest_digest": manifest_digest(manifest_path(run_root, existing_id)),
                 "artifact_count": len(existing.get("artifacts") or []),
+                "handoff_material_count": len(_handoff_manifest_entries(existing)),
             }
     base = checkpoints_root(run_root)
     base.mkdir(parents=True, exist_ok=True)
@@ -549,6 +578,9 @@ def save_checkpoint(
         "checkpoint_id": checkpoint_id,
         "manifest_digest": f"sha256:{hashlib.sha256(manifest_bytes).hexdigest()}",
         "artifact_count": len(resolved),
+        "handoff_material_count": sum(
+            1 for item in resolved if _is_handoff_source(item.spec.source)
+        ),
     }
 
 
@@ -618,6 +650,7 @@ def list_checkpoints(run_root: Path) -> list[dict[str, Any]]:
                     "source_run_id": None,
                     "created_at": None,
                     "artifact_count": 0,
+                    "handoff_material_count": 0,
                     "size_bytes": size,
                     "manifest_digest": None,
                     "status": "unparsable",
@@ -631,6 +664,7 @@ def list_checkpoints(run_root: Path) -> list[dict[str, Any]]:
                 "source_run_id": manifest.get("source_run_id"),
                 "created_at": manifest.get("created_at"),
                 "artifact_count": len(manifest.get("artifacts") or []),
+                "handoff_material_count": len(_handoff_manifest_entries(manifest)),
                 "size_bytes": size,
                 "manifest_digest": manifest_digest(manifest_path(run_root, checkpoint_id)),
                 "status": "listed",
@@ -734,6 +768,16 @@ def _checkpoint_inspection(run_root: Path, checkpoint_id: str) -> dict[str, Any]
             }
             for artifact in manifest.get("artifacts") or []
             if isinstance(artifact, Mapping)
+        ],
+        "handoff_materials": [
+            {
+                "source": artifact.get("source"),
+                "digest": artifact.get("digest"),
+                "owner": artifact.get("owner"),
+                "visible_to": artifact.get("visible_to"),
+                "host_private": False,
+            }
+            for artifact in _handoff_manifest_entries(manifest)
         ],
         "remaining_work": {
             "pending": stage_facts.get("pending") or [],
@@ -867,9 +911,19 @@ def public_role_projection(manifest: Mapping[str, Any], role: str) -> dict[str, 
         and not artifact.get("host_private")
         and role in (artifact.get("visible_to") or [])
     ]
+    visible_handoff = [
+        {
+            "source": artifact.get("source"),
+            "digest": artifact.get("digest"),
+            "owner": artifact.get("owner"),
+        }
+        for artifact in _handoff_manifest_entries(manifest)
+        if role in (artifact.get("visible_to") or [])
+    ]
     return {
         "role": role,
         "visible_artifacts": visible,
+        "visible_handoff_materials": visible_handoff,
         "host_private_note": (
             "host-private material (frozen pool, hidden basis, approved "
             "interview originals) is not part of this projection"

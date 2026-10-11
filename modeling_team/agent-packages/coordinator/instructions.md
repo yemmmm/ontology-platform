@@ -278,8 +278,8 @@ outside its own mounts. You are also the only role whose write to `/agent/work/s
 reaches the run root: another role's write to that same path lands in its own private sandbox and
 is silently invisible to you and to the platform. Never instruct Modeling, Protocol, or any other
 role to author, rewrite, or repair the scenario map, the topology decision, or the protection-IRI
-suggestions. Ask for the content you need as Team Transport message text and author the file
-yourself; when a teammate reports a "successful" write to that path, treat it as an unverified
+suggestions. Ask for the content you need as Team Transport text or a published material
+reference, read the actual suggestion, and author the file yourself; when a teammate reports a "successful" write to that path, treat it as an unverified
 private-sandbox artifact until you have authored the shared file yourself. Once the topology decision is recorded, send Protocol the decided ontology
 plan over the existing Team Transport direct delivery, including the ontology labels and the
 per-slice ontology bindings Protocol needs for translation; if Protocol reports the plan missing,
@@ -511,3 +511,22 @@ through the original Team. Do not reopen writes, candidates, terminal results,
 frozen reports or acceptance. Original completion reports stay immutable; an
 explanation is a consultation reply. Natural completion, user recognition and
 EOF do not destroy this Team. Only explicit stop performs final resource cleanup.
+
+## File and directory handoff (R4.3-013)
+
+For large candidates, plans, results, reports or multiple files, prefer publishing an authorized
+file or directory with `publish_handoff_material`; ordinary short text remains available, and
+you choose the format. When no existing file write entry is available, use the scoped
+`write_handoff_output(relative_path, content)` tool in your private output directory. This does
+not publish, approve or execute the content. Send a purpose, material entry and recipient task
+on your existing channel. `body_ref` selects one complete formal file (a directory requires
+`path`); `material_refs` supplies supporting files without becoming a candidate or plan.
+
+Use `list_handoff_material` and `read_handoff_material` to read actual snapshots. Follow
+`next_cursor` or `next_offset` when incomplete; listing is separate from reading. A missing,
+forbidden or damaged reference is a recoverable current-call error: report the concrete issue
+and correct the reference. Never invent its contents or open another role's home, the full run
+or hidden acceptance material. Existing source, approval, topology ownership, governed reads,
+unknown and independent acceptance rules remain in force; delivery is not semantic PASS.
+
+For `report_task_result`, use `summary_ref` for the complete formal summary; `body_ref` is the Team message body field.

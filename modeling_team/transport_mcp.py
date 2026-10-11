@@ -157,6 +157,9 @@ class Delivery:
     reply_to_delivery_id: str | None = None
     owner_answer_id: str | None = None
     release_id: str | None = None
+    display_text: str | None = None
+    body_ref: dict | None = None
+    material_refs: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -165,6 +168,9 @@ class TaskResult:
     status: str
     summary: str
     timestamp: float
+    display_summary: str | None = None
+    body_ref: dict | None = None
+    material_refs: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -178,6 +184,9 @@ class CoordinationMessage:
     terminal: bool = False
     settles: bool = False
     phase_event: dict[str, object] | None = None
+    display_text: str | None = None
+    body_ref: dict | None = None
+    material_refs: tuple[dict, ...] = ()
 
 
 _COORDINATION_ROLE_KINDS: dict[str, tuple[str, str]] = {
@@ -203,6 +212,7 @@ class TeamTransportBroker:
         issue_escalation_enabled: bool = False,
         issue_event_callback: Callable[[dict[str, object]], object] | None = None,
         pre_send_validator: Callable[[str, str, str, bool, str | None], object] | None = None,
+        materials: object | None = None,
     ):
         self.evidence_root = root
         requested_root = root
@@ -220,6 +230,7 @@ class TeamTransportBroker:
         self.issue_escalation_enabled = issue_escalation_enabled is True
         self.issue_event_callback = issue_event_callback
         self.pre_send_validator = pre_send_validator
+        self.materials = materials
         self._issue_lock = threading.Lock()
         self._issues: RecoverableIssueLedger | None = None
         if self.issue_escalation_enabled:
@@ -466,6 +477,24 @@ class TeamTransportBroker:
                 endpoint.unlink(missing_ok=True)
             self.root.rmdir()
 
+    def normalize_materials(self, actor_id, recipient_id, text, body_ref=None, material_refs=None):
+        from .handoff_materials import MaterialError
+        refs = material_refs if material_refs is not None else []
+        if not isinstance(refs, list):
+            raise RoutingError("material_path_invalid: material_refs must be a list")
+        if body_ref is None and not refs:
+            return text, None, ()
+        if self.materials is None:
+            raise RoutingError("material_forbidden: material capability is unavailable")
+        try:
+            for ref in refs + ([body_ref] if body_ref is not None else []):
+                self.materials.authorize_ref(actor_id, recipient_id, ref)
+            normalized = self.materials.resolve(actor_id, body_ref) if body_ref is not None else text
+        except MaterialError as exc:
+            raise RoutingError(str(exc), code=exc.code) from None
+        display = text or "Read the referenced material through read_handoff_material."
+        return normalized, display, tuple(refs)
+
     def send(
         self,
         sender_id: str,
@@ -473,6 +502,7 @@ class TeamTransportBroker:
         text: str,
         expects_reply: bool = False,
         reply_to_delivery_id: str | None = None,
+        *, body_ref: dict | None = None, material_refs: list[dict] | None = None,
     ) -> Delivery:
         if (
             not isinstance(text, str)
@@ -484,6 +514,9 @@ class TeamTransportBroker:
                 "recipient is not allowed by frozen Profile",
                 code="recipient-not-allowed",
             )
+        text, display_text, refs = self.normalize_materials(
+            sender_id, recipient_id, text, body_ref, material_refs
+        )
         if self.pre_send_validator is not None:
             self.pre_send_validator(
                 sender_id,
@@ -517,6 +550,7 @@ class TeamTransportBroker:
                 f"delivery-{self._delivery_sequence}",
                 expects_reply,
                 reply_to_delivery_id,
+                display_text=display_text, body_ref=body_ref, material_refs=refs,
             )
             self._deliveries.append(delivery)
             self._delivery_by_id[delivery.delivery_id] = delivery
@@ -534,6 +568,8 @@ class TeamTransportBroker:
         owner_answer_id: str,
         release_id: str,
         text: str,
+        display_text: str | None = None, body_ref: dict | None = None,
+        material_refs: tuple[dict, ...] = (),
     ) -> Delivery:
         """Queue one Runner-owned answer for the Modeling question that spawned it.
 
@@ -586,6 +622,7 @@ class TeamTransportBroker:
                 question_delivery_id,
                 owner_answer_id,
                 release_id,
+                display_text=display_text, body_ref=body_ref, material_refs=material_refs,
             )
             self._deliveries.append(delivery)
             self._delivery_by_id[release_id] = delivery
@@ -680,6 +717,7 @@ class TeamTransportBroker:
         message_kind: str,
         text: str = "",
         generation: int | None = None,
+        *, body_ref: dict | None = None, material_refs: list[dict] | None = None,
     ) -> CoordinationMessage:
         """Record a non-terminal phase message outside TaskResult settlement.
 
@@ -703,6 +741,9 @@ class TeamTransportBroker:
         role_kind = _COORDINATION_ROLE_KINDS.get(sender_id)
         if role_kind != (message_kind, recipient_id):
             raise RoutingError("coordination role/kind/recipient is not allowed")
+        text, display_text, refs = self.normalize_materials(
+            sender_id, recipient_id, text, body_ref, material_refs
+        )
         phase_event: dict[str, object] | None = None
         with self._coordination_emit_lock:
             with self._lock:
@@ -731,6 +772,7 @@ class TeamTransportBroker:
                     time.time(),
                     f"coordination-{self._coordination_sequence}",
                     phase_event=phase_event,
+                    display_text=display_text, body_ref=body_ref, material_refs=refs,
                 )
                 self._coordination.append(message)
             if self.coordination_event_observer is not None:
@@ -843,7 +885,11 @@ class TeamTransportBroker:
         summary: str,
         *,
         already_synchronized: bool = False,
+        body_ref: dict | None = None, material_refs: list[dict] | None = None,
     ) -> TaskResult:
+        summary, display, refs = self.normalize_materials(
+            agent_id, "runner", summary, body_ref, material_refs
+        )
         if self.terminal_report_guard is not None:
             try:
                 allowed = _call_terminal_report_guard(
@@ -879,7 +925,7 @@ class TeamTransportBroker:
                 if not all(isinstance(role, str) and _TERMINAL_ROLE_ID.fullmatch(role) for role in missing):
                     raise RoutingError("terminal result dependencies are invalid")
                 raise RoutingError("terminal result requires terminal handoffs: " + ", ".join(missing))
-            result = TaskResult(agent_id, status, summary, time.time())
+            result = TaskResult(agent_id, status, summary, time.time(), display, body_ref, refs)
             self._results[agent_id] = result
             return result
 
@@ -934,12 +980,14 @@ def _delivery_payload(delivery: Delivery) -> dict[str, object]:
         "sequence": delivery.sequence,
         "sender_id": delivery.sender_id,
         "recipient_id": delivery.recipient_id,
-        "text": delivery.text,
+        "text": delivery.display_text if delivery.display_text is not None else delivery.text,
         "timestamp": delivery.timestamp,
         "delivery_id": delivery.delivery_id,
         "expects_reply": delivery.expects_reply,
         "reply_to_delivery_id": delivery.reply_to_delivery_id,
     }
+    if delivery.body_ref is not None or delivery.material_refs:
+        payload.update(body_ref=delivery.body_ref, material_refs=list(delivery.material_refs))
     if delivery.owner_answer_id is not None:
         payload["owner_answer_id"] = delivery.owner_answer_id
     if delivery.release_id is not None:
@@ -1166,6 +1214,7 @@ def mcp_response(
 ) -> dict[str, object]:
     """Small stdio-MCP-compatible handler used by an Agent-private transport process."""
     method, params = request.get("method"), request.get("params", {})
+    from .handoff_materials import HANDOFF_TOOL_NAMES, HANDOFF_TOOL_SPECS, MaterialError, REF_SCHEMA
     if method == "tools/list":
         tools = [
                 {
@@ -1322,21 +1371,41 @@ def mcp_response(
                         },
                     }
                 )
+        for spec in tools:
+            if broker.materials is not None and spec["name"] in {"send_team_message", "send_coordination", "report_task_result"}:
+                spec["inputSchema"]["properties"].update(
+                    material_refs={"type": "array", "items": REF_SCHEMA})
+                spec["inputSchema"]["properties"][
+                    "summary_ref" if spec["name"] == "report_task_result" else "body_ref"
+                ] = REF_SCHEMA
+                required = spec["inputSchema"]["required"]
+                required.remove("summary" if spec["name"] == "report_task_result" else "text")
+        if broker.materials is not None:
+            tools.extend(HANDOFF_TOOL_SPECS)
         return {"tools": tools}
     if method != "tools/call" or not isinstance(params, dict):
         raise RoutingError("unsupported Team Transport request")
     name, args = params.get("name"), params.get("arguments", {})
     if not isinstance(args, dict):
         raise RoutingError("invalid Team Transport arguments")
+    if name in HANDOFF_TOOL_NAMES:
+        if broker.materials is None:
+            raise RoutingError("material_forbidden: material capability is unavailable")
+        try:
+            value = broker.materials.call(agent_id, name, args)
+        except MaterialError as exc:
+            raise RoutingError(str(exc), code=exc.code) from None
+        return {"content": [{"type": "text", "text": json.dumps(value, ensure_ascii=False)}]}
     if name == "send_team_message":
-        if set(args) - {"recipient_id", "text", "expects_reply", "reply_to_delivery_id"}:
+        if set(args) - {"recipient_id", "text", "expects_reply", "reply_to_delivery_id", "body_ref", "material_refs"}:
             raise RoutingError("invalid Team Transport arguments")
         value = broker.send(
             agent_id,
             args.get("recipient_id"),
-            args.get("text"),
+            args.get("text", "" if args.get("body_ref") else None),
             args.get("expects_reply", False),
             args.get("reply_to_delivery_id"),
+            body_ref=args.get("body_ref"), material_refs=args.get("material_refs"),
         )
         return {
             "content": [
@@ -1344,15 +1413,16 @@ def mcp_response(
             ]
         }
     if name == "report_task_result":
-        if set(args) != {"status", "summary"}:
+        if set(args) - {"status", "summary", "summary_ref", "material_refs"} or "status" not in args:
             raise RoutingError("invalid Team Transport arguments")
         already_synchronized = request.get("already_synchronized") is True
         try:
             value = broker.report(
                 agent_id,
                 args.get("status"),
-                args.get("summary"),
+                args.get("summary", "" if args.get("summary_ref") else None),
                 already_synchronized=already_synchronized,
+                body_ref=args.get("summary_ref"), material_refs=args.get("material_refs"),
             )
         except RoutingError as error:
             _observe_report_event(
@@ -1370,26 +1440,41 @@ def mcp_response(
             category="terminal_report_accepted",
             already_synchronized=already_synchronized,
         )
+        payload = {"agent_id": value.agent_id, "status": value.status,
+                   "summary": value.display_summary if value.display_summary is not None else value.summary,
+                   "timestamp": value.timestamp}
+        if value.body_ref is not None or value.material_refs:
+            payload.update(summary_ref=value.body_ref, material_refs=list(value.material_refs))
         return {
             "content": [
-                {"type": "text", "text": json.dumps(value.__dict__, ensure_ascii=False)}
+                {"type": "text", "text": json.dumps(payload, ensure_ascii=False)}
             ]
         }
     if name == "send_coordination":
         if broker.coordination_phase_callback is None:
             raise RoutingError("coordination capability is unavailable")
-        if set(args) != {"recipient_id", "message_kind", "text", "generation"}:
+        if set(args) - {"recipient_id", "message_kind", "text", "generation", "body_ref", "material_refs"} or not {"recipient_id", "message_kind", "generation"} <= set(args):
             raise RoutingError("invalid coordination arguments")
         value = broker.send_coordination(
             agent_id,
             args.get("recipient_id"),
             args.get("message_kind"),
-            args.get("text"),
+            args.get("text", ""),
             args.get("generation"),
+            body_ref=args.get("body_ref"), material_refs=args.get("material_refs"),
         )
+        payload = {
+            **value.__dict__,
+            "text": value.display_text if value.display_text is not None else value.text,
+        }
+        if value.body_ref is not None and value.phase_event is not None:
+            payload["phase_event"] = {
+                key: item for key, item in value.phase_event.items()
+                if key not in {"text", "objective"}
+            }
         return {
             "content": [
-                {"type": "text", "text": json.dumps(value.__dict__, ensure_ascii=False)}
+                {"type": "text", "text": json.dumps(payload, ensure_ascii=False)}
             ]
         }
     if name == "report_issue":

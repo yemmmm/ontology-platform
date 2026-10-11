@@ -3,9 +3,11 @@
 ## 1. 范围、基线与状态
 
 - 权威范围：[R4.3-013](../../requirements/requirements-v4.3.md#r43-013-agent-自主选择文件或目录引用交接)。
-  2026-10-11 用户授权需求细化、设计及独立测试；不包含工程开发、外部调用、恢复建模或消耗额度。
-- 静态代码基线：`main@0b73001`，开始时工作树干净。下文工具名、字段和存储布局是拟议增量，
-  不是当前已实现合同。独立设计审阅与设计测试结果记录在[共享测试记录](../test-plans/2026-10-11-r4-3-013-agent-reference-handoff-test-plan.md)。
+  2026-10-11 设计阶段授权需求细化、设计及独立测试；随后用户授权按本设计实现并测试。
+  不包含外部模型调用、恢复建模或消耗额度。
+- 设计时静态代码基线：`main@0b73001`，开始时工作树干净。下文保留设计阶段的增量与基线描述；
+  当前已实现工具合同见[引用交接工具](../../../modeling_team/references/handoff-materials.md)。
+  独立设计审阅与设计测试结果记录在[共享测试记录](../test-plans/2026-10-11-r4-3-013-agent-reference-handoff-test-plan.md)。
 - 复用 R4.3-003 的确定性引用执行、R4.3-006 的冻结原文读取与 R4.3-007 的响应去重。
   不新增平台 HTTP 接口、数据库、文件服务、通信边、通用审批或运行编排。
 - 本文覆盖既有 production、Delivery／Host、CQ、Consumer／Examiner、Judge／Acceptance
@@ -13,14 +15,15 @@
 - 当前状态：独立 `plan_reviewer` 审阅 PASS，0 Critical／High，无关键待确认假设；
   独立 `r4313_design_test` Round 1 的 T01—T08 设计测试 PASS，文档合同检查通过。
   工具名 Low 问题修正、只读输出及 legacy 报告预算隔离澄清均已复核，初稿证据保留在共享记录。
-  实现、独立功能验收、真实交接效果和语义质量均未验证。
+  2026-10-12 工程实现与独立功能 Round 3 PASS，详见[交付记录](../records/2026-10-11-r4-3-013-delivery-record.md)。
+  真实交接效果和独立语义质量未验证。
 
 例：Modeling 已保存一份大候选和三份切片说明，只发送“请审核此候选及说明”与引用。
 Runner 保存本次文件集合的不可变副本，Coordinator 在自己的通道列目录、读所需原文。
 原文件随后修改不会改变这次消息；正式候选仍以被引用的完整 JSON 通过原校验。
 正文交接仍可使用相同入口，由 Agent 决定。
 
-## 2. 当前能力与真实缺口
+## 2. 设计时能力与需补齐的增量
 
 | 实际入口 | 已有能力／限制 | 必要增量 |
 | --- | --- | --- |
@@ -251,10 +254,23 @@ Delivery 没有 shell，仍仅使用 dynamicTools 接入同一受限工具，优
    及[共享用例](../test-plans/2026-10-11-r4-3-013-agent-reference-handoff-test-plan.md)，随后按另行
    获准运行验证真实角色是否选用、读原文、减少搬运以及质量边界。
 
-未来实现需验证受影响 Team 回归、原 native／MCP／packet 合同和 changed skill validators。
+实施时需验证受影响 Team 回归、原 native／MCP／packet 合同和 changed skill validators。
 如修改 backend／frontend 再执行其规定的全套检查与重启；仅 Team 文件不额外重启应用。
 保留第一次失败和修正证据。运行授权仍按现有暂停、额度和独立验收合同处理。
 
-本轮完成门是需求／设计一致、原通道可定位、反例有明确处理、文档检查及独立设计审阅／
+设计阶段完成门是需求／设计一致、原通道可定位、反例有明确处理、文档检查及独立设计审阅／
 设计测试通过。真实接收环境中的文件可读、正式处理等价、返工减少和业务质量仍属实施后
 验收，不从本文方案或审阅结果推导。
+
+## 8. 2026-10-12 工程交付结果
+
+基于 `954f1601e3a79787adfaf929b16bd0edc548b2c3` 完成本设计增量，实际引用工具与参数见
+[工具合同](../../../modeling_team/references/handoff-materials.md)。正式摘要引用字段为 `summary_ref`，
+消息正文为 `body_ref`，报告为 `report_ref`；各自解析后进入原合同。checkpoint 仍使用原 artifacts，
+未另建材料包字段、服务、审批或恢复编排。角色提示与 native／MCP／legacy 清单同步。
+
+开发完整 Team suite 2660 passed／11 skipped；独立功能 Round 2 发现协调通道 decoder 与
+Runner 引用／证据缺口，局部修复并增加真实通道回归，Round 3 复测 81 passed，最终工程功能 PASS。
+历史、冻结输入和逐项验收见[共享计划](../test-plans/2026-10-11-r4-3-013-agent-reference-handoff-test-plan.md)，
+交付与检查见[记录](../records/2026-10-11-r4-3-013-delivery-record.md)。
+真实 Agent 行为改善及独立语义质量未验证，未启动模型调用或消耗额度。

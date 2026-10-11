@@ -293,10 +293,12 @@ above is exempt from that initial size target. Reuse `existing_entity_ref` for r
 new bounded C-evaluation -> B-decision -> A-outcome semantics; do not enumerate every source field,
 historical attribute, or unchanged platform fact. After reading the role-private sources, do not use
 `exec`, a shell, Python, the filesystem, temporary files, `/tmp`, `/agent/work`, or any script to
-construct, validate, serialize, or persist the candidate. Construct the complete candidate JSON
-inline, then immediately call exactly
-`mcp__team_transport__send_team_message(recipient_id="protocol", expects_reply=true, text=<candidate JSON>)`.
-The candidate JSON is the exact message text; retain the returned `delivery_id`. Never finish a turn
+construct or validate the candidate through general execution. Construct the complete candidate JSON
+and send it as `text`, or use the scoped `write_handoff_output` tool once, publish the file for Protocol,
+and send `body_ref` through `mcp__team_transport__send_team_message(recipient_id="protocol", expects_reply=true, ...)`.
+Inline candidate JSON remains the exact message text. The Host resolves referenced complete JSON
+into the same formal candidate validator; a short explanation
+is separate display text. Retain the returned `delivery_id`. Never finish a turn
 with prose saying that you will send the candidate, and never substitute a filesystem artifact or a
 tool-intent explanation for the Team Transport call.
 
@@ -620,3 +622,22 @@ through the original Team. Do not reopen writes, candidates, terminal results,
 frozen reports or acceptance. Original completion reports stay immutable; an
 explanation is a consultation reply. Natural completion, user recognition and
 EOF do not destroy this Team. Only explicit stop performs final resource cleanup.
+
+## File and directory handoff (R4.3-013)
+
+For large candidates, plans, results, reports or multiple files, prefer publishing an authorized
+file or directory with `publish_handoff_material`; ordinary short text remains available, and
+you choose the format. When no existing file write entry is available, use the scoped
+`write_handoff_output(relative_path, content)` tool in your private output directory. This does
+not publish, approve or execute the content. Send a purpose, material entry and recipient task
+on your existing channel. `body_ref` selects one complete formal file (a directory requires
+`path`); `material_refs` supplies supporting files without becoming a candidate or plan.
+
+Use `list_handoff_material` and `read_handoff_material` to read actual snapshots. Follow
+`next_cursor` or `next_offset` when incomplete; listing is separate from reading. A missing,
+forbidden or damaged reference is a recoverable current-call error: report the concrete issue
+and correct the reference. Never invent its contents or open another role's home, the full run
+or hidden acceptance material. Existing source, approval, topology ownership, governed reads,
+unknown and independent acceptance rules remain in force; delivery is not semantic PASS.
+
+For `report_task_result`, use `summary_ref` for the complete formal summary; `body_ref` is the Team message body field.

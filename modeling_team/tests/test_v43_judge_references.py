@@ -13,6 +13,7 @@ from modeling_team.acceptance_runtime import (
     ChildRuntimeError, V3BatchReportContract, build_acceptance_judge_packet, _unfreeze_packet,
 )
 from modeling_team.competency_questions import CQ_REFERENCE_PACKET_SCHEMA, content_digest
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
 from modeling_team.tests.test_r3011_acceptance_runtime import (
     _batch_packet, _start_sink, _submit, _verdict_entry, _questions,
 )
@@ -155,7 +156,14 @@ def test_real_stdio_facade_constrained_read_then_report_and_closed_lifecycle(tmp
         process.stdin.flush()
         return json.loads(process.stdout.readline())["result"]
     try:
-        assert {t["name"] for t in call("tools/list")["tools"]} == {"submit_examiner_report", "read_frozen_evidence"}
+        assert {t["name"] for t in call("tools/list")["tools"]} == {
+            "submit_examiner_report",
+            "read_frozen_evidence",
+            "write_handoff_output",
+            "publish_handoff_material",
+            "list_handoff_material",
+            "read_handoff_material",
+        }
         assert call("tools/call", {"name": "submit_examiner_report", "arguments": verdict(packet, "cq-1")})["isError"]
         denied = call("tools/call", {"name": "read_frozen_evidence", "arguments": arguments(packet, "/etc/passwd")})
         assert denied["isError"] and "unauthorized" in denied["content"][0]["text"]
@@ -239,7 +247,10 @@ def test_native_judge_factory_mounts_only_frozen_read_tool_and_retains_receipts(
             return {"thread": {"id": "fixture-judge-thread"}}
         if method == "mcpServerStatus/list":
             return {"data": [{"name": "examiner_report", "tools": [
-                {"name": "submit_examiner_report"}, {"name": "read_frozen_evidence"}]}]}
+                {"name": "submit_examiner_report"},
+                {"name": "read_frozen_evidence"},
+                *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES)),
+            ]}]}
         if method == "turn/start":
             native_inputs.append(params["input"])
             sink = sinks[0]

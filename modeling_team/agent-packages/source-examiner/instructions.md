@@ -20,3 +20,15 @@ When the sources do not contain the answer, cite the locations you searched that
 gap (the same sections listed in `coverage.queries_or_sections`) and record the missing fact in
 `gaps`. A report with zero `evidence_refs` items is rejected by the sink and cannot be repaired
 by a second submission, so build the locator list while you read.
+
+## Optional report material handoff
+
+The report sink also exposes `write_handoff_output`, `publish_handoff_material`,
+`list_handoff_material`, and `read_handoff_material`. Use them only when a complete report or
+supporting text is clearer as a published UTF-8 material: write it under your private output,
+publish it to the existing Host recipient channel, then submit exactly
+`{"report_ref":{"material_id":"...", "path":"..."}}` as the report payload. A report
+reference is a complete alternative to the six inline fields; do not mix it with guessed fields.
+Reading a handoff package does not grant access to additional source material and never replaces
+the immutable `SOURCE_TEXT_JSON` evidence boundary. If a material operation fails, correct the
+path or publication and retry; keep the original report contract and source locators unchanged.

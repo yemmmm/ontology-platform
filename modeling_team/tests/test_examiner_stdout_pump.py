@@ -10,6 +10,8 @@ lifecycle-owned pump can drain.
 
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import json
 import os
 import select
@@ -132,7 +134,7 @@ class _ScriptedAppServer:
                 return None
             return {"thread": {"id": "child-thread"}}
         if method == "mcpServerStatus/list":
-            servers = [{"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}]}]
+            servers = [{"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}, *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES))]}]
             if self._kind == "platform":
                 servers.append(
                     {

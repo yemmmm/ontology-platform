@@ -12,6 +12,7 @@ import queue
 import re
 import threading
 import time
+import uuid
 from dataclasses import replace
 from pathlib import Path
 from typing import Any
@@ -21,6 +22,12 @@ from jsonschema import validate
 
 from . import host_ops_mcp
 from .host_ops import HostOpError, resolve_run_root
+from .handoff_materials import (
+    HANDOFF_TOOL_NAMES,
+    HANDOFF_TOOL_SPECS,
+    HandoffMaterials,
+    MaterialError,
+)
 from .model_routing import (
     ProviderSessionManager, load_team_model_profile, preflight_profile_credentials,
     resolve_delivery_model_binding, uses_external_credential_session,
@@ -37,6 +44,17 @@ _READ = {
     "read_platform_record", "reconcile_write_state",
 }
 _PRODUCTION = {"start_run", "resume_from_checkpoint"}
+_MATERIAL_HOST_TOOLS = {"answer_question", "submit_instruction", "consult_team"}
+# Evidence streams that carry an existing public Delivery/Team handoff.  A
+# generic evidence directory is deliberately not a material source: CQ,
+# acceptance and report streams may contain private references whose recipient
+# is the Runner as an implementation detail.
+_PUBLIC_RUN_EVENT_SOURCES = frozenset({
+    "deliveries.jsonl", "coordination.jsonl", "coordination-phase.jsonl",
+    "outer-instruction.jsonl", "outer-question.jsonl", "outer-user.jsonl",
+    "terminal-result-handoff.jsonl", "settled.jsonl",
+})
+_PUBLIC_MATERIAL_ROLES = frozenset({"coordinator", "modeling", "protocol"})
 
 
 def _decision_observation(observation: dict) -> dict:
@@ -90,6 +108,7 @@ _LOCAL_SPECS = [
      "inputSchema": {"type": "object", "properties": {
          "operation_id": {"type": "string"}, "text": {"type": "string"},
          "source_references": {"type": "array", "items": {"type": "string"}},
+         "material_refs": {"type": "array", "items": {"type": "object"}},
          "owned_paths": {"type": "array", "items": {"type": "string"}}},
          "required": ["operation_id", "text", "source_references", "owned_paths"],
          "additionalProperties": False}},
@@ -108,6 +127,12 @@ _LOCAL_SPECS = [
          "required": ["message_id", "action", "status", "evidence_references"],
          "additionalProperties": False}},
 ]
+
+# These tools are mounted on the Delivery runtime itself.  They deliberately
+# remain separate from ``read_delivery_artifact``: the latter reads an
+# already-approved host path, while these operations create and consume an
+# immutable, recipient-scoped handoff package.
+_LOCAL_SPECS.extend(HANDOFF_TOOL_SPECS)
 
 
 class DeliverySession:
@@ -142,7 +167,24 @@ class DeliverySession:
         self.operation_kinds: dict[str, str] = {}
         self.verification_ids: set[str] = set()
         self.reconciled_runs: set[str] = set()
+        # ``get_run_events`` is incremental.  Keep its opaque cursor outside
+        # the observation payload so the same page is not repeatedly offered
+        # to the native Delivery model.  Imported run materials are cached by
+        # their originating run/material/member identity and restored from a
+        # small session-local ledger on resume.
+        self._event_cursors: dict[str, str | None] = {}
+        self._run_material_imports: dict[tuple[str, str, str | None], dict[str, Any]] = {}
         self.repair_task_files = {self._path(x) for x in config.get("repair_task_files", [])}
+        self._handoff_recipients = {
+            str(item)
+            for item in config.get("handoff_recipients", config.get("material_recipients", ["runner"]))
+            if isinstance(item, str) and item
+        }
+        self._handoff_source_recipients = {
+            str(alias): {str(recipient) for recipient in recipients}
+            for alias, recipients in (config.get("handoff_source_recipients") or {}).items()
+            if isinstance(alias, str) and isinstance(recipients, (list, set, tuple))
+        }
         self.messages: list[dict] = []
         self.finished = False
         self.profile = load_team_model_profile(self.repository_root, config["model_profile"])
@@ -162,11 +204,19 @@ class DeliverySession:
             self.operation_kinds.update(previous.get("operation_kinds", {}))
             self.verification_ids.update(previous.get("verification_ids", []))
             self.repair_task_files.update(Path(x) for x in previous.get("repair_task_files", []))
+            self._event_cursors.update(previous.get("event_cursors", {}))
             self.allowed_operations.intersection_update(previous["allowed_operations"])
             self.activity = previous.get("activity", "active")
             self.work_result = previous.get("work_result")
         else:
             self.session_root.mkdir(parents=True, exist_ok=False, mode=0o700)
+        self.handoff_materials = HandoffMaterials(
+            self.session_root / "handoff-materials", self.session_id
+        )
+        # Source mappings are reconstructed from the current authorization and
+        # run ids. Published packages remain immutable under this session root.
+        self._register_handoff_actor()
+        self._load_run_material_imports()
         if self.project_id:
             if not isinstance(self.project_id, str):
                 raise ValueError("project_id must be an explicit string binding")
@@ -189,7 +239,10 @@ class DeliverySession:
         for tool in asyncio.run(host_ops_mcp.mcp.list_tools()):
             schema = copy.deepcopy(tool.inputSchema)
             properties = schema.get("properties", {})
-            for name in ("repository_root", "host_session_ref", "base_url"):
+            for name in (
+                "repository_root", "host_session_ref", "base_url",
+                "handoff_materials", "material_actor_id", "material_recipient_id",
+            ):
                 properties.pop(name, None)
             schema["additionalProperties"] = False
             self._tools[tool.name] = {"name": tool.name, "description": tool.description,
@@ -201,6 +254,737 @@ class DeliverySession:
         path = Path(value)
         return (path if path.is_absolute() else self.repository_root / path).resolve()
 
+    def _register_handoff_actor(self) -> None:
+        """Refresh the Delivery actor's currently authorized source mapping.
+
+        A Delivery process may acquire run ids after ``start_run`` or restore
+        them while resuming.  Registering the actor again adds those bounded
+        run evidence roots without exposing the repository or another run's
+        workspace.  The helper stores immutable packages below the session
+        root; re-registration never changes an existing package's bytes.
+        """
+
+        sources: dict[str, Path] = {}
+        for path in sorted(self.sources, key=str):
+            sources[str(path)] = path
+            try:
+                relative = path.relative_to(self.repository_root)
+            except ValueError:
+                continue
+            sources[relative.as_posix()] = path
+        # Only public/run-level evidence that the Delivery reader already has
+        # permission to inspect is registered here.  Private CQ/review and
+        # hidden acceptance report trees are intentionally absent.
+        run_relative_sources = (
+            "state.json", "model-handoff.json", "baseline-manifest.json",
+            "competency-questions/public",
+        )
+        for run_id in sorted(self.run_ids):
+            try:
+                root, _ = resolve_run_root(run_id, repository_root=self.repository_root)
+            except (HostOpError, OSError, ValueError):
+                continue
+            for relative in run_relative_sources:
+                candidate = root / relative
+                if candidate.is_file() or candidate.is_dir():
+                    sources[str(candidate)] = candidate
+        # A delivery material is consumed by the Host/Runner route.  Explicit
+        # recipient configuration narrows this default; it never grants a new
+        # Team Transport edge.
+        self.handoff_materials.register_actor(
+            "delivery", sources, self._handoff_recipients,
+            self._handoff_source_recipients,
+        )
+
+    def _load_run_material_imports(self) -> None:
+        """Restore the origin index for run packages already relayed here."""
+
+        path = self.session_root / "handoff-material-origins.jsonl"
+        if not path.is_file():
+            return
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return
+        for line in lines:
+            try:
+                record = json.loads(line)
+                key = record.get("cache_key")
+                if (
+                    isinstance(key, list)
+                    and len(key) == 3
+                    and isinstance(key[0], str)
+                    and isinstance(key[1], str)
+                    and (key[2] is None or isinstance(key[2], str))
+                ):
+                    self._run_material_imports[(key[0], key[1], key[2])] = record
+            except (TypeError, ValueError):
+                # The immutable package remains readable even if this
+                # advisory index has a corrupt line; a new observation can
+                # re-establish the origin record.
+                continue
+
+    def _record_run_material_import(self, key: tuple[str, str, str | None], record: dict) -> None:
+        """Persist only non-secret origin/binding metadata for one relay."""
+
+        self._run_material_imports[key] = record
+        payload = {"cache_key": list(key), **record}
+        try:
+            with (self.session_root / "handoff-material-origins.jsonl").open("a", encoding="utf-8") as stream:
+                stream.write(json.dumps(payload, ensure_ascii=False, sort_keys=True) + "\n")
+        except OSError:
+            # Material publication is already immutable and complete.  A
+            # failure to append this local provenance index must not replace a
+            # valid handoff with a different package or expose a host path.
+            return
+
+    def _material_tool(self, name: str, arguments: dict) -> dict:
+        try:
+            return {"ok": True, "data": self.handoff_materials.call("delivery", name, arguments)}
+        except MaterialError as exc:
+            return {"ok": False, "error": {
+                "code": exc.code, "message": str(exc),
+                **({"retry": exc.data["retry"]} if isinstance(exc.data, dict) and exc.data.get("retry") else {}),
+            }}
+
+    def _target_handoff_store(self, run_id: str) -> HandoffMaterials:
+        """Open the bounded handoff store belonging to one authorized run."""
+
+        return self._run_handoff_store(run_id)
+
+    def _run_handoff_store(self, run_id: str) -> HandoffMaterials:
+        """Open a run store with the recorded role/source grants.
+
+        A result reference may have been published by a production Agent and
+        later relayed by the Runner.  Re-registering the recorded actors here
+        lets the helper re-check the original publisher, source alias and
+        recipient grant before Delivery copies bytes into its session store.
+        It does not add a Team edge or mount a role workspace into Delivery.
+        """
+
+        try:
+            run_root, _ = resolve_run_root(run_id, repository_root=self.repository_root)
+        except (HostOpError, OSError, ValueError) as exc:
+            raise MaterialError("material_source_unavailable", "bound run is unavailable") from exc
+        store = HandoffMaterials(run_root / "handoff-materials", run_id)
+        try:
+            profile = yaml.safe_load((run_root / "profile.snapshot.yaml").read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, yaml.YAMLError) as exc:
+            raise MaterialError("material_source_unavailable", "run role bindings are unavailable") from exc
+        if not isinstance(profile, dict) or not isinstance(profile.get("agents"), list):
+            raise MaterialError("material_binding_changed", "run role bindings are invalid")
+
+        agents = [agent for agent in profile["agents"] if isinstance(agent, dict)]
+        agent_ids = {
+            str(agent["agent_id"])
+            for agent in agents
+            if isinstance(agent.get("agent_id"), str) and agent["agent_id"]
+        }
+        role_by_agent = {
+            str(agent["agent_id"]): str(agent.get("package") or "")
+            for agent in agents
+            if isinstance(agent.get("agent_id"), str) and agent["agent_id"]
+        }
+        communication = profile.get("communication") or []
+        edges: dict[str, set[str]] = {agent_id: set() for agent_id in agent_ids}
+        for rule in communication:
+            if not isinstance(rule, dict) or not isinstance(rule.get("from"), str):
+                continue
+            targets = rule.get("to")
+            if isinstance(targets, str):
+                targets = [targets]
+            if isinstance(targets, list):
+                edges.setdefault(rule["from"], set()).update(
+                    target for target in targets if isinstance(target, str)
+                )
+
+        task: dict[str, Any] = {}
+        try:
+            loaded_task = yaml.safe_load((run_root / "task.snapshot.yaml").read_text(encoding="utf-8"))
+            if isinstance(loaded_task, dict):
+                task = loaded_task
+        except (OSError, UnicodeDecodeError, yaml.YAMLError):
+            # A handoff published solely from an output directory does not
+            # need the task snapshot.  Source-role aliases below do.
+            task = {}
+        role_sources = task.get("role_sources") if isinstance(task.get("role_sources"), list) else []
+        schema_version = task.get("schema_version")
+        allowed_sources = task.get("allowed_sources") if isinstance(task.get("allowed_sources"), list) else []
+
+        for agent_id, role in role_by_agent.items():
+            recipients = set(edges.get(agent_id, set()))
+            # Runner is the existing host route. CQ has no production Team
+            # edge and acceptance/private reports stay on their own sink.
+            recipients.add("runner")
+            if role == "competency-question":
+                recipients = {"runner"}
+            sources: dict[str, Path] = {}
+            filters: dict[str, set[str]] = {}
+            work = run_root / "runtime" / agent_id / "work"
+            if role not in {"competency-question", "acceptance"}:
+                sources["/agent/work"] = work
+                sources[str(work)] = work
+            for source in role_sources:
+                if not isinstance(source, dict) or role not in (source.get("roles") or []):
+                    continue
+                relative = source.get("path")
+                if not isinstance(relative, str) or not relative:
+                    continue
+                target = run_root / "sources" / role / relative
+                alias = "/agent/home/sources/" + relative
+                sources[alias] = target
+                filters[alias] = {
+                    other_id
+                    for other_id, other_role in role_by_agent.items()
+                    if other_role in (source.get("roles") or [])
+                } | {"runner"}
+            if schema_version == 1:
+                for source in allowed_sources:
+                    if isinstance(source, str):
+                        sources["/agent/home/sources/" + Path(source).name] = run_root / "sources" / Path(source).name
+            # Public projection roots are runner-readable and appear in
+            # manifests created by the staged handoff paths.
+            for relative in ("competency-questions/public", "value-semantics", "stage3-neutral-graph"):
+                target = run_root / relative
+                if target.exists() and role in _PUBLIC_MATERIAL_ROLES:
+                    alias = "/agent/work/" + relative
+                    sources[alias] = target
+                    sources[str(target)] = target
+            store.register_actor(agent_id, sources, recipients, filters)
+        store.register_actor("runner", {}, agent_ids)
+        return store
+
+    def _run_agent_ids(self, run_id: str) -> set[str]:
+        """Read only the role identities needed for a run-bound relay."""
+
+        try:
+            run_root, _ = resolve_run_root(run_id, repository_root=self.repository_root)
+            profile = yaml.safe_load((run_root / "profile.snapshot.yaml").read_text(encoding="utf-8"))
+        except (HostOpError, OSError, UnicodeDecodeError, yaml.YAMLError):
+            return set()
+        agents = profile.get("agents") if isinstance(profile, dict) else None
+        return {
+            str(agent.get("agent_id"))
+            for agent in agents or []
+            if isinstance(agent, dict) and isinstance(agent.get("agent_id"), str)
+            and agent.get("agent_id")
+        }
+
+    def _run_material_recipient(self, run_id: str, name: str, arguments: dict) -> str:
+        """Resolve the existing downstream role for an outer Host action."""
+
+        agents: list[dict] = []
+        try:
+            run_root, _ = resolve_run_root(run_id, repository_root=self.repository_root)
+            profile = yaml.safe_load((run_root / "profile.snapshot.yaml").read_text(encoding="utf-8"))
+            agents = profile.get("agents") if isinstance(profile, dict) else []
+        except (HostOpError, OSError, UnicodeDecodeError, yaml.YAMLError):
+            pass
+        role = "coordinator"
+        if name == "answer_question":
+            role = (
+                "competency-question"
+                if arguments.get("channel") == "cq_interview"
+                else "modeling"
+            )
+        for agent in agents or []:
+            if isinstance(agent, dict) and agent.get("package") == role:
+                if isinstance(agent.get("agent_id"), str) and agent["agent_id"]:
+                    return agent["agent_id"]
+        return role
+
+    def _run_material_roles(self, run_id: str) -> dict[str, str]:
+        """Return the recorded agent-id → package-role binding for one run."""
+
+        repository_root = getattr(self, "repository_root", None)
+        if repository_root is None:
+            return {}
+        try:
+            run_root, _ = resolve_run_root(run_id, repository_root=repository_root)
+            profile = yaml.safe_load((run_root / "profile.snapshot.yaml").read_text(encoding="utf-8"))
+        except (HostOpError, OSError, UnicodeDecodeError, yaml.YAMLError):
+            return {}
+        agents = profile.get("agents") if isinstance(profile, dict) else []
+        return {
+            str(agent["agent_id"]): str(agent.get("package") or "")
+            for agent in agents or []
+            if isinstance(agent, dict)
+            and isinstance(agent.get("agent_id"), str)
+            and agent.get("agent_id")
+        }
+
+    def _public_material_recipient(self, run_id: str, recipient_id: str) -> bool:
+        """Check the current production/public recipient grant.
+
+        A material published to the Runner is eligible only when its event is
+        itself a public production handoff; CQ, acceptance and report role ids
+        stay excluded from this observation surface.
+        """
+
+        if recipient_id == "runner":
+            return True
+        return self._run_material_roles(run_id).get(recipient_id) in _PUBLIC_MATERIAL_ROLES
+
+    @staticmethod
+    def _is_private_cq_source(manifest: dict[str, Any]) -> bool:
+        """Recognize only the existing CQ private/review source roots."""
+
+        for field in ("source_alias", "source_path"):
+            value = manifest.get(field)
+            if not isinstance(value, str):
+                continue
+            parts = [part for part in value.replace("\\", "/").split("/") if part]
+            if any(
+                parts[index:index + 2] in (["competency-questions", "private"],
+                                            ["competency-questions", "reviews"])
+                for index in range(len(parts) - 1)
+            ):
+                return True
+        return False
+
+    def _is_private_cq_material(self, ref: dict) -> bool:
+        """Retain CQ privacy after a Host relay replaces the source alias."""
+
+        manifest, _digest = self.handoff_materials._manifest("delivery", ref["material_id"])
+        if self._is_private_cq_source(manifest):
+            return True
+        for record in getattr(self, "_run_material_imports", {}).values():
+            target = record.get("target_ref")
+            if not isinstance(target, dict) or target.get("material_id") != ref.get("material_id"):
+                continue
+            binding = record.get("origin_binding")
+            origin_run_id = record.get("origin_run_id")
+            if not isinstance(binding, dict) or not isinstance(origin_run_id, str):
+                continue
+            publisher_id = binding.get("publisher_id")
+            recipient_id = binding.get("recipient_id")
+            if (
+                isinstance(publisher_id, str)
+                and recipient_id == "runner"
+                and self._run_material_roles(origin_run_id).get(publisher_id)
+                == "competency-question"
+            ):
+                return True
+        return False
+
+    def _assert_material_route(self, run_id: str, ref: dict, recipient_id: str) -> None:
+        """Keep original private CQ bindings on the existing CQ route."""
+
+        if not self._is_private_cq_material(ref):
+            return
+        role = self._run_material_roles(run_id).get(recipient_id)
+        if role != "competency-question":
+            raise MaterialError(
+                "material_forbidden",
+                "private CQ material is restricted to the existing CQ review channel",
+            )
+
+    @staticmethod
+    def _event_source_public(source: Any) -> bool:
+        return isinstance(source, str) and source in _PUBLIC_RUN_EVENT_SOURCES
+
+    def _import_run_material_ref(
+        self,
+        run_id: str,
+        ref: dict,
+        *,
+        source: str,
+        origin_agent_id: str | None = None,
+    ) -> tuple[dict, dict]:
+        """Relay one public run reference into the Delivery session store.
+
+        The run material remains immutable and its original manifest is read
+        with the publisher's current role/source binding.  Delivery receives a
+        session-scoped reference whose provenance points back to the run; a
+        raw run reference is never exposed to the native model.
+        """
+
+        if not self._event_source_public(source):
+            raise MaterialError("material_forbidden", "event is not a public handoff source")
+        if not isinstance(ref, dict) or not isinstance(ref.get("material_id"), str):
+            raise MaterialError("material_path_invalid", "material reference is invalid")
+        path = ref.get("path")
+        if path is not None and not isinstance(path, str):
+            raise MaterialError("material_path_invalid", "material member path is invalid")
+        origin_store = self._run_handoff_store(run_id)
+        # The manifest is the authority for publisher/recipient.  Inspect it
+        # through the helper so scope, digest and source grants are checked
+        # before any byte is copied.
+        try:
+            # The original recipient may be a production Agent rather than
+            # Runner.  Find the manifest through one of the recorded actors;
+            # every candidate still goes through HandoffMaterials' scope,
+            # digest and source-grant checks.
+            raw_manifest: dict[str, Any] | None = None
+            digest: str | None = None
+            candidates = ["runner", *self._run_material_roles(run_id).keys()]
+            for actor_id in dict.fromkeys(candidates):
+                try:
+                    raw_manifest, digest = origin_store._manifest(actor_id, ref["material_id"])
+                    break
+                except MaterialError:
+                    continue
+            if raw_manifest is None or digest is None:
+                raise MaterialError("material_forbidden", "material has no current run binding")
+            publisher_id = raw_manifest.get("publisher_id")
+            recipient_id = raw_manifest.get("recipient_id")
+            if not isinstance(publisher_id, str) or not isinstance(recipient_id, str):
+                raise MaterialError("material_binding_changed", "material binding is incomplete")
+            # Ensure the actor named by the immutable manifest is the one that
+            # passed the previous lookup.  This prevents a host-only recipient
+            # lookup from becoming a propagation grant.
+            raw_manifest, digest = origin_store._manifest(publisher_id, ref["material_id"])
+            if not self._public_material_recipient(run_id, recipient_id):
+                raise MaterialError("material_forbidden", "material recipient is not public in this run")
+            if origin_agent_id:
+                role = self._run_material_roles(run_id).get(origin_agent_id)
+                if role and role not in _PUBLIC_MATERIAL_ROLES and origin_agent_id != "runner":
+                    raise MaterialError("material_forbidden", "material publisher is private in this run")
+            # Resolve the selected member while the original binding is still
+            # active.  Auxiliary directory refs are relayed as the complete
+            # immutable package; validate every member before copying it.
+            if path is not None:
+                origin_store._bytes(publisher_id, ref["material_id"], path)
+            else:
+                for entry in raw_manifest.get("entries") or []:
+                    if not isinstance(entry, dict) or not isinstance(entry.get("path"), str):
+                        raise MaterialError("material_digest_mismatch", "material entry is invalid")
+                    origin_store._bytes(publisher_id, ref["material_id"], entry["path"])
+        except MaterialError:
+            raise
+        except (KeyError, TypeError, OSError) as exc:
+            raise MaterialError("material_source_unavailable", "run material cannot be read") from exc
+
+        key = (run_id, ref["material_id"], path)
+        cached = self._run_material_imports.get(key)
+        if cached:
+            target_ref = cached.get("target_ref")
+            if isinstance(target_ref, dict) and isinstance(target_ref.get("material_id"), str):
+                return dict(target_ref), dict(cached)
+        try:
+            target_ref = self.handoff_materials.relay_ref(
+                "delivery", "runner", ref,
+                origin_store=origin_store,
+                origin_actor_id=publisher_id,
+            )
+        except MaterialError:
+            raise
+        except (KeyError, TypeError, OSError) as exc:
+            raise MaterialError("material_source_unavailable", "run material relay failed") from exc
+        origin = {
+            "origin_run_id": run_id,
+            "origin_scope_id": run_id,
+            "origin_material_id": ref["material_id"],
+            **({"origin_path": path} if path is not None else {}),
+            "origin_manifest_digest": digest,
+            "origin_binding": {
+                "publisher_id": raw_manifest.get("publisher_id"),
+                "recipient_id": raw_manifest.get("recipient_id"),
+                "source_alias": raw_manifest.get("source_alias"),
+            },
+            "source_event": source,
+            "target_ref": target_ref,
+        }
+        self._record_run_material_import(key, origin)
+        return dict(target_ref), origin
+
+    @staticmethod
+    def _strip_material_fields(value: Any) -> Any:
+        """Remove raw refs from an event that is outside the public surface."""
+
+        if isinstance(value, dict):
+            return {
+                key: DeliverySession._strip_material_fields(item)
+                for key, item in value.items()
+                if key not in {"body_ref", "material_refs", "material_origins"}
+            }
+        if isinstance(value, list):
+            return [DeliverySession._strip_material_fields(item) for item in value]
+        return value
+
+    def _rewrite_event_materials(
+        self,
+        run_id: str,
+        value: Any,
+        *,
+        source: str,
+        origin_agent_id: str | None = None,
+        role_by_agent: dict[str, str] | None = None,
+    ) -> tuple[Any, list[dict], bool]:
+        """Translate public event refs and omit unusable/private raw refs."""
+
+        if not self._event_source_public(source):
+            return self._strip_material_fields(value), [], False
+        if isinstance(value, list):
+            output, origins, had_failure = [], [], False
+            for item in value:
+                rewritten, nested, failed = self._rewrite_event_materials(
+                    run_id, item, source=source, origin_agent_id=origin_agent_id,
+                    role_by_agent=role_by_agent,
+                )
+                output.append(rewritten)
+                origins.extend(nested)
+                had_failure = had_failure or failed
+            return output, origins, had_failure
+        if not isinstance(value, dict):
+            return value, [], False
+
+        inherited_agent = origin_agent_id
+        for field in ("source_id", "agent_id", "publisher_id"):
+            candidate = value.get(field)
+            if isinstance(candidate, str):
+                inherited_agent = candidate
+                break
+        output: dict[str, Any] = {}
+        origins: list[dict] = []
+        had_failure = False
+        for key, item in value.items():
+            if key == "body_ref":
+                if not isinstance(item, dict):
+                    had_failure = True
+                    continue
+                try:
+                    translated, origin = self._import_run_material_ref(
+                        run_id, item, source=source, origin_agent_id=inherited_agent
+                    )
+                except MaterialError:
+                    had_failure = True
+                    continue
+                output[key] = translated
+                origins.append({"role": "body", **origin})
+                continue
+            if key == "material_refs":
+                if not isinstance(item, list):
+                    had_failure = True
+                    continue
+                translated_refs: list[dict] = []
+                for ref in item:
+                    if not isinstance(ref, dict):
+                        had_failure = True
+                        continue
+                    try:
+                        translated, origin = self._import_run_material_ref(
+                            run_id, ref, source=source, origin_agent_id=inherited_agent
+                        )
+                    except MaterialError:
+                        had_failure = True
+                        continue
+                    translated_refs.append(translated)
+                    origins.append({"role": "auxiliary", **origin})
+                if translated_refs:
+                    output[key] = translated_refs
+                continue
+            if key == "material_origins":
+                # Never pass origin metadata containing raw run references
+                # through.  The translated entries below are authoritative.
+                continue
+            child_agent = inherited_agent
+            if isinstance(item, dict) and key in (role_by_agent or {}):
+                # ``settled.results`` is keyed by agent id rather than carrying
+                # an ``agent_id`` field inside every result object.
+                child_agent = key
+            nested, nested_origins, nested_failed = self._rewrite_event_materials(
+                run_id, item, source=source, origin_agent_id=child_agent,
+                role_by_agent=role_by_agent,
+            )
+            output[key] = nested
+            origins.extend(nested_origins)
+            had_failure = had_failure or nested_failed
+        if origins:
+            output["material_origins"] = origins
+        return output, origins, had_failure
+
+    def _project_run_events(self, run_id: str, data: dict[str, Any]) -> dict[str, Any]:
+        """Expose only session-readable refs in a Host event page."""
+
+        if not isinstance(data, dict) or not isinstance(data.get("events"), list):
+            return data
+        projected = dict(data)
+        events: list[Any] = []
+        omitted = False
+        role_by_agent = self._run_material_roles(run_id)
+        for event in data["events"]:
+            if not isinstance(event, dict):
+                events.append(event)
+                continue
+            source = event.get("source")
+            if not self._event_source_public(source):
+                events.append(self._strip_material_fields(event))
+                continue
+            item, _origins, failed = self._rewrite_event_materials(
+                run_id, event.get("data"), source=source, role_by_agent=role_by_agent
+            )
+            copied = dict(event)
+            copied["data"] = item
+            events.append(copied)
+            omitted = omitted or failed
+        projected["events"] = events
+        if omitted:
+            limitations = list(projected.get("limitations") or [])
+            limitations.append("one or more event material references were omitted because their current public binding could not be verified")
+            projected["limitations"] = sorted(set(limitations))
+        return projected
+
+    def _observe_run_events(self, run_id: str) -> dict:
+        result = self.call_tool(
+            "get_run_events",
+            {"run_id": run_id, "cursor": self._event_cursors.get(run_id), "limit": 200},
+        )
+        if result.get("ok"):
+            data = result.get("data") or {}
+            cursor = data.get("next_cursor")
+            if isinstance(cursor, str) and cursor != self._event_cursors.get(run_id):
+                self._event_cursors[run_id] = cursor
+                self._save("active")
+        return result
+
+    def _copy_material_to_run(
+        self, run_id: str, ref: dict, target: HandoffMaterials, *, full_package: bool,
+        recipient_id: str,
+    ) -> tuple[dict, dict]:
+        """Copy an authorized session package into the bound run by bytes.
+
+        A session-local material id is deliberately never sent to a Runner:
+        the Runner reads the run-owned immutable snapshot.  The returned
+        second value records the original reference for audit/attribution.
+        """
+
+        try:
+            listing = self.handoff_materials.list("delivery", ref["material_id"], max_entries=100)
+            entries = list(listing.get("entries") or [])
+            cursor = listing.get("next_cursor")
+            while cursor:
+                page = self.handoff_materials.list(
+                    "delivery", ref["material_id"], cursor=cursor, max_entries=100
+                )
+                entries.extend(page.get("entries") or [])
+                cursor = page.get("next_cursor")
+            selected_path = ref.get("path")
+            if listing.get("kind") == "file":
+                if (
+                    selected_path is not None
+                    and entries
+                    and selected_path != entries[0].get("path")
+                ):
+                    raise MaterialError("material_member_missing", "path is not a published member")
+                selected_path = entries[0]["path"] if entries else None
+            elif not full_package:
+                if not isinstance(selected_path, str) or not selected_path:
+                    raise MaterialError("material_member_required", "select a published member")
+                if not any(item.get("path") == selected_path for item in entries):
+                    raise MaterialError("material_member_missing", "path is not a published member")
+            if not full_package and selected_path is not None:
+                # Resolve once before relay so a deleted/corrupt member is a
+                # typed source error, while relay still copies every byte of a
+                # directory package for the auxiliary-ref case.
+                self.handoff_materials.resolve(
+                    "delivery", {"material_id": ref["material_id"], "path": selected_path}
+                )
+            if not full_package and listing.get("kind") == "directory":
+                # A directory body reference names exactly one formal member;
+                # do not expose the other selected members merely because the
+                # original auxiliary package happened to contain them.
+                assert isinstance(selected_path, str)
+                content = self.handoff_materials.resolve(
+                    "delivery", {"material_id": ref["material_id"], "path": selected_path}
+                )
+                relay_dir = f"relay-{uuid.uuid4().hex}"
+                target.write_output("runner", f"{relay_dir}/{selected_path}", content)
+                published = target.publish(
+                    "runner", recipient_id,
+                    f"/agent/handoff-output/{relay_dir}/{selected_path}",
+                )
+                # The selected member is republished as a single target file.
+                # Its package-relative path is therefore the target file's
+                # basename, rather than the source directory path.  Preserve
+                # a resolvable ref for the Runner instead of copying a stale
+                # source ``path`` into the new package.
+                translated = {"material_id": published["material_id"]}
+                entries = published.get("entries") or []
+                if entries and isinstance(entries[0].get("path"), str):
+                    translated["path"] = entries[0]["path"]
+            else:
+                translated = target.relay_ref(
+                    "runner", recipient_id, ref,
+                    origin_store=self.handoff_materials,
+                    origin_actor_id="delivery",
+                )
+            origin = {
+                "material_id": ref.get("material_id"),
+                **({"path": ref["path"]} if ref.get("path") is not None else {}),
+                "manifest_digest": listing.get("manifest_digest"),
+                "source_binding": dict(listing.get("binding") or {}),
+                "run_id": run_id,
+                "recipient_id": recipient_id,
+            }
+            return translated, origin
+        except MaterialError:
+            raise
+        except (KeyError, TypeError, OSError) as exc:
+            raise MaterialError("material_source_unavailable", "material package cannot be transferred") from exc
+
+    def _resolve_material_submission(self, name: str, arguments: dict) -> dict:
+        """Resolve a formal body reference before writing the Host FIFO.
+
+        ``text`` remains the complete formal content consumed by the existing
+        Runner validators.  ``display_text`` is a separate short explanation
+        for the runtime/UI and is never concatenated into that content.
+        Auxiliary ``material_refs`` retain their identities but do not become
+        formal content automatically.
+        """
+
+        resolved = dict(arguments)
+        run_id = resolved.get("run_id")
+        if not isinstance(run_id, str) or run_id not in self.run_ids:
+            raise ValueError("run is outside this Delivery session")
+        if resolved.get("body_ref") is None and not resolved.get("material_refs"):
+            return resolved
+        target = self._target_handoff_store(run_id)
+        target_recipient = self._run_material_recipient(run_id, name, resolved)
+        origins: list[dict] = []
+        body_ref = resolved.get("body_ref")
+        if body_ref is not None:
+            try:
+                self.handoff_materials.authorize_ref("delivery", "runner", body_ref)
+                self._assert_material_route(run_id, body_ref, target_recipient)
+                translated, origin = self._copy_material_to_run(
+                    run_id, body_ref, target, full_package=False,
+                    recipient_id=target_recipient,
+                )
+                full_text = self.handoff_materials.resolve("delivery", body_ref)
+            except MaterialError:
+                raise
+            display = resolved.get("text")
+            resolved["text"] = full_text
+            resolved["display_text"] = display or (
+                f"Formal content is in handoff material {translated.get('material_id')}"
+            )
+            resolved["body_ref"] = translated
+            origins.append({"role": "body", "from": origin, "to": translated})
+        translated_aux: list[dict] = []
+        for ref in resolved.get("material_refs") or []:
+            try:
+                self.handoff_materials.authorize_ref("delivery", "runner", ref)
+                self._assert_material_route(run_id, ref, target_recipient)
+                translated, origin = self._copy_material_to_run(
+                    run_id, ref, target, full_package=True,
+                    recipient_id=target_recipient,
+                )
+            except MaterialError:
+                raise
+            translated_aux.append(translated)
+            origins.append({"role": "auxiliary", "from": origin, "to": translated})
+        if translated_aux:
+            resolved["material_refs"] = translated_aux
+        if origins:
+            resolved["material_origins"] = origins
+        # The op-layer receives the target run store in-process and preserves
+        # the formal content/attribution separately from the display hint.
+        resolved["handoff_materials"] = target
+        resolved["material_actor_id"] = "runner"
+        resolved["material_recipient_id"] = target_recipient
+        return resolved
+
     def _save(self, state: str, **extra: Any) -> None:
         record = {"schema_version": 1, "session_id": self.session_id,
                   "project_id": self.project_id, "activity": self.activity,
@@ -210,6 +994,7 @@ class DeliverySession:
                   "run_ids": sorted(self.run_ids), "operation_ids": sorted(self.operation_ids),
                   "operation_kinds": self.operation_kinds,
                   "verification_ids": sorted(self.verification_ids),
+                  "event_cursors": self._event_cursors,
                   "repair_task_files": sorted(str(x) for x in self.repair_task_files),
                   "model_profile": self.profile.profile_id,
                   "model_binding": self.binding.as_dict(),
@@ -373,6 +1158,8 @@ class DeliverySession:
         try:
             if name not in self._tools:
                 raise ValueError("undeclared Delivery tool")
+            if name in HANDOFF_TOOL_NAMES:
+                return self._material_tool(name, arguments)
             validate(arguments, self._tools[name]["inputSchema"])
             if name == "record_efficiency_progress":
                 from datetime import datetime, timezone
@@ -452,6 +1239,22 @@ class DeliverySession:
                 public_refs = set(self.config.get("public_repair_references", []))
                 public_refs.update(str(x) for x in self.sources)
                 public_refs.update(self.config.get("allowed_sources", []))
+                material_refs = arguments.get("material_refs") or []
+                if material_refs:
+                    try:
+                        for ref in material_refs:
+                            self.handoff_materials.authorize_ref("delivery", "runner", ref)
+                            if self._is_private_cq_material(ref):
+                                raise MaterialError(
+                                    "material_forbidden",
+                                    "private CQ material is not an approved repair reference",
+                                )
+                    except MaterialError as exc:
+                        raise ValueError(f"{exc.code}: {exc}") from exc
+                    public_refs.update(
+                        f"material:{ref.get('material_id')}"
+                        for ref in material_refs if isinstance(ref, dict)
+                    )
                 if not arguments["source_references"] or not set(arguments["source_references"]) <= public_refs:
                     raise ValueError("repair requires approved public evidence references")
                 scope = {self._path(x) for x in self.config.get("repair_owned_paths", [])}
@@ -521,6 +1324,14 @@ class DeliverySession:
                 value = args.get(key)
                 if value and not (key == "run_id" and name == "start_run") and value not in self.run_ids:
                     raise ValueError("run is outside this Delivery session")
+            if name in _MATERIAL_HOST_TOOLS:
+                try:
+                    args = self._resolve_material_submission(name, args)
+                except MaterialError as exc:
+                    return {"ok": False, "error": {
+                        "code": exc.code, "message": str(exc),
+                        **({"retry": exc.data["retry"]} if isinstance(exc.data, dict) and exc.data.get("retry") else {}),
+                    }}
             if name in {"get_evaluation_status", "get_repair_status", "stop_delivery_operation", "relay_evaluation_message"}:
                 if args["operation_id"] not in self.operation_ids:
                     raise ValueError("operation is outside this Delivery session")
@@ -566,8 +1377,10 @@ class DeliverySession:
             inspect.signature(operation).bind(**args)
             if name == "start_run":
                 self.run_ids.add(args["run_id"])
+                self._register_handoff_actor()
             elif name == "resume_from_checkpoint":
                 self.run_ids.add(args["new_run_id"])
+                self._register_handoff_actor()
             elif name in {"start_evaluation", "start_repair"}:
                 self.operation_ids.add(args["operation_id"])
                 self.operation_kinds[args["operation_id"]] = "repair" if name == "start_repair" else "evaluation"
@@ -575,6 +1388,8 @@ class DeliverySession:
             if name not in _READ:
                 self._save("active")
             data = operation(**args)
+            if name == "get_run_events" and isinstance(data, dict):
+                data = self._project_run_events(args["run_id"], data)
             if name == 'reconcile_write_state':
                 proof = data.get('reconciliation', {})
                 self.reconciled_runs.discard(args['run_id'])
@@ -594,6 +1409,7 @@ class DeliverySession:
         return {"runs": {run_id: {
             "status": self.call_tool("get_run_status", {"run_id": run_id}),
             "pending": self.call_tool("get_pending_actions", {"run_id": run_id}),
+            "events": self._observe_run_events(run_id),
             "request_ledger": self.call_tool("read_delivery_artifact", {
                 "path": f"workspaces/modeling-runs/{run_id}/control/host-requests.jsonl",
             }),

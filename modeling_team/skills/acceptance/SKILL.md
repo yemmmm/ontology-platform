@@ -44,6 +44,11 @@ second infrastructure failure is BLOCKED.
 Infrastructure failures and missing evidence are reported through the Runner
 carrier, not hidden or converted into PASS.
 
+Examiner children may use the report sink's scoped handoff tools for a complete UTF-8 report and
+submit a one-field `report_ref` after publication to the existing Host channel. This is a transport
+choice only: preserve the original proxy receipts and required frozen-evidence reads; generic
+handoff list/read output is not acceptance evidence by itself.
+
 For the terminal verdict, call `build_acceptance_verdict` with ONLY the judgment
 fields (`acceptance_id`, `round_id`, `verdict`, `failure_layer`, `blocked_reason`,
 `evidence_refs`, `checks`, `competency_question_results`, `recommended_action`,

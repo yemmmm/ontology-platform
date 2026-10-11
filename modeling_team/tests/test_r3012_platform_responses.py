@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import socket
 import stat
 from argparse import Namespace
 from pathlib import Path, PurePosixPath
@@ -38,6 +39,7 @@ from modeling_team.acceptance_runtime import (
     canonical_read_digest,
     v3_examiner_proxy_schemas,
     v3_proxy_scope_entries,
+    v3_ticket_digest,
 )
 from modeling_team.competency_questions import (
     CQ_BATCH_REPORT_SCHEMA,
@@ -47,6 +49,7 @@ from modeling_team.competency_questions import (
     content_digest,
 )
 from modeling_team.contracts import TeamConfigurationError, repository_root
+from modeling_team.handoff_materials import HandoffMaterials
 from modeling_team.tests.test_r3011_acceptance import _question, _freeze, _platform_packet
 
 REPO_ROOT = repository_root()
@@ -96,12 +99,18 @@ def _handoff_binding(*, batch_id: str, freeze_digest: str) -> dict:
     }
 
 
-def _retaining_proxy(tmp_path: Path, artifact_root: Path, *, forward, tools=(
-    "get_ontology_workspace_context",
-)):
+def _retaining_proxy(
+    tmp_path: Path,
+    artifact_root: Path,
+    *,
+    forward,
+    tools=("get_ontology_workspace_context",),
+    response_material=None,
+    packet=None,
+):
     """A real v3 ScopedReadProxy whose reads persist under ``artifact_root``."""
 
-    packet = _platform_packet([_question("cq-1")])
+    packet = packet or _platform_packet([_question("cq-1")])
     entries = v3_proxy_scope_entries(packet)
     proxy = ScopedReadProxy(
         socket_path=tmp_path / "platform-proxy.sock",
@@ -116,6 +125,7 @@ def _retaining_proxy(tmp_path: Path, artifact_root: Path, *, forward, tools=(
         child_handle_digest="a" * 64,
         exact_schemas=v3_examiner_proxy_schemas(tools),
         persist_response=_cq_platform_read_persistence(artifact_root),
+        response_material=response_material,
     )
     return proxy
 
@@ -207,6 +217,189 @@ def test_a_retention_failure_is_observable_and_leaves_no_receipt(tmp_path):
     # The failed call appended no receipt, so it can never become evidence.
     assert proxy.receipt_snapshot == ()
     assert not (artifact_root / "acceptance").exists()
+
+
+def test_real_socket_response_material_ref_is_readable_without_changing_receipt(tmp_path):
+    artifact_root = tmp_path / "run"
+    artifact_root.mkdir()
+    materials = HandoffMaterials(tmp_path / "materials", "r3012-response-scope")
+    materials.register_actor("host", {}, {"judge"})
+    materials.register_actor("judge", {}, set())
+    seen: list[dict] = []
+
+    def forward(tool: str, arguments: dict, key: str) -> dict:
+        return {
+            "ok": True,
+            "rows": [{"ontology_id": arguments["ontology_id"], "value": 7}],
+            "nested": {"source": "governed-read"},
+        }
+
+    def publish_response(result):
+        seen.append(dict(result))
+        written = materials.write_output(
+            "host", "responses/read-0.json", json.dumps(result, ensure_ascii=False, sort_keys=True)
+        )
+        published = materials.publish("host", "judge", written["source_path"])
+        return {"material_id": published["material_id"], "path": "read-0.json"}
+
+    proxy = _retaining_proxy(
+        tmp_path,
+        artifact_root,
+        forward=forward,
+        response_material=publish_response,
+    )
+    proxy.start()
+    try:
+        request = {
+            "token": "proxy-token",
+            "operation": "tools/call",
+            "tool": "get_ontology_workspace_context",
+            "arguments": {"project_id": "project-1", "ontology_id": "ontology-1"},
+        }
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+            client.connect(str(proxy.socket_path))
+            client.sendall(json.dumps(request).encode("utf-8") + b"\n")
+            raw = b""
+            while b"\n" not in raw:
+                block = client.recv(8192)
+                assert block
+                raw += block
+        response = json.loads(raw.split(b"\n", 1)[0].decode("utf-8"))
+    finally:
+        proxy.stop()
+
+    expected = {
+        "ok": True,
+        "rows": [{"ontology_id": "ontology-1", "value": 7}],
+        "nested": {"source": "governed-read"},
+    }
+    assert response["ok"] is True
+    assert response["result"] == expected
+    assert seen == [expected]
+    result_ref = response["result_ref"]
+    assert set(result_ref) == {"material_id", "path"}
+    assert json.loads(materials.resolve("judge", result_ref)) == expected
+
+    receipt = proxy.receipt_snapshot[0]
+    assert response["response_digest"] == canonical_read_digest(expected)
+    assert receipt.response_digest == response["response_digest"]
+    assert receipt.request_digest == response["request_digest"]
+    assert response["artifact_path"] == receipt.artifact_path
+
+
+def test_response_material_failure_keeps_inline_read_and_receipt_retryable(tmp_path):
+    artifact_root = tmp_path / "run"
+    artifact_root.mkdir()
+    attempts = []
+
+    def publish_response(result):
+        attempts.append(dict(result))
+        if len(attempts) == 1:
+            raise OSError("handoff unavailable")
+        return {"material_id": "material-retry"}
+
+    proxy = _retaining_proxy(
+        tmp_path,
+        artifact_root,
+        forward=lambda tool, arguments, key: {"ok": True, "value": 7},
+        response_material=publish_response,
+    )
+    first = _read_once(proxy)
+    assert first["ok"] is True
+    assert "result_ref" not in first
+    assert first["material_error"] == "platform-response-material-failed"
+    assert first["result"] == {"ok": True, "value": 7}
+    assert len(proxy.receipt_snapshot) == 1
+    first_receipt = proxy.receipt_snapshot[0]
+    assert first_receipt.response_digest == canonical_read_digest(first["result"])
+
+    second = _read_once(proxy)
+    assert second["ok"] is True
+    assert second["result_ref"] == {"material_id": "material-retry"}
+    assert "material_error" not in second
+    assert len(proxy.receipt_snapshot) == 2
+    assert proxy.receipt_snapshot[0] == first_receipt
+    assert attempts == [{"ok": True, "value": 7}, {"ok": True, "value": 7}]
+
+
+def test_real_read_proxy_facade_preserves_v3_handle_with_response_material(tmp_path, monkeypatch):
+    import sys
+    from io import StringIO
+
+    from modeling_team import read_proxy_mcp
+
+    artifact_root = tmp_path / "run"
+    artifact_root.mkdir()
+    packet = _platform_packet([_question("cq-1")])
+    attempts = 0
+
+    def publish_response(result):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 2:
+            raise OSError("handoff temporarily unavailable")
+        return {"material_id": "material-response", "path": "read.json"}
+
+    proxy = _retaining_proxy(
+        tmp_path,
+        artifact_root,
+        packet=packet,
+        forward=lambda tool, arguments, key: {"ok": True, "value": 7},
+        response_material=publish_response,
+    )
+    token_path = tmp_path / "platform-proxy.token"
+    token_path.write_text("proxy-token\n", encoding="utf-8")
+    requests = [
+        {
+            "jsonrpc": "2.0",
+            "id": 1,
+            "method": "tools/call",
+            "params": {
+                "name": "get_ontology_workspace_context",
+                "arguments": {"project_id": "project-1", "ontology_id": "ontology-1"},
+            },
+        },
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "tools/call",
+            "params": {
+                "name": "get_ontology_workspace_context",
+                "arguments": {"project_id": "project-1", "ontology_id": "ontology-1"},
+            },
+        },
+    ]
+    stdin = StringIO("".join(json.dumps(request) + "\n" for request in requests))
+    stdout = StringIO()
+    proxy.start()
+    try:
+        monkeypatch.setattr(sys, "argv", [
+            "read_proxy_mcp.py",
+            "--stdio",
+            "--socket",
+            str(proxy.socket_path),
+            "--token-file",
+            str(token_path),
+        ])
+        monkeypatch.setattr(sys, "stdin", stdin)
+        monkeypatch.setattr(sys, "stdout", stdout)
+        monkeypatch.setenv("PLATFORM_PROXY_MODE", "v3-acceptance")
+        monkeypatch.setenv("PLATFORM_PROXY_TICKET_DIGEST", v3_ticket_digest(packet.freeze_digest))
+        assert read_proxy_mcp.main() == 0
+    finally:
+        proxy.stop()
+
+    replies = [json.loads(line) for line in stdout.getvalue().splitlines()]
+    assert [reply["id"] for reply in replies] == [1, 2]
+    first = json.loads(replies[0]["result"]["content"][0]["text"])
+    second = json.loads(replies[1]["result"]["content"][0]["text"])
+    assert first["evidence_handle"] == "p0"
+    assert first["result_ref"] == {"material_id": "material-response", "path": "read.json"}
+    assert first["ok"] is True and first["value"] == 7
+    assert second["evidence_handle"] == "p1"
+    assert second["material_error"] == "platform-response-material-failed"
+    assert "result_ref" not in second
+    assert second["ok"] is True and second["value"] == 7
 
 
 def test_the_persistence_callback_rejects_escaping_locators(tmp_path):

@@ -30,6 +30,7 @@ re-verify live.
 from __future__ import annotations
 
 import fcntl
+import hashlib
 import json
 import os
 import re
@@ -54,6 +55,7 @@ from modeling_team.checkpoints import (
     manifest_path,
     production_resume_bindings,
     safe_checkpoint_id,
+    _handoff_manifest_entries,
 )
 from modeling_team.competency_questions import (
     CQ_FREEZE_DIRECTORY,
@@ -2233,6 +2235,16 @@ def build_role_packets(
         for artifact in manifest.get("artifacts") or []
         if isinstance(artifact, Mapping) and artifact.get("host_private")
     ]
+    handoff_materials = [
+        {
+            "source": str(artifact.get("source")),
+            "digest": artifact.get("digest"),
+            "owner": artifact.get("owner"),
+            "visible_to": list(artifact.get("visible_to") or []),
+        }
+        for artifact in _handoff_manifest_entries(manifest)
+        if isinstance(artifact, Mapping)
+    ]
     pending = unfinished_items(reconciliation)
     base = {
         "resume_kind": str(manifest.get("kind")),
@@ -2271,6 +2283,10 @@ def build_role_packets(
                 role, stage_facts.get("next_step"), pending
             ),
             "readable_artifacts": public_artifacts,
+            "handoff_materials": [
+                entry for entry in handoff_materials
+                if role in (entry.get("visible_to") or [])
+            ],
             "plan_mappings": plan_mappings if role in {"coordinator", "modeling", "protocol"} else [],
             "translation_review": {
                 "required": True,
@@ -2307,6 +2323,10 @@ def build_role_packets(
             for source in private_artifacts
             if source.startswith(("competency-questions/private/", "competency-questions/reviews/"))
         ],
+        "handoff_materials": [
+            entry for entry in handoff_materials
+            if "competency-question" in (entry.get("visible_to") or [])
+        ],
         "private_material_note": "own private drafts/reviews/interviews ride only "
         "in this packet and the host's; production roles never see them",
         "frozen_pool": {
@@ -2321,6 +2341,7 @@ def build_role_packets(
         **base,
         "role": "host",
         "readable_artifacts": public_artifacts + private_artifacts,
+        "handoff_materials": handoff_materials,
         "approvals": approvals,
     }
     packets["host"]["configuration"] = dict(configuration)
@@ -2364,7 +2385,9 @@ def write_recovery_files(
 
 
 def restore_checkpoint_artifacts(
-    manifest: Mapping[str, Any], source_run_root: Path, new_run_root: Path
+    manifest: Mapping[str, Any], source_run_root: Path, new_run_root: Path,
+    *, handoff_materials: Any | None = None,
+    handoff_actor_id: str = "runner",
 ) -> dict[str, Any]:
     """Copy packaged artifacts to their original run-relative paths (§4.2).
 
@@ -2409,7 +2432,95 @@ def restore_checkpoint_artifacts(
             destination.unlink()
         destination.write_bytes(snapshot.read_bytes())
         restored.append(source)
-    return {"restored_artifacts": restored}
+    bindings: list[dict[str, Any]] = []
+    material_ids = {
+        Path(str(entry.get("source"))).parts[1]
+        for entry in _handoff_manifest_entries(manifest)
+        if isinstance(entry, Mapping)
+        and str(entry.get("source") or "").startswith("handoff-materials/")
+        and len(Path(str(entry.get("source"))).parts) >= 3
+    }
+    for material_id in sorted(material_ids):
+        package = Path(new_run_root) / "handoff-materials" / material_id
+        manifest_file = package / "manifest.json"
+        try:
+            raw = manifest_file.read_bytes()
+            # HandoffMaterials' manifest.sha256 contract is the raw hex
+            # digest (the checkpoint manifest itself uses ``sha256:``).
+            original_digest = hashlib.sha256(raw).hexdigest()
+            value = json.loads(raw)
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            raise _reject(
+                "checkpoint_incomplete",
+                f"restored handoff manifest {material_id!r} is unreadable",
+                obj=f"handoff-materials/{material_id}/manifest.json",
+                retryable=True,
+                retry="re-save the checkpoint from a stable handoff package",
+            )
+        if not isinstance(value, dict) or value.get("material_id") != material_id:
+            raise _reject(
+                "material_binding_changed",
+                f"restored handoff manifest {material_id!r} has changed identity",
+                obj=f"handoff-materials/{material_id}/manifest.json",
+                retryable=True,
+                retry="republish the material and save a new checkpoint",
+            )
+        binding = {
+            "material_id": material_id,
+            "origin_scope_id": value.get("scope_id"),
+            "origin_manifest_digest": original_digest,
+            "checkpoint_id": manifest.get("checkpoint_id"),
+            "source": f"handoff-materials/{material_id}",
+        }
+        if handoff_materials is not None:
+            binder = getattr(handoff_materials, "bind_restored_material", None)
+            if not callable(binder):
+                raise _reject(
+                    "material_binding_changed",
+                    "the target handoff store cannot bind a restored material",
+                    obj=f"handoff-materials/{material_id}",
+                    retryable=True,
+                    retry="use a Runner handoff store with restored-material binding support",
+                )
+            def rebind_path(value: Any) -> Any:
+                """Translate only paths rooted in the source run.
+
+                Handoff manifests retain their immutable original provenance.
+                The binding written in the restored store may point at the
+                equivalent current run root, but an external/virtual alias is
+                left untouched and must match an explicitly registered grant.
+                """
+
+                if not isinstance(value, str):
+                    return value
+                path = Path(value)
+                try:
+                    relative = path.relative_to(Path(source_run_root))
+                except ValueError:
+                    return value
+                return str(Path(new_run_root) / relative)
+
+            current_source_alias = rebind_path(value.get("source_alias"))
+            current_source_path = rebind_path(value.get("source_path"))
+            try:
+                result = binder(
+                    material_id,
+                    origin_scope_id=value.get("scope_id"),
+                    manifest_digest=original_digest,
+                    source_alias=current_source_alias,
+                    source_path=current_source_path,
+                )
+            except Exception as exc:
+                raise _reject(
+                    "material_binding_changed",
+                    "the restored material is not authorized for this target run",
+                    obj=f"handoff-materials/{material_id}",
+                    retryable=True,
+                    retry="republish the material through the current recipient channel",
+                ) from exc
+            binding["target_binding"] = result
+        bindings.append(binding)
+    return {"restored_artifacts": restored, "handoff_material_bindings": bindings}
 
 
 def merge_exposure_union(chain_roots: list[Path], new_run_root: Path) -> dict[str, Any]:

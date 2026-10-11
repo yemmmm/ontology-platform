@@ -128,10 +128,18 @@ def tool_get_pending_actions(run_id: str) -> dict[str, Any]:
 def tool_answer_question(
     run_id: str,
     channel: str,
-    text: str,
+    text: str | None = None,
     question_delivery_id: str | None = None,
     wait_for_draft: bool | None = None,
     request_id: str | None = None,
+    body_ref: dict[str, Any] | None = None,
+    material_refs: list[dict[str, Any]] | None = None,
+    display_text: str | None = None,
+    material_origins: list[dict[str, Any]] | None = None,
+    handoff_materials: Any = None,
+    material_actor_id: str = "host",
+    material_recipient_id: str = "runner",
+    repository_root: str | None = None,
 ) -> dict[str, Any]:
     """Answer one pending question through the outer-input FIFO.
 
@@ -151,6 +159,14 @@ def tool_answer_question(
         question_delivery_id=question_delivery_id,
         wait_for_draft=wait_for_draft,
         request_id=request_id,
+        body_ref=body_ref,
+        material_refs=material_refs,
+        display_text=display_text,
+        material_origins=material_origins,
+        handoff_materials=handoff_materials,
+        material_actor_id=material_actor_id,
+        material_recipient_id=material_recipient_id,
+        repository_root=_repository_root(repository_root),
     )
 
 
@@ -158,10 +174,18 @@ def tool_answer_question(
 def tool_submit_instruction(
     run_id: str,
     kind: str,
-    text: str,
+    *,
+    text: str | None = None,
     source_reference: str,
     authorization_reference: str,
     request_id: str | None = None,
+    body_ref: dict[str, Any] | None = None,
+    material_refs: list[dict[str, Any]] | None = None,
+    display_text: str | None = None,
+    material_origins: list[dict[str, Any]] | None = None,
+    handoff_materials: Any = None,
+    material_actor_id: str = "host",
+    material_recipient_id: str = "runner",
     repository_root: str | None = None,
 ) -> dict[str, Any]:
     """Submit a Delivery supplement or guidance note through the FIFO.
@@ -178,6 +202,13 @@ def tool_submit_instruction(
         source_reference=source_reference,
         authorization_reference=authorization_reference,
         request_id=request_id,
+        body_ref=body_ref,
+        material_refs=material_refs,
+        display_text=display_text,
+        material_origins=material_origins,
+        handoff_materials=handoff_materials,
+        material_actor_id=material_actor_id,
+        material_recipient_id=material_recipient_id,
         repository_root=_repository_root(repository_root),
     )
 
@@ -768,9 +799,34 @@ def tool_standby_run(run_id: str, request_id: str | None = None) -> dict[str, An
 
 
 @mcp.tool(name="consult_team")
-def tool_consult_team(run_id: str, text: str, request_id: str | None = None) -> dict[str, Any]:
+def tool_consult_team(
+    run_id: str,
+    text: str | None = None,
+    request_id: str | None = None,
+    body_ref: dict[str, Any] | None = None,
+    material_refs: list[dict[str, Any]] | None = None,
+    display_text: str | None = None,
+    material_origins: list[dict[str, Any]] | None = None,
+    handoff_materials: Any = None,
+    material_actor_id: str = "host",
+    material_recipient_id: str = "runner",
+    repository_root: str | None = None,
+) -> dict[str, Any]:
     """Send a read-only question to the retained Coordinator without reopening production."""
-    return _call(consult_team, run_id, text=text, request_id=request_id)
+    return _call(
+        consult_team,
+        run_id,
+        text=text,
+        request_id=request_id,
+        body_ref=body_ref,
+        material_refs=material_refs,
+        display_text=display_text,
+        material_origins=material_origins,
+        handoff_materials=handoff_materials,
+        material_actor_id=material_actor_id,
+        material_recipient_id=material_recipient_id,
+        repository_root=_repository_root(repository_root),
+    )
 
 
 S1_TOOL_NAMES = (

@@ -48,6 +48,7 @@ def _proxy(*, forward) -> ScopedReadProxy:
     self.acceptance_round_id = "round-one"
     self.child_handle_digest = "c" * 64
     self._forward = forward
+    self._response_material = None
     self._lock = threading.RLock()
     self._call_receipts = []
     self.requests = []

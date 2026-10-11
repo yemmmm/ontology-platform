@@ -10,11 +10,12 @@ writing directly to the Unix socket.
 from __future__ import annotations
 
 import argparse
+from copy import deepcopy
 import json
 import socket
 import sys
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterable, Mapping
 
 
 SEMANTIC_FIELDS = [
@@ -89,6 +90,106 @@ BATCH_VERDICT_FIELDS = [
     "note",
 ]
 
+# R4.3-013 report references.  This bridge only validates the opaque identity
+# shape; the Host sink authenticates the token/role and resolves the complete
+# immutable UTF-8 object before applying the original report contract.
+REPORT_REFERENCE_FIELDS = ("material_id", "path")
+HANDOFF_MATERIAL_TOOL_SPECS = [
+    {"name": "write_handoff_output", "description": "Write text in your private output directory.",
+     "inputSchema": {"type": "object", "properties": {
+         "relative_path": {"type": "string", "minLength": 1},
+         "content": {"type": "string"}},
+         "required": ["relative_path", "content"], "additionalProperties": False}},
+    {"name": "publish_handoff_material", "description": "Snapshot authorized text files for an existing recipient channel.",
+     "inputSchema": {"type": "object", "properties": {
+         "recipient_id": {"type": "string", "minLength": 1},
+         "source_path": {"type": "string", "minLength": 1},
+         "members": {"type": "array", "items": {"type": "string"}}},
+         "required": ["recipient_id", "source_path"], "additionalProperties": False}},
+    {"name": "list_handoff_material", "description": "List a fixed published handoff package.",
+     "inputSchema": {"type": "object", "properties": {
+         "material_id": {"type": "string", "minLength": 1},
+         "cursor": {"type": ["string", "null"]},
+         "max_entries": {"type": "integer", "minimum": 1, "maximum": 100}},
+         "required": ["material_id"], "additionalProperties": False}},
+    {"name": "read_handoff_material", "description": "Read immutable UTF-8 handoff text by byte offset.",
+     "inputSchema": {"type": "object", "properties": {
+         "material_id": {"type": "string", "minLength": 1},
+         "path": {"type": "string"},
+         "offset": {"type": "integer", "minimum": 0},
+         "max_bytes": {"type": "integer", "minimum": 1, "maximum": 16384}},
+         "required": ["material_id"], "additionalProperties": False}},
+]
+HANDOFF_MATERIAL_TOOL_NAMES = frozenset(item["name"] for item in HANDOFF_MATERIAL_TOOL_SPECS)
+
+
+def _reference_aware_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
+    """Advertise either the original report object or one complete report ref.
+
+    The legacy ``report_schema`` helpers remain the strict original object
+    schemas for callers that inspect those contracts directly.  Native MCP
+    manifests need a reachable alternative for ``report_ref``; wrapping both
+    spellings in ``oneOf`` keeps JSON-schema clients aligned with the bridge's
+    custom validator and prevents a ref from being mixed with guessed fields.
+    """
+
+    full = deepcopy(dict(schema))
+    full_properties = full.get("properties")
+    if isinstance(full_properties, dict):
+        reference = deepcopy(full_properties.get("report_ref"))
+        full_properties.pop("report_ref", None)
+    else:
+        reference = None
+    if not isinstance(reference, Mapping):
+        reference = {
+            "type": "object",
+            "required": ["material_id"],
+            "additionalProperties": False,
+            "properties": {
+                "material_id": {"type": "string", "minLength": 1},
+                "path": {"type": "string", "minLength": 1},
+            },
+        }
+    ref_object = {
+        "type": "object",
+        "required": ["report_ref"],
+        "additionalProperties": False,
+        "properties": {"report_ref": dict(reference)},
+    }
+    visible_properties = dict(full.get("properties", {})) if isinstance(full.get("properties"), dict) else {}
+    visible_properties["report_ref"] = dict(reference)
+    return {
+        "oneOf": [full, ref_object],
+        # Keep the property visible to simple manifest consumers which do not
+        # traverse oneOf, while the oneOf branches remain the actual contract.
+        "properties": visible_properties,
+        "description": str(schema.get("description", ""))
+        + " Submit either the complete report or a Host-published report_ref.",
+    }
+
+
+def _validate_report_ref(value: Any) -> dict[str, str | None]:
+    """Validate only the safe child-side identity shape for one report ref."""
+
+    if not isinstance(value, Mapping):
+        raise ValueError("report_ref must be an object")
+    if set(value) - set(REPORT_REFERENCE_FIELDS) or "material_id" not in value:
+        raise ValueError("report_ref requires material_id and optional path")
+    material_id = value.get("material_id")
+    path = value.get("path")
+    if not isinstance(material_id, str) or not material_id:
+        raise ValueError("report_ref material_id is invalid")
+    if "path" in value and (not isinstance(path, str) or not path):
+        raise ValueError("report_ref path is invalid")
+    normalized = {"material_id": material_id}
+    if "path" in value:
+        normalized["path"] = path
+    return normalized
+
+
+def _is_report_ref(value: Any) -> bool:
+    return isinstance(value, Mapping) and set(value) == {"report_ref"}
+
 
 def _validate_batch_payload(
     value: Any, *, kind: str, batch_id: str, question_ids: list[str], role: str
@@ -101,6 +202,12 @@ def _validate_batch_payload(
     expected_platform = role == "platform-examiner"
     if (kind == "platform") is not expected_platform:
         raise ValueError("v3 batch report role does not match the sink kind")
+    # A reference is the complete report input.  Resolve/parse and bind it at
+    # the Host sink; do not combine it with guessed per-question fields.
+    if isinstance(value, Mapping) and "report_ref" in value:
+        if not _is_report_ref(value):
+            raise ValueError("report_ref cannot be mixed with report fields")
+        return {"report_ref": _validate_report_ref(value["report_ref"])}
     fields = BATCH_EXAMINER_FIELDS if expected_platform else BATCH_VERDICT_FIELDS
     if not isinstance(value, Mapping):
         raise ValueError("v3 batch report fields drift")
@@ -179,6 +286,16 @@ def report_schema(kind: str) -> dict[str, Any]:
                 "usable": {"type": "boolean"},
                 "failure_layer": {"type": ["string", "null"]},
                 "blocked_reason": {"type": ["string", "null"]},
+                "report_ref": {
+                    "type": "object",
+                    "required": ["material_id"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "material_id": {"type": "string", "minLength": 1},
+                        "path": {"type": "string", "minLength": 1},
+                    },
+                    "description": "Host-published complete report material; cannot be mixed with report fields.",
+                },
             },
             "description": "Strict fresh Acceptance typed verdict payload.",
         }
@@ -247,6 +364,16 @@ def report_schema(kind: str) -> dict[str, Any]:
             },
             "gaps": {"type": "array"},
             "evidence_refs": {"type": "array", "minItems": 1, "items": evidence_ref},
+            "report_ref": {
+                "type": "object",
+                "required": ["material_id"],
+                "additionalProperties": False,
+                "properties": {
+                    "material_id": {"type": "string", "minLength": 1},
+                    "path": {"type": "string", "minLength": 1},
+                },
+                "description": "Host-published complete report material; cannot be mixed with report fields.",
+            },
         },
         "description": (
             f"Strict {kind} Examiner semantic payload. Submit no Runner bindings, "
@@ -256,6 +383,10 @@ def report_schema(kind: str) -> dict[str, Any]:
 
 
 def _validate_payload(value: Any, *, kind: str) -> dict[str, Any]:
+    if isinstance(value, Mapping) and "report_ref" in value:
+        if not _is_report_ref(value):
+            raise ValueError("report_ref cannot be mixed with report fields")
+        return {"report_ref": _validate_report_ref(value["report_ref"])}
     if kind == "acceptance":
         expected = {"status", "answer", "evidence_ref_ids", "current", "usable", "failure_layer", "blocked_reason"}
         if not isinstance(value, Mapping) or set(value) != expected:
@@ -346,6 +477,16 @@ def _v3_batch_report_schema(*, platform: bool) -> dict[str, Any]:
         "schema_version": {"type": "string", "const": CQ_BATCH_REPORT_SCHEMA},
         "batch_id": _text("batch_id"),
         "question_id": _text("question_id"),
+        "report_ref": {
+            "type": "object",
+            "required": ["material_id"],
+            "additionalProperties": False,
+            "properties": {
+                "material_id": _text("material_id"),
+                "path": _text("path"),
+            },
+            "description": "Host-published complete report material; cannot be mixed with report fields.",
+        },
         "failure_layer": {
             "type": ["string", "null"],
             "enum": [*CQ_FAILURE_LAYERS, None],
@@ -418,6 +559,68 @@ def frozen_evidence_tool() -> dict[str, Any]:
                             "properties": {key: {"type": "string", "minLength": 1} for key in fields}}}
 
 
+def native_report_tool_specs(
+    kind: str,
+    *,
+    v3_batch: bool = False,
+    role: str | None = None,
+    frozen_evidence_reads: bool = False,
+    handoff_tool_names: Iterable[str] | None = None,
+    cooperative_control: bool = False,
+) -> list[dict[str, Any]]:
+    """Return the child MCP manifest for the actual report bridge.
+
+    ``report_ref`` is exposed as a complete alternative to the original report
+    object.  Handoff tools are present by default so standalone and legacy
+    sinks have the same discoverable surface as Runner-bound sinks; their
+    source/recipient authorization still comes from the Host material store.
+    ``read_frozen_evidence`` remains a separate v3 Judge tool and is never
+    replaced by generic handoff reads.
+    """
+
+    if kind not in {"source", "platform", "acceptance"}:
+        raise ValueError("invalid Examiner kind")
+    if v3_batch and role not in {"platform-examiner", "acceptance"}:
+        raise ValueError("v3 report manifest role is invalid")
+    if v3_batch:
+        advertised_schema = _v3_batch_report_schema(platform=role == "platform-examiner")
+    else:
+        advertised_schema = report_schema(kind)
+    tools: list[dict[str, Any]] = [
+        {
+            "name": "submit_examiner_report",
+            "description": f"submit one strict {kind} semantic report",
+            "inputSchema": _reference_aware_schema(advertised_schema),
+        }
+    ]
+    if frozen_evidence_reads and kind == "acceptance" and v3_batch:
+        tools.append(frozen_evidence_tool())
+    enabled = HANDOFF_MATERIAL_TOOL_NAMES if handoff_tool_names is None else set(handoff_tool_names)
+    unknown = enabled - HANDOFF_MATERIAL_TOOL_NAMES
+    if unknown:
+        raise ValueError("handoff manifest contains an unknown tool")
+    tools.extend(
+        deepcopy(item) for item in HANDOFF_MATERIAL_TOOL_SPECS if item["name"] in enabled
+    )
+    if cooperative_control and v3_batch:
+        tools.append(
+            {
+                "name": "record_flow_confirmation",
+                "description": "Confirm actual waiting/resumption for a sourced user control; never submit a task report for waiting.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "request_id": {"type": "string"},
+                        "action": {"enum": ["pause", "resume"]},
+                    },
+                    "required": ["request_id", "action"],
+                    "additionalProperties": False,
+                },
+            }
+        )
+    return tools
+
+
 def read_frozen_evidence(socket_path: str, token: str, arguments: Any) -> dict[str, Any]:
     """Standalone child facade. Authorization and frozen digest checks stay Host-side."""
     fields = {"run_id", "batch_id", "freeze_digest", "reference_id"}
@@ -428,6 +631,38 @@ def read_frozen_evidence(socket_path: str, token: str, arguments: Any) -> dict[s
         client.connect(socket_path)
         client.sendall(_json({"token": token, "operation": "read_frozen_evidence",
                               "arguments": dict(arguments)}).encode("utf-8"))
+        chunks = []
+        while True:
+            chunk = client.recv(65536)
+            if not chunk:
+                break
+            chunks.append(chunk)
+    response = json.loads(b"".join(chunks).decode("utf-8"))
+    if not response.get("ok"):
+        raise RuntimeError(f"{response.get('code')}: {response.get('detail', '')}")
+    return {"content": [{"type": "text", "text": _json(response["result"])}], "isError": False}
+
+
+def read_handoff_material_tool(
+    socket_path: str, token: str, name: str, arguments: Any
+) -> dict[str, Any]:
+    """Call one Host-authorized handoff list/read operation over the sink socket."""
+
+    if name not in HANDOFF_MATERIAL_TOOL_NAMES:
+        raise ValueError("handoff material tool is not available")
+    if not isinstance(arguments, Mapping):
+        raise ValueError("handoff material tool arguments are invalid")
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(10)
+        client.connect(socket_path)
+        client.sendall(
+            _json({
+                "token": token,
+                "operation": "handoff_material",
+                "name": name,
+                "arguments": dict(arguments),
+            }).encode("utf-8")
+        )
         chunks = []
         while True:
             chunk = client.recv(65536)
@@ -454,6 +689,11 @@ def main() -> int:
     )
     parser.add_argument("--batch-id", default="")
     parser.add_argument("--frozen-evidence-reads", action="store_true")
+    parser.add_argument(
+        "--handoff-tools",
+        default=None,
+        help="comma-separated Host-authorized handoff tools (default: all four)",
+    )
     parser.add_argument("--cooperative-control", action="store_true")
     parser.add_argument("--role", choices=("platform-examiner", "acceptance"), default=None)
     parser.add_argument(
@@ -470,6 +710,13 @@ def main() -> int:
         return 2
     question_ids = [item for item in args.question_ids.split(",") if item]
     v3_batch = args.schema is not None
+    handoff_tools = (
+        set(HANDOFF_MATERIAL_TOOL_NAMES)
+        if args.handoff_tools is None
+        else {item for item in args.handoff_tools.split(",") if item}
+    )
+    if handoff_tools - HANDOFF_MATERIAL_TOOL_NAMES:
+        parser.error("--handoff-tools contains an unknown tool")
     for line in sys.stdin:
         request: Any = None
         try:
@@ -483,29 +730,30 @@ def main() -> int:
                     "serverInfo": {"name": "examiner_report", "version": "1"},
                 }
             elif method == "tools/list":
-                if v3_batch:
-                    advertised = _v3_batch_report_schema(
-                        platform=args.role == "platform-examiner"
-                    )
-                else:
-                    advertised = report_schema(args.kind)
                 result = {
-                    "tools": [
-                        {
-                            "name": "submit_examiner_report",
-                            "description": f"submit one strict {args.kind} semantic report",
-                            "inputSchema": advertised,
-                        }
-                    ]
+                    "tools": native_report_tool_specs(
+                        args.kind,
+                        v3_batch=v3_batch,
+                        role=args.role,
+                        frozen_evidence_reads=args.frozen_evidence_reads,
+                        handoff_tool_names=handoff_tools,
+                        cooperative_control=args.cooperative_control,
+                    )
                 }
-                if args.frozen_evidence_reads and args.kind == "acceptance" and v3_batch:
-                    result["tools"].append(frozen_evidence_tool())
-                if args.cooperative_control and v3_batch:
-                    result["tools"].append({"name": "record_flow_confirmation", "description": "Confirm actual waiting/resumption for a sourced user control; never submit a task report for waiting.",
-                        "inputSchema": {"type": "object", "properties": {"request_id": {"type": "string"}, "action": {"enum": ["pause", "resume"]}},
-                                        "required": ["request_id", "action"], "additionalProperties": False}})
             elif method == "tools/call":
                 params = request.get("params", {})
+                if (
+                    isinstance(params, Mapping)
+                    and params.get("name") in handoff_tools
+                ):
+                    result = read_handoff_material_tool(
+                        args.socket,
+                        token,
+                        str(params["name"]),
+                        params.get("arguments"),
+                    )
+                    print(_json({"jsonrpc": "2.0", "id": request_id, "result": result}), flush=True)
+                    continue
                 if (isinstance(params, Mapping) and params.get("name") == "record_flow_confirmation"
                         and args.cooperative_control and v3_batch):
                     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import json
 import os
 import tempfile
@@ -717,7 +719,7 @@ class R23005BRuntimeTests(unittest.TestCase):
                 if method == "turn/start"
                 else {
                     "data": [
-                        {"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}]},
+                        {"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}, *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES))]},
                         {"name": "platform_read_proxy", "tools": [{"name": name} for name in PLATFORM_PROXY_READ_TOOLS]},
                     ]
                 }

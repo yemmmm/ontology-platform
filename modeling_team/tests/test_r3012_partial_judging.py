@@ -17,6 +17,8 @@ receives the sanitized receipt -- without starting a child.
 
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import hashlib
 import json
 from pathlib import Path
@@ -1083,6 +1085,7 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
             if method == "mcpServerStatus/list":
                 return {"data": [{"name": "examiner_report", "tools": [
                     {"name": "submit_examiner_report"},
+                    *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES)),
                     {"name": "read_frozen_evidence"},
                 ]}]}
             if method == "turn/start":

@@ -101,7 +101,10 @@ ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
 # endpoint that advertises it (no production role ever sees this operation).
 COMPETENCY_QUESTION_ROLE = "competency-question"
 CQ_OPERATION = "cq_publish_question_draft"
-CQ_OPERATIONS: tuple[str, ...] = (CQ_OPERATION,)
+CQ_OPERATIONS: tuple[str, ...] = (
+    CQ_OPERATION, "write_handoff_output", "publish_handoff_material",
+    "list_handoff_material", "read_handoff_material",
+)
 ROLE_OPERATIONS[COMPETENCY_QUESTION_ROLE] = CQ_OPERATIONS
 
 
@@ -546,10 +549,17 @@ CAPABILITY_TOOL_SCHEMAS[CQ_OPERATION] = {
     "properties": {
         "cq_id": {"type": "string"},
         "draft": {"type": "object"},
+        "body_ref": {"type": "object"},
+        "material_refs": {"type": "array", "items": {"type": "object"}},
     },
-    "required": ["cq_id", "draft"],
+    "required": ["cq_id"],
     "additionalProperties": False,
 }
+
+
+if __package__:
+    from .handoff_materials import HANDOFF_TOOL_SPECS
+    CAPABILITY_TOOL_SCHEMAS.update({spec["name"]: spec["inputSchema"] for spec in HANDOFF_TOOL_SPECS})
 
 
 def token_digest(token: str) -> str:

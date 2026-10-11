@@ -21,6 +21,7 @@ import pytest
 
 from modeling_team.acceptance import RunnerAcceptanceCarrier
 from modeling_team.capability_mcp import (
+    CQ_OPERATIONS,
     COMPETENCY_QUESTION_ROLE,
     STAGED_PROTOCOL_RUN_OPERATIONS,
 )
@@ -1121,9 +1122,7 @@ def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path)
         # CQ stays independently available, and no unselected role endpoint was
         # started into existence.
         assert before_roster[COMPETENCY_QUESTION_ROLE]["is_socket"] is True
-        assert before_roster[COMPETENCY_QUESTION_ROLE]["tools"] == [
-            "cq_publish_question_draft"
-        ]
+        assert before_roster[COMPETENCY_QUESTION_ROLE]["tools"] == list(CQ_OPERATIONS)
         assert before_roster["coordinator"]["is_socket"] is False
         assert before_roster["acceptance"]["is_socket"] is False
 
@@ -1135,7 +1134,7 @@ def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path)
         ) == list(STAGED_PROTOCOL_RUN_OPERATIONS)
         assert _socket_tools(
             cq_socket, carrier.capability_token(COMPETENCY_QUESTION_ROLE)
-        ) == ["cq_publish_question_draft"]
+        ) == list(CQ_OPERATIONS)
         # An unrelated role cannot borrow the protocol socket's surface.
         unrelated = _socket_request(
             protocol_socket, carrier.capability_token("coordinator"), "tools/list"

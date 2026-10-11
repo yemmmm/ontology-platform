@@ -28,7 +28,9 @@ delivery evidence. Use the following locations for new documentation.
   modeling remains paused.
   R4.3-013 registers optional file and directory references across existing authorized Agent
   interactions, with the handoff format chosen by each Agent; refinement and design are complete,
-  independent design review/testing passed, and implementation remains undelivered.
+  independent design review/testing passed, and engineering implementation plus independent
+  functional Round 3 passed. See its [delivery record](delivery/records/2026-10-11-r4-3-013-delivery-record.md);
+  real Agent behavior improvements and independent semantic quality remain unverified.
   R4.3-014 requires recovery to reconcile actual completed content before continuing remaining work;
   existing recovery paths and partial prompt fixes should be reused, with real-run effects unverified.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;

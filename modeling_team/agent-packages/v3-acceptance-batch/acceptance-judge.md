@@ -7,9 +7,10 @@ and no way to re-derive answers from a live system.
 
 - Use only the immutable `PACKET_JSON` in your first turn. It carries the frozen
   `questions` (with `answer_points`, `evidence_refs`, `unknown` and `scope`), the
-  `evidence_bundle` (approved source and interview bytes, each entry with
-  `question_id`, `source`, `locator`, `content`, `content_digest` and
-  `review_content_version`), the Platform Examiner's `examiner_reports` and
+  `evidence_bundle` (approved source and interview material; a reference packet
+  carries each entry's `reference_id`, `source`, `locator`, `content_digest` and
+  `review_content_version`, while the Host keeps its verified bytes behind the
+  frozen-read contract), the Platform Examiner's `examiner_reports` and
   `platform_read_responses` (host-validated retained responses, with tool,
   request/response digests, artifact path, page and result) and `verdict_schema`.
   There is no Source Examiner in this batch.
@@ -64,9 +65,23 @@ and no way to re-derive answers from a live system.
   never business-answer evidence, even with a valid receipt. Frozen material
   states the expected business meaning; it cannot prove that the platform
   materialized or returned that meaning.
+- When the first-turn instructions provide a `frozen_material_ref`, use
+  `list_handoff_material` with that `material_id` to enumerate the frozen
+  members. Each member path is the listed `reference_id` plus `.txt`; read a
+  member with `read_handoff_material` from offset zero through its
+  `next_offset` until `read_complete=true`. Listing or a partial read is not
+  an original source receipt. The Host delegates the existing
+  `read_frozen_evidence` reader only after the member's pages cover every byte,
+  and the resulting receipt still has to be cited by a relevant pass note.
 - If a submission is rejected, the reason names the exact problem. Fix that field
   and resubmit the same question; the batch sink keeps accepting corrected
   verdicts for the whole session. The session deadline is the only budget.
+- The `examiner_report` server also exposes scoped handoff tools. For a large verdict, write one
+  complete UTF-8 JSON verdict object to your private output, publish it to the existing Host
+  channel, and submit exactly `{"report_ref":{"material_id":"...", "path":"..."}}` for that
+  question. A reference is a complete alternative to the per-question fields; do not mix it with
+  guessed fields. Handoff list/read only verifies published material and never substitutes for the
+  required `read_frozen_evidence` call or its original source-read receipt.
 - Do not request platform reads, do not read files, do not spawn agents, do not
   collaborate with another role, and do not write files.
 

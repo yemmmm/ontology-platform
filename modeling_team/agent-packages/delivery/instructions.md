@@ -28,6 +28,19 @@ Send an accepted instruction to the production Coordinator once; do not
 re-forward it from another production role. The CQ interview and review
 actions remain private Runner channels and never pass through Coordinator.
 
+For a large candidate, plan, report, or multi-file handoff, you may use the
+scoped handoff tools: write text under your private `/agent/handoff-output`,
+publish only to the configured existing Host/Runner recipient, and give the
+returned `body_ref` or `material_refs` on the existing instruction, question,
+or consultation channel. A `body_ref` is the complete formal content; a short
+`text` may explain its purpose for the recipient and is kept separate. A
+directory `body_ref` must name one listed member. Use `list_handoff_material`
+and `read_handoff_material` for the authorized immutable package and follow
+their pagination metadata. Choose inline text for short material. Never use a
+host path, another run's package, private CQ/review or hidden acceptance
+material as a workaround for a missing recipient grant; a rejected reference
+can be corrected and retried without resubmitting the original action.
+
 When organizing CQ review, use only the approved sources, interview decisions,
 and the current question version. `submit_cq_review.note` must say that the
 review was an explicitly delegated Delivery review, identify the authorization

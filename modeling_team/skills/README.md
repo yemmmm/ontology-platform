@@ -1,5 +1,7 @@
 # Modeling Team 内部技能
 
+Team 与 Host 的引用式交接见 [材料工具合同](../references/handoff-materials.md)。
+
 此目录集中保存 Team 成员使用的技能，由角色包或验收 Runtime 按当前 Task/Profile 加载。
 不链接到项目的 `.agents/skills/`；宿主 Delivery Agent 使用
 独立 [delivery](delivery/SKILL.md) 技能和受限 Host 工具推进建模、观察和修复；

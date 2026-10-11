@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import hashlib
 import json
 import socket
@@ -599,7 +601,7 @@ def test_long_private_paths_use_one_short_socket_root_and_cleanup(
         if method == "turn/start":
             return {"turn": {"id": f"{kind}-turn"}}
         if method == "mcpServerStatus/list":
-            servers = [{"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}]}]
+            servers = [{"name": "examiner_report", "tools": [{"name": "submit_examiner_report"}, *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES))]}]
             if kind == "platform":
                 servers.append(
                     {

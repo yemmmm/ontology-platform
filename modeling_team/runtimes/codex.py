@@ -80,6 +80,7 @@ from ..candidate_platform_gate import (
 from ..protocol_mcp_launch import protocol_mcp_launch_spec
 from ..protocol_mechanics import protocol_mechanics_contract_bytes
 from ..protocol_retrieval_gate import ORDINARY_RETRIEVAL_RECEIPT_SCHEMA
+from ..handoff_materials import HANDOFF_TOOL_NAMES
 from ..transport_mcp import (
     TERMINAL_REPLY_BINDING_PATTERNS,
     TERMINAL_REPORT_GUARD_ERROR,
@@ -3166,6 +3167,17 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             if validator is not None:
                 validator(report)
 
+        material_scope = str(spec["child_handle_digest"])
+        retained_root = getattr(self, "_run_root", None)
+        # Retain snapshots outside ephemeral child homes and short socket roots.
+        material_root = ((retained_root / "acceptance-materials" / material_scope)
+                         if isinstance(retained_root, Path) else private_root.parent / (
+                             "mt-acceptance-materials-" + material_scope)) / "handoff-materials"
+        material_sources = {"/agent/home/input.json": input_path}
+        host_material_sources = {"/packet": input_path}
+        if kind == "source" and staged_sources.is_dir():
+            material_sources["/agent/home/sources"] = staged_sources
+            host_material_sources["/approved-sources"] = staged_sources
         report_sink = ReportSinkServer(
             report_socket,
             report_token,
@@ -3178,7 +3190,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 else 3
             ),
             batch_contract=batch_contract,
+            material_actor_id=kind, material_root=material_root,
+            material_scope_id=material_scope, material_sources=material_sources,
+            material_host_sources=host_material_sources,
         )
+        input_publication = report_sink.handoff_materials.publish("host", kind, "/packet")
+        spec["handoff_input_ref"] = {"material_id": input_publication["material_id"]}
+        if "/approved-sources" in host_material_sources:
+            publication = report_sink.handoff_materials.publish("host", kind, "/approved-sources")
+            spec["handoff_sources_ref"] = {"material_id": publication["material_id"]}
         spec["_runtime_report_sink"] = report_sink
         report_sink.start()
         def _write_private(path: Path, payload: bytes, mode: int) -> None:
@@ -3222,6 +3242,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             proxy_socket = socket_root / "platform-proxy.sock"
             proxy_token_path = home / "platform-proxy.token"
             v3_batch = batch_contract is not None
+
+            def response_material(result: Mapping[str, Any]) -> dict[str, Any]:
+                # The original governed read remains the receipt-producing channel.
+                # Its immutable copy is readable only by this same acceptance child.
+                relative = "governed-response-" + secrets.token_hex(8) + ".json"
+                output = report_sink.handoff_materials.write_output(
+                    "host", relative, json.dumps(result, ensure_ascii=False, sort_keys=True))
+                publication = report_sink.handoff_materials.publish("host", kind, output["source_path"])
+                return {"material_id": publication["material_id"]}
+
             if v3_batch:
                 # One read-only scope entry per packet-authorized Ontology: the
                 # packet binding supplies project/state identity, the Host's
@@ -3244,6 +3274,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         spec.get("allowed_read_tools") or ()
                     ),
                     persist_response=spec.get("response_persistence"),
+                    response_material=response_material,
                 )
             else:
                 proxy = ScopedReadProxy(
@@ -3260,6 +3291,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     acceptance_round_id=str(spec["acceptance_round_id"]),
                     child_handle_digest=str(spec["child_handle_digest"]),
                     exact_schemas=examiner_proxy_schemas(spec.get("allowed_read_tools") or ()),
+                    response_material=response_material,
                 )
             spec["_runtime_proxy"] = proxy
             proxy.start()
@@ -3581,6 +3613,19 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                         + source_text_json,
                     }
                 ]
+            material_notice = {"input_ref": spec["handoff_input_ref"]}
+            if spec.get("handoff_sources_ref"):
+                material_notice["approved_sources_ref"] = spec["handoff_sources_ref"]
+            if getattr(report_sink, "frozen_material_ref", None):
+                material_notice["frozen_evidence_ref"] = report_sink.frozen_material_ref
+            first_turn_input = list(first_turn_input) + [{"type": "text", "text": (
+                "Authorized handoff entries (optional; inline packet remains valid): "
+                + json.dumps(material_notice, ensure_ascii=False)
+                + " Use list/read_handoff_material for actual contents; source authorization, "
+                "governed live reads and frozen evidence receipts still apply. "
+                "Use private write_handoff_output then publish_handoff_material to recipient host "
+                "for report_ref when useful; report fields retain the original validation."
+            )}]
             startup_stage = "turn-start"
             turn_result = self._rpc(child_agent, "turn/start", {"threadId": thread_id, "input": first_turn_input})
             resource.thread_id = thread_id
@@ -6351,7 +6396,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def _require_expected_mcp_servers(self, agent: _Agent) -> None:
         """Fail before the first turn unless the frozen per-role MCP surface is live."""
         if agent.package.package_id in {"source-examiner", "platform-examiner", "acceptance"}:
-            expected = {"examiner_report": {"submit_examiner_report"}}
+            expected = {"examiner_report": {"submit_examiner_report", *HANDOFF_TOOL_NAMES}}
             if getattr(agent, "cooperative_control", False) is True:
                 expected["examiner_report"].add("record_flow_confirmation")
             if getattr(agent, "frozen_evidence_reads", False) is True:
@@ -6361,6 +6406,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._require_mcp_surface(agent, expected)
             return
         expected = {"team_transport": {"send_team_message", "report_task_result"}}
+        if getattr(getattr(self, "_active_run", None), "handoff_materials", None) is not None:
+            expected["team_transport"].update(HANDOFF_TOOL_NAMES)
         # 2026-09-11 auth006-start9: staged v3 runs enable the cooperative
         # issue channel on the transport (runner a06af84), so the frozen
         # per-role surface must expect its tools there too.
@@ -6395,7 +6442,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     def _require_lean_examiner_mcp_servers(self, agent: _Agent) -> None:
         """Check the deliberately tiny R2.3-006 surface for all three fresh roles."""
 
-        expected = {"examiner_report": {"submit_examiner_report"}}
+        expected = {"examiner_report": {"submit_examiner_report", *HANDOFF_TOOL_NAMES}}
         if getattr(agent, "cooperative_control", False) is True:
             expected["examiner_report"].add("record_flow_confirmation")
         if getattr(agent, "frozen_evidence_reads", False) is True:
@@ -6610,11 +6657,13 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "sender_id": delivery.sender_id,
             "recipient_id": delivery.recipient_id,
             "kind": delivery.kind,
-            "text": delivery.text,
+            "text": delivery.display_text if delivery.display_text is not None else delivery.text,
             "delivery_id": delivery.delivery_id,
             "expects_reply": delivery.expects_reply,
             "reply_to_delivery_id": delivery.reply_to_delivery_id,
         }
+        if delivery.body_ref is not None or delivery.material_refs:
+            payload.update(body_ref=delivery.body_ref, material_refs=list(delivery.material_refs))
         if delivery.kind == "owner-answer":
             if not isinstance(delivery.owner_answer_id, str) or not delivery.owner_answer_id:
                 raise CodexRuntimeError("owner-answer delivery is missing owner_answer_id")
@@ -6996,7 +7045,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     ) -> dict[str, Any]:
         """Serve only the read-only files the frozen task exposes to the Agent."""
         transport_tool = str(tool).rsplit("__", 1)[-1]
-        if transport_tool in {
+        if transport_tool in HANDOFF_TOOL_NAMES or transport_tool in {
             "send_team_message",
             "report_task_result",
             "report_issue",
@@ -7470,8 +7519,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 connection.settimeout(10)
                 connection.connect(str(self._transport_root() / f"{agent.agent_id}.sock"))
                 connection.sendall((json.dumps(request, ensure_ascii=False) + "\n").encode())
-                response = connection.makefile("r", encoding="utf-8").readline(4097)
-            if len(response) > 4096:
+                response = connection.makefile("r", encoding="utf-8").readline(131073)
+            if len(response) > 131072:
                 return self._dynamic_tool_error("Team Transport rejected the request")
             result = json.loads(response)
         except (OSError, ValueError, json.JSONDecodeError):
@@ -7544,6 +7593,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         """Accept only fixed broker RoutingError text; never reflect socket-controlled data."""
         if not isinstance(value, str) or len(value) > 200:
             return None
+        if re.fullmatch(r"material_[a-z_]+: [A-Za-z0-9 _./;:,()-]{1,160}", value):
+            return value
         fixed = {
             TERMINAL_REPORT_GUARD_ERROR,
             "recipient is not allowed by frozen Profile",

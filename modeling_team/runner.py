@@ -18,6 +18,8 @@ from pathlib import Path
 from typing import Any, Callable, ClassVar, Mapping, Sequence
 
 
+from .handoff_materials import HandoffMaterials, MaterialError
+
 from .contracts import (
     MODELING_CHECKPOINTS_PARAMETER,
     OUTER_INSTRUCTION_ACTION,
@@ -463,6 +465,7 @@ class TeamRun:
     codex_subscription_auth_mode: str | None = None
     modeling_read_key_id: str | None = None
     modeling_read_proxy: ModelingReadProxy | None = None
+    handoff_materials: HandoffMaterials | None = None
 
 
 class TeamRunner:
@@ -1251,6 +1254,7 @@ class TeamRunner:
             cq_draft_handler=(
                 self._publish_cq_question_draft if self._competency_questions else None
             ),
+            handoff_handler=self._cq_material_call if self._competency_questions else None,
             staged_plan_handler=(self._handle_execute_approved_plans if self._unified_graph else None),
             staged_coverage_handler=(self._handle_check_plan_coverage if self._unified_graph else None),
             staged_protocol_capability=self._staged_decisions,
@@ -1286,6 +1290,7 @@ class TeamRunner:
                 ).encode("utf-8"),
             )
         self._stage_sources()
+        self._prepare_handoff_materials()
         self._record_runtime_core_hashes("before_start")
         self._atomic_json(root / "baseline-manifest.json", baseline)
         if preflight_evidence is not None:
@@ -1376,6 +1381,63 @@ class TeamRunner:
             "question_count": len(normalized_questions),
         }
 
+    def _prepare_handoff_materials(self) -> None:
+        """Register only existing role paths and recipient source grants."""
+        assert self.run
+        run = self.run
+        store = HandoffMaterials(run.root / "handoff-materials", run.run_id)
+        agents = run.configuration.profile.agents
+        edges = set(run.configuration.profile.communication)
+        for agent in agents:
+            role = agent.package.role
+            recipients = {target for sender, target in edges if sender == agent.agent_id}
+            # Runner-only CQ capability never creates a production edge.
+            if role == "competency-question":
+                recipients = {"runner"}
+            else:
+                recipients.add("runner")
+            sources, filters = {}, {}
+            if role not in {"competency-question", "acceptance"}:
+                work = run.root / "runtime" / agent.agent_id / "work"
+                sources["/agent/work"] = work
+                sources[str(work)] = work
+            for source in run.configuration.task.role_sources:
+                if role not in source.roles:
+                    continue
+                target = run.root / "sources" / role / source.relative_path
+                aliases = ["/agent/home/sources/" + source.relative_path.as_posix(), str(target)]
+                allowed = {other.agent_id for other in agents if other.package.role in source.roles}
+                allowed.add("runner")
+                for alias in aliases:
+                    sources[alias], filters[alias] = target, allowed
+            if run.configuration.task.schema_version == 1:
+                for source in run.configuration.task.allowed_sources:
+                    target = run.root / "sources" / source.name
+                    sources["/agent/home/sources/" + source.name] = target
+            relatives = ["competency-questions/public"] if self._competency_questions else []
+            if role == "competency-question":
+                relatives += ["competency-questions/private", "competency-questions/reviews"]
+            if role == "coordinator" and self._multi_slice_workflow:
+                relatives.append("scenario-map")
+            if self._staged_decisions and role in {"modeling", "protocol", "coordinator"}:
+                relatives += ["value-semantics"]
+                if role == "coordinator":
+                    relatives.append("joint-acceptance")
+                if self._unified_graph:
+                    relatives.append("stage3-neutral-graph")
+            for relative in relatives:
+                target = run.root / relative
+                if target.exists():
+                    alias = "/agent/work/" + relative
+                    sources[alias] = target
+                    sources[str(target)] = target
+                    if relative in {"scenario-map", "joint-acceptance"}:
+                        filters[alias] = {"runner"}
+                        filters[str(target)] = {"runner"}
+            store.register_actor(agent.agent_id, sources, recipients, filters)
+        store.register_actor("runner", {}, {agent.agent_id for agent in agents})
+        run.handoff_materials = store
+
     def _stage_sources(self) -> None:
         assert self.run
         task = self.run.configuration.task
@@ -1439,6 +1501,7 @@ class TeamRunner:
             "preflight": self.repository_root / "modeling_team/preflight.py",
             "codex_adapter": self.repository_root / "modeling_team/runtimes/codex.py",
             "team_transport": self.repository_root / "modeling_team/transport_mcp.py",
+            "handoff_materials": self.repository_root / "modeling_team/handoff_materials.py",
             "team_transport_interventions": self.repository_root / "modeling_team/interventions.py",
             "platform_scope": self.repository_root / "modeling_team/platform_scope.py",
             "protocol_mcp_launch": self.repository_root / "modeling_team/protocol_mcp_launch.py",
@@ -2318,6 +2381,7 @@ class TeamRunner:
                     if (formal_coordination or self._staged_decisions)
                     else None
                 ),
+                materials=self.run.handoff_materials,
                 pre_send_validator=(
                     self._validate_modeling_transport_send
                     if self._is_r23003_modeling_run()
@@ -3405,7 +3469,13 @@ class TeamRunner:
                 + "`mcp__team_transport__send_team_message`). Use the advertised spelling for every Team "
                 + "Transport call, including where this text names a tool without a prefix. Call the "
                 + "advertised `report_task_result` exactly once before ending. "
-                + "Protocol may use only its configured ontology-platform MCP tools."
+                + "Protocol may use only its configured ontology-platform MCP tools. "
+                + "For large candidates, plans, reports or multiple files, prefer private "
+                + "write_handoff_output (when needed) then publish_handoff_material and "
+                + "body_ref/material_refs on the existing channel. Inline text remains optional "
+                + "and valid. Give purpose, material entry and recipient task; read the referenced "
+                + "content through list/read_handoff_material and follow continuation metadata. "
+                + "Publication or reading is not approval or semantic acceptance."
             )
             # R3.0-011: the production roles' only legal competency-question
             # input is the read-only public projection mount.  Runs without
@@ -3871,7 +3941,66 @@ class TeamRunner:
             + "\nUse Team Transport for direct messages and call report_task_result exactly once before ending. Protocol must call check_platform_health once; do not call another platform tool."
         )
 
+    def _normalize_outer_materials(self, message, recipient, *, json_body=False):
+        fields = {"body_ref", "material_refs", "display_text", "material_origins"}
+        if not isinstance(message, dict) or not fields.intersection(message):
+            return message, {}
+        if message.get("run_id", self.run.run_id) != self.run.run_id:
+            raise MaterialError("material_binding_changed", "outer material belongs to another run")
+        metadata = {key: message[key] for key in fields if key in message}
+        clean = {key: value for key, value in message.items() if key not in fields}
+        store = self.run.handoff_materials
+        refs = metadata.get("material_refs", [])
+        if not isinstance(refs, list):
+            raise MaterialError("material_path_invalid", "material_refs must be a list")
+        body_ref = metadata.get("body_ref")
+        for ref in refs + ([body_ref] if body_ref is not None else []):
+            store.authorize_ref("runner", recipient, ref)
+        if body_ref is not None:
+            content = store.resolve(recipient, body_ref)
+            if json_body:
+                try:
+                    value = json.loads(content)
+                except ValueError:
+                    raise MaterialError("material_media_unsupported", "formal body must be JSON") from None
+                if not isinstance(value, dict) or "action" in value:
+                    raise MaterialError("material_path_invalid", "body must contain the original decision fields")
+                clean.update(value)
+            else:
+                clean["text"] = content
+            metadata.setdefault("display_text", message.get("text") or "Read referenced formal content.")
+        self._append_evidence("handoff-materials", {"event": "outer-material-resolved", "recipient_id": recipient,
+            **{key: value for key, value in metadata.items() if key != "display_text"}})
+        return clean, metadata
+
+    def _runtime_outer_materials(self):
+        metadata = getattr(self, "_outer_material_context", {})
+        if not metadata:
+            return {}
+        return {"display_text": metadata.get("display_text"), "body_ref": metadata.get("body_ref"),
+                "material_refs": tuple(metadata.get("material_refs", []))}
+
     def receive_outer(self, message: dict[str, Any]) -> list[dict[str, Any]]:
+        if not self.run or not isinstance(message, dict):
+            return self._receive_outer_normalized(message)
+        action = message.get("action")
+        metadata = {}
+        if action in {"instruction", "user", "consult"}:
+            recipient = self._issue_coordinator_id()
+            if action == "user" and self.run.configuration.task.schema_version == 2:
+                recipient = next(agent.agent_id for agent in self.run.configuration.profile.agents
+                                 if agent.package.role == "modeling")
+            try:
+                message, metadata = self._normalize_outer_materials(message, recipient)
+            except MaterialError as exc:
+                raise RecoverableOuterInputError(str(exc), code=exc.code, run_id=self.run.run_id) from None
+        self._outer_material_context = metadata
+        try:
+            return self._receive_outer_normalized(message)
+        finally:
+            self._outer_material_context = {}
+
+    def _receive_outer_normalized(self, message: dict[str, Any]) -> list[dict[str, Any]]:
         if not self.run:
             raise RuntimeError("Runner is not prepared")
         if not isinstance(message, dict):
@@ -4085,6 +4214,7 @@ class TeamRunner:
                             recipient_id=coordinator,
                             kind="outer-user",
                             text=text,
+                            **self._runtime_outer_materials(),
                         ),
                     )
                 except Exception as exc:
@@ -4276,7 +4406,8 @@ class TeamRunner:
                                              run_id=self.run.run_id)
         coordinator = self._issue_coordinator_id()
         self.adapter.send_message(coordinator, RuntimeDelivery(sender_id="user/outer", recipient_id=coordinator,
-            kind="read-only-consult", text="只读追问；原工作结论和写门已封口，不重新报告生产结果。\n" + text))
+            kind="read-only-consult", text="只读追问；原工作结论和写门已封口，不重新报告生产结果。\n" + text,
+            **self._runtime_outer_materials()))
         self._append_evidence("team-lifecycle", {"event": "consult_delivered", "request_id": message.get("request_id")})
         return [{"type": "consult-delivered", "agent_id": coordinator}]
 
@@ -4703,6 +4834,9 @@ class TeamRunner:
             "displayed": False,
             "consumed": False,
         }
+        if delivery.body_ref is not None or delivery.material_refs:
+            self._outer_questions[delivery_id].update(display_text=delivery.display_text,
+                body_ref=delivery.body_ref, material_refs=list(delivery.material_refs))
 
     def _formal_candidate_roles(self) -> tuple[str, str] | None:
         if not self._formal_coordination_enabled() or not self.run:
@@ -7065,6 +7199,7 @@ class TeamRunner:
                     recipient_id=agent_id,
                     kind=kind,
                     text=canonical_json_bytes(payload).decode("utf-8"),
+                    **self._runtime_outer_materials(),
                 ),
             )
         except Exception as exc:
@@ -7167,6 +7302,10 @@ class TeamRunner:
                 },
             )
 
+    def _cq_material_call(self, operation, arguments):
+        self._cq_selector_required()
+        return self.run.handoff_materials.call(self._cq_agent_id(), operation, dict(arguments))
+
     def _publish_cq_question_draft(self, arguments: Mapping[str, Any]) -> dict[str, Any]:
         """Runner-private ``cq_publish_question_draft`` capability handler.
 
@@ -7177,7 +7316,19 @@ class TeamRunner:
         """
 
         self._cq_selector_required()
-        document = validate_draft_document(dict(arguments.get("draft")))
+        body_ref = arguments.get("body_ref")
+        for ref in list(arguments.get("material_refs", [])) + ([body_ref] if body_ref else []):
+            self.run.handoff_materials.authorize_ref(self._cq_agent_id(), "runner", ref)
+        if body_ref is not None:
+            try:
+                draft = json.loads(self.run.handoff_materials.resolve(self._cq_agent_id(), body_ref))
+            except json.JSONDecodeError:
+                raise MaterialError("material_media_unsupported", "CQ draft body must be JSON") from None
+        else:
+            draft = arguments.get("draft")
+        if not isinstance(draft, dict):
+            raise MaterialError("material_media_unsupported", "CQ draft body must be a JSON object")
+        document = validate_draft_document(dict(draft))
         self._cq_assert_not_exposed_hidden(document["questions"])
         private_dir = self._cq_directories["private"]
         reviews_dir = self._cq_directories["reviews"]
@@ -7209,6 +7360,10 @@ class TeamRunner:
         now = self.monotonic_clock()
         self._cq_wait_windows.open_window("cq-review-request", now)
         self._cq_wait_windows.close_window("cq-interview-wait", now)
+        material_metadata = {}
+        if body_ref is not None or arguments.get("material_refs"):
+            material_metadata = {"body_ref": body_ref,
+                                 "material_refs": list(arguments.get("material_refs", []))}
         self._append_evidence(
             "cq-review-request",
             {
@@ -7217,6 +7372,7 @@ class TeamRunner:
                 "draft_ref": snapshot["draft_ref"],
                 "content_digest": document["content_digest"],
                 "question_ids": snapshot["question_ids"],
+                **material_metadata,
             },
         )
         return {
@@ -7226,6 +7382,7 @@ class TeamRunner:
             "draft_ref": snapshot["draft_ref"],
             "content_digest": document["content_digest"],
             "status": "awaiting_review",
+            **material_metadata,
         }
 
     def _cq_review_snapshot(self, review_id: str) -> dict[str, Any]:
@@ -8478,6 +8635,18 @@ class TeamRunner:
             return
 
     def handle_cq_outer_input(self, message: dict[str, Any]) -> dict[str, Any]:
+        try:
+            clean, metadata = self._normalize_outer_materials(message, self._cq_agent_id(),
+                json_body=message.get("action") == "cq_review")
+        except MaterialError as exc:
+            raise CQContractError(exc.code, str(exc), obj="handoff_material", retry="correct the reference and retry") from None
+        self._outer_material_context = metadata
+        try:
+            return self._handle_cq_outer_normalized(clean)
+        finally:
+            self._outer_material_context = {}
+
+    def _handle_cq_outer_normalized(self, message: dict[str, Any]) -> dict[str, Any]:
         """Admit one ``cq_interview``/``cq_review``/``cq_freeze``/``cq_handoff_complete`` input.
 
         This is the public entry the foreground CLI/FIFO path calls *before*
@@ -9297,7 +9466,8 @@ class TeamRunner:
                 # Ordinary peer/owner deliveries and terminal envelopes have
                 # unrelated IDs.  They are not candidates for formal display.
                 continue
-            if set(envelope) != expected_fields:
+            material_fields = {"body_ref", "material_refs"} if "body_ref" in record else set()
+            if set(envelope) != expected_fields | material_fields:
                 raise TeamConfigurationError("outer question display envelope fields drift")
             if (
                 envelope.get("type") != "delivery"
@@ -9310,7 +9480,9 @@ class TeamRunner:
                 or envelope.get("timestamp") != record.get("timestamp")
                 or envelope.get("sender_id") != modeling
                 or envelope.get("recipient_id") != coordinator
-                or envelope.get("text") != record.get("text")
+                or envelope.get("text") != record.get("display_text", record.get("text"))
+                or (material_fields and (envelope.get("body_ref") != record.get("body_ref")
+                    or envelope.get("material_refs") != record.get("material_refs")))
                 or envelope.get("expects_reply") is not True
                 or envelope.get("reply_to_delivery_id") is not None
             ):
@@ -9573,6 +9745,7 @@ class TeamRunner:
                     recipient_id=coordinator,
                     kind="outer-instruction",
                     text=text,
+                    **self._runtime_outer_materials(),
                     delivery_id=instruction_id,
                 ),
             )
@@ -9742,6 +9915,7 @@ class TeamRunner:
                     owner_answer_id=owner_answer_id,
                     release_id=release_id,
                     text=text,
+                    **self._runtime_outer_materials(),
                 )
             else:
                 # Compatibility for the historical direct helper used by schema-v2 unit
@@ -10068,6 +10242,8 @@ class TeamRunner:
                     recipient_id=delivery.recipient_id,
                     kind="owner-answer",
                     text=delivery.text,
+                    display_text=delivery.display_text,
+                    body_ref=delivery.body_ref, material_refs=delivery.material_refs,
                     delivery_id=delivery.delivery_id,
                     expects_reply=delivery.expects_reply,
                     reply_to_delivery_id=delivery.reply_to_delivery_id,
@@ -10088,6 +10264,8 @@ class TeamRunner:
                         else "peer"
                     ),
                     text=delivery.text,
+                    display_text=delivery.display_text,
+                    body_ref=delivery.body_ref, material_refs=delivery.material_refs,
                     delivery_id=delivery.delivery_id,
                     expects_reply=delivery.expects_reply,
                     reply_to_delivery_id=delivery.reply_to_delivery_id,
@@ -10131,12 +10309,14 @@ class TeamRunner:
                 "sequence": delivery.sequence,
                 "sender_id": delivery.sender_id,
                 "recipient_id": delivery.recipient_id,
-                "text": delivery.text,
+                "text": delivery.display_text if delivery.display_text is not None else delivery.text,
                 "timestamp": delivery.timestamp,
                 "delivery_id": delivery.delivery_id,
                 "expects_reply": delivery.expects_reply,
                 "reply_to_delivery_id": delivery.reply_to_delivery_id,
             }
+            if delivery.body_ref is not None or delivery.material_refs:
+                envelope.update(body_ref=delivery.body_ref, material_refs=list(delivery.material_refs))
             if owner_answer:
                 envelope.update(
                     {
@@ -10195,9 +10375,18 @@ class TeamRunner:
                         "report_task_result exactly once now and preserve every dependency "
                         "summary."
                     )
+                result_payload = result.__dict__.copy()
+                if result.body_ref is not None:
+                    result_payload["body_ref"] = self.run.handoff_materials.relay_ref(
+                        "runner", recipient_id, result.body_ref)
+                if result.material_refs:
+                    result_payload["material_refs"] = [self.run.handoff_materials.relay_ref(
+                        "runner", recipient_id, ref) for ref in result.material_refs]
+                display_result = {**result_payload, "summary": (result.display_summary
+                    if result.display_summary is not None else result.summary)}
                 handoff = {
-                    **result.__dict__,
-                    "terminal_result": result.__dict__,
+                    **display_result,
+                    "terminal_result": display_result,
                     "next_action": next_action,
                     "instruction": instruction,
                 }
@@ -10928,6 +11117,101 @@ class TeamRunner:
             if path.is_file() and not path.is_symlink()
         )
 
+    def _checkpoint_handoff_specs(self) -> list[CheckpointArtifactSpec]:
+        """Select current-run handoff packages for the ordinary artifact list.
+
+        Handoff packages are immutable snapshots already governed by the
+        HandoffMaterials store.  A checkpoint copies the complete package
+        (manifest, digest marker, members and any restored binding) only when
+        its current publisher/recipient binding maps to a production role or
+        the CQ private channel.  Acceptance-owned packages never enter a
+        production recovery package.
+        """
+
+        handoff_root = self.run.root / "handoff-materials"
+        if not handoff_root.is_dir() or handoff_root.is_symlink():
+            return []
+        role_by_agent = {
+            agent.agent_id: agent.package.role
+            for agent in self.run.configuration.profile.agents
+            if isinstance(agent.agent_id, str) and agent.agent_id
+        }
+        specs: list[CheckpointArtifactSpec] = []
+        for package in sorted(handoff_root.iterdir(), key=lambda item: item.name):
+            if (
+                not package.is_dir()
+                or package.is_symlink()
+                or not package.name.startswith("material-")
+            ):
+                continue
+            manifest_path = package / "manifest.json"
+            digest_path = package / "manifest.sha256"
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+                continue
+            if (
+                not isinstance(manifest, Mapping)
+                or manifest.get("material_id") != package.name
+                or not isinstance(manifest.get("publisher_id"), str)
+                or not isinstance(manifest.get("recipient_id"), str)
+                or not digest_path.is_file()
+                or manifest_path.is_symlink()
+            ):
+                continue
+            publisher_id = manifest["publisher_id"]
+            recipient_id = manifest["recipient_id"]
+            store = getattr(self.run, "handoff_materials", None)
+            if store is not None:
+                try:
+                    manifest, _digest = store._manifest(publisher_id, package.name)
+                except MaterialError:
+                    continue
+            publisher_role = role_by_agent.get(publisher_id)
+            recipient_role = role_by_agent.get(recipient_id)
+            if publisher_role == "acceptance" or recipient_role == "acceptance":
+                continue
+            if publisher_role == COMPETENCY_QUESTION_ROLE or recipient_role == COMPETENCY_QUESTION_ROLE:
+                # CQ drafts/reviews remain host/CQ private.  A CQ publisher
+                # cannot turn a private package into a production handoff.
+                if publisher_role == COMPETENCY_QUESTION_ROLE and recipient_role in PRODUCTION_ROLES:
+                    continue
+                owner = COMPETENCY_QUESTION_ROLE
+                visible_to = ("host", COMPETENCY_QUESTION_ROLE)
+                host_private = True
+            elif recipient_role in PRODUCTION_ROLES:
+                owner = publisher_role or publisher_id
+                visible_to = (recipient_role,)
+                host_private = False
+            elif recipient_id == "runner" and publisher_role in PRODUCTION_ROLES:
+                # Runner is the existing host route; no production role is
+                # inferred from an intermediate package recipient.
+                owner = publisher_role
+                visible_to = ("host",)
+                host_private = False
+            else:
+                continue
+            files = []
+            invalid = False
+            for path in sorted(package.rglob("*"), key=lambda item: item.as_posix()):
+                if path.is_symlink() or (not path.is_file() and not path.is_dir()):
+                    invalid = True
+                    break
+                if path.is_file():
+                    files.append(path)
+            if invalid or not files:
+                continue
+            for path in files:
+                specs.append(
+                    CheckpointArtifactSpec(
+                        source=path.relative_to(self.run.root).as_posix(),
+                        owner=owner,
+                        visible_to=visible_to,
+                        host_private=host_private,
+                    )
+                )
+        return specs
+
     def _checkpoint_configuration(self) -> dict[str, Any]:
         """The manifest 配置 group: identity, parameters and frozen contracts."""
 
@@ -11421,6 +11705,7 @@ class TeamRunner:
         ):
             if (root / name).is_file() and not (root / name).is_symlink():
                 add(name, "host", host_private=True)
+        specs.extend(self._checkpoint_handoff_specs())
         return StagePackage(
             kind=kind,
             scope_refs=dict(scope_refs) if scope_refs else default_scope,
@@ -11802,7 +12087,12 @@ class TeamRunner:
         if self.run is None:
             raise TeamConfigurationError("Runner is not prepared")
         root = self.run.root
-        restored = restore_checkpoint_artifacts(plan.manifest, plan.source_run_root, root)
+        restored = restore_checkpoint_artifacts(
+            plan.manifest,
+            plan.source_run_root,
+            root,
+            handoff_materials=self.run.handoff_materials,
+        )
         artifacts = [
             artifact
             for artifact in plan.manifest.get("artifacts") or []
@@ -12191,6 +12481,9 @@ class TeamRunner:
             "sender_id": sender_id,
             "text": event["text"],
             "generation": generation,
+            "display_text": event.get("display_text"),
+            "body_ref": event.get("body_ref"),
+            "material_refs": event.get("material_refs", ()),
         }
         with self._coordination_runtime_lock:
             message_id = queued["message_id"]
@@ -12282,6 +12575,13 @@ class TeamRunner:
                     "text": text,
                 }
                 delivery_kind = "coordination-phase"
+            display_text = event.get("display_text")
+            display_payload = None
+            if display_text is not None:
+                display_payload = dict(payload)
+                display_payload["round_id" if message_kind == "acceptance_start" else "text"] = (
+                    display_text
+                )
             try:
                 self.adapter.send_message(
                     recipient_id,
@@ -12291,6 +12591,12 @@ class TeamRunner:
                         kind=delivery_kind,
                         text=json.dumps(payload, ensure_ascii=False, sort_keys=True),
                         delivery_id=message_id,
+                        display_text=(
+                            json.dumps(display_payload, ensure_ascii=False, sort_keys=True)
+                            if display_payload is not None else None
+                        ),
+                        body_ref=event.get("body_ref"),
+                        material_refs=event.get("material_refs", ()),
                     ),
                 )
             except Exception as exc:
@@ -12318,7 +12624,12 @@ class TeamRunner:
             "settles",
             "phase_event",
         }
-        if not isinstance(event, dict) or set(event) != expected:
+        optional = {"display_text", "body_ref", "material_refs"}
+        if (
+            not isinstance(event, dict)
+            or not expected <= set(event)
+            or set(event) - expected - optional
+        ):
             return
         sender = event["sender_id"]
         recipient = event["recipient_id"]
@@ -12357,6 +12668,8 @@ class TeamRunner:
                 "settles": False,
                 "text_sha256": hashlib.sha256(text.encode("utf-8")).hexdigest(),
                 "phase_event": safe_phase,
+                **({"body_ref": event["body_ref"]} if event.get("body_ref") is not None else {}),
+                **({"material_refs": list(event["material_refs"])} if event.get("material_refs") else {}),
             },
         )
 

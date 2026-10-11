@@ -7,6 +7,8 @@ callable, which is exactly the seam the real ``McpReadForwarder`` occupies.
 
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import json
 import os
 import socket
@@ -1555,6 +1557,7 @@ def test_native_public_judge_startup_failure_preserves_first_blocker(
                 raise CodexRuntimeError("fixture MCP discovery failed; private sentinel")
             return {"data": [{"name": "examiner_report", "tools": [
                 {"name": "submit_examiner_report"},
+                *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES)),
             ]}]}
         if method == "turn/start":
             if startup_failure == "large":

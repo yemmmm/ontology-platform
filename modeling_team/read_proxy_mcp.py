@@ -316,7 +316,7 @@ def main() -> int:
                     ("evidence_handle",)
                     if v3_mode
                     else ("request_digest", "response_digest", "artifact_path")
-                )
+                ) + ("result_ref", "material_error")
                 digest_locators = {k: response[k] for k in locator_keys if response.get(k)}
                 if digest_locators:
                     payload = {**result_data, **digest_locators} if isinstance(result_data, dict) else {"result": result_data, **digest_locators}

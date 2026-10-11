@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
+
 import json
 import tomllib
 from io import StringIO
@@ -546,7 +548,7 @@ def test_formal_examiner_config_env_and_argv_are_secret_free(
         if method == "turn/start":
             return {"turn": {"id": f"{kind}-turn"}}
         if method == "mcpServerStatus/list":
-            tools = [{"name": "submit_examiner_report"}]
+            tools = [{"name": "submit_examiner_report"}, *({"name": name} for name in sorted(HANDOFF_TOOL_NAMES))]
             servers = [{"name": "examiner_report", "tools": tools}]
             if kind == "platform":
                 servers.append(

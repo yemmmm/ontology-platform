@@ -130,3 +130,12 @@ re-issue a correct, smaller query per the retrieval rules above until at least o
 succeeds, then keep its locator. Only treat the platform read as genuinely unavailable when
 correct, well-formed queries keep failing, and in that case still record every attempted
 direction in `coverage.queries_or_sections` and the failure in `gaps`.
+
+## Optional report material handoff
+
+The `examiner_report` server also provides scoped handoff tools. If the complete semantic report is
+large, write its UTF-8 JSON object with `write_handoff_output`, publish it to the existing Host
+channel, and submit the one-field `report_ref` object returned by that publication. Do not mix
+`report_ref` with report fields. Handoff reads are only for published material and cannot replace a
+ticket-bound proxy read, its receipt, or its exact `evidence_refs` locator; never use them to obtain
+source text or platform facts. `read_frozen_evidence` remains a separate Judge-only path.

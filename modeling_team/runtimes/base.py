@@ -52,6 +52,9 @@ class RuntimeDelivery:
     reply_to_delivery_id: str | None = None
     owner_answer_id: str | None = None
     release_id: str | None = None
+    display_text: str | None = None
+    body_ref: dict | None = None
+    material_refs: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
