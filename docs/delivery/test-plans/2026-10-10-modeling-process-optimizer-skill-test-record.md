@@ -5,9 +5,9 @@
 
 ## 交付范围
 
-- [Skill](../../../skills/modeling-process-optimizer/SKILL.md)：宿主侧流程复盘、归因、优化建议及效果复核。
-- [证据导航](../../../skills/modeling-process-optimizer/references/evidence-map.md) 与
-  [报告模板](../../../skills/modeling-process-optimizer/references/report-template.md) 按需读取。
+- [Skill](../../../skills/modeling-retrospective/SKILL.md)：宿主侧流程复盘、归因、优化建议及效果复核。
+- [证据导航](../../../skills/modeling-retrospective/references/evidence-map.md) 与
+  [报告模板](../../../skills/modeling-retrospective/references/report-template.md) 按需读取。
 - UI 元数据；`.agents/skills/`、`.claude/skills/` 的发现链接均指向同一规范目录。
 - 默认自动发现；实施和真实运行仍遵循任务授权，已有暂停不被创建或调用 Skill 解除。
 
@@ -100,3 +100,28 @@ GitNexus 符号分析不适用于本次文档变更，提交前核对差异和�
 和差异空白检查通过。仅文档／指令变更，不运行 backend/frontend 套件或重启服务。
 **交付边界：skill 与台账更新完成；真实跨轮行为及提速仍待验证。** R4.3-016 在生产台账
 更新为已实现待实测，未关闭；本次也不完成 R4.3-013—015 的真实效果验收。
+
+## 2026-10-12 需求验证闭环与更名 Round 7
+
+用户确认增加关联需求验证核对，并更名为“建模复盘与改进”／`modeling-retrospective`。
+沿用 R4.3-016 和本验证记录；旧文件名及前文旧调用记录保留历史，活动链接已更新。
+规范技能目录、`.agents/skills/` 与 `.claude/skills/` 发现入口、ignore 例外、UI 提示和
+当前文档引用同步更名。需求文档保存验收结论，优化台账保存改进预期与效果。
+
+同一独立试用者执行新的合成 `demo-run-03`，只接收新 skill 及
+`workspaces/modeling-retrospective-skill-20261012/` 的 `request.md`、
+`requirements-input.md`、`tracker-input.md`、`evidence.json`，未提供预期结论。
+输出 `requirements-output.md`、`tracker-output.md`、`report.md`；原输入保持。
+
+| 检查范围 | 独立试用结果 |
+| --- | --- |
+| 原定只需确定性测试的 DEMO-1 | 验证通过，不额外要求真实建模；对应提速 OPT-A 缺总耗时证据，保持待实测 |
+| 有生成与真实接收两项条件的 DEMO-2 | 生成通过、真实接收缺证据，记部分验证；范围仅为生成及正文体积的 OPT-B 可独立关闭 |
+| 不来自优化台账的 DEMO-3／4 | 明确分页缺项记验证未通过；无实现和证据记未验证；未自动加入已确认优化台账 |
+| 本轮未触发的 DEMO-5 | 代码、提示、合同不变且无反证，复用适用历史证据，保留验证通过 |
+| 权威位置与职责 | 需求状态和优化状态分别输出，需求核对先于优化效果；不实施、不运行、不替代独立裁决 |
+
+主代理核对原始情境和实际输出，Round 7 **PASS（有界独立情境）**，无需行为修订。
+官方技能 validator、32 个本地链接／锚点、UI YAML、新技能双发现入口和差异空白检查通过。
+属于文档／指令与发现链接变更，不运行 backend/frontend 套件或重启服务。
+R4.3-016 的需求验证状态为部分验证，优化状态仍为已实现待实测；真实跨轮效果待证。

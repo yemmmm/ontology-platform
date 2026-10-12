@@ -1,0 +1,4 @@
+interface:
+  display_name: "建模复盘与改进"
+  short_description: "核对关联需求验证闭环，追踪已确认改进效果，再依据证据评估质量、效率与新优化"
+  default_prompt: "使用 $modeling-retrospective 复盘本轮建模，先核对关联需求的验收证据并更新验证状态，再复核已确认优化的原预期，最后提出待调整项和新建议；保留必要催办并评估兜底成本。"

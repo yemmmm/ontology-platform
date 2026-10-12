@@ -1,4 +1,0 @@
-interface:
-  display_name: "建模流程优化"
-  short_description: "先复核已确认优化的跨轮效果并更新台账，再依据证据发现新优化与评估兜底成本"
-  default_prompt: "使用 $modeling-process-optimizer 先读取已确认优化台账，对照本轮实际证据验证原预期并更新状态，再提出待调整项和新优化；评估正常行为与兜底成本，确认后登记建议。"

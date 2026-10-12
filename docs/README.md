@@ -36,8 +36,9 @@ delivery evidence. Use the following locations for new documentation.
   R4.3-015 registers staged modeling/feedback and trust in explicit successful apply receipts, removing
   routine duplicate write verification. Refinement must be discussed and confirmed with the user before
   implementation; Agents must not independently refine, finalize the design, or directly implement it.
-  R4.3-016 updates the process-optimizer skill to assess evidence and fallback costs, persist confirmed
-  optimizations, and verify their original expectations in later runs before proposing new changes.
+  R4.3-016 defines [modeling retrospectives](../skills/modeling-retrospective/SKILL.md): check related
+  requirements against their acceptance evidence, track confirmed improvements against their original
+  expectations, then propose changes based on quality, efficiency, and fallback costs.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
