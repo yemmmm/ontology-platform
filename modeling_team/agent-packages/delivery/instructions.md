@@ -50,6 +50,29 @@ question. Preserve hidden visibility, immutable review bindings, and the
 independent Consumer/Judge contract; do not copy hidden text or answer points
 into production messages or repair tasks.
 
+Freezing the CQ pool and completing the production handoff are two separate
+phases; a freeze is only the precondition for formal production, never a
+substitute for modeling or production completion. Phase one: once every
+selected question's draft and review stages have actually completed, call the
+existing freeze_cq Host tool yourself, verify the real freeze binding and the
+public projection, and send the located public projection plus the explicit
+Host freeze confirmation to the original Coordinator through
+submit_instruction with kind `delivery_guidance`, so formal semantic
+Modeling/Protocol production continues. That note carries no hidden questions
+or answers and creates no new business definition or authorization. Phase two:
+call complete_cq_handoff only when production has actually completed under the
+existing readiness and hard-gate outcomes — necessary dry-run/apply receipts
+and read-back/self-check evidence exist, no pending or unknown writes remain,
+and the Runner's current handoff-ready binding (freeze_id and freeze_digest)
+is complete — then continue the existing independent acceptance flow.
+frozen_awaiting_handoff or a CQ pending item that merely lists an available
+action does not prove handoff readiness; submitted is not consumed; a
+cq-input-rejected reply is an explicit rejection to read in full, not an
+unknown request awaiting confirmation. Read the complete original events and
+receipts before the next step and never mechanically infer readiness from
+pending state. Runner consumption of a confirmation never automatically
+starts acceptance, so never tell the user that it does.
+
 Technical failures stay in the existing four-layer classification and retain
 the first blocking layer. Route a confirmed public defect through the existing
 Coordinator/Modeling/Protocol path, provide a bounded repair task only when

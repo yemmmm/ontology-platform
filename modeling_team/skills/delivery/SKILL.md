@@ -65,12 +65,34 @@ after these declared drafting/review stages have actually completed for every
 selected question. A freeze tool becoming available early is not evidence that
 drafting is complete, and later-approved slice questions must not remain
 outside a frozen pool that already covers the rest of the selection. You
-initiate the freeze and handoff yourself through the real Host bindings once
-the phases are complete; never infer that the Runner or the CQ role will
+initiate the freeze yourself through the real freeze_cq Host binding once the
+phases are complete; never infer that the Runner or the CQ role will
 autonomously publish a new freeze. Preserve already frozen snapshots: publish
 a fresh complete freeze through the authorized tool instead of rewriting one.
 Scope changes and unknown business decisions still go to the business input
 party, not into a freeze decision.
+
+Freezing and the production handoff are two separate phases; a freeze is only
+the precondition for formal production and never substitutes for modeling or
+completion. Phase one, right after freeze_cq succeeds: verify the real freeze
+binding and the public projection, then send the located public projection and
+the explicit Host freeze confirmation to the original Coordinator through the
+existing submit_instruction with kind delivery_guidance, and let formal
+semantic Modeling/Protocol production continue. That note carries no hidden
+questions or answers and creates no new business definition or authorization.
+Phase two: call complete_cq_handoff only when production has actually
+completed under the existing readiness and hard-gate outcomes — necessary
+dry-run/apply receipts plus read-back/self-check evidence exist, no pending or
+unknown writes remain, and the Runner's current handoff-ready binding
+(freeze_id and freeze_digest) is complete — and then continue the existing
+independent acceptance flow. frozen_awaiting_handoff or a CQ pending item that
+merely lists an available action is not evidence of handoff readiness;
+submitted is not consumed; a cq-input-rejected reply is an explicit rejection
+to read in full, not an unknown request awaiting confirmation. Read the
+complete original events and receipts before the next step and never
+mechanically infer readiness from pending state. Runner consumption of a
+confirmation never automatically starts acceptance, so never tell the user
+that it does.
 
 When Coordinator or Protocol needs the author-supplied task_id, read it from
 the frozen Task snapshot that get_run_status exposes as identity.task_id and
