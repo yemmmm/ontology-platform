@@ -57,13 +57,88 @@ _PUBLIC_RUN_EVENT_SOURCES = frozenset({
 _PUBLIC_MATERIAL_ROLES = frozenset({"coordinator", "modeling", "protocol"})
 
 
-def _decision_observation(observation: dict) -> dict:
-    """Keep decisions and their bindings, while ignoring observation-only traffic."""
+# Pure pagination/window bookkeeping on an incremental ``get_run_events``
+# page.  ``next_cursor``/``has_more``/``ordering``/``complete`` describe the
+# read position, not the run; ``line_no``/``byte_offset`` locate one line
+# inside one evidence file; page-level ``limitations`` only restate the
+# corrupt/truncated placeholder events, which stay visible themselves.  All of
+# them change with every (re)read without carrying a decision.
+_DECISION_EVENT_NOISE_KEYS = frozenset({
+    "next_cursor", "has_more", "ordering", "complete", "limitations",
+    "line_no", "byte_offset",
+})
+# The raw app-server notification log replays every token/reasoning delta and
+# turn-progress notification of the Team's native sessions.  It is retained as
+# run evidence and inside the stored raw observation, but it is model
+# activity, never a Delivery decision, so it must not wake the model.
+_DECISION_EVENT_NOISE_SOURCES = frozenset({"app-server-events.jsonl"})
+
+
+def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]]) -> Any:
+    """Project one incremental events page onto cumulative decision content.
+
+    The projected fingerprint depends on which decision events have already
+    been seen, never on which page they arrived in: the empty follow-up page
+    after a drained page and an at-least-once re-delivery inside a parked
+    window project to the same value as the page that first carried the event.
+    Failed event reads and corrupt/truncated placeholder events stay
+    decisions; every excluded byte remains in the stored raw observation for
+    on-demand reading, and the steered message payload is untouched.
+    """
+    if not isinstance(events, dict) or not isinstance(events.get("data"), dict):
+        # Failure envelopes and unexpected shapes stay decisions.
+        return events
+    page = events["data"]
+    # The raw ``events`` list is replaced by the cumulative chain below: the
+    # page window itself must never re-enter the wakeup fingerprint.
+    projected = {key: value for key, value in page.items()
+                 if key not in _DECISION_EVENT_NOISE_KEYS and key != "events"}
+    run_state = state.setdefault(run_id, {"seen": set(), "chain": ""})
+    for event in page.get("events") or []:
+        if isinstance(event, dict) and event.get("source") in _DECISION_EVENT_NOISE_SOURCES:
+            continue
+        canonical: Any = event
+        identity: str | None = None
+        if isinstance(event, dict):
+            canonical = {key: value for key, value in event.items()
+                         if key not in _DECISION_EVENT_NOISE_KEYS}
+            source = event.get("source")
+            if isinstance(source, str):
+                offset = event.get("byte_offset")
+                positioned = isinstance(offset, int) and not isinstance(offset, bool)
+                identity = f"{source}:{offset if positioned else 'unpositioned'}"
+        if identity is not None:
+            if identity in run_state["seen"]:
+                continue
+            run_state["seen"].add(identity)
+        encoded = json.dumps(canonical, ensure_ascii=False, sort_keys=True)
+        run_state["chain"] = hashlib.sha256(
+            (run_state["chain"] + "\x00" + encoded).encode("utf-8")).hexdigest()
+    projected["decision_events_chain"] = run_state["chain"]
+    return {**events, "data": projected}
+
+
+def _decision_observation(observation: dict,
+                          event_state: dict[str, dict[str, Any]]) -> dict:
+    """Keep decisions and their bindings, while ignoring observation-only traffic.
+
+    ``event_state`` is the caller's per-process cumulative seen-event state;
+    it is updated in place even when the observation does not wake the model.
+    Incremental events pages are reduced by :func:`_decision_events`; the
+    run-status ``evidence_refs`` listing only mirrors which evidence files
+    exist, which is log-growth information, not a decision.  No decision
+    source is dropped: new pending questions, content versions, phase and
+    terminal states, blockers, write receipts, public handoffs, request
+    receipts, user messages, reports and tool failures all keep waking the
+    model, and none of the excluded material is lost because the caller
+    stores the full raw observation.
+    """
     noise = {
         "observed_at", "events_cursor", "last_verifiable_activity",
         "heartbeat_at", "last_heartbeat_at", "heartbeat_count",
         "log_bytes", "stdout_bytes", "stderr_bytes", "log_tails",
         "stdout_tail", "stderr_tail", "staged_decision_count", "latest_staged_decision_at",
+        "evidence_refs",
     }
 
     def clean(value):
@@ -76,12 +151,14 @@ def _decision_observation(observation: dict) -> dict:
     projected = clean(observation)
     # Stage timestamp/ordinal alone may advance as the same phase emits more
     # progress. The phase, batch/review identity and classification are decisions.
-    for run in projected.get("runs", {}).values():
+    for run_id, run in projected.get("runs", {}).items():
         status = run.get("status", {}).get("data", {})
         stage = status.get("stage")
         if isinstance(stage, dict):
             stage.pop("recorded_at", None)
             stage.pop("ordinal", None)
+        if "events" in run:
+            run["events"] = _decision_events(run_id, run["events"], event_state)
     return projected
 
 
@@ -1445,10 +1522,26 @@ class DeliverySession:
         }}
 
     def record_observation(self, observation: dict) -> bool:
-        """Persist the full observation; wake the model only for decision changes."""
+        """Persist the full observation; wake the model only for decision changes.
+
+        The wakeup fingerprint is computed from
+        :func:`_decision_observation`, which folds each run's incremental
+        events page into a per-process cumulative chain of seen decision
+        events.  The full raw observation is still persisted below and is what
+        a wakeup delivers to the native model.
+        """
         path = self.session_root / "observation.json"
         previous = json.loads(path.read_text()) if path.exists() else {}
-        decision = json.dumps(_decision_observation(observation), ensure_ascii=False, sort_keys=True)
+        event_state = getattr(self, "_decision_event_state", None)
+        if event_state is None:
+            # Per-process like ``_last_decision_digest``: on resume the first
+            # page re-folds its decision events once, matching the resumed
+            # context rebuild; nothing is persisted beyond the raw
+            # observation and the existing event cursors.
+            event_state = {}
+            self._decision_event_state = event_state
+        decision = json.dumps(
+            _decision_observation(observation, event_state), ensure_ascii=False, sort_keys=True)
         digest = hashlib.sha256(decision.encode()).hexdigest()
         changed = digest != getattr(self, "_last_decision_digest", None)
         self._last_decision_digest = digest
