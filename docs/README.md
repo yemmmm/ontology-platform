@@ -33,6 +33,9 @@ delivery evidence. Use the following locations for new documentation.
   real Agent behavior improvements and independent semantic quality remain unverified.
   R4.3-014 requires recovery to reconcile actual completed content before continuing remaining work;
   existing recovery paths and partial prompt fixes should be reused, with real-run effects unverified.
+  R4.3-015 registers staged modeling/feedback and trust in explicit successful apply receipts, removing
+  routine duplicate write verification. Refinement must be discussed and confirmed with the user before
+  implementation; Agents must not independently refine, finalize the design, or directly implement it.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
