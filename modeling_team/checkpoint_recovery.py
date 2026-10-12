@@ -1537,6 +1537,7 @@ def reconcile_write_tail(
                     client_item_id = result.get("client_item_id")
                     if not isinstance(client_item_id, str):
                         continue
+                    outputs = result.get("resource_outputs") or []
                     completed.append(
                         CompletedOperation(
                             origin_run_id=run_id,
@@ -1554,7 +1555,7 @@ def reconcile_write_tail(
                             ),
                             resource_ids=tuple(
                                 str(value)
-                                for value in (result.get("resource_outputs") or [])
+                                for value in (outputs.values() if isinstance(outputs, Mapping) else outputs)
                             ),
                             evidence_association_ids=tuple(
                                 str(value)
@@ -1988,7 +1989,7 @@ def build_plan_mappings(
         projection = payload.get("projection") or {}
         client_item_ids = sorted(
             str(item.get("client_item_id"))
-            for item in payload.get("items") or []
+            for item in projection.get("items") or payload.get("items") or []
             if isinstance(item, Mapping) and item.get("client_item_id")
         )
         referenced_batches = [
@@ -1996,6 +1997,8 @@ def build_plan_mappings(
             for batch in payload.get("client_batch_ids") or []
             if isinstance(batch, str)
         ]
+        if projection.get("client_batch_id"):
+            referenced_batches = [str(projection["client_batch_id"])]
         mappings.append(
             {
                 "source_plan_ref": plan_ref,
@@ -2005,17 +2008,17 @@ def build_plan_mappings(
                 "client_item_ids": client_item_ids,
                 "candidate": {
                     "candidate_id": projection.get("candidate_id"),
-                    "revision": projection.get("revision"),
+                    "revision": projection.get("candidate_revision", projection.get("revision")),
                 },
-                "decision_bindings": list(payload.get("decision_bindings") or []),
-                "identity_bindings": list(payload.get("identity_bindings") or []),
+                "decision_bindings": list(projection.get("decision_bindings") or payload.get("decision_bindings") or []),
+                "identity_bindings": list(projection.get("identity_bindings") or payload.get("identity_bindings") or []),
                 "source_client_batch_ids": referenced_batches,
                 "completed_source_batches": [
                     batch for batch in referenced_batches if batch in completed_batches
                 ],
                 "status": (
                     "completed_do_not_resubmit"
-                    if referenced_batches and referenced_batches[0] in completed_batches
+                    if referenced_batches and all(batch in completed_batches for batch in referenced_batches)
                     else "unfinished_submit_through_new_session"
                 ),
             }
@@ -2026,10 +2029,9 @@ def build_plan_mappings(
 def unfinished_items(reconciliation: Mapping[str, Any]) -> list[dict[str, Any]]:
     """Public unfinished-work rows from the reconciliation (design §5.1).
 
-    ``pending_new_dry_run`` and ``recoverable_new_batch`` are the classifier's
-    own "provably unfinished" outputs; they belong in every role packet, not
-    only in the host inspection — a resumed team that cannot see them will
-    conclude the run while the authorized work is still outstanding.
+    These historical operations did not complete themselves. Their business
+    content may already be covered by a successful successor; Agents must
+    review the completion facts before deciding what is actually unfinished.
     """
 
     rows: list[dict[str, Any]] = []
@@ -2290,11 +2292,18 @@ def build_role_packets(
             "plan_mappings": plan_mappings if role in {"coordinator", "modeling", "protocol"} else [],
             "translation_review": {
                 "required": True,
-                "note": "the new session must republish plan/client_batch_id/key "
-                "and a fresh dry-run; the current Coordinator reviews the new "
+                "note": "review successful successor receipts, current candidates "
+                "and actual readback first; covered content stays history without "
+                "republishing, re-approval or another dry-run. For only genuinely remaining content, "
+                "the new session republishes plan/client_batch_id/key "
+                "and obtains a fresh dry-run; the current Coordinator reviews the new "
                 "translation plan through the normal 014 path (S3 auto-migration "
                 "is deferred by design)",
             },
+        }
+        packets[role]["completed_scope"] = {
+            **base["completed_scope"],
+            "items": [entry.index_entry() for entry in reconciliation.get("completed") or []],
         }
     # R3.0-011 host-only contract: the frozen pool rides in the host packet
     # only.  The competency-question packet lists the role's own private/
@@ -2343,6 +2352,10 @@ def build_role_packets(
         "readable_artifacts": public_artifacts + private_artifacts,
         "handoff_materials": handoff_materials,
         "approvals": approvals,
+        "completed_scope": {
+            **base["completed_scope"],
+            "items": [entry.index_entry() for entry in reconciliation.get("completed") or []],
+        },
     }
     packets["host"]["configuration"] = dict(configuration)
     return packets
@@ -2629,7 +2642,7 @@ def check_resume_submission(
             if not isinstance(mapping, Mapping):
                 continue
             if (
-                str(mapping.get("source_plan_ref")) == str(plan_ref)
+                str(mapping.get("source_plan_ref")) == str(plan_ref).rsplit("/", 1)[-1]
                 and mapping.get("status") == "completed_do_not_resubmit"
             ):
                 raise _reject_for_submission(

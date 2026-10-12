@@ -168,6 +168,7 @@ STAGED_REASON_CODES = (
     "staged_conclusion_not_confirmed",
     "staged_conclusion_conflict",
     "staged_conclusion_already_materialized",
+    "staged_recovery_request_mismatch",
     "staged_trace_mismatch",
     "staged_unknown_enum_target",
     "staged_l3_unapproved",

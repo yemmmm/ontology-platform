@@ -273,7 +273,7 @@
       "a durable submission intent is written BEFORE the host-side forward; the Runner-supplied idempotency_key and client_batch_id are reused verbatim on retries",
       "the host-side forward is a Runner-injected write path; value_traces and l3_nodes never leave the Runner",
       "an indeterminate forward result marks the intent unknown, rejects every new submission with staged_unreconciled_batch, and fires the kill-switch (manual adjudication via the three deterministic branches: claim the platform-listing hit, retry with the same key, or suspend)",
-      "an authoritative receipt is written only after a definite result that actually returned a real platform Batch; the intent transitions submitted -> receipted; a typed pre-write refusal instead closes the intent as rejected with no receipt and the accurate error evidence preserved, and unknown/unparseable forward results still close the write gate; a receipted idempotency key is rejected with staged_conclusion_already_materialized",
+      "an authoritative receipt is written only after a definite result that actually returned a real platform Batch; the intent transitions submitted -> receipted; a typed pre-write refusal instead closes the intent as rejected with no receipt and the accurate error evidence preserved, and unknown/unparseable forward results still close the write gate; receipted terminal requests are rejected with staged_conclusion_already_materialized. R4.3-014: a Runner-bound applying/recovering Attempt with its exact retained original request may continue through the same submit path; session, key, payload, version and lease remain unchanged, no new Batch/Attempt may be created, old receipts remain and a new result receipt is appended. Missing or changed original request returns staged_recovery_request_mismatch for Host reconciliation; a refused recovery cannot erase the original unresolved write",
       "every rejection is a typed reason code returned as structured error content; each code names the artifact to repair and the run continues"
     ],
     "submission_intent": {
@@ -322,6 +322,7 @@
       "staged_conclusion_not_confirmed",
       "staged_conclusion_conflict",
       "staged_conclusion_already_materialized",
+      "staged_recovery_request_mismatch",
       "staged_trace_mismatch",
       "staged_unknown_enum_target",
       "staged_l3_unapproved",

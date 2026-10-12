@@ -812,7 +812,10 @@ class RunnerCapabilityEndpoint:
                 "protocol_staged_submit_modeling_batch": (
                     "Legacy/manual inline staged batch submission. Unified plans should use "
                     "protocol_execute_approved_plans, including mode=dry_run for validation only, "
-                    "to preserve every approved item field without transcription."
+                    "to preserve every approved item field without transcription. For a receipted "
+                    "applying/recovering Attempt, continue the exact retained original batch "
+                    "through this tool with unchanged session, key, payload, version and lease; "
+                    "terminal Attempts are not replayed."
                 ),
             }
             tools = [

@@ -5325,14 +5325,17 @@ class TeamRunner:
                 for intent in intents:
                     if (intent.get("plan_ref") == ref
                             and intent.get("projection_digest") == plan["projection_digest"]):
-                        receipt = next((r for r in receipts if r["intent_ordinal"] == intent["ordinal"]), None)
+                        receipt = next((r for r in reversed(receipts) if r["intent_ordinal"] == intent["ordinal"]), None)
                         if intent.get("mode") == "apply_atomic" and intent.get("status") == "receipted":
                             terminal = bound_attempt_proof(self.run.root, intent=intent, receipt=receipt)
                             if terminal is None or terminal.get("attempt_status") not in {
                                 "applied", "validation_failed", "failed",
                             }:
                                 raise StagedSubmissionRejection(
-                                    "staged_unreconciled_batch", "receipted apply has no bound terminal Attempt; reconcile it before continuing",
+                                    "staged_unreconciled_batch",
+                                    "receipted apply has no bound terminal Attempt; if applying/recovering, "
+                                    "continue the exact original request from protocol_list_platform_artifacts "
+                                    "via protocol_staged_submit_modeling_batch; otherwise request Host reconciliation",
                                 )
                         proof = applied_attempt_proof(self.run.root, intent=intent, receipt=receipt)
                         if proof is not None:
@@ -5561,16 +5564,74 @@ class TeamRunner:
                 unlock_issues = validate_materialization_unlock(unlock, conclusions=conclusions)
         try:
             receipts = read_submission_receipts(run_root)
+            intents = read_submission_intents(run_root)
         except StagedDecisionArtifactError as exc:
             self._staged_gate_kill_switch(exc.reason_code, exc.detail)
             raise StagedSubmissionRejection("staged_unreconciled_batch", exc.detail) from exc
+        # R4.3-014: receipt means reception, not application. An exact original
+        # request may continue an applying/recovering Attempt through the same
+        # backend submit path; terminal writes remain non-replayable.
+        recovery_proof = None
+        request_batch = args.get("batch")
+        recovery_intent = next((item for item in intents
+                                if isinstance(request_batch, Mapping)
+                                and item.get("idempotency_key") == request_batch.get("idempotency_key")
+                                and item.get("status") == "receipted"), None)
+        if (recovery_intent is None and isinstance(request_batch, Mapping)
+                and request_batch.get("mode") == "apply_atomic"):
+            # A new key cannot turn the affected ontology's known in-flight
+            # write into a fresh operation. Other ontology scopes remain usable.
+            for item in intents:
+                if (item.get("status") != "receipted"
+                        or (item.get("projection") or {}).get("ontology_id") != request_batch.get("ontology_id")):
+                    continue
+                receipt = next((r for r in reversed(receipts)
+                                if r.get("intent_ordinal") == item["ordinal"]), None)
+                proof = bound_attempt_proof(run_root, intent=item, receipt=receipt)
+                if proof is not None and proof.get("attempt_status") in {"applying", "recovering"}:
+                    recovery_intent = item
+                    break
+        if recovery_intent is not None:
+            receipt = next((item for item in reversed(receipts)
+                            if item.get("intent_ordinal") == recovery_intent["ordinal"]), None)
+            proof = bound_attempt_proof(run_root, intent=recovery_intent, receipt=receipt)
+            if proof is not None and proof.get("attempt_status") in {"applying", "recovering"}:
+                observations = self.acceptance.protocol_list_platform_artifacts(
+                    protocol_id=args["protocol_id"],
+                )["artifacts"] if self.acceptance is not None else []
+                for observation in observations:
+                    if (observation["tool"] != "submit_modeling_batch"
+                            or observation["request_arguments"] != request_batch
+                            or not observation["successful"]):
+                        continue
+                    try:
+                        result = json.loads((run_root / observation["artifact_path"]).read_text())
+                    except (OSError, ValueError):
+                        continue
+                    data = result.get("structuredContent", {}).get("data")
+                    if not isinstance(data, Mapping):
+                        continue
+                    digest = "sha256:" + hashlib.sha256(json.dumps(
+                        data, ensure_ascii=False, sort_keys=True,
+                    ).encode()).hexdigest()
+                    if digest == proof["response_digest"] and args.get("plan_ref") == recovery_intent.get("plan_ref"):
+                        recovery_proof = proof
+                        break
+                if recovery_proof is None:
+                    raise StagedSubmissionRejection(
+                        "staged_recovery_request_mismatch",
+                        "continue the retained original request unchanged, including session, "
+                        "key, payload, workspace version and lease token; missing original "
+                        "evidence requires Host reconciliation, not a new Batch or Attempt",
+                    )
         issues = validate_staged_submission(
             args,
             gate_open=gate_open,
             conclusions=conclusions,
             unlock=unlock,
             unlock_issues=unlock_issues,
-            receipts=receipts,
+            receipts=[item for item in receipts
+                      if recovery_proof is None or item.get("intent_ordinal") != recovery_intent["ordinal"]],
             unified=unified,
         )
         if issues:
@@ -5671,7 +5732,7 @@ class TeamRunner:
         existing = [item for item in intents if item.get("idempotency_key") == idempotency_key]
         if existing:
             intent_record = existing[0]
-            if intent_record.get("status") == "receipted":
+            if intent_record.get("status") == "receipted" and recovery_proof is None:
                 raise StagedSubmissionRejection(
                     "staged_conclusion_already_materialized",
                     f"idempotency key {idempotency_key} is already receipted",
@@ -5713,11 +5774,14 @@ class TeamRunner:
                 list((projection or {}).get("decision_bindings") or []) if unified else None
             ),
         )
-        write_submission_intent(run_root, intent)
+        if recovery_proof is not None:
+            intent = recovery_intent
+        else:
+            write_submission_intent(run_root, intent)
         self._append_evidence(
             "staged-decisions",
             {
-                "event": "submission-intent-written",
+                "event": "submission-recovery-started" if recovery_proof else "submission-intent-written",
                 "intent_ordinal": ordinal,
                 "idempotency_key": idempotency_key,
                 "mode": batch["mode"],
@@ -5732,6 +5796,15 @@ class TeamRunner:
             )
         try:
             result = forwarder(batch)
+            if recovery_proof is not None and (
+                any(result.get(field) != recovery_proof.get(field)
+                    for field in ("batch_id", "attempt_id", "client_batch_id", "idempotency_key", "mode", "content_hash"))
+                or result.get("created_batch") is not False
+                or result.get("created_attempt") is not False
+            ):
+                raise StagedBatchForwardUnknown(
+                    "same-request recovery did not confirm the original Batch/Attempt identity"
+                )
         except StagedBatchForwardUnknown as exc:
             write_submission_intent(run_root, mark_intent_status(intent, "unknown"))
             self._append_evidence(
@@ -5749,6 +5822,17 @@ class TeamRunner:
             )
             raise StagedSubmissionRejection("staged_batch_forward_unknown", str(exc)) from exc
         except StagedBatchForwardError as exc:
+            if recovery_proof is not None:
+                self._append_evidence("staged-decisions", {
+                    "event": "submission-recovery-refused", "intent_ordinal": ordinal,
+                    "batch_id": recovery_proof["batch_id"],
+                    "attempt_id": recovery_proof["attempt_id"], "detail": str(exc),
+                })
+                raise StagedSubmissionRejection(
+                    "staged_unreconciled_batch",
+                    "the original Attempt remains unresolved; correct the recovery "
+                    "failure and retry the original request: " + str(exc),
+                ) from exc
             # Definite backend refusal (pre-write error / pre-dispatch failure):
             # the batch was provably never written, so close the intent as
             # ``rejected`` instead of leaving it ``submitted`` unsettled.  No
@@ -5834,7 +5918,7 @@ class TeamRunner:
                 tool="submit_modeling_batch", arguments=dict(batch),
                 result={"structuredContent": {"ok": True, "data": dict(result)}},
             )
-        for field in ("mode", "attempt_id", "attempt_status", "content_hash"):
+        for field in ("mode", "attempt_id", "attempt_status", "content_hash", "created_batch", "created_attempt", "recovery"):
             if result.get(field) is not None:
                 response[field] = result.get(field)
         if isinstance(result.get("findings"), list):

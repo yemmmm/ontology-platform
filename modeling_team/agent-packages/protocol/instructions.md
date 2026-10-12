@@ -542,19 +542,23 @@ path; report the limitation and await the outer owner's lifecycle decision.
 
 A non-terminal `modeling_batch_attempts` record (`recovering`, `pending`, `applying`) is not an
 applied batch, and a receipt that only proves reception never proves application. If resubmitting
-a staged request is rejected as already receipted while its same
-BuildSession+`idempotency_key` Attempt is still non-terminal, do not first acquire or renew a
+a staged request returns a Runner-bound `applying`/`recovering` Attempt, reuse the exact
+original batch from `protocol_list_platform_artifacts` and continue it through
+`protocol_staged_submit_modeling_batch`. Keep the original plan reference and request;
+the Runner verifies its retained request and the platform recovers the same Batch/Attempt.
+Do not first acquire or renew a
 write lease to get past the fence (a resume can run RDF observation, revision guard and execution
 claim ahead of the fence check), do not switch the idempotency key, payload, lease token or any
-recorded state, and never report the batch applied: call
+recorded state, and never report the batch applied until the platform confirms `applied`.
+If the original request/Attempt proof is unavailable, the Runner refuses recovery, or the
+platform still requires intervention, call
 `mcp__team_transport__report_issue` with the genuine `mutation_state` and pause. The only
-remediation is the host's existing canonical original-request recovery path for that exact
+fallback is the host's existing canonical original-request recovery path for that exact
 original request and receipt, which Delivery explicitly approves and coordinates after confirming
 no drift and the actual write state; do not call hidden or host-only capabilities yourself. Keep
 all other writes closed until an actual new receipt plus governed readback exists, and never
 treat a verbal "reconciled" as an unlock. This paragraph records the usage and escalation path
-for a known current Runner-side defect; adding it here does not fix the Runner and promises no
-specific recovery outcome.
+for original-attempt recovery; a receipt alone never grants new-write authority.
 
 ## Prompt E acceptance-stage handoff
 

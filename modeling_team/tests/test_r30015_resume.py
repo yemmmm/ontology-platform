@@ -2496,7 +2496,10 @@ def test_m31_role_startup_packets_carry_resume_kind_and_boundaries(tmp_path):
     )
     manifest = _manifest_of(run_root, saved["checkpoint_id"])
     reconciliation = {
-        "completed": [{"key": ["k"]}],
+        "completed": [cr.CompletedOperation(
+            origin_run_id="r3015-pk", session_id="session-1", batch_id="batch-1",
+            attempt_id="attempt-1", client_item_id="item-1", client_batch_id="cb-done",
+        )],
         "completed_client_batches": {"cb-done": "batch-1"},
         "pending_new_dry_run": [],
         "recoverable_new_batch": [],
