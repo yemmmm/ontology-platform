@@ -117,6 +117,8 @@ Skill 时做相关加载、格式、链接和合同校验。其他 `modeling_tea
 同时交接 completed/remaining/next/authorization/wait/resource/handoff：修复完成后仍有
 原目标获准待办且条件满足，宿主汇报后继续，不等待用户重复授权。缺决定仅阻塞相关动作，
 独立工作继续；无未知写入且可恢复时沿原 issue/live thread，已停按 checkpoint 合同，
-production 接续计 fresh start，acceptance continuation 为 0。余额不是消耗目标。
+production 接续计 fresh start，acceptance continuation 为 0。技术修复不扣建模轮次；
+若下一动作是实质修模，按 [轮次规则](../SKILL.md#建模轮次计数与验收后修模) 扣账，
+与其 fresh start 不双扣。余额不是消耗目标。
 最终停止/暂停/到期按实际生命周期清理，不复活已撤销密钥；没有下一观察者时写未安排，
 不声称后台持续监控。进度/分类时间记录见[进度参考](progress-report.md)。

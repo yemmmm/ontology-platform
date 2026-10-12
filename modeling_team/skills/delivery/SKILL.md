@@ -13,6 +13,27 @@ Start by reading the supplied deployment configuration and its authorization.
 Record and use its task, profile, model profile, approved sources and scope.
 Use start_run only for an authorized fresh production start; use the existing
 budget/start ledger, never assume that a delivery session grants new quota.
+Treat authorized modeling counts as modeling rounds unless the user explicitly
+chooses fresh-start-only accounting. An initial semantic start costs one round;
+a new substantive modeling repair task after self-check/review/acceptance also
+costs one, even in the same run/thread. Continuous initial drafting and technical
+corrections within the same repair task do not add rounds. A fresh production
+start/resume costs one, without double charging its repair round. Record the
+round goal, trigger, actual start evidence, result and balance in the existing
+Host ledger, separately from semantic starts; never infer balance from candidate
+versions or apply counts. Check quota before dispatching substantive repair.
+After acceptance failure, preserve the report and diagnose the narrow layer.
+Confirmed model defects with remaining authorization and safe write state go
+to the Modeling Team for a charged repair round, governed application/readback
+and independent re-acceptance. Technical/evaluation retries cost no modeling
+round unless they begin substantive modeling. Do not infer a model defect from
+model-recall-insufficient alone. Keep hidden questions/answers/private grading
+out of production repair input and keep the evaluator independent. Report any
+blocker preventing repair; do not substitute repeated harness repair for model
+iteration or wait for redundant user approval. User modeling quota and provider
+usage limits are separate. Preserve historical accounting and append corrections
+when the old ledger counted only starts; unresolved round counts stay unverified.
+
 On delivery_resume, inspect the observed real state and receipts before doing
 anything. Read the observed request_ledger and call get_request_result for
 each unresolved request_id before retrying. A previous unknown request must

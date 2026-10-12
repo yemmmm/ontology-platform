@@ -204,8 +204,9 @@ effort、service_tier/fast_mode 白名单；外部 provider 写 `not_applicable`
 证据接续；
 隐藏完成而获准公开仍待办时继续公开，窄修复后回原失败步骤。
 
-新业务定义、权限扩大、兼容性决定或新 start 额度实质缺失时，只等待依赖该决定的动作，
-写明原因、影响范围、独立可做项和恢复入口。额度上限不必耗尽；耗尽不再新开 production，
+新业务定义、权限扩大、兼容性决定或新建模轮次额度实质缺失时，只等待依赖该决定的动作，
+写明原因、影响范围、独立可做项和恢复入口。额度上限不必耗尽；耗尽不再新开 production
+或开始新的实质修模任务，
 已有授权内安全核查、只读验收和收尾仍可做。用户暂停/取消、到期、原目标完成或确无安全
 动作时暂停推进并记录待办，正常完成保持原会话待命；明确 stop 才最终销毁并核对清理，
 保留模型/证据。进程已结束临时 key 及时撤销，仍服务连续任务
@@ -682,7 +683,9 @@ Session 并由当前 Coordinator 按既有 014 路径审核（S3 自动迁移按
 staged 校验器一律重算，布尔 gate-open 状态永不还原；CQ 冻结池重新校验后采纳。
 
 记账：续跑记 1 次 fresh semantic start（host 记录 `authorization_reference`），
-平台侧没有硬计数门（`platform_hard_gate: false`）。每次授权后的第一次真实 semantic start
+平台侧没有硬计数门（`platform_hard_gate: false`）。它也消耗一次建模轮次，若正是
+已登记修模轮的执行入口则不双扣；同 run 实质修模也须按 Skill 的轮次规则记账。
+每次授权后的第一次真实 semantic start
 若恰为本次 production resume，除非用户明确允许更长准备期，仍须在授权后 20 分钟内开始；
 超时报告耗时来源并缩短通路。后续恢复记录实际对账/准备耗时和阻塞，不从最初授权时点
 重复套用此期限或自动请求新授权；余额与写入安全条件不变。
@@ -780,7 +783,7 @@ Runner 保存通知并交给 Coordinator，通过绑定 `resume` 在原 thread �
 不能解锁写入；旧格式中的 `reconciled` 等文字也不是核对证据。保留 issue、关闭的写门和原始
 记录，按下方只读核查定位；本增量不提供 unknown-write gate reopen。不得改写 receipt 或
 清除关闭状态。进程已死、线程已丢失或修复需要替换冻结运行代码时，也不能用此通知重绑；
-按 Skill 的既有 fresh-start 额度与现场保留规则处理，不把 `stop` 当作暂停。
+按 Skill 的建模轮次额度、独立 fresh-start 记录与现场保留规则处理，不把 `stop` 当作暂停。
 
 ## 独立验收入口
 
