@@ -17,6 +17,10 @@ from app.services.modeling_handlers import ModelingCommandHandlerRegistry
 # - interview (brief, competency-questions CRUD — Stage 1 disposition K)
 # - semantic (the new RDF/graph-set stack)
 ALLOWED_TOOLS = {
+    "submit_semantic_feedback",
+    "list_semantic_feedback",
+    "get_semantic_feedback",
+    "record_semantic_feedback_resolution",
     "check_platform_health",
     "get_build_context",
     "get_project_build_context",

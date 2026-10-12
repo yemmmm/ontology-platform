@@ -51,6 +51,8 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
                 "run_id",
                 "job_id",
                 "ontology_ids",
+                "feedback_id",
+                "query_request",
                 "scope_id",
                 "protection_set_id",
             }
@@ -60,7 +62,10 @@ def test_policy_inventory_fails_closed_for_resource_less_and_mutating_tools():
         if not has_owner_input:
             assert policy.ownership in {McpOwnership.ORG_ONLY, McpOwnership.GLOBAL_SAFE}
         if policy.mutates_state:
-            assert policy.required_scope in {"model", "admin"}
+            if tool.name == "submit_semantic_feedback":
+                assert policy.required_scope == "read"  # Private observations are not model writes.
+            else:
+                assert policy.required_scope in {"model", "admin"}
             assert policy.ownership is not McpOwnership.GLOBAL_SAFE
         if policy.ownership is McpOwnership.GLOBAL_SAFE:
             global_safe.add(tool.name)

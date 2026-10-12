@@ -1717,3 +1717,17 @@ class SemanticMigrationParityReportModel(Base):
     )
 
     migration_run: Mapped[SemanticMigrationRunModel] = relationship(back_populates="parity_reports")
+
+
+class SemanticFeedbackModel(Base):
+    __tablename__ = "semantic_feedback"
+    __table_args__ = (Index("ix_semantic_feedback_project_time", "project_id", "created_at",
+                           "feedback_id"),)
+
+    feedback_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    project_id: Mapped[str] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    submitted_by: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    submission: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False)
+    resolution_history: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, nullable=False)
+    outcome: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")

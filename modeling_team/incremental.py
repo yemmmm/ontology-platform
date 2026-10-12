@@ -88,6 +88,36 @@ def validate_request(request: dict, *, check_authorization: bool = True) -> dict
     return request
 
 
+def read_public_feedback(repository_root: Path, base_url: str, project_id: str,
+                         feedback_id: str, ontology_ids: list[str]) -> dict:
+    """Trusted Host projects a selected report; private snapshots/history stay private."""
+    from urllib.parse import quote
+    from .__main__ import _bootstrap_helpers
+    from .platform_scope import _http
+
+    create, revoke = _bootstrap_helpers(repository_root)
+    key, key_id = create()
+    try:
+        status, record = _http(base_url, "GET", "/api/semantic/feedback/" +
+                               quote(feedback_id, safe=""), None, key)
+    finally:
+        revoke(key_id)
+    if status != 200 or not isinstance(record, dict) or record.get("project_id") != project_id:
+        raise IncrementalError("incremental_feedback_unavailable", "Selected feedback is unavailable in the authorized Project")
+    submission = record.get("submission", {})
+    query = submission.get("query_request", {})
+    if (query.get("project_id") != project_id or
+            not set(query.get("ontology_ids") or []).issubset(ontology_ids)):
+        raise IncrementalError("incremental_feedback_invalid", "Feedback query exceeds the authorized model scope")
+    observation = json.dumps({"query_request": query, "reasons": submission.get("reasons"),
+                              "description": submission.get("description"),
+                              "snapshot_complete": submission.get("snapshot_complete", False),
+                              "notice": "Client observation, not verified model truth; private result snapshot omitted"},
+                             ensure_ascii=False)
+    return {"project_id": project_id, "feedback_id": record.get("feedback_id"),
+            "observation": observation, "status": record.get("outcome", "pending")}
+
+
 def _snapshot(path: Path, body: str) -> None:
     if path.exists():
         if path.read_text() != body:
@@ -150,8 +180,10 @@ def prepare_incremental(request: dict, *, repository_root: Path, scope_probe=Non
         public_feedback = []
         for fid in request.get("feedback_ids", []):
             if feedback_reader is None:
-                raise IncrementalError("incremental_feedback_unavailable", "R4.0-001 feedback storage is not available; provide approved public material or deliver 001 first")
-            feedback = feedback_reader(request["project_id"], fid)
+                feedback = read_public_feedback(root, request.get("base_url", "http://127.0.0.1:8001"),
+                                                request["project_id"], fid, request["ontology_ids"])
+            else:
+                feedback = feedback_reader(request["project_id"], fid)
             if (not isinstance(feedback, dict) or feedback.get("project_id") != request["project_id"]
                     or feedback.get("feedback_id") != fid
                     or not all(isinstance(feedback.get(key), str) and feedback[key].strip()

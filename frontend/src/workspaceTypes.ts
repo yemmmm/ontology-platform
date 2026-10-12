@@ -17,11 +17,27 @@ export type Resource = {
 export type Relation = { id: string; source: string; target: string; relation: string; label?: string; assertion_kind: string; edge_kind?: "rdf_relation" | "structured_reference"; field_path?: string };
 export type Envelope<T> = { items: T[]; model_revision: number; paging?: { complete?: boolean }; warnings?: { code?: string; message?: string }[] };
 export type RecallResult = Resource & { id: string };
-export type RecallResponse = {
-  primary_matches: RecallResult[]; result_status: string;
-  matches_page: { next_match_cursor?: string | null; complete?: boolean; has_more?: boolean };
-  recall: { completeness?: string }; warnings: { code?: string; message?: string }[];
+export type SemanticContextQueryRequest = {
+  project_id: string; scope_mode: "project" | "ontologies"; ontology_ids?: string[];
+  query?: string; queries?: string[]; resource_types?: string[]; assertion_types?: string[];
+  semantic_roles?: string[]; search_mode?: "hybrid" | "lexical"; depth?: number;
+  limit?: number; context_limit?: number; context_detail?: "full" | "compact" | "preview";
+  match_cursor?: string; context_cursor?: string;
 };
+export type RecallResponse = {
+  query?: JsonObject; scope?: JsonObject; related_context?: JsonObject[];
+  context_page?: JsonObject; truncated?: boolean;
+  primary_matches: RecallResult[]; result_status: string;
+  matches_page: JsonObject & { next_match_cursor?: string | null; complete?: boolean; has_more?: boolean };
+  recall: JsonObject & { completeness?: string }; warnings: { code?: string; message?: string }[];
+};
+export type SemanticFeedbackReason = "incomplete" | "incorrect" | "irrelevant" | "other";
+export type SemanticFeedbackRequest = {
+  feedback_id: string; query_request: SemanticContextQueryRequest;
+  reasons: SemanticFeedbackReason[]; description: string;
+  result_snapshot?: JsonObject; snapshot_complete: boolean;
+};
+export type SemanticFeedbackReceipt = { feedback_id: string; received_at: string; status: "received" };
 export type AccessRole = { id: string; name: string; description?: string | null; grants: string[] };
 export const semanticViews = [
   ["object", "Object"], ["behavior", "Behavior"], ["rule", "Rule"], ["business_role", "Business role"],

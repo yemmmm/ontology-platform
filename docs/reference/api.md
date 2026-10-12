@@ -3,6 +3,45 @@
 本文档描述当前运行时实际注册的 HTTP API。完整操作清单由 FastAPI `app.openapi()` 生成；业务
 契约、边界和示例由人工维护。
 
+## R4.0-001 独立召回反馈
+
+`POST /api/semantic/feedback` 与召回接口并列，使用 read 主体及其 Project／显式
+Ontology 范围；不要求 model 权限，不自动召回、诊断、启动 Team 或写业务图。
+提交 UUID `feedback_id`、完整 `query_request`（沿 Context Query 结构）、非空且不重复的
+`reasons`（incomplete／incorrect／irrelevant／other）、1–65536 字符 `description`。
+可选 `result_snapshot` 是客户端报告对象，UTF-8 紧凑 JSON 不超过 256 KiB；
+`snapshot_complete` 缺省 false，无快照必须 false。原始查询、说明及旧修订保持，不用
+当前模型状态补写旧快照；缺省的快照字段存为 null／false，支持 REST／MCP 相同重试身份。
+多页可通过 snapshot.pages 保存各页实际 query_request 与 result；分页完整性与快照
+完整性分别表达。提交回执仅含 `feedback_id`、ISO UTC `received_at`、`status: received`。
+
+同主体、同 ID、同正文返回原回执；同 ID 不同正文或跨主体占用返回
+`409 feedback_identity_conflict`，不返回旧内容。超大快照返回
+`413 feedback_snapshot_too_large`，保留必要投影或省略快照、标不完整后重交。
+参数拒绝可修正；接收未知时保留原 ID 与正文重试；存储不可用为 `503 dependency_error`。
+关系表迁移为 `0036_semantic_feedback`，不依赖 Team/run 存活，不推进模型修订。
+
+内部 `GET /api/semantic/feedback?project_id=…&pending_only=true&limit=50&cursor=…`
+需 admin 及 Project 归属；limit 为 1–200，按提交时间／ID 升序，返回
+`items/has_more/next_cursor`。待处理包括无处理记录及最新 unresolved／needs_clarification；
+`pending_only=false` 保留完整历史。`GET /api/semantic/feedback/{feedback_id}` 读取
+submission／resolution_history／outcome；跨项目与缺失 ID 不泄露原文或存在性。
+
+`POST /api/semantic/feedback/{feedback_id}/resolution` 同样限 admin 及记录项目，追加
+`outcome`（unresolved／needs_clarification／resolved／no_change_needed）、`explanation`，
+可选 `diagnosis`（model_expression／retrieval／consumer_understanding／visibility／unknown）、
+`run_reference`／`operation_reference`、`verification`。verification 结构为
+`project_id`、`model_revisions: {ontology_id: integer}`、非空 `readback_references` 及可选
+`independent_validation_reference`。resolved／no_change_needed 必须有实际复核引用，
+resolved 还必须有独立验证引用；项目与本体范围须匹配、修订须为当前值，否则拒绝。
+服务器附 resolution_id／recorded_by／recorded_at，原提交与旧处理历史不改写。
+引用内容由内部主体负责，接口只校验结构、归属与当前修订，不能证明业务语义真实或改写
+Judge 结论；历史 resolved 仅绑定当次状态，不代表之后版本 PASS。
+
+Host 经既有 029 显式选择 feedback_ids，默认读取上述持久记录并只投影查询、观察标签、
+原话及限制声明；私有快照和处理历史不交给生产。启动仍受本轮目标、获准材料和独立授权
+限制，反馈保存本身不授予启动或修改权限。
+
 ## R4.0-027 模型状态绑定
 
 当前读取、索引、分页与交接使用 Ontology 的非负整数 `model_revision`（包括 `0`）。
@@ -392,6 +431,8 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `GET` | `/api/semantic/canonical-mode` | Get Canonical Mode |
 | semantic | `GET` | `/api/semantic/edits/audits` | List Semantic Edit Audits |
 | semantic | `GET` | `/api/semantic/export` | Export Dataset |
+| semantic | `GET` | `/api/semantic/feedback` | List Semantic Feedback |
+| semantic | `GET` | `/api/semantic/feedback/{feedback_id}` | Get Semantic Feedback |
 | semantic | `GET` | `/api/semantic/migrations` | List Migration Runs |
 | semantic | `GET` | `/api/semantic/migrations/{run_id}` | Get Migration Run |
 | semantic | `GET` | `/api/semantic/ontologies/{ontology_id}/export` | Export Ontology |
@@ -408,6 +449,8 @@ uv run python ../scripts/sync-interface-docs.py --write
 | semantic | `POST` | `/api/semantic/datasets:load` | Load Dataset |
 | semantic | `POST` | `/api/semantic/derived-results:gc` | Run Derived Results Gc |
 | semantic | `POST` | `/api/semantic/edits` | Create Semantic Edit |
+| semantic | `POST` | `/api/semantic/feedback` | Submit Semantic Feedback |
+| semantic | `POST` | `/api/semantic/feedback/{feedback_id}/resolution` | Record Semantic Feedback Resolution |
 | semantic | `POST` | `/api/semantic/migrations` | Create Migration Run |
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:cutover` | Cutover Migration Run |
 | semantic | `POST` | `/api/semantic/migrations/{run_id}:parity-check` | Run Migration Parity Check |

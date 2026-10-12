@@ -2,7 +2,7 @@ import { apiRequest } from "./api";
 import type { ConversationIndex, ConversationStatus, ConversationEvents, ConversationMessage, ConversationInput } from "./workspaceTypes";
 
 const conversationPath = (project: string, session?: string) => `/projects/${encodeURIComponent(project)}/delivery-conversations${session ? `/${encodeURIComponent(session)}` : ""}`;
-import type { AccessRole, Envelope, Ontology, Project, RecallResponse, Relation, Resource, Run, RunIndex } from "./workspaceTypes";
+import type { AccessRole, Envelope, Ontology, Project, RecallResponse, Relation, Resource, Run, RunIndex, SemanticContextQueryRequest, SemanticFeedbackRequest, SemanticFeedbackReceipt } from "./workspaceTypes";
 export const workspaceApi = {
   conversations: (project: string) => apiRequest<ConversationIndex>(conversationPath(project)),
   conversation: (project: string, session: string) => apiRequest<ConversationStatus>(conversationPath(project, session)),
@@ -18,10 +18,6 @@ export const workspaceApi = {
   resources: (ontology: string) => apiRequest<Envelope<Resource>>(`/semantic/ontologies/${encodeURIComponent(ontology)}/read-models/resource-list?include=asserted&field_set=detail&limit=500`),
   relations: (ontology: string) => apiRequest<Envelope<Relation>>(`/semantic/ontologies/${encodeURIComponent(ontology)}/read-models/resource-relations?include=asserted&limit=1000`),
   roles: (project: string) => apiRequest<AccessRole[]>(`/projects/${encodeURIComponent(project)}/semantic-access-roles`),
-  recall: (project: string, query: string, cursor?: string) => apiRequest<RecallResponse>("/semantic/context:query", { method: "POST", body: JSON.stringify({
-    project_id: project, scope_mode: "project", query,
-    resource_types: ["concept", "instance", "operation", "mapping", "metric"], assertion_types: ["asserted"],
-    search_mode: "hybrid", depth: 0, limit: 20, context_limit: 0, context_detail: "compact",
-    ...(cursor ? { match_cursor: cursor } : {}),
-  }) }),
+  recall: (request: SemanticContextQueryRequest) => apiRequest<RecallResponse>("/semantic/context:query", { method: "POST", body: JSON.stringify(request) }),
+  submitSemanticFeedback: (request: SemanticFeedbackRequest) => apiRequest<SemanticFeedbackReceipt>("/semantic/feedback", { method: "POST", body: JSON.stringify(request) }),
 };

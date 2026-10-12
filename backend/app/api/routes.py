@@ -10,6 +10,7 @@ from app.api.build_sessions import router as build_sessions_router
 from app.api.checkpoint_data import router as checkpoint_data_router
 from app.api.ontologies import router as ontologies_router
 from app.api.semantic import router as semantic_router
+from app.api.semantic_feedback import router as semantic_feedback_router
 from app.api.protection_sets import router as protection_sets_router
 from app.api.mcp_catalog import router as mcp_catalog_router
 from app.api.modeling_batches import router as modeling_batches_router
@@ -31,6 +32,7 @@ router.include_router(modeling_workflow_router)
 router.include_router(modeling_workbench_router)
 router.include_router(delivery_conversations_router)
 router.include_router(semantic_router)
+router.include_router(semantic_feedback_router)
 router.include_router(protection_sets_router)
 router.include_router(mcp_catalog_router)
 

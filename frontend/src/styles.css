@@ -19,3 +19,4 @@
 .conversationComposer textarea { width: 100%; resize: vertical; box-sizing: border-box; }
 .conversationControls { display: flex; flex-wrap: wrap; gap: .5rem; }
 @media (max-width: 800px) { .conversationLayout { grid-template-columns: 1fr; } .conversationTimeline { max-height: none; } }
+.feedbackForm fieldset{border:1px solid #d9ddeb;border-radius:9px;margin:16px 0;padding:14px}.feedbackForm .feedbackOption{flex-direction:row;align-items:center;gap:8px;margin:12px 0}.feedbackOption input{width:auto}.feedbackForm small{display:block}

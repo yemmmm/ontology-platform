@@ -28,7 +28,9 @@ from app.security.auth import (
     AuthorizationDependencyError,
     resolve_api_key,
 )
-from app.security.http import _collect_resource_ids, _project_for_resource
+from app.security.http import (
+    _collect_resource_ids, _collect_feedback_resource_ids, _project_for_resource,
+)
 from app.security.secrets import scan_domain_payload
 
 T = TypeVar("T")
@@ -65,7 +67,14 @@ def _policy(
     return McpToolPolicy(required_scope, ownership, mutates_state)
 
 
+FEEDBACK_TOOLS = frozenset({"submit_semantic_feedback", "list_semantic_feedback",
+                            "get_semantic_feedback", "record_semantic_feedback_resolution"})
+
 MCP_TOOL_POLICIES: dict[str, McpToolPolicy] = {
+    "submit_semantic_feedback": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
+    "list_semantic_feedback": _policy("admin", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
+    "get_semantic_feedback": _policy("admin", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
+    "record_semantic_feedback_resolution": _policy("admin", McpOwnership.PROJECT_RESOURCE, mutates_state=True),
     "check_platform_health": _policy("read", McpOwnership.GLOBAL_SAFE, mutates_state=False),
     "discover_semantic_scopes": _policy("read", McpOwnership.GLOBAL_SAFE, mutates_state=False),
     "get_modeling_batch": _policy("read", McpOwnership.PROJECT_RESOURCE, mutates_state=False),
@@ -328,7 +337,9 @@ def _authorize_tool(session: Session, tool_name: str, fn: Callable) -> AuthPrinc
             raise PermissionError("MCP operation requires organization admin scope")
         resolved = []
         resources: list[tuple[str, str]] = []
-        _collect_resource_ids(_closure_payload(fn), resources)
+        collector = (_collect_feedback_resource_ids if tool_name in FEEDBACK_TOOLS
+                     else _collect_resource_ids)
+        collector(_closure_payload(fn), resources)
         for kind, value in resources:
             project_id = _project_for_resource(session, kind, value)
             if project_id is None:
@@ -338,7 +349,7 @@ def _authorize_tool(session: Session, tool_name: str, fn: Callable) -> AuthPrinc
             raise PermissionError("MCP resource is outside the authorized Project")
         if policy.ownership is McpOwnership.PROJECT_RESOURCE and not resolved:
             raise PermissionError("MCP operation requires a Project-owned resource")
-    if policy.mutates_state:
+    if policy.mutates_state and tool_name not in FEEDBACK_TOOLS:
         from app.services.checkpoint_archive import project_is_checkpoint_archived
 
         resources = []
@@ -438,6 +449,8 @@ def _candidate_platform_gate_error(
     process-local exact-O revalidation record before any mutating Protocol tool.
     """
 
+    if tool_name in FEEDBACK_TOOLS:
+        return None  # Independent observations cannot open or mutate the modeling write gate.
     gate_path, state = _read_candidate_platform_gate()
     if gate_path is None:
         return None
@@ -703,7 +716,8 @@ def _run_tool(fn: Callable[[Session, Any, EmbeddingClient], T]) -> dict[str, Any
             if gate_path is not None and gate_state is not None:
                 context = _context_binding(gate_state)
                 policy = MCP_TOOL_POLICIES.get(tool_name)
-                if context and policy is not None and policy.mutates_state:
+                if (context and policy is not None and policy.mutates_state
+                        and tool_name not in FEEDBACK_TOOLS):
                     live_error = _check_live_protocol_context(gate_path, gate_state, session)
                     if live_error is not None:
                         return live_error

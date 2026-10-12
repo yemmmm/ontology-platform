@@ -3,6 +3,23 @@
 本文档描述当前 FastMCP 进程实际注册的工具。完整清单来自 `mcp.list_tools()`，并通过现有
 `app.api.mcp_catalog._enumerate_tools()` 补充 category 和源文件。
 
+## R4.0-001 反馈工具
+
+`submit_semantic_feedback` 是与召回并列的 read + PROJECT_RESOURCE 工具：
+feedback_id、query_request、reasons、description、可选 result_snapshot 和
+snapshot_complete，调用同一关系持久化服务，与 REST 共用身份、归属、幂等及错误合同。
+回执只表示 received；不启动建模、不修改本体，不依赖 Team 或 candidate 写门。
+快照是私有客户端报告，授权检查不把其中标识作为资源存在性探测输入。
+
+`list_semantic_feedback`（project_id、pending_only、limit、cursor）、
+`get_semantic_feedback`（feedback_id）、`record_semantic_feedback_resolution`
+（feedback_id、resolution）均为内部 admin + PROJECT_RESOURCE 工具；反馈 ID 解析到
+记录的真实项目。它们不自动加入 Consumer／生产角色／Examiner／Judge 的工具目录。
+resolution、分页及超限合同见 [REST 接口](api.md#r40-001-独立召回反馈)。
+保存/处理操作数据不会绕开业务模型写门；即使模型写门关闭仍可保存反馈，但不取得模型
+修正权。MCP 错误使用相同服务 code，例如 feedback_identity_conflict、
+feedback_snapshot_too_large、feedback_verification_stale 与 dependency_error。
+
 ## R4.0-027 模型状态绑定
 
 当前读取、索引、分页与交接使用 Ontology 的非负整数 `model_revision`（包括 `0`）。
@@ -210,13 +227,16 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | semantic | `delete_semantic_protection_set` | Delete an empty protection set; non-empty sets are rejected. | protection_set_id | actor, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `discover_semantic_scopes` | Discover authorized Project/Ontology query scopes and readiness. | - | cursor, limit, query, queryable | `backend/app/mcp/tools/semantic.py` |
 | semantic | `export_semantic_ontology` | Export an Ontology model as Turtle, TriG, or JSON-LD. | ontology_id | allow_stale_derived, format, include, ontology_id | `backend/app/mcp/tools/semantic.py` |
+| semantic | `get_semantic_feedback` | Internal admin: read one private submission and its append-only resolution history. | feedback_id | feedback_id | `backend/app/mcp/tools/semantic_feedback.py` |
 | semantic | `get_semantic_governance_status` | Return a governance status summary: graph counts, editability, derived staleness. | - | - | `backend/app/mcp/tools/semantic.py` |
 | semantic | `get_semantic_read_model` | Read a compact graph-derived business JSON read model for an Ontology. | model_name, ontology_id | allow_stale_derived, entity_iri, include, limit, model_name, ontology_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `inspect_semantic_projection_status` | Inspect projection freshness by Ontology and projection kind. | - | ontology_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `list_semantic_edit_audits` | List recent governed semantic edit audit records. | - | limit | `backend/app/mcp/tools/semantic.py` |
+| semantic | `list_semantic_feedback` | Internal admin: list private feedback in one authorized Project, with bounded pages. | project_id | cursor, limit, pending_only, project_id | `backend/app/mcp/tools/semantic_feedback.py` |
 | semantic | `list_semantic_protection_sets` | List the protection sets of one authorized Project. | project_id | project_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_ontology_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, scope_mode | assertion_types, context_cursor, context_detail, context_limit, depth, limit, match_cursor, ontology_ids, project_id, queries, query, resource_types, scope_mode, search_mode, semantic_roles | `backend/app/mcp/tools/semantic.py` |
+| semantic | `record_semantic_feedback_resolution` | Internal admin: append a scoped diagnosis and verification reference; no model write.  A resolved conclusion requires current model revisions, actual readback references and an independent validation reference. References are reports, not semantic verdicts.  | feedback_id, resolution | feedback_id, resolution | `backend/app/mcp/tools/semantic_feedback.py` |
 | semantic | `remove_semantic_protection_set_members` | Batch-remove resource IRIs from a protection set. | protection_set_id, resource_iris | actor, protection_set_id, resource_iris | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `rollback_semantic_migration_run` | Roll back a Phase 7 cutover and restore legacy-primary mode. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
 | semantic | `run_next_semantic_migration_batch` | Execute the next pending batch of a Phase 7 migration run. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |
@@ -224,6 +244,7 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | semantic | `semantic_sparql_query` | Run scoped read-only SPARQL against current Ontology semantic state. | project_id, query, scope_mode | ontology_ids, project_id, query, result_limit, scope_mode, timeout_seconds | `backend/app/mcp/tools/semantic.py` |
 | semantic | `start_semantic_projection_job` | Request a projection rebuild job and (for non-dry-run modes) execute it. | ontology_id, projection_kind, projection_version | allow_stale_derived, include, mode, ontology_id, projection_kind, projection_version | `backend/app/mcp/tools/semantic.py` |
 | semantic | `submit_semantic_edit` | Submit a governed RDF/SPARQL Update semantic edit with audit metadata. | content, format, ontology_id | actor, content, format, ontology_id, reason, warning_state | `backend/app/mcp/tools/semantic.py` |
+| semantic | `submit_semantic_feedback` | Save a client observation (read scope); reuse the ID and body for unknown receipts.  This only saves feedback. It does not diagnose, start modeling or modify the model.  | description, feedback_id, query_request, reasons | description, feedback_id, query_request, reasons, result_snapshot, snapshot_complete | `backend/app/mcp/tools/semantic_feedback.py` |
 | semantic | `update_semantic_protection_set` | Update a protection set name, description, or allowed_grants. | protection_set_id | actor, allowed_grants, description, name, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
 
 <!-- END GENERATED MCP TOOL INVENTORY -->

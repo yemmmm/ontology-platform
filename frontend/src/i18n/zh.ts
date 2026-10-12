@@ -1,5 +1,16 @@
 import type { TranslationMap } from "./translations";
 export const zh: TranslationMap = {
+  "Give feedback": "反馈", "Query feedback": "查询反馈", "Feedback reasons": "反馈原因",
+  "Incomplete data": "数据不全", "Incorrect information": "信息错误", "Irrelevant results": "不相关", "Other": "其他",
+  "Feedback description": "反馈说明", "Enter 1–65536 characters": "请输入 1—65536 个字符",
+  "Include the frozen result snapshot": "附上已冻结的结果快照", "Save feedback": "保存反馈", "Saving feedback…": "保存反馈中…",
+  "Cancel feedback": "取消反馈", "Feedback saved": "反馈已保存", "Feedback submission failed": "反馈提交失败",
+  "Retry original feedback": "重试原反馈", "Retry sends the same feedback ID and content": "重试将发送相同反馈 ID 和正文",
+  "Feedback was rejected; edit and submit again": "反馈已被拒绝保存；可修改后再次提交",
+  "Feedback describes your observation; saving does not mean the model has been corrected": "反馈记录您的观察；保存不代表模型已修复",
+  "Result snapshot exceeds 256 KiB; omit it explicitly to submit an incomplete snapshot": "结果快照超过 256 KiB；可明确取消附上快照，以不完整快照提交",
+  "Result snapshot omitted; snapshot is incomplete": "未附结果快照；快照不完整",
+  "Model revisions differ between pages; each page is retained and the snapshot is incomplete": "各页模型修订不同；逐页保留，快照不完整",
   "Modeling conversation": "建模对话", "Delivery conversation": "Delivery 会话",
   "Status basis": "状态依据", "Control basis and limits": "控制依据与在途限制",
   "Select a conversation": "请选择会话", "No Delivery conversations": "暂无 Delivery 会话",

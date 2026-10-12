@@ -29,6 +29,7 @@ from app.repositories.models import (
     SemanticRuleRunModel,
     SemanticProjectionJobModel,
     SemanticEditAuditModel,
+    SemanticFeedbackModel,
 )
 from app.security.auth import (
     AuthPrincipal, AuthorizationDependencyError, audit_security_event, resolve_api_key, resolve_session,
@@ -48,6 +49,7 @@ UNSAFE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 
 OWNER_RESOURCE_KEYS = frozenset(
     {
+        "feedback_id",
         "project_id",
         "ontology_id",
         "session_id",
@@ -95,6 +97,10 @@ _ADMIN_PATHS = (
 
 
 def required_scope(method: str, path: str) -> str:
+    if path == "/api/semantic/feedback" and method == "POST":
+        return "read"
+    if path == "/api/semantic/feedback" or path.startswith("/api/semantic/feedback/"):
+        return "admin"
     if re.fullmatch(r"/api/projects/[^/]+/delivery-conversations(/.*)?", path):
         return "read"
     if re.fullmatch(r"/api/projects/[^/]+/workbench(/.*)?", path):
@@ -267,6 +273,9 @@ def current_principal(request: Request) -> AuthPrincipal:
 
 
 def _project_for_resource(session: Session, kind: str, value: str) -> str | None:
+    if kind == "feedback_id":
+        row = session.get(SemanticFeedbackModel, value)
+        return row.project_id if row else None
     if kind == "target_ontology_id":
         kind = "ontology_id"
     if kind == "project_id":
@@ -394,6 +403,25 @@ def _collect_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
             _collect_resource_ids(child, output)
 
 
+def _collect_feedback_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
+    """Snapshots are private client reports, never resource-existence probes."""
+    if hasattr(value, "model_dump"):
+        value = value.model_dump()
+    if not isinstance(value, dict):
+        return
+    if "query_request" in value:
+        _collect_resource_ids(value["query_request"], output)
+        return  # New feedback_id has no owner yet; snapshots are not lookup inputs.
+    for key, child in value.items():
+        if key in {"payload", "resolution"} and isinstance(child, dict):
+            _collect_feedback_resource_ids(child, output)
+        elif key in {"feedback_id", "project_id"} and isinstance(child, str):
+            output.append((key, child))
+        elif key == "verification" and isinstance(child, dict):
+            _collect_resource_ids({"project_id": child.get("project_id"),
+                                   "ontology_ids": list(child.get("model_revisions", {}))}, output)
+
+
 def _collect_modeling_batch_resource_ids(value: Any, output: list[tuple[str, str]]) -> None:
     if hasattr(value, "model_dump"):
         value = value.model_dump()
@@ -481,7 +509,9 @@ async def authorize_api_request(request: Request) -> None:
                 and re.fullmatch(r"/api/build-sessions/[^/]+/modeling-batches", request.url.path)
             )
             collector = (
-                _collect_modeling_batch_resource_ids
+                _collect_feedback_resource_ids
+                if request.url.path.startswith("/api/semantic/feedback")
+                else _collect_modeling_batch_resource_ids
                 if modeling_batch_request
                 else _collect_resource_ids
             )
@@ -545,6 +575,8 @@ async def authorize_api_request(request: Request) -> None:
 
 async def _check_checkpoint_archive(request: Request, scope: str) -> None:
     # Ownership is checked first so archive state is not disclosed across Projects.
+    if request.url.path.startswith("/api/semantic/feedback"):
+        return  # Operational observations do not mutate the archived business model.
     if request.method not in UNSAFE_METHODS or scope == "read" or request.url.path.startswith(
         "/api/checkpoint-data/"
     ):
