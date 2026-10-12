@@ -1,4 +1,4 @@
 interface:
   display_name: "建模流程优化"
-  short_description: "依据真实运行证据定位时间与质量瓶颈，提出最小改进并复核实际效果"
-  default_prompt: "使用 $modeling-process-optimizer 复盘近期建模流程，核对已有改进的生效与效果，提出兼顾时间和语义质量的优化建议及验证计划。"
+  short_description: "先复核已确认优化的跨轮效果并更新台账，再依据证据发现新优化与评估兜底成本"
+  default_prompt: "使用 $modeling-process-optimizer 先读取已确认优化台账，对照本轮实际证据验证原预期并更新状态，再提出待调整项和新优化；评估正常行为与兜底成本，确认后登记建议。"

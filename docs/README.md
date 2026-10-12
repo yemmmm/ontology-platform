@@ -13,7 +13,7 @@ delivery evidence. Use the following locations for new documentation.
 | [`delivery/implementation-plans/`](delivery/implementation-plans/) | Historical execution plans and implementation-status plans. |
 | [`delivery/test-plans/`](delivery/test-plans/) | Shared and independent test plans, including their recorded rounds. |
 | [`delivery/records/`](delivery/records/) | Append-only requirement delivery records. |
-| [`delivery/modeling-retrospectives/`](delivery/modeling-retrospectives/) | Modeling-workflow retrospectives. |
+| [`delivery/modeling-retrospectives/`](delivery/modeling-retrospectives/) | Modeling-workflow retrospectives and the [confirmed optimization tracker](delivery/modeling-retrospectives/optimization-tracker.md). |
 
 ## Current requirement entry points
 
@@ -36,6 +36,8 @@ delivery evidence. Use the following locations for new documentation.
   R4.3-015 registers staged modeling/feedback and trust in explicit successful apply receipts, removing
   routine duplicate write verification. Refinement must be discussed and confirmed with the user before
   implementation; Agents must not independently refine, finalize the design, or directly implement it.
+  R4.3-016 updates the process-optimizer skill to assess evidence and fallback costs, persist confirmed
+  optimizations, and verify their original expectations in later runs before proposing new changes.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
