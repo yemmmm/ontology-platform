@@ -560,6 +560,12 @@ def test_repair_uses_file_backed_stdin_and_keeps_effectiveness_unverified(
     assert "--bind" in observed["argv"]
     assert "/agent/home" in observed["argv"]
     assert "--model" in observed["argv"]
+    # The namespace intentionally exposes public/owned files without .git.
+    # Codex must accept that isolated workspace while keeping its sandbox.
+    assert "--skip-git-repo-check" in observed["argv"]
+    assert observed["argv"][observed["argv"].index("--chdir") + 1] == "/workspace"
+    assert observed["argv"][observed["argv"].index("--sandbox") + 1] == "workspace-write"
+    assert str(tmp_path / ".git") not in observed["argv"]
     status = _wait_for_exit("repair-1", tmp_path)
     assert status["exit_code"] == 3
     assert status["outcome"] == "failed"

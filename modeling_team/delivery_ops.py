@@ -1641,6 +1641,8 @@ def _repair_namespace_command(
             "--ask-for-approval",
             "never",
             "exec",
+            # /workspace is a scoped file view; Host .git stays outside it.
+            "--skip-git-repo-check",
             "--json",
             "--sandbox",
             "workspace-write",
