@@ -1106,3 +1106,58 @@ Lease 与写回执终态并保留原线程；`consult_team` 只读追问原 Coor
 继续披露 partial。认可、自然完成、EOF、关闭网页和轮询均非 stop。
 CLI `delivery-conversation send|status|history` 只读/投递已有 session，稳定 UUID 与原始
 source/text 保留，unknown 收据按原 ID 核对，不重放或唤醒离线 Delivery。
+
+## 已有模型上的新目标（R4.0-029）
+
+原目标仍在生产中，沿原 run 修正；原目标退出但未完成，沿检查点恢复。旧 Team 已停止或
+封口后提出新业务／新改进目标，使用内部 Host 通用入口：
+
+```bash
+cd /home/yangxiang/ontology-platform
+backend/.venv/bin/python -m modeling_team incremental start --request workspaces/incremental-request.yaml
+```
+
+请求由已取得实际用户授权的可信 Host 准备；请求文件本身不能授予权限。示例占位字段须
+替换为当前获准值，`valid_until` 使用带时区的真实授权截止时间：
+
+```yaml
+request_id: 00000000-0000-4000-8000-000000000029
+project_id: existing-project-id
+ontology_ids: [existing-ontology-id]
+objective: 本轮有界的新增业务或修订目标
+approved_sources:
+  - path: docs/business/approved-source.md
+    source_reference: 业务负责人本轮授权资料引用
+    valid_at: 资料有效时点
+profile: modeling_team/profiles/r3-0-011-competency-question.yaml
+model_profile: openai-sol-medium
+authorization_reference: 实际用户生产授权引用
+valid_until: 2099-01-01T00:00:00+08:00
+production_start_limit: 1
+allow_new_ontologies: false
+feedback_ids: []
+acceptance_scope: 本轮新增／修改、跨业务关联和受影响旧问题
+```
+
+入口按 ID 检查当前归属、修订及 writer／Attempt 状态，生成获准资料正文、正常 v4 Task、
+scope 和 Delivery 配置快照。它不继承旧 run 或隐藏材料。`profile`、`model_profile` 由
+宿主沿本轮选项填写；示例不替换已确认的模型配置。正常运行仍由独立 Delivery 调用
+`start_run`，必须使用返回的 `run_id` 和原 `request_id`。
+
+重复请求保留同一身份；未知启动先读同一 Delivery／launch／run 回执，不能换 ID 重试。
+返回 `delivery_launch_accepted` 只证明 Delivery 启动已接受，随后检查 `get_run_status`、
+`get_run_events` 及 `evidence/semantic-start.jsonl`。若已确认监督器中断，沿生成的
+`delivery.yaml` 使用 `delivery --resume`；不得重新准备另一个请求掩盖未知写入。
+配置只开放本轮读、监督、生产和独立验收，不授予代码修复或部署权限；期限、额度或
+用户撤回继续由 Delivery 检查，恢复不能提高原额度或换请求身份。
+
+Protocol 从当前受治理读取绑定既有定义。复用条目不写；全轮无需改动时发布当前候选
+和批准的空写计划，以当前读回引用及修订证明覆盖，通过 `protocol_check_plan_coverage`
+收口。新项仍须计划／实际应用或有依据的未知／延期说明。独立验收与公开修模回归分开，
+不拼接旧 PASS。拓扑已有项用 `ontology_id`，新建项用 `name`，只有本轮显式允许且
+业务拓扑批准后才创建；响应未知核对本轮回执，不按名称误绑定，不盲重放。
+
+当前 R4.0-001 反馈存储尚未实施。`feedback_ids` 默认空；非空在缺少内部公开反馈读取器时
+返回 `incremental_feedback_unavailable`。可将已获准的公开反馈原文作为 `approved_sources`
+使用，但其观察／预期不自动变成业务事实。001 后续接同一入口的公开投影读取器，不能
+另建改进 Runner，也不能把 Judge 私有材料传入生产。

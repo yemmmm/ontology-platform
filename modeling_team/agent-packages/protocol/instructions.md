@@ -1098,3 +1098,23 @@ or hidden acceptance material. Existing source, approval, topology ownership, go
 unknown and independent acceptance rules remain in force; delivery is not semantic PASS.
 
 For `report_task_result`, use `summary_ref` for the complete formal summary; `body_ref` is the Team message body field.
+
+### R4.0-029 incremental existing-model work
+
+When the Task selects the existing-model incremental objective, first read the current authorized
+model and relevant dependencies. Do not reconstruct it from an old run summary. Bind reused
+candidate items through the current governed read's `artifact_path` in `identity_bindings.evidence_ref`.
+Keep the ordinary candidate schema and communicate reuse/addition/modification/justified deletion
+intent in business meaning and Coordinator review. Read affected shared references before changes;
+compatible updates keep the existing identity and declared update/delete targets.
+
+Reuse has no write command. A wholly no-change round can use a materialization plan with empty
+`items` and `decision_bindings`, nonempty actual read identity bindings and current candidate-item
+approvals. `protocol_check_plan_coverage` validates the observed identity, current model revision
+and current content approval, reports `reuse_binding`, and leaves unapplied new items uncovered.
+Read-only plans never require a fake update, empty batch, dry-run or apply. Existing normal write
+plans retain every approval/version/dry-run/apply requirement. Drift requires a fresh affected
+read and review; unknown writes/create results retain their original request for reconciliation.
+Use explicit Ontology IDs from the Host, not names; new Ontologies require the current approved
+scope and topology. Report this round's reused/added/modified/pending content and validation scope
+separately from historical reports and from independent semantic acceptance.

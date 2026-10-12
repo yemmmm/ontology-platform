@@ -46,7 +46,7 @@ def test_operator_binding_membership_and_key_scope(r008_client, monkeypatch, mod
         if path.endswith("/ontologies"):
             return (201, {"id": "ontology"}) if method == "POST" else (200, [{"id": "ontology"}])
         if path.endswith("workspace-context"):
-            return 200, {"state": "ready"}
+            return 200, {"state": "ready", "ontology_id": "ontology", "model_revision": 0}
         if path.endswith("modeling-batches"):
             return 200, {"items": []}
         if path.endswith("build-context"):

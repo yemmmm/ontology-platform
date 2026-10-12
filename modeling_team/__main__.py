@@ -3660,6 +3660,9 @@ def _run_checkpoint_resume_acceptance(
 def main() -> int:
     parser = argparse.ArgumentParser(description="R2.3-001 foreground Team Runner")
     subparsers = parser.add_subparsers(dest="command", required=True)
+    incremental = subparsers.add_parser("incremental", help="Trusted Host incremental modeling on an existing Project")
+    incremental.add_argument("incremental_action", choices=["start"])
+    incremental.add_argument("--request", required=True, type=Path)
     conversation = subparsers.add_parser("delivery-conversation", help="Send/read an existing Delivery without starting inference")
     conversation.add_argument("conversation_action", choices=["send", "status", "history"])
     conversation.add_argument("--session-id", required=True)
@@ -3858,6 +3861,14 @@ def main() -> int:
         "--fork-reason", help="Explicitly restore saved data into a new Project; record why",
     )
     args = parser.parse_args()
+    if args.command == "incremental":
+        from .incremental import start_incremental
+        try:
+            print(json.dumps(start_incremental(args.request, repository_root=repository_root()), ensure_ascii=False))
+            return 0
+        except (ValueError, OSError, RuntimeError) as exc:
+            print(json.dumps({"error": getattr(exc, "code", "incremental_start_failed"), "detail": str(exc)}, ensure_ascii=False))
+            return 2
     if args.command == "delivery-conversation":
         from .conversation_cli import execute
         from .delivery_conversation import ConversationError

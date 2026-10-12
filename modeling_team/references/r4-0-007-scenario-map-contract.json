@@ -307,7 +307,7 @@
       "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
       "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
       "selected_option must be one of the listed options and rationale must be non-empty",
-      "R3.0-006 additive optional field ontology_plan: must be absent when selected_option is single_ontology, required for every other selection; value is a mechanical list [{name, slice_ids}] with at least two entries, non-empty unique names, and every scenario-map slice assigned to at least one planned Ontology, with a logical slice allowed to be served by more than one planned Ontology (shared core plus domain topology; slice references close against the scenario map's slice list)"
+      "R4.0-029 existing topology: entries are mutually exclusive {ontology_id, slice_ids} for explicit authorized existing IDs or {name, slice_ids} for new creation. New entries require allow_new_ontologies and current business topology approval; do not adopt same-name resources or precreate a first Ontology. A single_ontology selection may supply exactly one existing-ID entry. Original create topology keeps its name-based at-least-two plan contract. Each slice must be covered; slices may overlap."
     ],
     "optional_fields": {
       "ontology_plan": {
@@ -316,10 +316,15 @@
           "slice_ids"
         ],
         "rules": [
-          "at least two planned Ontologies",
-          "name values are non-empty and unique",
+          "create/name-only plans require at least two; an existing-ID single_ontology plan may contain one",
+          "name or ontology_id values are non-empty and unique within the plan",
           "slice_ids is a non-empty list of distinct slice_ids of the current scenario map",
-          "every scenario-map slice belongs to at least one planned Ontology; a slice may be served by more than one planned Ontology"
+          "every scenario-map slice belongs to at least one planned Ontology; a slice may be served by more than one planned Ontology",
+          "existing mode supports explicit ID entries and a single existing-ID entry for single_ontology; create/new-name entries still require authorization and receipt reconciliation"
+        ],
+        "existing_entry_fields": [
+          "ontology_id",
+          "slice_ids"
         ]
       }
     },

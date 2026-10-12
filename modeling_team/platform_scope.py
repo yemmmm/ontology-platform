@@ -85,6 +85,11 @@ class PlatformScope:
     checkpoint_retention: dict[str, Any] | None = None
     # The host-selected operator owns run keys; scenario-map owners are unrelated.
     key_user_id: str | None = None
+    allow_new_ontologies: bool = False
+    authorized_ontology_ids: list[str] = field(default_factory=list)
+    owned_session_ids: set[str] = field(default_factory=set)
+    ontology_plan_receipts: dict[str, dict[str, Any]] = field(default_factory=dict)
+    ontology_plan_ids: list[str] = field(default_factory=list)
 
     def __post_init__(self) -> None:
         if self.request is None:
@@ -104,6 +109,9 @@ class PlatformScope:
             raise PlatformScopeError("mapping_reference_direction is invalid")
         self.mapping_reference_direction = direction
         self.mode = mode
+        receipt_path = getattr(self, "ontology_plan_receipts_path", None)
+        if receipt_path is not None and receipt_path.is_file():
+            self.ontology_plan_receipts = json.loads(receipt_path.read_text())
         self.admin_key, self.admin_key_id = self.bootstrap_admin()
         try:
             principal = self._ok("GET", "/api/auth/me")
@@ -139,9 +147,9 @@ class PlatformScope:
         assert self.request is not None
         status, value = self.request(method, path, body, self.admin_key)
         if status not in statuses:
-            raise PlatformScopeError(
-                f"platform request {method} {path} failed ({status})"
-            )
+            error = PlatformScopeError(f"platform request {method} {path} failed ({status})")
+            error.http_status = status
+            raise error
         return value
 
     def _create(self) -> None:
@@ -179,18 +187,29 @@ class PlatformScope:
 
     def _existing(self, scope: dict[str, str]) -> None:
         project, ontology = scope.get("project_id"), scope.get("ontology_id")
-        if not project or not ontology:
+        ids = scope.get("ontology_ids", [ontology] if ontology else [])
+        if (not isinstance(ids, list) or not ids
+                or not all(isinstance(value, str) and value.strip() for value in ids)
+                or len(set(ids)) != len(ids) or (ontology and ontology != ids[0])):
+            raise PlatformScopeError("existing scope requires unique explicit ontology_ids")
+        if type(scope.get("allow_new_ontologies", False)) is not bool:
+            raise PlatformScopeError("allow_new_ontologies must be boolean")
+        ontology = ids[0]
+        if not isinstance(project, str) or not project.strip():
             raise PlatformScopeError("existing scope requires Project and Ontology IDs")
         self._ok("GET", f"/api/projects/{project}")
         listed = self._ok("GET", f"/api/projects/{project}/ontologies")
         if not isinstance(listed, list):
             raise PlatformScopeError("Project Ontology listing is invalid")
-        if not any(
-            item.get("id") == ontology for item in listed if isinstance(item, dict)
-        ):
-            raise PlatformScopeError("Ontology does not belong to existing Project")
+        available = {item.get("id") for item in listed if isinstance(item, dict)}
+        missing = set(ids) - available
+        if missing:
+            raise PlatformScopeError("Ontology does not belong to existing Project: " + ", ".join(sorted(missing)))
         self.project_id, self.ontology_id, self.owned = project, ontology, False
-        self.existing_strict = isinstance(scope.get("handoff_path"), str)
+        self.ontology_ids = list(ids)
+        self.authorized_ontology_ids = list(ids)
+        self.allow_new_ontologies = scope.get("allow_new_ontologies", False)
+        self.existing_strict = isinstance(scope.get("handoff_path"), str) or "ontology_ids" in scope
         self.existing_context_before = self._existing_context(strict=self.existing_strict)
 
     def _checkpoint_binding(self, scope: dict[str, str]) -> None:
@@ -241,6 +260,8 @@ class PlatformScope:
         already-created same-name Ontologies instead of duplicating them.
         """
 
+        if self.mode == "existing":
+            return self._apply_existing_ontology_plan(plan)
         if self.ontology_ids:
             return list(self.ontology_ids)
         if (
@@ -298,6 +319,75 @@ class PlatformScope:
         self.ontology_ids = ontology_ids
         return list(ontology_ids)
 
+    def _apply_existing_ontology_plan(self, plan: Any) -> list[str]:
+        from .scenario_map import _validate_ontology_plan
+
+        issues = _validate_ontology_plan(plan, slice_ids=None)
+        if issues:
+            raise PlatformScopeError(issues[0].detail)
+        # Validate the whole plan before creating anything. Reuse is by ID only.
+        for entry in plan:
+            identity = entry.get("ontology_id")
+            if identity and identity not in self.authorized_ontology_ids:
+                raise PlatformScopeError(f"ontology_plan ID outside authorization: {identity}")
+            if not identity and not self.allow_new_ontologies:
+                raise PlatformScopeError("ontology creation is not authorized; request a topology/scope decision")
+        listed = self._ok("GET", f"/api/projects/{self.project_id}/ontologies")
+        available = {item["id"] for item in listed if isinstance(item, dict) and "id" in item}
+        ids = []
+        for entry in plan:
+            identity = entry.get("ontology_id")
+            if identity:
+                if identity not in available:
+                    raise PlatformScopeMissingError(f"planned existing Ontology is missing: {identity}")
+            else:
+                # The receipt belongs to this run and this exact plan entry. Never
+                # adopt another run's same-name Ontology or replay an unknown POST.
+                key = json.dumps(entry, sort_keys=True)
+                receipt = self.ontology_plan_receipts.get(key)
+                if receipt is None or receipt["status"] == "rejected":
+                    self.ontology_plan_receipts[key] = {"status": "unknown", "entry": entry}
+                    self._persist_ontology_plan_receipts()
+                    try:
+                        ontology = self._ok(
+                            "POST", f"/api/projects/{self.project_id}/ontologies",
+                            {"name": entry["name"], "description": "authorized incremental topology",
+                             "external_mappings": {}}, statuses={201},
+                        )
+                    except PlatformScopeError as exc:
+                        # Authentication/schema rejection precedes the handler;
+                        # it is safe to correct and retry, unlike lost responses.
+                        if getattr(exc, "http_status", None) in {401, 403, 404, 422}:
+                            self.ontology_plan_receipts[key] = {
+                                "status": "rejected", "entry": entry, "http_status": exc.http_status}
+                            self._persist_ontology_plan_receipts()
+                        raise
+                    identity = ontology.get("id")
+                    if not isinstance(identity, str) or not identity:
+                        raise PlatformScopeError("created Ontology identity is unknown; reconcile original request")
+                    receipt = {"status": "created", "ontology_id": identity, "entry": entry}
+                    self.ontology_plan_receipts[key] = receipt
+                    self._persist_ontology_plan_receipts()
+                    available.add(identity)
+                if receipt["status"] != "created":
+                    raise PlatformScopeError("ontology creation result is unknown; reconcile original request, do not replay")
+                identity = receipt["ontology_id"]
+                if identity not in available:
+                    raise PlatformScopeMissingError(f"created Ontology is missing: {identity}")
+            ids.append(identity)
+        # Keep initial scopes authorized for reads even when a slice uses only a
+        # subset. Plan IDs remain positional for mapping-reference activation.
+        self.ontology_plan_ids = ids
+        self.ontology_ids = list(dict.fromkeys(self.authorized_ontology_ids + ids))
+        self.ontology_id = self.ontology_ids[0]
+        return list(ids)
+
+    def _persist_ontology_plan_receipts(self) -> None:
+        path = getattr(self, "ontology_plan_receipts_path", None)
+        if path is not None:
+            from .staged_decisions import _atomic_write
+            _atomic_write(path, self.ontology_plan_receipts)
+
     def apply_mapping_reference_ontologies(
         self,
         scenario_map: Any,
@@ -337,7 +427,8 @@ class PlatformScope:
         if not dependencies:
             self.mapping_reference_ontology_ids = {}
             return {}
-        if not isinstance(plan, list) or len(plan) != len(self.ontology_ids):
+        plan_ids = self.ontology_plan_ids or self.ontology_ids
+        if not isinstance(plan, list) or len(plan) != len(plan_ids):
             raise PlatformScopeError(
                 "mapping reference scope requires the applied ontology plan and IDs"
             )
@@ -363,7 +454,7 @@ class PlatformScope:
         for index, entry in enumerate(plan):
             if not isinstance(entry, dict) or not isinstance(entry.get("slice_ids"), list):
                 raise PlatformScopeError("ontology plan entry is invalid for mapping references")
-            ontology_id = self.ontology_ids[index]
+            ontology_id = plan_ids[index]
             for slice_id in entry["slice_ids"]:
                 if not isinstance(slice_id, str) or not slice_id:
                     raise PlatformScopeError("ontology plan contains an invalid slice ID")
@@ -481,7 +572,7 @@ class PlatformScope:
             if any(
                 isinstance(batch, dict)
                 and isinstance(batch.get("latest_attempt"), dict)
-                and batch["latest_attempt"].get("attempt_status") in {"applying", "recovering"}
+                and batch["latest_attempt"].get("attempt_status") in {"applying", "recovering", "unknown"}
                 for batch in batches_for_session if isinstance(batches_for_session, list)
             ):
                 raise PlatformScopeError("existing scope has an in-flight Attempt")
@@ -524,6 +615,11 @@ class PlatformScope:
 
         if not self.ontology_id or not self.project_id:
             raise PlatformScopeError("existing scope identity is unavailable")
+        if len(self.ontology_ids) > 1:
+            results = {identity: self._single_ontology_context(identity) for identity in self.ontology_ids}
+            if any(row.get("model_revision") is None for row in results.values()):
+                raise PlatformScopeError("workspace context has no version")
+            return results
         result = self._single_ontology_context(self.ontology_id)
         strict = self.existing_strict if strict is None else strict
         if strict and result.get("model_revision") is None:
@@ -608,7 +704,7 @@ class PlatformScope:
                 raise PlatformScopeError(f"work Build Session {identity} resource inventory is malformed")
             if any(not isinstance(lease, dict) or lease.get("state") != "released" for lease in leases):
                 raise PlatformScopeError(f"work Build Session {identity} has an unreleased Lease")
-            if any(batch.get("latest_attempt", {}).get("attempt_status") in {"applying", "recovering"}
+            if any(batch.get("latest_attempt", {}).get("attempt_status") in {"applying", "recovering", "unknown"}
                    for batch in batches):
                 raise PlatformScopeError(f"work Build Session {identity} has an in-flight Attempt")
             observed.append(identity)
@@ -622,6 +718,8 @@ class PlatformScope:
             "project_id": self.project_id,
             "ontology_id": self.ontology_id,
             "owned": self.owned,
+            "ontology_ids": list(self.ontology_ids),
+            "ontology_plan_receipts": dict(self.ontology_plan_receipts),
         }
         if self.mode == "checkpoint":
             # R3.0-015 S2 (design §5.2): a recovery run owns only this round's
@@ -660,6 +758,8 @@ class PlatformScope:
         if self.protocol_key_id and self.admin_key:
             evidence["protocol_key_revoked"] = self._revoke_project_key(evidence)
         if not self.owned and self.mode == "existing":
+            self.scope_disposition = "existing-retained"
+            evidence["scope_disposition"] = self.scope_disposition
             evidence["existing_context_before"] = self.existing_context_before
             try:
                 evidence["existing_context_after"] = self._existing_context(strict=self.existing_strict)
@@ -1007,7 +1107,8 @@ class PlatformScope:
 
     def _terminal_state(self, *, allow_cancel: bool, require_completed: bool) -> dict[str, Any]:
         """Cancel safe failed Sessions before any scope disposition is considered."""
-        if not self.owned or not self.project_id or not self.admin_key:
+        existing_owned_sessions = self.mode == "existing" and bool(self.owned_session_ids)
+        if (not self.owned and not existing_owned_sessions) or not self.project_id or not self.admin_key:
             return {}
         # R3.0-006 M3: a multi-Ontology plan uses aggregate ownership — each
         # Session involves exactly one planned Ontology, the cross-Session
@@ -1035,6 +1136,8 @@ class PlatformScope:
             if not isinstance(summary, dict) or not isinstance(summary.get("id"), str):
                 return {"cleanup_blocker": "Build Session identity is ambiguous"}
             session_id = summary["id"]
+            if existing_owned_sessions and session_id not in self.owned_session_ids:
+                continue
             if session_id in seen_sessions:
                 continue
             seen_sessions.add(session_id)
@@ -1043,7 +1146,7 @@ class PlatformScope:
             if any(
                 isinstance(batch, dict)
                 and isinstance(batch.get("latest_attempt"), dict)
-                and batch["latest_attempt"].get("attempt_status") in {"applying", "recovering"}
+                and batch["latest_attempt"].get("attempt_status") in {"applying", "recovering", "unknown"}
                 for batch in batches
             ):
                 return {"cleanup_blocker": "an owned Modeling Batch Attempt is in flight"}
@@ -1103,7 +1206,7 @@ class PlatformScope:
                 elif require_completed:
                     return {"success_blocker": "Build Session is cancelled or not completed"}
         if multi:
-            if involved_union != plan_ids:
+            if not existing_owned_sessions and involved_union != plan_ids:
                 return {"cleanup_blocker": "Build Session Ontology coverage drifted"}
             if require_completed:
                 if set(completed_by_ontology) != plan_ids:

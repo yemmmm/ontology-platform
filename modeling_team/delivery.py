@@ -197,6 +197,9 @@ class DeliverySession:
                 raise ValueError("resumption requires the original model binding")
             if previous.get("project_id") and previous["project_id"] != self.project_id:
                 raise ValueError("resumption requires the original project binding")
+            for field in ("production_start_limit", "incremental_request_id", "incremental_run_id"):
+                if previous.get(field) != config.get(field):
+                    raise ValueError(f"resumption cannot change original {field}")
             if previous.get("authorization_valid_until") != self.authorization_valid_until:
                 raise ValueError("resumption cannot change the original authorization deadline")
             self.run_ids.update(previous["run_ids"])
@@ -990,6 +993,8 @@ class DeliverySession:
                   "project_id": self.project_id, "activity": self.activity,
                   "work_result": self.work_result,
                   "authorization_valid_until": self.authorization_valid_until,
+                  **{field: self.config.get(field) for field in
+                     ("production_start_limit", "incremental_request_id", "incremental_run_id")},
                   "authorization_reference": self.authorization, "state": state,
                   "run_ids": sorted(self.run_ids), "operation_ids": sorted(self.operation_ids),
                   "operation_kinds": self.operation_kinds,
@@ -1339,6 +1344,14 @@ class DeliverySession:
             if name in _PRODUCTION:
                 args["host_session_ref"] = str(self.session_root / "session.json")
                 if name == "start_run":
+                    if self.config.get("incremental_request_id"):
+                        if args.get("run_id") != self.config["incremental_run_id"]:
+                            raise ValueError("incremental launch must retain its original run_id")
+                        if args.get("request_id") != self.config["incremental_request_id"]:
+                            raise ValueError("incremental launch must retain its original request_id")
+                    limit = self.config.get("production_start_limit")
+                    if limit is not None and args.get("run_id") not in self.run_ids and len(self.run_ids) >= limit:
+                        raise ValueError("authorized production start limit exhausted")
                     for key in ("task", "profile", "scope", "model_profile", "task_overlay"):
                         if key in self.config and args.get(key, self.config[key]) != self.config[key]:
                             raise ValueError(f"{key} differs from the authorized launch configuration")
@@ -1371,6 +1384,15 @@ class DeliverySession:
                 ontologies = args.get("ontology_ids", [args.get("ontology_id")])
                 if not any(args["project_id"] == scope.get("project_id") and set(ontologies) <= set(scope.get("ontology_ids", [])) for scope in self._readback_scopes()):
                     raise ValueError("platform read is outside authorized reconciliation scope")
+            if name == "start_run" and args.get("run_id") in self.run_ids:
+                from .host_ops import read_launch_record
+                launch = read_launch_record(args["run_id"], repository_root=self.repository_root)
+                if launch is not None:
+                    if launch.get("request_id") != args.get("request_id"):
+                        raise ValueError("launch request identity differs from the retained request")
+                    return {"ok": True, "data": {"launch": launch, "run_id": args["run_id"],
+                            "status": "existing_launch", "note": "observe this launch; do not replay"}}
+                raise ValueError("start result is unknown; reconcile the original run before retry")
             operation = getattr(host_ops_mcp, name)
             if name == "submit_cq_review":
                 args["content_digest_value"] = args.pop("content_digest")

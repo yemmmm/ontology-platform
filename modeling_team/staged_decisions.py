@@ -2376,7 +2376,10 @@ def validate_materialization_plan(value: Any) -> tuple[StagedDecisionIssue, ...]
         # intent/receipt schemas use: a malformed binding shape is a typed,
         # fixable rejection at load time instead of a raw AttributeError in a
         # later close check.
-        binding_issue = _decision_binding_issue(plan_projection.get("decision_bindings"))
+        reuse_only = (plan_projection.get("items") == []
+                      and plan_projection.get("decision_bindings") == []
+                      and bool(plan_projection.get("identity_bindings")))
+        binding_issue = None if reuse_only else _decision_binding_issue(plan_projection.get("decision_bindings"))
         if binding_issue is not None:
             issues.append(binding_issue)
         index_issue = _command_index_issue(
@@ -2662,6 +2665,18 @@ def unified_approval_issue(
         for decision in approvals.get("decisions") or []
         if isinstance(decision, Mapping)
     }
+    written = {item_id for binding in projection.get("decision_bindings") or []
+               for item_id in binding.get("candidate_item_ids") or []}
+    for identity in projection.get("identity_bindings") or []:
+        item_id = identity["candidate_item_id"]
+        if item_id in written or projection.get("items"):
+            continue
+        if not any(decision.get("decision") == "approved"
+                   and decision.get("target_id") == item_id
+                   and decision.get("candidate_id") == projection.get("candidate_id")
+                   and decision.get("content_revision") == projection.get("candidate_revision")
+                   for decision in decisions.values()):
+            return StagedDecisionIssue("approval_missing", f"{item_id}: reuse needs current item approval", "")
     for binding in projection.get("decision_bindings") or []:
         for decision_id in binding.get("decision_ids") or []:
             decision = decisions.get(decision_id)

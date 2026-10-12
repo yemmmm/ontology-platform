@@ -71,7 +71,7 @@ from .preflight import (
     run_prestart_preflight,
 )
 from .runtimes.base import RuntimeAdapter, RuntimeDelivery, RuntimeDispatchReceipt
-from .platform_scope import PlatformScope
+from .platform_scope import PlatformScope, PlatformScopeError
 from .candidate_progress import (
     FormalCandidateError,
     FormalCandidatePlatformContractError,
@@ -2296,6 +2296,8 @@ class TeamRunner:
             if self.scope_factory:
                 self.scope = self.scope_factory(self.run)
                 self.scope.retain_nonempty = self.run.configuration.task.retain_nonempty
+                if isinstance(self.scope, PlatformScope):
+                    self.scope.ontology_plan_receipts_path = self.run.root / "evidence/ontology-plan-receipts.json"
                 self.scope.prepare(self.run.scope)
                 if formal_coordination and self.acceptance is not None:
                     # Bind formal Acceptance read keys only after PlatformScope has
@@ -5259,7 +5261,7 @@ class TeamRunner:
         issue = unified_approval_issue(approvals, projection)
         if issue is not None:
             raise StagedSubmissionRejection(issue.reason_code, issue.detail)
-        if require_translation:
+        if require_translation and projection.get("items"):
             issue = unified_translation_issue(
                 approvals, plan_ref=plan_ref, projection_digest=plan["projection_digest"],
                 coordinator_id=self._multi_slice_role_ids().get("coordinator") or "",
@@ -5321,6 +5323,11 @@ class TeamRunner:
                 intents = read_submission_intents(self.run.root)
                 if any(intent.get("status") in {"unknown", "submitted"} for intent in intents):
                     raise StagedSubmissionRejection("staged_unreconciled_batch", "reconcile pending write intents before retrying plans")
+                if not projection["items"]:
+                    reused = self._validated_reuse_bindings(plan)
+                    completed.append({"plan_ref": ref, "status": "reused", "reuse_bindings": reused,
+                                      "semantic_verdict": "not_evaluated"})
+                    continue
                 applied = None
                 for intent in intents:
                     if (intent.get("plan_ref") == ref
@@ -5412,6 +5419,75 @@ class TeamRunner:
                 "required_next_step": "Continue approved work along real dependencies; obtain public business feedback at valuable milestones and complete necessary global coverage and association checks before whole-run production handoff",
                 "semantic_verdict": "not_evaluated"}
 
+    def _validated_reuse_bindings(self, plan: Mapping[str, Any], *, written_elsewhere: set[str] | None = None) -> dict[str, Any]:
+        """Cover only unchanged, currently read, approved candidate identities."""
+        from .staged_decisions import candidate_item_digest
+        from .incremental import platform_envelope
+
+        projection = plan["projection"]
+        written = {identity for binding in projection["decision_bindings"]
+                   for identity in binding["candidate_item_ids"]} | (written_elsewhere or set())
+        if all(identity["candidate_item_id"] in written for identity in projection["identity_bindings"]):
+            return {}
+        candidate_path = self.run.root / "stage3-neutral-graph/candidates" / (
+            f"{projection['candidate_id']}-r{projection['candidate_revision']}.json")
+        candidate = load_unified_candidate(candidate_path)
+        items = {item["item_id"]: item for item in candidate["items"]}
+        approvals = load_approvals(staged_decision_artifact_paths(self.run.root, unified=True)["approvals"])
+        scope = self._checkpoint_platform_bindings()
+        allowed = set(scope.get("ontology_ids", []))
+        if not allowed:
+            allowed = {projection["ontology_id"]}
+        observed = getattr(self.acceptance, "_platform_read_artifacts", {})
+        reused = {}
+        versions = {}
+        for identity in projection["identity_bindings"]:
+            item_id = identity["candidate_item_id"]
+            if item_id in written:
+                continue
+            iri, ref = identity.get("resource_iri"), identity.get("evidence_ref")
+            record = observed.get(ref)
+            if not iri or not record or record.get("tool") != "get_ontology_read_model" or not record.get("successful"):
+                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: reuse needs an observed governed resource read")
+            request = record["request_arguments"]
+            ontology = request.get("ontology_id")
+            if ontology not in allowed:
+                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: read outside authorized Ontology IDs")
+            target = self.run.root / ref
+            if (target.is_symlink() or not target.resolve().is_relative_to(self.run.root.resolve())
+                    or hashlib.sha256(target.read_bytes()).hexdigest() != record["response_digest"]):
+                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: observed read changed")
+            response = json.loads(target.read_text())
+            envelope = platform_envelope(response)
+            if not isinstance(envelope, Mapping) or envelope.get("ok") is not True:
+                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: resource read failed")
+            data = envelope.get("data", {})
+            rows = data.get("items", [])
+            fields = ("iri", "entity_iri", "class_iri", "property_iri", "operation_iri",
+                      "table_mapping_iri", "join_mapping_iri", "metric_iri", "enum_meaning_iri")
+            if not any(isinstance(row, Mapping) and any(row.get(field) == iri for field in fields) for row in rows):
+                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: identity absent from the observed page; absence does not prove nonexistence")
+            if ontology not in versions:
+                forward = self.staged_plan_read_forwarder
+                current = forward("get_modeling_context", {"ontology_id": ontology}) if callable(forward) else None
+                if not isinstance(current, Mapping) or current.get("ok") is not True:
+                    raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: current revision unavailable")
+                context = current["data"]
+                if context.get("ontology", {}).get("id") != ontology:
+                    raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: current Ontology identity differs")
+                versions[ontology] = context.get("workspace", {}).get("model_revision")
+            if type(data.get("model_revision")) is not int or data["model_revision"] != versions[ontology]:
+                raise StagedSubmissionRejection("approval_stale", f"{item_id}: model drift; read affected definition again and review reuse")
+            if not any(decision.get("decision") == "approved" and decision.get("target_id") == item_id
+                       and decision.get("candidate_id") == projection["candidate_id"]
+                       and decision.get("content_revision") == projection["candidate_revision"]
+                       and decision.get("content_digest") == candidate_item_digest(items[item_id])
+                       for decision in approvals.get("decisions", [])):
+                raise StagedSubmissionRejection("approval_content_mismatch", f"{item_id}: reuse approval differs from current candidate")
+            reused[item_id] = {"resource_iri": iri, "read_ref": ref,
+                               "ontology_id": ontology, "model_revision": versions[ontology]}
+        return reused
+
     def _handle_check_plan_coverage(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """Candidate/command identity coverage only; business decisions stay with Agents."""
         ref = args["candidate_ref"]
@@ -5430,13 +5506,18 @@ class TeamRunner:
             raise StagedSubmissionRejection(issues[0].reason_code, issues[0].detail)
         planned: dict[str, list[str]] = {}
         applied: dict[str, list[str]] = {}
+        reused: dict[str, Any] = {}
         proofs = read_attempt_proofs(self.run.root)
-        for plan_ref in args["plan_refs"]:
-            plan = self._reference_plan(plan_ref)
+        plans = {plan_ref: self._reference_plan(plan_ref) for plan_ref in args["plan_refs"]}
+        written_elsewhere = {item_id for plan in plans.values()
+                             for binding in plan["projection"]["decision_bindings"]
+                             for item_id in binding["candidate_item_ids"]}
+        for plan_ref, plan in plans.items():
             projection = plan["projection"]
             if (projection["candidate_id"] != candidate["candidate_id"]
                     or projection["candidate_revision"] != candidate["revision"]):
                 raise StagedSubmissionRejection("approval_stale", "coverage plans must bind the same candidate revision")
+            reused.update(self._validated_reuse_bindings(plan, written_elsewhere=written_elsewhere))
             is_applied = any(p.get("plan_ref") == plan_ref
                              and p.get("projection_digest") == plan["projection_digest"]
                              and p.get("mode") == "apply_atomic" and p.get("attempt_status") == "applied"
@@ -5450,7 +5531,7 @@ class TeamRunner:
         dispositions = {}
         for entry in args["dispositions"]:
             item_id = entry["candidate_item_id"]
-            if (item_id not in item_ids or item_id in dispositions or item_id in planned
+            if (item_id not in item_ids or item_id in dispositions or item_id in planned or item_id in reused
                     or entry["disposition"] not in {"unknown", "out_of_scope", "deferred"}
                     or not entry["reason"].strip()):
                 raise StagedSubmissionRejection("approval_content_mismatch", "disposition must uniquely name an unplanned candidate item and its business reason")
@@ -5458,12 +5539,15 @@ class TeamRunner:
         rows = [{"candidate_item_id": item["item_id"], "item_kind": item["item_kind"],
                  "plan_refs": planned.get(item["item_id"], []),
                  "applied_plan_refs": applied.get(item["item_id"], []),
+                 "reuse_binding": reused.get(item["item_id"]),
                  "disposition": dispositions.get(item["item_id"])} for item in candidate["items"]]
-        missing = sorted(item_ids - set(planned) - set(dispositions))
-        return {"status": "PARTIAL" if missing else "COMPLETE", "candidate_ref": ref,
+        missing = sorted(item_ids - set(planned) - set(reused) - set(dispositions))
+        result = {"status": "PARTIAL" if missing else "COMPLETE", "candidate_ref": ref,
                 "items": rows, "unaccounted_item_ids": missing,
                 "semantic_verdict": "not_evaluated",
                 "remediation": "review missing definitions/relations/shared identities/cross-Ontology dependencies; add plans or explicit business dispositions"}
+        self._append_evidence("plan-coverage", result)
+        return result
 
     def _handle_staged_submit_modeling_batch(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """The Runner-private staged Modeling Batch submission capability.
@@ -5637,6 +5721,9 @@ class TeamRunner:
         if issues:
             raise StagedSubmissionRejection(issues[0].reason_code, issues[0].detail)
         batch = args["batch"]
+        if isinstance(self.scope, PlatformScope) and self.scope.mode == "existing":
+            if batch["ontology_id"] not in self.scope.ontology_ids:
+                raise StagedSubmissionRejection("forbidden_scope", "Batch Ontology is outside this round's bound IDs")
         plan_ref = args.get("plan_ref")
         if self._resume_imports is not None:
             # R3.0-015 S2 (design §5.2): the backend scopes idempotency keys
@@ -6179,6 +6266,18 @@ class TeamRunner:
                 },
             )
             return
+        def recoverable_failure(detail: str) -> None:
+            if getattr(scope, "mode", None) == "existing":
+                # The original topology-open latch otherwise prevents the next
+                # cycle from applying a corrected incremental plan. Keep the
+                # same run, receipts and resource ownership for that retry.
+                self._multi_slice_gate_opened = False
+                self._multi_slice_gate_reject(
+                    "topology_apply_incomplete", "scenario-map/topology-decision.json",
+                    "topology_apply_incomplete:" + hashlib.sha256(detail.encode()).hexdigest(),
+                    detail,
+                )
+
         try:
             ontology_ids = scope.apply_ontology_plan(plan)
         except Exception as exc:
@@ -6186,10 +6285,11 @@ class TeamRunner:
                 "multi-slice-gate",
                 {
                     "event": "ontology-plan-apply-failed",
-                    "classification": "runtime/infrastructure",
+                    "classification": "platform-contract" if isinstance(exc, PlatformScopeError) else "runtime/infrastructure",
                     "detail": str(exc),
                 },
             )
+            recoverable_failure(str(exc))
             return
         self._refresh_platform_binding()
         self._append_evidence(
@@ -6213,7 +6313,7 @@ class TeamRunner:
         ):
             mapping_direction = getattr(scope, "mapping_reference_direction", None)
             try:
-                ontology_ids = mapping_scope(
+                mapping_ids = mapping_scope(
                     scenario_map,
                     plan,
                     dependent_direction=mapping_direction,
@@ -6231,12 +6331,13 @@ class TeamRunner:
                 # selected mapping reference Graph Sets are active. The gate
                 # remains open for the existing retry/resume path, while the
                 # failed bridge stays visible as infrastructure evidence.
+                recoverable_failure(str(exc))
                 return
             self._append_evidence(
                 "multi-slice-gate",
                 {
                     "event": "mapping-reference-ontologies-applied",
-                    "ontology_ids": dict(ontology_ids),
+                    "ontology_ids": dict(mapping_ids),
                     "dependent_direction": mapping_direction,
                 },
             )
@@ -6251,7 +6352,10 @@ class TeamRunner:
                     "detail": str(exc),
                 },
             )
-        self._deliver_multi_slice_ontology_ids(ontology_ids)
+            recoverable_failure(str(exc))
+            if getattr(scope, "mode", None) == "existing":
+                return
+        self._deliver_multi_slice_ontology_ids(list(getattr(scope, "ontology_ids", []) or ontology_ids))
 
     def _deliver_multi_slice_ontology_ids(self, ontology_ids: list[str]) -> None:
         """Gate-open delivery of the full ontology-id set to Protocol (M3)."""
@@ -10876,6 +10980,18 @@ class TeamRunner:
                         checkpoint_retention = None
                 if checkpoint_retention is not None:
                     self.scope.checkpoint_retention = checkpoint_retention
+                if isinstance(self.scope, PlatformScope) and self.scope.mode == "existing" and self.acceptance:
+                    # Only Session identities observed being created by this run
+                    # authorize cleanup; historical project sessions stay untouched.
+                    from .incremental import platform_envelope
+                    for record in self.acceptance._platform_read_artifacts.values():
+                        if record.get("tool") == "create_build_session" and record.get("successful"):
+                            response = json.loads((self.run.root / record["artifact_path"]).read_text())
+                            envelope = platform_envelope(response)
+                            data = envelope.get("data", {})
+                            session = data.get("session", data)
+                            if isinstance(session.get("id"), str):
+                                self.scope.owned_session_ids.add(session["id"])
                 evidence["scope"] = self.scope.cleanup()
                 if checkpoint_retention is not None:
                     self._append_evidence(

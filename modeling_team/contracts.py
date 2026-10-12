@@ -704,6 +704,14 @@ def _load_v2_source(
     if len(set(roles)) != len(roles):
         raise TeamConfigurationError("v2 Task source duplicates a role")
     normalized = relative.as_posix().lower()
+    incremental_public_snapshot = (
+        classification == "business-source"
+        and len(relative.parts) == 4
+        and relative.parts[:2] == ("workspaces", "incremental-requests")
+        and re.fullmatch(r"[0-9a-fA-F-]{36}", relative.parts[2]) is not None
+        and (re.fullmatch(r"source-[0-9]+\.md", relative.name) is not None
+             or relative.name == "public-feedback.json")
+    )
     forbidden = (
         "tester-only",
         "runtime/",
@@ -713,7 +721,8 @@ def _load_v2_source(
         "historical",
         "secret",
     )
-    if any(token in normalized for token in forbidden):
+    if any(token in normalized for token in forbidden
+           if token != "workspaces/" or not incremental_public_snapshot):
         raise TeamConfigurationError("v2 Task source is not Agent-visible")
     return TaskSource(source, relative, classification, frozenset(roles))
 

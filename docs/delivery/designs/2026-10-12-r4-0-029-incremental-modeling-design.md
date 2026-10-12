@@ -5,7 +5,9 @@
 权威范围：[R4.0-029](../../requirements/requirements-v4.0.md#r40-029-基于已有模型的增量建模)；
 反馈场景由 [001](2026-10-12-r4-0-001-semantic-feedback-design.md) 提供输入。
 本轮用户确认独立通用能力，授权细化与设计。决策主表保留在权威需求 D1—D8。
-基线为 2026-10-12 checkout 440d534；尚未独立设计审阅、实施、功能或真实语义验收。
+设计时基线为 2026-10-12 checkout 440d534；当时尚未独立设计审阅、实施、功能或真实语义验收。
+随后按用户授权实施，当前工程与受控功能证据见[实现记录](../records/2026-10-12-r4-0-029-incremental-delivery-record.md)
+及[独立验收](../tests/2026-10-12-r4-0-029-incremental-acceptance.md)。A11 仍未授权／未执行。
 
 例：维修模型已有设备、工单及维修规则。用户新增备件采购目标和资料，新一轮需要
 读取现有设备／工单，识别可复用定义，再建采购含义及真实跨业务关联。另一轮也可以
@@ -39,7 +41,7 @@
 python -m modeling_team incremental start --request workspaces/<本轮请求>.yaml
 ```
 
-该命令尚未实现。内部请求描述本轮工作；业务用户不填写 run ID、Key、lease 或 Batch。
+该命令已按本设计实现（设计轮时尚未实现）。内部请求描述本轮工作；业务用户不填写 run ID、Key、lease 或 Batch。
 宿主为输入创建不可变请求快照，生成新的 Delivery 配置和新 run ID，返回请求／会话及
 查询入口。相同 request_id 的未知启动先核对已有 launch／run，不能换 ID 盲重启。
 范围不符、缺资料或缺运行授权返回可修正反馈，不能自动改目标或追加额度。

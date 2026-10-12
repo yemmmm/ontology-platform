@@ -502,7 +502,9 @@ def _validate_ontology_plan(
     """
 
     issues: list[ScenarioMapIssue] = []
-    if not isinstance(value, list) or len(value) < 2:
+    if not isinstance(value, list) or not value or (len(value) < 2 and not any(
+        isinstance(entry, dict) and "ontology_id" in entry for entry in value
+    )):
         return [
             ScenarioMapIssue(
                 "topology_invalid_ontology_plan", "ontology_plan requires at least two entries"
@@ -511,12 +513,12 @@ def _validate_ontology_plan(
     names: set[str] = set()
     assigned: set[str] = set()
     for entry in value:
-        if not isinstance(entry, dict) or set(entry) != {"name", "slice_ids"}:
+        if not isinstance(entry, dict) or set(entry) not in ({"name", "slice_ids"}, {"ontology_id", "slice_ids"}):
             issues.append(
                 ScenarioMapIssue("topology_invalid_ontology_plan", "entry fields drift")
             )
             continue
-        name = entry["name"]
+        name = entry.get("ontology_id", entry.get("name"))
         if not _nonempty(name):
             issues.append(ScenarioMapIssue("topology_invalid_ontology_plan", "name is empty"))
             continue
@@ -642,7 +644,12 @@ def validate_topology_decision(
     # R3.0-006 M3 additive ontology_plan extension (registered revision of the
     # frozen R3.0-002 six-field record; see the design's exception list).
     plan_present = TOPOLOGY_ONTOLOGY_PLAN_FIELD in value
-    if plan_present and selected == "single_ontology":
+    if plan_present and selected == "single_ontology" and not (
+        isinstance(value[TOPOLOGY_ONTOLOGY_PLAN_FIELD], list)
+        and len(value[TOPOLOGY_ONTOLOGY_PLAN_FIELD]) == 1
+        and isinstance(value[TOPOLOGY_ONTOLOGY_PLAN_FIELD][0], dict)
+        and "ontology_id" in value[TOPOLOGY_ONTOLOGY_PLAN_FIELD][0]
+    ):
         issues.append(
             ScenarioMapIssue(
                 "topology_schema_mismatch",
