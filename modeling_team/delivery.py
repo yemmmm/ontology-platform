@@ -70,7 +70,10 @@ _DECISION_EVENT_NOISE_KEYS = frozenset({
 # The raw app-server notification log replays every token/reasoning delta and
 # turn-progress notification of the Team's native sessions.  It is retained as
 # run evidence and inside the stored raw observation, but it is model
-# activity, never a Delivery decision, so it must not wake the model.
+# activity, never a Delivery decision, so it must not wake the model and must
+# not be pushed back into the model context either:
+# :meth:`DeliverySession._model_observation` excludes exactly these sources
+# from every payload handed to the native model.
 _DECISION_EVENT_NOISE_SOURCES = frozenset({"app-server-events.jsonl"})
 
 
@@ -83,7 +86,8 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
     window project to the same value as the page that first carried the event.
     Failed event reads and corrupt/truncated placeholder events stay
     decisions; every excluded byte remains in the stored raw observation for
-    on-demand reading, and the steered message payload is untouched.
+    on-demand reading, and the delivered payload excludes exactly the same
+    noise sources (:meth:`DeliverySession._model_observation`).
     """
     if not isinstance(events, dict) or not isinstance(events.get("data"), dict):
         # Failure envelopes and unexpected shapes stay decisions.
@@ -1527,8 +1531,9 @@ class DeliverySession:
         The wakeup fingerprint is computed from
         :func:`_decision_observation`, which folds each run's incremental
         events page into a per-process cumulative chain of seen decision
-        events.  The full raw observation is still persisted below and is what
-        a wakeup delivers to the native model.
+        events.  The full raw observation is still persisted below; a wakeup
+        delivers its :meth:`_model_observation` view, which leaves out only
+        the pure noise-source records and points at this stored artifact.
         """
         path = self.session_root / "observation.json"
         previous = json.loads(path.read_text()) if path.exists() else {}
@@ -1555,6 +1560,56 @@ class DeliverySession:
         temporary.write_text(json.dumps(record, ensure_ascii=False))
         temporary.replace(path)
         return changed
+
+    def _model_observation(self, observation: Any) -> Any:
+        """Project the observation handed to the native model.
+
+        All three delivery paths — the initial resume ``observed_state``, a
+        busy-turn steer and an idle send — use this one view: records whose
+        source is in ``_DECISION_EVENT_NOISE_SOURCES`` are dropped from each
+        run's incremental events page, because the raw app-server log is
+        native model activity, never a Delivery decision.  Everything else
+        passes through complete and unmodified — status, pending questions,
+        blockers, write and request receipts, reports, public handoffs,
+        failed tool envelopes and truncated placeholders included — and
+        nothing is truncated, summarized or re-written.  The payload carries
+        the raw-observation reference so the model can read the excluded
+        records on demand through the existing ``read_delivery_artifact``
+        tool; the complete observation itself stays in the stored
+        ``observation.json``.
+        """
+        if not isinstance(observation, dict):
+            return observation
+        excluded = 0
+        runs: dict[str, Any] = {}
+        for run_id, run in (observation.get("runs") or {}).items():
+            events = run.get("events") if isinstance(run, dict) else None
+            page = events.get("data") if isinstance(events, dict) else None
+            if (isinstance(page, dict) and events.get("ok") is True
+                    and isinstance(page.get("events"), list)):
+                kept: list[Any] = []
+                for event in page["events"]:
+                    if (isinstance(event, dict)
+                            and event.get("source") in _DECISION_EVENT_NOISE_SOURCES):
+                        excluded += 1
+                        continue
+                    kept.append(event)
+                if len(kept) != len(page["events"]):
+                    run = {**run, "events": {**events, "data": {**page, "events": kept}}}
+            runs[run_id] = run
+        payload = {**observation, "runs": runs}
+        payload["raw_observation"] = {
+            "path": str(self.session_root / "observation.json"),
+            "reader": "read_delivery_artifact",
+            "excluded_noise_event_records": excluded,
+            "excluded_noise_sources": sorted(_DECISION_EVENT_NOISE_SOURCES),
+            "note": ("Pure native app-server notification records are excluded "
+                     "from this payload; the complete raw observation including "
+                     "every excluded record is stored at the path above and "
+                     "readable on demand. No business, approval or receipt "
+                     "content was truncated or summarized."),
+        }
+        return payload
 
 
 def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
@@ -1611,8 +1666,19 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     incoming.put({key: value for key, value in message.items() if key not in {
                         "received_seq", "recorded_at", "dispatch", "dispatch_reason", "control"}})
         threading.Thread(target=read_input, daemon=True).start()
+        observed_state = None
+        if resume:
+            initial_observation = session.observe()
+            # Persist the complete raw observation (the existing
+            # observation.json record) before the first model-facing payload,
+            # so the native log records excluded below are readable on demand
+            # from the first turn.  One startup observe feeds both the stored
+            # record and the delivered state, so no events page is consumed
+            # twice and no duplicate startup observation is recorded.
+            session.record_observation(initial_observation)
+            observed_state = session._model_observation(initial_observation)
         runtime.send(json.dumps({"kind": "delivery_resume" if resume else "delivery_start", "config": config,
-                                  "observed_state": session.observe() if resume else None,
+                                  "observed_state": observed_state,
                                   "session_reference": str(session_root / "session.json")}, ensure_ascii=False))
         next_observation = 0.0
         pending_input: list[dict] = []
@@ -1721,7 +1787,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 observation = session.observe()
                 next_observation = time.monotonic() + 2
                 if session.record_observation(observation):
-                    pending_observation = {"kind": "host_observation", "data": observation}
+                    pending_observation = {"kind": "host_observation",
+                                           "data": session._model_observation(observation)}
             if (runtime.busy and not pending_input and pending_observation is not None
                     and steer_blocked_turn != runtime.turn_id):
                 try:
@@ -1755,7 +1822,9 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     observation = session.observe()
                     next_observation = time.monotonic() + 2
                     if session.record_observation(observation):
-                        runtime.send(json.dumps({"kind": "host_observation", "data": observation}, ensure_ascii=False))
+                        runtime.send(json.dumps(
+                            {"kind": "host_observation",
+                             "data": session._model_observation(observation)}, ensure_ascii=False))
                     elif eof and server is None:
                         session._save("supervision_interrupted", reason="business input closed", observation=observation)
                         return 2

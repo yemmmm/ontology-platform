@@ -1,10 +1,16 @@
 """R4.3-005 decision-driven observation, without a live semantic run."""
 import copy
+import importlib
 import json
+from pathlib import Path
 
 import pytest
 
-from modeling_team.tests.test_delivery_session import session
+from modeling_team.tests.test_delivery_session import (
+    _StubNativeRuntime, _run_delivery_with_stub, session,
+)
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def _events_page(events, *, next_cursor, has_more=False, limitations=("none",)):
@@ -221,3 +227,191 @@ def test_new_evidence_file_listing_alone_does_not_wake(tmp_path):
         {"path": "evidence/runtime-failure.jsonl", "readable": True},
     ]
     assert not host.record_observation(grown)
+
+
+# --- R4.3-013: the delivered payload never carries raw app-server records ----
+
+_HUGE_DELTA = "\u6bb5" * 204_007
+
+
+def _huge_delta_observation():
+    """One observation whose events page replays a huge native app delta.
+
+    The real resume failure carried single app-server-events records of
+    ~204007 characters; the page here mirrors that shape and keeps one real
+    receipt event beside it.
+    """
+    raw = observation()
+    raw["runs"]["run"]["events"] = _events_page(
+        [_app_server_delta(0, 1, _HUGE_DELTA), _receipt_event(620_021, "req-9")],
+        next_cursor="cursor-9")
+    return raw
+
+
+def _prepare_stub_repository(tmp_path):
+    """Mirror the minimal offline repository used by _run_delivery_with_stub."""
+    import shutil
+    profiles = tmp_path / 'modeling_team/model-profiles'
+    profiles.mkdir(parents=True)
+    shutil.copyfile(ROOT / 'modeling_team/model-profiles/openai-sol-medium.yaml',
+                    profiles / 'openai-sol-medium.yaml')
+    package = tmp_path / 'modeling_team/agent-packages/delivery'
+    package.mkdir(parents=True)
+    (package / 'instructions.md').write_text('stub delivery instructions')
+    skill = tmp_path / 'modeling_team/skills/delivery'
+    skill.mkdir(parents=True)
+    (skill / 'SKILL.md').write_text('stub delivery skill')
+
+
+def _run_resume_with_stub(tmp_path, monkeypatch, observations, *, run_ids, **stub_kwargs):
+    """Drive ``_run_delivery`` with ``resume=True`` against a prepared session.
+
+    ``observations`` is one observation or a per-call sequence; the session is
+    created once beforehand so the resumed process restores its original
+    authorization and model binding.
+    """
+    import os
+    import sys
+    module = importlib.import_module("modeling_team.delivery")
+    _prepare_stub_repository(tmp_path)
+    config = {'session_id': 'steer-probe', 'model_profile': 'openai-sol-medium',
+              'authorization_reference': 'user-test', 'allowed_sources': [],
+              'allowed_operations': ['read'], 'run_ids': list(run_ids)}
+    session_root = tmp_path / 'workspaces/delivery-sessions/steer-probe'
+    module.DeliverySession(repository_root=tmp_path, session_root=session_root,
+                           config=config, resume=False)
+    sequence = [copy.deepcopy(item) for item in (
+        observations if isinstance(observations, list) else [observations])]
+    calls = {"count": 0}
+
+    def fake_observe(self):
+        index = min(calls["count"], len(sequence) - 1)
+        calls["count"] += 1
+        return copy.deepcopy(sequence[index])
+
+    monkeypatch.setattr(module.DeliverySession, "observe", fake_observe)
+    stub = _StubNativeRuntime(**stub_kwargs)
+    monkeypatch.setattr(module, 'DeliveryRuntime', lambda **kwargs: stub)
+    read_fd, write_fd = os.pipe()
+    monkeypatch.setattr(sys, 'stdin', os.fdopen(read_fd, 'r'))
+    os.close(write_fd)
+    result = module._run_delivery(config, repository_root=tmp_path, resume=True)
+    return stub, result, calls["count"]
+
+
+def test_resume_persists_full_observation_then_delivers_filtered_state(tmp_path, monkeypatch):
+    raw = _huge_delta_observation()
+    settled = copy.deepcopy(raw)
+    settled["runs"]["run"]["status"]["data"]["recorded_state"]["state"] = "SETTLED"
+    stub, result, observe_calls = _run_resume_with_stub(
+        tmp_path, monkeypatch, [raw, settled], run_ids=["bound"])
+    assert result == 2
+    # One startup observe fed both the stored record and the delivered state;
+    # the busy observation and the final idle observation follow.
+    assert observe_calls == 3
+    resume_message = json.loads(stub.sent[0])
+    assert resume_message["kind"] == "delivery_resume"
+    state = resume_message["observed_state"]
+    delivered = json.dumps(state, ensure_ascii=False)
+    assert _HUGE_DELTA not in delivered
+    assert len(delivered) < 40_000
+    events = state["runs"]["run"]["events"]["data"]["events"]
+    assert [event["source"] for event in events] == ["outer-input-receipts.jsonl"]
+    assert events[0] == _receipt_event(620_021, "req-9")
+    assert state["runs"]["run"]["events"]["data"]["next_cursor"] == "cursor-9"
+    assert state["raw_observation"]["excluded_noise_event_records"] == 1
+    # The busy steer uses the same filtered view.
+    steered = json.loads(stub.steered[0])
+    assert steered["kind"] == "host_observation"
+    assert _HUGE_DELTA not in json.dumps(steered, ensure_ascii=False)
+    # The complete record was persisted before delivery, at the referenced path.
+    raw_ref = state["raw_observation"]
+    assert raw_ref["reader"] == "read_delivery_artifact"
+    stored = json.loads(Path(raw_ref["path"]).read_text())
+    page = stored["data"]["runs"]["run"]["events"]["data"]
+    assert page["events"][0]["data"]["params"]["delta"] == _HUGE_DELTA
+    assert stored["observation_count"] == 3 and stored["wake_count"] == 2
+
+
+def test_busy_steer_payload_excludes_only_raw_app_server_records(tmp_path, monkeypatch):
+    raw = _huge_delta_observation()
+    module = importlib.import_module("modeling_team.delivery")
+    monkeypatch.setattr(module.DeliverySession, "observe", lambda self: copy.deepcopy(raw))
+    runtime, result, _record = _run_delivery_with_stub(
+        tmp_path, monkeypatch, [], run_ids=["bound"])
+    assert result == 2
+    steered = json.loads(runtime.steered[0])
+    assert steered["kind"] == "host_observation"
+    delivered = json.dumps(steered, ensure_ascii=False)
+    assert _HUGE_DELTA not in delivered
+    page = steered["data"]["runs"]["run"]["events"]["data"]
+    assert [event["source"] for event in page["events"]] == ["outer-input-receipts.jsonl"]
+    # Decisions stay byte-complete: receipt, pending item, request ledger.
+    assert page["events"][0] == _receipt_event(620_021, "req-9")
+    assert (steered["data"]["runs"]["run"]["pending"]["data"]["items"]
+            == observation()["runs"]["run"]["pending"]["data"]["items"])
+    assert steered["data"]["runs"]["run"]["request_ledger"]["data"]["text"] == "request-1"
+    assert steered["data"]["raw_observation"]["excluded_noise_event_records"] == 1
+
+
+def test_idle_send_after_steer_race_carries_no_raw_app_server_records(tmp_path, monkeypatch):
+    raw = _huge_delta_observation()
+    raw["runs"]["run"]["events"]["data"]["events"] =         raw["runs"]["run"]["events"]["data"]["events"][:1]
+    module = importlib.import_module("modeling_team.delivery")
+    monkeypatch.setattr(module.DeliverySession, "observe", lambda self: copy.deepcopy(raw))
+    runtime, result, _record = _run_delivery_with_stub(
+        tmp_path, monkeypatch, [], run_ids=["bound"], steer_failures=1)
+    assert result == 2
+    assert runtime.steered == [] and runtime.steer_attempts == 1
+    sent = json.loads(runtime.sent[1])
+    assert sent["kind"] == "host_observation"
+    delivered = json.dumps(sent, ensure_ascii=False)
+    assert _HUGE_DELTA not in delivered
+    assert sent["data"]["runs"]["run"]["events"]["data"]["events"] == []
+    assert sent["data"]["raw_observation"]["excluded_noise_event_records"] == 1
+    assert sent["data"]["raw_observation"]["path"].endswith("observation.json")
+
+
+def test_raw_observation_reference_is_readable_on_demand(tmp_path):
+    host = session(tmp_path)
+    raw = _huge_delta_observation()
+    host.record_observation(raw)
+    payload = host._model_observation(raw)
+    assert _HUGE_DELTA not in json.dumps(payload, ensure_ascii=False)
+    result = host.call_tool("read_delivery_artifact",
+                            {"path": payload["raw_observation"]["path"]})
+    assert result["ok"]
+    stored = json.loads(result["data"]["text"])
+    page = stored["data"]["runs"]["run"]["events"]["data"]
+    assert page["events"][0]["data"]["params"]["delta"] == _HUGE_DELTA
+    assert page["events"][1]["data"]["request_id"] == "req-9"
+
+
+def test_model_observation_keeps_decisions_complete_and_failures_untouched(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    placeholder = {"source": "settled.jsonl", "line_no": 4, "byte_offset": 4096,
+                   "truncated": True, "byte_length": 262144}
+    raw["runs"]["run"]["events"] = _events_page(
+        [placeholder, _receipt_event(620_021, "req-9"), _app_server_delta(0, 1, "delta")],
+        next_cursor="cursor-9", limitations=("settled.jsonl line 4 is truncated",))
+    raw["runs"]["run"]["status"] = {"ok": False,
+                                    "error": {"code": "unavailable", "message": "down"}}
+    payload = host._model_observation(raw)
+    page = payload["runs"]["run"]["events"]["data"]
+    assert [event["source"] for event in page["events"]] == [
+        "settled.jsonl", "outer-input-receipts.jsonl"]
+    assert page["events"][0] == placeholder
+    assert page["limitations"] == ["settled.jsonl line 4 is truncated"]
+    assert page["next_cursor"] == "cursor-9"
+    assert payload["runs"]["run"]["status"] == {
+        "ok": False, "error": {"code": "unavailable", "message": "down"}}
+    assert payload["runs"]["run"]["pending"] == raw["runs"]["run"]["pending"]
+    assert payload["runs"]["run"]["request_ledger"] == raw["runs"]["run"]["request_ledger"]
+    # A failed events read is an error decision, not a noise page: untouched.
+    failed = observation()
+    failed["runs"]["run"]["events"] = {"ok": False,
+                                       "error": {"code": "run_missing", "message": "gone"}}
+    projected = host._model_observation(failed)
+    assert projected["runs"]["run"]["events"] == {
+        "ok": False, "error": {"code": "run_missing", "message": "gone"}}
