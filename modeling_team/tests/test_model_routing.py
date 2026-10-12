@@ -233,6 +233,23 @@ def test_openai_sol_profile_binds_every_role_to_requested_model_and_effort() -> 
     assert profile.provider_ids() == ("openai-codex",)
 
 
+def test_openai_6_luna_profile_binds_every_role_without_model_substitution() -> None:
+    profile = load_team_model_profile(ROOT, "openai-6-luna-medium")
+    assert set(profile.bindings) == set(MODEL_PROFILE_ROLE_UNIVERSE) | {
+        DELIVERY_MODEL_PROFILE_PACKAGE_ID
+    }
+    for binding in profile.bindings.values():
+        assert binding.provider_id == "openai-codex"
+        assert binding.model == "gpt-6-luna"
+        assert binding.requested_effort == binding.effective_effort == "medium"
+    assert profile_requires_codex_subscription_auth(profile) is True
+    assert profile.provider_ids() == ("openai-codex",)
+    delivery, source = resolve_delivery_model_binding(profile)
+    assert source == "delivery"
+    assert delivery.model == "gpt-6-luna"
+    assert delivery.requested_effort == delivery.effective_effort == "medium"
+
+
 def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert DEEPSEEK_DIRECT_ROUTE.effective_effort("low") == "high"
     assert DEEPSEEK_DIRECT_ROUTE.effective_effort("medium") == "high"
