@@ -430,7 +430,7 @@ Ordinary stale notes are fixable collaboration feedback, not a new terminal or a
 ### R4.0-024 production association self-check
 
 Only when the Task mounts `r4-0-024-model-check-contract.json`, include the check in your initial
-bounded assignments. After actual application/readback, have Protocol scan the approved asserted
+bounded assignments. At whole-run completion after actual application, have Protocol scan the approved asserted
 scope and send the unchanged mechanical results/read locators to Modeling. Route grounded
 dispositions and approved corrections; keep all production peers available until the required
 checks, repairs and rechecks finish. A provisional completion request is not whole-run terminal.
@@ -458,7 +458,7 @@ completion and paging from complete results. Fixture checks do not replace indep
 
 ## R4.3 complete business chain and early public feedback
 
-Before first execution and at final handoff, reconcile current candidate item identities with
+Before each stage execution and at final handoff, reconcile current candidate item identities with
 Protocol's approved plan coverage: definitions, relations, shared identities, cross-Ontology targets
 and necessary dependencies must have actual planned/applied correspondence, or explicit supported
 unknown/out-of-scope/deferred dispositions. Use `protocol_check_plan_coverage` as a deterministic
@@ -475,8 +475,10 @@ fully approved unchanged list. A real HOLD, changed scope or uncertain write sti
 only the affected execution through existing recovery channels.
 Correct changed content or real errors through the current revision/review/reconciliation channels.
 
-A complete small chain can execute before all later scenarios are finished. After its safe actual
-readback, reuse the existing R4.0-015 bounded public feedback path with a few high-value public
+A complete small chain, usually an existing business slice, can execute before all later scenarios
+have detailed candidates/plans. Include its necessary shared dependencies and reuse their actual
+identities later; retain the full authorized scope and remaining work. After its confirmed successful
+application, reuse the existing R4.0-015 bounded public feedback path with a few high-value public
 questions. Keep model expression, retrieval acquisition and Consumer understanding separate in
 failure evidence and repair only the evidenced layer. Final independent acceptance cannot repair
 production; hidden questions/answers never enter production. Public success is interim feedback.
@@ -489,6 +491,32 @@ running Task or require final production_handoff first. If this checkpoint path 
 report feedback not executed and the exact missing prerequisite. Delivery obtains actual governed
 responses and Consumer answers; production consumes only authorized public feedback and preserves
 original receipts. This checkpoint prerequisite is the existing R4.0-015 path, not a new phase gate.
+
+R4.3-015: trust the tool's bound applied Attempt and version confirmation; do not routinely read
+all resources or compare every approved statement after successful apply. Applied and business
+quality feedback are separate: not_evaluated is not semantic PASS. A stage with complete approved
+coverage and available dependencies may advance without a mandatory question round; choose later
+public questions by business value, not once per batch/stage. Keep dry-run validated separate from
+applied. Pending/applying/recovering, lost replies or unconfirmed identity use the original request
+and Attempt recovery; never change keys to replay possible writes. Actual business reads revealing
+missing/wrong writes are platform defects, not a reason to add a permanent full-audit routine.
+
+For the bounded feedback reading window, Delivery sends sourced delivery_guidance to Coordinator;
+Coordinator sends Protocol an existing reply-required Team message to pause new dry-run/apply
+submissions. Let in-flight continuous calls return and report actual receipts/pending writes before
+feedback starts. Analysis, candidate preparation and later planning may continue. The window lasts
+through Consumer reads and the final binding check. Release this normal submission wait only when
+the original evaluation operation actually ends, including partial/unavailable/superseded results;
+a timeout/lost reply requires querying that same operation, not launching another or releasing early.
+Unknown writes and explicit user pauses remain constrained. Do not require a retained owner to exit.
+
+Quality defects pause only affected content and its real dependents, including shared references;
+independent work continues. Revise/review/dry-run/apply only changed content, then recheck affected
+public questions and associations. Preserve unresolved defects as REVISE and incomplete reads or
+undetermined causes as PARTIAL. At whole-run completion retain actual governed association checks,
+shared identity/global coverage reconciliation and the complete independent Consumer/Judge verdict;
+local public feedback and successful application never replace that final read-only acceptance.
+
 
 
 ## Original Team retention and user flow messages (R4.0-028 / R4.2-008)

@@ -1024,6 +1024,39 @@ artifacts；每次新目录、旧件不覆盖。标准 per-question reports 保�
 Modeling／Protocol 通道交回，内容修正仍走审核、dry-run/apply 和回读；证据不足保留原因未
 确定。正式交接记下已执行／未执行、曝光和未闭合项，隐藏验收维持原独立路径。
 
+### R4.3-015：阶段推进、写入信任与反馈窗口
+
+通常复用已有业务切片，必要共享依赖随首链落地；不等全局详细候选／计划完成。每阶段
+应用前核对定义、关系、共享身份及依赖覆盖，全局获准范围和剩余事项始终保留。正常取得
+绑定计划／请求／Attempt 的 applied 和版本确认后，沿真实依赖继续，不逐批全量读资源或
+逐条比对计划。已应用、业务质量已反馈和未验证／未解决事项分账；dry-run validated 不是
+应用，工具 COMPLETE 不是语义 PASS。未确认写入仍沿原身份恢复，不换 key 重放。
+
+首个可消费小链应用成功后尽早选少量高价值公开题，后续时机由 Agent 判断，不固定每批／
+每阶段问答。独立 Delivery 使用 submit_instruction(kind="delivery_guidance") 的现有来源／
+授权引用，经 Coordinator 发有回复要求的 Team 消息暂停本轮新 dry-run/apply；manual Host
+沿原指导通道执行同一协作。先等在途连续调用返回，确认实际回执、pending／unknown 和
+检查点 write_positions；指导已接收不等于排空。分析、候选和后续计划准备可继续。
+
+窗口持续至 Consumer 实际读取及前后绑定核对完成。沿绑定的原 start_evaluation
+(mode="public-feedback")／get_evaluation_status 或 manual Host 原入口读取状态；无 retained
+owner 时 status="exited" 且有 exit_code／ended_at 即证明任务已结束，不等 work_state 变为
+completed；有 owner 时看 task_closed 等原任务封口回执，不等进程退出。非零退出、partial、
+unavailable 或 superseded 也结束正常提交等待，原通道明确解除后继续安全工作；未知写入和
+用户暂停保持原约束。超时／返回丢失则查询同一 operation，未证实结束不释放、不另起反馈。
+
+Delivery 从原 operation 的有效 report_binding 定位反馈，用 read_delivery_artifact 读取绑定
+run 的 `early-feedback/<invocation-id>/feedback.json` 及其保留响应，对照 content_digest 与绑定
+digest。旧／
+拒绝绑定、digest 变化、正文不可读或超出既有大小限制都不能用题数摘要替代答案；反馈记
+不足，任务确认结束后仍解除正常提交等待。变化结果保留 superseded，不拼不同状态证据。
+
+缺陷只暂停真实受影响内容及其依赖，包括共享引用；其他工作可继续。变更经原审核、有效
+dry-run/apply，复核受影响公开题和关联，不重放成功内容。实际业务读发现漏／错写属于平台
+缺陷，保留证据并走必要完整性恢复，不新增常驻全量核验。整轮结束仍核对全局范围、共享
+身份并执行实际 R4.0-024 关联检查和完整独立只读 Consumer／Judge 验收；未知、PARTIAL／
+REVISE 如实保留，局部反馈不能提升最终结论。本节不授予暂停运行的新启动额度。
+
 ### 启动／接续范围与入口对账（016）
 
 在既有 host run record／handoff 或 run-owned `evidence/` 的 append-only artifact 中记录

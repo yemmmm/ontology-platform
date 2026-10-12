@@ -195,8 +195,9 @@ SPOs from three new source entities move `relations` by three with zero duplicat
 counters stay valid raw readback evidence of entity-level state and belong in the preserved
 count reports; prove SPO-level facts (new, duplicate, missing, extra, removed) only with the
 complete statement-list membership and qualified before-evidence above — never arithmetic on
-`semantic_counts` deltas. After apply, check each approved SPO is present with full
-paging eligibility; a genuinely missing approved SPO is one concrete inconsistency to
+`semantic_counts` deltas. Normal confirmed apply does not require checking every approved SPO.
+When business reads or necessary recovery inspect statements, retain full paging eligibility;
+a genuinely missing approved SPO is one concrete inconsistency to
 investigate, not the only kind: unexplained extra content beyond the approved projection,
 unexpected deletions, or a binding difference on an approved statement are equally real
 write-integrity inconsistencies that follow the existing unknown-write gate and recovery
@@ -751,10 +752,12 @@ immutable plan and forwards the complete approved `projection.items` exactly, in
 `depends_on` and `competency_question_ids`, in approved order. It validates current candidate/semantic/translation
 approval, then obtains current-version dry-run, applies and retains workspace version readback
 before the next plan. `get_modeling_context` carries revision/counts, not complete resource or
-relation content. An execution COMPLETE never closes `resource_readback_status`, chain readback
-or semantic acceptance: afterward continue existing governed SPARQL pagination over the applied
-and approved shared scope and `protocol_inspect_associations` by retained refs. Preserve exact
-resource/relationship rows and compare with approved candidate/plan scope before chain handoff. One approved reference is one actual batch; form plans before approval using deployment
+relation content. Confirmed applied/already_applied results retain `resource_readback_status`
+and `semantic_verdict` as `not_evaluated`: COMPLETE proves execution of this approved list only.
+Continue along real dependencies without per-batch full resource reads or statement comparisons.
+Use governed reads for valuable public business feedback, affected repairs, necessary recovery and
+whole-run association checks via `protocol_inspect_associations` with complete retained refs.
+One approved reference is one actual batch; form plans before approval using deployment
 limits, input size and real dependencies. The tool never internally rechunks an approved projection.
 If an actual deployment/input bound requires parts, propose dependency-ordered successor plans to
 Coordinator before approval. Each part keeps distinct plan/client batch IDs, exact item fields and
@@ -1008,14 +1011,15 @@ provenance intact; shared references require explicitly approved Ontology scope.
 
 ## R4.3 complete chain coverage and bounded early feedback
 
-Before first execution and before final handoff, call `protocol_check_plan_coverage` with the
+Before each stage execution and before final handoff, call `protocol_check_plan_coverage` with the
 published candidate_ref, approved plan_refs and explicit dispositions for unplanned candidate
 items (`unknown`, `out_of_scope`, `deferred`, with a business reason). Review its identity-level
 rows with Modeling and Coordinator: definitions, relations, shared identity, cross-Ontology targets
 and real dependencies must be in plans or explicitly accounted for. COMPLETE is diagnostic
 coverage only; an applied entity count or receipt never proves the business chain is correct.
-An already complete small chain can execute while later slices are refined. After its safe actual
-readback, ask Coordinator to use the existing R4.0-015 public feedback path for a small useful
+An already complete small chain, usually an existing slice with its necessary shared dependencies,
+can execute while later slices are refined. Retain global scope and remaining work. After its
+confirmed successful application, ask Coordinator to use the existing R4.0-015 public feedback path for a small useful
 question subset. Keep actual model-expression, retrieval and Consumer-understanding failures
 distinct; public feedback does not replace final independent acceptance. Hidden questions/answers
 remain outside production. Preserve mapping/metric unknowns and authorized scope.
@@ -1027,6 +1031,32 @@ running Task or require final production_handoff first. If this checkpoint path 
 report feedback not executed and the exact missing prerequisite. Delivery obtains actual governed
 responses and Consumer answers; production consumes only authorized public feedback and preserves
 original receipts. This checkpoint prerequisite is the existing R4.0-015 path, not a new phase gate.
+
+R4.3-015: trust the tool's bound applied Attempt and version confirmation; do not routinely read
+all resources or compare every approved statement after successful apply. Applied and business
+quality feedback are separate: not_evaluated is not semantic PASS. A stage with complete approved
+coverage and available dependencies may advance without a mandatory question round; choose later
+public questions by business value, not once per batch/stage. Keep dry-run validated separate from
+applied. Pending/applying/recovering, lost replies or unconfirmed identity use the original request
+and Attempt recovery; never change keys to replay possible writes. Actual business reads revealing
+missing/wrong writes are platform defects, not a reason to add a permanent full-audit routine.
+
+For the bounded feedback reading window, Delivery sends sourced delivery_guidance to Coordinator;
+Coordinator sends Protocol an existing reply-required Team message to pause new dry-run/apply
+submissions. Let in-flight continuous calls return and report actual receipts/pending writes before
+feedback starts. Analysis, candidate preparation and later planning may continue. The window lasts
+through Consumer reads and the final binding check. Release this normal submission wait only when
+the original evaluation operation actually ends, including partial/unavailable/superseded results;
+a timeout/lost reply requires querying that same operation, not launching another or releasing early.
+Unknown writes and explicit user pauses remain constrained. Do not require a retained owner to exit.
+
+Quality defects pause only affected content and its real dependents, including shared references;
+independent work continues. Revise/review/dry-run/apply only changed content, then recheck affected
+public questions and associations. Preserve unresolved defects as REVISE and incomplete reads or
+undetermined causes as PARTIAL. At whole-run completion retain actual governed association checks,
+shared identity/global coverage reconciliation and the complete independent Consumer/Judge verdict;
+local public feedback and successful application never replace that final read-only acceptance.
+
 
 
 ## Original Team retention and user flow messages (R4.0-028 / R4.2-008)

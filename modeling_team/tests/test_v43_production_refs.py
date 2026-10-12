@@ -145,6 +145,11 @@ def test_native_plan_refs_execute_ordered_complete_projections_and_do_not_replay
     with _protocol_capability(production) as endpoint:
         result = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert result["ok"] is True, result
+        assert result["resource_readback_status"] == "not_evaluated"
+        assert result["semantic_verdict"] == "not_evaluated"
+        assert "real dependencies" in result["required_next_step"]
+        assert all(row["resource_readback_status"] == "not_evaluated"
+                   for row in result["completed"])
         assert [c["mode"] for c in production.calls] == ["dry_run", "apply_atomic"] * 2
         assert [c["expected_model_revision"] for c in production.calls] == [1, 1, 4, 4]
         for index, plan in enumerate(production.plans):
@@ -155,6 +160,11 @@ def test_native_plan_refs_execute_ordered_complete_projections_and_do_not_replay
         replay = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert [row["status"] for row in replay["completed"]] == ["already_applied"] * 2
         assert len(production.calls) == 4
+        assert replay["resource_readback_status"] == "not_evaluated"
+        assert all(row["resource_readback_status"] == "not_evaluated"
+                   for row in replay["completed"])
+        assert {r["tool"] for r in production.runner.acceptance._platform_read_artifacts.values()} == {
+            "get_modeling_context", "submit_modeling_batch"}
     assert "batch" not in CAPABILITY_TOOL_SCHEMAS["protocol_execute_approved_plans"]["properties"]
 
 
@@ -362,11 +372,11 @@ def test_association_retained_digest_tampering_is_actionable(production):
     assert error.value.data["reason_code"] == "association_read_ref_invalid"
 
 
-def test_execution_requires_actual_governed_definition_relation_and_shared_target_readback(production):
+def test_final_association_check_reads_actual_definitions_relations_and_shared_targets(production):
     carrier = production.runner.acceptance
     with _protocol_capability(production) as endpoint:
         execution = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
-        assert execution["resource_readback_status"] == "pending_protocol_governed_read"
+        assert execution["resource_readback_status"] == "not_evaluated"
         selections = [scope(signature=production.versions[ontology], ontology_id=ontology,
                             graph=graph).ontologies[0] for ontology, graph in production.graphs.items()]
         selections.append(scope(ontology_id=production.shared_ontology,

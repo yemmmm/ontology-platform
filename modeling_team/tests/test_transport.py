@@ -742,7 +742,8 @@ class TransportTests(unittest.TestCase):
         self.assertIn("cannot derive the unique SPO count", protocol)
         self.assertIn("never arithmetic on", protocol)
         self.assertIn("`semantic_counts` deltas", protocol)
-        # Post-apply: every approved SPO present under full paging; a missing
+        # R4.3-015: routine successful apply needs no per-SPO proof. Business
+        # reads / necessary recovery preserve full paging and a missing
         # approved SPO is one concrete inconsistency, never the only kind —
         # unexplained extra content, deletions and binding differences are
         # write-integrity issues on the unknown-write gate, "no missing" is
@@ -750,7 +751,10 @@ class TransportTests(unittest.TestCase):
         # pure count discrepancy reconciles; duplicates explain a count
         # difference without inventing unknown writes or compensations — and
         # count mismatch alone is never blanket-safe either.
-        self.assertIn("check each approved SPO is present with full", protocol)
+        self.assertNotIn("After apply, check each approved SPO", protocol)
+        self.assertIn("Normal confirmed apply does not require checking every approved SPO.", protocol)
+        self.assertIn("When business reads or necessary recovery inspect statements", protocol)
+        self.assertIn("retain full paging eligibility", protocol)
         self.assertIn("a genuinely missing approved SPO is one concrete inconsistency to", protocol)
         self.assertIn("investigate, not the only kind: unexplained extra content beyond the approved projection,", protocol)
         self.assertIn("a binding difference on an approved statement are equally real", protocol)

@@ -127,8 +127,13 @@ See [prompts.md](references/prompts.md) for a bounded semantic handoff and clari
 
 ## Assess returned execution results
 
-A candidate receipt proves only what that receipt states. Use Protocol's bound dry-run/application,
-readback and governed-retrieval results to identify remaining semantic gaps.
+A candidate receipt proves only what that receipt states. Trust Protocol's bound successful
+application/Attempt and version confirmation without a routine full resource/statement comparison.
+Use business-directed governed reads, public feedback, affected rechecks and final association checks
+to identify semantic gaps. Track stage application separately from business quality; a stage may
+advance along real dependencies while its quality is unverified. Keep full authorized scope and
+remaining stages; pause only real dependents of a defect, including shared references. Original
+identity recovery remains required for uncertain writes. Final independent acceptance is separate.
 Preserve source-supported business constraints as ordinary semantic knowledge; do not require
 SHACL/OWL runs, specialized rule annotations, scripts or their receipts (R4.0-025).
 

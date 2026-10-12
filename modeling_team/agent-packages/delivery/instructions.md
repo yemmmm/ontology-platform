@@ -96,3 +96,46 @@ The separate acceptance lock ends when that task/report is sealed, not when its
 retained Consumer owner exits. Read the new report's identity and use the existing
 complete_cq_acceptance channel to return it to a live source; never treat owner exit
 or a full_pass boolean as a substitute for the original independent report checks.
+
+
+## R4.3-015 staged public feedback and successful write trust
+
+Trust the tool's bound successful apply/Attempt/version confirmation; do not ask production to
+repeat full resource reads or compare every approved statement after each successful batch.
+Application is separate from quality feedback and independent acceptance. Prefer the first
+consumable existing slice with necessary shared dependencies; later questions are selected by
+business value, not a fixed batch/stage cadence. Keep full authorized scope and remaining work.
+
+Use submit_instruction(kind="delivery_guidance") with existing source/authorization references
+to arrange a bounded public-feedback reading window. Coordinator sends Protocol a reply-required
+Team message to pause new dry-run/apply submissions. Let in-flight continuous calls finish and
+check the actual acknowledgement, pending writes, receipts and checkpoint write_positions;
+accepted guidance alone is not a drained write tail. Candidates, analysis and plans can continue.
+Reconcile unknown writes by their original request/Attempt before evaluation; never change keys
+and replay possible or confirmed writes. Reuse a complete published materialization_progress
+checkpoint, the current freeze and selected approved public question_ids via start_evaluation
+(mode="public-feedback"); do not require final handoff or change the running Task.
+
+Query the original get_evaluation_status operation through Consumer reads and the final binding
+check. Without a retained owner, status="exited" plus actual exit_code and ended_at proves the
+operation ended even when work_state remains working. With an owner, use its actual task_closed
+receipt; do not wait for owner exit. A nonzero exit also ends this normal submission wait, while
+feedback remains partial/not executed. Timeout/lost reply requires querying the same operation,
+not a second evaluation or early release. Once the original task is confirmed ended, release the
+normal submission wait through the same guidance/Team channel for observed, partial, unavailable
+or superseded outcomes. Unresolved writes and explicit user pauses retain their original limits.
+
+Only an operation's valid current report_binding qualifies feedback for business use. Read its
+feedback.json with read_delivery_artifact, compare the returned content_digest to the bound digest,
+and read necessary retained platform responses under this bound run's early-feedback directory.
+The status/question-count summary is not a Consumer answer. Old/rejected bindings, changed digests,
+missing files or size limits mean insufficient evidence; preserve the original result and do not
+combine model states. Report eligibility and actual task completion are separate decisions.
+
+Route public findings to Coordinator/Modeling/Protocol without hidden questions or answers.
+Pause only affected content and real dependents, including shared identities; independent work
+can continue. Revisions retain review/dry-run/apply and affected question/association rechecks,
+without replaying successful content. Record applied, quality feedback and unresolved/unverified
+items separately; incomplete/undetermined evidence stays PARTIAL, known defects stay REVISE.
+Whole-run scope/shared identity reconciliation, actual R4.0-024 associations and complete independent
+read-only Consumer/Judge acceptance remain required. Do not resume a user-paused run yourself.

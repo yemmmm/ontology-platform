@@ -1116,6 +1116,7 @@ class DeliverySession:
                     relative = path.relative_to(root)
                     approved = relative.parts[0] in {
                         "competency-questions", "acceptance-v3", "evidence", "manifest-snapshots",
+                        "early-feedback",
                     } or relative.as_posix() in {
                         "state.json", "baseline-manifest.json", "task.snapshot.yaml", "profile.snapshot.yaml",
                         "model-handoff.json", "control/host-requests.jsonl",

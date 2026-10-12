@@ -5346,7 +5346,7 @@ class TeamRunner:
                 if applied is not None:
                     completed.append({"plan_ref": ref, "projection_digest": plan["projection_digest"],
                                       "status": "already_applied", "version_readback_ref": read_ref,
-                                      "resource_readback_status": "pending_protocol_governed_read",
+                                      "resource_readback_status": "not_evaluated",
                                       "attempt_id": applied["attempt_id"]})
                     continue
                 version = data["workspace"]["model_revision"]
@@ -5393,7 +5393,7 @@ class TeamRunner:
                 completed.append({"plan_ref": ref, "projection_digest": plan["projection_digest"],
                                   "status": "applied", "dry_run": dict(dry), "apply": apply,
                                   "version_readback_ref": read_ref,
-                                  "resource_readback_status": "pending_protocol_governed_read",
+                                  "resource_readback_status": "not_evaluated",
                                   "model_revision": after["workspace"]["model_revision"]})
         except (StagedSubmissionRejection, StagedDecisionArtifactError) as exc:
             detail = exc.data if isinstance(exc, StagedSubmissionRejection) else {
@@ -5408,8 +5408,8 @@ class TeamRunner:
                     "required_next_step": "Obtain current translation approval and apply authorization before apply_atomic; validation is not materialization or semantic acceptance",
                     "semantic_verdict": "not_evaluated"}
         return {"ok": True, "status": "COMPLETE", "completed": completed,
-                "resource_readback_status": "pending_protocol_governed_read",
-                "required_next_step": "Protocol must read actual authorized resources/relations with existing governed reads, retain complete pages, then inspect associations by read_refs before chain handoff",
+                "resource_readback_status": "not_evaluated",
+                "required_next_step": "Continue approved work along real dependencies; obtain public business feedback at valuable milestones and complete necessary global coverage and association checks before whole-run production handoff",
                 "semantic_verdict": "not_evaluated"}
 
     def _handle_check_plan_coverage(self, args: Mapping[str, Any]) -> dict[str, Any]:

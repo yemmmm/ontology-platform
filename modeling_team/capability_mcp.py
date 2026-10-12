@@ -807,7 +807,10 @@ class RunnerCapabilityEndpoint:
                     "performs current-version dry-run, approved apply and version readback per plan. "
                     "For validation only, use mode=dry_run and lease_tokens={}; this never applies "
                     "model resources and does not require translation approval. Semantic approvals "
-                    "and existing gates remain required. Actual governed resource readback follows apply."
+                    "and existing gates remain required. Confirmed applied receipts allow dependency-ordered "
+                    "continuation without per-batch full resource comparisons. Resource readback and "
+                    "semantic verdict remain not_evaluated; business feedback and final association "
+                    "checks use actual governed reads."
                 ),
                 "protocol_staged_submit_modeling_batch": (
                     "Legacy/manual inline staged batch submission. Unified plans should use "

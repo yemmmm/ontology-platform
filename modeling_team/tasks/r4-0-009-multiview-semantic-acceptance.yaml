@@ -34,7 +34,12 @@ objective: >-
   unknowns/conflicts and scoped reference reviews before shared changes.
   Preserve source fidelity, explicit unknowns, competency-question
   coverage, generic semantic scope, deterministic dry-run/apply/readback,
-  authorization and independent acceptance.  Modeling candidates contain
+  authorization and independent acceptance. Under R4.3-015 trust bound successful
+  apply/Attempt/version receipts without per-batch resource or statement comparisons.
+  authorized-scope-readback-complete means necessary business reads and whole-run actual
+  semantic/association coverage, not repeated proof of each applied plan; apply alone
+  never completes this label. Stage application and quality feedback remain separate.
+  Modeling candidates contain
   semantic meaning, shared slice scope and unknowns only; Protocol owns Batch
   envelopes, platform IDs, write receipts and read handles.  The active flow
   does not create, attach or complete source-tracing records and does not use

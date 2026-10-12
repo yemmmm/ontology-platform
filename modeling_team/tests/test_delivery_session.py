@@ -278,3 +278,53 @@ def test_run_delivery_keeps_packet_queued_when_steer_hits_completed_turn(tmp_pat
     packet = json.loads(next(text for text in stub.sent[1:] if '迟到的排队输入。' in text))
     assert packet['source_reference'].startswith('delivery:steer-probe:')
     assert stub.events.index('steer') < stub.events.index('turn_completed')
+
+
+def test_bound_public_feedback_body_and_retained_response_are_readable(tmp_path):
+    import hashlib
+    host = session(tmp_path)
+    host.repository_root = tmp_path
+    host.run_ids = {"bound"}
+    root = tmp_path / "workspaces/modeling-runs/bound/early-feedback/feedback-1"
+    root.mkdir(parents=True)
+    for name, text in (("feedback.json", '{"status":"partial","answer":"unknown"}'),
+                       ("platform-responses/read-1.json", '{"ok":true,"data":{"rows":[]}}')):
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text)
+        result = host.call_tool("read_delivery_artifact", {"path": str(path)})
+        assert result["ok"], result
+        assert result["data"]["text"] == text
+        assert result["data"]["content_digest"] == "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+        # The reader reports actual content; it cannot bless a stale binding digest.
+        old_digest = result["data"]["content_digest"]
+        path.write_text(text + "\n")
+        changed = host.call_tool("read_delivery_artifact", {"path": str(path)})
+        assert changed["data"]["content_digest"] != old_digest
+
+
+@pytest.mark.parametrize("outside", ["other-run", "host-path", "symlink", "oversize", "directory"])
+def test_public_feedback_reader_preserves_existing_file_boundaries(tmp_path, outside):
+    host = session(tmp_path)
+    host.repository_root = tmp_path
+    host.run_ids = {"bound"}
+    root = tmp_path / "workspaces/modeling-runs/bound/early-feedback/feedback-1"
+    root.mkdir(parents=True)
+    path = root / "feedback.json"
+    if outside == "other-run":
+        path = tmp_path / "workspaces/modeling-runs/other/early-feedback/feedback.json"
+        path.parent.mkdir(parents=True)
+        path.write_text("private")
+    elif outside == "host-path":
+        path = tmp_path / "private.json"
+        path.write_text("private")
+    elif outside == "symlink":
+        target = tmp_path / "private.json"
+        target.write_text("private")
+        path.symlink_to(target)
+    elif outside == "oversize":
+        path.write_text("x" * 2_000_001)
+    else:
+        path.mkdir()
+    result = host.call_tool("read_delivery_artifact", {"path": str(path)})
+    assert result["ok"] is False, result
