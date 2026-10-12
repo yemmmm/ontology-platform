@@ -67,6 +67,7 @@ from ..modeling_readonly import MODELING_READ_TOOLS
 from ..capability_mcp import (
     COMPETENCY_QUESTION_ROLE,
     CQ_OPERATION,
+    CQ_OPERATIONS,
     ROLE_OPERATIONS,
     STAGED_PROTOCOL_RUN_OPERATIONS,
     STAGED_UNIFIED_PROTOCOL_OPERATIONS,
@@ -3854,6 +3855,16 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             ):
                 # R3.0-011: the competency-question role owns exactly one
                 # Runner-private capability and no platform tool at all.
+                # R4.3-013: when the active run carries the Runner handoff
+                # materials, the carrier's CQ endpoint also advertises the
+                # four authorized handoff tools (the same
+                # ``handoff_materials`` condition that already freezes the
+                # team_transport surface); this tuple must equal the live
+                # socket's ``tools/list`` exactly -- ``_require_mcp_surface``
+                # asserts that equality against the carrier's own assembly.
+                active_run = run if run is not None else getattr(self, "_active_run", None)
+                if getattr(active_run, "handoff_materials", None) is not None:
+                    return CQ_OPERATIONS
                 return (CQ_OPERATION,)
             return ()
         expected = ROLE_OPERATIONS.get(role, ())

@@ -16,7 +16,9 @@ from types import SimpleNamespace
 
 import yaml
 
+from modeling_team.capability_mcp import COMPETENCY_QUESTION_ROLE, CQ_OPERATION, CQ_OPERATIONS
 from modeling_team.contracts import _load_package, load_team_configuration, repository_root
+from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
 from modeling_team.protocol_mcp_launch import canonical_protocol_mcp_mode_contract, protocol_mcp_launch_spec
 from modeling_team.protocol_mechanics import protocol_mechanics_contract, protocol_mechanics_contract_bytes
 from modeling_team.runner import TeamRunner
@@ -593,6 +595,96 @@ class CodexIsolationTests(unittest.TestCase):
             agent = coordinator if name == "wrong-role" else protocol
             adapter._rpc = lambda _agent, _method, _params, servers=servers: {"data": servers}  # type: ignore[method-assign]
             with self.subTest(case=name), patch(
+                "modeling_team.runtimes.codex.time.monotonic", side_effect=[0, 1, 26]
+            ), patch("modeling_team.runtimes.codex.time.sleep"):
+                with self.assertRaisesRegex(CodexRuntimeError, "MCP preflight failed"):
+                    adapter._require_expected_mcp_servers(agent)
+
+    def test_mcp_preflight_matches_the_real_cq_and_handoff_tool_surface(self) -> None:
+        """R3.0-011 + R4.3-013 preflight parity for the competency-question role.
+
+        A real production start (r4-0-009 multiview slices + r3-0-011
+        competency-question) failed ``MCP preflight failed for
+        competency-question`` before any first dispatch: the live carrier CQ
+        socket advertises the four authorized handoff tools beside
+        ``cq_publish_question_draft`` (the carrier assembles
+        ``CQ_OPERATIONS`` whenever the run carries handoff materials), while
+        the frozen surface expected only the single capability.  The four
+        handoff tools are already authorized for the CQ role on the same
+        socket (``TeamRunner._cq_material_call``), so the frozen surface must
+        mirror them and never a wider tool set: an extra or unknown tool on
+        either server still fails the start.
+        """
+
+        root = repository_root()
+        agent = _Agent(
+            COMPETENCY_QUESTION_ROLE,
+            _load_package(root, COMPETENCY_QUESTION_ROLE),
+            Path("/tmp/cq-home"),
+            Path("/tmp/cq-work"),
+            Path("/tmp/cq-skills"),
+            schema_version=2,
+        )
+
+        def cq_task_run(**extra: object) -> SimpleNamespace:
+            return SimpleNamespace(
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(
+                        schema_version=2,
+                        parameters={
+                            "competency_question_acceptance": True,
+                            "staged_modeling_decisions": True,
+                        },
+                    )
+                ),
+                **extra,
+            )
+
+        def status(runner_capability: set[str], team_transport: set[str]) -> dict:
+            return {
+                "data": [
+                    {
+                        "name": "team_transport",
+                        "tools": [{"name": name} for name in sorted(team_transport)],
+                    },
+                    {
+                        "name": "runner_capability",
+                        "tools": [{"name": name} for name in sorted(runner_capability)],
+                    },
+                ]
+            }
+
+        # 1. The real production combination: handoff materials active, so the
+        #    carrier CQ socket serves the authorized handoff tools beside the
+        #    CQ capability, and the staged transport serves ``report_issue``.
+        adapter = CodexRuntimeAdapter(repository_root=root)
+        adapter._active_run = cq_task_run(handoff_materials=SimpleNamespace())
+        adapter._staged_decisions_enabled = True
+        transport = {"send_team_message", "report_task_result", "report_issue", *HANDOFF_TOOL_NAMES}
+        adapter._rpc = lambda _agent, _method, _params: status(set(CQ_OPERATIONS), transport)  # type: ignore[method-assign]
+        adapter._require_expected_mcp_servers(agent)
+
+        # 2. The pre-handoff surface stays valid: a run without handoff
+        #    materials keeps the single-capability CQ socket and the base
+        #    staged transport.
+        adapter = CodexRuntimeAdapter(repository_root=root)
+        adapter._active_run = cq_task_run()
+        adapter._staged_decisions_enabled = True
+        adapter._rpc = lambda _agent, _method, _params: status(  # type: ignore[method-assign]
+            {CQ_OPERATION}, {"send_team_message", "report_task_result", "report_issue"}
+        )
+        adapter._require_expected_mcp_servers(agent)
+
+        # 3. Illegal extra tools on either server still fail the start closed.
+        for case, surface in (
+            ("runner-capability-extra", status({*CQ_OPERATIONS, "query_semantic_context"}, transport)),
+            ("team-transport-extra", status(set(CQ_OPERATIONS), {*transport, "send_coordination"})),
+        ):
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter._active_run = cq_task_run(handoff_materials=SimpleNamespace())
+            adapter._staged_decisions_enabled = True
+            adapter._rpc = lambda _agent, _method, _params, surface=surface: surface  # type: ignore[method-assign]
+            with self.subTest(case=case), patch(
                 "modeling_team.runtimes.codex.time.monotonic", side_effect=[0, 1, 26]
             ), patch("modeling_team.runtimes.codex.time.sleep"):
                 with self.assertRaisesRegex(CodexRuntimeError, "MCP preflight failed"):
