@@ -147,7 +147,11 @@ GLM_DIRECT_ROUTE = ProviderRoute(
     credential_env="GLM_API_KEY",
     # ``glm-5.3`` (full model) admitted 2026-09-12 for the user-authorized
     # model-comparison round; it rides the same credential and loopback session.
-    models=frozenset({"glm-5.3", "glm-5.3-flash"}),
+    # ``glm-5.3-flashx`` admitted 2026-10-13 by explicit user authorization
+    # (R4.0-019): the user-specified exact Team model -- no downgrade to
+    # ``glm-5.3-flash`` and no silent fallback.  Same credential, loopback
+    # session, and effort mapping.
+    models=frozenset({"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"}),
     # The upstream Responses endpoint accepts ``low`` verbatim for both models
     # (verified 2026-09-13 with a one-shot probe: effort=low completed with
     # reasoning_tokens=0), so unlike the DeepSeek route ``low`` passes through

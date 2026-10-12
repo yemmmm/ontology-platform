@@ -48,6 +48,7 @@ from modeling_team.model_routing import (
     CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
     DEFAULT_MODEL_PROFILE_ID,
     DEEPSEEK_DIRECT_ROUTE,
+    DELIVERY_MODEL_PROFILE_PACKAGE_ID,
     GLM_DIRECT_ROUTE,
     MODEL_PROFILE_PACKAGE_IDS,
     MODEL_PROFILE_ROLE_UNIVERSE,
@@ -63,6 +64,7 @@ from modeling_team.model_routing import (
     preflight_codex_subscription_auth,
     preflight_profile_credentials,
     profile_requires_codex_subscription_auth,
+    resolve_delivery_model_binding,
     uses_external_credential_session,
 )
 from modeling_team.runner import TeamRunner
@@ -252,7 +254,9 @@ def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert GLM_DIRECT_ROUTE.upstream_url == "https://open.bigmodel.cn/api/v1/responses"
     assert GLM_DIRECT_ROUTE.credential_env == "GLM_API_KEY"
     assert GLM_DIRECT_ROUTE.wire_api == "responses"
-    assert GLM_DIRECT_ROUTE.models == frozenset({"glm-5.3", "glm-5.3-flash"})
+    assert GLM_DIRECT_ROUTE.models == frozenset(
+        {"glm-5.3", "glm-5.3-flash", "glm-5.3-flashx"}
+    )
     assert GLM_DIRECT_ROUTE.uses_external_credential is True
     # ``low`` passes through verbatim (upstream-verified 2026-09-13; the
     # auth-r3-0-012 batch runs the Platform Examiner at low effort), while the
@@ -1503,6 +1507,57 @@ def test_repository_glm_profile_binds_every_role_to_glm() -> None:
         assert binding.model == "glm-5.3-flash"
         assert binding.requested_effort == "max"
         assert binding.effective_effort == "max"
+
+
+def test_repository_glm_flashx_high_profile_binds_every_role_to_flashx_high() -> None:
+    """The user-authorized flashx profile pins every declared role exactly.
+
+    2026-10-13 explicit user authorization (R4.0-019): the Team runs the
+    glm-direct route on the exact model ``glm-5.3-flashx`` at ``high``.  No
+    downgrade to ``glm-5.3-flash`` and no silent fallback onto another route
+    or effort is permitted.
+    """
+
+    # The exact model must sit in the closed glm-direct allowlist; the
+    # runtime guard in ``runtimes.codex`` revalidates bindings against the
+    # same catalog, so admission here covers the child path too.
+    assert "glm-5.3-flashx" in GLM_DIRECT_ROUTE.models
+    profile = load_team_model_profile(ROOT, "glm-flashx-high")
+    assert profile.provider_ids() == ("glm-direct",)
+    # Nothing declares the built-in route, so nothing can fall back onto the
+    # Codex ChatGPT subscription.
+    assert profile_requires_codex_subscription_auth(profile) is False
+    assert set(profile.bindings) == set(MODEL_PROFILE_PACKAGE_IDS) | {
+        "competency-question",
+        DELIVERY_MODEL_PROFILE_PACKAGE_ID,
+    }
+    for binding in profile.bindings.values():
+        assert binding.provider_id == "glm-direct"
+        assert binding.model == "glm-5.3-flashx"
+        assert binding.requested_effort == "high"
+        # The existing glm-direct mapping passes ``high`` through verbatim;
+        # the profile adds no effort mapping of its own.
+        assert binding.effective_effort == "high"
+    # ``delivery`` is an explicit declaration, not Coordinator inheritance.
+    delivery_binding, delivery_source = resolve_delivery_model_binding(profile)
+    assert delivery_source == DELIVERY_MODEL_PROFILE_PACKAGE_ID
+    assert delivery_binding.model == "glm-5.3-flashx"
+    assert delivery_binding.effective_effort == "high"
+    # The loopback child config projects the exact model, provider, and
+    # effective effort onto the shared loopback session table, exactly as
+    # the fresh-child TOML writer does for external-credential routes.
+    binding = profile.bindings["modeling"]
+    lines = codex_module._formal_provider_config_lines(
+        binding, "http://127.0.0.1:49013"
+    )
+    parsed = tomllib.loads("\n".join(lines))
+    assert parsed["model"] == "glm-5.3-flashx"
+    assert parsed["model_provider"] == "glm-direct"
+    assert parsed["model_reasoning_effort"] == "high"
+    assert parsed["model_providers"]["glm-direct"]["base_url"] == (
+        "http://127.0.0.1:49013/"
+    )
+    assert parsed["model_providers"]["glm-direct"]["wire_api"] == "responses"
 
 
 # --------------------------------------------------------------------------

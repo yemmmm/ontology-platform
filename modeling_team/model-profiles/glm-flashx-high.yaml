@@ -1,0 +1,51 @@
+# Team Model Profile for the user-authorized 2026-10-13 flashx round
+# (R4.0-019 configuration consistency): the formal six roles plus the
+# ``competency-question`` roster role and the explicit optional ``delivery``
+# binding, all pinned to the ``glm-direct`` route with the exact model
+# ``glm-5.3-flashx`` at ``high`` reasoning effort -- the user-specified exact
+# model, with no downgrade to ``glm-5.3-flash`` and no silent fallback onto
+# another route or effort.
+#
+# The profile ID drops the model's version suffix because ``SAFE_ID`` allows
+# only ``[a-z0-9-]``; the precise model string lives in every ``model:``
+# binding.  ``glm-direct`` is the Zhipu direct Responses route reached through
+# the Host-owned loopback session; ``high`` passes through the existing
+# glm-direct effort mapping verbatim.  No OpenAI route is declared, so no role
+# can silently ride the Codex built-in ChatGPT subscription.  Other profiles
+# stay unchanged: validate, baseline, and run must select this profile
+# explicitly via ``--model-profile glm-flashx-high``.
+schema_version: 1
+model_profile_id: glm-flashx-high
+roles:
+  coordinator:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  modeling:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  protocol:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  competency-question:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  acceptance:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  source-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  platform-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  delivery:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
