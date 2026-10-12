@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import ast
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -161,3 +163,109 @@ class ContractTests(unittest.TestCase):
                     self._write_package_fixture(root, skills_line=skills_line)
                     with self.assertRaises(TeamConfigurationError):
                         _load_package(root, "coordinator")
+
+
+class DeletePropertyContractTests(unittest.TestCase):
+    """The mounted delete_property payload contract agrees with the real backend."""
+
+    def setUp(self) -> None:
+        self.root = repository_root()
+
+    def _contract(self) -> dict:
+        return json.loads(
+            (self.root / "modeling_team/references/modeling-batch-item-contract.json")
+            .read_text(encoding="utf-8")
+        )
+
+    def _backend_literal(self, name: str) -> object:
+        # Importing app.services.modeling_handlers needs the backend virtualenv;
+        # read the same real allowlist/forbidden-set literals instead of
+        # restating them here.
+        source = (self.root / "backend/app/services/modeling_handlers.py").read_text(
+            encoding="utf-8"
+        )
+        for node in ast.parse(source).body:
+            targets: list[ast.expr] = []
+            if isinstance(node, ast.Assign):
+                targets = list(node.targets)
+            elif isinstance(node, ast.AnnAssign) and node.value is not None:
+                targets = [node.target]
+            if any(isinstance(target, ast.Name) and target.id == name for target in targets):
+                return ast.literal_eval(node.value)
+        raise AssertionError(f"{name} not found in modeling_handlers.py")
+
+    def test_delete_property_payload_contract_matches_backend_allowlist(self) -> None:
+        contract = self._contract()
+        self.assertEqual(set(contract["delete_payloads"]), {"delete_property"})
+        schema = contract["delete_payloads"]["delete_property"]
+        allowed = self._backend_literal("ALLOWED_FIELDS")
+        forbidden = self._backend_literal("FORBIDDEN_TARGET_FIELDS")
+        self.assertEqual(set(schema["fields"]), set(allowed["delete_property"]))
+        self.assertEqual(set(schema["fields"]), {"property_id", "property_iri"})
+        self.assertFalse(forbidden.intersection(schema["fields"]))
+        self.assertFalse(schema["additional_properties"])
+        self.assertIn("At least one of property_id or property_iri", schema["identity"])
+        self.assertIn("ontology_id belongs to the Batch envelope", schema["identity"])
+        self.assertTrue(all(not field["required"] for field in schema["fields"].values()))
+
+    def test_create_and_update_payload_sections_stay_unchanged(self) -> None:
+        contract = self._contract()
+        self.assertEqual(
+            set(contract["create_payloads"]),
+            {
+                "create_table_mapping",
+                "create_join_mapping",
+                "create_enum_meaning",
+                "create_metric_definition",
+                "create_class",
+                "create_property",
+                "create_relation_type",
+                "create_entity",
+                "create_operation",
+                "create_relation",
+            },
+        )
+        self.assertEqual(
+            set(contract["update_payloads"]), {"update_property", "update_entity"}
+        )
+
+    def test_delete_candidate_closes_through_existing_identity_binding(self) -> None:
+        from modeling_team.staged_decisions import unified_identity_issue
+
+        def projection(property_iri: str) -> dict:
+            return {
+                "identity_bindings": [
+                    {
+                        "candidate_item_id": "neutral-delete-item",
+                        "resource_iri": "https://example.test/authorized-read/property",
+                        "receipt_ref": None,
+                        "evidence_ref": "authorized-read-binding-example",
+                    }
+                ],
+                "items": [
+                    {
+                        "command_kind": "delete_property",
+                        "payload": {"property_iri": property_iri},
+                    }
+                ],
+                "decision_bindings": [
+                    {"command_index": 0, "candidate_item_ids": ["neutral-delete-item"]}
+                ],
+            }
+
+        published = {"neutral-delete-item": {"item_kind": "property"}}
+        self.assertIsNone(
+            unified_identity_issue(
+                projection("https://example.test/authorized-read/property"), published
+            )
+        )
+        drifted = unified_identity_issue(
+            projection("https://example.test/guessed/property"), published
+        )
+        self.assertEqual(drifted.reason_code, "approval_content_mismatch")
+        unbound = projection("https://example.test/authorized-read/property")
+        unbound["identity_bindings"] = []
+        self.assertEqual(
+            unified_identity_issue(unbound, published).reason_code,
+            "missing_candidate_reference",
+        )

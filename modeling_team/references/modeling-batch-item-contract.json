@@ -1388,5 +1388,30 @@
       "annotation_update": "Annotations replace as objects, clear with null, and remain unchanged when omitted."
     }
   },
+  "delete_payloads": {
+    "delete_property": {
+      "additional_properties": false,
+      "identity": "At least one of property_id or property_iri is required, using the existing authorized identity binding; the deletion targets that existing property identity. ontology_id belongs to the Batch envelope, not this payload.",
+      "fields": {
+        "property_id": {
+          "type": "string",
+          "required": false,
+          "server_behavior": "accepted alone; the compiler then derives the property IRI itself from the deployed namespace"
+        },
+        "property_iri": {
+          "type": "string",
+          "required": false,
+          "format": "absolute-rdf-iri",
+          "server_behavior": "accepted alone or with property_id; when both are supplied the compiler deletes the property_iri target and records the id"
+        }
+      },
+      "rules": [
+        "Send delete_property only for a currently approved source-business deletion intent. The neutral candidate keeps the approved deletion item together with its existing property identity binding, and closes it through the ordinary unified candidate/approval/identity contracts; do not bypass approval closure by pointing the command at an item that no longer exists in the current candidate.",
+        "Bind the target only from the approved plan's existing identity binding: when that binding carries a resource_iri, send property_iri with that exact value; property_id remains valid where the authorized target contract is ID-based and the ID matches. Never guess, shorten, or synthesize the IRI.",
+        "The target must be an existing resource referenced by authorized reads or receipts; a concept/fact no_match response does not establish property absence. Deletion is destructive: dry_run the identical content first, require the prepared write to match the approved deletion intent and identity binding, then apply_atomic and keep the receipt. Existing confirmation, approval, protection and application gates stay mandatory; this payload adds no process, count, or role gate.",
+        "server_current_acceptance: the compiler accepts exactly property_id and property_iri (at least one required); unknown payload fields and forbidden target fields such as ontology_id are rejected before compilation. The write is a subject-scoped wildcard triple removal for the property inside the ontology graph only, and this command carries no semantic_definition and no impact-receipt fields."
+      ]
+    }
+  },
   "ordered_schedule": "class -> property/relation type -> entity -> receipt/read bind generated IDs/IRIs -> relation"
 }
