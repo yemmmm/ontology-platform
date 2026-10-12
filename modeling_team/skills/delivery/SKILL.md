@@ -160,6 +160,23 @@ a delivery receipt alone stays pending. Do not interrupt or install a global pau
 switch. 取消/撤回预算 preserve their separate authorization-revocation contract. A host interruption is recorded as supervision interrupted,
 not success. Resume from real state without silently relaunching production.
 
+Before standby/seal/CQ handoff, when production operations have ended, no
+in-flight or unknown writes remain and this round's evidence is preserved,
+first normally complete this round's OWNED work Build Session: through the
+existing complete_build_session binding where the role is allowed to use it,
+or by Delivery coordinating the Host's existing REST
+/api/build-sessions/{id}:complete with the current GET expected_revision, a
+fresh client_request_id, and a factual summary/unresolved_items; then re-GET
+to confirm status=completed with leases released. Never cancel, delete model
+resources, or replay writes, and never complete a session this run does not
+own. A role that can call completion does so before its own terminal; when it
+cannot, Delivery coordinates the existing normal Host lifecycle instead of
+reopening a terminal role. Session completion records process wrap-up only —
+it is not semantic or production PASS: keep PARTIAL/DEFERRED/unknown items
+explicit for the separate independent acceptance, and never substitute an
+earlier accepted-phase (p2a) summary, which would fabricate a semantic PASS
+at this stage.
+
 Finish with an explicit final business message stating what is verified and
 what remains unknown, then finish_delivery. Keep functional PASS separate
 from L0 runtime and independent L1 semantic acceptance. No self-review can

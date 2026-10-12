@@ -101,6 +101,21 @@ in-flight calls and partial acknowledgements. While awaiting user input, wait wi
 new inference; resume only on explicit input, on the same thread and remaining task.
 Authorization expiry, cancellation and budget revocation remain separate controls.
 
+Before standby/seal/CQ handoff, once production operations have actually ended
+with no in-flight or unknown writes and this round's evidence preserved, first
+normally complete this round's OWNED work Build Session — through the existing
+complete_build_session binding where the role may use it, otherwise Delivery
+coordinates the Host's existing REST /api/build-sessions/{id}:complete with the
+current GET expected_revision, a fresh client_request_id and a factual
+summary/unresolved_items (never a copy of an earlier accepted-phase summary) —
+then re-GET to confirm status=completed and released leases. Do not cancel,
+delete model resources or replay writes; never complete a session this run does
+not own. A role able to call completion does so before its own terminal; if it
+cannot, use the existing normal Host lifecycle path instead of reopening a
+terminal role. Session completion records process wrap-up only, not semantic or
+production PASS: keep PARTIAL/DEFERRED/unknown items explicit for the separate
+independent acceptance.
+
 At production completion use standby_run: drain writes, verify Build Sessions/Leases
 and revoke this run's write keys while retaining its original Team. Consult a sealed
 run through consult_team, not production instruction. Use the actual already-running
