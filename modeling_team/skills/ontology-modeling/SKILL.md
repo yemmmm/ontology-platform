@@ -40,7 +40,12 @@ while awaiting a decision, without treating silence as confirmation.
 
 If a material answer remains unavailable, preserve a scoped explicit unknown using the selected
 candidate contract and [platform-flow.md](references/platform-flow.md). Do not guess a value or
-turn a plausible interpretation into an asserted fact.
+turn a plausible interpretation into an asserted fact. Narrow the unknown to the exact unconfirmed
+business meaning; retain other source-confirmed facts and the current scope. Keep confirmation state
+separate from candidate/plan/application delivery, and explain the reason, impact and next responsible
+role/input for each deferred, unknown or out-of-scope disposition in the existing reason/note or
+handoff content. Do not add a field or enum for it. Physical source structure and samples do not
+establish business rules, legal value universes or permissions.
 
 ## Design a coherent scenario
 
@@ -56,7 +61,18 @@ inheritance or a type-level relation. Preserve the selected task's approval and 
 
 For controlled values, distinguish analysis from confirmed business semantics. Follow the staged
 contract for analysis conclusions, revisions and materialization decisions. Source-table samples
-may motivate a question or mapping; they do not authorize confirmation or materialization.
+may motivate a question or mapping; they do not authorize confirmation or materialization. Do not
+materialize mapping semantics without the applicable mapping approval; a legitimate deferral does not
+mean the authorized scope is complete.
+
+For a staged handoff or content review, use only the approved originals visible to this role and the
+existing handoff text, candidate IDs and scenario-map note. Trace important facts, relation direction,
+conditions/exceptions, knowns and unknowns from source to candidate items or a concrete gap, then trace
+each candidate assertion back to an approved basis. A summary does not prove an unread original. Use
+the existing contract and references; do not create a per-field table, private schema, extra Agent or
+hard gate. Candidate-to-plan coverage cannot discover material that never entered the candidate. Keep
+the stage candidate and plan complete for the current chain and necessary dependencies; later detailed
+scenarios are not a prerequisite.
 
 ## Coordinate viewpoints and shared changes
 
@@ -133,7 +149,9 @@ Use business-directed governed reads, public feedback, affected rechecks and fin
 to identify semantic gaps. Track stage application separately from business quality; a stage may
 advance along real dependencies while its quality is unverified. Keep full authorized scope and
 remaining stages; pause only real dependents of a defect, including shared references. Original
-identity recovery remains required for uncertain writes. Final independent acceptance is separate.
+identity recovery remains required for uncertain writes. A confirmed business meaning and its
+candidate/plan/application delivery are separate states; `not_evaluated` and a legitimate deferral
+are not semantic PASS or whole-scope completion. Final independent acceptance is separate.
 Preserve source-supported business constraints as ordinary semantic knowledge; do not require
 SHACL/OWL runs, specialized rule annotations, scripts or their receipts (R4.0-025).
 

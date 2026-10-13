@@ -1027,10 +1027,19 @@ provenance intact; shared references require explicitly approved Ontology scope.
 
 Before each stage execution and before final handoff, call `protocol_check_plan_coverage` with the
 published candidate_ref, approved plan_refs and explicit dispositions for unplanned candidate
-items (`unknown`, `out_of_scope`, `deferred`, with a business reason). Review its identity-level
+items (`unknown`, `out_of_scope`, `deferred`, with a concrete reason, affected scope/impact and next
+responsible role/input in the existing reason/note or handoff content). Same-reason dispositions may
+be combined only when their impact is the same; do not add disposition fields or enums.
+Review its identity-level
 rows with Modeling and Coordinator: definitions, relations, shared identity, cross-Ontology targets
 and real dependencies must be in plans or explicitly accounted for. COMPLETE is diagnostic
 coverage only; an applied entity count or receipt never proves the business chain is correct.
+Execute the received approved plan references in actual dependency order; an approved plan that is
+unchanged remains reusable without another semantic approval. Keep a valid `dry_run` proof bound to
+the current plan and workspace version through its immediate apply, and do not repeat the same
+review or proof merely because another unchanged batch completed. Revalidate when plan content,
+plan/binding identity, approval, or the workspace version makes that proof stale. Do not require
+detailed plans for later stages in order to execute a complete current chain and its dependencies.
 An already complete small chain, usually an existing slice with its necessary shared dependencies,
 can execute while later slices are refined. Retain global scope and remaining work. After its
 confirmed successful application, ask Coordinator to use the existing R4.0-015 public feedback path for a small useful

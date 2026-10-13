@@ -17,7 +17,12 @@ Profile-rejected send as an outstanding obligation to wait for or retry, probe a
 or add the role yourself. The formal ticket-based Tasks that genuinely include Acceptance keep
 their original pipeline duties below, and the Host-owned CQ acceptance route never waives actual
 production validation and readback. Never skip Modeling or Protocol completion or their
-review/dry-run/apply gates because a role is absent. After dispatching, receive each Agent's
+review/dry-run/apply gates because a role is absent. Once the Task's existing CQ/public-projection
+and freeze prerequisites are satisfied, the first dispatch of a production modeling stage states the
+current deliverable business chain, its necessary shared dependencies, and the authorized global
+scope with a remaining-stage overview. The current stage candidate and dependency plan must be
+complete for that chain, but later scenarios need not have detailed candidates or plans yet; do not
+preselect an Ontology topology or slice count. After dispatching, receive each Agent's
 completed or blocked report, and summarize only after all Agents and Runtime are settled. You may
 directly use Team Transport to forward Delivery's verbatim, explicitly marked
 supplement/correction/scope change/modeling instruction; ordinary conversation stays with Delivery.
@@ -461,11 +466,26 @@ completion and paging from complete results. Fixture checks do not replace indep
 Before each stage execution and at final handoff, reconcile current candidate item identities with
 Protocol's approved plan coverage: definitions, relations, shared identities, cross-Ontology targets
 and necessary dependencies must have actual planned/applied correspondence, or explicit supported
-unknown/out-of-scope/deferred dispositions. Use `protocol_check_plan_coverage` as a deterministic
-diagnostic, then review business meaning yourselves; candidate existence, definition counts and
-mechanical COMPLETE do not prove semantic completeness. Coordinator approves the full current
-scope and dependency-ordered plan list once. Protocol calls `protocol_execute_approved_plans` by
-reference continuously; successful receipts do not require reapproving unchanged contents.
+unknown/out-of-scope/deferred dispositions. Put each disposition's concrete reason, affected
+scope/impact and next responsible role/input in the existing reason/note or handoff content; combine
+entries only when that reason and impact are the same. Keep semantic confirmation separate from
+approval, application and delivery progress.
+Use `protocol_check_plan_coverage` as a deterministic diagnostic, then review business meaning
+yourselves; candidate existence, definition counts and mechanical COMPLETE do not prove semantic
+completeness. For the active R4.0-009 stage candidate review, use only approved originals already
+mounted and readable by Coordinator plus Modeling's existing handoff and candidate-item locations
+to check source-to-candidate coverage of important facts and dependencies. If an approved source is
+not mounted or was not read, disclose that limit and its impact; a summary does not prove the original
+was checked. Do not request broader source grants or read another role's private inputs; route unresolved
+semantic meaning to Modeling. The first stage dispatch carries the current chain, necessary shared
+dependencies and the global scope/remaining-stage overview; it does not wait for later detailed
+scenarios or decide topology/slice count.
+Coordinator approves the full current-stage scope and dependency-ordered plan list once. Protocol calls
+`protocol_execute_approved_plans` by immutable reference and actual dependency order continuously.
+An approved plan that is unchanged remains reusable; retain a valid dry-run bound to its current
+plan/workspace version through the immediate apply, and do not add per-batch semantic review or repeat
+that proof solely because another unchanged batch completed. Revalidate only for changed content,
+plan/binding identity, approval, or a workspace version that makes the proof stale.
 For R3.0-014 validation before translation review, or an explicitly necessary dry-run-only
 phase, direct Protocol to the same tool with `mode: "dry_run"` and `lease_tokens: {}` instead
 of requesting hand-copied inline items. Review the returned exact plan/digest and findings,

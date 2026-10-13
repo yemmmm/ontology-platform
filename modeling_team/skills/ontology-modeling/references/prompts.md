@@ -32,6 +32,24 @@ Requested execution result: <Task-required translation/application/check results
 Use the exact machine-readable schema where one is required; the headings above are explanatory,
 not an alternative candidate schema. Protocol performs deterministic translation and platform calls.
 
+## Review a staged handoff or content revision
+
+```text
+Source-to-candidate check: <important facts, relation direction, conditions/exceptions, knowns and unknowns mapped to item IDs or concrete gaps>
+Candidate-to-source check: <basis for each material assertion, or the unsupported claim to remove/qualify>
+Disposition: <confirmed / deferred / unknown / out-of-scope, with reason, impact and next role/input>
+Delivery state: <analyzed / candidate-published / plan-approved / applied / feedback-pending>
+```
+
+Use only approved originals visible to the role plus the existing handoff text, candidate IDs and
+scenario-map note. A summary or candidate-to-plan coverage does not prove that every original was read
+or that material never entered the candidate was found. Keep this check in the existing handoff and
+candidate references and their existing reason/note content; the labels above are explanatory text,
+not a new enum, schema or workflow. Do not create a field table, private schema, extra Agent or hard
+gate. Narrow
+unknowns to a specific unconfirmed meaning, preserve source-confirmed facts and scope, and do not
+treat physical structure or samples as business rules, legal value universes or permissions.
+
 ## Respond to a returned conflict
 
 ```text
@@ -52,11 +70,17 @@ Task's handoff; independent acceptance remains separate.
 Before each stage execution and at final handoff, reconcile current candidate item identities with
 Protocol's approved plan coverage: definitions, relations, shared identities, cross-Ontology targets
 and necessary dependencies must have actual planned/applied correspondence, or explicit supported
-unknown/out-of-scope/deferred dispositions. Use `protocol_check_plan_coverage` as a deterministic
-diagnostic, then review business meaning yourselves; candidate existence, definition counts and
-mechanical COMPLETE do not prove semantic completeness. Coordinator approves the full current
-scope and dependency-ordered plan list once. Protocol calls `protocol_execute_approved_plans` by
-reference continuously; successful receipts do not require reapproving unchanged contents.
+unknown/out-of-scope/deferred dispositions, each with a concrete reason, impact and next responsible
+role/input. Use `protocol_check_plan_coverage` as a deterministic diagnostic, then review business
+meaning yourselves; candidate existence, definition counts and mechanical COMPLETE do not prove
+semantic completeness. Coordinator's first stage dispatch names the current chain, necessary shared
+dependencies and the global scope/remaining-stage overview; later detailed candidates are not a
+prerequisite and topology or slice count is not preselected. Coordinator approves the full
+current-stage scope and dependency-ordered
+plan list once. Protocol calls `protocol_execute_approved_plans` by immutable reference continuously;
+unchanged approved plans remain reusable, and a valid current-version dry-run is retained through its
+immediate apply without a repeated per-batch semantic review. Revalidate only when the plan/content,
+binding, approval or workspace version makes the proof stale.
 Correct changed content or real errors through the current revision/review/reconciliation channels.
 
 A complete small chain, usually an existing business slice, can execute before all later scenarios
@@ -66,7 +90,10 @@ application, reuse the existing R4.0-015 bounded public feedback path with a few
 questions. Keep model expression, retrieval acquisition and Consumer understanding separate in
 failure evidence and repair only the evidenced layer. Final independent acceptance cannot repair
 production; hidden questions/answers never enter production. Public success is interim feedback.
-Mapping/metric business unknowns remain explicit; source schema is not business truth.
+Mapping/metric business unknowns remain explicit; source schema is not business truth. Confirmation and
+delivery state stay separate; a legitimate deferred disposition is not whole-scope completion, and an
+analyzed-but-undelivered item is not a generic unknown. Do not materialize mapping semantics without
+the applicable mapping approval.
 
 For that early feedback, Coordinator requests Delivery's existing `public-feedback` evaluation
 with a verified published `materialization_progress` checkpoint, current freeze_id and the small

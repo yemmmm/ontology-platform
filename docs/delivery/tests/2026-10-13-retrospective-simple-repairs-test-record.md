@@ -1,4 +1,4 @@
-# 两次建模复盘后的简易工程修复验证
+# 两次建模复盘后的修复与优化验证
 
 日期：2026-10-13。修复前基线：`752f6e5`。开始时只有用户无关未跟踪目录
 `docs/presentations/`；本次不修改、不暂存该目录。
@@ -85,3 +85,59 @@ F401/F841为runner.py和test_provider_wait_recovery.py的既存问题，无新�
 本次只改Team代码、角色/合同指引、测试和文档；backend/frontend、应用配置与迁移未变。
 因此没有重启ontology-platform.service，也没有重启已停止的Team。后续进程必须实际
 加载新代码，不能假定旧进程热生效。文档/工程检查不恢复历史报告的PASS资格。
+
+## 同日后续：阶段采用纠正与信息保留优化
+
+修复前基线：`c180d79`。用户明确要求实施本次提出的优化并记录供下次复盘验证。
+范围为 R4.3-015 的具体阶段派单、连续执行及首链反馈采用，以及
+RETRO-20261013-07／08／09 的已知与未知、源反查和答案限定保留。当前只有
+`docs/presentations/`、`slide-deck/` 两个无关未跟踪目录，本次不修改或暂存。
+
+| 优化 | 实际权威触点 | 本次实施与下次效果边界 |
+| --- | --- | --- |
+| R4.3-015 采用纠正 | 当前009 Task；Coordinator／Modeling／Protocol／Delivery指令，ontology-modeling／delivery技能 | 具体当前阶段及共享依赖、全局范围概览；按已批准计划连续引用执行；首链已审且applied后组织现有公开反馈。原成功写入确认、必要依赖及最终独立验收保持 |
+| RETRO-20261013-07 | 生产角色指令、ontology-modeling技能及交接模板 | 未知缩小到具体含义，已知和实际交付状态分别保留；延后原因、能力影响及下一责任放既有交接／note，不新增字段或物化未批准映射 |
+| RETRO-20261013-08 | 当前Task、Modeling／Coordinator指令、ontology-modeling技能及模板 | 当前阶段原资料→候选反查，再核对候选依据；只检查获准可读原件，不以摘要证明全部已读，不建逐字段台账或首链前置全面审计 |
+| RETRO-20261013-09 | 实际v3 Platform Examiner指令 | 在既有提交前核对中保留答案涉及关系方向、必要条件／例外／范围／基数及未知，只用本题真实平台响应，不扩大到无关返回审计或新report字段 |
+
+生产侧与Delivery／Consumer侧分别由子Agent实施，主Agent复核。子Agent仅收到通用
+优化要求及归属文件，未继承宿主私有复盘上下文，未读取隐藏原件；没有供应商调用、
+真实建模／验收、模型写入或旧运行恢复。本次未修改Python执行代码、工具面、权限、
+模型profile或后端／前端；已有`glm-flash-high`各角色绑定`glm-5.3-flash`，后续启动须按
+用户实际模型／effort选择核对，不假定未启动进程已采用。
+
+### 复核与相关检查
+
+主Agent复核收窄了两处指令：反馈未执行只表示质量未验证，不把已确认applied写入
+变成未知；Consumer只核对本题答案涉及的关系和必要限定，合并至已有提交前检查，
+不增加一段重复的全量返回审核。全局待办保留业务范围与剩余阶段概览，不要求先列出
+全部详细item；原因／影响／下一责任为既有说明内容，不新增合同字段或状态。
+
+生产侧子Agent执行`python modeling_team/skills/ontology-modeling/evals/validate_skill.py`
+通过；从backend运行`env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest`，选取
+`test_contracts.py`、`test_r4009_acceptance_contract.py`、`test_r4315_independent.py`、
+`test_v43_production_refs.py`四个现有Team测试文件：**87 passed，3 subtests passed**，
+158条既有rdflib warning。Delivery／Consumer最终修改后的定向检查：
+`test_v4_consumer_answer_contract.py` **3 passed**、`test_r4315_independent.py` **16 passed**、
+`test_delivery_ops.py`反馈／验收入口子集**8 passed／
+9 deselected**；未受本次文字收窄影响的Delivery session **23 passed**、wakeups **23 passed**
+结果复用。各命令有重叠，不相加成独立测试总数。主Agent补查与未知／映射边界相关的
+`test_r4007_scenario_map_contract.py`与`test_r4010_mapping_contract.py`两个文件：
+**17 passed**。未修改执行代码或测试断言。
+
+另一子Agent对最终生产侧指令及权威需求做只读交叉审阅，未发现证据支持的Critical／High
+阻塞或行为冲突；未读取隐藏材料，没有新增独立功能／真实语义裁决。本次保留的指令
+摘要见[source manifest](../../../workspaces/v4-delivery-20261013/retrospective-adoption-final-source-manifest.json)。
+这些检查只能证明当前指令、包装与既有工具合同兼容，不能证明Agent实际采用、语义
+质量提升或节省时间。最终14份改动Markdown的围栏、11个新增／变更本地链接／锚点、
+十份Team指令／任务／技能摘要与manifest对应关系及差异空白检查通过。
+指令／文档改动不要求后端／前端全套测试、服务重启或新建模启动。
+
+### 下一次复盘必须核验的效果
+
+先确认新运行manifest所记录的Task、角色指令和技能摘要与本次实现匹配，再核对相关
+场景是否实际发生，按优化台账分别验证：阶段派单与首链公开反馈、已知／具体未知和
+未交付去向、原资料关键内容的候选定位，以及本题平台证据到答案的方向与限定保留。
+记录首链／首反馈时点、实际返工与独立语义结果，不能只凭新增文字或事件数量判生效。
+无新运行、未触发或证据不足保持已实现待实测；实际采用但未达预期／退步转待调整，
+达到各项原预期且质量约束满足后才关闭，历史失败和原件保留。

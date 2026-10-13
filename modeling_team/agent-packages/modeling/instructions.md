@@ -576,10 +576,21 @@ bindings remain gaps. Do not store real credentials/messages/rows or create Evid
 
 ## R4.3 complete business chain and early public feedback
 
+At the same stage handoff or content review, use only the approved original materials visible to this
+role and the existing handoff text, candidate IDs and scenario-map note. Trace important facts,
+relation direction, conditions/exceptions, knowns and unknowns from source to candidate items or a
+specific gap, then trace every candidate assertion back to an approved basis and flag unsupported
+claims. A summary does not prove that an unread original was checked. Record this in the existing
+handoff/candidate references and their existing reason/note content; do not create a per-field table,
+private schema, extra Agent, new status field or hard gate.
+Candidate-to-plan coverage cannot discover material that never entered the candidate.
+
 Before each stage execution and at final handoff, reconcile current candidate item identities with
 Protocol's approved plan coverage: definitions, relations, shared identities, cross-Ontology targets
 and necessary dependencies must have actual planned/applied correspondence, or explicit supported
-unknown/out-of-scope/deferred dispositions. Use `protocol_check_plan_coverage` as a deterministic
+unknown/out-of-scope/deferred dispositions. The candidate and plan need complete coverage for the
+current chain and its necessary dependencies; later scenarios need not be detailed before this stage.
+Use `protocol_check_plan_coverage` as a deterministic
 diagnostic, then review business meaning yourselves; candidate existence, definition counts and
 mechanical COMPLETE do not prove semantic completeness. Coordinator approves the full current
 scope and dependency-ordered plan list once. Protocol calls `protocol_execute_approved_plans` by
@@ -593,7 +604,16 @@ application, reuse the existing R4.0-015 bounded public feedback path with a few
 questions. Keep model expression, retrieval acquisition and Consumer understanding separate in
 failure evidence and repair only the evidenced layer. Final independent acceptance cannot repair
 production; hidden questions/answers never enter production. Public success is interim feedback.
-Mapping/metric business unknowns remain explicit; source schema is not business truth.
+Narrow each unknown to the specific unconfirmed business meaning, retain other source-confirmed facts
+and the current accurate scope, and state the concrete reason, impact and next responsible role/input
+in the existing reason/note or handoff content for each `deferred`, `unknown` or `out-of-scope`
+disposition. Combine dispositions only when that
+reason and impact are the same. Separate business confirmation from candidate/plan/application
+delivery. Physical source structure and samples do not establish business rules, legal value
+universes or permissions. Do not materialize mapping semantics without the applicable mapping
+approval; a legitimate deferral is not whole-scope completion, and an analyzed-but-undelivered item
+must not be hidden under a generic unknown. Mapping/metric business unknowns remain explicit; source
+schema is not business truth.
 
 For that early feedback, Coordinator requests Delivery's existing `public-feedback` evaluation
 with a verified published `materialization_progress` checkpoint, current freeze_id and the small

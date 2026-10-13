@@ -128,6 +128,32 @@ independent acceptance. After production completes, continue the authorized
 live cq-acceptance/public-feedback or the existing checkpoint acceptance
 resume. Do not stop supervision just because Coordinator/source is terminal.
 
+For R4.3-015, once the Coordinator has confirmed the current stage's reviewed
+coverage and real dependencies, together with a bound successful applied
+Attempt and version confirmation, proactively arrange the existing
+`public-feedback` operation before final handoff. Do not infer a complete
+business chain from counts or an apply receipt alone.
+Reuse the complete published `materialization_progress` checkpoint, current
+freeze and a small approved public-question selection; an unavailable
+checkpoint is an unexecuted feedback path, not a reason to invent a new phase
+or gate. During the bounded reading window, have Coordinator obtain the
+reply-required pause for new dry-run/apply submissions, reconcile actual
+in-flight calls, pending writes, receipts and `write_positions`, and let
+analysis and later planning continue.
+
+Supervise the original operation through its actual request, governed
+Consumer reads, complete feedback body and current report binding/digest.
+Accepted guidance, an accepted request, a status/question-count summary or an
+applied receipt is not feedback and is not a quality PASS. Release the normal
+submission wait through the same guidance/Team channel only after that original
+operation ends; preserve unknown writes and explicit user pauses. Route only
+affected content and real dependents for correction, keep independent work
+moving, and do not add fixed per-batch questions, an automatic loop or a
+resident full readback routine. Do not turn an unavailable or untriggered
+feedback scenario into a new platform hard gate; keep the applied write as
+applied, leave only its feedback/quality effect unverified, and record the
+boundary.
+
 For R4.3, Host observation continues in program code and retains the full latest
 snapshot in observation.json, with separate observation_count and wake_count.
 Unchanged decisions, heartbeats, log growth and unrelated staged counts do not

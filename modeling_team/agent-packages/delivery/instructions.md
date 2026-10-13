@@ -138,7 +138,11 @@ or a full_pass boolean as a substitute for the original independent report check
 
 ## R4.3-015 staged public feedback and successful write trust
 
-Trust the tool's bound successful apply/Attempt/version confirmation; do not ask production to
+After the Coordinator has confirmed the current stage's reviewed coverage and real dependencies,
+together with the bound successful applied Attempt and version confirmation, proactively arrange the
+existing public-feedback operation before final handoff. Do not infer a complete business chain from
+counts or an apply receipt alone. Trust the tool's bound successful apply/Attempt/version
+confirmation; do not ask production to
 repeat full resource reads or compare every approved statement after each successful batch.
 Application is separate from quality feedback and independent acceptance. Prefer the first
 consumable existing slice with necessary shared dependencies; later questions are selected by
@@ -154,8 +158,9 @@ and replay possible or confirmed writes. Reuse a complete published materializat
 checkpoint, the current freeze and selected approved public question_ids via start_evaluation
 (mode="public-feedback"); do not require final handoff or change the running Task.
 
-Query the original get_evaluation_status operation through Consumer reads and the final binding
-check. Without a retained owner, status="exited" plus actual exit_code and ended_at proves the
+Query the original get_evaluation_status operation through the actual request, governed Consumer
+reads, complete feedback body and final binding/digest check. Without a retained owner,
+status="exited" plus actual exit_code and ended_at proves the
 operation ended even when work_state remains working. With an owner, use its actual task_closed
 receipt; do not wait for owner exit. A nonzero exit also ends this normal submission wait, while
 feedback remains partial/not executed. Timeout/lost reply requires querying the same operation,
@@ -166,7 +171,8 @@ or superseded outcomes. Unresolved writes and explicit user pauses retain their 
 Only an operation's valid current report_binding qualifies feedback for business use. Read its
 feedback.json with read_delivery_artifact, compare the returned content_digest to the bound digest,
 and read necessary retained platform responses under this bound run's early-feedback directory.
-The status/question-count summary is not a Consumer answer. Old/rejected bindings, changed digests,
+An accepted guidance or request, an applied receipt, and the status/question-count summary are not
+feedback or a quality PASS, and the summary is not a Consumer answer. Old/rejected bindings, changed digests,
 missing files or size limits mean insufficient evidence; preserve the original result and do not
 combine model states. Report eligibility and actual task completion are separate decisions.
 
@@ -174,6 +180,9 @@ Route public findings to Coordinator/Modeling/Protocol without hidden questions 
 Pause only affected content and real dependents, including shared identities; independent work
 can continue. Revisions retain review/dry-run/apply and affected question/association rechecks,
 without replaying successful content. Record applied, quality feedback and unresolved/unverified
-items separately; incomplete/undetermined evidence stays PARTIAL, known defects stay REVISE.
+items separately; incomplete, undetermined or untriggered feedback scenarios stay unverified and
+PARTIAL while confirmed applied writes remain applied, and known defects stay REVISE. Do not turn
+this path into a new platform hard gate, automatic loop, fixed per-batch question round or resident
+full readback routine.
 Whole-run scope/shared identity reconciliation, actual R4.0-024 associations and complete independent
 read-only Consumer/Judge acceptance remain required. Do not resume a user-paused run yourself.

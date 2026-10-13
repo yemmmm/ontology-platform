@@ -31,7 +31,12 @@ Represent an unresolved business decision through the mounted semantic contract.
 uses a model-local `kind=explicit_unknown` resource, preserve its stable identity, affected semantic
 scope, unanswered business question, source basis and rationale, with no asserted answer value.
 Connect it to the affected model meaning so a governed consumer can observe the uncertainty.
-Do not create source-row instances or a platform-domain feature to carry the unknown.
+Narrow the unknown to the specific unconfirmed business meaning, and retain other source-confirmed
+facts and the current scope. Physical source structure and samples do not establish business rules,
+legal value universes or permissions. Keep confirmation state separate from delivery state; every
+`deferred`, `unknown` or `out-of-scope` disposition carries its reason, impact and next responsible
+role/input in the existing reason/note or handoff content; do not add a field or enum for it. Do not
+create source-row instances or a platform-domain feature to carry the unknown.
 
 ## Retrieval completeness
 
@@ -61,11 +66,17 @@ replacement modeling session or an acceptance consumer from this role.
 Before each stage execution and at final handoff, reconcile current candidate item identities with
 Protocol's approved plan coverage: definitions, relations, shared identities, cross-Ontology targets
 and necessary dependencies must have actual planned/applied correspondence, or explicit supported
-unknown/out-of-scope/deferred dispositions. Use `protocol_check_plan_coverage` as a deterministic
-diagnostic, then review business meaning yourselves; candidate existence, definition counts and
-mechanical COMPLETE do not prove semantic completeness. Coordinator approves the full current
-scope and dependency-ordered plan list once. Protocol calls `protocol_execute_approved_plans` by
-reference continuously; successful receipts do not require reapproving unchanged contents.
+unknown/out-of-scope/deferred dispositions, each with a concrete reason, impact and next responsible
+role/input. Use `protocol_check_plan_coverage` as a deterministic diagnostic, then review business
+meaning yourselves; candidate existence, definition counts and mechanical COMPLETE do not prove
+semantic completeness. Coordinator's first stage dispatch names the current chain, necessary shared
+dependencies and the global scope/remaining-stage overview; later detailed candidates are not a
+prerequisite and topology or slice count is not preselected. Coordinator approves the full
+current-stage scope and dependency-ordered
+plan list once. Protocol calls `protocol_execute_approved_plans` by immutable reference continuously;
+unchanged approved plans remain reusable, and a valid current-version dry-run is retained through its
+immediate apply without a repeated per-batch semantic review. Revalidate only when the plan/content,
+binding, approval or workspace version makes the proof stale.
 Correct changed content or real errors through the current revision/review/reconciliation channels.
 
 A complete small chain, usually an existing business slice, can execute before all later scenarios
@@ -75,7 +86,10 @@ application, reuse the existing R4.0-015 bounded public feedback path with a few
 questions. Keep model expression, retrieval acquisition and Consumer understanding separate in
 failure evidence and repair only the evidenced layer. Final independent acceptance cannot repair
 production; hidden questions/answers never enter production. Public success is interim feedback.
-Mapping/metric business unknowns remain explicit; source schema is not business truth.
+Mapping/metric business unknowns remain explicit; source schema is not business truth. Confirmation and
+delivery state stay separate; a legitimate deferred disposition is not whole-scope completion, and an
+analyzed-but-undelivered item is not a generic unknown. Do not materialize mapping semantics without
+the applicable mapping approval.
 
 For that early feedback, Coordinator requests Delivery's existing `public-feedback` evaluation
 with a verified published `materialization_progress` checkpoint, current freeze_id and the small

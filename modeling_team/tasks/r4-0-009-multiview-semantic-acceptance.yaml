@@ -39,6 +39,31 @@ objective: >-
   authorized-scope-readback-complete means necessary business reads and whole-run actual
   semantic/association coverage, not repeated proof of each applied plan; apply alone
   never completes this label. Stage application and quality feedback remain separate.
+  After the existing CQ/public-projection and freeze prerequisites are satisfied,
+  each production stage's first Coordinator dispatch names the current deliverable
+  business chain, its necessary shared dependencies, and the authorized global
+  scope with a remaining-stage overview. A stage candidate and plan cover that chain and its
+  necessary dependencies; later detailed candidates are not a prerequisite, and
+  no Ontology boundary or slice count is selected in advance. During the same
+  stage handoff or content review, use role-visible approved sources and the
+  existing handoff, candidate-item, and scenario-map references for both
+  source-to-candidate and candidate-to-source checks. Do not create a field table,
+  private schema, extra Agent, or new hard gate for these checks.
+  Narrow unknowns to the specific unconfirmed business meaning while retaining
+  source-confirmed facts and the current accurate scope. Physical source structure
+  and samples do not establish business rules, legal value universes, or permissions.
+  Keep confirmation state separate from delivery state; each deferred, unknown, or
+  out-of-scope disposition states its reason, impact, and next responsible role/input
+  in the existing reason/note or handoff content.
+  Do not materialize mapping semantics without the applicable mapping approval; a
+  legitimate deferral is not whole-scope completion.
+  After the first chain has reviewed candidate/plan coverage and its real dependencies
+  and is successfully applied, Coordinator explicitly requests Delivery's existing
+  `public-feedback` evaluation with its published `materialization_progress` checkpoint,
+  current freeze_id and a small approved public-question selection; final handoff is not
+  a prerequisite. Reviewed unchanged plans continue by reference in dependency order;
+  a valid current-version dry-run remains bound to its immediate apply without a new
+  per-batch semantic review.
   Modeling candidates contain
   semantic meaning, shared slice scope and unknowns only; Protocol owns Batch
   envelopes, platform IDs, write receipts and read handles.  The active flow

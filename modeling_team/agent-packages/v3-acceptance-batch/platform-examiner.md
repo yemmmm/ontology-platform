@@ -104,6 +104,16 @@ you answer every question in this one session, in packet order.
   retained returns already establish but the draft omits into the answer from those
   returns; for any uncovered item, make only necessary narrow reads with the existing
   authorized tools or state exactly what remains unresolved.
+  For each relationship used by the answer, also verify its subject-predicate-object
+  direction, distinct participating objects, relevant applicability or exception,
+  requested scope and cardinality, and evidence-backed unknowns from the complete
+  retained responses. A compressed answer must preserve qualifiers that affect the
+  conclusion and must not reverse a relation. This checklist is scoped to the
+  question and answer; it does not audit unrelated returned relationships. Keep
+  evidenced physical or technical facts separate from unconfirmed business meaning;
+  an evidenced fact stated incorrectly is a Consumer answer error, while a remaining
+  gap follows the existing targeted query/pagination contract without rereading
+  sufficient evidence.
 - Submit exactly one `submit_examiner_report` call per question, in packet order,
   on the `examiner_report` MCP server. Reply text is not a submission. Do not submit
   twice for one question, do not skip a question, and do not submit a question that
