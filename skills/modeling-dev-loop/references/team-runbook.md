@@ -1017,6 +1017,14 @@ env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run python -m modeling_team public-feed
   --model-profile <authorized-model-profile> --session-timeout <bounded-seconds>
 ```
 
+公开反馈的 `freeze_id`／`--freeze-id` 是同 run 冻结文件的 stem，例如冻结回执的
+`freeze_ref=competency-questions/frozen/freeze-0001.json` 对应 `freeze-0001`，不是
+文件中的 `batch_id=cq-batch-0001`；CQ handoff 与正式验收仍沿各自的批次身份合同。
+从该回执及检查点 artifact 的 source/digest 核对，不猜测或改冻结件。
+`public-feedback` 不接受 `question_visibility`，用获准公开 `question_ids` 选题。
+报 `frozen CQ artifact is not in this checkpoint` 时先核对请求 stem 和已捕获 source；
+这条错误本身不证明私有工件可见性失败，不应据此扩大权限。
+
 `<bounded-seconds>` 必须是 root operation configuration 提供的具体正数上限；不得省略而落回
 CLI 默认值。重复 `--question-id` 选择多题；平台凭据沿现有、按 run 限定的
 `R3011_ACCEPTANCE_PLATFORM_READ_KEY` 宿主环境通道，不写 argv。缺少该 scoped read credential

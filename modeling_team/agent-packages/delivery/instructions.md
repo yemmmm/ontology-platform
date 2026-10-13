@@ -173,6 +173,14 @@ and selected approved public question_ids via start_evaluation
 require final handoff or change the running Task. The published checkpoint establishes eligibility
 only; it is not the feedback report.
 
+For `mode="public-feedback"`, `freeze_id` is the published frozen artifact's file stem
+(for example `freeze-0001` from `competency-questions/frozen/freeze-0001.json`), not its
+`batch_id` (`cq-batch-0001`). Resolve it from the same-run freeze_ref and checkpoint artifact
+source/digest. Keep the batch identity for CQ handoff and formal acceptance. This mode does not
+accept `question_visibility`; select only approved public `question_ids`. If checkpoint binding
+says the frozen artifact is absent, first compare the requested stem with the captured source
+path; this message alone does not prove a visibility failure or require broader permissions.
+
 Pass the existing run-scoped read credential (`R3011_ACCEPTANCE_PLATFORM_READ_KEY`, or the exact
 scoped equivalent supplied by root configuration) through the Host operation environment only. If
 that credential is absent, record the feedback operation as unexecuted/blocked and do not broaden
