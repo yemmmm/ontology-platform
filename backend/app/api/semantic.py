@@ -342,6 +342,9 @@ def query_semantic_context(
             resolver,
             cursor_codec=cursor_codec,
             access_view=access_view,
+            access_view_resolver=lambda: SemanticAccessResolver(session).resolve(
+                principal, request.project_id
+            ),
         ).query_multi(
             project_id=request.project_id,
             scope_mode=request.scope_mode,
@@ -351,6 +354,7 @@ def query_semantic_context(
             assertion_types=request.assertion_types,
             semantic_roles=request.semantic_roles,
             search_mode=request.search_mode,
+            expansion_strategy=request.expansion_strategy,
             depth=request.depth,
             limit=request.limit,
             context_limit=request.context_limit,

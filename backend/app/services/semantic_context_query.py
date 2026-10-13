@@ -3,26 +3,34 @@
 from __future__ import annotations
 
 from collections import defaultdict
+import copy
 from dataclasses import asdict
 import hashlib
 import json
 import re
 import unicodedata
+import time
 from urllib.parse import urlsplit
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
 from rdflib import Literal, URIRef
 from rdflib.namespace import RDF
 from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
-from app.repositories.models import OntologyModel
-from app.repositories.rdf_store import RdfStoreRepository
+from app.repositories.models import OntologyModel, SemanticMappingModel
+from app.repositories.rdf_store import RdfStoreRepository, RdfStoreError
 from app.security.auth import AuthPrincipal
-from app.services.semantic_access import SemanticAccessView
+from app.services.semantic_access import SemanticAccessDependencyError, SemanticAccessView
+from app.services.semantic_context_adaptive import (
+    ADAPTIVE_CONFIG, AdaptiveContextExpansion, selection_config_digest,
+)
 from app.services.semantic_jev import (
     JEV_RANKING_VERSION, JevReranker, JevScoringError, apply_jev_ranking,
     get_ranking_snapshot, ranking_cache_key, save_ranking_snapshot,
+    get_snapshot_by_id, discard_ranking_snapshot, update_snapshot_access,
 )
 from app.services.semantic_context_cursor import (
     CURSOR_KIND_CONTEXT,
@@ -47,6 +55,7 @@ from app.services.semantic_retrieval import (
     SemanticResourceRetrievalService,
     fuse_context_candidates,
     governed_mapping_lexical_candidates,
+    _mapping_evidence,
     promote_exact_label_candidates,
     recall_summary,
 )
@@ -157,11 +166,13 @@ class SemanticContextQueryService:
         lineage_service: Any | None = None,
         cursor_codec: ContextCursorCodec | None = None,
         access_view: SemanticAccessView | None = None,
+        access_view_resolver: Callable[[], SemanticAccessView] | None = None,
     ) -> None:
         self.session = session
         self.rdf_store = rdf_store
         self.scope_resolver = scope_resolver
         self.access_view = access_view or SemanticAccessView.all_visible()
+        self.access_view_resolver = access_view_resolver
         self.operation_vocab = operation_vocabulary(scope_resolver.settings)
         self.operation_predicates = operation_predicates(scope_resolver.settings)
         self.operation_type = self.operation_vocab["type"]
@@ -172,6 +183,9 @@ class SemanticContextQueryService:
         self._description_cache = {}
         self._resource_cache = {}
         self._request_assertions = set(ASSERTION_TYPES)
+        self._adaptive_read_deadline = None
+        self._expansion_strategy = "fixed"
+        self._visible_work_budget = CONTEXT_EXPANSION_BUDGET
 
     def query(
         self,
@@ -184,7 +198,8 @@ class SemanticContextQueryService:
         assertion_types: list[str] | None = None,
         semantic_roles: list[str] | None = None,
         search_mode: str = "hybrid",
-        depth: int = 1,
+        depth: int | None = None,
+        expansion_strategy: str = "adaptive",
         limit: int = 20,
         context_limit: int = 100,
         principal: AuthPrincipal | None = None,
@@ -207,6 +222,7 @@ class SemanticContextQueryService:
             semantic_roles=semantic_roles,
             search_mode=search_mode,
             depth=depth,
+            expansion_strategy=expansion_strategy,
             limit=limit,
             context_limit=context_limit,
             principal=principal,
@@ -225,7 +241,8 @@ class SemanticContextQueryService:
         assertion_types: list[str] | None = None,
         semantic_roles: list[str] | None = None,
         search_mode: str = "hybrid",
-        depth: int = 1,
+        depth: int | None = None,
+        expansion_strategy: str = "adaptive",
         limit: int = 20,
         context_limit: int = 100,
         principal: AuthPrincipal | None = None,
@@ -243,6 +260,21 @@ class SemanticContextQueryService:
         ``compact`` keeps identity/kind/label/statement essentials/evidence
         status/root paths only.
         """
+        self._query_started = time.monotonic()
+        self._adaptive_deadline = self._query_started + ADAPTIVE_CONFIG["deadline_seconds"]
+        self._adaptive_read_deadline = None
+        self._jev_remaining_seconds = self.settings.semantic_jev_timeout_seconds
+        self._all_resource_types = RESOURCE_TYPES
+        self._rdf_read_errors = (RdfStoreError,)
+        self._adaptive_partial_items = {}
+        self._visible_work_budget = CONTEXT_EXPANSION_BUDGET
+        if expansion_strategy not in {"adaptive", "fixed"}:
+            raise SemanticContextQueryError("expansion_strategy must be adaptive or fixed")
+        is_anchor = len(queries) == 1 and _is_iri_anchor(queries[0])
+        if is_anchor:
+            expansion_strategy = "fixed"
+        depth = (3 if expansion_strategy == "adaptive" else 1) if depth is None else depth
+        self._expansion_strategy = expansion_strategy
         semantic_roles = _normalize_semantic_roles(semantic_roles)
         self._semantic_roles = semantic_roles
         self._jev_ranking = None
@@ -326,6 +358,10 @@ class SemanticContextQueryService:
             limit=limit,
             context_limit=context_limit,
             model_revisions=model_revisions,
+            expansion_strategy=expansion_strategy,
+            context_detail=context_detail,
+            selection_config_digest=(selection_config_digest(self.settings)
+                                     if expansion_strategy == "adaptive" else ""),
         )
 
         match_payload = self._decode_cursor_opt(
@@ -355,16 +391,30 @@ class SemanticContextQueryService:
             )
 
         payload = context_payload or match_payload
+        adaptive = expansion_strategy == "adaptive"
         snapshot_key = ranking_cache_key(
-            binding_digest(binding), scope.public_dict(), asdict(self.access_view), self.settings,
+            binding_digest(binding), self._scope_cache_signature(scope),
+            None if adaptive else asdict(self.access_view), self.settings,
         )
-        cached = get_ranking_snapshot(snapshot_key) if self.settings.semantic_jev_enabled else None
+        if adaptive and context_payload is not None:
+            return self._resume_adaptive_context(
+                context_payload, binding, scope, cursor_codec, original_queries,
+                normalized_queries, context_limit, context_detail, snapshot_key,
+            )
+        cached = get_ranking_snapshot(snapshot_key) if (
+            self.settings.semantic_jev_enabled or adaptive
+        ) else None
+        if adaptive and cached is not None and not self._cached_access_unchanged(cached, scope):
+            if payload is not None:
+                raise SemanticContextSnapshotChanged("Semantic visibility changed; restart the query")
+            discard_ranking_snapshot(snapshot_key)
+            cached = None
         if payload is not None and payload.ranking_snapshot_id:
             if cached is None or cached["snapshot_id"] != payload.ranking_snapshot_id:
                 raise SemanticContextSnapshotChanged(
                     "Ranking snapshot expired or changed; restart the query without a cursor"
                 )
-        elif payload is not None:
+        elif payload is not None and not adaptive:
             # Legacy cursors stay on the historical deterministic ranking path.
             cached = None
         if cached is not None:
@@ -383,7 +433,8 @@ class SemanticContextQueryService:
             retrieval_completeness = cached["completeness"]
             retrieval_indexes = cached["indexes"]
             warnings.extend(cached["warnings"])
-            self._jev_ranking = {**cached["ranking"], "cache_hit": True}
+            self._jev_ranking = ({**cached["ranking"], "cache_hit": True}
+                                 if cached["ranking"] is not None else None)
             self._ranking_version = cached["ranking_version"]
             if any(not self.access_view.filter_candidate(item) for item in fused):
                 raise SemanticContextSnapshotChanged("Visible candidates no longer match the cursor")
@@ -475,10 +526,19 @@ class SemanticContextQueryService:
             fused = _dedupe_multi(fused)
 
             if self.settings.semantic_jev_enabled and payload is None:
+                scoring_started = time.monotonic()
                 try:
-                    scores, model = JevReranker(self.settings).score(
-                        original_queries, [_public_item(item) for item in fused],
-                    )
+                    scorer = JevReranker(self.settings)
+                    candidates = [_public_item(item) for item in fused]
+                    if adaptive:
+                        remaining = min(self._jev_remaining_seconds,
+                                        self._adaptive_deadline - time.monotonic())
+                        if remaining <= 0:
+                            raise JevScoringError("timeout")
+                        scores, model = scorer.score(original_queries, candidates,
+                                                     timeout_seconds=remaining)
+                    else:
+                        scores, model = scorer.score(original_queries, candidates)
                     # Fusion annotations identify exact full-expression matches, not term matches.
                     for item in fused:
                         item["fusion"] = fusion_by_item[self._identity_key(item)]
@@ -498,15 +558,23 @@ class SemanticContextQueryService:
                     }
                     warnings.append({"code": "jev_reranking_degraded",
                                      "message": "Jev scoring unavailable; baseline order retained without relevance filtering."})
+                finally:
+                    self._jev_remaining_seconds = max(
+                        0, self._jev_remaining_seconds - (time.monotonic() - scoring_started)
+                    )
                 self._jev_ranking["cache_hit"] = False
+            if (self.settings.semantic_jev_enabled or adaptive) and payload is None:
                 self._verify_scope_snapshot(scope)
                 cached = save_ranking_snapshot(snapshot_key, {
                     "fused": fused, "matched_queries": matched_queries_by_item,
                     "fusion": fusion_by_item, "completeness": retrieval_completeness,
                     "indexes": retrieval_indexes, "warnings": warnings,
                     "ranking": self._jev_ranking, "ranking_version": self._ranking_version,
+                    "access_view": self.access_view,
+                    "cache_key": snapshot_key,
                 }, self.settings.semantic_context_query_cursor_lifetime_seconds)
-        ranking_snapshot_id = cached["snapshot_id"] if cached is not None else ""
+        ranking_snapshot_id = (cached["snapshot_id"] if cached is not None
+                               and self.settings.semantic_jev_enabled else "")
 
         candidate_digest = _visible_digest(fused)
         payload = context_payload or match_payload
@@ -536,14 +604,57 @@ class SemanticContextQueryService:
                 ),
             )
 
-        decorated_primary, related_raw, root_paths_by_item = self._expand_multi_primary(
-            primary=primary,
-            scope=scope,
-            depth=depth,
-            context_limit=context_limit,
-            selected_resource_types=selected_resource_types,
-            selected_assertion_types=selected_assertion_types,
-        )
+        context_snapshot = None
+        context_key = "context:" + _json_digest([
+            snapshot_key, root_digest, ranking_snapshot_id,
+            _match_resume_key(primary[0]) if primary else [],
+        ])
+        if adaptive:
+            context_snapshot = get_ranking_snapshot(context_key)
+            if context_snapshot is not None:
+                if (context_snapshot["indexes"] != retrieval_indexes
+                        or not self._cached_access_unchanged(context_snapshot, scope)):
+                    discard_ranking_snapshot(context_key)
+                    context_snapshot = None
+            if context_snapshot is not None:
+                decorated_primary = context_snapshot["primary"]
+                related_raw = context_snapshot["related"]
+                root_paths_by_item = context_snapshot["paths"]
+                self._expansion = context_snapshot["expansion"]
+            elif depth > 0 and context_limit > 0:
+                decorated_primary, related_raw, root_paths_by_item = AdaptiveContextExpansion(
+                    self, scope, primary, original_queries, depth,
+                    selected_resource_types, selected_assertion_types,
+                ).run()
+            else:
+                decorated_primary, related_raw, root_paths_by_item = (
+                    [self._decorate(item, scope) for item in primary], [], {},
+                )
+                self._expansion = {"status": "not_requested", "strategy": "adaptive",
+                                   "completeness_scope": "selected_subgraph",
+                                   "selection_status": "not_requested", "stop_reasons": [],
+                                   "path_projection": "complete"}
+            if context_snapshot is None:
+                self._verify_scope_snapshot(scope)
+                context_snapshot = save_ranking_snapshot(context_key, {
+                    "request_key": snapshot_key, "primary": decorated_primary,
+                    "cache_key": context_key,
+                    "related": related_raw, "paths": root_paths_by_item,
+                    "expansion": self._expansion, "access_view": self.access_view,
+                    "ranking_snapshot_id": ranking_snapshot_id,
+                    "ranking": self._jev_ranking, "ranking_version": self._ranking_version,
+                    "indexes": retrieval_indexes, "completeness": retrieval_completeness,
+                    "candidate_digest": candidate_digest, "root_digest": root_digest,
+                    "matched_queries": matched_queries_by_item, "fusion": fusion_by_item,
+                    "warnings": warnings, "matches_truncated": matches_truncated,
+                    "next_match_cursor": next_match_cursor,
+                }, self.settings.semantic_context_query_cursor_lifetime_seconds)
+        else:
+            decorated_primary, related_raw, root_paths_by_item = self._expand_multi_primary(
+                primary=primary, scope=scope, depth=depth, context_limit=context_limit,
+                selected_resource_types=selected_resource_types,
+                selected_assertion_types=selected_assertion_types,
+            )
 
         # Apply context cursor within the bound root-match page only.
         context_digest = self._visible_context_digest(related_raw, root_paths_by_item)
@@ -566,6 +677,8 @@ class SemanticContextQueryService:
                     root_match_digest=root_digest,
                     candidate_digest=candidate_digest,
                     ranking_snapshot_id=ranking_snapshot_id,
+                    context_snapshot_id=(context_snapshot["snapshot_id"]
+                                         if context_snapshot is not None else ""),
                     context_digest=context_digest,
                 ),
             )
@@ -674,6 +787,8 @@ class SemanticContextQueryService:
             limit=limit,
             context_limit=context_limit,
             model_revisions=model_revisions,
+            expansion_strategy="fixed",
+            context_detail=context_detail,
         )
         context_payload = self._decode_cursor_opt(
             cursor_codec, context_cursor, binding=binding, expected_kind=CURSOR_KIND_CONTEXT,
@@ -814,10 +929,17 @@ class SemanticContextQueryService:
         """Stable RDF continuation; raw/hidden rows never consume a visible budget."""
         after = None
         while True:
+            timeout = 10
+            if self._adaptive_read_deadline is not None:
+                timeout = min(timeout, self._adaptive_read_deadline - time.monotonic())
+                if timeout <= 0:
+                    raise TimeoutError("time_budget_reached")
             result = self.rdf_store.query_sparql(
                 build_query(RDF_READ_CHUNK_SIZE, after),
-                timeout_seconds=10, limit=RDF_READ_CHUNK_SIZE,
+                timeout_seconds=timeout, limit=RDF_READ_CHUNK_SIZE,
             )
+            if result.truncated:
+                raise SemanticContextQueryError("RDF chunk is incomplete")
             rows = _bindings(result.result)
             yield rows
             if len(rows) < RDF_READ_CHUNK_SIZE:
@@ -1034,6 +1156,158 @@ class SemanticContextQueryService:
             "paths": [[list(key), value] for key, value in sorted(paths.items())],
             "expansion": self._expansion,
         })
+
+    def _scope_cache_signature(self, scope):
+        return {"scope": scope.public_dict(), "graphs": self._selected_graphs(scope)}
+
+    @staticmethod
+    def _denied_iris(view):
+        return view._unauthorized_iris if view.requires_filtering else frozenset()
+
+    def _verify_access_snapshot(self):
+        if self.access_view_resolver is not None:
+            current = self.access_view_resolver()
+            if self._denied_iris(current) != self._denied_iris(self.access_view):
+                raise SemanticContextSnapshotChanged("Semantic visibility changed during the query")
+
+    def _cached_access_unchanged(self, cached, scope):
+        previous = cached["access_view"]
+        if self._denied_iris(previous) != self._denied_iris(self.access_view):
+            self._verify_scope_snapshot(scope)
+            changed = False
+            graphs = " ".join(URIRef(graph).n3() for graph in self._selected_graphs(scope))
+            row_key = _context_row_key(("?graph", "?subject", "?predicate", "?object"))
+
+            def build_query(limit, after):
+                continuation = f"FILTER(?rowKey > {Literal(after).n3()})" if after else ""
+                return f"""# template: semantic-context-visibility
+SELECT ?graph ?subject ?predicate ?object ?rowKey WHERE {{
+  VALUES ?graph {{ {graphs} }}
+  GRAPH ?graph {{ ?subject ?predicate ?object }}
+  BIND({row_key} AS ?rowKey)
+  {continuation}
+}} ORDER BY ?rowKey LIMIT {limit}
+"""
+
+            try:
+                for rows in self._read_chunks(build_query):
+                    for row in rows:
+                        args = (_value(row, "subject"), _value(row, "predicate"),
+                                [_value(row, "object")])
+                        if previous.is_statement_visible(*args) != self.access_view.is_statement_visible(*args):
+                            changed = True
+                mappings = self.session.scalars(select(SemanticMappingModel).where(
+                    SemanticMappingModel.ontology_id.in_([entry.ontology_id for entry in scope.ontologies]),
+                    SemanticMappingModel.status == "active",
+                ))
+                for mapping in mappings:
+                    evidence = _mapping_evidence(mapping)
+                    item = {"id": mapping.target_id, "iri": mapping.target_id,
+                            "data": {"mapping_evidence": [evidence]},
+                            "mapping_evidence": [evidence]}
+                    if previous.filter_candidate(item) != self.access_view.filter_candidate(item):
+                        changed = True
+            except (RdfStoreError, SemanticContextQueryError, SQLAlchemyError) as exc:
+                raise SemanticAccessDependencyError(
+                    "Semantic visibility verification is temporarily unavailable"
+                ) from exc
+            self._verify_scope_snapshot(scope)
+            self._verify_access_snapshot()
+            if changed:
+                return False
+            update_snapshot_access(cached["cache_key"], self.access_view)
+        for item in [*cached.get("fused", []), *cached.get("primary", []),
+                     *cached.get("related", [])]:
+            if not self.access_view.filter_candidate(item):
+                return False
+        self._verify_access_snapshot()
+        return True
+
+    def _resume_adaptive_context(
+        self, payload, binding, scope, codec, queries, normalized_queries,
+        context_limit, context_detail, request_key,
+    ):
+        cached = get_snapshot_by_id(payload.context_snapshot_id)
+        if cached is None or cached.get("request_key") != request_key:
+            raise SemanticContextSnapshotChanged("Context snapshot expired or changed; restart the query")
+        if not self._cached_access_unchanged(cached, scope):
+            raise SemanticContextSnapshotChanged("Semantic visibility changed; restart the query")
+        if cached["ranking_snapshot_id"]:
+            if get_snapshot_by_id(cached["ranking_snapshot_id"]) is None:
+                raise SemanticContextSnapshotChanged("Ranking snapshot expired; restart the query")
+        repository = SemanticResourceRetrievalService(self.session, self.settings).repository
+        indexes = [repository.index_status(
+            ontology_id=entry.ontology_id, model_revision=entry.model_revision,
+        ) for entry in scope.ontologies]
+        if indexes != cached["indexes"]:
+            raise SemanticContextSnapshotChanged("Retrieval indexes changed; restart the query")
+        self._expansion = cached["expansion"]
+        self._ranking_version = cached["ranking_version"]
+        self._jev_ranking = ({**cached["ranking"], "cache_hit": True}
+                             if cached["ranking"] is not None else None)
+        rows = cached["related"]
+        paths = cached["paths"]
+        if (payload.context_digest != self._visible_context_digest(rows, paths)
+                or payload.root_match_digest != cached["root_digest"]
+                or payload.candidate_digest != cached["candidate_digest"]):
+            raise SemanticContextSnapshotChanged("Context snapshot no longer matches the cursor")
+        rows = _resume_context_after_key(rows, payload.resume_key)
+        truncated = len(rows) > context_limit
+        next_cursor = None
+        if truncated:
+            next_cursor = self._encode_cursor(codec, CursorPayload(
+                kind=CURSOR_KIND_CONTEXT, binding_digest=binding_digest(binding),
+                model_revisions=binding.model_revisions,
+                resume_key=_context_resume_key(rows[context_limit]),
+                match_page_start_key=payload.match_page_start_key,
+                root_match_digest=payload.root_match_digest,
+                candidate_digest=payload.candidate_digest, context_digest=payload.context_digest,
+                ranking_snapshot_id=cached["ranking_snapshot_id"],
+                context_snapshot_id=cached["snapshot_id"],
+            ))
+        warnings = list(cached["warnings"])
+        if truncated:
+            warnings.append({"code": "context_truncated", "message": "Semantic context was truncated."})
+        if cached["matches_truncated"]:
+            warnings.append({"code": "matches_truncated", "message": "Primary matches were truncated."})
+        primary = cached["primary"]
+        return self._multi_response(
+            scope=scope, original_queries=queries, normalized_queries=normalized_queries,
+            primary=primary, related=self._decorate_related(rows[:context_limit], scope, paths),
+            matched_queries_by_item=cached["matched_queries"], fusion_by_item=cached["fusion"],
+            root_paths_by_item=paths,
+            recall=recall_summary(primary, {"completeness": cached["completeness"],
+                                           "indexes": cached["indexes"]}, binding.search_mode),
+            warnings=warnings, matches_truncated=cached["matches_truncated"],
+            context_truncated=truncated, match_cursor_out=cached["next_match_cursor"],
+            context_cursor_out=next_cursor, context_detail=context_detail,
+        )
+
+    def _adaptive_statement_endpoints(self, root, scope):
+        data = root.get("data", {})
+        iris = [data.get("subject")]
+        if data.get("object_type") == "uri":
+            iris.append(data.get("object"))
+        return [item for iri in iris if iri
+                for item in self._resource_variants(scope, iri)
+                if self.access_view.filter_candidate(item)]
+
+    def _resource_variants(self, scope, iri):
+        seed = [{"iri": iri, "id": iri, "kind": "instance", "ontology_id": entry.ontology_id,
+                 "data": {}, "assertion_kind": "asserted"} for entry in scope.ontologies]
+        self._hydrate_candidates(seed, scope)
+        resources = []
+        for entry in scope.ontologies:
+            rows = self._description_cache[(entry.ontology_id, iri)].get("_own_rows", [])
+            if rows:
+                item = self._resource_from_rows(rows, scope, iri)
+                if item is not None:
+                    resources.append(item)
+        if not resources:
+            item = self._resource_item(scope, iri)
+            if item is not None:
+                resources.append(item)
+        return resources
 
     def _verify_scope_snapshot(self, scope: SemanticQueryScope) -> None:
         project_id = scope.project_id
@@ -1274,11 +1548,13 @@ class SemanticContextQueryService:
             return False
         key = self._identity_key(item)
         if key not in self._work_items:
-            if len(self._work_items) >= CONTEXT_EXPANSION_BUDGET:
+            if len(self._work_items) >= self._visible_work_budget:
                 self._work_stopped = True
                 self._expansion = {"status": "partial", "reason": "expansion_budget_reached"}
                 return False
             self._work_items.add(key)
+        if self._expansion_strategy == "adaptive":
+            self._adaptive_partial_items[key] = copy.deepcopy(item)
         return True
 
     def _related_for_root(
@@ -1378,17 +1654,20 @@ class SemanticContextQueryService:
 
             # A visible target resource gives the Consumer the usual resource
             # projection and keeps the derived edge useful across Ontologies.
-            target_resource = self._resource_item(scope, target)
-            if target_resource is None or not self.access_view.filter_candidate(target_resource):
-                continue
-            target_resource["distance"] = edge["distance"]
-            target_resource["match"] = _neighborhood_match(edge["distance"])
-            if _assertion_filter_value(target_resource.get("assertion_kind", "asserted")) not in selected_assertion_types:
-                continue
-            if self._accept_work(target_resource) and target_resource.get("kind") in selected_resource_types:
-                items.append(target_resource)
-            if self._work_stopped:
-                break
+            targets = (self._resource_variants(scope, target)
+                       if self._expansion_strategy == "adaptive"
+                       else [self._resource_item(scope, target)])
+            for target_resource in targets:
+                if target_resource is None or not self.access_view.filter_candidate(target_resource):
+                    continue
+                target_resource["distance"] = edge["distance"]
+                target_resource["match"] = _neighborhood_match(edge["distance"])
+                if _assertion_filter_value(target_resource.get("assertion_kind", "asserted")) not in selected_assertion_types:
+                    continue
+                if self._accept_work(target_resource) and target_resource.get("kind") in selected_resource_types:
+                    items.append(target_resource)
+                if self._work_stopped:
+                    break
         return items
 
 
@@ -1459,6 +1738,7 @@ class SemanticContextQueryService:
         context_detail: str = "full",
     ) -> dict[str, Any]:
         self._verify_scope_snapshot(scope)
+        self._verify_access_snapshot()
         if self._jev_ranking is not None:
             recall["ranking"] = dict(self._jev_ranking)
         decorated_primary: list[dict[str, Any]] = []
@@ -1526,7 +1806,16 @@ class SemanticContextQueryService:
             "result_scope": "authorized_query_scope",
             "context_detail": context_detail,
             "ranking_version": self._ranking_version,
+            "expansion_strategy": self._expansion_strategy,
         }
+        expansion = dict(self._expansion)
+        if self._expansion_strategy == "fixed":
+            expansion.update(strategy="fixed", completeness_scope="requested_depth",
+                             selection_status="not_requested")
+            expansion["path_projection"] = ("partial" if expansion["status"] == "partial"
+                                            else "paged" if context_truncated else "complete")
+        elif context_truncated and expansion.get("path_projection") == "complete":
+            expansion["path_projection"] = "paged"
         return {
             "query": query_echo,
             "result_status": "matched" if decorated_primary else "no_match",
@@ -1542,7 +1831,7 @@ class SemanticContextQueryService:
                 "returned": len(decorated_related),
                 "truncated": bool(context_truncated),
                 "next_context_cursor": context_cursor_out,
-                "expansion": dict(self._expansion),
+                "expansion": expansion,
             },
             "truncated": truncated,
             "recall": _public_recall(recall),
@@ -2500,6 +2789,8 @@ def _public_item(item: Mapping[str, Any]) -> dict[str, Any]:
         public["target_kind"] = item.get("target_kind")
     if item.get("mapping_evidence") is not None:
         public["mapping_evidence"] = item.get("mapping_evidence")
+    if item.get("expansion") is not None:
+        public["expansion"] = copy.deepcopy(item["expansion"])
     return {key: value for key, value in public.items() if value is not None}
 
 

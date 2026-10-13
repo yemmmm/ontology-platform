@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from app.core.config import Settings
+from app.services.semantic_context_adaptive import ADAPTIVE_CONFIG, ADAPTIVE_VERSION
 from app.services.semantic_context_cursor import ContextCursorCodec
 
 
@@ -43,9 +44,28 @@ def context_query_capabilities(settings: Settings) -> dict[str, Any]:
         },
         "result_scope": "authorized_query_scope",
         "expansion": {
-            "visible_work_budget": 5000,
+            "strategies": ["adaptive", "fixed"],
+            "default_strategy": "adaptive",
+            "default_depth": {"adaptive": 3, "fixed": 1},
+            "iri_default": {"strategy": "fixed", "depth": 1},
+            "depth": {
+                "min": 0,
+                "max": min(settings.semantic_context_query_depth_max, 3),
+                "explicit_is_upper_bound": True,
+                "zero_disables_expansion": True,
+            },
+            "adaptive": {
+                "version": ADAPTIVE_VERSION,
+                "config": dict(ADAPTIVE_CONFIG),
+            },
+            "visible_work_budget": ADAPTIVE_CONFIG["work_budget"],
             "statuses": ["complete", "partial", "not_requested"],
             "complete_within": ["scope", "assertion_types", "depth", "current_match_page"],
+            "completeness_scope": {
+                "adaptive": "selected_subgraph",
+                "fixed": "requested_depth",
+                "applies_within": ["authorized_query_scope", "current_match_page"],
+            },
             "business_completeness": False,
         },
         "context_detail": {
@@ -55,8 +75,9 @@ def context_query_capabilities(settings: Settings) -> dict[str, Any]:
             "omission_marker": "projection.omitted_fields",
         },
         "depth": {
-            "default": settings.semantic_context_query_depth_default,
-            "max": settings.semantic_context_query_depth_max,
+            "default": 3,
+            "max": min(settings.semantic_context_query_depth_max, 3),
+            "default_by_strategy": {"adaptive": 3, "fixed": 1},
         },
         "cursors": codec.capabilities,
     }

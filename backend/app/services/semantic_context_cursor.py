@@ -24,7 +24,7 @@ from app.core.config import Settings
 from app.security.auth import AuthPrincipal
 
 
-CURSOR_VERSION = 3
+CURSOR_VERSION = 4
 CURSOR_KIND_MATCH = "match"
 CURSOR_KIND_CONTEXT = "context"
 CURSOR_KINDS = (CURSOR_KIND_MATCH, CURSOR_KIND_CONTEXT)
@@ -75,6 +75,12 @@ class CursorBinding:
     context_limit: int
     model_revisions: tuple[tuple[str, int], ...]
     semantic_roles: tuple[str, ...] = ()
+    # These fields are optional so older direct callers keep the historical
+    # fixed/full/empty binding while new adaptive requests bind their full
+    # selection contract.
+    expansion_strategy: str = "fixed"
+    context_detail: str = "full"
+    selection_config_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -93,6 +99,7 @@ class CursorPayload:
     ranking_snapshot_id: str = ""
     issued_at: int = 0
     version: int = CURSOR_VERSION
+    context_snapshot_id: str = ""
 
 
 @dataclass
@@ -121,6 +128,7 @@ class ContextCursorCodec:
     @property
     def capabilities(self) -> dict[str, Any]:
         return {
+            "version": CURSOR_VERSION,
             "kinds": list(CURSOR_KINDS),
             "lifetime_seconds": self.lifetime_seconds,
             "stable_secret_configured": self.stable_secret,
@@ -140,6 +148,7 @@ class ContextCursorCodec:
             "cd": payload.candidate_digest,
             "xd": payload.context_digest,
             "rs": payload.ranking_snapshot_id,
+            "cs": payload.context_snapshot_id,
             "i": int(payload.issued_at or time.time()),
         }
         raw = json.dumps(body, separators=(",", ":"), sort_keys=True).encode("utf-8")
@@ -206,6 +215,7 @@ class ContextCursorCodec:
             candidate_digest=str(payload.get("cd") or ""),
             context_digest=str(payload.get("xd") or ""),
             ranking_snapshot_id=str(payload.get("rs") or ""),
+            context_snapshot_id=str(payload.get("cs") or ""),
             issued_at=issued_at,
             version=int(payload.get("v") or CURSOR_VERSION),
         )
@@ -232,6 +242,9 @@ def make_binding(
     context_limit: int,
     model_revisions: list[tuple[str, int]] | tuple[tuple[str, int], ...],
     semantic_roles: list[str] | None = None,
+    expansion_strategy: str = "fixed",
+    context_detail: str = "full",
+    selection_config_digest: str = "",
 ) -> CursorBinding:
     return CursorBinding(
         principal=principal,
@@ -248,6 +261,9 @@ def make_binding(
         context_limit=context_limit,
         model_revisions=tuple(model_revisions),
         semantic_roles=tuple(semantic_roles or ()),
+        expansion_strategy=expansion_strategy,
+        context_detail=context_detail,
+        selection_config_digest=selection_config_digest,
     )
 
 
@@ -277,6 +293,9 @@ def binding_digest(binding: CursorBinding) -> str:
         "depth": binding.depth,
         "limit": binding.limit,
         "context_limit": binding.context_limit,
+        "expansion_strategy": binding.expansion_strategy,
+        "context_detail": binding.context_detail,
+        "selection_config_digest": binding.selection_config_digest,
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()

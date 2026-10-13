@@ -38,6 +38,13 @@ def isolated_semantic_service_environment(monkeypatch):
     """
     monkeypatch.setenv("EMBEDDING_API_KEY", "")
     monkeypatch.setenv("SEMANTIC_JEV_ENABLED", "false")
+    # Adaptive queries now freeze context even when external scoring is disabled.
+    # Each test owns a fresh source corpus despite reusing the same project/revision IDs.
+    from app.services.semantic_jev import _SNAPSHOTS
+
+    _SNAPSHOTS.clear()
+    yield
+    _SNAPSHOTS.clear()
 
 
 @compiles(JSONB, "sqlite")

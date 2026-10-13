@@ -71,13 +71,15 @@ def _scope_resolver(session) -> SemanticQueryScopeResolver:
 
 
 def _context_query_service(session, project_id: str | None = None) -> SemanticContextQueryService:
+    principal = runtime_principal()
     return SemanticContextQueryService(
         session,
         _rdf_store(),
         _scope_resolver(session),
         cursor_codec=get_context_cursor_codec(),
-        access_view=SemanticAccessResolver(session).resolve(
-            runtime_principal(), project_id
+        access_view=SemanticAccessResolver(session).resolve(principal, project_id),
+        access_view_resolver=lambda: SemanticAccessResolver(session).resolve(
+            principal, project_id
         ),
     )
 
@@ -176,7 +178,8 @@ def register_semantic(server: FastMCP) -> None:
         assertion_types: list[str] | None = None,
         semantic_roles: list[str] | None = None,
         search_mode: str = "hybrid",
-        depth: int = 1,
+        expansion_strategy: Literal["adaptive", "fixed"] = "adaptive",
+        depth: int | None = None,
         limit: int = 20,
         context_limit: int = 100,
         context_detail: Literal["full", "compact", "preview"] = "compact",
@@ -196,6 +199,7 @@ def register_semantic(server: FastMCP) -> None:
                 assertion_types=assertion_types,
                 semantic_roles=semantic_roles,
                 search_mode=search_mode,
+                expansion_strategy=expansion_strategy,
                 depth=depth,
                 limit=limit,
                 context_limit=context_limit,

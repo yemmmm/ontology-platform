@@ -27,7 +27,13 @@ def test_context_and_sparql_mcp_schemas_use_public_scope_only():
         assert "graph_set_id" not in properties
         assert "graph_iri" not in properties
 
-    assert context["properties"]["depth"]["default"] == 1
+    assert context["properties"]["expansion_strategy"]["default"] == "adaptive"
+    assert context["properties"]["expansion_strategy"]["enum"] == ["adaptive", "fixed"]
+    assert context["properties"]["depth"]["default"] is None
+    assert context["properties"]["depth"]["anyOf"] == [
+        {"type": "integer"},
+        {"type": "null"},
+    ]
     assert context["properties"]["limit"]["default"] == 20
 
 
@@ -239,6 +245,8 @@ def test_mcp_context_query_accepts_canonical_queries(scoped_mcp, monkeypatch):
     assert result["ok"] is True
     body = result["data"]
     assert body["query"]["queries"] == ["one", "two"]
+    assert body["query"]["expansion_strategy"] == "adaptive"
+    assert body["query"]["depth"] == 0
     assert body["matches_page"]["returned"] == 0
 
 
@@ -305,6 +313,35 @@ def test_mcp_context_query_forwards_refreshed_principal(scoped_mcp, monkeypatch)
     forwarded = captured.get("principal")
     assert forwarded is not None
     assert forwarded.subject_type == "api_key"
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected_strategy"),
+    [({}, "adaptive"), ({"expansion_strategy": "fixed"}, "fixed")],
+)
+def test_mcp_context_query_forwards_strategy_and_optional_depth(
+    scoped_mcp, monkeypatch, extra, expected_strategy
+):
+    captured: dict[str, object] = {}
+
+    class Service:
+        def query_multi(self, **kwargs):
+            captured.update(kwargs)
+            return {"result_status": "no_match"}
+
+    monkeypatch.setattr("app.mcp.tools.semantic._context_query_service", lambda *args: Service())
+    scoped_mcp(EmptyStore())
+    result = _tool("query_semantic_context").fn(
+        project_id="p",
+        scope_mode="ontologies",
+        ontology_ids=["o"],
+        query="topic",
+        **extra,
+    )
+
+    assert result["ok"] is True
+    assert captured["expansion_strategy"] == expected_strategy
+    assert captured["depth"] is None
 
 
 def test_mcp_context_cursor_survives_service_recreation_and_keeps_bindings(
@@ -382,6 +419,7 @@ def test_mcp_context_cursor_survives_service_recreation_and_keeps_bindings(
         "scope_mode": "ontologies",
         "ontology_ids": ["o"],
         "query": "topic",
+        "expansion_strategy": "fixed",
         "resource_types": ["instance"],
         "depth": 0,
         "limit": 1,

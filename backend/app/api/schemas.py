@@ -619,7 +619,8 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
     assertion_types: list[Literal["asserted", "derived"]] | None = None
     semantic_roles: list[str] | None = Field(default=None, min_length=1)
     search_mode: Literal["hybrid", "lexical"] = "hybrid"
-    depth: int = Field(default=1, ge=0, le=3)
+    expansion_strategy: Literal["adaptive", "fixed"] = "adaptive"
+    depth: int | None = Field(default=None, ge=0, le=3)
     limit: int = Field(default=20, ge=1, le=100)
     context_limit: int = Field(default=100, ge=0, le=1000)
     context_detail: Literal["full", "compact", "preview"] = "full"

@@ -600,7 +600,8 @@ def test_bd05_capability_discovery_advertises_full_contract():
     )
 
     # Depth.
-    assert capabilities["depth"]["default"] == settings.semantic_context_query_depth_default
+    assert capabilities["depth"]["default"] == 3
+    assert capabilities["depth"]["default_by_strategy"] == {"adaptive": 3, "fixed": 1}
     assert capabilities["depth"]["max"] == settings.semantic_context_query_depth_max
 
     # Cursor kinds and lifetime.

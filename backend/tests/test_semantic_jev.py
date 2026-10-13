@@ -27,8 +27,8 @@ def context(original_context):  # noqa: F811
 def scorer(monkeypatch, values):
     seen = []
 
-    def score(self, queries, items):
-        seen.append((queries, items))
+    def score(self, queries, items, **kwargs):
+        seen.append((queries, items, kwargs))
         return [values[item["label"]] for item in items], "jev-1.13.0"
 
     monkeypatch.setattr(JevReranker, "score", score)
@@ -113,7 +113,7 @@ def test_authorized_only_to_provider_and_cache_permissions_change(context, monke
     assert str(hidden) not in json.dumps(seen)
     service.access_view = SemanticAccessView(requires_filtering=True,
                                            _unauthorized_iris=frozenset({str(hidden), first["primary_matches"][0]["id"]}))
-    with pytest.raises(SemanticContextSnapshotChanged, match="snapshot expired or changed"):
+    with pytest.raises(SemanticContextSnapshotChanged, match="visibility changed"):
         query(["topic"], depth=0, limit=1, match_cursor=first["matches_page"]["next_match_cursor"])
     fresh = query(["topic"], depth=0, limit=1)
     assert fresh["primary_matches"][0]["label"] == "topic b"
@@ -215,3 +215,376 @@ def test_client_proxy_isolation_and_invalid_scores(monkeypatch, bad):
     assert "candidates" not in sent[0]["state"]
     instructions = sent[0]["questions"]["c0"]["instructions"]
     assert "missing rule" in instructions and '"score": 999' not in instructions
+
+
+def test_score_branches_inlines_context_and_uses_independent_scales(monkeypatch):
+    sent = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            assert kwargs["trust_env"] is False
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, endpoint, *, json, headers, timeout):
+            sent.append(json)
+            response = Mock(status_code=200, headers={
+                "x-opencode-upstream-model-id": "jev-1.13.0",
+            })
+            response.json.return_value = {
+                "model": "jev-1.13-free",
+                "answers": {
+                    key: {"type": "score", "score": 2 if key.startswith("c") else 1}
+                    for key in json["questions"]
+                },
+            }
+            return response
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    contexts = [
+        {
+            "candidate": {
+                "id": "branch-a",
+                "semantic_definition": {
+                    "business_meaning": "规则入口",
+                },
+                "original_json": {"match": "original-match", "fusion": "original-fusion"},
+                "data": {
+                    "semantic_definition": {
+                        "business_meaning": "规则入口",
+                        "match": "business-match",
+                        "fusion": "business-fusion",
+                        "answer_score": "business-answer-score",
+                    },
+                    "original_json": {"match": "original-match", "fusion": "original-fusion"},
+                },
+                "match": {"score": 999},
+                "fusion": {"best_evidence_tier": "exact"},
+            },
+            "root": {
+                "id": "root-a", "match": {"score": 100},
+                "data": {"semantic_definition": {"match": "root-business-match"}},
+            },
+            "path": [{
+                "predicate": "hasRule", "fusion": {"score": 101},
+                "data": {"original_json": {"fusion": "path-business-fusion"}},
+            }],
+            "via_edge": {
+                "source": "root-a", "target": "branch-a", "answer_score": 102,
+                "data": {"semantic_definition": {"answer_score": "edge-business-score"}},
+            },
+            "can_explore": True,
+        },
+        {
+            "candidate": {"id": "terminal-a", "value": "未知"},
+            "root": {"id": "root-a"},
+            "path": [],
+            "via_edge": None,
+            "can_explore": False,
+        },
+    ]
+    result = JevReranker(Settings(semantic_jev_api_key="test-only")).score_branches(
+        ["关闭工单需要什么条件"], contexts
+    )
+
+    assert result["status"] == "applied"
+    assert result["model"] == "jev-1.13.0"
+    assert result["scores"] == [
+        {"answer_score": 2.0, "exploration_score": 1.0, "status": "scored"},
+        {"answer_score": 2.0, "exploration_score": None, "status": "scored"},
+    ]
+    questions = sent[0]["questions"]
+    assert set(questions) == {"c0", "e0", "c1"}
+    assert questions["c0"]["version"] == semantic_jev.JEV_RANKING_VERSION
+    assert questions["e0"]["version"] == semantic_jev.JEV_EXPLORATION_VERSION
+    assert questions["c1"]["version"] == semantic_jev.JEV_RANKING_VERSION
+    serialized = json.dumps(questions, ensure_ascii=False)
+    assert '"score": 999' not in serialized and '"score": 100' not in serialized
+    assert '"score": 101' not in serialized and '"answer_score": 102' not in serialized
+    assert '"best_evidence_tier": "exact"' not in serialized
+    assert "business-match" in serialized and "business-fusion" in serialized
+    assert "business-answer-score" in serialized and "original-match" in serialized
+    assert "root-business-match" in serialized and "path-business-fusion" in serialized
+    assert "edge-business-score" in serialized
+    assert "规则入口" in serialized and "root-a" in serialized
+
+
+def test_score_branches_keeps_successful_batches_when_later_batch_is_invalid(monkeypatch):
+    calls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, endpoint, *, json, headers, timeout):
+            calls.append(json)
+            response = Mock(status_code=200, headers={
+                "x-opencode-upstream-model-id": "jev-1.13.0",
+            })
+            if len(calls) == 1:
+                response.json.return_value = {
+                    "model": "jev-1.13.0",
+                    "answers": {
+                        key: {"type": "score", "score": 2}
+                        for key in json["questions"]
+                    },
+                }
+            else:
+                response.json.return_value = {"model": "jev-1.13.0", "answers": {}}
+            return response
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    contexts = [
+        {
+            "candidate": {"id": "a", "text": "a" * 15_000},
+            "root": {"id": "root-a"}, "path": [], "via_edge": None,
+            "can_explore": True,
+        },
+        {
+            "candidate": {"id": "b", "text": "b" * 15_000},
+            "root": {"id": "root-b"}, "path": [], "via_edge": None,
+            "can_explore": True,
+        },
+    ]
+    result = JevReranker(Settings(semantic_jev_api_key="test-only")).score_branches(
+        ["question"], contexts
+    )
+
+    assert len(calls) == 2
+    assert result["status"] == "degraded"
+    assert result["scores"][0] == {
+        "answer_score": 2.0, "exploration_score": 2.0, "status": "scored",
+    }
+    assert result["scores"][1]["status"] == "unavailable"
+    assert result["scores"][1]["reason"] == "invalid_answers"
+    assert result["reason"] == "invalid_answers"
+
+
+def test_score_branches_oversized_context_only_degrades_itself(monkeypatch):
+    sent = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, endpoint, *, json, headers, timeout):
+            sent.append(json)
+            response = Mock(status_code=200, headers={
+                "x-opencode-upstream-model-id": "jev-1.13.0",
+            })
+            response.json.return_value = {
+                "model": "jev-1.13.0",
+                "answers": {
+                    key: {"type": "score", "score": 3}
+                    for key in json["questions"]
+                },
+            }
+            return response
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    contexts = [
+        {
+            "candidate": {"id": "too-large", "text": "大" * 40_000},
+            "root": {"id": "root"}, "path": [], "via_edge": None,
+            "can_explore": True,
+        },
+        {
+            "candidate": {"id": "small", "text": "可用"},
+            "root": {"id": "root"}, "path": [], "via_edge": None,
+            "can_explore": False,
+        },
+    ]
+    result = JevReranker(Settings(semantic_jev_api_key="test-only")).score_branches(
+        ["question"], contexts
+    )
+
+    assert len(sent) == 1 and set(sent[0]["questions"]) == {"c1"}
+    assert result["scores"][0]["status"] == "unavailable"
+    assert result["scores"][0]["reason"] == "candidate_exceeds_context"
+    assert result["scores"][1] == {
+        "answer_score": 3.0, "exploration_score": None, "status": "scored",
+    }
+
+
+def _large_branch_context(identifier, marker, *, can_explore=True):
+    return {
+        "candidate": {"id": identifier, "text": marker * 15_000},
+        "root": {"id": f"root-{identifier}"},
+        "path": [],
+        "via_edge": None,
+        "can_explore": can_explore,
+    }
+
+
+def test_score_branches_shares_one_deadline_across_batches(monkeypatch):
+    calls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, endpoint, *, json, headers, timeout):
+            calls.append(timeout)
+            response = Mock(status_code=200, headers={
+                "x-opencode-upstream-model-id": "jev-1.13.0",
+            })
+            response.json.return_value = {
+                "model": "jev-1.13.0",
+                "answers": {
+                    key: {"type": "score", "score": 2}
+                    for key in json["questions"]
+                },
+            }
+            return response
+
+    monotonic_values = iter((100.0, 100.2, 102.1))
+    monkeypatch.setattr(httpx, "Client", Client)
+    monkeypatch.setattr(semantic_jev.time, "monotonic", lambda: next(monotonic_values))
+    result = JevReranker(Settings(semantic_jev_api_key="test-only")).score_branches(
+        ["question"],
+        [_large_branch_context("a", "a"), _large_branch_context("b", "b")],
+        timeout_seconds=2,
+    )
+
+    assert len(calls) == 1
+    assert calls[0] == pytest.approx(1.8)
+    assert result["scores"][0] == {
+        "answer_score": 2.0, "exploration_score": 2.0, "status": "scored",
+    }
+    assert result["scores"][1]["status"] == "unavailable"
+    assert result["scores"][1]["reason"] == "timeout"
+    assert result["reason"] == "timeout"
+
+
+def test_score_branches_discards_entire_batch_on_one_invalid_score(monkeypatch):
+    sent = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, endpoint, *, json, headers, timeout):
+            sent.append(json)
+            response = Mock(status_code=200, headers={
+                "x-opencode-upstream-model-id": "jev-1.13.0",
+            })
+            response.json.return_value = {
+                "model": "jev-1.13.0",
+                "answers": {
+                    "c0": {"type": "score", "score": 2},
+                    "e0": {"type": "score", "score": 1},
+                    "c1": {"type": "score", "score": 4},
+                },
+            }
+            return response
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    result = JevReranker(Settings(semantic_jev_api_key="test-only")).score_branches(
+        ["question"],
+        [
+            {"candidate": {"id": "a"}, "root": {}, "path": [],
+             "via_edge": None, "can_explore": True},
+            {"candidate": {"id": "b"}, "root": {}, "path": [],
+             "via_edge": None, "can_explore": False},
+        ],
+    )
+
+    assert set(sent[0]["questions"]) == {"c0", "e0", "c1"}
+    assert result["status"] == "degraded" and result["reason"] == "invalid_score"
+    assert result["scores"] == [
+        {
+            "answer_score": None, "exploration_score": None,
+            "status": "unavailable", "reason": "invalid_score",
+        },
+        {
+            "answer_score": None, "exploration_score": None,
+            "status": "unavailable", "reason": "invalid_score",
+        },
+    ]
+
+
+def test_score_branches_stops_after_upstream_model_drift(monkeypatch):
+    calls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def post(self, endpoint, *, json, headers, timeout):
+            calls.append(json)
+            model = "jev-1.13.0" if len(calls) == 1 else "jev-1.14.0"
+            response = Mock(status_code=200, headers={
+                "x-opencode-upstream-model-id": model,
+            })
+            response.json.return_value = {
+                "model": model,
+                "answers": {
+                    key: {"type": "score", "score": 2}
+                    for key in json["questions"]
+                },
+            }
+            return response
+
+    monkeypatch.setattr(httpx, "Client", Client)
+    result = JevReranker(Settings(semantic_jev_api_key="test-only")).score_branches(
+        ["question"],
+        [_large_branch_context("a", "a"), _large_branch_context("b", "b")],
+        expected_model="jev-1.13.0",
+    )
+
+    assert len(calls) == 2
+    assert result["model"] == "jev-1.13.0"
+    assert result["scores"][0]["status"] == "scored"
+    assert result["scores"][1]["status"] == "unavailable"
+    assert result["scores"][1]["reason"] == "model_changed_during_scoring"
+    assert result["reason"] == "model_changed_during_scoring"
+
+
+def test_snapshot_helpers_preserve_identity_and_update_only_access_view():
+    semantic_jev._SNAPSHOTS.clear()
+    saved = semantic_jev.save_ranking_snapshot(
+        "key", {"frozen": ["value"], "access_view": {"old": True}}, lifetime=60
+    )
+    by_id = semantic_jev.get_snapshot_by_id(saved["snapshot_id"])
+    assert by_id["snapshot_id"] == saved["snapshot_id"]
+    updated = semantic_jev.update_snapshot_access("key", {"new": True})
+    assert updated["snapshot_id"] == saved["snapshot_id"]
+    assert updated["expires"] == saved["expires"]
+    assert updated["frozen"] == ["value"]
+    assert updated["access_view"] == {"new": True}
+    assert semantic_jev.discard_ranking_snapshot("key") is True
+    assert semantic_jev.get_snapshot_by_id(saved["snapshot_id"]) is None

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 from typing import Any
 
@@ -1577,6 +1576,7 @@ def test_multi_expression_match_cursor_continues_global_stream(
         queries=["topic"],
         resource_types=["concept"],
         depth=0,
+        expansion_strategy="fixed",
         limit=2,
         context_limit=0,
         principal=_principal(),
@@ -1591,6 +1591,7 @@ def test_multi_expression_match_cursor_continues_global_stream(
         queries=["topic"],
         resource_types=["concept"],
         depth=0,
+        expansion_strategy="fixed",
         limit=2,
         context_limit=0,
         principal=_principal(),

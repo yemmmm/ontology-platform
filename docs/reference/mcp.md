@@ -103,6 +103,13 @@ R1.2-004 起 `query_semantic_context` 支持一次提交一组同主题的相关
 私有随机完整性材料，并经 `GET /api/mcp/tools` 的 `capabilities.semantic_context_query` 字段声明
 该限制、cursor 种类、生命周期与各项默认/上限。
 
+R4.3-017 为 `query_semantic_context` 增加 `expansion_strategy`（`adaptive` 或 `fixed`），缺省为
+`adaptive`；`depth` 可省略，adaptive／fixed 的缺省上限分别为 3／1，显式 0–3 始终是上限。
+精确 IRI 查询保持 fixed 深度 1 的读取合同，不调用自适应评分。能力目录公布 adaptive 选择配置、
+策略相关深度和完整性边界；`complete` 只覆盖当前授权页的 selected subgraph 或 requested depth，
+不证明业务完整。Context Query cursor 为 v4，context cursor 绑定服务端 opaque snapshot 与选择配置，
+旧 v3 token 需要无 cursor 重新查询。
+
 ## 返回与错误边界
 
 多数业务工具通过 MCP runtime 返回 `{"ok": true, "data": ...}` 或
@@ -235,7 +242,7 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | semantic | `list_semantic_feedback` | Internal admin: list private feedback in one authorized Project, with bounded pages. | project_id | cursor, limit, pending_only, project_id | `backend/app/mcp/tools/semantic_feedback.py` |
 | semantic | `list_semantic_protection_sets` | List the protection sets of one authorized Project. | project_id | project_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `preflight_semantic_migration` | Run Phase 7 migration preflight for a scope. | scope_type | scope_id, scope_type, target_ontology_id | `backend/app/mcp/tools/semantic.py` |
-| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, scope_mode | assertion_types, context_cursor, context_detail, context_limit, depth, limit, match_cursor, ontology_ids, project_id, queries, query, resource_types, scope_mode, search_mode, semantic_roles | `backend/app/mcp/tools/semantic.py` |
+| semantic | `query_semantic_context` | Recall structured semantic context from one Project's current Ontologies. | project_id, scope_mode | assertion_types, context_cursor, context_detail, context_limit, depth, expansion_strategy, limit, match_cursor, ontology_ids, project_id, queries, query, resource_types, scope_mode, search_mode, semantic_roles | `backend/app/mcp/tools/semantic.py` |
 | semantic | `record_semantic_feedback_resolution` | Internal admin: append a scoped diagnosis and verification reference; no model write.  A resolved conclusion requires current model revisions, actual readback references and an independent validation reference. References are reports, not semantic verdicts.  | feedback_id, resolution | feedback_id, resolution | `backend/app/mcp/tools/semantic_feedback.py` |
 | semantic | `remove_semantic_protection_set_members` | Batch-remove resource IRIs from a protection set. | protection_set_id, resource_iris | actor, protection_set_id, resource_iris | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `rollback_semantic_migration_run` | Roll back a Phase 7 cutover and restore legacy-primary mode. | run_id | run_id | `backend/app/mcp/tools/semantic.py` |

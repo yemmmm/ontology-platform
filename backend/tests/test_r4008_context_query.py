@@ -182,7 +182,8 @@ def test_fact_output_traverses_relation_without_returning_it(context):
     # Lexical fact root is a statement: use its subject, never its predicate,
     # as the graph expansion anchor.
     graph.add((root, URIRef("https://business.test/marker"), Literal("uniqueRootMarker")))
-    result = query(["uniqueRootMarker"], depth=2, resource_types=["fact"])
+    result = query(["uniqueRootMarker"], depth=2, resource_types=["fact"],
+                   expansion_strategy="fixed")
     assert result["primary_matches"][0]["data"]["subject"] == str(root)
     assert any(row["data"].get("object") == "42" for row in result["related_context"])
     assert all(row["kind"] == "fact" for row in result["related_context"])
@@ -230,6 +231,10 @@ def test_budget_partial_is_distinct_from_terminal_page_and_hidden_rows(context, 
     assert partial["context_page"]["expansion"] == {
         "status": "partial",
         "reason": "expansion_budget_reached",
+        "strategy": "fixed",
+        "completeness_scope": "requested_depth",
+        "selection_status": "not_requested",
+        "path_projection": "partial",
     }
     assert partial["context_page"]["next_context_cursor"] is None
     assert partial["truncated"] is False
@@ -409,7 +414,8 @@ def test_cycle_and_overlapping_roots_keep_shortest_root_paths(context):
     for root in [first, second]:
         graph.add((root, URIRef("https://business.test/next"), shared))
     graph.add((shared, URIRef("https://business.test/next"), first))
-    result = query(["common"], semantic_roles=["Action"], depth=3)
+    result = query(["common"], semantic_roles=["Action"], depth=3,
+                   expansion_strategy="fixed")
     shared_row = next(row for row in result["related_context"] if row["iri"] == str(shared))
     assert shared_row["root_paths"] == [
         {"root_match_id": str(first), "graph_distance": 1},

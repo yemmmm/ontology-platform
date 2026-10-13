@@ -184,6 +184,18 @@ R1.2-004 起 Context Query 支持一次提交一组同主题的相关表达式�
 重启继续验证；未配置时后端使用进程私有随机完整性材料并经能力发现声明该限制。
 
 
+R4.3-017 为自然语言 Context Query 增加 `expansion_strategy`：缺省为 `adaptive`，也可显式选择
+`fixed`。`depth` 可省略（`null` 与省略相同），自适应缺省上限为 3，固定路径缺省为 1；显式
+`depth`（0–3）始终是上限，不会被策略抬高。精确 IRI 查询沿固定读取合同，实际策略为 `fixed`、
+缺省深度为 1，不调用自适应评分。能力目录会公布策略、深度解析、选择配置和完整性边界：
+adaptive 的 complete 只表示当前授权主命中页的 selected subgraph，fixed 只表示 requested depth，
+两者都不代表业务答案完整。
+
+R4.3-017 起 Context Query cursor 为 v4；context cursor 的签名 payload 含服务端 opaque 的
+`context_snapshot_id`，并绑定实际策略、解析后深度、`context_detail` 与选择配置摘要。旧 v3
+token 按 `invalid_context_cursor` 重新首查；权限、模型修订、检索或选择配置变化时不能在旧 cursor
+下重新选择或补做探索。
+
 R4.0-008 在同一入口增加可选 `semantic_roles`：非空字符串列表，trim、去重，按已声明的
 `data.semantic_definition.semantic_role` 精确且区分大小写匹配，多值 OR；与资源／断言筛选取
 AND，只筛主命中。null／缺省不筛选，未知角色返回正常空匹配，不推断未声明的角色。
@@ -252,7 +264,7 @@ compact 保留普通业务解释、身份和 statement 信息；R4.0-025 不再�
 超出窗口时 `recall.completeness=degraded`，warning 为 `candidate_window_incomplete`。
 
 所有授权在计额、遍历和投影前应用，不返回隐藏资源占位、数量或授权缺口提示；缺关联不能推导
-“无规则／允许执行”。cursor 格式现为 v2，旧临时 token 按 invalid 合同失效。context cursor
+“无规则／允许执行”。cursor 格式现为 v4，旧临时 token 按 invalid 合同失效。context cursor
 独立恢复原匹配页，响应继续提供该页后继的 match cursor；续页绑定角色筛选，并校验当前可见
 候选／上下文摘要。保护成员变化影响可见结果时返回 snapshot_changed，隐藏集合变化不单独
 失效。输出前复核已绑定 Ontology 的 workspace／source 版本，避免混读。
@@ -324,7 +336,8 @@ Protocol 以该 namespace 构造当前平台引用，不从业务候选猜测 IR
 
 能力发现：`GET /api/mcp/tools` 在响应的 `capabilities.semantic_context_query` 中返回当前部署
 公开的 `queries`/`query`/`limit`/`context_limit`/`depth` 上下限、cursor 种类
-（`match`、`context`）、cursor 生命周期（默认 600 秒），以及是否配置了稳定 cursor 签名密钥。
+（`match`、`context`）、cursor 生命周期（默认 600 秒），是否配置了稳定 cursor 签名密钥，以及
+R4.3-017 的策略／默认深度、adaptive 选择配置版本与预算、授权查询范围内的完整性边界。
 该字段是 R1.2-007 capability discovery 在 Context Query 合约上的唯一展示位置，未引入新路由。
 
 消费 Agent 新会话可先调用范围发现。无筛选时它以稳定游标分页返回当前主体可访问的 Project 与
@@ -394,7 +407,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | modeling batches | `GET` | `/api/modeling-batches/{batch_id}` | Get Modeling Batch |
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/modeling-batches` | List Ontology Modeling Batches |
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/modeling-context` | Get Modeling Context |
-| modeling batches | `GET` | `/api/ontologies/{ontology_id}/semantic-read-models/{model_name}` | Get Ontology Read Model; exact `entity-list` and `entity-detail` names are supported alongside the existing `entities` alias |
+| modeling batches | `GET` | `/api/ontologies/{ontology_id}/semantic-read-models/{model_name}` | Get Ontology Read Model |
 | modeling batches | `POST` | `/api/build-sessions/{session_id}/modeling-batches` | Submit Modeling Batch |
 | modeling workbench | `GET` | `/api/projects/{project_id}/workbench` | Workbench |
 | modeling workbench | `GET` | `/api/projects/{project_id}/workbench/runs/{team_run_id}` | Workbench Run |

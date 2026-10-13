@@ -76,9 +76,65 @@ def test_context_query_rest_returns_no_match_and_public_scope(in_memory_session)
     assert response.status_code == 200
     body = response.json()
     assert body["result_status"] == "no_match"
+    assert body["query"]["expansion_strategy"] == "adaptive"
+    assert body["query"]["depth"] == 3
     assert body["scope"]["ontologies"][0]["ontology_id"] == "o"
     assert "graph_set" not in str(body)
     assert "graph_iri" not in str(body)
+
+
+@pytest.mark.parametrize(
+    ("extra", "expected_strategy"),
+    [({}, "adaptive"), ({"expansion_strategy": "fixed"}, "fixed")],
+)
+def test_context_query_rest_forwards_strategy_and_optional_depth(
+    in_memory_session, monkeypatch, extra, expected_strategy
+):
+    settings = Settings()
+    _ready_scope(in_memory_session, settings)
+    captured: dict[str, object] = {}
+
+    def query_multi(self, **kwargs):  # noqa: ARG001
+        captured.update(kwargs)
+        return {"query": {}, "result_status": "no_match", "scope": {}}
+
+    monkeypatch.setattr(SemanticContextQueryService, "query_multi", query_multi)
+    request = {
+        "project_id": "p",
+        "scope_mode": "ontologies",
+        "ontology_ids": ["o"],
+        "query": "workflow",
+        **extra,
+    }
+
+    response = _client(in_memory_session, settings).post(
+        "/api/semantic/context:query", json=request
+    )
+
+    assert response.status_code == 200, response.text
+    assert captured["expansion_strategy"] == expected_strategy
+    assert captured["depth"] is None
+
+
+def test_context_query_rest_fixed_strategy_defaults_depth_to_one(in_memory_session):
+    settings = Settings()
+    _ready_scope(in_memory_session, settings)
+
+    response = _client(in_memory_session, settings).post(
+        "/api/semantic/context:query",
+        json={
+            "project_id": "p",
+            "scope_mode": "ontologies",
+            "ontology_ids": ["o"],
+            "query": "not found",
+            "expansion_strategy": "fixed",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["query"]["expansion_strategy"] == "fixed"
+    assert body["query"]["depth"] == 1
 
 
 def test_context_query_rest_keeps_bilingual_asserted_label_exactness(
@@ -428,6 +484,7 @@ def test_context_query_rest_reuses_default_ephemeral_cursor_across_requests(
         "scope_mode": "ontologies",
         "ontology_ids": ["o"],
         "query": "workflow",
+        "expansion_strategy": "fixed",
         "resource_types": ["concept"],
         "depth": 0,
         "limit": 1,

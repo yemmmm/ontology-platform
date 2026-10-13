@@ -91,6 +91,25 @@ def test_cursor_round_trip_preserves_resume_key_and_kind():
     assert decoded.resume_key == ("ontology-1", "match-2")
 
 
+def test_cursor_v4_round_trip_preserves_context_snapshot_id():
+    codec = _codec()
+    binding = _binding()
+    payload = CursorPayload(
+        kind=CURSOR_KIND_CONTEXT,
+        binding_digest=binding_digest(binding),
+        model_revisions=binding.model_revisions,
+        context_snapshot_id="context-snapshot-1",
+        issued_at=int(time.time()),
+    )
+
+    token = codec.encode(payload)
+    decoded = codec.decode(token, binding=binding, expected_kind=CURSOR_KIND_CONTEXT)
+
+    assert codec.capabilities["version"] == 4
+    assert decoded.version == 4
+    assert decoded.context_snapshot_id == "context-snapshot-1"
+
+
 def test_cursor_tamper_returns_invalid():
     codec = _codec()
     binding = _binding()
@@ -174,3 +193,29 @@ def test_cursor_payload_excludes_raw_query_text():
     )
     token = codec.encode(_fill_payload(codec, binding))
     assert "secret-query-value" not in token
+
+
+def test_binding_digest_includes_adaptive_selection_contract():
+    base = _binding()
+    adaptive = _binding()
+    adaptive = make_binding(
+        principal=adaptive.principal,
+        project_id=adaptive.project_id,
+        scope_mode=adaptive.scope_mode,
+        ontology_ids=list(adaptive.ontology_ids),
+        original_queries=list(adaptive.original_queries),
+        normalized_queries=list(adaptive.normalized_queries),
+        resource_types=list(adaptive.resource_types),
+        assertion_types=list(adaptive.assertion_types),
+        search_mode=adaptive.search_mode,
+        depth=adaptive.depth,
+        limit=adaptive.limit,
+        context_limit=adaptive.context_limit,
+        model_revisions=list(adaptive.model_revisions),
+        semantic_roles=list(adaptive.semantic_roles),
+        expansion_strategy="adaptive",
+        context_detail="preview",
+        selection_config_digest="adaptive-context-v1:abc",
+    )
+
+    assert binding_digest(adaptive) != binding_digest(base)
