@@ -12045,8 +12045,15 @@ class TeamRunner:
         if package.platform_bindings.get("project_id"):
             from .checkpoint_data import platform_data_request
 
-            data_key = self.canonical_admin_key or getattr(self.scope, "admin_key", None)
-            if not data_key:
+            # The launcher's credential may expire while this detached run
+            # continues. Prefer the run-owned credential, and after sealing
+            # bootstrap only the single capture without reopening write keys.
+            owned_scope = self.scope if isinstance(self.scope, PlatformScope) else None
+            data_key = (
+                owned_scope.admin_key if owned_scope is not None
+                else self.canonical_admin_key or getattr(self.scope, "admin_key", None)
+            )
+            if not data_key and owned_scope is None:
                 raise CheckpointError(
                     "checkpoint_data_credentials_missing",
                     "a scope-bound checkpoint requires the host data snapshot credential",
@@ -12065,15 +12072,34 @@ class TeamRunner:
                 self._cq_write_admission.snapshot()
             )
             bindings = package.platform_bindings
-            package.platform_data = platform_data_request(
-                self.canonical_base_url,
-                data_key,
-                "capture",
-                {
-                    "project_id": bindings["project_id"],
-                    "ontology_ids": bindings.get("ontology_ids") or [bindings["ontology_id"]],
-                },
-            )
+            temporary_key_id = None
+            if not data_key:
+                try:
+                    data_key, temporary_key_id = owned_scope.bootstrap_admin()
+                except Exception as exc:
+                    raise CheckpointError(
+                        "checkpoint_data_credentials_missing",
+                        "temporary checkpoint capture credential is unavailable",
+                        obj="platform_data", phase="checkpoint-save",
+                    ) from exc
+            try:
+                package.platform_data = platform_data_request(
+                    self.canonical_base_url,
+                    data_key,
+                    "capture",
+                    {
+                        "project_id": bindings["project_id"],
+                        "ontology_ids": bindings.get("ontology_ids") or [bindings["ontology_id"]],
+                    },
+                )
+            finally:
+                if temporary_key_id is not None:
+                    if not owned_scope.revoke_admin(temporary_key_id):
+                        raise CheckpointError(
+                            "checkpoint_data_unavailable",
+                            "temporary checkpoint capture credential revocation is unconfirmed",
+                            obj="platform_data", phase="checkpoint-save",
+                        )
         result = save_checkpoint(
             self.run.root,
             package,
