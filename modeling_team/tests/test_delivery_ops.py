@@ -16,6 +16,7 @@ from pathlib import Path
 import pytest
 
 from modeling_team import delivery_ops, host_ops
+from modeling_team.competency_questions import freeze_question_pool
 
 
 def _run_root(repository_root: Path, run_id: str = "delivery-run") -> Path:
@@ -46,6 +47,45 @@ def _wait_for_exit(operation_id: str, repository_root: Path) -> dict:
             return status
         time.sleep(0.005)
     raise AssertionError("controlled Delivery process did not reach an exited record")
+
+
+def _write_frozen_snapshot(
+    run_root: Path,
+    *,
+    stem: str = "freeze-0001",
+    batch_id: str = "cq-batch-0001",
+    material_digest: str = "sha256:material-1",
+) -> dict:
+    payload = {
+        "schema_version": "r3-0-011-cq-freeze/v1",
+        "batch_id": batch_id,
+        "material_digest": material_digest,
+        "panorama_question_ids": ["cq-1"],
+        "slice_question_ids": [],
+        "ordering": ["cq-1"],
+        "questions": [
+            {
+                "question_id": "cq-1",
+                "scope": {"kind": "panorama", "slice_ids": []},
+                "question": "Which approved fact is retained?",
+                "answer_points": ["the approved fact"],
+                "evidence_refs": [{"source": "source.md", "locator": "L1"}],
+                "unknown": [],
+                "proposed_visibility": "hidden",
+                "content_version": 1,
+            }
+        ],
+        "review_binding": {
+            "review_id": "review-1",
+            "review_content_version": 1,
+            "decision_digest": "sha256:decision-1",
+        },
+    }
+    snapshot = freeze_question_pool(payload)
+    path = run_root / "competency-questions" / "frozen" / f"{stem}.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(snapshot), encoding="utf-8")
+    return snapshot
 
 
 def test_submit_instruction_writes_the_existing_fifo_without_owner_question_binding(
@@ -101,6 +141,169 @@ def test_submit_instruction_rejects_unknown_kind_before_fifo_write(tmp_path: Pat
             repository_root=tmp_path,
         )
     assert error.value.code == "instruction_kind_invalid"
+
+
+@pytest.mark.parametrize(
+    ("requested_freeze_id", "cli_freeze_id"),
+    [("freeze-0001", "freeze-0001"), ("cq-batch-0001", "freeze-0001")],
+)
+def test_cq_evaluation_uses_snapshot_stem_and_binds_the_real_freeze(
+    tmp_path: Path, requested_freeze_id: str, cli_freeze_id: str
+) -> None:
+    run_id = "evaluation-freeze-identity"
+    run_root = _run_root(tmp_path, run_id)
+    snapshot = _write_frozen_snapshot(run_root)
+    handoff = tmp_path / "handoff.json"
+    handoff.write_text("{}", encoding="utf-8")
+    launched: list[list[str]] = []
+
+    def launcher(argv, **_kwargs):
+        launched.append(list(argv))
+        return _Process(exit_code=0)
+
+    delivery_ops.start_evaluation(
+        run_id=run_id,
+        operation_id=f"evaluation-{requested_freeze_id}",
+        mode="cq-acceptance",
+        freeze_id=requested_freeze_id,
+        model_handoff="handoff.json",
+        model_profile="openai-sol-medium",
+        question_visibility="hidden",
+        repository_root=tmp_path,
+        launcher=launcher,
+    )
+    argv = launched[0]
+    assert argv[argv.index("--freeze-id") + 1] == cli_freeze_id
+    record = json.loads(
+        (tmp_path / ".delivery-ops" / f"evaluation-{requested_freeze_id}.json").read_text()
+    )
+    assert record["request"]["freeze_id"] == requested_freeze_id
+    assert record["request"]["report_expectations"]["batch_id"] == "cq-batch-0001"
+    assert record["request"]["report_expectations"]["freeze_digest"] == snapshot[
+        "snapshot_digest"
+    ]
+
+    report = run_root / "acceptance-v3" / "reports" / requested_freeze_id / "batch-report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "full_pass": True,
+                "run_id": run_id,
+                "batch_id": "cq-batch-0001",
+                "freeze_digest": snapshot["snapshot_digest"],
+                "executed_question_ids": ["cq-1"],
+                "unexecuted_question_ids": [],
+                "verdicts": [{"verdict": "pass"}],
+                "sessions": {"model_profile": "openai-sol-medium"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    status = delivery_ops.get_evaluation_status(
+        operation_id=f"evaluation-{requested_freeze_id}", repository_root=tmp_path
+    )
+    assert status["report_status"] == "new_report_bound"
+    assert status["report_binding"]["valid"] is True
+
+
+def test_cq_batch_identity_does_not_guess_between_snapshots(tmp_path: Path) -> None:
+    run_id = "evaluation-freeze-ambiguous"
+    run_root = _run_root(tmp_path, run_id)
+    first_snapshot = _write_frozen_snapshot(run_root, stem="freeze-0001")
+    _write_frozen_snapshot(
+        run_root,
+        stem="freeze-0002",
+        material_digest="sha256:material-2",
+    )
+    handoff = tmp_path / "handoff.json"
+    handoff.write_text("{}", encoding="utf-8")
+    launched: list[list[str]] = []
+
+    with pytest.raises(host_ops.HostOpError) as error:
+        delivery_ops.start_evaluation(
+            run_id=run_id,
+            operation_id="evaluation-ambiguous",
+            mode="cq-acceptance",
+            freeze_id="cq-batch-0001",
+            model_handoff="handoff.json",
+            question_visibility="hidden",
+            repository_root=tmp_path,
+            launcher=lambda argv, **_kwargs: launched.append(list(argv)),
+        )
+    assert error.value.code == "evaluation_argument_invalid"
+    assert launched == []
+
+    published_handoff = run_root / "acceptance-v3" / "production-handoff.json"
+    published_handoff.parent.mkdir(parents=True, exist_ok=True)
+    published_handoff.write_text(
+        json.dumps(
+            {
+                "freeze_id": "cq-batch-0001",
+                "freeze_digest": first_snapshot["snapshot_digest"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    delivery_ops.start_evaluation(
+        run_id=run_id,
+        operation_id="evaluation-disambiguated",
+        mode="cq-acceptance",
+        freeze_id="cq-batch-0001",
+        model_handoff="handoff.json",
+        question_visibility="hidden",
+        repository_root=tmp_path,
+        launcher=lambda argv, **_kwargs: launched.append(list(argv)) or _Process(),
+    )
+    assert launched[-1][launched[-1].index("--freeze-id") + 1] == "freeze-0001"
+
+
+def test_cq_batch_identity_with_no_matching_snapshot_stays_bound_to_requested_id(
+    tmp_path: Path,
+) -> None:
+    run_id = "evaluation-freeze-wrong-binding"
+    run_root = _run_root(tmp_path, run_id)
+    snapshot = _write_frozen_snapshot(run_root)
+    handoff = tmp_path / "handoff.json"
+    handoff.write_text("{}", encoding="utf-8")
+    launched: list[list[str]] = []
+
+    delivery_ops.start_evaluation(
+        run_id=run_id,
+        operation_id="evaluation-wrong-binding",
+        mode="cq-acceptance",
+        freeze_id="cq-batch-other",
+        model_handoff="handoff.json",
+        question_visibility="hidden",
+        repository_root=tmp_path,
+        launcher=lambda argv, **_kwargs: launched.append(list(argv)) or _Process(),
+    )
+    assert launched[0][launched[0].index("--freeze-id") + 1] == "cq-batch-other"
+    report = run_root / "acceptance-v3" / "reports" / "wrong" / "batch-report.json"
+    report.parent.mkdir(parents=True)
+    report.write_text(
+        json.dumps(
+            {
+                "status": "completed",
+                "run_id": run_id,
+                "batch_id": "cq-batch-0001",
+                "freeze_digest": snapshot["snapshot_digest"],
+                "executed_question_ids": ["cq-1"],
+                "unexecuted_question_ids": [],
+                "verdicts": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+    rejected = delivery_ops.get_evaluation_status(
+        operation_id="evaluation-wrong-binding", repository_root=tmp_path
+    )
+    assert rejected["report_status"] == "new_report_rejected"
+    assert any(
+        item.startswith("batch_id_mismatch")
+        for item in rejected["report_binding"]["validation_errors"]
+    )
 
 
 def test_start_evaluation_binds_only_a_report_created_after_this_operation(

@@ -244,18 +244,20 @@ def tool_submit_cq_review(
     decision: str,
     content_version: int,
     content_digest: str,
-    revision: int,
+    revision: int = 1,
     modified_question: str | None = None,
     note: str | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
     """Submit one competency-question review decision.
 
-    All bindings come from the current ``cq_review`` pending item
-    (``get_pending_actions``); the tool fills the schema_version itself and
-    the Runner validates every binding against the review snapshot.  A
-    stale revision/digest/question binding is rejected with the original
-    Runner code.
+    The review/question/content bindings come from the current ``cq_review``
+    pending item (``get_pending_actions``).  ``revision`` is a positive
+    reviewer-supplied ordinal rather than a snapshot binding; it defaults to
+    ``1`` when omitted.  The tool fills ``schema_version`` itself and the
+    Runner preserves its existing review/question/content/run validation.  A
+    stale content version/digest/question binding is rejected with the
+    original Runner code.
     """
     return _call(
         submit_cq_review,

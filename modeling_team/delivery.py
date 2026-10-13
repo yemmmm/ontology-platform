@@ -56,6 +56,25 @@ _PUBLIC_RUN_EVENT_SOURCES = frozenset({
 })
 _PUBLIC_MATERIAL_ROLES = frozenset({"coordinator", "modeling", "protocol"})
 
+# ``start_repair`` validates the task and its namespace before creating a
+# Delivery operation record.  These typed failures therefore prove that no
+# repair process was created.  Other failures stay ambiguous: the operation
+# owner is retained so a lost acknowledgement cannot be retried or stopped
+# as if it never existed.
+_REPAIR_PRELAUNCH_ERROR_CODES = frozenset({
+    "delivery_argument_invalid",
+    "delivery_operation_id_invalid",
+    "input_path_invalid",
+    "repair_authorization_mismatch",
+    "repair_effort_invalid",
+    "repair_executor_invalid",
+    "repair_isolation_unavailable",
+    "repair_scope_invalid",
+    "repair_scope_missing",
+    "repair_scope_private",
+    "repair_task_invalid",
+})
+
 
 # Pure pagination/window bookkeeping on an incremental ``get_run_events``
 # page.  ``next_cursor``/``has_more``/``ordering``/``complete`` describe the
@@ -1241,7 +1260,34 @@ class DeliverySession:
                 continue
         return scopes
 
+    def _discard_prelaunch_repair_owner(
+        self, name: str, arguments: dict, exc: BaseException, *, newly_registered: bool
+    ) -> None:
+        """Release only an owner proven to have failed before repair launch.
+
+        Delivery registers an intended operation before invoking the Host so a
+        lost launch receipt remains observable.  A narrow set of typed repair
+        validation errors is the exception: those paths run before
+        ``.delivery-ops/<id>.json`` can be created and must not leave a phantom
+        owner that traps the stop loop.
+        """
+
+        if (
+            not newly_registered
+            or name != "start_repair"
+            or not isinstance(exc, HostOpError)
+            or exc.code not in _REPAIR_PRELAUNCH_ERROR_CODES
+        ):
+            return
+        operation_id = arguments.get("operation_id")
+        if not isinstance(operation_id, str):
+            return
+        self.operation_ids.discard(operation_id)
+        self.operation_kinds.pop(operation_id, None)
+        self._save("active")
+
     def call_tool(self, name: str, arguments: dict, *, call_identity: str | None = None) -> dict:
+        newly_registered_operation = False
         try:
             if name not in self._tools:
                 raise ValueError("undeclared Delivery tool")
@@ -1486,6 +1532,7 @@ class DeliverySession:
                 self.run_ids.add(args["new_run_id"])
                 self._register_handoff_actor()
             elif name in {"start_evaluation", "start_repair"}:
+                newly_registered_operation = args["operation_id"] not in self.operation_ids
                 self.operation_ids.add(args["operation_id"])
                 self.operation_kinds[args["operation_id"]] = "repair" if name == "start_repair" else "evaluation"
             # Retain the intended binding even if launch acknowledgement is lost.
@@ -1501,11 +1548,20 @@ class DeliverySession:
                     self.reconciled_runs.add(args['run_id'])
             return {"ok": True, "data": data}
         except HostOpError as exc:
+            self._discard_prelaunch_repair_owner(
+                name, arguments, exc, newly_registered=newly_registered_operation
+            )
             return {"ok": False, "error": exc.as_envelope()}
         except (ValueError, TypeError, KeyError, OSError) as exc:
+            self._discard_prelaunch_repair_owner(
+                name, arguments, exc, newly_registered=newly_registered_operation
+            )
             return {"ok": False, "error": {"code": "delivery_contract", "message": str(exc)}}
         except Exception as exc:
             # Schema failures can contain the supplied instance. Keep them private.
+            self._discard_prelaunch_repair_owner(
+                name, arguments, exc, newly_registered=newly_registered_operation
+            )
             self._append("tool-errors.jsonl", {"tool": name, "error_type": type(exc).__name__})
             return {"ok": False, "error": {"code": "delivery_tool_failed", "message": "check tool schema and bound inputs"}}
 

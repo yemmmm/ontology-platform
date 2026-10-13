@@ -1072,15 +1072,34 @@ def test_issue_resolution_delivery_defers_when_coordinator_waits(tmp_path: Path)
         _pump(runner, sink)
         # The Coordinator parks in its own provider wait after pausing.
         adapter.inject_wait("coordinator")
+        queued = runner.transport.send("protocol", "modeling", "queued while deferred")
 
         rejected = _admit_line(runner, sink, _resolution_line(runner.run.run_id, issue))
         assert rejected is not None
         assert rejected["code"] == "coordinator_waiting_provider"
-        # The resolution itself persisted; the run stays alive and actionable.
-        assert ledger.state == "resolution_ready"
+        # The typed defer remains visible to the outer caller, but the
+        # persisted resolution still performs the existing Modeling relay and
+        # Runner-owned settlement before it is reported.
+        assert ledger.state == "resume_sent"
+        assert any(
+            agent_id == "modeling" and delivery.kind == "issue-resolution"
+            for agent_id, delivery in adapter.messages
+        )
         assert adapter.stopped is False
         evidence = (staged.run_root / "evidence" / "issue-resolution.jsonl").read_text()
         assert "coordinator-delivery-deferred" in evidence
+
+        # The real broker dispatches the queued resume on the next foreground
+        # tick.  It settles the issue, then releases the ordinary delivery
+        # that was held while the issue was pending.
+        _pump(runner, sink)
+        assert ledger.state == "resolved"
+        assert adapter.recoveries and adapter.recoveries[-1][0] == "protocol"
+        assert adapter.provider_wait_status("protocol") is None
+        assert any(
+            agent_id == "modeling" and delivery.delivery_id == queued.delivery_id
+            for agent_id, delivery in adapter.messages
+        )
     finally:
         staged.cleanup()
 

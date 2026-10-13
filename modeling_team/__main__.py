@@ -1299,6 +1299,39 @@ def _cq_mask_reissued_pagination_cursors(value: object) -> object:
     return {**value, "data": masked} if enveloped else masked
 
 
+_CQ_REISSUED_CACHE_HIT_MARKER = "<ranking-cache-status>"
+
+
+def _cq_mask_reissued_ranking_cache_hit(value: object) -> object:
+    """Reduce the JEV ranking cache flag to presence for one comparison.
+
+    ``query_semantic_context`` reports whether its deterministic ranking was
+    newly computed or read from the same ranking snapshot.  That transport
+    detail changes between the first read and an authorized replay, while the
+    ranking payload and semantic response remain the same.  Limit the mask to
+    the exact ``recall.ranking.cache_hit`` slot in this tool's bare payload or
+    API ``data`` envelope; same-named business fields remain semantic content.
+    """
+
+    if not isinstance(value, dict):
+        return value
+    enveloped = isinstance(value.get("data"), dict)
+    payload = value["data"] if enveloped else value
+    recall = payload.get("recall")
+    if not isinstance(recall, dict):
+        return value
+    ranking = recall.get("ranking")
+    if not isinstance(ranking, dict):
+        return value
+    cache_hit = ranking.get("cache_hit")
+    if not isinstance(cache_hit, bool):
+        return value
+    masked_ranking = {**ranking, "cache_hit": _CQ_REISSUED_CACHE_HIT_MARKER}
+    masked_recall = {**recall, "ranking": masked_ranking}
+    masked = {**payload, "recall": masked_recall}
+    return {**value, "data": masked} if enveloped else masked
+
+
 def _cq_recheck_projection(tool: str, value: object) -> object:
     """Project one retained or re-read result for the recheck comparison.
 
@@ -1309,6 +1342,7 @@ def _cq_recheck_projection(tool: str, value: object) -> object:
 
     if tool == "query_semantic_context":
         value = _cq_mask_reissued_pagination_cursors(value)
+        value = _cq_mask_reissued_ranking_cache_hit(value)
     return _cq_semantic_projection(value)
 
 

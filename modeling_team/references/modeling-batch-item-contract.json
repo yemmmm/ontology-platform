@@ -1224,6 +1224,26 @@
   ],
   "property_read_contract": {
     "availability": "MCP tools below are usable only when advertised in the current role catalog. If absent, request the authorized Host's original scoped HTTP read envelope through the existing Owner channel; do not call an unadvertised tool or widen permissions.",
+    "batch_receipt_identity": {
+      "tool": "get_modeling_batch",
+      "fields": [
+        "batch_id"
+      ],
+      "command_kinds": [
+        "create_property",
+        "create_entity"
+      ],
+      "attempt_statuses": [
+        "applied",
+        "partially_applied"
+      ],
+      "item_status": "applied",
+      "resource_output_path": "attempts[].items[].resource_outputs.resource_iri",
+      "rules": [
+        "Use resource_outputs.resource_iri only from an applied Attempt Item whose Item status is applied; this is the actual property/entity identity for the dependent stage.",
+        "Batch-level items[].resource_outputs and dry_run/validated outputs are planned values, not proof of application. Never derive an IRI from a label, client item ID, payload ID or namespace. If no applied Attempt Item exposes the IRI, request the authorized Host's original scoped read envelope through the existing Owner channel."
+      ]
+    },
     "listing": {
       "tool": "get_semantic_read_model",
       "fields": [

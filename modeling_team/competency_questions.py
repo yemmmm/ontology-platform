@@ -451,9 +451,10 @@ def validate_draft_document(payload: Any) -> dict[str, Any]:
 def validate_review_decision(payload: Any, *, draft: dict[str, Any]) -> dict[str, Any]:
     """Validate one ``cq_review`` decision against the current draft version.
 
-    Owner, schema, revision and content digest must all match the draft that
-    produced the review snapshot; anything else is a stale review that rejects
-    only this input (design §3.2).
+    Owner, schema, content version and content digest must match the draft that
+    produced the review snapshot; ``revision`` is only a positive reviewer
+    ordinal because the snapshot has no revision field.  Stale content or
+    owner bindings reject only this input (design §3.2).
     """
 
     obj = "cq_review"
@@ -520,6 +521,9 @@ def validate_review_decision(payload: Any, *, draft: dict[str, Any]) -> dict[str
             obj=obj,
             retry="re-read the current review snapshot and resend",
         )
+    # ``revision`` is retained in the review envelope for the existing wire
+    # contract, but it is not a snapshot binding.  Staleness is carried by the
+    # immutable content_version/content_digest pair above.
     _positive_int(decision["revision"], obj, "revision", "cq_review_stale")
     if decision["decision"] in {"modify", "supplement"}:
         replacement = decision["modified_question"]

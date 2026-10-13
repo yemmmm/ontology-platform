@@ -591,21 +591,57 @@ def _semantic_progress_block(run_root: Path) -> dict[str, Any]:
 
 
 def _issue_pending(run_root: Path) -> tuple[dict[str, Any] | None, list[str]]:
-    """Derive the current cooperative issue wait (design §7.2 issue row)."""
+    """Derive the current cooperative issue wait (design §7.2 issue row).
+
+    ``issue-resolution`` records persist guidance, but do not prove that the
+    corresponding control reached the reporter.  Only an issue-control
+    terminal dispatch, or the Runner's matching abort-control record, closes
+    the host-side wait; informational control events (which carry ``event``)
+    remain pending until the actual dispatch record.
+    """
 
     reports, report_limits = _evidence_source(run_root, "issue-report")
     limitations = list(report_limits)
     if not reports:
         return None, limitations
-    resolutions, _ = _evidence_source(run_root, "issue-resolution")
-    controls, _ = _evidence_source(run_root, "issue-control")
-    resolved = {
-        record.get("issue_id")
-        for record in resolutions
+    _, resolution_limits = _evidence_source(run_root, "issue-resolution")
+    controls, control_limits = _evidence_source(run_root, "issue-control")
+    aborts, abort_limits = _evidence_source(run_root, "issue-abort")
+    limitations.extend(resolution_limits)
+    limitations.extend(control_limits)
+    limitations.extend(abort_limits)
+    report_epochs = {
+        record.get("issue_id"): record.get("control_epoch")
+        for record in reports
         if isinstance(record.get("issue_id"), str)
     }
-    # The latest reported issue without a resolution entry wins (recorded
-    # order in the file); a resolved issue is not pending again.
+    resolved = {
+        record.get("issue_id")
+        for record in controls
+        if (
+            isinstance(record.get("issue_id"), str)
+            and record.get("action") in {"resume", "abort"}
+            and "event" not in record
+        )
+    }
+    resolved.update(
+        issue_id
+        for record in aborts
+        for issue_id in [record.get("issue_id")]
+        if (
+            isinstance(issue_id, str)
+            and record.get("action") == "abort"
+            and "event" not in record
+            and isinstance(record.get("control_epoch"), int)
+            and not isinstance(record.get("control_epoch"), bool)
+            and isinstance(report_epochs.get(issue_id), int)
+            and not isinstance(report_epochs.get(issue_id), bool)
+            and record["control_epoch"] == report_epochs[issue_id]
+        )
+    )
+    # The latest reported issue without a terminal control dispatch wins
+    # (recorded order in the file); persisted guidance and waiting events do
+    # not hide a still-unsettled issue.
     active = None
     for record in reports:
         issue_id = record.get("issue_id")
@@ -904,11 +940,12 @@ def _cq_pending(run_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
                                 "decision",
                                 "content_version",
                                 "content_digest",
-                                "revision",
                             ],
-                            "optional_bindings": ["modified_question", "note"],
+                            "optional_bindings": ["revision", "modified_question", "note"],
                             "note": "schema_version is filled by the tool; the "
-                            "Runner validates every binding against the snapshot",
+                            "Runner validates the review/question/content bindings "
+                            "against the snapshot; revision is a positive reviewer "
+                            "ordinal and is not stored in the snapshot",
                         }
                     ],
                 }
@@ -2183,7 +2220,7 @@ def submit_cq_review(
     decision: str,
     content_version: int,
     content_digest_value: str,
-    revision: int,
+    revision: int = 1,
     modified_question: str | None = None,
     note: str | None = None,
     request_id: str | None = None,

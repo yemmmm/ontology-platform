@@ -48,6 +48,20 @@ existing definition (`no_match` or `unsupported_read_model` does not establish a
 if that tool is not advertised, request the authorized Host's original scoped read
 envelope through the existing Owner channel instead of calling an unavailable tool.
 
+When a later relation or semantic read needs the identity created by an earlier Batch, read
+that Batch with `get_modeling_batch` and use only
+`attempts[].items[].resource_outputs.resource_iri` from an Attempt whose status is
+`applied` or `partially_applied` and whose Item status is `applied`. For `create_property`
+and `create_entity`, this is the actual property/entity IRI needed by the dependent stage;
+the Batch-level `items[].resource_outputs` and dry-run/validated outputs are planned values,
+not proof of application. Never derive an IRI from a label, client item ID, payload ID, or
+namespace. For R4.0-009, use the authorized `semantic_sparql_query` with that exact IRI for
+a bounded definition read; do not send `model_name=property-list` to `get_ontology_read_model`.
+If no applied Attempt Item exposes the required IRI, request the authorized Host's original
+scoped read envelope through the existing Owner channel and keep the dependent write closed.
+This identity read is only for a dependent stage that needs the binding; do not turn it into a
+standing full-resource or post-apply revalidation gate.
+
 For translating an ordinary or R2.3-005 candidate into platform Batches, you MUST first call the
 native `protocol_mechanics` tool `translate_candidate_to_batches` with the frozen candidate as its
 sole argument. For R2.3-003, use the native MCP extension described in the R2.3-003 section below;

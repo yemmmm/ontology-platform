@@ -911,6 +911,15 @@ R3.0-008B 的逻辑切片分析之后、Ontology 拓扑决策之前，必须执�
 
 ### R3.0-011 能力问题驱动建模与批次级语义验收
 
+2026-10-13 有界复盘与简易修复增量：Luna的CQ审核snapshot只有content_version/digest，
+不存在可读取的snapshot revision；旧决策revision仅接受正整数。Host将其声明为必须
+从pending取得的绑定，实际阻断安全提交。本次保留旧wire字段为默认1的可选reviewer
+序号，防陈旧仍由原review/question/content_version/content_digest/run校验承担，不新加
+snapshot字段或替用户批准。FlashX验收启动另发现batch ID与冻结文件stem混用，本次
+修正已有入口的确定性衔接，冻结原件不改。新增工程证据见
+[修复记录](../delivery/tests/2026-10-13-retrospective-simple-repairs-test-record.md)；原真实
+审核/验收步骤未恢复，增量效果部分验证。原历史机械/独立结果保持，不替代完整L0/L1。
+
 2026-10-09 合同增量：[R4.3-006／007](requirements-v4.3.md#r43-006-judge-按引用读取冻结业务依据并复用)
 在原独立验收路径上设计冻结资料引用 packet、受限原文读取及主动无损去重／分组。
 新的引用合同同步读取回执与报告校验；原 v1 内嵌 packet 保持原合同。
@@ -1061,6 +1070,14 @@ Modeling 角色的语义工作，不向 Coordinator、Protocol 或 CQ 注入整�
 - 不用本需求替代 R3.0-006 的真实 SQL、授权、RDF 业务行边界和端到端验收。
 
 ### R3.0-012 CQ 为核心的阶段验收
+
+2026-10-13 响应复核增量：同一有效Jev排名快照首次/复用的cache_hit布尔元数据不表示
+语义变化。原比较将该精确路径计入drift，本次仅在query_semantic_context的
+recall.ranking.cache_hit排除布尔值差异，bare/API封套一致；真实事实、候选、评分、模型、
+分页完整性和业务同名字段继续比较。泛化反例/相邻工程回归按
+[测试记录](../delivery/tests/2026-10-13-retrospective-simple-repairs-test-record.md)保留。
+历史8条drift的第二份正文缺失，工程修复不能重判旧裁决或恢复PASS资格；真实效果
+仍为部分验证。原完整分母、源忠实与独立验收要求不变。
 
 状态（2026-09-14 同步）：`49b7e51` 已实现；[共享测试计划](../delivery/test-plans/2026-09-13-r3-0-012-cq-centered-staged-acceptance-test-plan.md)
 记录独立机械 Round 2 PASS，保留 Round 1 失败与修复过程，不能称为所有回归全绿。
@@ -1404,6 +1421,14 @@ PASS；auth-r3-0-023 的 S1 检查点保存与 S2 跨进程接续后真实推进
 
 ### R3.0-016 建模 Team 宿主交互接口
 
+2026-10-13 本次增量：CQ审核的真实绑定/可选序号说明按R3.0-011对齐；指导持久化
+不等于实际issue-control派发，pending必须保留未结算阻塞，正常resume与显式abort
+按其真实终态证据闭合。Coordinator provider wait的typed defer不应跳过已有relay和
+runner-owned settlement。简易修复与工程回归见
+[测试记录](../delivery/tests/2026-10-13-retrospective-simple-repairs-test-record.md)。
+本次代码修复没有接续真实run；增量实际恢复与效果部分验证，不撤销用户对原S1/S2
+历史验收的裁决，不凭源码修复宣称旧失败已恢复。
+
 **状态与来源**：2026-09-17，用户要求将宿主常用交互动作封装建议登记为需求并细化。
 本条目为该增量的权威功能合同；已细化并按外部意见修订。**S1 段已实现并交付**
 （ceb4d4f，2026-09-18）：独立功能验收 I Round 1–3 缺陷循环后 Round 4 PASS；真实 L0
@@ -1474,7 +1499,7 @@ app-server 静默 EOF（当时属运行时缺陷；后续定位为执行 checkou
 | S1 | `get_pending_actions` | `run_id` → 问题、审核项、issue/provider 等待、CQ 交接/验收收口待办及其绑定 | 给出可用动作与必填绑定；不替用户生成答案或批准 |
 | S1 | `answer_question` | 问题类型与 run/问题绑定、正文及适用的来源引用 → 提交结果 | 普通问题走 `user`，CQ 访谈明确走 `cq_interview`；中文、多行原样传递 |
 | S1 | `register_question` | `run_id`、显式问题 ID、正文/来源 → 提交结果 | 仅在既有通道要求宿主注册问题时使用；不在答复失败后自动注册替代问题 |
-| S1 | `submit_cq_review`、`freeze_cq` | run、当前 review/revision/digest 等原有绑定及明确决定 → 提交结果 | 沿用直接通道和原审批/冻结条件；审核与冻结是不同动作 |
+| S1 | `submit_cq_review`、`freeze_cq` | run、当前review/question/content_version/digest绑定及明确决定 → 提交结果；可选reviewer序号revision默认1 | 沿用直接通道和原审批/冻结条件；审核与冻结是不同动作；revision不是snapshot版本绑定 |
 | S1 | `complete_cq_handoff` | run、freeze ID/digest、适用的 delivery binding → 提交结果及 handoff/验收阶段引用 | 封装 `cq_handoff_complete`；复用生产交付及在途/未知写入检查，`cq_semantic` 成功后进入 acceptance_pending，不报整轮完成 |
 | S1 | `complete_cq_acceptance` | run、freeze、当前 batch/acceptance attempt 绑定、保留报告引用 → 提交结果及实际收口状态 | 封装 `cq_acceptance_complete`；从报告生成 digest/verdict 信封，Runner 复读核验；仅适用于 live `cq_semantic` 通道 |
 | S1 | `resolve_issue` | run、issue/reporter/epoch 绑定、resolution 类型、修复对象及说明 → 提交结果 | 封装 `issue_resolution`；普通便签不能冒充修复通知 |

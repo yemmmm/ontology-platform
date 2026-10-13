@@ -105,6 +105,35 @@ def test_documented_property_reads_match_registered_governed_tool_fields():
     assert "entity" in parameters
 
 
+def test_applied_batch_receipt_is_the_identity_bridge_for_dependent_reads():
+    contract = json.loads((REFERENCES / "modeling-batch-item-contract.json").read_text())
+    identity = contract["property_read_contract"]["batch_receipt_identity"]
+    assert identity["tool"] == "get_modeling_batch"
+    assert identity["fields"] == ["batch_id"]
+    assert identity["command_kinds"] == ["create_property", "create_entity"]
+    assert identity["attempt_statuses"] == ["applied", "partially_applied"]
+    assert identity["item_status"] == "applied"
+    assert identity["resource_output_path"] == (
+        "attempts[].items[].resource_outputs.resource_iri"
+    )
+    rules = " ".join(identity["rules"])
+    assert "planned values, not proof of application" in rules
+    assert "original scoped read envelope" in rules
+
+    instructions = (
+        Path(__file__).resolve().parents[1]
+        / "agent-packages/protocol/instructions.md"
+    ).read_text(encoding="utf-8")
+    for phrase in (
+        "`attempts[].items[].resource_outputs.resource_iri`",
+        "`semantic_sparql_query`",
+        "`model_name=property-list`",
+        "scoped read envelope through the existing Owner channel",
+        "standing full-resource or post-apply revalidation gate",
+    ):
+        assert phrase in instructions
+
+
 def test_identity_binding_examples_use_string_locator_and_exact_constructor_shape():
     contract = json.loads((REFERENCES / "r3-0-009-unified-graph-contract.json").read_text())
     section = contract["materialization_plan"]

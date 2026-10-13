@@ -4052,6 +4052,7 @@ class TeamRunner:
             # Persist first; only then make the resolution visible to Coordinator.
             self._append_evidence("issue-resolution", resolution.as_dict())
             coordinator = self._issue_coordinator_id()
+            deferred_coordinator: tuple[RecoverableOuterInputError, Exception] | None = None
             try:
                 self.adapter.send_message(
                     coordinator,
@@ -4065,8 +4066,8 @@ class TeamRunner:
             except Exception as exc:
                 if self._provider_rejection_pending(coordinator):
                     # The resolution is already persisted; a Coordinator parked
-                    # in a provider wait cannot receive it yet.  Surface the
-                    # bounded, actionable deferral instead of tearing the run.
+                    # in a provider wait cannot receive it yet.  Remember the
+                    # bounded, actionable deferral until relay and settlement finish.
                     self._append_evidence(
                         "issue-resolution",
                         {
@@ -4075,16 +4076,20 @@ class TeamRunner:
                             "detail": str(exc)[:200],
                         },
                     )
-                    raise RecoverableOuterInputError(
-                        "Coordinator is parked in a provider wait; recover it "
-                        "(recover_provider) so it can act on the persisted resolution",
-                        code="coordinator_waiting_provider",
-                        run_id=self.run.run_id,
-                        issue_id=resolution.issue_id,
-                        reporter_id=resolution.reporter_id,
-                        control_epoch=resolution.control_epoch,
-                    ) from exc
-                raise TeamConfigurationError("issue resolution Coordinator delivery failed") from exc
+                    deferred_coordinator = (
+                        RecoverableOuterInputError(
+                            "Coordinator is parked in a provider wait; recover it "
+                            "(recover_provider) so it can act on the persisted resolution",
+                            code="coordinator_waiting_provider",
+                            run_id=self.run.run_id,
+                            issue_id=resolution.issue_id,
+                            reporter_id=resolution.reporter_id,
+                            control_epoch=resolution.control_epoch,
+                        ),
+                        exc,
+                    )
+                else:
+                    raise TeamConfigurationError("issue resolution Coordinator delivery failed") from exc
             # R2.3-009 start15/start20: the Coordinator's discretionary relay of
             # the ruling to Modeling proved unreliable twice — Modeling kept a
             # stale precondition (an unanswered owner question in start15, a
@@ -4165,6 +4170,9 @@ class TeamRunner:
                         "detail": str(exc)[:200],
                     },
                 )
+            if deferred_coordinator is not None:
+                error, cause = deferred_coordinator
+                raise error from cause
         elif action == "user":
             text = message.get("text")
             if not isinstance(text, str) or not text.strip():

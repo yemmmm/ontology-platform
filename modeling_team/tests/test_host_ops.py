@@ -30,6 +30,7 @@ import pytest
 from modeling_team import host_ops
 from modeling_team.competency_questions import (
     CQ_ACCEPTANCE_COMPLETE_FIELDS,
+    CQContractError,
     content_digest,
     freeze_question_pool,
 )
@@ -143,6 +144,22 @@ def _issue_report(run_id: str, issue_id: str = "issue-1") -> dict:
         "thread_id": "thread-1",
         "timestamp": "2026-09-18T11:00:00+00:00",
         "recorded_at": "2026-09-18T11:00:00+00:00",
+    }
+
+
+def _issue_abort(run_id: str, issue_id: str = "issue-1", control_epoch: int = 3) -> dict:
+    """Runner ``IssueControl.as_dict()`` shape for an explicit abort."""
+
+    return {
+        "run_id": run_id,
+        "issue_id": issue_id,
+        "coordinator_id": "coordinator",
+        "reporter_id": "modeling",
+        "action": "abort",
+        "control_epoch": control_epoch,
+        "resolution": None,
+        "reason": "stop after provider failure",
+        "recorded_at": "2026-09-18T11:32:00+00:00",
     }
 
 
@@ -1282,7 +1299,48 @@ def test_a05_1_issue_pending_bindings_drive_the_resolution_envelope(tmp_path):
         }
     finally:
         fifo.close()
-    # A resolution record closes the wait (issue-resolution shape from r23003).
+    # Persisted guidance is not a dispatch receipt: the wait stays visible
+    # until the Runner records the actual issue-control terminal action.
+    _append_evidence(
+        run_root,
+        "issue-resolution",
+        [
+            {
+                "issue_id": "issue-1",
+                "reporter_id": "modeling",
+                "control_epoch": 3,
+                "resolution_type": "guidance",
+                "resolution_text": "按合同 A 处理",
+                "event": "coordinator-delivery-deferred",
+                "recorded_at": "2026-09-18T11:30:00+00:00",
+            }
+        ],
+    )
+    pending = host_ops.get_pending_actions("t-run", repository_root=repo)
+    assert [entry["type"] for entry in pending["items"]] == ["issue_wait"]
+    _append_evidence(
+        run_root,
+        "issue-control",
+        [
+            {
+                "issue_id": "issue-1",
+                "reporter_id": "modeling",
+                "action": "resume",
+                "control_epoch": 3,
+                "dispatch_mode": "self",
+                "recorded_at": "2026-09-18T11:31:00+00:00",
+            }
+        ],
+    )
+    pending = host_ops.get_pending_actions("t-run", repository_root=repo)
+    assert pending["items"] == []
+
+
+@pytest.mark.parametrize("event", ["coordinator-delivery-deferred", "resume_waiting_reporter"])
+def test_a05_issue_resolution_event_stays_pending_in_status_until_dispatch(tmp_path, event):
+    repo, run_root = _make_run(tmp_path)
+    _set_state(run_root, "WAITING_OWNER", issue_id="issue-1")
+    _append_evidence(run_root, "issue-report", [_issue_report("t-run")])
     _append_evidence(
         run_root,
         "issue-resolution",
@@ -1297,8 +1355,76 @@ def test_a05_1_issue_pending_bindings_drive_the_resolution_envelope(tmp_path):
             }
         ],
     )
+    # A persisted/deferred control event is evidence of progress, not proof
+    # that the reporter received the control.
+    _append_evidence(
+        run_root,
+        "issue-control",
+        [
+            {
+                "event": event,
+                "issue_id": "issue-1",
+                "reporter_id": "modeling",
+                "action": "resume",
+                "control_epoch": 3,
+                "recorded_at": "2026-09-18T11:31:00+00:00",
+            }
+        ],
+    )
+    pending = host_ops.get_pending_actions("t-run", repository_root=repo)
+    assert [entry["type"] for entry in pending["items"]] == ["issue_wait"]
+    status = host_ops.get_run_status("t-run", repository_root=repo)
+    assert status["first_blocker"]["kind"] == "issue_wait"
+    assert status["pending_summary"]["counts"]["issue_wait"] == 1
+
+    _append_evidence(
+        run_root,
+        "issue-control",
+        [
+            {
+                "issue_id": "issue-1",
+                "reporter_id": "modeling",
+                "action": "resume",
+                "control_epoch": 3,
+                "dispatch_mode": "self",
+                "recorded_at": "2026-09-18T11:32:00+00:00",
+            }
+        ],
+    )
+    assert host_ops.get_pending_actions("t-run", repository_root=repo)["items"] == []
+    assert host_ops.get_run_status("t-run", repository_root=repo)["first_blocker"] is None
+
+
+def test_a05_issue_abort_control_closes_matching_terminal_wait(tmp_path):
+    repo, run_root = _make_run(tmp_path)
+    _set_state(run_root, "TERMINAL_REPORT_COMPLETE", issue_id="issue-1")
+    _append_evidence(run_root, "issue-report", [_issue_report("t-run")])
+    _append_evidence(run_root, "issue-abort", [_issue_abort("t-run", control_epoch=2)])
+    # A stale abort control cannot settle the report's current epoch.
+    pending = host_ops.get_pending_actions("t-run", repository_root=repo)
+    assert [entry["type"] for entry in pending["items"]] == ["issue_wait"]
+
+    _append_evidence(run_root, "issue-abort", [_issue_abort("t-run")])
     pending = host_ops.get_pending_actions("t-run", repository_root=repo)
     assert pending["items"] == []
+    assert host_ops.get_run_status("t-run", repository_root=repo)["first_blocker"] is None
+
+
+@pytest.mark.parametrize(
+    ("issue_id", "control_epoch"),
+    [("other-issue", 3), ("issue-1", 2)],
+)
+def test_a05_issue_abort_requires_report_issue_and_epoch(tmp_path, issue_id, control_epoch):
+    repo, run_root = _make_run(tmp_path)
+    _set_state(run_root, "TERMINAL_REPORT_COMPLETE", issue_id="issue-1")
+    _append_evidence(run_root, "issue-report", [_issue_report("t-run")])
+    _append_evidence(
+        run_root,
+        "issue-abort",
+        [_issue_abort("t-run", issue_id=issue_id, control_epoch=control_epoch)],
+    )
+    pending = host_ops.get_pending_actions("t-run", repository_root=repo)
+    assert [entry["type"] for entry in pending["items"]] == ["issue_wait"]
 
 
 def test_a05_4_recover_provider_envelope_requires_exactly_one_binding(tmp_path):
@@ -1869,11 +1995,79 @@ def test_a04_review_pending_bindings_match_the_real_snapshot(cq_harness):
     assert item["bindings"]["content_digest"] == snapshot["content_digest"]
     assert item["bindings"]["question_ids"] == snapshot["question_ids"]
     assert item["bindings"]["content_version"] == snapshot["content_version"]
+    action = item["available_actions"][0]
+    assert "revision" not in action["required_bindings"]
+    assert "revision" in action["optional_bindings"]
+    assert "not stored in the snapshot" in action["note"]
     assert item["recorded_at"]
     # A recorded decision closes the review item.
     cq_harness.handle_cq_outer_input(_decision(cq_harness))
     pending = _cq_pending(cq_harness)
     assert not [entry for entry in pending["items"] if entry["type"] == "cq_review"]
+
+
+def test_a04_pending_review_can_submit_without_snapshot_revision(cq_harness):
+    cq_harness._publish_cq_question_draft(
+        {"cq_id": "competency-question", "draft": _draft_of([_question("cq-1")])}
+    )
+    pending = _cq_pending(cq_harness)
+    item = next(entry for entry in pending["items"] if entry["type"] == "cq_review")
+    bindings = item["bindings"]
+    fifo = _open_fifo(cq_harness.run.root)
+    try:
+        host_ops.submit_cq_review(
+            cq_harness.run.run_id,
+            review_id=bindings["review_id"],
+            question_id=bindings["question_ids"][0],
+            decision="approve",
+            content_version=bindings["content_version"],
+            content_digest_value=bindings["content_digest"],
+            repository_root=Path(cq_harness.repository_root),
+        )
+        envelope = _pop_fifo_line(fifo)
+    finally:
+        fifo.close()
+    assert envelope["revision"] == 1
+    accepted = cq_harness.handle_cq_outer_input(envelope)
+    assert accepted["type"] == "cq-review-accepted"
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("content_version", 99),
+        ("content_digest", "sha256:" + "f" * 64),
+    ],
+)
+def test_a04_pending_review_preserves_stale_content_guards(cq_harness, field, value):
+    cq_harness._publish_cq_question_draft(
+        {"cq_id": "competency-question", "draft": _draft_of([_question("cq-1")])}
+    )
+    pending = _cq_pending(cq_harness)
+    item = next(entry for entry in pending["items"] if entry["type"] == "cq_review")
+    bindings = item["bindings"]
+    values = {
+        "review_id": bindings["review_id"],
+        "question_id": bindings["question_ids"][0],
+        "decision": "approve",
+        "content_version": bindings["content_version"],
+        "content_digest_value": bindings["content_digest"],
+    }
+    values[field if field == "content_version" else "content_digest_value"] = value
+    fifo = _open_fifo(cq_harness.run.root)
+    try:
+        host_ops.submit_cq_review(
+            cq_harness.run.run_id,
+            repository_root=Path(cq_harness.repository_root),
+            **values,
+        )
+        envelope = _pop_fifo_line(fifo)
+    finally:
+        fifo.close()
+    with pytest.raises(CQContractError) as error:
+        cq_harness.handle_cq_outer_input(envelope)
+    assert error.value.data["reason_code"] == "cq_review_stale"
+    assert any(entry["type"] == "cq_review" for entry in _cq_pending(cq_harness)["items"])
 
 
 def test_a04_freeze_pending_appears_only_with_decided_questions(cq_harness):

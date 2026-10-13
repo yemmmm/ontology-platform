@@ -522,7 +522,6 @@ def test_submit_cq_review_maps_the_wire_digest_parameter():
                             "decision": "approve",
                             "content_version": 1,
                             "content_digest": "sha256:abc",
-                            "revision": 1,
                             "request_id": "mcp-req-2",
                         },
                     )

@@ -3,12 +3,16 @@
 ## 结论与范围
 
 两次均未取得完整独立语义 PASS。FlashX 有实际模型应用及局部裁决，Luna 停在 CQ 审核。
-最优先的动作是完成已有窄故障的修复生效与原失败步骤复测，然后验证已实现的连续执行、
-早期公开反馈；当前证据不支持继续扩展运行框架，也不支持比较两种模型的质量或提速。
+第二次复盘已把中途失败逐项追到调用、回执、源合同或明确的证据缺口。最优先的是修复
+已定位的消息结算、CQ审核合同、停止收尾及非语义响应比较，再落实已有连续执行和早期
+反馈。四项消费失败也已收窄到候选／计划未交付的表达、回答综合与源忠实度边界，不能
+全部当成检索失败或据隐藏裁决直接修模。当前仍不能比较两种模型的质量或提速。
 
 本次仅核对保留证据、更新需求验证结论和跨轮台账。两个授权均已撤销，未启动、接续或
 修复生产／验收运行，未改变冻结、模型或原裁决。报告不含隐藏题、答案或私有评分内容，
-也不作为隔离生产输入。本复盘不是新增独立验收。
+也不作为隔离生产输入。本复盘不是新增独立验收。用户在第二次复盘中明确要求“对于
+已识别简易问题，请直接调用子agent完成修复”；本次据此分工完成窄工程修复和相关测试，
+没有恢复已撤销授权的生产或验收。历史摘要与首轮建议保留，当前变化见后续增量。
 
 | 任务 | 绑定与采用身份 | 结果及边界 |
 | --- | --- | --- |
@@ -125,7 +129,10 @@ Judge 统计：冻结源全文重复基准99,809字节、初始正文0、引用m
 20次按引用读取；平台响应正文175,258→注册表172,648字节，局部去重约1.49%。两类对象
 不同；既不外推整个输入降幅，也不据此宣称端到端提速。
 
-## 待调整项与新建议（未授权实施）
+## 首轮待调整项与建议（历史记录）
+
+以下是首次复盘的建议。第二次复盘中已授权的简易修复和更新后的诊断见下节；其余
+行为调整、业务决定及真实运行没有因此取得授权。首轮笼统待定位结论不覆盖下方新证据。
 
 1. **先让既有故障修复闭环，再评价模型。** FlashX 首层为 platform-contract（启动工具面），
    run 内另有 runtime/infrastructure（限流）与 collaboration/routing（resolution_ready
@@ -159,7 +166,94 @@ delivery-deferred为不同事件，不能称1254次Agent往返，更不能由计
 
 上述建议未作为用户确认项新增台账，未自动修改实现、提示、业务模型或新立需求。
 下一次先核验ISSUE-V4-006是否有反证、R4.3-015调整是否生效，再核对其余待实测范围。
-当前需要新的运行授权才能开展真实验证；本次只完成文档和已有证据闭环。
+当前需要新的运行授权才能开展真实验证；首次复盘仅完成文档和已有证据闭环。
+
+## 第二次复盘：已识别问题逐项定位
+
+以 `752f6e5` 为本次修复前代码身份。下表中 F 编号仅为本报告定位，不是新增需求或
+另一套失败分类。FlashX原件简称 F-run，Luna原件简称 L-run，均指上文绑定的run；
+原件导航继续有效。已修、实际加载和原失败步骤复测分别列出，工程回归不恢复历史PASS。
+
+| 定位项／现象与原件 | 最窄原因、首失败层及把握 | 影响、历史修复和本次处置 |
+| --- | --- | --- |
+| F01 FlashX start1／2 MCP preflight mismatch；授权的failed_presemantic_launches及两份err.log | 已定位／platform-contract：CQ runner_capability已广告获准handoff工具，codex runtime预期面漏列；不是源材料或语义失败 | 两次均零semantic-start。`3604f22`修正预期面，start3实际启动验证该步；第二次同错重启发生在修复交接被消费前，不建议再造全面preflight |
+| F02 Delivery context_window_exceeded；repair-delivery-context-public.md、repair-delivery-payload-public.md及原native输入 | 已定位／platform-contract：增量app-server token／游标变化既进入唤醒指纹，也随原始observed_state／host_observation注入。第一修复只去噪指纹，没有去掉模型payload中的巨大原生日志 | `0eb9913`只完成第一层，`55a3316`过滤三种真实投递路径并保留raw observation引用；后续Delivery接续加载。不能把第一修复算根治，或把所有状态观察称无效催办。窄修复的长推理/再次收口成本可观察，但全轮累计有效工时unknown |
+| F03 冻结后过早complete_cq_handoff，并称会自动验收；repair-delivery-freeze-prompt-public.md | 已定位／prompt-contract，操作首层platform-contract：旧提示“freeze and handoff ... once phases complete”把两个阶段含混在一起，pending的available action也被误作ready | `ebcca85`持久明确先冻结/转发再生产完成交接；当前run经实际生产后04:19合法handoff验证该路径。保留可恢复ready拒绝，不删除生产完整性门 |
+| F04 issue-3指导已持久化却消息不消费；live-routing-diagnosis.md、issue-resolution/control及broker事件 | 已定位／collaboration/routing：Coordinator provider wait时提前raise，跳过既有Modeling relay和runner-owned settlement，账本停resolution_ready，drain不断requeue。不是freeze覆盖状态，也不存在dormant标记 | 原/tmp补丁和精确resume只解锁旧run，原源码仍有缺陷。本次子Agent把typed defer延后到relay/settlement之后，保留真open/未知写入门；实际broker/ledger工程回归通过，旧run不重启 |
+| F05 已持久化指导后first_blocker消失；host_ops.py::_issue_pending及原RUNNING摘要 | 已定位／platform-contract：把任何带issue_id的issue-resolution记录视为resolved，连coordinator-delivery-deferred也被当终态 | 本次改为实际issue-control终态派发才闭合；指导持久化与等待事件继续显示issue_wait，原摘要不回写。解决可见性，不能以状态显示代替业务恢复 |
+| F06 r1→r4候选/翻译拒绝；delivery-15、18—26及各immutable候选 | 已定位／platform-contract输入纠错：slot路径写完整candidate、shared_scope位置/类型错误、applicability数组、table/join/enum/metric canonical payload不完整；是不同具体错误 | Agent收到可定位反馈后r2修slot、r3修scalar、r4补canonical分析，原候选保留；初建内纠错不另计轮次。校验保护真实内容，可自修，保持现状，不为提速删除字段/形状校验 |
+| F07 缺真实task_id和batch max，Protocol停止规划；issue-7及其resolution | 已定位／prompt-contract输入交接，首层platform-contract：业务角色不能从平台read猜Host Task身份和部署参数 | 宿主从task.snapshot读取task_id、核对部署Settings max=100后交接，随后原计划继续。task_id读取已进入`ebcca85`提示；batch max本次只证明运行指导生效。沿现有Host配置交接，不新建配置平台 |
+| F08 P1/P2成功后property-list unsupported，阻断P3身份；issue-8、failed read artifact及host-production-readback | 已定位／platform-contract：get_ontology_read_model是有限旧别名，property-list的canonical工具是get_semantic_read_model；当前Task未advertise后者，而挂载合同指向它 | 宿主canonical原读确有43property/58entity，故非漏写、非权限拒绝、非模型缺失。这里只是关系计划必需身份读取，不能归入取消的成功全量审计；本次检查既有治理SPARQL/回执替代，不猜IRI或扩工具授权 |
+| F09 原件宿主路径不可读与material_forbidden；issue-9/10、handoff-materials及delivery-42—55 | 已定位／collaboration/routing使用边：宿主evidence路径未在角色bind中；首次material只获准Host→Coordinator，后续原ref代转到Protocol不具有该channel授权 | 原件存在且Coordinator可读，权限拒绝正确；重新沿Coordinator→Protocol发布后完整读取、66条关系解析，P3成功。复用R4.3-013；保留必要一次兜底，改交接边，不删除权限检查。净搬运/返工效果仍未证 |
+| F10 P3 approval_content_mismatch两次；issue-11/12及resolution、approvals历史 | 已定位／platform-contract输入表示：Coordinator摘要少sha256:前缀，计划是合同格式；31个批准摘要的hex内容一致。最初Delivery仅发“前缀等价放行”guidance并不能改变执行校验 | 后改为owner追加正确批准表示，再coverage/dry-run/apply成功。不是Protocol手工重录命令，原门有效。保持此低成本自纠；不新建manual acceptance或全局摘要兼容层 |
+| F11 已审P1/P2逐步放行、P2重复dry-run；delivery-34—40及11组staged意图/回执 | 已定位／prompt-contract实际采用：Coordinator明确给单计划dry_run-only，随后单计划apply；工具成功正常停止并非Protocol违令。P2先dry-run再因P1改版本而失效 | R4.3-002本次行为未达预期。已实现引用列表/版本检查继续保留；建议Coordinator按真实依赖使用既有列表并及时取dry-run。不能把必需重做称平台多余校验，未自主实施新的语义编排 |
+| F12 全范围详细candidate先完成，P3后没有早期公开反馈；delivery-9、22—27及checkpoints、operation集合 | 已定位到责任面／prompt-contract实际采用：Coordinator实际要求完整五切片candidate，再全property/entity/relation；已加载阶段提示却未按首小链选择推进。P3后已有materialization_progress checkpoint，未调用public-feedback | R4.3-015仍待调整，不能笼统说“缺切片/工具”。首可消费关系链P3于03:20:55应用，原handoff04:19:08；该58分13秒区间有自查、业务修订与异常恢复，不全是可删除等待。建议调整阶段选择/反馈行为；保持最终独立验收 |
+| F13 自查REVISE与r5/r6修模；delivery-69/71、r5/r6计划及revision5完整扫描 | 已定位／modeling-quality：七个游离候选经业务处置，三处需补关系、三项属性无支持需删除；不是把所有游离节点都连起来 | 实际开始新六项修模目标，计第2轮；r6补同目标删除意图/真实身份不再扣一次。两次修复应用及549条完整读回保留，最终PARTIAL。裁决后未新修模，具体阻塞是验收尚未完整、错层原因待核和供应商限额，随后用户关闭 |
+| F14 删除合同未声明既有delete_property；issue-15、property-removal-diagnosis/report | 已定位／prompt-contract，首层platform-contract：后端已有原子delete_property，但mounted合同只有create/update；不应让Agent凭想象写删除 | `bd0143e`补最窄合同，旧run由真实字段/身份指导解锁，03:59删除applied，读回零残留；Luna新baseline含该合同。无需新删除API/重建Ontology或绕过dry-run |
+| F15 Session active造成write-seal失败，consult也被拒；handoff请求回执、work-seal-diagnosis.md | 已定位／prompt-contract生命周期遗漏，首层platform-contract：生产终态不等于owned Build Session completed；错误被归入cq_unknown_write_pending/write-seal，实际不是未决写入 | 原Host使用已有:complete、真实revision和unresolved_items收尾，原模型不动；随后handoff成功。`c891401`持久补Delivery步骤。consult_requires_read_only是未封写的正确拒绝；不建议取消Session/lease完整性门 |
+| F16 两次验收称“未冻结”；.delivery-ops/start3-cq-acceptance-attempt-0001及-02的request/argv/err.log | 已定位／platform-contract：Host/handoff freeze_id=cq-batch-0001是batch身份；CLI却用该值拼frozen/cq-batch-0001.json，真实snapshot文件为freeze-0001.json | 换真实snapshot stem后通过此步，冻结从未丢失。本次子Agent修同源唯一快照解析/真实digest消歧，显式stem兼容，错绑定/歧义不猜；不重冻，原实际入口未重新启动 |
+| F17 首次public验收read key缺失、第三次重用已有attempt被拒；public13-01/-03 err.log及后续02 | 已定位／runtime/infrastructure（凭据入口），后续platform-contract（输入身份）：01缺R3011_ACCEPTANCE_PLATFORM_READ_KEY；02由Host使用既有只读凭据继续；03复用已发报告的attempt | key由Host按既有授权创建/撤销，旧私有key不写报告；immutable attempt拒绝正确，新重验须走已有新handoff。生产修复授权不恢复验收，不为此自动增加密钥机制 |
+| F18 生产重复provider wait及public 0/13 batch-incomplete；issue-1/2/4/5/6/13/14/16/17/18、Consumer a953dbf0原native task_complete | 已定位／runtime/infrastructure：生产及04:33:22公开Consumer均有rateLimitExceeded，粗标签只是结果；不是模型质量或输入校验丢报告。各次通知与实际请求不按事件数混算 | 原供应商回执及同线程恢复保留；后续Claude修复者05:05又遇HTTP429/1308五小时限额。定位到供应商边界即止，不猜供应商内部、不无授权重试，不把并行等待累加或一律扣除墙钟 |
+| F19 hidden7/10 child-timeout，3题无报告；Consumer 926b259d原native事件及CLI/operation参数 | 已定位到运行限制／runtime/infrastructure：本次session_timeout未显式设置，CLI默认300秒用于整个continuous batch；20:40:25启动，20:45:23仍成功提交第7份报告，随后看门狗终止，无末次provider错误证据 | 46条实际读取及7份报告保留，不能把该超时外推模型失败。最小后续使用现有session_timeout/局部接续配置作有界取舍；不改通用默认、不建新流水框架。每题有效推理耗时及可省读取量unknown |
+| F20 8条query响应recheck drift影响7题；原report及__main__/_cq_recheck_projection | 部分定位／platform-contract：8份原响应均cache_hit=false；后端快照复用改true，而旧投影把该缓存元数据计入语义。分页cursor字节重发早由80ae6d8屏蔽，不是本次未修根因 | 本次子Agent仅屏蔽该工具准确路径的布尔cache_hit，真实事实/身份/分页/模型/评分变化继续检测。历史第二份重放正文未留存，不能证明8条全部只有此变化；不自动恢复旧三题PASS资格 |
+| F21 四项model-recall-insufficient；原完整裁决、r6、61组deferred处置、revision5完整549条治理扫描 | 分层已定位，资格部分待核：物理字段/枚举在候选分析中而未物化，部分显式结构未表达；另有已返关系方向综合、职责依据与限定问题。完整扫描把若干“只在下一页”解释排除；Schema支持物理结构不等于确认业务规则 | 具体对象与评分定位仅留宿主受限文件，不交生产。本次可以收窄到候选→计划/应用与回答责任面，不能重判四题、给隐藏题修模清单或把未知业务意义补造为真。核心/映射分段与CQ范围强度应由原独立流程复核 |
+| L01 首Delivery首推理无返回；preproxy配置、授权及cleanup | 已定位／runtime/infrastructure：未继承代理变量，未创建run；正确代理配置的原授权重启后semantic-start | 零额重试并清理，未证明Luna实质建模速度/质量；复用原环境传递，不新增网络测试平台 |
+| L02 CQ schema mismatch后10秒自纠；L-run capability/原native回执 | 已定位／platform-contract输入纠错：发布payload schema不符，准确反馈后06:34:03提交5条草稿 | 自修通路有效，无冻结/候选/apply；保持必要源/字段校验，不记新建模轮次 |
+| L03 CQ审核revision“缺绑定”；pending、snapshot元数据、Host/MCP/validate_review_decision | 已定位／platform-contract，修正首次诊断：snapshot没有revision，实际validator仅检查正整数；并不存在首次报告所称可读取/可验证的当前snapshot revision。Host却将其列必填绑定，说明还承诺全部来自pending | 真实防陈旧字段是content_version/digest/question/review/run。本次将revision保留为默认1的可选reviewer序号并纠正说明，保留现有真实校验，不伪造snapshot字段或新增硬门。原审核未复测，旧run不恢复 |
+| L04 repair-01拒绝、repair-02启动即exit1；native第511/537行及repair-result | 已定位／platform-contract输入（01目录owned_paths非法）、runtime/infrastructure（02隔离无git且缺skip参数） | 01没有创建operation；02真实argv/临时目录已经在成功启动回执中，故“缺argv必须加回执”不成立。`1077682`已加参数，但该修复从未重启/复测CQ；本次不再重复实现，保留待运行验证 |
+| L05 用户stop无法正常退出；session.operation_ids、operation_missing及delivery.call/stop循环 | 已定位／platform-contract：启动前登记repair-01，确定的scope_invalid失败后不注销意图，stop把这个无record对象当仍需结束的owner | 本次对子Agent明确启动前拒绝撤掉该新owner；Host已有owner、失去回执/未知启动继续保留。不能把任意operation_missing当stopped。原Host SIGINT收尾证据不回写成自动正常退出 |
+
+### 质量、时间与未定位边界
+
+整项任务的第一失败层须保留：FlashX为启动前MCP的platform-contract；Luna为首Delivery
+未继承代理的runtime/infrastructure。Luna成功启动run后的第一实质阻塞才是CQ审核
+platform-contract；首次建议中仅写后者，不能覆盖整项任务更早的基础设施失败。
+
+保留首轮的轮次校正：FlashX **2轮/1个fresh semantic start**，Luna **1个已登记初建轮/1个
+fresh semantic start**；两次当前授权均为0。本次代码修复、只读诊断和工程测试不扣新轮次。
+FlashX观察窗口4小时45分12秒、Luna3小时13分34秒仍是停止前经过时间，不是PASS基线。
+F-run的首条完整已应用关系链03:20:55距semantic-start为2小时13分12秒；P1/P2不是完整链。
+Luna草稿06:34:03→关闭08:49:43为**2小时15分40秒**未进入审核后阶段；约124分钟只是
+首轮记录截止08:37的较短观察，不是全部停滞区间。以上均不等于有效语义工时或可省时间。
+
+本次剩余证据限制已收窄，不再笼统“平台问题待定位”：
+
+- F20查了全部drift原响应、比较实现、Jev缓存产生/复用及cursor历史修复；排除了单纯cursor
+  重发作为未修缺陷，确认cache元数据比较反例。缺历史重读正文，无法排除其他真实内容变化；
+  下一动作是在获准同绑定重验中核对必要响应对，旧裁决保持原样。
+- F21查了获准源、当前候选、明确deferred计划、完整应用扫描、实际回答和原Judge依据；
+  已区分未交付物理分析与业务未知、回答方向及源忠实问题。评分范围/资格仍须原独立流程
+  决定，本宿主已接触受限材料，不能替代该裁决。受限详情不挂载给修复者或生产。
+- F19可定位整批300秒限制及终止前实际进展，缺分题有效活动时间，不把46次读取默认削减；
+  外部限流定位到服务边界，不推测供应商内部。有效语义/等待/修复分账仍unknown，不计算比例。
+
+### 当前建议顺序及最小验证
+
+1. **完成已授权窄工程修复。** 当前“指导已发/错误被误派生”→修复既有settlement、pending、
+   CQ字段和启动前失败注册；“缓存状态变化被当drift”→只比较真实语义/资格内容。工程测试
+   使用现有泛化fixture，不消费生产额度；验证结果统一见下方修复记录。未知启动、真实
+   content_version/digest、写入原子性及受治理范围继续保护，不靠新增Agent全量对账兜底。
+2. **再落实R4.3-002/015实际行为。** 当前“全详细候选/逐批单放行/最后才验收”→在已有
+   全局范围和真实依赖下选择首完整小链、按引用连续执行、使用已有公开反馈；这是既有角色
+   的阶段/指令采用，不是新平台功能。能减少晚期返工，净分钟数待测；先保质量和完整分母。
+3. **范围及来源先讲清，再修语义。** 当前“候选物理分析未交付，消费只见未知holder”→
+   在获准范围内清楚表达已知源结构与未确认业务含义，保持analyzed_not_materialized的
+   披露；不能默认把物理映射批准为业务规则。原独立流程复核CQ分段范围及资格，生产仅接收
+   通用原则和获准公开诊断。需要业务决定时走既有访谈，不用隐藏答案补事实。
+
+上述第2/3项仍为建议；用户简易修复授权没有批准新业务含义、改变时间目标或恢复运行。
+已确认台账旧项结论保持：006本次引用采用仍闭合；013/014/016范围效果仍待证；015待调整。
+新增技术修复按实际已授权范围登记，不能据工程PASS关闭真实效果；退步时保留原件，修窄层。
+
+### 本次修复与验证记录
+
+本次子Agent修复、主Agent复核及最终回归统一记录于
+[简易修复测试记录](../tests/2026-10-13-retrospective-simple-repairs-test-record.md)。
+六项工程修复及相邻完整Team回归已通过：2784 passed、11 skipped、318 subtests passed；
+首轮1个已过期工具面测试断言失败及一行修正过程均保留。工程结果不能代替实际恢复，
+六项优化效果维持已实现待实测，不把旧响应drift或语义成绩改写成PASS。
+源码/提示生效仅对后续正确加载进程成立；本次没有重新启动真实Team或验收，也没有
+应用服务代码改动。原来没有实际恢复的步骤仍标未复测，语义总体继续PARTIAL。
 
 ## 原件导航与检查
 
@@ -188,7 +282,8 @@ delivery-deferred为不同事件，不能称1254次Agent往返，更不能由计
   [阶段015](../records/2026-10-12-r4-3-015-delivery-record.md)、
   [复盘skill](../test-plans/2026-10-10-modeling-process-optimizer-skill-test-record.md)。
 
-本次检查仅覆盖新增／修改文档的本地链接、Markdown围栏、差异空白，以及关键数字与
+以下为首次复盘的历史检查；第二次复盘和工程修复的最终检查见上述统一测试记录。
+首次检查仅覆盖新增／修改文档的本地链接、Markdown围栏、差异空白，以及关键数字与
 上述保留JSON／JSONL的对应。不运行后端／前端测试或重启服务，检查不建立语义验收PASS。
 新增／修改34个本地链接、围栏与元数据计数／时间检查通过；全文链接检查另发现v4.0中
 3个旧UI页面链接已失效，均在原HEAD存在，本次未修改，不能宣称整份历史文档链接全部通过。

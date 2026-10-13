@@ -746,6 +746,113 @@ def _recheck_status(retained: dict, reread: dict, *, tool: str = "query_semantic
     return recheck["question_status"]["cq-1"]
 
 
+def _ranking_response(*, cache_hit: bool) -> dict:
+    """Generalized context response with binding, facts, pages, and ranking."""
+
+    return {
+        "query": {
+            "queries": ["reserve binding"],
+            "normalized_queries": ["reserve binding"],
+            "depth": 2,
+            "result_scope": "authorized_query_scope",
+            "ranking_version": "jev-v1",
+        },
+        "result_status": "matched",
+        "scope": {
+            "project_id": "project-1",
+            "mode": "ontologies",
+            "status": "complete",
+            "ontologies": [{"ontology_id": "ontology-1", "model_revision": 1}],
+        },
+        "primary_matches": [
+            {
+                "id": "resource-1",
+                "iri": "iri:1",
+                "label": "Reserve binding",
+                "match": {"relevance_score": 2.0, "relevance_status": "scored"},
+            }
+        ],
+        "related_context": [],
+        "matches_page": {
+            "returned": 1,
+            "truncated": False,
+            "next_match_cursor": None,
+        },
+        "context_page": {
+            "returned": 0,
+            "truncated": False,
+            "next_context_cursor": None,
+            "expansion": {"status": "complete"},
+        },
+        "truncated": False,
+        "recall": {
+            "mode": "hybrid",
+            "match_status": "candidate",
+            "completeness": "complete",
+            "ranking": {
+                "status": "scored",
+                "version": "jev-v1",
+                "score_scale": [0, 3],
+                "min_score": 1.0,
+                "filtered_count": 0,
+                "candidate_count": 1,
+                "cache_hit": cache_hit,
+            },
+        },
+        "warnings": [],
+    }
+
+
+@pytest.mark.parametrize("envelope", [False, True])
+def test_reissued_query_ranking_cache_flag_is_stable_in_bare_and_api_envelopes(envelope):
+    retained = _ranking_response(cache_hit=False)
+    reread = _ranking_response(cache_hit=True)
+    if envelope:
+        retained = {"ok": True, "data": retained}
+        reread = {"ok": True, "data": reread}
+
+    assert _recheck_status(retained, reread) == "stable"
+
+
+@pytest.mark.parametrize(
+    ("path", "replacement"),
+    [
+        (("scope", "ontologies", 0, "model_revision"), 2),
+        (("primary_matches", 0, "id"), "resource-9"),
+        (("primary_matches", 0, "match", "relevance_score"), 1.0),
+        (("matches_page", "returned"), 2),
+        (("matches_page", "truncated"), True),
+        (("recall", "ranking", "candidate_count"), 2),
+    ],
+)
+def test_ranking_cache_flag_mask_does_not_hide_semantic_drift(path, replacement):
+    retained = _ranking_response(cache_hit=False)
+    reread = _ranking_response(cache_hit=True)
+    parent = reread
+    for key in path[:-1]:
+        parent = parent[key]
+    parent[path[-1]] = replacement
+
+    assert _recheck_status(retained, reread) == "drift"
+
+
+def test_ranking_cache_flag_mask_is_limited_to_the_exact_recall_slot_and_tool():
+    retained = _ranking_response(cache_hit=False)
+    retained["primary_matches"][0]["data"] = {
+        "cache_hit": False,
+        "recall": {"ranking": {"cache_hit": False}},
+    }
+    retained["other"] = {"recall": {"ranking": {"cache_hit": False}}}
+    reread = json.loads(json.dumps(retained))
+    reread["recall"]["ranking"]["cache_hit"] = True
+    reread["primary_matches"][0]["data"]["cache_hit"] = True
+    reread["primary_matches"][0]["data"]["recall"]["ranking"]["cache_hit"] = True
+    reread["other"]["recall"]["ranking"]["cache_hit"] = True
+
+    assert _recheck_status(retained, reread) == "drift"
+    assert _recheck_status(retained, reread, tool="get_ontology_workspace_context") == "drift"
+
+
 def test_a_reissued_opaque_pagination_cursor_is_not_semantic_drift():
     retained = json.loads(json.dumps(_CURSOR_PAGE_RESULT))
     reread = json.loads(json.dumps(_CURSOR_PAGE_RESULT))

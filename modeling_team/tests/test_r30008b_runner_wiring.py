@@ -1149,7 +1149,7 @@ def test_staged_protocol_capability_socket_is_live_before_roster_start(tmp_path)
         runtime._acceptance = carrier
         for role, declared in (
             ("protocol", STAGED_PROTOCOL_RUN_OPERATIONS),
-            (COMPETENCY_QUESTION_ROLE, ("cq_publish_question_draft",)),
+            (COMPETENCY_QUESTION_ROLE, CQ_OPERATIONS),
             ("coordinator", ()),
             ("acceptance", ()),
         ):

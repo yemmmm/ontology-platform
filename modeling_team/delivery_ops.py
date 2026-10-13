@@ -878,8 +878,96 @@ def _load_report(path: Path) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
+def _load_frozen_snapshot(path: Path) -> tuple[dict[str, Any] | None, str | None]:
+    """Read one Runner-owned frozen snapshot and verify its content digest."""
+
+    if path.is_symlink() or not path.is_file():
+        return None, None
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+        return reload_frozen_pool(stored), None
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, CQContractError, TypeError, ValueError) as exc:
+        return None, str(exc)
+
+
+def _published_freeze_digest(run_root: Path, freeze_id: str) -> str | None:
+    """Read the same-run handoff digest when it names this batch identity."""
+
+    path = run_root / "acceptance-v3" / "production-handoff.json"
+    if path.is_symlink() or not path.is_file():
+        return None
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(value, Mapping) or value.get("freeze_id") != freeze_id:
+        return None
+    digest = value.get("freeze_digest")
+    return digest if isinstance(digest, str) and digest else None
+
+
+def _resolve_cq_freeze_snapshot(
+    run_root: Path, freeze_id: str
+) -> tuple[str, dict[str, Any] | None, str | None]:
+    """Resolve a CQ batch identity to the CLI's immutable snapshot stem.
+
+    The Delivery request and handoff use the frozen batch id, while the CLI
+    reads a file by its snapshot stem.  An explicit stem remains preferred for
+    compatibility.  A batch id is translated only when exactly one valid
+    snapshot in this run matches it; a same-run handoff digest may select one
+    candidate deterministically.  Missing snapshots retain the old CLI
+    failure path, while ambiguity is rejected instead of guessed.
+    """
+
+    frozen = run_root / "competency-questions" / "frozen"
+    direct = frozen / f"{freeze_id}.json"
+    if direct.is_file() and not direct.is_symlink():
+        snapshot, error = _load_frozen_snapshot(direct)
+        return freeze_id, snapshot, error
+
+    candidates: list[tuple[Path, dict[str, Any]]] = []
+    for path in sorted(frozen.glob("*.json")):
+        if path.is_symlink() or not path.is_file() or not REFERENCE_PATTERN.fullmatch(path.stem):
+            continue
+        snapshot, _error = _load_frozen_snapshot(path)
+        if snapshot is not None and snapshot.get("batch_id") == freeze_id:
+            candidates.append((path, snapshot))
+    if not candidates:
+        return freeze_id, None, None
+
+    expected_digest = _published_freeze_digest(run_root, freeze_id)
+    if expected_digest is not None:
+        candidates = [
+            (path, snapshot)
+            for path, snapshot in candidates
+            if snapshot.get("snapshot_digest") == expected_digest
+        ]
+        if not candidates:
+            raise HostOpError(
+                "evaluation_argument_invalid",
+                f"freeze_id {freeze_id!r} does not match the published freeze digest",
+                obj="freeze_id",
+                retryable=False,
+                next_action="use the immutable freeze identity from the same run",
+            )
+    if len(candidates) != 1:
+        raise HostOpError(
+            "evaluation_argument_invalid",
+            f"freeze_id {freeze_id!r} matches multiple frozen snapshots",
+            obj="freeze_id",
+            retryable=True,
+            next_action="use the frozen snapshot stem or an unambiguous batch identity",
+        )
+    path, snapshot = candidates[0]
+    return path.stem, snapshot, None
+
+
 def _freeze_expectation(
-    run_root: Path, freeze_id: str, *, question_visibility: str | None
+    run_root: Path,
+    freeze_id: str,
+    *,
+    question_visibility: str | None,
+    resolve_batch_id: bool = False,
 ) -> dict[str, Any]:
     """Read the CLI's immutable freeze identity for report attribution.
 
@@ -895,14 +983,14 @@ def _freeze_expectation(
         "freeze_digest": None,
         "question_ids": None,
     }
-    path = run_root / "competency-questions" / "frozen" / f"{freeze_id}.json"
-    if path.is_symlink() or not path.is_file():
-        return expectation
-    try:
-        stored = json.loads(path.read_text(encoding="utf-8"))
-        freeze = reload_frozen_pool(stored)
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError, CQContractError, TypeError, ValueError) as exc:
-        expectation["freeze_snapshot_error"] = str(exc)
+    if resolve_batch_id:
+        _cli_freeze_id, freeze, snapshot_error = _resolve_cq_freeze_snapshot(run_root, freeze_id)
+    else:
+        path = run_root / "competency-questions" / "frozen" / f"{freeze_id}.json"
+        freeze, snapshot_error = _load_frozen_snapshot(path)
+    if snapshot_error is not None:
+        expectation["freeze_snapshot_error"] = snapshot_error
+    if freeze is None:
         return expectation
     expectation["batch_id"] = freeze["batch_id"]
     expectation["freeze_digest"] = freeze["snapshot_digest"]
@@ -970,6 +1058,7 @@ def _evaluation_request(
         run_root,
         freeze_id,
         question_visibility=question_visibility if mode == "cq-acceptance" else None,
+        resolve_batch_id=mode == "cq-acceptance",
     )
     if mode == "public-feedback":
         freeze["question_ids"] = list(question_ids)
@@ -1380,6 +1469,9 @@ def start_evaluation(
                 next_action="remove model_handoff for public-feedback",
             )
         model_handoff_value = None
+    cli_freeze_id = freeze_id
+    if mode == "cq-acceptance":
+        cli_freeze_id, _freeze, _snapshot_error = _resolve_cq_freeze_snapshot(run_root, freeze_id)
     argv = [
         sys.executable,
         "-m",
@@ -1388,7 +1480,7 @@ def start_evaluation(
         "--run-root",
         str(run_root),
         "--freeze-id",
-        freeze_id,
+        cli_freeze_id,
     ]
     if mode == "cq-acceptance":
         argv.extend(["--model-handoff", str(model_handoff_value), "--question-visibility", str(question_visibility)])
