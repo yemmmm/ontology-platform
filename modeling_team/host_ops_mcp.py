@@ -353,9 +353,13 @@ def tool_resolve_issue(
 
     Bindings come from the ``issue_wait`` pending item; guidance and abort
     resolutions require ``resolution_text``, repair_completed additionally
-    binds ``repair_component``.  This is the only issue-resolution channel:
+    binds ``repair_component``. This is the only issue-resolution channel;
     plain answer texts never impersonate a repair notice, and stale
     epoch/reporter bindings keep the original Runner rejection.
+    ``verification_reference``, ``before_digest``, ``after_digest`` and
+    ``mutation_reconciliation`` are repair_completed-only fields. Omit all
+    repair fields for guidance/abort; put any guidance source reference in
+    ``resolution_text`` instead.
     """
     return _call(
         resolve_issue,
@@ -646,7 +650,15 @@ def tool_start_evaluation(
     service_tier: str = "unset",
     repository_root: str | None = None,
 ) -> dict[str, Any]:
-    """Start one explicitly selected, read-only evaluation CLI process."""
+    """Start one explicitly selected, read-only evaluation CLI process.
+
+    Host must inject an authorized read-only platform credential as
+    ``R3011_ACCEPTANCE_PLATFORM_READ_KEY`` in this process environment before
+    launch; production/Host admin credentials do not substitute for it.
+    Pass ``session_timeout`` explicitly for evaluations needing more than
+    the CLI's default 300 seconds. Query ``get_evaluation_status`` for bound
+    stderr/stdout tails and the actual report outcome.
+    """
 
     return _call(
         start_evaluation,
@@ -670,7 +682,7 @@ def tool_get_evaluation_status(
     operation_id: str,
     repository_root: str | None = None,
 ) -> dict[str, Any]:
-    """Read one managed evaluation process and its newly bound report."""
+    """Read one managed evaluation, its redacted 4KiB log tails and bound report."""
 
     return _call(
         get_evaluation_status,

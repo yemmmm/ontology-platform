@@ -2568,7 +2568,26 @@ def resolve_issue(
     request_id: str | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
-    """``resolve_issue``: the cooperative issue-resolution envelope."""
+    """Submit guidance/abort text or the separate repair-completed envelope."""
+
+    repair_fields = (
+        ("repair_component", repair_component),
+        ("before_digest", before_digest),
+        ("after_digest", after_digest),
+        ("verification_reference", verification_reference),
+        ("mutation_reconciliation", mutation_reconciliation),
+    )
+    if resolution_type in {"guidance", "abort"}:
+        for field, value in repair_fields:
+            if value is not None:
+                raise HostOpError(
+                    "invalid_issue_resolution",
+                    f"{field} is only supported for repair_completed",
+                    obj=field,
+                    retryable=True,
+                    next_action="remove repair-only fields and submit guidance/abort with "
+                    "resolution_text; retain any guidance source reference in that text",
+                )
 
     envelope: dict[str, Any] = {
         "action": "issue_resolution",
@@ -2579,11 +2598,7 @@ def resolve_issue(
     }
     for key, value in (
         ("resolution_text", resolution_text),
-        ("repair_component", repair_component),
-        ("before_digest", before_digest),
-        ("after_digest", after_digest),
-        ("verification_reference", verification_reference),
-        ("mutation_reconciliation", mutation_reconciliation),
+        *repair_fields,
     ):
         if value is not None:
             envelope[key] = value

@@ -113,7 +113,11 @@ Protocol 复用 get_project_build_context、get_modeling_context、获准 Ontolo
 definition_ref 引用该条目；Protocol 的 identity_bindings 从当前 read／receipt 绑定其
 实际资源。Modeling 不猜 IRI，Protocol 不按名称单独判同义。
 
-复用条目由有效已有身份及实际读取覆盖，不生成 create 命令或无意义 update。实施需
+复用条目由有效已有身份及实际读取覆盖，不生成 create 命令或无意义 update。
+2026-10-14 窄修复：待写计划的身份读取可来自当前 read-model，或本 run 观测且与
+intent／receipt／applied Attempt proof 绑定的 Batch Attempt item；均保留当前版本和
+候选内容批准检查。历史已应用计划由绑定成功证明保留覆盖，不因后续版本增长重新
+判定旧 reuse 失效；任意回执、planned outputs、dry-run 或 unknownAttempt 均不能替代。实施需
 使 protocol_check_plan_coverage 等覆盖核对识别该已有绑定，仍检出未应用的新内容。
 若本轮检查后全部无需模型改动，允许按实际读取及适用独立验证完成“无需改动”的任务，
 生产交接覆盖以已有有效绑定证明，不为了满足非空写计划伪造一次 update／apply。

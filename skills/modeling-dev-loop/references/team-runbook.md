@@ -385,9 +385,13 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
   task_id: str, ...)`（`modeling_team/staged_decisions.py`）只是普通入参，无任何校验器交叉核对
   平台值；`APPROVAL_PROJECTION_FIELDS` 仅列出该字段名。真实先例携带的也都是调用方提供的值：
   `r30006-20260911-auth007-start1`、`r30006-20260911-auth006-start6`、`industrial-service-v3`、
-  `r3-0-006-real-full`。裁定取值应取本 run 冻结任务定义 `task.snapshot.yaml` 自己声明的
-  `task_id`（auth009-start1 为 `r3-0-006-real-full`，第 36 行），逐字使用，不得用占位符/空值/
-  run_id 或其它派生值替代。同类“把作者字段当权威来源”的 prompt 合同缺陷值得在后续轮次修掉。
+  `r3-0-006-real-full`。Host 冻结任务定义可以声明这个值，但其 snapshot 是 Host-owned，
+  不是 Protocol 的 role mount；Delivery/Host 要通过现有带来源的 `delivery_guidance` 把具体值
+  交给 Coordinator，再由 Coordinator 放进 Protocol 派单。若派单没有具体值，保持依赖的
+  projection pending 并沿现有 owner channel 补齐，不能靠平台读取、占位符、空值、run_id 或
+  其它派生值替代。当前 staged path 也不要求 Coordinator 先提供 accepted Build Session：
+  Protocol 在既有候选/topology 门通过后按现有顺序 `create -> checkpoint -> lease`，再做依赖
+  该 Session 的平台调用；Session 回执、反馈 checkpoint 与实际反馈报告分别记账。
 - 顶层 CLI 没有 `status`/`resume` 子命令。外层 `{"action":"status"}` 只触发 drain，
   不是完整状态快照；直接读上述事件和状态即可。
 - 外层 `pause` 会 interrupt 当前 turn；当前 Codex adapter 的 `resume()` 不重建子进程也
@@ -1013,13 +1017,18 @@ env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run python -m modeling_team public-feed
   --model-profile <authorized-model-profile> --session-timeout <bounded-seconds>
 ```
 
-重复 `--question-id` 选择多题；平台凭据沿现有 `R3011_ACCEPTANCE_PLATFORM_READ_KEY` 宿主环境通道，
-不写 argv。入口复用 v3 Platform Examiner／只读 proxy／report sink，只发送公开题干、内容
+`<bounded-seconds>` 必须是 root operation configuration 提供的具体正数上限；不得省略而落回
+CLI 默认值。重复 `--question-id` 选择多题；平台凭据沿现有、按 run 限定的
+`R3011_ACCEPTANCE_PLATFORM_READ_KEY` 宿主环境通道，不写 argv。缺少该 scoped read credential
+时记录 operation 未执行/受阻，不扩大 grant，也不换用无关 key。入口复用 v3 Platform
+Examiner／只读 proxy／report sink，只发送公开题干、内容
 版本和获准读取 scope，不发送隐藏资料、答案点或私有审核理由，不启动 Judge、发布 handoff、
 消费正式 attempt 或切换生产／验收 phase。反馈存于
 `<run-root>/early-feedback/<invocation-id>/feedback.json` 及该目录下 retained platform-read
 artifacts；每次新目录、旧件不覆盖。标准 per-question reports 保留答案、引用、显式未知与
-首失败；宿主按公开题意审核覆盖、缺口和可见证据，不自动给业务 PASS。
+首失败；宿主按公开题意审核覆盖、缺口和可见证据，不自动给业务 PASS。运行时接受证据必须
+来自实际启动的 run-owned MCP operation 的 `initialize`／`tools/list` 或 version 报告；HTTP
+health 响应或 service restart 只能证明 HTTP 服务响应，不能证明运行中的 MCP 已使用目标版本。
 
 前后再次观察平台模型、冻结／公开 projection digest、manifest／scope 与写尾。变化时反馈
 为 `superseded`，不拼接前后响应；运行／受限／未知／partial 保留不足。`observed` 仅表示
@@ -1036,10 +1045,18 @@ Modeling／Protocol 通道交回，内容修正仍走审核、dry-run/apply 和�
 应用，工具 COMPLETE 不是语义 PASS。未确认写入仍沿原身份恢复，不换 key 重放。
 
 首个可消费小链应用成功后尽早选少量高价值公开题，后续时机由 Agent 判断，不固定每批／
-每阶段问答。独立 Delivery 使用 submit_instruction(kind="delivery_guidance") 的现有来源／
-授权引用，经 Coordinator 发有回复要求的 Team 消息暂停本轮新 dry-run/apply；manual Host
-沿原指导通道执行同一协作。先等在途连续调用返回，确认实际回执、pending／unknown 和
-检查点 write_positions；指导已接收不等于排空。分析、候选和后续计划准备可继续。
+每阶段问答。Delivery 是主动观察并安排现有反馈入口的 Host-side owner，不等待 profile 中
+不存在的 Team Transport Delivery edge。它使用 `submit_instruction(kind="delivery_guidance")`
+的现有来源／授权引用，Runner 将其作为 `kind="outer-instruction"` 交给 Coordinator；再由
+Coordinator 发有回复要求的 Team 消息暂停本轮新 dry-run/apply。manual Host 沿原指导通道
+执行同一协作。先等在途连续调用返回，确认实际回执、pending／unknown 和检查点
+write_positions；指导已接收不等于排空。分析、候选和后续计划准备可继续。
+
+已发布的 materialization_progress checkpoint 只证明反馈具备读取资格，不是反馈报告。实际
+报告仍须沿原 `start_evaluation(mode="public-feedback", session_timeout=<root-configured
+positive bound>)` operation 完成 governed reads、Consumer answers 以及 report_binding／
+content_digest／正文读回；缺少报告、timeout 或正文不可读时只把反馈记为未执行／PARTIAL，保留
+已应用 Attempt 的状态，不增 phase gate。
 
 窗口持续至 Consumer 实际读取及前后绑定核对完成。沿绑定的原 start_evaluation
 (mode="public-feedback")／get_evaluation_status 或 manual Host 原入口读取状态；无 retained

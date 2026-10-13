@@ -110,10 +110,18 @@ let either recipient's initial assignment substitute for the required supplement
 Ordinary CQ review, owner-answer, upstream-candidate, and handoff waits are not terminal failures.
 Keep their pending deliveries and wait for the required input; escalate only an actual defect.
 
-When Protocol needs the projection `task_id`, relay the exact author-provided Task/Host value.
-If it is not in your visible inputs, ask the Host for that configuration value through the
-existing owner channel; the Host task snapshot is not a role mount, and Platform reads cannot
-discover this author identifier. Keep it distinct from scenario ID and run ID.
+When Protocol needs the projection `task_id`, the dispatch must carry the concrete author-provided
+Task/Host value; do not give a generic instruction to discover it from a Task snapshot. If the value
+is not in your visible inputs, ask the Host/Delivery owner through the existing channel and keep the
+dependent projection pending until that exact value arrives. The Host task snapshot is not a role
+mount, Platform reads cannot discover this author identifier, and `task_id` stays distinct from
+scenario ID, run ID, and Platform `session_id`.
+
+Do not require an already-accepted Build Session before Protocol can proceed. Once the existing
+candidate/topology gates admit the active staged path, Protocol owns the run's existing lifecycle:
+create the Build Session, read its returned Session ID, perform the required checkpoint, acquire the
+lease, and then make the dependent platform calls. A Coordinator dispatch supplies scope and the
+concrete task identity; it does not create or pre-accept Protocol's Session.
 
 The same binding applies when you are the reporter. After your own `report_issue` call returns,
 immediately call `issue_control` with `action: "pause"` in that same turn and then end the turn:
@@ -504,13 +512,24 @@ failure evidence and repair only the evidenced layer. Final independent acceptan
 production; hidden questions/answers never enter production. Public success is interim feedback.
 Mapping/metric business unknowns remain explicit; source schema is not business truth.
 
-For that early feedback, Coordinator requests Delivery's existing `public-feedback` evaluation
-with a verified published `materialization_progress` checkpoint, current freeze_id and the small
-selected approved public question_ids. Reuse enabled checkpoint/CQ selectors; do not change the
-running Task or require final production_handoff first. If this checkpoint path is unavailable,
-report feedback not executed and the exact missing prerequisite. Delivery obtains actual governed
-responses and Consumer answers; production consumes only authorized public feedback and preserves
-original receipts. This checkpoint prerequisite is the existing R4.0-015 path, not a new phase gate.
+Delivery is the independent Host-side owner of observing this eligibility and proactively arranging
+the existing `public-feedback` evaluation. It is not a production peer recipient in this Team
+Transport profile, so do not probe for a Delivery edge or skip feedback because one is absent. The
+legal handoff is Delivery's existing
+typed `delivery_guidance` submission, retaining its `source_reference` and `authorization_reference`;
+the Runner delivers that note to Coordinator as `kind="outer-instruction"`. Coordinator consumes
+the sourced guidance and, when the bounded reading window begins, sends Protocol the existing
+reply-required Team message to pause new dry-run/apply submissions. No new edge, role, or bus is
+needed.
+
+The published `materialization_progress` checkpoint, current freeze_id and selected approved public
+question_ids establish feedback eligibility only. Delivery must then start the existing
+`public-feedback` operation with an explicit `session_timeout=<positive bounded value from root
+configuration>`, perform the governed reads and Consumer answers, and verify its report binding,
+content digest and complete body. A successful checkpoint is not the feedback report; if the
+operation is unavailable, times out, or its report cannot be read, record feedback as not executed
+or PARTIAL while the applied Attempt remains applied. Do not change the running Task or require final
+`production_handoff`; this existing checkpoint prerequisite is not a new phase gate.
 
 R4.3-015: trust the tool's bound applied Attempt and version confirmation; do not routinely read
 all resources or compare every approved statement after successful apply. Applied and business

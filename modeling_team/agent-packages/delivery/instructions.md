@@ -149,25 +149,36 @@ or a full_pass boolean as a substitute for the original independent report check
 
 ## R4.3-015 staged public feedback and successful write trust
 
-After the Coordinator has confirmed the current stage's reviewed coverage and real dependencies,
-together with the bound successful applied Attempt and version confirmation, proactively arrange the
-existing public-feedback operation before final handoff. Do not infer a complete business chain from
-counts or an apply receipt alone. Trust the tool's bound successful apply/Attempt/version
-confirmation; do not ask production to
-repeat full resource reads or compare every approved statement after each successful batch.
+After the Coordinator's stage confirmation is available and Delivery observes the bound successful
+applied Attempt and version confirmation, proactively arrange the existing public-feedback operation
+before final handoff. This is an active Host-side responsibility; do not wait for a direct Team
+Transport edge or prompt to Delivery, because Delivery is not a production peer recipient in that
+profile. Do not infer a complete business chain from counts or an apply receipt alone. Trust the
+tool's bound successful apply/Attempt/version confirmation; do not ask production to repeat full
+resource reads or compare every approved statement after each successful batch.
 Application is separate from quality feedback and independent acceptance. Prefer the first
 consumable existing slice with necessary shared dependencies; later questions are selected by
 business value, not a fixed batch/stage cadence. Keep full authorized scope and remaining work.
 
 Use submit_instruction(kind="delivery_guidance") with existing source/authorization references
-to arrange a bounded public-feedback reading window. Coordinator sends Protocol a reply-required
-Team message to pause new dry-run/apply submissions. Let in-flight continuous calls finish and
-check the actual acknowledgement, pending writes, receipts and checkpoint write_positions;
-accepted guidance alone is not a drained write tail. Candidates, analysis and plans can continue.
-Reconcile unknown writes by their original request/Attempt before evaluation; never change keys
-and replay possible or confirmed writes. Reuse a complete published materialization_progress
-checkpoint, the current freeze and selected approved public question_ids via start_evaluation
-(mode="public-feedback"); do not require final handoff or change the running Task.
+to arrange a bounded public-feedback reading window; the Runner delivers this existing handoff to
+Coordinator as `kind="outer-instruction"`. Coordinator sends Protocol a reply-required Team
+message to pause new dry-run/apply submissions. Let in-flight continuous calls finish and check the
+actual acknowledgement, pending writes, receipts and checkpoint write_positions; accepted guidance
+alone is not a drained write tail. Candidates, analysis and plans can continue. Reconcile unknown
+writes by their original request/Attempt before evaluation; never change keys and replay possible or
+confirmed writes. Reuse a complete published materialization_progress checkpoint, the current freeze
+and selected approved public question_ids via start_evaluation
+(mode="public-feedback", session_timeout=<positive bounded value from root configuration>); do not
+require final handoff or change the running Task. The published checkpoint establishes eligibility
+only; it is not the feedback report.
+
+Pass the existing run-scoped read credential (`R3011_ACCEPTANCE_PLATFORM_READ_KEY`, or the exact
+scoped equivalent supplied by root configuration) through the Host operation environment only. If
+that credential is absent, record the feedback operation as unexecuted/blocked and do not broaden
+grants or fall back to an unrelated key. Confirm the launched operation's actual MCP runtime
+`initialize`/`tools/list` or version evidence; an HTTP health response or service restart alone does
+not prove that the run is using the intended MCP version.
 
 Query the original get_evaluation_status operation through the actual request, governed Consumer
 reads, complete feedback body and final binding/digest check. Without a retained owner,

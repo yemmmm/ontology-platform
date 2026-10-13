@@ -381,6 +381,56 @@ def test_start_evaluation_binds_only_a_report_created_after_this_operation(
     assert bound["report_binding"]["summary"]["executed_question_ids"] == ["cq-1"]
 
 
+def test_evaluation_status_exposes_only_bound_redacted_log_tails(tmp_path, monkeypatch):
+    _run_root(tmp_path)
+    (tmp_path / "handoff.json").write_text("{}")
+    secret = "sk_read_test-acceptance-credential"
+    monkeypatch.setenv("R3011_ACCEPTANCE_PLATFORM_READ_KEY", secret)
+    launched = []
+
+    def launcher(argv, *, env, **kwargs):
+        launched.append((list(argv), dict(env)))
+        return _Process(exit_code=2)
+
+    delivery_ops.start_evaluation(
+        run_id="delivery-run", operation_id="evaluation-logs", mode="cq-acceptance",
+        freeze_id="freeze-logs", model_handoff="handoff.json",
+        repository_root=tmp_path, launcher=launcher,
+    )
+    assert launched[0][1]["R3011_ACCEPTANCE_PLATFORM_READ_KEY"] == secret
+    assert "--session-timeout" not in launched[0][0]
+    directory = tmp_path / delivery_ops.DELIVERY_DIRECTORY
+    (directory / "evaluation-logs.err.log").write_text(
+        "x" * 5000 + "\ncq_acceptance_credentials_missing " + secret
+        + '\n{"plaintext_key": "sk_read_not-in-env"}'
+        + "\nAuthorization: Bearer not-in-env-bearer"
+        + '\n{"Authorization": "Basic not-in-env-basic"}'
+        + "\nrequest used Bearer not-in-env-request"
+    )
+    (directory / "evaluation-logs.out.log").write_text("operation stdout")
+    # Another operation's file is not selected by this operation's status.
+    (directory / "unrelated.err.log").write_text("unrelated private content")
+    status = delivery_ops.get_evaluation_status(
+        operation_id="evaluation-logs", repository_root=tmp_path,
+    )
+    assert status["stdout_tail"] == "operation stdout"
+    assert status["log_tails"]["stderr"]["available"] is True
+    assert status["log_tails"]["stderr"]["truncated"] is True
+    assert "cq_acceptance_credentials_missing" in status["stderr_tail"]
+    assert "[REDACTED_SECRET]" in status["stderr_tail"]
+    assert secret not in status["stderr_tail"]
+    assert "not-in-env" not in status["stderr_tail"]
+    assert "unrelated private content" not in str(status)
+    assert len(status["stderr_tail"].encode()) <= delivery_ops.LOG_TAIL_BYTES
+    (directory / "evaluation-logs.err.log").unlink()
+    (directory / "evaluation-logs.err.log").symlink_to(directory / "unrelated.err.log")
+    status = delivery_ops.get_evaluation_status(
+        operation_id="evaluation-logs", repository_root=tmp_path,
+    )
+    assert status["log_tails"]["stderr"]["available"] is False
+    assert status["stderr_tail"] == ""
+
+
 def test_evaluation_status_observes_a_report_published_just_after_process_exit(
     tmp_path: Path,
 ) -> None:

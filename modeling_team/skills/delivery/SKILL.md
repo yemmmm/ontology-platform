@@ -115,12 +115,17 @@ mechanically infer readiness from pending state. Runner consumption of a
 confirmation never automatically starts acceptance, so never tell the user
 that it does.
 
-When Coordinator or Protocol needs the author-supplied task_id, read it from
-the frozen Task snapshot that get_run_status exposes as identity.task_id and
-provide that exact value through submit_instruction with kind
-delivery_guidance and its source reference. Never substitute run_id,
-scenario_id or any platform-generated identifier, and never invent a business
-input or question to carry it.
+When Coordinator or Protocol needs the author-supplied `task_id`, provide the
+concrete value only when the Host snapshot exposes it as `identity.task_id`; the
+snapshot is Host-owned and is not a Protocol role mount. Send that exact value
+through `submit_instruction` with kind `delivery_guidance` and its source
+reference. If it is absent, report the missing configuration through the
+existing owner channel and leave the dependent projection pending. Never
+substitute `run_id`, `scenario_id` or any platform-generated identifier, and
+never invent a business input or question to carry it. Protocol owns the
+existing Build Session lifecycle on the active staged path:
+`create -> checkpoint -> lease`; do not tell it to wait for a pre-accepted
+Session.
 
 Observe active runs and operations after every phase. Accepted is not
 consumed; a PID is not semantic start; exit zero or a preexisting report is not
@@ -128,11 +133,13 @@ independent acceptance. After production completes, continue the authorized
 live cq-acceptance/public-feedback or the existing checkpoint acceptance
 resume. Do not stop supervision just because Coordinator/source is terminal.
 
-For R4.3-015, once the Coordinator has confirmed the current stage's reviewed
-coverage and real dependencies, together with a bound successful applied
-Attempt and version confirmation, proactively arrange the existing
-`public-feedback` operation before final handoff. Do not infer a complete
-business chain from counts or an apply receipt alone.
+For R4.3-015, once the Coordinator's stage confirmation is available and
+Delivery observes a bound successful applied Attempt and version confirmation,
+proactively arrange the existing `public-feedback` operation before final
+handoff. Delivery is the active Host-side observer and must not wait for a
+direct Team Transport edge or prompt; it is not a production peer recipient in
+that profile. Do not infer a complete business chain from counts or an apply
+receipt alone.
 Reuse the complete published `materialization_progress` checkpoint, current
 freeze and a small approved public-question selection; an unavailable
 checkpoint is an unexecuted feedback path, not a reason to invent a new phase
@@ -140,6 +147,16 @@ or gate. During the bounded reading window, have Coordinator obtain the
 reply-required pause for new dry-run/apply submissions, reconcile actual
 in-flight calls, pending writes, receipts and `write_positions`, and let
 analysis and later planning continue.
+
+Start the operation with an explicit
+`session_timeout=<positive bounded value from root configuration>`; do not rely
+on a CLI default. Pass the existing run-scoped read credential
+(`R3011_ACCEPTANCE_PLATFORM_READ_KEY`, or the exact scoped equivalent from root
+configuration) only through the Host operation environment. If it is missing,
+record feedback as unexecuted/blocked without broadening grants or using an
+unrelated key. Confirm the run-owned operation's actual MCP
+`initialize`/`tools/list` or version evidence; an HTTP health response or
+restart alone does not establish that the intended MCP version is active.
 
 Supervise the original operation through its actual request, governed
 Consumer reads, complete feedback body and current report binding/digest.

@@ -194,10 +194,22 @@ def _redact_log_text(text: str) -> str:
         upper = name.upper()
         if not (
             upper.endswith(("_API_KEY", "_TOKEN", "_SECRET"))
-            or upper in {"DEEPSEEK_API_KEY", "ONTOLOGY_PLATFORM_ADMIN_API_KEY"}
+            or upper in {
+                "DEEPSEEK_API_KEY", "ONTOLOGY_PLATFORM_ADMIN_API_KEY",
+                "R3011_ACCEPTANCE_PLATFORM_READ_KEY",
+            }
         ):
             continue
         redacted = redacted.replace(value, "[REDACTED_SECRET]")
+    redacted = re.sub(
+        r"(?i)([\"']?(?:plaintext_key|authorization)[\"']?\s*[:=]\s*[\"']?)"
+        r"(?:(?:Bearer|Basic)[ \t]+)?[^\"'\s,}]+",
+        r"\1[REDACTED_SECRET]",
+        redacted,
+    )
+    redacted = re.sub(
+        r"(?i)\bBearer[ \t]+[^\"'\s,}]+", "Bearer [REDACTED_SECRET]", redacted,
+    )
     return redacted
 
 
@@ -1528,7 +1540,7 @@ def start_evaluation(
 def get_evaluation_status(
     *, operation_id: str, repository_root: Path | None = None
 ) -> dict[str, Any]:
-    """Observe one evaluation and bind only a report changed by this call."""
+    """Observe one evaluation, its bounded log tails and its report binding."""
 
     record_path = _record_path(operation_id, repository_root)
     with _RECORD_LOCK:
@@ -1576,6 +1588,8 @@ def get_evaluation_status(
             owner = None
     except (OSError, ValueError):
         owner = None
+    stdout_path, stderr_path = _log_paths(operation_id, repository_root)
+    log_tails = {"stdout": _log_tail(stdout_path), "stderr": _log_tail(stderr_path)}
     return {
         "operation_id": operation_id,
         "kind": "evaluation",
@@ -1596,6 +1610,9 @@ def get_evaluation_status(
         "control_receipts": owner.get("receipts", {}) if owner else {},
         "consult_replies": owner.get("consult_replies", []) if owner else [],
         "logs": record.get("log_paths"),
+        "log_tails": log_tails,
+        "stdout_tail": log_tails["stdout"]["text"],
+        "stderr_tail": log_tails["stderr"]["text"],
         "record_path": record.get("record_path"),
         "note": "a process exit and a new report do not by themselves prove semantic acceptance",
     }

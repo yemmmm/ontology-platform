@@ -5427,8 +5427,8 @@ class TeamRunner:
                 "required_next_step": "Continue approved work along real dependencies; obtain public business feedback at valuable milestones and complete necessary global coverage and association checks before whole-run production handoff",
                 "semantic_verdict": "not_evaluated"}
 
-    def _validated_reuse_bindings(self, plan: Mapping[str, Any], *, written_elsewhere: set[str] | None = None) -> dict[str, Any]:
-        """Cover only unchanged, currently read, approved candidate identities."""
+    def _validated_reuse_bindings(self, plan: Mapping[str, Any], *, written_elsewhere: set[str] | None = None, applied: bool = False) -> dict[str, Any]:
+        """Cover approved identities from current reads or bound applied Attempt items."""
         from .staged_decisions import candidate_item_digest
         from .incremental import platform_envelope
 
@@ -5454,13 +5454,22 @@ class TeamRunner:
             if item_id in written:
                 continue
             iri, ref = identity.get("resource_iri"), identity.get("evidence_ref")
+            if not any(decision.get("decision") == "approved" and decision.get("target_id") == item_id
+                       and decision.get("candidate_id") == projection["candidate_id"]
+                       and decision.get("content_revision") == projection["candidate_revision"]
+                       and decision.get("content_digest") == candidate_item_digest(items[item_id])
+                       for decision in approvals.get("decisions", [])):
+                raise StagedSubmissionRejection("approval_content_mismatch", f"{item_id}: reuse approval differs from current candidate")
+            if applied and iri and ref:
+                reused[item_id] = {"resource_iri": iri, "read_ref": ref,
+                                   "status": "covered_by_applied_plan"}
+                continue
             record = observed.get(ref)
-            if not iri or not record or record.get("tool") != "get_ontology_read_model" or not record.get("successful"):
+            if (not iri or not record or record.get("tool") not in {
+                    "get_ontology_read_model", "get_modeling_batch",
+                } or not record.get("successful")):
                 raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: reuse needs an observed governed resource read")
             request = record["request_arguments"]
-            ontology = request.get("ontology_id")
-            if ontology not in allowed:
-                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: read outside authorized Ontology IDs")
             target = self.run.root / ref
             if (target.is_symlink() or not target.resolve().is_relative_to(self.run.root.resolve())
                     or hashlib.sha256(target.read_bytes()).hexdigest() != record["response_digest"]):
@@ -5470,11 +5479,43 @@ class TeamRunner:
             if not isinstance(envelope, Mapping) or envelope.get("ok") is not True:
                 raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: resource read failed")
             data = envelope.get("data", {})
-            rows = data.get("items", [])
-            fields = ("iri", "entity_iri", "class_iri", "property_iri", "operation_iri",
-                      "table_mapping_iri", "join_mapping_iri", "metric_iri", "enum_meaning_iri")
-            if not any(isinstance(row, Mapping) and any(row.get(field) == iri for field in fields) for row in rows):
-                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: identity absent from the observed page; absence does not prove nonexistence")
+            if record["tool"] == "get_modeling_batch":
+                ontology = data.get("ontology_id")
+                version = None
+                receipts = read_submission_receipts(self.run.root)
+                for intent in read_submission_intents(self.run.root):
+                    if (intent.get("status") != "receipted"
+                            or (intent.get("projection") or {}).get("ontology_id") != ontology):
+                        continue
+                    receipt = next((r for r in reversed(receipts)
+                                    if r.get("intent_ordinal") == intent["ordinal"]), None)
+                    proof = applied_attempt_proof(self.run.root, intent=intent, receipt=receipt)
+                    if (proof is None or request.get("batch_id") != proof["batch_id"]
+                            or data.get("batch_id") != proof["batch_id"]):
+                        continue
+                    for attempt in data.get("attempts", []):
+                        if (attempt.get("attempt_id") == proof["attempt_id"]
+                                and attempt.get("idempotency_key") == proof["idempotency_key"]
+                                and attempt.get("mode") == "apply_atomic"
+                                and attempt.get("attempt_status") == "applied"
+                                and attempt.get("content_hash") == proof["content_hash"]
+                                and attempt.get("workspace", {}).get("before_version") == proof["workspace_before_version"]
+                                and any(row.get("status") == "applied"
+                                        and row.get("resource_outputs", {}).get("resource_iri") == iri
+                                        for row in attempt.get("items", []))):
+                            version = attempt.get("workspace", {}).get("after_version")
+                if version is None:
+                    raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: identity needs a bound applied Attempt item")
+            else:
+                ontology = request.get("ontology_id")
+                version = data.get("model_revision")
+                rows = data.get("items", [])
+                fields = ("iri", "entity_iri", "class_iri", "property_iri", "operation_iri",
+                          "table_mapping_iri", "join_mapping_iri", "metric_iri", "enum_meaning_iri")
+                if not any(isinstance(row, Mapping) and any(row.get(field) == iri for field in fields) for row in rows):
+                    raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: identity absent from the observed page; absence does not prove nonexistence")
+            if ontology not in allowed:
+                raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: read outside authorized Ontology IDs")
             if ontology not in versions:
                 forward = self.staged_plan_read_forwarder
                 current = forward("get_modeling_context", {"ontology_id": ontology}) if callable(forward) else None
@@ -5484,14 +5525,8 @@ class TeamRunner:
                 if context.get("ontology", {}).get("id") != ontology:
                     raise StagedSubmissionRejection("reuse_read_invalid", f"{item_id}: current Ontology identity differs")
                 versions[ontology] = context.get("workspace", {}).get("model_revision")
-            if type(data.get("model_revision")) is not int or data["model_revision"] != versions[ontology]:
+            if type(version) is not int or version != versions[ontology]:
                 raise StagedSubmissionRejection("approval_stale", f"{item_id}: model drift; read affected definition again and review reuse")
-            if not any(decision.get("decision") == "approved" and decision.get("target_id") == item_id
-                       and decision.get("candidate_id") == projection["candidate_id"]
-                       and decision.get("content_revision") == projection["candidate_revision"]
-                       and decision.get("content_digest") == candidate_item_digest(items[item_id])
-                       for decision in approvals.get("decisions", [])):
-                raise StagedSubmissionRejection("approval_content_mismatch", f"{item_id}: reuse approval differs from current candidate")
             reused[item_id] = {"resource_iri": iri, "read_ref": ref,
                                "ontology_id": ontology, "model_revision": versions[ontology]}
         return reused
@@ -5515,7 +5550,8 @@ class TeamRunner:
         planned: dict[str, list[str]] = {}
         applied: dict[str, list[str]] = {}
         reused: dict[str, Any] = {}
-        proofs = read_attempt_proofs(self.run.root)
+        receipts = read_submission_receipts(self.run.root)
+        intents = read_submission_intents(self.run.root)
         plans = {plan_ref: self._reference_plan(plan_ref) for plan_ref in args["plan_refs"]}
         written_elsewhere = {item_id for plan in plans.values()
                              for binding in plan["projection"]["decision_bindings"]
@@ -5525,11 +5561,22 @@ class TeamRunner:
             if (projection["candidate_id"] != candidate["candidate_id"]
                     or projection["candidate_revision"] != candidate["revision"]):
                 raise StagedSubmissionRejection("approval_stale", "coverage plans must bind the same candidate revision")
-            reused.update(self._validated_reuse_bindings(plan, written_elsewhere=written_elsewhere))
-            is_applied = any(p.get("plan_ref") == plan_ref
-                             and p.get("projection_digest") == plan["projection_digest"]
-                             and p.get("mode") == "apply_atomic" and p.get("attempt_status") == "applied"
-                             for p in proofs)
+            is_applied = any(
+                intent.get("plan_ref") == plan_ref
+                and intent.get("projection_digest") == plan["projection_digest"]
+                and intent.get("status") == "receipted"
+                and applied_attempt_proof(
+                    self.run.root, intent=intent,
+                    receipt=next((r for r in reversed(receipts)
+                                  if r.get("intent_ordinal") == intent["ordinal"]), None),
+                ) is not None
+                for intent in intents
+            )
+            # Successful historical writes do not depend on re-reading their
+            # old reuse pages after later approved batches advance the model.
+            reused.update(self._validated_reuse_bindings(
+                plan, written_elsewhere=written_elsewhere, applied=is_applied,
+            ))
             for binding in projection["decision_bindings"]:
                 for item_id in binding["candidate_item_ids"]:
                     planned.setdefault(item_id, []).append(plan_ref)

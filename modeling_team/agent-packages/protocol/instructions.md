@@ -331,16 +331,24 @@ the current Coordinator's translation review before apply. Do not change the bus
 builder. If the platform reports `candidate_receipt_required` on this route, locate and repair
 the missing topology/scenario gate instead of fabricating a legacy receipt. Keep application
 closed until its separate approval.
-The projection `task_id` is the author-provided Task identifier, not a Platform resource ID.
-Use the exact value supplied by the current Task/Host. If it is absent from your role-visible
-inputs, request it through Coordinator; do not search Platform responses or an unmounted Host
-task snapshot, and do not substitute the run ID or scenario ID.
+The projection `task_id` is the author-provided Task identifier, not a Platform resource ID. The
+Coordinator dispatch must carry its concrete value; do not treat a generic reference to the Task
+snapshot as a supplied value. If it is absent from your role-visible inputs, request that exact value
+through Coordinator and keep the dependent projection pending; do not search Platform responses or
+an unmounted Host task snapshot, and do not substitute the run ID or scenario ID.
 On a checkpoint resume, the source `checkpoint_id` names a Runner package, not a Platform Build
 Checkpoint resource. Create the required fresh Build Session with a new-run-unique
 `client_session_id`; omit `initial_checkpoint` unless you have a valid Platform initial-checkpoint
 payload, and never put the source Runner `checkpoint_id` inside it. Read the actual create response
 before reporting a failure or retrying: if it returned `ok=true` with a Session ID, use that Session
 and do not create another one because an earlier delivery still describes a failure.
+
+For the active staged build-session path, Protocol owns the existing Session lifecycle; Coordinator
+does not create or hand over an already-accepted Session. After the existing candidate/topology
+gates admit the path, perform the required sequence `create -> checkpoint -> lease` using the actual
+returned Session ID and lease data, then make the dependent platform calls. A missing task_id is a
+missing dispatch input, not a reason to discover or invent one. Keep Session creation/checkpoint
+success separate from semantic acceptance and from any later public-feedback report.
 A retained pending attempt in the recovery packet is history, not by itself proof its content is
 still unmaterialized. Before rebinding, republishing or giving any pending item a new identity,
 verify with the Coordinator the successful successor receipts, current candidates and actual
@@ -1042,18 +1050,26 @@ plan/binding identity, approval, or the workspace version makes that proof stale
 detailed plans for later stages in order to execute a complete current chain and its dependencies.
 An already complete small chain, usually an existing slice with its necessary shared dependencies,
 can execute while later slices are refined. Retain global scope and remaining work. After its
-confirmed successful application, ask Coordinator to use the existing R4.0-015 public feedback path for a small useful
-question subset. Keep actual model-expression, retrieval and Consumer-understanding failures
+confirmed successful application, the existing R4.0-015 public feedback path may consume a small
+useful question subset. Keep actual model-expression, retrieval and Consumer-understanding failures
 distinct; public feedback does not replace final independent acceptance. Hidden questions/answers
 remain outside production. Preserve mapping/metric unknowns and authorized scope.
 
-For that early feedback, Coordinator requests Delivery's existing `public-feedback` evaluation
-with a verified published `materialization_progress` checkpoint, current freeze_id and the small
-selected approved public question_ids. Reuse enabled checkpoint/CQ selectors; do not change the
-running Task or require final production_handoff first. If this checkpoint path is unavailable,
-report feedback not executed and the exact missing prerequisite. Delivery obtains actual governed
-responses and Consumer answers; production consumes only authorized public feedback and preserves
-original receipts. This checkpoint prerequisite is the existing R4.0-015 path, not a new phase gate.
+Delivery is the active Host-side observer and owner of arranging this existing evaluation; it is not
+a Team Transport recipient in the production profile. The legal handoff is Delivery's existing
+typed `delivery_guidance` submission, retaining its `source_reference` and `authorization_reference`,
+which the Runner delivers to Coordinator as `kind="outer-instruction"`. Coordinator then sends
+Protocol the existing reply-required Team message for the bounded pause of new dry-run/apply
+submissions. Do not wait for or invent a direct Delivery edge.
+
+The published `materialization_progress` checkpoint, current freeze_id and selected approved public
+question_ids establish eligibility only. Delivery must start the existing `public-feedback` operation
+with `session_timeout=<positive bounded value from root configuration>`, obtain actual governed
+responses and Consumer answers, and verify the report binding, content digest and complete body.
+Checkpoint success is not a feedback report; if the checkpoint is unavailable, the operation times
+out, or the report is unreadable, report feedback as not executed or PARTIAL while preserving the
+applied receipt. Do not change the running Task or require final production_handoff. This is the
+existing R4.0-015 path, not a new phase gate.
 
 R4.3-015: trust the tool's bound applied Attempt and version confirmation; do not routinely read
 all resources or compare every approved statement after successful apply. Applied and business
@@ -1135,6 +1151,11 @@ Reuse has no write command. A wholly no-change round can use a materialization p
 `items` and `decision_bindings`, nonempty actual read identity bindings and current candidate-item
 approvals. `protocol_check_plan_coverage` validates the observed identity, current model revision
 and current content approval, reports `reuse_binding`, and leaves unapplied new items uncovered.
+For pending plans, the observed identity may come from `get_ontology_read_model` or this run's
+`get_modeling_batch` applied Attempt item bound to its intent/receipt/proof; both retain the current
+version check. A historically applied plan retains approved reuse coverage without re-reading old
+evidence against later revisions. Arbitrary receipts, planned outputs and dry-run are not applied
+identity evidence; a general SPARQL result alone does not satisfy this coverage binding.
 Read-only plans never require a fake update, empty batch, dry-run or apply. Existing normal write
 plans retain every approval/version/dry-run/apply requirement. Drift requires a fresh affected
 read and review; unknown writes/create results retain their original request for reconciliation.

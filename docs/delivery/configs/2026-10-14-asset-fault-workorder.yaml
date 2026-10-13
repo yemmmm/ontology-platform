@@ -1,0 +1,39 @@
+# Preparation config only. Production/evaluation require renewed modeling authorization.
+# No credentials, old freeze, old run IDs or old quota are carried forward.
+session_id: industrial-service-smallchain-prepared-20261014
+authorization_reference: user-20261014-modeling-readiness-engineering-only
+allowed_operations: [read, supervise]
+business_input_role: user
+base_url: http://127.0.0.1:8001
+task: modeling_team/tasks/r4-0-009-asset-fault-workorder.yaml
+profile: modeling_team/profiles/r3-0-011-competency-question.yaml
+scope: modeling_team/scopes/new-scope-create.yaml
+model_profile: glm-flash-high
+service_tier: default
+run_ids: []
+allowed_sources:
+  - docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
+  - docs/evaluation-scenarios/industrial-service-v3/modeling-input/business-terms.md
+  - docs/evaluation-scenarios/industrial-service-v3/modeling-input/schema.sql
+  - docs/evaluation-scenarios/industrial-service-v3/modeling-input/sample-data.sql
+repair:
+  executor: codex
+  model: gpt-6.1-sol
+  effort: high
+  allow_deployment: true
+delivery_objective: >-
+  This configuration records engineering preparation only; it grants no new
+  production, evaluation or repair operation. At an authorized future start,
+  bind the actual authorization, fresh session/run IDs and allowed operations.
+  Model only the asset-fault-work-order chain selected by the Task. The user
+  supplies missing business meaning and reviews CQ unless explicitly delegating
+  that review. Preserve private CQ isolation and freeze the new bounded pool.
+  Use the current checked-in role/tool contracts in fresh processes. Delivery
+  observes the first applied chain and its materialization_progress checkpoint,
+  freeze_id and approved public selection, then starts public-feedback through
+  its existing operation. Every evaluation call must explicitly pass
+  session_timeout=900 and inherit a current-project read-only
+  R3011_ACCEPTANCE_PLATFORM_READ_KEY from the Host environment. Never put its
+  value in prompts or files. Report runtime, modeling quality and engineering
+  validation separately. Do not expand to the full business scenario or start
+  another round without authorization. Preserve first-blocker and write evidence.

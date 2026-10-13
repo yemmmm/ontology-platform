@@ -1272,6 +1272,49 @@ def test_a03_pending_notes_legacy_answers_cannot_be_deducted(tmp_path):
 # --- A05: issue and provider recovery envelopes ---------------------------------
 
 
+@pytest.mark.parametrize("resolution_type", ["guidance", "abort"])
+@pytest.mark.parametrize("field", [
+    "repair_component", "before_digest", "after_digest", "verification_reference",
+    "mutation_reconciliation",
+])
+def test_issue_guidance_rejects_repair_fields_before_submission(monkeypatch, resolution_type, field):
+    def unexpected_submit(*args, **kwargs):
+        pytest.fail("invalid guidance must not be submitted to the live run")
+
+    monkeypatch.setattr(host_ops, "submit_fifo_action", unexpected_submit)
+    with pytest.raises(host_ops.HostOpError) as error:
+        host_ops.resolve_issue(
+            "t-run", issue_id="issue-1", reporter_id="modeling", control_epoch=3,
+            resolution_type=resolution_type, resolution_text="按合同处理",
+            **{field: "repair-evidence"},
+        )
+    assert error.value.code == "invalid_issue_resolution"
+    assert error.value.obj == field
+    assert error.value.retryable is True
+    assert "resolution_text" in error.value.next_action
+
+
+def test_issue_repair_completed_preserves_verification_fields(monkeypatch):
+    submitted = []
+
+    def submit(*args, **kwargs):
+        submitted.append(args[2])
+        return {"status": "submitted"}
+
+    monkeypatch.setattr(host_ops, "submit_fifo_action", submit)
+    result = host_ops.resolve_issue(
+        "t-run", issue_id="issue-1", reporter_id="modeling", control_epoch=3,
+        resolution_type="repair_completed", repair_component="external_service",
+        before_digest="sha256:before", after_digest="sha256:after",
+        verification_reference="verification.json", mutation_reconciliation="reconciled",
+    )
+    assert result["status"] == "submitted"
+    assert submitted[0]["verification_reference"] == "verification.json"
+    assert submitted[0]["before_digest"] == "sha256:before"
+    assert submitted[0]["after_digest"] == "sha256:after"
+    assert submitted[0]["mutation_reconciliation"] == "reconciled"
+
+
 def test_a05_1_issue_pending_bindings_drive_the_resolution_envelope(tmp_path):
     repo, run_root = _make_run(tmp_path)
     _append_evidence(run_root, "issue-report", [_issue_report("t-run")])
