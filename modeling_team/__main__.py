@@ -3504,7 +3504,7 @@ def _run_checkpoint_resume_acceptance(
                     break
                 time.sleep(0.1)
             source_safe_for_acceptance(source_root, http_readback(args.base_url, os.environ.get("ONTOLOGY_PLATFORM_ADMIN_API_KEY", "")),
-                                       live_request, root_run_id)
+                                       live_request, root_run_id, checkpoint_id=args.checkpoint_id)
         acceptance_lock = acquire_acceptance_lock(root_run_id, runs_root)
         if live_request is None:
             resume_lock = acquire_root_run_lock(root_run_id, runs_root)

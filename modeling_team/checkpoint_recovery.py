@@ -53,8 +53,10 @@ from modeling_team.checkpoints import (
     file_digest,
     manifest_digest,
     manifest_path,
+    PLATFORM_DATA_PATH,
     production_resume_bindings,
     safe_checkpoint_id,
+    verify_checkpoint,
     _handoff_manifest_entries,
 )
 from modeling_team.competency_questions import (
@@ -300,7 +302,8 @@ def acquire_acceptance_lock(root_run_id: str, runs_root: Path) -> RootRunLock:
 
 
 def source_safe_for_acceptance(source_run_root: Path, readback: PlatformReadback,
-                               request_id: str, root_run_id: str) -> dict[str, Any]:
+                               request_id: str, root_run_id: str, *,
+                               checkpoint_id: str | None = None) -> dict[str, Any]:
     """Verify a fresh owner receipt and live platform state; never settles a producer for recovery."""
     from .host_ops import get_request_result, get_run_status
     source_run_root = Path(source_run_root)
@@ -337,20 +340,98 @@ def source_safe_for_acceptance(source_run_root: Path, readback: PlatformReadback
             raise _acceptance_reject(REASON_SOURCE_ACTIVE, "source write key is not revoked", obj=str(key["id"]),
                                      retryable=True, retry="verify the actual owned key revocation")
     revisions = sealed.get("model_revisions", {})
+    revision_basis = None
+    if revisions == {} and sealed.get("ontology_ids") == [] and checkpoint_id:
+        revisions = _checkpoint_singleton_revisions(source_run_root, checkpoint_id, sealed, readback)
+        revision_basis = {"checkpoint_id": checkpoint_id, "source": PLATFORM_DATA_PATH}
     if not revisions:
         raise _acceptance_reject(REASON_SOURCE_ACTIVE, "source model revision seal is missing", obj="model_revisions", retryable=True)
     for ontology_id, revision in revisions.items():
         context = readback._get(f"/api/ontologies/{ontology_id}/workspace-context")
         workspace = context.get("workspace", {}) if isinstance(context, dict) else {}
-        actual = workspace.get("model_revision", context.get("model_revision"))
-        if actual != revision:
+        actual = workspace.get("model_revision", context.get("model_revision")) if isinstance(context, dict) else None
+        if type(revision) is not int or revision < 0 or type(actual) is not int or actual != revision:
             raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "live-source model revision changed", obj=ontology_id)
     handoff = source_run_root / _PUBLISHED_HANDOFF_SOURCE
     if state.get("handoff_digest") != file_digest(handoff):
         raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED, "live-source handoff digest changed", obj=_PUBLISHED_HANDOFF_SOURCE)
     return {"source_run_id": source_run_root.name, "root_run_id": root_run_id, "request_id": request_id,
             "owner_pid": owner_pid, "write_phase": "read-only", "model_revisions": revisions,
+            **({"model_revision_basis": revision_basis} if revision_basis else {}),
             "handoff_digest": state["handoff_digest"]}
+
+
+def _checkpoint_singleton_revisions(source_run_root: Path, checkpoint_id: str,
+                                    sealed: Mapping[str, Any], readback: PlatformReadback) -> dict[str, int]:
+    """Recover only the old empty singleton seal from an immutable S4 snapshot.
+
+    Current readback alone cannot establish a no-drift baseline. The published
+    checkpoint and its platform-data digest must bind that baseline to the same
+    settled handoff, Project and single Ontology. Nothing is written to source.
+    """
+    manifest, issues = verify_checkpoint(source_run_root, checkpoint_id)
+    bindings = production_resume_bindings(manifest)
+    package_root = checkpoints_root(source_run_root) / checkpoint_id
+    handoff_path = package_root / CHECKPOINT_HOST_PRIVATE_DIRECTORY / _PUBLISHED_HANDOFF_SOURCE
+    data_ref = manifest.get("platform_data") or {}
+    data_path = package_root / PLATFORM_DATA_PATH
+    if (issues or manifest.get("kind") != CHECKPOINT_KIND_PRODUCTION_HANDOFF
+            or manifest.get("source_run_id") != source_run_root.name
+            or not bindings or len(bindings["ontology_ids"]) != 1
+            or bindings["project_id"] != sealed.get("project_id")
+            or not any(item.get("source") == _PUBLISHED_HANDOFF_SOURCE and item.get("host_private")
+                       for item in manifest.get("artifacts", []))
+            or data_ref.get("path") != PLATFORM_DATA_PATH
+            or data_path.is_symlink() or not data_path.is_file()
+            or file_digest(data_path) != data_ref.get("digest")):
+        raise _acceptance_reject(REASON_SOURCE_ACTIVE, "singleton revision baseline is unavailable",
+                                 obj="model_revisions", retryable=True)
+    try:
+        handoff = json.loads(handoff_path.read_text(encoding="utf-8"))
+        published = json.loads((source_run_root / _PUBLISHED_HANDOFF_SOURCE).read_text(encoding="utf-8"))
+        snapshot = json.loads(data_path.read_text(encoding="utf-8"))
+        snapshot_digest = hashlib.sha256(json.dumps(
+            {key: value for key, value in snapshot.items() if key != "digest"},
+            sort_keys=True, ensure_ascii=False, separators=(",", ":")
+        ).encode()).hexdigest()
+        rows = snapshot["tables"]["ontologies"]
+        ontology_id = bindings["ontology_ids"][0]
+        revision = rows[0]["model_revision"]
+        valid = (handoff == published
+                 and handoff.get("schema_version") == "r3-0-012-production-handoff/v1"
+                 and handoff.get("run_id") == source_run_root.name
+                 and handoff.get("scope_binding") == {"project_id": bindings["project_id"],
+                                                       "ontology_ids": [ontology_id]}
+                 and snapshot.get("schema_version") == "r4-0-026-platform-data/v3"
+                 and snapshot.get("digest") == data_ref.get("snapshot_digest") == snapshot_digest
+                 and snapshot.get("project_id") == bindings["project_id"]
+                 and snapshot.get("ontology_ids") == [ontology_id]
+                 and len(rows) == 1 and rows[0].get("id") == ontology_id
+                 and rows[0].get("project_id") == bindings["project_id"]
+                 and type(revision) is int and revision >= 0)
+    except (OSError, UnicodeDecodeError, ValueError, KeyError, IndexError, TypeError, AttributeError) as exc:
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED,
+                                 "singleton checkpoint baseline is unreadable", obj="model_revisions") from exc
+    if not valid:
+        raise _acceptance_reject(REASON_ACCEPTANCE_BINDING_CHANGED,
+                                 "singleton checkpoint baseline binding changed", obj="model_revisions")
+    _settled_handoff_evidence(handoff)
+    # The old singleton filter also omitted owned sessions from the terminal
+    # inventory. Recheck all Project sessions and leases using GETs only.
+    from .platform_scope import PlatformScope, PlatformScopeError
+    scope = PlatformScope("", source_run_root.name, lambda: ("", ""), lambda _: False,
+                          project_id=bindings["project_id"], ontology_id=ontology_id)
+    scope._ok = lambda method, path: readback._get(path)
+    try:
+        scope._work_terminal_state(sealed.get("terminal", {}).get("session_ids", []))
+        scope._single_ontology_context(ontology_id)
+    except PlatformScopeError as exc:
+        raise _acceptance_reject(REASON_SOURCE_ACTIVE, "singleton source resources are not settled",
+                                 obj="model_revisions", retryable=True) from exc
+    if not sealed.get("project_scoped_keys") or not sealed.get("second_stage", {}).get("org_admin_key"):
+        raise _acceptance_reject(REASON_SOURCE_ACTIVE, "singleton source key inventory is incomplete",
+                                 obj="write_seal", retryable=True)
+    return {ontology_id: revision}
 
 
 def lock_record_path(runs_root: Path, root_run_id: str) -> Path:
@@ -3433,7 +3514,8 @@ def prepare_acceptance_continuation(
         writer["verdict"] = "writer_process_exited"
     if not source_writer_settles_recovery(writer) and live_source_request_id:
         writer["live_source_seal"] = source_safe_for_acceptance(source_run_root, readback, live_source_request_id,
-                                                               str(manifest.get("root_run_id") or manifest.get("source_run_id")))
+                                                               str(manifest.get("root_run_id") or manifest.get("source_run_id")),
+                                                               checkpoint_id=checkpoint_id)
     if not source_writer_settles_recovery(writer) and not writer.get("live_source_seal"):
         obj, retry = source_active_evidence(writer, source_run_root)
         raise _acceptance_reject(

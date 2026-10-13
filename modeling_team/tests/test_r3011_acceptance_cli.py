@@ -17,6 +17,7 @@ import shutil
 import sys
 from argparse import Namespace
 from pathlib import Path
+from unittest.mock import Mock
 
 import pytest
 
@@ -39,6 +40,77 @@ from modeling_team.runtimes.codex import CodexRuntimeAdapter
 from modeling_team.tests.test_r3011_acceptance import _freeze, _question
 
 REPO_ROOT = repository_root()
+
+
+@pytest.mark.parametrize("reject_integrity", [False, True])
+def test_live_acceptance_preflight_uses_explicit_checkpoint(
+    tmp_path, monkeypatch, capsys, reject_integrity
+):
+    from modeling_team import __main__ as cli
+    from modeling_team import host_ops
+    from modeling_team.checkpoints import CheckpointError
+
+    source_root = tmp_path / "workspaces" / "modeling-runs" / "source-run"
+    source_root.mkdir(parents=True)
+    (source_root / "state.json").write_text(
+        json.dumps({"state": "READ_ONLY_WAIT"}), encoding="utf-8"
+    )
+    args = Namespace(
+        run_id="source-run",
+        new_run_id="acceptance-run",
+        checkpoint_id="explicit-production-handoff",
+        base_url="http://unused.invalid",
+        authorization_reference="test-authorization",
+    )
+    integrity_error = CheckpointError(
+        "acceptance_binding_changed", "checkpoint baseline binding changed",
+        obj="model_revisions", retryable=False,
+    )
+    # Bound the successful preflight at preparation, before acceptance execution.
+    preparation_stop = CheckpointError(
+        "test_preparation_stop", "preparation reached", obj=args.checkpoint_id,
+    )
+    readback = object()
+    preflight = Mock(side_effect=integrity_error if reject_integrity else None)
+    prepare = Mock(side_effect=preparation_stop)
+    lock = Mock()
+    acquire_lock = Mock(return_value=lock)
+    standby = Mock()
+    monkeypatch.delenv("ONTOLOGY_PLATFORM_ADMIN_API_KEY", raising=False)
+    monkeypatch.setattr(cli, "checkpoint_root_run_id", Mock(return_value=args.run_id))
+    monkeypatch.setattr(cli, "http_readback", Mock(return_value=readback))
+    monkeypatch.setattr(cli, "source_safe_for_acceptance", preflight)
+    monkeypatch.setattr(cli, "prepare_acceptance_continuation", prepare)
+    monkeypatch.setattr(cli, "acquire_acceptance_lock", acquire_lock)
+    monkeypatch.setattr(cli, "acquire_root_run_lock", Mock(side_effect=AssertionError("live source")))
+    monkeypatch.setattr(host_ops, "standby_run", standby)
+    monkeypatch.setattr(host_ops, "get_request_result", Mock(return_value={"outcome": "accepted"}))
+
+    assert cli._run_checkpoint_resume_acceptance(args, tmp_path) == 2
+    standby.assert_called_once()
+    request_id = standby.call_args.kwargs["request_id"]
+    preflight.assert_called_once_with(
+        source_root, readback, request_id, args.run_id, checkpoint_id=args.checkpoint_id
+    )
+    output = capsys.readouterr()
+    assert output.out == ""
+    expected_error = integrity_error if reject_integrity else preparation_stop
+    assert json.loads(output.err.removeprefix("checkpoint failed: ")) == expected_error.data()
+    if reject_integrity:
+        prepare.assert_not_called()
+        acquire_lock.assert_not_called()
+    else:
+        prepare.assert_called_once_with(
+            source_run_root=source_root,
+            checkpoint_id=args.checkpoint_id,
+            new_run_id=args.new_run_id,
+            readback=readback,
+            authorization_reference=args.authorization_reference,
+            question_visibility="hidden",
+            live_source_request_id=request_id,
+        )
+        lock.release.assert_called_once_with()
+
 
 _RUN_CONTRACT = {
     "schema_version": "r3-0-011-run-contract/v1",

@@ -35,6 +35,31 @@ from modeling_team.tests.test_r3011_acceptance import _binding, _platform_packet
 TOKEN = "sink-token"
 
 
+@pytest.mark.parametrize("role", [None, "platform-examiner", "acceptance"])
+def test_public_report_ref_validation_remains_strict(role):
+    from modeling_team import report_sink_mcp as bridge
+
+    def validate(payload):
+        if role:
+            return bridge._validate_batch_payload(
+                payload, kind="platform" if role == "platform-examiner" else "acceptance",
+                role=role, batch_id="batch", question_ids=["cq-1"],
+            )
+        return bridge._validate_payload(payload, kind="platform")
+
+    for ref in ({"material_id": "opaque"}, {"material_id": "opaque", "path": "report.json"}):
+        assert validate({"report_ref": ref}) == {"report_ref": ref}
+    for ref in (None, [], {}, {"material_id": ""}, {"material_id": 1},
+                {"material_id": "opaque", "path": None},
+                {"material_id": "opaque", "path": ""},
+                {"material_id": "opaque", "hidden_evidence": "guessed"}):
+        with pytest.raises(ValueError):
+            validate({"report_ref": ref})
+    for field in ("answer", "question_id", "model_state", "source_bundle_digest", "evidence_refs"):
+        with pytest.raises(ValueError, match="cannot be mixed"):
+            validate({"report_ref": {"material_id": "opaque"}, field: "guessed"})
+
+
 # --- fixtures -----------------------------------------------------------------
 
 

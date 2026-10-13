@@ -81,6 +81,13 @@ effect, and request a new independent read/acceptance. Do not write model
 candidates, apply platform changes, alter a Judge verdict, or treat a local
 self-check as semantic acceptance.
 
+Copy the configured repair executor, model ID and effort exactly from the
+approved session binding; the production model binding is a separate choice.
+Do not probe aliases or alternate triples after a binding rejection. If the
+exact binding is unavailable, request that configuration fact from Host once.
+Repair task `owned_paths` must list existing regular files, not directories;
+narrow the list to the files required by the observed defect.
+
 For an issue-linked repair, copy `issue_id`, `reporter_id`, and `control_epoch`
 from the current `get_pending_actions` binding. Pass `issue_id` to `start_repair`
 so its verification can support `resolve_issue(repair_completed)`; that

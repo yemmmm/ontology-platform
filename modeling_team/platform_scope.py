@@ -657,10 +657,13 @@ class PlatformScope:
         terminal = self._work_terminal_state(session_ids or [])
         if terminal.get("cleanup_blocker") or terminal.get("success_blocker"):
             raise PlatformScopeError(str(terminal))
-        evidence = {"project_id": self.project_id, "ontology_ids": list(self.ontology_ids),
+        ontology_ids = self.ontology_ids or ([self.ontology_id] if self.ontology_id else [])
+        if not ontology_ids:
+            raise PlatformScopeError("scope Ontology identity is unavailable")
+        evidence = {"project_id": self.project_id, "ontology_ids": list(ontology_ids),
                     "terminal": terminal, "resources_retained": True}
         evidence["model_revisions"] = {ontology_id: self._single_ontology_context(ontology_id).get("model_revision")
-                                       for ontology_id in self.ontology_ids}
+                                       for ontology_id in ontology_ids}
         if any(revision is None for revision in evidence["model_revisions"].values()):
             raise PlatformScopeError("model revision readback is unavailable")
         keys = (self.protocol_key_id, self.protocol_key, self.admin_key_id, self.admin_key)
@@ -688,11 +691,12 @@ class PlatformScope:
             raise PlatformScopeError("work Build Session identity is malformed")
         identities = set(session_ids)
         identities.update(item["id"] for item in summaries)
+        ontology_ids = self.ontology_ids or ([self.ontology_id] if self.ontology_id else [])
         observed = []
         for identity in sorted(identities):
             detail = self._ok("GET", f"/api/build-sessions/{identity}")
             involved = set(detail.get("involved_ontology_ids", []))
-            if not involved.intersection(self.ontology_ids) and identity not in session_ids:
+            if not involved.intersection(ontology_ids) and identity not in session_ids:
                 continue
             session = detail.get("session", {})
             if session.get("project_id") != self.project_id:

@@ -35,6 +35,36 @@ BUSINESS_INPUTS = (
 )
 
 
+@pytest.mark.parametrize("kind,role", [
+    ("source", None), ("platform", None), ("acceptance", None),
+    ("platform", "platform-examiner"), ("acceptance", "acceptance"),
+])
+def test_public_report_manifest_has_provider_object_root_and_strict_alternatives(kind, role):
+    from copy import deepcopy
+    from modeling_team import report_sink_mcp as bridge
+
+    specs = bridge.native_report_tool_specs(kind, v3_batch=role is not None, role=role)
+    assert all(spec["inputSchema"].get("type") == "object" for spec in specs)
+    schema = specs[0]["inputSchema"]
+    original = (bridge._v3_batch_report_schema(platform=role == "platform-examiner")
+                if role else bridge.report_schema(kind))
+    full = deepcopy(original)
+    reference = full["properties"].pop("report_ref")
+    # The provider root must not alter either strict branch or expose Host
+    # evidence/bindings through the convenience properties projection.
+    assert schema["oneOf"] == [full, {
+        "type": "object", "required": ["report_ref"], "additionalProperties": False,
+        "properties": {"report_ref": reference},
+    }]
+    assert schema["properties"] == original["properties"]
+    assert reference == {
+        **reference, "type": "object", "required": ["material_id"],
+        "additionalProperties": False,
+        "properties": {"material_id": {"type": "string", "minLength": 1},
+                       "path": {"type": "string", "minLength": 1}},
+    }
+
+
 # --- M1: the 011 selector loads the 011 Profile plus the real staged task -----
 
 

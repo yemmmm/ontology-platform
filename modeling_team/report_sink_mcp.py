@@ -159,6 +159,7 @@ def _reference_aware_schema(schema: Mapping[str, Any]) -> dict[str, Any]:
     visible_properties = dict(full.get("properties", {})) if isinstance(full.get("properties"), dict) else {}
     visible_properties["report_ref"] = dict(reference)
     return {
+        "type": "object",
         "oneOf": [full, ref_object],
         # Keep the property visible to simple manifest consumers which do not
         # traverse oneOf, while the oneOf branches remain the actual contract.
