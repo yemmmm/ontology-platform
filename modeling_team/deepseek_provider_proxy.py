@@ -737,10 +737,14 @@ class ResponsesProviderSession:
                     "Content-Length": str(len(body)),
                 },
             )
-            response = connection.getresponse()
+            # request() establishes TCP/TLS with connect_timeout.  Apply the
+            # read timeout before waiting for headers, which can be delayed by
+            # reasoning.  getresponse() also detaches Connection: close sockets,
+            # so setting the timeout afterwards can miss the body socket too.
             response_socket = getattr(connection, "sock", None)
             if response_socket is not None:
                 response_socket.settimeout(self.read_timeout)
+            response = connection.getresponse()
             safe_headers = {
                 name.casefold(): value
                 for name, value in response.getheaders()

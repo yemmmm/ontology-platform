@@ -264,3 +264,158 @@ def test_provider_session_read_timeout_default_is_calibrated_above_watchdog() ->
         assert proxy.read_timeout == 1250.0
     finally:
         proxy.stop()
+
+
+def _provider_timeout_probe(
+    *, scheme: str = "https", header_delay: float = 30.0,
+    body_delay: float = 45.0, read_timeout: float = 1250.0,
+    connect_fails: bool = False,
+) -> tuple[int, bytes, dict]:
+    """Exercise the real POST handler with a deterministic, socket-free upstream.
+
+    The real http.client connection/response enforce configured timeouts through
+    an in-memory socket, including Connection: close socket detachment.
+    No provider, business data, or credential file is accessed.
+    """
+    import io
+    from types import SimpleNamespace
+    from unittest.mock import patch
+
+    from modeling_team.deepseek_provider_proxy import _SessionHandler
+
+    observed = {}
+
+    class TimeoutFile(io.BytesIO):
+        def __init__(self, sock):
+            super().__init__(
+                b"HTTP/1.1 200 OK\r\nContent-Type: application/json\r\n"
+                b"Content-Length: 2\r\nConnection: close\r\n\r\n{}"
+            )
+            self.sock = sock
+            self.headers_complete = False
+
+        def readline(self, size=-1):
+            if self.tell() == 0:
+                observed["header_timeout"] = self.sock.timeout
+                if header_delay > self.sock.timeout:
+                    raise TimeoutError("synthetic header timeout")
+            if self.headers_complete:
+                observed["body_timeout"] = self.sock.timeout
+                if body_delay > self.sock.timeout:
+                    raise TimeoutError("synthetic body timeout")
+            line = super().readline(size)
+            if line == b"\r\n":
+                self.headers_complete = True
+            return line
+
+        def close(self):
+            observed["response_closed"] = True
+            super().close()
+
+    class TimeoutSocket:
+        def __init__(self, timeout):
+            self.timeout = timeout
+
+        def settimeout(self, timeout):
+            self.timeout = timeout
+
+        def sendall(self, payload):
+            if payload.startswith(b"POST "):
+                request_line = payload.split(b"\r\n", 1)[0].decode().split()
+                observed["request_line"] = tuple(request_line[:2])
+                assert b"Content-Length: " + str(len(body)).encode() in payload
+            else:
+                observed["request"] = (*observed["request_line"], payload)
+
+        def makefile(self, mode):
+            assert mode == "rb"
+            return TimeoutFile(self)
+
+        def close(self):
+            observed["connection_closed"] = True
+
+    def connect(connection):
+        observed["connects"] = observed.get("connects", 0) + 1
+        observed["connect_timeout"] = connection.timeout
+        if connect_fails:
+            raise TimeoutError("synthetic connect timeout")
+        connection.sock = TimeoutSocket(connection.timeout)
+
+    session = ResponsesProviderSession(
+        b"synthetic-only", upstream_url=(
+            "https://api.deepseek.com/responses" if scheme == "https"
+            else "http://127.0.0.1:1/responses"
+        ), connect_timeout=15.0, read_timeout=read_timeout, max_upstream_attempts=1,
+    )
+    body = b'{"model":"deepseek-v4-flash","reasoning":{"effort":"high"}}'
+    handler = object.__new__(_SessionHandler)
+    handler.server = SimpleNamespace(session=session)
+    handler.path = "/responses"
+    handler.headers = {"Content-Type": "application/json", "Content-Length": str(len(body))}
+    handler.rfile = io.BytesIO(body)
+    handler.wfile = io.BytesIO()
+    handler.send_response = lambda status: observed.update(local_status=status)
+    handler.send_header = lambda *_args: None
+    handler.end_headers = lambda: None
+    connection_type = http.client.HTTPSConnection if scheme == "https" else http.client.HTTPConnection
+    try:
+        with patch.object(connection_type, "connect", connect):
+            handler.do_POST()
+        observed["counts"] = session.snapshot()
+        return observed["local_status"], handler.wfile.getvalue(), observed
+    finally:
+        session.stop()
+
+
+def test_provider_timeout_covers_response_headers_without_changing_request() -> None:
+    for scheme in ("https", "http"):
+        status, body, observed = _provider_timeout_probe(scheme=scheme)
+        assert status == 200
+        assert body == b"{}"
+        assert observed["connect_timeout"] == 15.0
+        assert observed["header_timeout"] == 1250.0
+        assert observed["connects"] == 1
+        assert observed["request"] == (
+            "POST", "/responses",
+            b'{"model":"deepseek-v4-flash","reasoning":{"effort":"high"}}',
+        )
+        assert observed["counts"]["upstream_errors"] == 0
+        assert observed["counts"]["upstream_retries"] == 0
+
+
+def test_provider_timeout_survives_connection_close_socket_detachment() -> None:
+    status, body, observed = _provider_timeout_probe(header_delay=0.0)
+    assert status == 200
+    assert body == b"{}"
+    assert observed["body_timeout"] == 1250.0
+    assert observed["response_closed"] is True
+    assert observed["counts"]["upstream_errors"] == 0
+
+
+def test_provider_timeout_keeps_connection_setup_bounded() -> None:
+    status, body, observed = _provider_timeout_probe(connect_fails=True)
+    assert status == 502
+    assert body == b""
+    assert observed["connect_timeout"] == 15.0
+    assert "header_timeout" not in observed
+    assert "request" not in observed
+    assert observed["counts"]["upstream_errors"] == 1
+
+
+def test_provider_timeout_still_rejects_headers_beyond_read_deadline() -> None:
+    status, body, observed = _provider_timeout_probe(read_timeout=20.0)
+    assert status == 502
+    assert body == b""
+    assert observed["header_timeout"] == 20.0
+    assert observed["connection_closed"] is True
+    assert observed["counts"]["upstream_errors"] == 1
+
+
+def test_provider_timeout_still_counts_broken_body_without_replaying() -> None:
+    status, body, observed = _provider_timeout_probe(header_delay=0.0, read_timeout=20.0)
+    assert status == 200  # Headers already sent; the partial stream cannot be replayed.
+    assert body == b""
+    assert observed["body_timeout"] == 20.0
+    assert observed["response_closed"] is True
+    assert observed["counts"]["upstream_errors"] == 1
+    assert observed["counts"]["upstream_retries"] == 0
