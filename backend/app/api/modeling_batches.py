@@ -123,6 +123,8 @@ def get_modeling_context(ontology_id: str, service: ModelingBatchService = Depen
 READ_MODEL_NAMES = {
     "classes": "ontology-schema-summary",
     "entities": "entity-list",
+    "entity-list": "entity-list",
+    "entity-detail": "entity-detail",
     "facts": "statement-list",
     # R4.0-010 keeps the exact list/detail model names available through the
     # Ontology read-model adapter used by the MCP surface as well as REST.

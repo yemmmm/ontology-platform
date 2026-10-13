@@ -81,6 +81,17 @@ effect, and request a new independent read/acceptance. Do not write model
 candidates, apply platform changes, alter a Judge verdict, or treat a local
 self-check as semantic acceptance.
 
+For an issue-linked repair, copy `issue_id`, `reporter_id`, and `control_epoch`
+from the current `get_pending_actions` binding. Pass `issue_id` to `start_repair`
+so its verification can support `resolve_issue(repair_completed)`; that
+resolution also needs the exact verified result path as
+`verification_reference`. Every `resolve_issue` call requires `control_epoch`.
+For a recoverable guidance resolution, send `resolution_text` without repair
+fields. Keep resolution text free of credential names and secret-like markers;
+reference the retained verification artifact instead of copying credentials or
+environment variable names into the Runner message. Check the Runner request
+result before claiming that an accepted submission resumed the original role.
+
 
 ## Unified conversation and retained Team (R4.2-008 / R4.0-028)
 

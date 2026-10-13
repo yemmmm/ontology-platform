@@ -394,7 +394,7 @@ uv run python ../scripts/sync-interface-docs.py --write
 | modeling batches | `GET` | `/api/modeling-batches/{batch_id}` | Get Modeling Batch |
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/modeling-batches` | List Ontology Modeling Batches |
 | modeling batches | `GET` | `/api/ontologies/{ontology_id}/modeling-context` | Get Modeling Context |
-| modeling batches | `GET` | `/api/ontologies/{ontology_id}/semantic-read-models/{model_name}` | Get Ontology Read Model |
+| modeling batches | `GET` | `/api/ontologies/{ontology_id}/semantic-read-models/{model_name}` | Get Ontology Read Model; exact `entity-list` and `entity-detail` names are supported alongside the existing `entities` alias |
 | modeling batches | `POST` | `/api/build-sessions/{session_id}/modeling-batches` | Submit Modeling Batch |
 | modeling workbench | `GET` | `/api/projects/{project_id}/workbench` | Workbench |
 | modeling workbench | `GET` | `/api/projects/{project_id}/workbench/runs/{team_run_id}` | Workbench Run |

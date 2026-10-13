@@ -30,6 +30,16 @@ from fastapi.testclient import TestClient
 from uuid import uuid4
 
 
+@pytest.fixture(autouse=True)
+def isolated_semantic_service_environment(monkeypatch):
+    """Override local .env credentials and feature flags for each test.
+
+    Feature tests must opt in explicitly and mock external service calls.
+    """
+    monkeypatch.setenv("EMBEDDING_API_KEY", "")
+    monkeypatch.setenv("SEMANTIC_JEV_ENABLED", "false")
+
+
 @compiles(JSONB, "sqlite")
 def _compile_jsonb_for_sqlite(element, compiler, **kw):  # noqa: ARG001
     return "JSON"
