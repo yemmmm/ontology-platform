@@ -13,6 +13,7 @@ from typing import Any
 from app.core.config import Settings
 from app.services.semantic_context_adaptive import ADAPTIVE_CONFIG, ADAPTIVE_VERSION
 from app.services.semantic_context_cursor import ContextCursorCodec
+from app.services.semantic_jev import RELATED_CONTEXT_CONFIG, RELATED_CONTEXT_VERSION
 
 
 def context_query_capabilities(settings: Settings) -> dict[str, Any]:
@@ -67,6 +68,15 @@ def context_query_capabilities(settings: Settings) -> dict[str, Any]:
                 "applies_within": ["authorized_query_scope", "current_match_page"],
             },
             "business_completeness": False,
+        },
+        "context_order": {
+            "default": "relevance", "choices": ["relevance", "graph_distance"],
+            "iri_effective": "graph_distance", "version": RELATED_CONTEXT_VERSION,
+            "config": dict(RELATED_CONTEXT_CONFIG),
+            "ranking_scope": "current_match_page_bounded_context",
+            "sort_before_paging": True, "additional_filtering": False,
+            "statuses": ["applied", "degraded", "not_requested"],
+            "frozen_strategies": ["fixed", "adaptive"],
         },
         "context_detail": {
             "rest_default": "full", "mcp_default": "compact",

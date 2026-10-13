@@ -78,6 +78,8 @@ def test_context_query_rest_returns_no_match_and_public_scope(in_memory_session)
     assert body["result_status"] == "no_match"
     assert body["query"]["expansion_strategy"] == "adaptive"
     assert body["query"]["depth"] == 3
+    assert body["query"]["context_order"] == "relevance"
+    assert body["context_page"]["ranking"]["status"] == "not_requested"
     assert body["scope"]["ontologies"][0]["ontology_id"] == "o"
     assert "graph_set" not in str(body)
     assert "graph_iri" not in str(body)
@@ -85,7 +87,8 @@ def test_context_query_rest_returns_no_match_and_public_scope(in_memory_session)
 
 @pytest.mark.parametrize(
     ("extra", "expected_strategy"),
-    [({}, "adaptive"), ({"expansion_strategy": "fixed"}, "fixed")],
+    [({}, "adaptive"), ({"expansion_strategy": "fixed"}, "fixed"),
+     ({"context_order": "graph_distance"}, "adaptive")],
 )
 def test_context_query_rest_forwards_strategy_and_optional_depth(
     in_memory_session, monkeypatch, extra, expected_strategy
@@ -112,6 +115,7 @@ def test_context_query_rest_forwards_strategy_and_optional_depth(
     )
 
     assert response.status_code == 200, response.text
+    assert captured["context_order"] == extra.get("context_order", "relevance")
     assert captured["expansion_strategy"] == expected_strategy
     assert captured["depth"] is None
 
@@ -485,6 +489,7 @@ def test_context_query_rest_reuses_default_ephemeral_cursor_across_requests(
         "ontology_ids": ["o"],
         "query": "workflow",
         "expansion_strategy": "fixed",
+        "context_order": "graph_distance",
         "resource_types": ["concept"],
         "depth": 0,
         "limit": 1,

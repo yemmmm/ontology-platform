@@ -116,7 +116,7 @@ def test_type_paths_and_shared_adjacency_keep_root_distances(context):
         return original(text, **kwargs)
     service.rdf_store.query_sparql = tracked
     cached = query(['start'], depth=3, context_limit=100, context_detail='preview',
-                   expansion_strategy='fixed')
+                   expansion_strategy='fixed', context_order='graph_distance')
     cached_calls = len(calls)
     calls.clear()
     original_chunks = service._neighborhood_chunks
@@ -125,7 +125,7 @@ def test_type_paths_and_shared_adjacency_keep_root_distances(context):
         yield from original_chunks(scope, frontier)
     service._neighborhood_chunks = uncached
     baseline = query(['start'], depth=3, context_limit=100, context_detail='preview',
-                     expansion_strategy='fixed')
+                     expansion_strategy='fixed', context_order='graph_distance')
     assert cached == baseline
     assert cached_calls < len(calls)
     other_row = next(row for row in cached['related_context'] if row['id'] == str(other))

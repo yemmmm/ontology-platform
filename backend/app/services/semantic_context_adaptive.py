@@ -326,6 +326,10 @@ class AdaptiveContextExpansion:
                 if ((data.get("subject") or data.get("source_iri")) in kept_iris
                         and (data.get("object") or data.get("target_iri")) in kept_iris):
                     self.retained[key].add("connection")
+        service._context_material = {
+            self.key(root): {key: copy.deepcopy(self.items[key]) for key in self.retained}
+            for root in self.roots
+        }
         primary_keys = {self.key(root) for root in self.roots}
         paths = self.selected_paths()
         rows = []

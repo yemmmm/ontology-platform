@@ -105,8 +105,8 @@ def test_cursor_v4_round_trip_preserves_context_snapshot_id():
     token = codec.encode(payload)
     decoded = codec.decode(token, binding=binding, expected_kind=CURSOR_KIND_CONTEXT)
 
-    assert codec.capabilities["version"] == 4
-    assert decoded.version == 4
+    assert codec.capabilities["version"] == 5
+    assert decoded.version == 5
     assert decoded.context_snapshot_id == "context-snapshot-1"
 
 

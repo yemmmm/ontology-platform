@@ -31,7 +31,11 @@ def context(original_context, monkeypatch):  # noqa: F811
     service.settings.semantic_jev_api_key = "independent-test-only"
     monkeypatch.setattr(JevReranker, "score", lambda self, queries, items, **kwargs:
                         ([2.0] * len(items), "test-model"))
-    yield service, graph, declare, query, vocab
+    def existing_contract_query(queries, **kwargs):
+        kwargs.setdefault("context_order", "graph_distance")
+        return query(queries, **kwargs)
+
+    yield service, graph, declare, existing_contract_query, vocab
     semantic_jev._SNAPSHOTS.clear()
 
 

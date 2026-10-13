@@ -2,7 +2,8 @@
 
 R1.2-004 cursors carry only the minimum continuation keys and a binding
 fingerprint. They never carry raw query text. A configured stable signing
-secret makes cursors survive process restart; without one, the codec
+secret preserves signature validation across process restart; frozen ranking/context
+snapshots remain process-local and require a new query after restart. Without a secret, the codec
 derives a process-local ephemeral key and advertises that limitation via
 ``ContextCursorCodec.capabilities``. Rotation or restart then invalidates
 outstanding cursors as ``invalid_context_cursor`` rather than resuming
@@ -24,7 +25,7 @@ from app.core.config import Settings
 from app.security.auth import AuthPrincipal
 
 
-CURSOR_VERSION = 4
+CURSOR_VERSION = 5
 CURSOR_KIND_MATCH = "match"
 CURSOR_KIND_CONTEXT = "context"
 CURSOR_KINDS = (CURSOR_KIND_MATCH, CURSOR_KIND_CONTEXT)
@@ -81,6 +82,8 @@ class CursorBinding:
     expansion_strategy: str = "fixed"
     context_detail: str = "full"
     selection_config_digest: str = ""
+    context_order: str = "graph_distance"
+    context_ranking_config_digest: str = ""
 
 
 @dataclass(frozen=True)
@@ -107,8 +110,8 @@ class ContextCursorCodec:
     """Sign and verify Context Query cursors.
 
     The codec is process-local by default. Configure
-    ``semantic_context_query_cursor_signing_secret`` for stable cursors that
-    survive restart.
+    ``semantic_context_query_cursor_signing_secret`` for signatures that
+    survive restart. Process-local snapshots do not survive restart.
     """
 
     secret: str
@@ -176,7 +179,7 @@ class ContextCursorCodec:
         except (ValueError, UnicodeDecodeError) as exc:
             raise ContextCursorInvalid("Cursor payload is malformed") from exc
         if payload.get("v") != CURSOR_VERSION:
-            raise ContextCursorInvalid("Cursor version is unsupported")
+            raise ContextCursorInvalid("Cursor version is unsupported; restart the query without a cursor")
         kind = payload.get("k")
         if kind not in CURSOR_KINDS:
             raise ContextCursorInvalid("Cursor kind is unsupported")
@@ -245,6 +248,8 @@ def make_binding(
     expansion_strategy: str = "fixed",
     context_detail: str = "full",
     selection_config_digest: str = "",
+    context_order: str = "graph_distance",
+    context_ranking_config_digest: str = "",
 ) -> CursorBinding:
     return CursorBinding(
         principal=principal,
@@ -264,6 +269,8 @@ def make_binding(
         expansion_strategy=expansion_strategy,
         context_detail=context_detail,
         selection_config_digest=selection_config_digest,
+        context_order=context_order,
+        context_ranking_config_digest=context_ranking_config_digest,
     )
 
 
@@ -296,6 +303,8 @@ def binding_digest(binding: CursorBinding) -> str:
         "expansion_strategy": binding.expansion_strategy,
         "context_detail": binding.context_detail,
         "selection_config_digest": binding.selection_config_digest,
+        "context_order": binding.context_order,
+        "context_ranking_config_digest": binding.context_ranking_config_digest,
     }
     raw = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
     return hashlib.sha256(raw).hexdigest()

@@ -418,8 +418,8 @@ def test_cycle_and_overlapping_roots_keep_shortest_root_paths(context):
                    expansion_strategy="fixed")
     shared_row = next(row for row in result["related_context"] if row["iri"] == str(shared))
     assert shared_row["root_paths"] == [
-        {"root_match_id": str(first), "graph_distance": 1},
-        {"root_match_id": str(second), "graph_distance": 1},
+        {"root_match_id": str(first), "root_ontology_id": "ontology-1", "graph_distance": 1},
+        {"root_match_id": str(second), "root_ontology_id": "ontology-1", "graph_distance": 1},
     ]
     assert len(result["related_context"]) == len(
         {identity(row) for row in result["related_context"]}

@@ -20,7 +20,11 @@ def context(original_context):  # noqa: F811
     service, graph, declare, query, vocab = original_context
     service.settings.semantic_jev_enabled = True
     service.settings.semantic_jev_api_key = "test-only"
-    yield service, graph, declare, query, vocab
+    def existing_contract_query(queries, **kwargs):
+        kwargs.setdefault("context_order", "graph_distance")
+        return query(queries, **kwargs)
+
+    yield service, graph, declare, existing_contract_query, vocab
     semantic_jev._SNAPSHOTS.clear()
 
 

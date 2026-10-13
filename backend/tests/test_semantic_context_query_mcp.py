@@ -420,6 +420,7 @@ def test_mcp_context_cursor_survives_service_recreation_and_keeps_bindings(
         "ontology_ids": ["o"],
         "query": "topic",
         "expansion_strategy": "fixed",
+        "context_order": "graph_distance",
         "resource_types": ["instance"],
         "depth": 0,
         "limit": 1,
@@ -490,3 +491,25 @@ def test_r4008_mcp_roles_are_forwarded_and_discoverable(scoped_mcp, monkeypatch)
     assert seen["context_detail"] == "compact"
     tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
     assert "semantic_roles" in tools["query_semantic_context"].inputSchema["properties"]
+
+
+@pytest.mark.parametrize("order", ["relevance", "graph_distance"])
+def test_r4318_mcp_context_order_contract(scoped_mcp, monkeypatch, order):
+    seen = {}
+
+    class Service:
+        def query_multi(self, **arguments):
+            seen.update(arguments)
+            return {"result_status": "no_match"}
+
+    monkeypatch.setattr("app.mcp.tools.semantic._context_query_service", lambda *args: Service())
+    result = asyncio.run(_tool("query_semantic_context").run({
+        "project_id": "p", "scope_mode": "ontologies", "ontology_ids": ["o"],
+        "queries": ["example"], "context_order": order,
+    }))
+    assert result["ok"] is True
+    assert seen["context_order"] == order
+    tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
+    field = tools["query_semantic_context"].inputSchema["properties"]["context_order"]
+    assert field["default"] == "relevance"
+    assert field["enum"] == ["relevance", "graph_distance"]

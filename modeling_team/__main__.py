@@ -1309,26 +1309,24 @@ def _cq_mask_reissued_ranking_cache_hit(value: object) -> object:
     newly computed or read from the same ranking snapshot.  That transport
     detail changes between the first read and an authorized replay, while the
     ranking payload and semantic response remain the same.  Limit the mask to
-    the exact ``recall.ranking.cache_hit`` slot in this tool's bare payload or
-    API ``data`` envelope; same-named business fields remain semantic content.
+    the exact ``recall.ranking.cache_hit`` and ``context_page.ranking.snapshot_reused``
+    slots in this tool's bare payload or API ``data`` envelope; same-named business
+    fields remain semantic content.
     """
 
     if not isinstance(value, dict):
         return value
     enveloped = isinstance(value.get("data"), dict)
     payload = value["data"] if enveloped else value
-    recall = payload.get("recall")
-    if not isinstance(recall, dict):
-        return value
-    ranking = recall.get("ranking")
-    if not isinstance(ranking, dict):
-        return value
-    cache_hit = ranking.get("cache_hit")
-    if not isinstance(cache_hit, bool):
-        return value
-    masked_ranking = {**ranking, "cache_hit": _CQ_REISSUED_CACHE_HIT_MARKER}
-    masked_recall = {**recall, "ranking": masked_ranking}
-    masked = {**payload, "recall": masked_recall}
+    masked = dict(payload)
+    for page, flag in (("recall", "cache_hit"), ("context_page", "snapshot_reused")):
+        container = payload.get(page)
+        if not isinstance(container, dict):
+            continue
+        ranking = container.get("ranking")
+        if not isinstance(ranking, dict) or not isinstance(ranking.get(flag), bool):
+            continue
+        masked[page] = {**container, "ranking": {**ranking, flag: _CQ_REISSUED_CACHE_HIT_MARKER}}
     return {**value, "data": masked} if enveloped else masked
 
 

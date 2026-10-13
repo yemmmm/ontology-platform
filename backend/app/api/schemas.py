@@ -620,6 +620,7 @@ class SemanticContextQueryRequest(SemanticQueryScopeRequest):
     semantic_roles: list[str] | None = Field(default=None, min_length=1)
     search_mode: Literal["hybrid", "lexical"] = "hybrid"
     expansion_strategy: Literal["adaptive", "fixed"] = "adaptive"
+    context_order: Literal["relevance", "graph_distance"] = "relevance"
     depth: int | None = Field(default=None, ge=0, le=3)
     limit: int = Field(default=20, ge=1, le=100)
     context_limit: int = Field(default=100, ge=0, le=1000)

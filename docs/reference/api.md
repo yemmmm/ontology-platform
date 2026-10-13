@@ -191,10 +191,33 @@ R4.3-017 为自然语言 Context Query 增加 `expansion_strategy`：缺省为 `
 adaptive 的 complete 只表示当前授权主命中页的 selected subgraph，fixed 只表示 requested depth，
 两者都不代表业务答案完整。
 
-R4.3-017 起 Context Query cursor 为 v4；context cursor 的签名 payload 含服务端 opaque 的
-`context_snapshot_id`，并绑定实际策略、解析后深度、`context_detail` 与选择配置摘要。旧 v3
+R4.3-018 起 Context Query cursor 为 v5；context cursor 的签名 payload 含服务端 opaque 的
+`context_snapshot_id`，并绑定实际策略、解析后深度、`context_detail` 与选择配置摘要。旧 v4 及更早版本
 token 按 `invalid_context_cursor` 重新首查；权限、模型修订、检索或选择配置变化时不能在旧 cursor
 下重新选择或补做探索。
+
+R4.3-018 增加 `context_order=relevance|graph_distance`，自然语言缺省 relevance，独立于
+扩展策略；精确 IRI 的解析顺序为 graph_distance，不调用周边评分。对当前根页已取得、
+获准且输出筛选合格的周边先合并去重，完整候选各评一次，再按分数降序（同分用原完整
+稳定键）排序和分页；0 分也保留，不新增淘汰。完整业务值、条件、例外、未知及真实路径
+用于评分，路径只解释当前候选的贡献；preview 不返回完整评分材料。
+`related_context[*].relevance` 在 full／compact／preview 都保留 `relevance_score`、
+`relevance_scale=[0,3]`、实际 `relevance_model`、`relevance_version=jev-evidence-relevance-v1`
+与 `relevance_status=scored|unavailable|not_requested`。`context_page.ranking` 独立于主命中／探索，
+声明 requested_order／effective_order、status=applied|degraded|not_requested、
+version=related-context-relevance-v1、score_version／score_scale、model、reason、candidate_count／
+scored_count、filtered_count（恒0）、elapsed_seconds 和 snapshot_reused；ranking_scope 为
+current_match_page_bounded_context。applied 不证明业务完整或未探索内容更差。
+每根页最多评分512个候选；超过上限仍返回完整原集合。主命中、探索、周边共享默认15秒
+Jev额度，周边另受入口起30秒软截止；单问题／批次为30000／60000 UTF-8字节，不截条件。
+评分关闭、超时、输入过大、无效结果、完整值读取故障或模型漂移时整集合沿旧序，全部
+分数null／unavailable，带 context_ranking_degraded；空集合／不展开／显式旧序为not_requested。
+两种扩展的 relevance（含降级）均冻结完整集合及排名；context续页不召回、扩图或评分。
+排序与配置、根页、投影、主体、授权、源修订和索引绑定cursor v5；快照过期、淘汰、重启
+或配置变化须无cursor首查。稳定签名不使进程内快照跨重启存活。新增可见／撤权按原409
+context_snapshot_changed；纯隐藏变化不产生公开失效信号，核验依赖失败沿可重试错误。
+评分故障不会绕过授权或源修订核验。snapshot_reused仅为重放可归一化的运行字段，
+业务data内同名字段和实际分数／顺序仍须逐值比较。真实效果仍待独立同集对照及业务验收。
 
 R4.0-008 在同一入口增加可选 `semantic_roles`：非空字符串列表，trim、去重，按已声明的
 `data.semantic_definition.semantic_role` 精确且区分大小写匹配，多值 OR；与资源／断言筛选取
@@ -264,7 +287,7 @@ compact 保留普通业务解释、身份和 statement 信息；R4.0-025 不再�
 超出窗口时 `recall.completeness=degraded`，warning 为 `candidate_window_incomplete`。
 
 所有授权在计额、遍历和投影前应用，不返回隐藏资源占位、数量或授权缺口提示；缺关联不能推导
-“无规则／允许执行”。cursor 格式现为 v4，旧临时 token 按 invalid 合同失效。context cursor
+“无规则／允许执行”。cursor 格式现为 v5，旧临时 token 按 invalid 合同失效。context cursor
 独立恢复原匹配页，响应继续提供该页后继的 match cursor；续页绑定角色筛选，并校验当前可见
 候选／上下文摘要。保护成员变化影响可见结果时返回 snapshot_changed，隐藏集合变化不单独
 失效。输出前复核已绑定 Ontology 的 workspace／source 版本，避免混读。

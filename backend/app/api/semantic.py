@@ -355,6 +355,7 @@ def query_semantic_context(
             semantic_roles=request.semantic_roles,
             search_mode=request.search_mode,
             expansion_strategy=request.expansion_strategy,
+            context_order=request.context_order,
             depth=request.depth,
             limit=request.limit,
             context_limit=request.context_limit,

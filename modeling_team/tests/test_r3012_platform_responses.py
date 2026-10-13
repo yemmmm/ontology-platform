@@ -1594,3 +1594,24 @@ def test_unmatched_refs_and_persistence_failures_surface_and_fail_closed(
         "receipt-unmatched",
     ]
     assert report["full_pass"] is False
+
+
+@pytest.mark.parametrize("envelope", [False, True])
+def test_r4318_only_exact_context_snapshot_flag_is_normalized(envelope):
+    retained = _ranking_response(cache_hit=False)
+    retained["context_page"]["ranking"] = {"snapshot_reused": False, "status": "applied"}
+    retained["related_context"] = [{"data": {"snapshot_reused": False},
+                                     "relevance": {"relevance_score": 2}}]
+    reread = json.loads(json.dumps(retained))
+    reread["context_page"]["ranking"]["snapshot_reused"] = True
+    first, second = (({"ok": True, "data": retained}, {"ok": True, "data": reread})
+                     if envelope else (retained, reread))
+    assert _recheck_status(first, second) == "stable"
+    reread["related_context"][0]["data"]["snapshot_reused"] = True
+    assert _recheck_status(first, second) == "drift"
+    reread["related_context"][0]["data"]["snapshot_reused"] = False
+    reread["related_context"][0]["relevance"]["relevance_score"] = 1
+    assert _recheck_status(first, second) == "drift"
+    reread["related_context"][0]["relevance"]["relevance_score"] = 2
+    reread["context_page"]["ranking"]["status"] = "degraded"
+    assert _recheck_status(first, second) == "drift"
