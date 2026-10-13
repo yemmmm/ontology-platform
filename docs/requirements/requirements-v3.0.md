@@ -911,6 +911,15 @@ R3.0-008B 的逻辑切片分析之后、Ontology 拓扑决策之前，必须执�
 
 ### R3.0-011 能力问题驱动建模与批次级语义验收
 
+2026-10-14 最近两次DeepSeek小链验证：A／B各自冻结7／6题，有效公开及隐藏报告
+同源、同freeze_digest／model_binding_digest，逐题原返回与registry一致，重放stable，
+无漂移／lifecycle error。原独立裁决A3/7、B5/6，均未完整通过；早期零报告及后续
+只读S4失败／恢复证据保留，不用零执行推导模型失败。结构事实与业务未知、Task排除
+SQL/API映射与若干冻结结构必答点之间仍有范围复核问题；本次只提出按既有
+question-answer-review路径复核，不改冻结、旧裁决或分母。两组资料补充／题池不同，
+且报告标non-blind-regression，不升级为L2／严格盲测。整体部分验证，当前归属与
+工程／真实边界见[复盘](../delivery/modeling-retrospectives/2026-10-14-deepseek-two-task-retrospective.md)。
+
 2026-10-13 有界复盘与简易修复增量：Luna的CQ审核snapshot只有content_version/digest，
 不存在可读取的snapshot revision；旧决策revision仅接受正整数。Host将其声明为必须
 从pending取得的绑定，实际阻断安全提交。本次保留旧wire字段为默认1的可选reviewer

@@ -1555,6 +1555,15 @@ A1—A9 已完成开发侧合同／功能验证，包含后端全量回归、Tea
 
 ### R4.0-009 多视角真实建模与独立语义验收
 
+**2026-10-14 两组小链验证追加**：deepseek-flash/high的A／B资产—故障—工单链分别
+应用24／20候选项、revision2／3；有效公开／隐藏报告同组冻结及模型绑定一致，逐题
+实际返回与保留原件一致、recheck稳定、无漂移。原独立裁决A3/7、B5/6，均未完整通过；
+不同题池／切片／测试补充不证明L2重复性。原首次验收零报告失败保留；本轮不改Judge
+裁决或冻结，结构依据与业务未知、Task范围与必答点的具体衔接仍待复核。整体继续
+PARTIAL／部分验证，不替代全场景A1—A12、映射与L2／L3。B第二轮增量已启动后被
+账户HTTP402阻塞，0新提交／写入；已用A1/3、B2/3，余2／1，不互借。
+范围、逐项定位及证据见[两组复盘](../delivery/modeling-retrospectives/2026-10-14-deepseek-two-task-retrospective.md)。
+
 **2026-10-13 晚间验证追加**：GLM Flash high任务S1初建/同run修模取得10次applied、
 14次dry-run和147资源/838 statements的受治理关联扫描；R4.0-024为生产有界自查证据，
 不替代独立业务验收。完整冻结30题，实际隐藏8题批次因300秒child-timeout产生0份
@@ -2701,6 +2710,12 @@ A1—A8 先做合同、行为及独立功能验证；A9 单独记录后续获准
 
 ### R4.0-015 建模过程中的早期公开业务问答反馈
 
+**2026-10-14 验证追加**：DeepSeek两组首链后反馈尝试存在，但首次零报告；修复后
+各3份公开答案实际completed、无缺题／漂移，全部晚于写入封口。因此本轮早期有效
+反馈条件验证未通过，原工程／独立功能PASS保留。冻结file stem、报告schema等窄修复
+已获晚期原入口复测，不证明下一轮早期组织成功；整体部分验证，见
+[复盘](../delivery/modeling-retrospectives/2026-10-14-deepseek-two-task-retrospective.md)。
+
 2026-10-13 关联验证追加：工程与历史独立功能结果保留；按R4.3-015增量已加载的
 FlashX任务，完整关系应用后仍没有早期公开问答operation／报告，**本次真实早期反馈
 行为验证未通过**。Luna未到模型应用，未触发不判失败；没有据此撤销既有工程结果或
@@ -2878,6 +2893,12 @@ R4.0-013；范围及入口核对归 R4.0-016，模型检索能力归 R4.0-008。
 不追加／消耗建模额度。原 stdout 异常尚未确定的根因继续保留，不能因本条登记改为已修复。
 
 ### R4.0-018 生产交接与同源检查点验收的启动衔接
+
+**2026-10-14 验证追加**：DeepSeek单Ontology源封口只保存复数identity，model_revisions
+为空，原S4拒绝；bc2d582修封口及CLI显式checkpoint接线，旧证据不改，沿digest校验
+production_handoff与实际撤钥／no-drift恢复只读资格。两组S4实际读取和四份独立裁决
+取得，原失败保留。该单Ontology路径有真实局部验证；整体仍部分验证，不覆盖全部
+生命周期／多Ontology反例。详见[复盘](../delivery/modeling-retrospectives/2026-10-14-deepseek-two-task-retrospective.md)。
 
 2026-10-13 关联增量：FlashX两次验收启动把Host的冻结batch ID当CLI snapshot文件stem，
 已存在冻结却报未冻结。本次已修同源快照解析/真实摘要消歧，stem调用兼容，错误摘要
@@ -3154,6 +3175,11 @@ Consumer／业务系统理解或执行。旧 Platform DSL／SPARQL CONSTRUCT 可
 宣称模型质量或完整语义验收 PASS。本条属于产品职责收敛，不作为下一次真实建模的启动前置。
 
 ### R4.0-023 独立 Delivery Agent 与统一用户交互
+
+**2026-10-14 验证追加**：两组DeepSeek任务由Delivery完成部分启动、进度交接、反馈
+尝试及封口，Root仍完成技术诊断／修复、S4接线和后续验收补位。A13本轮自主交付
+验证未通过，历史独立功能PASS保留，整体部分验证。最终有效语义报告的生成不覆盖
+外层补位事实；见[复盘](../delivery/modeling-retrospectives/2026-10-14-deepseek-two-task-retrospective.md)。
 
 2026-10-13 关联增量：Luna repair-01在启动前被scope_invalid明确拒绝，却已登记为
 operation owner，后续stop被不存在记录阻断。本次仅移除确证零执行的新repair登记，
@@ -3869,6 +3895,14 @@ GraphSet ID 和来源图；后台读写、工作区版本、检索投影及恢�
   并取得实际接线及 Agent 等待／恢复证据。
 
 ### R4.0-029 基于已有模型的增量建模
+
+**2026-10-14 真实启动追加**：B公开反馈后新目标通过既有通用增量入口于
+2026-10-13T20:18:51.632531Z实际semantic start，run为
+`incremental-17e5c118-c6e1-4f99-9bd6-d3ca0ee8cf39`，计B第二轮。4角色provider_wait，
+账户HTTP402，0新意图／回执／写入，原模型revision3保持。A11由未运行推进至
+部分验证（取得真实启动，语义效果未完成），不标模型新增成功；原A1—A10独立功能
+PASS保留，整体PARTIAL。账户恢复后沿原等待项接续，复盘不授恢复／新start权限，
+见[两组复盘](../delivery/modeling-retrospectives/2026-10-14-deepseek-two-task-retrospective.md)。
 
 **状态与授权**：2026-10-12 用户确认将“已有模型上继续新增业务”独立为通用需求，
 反馈驱动改进作为其调用场景；授权本条与 001 细化和设计。细化及
