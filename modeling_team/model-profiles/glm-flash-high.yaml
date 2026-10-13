@@ -42,3 +42,11 @@ roles:
     model_provider: glm-direct
     model: glm-5.3-flash
     model_reasoning_effort: high
+  source-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high
+  delivery:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: high
