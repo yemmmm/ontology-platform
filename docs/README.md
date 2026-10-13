@@ -39,6 +39,10 @@ delivery evidence. Use the following locations for new documentation.
   R4.3-016 defines [modeling retrospectives](../skills/modeling-retrospective/SKILL.md): check related
   requirements against their acceptance evidence, track confirmed improvements against their original
   expectations, then propose changes based on quality, efficiency, and fallback costs.
+  R4.3-017／018 register Jev-guided adaptive subgraph expansion and relevance ordering of
+  `related_context`, including cycle handling, shared-node deduplication, path preservation, and
+  stable pagination. Both await design, implementation, and effect validation; registration does
+  not authorize modeling or acceptance runs.
 - [v4.2 five-tab frontend rewrite](requirements/requirements-v4.2.md): current frontend target;
   overview, graph-based model browsing, recall testing, roles and Grants, and settings. Requirements
   implemented; design review, developer verification and independent functional Round 1 PASS. Supersedes
