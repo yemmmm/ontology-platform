@@ -56,3 +56,39 @@ PASS后只同步需求顶部／总表／025状态和024依赖进度、设计第7
 通过。仅本次四份文档纳入提交，产品代码和活跃Skill未变，本轮不需backend／frontend
 测试、Skill validator或服务重启。文档检查只证明文档一致与可导航；独立设计PASS只
 证明当前方案可交接实施，不证明执行、业务或性能结果。
+
+## Round 2 — 用户后续边界对齐 PASS
+
+用户后续明确compiler返回依赖有序ontology batches与source_map，item保留稳定
+client_item_id（candidate identity）、可选change_id、resource_kind和JSON Pointer，
+不带Session／lease／revision／idempotency／资源技术ID；并指定DirectModelExecutor
+构造签名及execute(batches, source_map)职责。本轮按此新增需求D9、设计§3.3，同步
+F1／F3／A1及编译／执行分工，原Round 1审阅摘要和结论保留。
+
+只改四份025文档，不接管工作区并行backend／Runner／读取代理等实现。本轮开始时checkout
+尚无compiler或DirectModelExecutor实现；审阅后并行任务新建并持续编辑
+`modeling_team/direct_modeling.py`和`direct_execution.py`。本次为设计合同对齐，不提交
+这些他人未跟踪实现，不宣称输出代码已对齐。定向读取发现compiler当时仍使用change_id
+作client_item_id，属于待联调差异，不能据设计PASS关闭。
+原独立Reviewer完整复核当前F1—F7／D1—D9／A1—A10与设计第1—7节，结果为
+**Round 2 PASS，Critical 0、High 0、关键未决假设无**。
+
+审阅中Reviewer指出固定submit／read转发本身不能承担Session／lease生命周期调用，
+作者在§3.3明确scope承载既有可信生命周期adapter，写／读转发职责不变；Reviewer随后
+以最终输入确认接口闭合。该澄清在PASS前完成，没有增加构造参数或新生命周期框架。
+
+最终审阅主输入SHA256（PASS后状态同步前）：
+
+| 输入 | SHA256 |
+| --- | --- |
+| `docs/requirements/requirements-v4.3.md` | `8ce1fcf239162ee750b6414f55adff97fcc785fd9f0917f1a46d35087746a9b2` |
+| `docs/delivery/designs/2026-10-15-r4-3-025-deterministic-model-execution-design.md` | `659b69bb2cd5676287d69b9fdc9a3e28407c72ccbe591746421e8d7500648bdf` |
+
+核对依据：§3.3保留ontology_id及稳定来源ID，一项多命令按批次定位；source_map以
+(batch_index, client_item_id)对应artifact及字段JSON Pointer，sidecar不透传封闭后端
+schema。Executor填执行身份／真实绑定并保存intent／receipt／apply Attempt proof；
+proof不恢复dry-run门。§5的单批原子、跨批成功保留、持久去重、未知结果对账及真实
+revision／索引边界保持；与原024／最终独立语义验收分工无回退。
+
+PASS后仅同步需求／设计／tracker状态及本记录，未改本次合同。文档链接／锚点、围栏、
+F／D／A编号及diff检查通过；不运行产品测试／服务。独立结论只证明设计通过。

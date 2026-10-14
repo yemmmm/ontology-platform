@@ -2,7 +2,7 @@
 
 ## 1. 范围、例子与基线
 
-权威来源：[R4.3-025](../../requirements/requirements-v4.3.md#r4-3-025)，决策D1—D8以
+权威来源：[R4.3-025](../../requirements/requirements-v4.3.md#r4-3-025)，决策D1—D9以
 该条为主记录。本轮授权为细化、设计及独立**设计**验收，不实施代码／活跃提示／合同，
 不启动服务、调用provider、修改模型或恢复生产。开始基线为
 `fc8be76`（024设计提交）；工作区只有无关未跟踪`docs/presentations/`、`slide-deck/`。
@@ -34,17 +34,18 @@ update并绑定原资源，不能因候选完整重发而把故障再建一次�
 本轮仅定向源码／call-site检查，没有GitNexus图分析，不宣称图覆盖。实施若更改公共
 入口／跨模块调用，依AGENTS做影响分析；无工具时定向引用检查并披露，不重建索引作设计门。
 
-后续代码增量放现有`modeling_team`确定性工具层：建议一个
-`model_change_execution.py`承接薄信封校验、编译及source map，由Runner现有转发／
-intent／receipt机制执行；保持纯编译和平台IO分离便于验证即可，不建通用编译器框架。
+后续代码增量放现有`modeling_team`确定性工具层，纯compiler处理薄信封校验、语义
+命令编译及source_map，`DirectModelExecutor`复用Runner现有转发／intent／receipt机制
+执行。两者以§3.3的batches／source_map交接，不建通用编译器框架。
 平台仅在现有Batch无法提供必要单批引用时补最窄适配，不新增路由／表或任意写入接口。
 
 ## 3. 可消费接口与上下文
 
 ### 3.1 程序核心接口
 
-建议内部入口`execute_model_changes(request, execution_context)`，后续024能力名
-`modeling_submit_model_changes`转交它。此为待实施合同，不是当前可调用工具。
+对外逻辑入口仍为`execute_model_changes(request, execution_context)`，后续024能力
+`modeling_submit_model_changes`先调用纯compiler，再调用§3.3的Executor；前者不是
+compiler本身，也不要求Executor重新理解候选。此为待实施合同，不是当前可调用工具。
 Agent只提交`request`；`execution_context`由已认证Runner构造，不能透传Agent自报值。
 
 request外层封闭字段：
@@ -97,6 +98,62 @@ intent旁保留快照／source map即可；不创建新覆盖台账或Evidence�
 或prepare后revision冲突，返回可修正冲突及原提交位置，Modeling重新核对原语义意图。
 不能为了越过冲突循环更新expected_model_revision。纯技术租约续期不改业务内容，
 未知写入对账必须先于任何新请求身份或版本刷新。
+
+### 3.3 Compiler／DirectModelExecutor边界（用户后续确认）
+
+compiler返回`(batches, source_map)`。batches是已按依赖排好的有序数组，每批恰含
+`ontology_id, items`；ontology_id保留已确认拓扑的真实目标，仅用于scope核对，不授权
+任意Ontology写入。compiler不发平台请求、不申请Session／lease、不分配执行身份。
+
+每个item保留以下字段：
+
+| 字段 | Compiler输出／Executor处理 |
+| --- | --- |
+| client_item_id | 必需；原candidate item identity原样保留，不改成顺序号、UUID或Batch局部重命名；不是平台资源ID |
+| change_id | 可选；有显式变更时原样保留，无变更ID时不伪造 |
+| resource_kind | 必需；保留已明确资源种类，不能按命令输出改成entity |
+| command_kind／payload | 完整语义命令字段；保留缺省／null／空值差异。身份引用仍是中性或获准绑定引用，由Executor用真实read／output填充；不拼技术ID或IRI |
+| depends_on | 同批稳定client_item_id的依赖；跨批依赖保留来源item／批次定位，Executor取得前批实际输出后绑定，不放进同批depends_on |
+
+compiler输出不带session_id、lease_token、expected_model_revision、idempotency_key、
+client_batch_id、平台Batch／Attempt或create资源技术ID。scope提供的ontology_id与
+candidate的client_item_id是必要交接定位，不属于应移除的执行身份。datatype等语义IRI
+原样保留，真实资源引用解析不由compiler猜测。
+
+source_map与batches一同交接；逐命令以`(batch_index, client_item_id)`定位，保留
+`change_id`（如有）、原artifact引用及JSON Pointer。字段对应为**命令字段JSON Pointer
+→原提交字段JSON Pointer列表**，例如`/payload/label → /items/0/value/label`；明确
+artifact后解析指针，遵循JSON Pointer的`~0`／`~1`转义。技术上下文错误定位change或
+提交根，不能伪造源字段。Executor不得在排序／组包时改写client_item_id或丢弃该映射。
+
+同一candidate item确需多命令时，在不同有序批次保留同一client_item_id，以batch_index
+区分映射；没有candidate的fields式操作使用其原change_id作为稳定来源身份。每批
+client_item_id唯一；若不能在保留所要求原子性的同时分批，返回原定位的
+atomic_dependency_conflict，不偷偷重命名来源ID或拆开原子替换。
+
+Executor接口按用户确认固定为：
+
+```python
+DirectModelExecutor(
+    scope, run_root, run_id, task_id,
+    submit=batch_forwarder, read=scoped_forwarder, observe_result=None,
+).execute(batches, source_map)
+```
+
+此签名为设计合同，非当前可运行示例。scope、run_root、run_id、task_id来自可信Runner。
+scope是§3.2的可信执行上下文，除授权资源集合外，显式承载Runner既有Session／lease
+生命周期adapter及当前凭据，不是Agent提交的纯JSON范围声明。submit只作Batch写转发，
+read只作受scope约束的读取；创建Session、取得／续租lease使用scope的生命周期adapter，
+不把管理写操作塞进read或Batch forwarder，也不新增构造参数／生命周期框架。该adapter
+缺失且不能完成必要准备时返回明确能力缺口，不猜凭据或继续写入。Executor取得／填充BuildSession、
+lease、revision、执行幂等身份及必要真实资源绑定，每批只调用一次apply_atomic，并持久
+保留staged intent／receipt／apply Attempt proof。该proof记录真实apply终态，不是dry-run
+证明，也不是额外写入许可门。observe_result只观察实际结果，不代替持久回执或语义裁决。
+
+Executor把后端Finding按稳定ID与source_map映射回原item／字段，保留ontology_id及实际
+Batch／Attempt；resource_kind、change_id、source_map为Runner sidecar，向封闭的后端
+ModelingItemInput只投影其允许字段，不把sidecar塞入payload。§5的去重、结果三态、
+索引／修订及恢复合同保持。
 
 ## 4. 确定性转换规则
 
@@ -164,9 +221,9 @@ create额外语义载体只适用于现有Class／relation_type／Operation／�
 
 ### 4.3 源字段对应、排序与引用
 
-每条命令都有Runner私有source map：提交digest、change_id、candidate_ref及item_id、
-输入JSON Pointer -> client_item_id／payload路径。一个item可对应必要多命令，反向映射
-保留所有来源；技术默认错误定位到change或request，不能伪造不存在的源字段。
+compiler生成§3.3的source_map并交给Executor；提交digest、原candidate item identity、
+可选change_id、artifact及字段JSON Pointer贯穿编译、转发与反馈。一项多命令按批次
+定位，反向映射保留所有来源；技术默认错误定位到change或request，不伪造源字段。
 
 先对整提交做格式、意图、引用、字段／种类、已知授权scope、业务确认绑定闭合；可静态
 确定的任何错误在首次apply前返回。编译不判断业务必要性或全面语义覆盖。确认过的字段
@@ -198,7 +255,9 @@ create额外语义载体只适用于现有Class／relation_type／Operation／�
 submit digest包含完整request、候选实际内容、已确认拓扑／业务决定绑定、选定目标内容，
 不含lease／当前版本；同run相同提交找到同一记录。原始请求先落盘，再转发底层Batch；
 快照／intent落盘失败则不转发。并发同提交复用既有Runner串行提交段及平台幂等约束。
-Batch／client_item／idempotency由程序产生并先持久绑定，重启加载原值，不按重启时间生成。
+Batch／幂等身份由Executor产生并先持久绑定，重启加载原值，不按重启时间生成。
+client_item_id由compiler保留原candidate item identity（无candidate时为原change_id），
+Executor不再生成或改写；仅向平台create payload填真实技术资源身份。
 
 相同成功请求返回原资源／Attempt，不重放；查询当前索引可补新的观测时间，不改写原写入
 revision。相同身份不同语义内容返回idempotency_conflict。已验证无写入的失败才可用新
@@ -254,8 +313,8 @@ change／提交，返回底层类型及可行下一步。受保护内容不在ac
 
 1. 在当前统一图reference、012／010引用处补value／引用槽位和七类种类一致性、变更／
    结果合同；同步batch reference缺失的现有变更字段及索引／修订说明，历史文件不重写。
-2. 实现纯编译、source map与真实binding适配；再接现有Session／lease、intent／receipt、
-   真实outputs、apply／恢复调用。禁止调用旧格式validator强迫改写候选。
+2. 实现纯compiler输出batches／source_map及稳定ID；DirectModelExecutor再接现有
+   Session／lease、intent／receipt／apply Attempt proof、真实binding／outputs和恢复调用。禁止调用旧格式validator强迫改写候选。
 3. 024接真实Modeling能力、runtime目录及读代理，退役公开dry-run／proof／翻译审批／
    Protocol等待门。025程序核心自身不得依赖这些门；未联调前不宣称024完成。
 4. API／MCP如受影响同步接口文档；不预设新增HTTP接口／UI／存储。仅实际必要代码改动
@@ -284,11 +343,11 @@ Team从backend运行`env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest ../mode
 
 ## 7. 本轮设计验收状态
 
-需求和设计已形成，D1—D8关闭；独立设计验收**Round 1 PASS，0 Critical／High，
-无关键未决假设**。Reviewer、主输入SHA256和定向源码依据见
-[独立验收记录](../records/2026-10-15-r4-3-025-design-review-record.md)。A1—A10均未执行。
+需求和设计已形成；原D1—D8独立设计验收Round 1 PASS保留。用户后续明确compiler／
+DirectModelExecutor边界，新增D9，补充§3.3并同步稳定身份及source_map描述；本次增量
+独立设计复核**Round 2 PASS，0 Critical／High、无关键未决假设**；独立主输入摘要单列，
+不把Round 1摘要冒称本次修订。A1—A10均未执行。
+见[独立验收记录](../records/2026-10-15-r4-3-025-design-review-record.md)。
 
-PASS后仅同步本文第7节、权威条目／tracker状态和验收记录，不改变第1—6节、需求
-F1—F7／D1—D8／A1—A10。文档链接／锚点、围栏／表格、编号／路径及diff检查通过；
-未改活跃合同、Skill或产品代码，本轮无需产品测试／服务重启。设计与机械检查均不证明
-转换执行工程、024实际采用、真实建模／独立语义质量或提速已通过。
+本次只同步需求、设计、tracker和验收记录。未改活跃合同、Skill或产品代码，无需产品
+测试／服务重启；文档及设计检查不证明执行工程、024实际采用或真实语义效果。
