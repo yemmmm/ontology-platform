@@ -911,6 +911,13 @@ R3.0-008B 的逻辑切片分析之后、Ontology 拓扑决策之前，必须执�
 
 ### R3.0-011 能力问题驱动建模与批次级语义验收
 
+2026-10-14 下午GLM小链追加：**部分验证**。原7题冻结（3公开／4隐藏）及实际审核
+消费可追溯；首链后3题公开反馈完成、无缺题／无漂移，不是正式独立验收或7题PASS。
+Host/MCP的modified_question原为字符串、Runner却要求完整问题对象，合同缺陷已定位，
+`ecb7495`完成对象类型／决定枚举修复及开发验证。原run由Root直调完成冻结，不能当
+修后MCP原入口复测；真实自主审核及最终独立裁决仍待证。见
+[本轮复盘](../delivery/modeling-retrospectives/2026-10-14-glm-smallchain-retrospective.md)。
+
 2026-10-14 用户授权落实下一轮准备：当前Task排除可执行SQL/API映射，不自动排除
 当前业务链所需源结构证据的普通定义／文本表达。CQ逐点核对获准输出范围及问题
 范围，分开结构已知、业务已确认及有依据的未知；结构约束不升级为客户业务规则。
@@ -1447,6 +1454,12 @@ PASS；auth-r3-0-023 的 S1 检查点保存与 S2 跨进程接续后真实推进
 - 测试：[R3.0-015 共享测试计划](../delivery/test-plans/2026-09-14-r3-0-015-modeling-checkpoint-recovery-test-plan.md)。
 
 ### R3.0-016 建模 Team 宿主交互接口
+
+2026-10-14 下午GLM小链追加：**部分验证**。issue-1指导与绑定resume均已记录，
+本人Coordinator reporter走既有self_resumed，无第二Runtime消息；旧角色提示仍等待
+该消息，运行中技术说明解锁后继续。`ecb7495`对齐持久指令，开发合同检查通过；临时
+指导生效不证明旧线程加载新指令。CQ对象工具增量与Root接管保留，非自主交付PASS。
+见[本轮复盘](../delivery/modeling-retrospectives/2026-10-14-glm-smallchain-retrospective.md)。
 
 2026-10-13 本次增量：CQ审核的真实绑定/可选序号说明按R3.0-011对齐；指导持久化
 不等于实际issue-control派发，pending必须保留未结算阻塞，正常resume与显式abort
