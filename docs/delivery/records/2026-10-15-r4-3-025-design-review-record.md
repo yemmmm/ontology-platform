@@ -92,3 +92,35 @@ revision／索引边界保持；与原024／最终独立语义验收分工无回
 
 PASS后仅同步需求／设计／tracker状态及本记录，未改本次合同。文档链接／锚点、围栏、
 F／D／A编号及diff检查通过；不运行产品测试／服务。独立结论只证明设计通过。
+
+## Round 3 — Executor实际消费合同对齐 PASS
+
+用户后续明确resource_kind必需、change_id可选、client_item_id保持；sidecar在平台投影
+剥离；source_map采用str(batch_index)→client_item_id→entry嵌套结构，field_map为
+payload JSON Pointer到候选／请求指针列表。cross_batch_dependencies／depends_on_batches
+只阻断未成功依赖，Executor不解释target_ref／item_ref／IRI。准确capability入口为
+modeling_submit_model_changes(modeling_id, request)，随后execute(batches, source_map)。
+
+本轮据此同步需求F3／F4／D9／A4与设计§3.1／3.3／4.3，明确跨批真实输出由Runner
+能力层在执行前绑定；新输出未存在时沿既有阶段取得真实成功回执，再准备后续阶段。
+同批合法item_ref归后端Batch请求内解析，Executor仅投影。成功阶段不重放，失败／未知
+依赖不得删边绕过。原Round 1／2结论及摘要保留；同一独立Reviewer完整复核当前需求及设计，结论
+**Round 3 PASS，Critical 0、High 0、关键未决假设无**。
+
+最终主输入SHA256（状态同步前）：
+
+| 输入 | SHA256 |
+| --- | --- |
+| `docs/requirements/requirements-v4.3.md` | `02a5cb1796b84a51c8345ce528758ab7f2113e69002304e1d7fc649a40c4c59f` |
+| `docs/delivery/designs/2026-10-15-r4-3-025-deterministic-model-execution-design.md` | `36705665eff4ffc7f90fc27df9b58d450e097a161f50322bbe4f1a9994b69644` |
+
+Reviewer确认准确能力入口、稳定ID／嵌套映射、能力层执行前绑定及真实回执后续阶段、
+Executor只阻断依赖及后端同批解析的责任闭合。单批原子、持久幂等、成功不重放及未知
+先对账保持；无原设计范围回退。PASS后仅同步状态及本记录，独立结论仍限设计。
+文档144处本地链接／锚点、围栏／表格、F1—F7／D1—D9／A1—A10编号及diff检查通过。
+
+只读核对并行实现的当前切片：direct_modeling.py现已保留candidate identity并生成嵌套
+source_map，Round 2记录的旧ID差异已消除；direct_execution.py有sidecar剥离及依赖状态
+阻断；Runner有准确capability→compiler→execute调用。但是compiler仍可能输出跨批
+item_ref，能力层实际绑定／分阶段执行尚待集成验证，不能从排序或入口存在判定通过。
+本轮不接管、测试或提交这些持续变动中的并行代码，仅提交025的四份文档。

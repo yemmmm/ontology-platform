@@ -43,9 +43,10 @@ update并绑定原资源，不能因候选完整重发而把故障再建一次�
 
 ### 3.1 程序核心接口
 
-对外逻辑入口仍为`execute_model_changes(request, execution_context)`，后续024能力
-`modeling_submit_model_changes`先调用纯compiler，再调用§3.3的Executor；前者不是
-compiler本身，也不要求Executor重新理解候选。此为待实施合同，不是当前可调用工具。
+对外能力入口为`modeling_submit_model_changes(modeling_id, request)`，由Runner核验真实
+Modeling身份和范围，读取／冻结candidate与获准绑定，再调用compiler及§3.3的Executor。
+Executor不重新理解candidate、target_ref或语义引用。接口目标已明确；并行代码出现同名
+入口不等于本轮已验证实际能力目录、调用及绑定集成。
 Agent只提交`request`；`execution_context`由已认证Runner构造，不能透传Agent自报值。
 
 request外层封闭字段：
@@ -101,8 +102,9 @@ intent旁保留快照／source map即可；不创建新覆盖台账或Evidence�
 
 ### 3.3 Compiler／DirectModelExecutor边界（用户后续确认）
 
-compiler返回`(batches, source_map)`。batches是已按依赖排好的有序数组，每批恰含
-`ontology_id, items`；ontology_id保留已确认拓扑的真实目标，仅用于scope核对，不授权
+compiler返回`(batches, source_map)`。batches是已按依赖排好的有序数组，每批必含
+`ontology_id, items`，另可有`depends_on_batches`和原`batch_index`依赖定位；
+ontology_id保留已确认拓扑的真实目标，仅用于scope核对，不授权
 任意Ontology写入。compiler不发平台请求、不申请Session／lease、不分配执行身份。
 
 每个item保留以下字段：
@@ -112,19 +114,37 @@ compiler返回`(batches, source_map)`。batches是已按依赖排好的有序数
 | client_item_id | 必需；原candidate item identity原样保留，不改成顺序号、UUID或Batch局部重命名；不是平台资源ID |
 | change_id | 可选；有显式变更时原样保留，无变更ID时不伪造 |
 | resource_kind | 必需；保留已明确资源种类，不能按命令输出改成entity |
-| command_kind／payload | 完整语义命令字段；保留缺省／null／空值差异。身份引用仍是中性或获准绑定引用，由Executor用真实read／output填充；不拼技术ID或IRI |
-| depends_on | 同批稳定client_item_id的依赖；跨批依赖保留来源item／批次定位，Executor取得前批实际输出后绑定，不放进同批depends_on |
+| command_kind／payload | 完整语义命令字段；保留缺省／null／空值差异。能力层在交给Executor前把跨批身份引用绑定到真实read／成功output；不猜技术ID或IRI |
+| depends_on | 只含同批稳定client_item_id；跨批依赖由source_map的cross_batch_dependencies及批级depends_on_batches表达，Executor据成功状态阻断失败／未知依赖，不负责资源引用解析 |
 
 compiler输出不带session_id、lease_token、expected_model_revision、idempotency_key、
 client_batch_id、平台Batch／Attempt或create资源技术ID。scope提供的ontology_id与
 candidate的client_item_id是必要交接定位，不属于应移除的执行身份。datatype等语义IRI
 原样保留，真实资源引用解析不由compiler猜测。
 
-source_map与batches一同交接；逐命令以`(batch_index, client_item_id)`定位，保留
-`change_id`（如有）、原artifact引用及JSON Pointer。字段对应为**命令字段JSON Pointer
-→原提交字段JSON Pointer列表**，例如`/payload/label → /items/0/value/label`；明确
-artifact后解析指针，遵循JSON Pointer的`~0`／`~1`转义。技术上下文错误定位change或
-提交根，不能伪造源字段。Executor不得在排序／组包时改写client_item_id或丢弃该映射。
+source_map与batches一同交接，规范结构为：
+
+```text
+{str(batch_index): {client_item_id: entry}}
+entry.field_map = {payload_pointer: [candidate_or_request_json_pointer, ...]}
+```
+
+entry保留原item_id、可选change_id、resource_kind及artifact引用；例如
+`field_map["/payload/label"] = ["/items/0/value/label"]`。JSON Pointer按原artifact解析并
+保留`~0`／`~1`转义；同名client_item_id在不同批由外层batch_index区分。技术上下文
+错误定位change／提交根，不能伪造源字段；Executor不得改写稳定ID或丢弃字段映射。
+
+entry.cross_batch_dependencies沿实际依赖携带depends_on_batch及来源client_item_id；
+批级depends_on_batches可直接提供同一依赖。Executor据两者核对前置批真实成功状态，
+前置失败、未执行、部分应用或不确定均不放行依赖批。**阻断依赖不等于解析资源引用。**
+Executor不解析target_ref、item_ref或IRI，不把cross_batch_dependencies当资源输出。
+
+Runner能力层负责原target_ref的获准读取／真实绑定，以及跨批引用在执行前的解析。
+调用execute的本次批次必须已绑定跨批真实输出；还没有该输出时，先执行已有可落地阶段，
+保留实际成功回执后准备后续阶段，不把未解析模板塞给Executor或平台。已满足的跨阶段
+依赖保留原计划／回执证据；本次执行投影只带当前待执行前置批，不能丢掉失败／未知依赖
+来绕过阻断。原batch_index及字段source_map继续对回原提交，已成功阶段不重复创建。
+同批合法item_ref仍由现有后端Batch请求内解析，Executor只原样投影，不承担引用解释。
 
 同一candidate item确需多命令时，在不同有序批次保留同一client_item_id，以batch_index
 区分映射；没有candidate的fields式操作使用其原change_id作为稳定来源身份。每批
@@ -146,7 +166,7 @@ scope是§3.2的可信执行上下文，除授权资源集合外，显式承载R
 read只作受scope约束的读取；创建Session、取得／续租lease使用scope的生命周期adapter，
 不把管理写操作塞进read或Batch forwarder，也不新增构造参数／生命周期框架。该adapter
 缺失且不能完成必要准备时返回明确能力缺口，不猜凭据或继续写入。Executor取得／填充BuildSession、
-lease、revision、执行幂等身份及必要真实资源绑定，每批只调用一次apply_atomic，并持久
+lease、revision及执行幂等身份，每批只调用一次apply_atomic，并持久
 保留staged intent／receipt／apply Attempt proof。该proof记录真实apply终态，不是dry-run
 证明，也不是额外写入许可门。observe_result只观察实际结果，不代替持久回执或语义裁决。
 
@@ -230,11 +250,11 @@ compiler生成§3.3的source_map并交给Executor；提交digest、原candidate 
 完整进入编译结果或报告未交付，不能静默跳过“不认识的”项。
 
 依赖由显式引用／现有命令约束产生，稳定拓扑排序以原changes顺序、item顺序打破并列。
-按已确认Ontology和部署modeling_batch_max_items分批，每批只针对一个Ontology。
+按已确认Ontology和部署modeling_batch_max_items分批，每批只针对一个Ontology。跨批binding归§3.3的Runner能力层，不归Executor。
 
 - 同批outputs引用使用现有平台item-output reference合同；若特定命令不支持该槽位引用，
   改为先成功建立依赖再绑定，不发明平台$ref语法。depends_on只指同批client_item_id。
-- 既有／跨批依赖来自实际获准回执输出；新create若必须提前绑定，程序调用真实
+- 既有／跨批依赖来自实际获准回执输出；新create若必须提前绑定，Runner绑定层调用真实
   outputs_for配部署Settings和显式程序ID，保持future身份，不能称资源存在。实际输出
   与预期不一致时保留已写结果并停止依赖，原身份对账，不用猜测值继续。
 - 引用环不一律拒绝run：先创建不带可后置字段的普通定义，再用已有update／关系操作
@@ -314,7 +334,7 @@ change／提交，返回底层类型及可行下一步。受保护内容不在ac
 1. 在当前统一图reference、012／010引用处补value／引用槽位和七类种类一致性、变更／
    结果合同；同步batch reference缺失的现有变更字段及索引／修订说明，历史文件不重写。
 2. 实现纯compiler输出batches／source_map及稳定ID；DirectModelExecutor再接现有
-   Session／lease、intent／receipt／apply Attempt proof、真实binding／outputs和恢复调用。禁止调用旧格式validator强迫改写候选。
+   Session／lease、intent／receipt／apply Attempt proof和恢复调用；Runner能力层闭合真实binding／outputs。禁止调用旧格式validator强迫改写候选。
 3. 024接真实Modeling能力、runtime目录及读代理，退役公开dry-run／proof／翻译审批／
    Protocol等待门。025程序核心自身不得依赖这些门；未联调前不宣称024完成。
 4. API／MCP如受影响同步接口文档；不预设新增HTTP接口／UI／存储。仅实际必要代码改动
@@ -344,9 +364,10 @@ Team从backend运行`env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest ../mode
 ## 7. 本轮设计验收状态
 
 需求和设计已形成；原D1—D8独立设计验收Round 1 PASS保留。用户后续明确compiler／
-DirectModelExecutor边界，新增D9，补充§3.3并同步稳定身份及source_map描述；本次增量
-独立设计复核**Round 2 PASS，0 Critical／High、无关键未决假设**；独立主输入摘要单列，
-不把Round 1摘要冒称本次修订。A1—A10均未执行。
+DirectModelExecutor边界，新增D9，独立Round 2 PASS保留。后续进一步确认嵌套source_map、
+侧车投影、跨批绑定归能力层及准确capability入口，已同步§3.1／3.3和相关要求；本次
+独立设计**Round 3 PASS，0 Critical／High、无关键未决假设**，不以Round 2旧摘要
+覆盖该修订。A1—A10均未执行。
 见[独立验收记录](../records/2026-10-15-r4-3-025-design-review-record.md)。
 
 本次只同步需求、设计、tracker和验收记录。未改活跃合同、Skill或产品代码，无需产品

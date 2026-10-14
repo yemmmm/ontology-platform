@@ -26,7 +26,7 @@
   已确认待细化／实施，验证状态为未验证；仅登记，不授权实施或恢复建模。
 - 新增范围状态（R4.3-025设计）：2026-10-15用户授权细化、设计及独立设计验收；
   [详细设计](../delivery/designs/2026-10-15-r4-3-025-deterministic-model-execution-design.md)
-  已形成，D1—D9关闭；用户确认边界修订的独立设计Round 2 PASS，0 Critical／High、无关键未决假设，
+  已形成，D1—D9关闭；后续嵌套映射／跨批绑定边界独立Round 3 PASS，0 Critical／High、无关键未决假设，
   见[验收记录](../delivery/records/2026-10-15-r4-3-025-design-review-record.md)。
   未实施或恢复建模，工程与真实效果未验证。
 - 新增范围状态（R4.3-024）：2026-10-15用户授权细化、设计及独立设计验收；
@@ -325,7 +325,7 @@ r5只修改六关系并获审，尚未应用。RETRO-09有明确“已返回却�
 | R4.3-022 | Delivery 决策输入与按需原文读取 | P0 | 工程已实现，开发测试／Team全量通过；独立工程及真实效果待证 |
 | R4.3-023 | 派单忠实于权威任务与建模表示边界 | P0 | 已实现；Team全量及受控反例检查通过／真实效果待证 |
 | R4.3-024 | Modeling 直接修改模型、暂退 dry-run 与即时召回自查 | P0 | 需求／设计完成；独立设计Round 1 PASS；未实施／实测 |
-| R4.3-025 | 模型变更的确定性转换与执行 | P0 | 需求／设计完成；独立设计Round 2 PASS；本轮未实施／实测 |
+| R4.3-025 | 模型变更的确定性转换与执行 | P0 | 需求／设计完成；独立设计Round 3 PASS；本轮未实施／实测 |
 
 2026-10-13 后续实施授权：用户要求“请实现本次复盘你提出的优化点，并记录，下次复盘
 的时候再次验证是否生效”。本次范围为 R4.3-015 的阶段派单／连续执行／首链公开反馈
@@ -1884,7 +1884,8 @@ R4.0-024／027提供关联检查与真实修订／索引合同。不增SHACL／O
 设计R4.3-025需求，通过独立验收”。本轮完成需求细化与
 [详细设计](../delivery/designs/2026-10-15-r4-3-025-deterministic-model-execution-design.md)，
 D1—D8独立设计验收Round 1 PASS保留；用户后续明确compiler／DirectModelExecutor
-交接边界，新增已确认D9，独立设计复核Round 2 PASS（0 Critical／High、无关键未决假设）。见
+交接边界，新增已确认D9，独立设计复核Round 2 PASS保留；后续确认嵌套source_map及Executor不解释引用，
+当前边界增量独立Round 3 PASS（0 Critical／High、无关键未决假设）。见
 [验收记录](../delivery/records/2026-10-15-r4-3-025-design-review-record.md)。
 未实施、未验证转换执行工程或真实业务效果，
 未修改活跃合同／代码／模型，未恢复暂停运行或增加建模额度。
@@ -1917,7 +1918,8 @@ D1—D8独立设计验收Round 1 PASS保留；用户后续明确compiler／Direc
   资源用获准读取／回执；禁止Agent或转换器拼IRI、猜ID或把local item_id当平台身份。
   DirectModelExecutor接收compiler的batches／source_map，通过注入的Batch与scoped
   read转发填充技术字段，持久保存staged intent／receipt／apply Attempt proof并映射
-  Finding；无Session／lease时只复用已有生命周期调用，越权／未定拓扑／他人租约准确反馈。
+  Finding。入口固定modeling_submit_model_changes(modeling_id, request)；Runner能力层
+  先闭合target_ref及跨批真实输出绑定，Executor不解释target_ref／item_ref／IRI；无Session／lease时只复用已有生命周期调用，越权／未定拓扑／他人租约准确反馈。
 - **F4 依赖与单批原子。** 确定性排序、按当前部署容量分批；同批depends_on仅指
   同批项，跨批用成功回执绑定，尚未成功的依赖不执行。调用现有apply_atomic，一次
   请求内compile／校验后合法才写入，无独立或隐藏dry-run，无apply_partial降级。
@@ -1952,8 +1954,7 @@ D1—D8独立设计验收Round 1 PASS保留；用户后续明确compiler／Direc
 | D6 | 原始提交路径到命令字段的sidecar映射；只复用既有记录，不添模型追溯字段 | 明确超过85%；底层Finding只知命令，原提交定位需机械映射 | 按本轮设计授权采用 |
 | D7 | 原请求持久身份去重；明确未写入才修正，未知结果先对账；索引与写入分别判断 | 成功不重放、未知不盲试及015回执信任已有明确约束 | 沿用既有确认 |
 | D8 | 工程转换／执行、024采用及最终语义分层验证；本轮只做独立设计验收 | 本轮授权为细化／设计／独立验收，没有开发或运行授权 | 沿用本轮授权边界 |
-
-| D9 | compiler交付依赖有序的ontology batches／source_map并保留稳定来源ID；DirectModelExecutor按用户签名补执行上下文、单次atomic、记录及错误映射 | 用户后续明确接口及职责，无需重新评分；详细合同见设计§3.3 | 用户本轮确认 |
+| D9 | compiler保留稳定来源ID并交付ontology batches／嵌套source_map；能力层闭合跨批真实输出，Executor按用户签名填上下文、阻断未成功依赖、单次atomic、保存记录并映射错误，不解释资源引用 | 用户后续两次明确接口及职责，无需重新评分；准确capability及交接合同见设计§3.3 | 用户本轮确认 |
 
 #### 验收 A1—A10
 
@@ -1964,7 +1965,7 @@ D1—D8独立设计验收Round 1 PASS保留；用户后续明确compiler／Direc
 | A1 | 实际统一图七类item、对象／字面量属性、零Class实体、嵌套映射及多视图注解 | 无旧候选改写／手写计划；逐项命令及字段映射与源一致，ontology_id／client_item_id／可选change_id／resource_kind与JSON Pointer贯穿compiler→Executor且无执行字段泄入；注解／条件／未知保留；缺业务选择精确拒绝，不默认补Class／datatype |
 | A2 | 显式创建／描述更新／删除／fact变化；新candidate revision仍含已应用项；同名不同义 | 本次操作与字段语义准确、既有身份不变；未选择项不重复创建，缺项不删除、不按名称合并；字段缺省／null／空值按既有各命令合同 |
 | A3 | 真实task／Session／lease、获准已有资源、跨O既定拓扑；伪造／过期／越权绑定 | Agent无技术字段，实际值来自真实上下文；错误／未知不猜不写，保护信息不泄露；不将现有helper的旧格式入口当作统一图可用 |
-| A4 | 乱序依赖、同批引用、跨批生成身份、容量边界、循环创建引用 | 排序稳定；同批引用用真实outputs，必要时分阶段，跨批只用已成功回执；不拼IRI，无法闭合可修正反馈，已成功批不重放 |
+| A4 | 乱序依赖、同批引用、跨批生成身份、容量边界、循环创建引用 | 排序稳定；同批引用用真实outputs，必要时分阶段，跨批只用已成功回执；跨批引用在execute前已绑定真实输出、Executor不解释引用，同批引用由后端解析；缺失／失败／未知依赖阻断，不拼IRI，无法闭合可修正反馈，已成功批不重放 |
 | A5 | 合法批及同批末项缺字段、类型／引用／权限／版本错误 | 仅调用apply_atomic，无任何dry_run／proof／翻译审批依赖；失败批无部分修改，先前成功批如实保留；沿平台恢复判定最终状态 |
 | A6 | 转换错、嵌套引用错、底层Finding、请求级权限错 | 绑定原提交摘要、change_id／item／字段或提交级定位，原因准确；修正后同目标继续，不能只回command_index或永久杀run |
 | A7 | 同提交重复／并发／进程重启、同身份不同内容、明确失败后修正、网络断在apply前后 | 原持久身份／intent先于转发，相同请求不重复写；改内容冲突，未知先用原Batch／Attempt对账；只有明确未写部分可重试，不引入全run硬门 |
