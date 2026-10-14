@@ -24,7 +24,7 @@ registry or any role agent-package mount.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from mcp.server.fastmcp import FastMCP
 
@@ -241,11 +241,11 @@ def tool_submit_cq_review(
     run_id: str,
     review_id: str,
     question_id: str,
-    decision: str,
+    decision: Literal["approve", "modify", "delete", "supplement"],
     content_version: int,
     content_digest: str,
     revision: int = 1,
-    modified_question: str | None = None,
+    modified_question: dict[str, Any] | None = None,
     note: str | None = None,
     request_id: str | None = None,
 ) -> dict[str, Any]:
@@ -258,6 +258,16 @@ def tool_submit_cq_review(
     Runner preserves its existing review/question/content/run validation.  A
     stale content version/digest/question binding is rejected with the
     original Runner code.
+
+    decision must be approve, modify, delete or supplement (not revise).
+    modify/supplement require modified_question as a complete question object,
+    not a question-text string: question_id, scope ({kind, slice_ids}), question,
+    answer_points (string list), evidence_refs ({source, locator} list), unknown
+    (string list), proposed_visibility (public/hidden), content_version (positive
+    integer). approve/delete use null. The outer content_version/content_digest
+    still bind the current review snapshot. A submitted response only confirms
+    FIFO transport; use get_request_result with the returned request_id to check
+    accepted/rejected/unknown and the original Runner error before proceeding.
     """
     return _call(
         submit_cq_review,

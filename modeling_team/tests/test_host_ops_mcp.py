@@ -18,11 +18,14 @@ import json
 from pathlib import Path
 from shutil import rmtree
 
+import pytest
 from mcp.shared.memory import create_connected_server_and_client_session
 
 from modeling_team import host_ops, host_ops_mcp
+from modeling_team.competency_questions import CQContractError
 from modeling_team.contracts import repository_root
 from modeling_team.outer_input import OuterInputFifo
+from modeling_team.tests.test_r3011_runner_wiring import _CQRunner, _decision, _draft, _question
 
 REPO_ROOT = repository_root()
 RUNS_ROOT = REPO_ROOT / "workspaces" / "modeling-runs"
@@ -535,6 +538,100 @@ def test_submit_cq_review_maps_the_wire_digest_parameter():
             assert envelope["schema_version"] == "r3-0-011-cq-review/v1"
         finally:
             fifo.close()
+
+
+@pytest.mark.parametrize("decision", ["modify", "supplement"])
+def test_cq_review_object_crosses_mcp_schema_and_runner_validator(decision):
+    harness = _CQRunner()
+    runner = harness.prepare()
+    fifo = OuterInputFifo(runner.run.root / "control" / "outer-input.fifo")
+    fifo.open()
+    try:
+        runner._publish_cq_question_draft({
+            "cq_id": "competency-question", "draft": _draft([_question("cq-1")])})
+        question_id = "cq-1" if decision == "modify" else "cq-2"
+        replacement = _question(question_id, question="修改后的完整问题？",
+            answer_points=["保留依据支持的答案点"], unknown=["未确认的业务限定"], content_version=2)
+        message = _decision(runner, decision=decision, question_id=question_id,
+                            modified_question=replacement)
+        arguments = {key: value for key, value in message.items()
+                     if key not in {"action", "schema_version"}}
+        arguments["run_id"] = runner.run.run_id
+
+        async def submit(client):
+            result = await client.call_tool("submit_cq_review", arguments)
+            assert not result.isError, result
+            return _payload(result)
+
+        submitted, = _session([submit])
+        assert submitted["ok"] and submitted["data"]["status"] == "submitted"
+        fifo.read_ready()
+        envelope = json.loads(fifo.pop_line())
+        assert envelope["modified_question"] == replacement
+        accepted = runner.handle_cq_outer_input(envelope)
+        assert accepted["type"] == "cq-review-accepted"
+        assert accepted["decision"] == decision
+        assert runner._cq_effective_panorama_questions()[-1] == replacement
+    finally:
+        fifo.close()
+        harness.cleanup()
+
+
+@pytest.mark.parametrize("changes", [
+    {"decision": "revise"},
+    {"decision": "modify", "modified_question": "只有题干"},
+])
+def test_cq_review_invalid_tool_arguments_do_not_reach_fifo(changes):
+    with _Run("cq-schema-invalid") as run:
+        fifo = OuterInputFifo(run.root / "control" / "outer-input.fifo")
+        fifo.open()
+        try:
+            async def submit(client):
+                return await client.call_tool("submit_cq_review", {
+                    "run_id": run.run_id, "review_id": "cq-review-0001", "question_id": "cq-1",
+                    "decision": "approve", "content_version": 1, "content_digest": "sha256:abc",
+                    **changes})
+
+            rejected, = _session([submit])
+            assert rejected.isError
+            fifo.read_ready()
+            assert fifo.pop_line() is None
+            assert not (run.root / "control" / "host-requests.jsonl").exists()
+        finally:
+            fifo.close()
+
+
+def test_cq_review_incomplete_question_retains_runner_recoverable_rejection():
+    harness = _CQRunner()
+    runner = harness.prepare()
+    fifo = OuterInputFifo(runner.run.root / "control" / "outer-input.fifo")
+    fifo.open()
+    try:
+        runner._publish_cq_question_draft({
+            "cq_id": "competency-question", "draft": _draft([_question("cq-1")])})
+        message = _decision(runner, decision="modify", modified_question={"question": "缺字段？"})
+        arguments = {key: value for key, value in message.items()
+                     if key not in {"action", "schema_version"}}
+
+        async def submit(client):
+            result = await client.call_tool("submit_cq_review", {
+                "run_id": runner.run.run_id, **arguments})
+            assert not result.isError, result
+            return _payload(result)
+
+        submitted, = _session([submit])
+        assert submitted["ok"] and submitted["data"]["status"] == "submitted"
+        fifo.read_ready()
+        with pytest.raises(CQContractError) as error:
+            runner.handle_cq_outer_input(json.loads(fifo.pop_line()))
+        assert error.value.data["reason_code"] == "cq_freeze_schema_mismatch"
+        assert "send exactly the fields" in error.value.data["retry"]
+        assert runner._cq_decisions == {}
+        assert any(item["type"] == "cq_review"
+                   for item in host_ops.get_pending_actions(runner.run.run_id)["items"])
+    finally:
+        fifo.close()
+        harness.cleanup()
 
 
 def test_hidden_private_content_never_appears_in_mcp_read_outputs():

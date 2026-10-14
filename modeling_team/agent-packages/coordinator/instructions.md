@@ -142,9 +142,9 @@ the earlier failed call and cannot erase the later successful creation.
 Never keep working the blocker after reporting it, never decide on your own that your issue is
 resolved (not even from artifacts you can now read, projections that appeared, or messages you
 queued), and never send a "blocker resolved" notice while the issue is pending; the issue closes
-only through the persisted outer resolution and the Runner's automatic broker `resume` or `abort`
-dispatch; check that dispatch and the actual artifact/platform gates before continuing, and do not
-send a duplicate `resume`.
+only through the persisted outer resolution and the Runner's recorded bound broker `resume` or
+`abort` outcome. Follow the self-reporter resume exception below and check the actual
+artifact/platform gates before continuing; do not send a duplicate `resume`.
 
 If a persistent role reports a typed issue, receive the exact structured issue delivery from the
 Runner and do not replace it with a terminal `blocked` report. Use only the native
@@ -154,10 +154,17 @@ an optional field set to JSON `null`. If the tool rejects the shape, correct it 
 schema and retry that same pause once; do not claim that the Runner resolved the issue. Then wait
 for the Runner's structured outer resolution delivery. Do not call Runtime controls, platform
 tools, or invent a business answer. After the formal outer resolution is persisted, the Runner
-automatically sends the bound broker `resume` or `abort` to the issue's reporter only. When you are
-the reporter, that dispatch is your own: receive its exact guidance or repair fields, wait for it,
-and check the actual gates before continuing without a second `resume`. When another role is the
-reporter, the control is delivered on that reporter's thread, never to you: do not wait for a
+handles the bound broker control. When you are the reporter and the action is `resume`, the
+Runner's `self_resumed` path records the bound control as dispatched, resolves the issue ledger,
+and returns the run to `RUNNING` without sending you a second Runtime message. Continue on your
+existing thread only after the formal resolution and Host-supplied evidence confirm that outcome
+for the same run, issue, reporter, and `control_epoch`, and the original artifact/platform gates
+are ready. The recorded `turn_id` and `dispatch_mode` may be null on this path; null fields alone
+are not proof of recovery. Preserve the exact resolution guidance or repair fields. If the Host
+has not verified that bound outcome or the gates remain closed, keep waiting; never send a
+duplicate `resume` or wait for a second Runtime delivery after self-resume is verified.
+When another role is the reporter, the Runner sends the control to that reporter's thread, never
+to you: do not wait for a
 Coordinator-addressed control. Confirm the actual dispatch and recovery facts and the original gate
 from the reporter's own recovery message or the accurate bound-dispatch evidence the Host supplies
 over the existing owner channel; while that is unverified or the dispatch is deferred (for example

@@ -43,7 +43,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable, NamedTuple
+from typing import Any, Callable, Literal, NamedTuple
 from urllib.parse import urlsplit
 
 import yaml
@@ -945,7 +945,10 @@ def _cq_pending(run_root: Path) -> tuple[list[dict[str, Any]], list[str]]:
                             "note": "schema_version is filled by the tool; the "
                             "Runner validates the review/question/content bindings "
                             "against the snapshot; revision is a positive reviewer "
-                            "ordinal and is not stored in the snapshot",
+                            "ordinal and is not stored in the snapshot; decision must "
+                            "be approve, modify, delete or supplement; modify/supplement "
+                            "require modified_question as a complete question object, "
+                            "not a question-text string",
                         }
                     ],
                 }
@@ -2217,16 +2220,22 @@ def submit_cq_review(
     *,
     review_id: str,
     question_id: str,
-    decision: str,
+    decision: Literal["approve", "modify", "delete", "supplement"],
     content_version: int,
     content_digest_value: str,
     revision: int = 1,
-    modified_question: str | None = None,
+    modified_question: dict[str, Any] | None = None,
     note: str | None = None,
     request_id: str | None = None,
     repository_root: Path | None = None,
 ) -> dict[str, Any]:
-    """``submit_cq_review``: one strict review decision envelope."""
+    """Submit approve/modify/delete/supplement using the existing review envelope.
+
+    modify/supplement require a complete modified_question object, with
+    question_id, scope, question, answer_points, evidence_refs, unknown,
+    proposed_visibility and content_version. Other decisions use null.
+    Submission is not acceptance; check get_request_result for Runner validation.
+    """
 
     envelope = {
         "action": "cq_review",
