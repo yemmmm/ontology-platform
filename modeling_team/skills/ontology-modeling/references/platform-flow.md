@@ -32,8 +32,10 @@ uses a model-local `kind=explicit_unknown` resource, preserve its stable identit
 scope, unanswered business question, source basis and rationale, with no asserted answer value.
 Connect it to the affected model meaning so a governed consumer can observe the uncertainty.
 Narrow the unknown to the specific unconfirmed business meaning, and retain other source-confirmed
-facts and the current scope. Physical source structure and samples do not establish business rules,
-legal value universes or permissions. Keep confirmation state separate from delivery state; every
+facts and the current scope. Physical source structure and samples do not establish customer
+business rules, business-wide legal value universes or permissions. A declared source enum/CHECK
+can describe that source column's allowed values; sample values alone cannot.
+Keep confirmation state separate from delivery state; every
 `deferred`, `unknown` or `out-of-scope` disposition carries its reason, impact and next responsible
 role/input in the existing reason/note or handoff content; do not add a field or enum for it. Do not
 create source-row instances or a platform-domain feature to carry the unknown.

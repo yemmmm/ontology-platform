@@ -48,7 +48,10 @@ candidate references and their existing reason/note content; the labels above ar
 not a new enum, schema or workflow. Do not create a field table, private schema, extra Agent or hard
 gate. Narrow
 unknowns to a specific unconfirmed meaning, preserve source-confirmed facts and scope, and do not
-treat physical structure or samples as business rules, legal value universes or permissions.
+treat physical structure or samples as customer business rules, business-wide legal value universes
+or permissions. A declared source enum/CHECK can describe that source column's allowed values;
+sample values alone cannot. Necessary source facts belong in the permitted candidate/model content;
+technical file/line locators belong in the existing handoff, which cannot replace model expression.
 
 ## Respond to a returned conflict
 

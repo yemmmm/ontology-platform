@@ -850,9 +850,13 @@ class TransportTests(unittest.TestCase):
         coordinator = (root / "modeling_team/agent-packages/coordinator/instructions.md").read_text(
             encoding="utf-8"
         )
-        self.assertIn("Runner's automatic broker `resume` or `abort`", coordinator)
-        self.assertIn("automatically sends the bound broker `resume` or `abort`", coordinator)
-        self.assertIn("check the actual gates before continuing without a second `resume`", coordinator)
+        self.assertIn("handles the bound broker control", coordinator)
+        self.assertIn("Runner's `self_resumed` path records the bound control as dispatched", coordinator)
+        self.assertIn("without sending you a second Runtime message", coordinator)
+        self.assertIn("the original artifact/platform gates\nare ready", coordinator)
+        self.assertIn("null fields alone\nare not proof of recovery", coordinator)
+        self.assertIn("the Runner sends the control to that reporter's thread", coordinator)
+        self.assertIn("a persisted outer resolution alone is not success", coordinator)
         self.assertNotIn("your one bound `resume`", coordinator)
         self.assertNotIn("After the outer resolution is delivered, send exactly one bound", coordinator)
         self.assertNotIn("send exactly one bound `resume` carrying the exact", coordinator)

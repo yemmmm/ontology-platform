@@ -324,8 +324,10 @@ class R23005CompleteRevisionTests(unittest.TestCase):
             "do not include `reason`",
             "retry that same pause once",
             "do not claim that the Runner resolved the issue",
-            "receive its exact guidance or repair fields",
-            "automatically sends the bound broker `resume` or `abort`",
+            "Preserve the exact resolution guidance or repair fields",
+            "Runner's `self_resumed` path records the bound control as dispatched",
+            "without sending you a second Runtime message",
+            "the Runner sends the control to that reporter's thread",
         ):
             self.assertIn(phrase, coordinator_instructions)
 

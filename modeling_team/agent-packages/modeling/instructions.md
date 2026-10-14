@@ -12,6 +12,18 @@ own build sessions, leases, Batch/Item envelopes, or idempotency; do not author 
 items. Protocol mechanically translates your candidate and returns a concrete translation conflict
 when one exists.
 
+Read the Runner's original `Task objective`, concrete `Task identity` and your mounted
+representation contracts directly. Coordinator's dispatch references that task_id and supplements
+the current stage; it cannot replace the Task or redefine its allowed fields. If it conflicts,
+use existing Team Transport to state the original clause, conflicting instruction, affected
+facts/candidate items and proposed correction. Continue unaffected work and correct ordinary
+restatement/format errors within the authorized contract without new business authorization.
+Actual scope changes or unresolved business meanings still go through Coordinator/Delivery to
+the original authorizer. A genuine representation limit remains an explicit undelivered gap,
+with impact and next step; do not relabel known facts unknown, invent fields, permanently end
+the run or wait for independent acceptance to fix an ordinary dispatch conflict. Existing
+candidate review and execution authorization still apply.
+
 The authoritative Team Transport call identities are the ones your Runtime advertises for this run
 in its tool catalog. A namespaced MCP surface advertises each tool as two parts - a namespace and a
 member name - and both are part of its identity: the Team Transport namespace is
@@ -58,9 +70,15 @@ Protocol completion result and report your production result when your semantic 
 During this route's existing stage review, identify the candidate item/location or concrete
 disposition for important source facts and necessary dependencies of the current chain and its
 approved public questions. A source declaration can be known while customer meaning remains
-unknown: preserve that distinction and its source locator in permitted definitions/text or the
-existing handoff. A Task excluding executable SQL/API mappings does not itself exclude relevant
-source-structure evidence. Do not promote it to a customer rule, create mappings without approval
+unknown: express necessary known fields, declared values, non-null/unique/foreign-key declarations
+and time conditions in the actual model's permitted definitions/text or ordinary nodes/relations.
+State which source structure each declaration describes, preserving concrete conditions and null
+branches. Keep the distinct customer unknown in the model. Technical file/line locators and current
+candidate revision/item references stay in the existing handoff/map note; handoff-only facts do
+not count as model expression. No source-locator field is needed, and no evidence_refs, lineage
+or provenance field may be added. A Task excluding executable SQL/API mappings does not itself
+exclude relevant source-structure evidence. Samples do not prove rules or the full legal value
+set, and source rows stay in the relational source. Do not promote it to a customer rule, create mappings without approval
 or expand to all columns. If representation or business confirmation is missing, name the precise
 delivery gap and its effect. Excluding full master-data coverage is not sufficient grounds to
 exclude a minimal shared dependency. Coordinate that disposition before freezing the candidate;
@@ -488,7 +506,8 @@ ordinary explanatory material; the platform does not execute them.
 
 ## R4.0-010 relational mapping candidates
 
-When the active task mounts `r4-0-010-relational-mapping-contract.json`, use the same
+Only when the selected Task includes SQL mapping and actually mounts
+`r4-0-010-relational-mapping-contract.json`, use the same
 platform-neutral candidate boundary in both candidate forms. A mapping item has one of the
 neutral kinds `table_mapping`, `join_mapping`, `enum_meaning`, or `metric_definition`; its
 `semantic` object carries the physical location, roles, keys, path, value meaning, metric
@@ -575,7 +594,8 @@ never bulk-upgrade shared business states or use a private verdict to amend prod
 
 ### R4.0-011 interface mapping
 
-When mounted, read `r4-0-011-api-mapping-contract.json` and its complete `neutral_example`,
+Only when the selected Task includes API mapping and actually mounts
+`r4-0-011-api-mapping-contract.json`, read it and its complete `neutral_example`,
 and the `interface_mapping` authoring/role section. Apply its ordinary graph method in both
 active candidate formats. Query interfaces need no Class/Action/Operation. Preserve distinct
 message/field identities, same-type parameter positions and repeated-call contexts, composite
@@ -619,8 +639,9 @@ and the current accurate scope, and state the concrete reason, impact and next r
 in the existing reason/note or handoff content for each `deferred`, `unknown` or `out-of-scope`
 disposition. Combine dispositions only when that
 reason and impact are the same. Separate business confirmation from candidate/plan/application
-delivery. Physical source structure and samples do not establish business rules, legal value
-universes or permissions. Do not materialize mapping semantics without the applicable mapping
+delivery. Physical source structure and samples do not establish customer business rules,
+business-wide legal value universes or permissions. A declared source enum/CHECK can describe
+that source column's allowed values; sample values alone cannot. Do not materialize mapping semantics without the applicable mapping
 approval; a legitimate deferral is not whole-scope completion, and an analyzed-but-undelivered item
 must not be hidden under a generic unknown. Mapping/metric business unknowns remain explicit; source
 schema is not business truth.

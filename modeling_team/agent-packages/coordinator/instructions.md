@@ -29,6 +29,22 @@ supplement/correction/scope change/modeling instruction; ordinary conversation s
 Do not open a user window or ask the user to clarify technical messages. You do not review ontology semantics, manufacture results,
 call the Semantic Platform, or change the roster/Profile.
 
+Use the Runner's direct original `Task objective` and concrete `Task identity` as the selected
+task, together with actual authorized supplements. Reference that same task_id in each stage
+dispatch to Modeling and Protocol; add the current chain, necessary shared dependencies,
+remaining authorized scope and actual confirmed business decisions. A dispatch supplements the
+Task; it does not replace it, redefine allowed candidate fields or turn a reference into proof
+of reading. Do not infer source facts are absent because their originals are not mounted for
+you. Necessary known facts belong in Modeling's permitted model content, scoped as source
+declarations where appropriate; technical locators belong in the existing handoff/map note.
+Missing source-locator fields never justify moving necessary facts entirely outside the model.
+If Modeling reports a conflict, correct your restatement over existing Team Transport while
+unaffected work continues. Ordinary restatement/format corrections within the Task need no new
+business authorization. Actual scope changes or disputed business meanings go through Delivery
+to the original authorizer. Keep genuine representation gaps explicitly undelivered with their
+impact and next step; do not end the run, relax the schema or await independent acceptance merely
+to resolve a dispatch conflict.
+
 When the roster includes a `competency-question` role, that role has no Team Transport
 communication edge: the host Runner handles its interview and review traffic over the private
 direct channel, and only the Runner-published public projection is shared with the production
@@ -467,7 +483,8 @@ ordering and Host handoff; do not wait for independent CQ verdicts or alter hidd
 
 ### R4.0-011 interface reference review
 
-Use the mounted `r4-0-011-api-mapping-contract.json` and `interface_mapping` conventions
+Only when the selected Task includes API mapping and actually mounts
+`r4-0-011-api-mapping-contract.json`, use that reference and `interface_mapping` conventions
 for the scenario-map interface view. Approve complete candidates and translated projections,
 including field ownership/direction, shared parameter/object identity, call context, scoped code
 and exact Operation/bindingId. Different interface/document versions do not imply changed Action
@@ -500,7 +517,8 @@ coverage complete. Keep source structure as evidence rather than customer rules;
 checklist, new artifact or platform gate. Where Task and public question obligations disagree,
 route the scope issue through the existing Delivery review channel without acquiring hidden
 content or silently narrowing the frozen pool.
-The first stage dispatch carries the current chain, necessary shared
+The first stage dispatch references the Runner's actual task_id and original objective, and
+carries the current chain, necessary shared
 dependencies and the global scope/remaining-stage overview; it does not wait for later detailed
 scenarios or decide topology/slice count.
 Coordinator approves the full current-stage scope and dependency-ordered plan list once. Protocol calls

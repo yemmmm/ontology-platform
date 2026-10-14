@@ -45,17 +45,35 @@ business meaning; retain other source-confirmed facts and the current scope. Kee
 separate from candidate/plan/application delivery, and explain the reason, impact and next responsible
 role/input for each deferred, unknown or out-of-scope disposition in the existing reason/note or
 handoff content. Do not add a field or enum for it. Physical source structure and samples do not
-establish business rules, legal value universes or permissions.
+establish customer business rules, business-wide legal value universes or permissions. A declared
+source enum/CHECK can describe that source column's allowed values; sample values alone cannot.
 
 For the current authorized chain, a declared source field, value constraint or physical link can
 be known even while its customer business interpretation is unknown. When needed by that chain or
-an approved public question, retain the known source evidence and locator in the existing permitted
-definition/text, and name the distinct unknown meaning. Excluding executable mappings does not
+an approved public question, express known fields, declared values, non-null/unique/foreign-key
+declarations and time conditions in the actual model's permitted definition/text or ordinary
+nodes/relations. Clearly scope each declaration to the relevant source structure; preserve concrete
+conditions and null branches. Keep the distinct unknown customer meaning in the model as well.
+Technical file/line locators and current candidate revision/item references belong in the existing
+handoff/map note; handoff-only facts do not count as model expression. Absence of a source-locator
+field does not exclude a fact or permit new evidence_refs, lineage or provenance fields.
+Excluding executable mappings does not
 automatically exclude such evidence. Do not turn a physical constraint into a business rule or
 expand to every source column. If it cannot be represented under the selected contract, disclose
 the undelivered evidence, affected answer and next input in the existing handoff instead of
 relabeling it unknown. Necessary shared dependencies require a grounded disposition; excluding
 a whole master-data area does not by itself exclude the minimal dependency used by this chain.
+
+Read the Runner's direct original Task objective, actual Task identity and mounted representation
+contracts. Coordinator's dispatch references that task_id and supplements the stage, without
+replacing the Task or redefining allowed fields. For a conflict, report the original clause,
+conflicting instruction, affected facts/items and proposed correction over existing Team Transport;
+continue unaffected work. Correct restatement/format errors within the authorized contract without
+new business authorization, preserving normal candidate review and execution authorization.
+Route genuine scope changes or unresolved business meaning through Coordinator/Delivery to the
+original authorizer. Keep a genuine representation gap explicitly undelivered with impact and next
+step; do not relabel known facts unknown, relax fields, permanently end the run or wait for
+independent acceptance to resolve an ordinary dispatch conflict.
 
 ## Design a coherent scenario
 
@@ -140,7 +158,8 @@ semantic ownership, preserve unaffected meaning, and submit the required full re
 Do not hand-author platform envelopes or ask Protocol to invent missing semantics. Follow the
 selected revision contract instead of sending an unbound patch or silently altering a frozen file.
 
-For R4.0-010, model the four neutral mapping item kinds (`table_mapping`, `join_mapping`,
+Only when the selected Task includes SQL mapping and actually mounts the R4.0-010 reference,
+model the four neutral mapping item kinds (`table_mapping`, `join_mapping`,
 `enum_meaning`, `metric_definition`) in either active candidate form. Include the complete
 physical role, grain, key, path, encoding or metric context plus `mapping_definition`, and use
 recursive `{definition_ref: item_id}` links. Use an explicit unknown for unsupported business
@@ -179,7 +198,8 @@ Do not invoke historical artifacts listed in
 
 ## Map external API descriptions
 
-For R4.0-011 read the mounted `r4-0-011-api-mapping-contract.json` and its complete
+Only when the selected Task includes API mapping and actually mounts
+`r4-0-011-api-mapping-contract.json`, read that reference and its complete
 `neutral_example`; the `interface_mapping` section of both authoring/role contracts applies
 also to unified candidates. Use ordinary definitions and explicit edges, not a new platform kind.
 A query interface can have no Class, Action or Operation. Keep system/interface/document versions,

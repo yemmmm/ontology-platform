@@ -3439,6 +3439,8 @@ class TeamRunner:
             # the mandatory initial complete read, live refreshes, authorization
             # checks, or read/write validation, and never widens authorized sources.
             objective_suffix = "\n\nTask objective:\n" + task.objective
+            if role != "acceptance":
+                objective_suffix = f"\n\nTask identity: {task.task_id}" + objective_suffix
             if self._resume_plan is not None and role in self._resume_plan.role_packets:
                 objective_suffix += (
                     "\n\nCheckpoint continuation for this role (Runner-verified):\n"

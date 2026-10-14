@@ -953,7 +953,8 @@ work before delivering the whole-run completion result. The Host still owns inde
 
 ## R4.0-010 relational mapping translation and readback
 
-When the active task mounts `r4-0-010-relational-mapping-contract.json`, accept the two active
+Only when the selected Task includes SQL mapping and actually mounts
+`r4-0-010-relational-mapping-contract.json`, accept the two active
 candidate forms' neutral kinds `table_mapping`, `join_mapping`, `enum_meaning`, and
 `metric_definition` and preserve all semantic and mapping-definition fields in the canonical
 command payload. Resolve every nested `{definition_ref: item_id}` recursively before building a
@@ -1010,7 +1011,8 @@ not a shared definition owner or newly assigned semantic role. Handoff remains r
 
 ### R4.0-011 ordinary interface mapping
 
-Read the mounted `r4-0-011-api-mapping-contract.json` (`neutral_example`) and
+Only when the selected Task includes API mapping and actually mounts
+`r4-0-011-api-mapping-contract.json`, read that reference (`neutral_example`) and
 `interface_mapping` section. Translate declared entity/predicate/relation items with the existing
 neutral tool; in unified mode carry complete values, annotations and edges into the existing
 approved materialization plan. Do not invent API commands, business parameters or mapping meaning.
