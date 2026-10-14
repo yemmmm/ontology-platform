@@ -1,2 +1,2 @@
-"""Ontology Platform backend package."""
+"""OntoWeave backend package."""
 

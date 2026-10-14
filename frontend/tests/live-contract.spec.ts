@@ -169,6 +169,6 @@ test.describe("semantic live-contract (real backend + Oxigraph)", () => {
     const res = await page.goto("/");
     expect(res?.status()).toBe(200);
     await expect(page.locator("#root")).not.toBeEmpty({ timeout: 10_000 });
-    await expect(page).toHaveTitle(/Ontology Platform/i);
+    await expect(page).toHaveTitle(/OntoWeave/i);
   });
 });

@@ -1,4 +1,4 @@
-# Ontology Platform Glossary
+# OntoWeave Glossary
 
 > **v4 scope (R4.0-012, 2026-10-01):** Evidence Reference, Evidence Association,
 > Statement Occurrence, Lineage, Lineage Completeness, Derivation Proof Level, Evidence Status,

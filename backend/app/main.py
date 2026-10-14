@@ -10,7 +10,7 @@ from app.security.http import AuthenticationMiddleware, install_http_route_polic
 
 def create_app() -> FastAPI:
     settings = Settings()
-    app = FastAPI(title="Ontology Platform API", version="0.1.0")
+    app = FastAPI(title="OntoWeave API", version="0.1.0")
     app.state.settings = settings
     app.state.session_factory = build_session_factory(settings)
     app.state.rdf_store = build_rdf_store(settings)

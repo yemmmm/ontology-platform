@@ -1,4 +1,4 @@
-"""ontology-platform MCP server entrypoint.
+"""OntoWeave MCP server entrypoint.
 
 Tool implementations live in ``app.mcp.tools``; this module owns only the
 FastMCP instance and the registration call.
@@ -18,7 +18,7 @@ class AuthenticatedFastMCP(FastMCP):
         return super().run(*args, **kwargs)
 
 
-mcp = AuthenticatedFastMCP("ontology-platform")
+mcp = AuthenticatedFastMCP("OntoWeave")
 register_all(mcp)
 
 

@@ -1,5 +1,9 @@
 # Repository Guidelines
 
+项目名称为 **OntoWeave**（织义），原名 Ontology Platform。当前产品展示与说明使用新名称；
+`ontology-platform`／`ontology_platform` 仍是现有部署、存储及 Agent 配置的兼容技术标识。
+历史证据不因更名改写。名称范围见 [README](README.md#project-name)。
+
 ## 建模优先、平台防御与失败恢复规则
 
 本节是建模流程优先级、平台校验和失败处理的统一规则。除非用户或适用的权威需求明确变更，

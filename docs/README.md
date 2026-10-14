@@ -1,4 +1,6 @@
-# Documentation Map
+# OntoWeave Documentation Map
+
+Project naming and retained deployment identifiers are documented in the [README](../README.md#project-name).
 
 This directory separates the current product contract from architecture decisions and historical
 delivery evidence. Use the following locations for new documentation.

@@ -1,11 +1,24 @@
-# Ontology Platform
+# OntoWeave
 
-Ontology Platform 是供外部 Agent 构建、验证和查询领域本体的本地语义平台。外部 Agent 负责理解
+**织义 · 面向 AI Agent 的业务语义平台**
+
+OntoWeave 是供外部 Agent 构建、验证和查询领域本体的本地语义平台。外部 Agent 负责理解
 资料与建模判断；平台负责确定性校验、RDF/Oxigraph 语义存储、PostgreSQL 工作流与审计状态、
 Evidence Reference、可恢复建模批次、lineage 和结构化查询。
 
 当前 v1 已实现 R-001 至 R-008 及 R-011。R-009 纯查询诊断暂时挂起，旧 Agent Test
 内置 LLM 路径已移除；R-010 的建模效果目标已转入 v1.1。部署仍应使用受控网络并妥善保管运营凭据。
+
+## Project Name
+
+2026-10-14 起，项目名称为 **OntoWeave**（中文名：织义），原名 Ontology Platform。
+当前文档、界面、API/MCP 服务展示名与软件包元数据统一使用新名称；历史需求、交付记录与
+验收证据保留原有名称及其时点含义。
+
+为兼容现有部署与模型数据，工作目录 `ontology-platform`、systemd unit
+`ontology-platform.service`、数据库／容器名称、RDF IRI／URN、MCP 配置键
+`ontology-platform`／`ontology_platform`、环境变量、凭据路径与浏览器存储键继续沿用。
+这些是技术标识，不是当前产品名称；本次更名不要求迁移数据或重新配置 Agent。
 
 ## Repository Layout
 

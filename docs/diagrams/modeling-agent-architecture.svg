@@ -48,7 +48,7 @@
 
   <rect x="940" y="120" width="620" height="750" rx="14" fill="#eff6ff" stroke="#6c8ebf" stroke-width="2"/>
   <rect x="940" y="120" width="620" height="42" rx="14" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2"/>
-  <text class="laneTitle" x="960" y="148">Ontology Platform 确定性平台层</text>
+  <text class="laneTitle" x="960" y="148">OntoWeave 确定性平台层</text>
   <rect class="node" x="985" y="185" width="235" height="72" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="1102" y="213"><tspan x="1102">FastMCP</tspan><tspan class="small" x="1102" dy="22">外部 Agent stdio tools</tspan></text>
   <rect class="node" x="1280" y="185" width="235" height="72" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="1397" y="213"><tspan x="1397">FastAPI</tspan><tspan class="small" x="1397" dy="22">UI / HTTP adapters</tspan></text>
   <rect class="node" x="970" y="300" width="270" height="76" rx="12" fill="#f5f5f5" stroke="#6c8ebf"/><text class="label" x="1105" y="328"><tspan x="1105">BuildSessionService</tspan><tspan class="small" x="1105" dy="22">Context · Session · Checkpoint · Lease</tspan></text>

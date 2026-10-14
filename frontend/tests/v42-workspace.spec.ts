@@ -12,6 +12,9 @@ test("T01 six sibling links normalize retired URL and storage, with history navi
     localStorage.setItem("unrelated", "keep");
   });
   await page.goto("/?project=forbidden&ontology=secret&tab=classes&batch=b1&graph=g1");
+  await expect(page).toHaveTitle("OntoWeave");
+  await expect(page.locator(".workspaceHeader .eyebrow")).toHaveText("OntoWeave");
+  await expect(page.locator(".brand")).toHaveText("OntoWeave");
   await expect(page.getByRole("heading", { name: "Overview", exact: true })).toBeVisible();
   await expect.poll(() => new URL(page.url()).search).toBe("?project=p1&tab=overview");
   expect(await page.getByRole("navigation").getByRole("link").allTextContents()).toEqual(["Overview", "Modeling conversation", "Model browser", "Recall test", "Member permissions", "Settings"]);

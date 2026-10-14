@@ -1,7 +1,7 @@
 [project]
-name = "ontology-platform-backend"
+name = "ontoweave-backend"
 version = "0.1.0"
-description = "FastAPI backend and MCP server for Ontology Platform"
+description = "FastAPI backend and MCP server for OntoWeave"
 requires-python = ">=3.11"
 dependencies = [
   "alembic>=1.13",

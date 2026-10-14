@@ -43,6 +43,8 @@ test("unauthenticated users can sign in and sign out", async ({ page }) => {
   });
 
   await page.goto("/?project=project-1&ontology=ontology-1&tab=settings");
+  await expect(page).toHaveTitle("OntoWeave");
+  await expect(page.locator(".auth-eyebrow")).toHaveText("OntoWeave");
   await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible();
 
   await page.getByLabel("Username").fill("test-admin");

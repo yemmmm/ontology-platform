@@ -18,7 +18,7 @@
   <rect x="30" y="110" width="250" height="1660" fill="#faf5ff" stroke="#9673a6" stroke-width="2"/><rect x="30" y="110" width="250" height="44" fill="#e1d5e7" stroke="#9673a6" stroke-width="2"/><text class="laneTitle" x="155" y="139">用户</text>
   <rect x="290" y="110" width="500" height="1660" fill="#eff6ff" stroke="#6c8ebf" stroke-width="2"/><rect x="290" y="110" width="500" height="44" fill="#dae8fc" stroke="#6c8ebf" stroke-width="2"/><text class="laneTitle" x="540" y="139">主建模 Agent</text>
   <rect x="800" y="110" width="450" height="1660" fill="#f0fdf4" stroke="#82b366" stroke-width="2"/><rect x="800" y="110" width="450" height="44" fill="#d5e8d4" stroke="#82b366" stroke-width="2"/><text class="laneTitle" x="1025" y="139">子 Agent / Repo-local 工具</text>
-  <rect x="1260" y="110" width="510" height="1660" fill="#fffbeb" stroke="#d6b656" stroke-width="2"/><rect x="1260" y="110" width="510" height="44" fill="#fff2cc" stroke="#d6b656" stroke-width="2"/><text class="laneTitle" x="1515" y="139">Ontology Platform</text>
+  <rect x="1260" y="110" width="510" height="1660" fill="#fffbeb" stroke="#d6b656" stroke-width="2"/><rect x="1260" y="110" width="510" height="44" fill="#fff2cc" stroke="#d6b656" stroke-width="2"/><text class="laneTitle" x="1515" y="139">OntoWeave</text>
 
   <ellipse class="node" cx="540" cy="195" rx="115" ry="30" fill="#d5e8d4" stroke="#82b366"/><text class="label" x="540" y="200">开始 / 恢复一次建模任务</text>
   <rect class="node" x="365" y="255" width="350" height="80" rx="12" fill="#dae8fc" stroke="#6c8ebf"/><text class="label" x="540" y="282"><tspan x="540">读取本地 ledger（如有）</tspan><tspan class="small" x="540" dy="22">请求 Build Context / Session / Modeling Context</tspan></text>

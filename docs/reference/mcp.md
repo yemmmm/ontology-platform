@@ -1,4 +1,4 @@
-# MCP 工具
+# OntoWeave MCP 工具
 
 本文档描述当前 FastMCP 进程实际注册的工具。完整清单来自 `mcp.list_tools()`，并通过现有
 `app.api.mcp_catalog._enumerate_tools()` 补充 category 和源文件。
@@ -35,6 +35,9 @@ Embedding／投影配置仍单独校验；旧索引降级为词面召回，重�
 检查点和冻结证据保留原样，不改写历史记录为新状态。
 
 ## 启动与配置
+
+MCP 服务展示名为 `OntoWeave`；现有客户端配置键 `ontology-platform`／`ontology_platform`
+与工具名称保持不变。
 
 从 backend 目录启动 stdio MCP server：
 

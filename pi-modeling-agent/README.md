@@ -1,6 +1,6 @@
 # pi-modeling-agent
 
-First-party **Pi Local** modeling Agent Runtime for the ontology platform. A repo-local Runner drives
+First-party **Pi Local** modeling Agent Runtime for OntoWeave. A repo-local Runner drives
 headless Pi RPC child processes through the daily modeling workflow: source understanding, user
 interview, Brief/CQ confirmation, Work Unit modeling, independent review, deterministic dry-run/apply,
 and post-apply CQ/retrieval/provenance verification.

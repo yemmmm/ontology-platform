@@ -1,6 +1,6 @@
 ---
 name: modeling-dev-loop
-description: "Start, resume and actively supervise authorized ontology-platform modeling with independent Delivery or an existing manual Host workflow. Covers progress checks, blocker follow-through, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
+description: "Start, resume and actively supervise authorized OntoWeave modeling with independent Delivery or an existing manual Host workflow. Covers progress checks, blocker follow-through, repair handoff and evidence boundaries; not a production modeling or testing business-answerer skill."
 ---
 
 # 建模开发推进

@@ -588,7 +588,7 @@ wheels = [
 ]
 
 [[package]]
-name = "ontology-platform-backend"
+name = "ontoweave-backend"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

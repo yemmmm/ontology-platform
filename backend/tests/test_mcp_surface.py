@@ -162,6 +162,7 @@ def _tool_names() -> set[str]:
 
 
 def test_mcp_surface_matches_registry_exactly() -> None:
+    assert mcp.name == "OntoWeave"
     names = _tool_names()
     assert names == ALLOWED_TOOLS
     assert names.isdisjoint(FORBIDDEN_TOOLS)

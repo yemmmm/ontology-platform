@@ -78,10 +78,10 @@ export function App() {
   }
   const project = projects.find(item => item.id === selection.project);
   return <div className="workspaceShell">
-    <aside className="workspaceRail"><div className="brand"><Network size={26} /><span>Ontology<br /><strong>Platform</strong></span></div>
+    <aside className="workspaceRail"><div className="brand"><Network size={26} /><span>Onto<strong>Weave</strong></span></div>
       <nav aria-label={t("Workspace navigation")}>{tabs.map(([tab, label, Icon]) => <a key={tab} href={`${urlFor(selection.project, tab).search}`} aria-current={selection.tab === tab ? "page" : undefined} onClick={event => { if (event.button === 0 && !event.metaKey && !event.ctrlKey) { event.preventDefault(); navigate(selection.project, tab); } }}><Icon size={19} /><span>{t(label)}</span></a>)}</nav>
     </aside>
-    <main className="workspaceMain"><header className="workspaceHeader"><div><p className="eyebrow">Ontology Platform</p><h1>{t(tabs.find(item => item[0] === selection.tab)![1])}</h1></div>
+    <main className="workspaceMain"><header className="workspaceHeader"><div><p className="eyebrow">OntoWeave</p><h1>{t(tabs.find(item => item[0] === selection.tab)![1])}</h1></div>
       {selection.tab === "overview" && <label className="projectPicker">{t("Project")}<select value={selection.project} aria-label={t("Project")} onChange={event => navigate(event.target.value, "overview")} disabled={!projects.length}>{projects.length ? projects.map(item => <option value={item.id} key={item.id}>{item.name}</option>) : <option value="">{t("No accessible projects")}</option>}</select></label>}
     </header>
       {error && <p className="errorMessage" role="alert">{t("Project list could not be read")}: {error}</p>}

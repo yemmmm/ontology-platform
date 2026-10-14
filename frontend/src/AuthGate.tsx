@@ -88,7 +88,7 @@ export function AuthGate({ children }: { children: React.ReactNode }) {
     return (
       <main className="auth-page">
         <form className="auth-card" onSubmit={login}>
-          <div className="auth-eyebrow">Ontology Platform</div>
+          <div className="auth-eyebrow">OntoWeave</div>
           <h1>{t("Sign in")}</h1>
           <p>{t("Use the administrator account configured for this deployment.")}</p>
           <label>

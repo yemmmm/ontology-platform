@@ -1,6 +1,6 @@
 ---
 name: modeling-retrospective
-description: "复盘 ontology-platform 建模运行，核对关联需求的验证闭环，追踪已确认改进的实际效果，再分析质量、效率与兜底成本并提出新建议。适用于建模复盘、需求验证状态核对和改进跟踪；即时启动、监督和恢复使用 modeling-dev-loop。"
+description: "复盘 OntoWeave 建模运行，核对关联需求的验证闭环，追踪已确认改进的实际效果，再分析质量、效率与兜底成本并提出新建议。适用于建模复盘、需求验证状态核对和改进跟踪；即时启动、监督和恢复使用 modeling-dev-loop。"
 ---
 
 # 建模复盘与改进

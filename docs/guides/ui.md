@@ -1,4 +1,4 @@
-# UI
+# OntoWeave UI
 
 frontend 是 `frontend/` 下的 React/Vite 项目阅读工作区，当前范围为
 [v4.2 五 Tab](../requirements/requirements-v4.2.md)。

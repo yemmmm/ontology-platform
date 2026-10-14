@@ -2,7 +2,7 @@
 
 ## 目标边界
 
-Ontology Platform 的目标是可复用的 Agent 语义层，而不是内置领域建模 Agent：
+OntoWeave 的目标是可复用的 Agent 语义层，而不是内置领域建模 Agent：
 
 | Party | Responsibility | Current surface |
 | --- | --- | --- |
