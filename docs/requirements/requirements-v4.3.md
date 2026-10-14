@@ -702,6 +702,13 @@ HIGH D01，修后 Round 2 原 15 项探针、2 项不相关范围推进及 23 �
 
 ### R4.3-015 分阶段建模反馈与成功写入信任边界
 
+2026-10-14同轮后续原因核对：当前Task／skill保留必要已知源事实的目标未改变，但
+实际Coordinator delivery-26要求源结构另放handoff／map-progress，r1随后未具体表达
+已在delivery-10准确识别的字段／约束。这是实际派单的prompt-contract偏差，不仅是
+Modeling缺少后置检查；当前原件、候选与反证见
+[后续根因分析](../delivery/modeling-retrospectives/2026-10-14-glm-smallchain-retrospective.md#后续根因分析输入表示理解与流程负担)。
+原部分验证及RETRO-07／08待调整保持；本次只定位责任面，未实施提示调整或运行验证。
+
 2026-10-14 后续准备授权：用户要求主导完成复盘待办，并明确下一轮改用
 `glm-5.3-flash`；沿用high及八角色profile，不再恢复DeepSeek模型调用。
 当前小链／增量Task澄清可执行映射排除与相关源结构证据的区别；Modeling／Coordinator
