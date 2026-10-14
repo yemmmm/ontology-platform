@@ -93,9 +93,28 @@ _DECISION_EVENT_NOISE_KEYS = frozenset({
 # run evidence and inside the stored raw observation, but it is model
 # activity, never a Delivery decision, so it must not wake the model and must
 # not be pushed back into the model context either:
-# :meth:`DeliverySession._model_observation` excludes exactly these sources
-# from every payload handed to the native model.
+# The same event predicate is used for fingerprints and model input.
 _DECISION_EVENT_NOISE_SOURCES = frozenset({"app-server-events.jsonl"})
+
+
+def _is_decision_event_noise(event: Any) -> bool:
+    if not isinstance(event, dict):
+        return False
+    if event.get("source") in _DECISION_EVENT_NOISE_SOURCES:
+        return True
+    if event.get("source") != "provider-attempts.jsonl":
+        return False
+    receipt = event.get("data")
+    if not isinstance(receipt, dict) or receipt.get("schema_version") != "model-usage-capture/v1":
+        return False
+    # Numeric call activity is raw evidence, not new work for Delivery.
+    # Errors (including interrupted 2xx streams), unknown statuses and
+    # corrupt/truncated placeholders remain decisions.
+    if receipt.get("event") == "attempt_start":
+        return receipt.get("status") == "unfinished" and receipt.get("http_status") is None
+    status = receipt.get("http_status")
+    return (receipt.get("event") == "attempt_end" and receipt.get("status") == "completed"
+            and type(status) is int and 200 <= status < 300)
 
 
 def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]]) -> Any:
@@ -108,7 +127,7 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
     Failed event reads and corrupt/truncated placeholder events stay
     decisions; every excluded byte remains in the stored raw observation for
     on-demand reading, and the delivered payload excludes exactly the same
-    noise sources (:meth:`DeliverySession._model_observation`).
+    noise events (:meth:`DeliverySession._model_observation`).
     """
     if not isinstance(events, dict) or not isinstance(events.get("data"), dict):
         # Failure envelopes and unexpected shapes stay decisions.
@@ -120,7 +139,7 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
                  if key not in _DECISION_EVENT_NOISE_KEYS and key != "events"}
     run_state = state.setdefault(run_id, {"seen": set(), "chain": ""})
     for event in page.get("events") or []:
-        if isinstance(event, dict) and event.get("source") in _DECISION_EVENT_NOISE_SOURCES:
+        if _is_decision_event_noise(event):
             continue
         canonical: Any = event
         identity: str | None = None
@@ -2022,8 +2041,7 @@ class DeliverySession:
                     envelope = copy.deepcopy(envelope)
                     page = envelope.get("data", {})
                     events = page.get("events", [])
-                    page["events"] = [item for item in events if not isinstance(item, dict)
-                        or item.get("source") not in _DECISION_EVENT_NOISE_SOURCES]
+                    page["events"] = [item for item in events if not _is_decision_event_noise(item)]
                     excluded += len(events) - len(page["events"])
                     self._locate_decision_events(run_id, page["events"])
                 run["events"] = envelope

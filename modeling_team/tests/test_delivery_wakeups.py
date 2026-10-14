@@ -229,6 +229,81 @@ def test_new_evidence_file_listing_alone_does_not_wake(tmp_path):
     assert not host.record_observation(grown)
 
 
+def _provider_attempt(byte_offset, event, status, http_status=None):
+    return {"source": "provider-attempts.jsonl", "byte_offset": byte_offset,
+            "data": {"schema_version": "model-usage-capture/v1", "event": event,
+                     "status": status, "http_status": http_status, "request_id": "request-1"}}
+
+
+def test_provider_success_and_inflight_receipts_do_not_wake(tmp_path):
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    for index, event in enumerate([
+        _provider_attempt(0, "attempt_start", "unfinished"),
+        _provider_attempt(256, "attempt_end", "completed", 200),
+    ], 1):
+        updated = observation()
+        updated["runs"]["run"]["events"] = _events_page([event], next_cursor=f"cursor-{index + 1}")
+        assert not host.record_observation(updated)
+        stored = json.loads((host.session_root / "observation.json").read_text())
+        assert stored["data"] == updated
+        assert stored["wake_count"] == 1
+
+
+def test_provider_noise_is_excluded_when_business_pending_wakes(tmp_path):
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    assert host._dispatch_observation(_StubNativeRuntime(), {
+        "kind": "host_observation", "data": host._model_observation()}, steer=False)
+    updated = observation()
+    updated["runs"]["run"]["pending"]["data"]["items"][0]["id"] = "question-2"
+    updated["runs"]["run"]["events"] = _events_page([
+        _provider_attempt(0, "attempt_start", "unfinished"),
+        _provider_attempt(256, "attempt_end", "completed", 200),
+        _receipt_event(0, "req-9"),
+    ], next_cursor="cursor-2")
+    assert host.record_observation(updated)
+    payload = host._model_observation()
+    run = payload["runs"]["run"]
+    assert run["pending"]["data"]["items"][0]["id"] == "question-2"
+    assert [item["source"] for item in run["events"]["data"]["events"]] == [
+        "outer-input-receipts.jsonl"]
+    assert payload["raw_observation"]["excluded_noise_event_records"] == 2
+
+
+@pytest.mark.parametrize("status,http_status", [
+    ("transport_error", None), ("http_error", 429), ("stream_error", 200),
+    ("client_disconnected", 200), ("completed", 500), (None, 200),
+])
+def test_provider_failures_and_unknown_receipts_still_wake(tmp_path, status, http_status):
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    assert host._dispatch_observation(_StubNativeRuntime(), {
+        "kind": "host_observation", "data": host._model_observation()}, steer=False)
+    event = _provider_attempt(0, "attempt_end", status, http_status)
+    updated = observation()
+    updated["runs"]["run"]["events"] = _events_page([event], next_cursor="cursor-2")
+    assert host.record_observation(updated)
+    assert event in host._model_observation()["runs"]["run"]["events"]["data"]["events"]
+    assert not host.record_observation(updated)
+
+
+@pytest.mark.parametrize("event", [
+    {"source": "provider-attempts.jsonl", "byte_offset": 0, "corrupt": True},
+    {"source": "provider-attempts.jsonl", "byte_offset": 0, "truncated": True},
+    {"source": "runtime-failure.jsonl", "byte_offset": 0, "data": {"event": "failed"}},
+])
+def test_provider_corruption_and_runtime_failures_still_wake(tmp_path, event):
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    assert host._dispatch_observation(_StubNativeRuntime(), {
+        "kind": "host_observation", "data": host._model_observation()}, steer=False)
+    updated = observation()
+    updated["runs"]["run"]["events"] = _events_page([event], next_cursor="cursor-2")
+    assert host.record_observation(updated)
+    assert event in host._model_observation()["runs"]["run"]["events"]["data"]["events"]
+
+
 # --- R4.3-013: the delivered payload never carries raw app-server records ----
 
 _HUGE_DELTA = "\u6bb5" * 204_007
