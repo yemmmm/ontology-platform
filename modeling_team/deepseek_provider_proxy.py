@@ -23,12 +23,16 @@ import ssl
 import stat
 import threading
 import time
+import uuid
+
 from dataclasses import dataclass
 from functools import lru_cache
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable, Sequence
 from urllib.parse import urlsplit
+
+from .usage_capture import LOG, utc_now
 
 
 DEEPSEEK_API_KEY_ENV = "DEEPSEEK_API_KEY"
@@ -406,11 +410,22 @@ class _SessionHandler(BaseHTTPRequestHandler):
             session._count("rejected")
             self._reject(400)
             return
+        request_id = uuid.uuid4().hex
         attempt = 1
+        request_receipt = {"proxy_session_id": session._usage_session_id, "request_id": request_id,
+                   "provider": session.provider_id,
+                   "requested_model": _parsed_body.get("model")
+                       if isinstance(_parsed_body.get("model"), str) else None,
+                   "requested_effort": (_parsed_body.get("reasoning") or {}).get("effort")
+                       if isinstance(_parsed_body.get("reasoning"), dict) else None}
         while True:
+            receipt = {**request_receipt, "attempt_index": attempt, "start": utc_now()}
+            session.record_attempt({**receipt, "event": "attempt_start", "status": "unfinished"})
             try:
                 status, headers, response = session.forward(body)
             except ProviderSessionError as exc:
+                session.record_attempt({**receipt, "event": "attempt_end", "end": utc_now(),
+                                        "status": "transport_error"})
                 if self._retry_transport_failure(session, attempt, exc):
                     attempt += 1
                     continue
@@ -418,11 +433,14 @@ class _SessionHandler(BaseHTTPRequestHandler):
                 session.note_upstream_failure()
                 self._reject(_LOCAL_FAILURE_STATUS)
                 return
+            receipt.update(http_status=status, headers_at=utc_now())
             session._record_status(status)
             if 200 <= status < 300:
                 break
             retry_after = headers.get("retry-after") if isinstance(headers, dict) else None
             self._discard_upstream_body(response)
+            session.record_attempt({**receipt, "event": "attempt_end", "end": utc_now(),
+                                    "status": "http_error"})
             if (
                 _is_retryable_upstream_status(status)
                 and attempt < session.max_upstream_attempts
@@ -442,6 +460,7 @@ class _SessionHandler(BaseHTTPRequestHandler):
             self._reject(status)
             return
         session.note_upstream_success()
+        stream_status = "completed"
         self.send_response(status)
         self.send_header("Content-Type", headers.get("content-type", "application/json"))
         if "content-length" in headers:
@@ -461,6 +480,7 @@ class _SessionHandler(BaseHTTPRequestHandler):
                     # this failure is never retried; it is counted and only
                     # signals at the consecutive-failure threshold, never the
                     # exception string.
+                    stream_status = "stream_error"
                     session._count("upstream_errors")
                     session.note_upstream_failure()
                     break
@@ -472,6 +492,7 @@ class _SessionHandler(BaseHTTPRequestHandler):
                 except (BrokenPipeError, ConnectionResetError):
                     # Client disconnects are a bounded transport counter, not an
                     # error containing provider-controlled text.
+                    stream_status = "client_disconnected"
                     session._count("client_disconnects")
                     break
         finally:
@@ -480,6 +501,8 @@ class _SessionHandler(BaseHTTPRequestHandler):
             except Exception:
                 pass
             session._count("requests")
+            session.record_attempt({**receipt, "event": "attempt_end", "end": utc_now(),
+                                    "status": stream_status})
 
     def _retry_transport_failure(
         self, session: "ResponsesProviderSession", attempt: int, exc: ProviderSessionError
@@ -541,6 +564,7 @@ class ResponsesProviderSession:
         retry_backoff_seconds: Sequence[float] = RESPONSES_UPSTREAM_RETRY_BACKOFF_SECONDS,
         retry_after_ceiling_seconds: float = RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS,
         on_failure: Callable[[str], None] | None = None,
+        on_attempt: Callable[[dict], None] | None = None,
     ) -> None:
         if not isinstance(credential, (bytes, bytearray)) or not credential:
             raise ProviderSessionError("provider session credential is unavailable")
@@ -564,6 +588,8 @@ class ResponsesProviderSession:
         self.bound_port: int | None = None
         self._consecutive_upstream_failures = 0
         self.on_failure = on_failure
+        self.on_attempt = on_attempt
+        self._usage_session_id = uuid.uuid4().hex
         self._server: _SessionHTTPServer | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.RLock()
@@ -590,6 +616,13 @@ class ResponsesProviderSession:
             raise ProviderSessionError("provider session is not started")
         host, port = server.server_address
         return f"http://{host}:{port}"
+
+    def record_attempt(self, event: dict) -> None:
+        if self.on_attempt is not None:
+            try:
+                self.on_attempt(event)
+            except Exception:
+                LOG.warning("usage_capture_incomplete")
 
     def _count(self, key: str) -> None:
         with self._lock:
@@ -852,6 +885,7 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
         retry_backoff_seconds: Sequence[float] = RESPONSES_UPSTREAM_RETRY_BACKOFF_SECONDS,
         retry_after_ceiling_seconds: float = RESPONSES_UPSTREAM_RETRY_AFTER_CEILING_SECONDS,
         on_failure: Callable[[str], None] | None = None,
+        on_attempt: Callable[[dict], None] | None = None,
     ) -> None:
         super().__init__(
             credential,
@@ -867,6 +901,7 @@ class DeepSeekProviderProxy(ResponsesProviderSession):
             retry_backoff_seconds=retry_backoff_seconds,
             retry_after_ceiling_seconds=retry_after_ceiling_seconds,
             on_failure=on_failure,
+            on_attempt=on_attempt,
         )
 
 

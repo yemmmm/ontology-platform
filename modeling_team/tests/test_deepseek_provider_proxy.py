@@ -499,3 +499,96 @@ def test_provider_timeout_still_counts_broken_body_without_replaying() -> None:
     assert observed["response_closed"] is True
     assert observed["counts"]["upstream_errors"] == 1
     assert observed["counts"]["upstream_retries"] == 0
+
+
+@pytest.mark.parametrize("broken_callback", [False, True])
+def test_attempt_receipts_retry_without_usage_body_or_behavior_changes(broken_callback):
+    """429 then a transparent 2xx, with an absent or failing numeric observer."""
+    import io
+    from unittest.mock import patch
+    from modeling_team.deepseek_provider_proxy import _SessionHandler
+
+    events = []
+
+    def capture(event):
+        events.append(dict(event))
+        if broken_callback:
+            raise RuntimeError("secret-provider-error")
+
+    session = ResponsesProviderSession(b"private-key", on_attempt=capture,
+                                      retry_backoff_seconds=(0,), max_upstream_attempts=2)
+    handler = object.__new__(_SessionHandler)
+    body = b'{"model":"deepseek-v4-flash","input":"private-business","reasoning":{"effort":"high"}}'
+    handler.server = type("Server", (), {"session": session})()
+    handler.path = "/responses"
+    handler.headers = {"Content-Length": str(len(body)), "Content-Type": "application/json"}
+    handler.rfile, handler.wfile = io.BytesIO(body), io.BytesIO()
+    handler.send_response = lambda status: None
+    handler.send_header = lambda *args: None
+    handler.end_headers = lambda: None
+    handler._client_disconnected = lambda: False
+    with patch.object(session, "forward", side_effect=[
+        (429, {}, io.BytesIO(b"private-error")),
+        (200, {}, io.BytesIO(b"unchanged-response\n")),
+    ]) as forward:
+        handler.do_POST()
+    assert handler.wfile.getvalue() == b"unchanged-response\n"
+    assert forward.call_count == 2
+    assert all(call.args == (body,) for call in forward.call_args_list)
+    assert [e["event"] for e in events] == ["attempt_start", "attempt_end"] * 2
+    assert [e["attempt_index"] for e in events] == [1, 1, 2, 2]
+    assert len({e["request_id"] for e in events}) == 1
+    assert [events[1]["status"], events[3]["status"]] == ["http_error", "completed"]
+    assert session.snapshot()["upstream_retries"] == 1
+    assert "private" not in str(events)
+    assert all("response_id" not in e and "usage" not in e for e in events)
+
+
+@pytest.mark.parametrize("failure", ["transport", "stream", "disconnect"])
+def test_attempt_observer_failure_preserves_aborted_forwarding(failure):
+    import io
+    from unittest.mock import patch
+    from modeling_team.deepseek_provider_proxy import _SessionHandler, ProviderSessionError
+
+    events = []
+
+    def capture(event):
+        events.append(dict(event))
+        raise OSError("must-never-escape")
+
+    class Stream:
+        def __iter__(self):
+            yield b"first\n"
+            if failure == "stream":
+                raise OSError("upstream-private-error")
+            yield b"second\n"
+
+        def close(self):
+            pass
+
+    class Disconnected(io.BytesIO):
+        def write(self, value):
+            raise BrokenPipeError("client-private-error")
+
+    session = ResponsesProviderSession(b"synthetic", on_attempt=capture, max_upstream_attempts=1)
+    handler = object.__new__(_SessionHandler)
+    handler.server = type("Server", (), {"session": session})()
+    handler.path = "/responses"
+    body = b'{"model":"test"}'
+    handler.headers = {"Content-Length": str(len(body)), "Content-Type": "application/json"}
+    handler.rfile = io.BytesIO(body)
+    handler.wfile = Disconnected() if failure == "disconnect" else io.BytesIO()
+    handler.send_response = lambda status: None
+    handler.send_header = lambda *args: None
+    handler.end_headers = lambda: None
+    kwargs = ({"side_effect": ProviderSessionError("fixed", transient=True)} if failure == "transport"
+              else {"return_value": (200, {}, Stream())})
+    with patch.object(session, "forward", **kwargs) as forward:
+        handler.do_POST()
+    assert forward.call_count == 1
+    assert events[0]["status"] == "unfinished"
+    assert events[-1]["status"] == {"transport": "transport_error", "stream": "stream_error",
+                                     "disconnect": "client_disconnected"}[failure]
+    if failure == "stream":
+        assert handler.wfile.getvalue() == b"first\n"
+    assert "private-error" not in str(events)

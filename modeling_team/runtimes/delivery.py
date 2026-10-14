@@ -10,6 +10,8 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from modeling_team.usage_capture import NumericReceiptWriter
+
 from modeling_team.model_routing import (
     RoleModelBinding, codex_auth_cache_path, preflight_codex_subscription_auth,
 )
@@ -88,7 +90,13 @@ class DeliveryRuntime:
         service_tier: str = "unset", provider_base_url: str | None = None,
         model_context_window: int | None = None,
         model_auto_compact_token_limit: int | None = None,
+        usage_context: dict | None = None,
     ) -> None:
+        self._usage_writer = NumericReceiptWriter(Path(home) / "usage-events.jsonl", {
+            **(usage_context or {}), "provider": binding.provider_id,
+            "requested_model": binding.model, "requested_effort": binding.requested_effort,
+            "effective_effort": binding.effective_effort,
+        })
         self.binding = binding
         self.home = Path(home).resolve()
         self.instructions = instructions
@@ -265,7 +273,16 @@ class DeliveryRuntime:
 
     def _handle(self, value: dict) -> None:
         method = value.get("method")
-        if method == "item/tool/call" and "id" in value:
+        if method == "thread/tokenUsage/updated":
+            params = value.get("params") or {}
+            try:
+                self._usage_writer({"event": "thread_usage",
+                    "thread_id": params.get("threadId"), "turn_id": params.get("turnId"),
+                    "total": (params.get("tokenUsage") or {}).get("total") or {}})
+            except Exception:
+                from modeling_team.usage_capture import LOG
+                LOG.warning("usage_capture_incomplete")
+        elif method == "item/tool/call" and "id" in value:
             # Authentication must disappear before any model-directed Host call.
             self._remove_auth()
             params = value.get("params", {})

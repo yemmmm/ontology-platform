@@ -625,6 +625,7 @@ class ProviderSessionManager:
         *,
         on_failure: Callable[[str], None] | None = None,
         session_factory: Callable[..., ResponsesProviderSession] = ResponsesProviderSession,
+        on_attempt: Callable[[dict], None] | None = None,
     ) -> None:
         if not isinstance(credential_bindings, Mapping) or not credential_bindings:
             raise ProviderSessionManagerError("provider credential bindings are unavailable")
@@ -638,6 +639,7 @@ class ProviderSessionManager:
                 )
             self._bindings[provider_id] = credential_bindings[provider_id]
             self._routes[provider_id] = route
+        self._on_attempt = on_attempt
         self._on_failure = on_failure
         self._session_factory = session_factory
         self._lock = threading.RLock()
@@ -696,6 +698,7 @@ class ProviderSessionManager:
                             provider_id=provider_id,
                             upstream_url=self._routes[provider_id].upstream_url,
                             on_failure=self._on_failure,
+                            **({"on_attempt": self._on_attempt} if self._on_attempt else {}),
                         )
                         session.start()
                     finally:
@@ -796,6 +799,7 @@ class ProviderSessionManager:
                         upstream_url=route.upstream_url,
                         port=port,
                         on_failure=self._on_failure,
+                        **({"on_attempt": self._on_attempt} if self._on_attempt else {}),
                     )
                     candidate.start()
                 except Exception:

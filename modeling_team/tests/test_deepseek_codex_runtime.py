@@ -809,7 +809,9 @@ def _install_carrier_sessions(
         *,
         on_failure: object = None,
         session_factory: object = None,
+        on_attempt: object = None,
     ) -> _CarrierSessionsDouble:
+        assert callable(on_attempt)
         assert "glm-direct" in bindings, "the profile's external route must be preflighted"
         manager = _CarrierSessionsDouble(bindings, on_failure=on_failure)
         created.append(manager)

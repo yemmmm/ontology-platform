@@ -22,9 +22,11 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Mapping
+from uuid import uuid4
 
 from ..contracts import AgentPackage, digest_file
 from ..model_manifest import FORMAL_MODEL_TASK_ID
+from ..usage_capture import NumericReceiptWriter
 from ..model_routing import (
     CODEX_AUTH_MODE,
     CODEX_TOML_PROVIDER_ID,
@@ -1472,6 +1474,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         self._acceptance_children: dict[str, Any] = {}
         self.agents: dict[str, _Agent] = {}
         self._messages: list[RuntimeMessage] = []
+        self._usage_receipt_session = uuid4().hex
         self._run_root: Path | None = None
         self._run_id: str | None = None
         self._active_run: Any | None = None
@@ -2046,6 +2049,15 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("acceptance runtime model profile is invalid")
         self._team_model_profile = profile
 
+    def _record_provider_attempt(self, event: dict) -> None:
+        root = self._run_root
+        if root is None:
+            # Standalone evaluation has no roster-owned run. Keep its actual
+            # adapter session identity without guessing a role or task.
+            root = self.root / "workspaces" / "usage-receipts" / self._usage_receipt_session
+        NumericReceiptWriter(root / "evidence" / "provider-attempts.jsonl",
+            {"run_id": self._run_id, "session_id": self._usage_receipt_session})(event)
+
     def _ensure_standalone_provider_sessions(self) -> None:
         """Open the sessions a standalone acceptance child needs, if any.
 
@@ -2067,6 +2079,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         sessions = ProviderSessionManager(
             preflight_profile_credentials(profile),
             on_failure=self._on_provider_session_failure,
+            on_attempt=self._record_provider_attempt,
         )
         sessions.start()
         self._provider_sessions = sessions
@@ -4063,6 +4076,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 sessions = ProviderSessionManager(
                     credential_bindings,
                     on_failure=self._on_provider_session_failure,
+                    on_attempt=self._record_provider_attempt,
                 )
                 sessions.start()
             except Exception as exc:

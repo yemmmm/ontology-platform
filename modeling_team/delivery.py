@@ -28,6 +28,8 @@ from .handoff_materials import (
     HandoffMaterials,
     MaterialError,
 )
+from modeling_team.usage_capture import NumericReceiptWriter
+
 from .model_routing import (
     ProviderSessionManager, load_team_model_profile, preflight_profile_credentials,
     resolve_delivery_model_binding, uses_external_credential_session,
@@ -2232,11 +2234,16 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
         base_url = None
         if uses_external_credential_session(session.binding.provider_id):
             selected = replace(session.profile, bindings={"delivery": session.binding})
-            providers = ProviderSessionManager(preflight_profile_credentials(selected))
+            providers = ProviderSessionManager(preflight_profile_credentials(selected),
+                on_attempt=NumericReceiptWriter(session_root / "native" / "provider-attempts.jsonl",
+                    {"session_id": config["session_id"], "phase": "supervision",
+                     "role": "delivery"}))
             providers.start()
             base_url = providers.base_url_for(session.binding.provider_id)
         runtime = DeliveryRuntime(
             binding=session.binding, home=session_root / "native", instructions=instructions,
+            usage_context={"session_id": config["session_id"], "phase": "supervision",
+                           "role": "delivery"},
             tools=session.tool_specs(), tool_handler=session.call_tool,
             service_tier=config.get("service_tier", "unset"), provider_base_url=base_url,
             model_context_window=config.get("model_context_window", 544000),
