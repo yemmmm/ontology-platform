@@ -17,6 +17,7 @@ import importlib
 import json
 import os
 import time
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -70,6 +71,73 @@ def _runtime(module, profile, home: Path, **overrides):
     )
     settings.update(overrides)
     return module.DeliveryRuntime(**settings)
+
+
+@pytest.mark.parametrize('profile_id,external', [
+    ('openai-sol-medium', False), ('glm-flash-high', True),
+])
+def test_delivery_context_override_is_root_config_and_keeps_tool_boundary(
+    tmp_path, profile_id, external,
+):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, profile_id)
+    runtime = _runtime(
+        module, profile, tmp_path / 'native',
+        model_context_window=544000, model_auto_compact_token_limit=489600,
+        provider_base_url='http://127.0.0.1:1/' if external else None,
+    )
+    try:
+        runtime.start()
+        config = tomllib.loads((runtime.home / 'config.toml').read_text())
+        assert config['model_context_window'] == 544000
+        assert config['model_auto_compact_token_limit'] == 489600
+        assert config['model'] == profile.binding_for('coordinator').model
+        if external:
+            catalog = json.loads(Path(config['model_catalog_json']).read_text())
+            assert len(catalog['models']) == 1
+            metadata = catalog['models'][0]
+            assert metadata['slug'] == config['model']
+            assert metadata['context_window'] == 544000
+            assert metadata['max_context_window'] == 544000
+            assert metadata['effective_context_window_percent'] == 95
+        else:
+            assert 'model_catalog_json' not in config
+        thread = next(x['params'] for x in _messages(runtime)
+                      if x.get('method') == 'thread/start')
+        assert thread['config'] == EXPECTED_BOUNDARY_CONFIG
+        assert thread['sandbox'] == 'read-only'
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize('external', [False, True])
+def test_delivery_default_leaves_model_context_settings_unset(tmp_path, external):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    runtime = _runtime(module, profile, tmp_path / 'native',
+                       provider_base_url='http://127.0.0.1:1/' if external else None)
+    try:
+        runtime.start()
+        config = tomllib.loads((runtime.home / 'config.toml').read_text())
+        assert 'model_context_window' not in config
+        assert 'model_auto_compact_token_limit' not in config
+        assert 'model_catalog_json' not in config
+    finally:
+        runtime.close()
+
+
+@pytest.mark.parametrize('setting,value', [
+    ('model_context_window', 0),
+    ('model_context_window', True),
+    ('model_auto_compact_token_limit', '489600'),
+])
+def test_delivery_rejects_invalid_context_config_before_native_start(tmp_path, setting, value):
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'openai-sol-medium')
+    runtime = _runtime(module, profile, tmp_path / 'native', **{setting: value})
+    with pytest.raises(module.DeliveryRuntimeError, match=f'{setting} must be a positive integer'):
+        runtime.start()
+    assert runtime.process is None
 
 
 def test_native_thread_tool_dispatch_and_private_message_boundary(tmp_path, monkeypatch):
@@ -391,3 +459,80 @@ def test_live_real_codex_server_honors_boundary(tmp_path):
     assert 'emit_user_message' in names, sorted(names)
     leaked = sorted(set(FORBIDDEN_NATIVE_TOOLS) & names)
     assert not leaked, f'native builtins still offered: {leaked}'
+
+
+def test_real_codex_external_delivery_context_window(tmp_path):
+    """Verify usable capacity, not just accepted TOML, with a loopback model."""
+    import shutil
+    import threading
+    from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+    if os.environ.get(REAL_CODEX_BOUNDARY_ENV) != '1':
+        pytest.skip(f'set {REAL_CODEX_BOUNDARY_ENV}=1 to probe the real server')
+    executable = shutil.which('codex')
+    if executable is None:
+        pytest.skip('Codex app-server not installed')
+    module = importlib.import_module('modeling_team.runtimes.delivery')
+    profile = load_team_model_profile(ROOT, 'glm-flash-high')
+    bodies = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            bodies.append(json.loads(self.rfile.read(int(self.headers['content-length']))))
+            item = {'id': 'msg-window-probe', 'type': 'message', 'role': 'assistant',
+                    'status': 'completed', 'content': [
+                        {'type': 'output_text', 'text': 'probe-ok', 'annotations': []}]}
+            response = {'id': 'window-probe-response', 'object': 'response',
+                        'model': 'glm-5.3-flash', 'status': 'completed',
+                        'created_at': int(time.time()), 'output': [item], 'usage': {
+                            'input_tokens': 10, 'output_tokens': 2, 'total_tokens': 12,
+                            'input_tokens_details': {'cached_tokens': 0},
+                            'output_tokens_details': {'reasoning_tokens': 0}}}
+            events = [
+                {'type': 'response.created', 'response': {
+                    **response, 'status': 'in_progress', 'output': []}},
+                {'type': 'response.output_item.done', 'output_index': 0, 'item': item},
+                {'type': 'response.completed', 'response': response},
+            ]
+            payload = ''.join('data: ' + json.dumps(event) + '\n\n'
+                              for event in events).encode()
+            self.send_response(200)
+            self.send_header('content-type', 'text/event-stream')
+            self.send_header('content-length', str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    runtime = _runtime(
+        module, profile, tmp_path / 'native', codex_binary=executable,
+        provider_base_url=f'http://127.0.0.1:{server.server_port}/',
+        model_context_window=544000, model_auto_compact_token_limit=489600,
+    )
+    try:
+        runtime.start()
+        runtime.send('window probe')
+        deadline = time.monotonic() + 20
+        while runtime.busy and time.monotonic() < deadline:
+            runtime.poll(0.1)
+        assert not runtime.busy
+        windows = []
+        for path in runtime.home.rglob('rollout-*.jsonl'):
+            for line in path.read_text().splitlines():
+                record = json.loads(line)
+                payload = record.get('payload', {})
+                if record['type'] == 'event_msg' and payload.get('type') == 'token_count':
+                    if payload.get('info'):
+                        windows.append(payload['info']['model_context_window'])
+        assert windows and set(windows) == {516800}, windows
+        assert len(bodies) == 1
+        assert bodies[0]['model'] == 'glm-5.3-flash'
+        assert bodies[0]['reasoning']['effort'] == 'high'
+        assert _captured_tool_names([json.dumps(bodies[0])]) == {'emit_user_message'}
+    finally:
+        runtime.close()
+        server.shutdown()
+        server.server_close()

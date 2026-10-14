@@ -328,6 +328,15 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 `base_url` 和 `host_session_ref`，由部署宿主注入。
 
 本地入口为 `python -m modeling_team delivery --config <yaml> [--resume]`。
+R4.3-020的Delivery CLI默认`model_context_window: 544000`及
+`model_auto_compact_token_limit: 489600`，可在同一YAML中显式覆盖为正整数。
+当前GLM Delivery有效输入窗口为516,800（95%），是旧258,400的两倍；
+仅作用于新Delivery原生进程，不修改生产／验收角色或已启动线程。
+外部provider的显式窗口通过启动时精确模型catalog避免Codex未知模型272,000上限；
+它记录本会话预算，不能视为所有模型均支持该容量。变更模型／预算仍须核对实际规格。
+原生模型保留自身容量上限；直接复用DeliveryRuntime的测试代答者默认不设置窗口。
+实际生效检查及真实效果边界见
+[局部交付记录](../delivery/records/2026-10-14-modeling-cache-cost-requirements-registration.md#delivery窗口翻倍的后续授权与局部实现)。
 独立原生会话另有宿主专用 `verify_repair`／`get_repair_verification_status`，按绑定修复
 运行固定 repo 检查与明确授权的本地服务部署。它们不属于上述 stdio MCP 的 28 项清单，
 不开放通用 shell；实际命令、退出码、健康与目标摘要保存在交付私有回执中，不能代替语义验收。

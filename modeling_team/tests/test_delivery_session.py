@@ -372,7 +372,9 @@ class _StubProcess:
         return 0
 
 
-def _run_delivery_with_stub(tmp_path, monkeypatch, lines, *, run_ids=None, **stub_kwargs):
+def _run_delivery_with_stub(
+    tmp_path, monkeypatch, lines, *, run_ids=None, config_overrides=None, **stub_kwargs,
+):
     import shutil
     module = importlib.import_module('modeling_team.delivery')
     # Minimal repository layout under tmp_path: the real profile (the loader
@@ -389,7 +391,10 @@ def _run_delivery_with_stub(tmp_path, monkeypatch, lines, *, run_ids=None, **stu
     skill.mkdir(parents=True)
     (skill / 'SKILL.md').write_text('stub delivery skill')
     stub = _StubNativeRuntime(**stub_kwargs)
-    monkeypatch.setattr(module, 'DeliveryRuntime', lambda **kwargs: stub)
+    def runtime_factory(**kwargs):
+        stub.configured_options = kwargs
+        return stub
+    monkeypatch.setattr(module, 'DeliveryRuntime', runtime_factory)
     read_fd, write_fd = os.pipe()
     monkeypatch.setattr(sys, 'stdin', os.fdopen(read_fd, 'r'))
     for line in lines:
@@ -398,9 +403,31 @@ def _run_delivery_with_stub(tmp_path, monkeypatch, lines, *, run_ids=None, **stu
     config = {'session_id': 'steer-probe', 'model_profile': 'openai-sol-medium',
               'authorization_reference': 'user-test', 'allowed_sources': [],
               'allowed_operations': ['read'], 'run_ids': run_ids or []}
+    config.update(config_overrides or {})
     result = module._run_delivery(config, repository_root=tmp_path, resume=False)
     return stub, result, json.loads(
         (tmp_path / 'workspaces/delivery-sessions/steer-probe/session.json').read_text())
+
+
+def test_delivery_session_forwards_selected_context_settings(tmp_path, monkeypatch):
+    stub, result, _record = _run_delivery_with_stub(
+        tmp_path, monkeypatch, ['窗口配置检查。'], config_overrides={
+            'model_context_window': 600000,
+            'model_auto_compact_token_limit': 540000,
+        },
+    )
+    assert result == 2
+    assert stub.configured_options['model_context_window'] == 600000
+    assert stub.configured_options['model_auto_compact_token_limit'] == 540000
+
+
+def test_delivery_session_defaults_to_doubled_window(tmp_path, monkeypatch):
+    stub, result, _record = _run_delivery_with_stub(
+        tmp_path, monkeypatch, ['窗口配置检查。'],
+    )
+    assert result == 2
+    assert stub.configured_options['model_context_window'] == 544000
+    assert stub.configured_options['model_auto_compact_token_limit'] == 489600
 
 
 def test_run_delivery_steers_queued_input_into_the_active_turn_in_order(tmp_path, monkeypatch):

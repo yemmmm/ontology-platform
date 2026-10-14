@@ -86,6 +86,8 @@ class DeliveryRuntime:
         tools: list[dict[str, Any]], tool_handler: Callable[[str, dict], Any],
         codex_binary: str = "codex", authenticate: bool = True,
         service_tier: str = "unset", provider_base_url: str | None = None,
+        model_context_window: int | None = None,
+        model_auto_compact_token_limit: int | None = None,
     ) -> None:
         self.binding = binding
         self.home = Path(home).resolve()
@@ -96,6 +98,8 @@ class DeliveryRuntime:
         self.authenticate = authenticate
         self.service_tier = service_tier
         self.provider_base_url = provider_base_url
+        self.model_context_window = model_context_window
+        self.model_auto_compact_token_limit = model_auto_compact_token_limit
         self.process: subprocess.Popen | None = None
         self.thread_id: str | None = None
         self.busy = False
@@ -125,6 +129,43 @@ class DeliveryRuntime:
             raise DeliveryRuntimeError("unsupported Delivery service tier")
         if tier == "fast" and not self.provider_base_url:
             lines = ['service_tier = "fast"', *lines, "[features]", "fast_mode = true"]
+        # These are root TOML keys, before the provider and environment tables.
+        # Optional settings belong to the selected Delivery session, not the
+        # shared role provider helper or isolated test business answerers.
+        context_lines = []
+        for name in ("model_context_window", "model_auto_compact_token_limit"):
+            value = getattr(self, name)
+            if value is not None:
+                if type(value) is not int or value <= 0:
+                    raise DeliveryRuntimeError(f"{name} must be a positive integer")
+                context_lines.append(f"{name} = {value}")
+        if self.provider_base_url and self.model_context_window is not None:
+            # Codex 0.162.1 clamps unknown models to its 272000-token fallback
+            # maximum even with model_context_window configured.  Supply the
+            # exact external model's session budget in a startup-only catalog.
+            # Other fields retain the native unknown-model defaults; built-in
+            # models continue using their own metadata and capacity limits.
+            catalog_path = self.home / "delivery-model-catalog.json"
+            catalog_path.write_text(json.dumps({"models": [{
+                "slug": self.binding.model,
+                "display_name": self.binding.model,
+                "base_instructions": "",
+                "supported_reasoning_levels": [],
+                "shell_type": "unified_exec",
+                "visibility": "none",
+                "supported_in_api": True,
+                "priority": 99,
+                "include_apps_usage_instructions": False,
+                "default_reasoning_summary": "auto",
+                "support_verbosity": False,
+                "truncation_policy": {"mode": "bytes", "limit": 10000},
+                "context_window": self.model_context_window,
+                "max_context_window": self.model_context_window,
+                "effective_context_window_percent": 95,
+                "experimental_supported_tools": [],
+            }]}))
+            context_lines.append(f"model_catalog_json = {json.dumps(str(catalog_path))}")
+        lines = [*context_lines, *lines]
         (self.home / "config.toml").write_text("\n".join(lines) + "\n")
         try:
             if self.authenticate and not self.provider_base_url:

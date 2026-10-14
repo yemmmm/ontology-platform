@@ -1705,6 +1705,8 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
             binding=session.binding, home=session_root / "native", instructions=instructions,
             tools=session.tool_specs(), tool_handler=session.call_tool,
             service_tier=config.get("service_tier", "unset"), provider_base_url=base_url,
+            model_context_window=config.get("model_context_window", 544000),
+            model_auto_compact_token_limit=config.get("model_auto_compact_token_limit", 489600),
         )
         runtime.start()
         session.native_thread_id = runtime.thread_id

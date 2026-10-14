@@ -9,6 +9,10 @@ task: modeling_team/tasks/r4-0-009-asset-fault-workorder.yaml
 profile: modeling_team/profiles/r3-0-011-competency-question.yaml
 model_profile: glm-flash-high
 service_tier: default
+# Delivery only: double the observed 272000 raw / 258400 effective window.
+# Production and acceptance role configs continue using their own settings.
+model_context_window: 544000
+model_auto_compact_token_limit: 489600
 run_ids: []
 allowed_sources:
   - docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
