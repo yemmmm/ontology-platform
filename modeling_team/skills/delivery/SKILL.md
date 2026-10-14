@@ -110,7 +110,7 @@ independent acceptance flow. frozen_awaiting_handoff or a CQ pending item that
 merely lists an available action is not evidence of handoff readiness;
 submitted is not consumed; a cq-input-rejected reply is an explicit rejection
 to read in full, not an unknown request awaiting confirmation. Read the
-complete original events and receipts before the next step and never
+complete original events and receipts needed for the current decision before the next step and never
 mechanically infer readiness from pending state. Runner consumption of a
 confirmation never automatically starts acceptance, so never tell the user
 that it does.
@@ -259,3 +259,46 @@ thread, remaining questions and report sink until genuine task completion. Resum
 on explicit input, never resubmit already accepted question reports. S4 permits a
 live sealed source under the fresh receipt/revision/key checks and separate
 acceptance-task lock; production recovery still requires writer exit.
+
+
+R4.3-022 decision inputs use `delivery-decision-input/v1`. Start with current
+state, coverage, actual changes and exact evidence locators. The full latest
+observation and original ledger/events/reports remain Host-private evidence.
+Settled request/operation history is an index, not a reprinted history. Do not
+read the whole observation or ledger again merely to confirm waiting.
+
+Use `read_delivery_artifact` with `selection={kind:"bytes",offset:...}` (optional
+length) or `selection={kind:"json",paths:[["literal-key",0,"field"]],offset:...}`
+for the original facts needed by the current decision. Pages default to and
+are capped at 16384 UTF-8 bytes; continue using the returned `continuation`
+with the same source_ref and selected interval/paths. A `found:false` field
+is missing; a `found:true,value:null` field is present with null. JSON page
+text can be incomplete; concatenate selected pages before interpreting it.
+`read_complete` covers the selected range, `source_complete` the captured
+whole source. Other fields and later JSONL appends are outside that coverage.
+Path-only full reads remain available within their existing response bound.
+
+Oversized decision inputs explicitly paginate; read the referenced packet or
+collect its input pages before decisions that depend on unreturned collections.
+Large referenced values carry their packet_path inside the original packet.
+Do not infer absence of pending/unknown writes from a partial page. Old ordinary
+file bindings fail with artifact_changed; restart against the current identity.
+JSONL references bind a captured prefix, so append is safe but rewrite/shortening
+requires a fresh identity. Exact events use source byte_offset/byte_length,
+not page-local line_no. Recoverable selection/unavailable/corrupt errors require
+correcting the read, not abandoning the modeling goal.
+
+A delivery_status of unknown means the native receipt is uncertain and this
+observation may already have been received. Reconcile current facts; never
+replay platform actions because a Delivery input was resent. For CQ review,
+read the selected questions and necessary business basis. For public feedback,
+read all actual answers, read evidence and complete feedback for the selected
+questions. For faults, read the exact event/receipt/log; for final delivery,
+verify original report qualification, versions and independent verdicts.
+Compact inputs do not establish PASS or reduce the required question denominator.
+When current_state identifies a newer packet, this packet snapshot is historical;
+read and reconcile the newer necessary state before state-dependent actions.
+Host-private Judge/CQ content, references and decision packets remain private;
+reading them grants no permission to forward them to production, repair or a
+test answerer. Existing public projection/material routes and role duties apply.
+Byte reductions alone do not establish token savings or net cost improvement.

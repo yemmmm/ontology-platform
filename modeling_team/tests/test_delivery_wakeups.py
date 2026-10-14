@@ -350,7 +350,8 @@ def test_busy_steer_payload_excludes_only_raw_app_server_records(tmp_path, monke
     assert page["events"][0] == _receipt_event(620_021, "req-9")
     assert (steered["data"]["runs"]["run"]["pending"]["data"]["items"]
             == observation()["runs"]["run"]["pending"]["data"]["items"])
-    assert steered["data"]["runs"]["run"]["request_ledger"]["data"]["text"] == "request-1"
+    assert "request_ledger" not in steered["data"]["runs"]["run"]
+    assert steered["data"]["runs"]["run"]["requests"]["data"]["coverage"]["complete"] is False
     assert steered["data"]["raw_observation"]["excluded_noise_event_records"] == 1
 
 
@@ -406,8 +407,10 @@ def test_model_observation_keeps_decisions_complete_and_failures_untouched(tmp_p
     assert page["next_cursor"] == "cursor-9"
     assert payload["runs"]["run"]["status"] == {
         "ok": False, "error": {"code": "unavailable", "message": "down"}}
-    assert payload["runs"]["run"]["pending"] == raw["runs"]["run"]["pending"]
-    assert payload["runs"]["run"]["request_ledger"] == raw["runs"]["run"]["request_ledger"]
+    assert payload["runs"]["run"]["pending"]["data"]["items"] == raw["runs"]["run"]["pending"]["data"]["items"]
+    assert "request_ledger" not in payload["runs"]["run"]
+    assert json.loads((host.session_root / "observation.json").read_text())["data"] == raw
+    host._dispatch_observation(_StubNativeRuntime(), {"kind": "host_observation", "data": payload}, steer=False)
     # A failed events read is an error decision, not a noise page: untouched.
     failed = observation()
     failed["runs"]["run"]["events"] = {"ok": False,

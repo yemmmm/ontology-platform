@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Any
 
 import yaml
-from jsonschema import validate
+from jsonschema import ValidationError, validate
 
 from . import host_ops_mcp
 from .host_ops import HostOpError, resolve_run_root
@@ -156,22 +156,29 @@ def _decision_observation(observation: dict,
     model, and none of the excluded material is lost because the caller
     stores the full raw observation.
     """
-    noise = {
-        "observed_at", "events_cursor", "last_verifiable_activity",
-        "heartbeat_at", "last_heartbeat_at", "heartbeat_count",
-        "log_bytes", "stdout_bytes", "stderr_bytes", "log_tails",
-        "stdout_tail", "stderr_tail", "staged_decision_count", "latest_staged_decision_at",
-        "evidence_refs",
-    }
-
-    def clean(value):
-        if isinstance(value, dict):
-            return {key: clean(item) for key, item in value.items() if key not in noise}
-        if isinstance(value, list):
-            return [clean(item) for item in value]
-        return value
-
-    projected = clean(observation)
+    projected = copy.deepcopy(observation)
+    # Strip metadata only at its owning path. Business dictionaries may use
+    # exactly the same keys, including evidence_refs and observed_at.
+    for run in projected.get("runs", {}).values():
+        status = run.get("status", {}).get("data", {})
+        for key in ("observed_at", "events_cursor", "last_verifiable_activity", "evidence_refs"):
+            status.pop(key, None)
+        progress = status.get("semantic_progress", {})
+        for key in ("staged_decision_count", "latest_staged_decision_at"):
+            progress.pop(key, None)
+        liveness = status.get("liveness", {})
+        for owner in (liveness, liveness.get("process_observation", {})):
+            for key in ("observed_at", "heartbeat_at", "last_heartbeat_at", "heartbeat_count"):
+                owner.pop(key, None)
+        run.get("pending", {}).get("data", {}).pop("observed_at", None)
+        # Source identity is retained in the raw snapshot, but log append is
+        # not an independent decision when the parsed request set is unchanged.
+        run.pop("request_ledger", None)
+    for collection in ("operations", "repair_verifications"):
+        for envelope in projected.get(collection, {}).values():
+            data = envelope.get("data", {})
+            for key in ("log_tails", "stdout_tail", "stderr_tail", "stdout_bytes", "stderr_bytes"):
+                data.pop(key, None)
     # Stage timestamp/ordinal alone may advance as the same phase emits more
     # progress. The phase, batch/review identity and classification are decisions.
     for run_id, run in projected.get("runs", {}).items():
@@ -183,6 +190,179 @@ def _decision_observation(observation: dict,
         if "events" in run:
             run["events"] = _decision_events(run_id, run["events"], event_state)
     return projected
+
+
+def _digest_bytes(raw: bytes) -> str:
+    return "sha256:" + hashlib.sha256(raw).hexdigest()
+
+
+def _json_bytes(value: Any) -> bytes:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+
+
+def _source_ref(path: Path, raw: bytes) -> dict:
+    return {"path": str(path), "scope": "prefix" if path.suffix == ".jsonl" else "file",
+            "byte_length": len(raw), "content_digest": _digest_bytes(raw)}
+
+
+def _utf8_page(raw: bytes, offset: int, budget: int) -> tuple[str, int]:
+    if type(offset) is not int or not 0 <= offset <= len(raw):
+        raise ValueError("offset is outside the selected range")
+    if offset < len(raw) and raw[offset] & 0xC0 == 0x80:
+        raise ValueError("offset must be a UTF-8 boundary; use next_offset")
+    end = min(offset + budget, len(raw))
+    while end < len(raw) and end > offset and raw[end] & 0xC0 == 0x80:
+        end -= 1
+    if end == offset and offset < len(raw):
+        end += 1
+        while end < len(raw) and raw[end] & 0xC0 == 0x80:
+            end += 1
+    return raw[offset:end].decode("utf-8"), end
+
+
+def _selected_artifact(path: Path, raw: bytes, reference: dict | None,
+                       selection: dict, max_bytes: int) -> dict:
+    current = _source_ref(path, raw)
+    if reference is not None:
+        valid = (reference.get("path") == str(path)
+                 and reference.get("scope") == current["scope"]
+                 and type(reference.get("byte_length")) is int
+                 and 0 <= reference["byte_length"] <= len(raw))
+        captured = raw[:reference["byte_length"]] if valid else b""
+        valid = (valid and _digest_bytes(captured) == reference.get("content_digest")
+                 and (current["scope"] == "prefix" or len(captured) == len(raw)))
+        if not valid:
+            raise HostOpError("artifact_changed", "original artifact identity changed",
+                              obj=str(path), retryable=True,
+                              next_action="restart selection with the current source identity",
+                              passthrough={"source_ref": current})
+        raw = captured
+    ref = dict(reference or current)
+    try:
+        if type(max_bytes) is not int or not 1 <= max_bytes <= 16384:
+            raise ValueError("max_bytes must be 1..16384")
+        if not isinstance(selection, dict):
+            raise ValueError("selection must be bytes or literal JSON paths")
+        kind = selection.get("kind")
+        offset = selection.get("offset", 0)
+        if kind == "bytes":
+            if set(selection) - {"kind", "offset", "length"}:
+                raise ValueError("unknown bytes selection parameter")
+            length = selection.get("length", len(raw) - offset)
+            if type(length) is not int or length < 0 or type(offset) is not int:
+                raise ValueError("invalid byte interval")
+            stop = offset + length
+            if stop > len(raw):
+                raise ValueError("byte interval exceeds captured source")
+            if stop < len(raw) and raw[stop] & 0xC0 == 0x80:
+                raise ValueError("interval end must be a UTF-8 boundary")
+            binding = ref.get("selection_binding")
+            if binding and (binding.get("kind") != kind or binding.get("stop") != stop
+                            or offset < binding.get("start", 0)):
+                raise ValueError("continuation must preserve the original interval")
+            ref["selection_binding"] = binding or {"kind": kind, "start": offset, "stop": stop}
+            selected = raw[:stop]
+            text, end = _utf8_page(selected, offset, max_bytes)
+            omitted = {"before": ref["selection_binding"]["start"], "after": len(raw) - stop,
+                       "remaining_selected_bytes": stop - end}
+            complete = end == stop
+            source_complete = complete and ref["selection_binding"]["start"] == 0 and stop == len(raw)
+            continuation = {"kind": kind, "offset": end, "length": stop - end}
+            missing = []
+        elif kind == "json":
+            if set(selection) - {"kind", "paths", "offset"}:
+                raise ValueError("unknown JSON selection parameter")
+            paths = selection.get("paths")
+            if (not isinstance(paths, list) or not 1 <= len(paths) <= 16
+                    or any(not isinstance(parts, list) or not 1 <= len(parts) <= 16
+                           or any(not isinstance(part, str) and
+                                  (type(part) is not int or part < 0) for part in parts)
+                           for parts in paths)):
+                raise ValueError("paths require 1..16 literal paths, each with 1..16 keys/indices")
+            binding = {"kind": kind, "paths": paths}
+            if ref.get("selection_binding", binding) != binding:
+                raise ValueError("continuation must preserve the selected paths and order")
+            ref["selection_binding"] = binding
+            try:
+                document = json.loads(raw.decode("utf-8"))
+            except (ValueError, UnicodeError) as exc:
+                raise HostOpError("artifact_corrupt", "original JSON cannot be parsed", obj=str(path),
+                                  retryable=True, next_action="inspect an approved bytes selection") from exc
+            fields, missing = [], []
+            for parts in paths:
+                value = document
+                found = True
+                for part in parts:
+                    if isinstance(part, str) and isinstance(value, dict) and part in value:
+                        value = value[part]
+                    elif type(part) is int and isinstance(value, list) and part < len(value):
+                        value = value[part]
+                    else:
+                        found = False
+                        break
+                entry = {"path": parts, "found": found}
+                if found:
+                    entry["value"] = value
+                else:
+                    missing.append(parts)
+                fields.append(entry)
+            selected = _json_bytes({"fields": fields})
+            text, end = _utf8_page(selected, offset, max_bytes)
+            stop = len(selected)
+            complete, source_complete = end == stop, False
+            omitted = {"other_source_fields": True, "remaining_selected_bytes": stop - end}
+            continuation = {"kind": kind, "paths": paths, "offset": end}
+        else:
+            raise ValueError("selection.kind must be bytes or json")
+    except (ValueError, TypeError) as exc:
+        code = "artifact_corrupt" if isinstance(exc, UnicodeError) else "artifact_selection_invalid"
+        raise HostOpError(code, str(exc), obj=str(path), retryable=True,
+                          next_action="correct selection; continue only at next_offset") from exc
+    return {"path": str(path), "source_ref": ref, "content_digest": ref["content_digest"],
+            "selection": selection, "returned_range": {"offset": offset, "end": end, "bytes": end - offset},
+            "text": text, "next_offset": end, "read_complete": complete,
+            "source_complete": source_complete, "omitted": omitted, "missing_paths": missing,
+            "continuation": None if complete else {"source_ref": ref, "selection": continuation},
+            "limitations": ["text may be a partial JSON fragment; concatenate all selected pages",
+                            "completeness refers to the captured source, not later appends"]}
+
+
+def _value_changes(before: Any, after: Any, path: tuple = ()) -> list[dict]:
+    if before == after:
+        return []
+    if isinstance(before, list) and isinstance(after, list):
+        def identity(item):
+            if isinstance(item, dict):
+                return item.get("request_id") or item.get("id")
+            return None
+        old_ids, new_ids = [identity(item) for item in before], [identity(item) for item in after]
+        if (all(isinstance(key, str) for key in old_ids + new_ids)
+                and len(set(old_ids)) == len(old_ids) and len(set(new_ids)) == len(new_ids)):
+            old = dict(zip(old_ids, before))
+            new = dict(zip(new_ids, after))
+            changes = []
+            if set(old_ids) == set(new_ids) and old_ids != new_ids:
+                changes.append({"path": list(path), "change": "order", "value": new_ids})
+            for index, (key, value) in enumerate(zip(new_ids, after)):
+                if key not in old:
+                    changes.append({"path": [*path, index], "change": "added", "identity": key, "value": value})
+                else:
+                    changes.extend(_value_changes(old[key], value, (*path, index)))
+            for key in old_ids:
+                if key not in new:
+                    changes.append({"path": list(path), "change": "removed", "identity": key, "previous": old[key]})
+            return changes
+    if isinstance(before, dict) and isinstance(after, dict):
+        changes = []
+        for key in sorted(before.keys() | after.keys()):
+            if key not in after:
+                changes.append({"path": [*path, key], "change": "removed", "previous": before[key]})
+            elif key not in before:
+                changes.append({"path": [*path, key], "change": "added", "value": after[key]})
+            else:
+                changes.extend(_value_changes(before[key], after[key], (*path, key)))
+        return changes
+    return [{"path": list(path), "change": "updated", "previous": before, "value": after}]
 
 
 _LOCAL_SPECS = [
@@ -199,8 +379,11 @@ _LOCAL_SPECS = [
          "resolved_question_ids": {"type": "array", "items": {"type": "string"}}}, "required": ["kind", "text"],
          "additionalProperties": False}},
     {"name": "read_delivery_artifact", "description": "Read approved sources or bound private run evidence.",
-     "inputSchema": {"type": "object", "properties": {"path": {"type": "string"}},
-                     "required": ["path"], "additionalProperties": False}},
+     "inputSchema": {"type": "object", "properties": {
+         "path": {"type": "string"}, "source_ref": {"type": "object"},
+         "selection": {"type": "object"},
+         "max_bytes": {"type": "integer", "minimum": 1, "maximum": 16384}},
+         "required": ["path"], "additionalProperties": False}},
     {"name": "finish_delivery", "description": "Record verified result and limits, then retain this Delivery and the existing Team in standby. Only explicit user/Host stop destroys them.",
      "inputSchema": {"type": "object", "properties": {"conclusion": {"type": "string"}},
                      "required": ["conclusion"], "additionalProperties": False}},
@@ -351,6 +534,7 @@ class DeliverySession:
             self._tools[tool.name] = {"name": tool.name, "description": tool.description,
                                       "inputSchema": schema}
         self._tools.update({item["name"]: copy.deepcopy(item) for item in _LOCAL_SPECS})
+        self._restore_decision_inputs()
         self._save("ready")
 
     def _path(self, value: str) -> Path:
@@ -938,7 +1122,6 @@ class DeliverySession:
             cursor = data.get("next_cursor")
             if isinstance(cursor, str) and cursor != self._event_cursors.get(run_id):
                 self._event_cursors[run_id] = cursor
-                self._save("active")
         return result
 
     def _copy_material_to_run(
@@ -1100,6 +1283,7 @@ class DeliverySession:
                   "operation_kinds": self.operation_kinds,
                   "verification_ids": sorted(self.verification_ids),
                   "event_cursors": self._event_cursors,
+                  "delivery_inputs": getattr(self, "_pending_decisions", []),
                   "repair_task_files": sorted(str(x) for x in self.repair_task_files),
                   "model_profile": self.profile.profile_id,
                   "model_binding": self.binding.as_dict(),
@@ -1201,7 +1385,9 @@ class DeliverySession:
         messages, self.messages = self.messages, []
         return messages
 
-    def _read_artifact(self, value: str) -> dict:
+    def _read_artifact(self, value: str, *, source_ref: dict | None = None,
+                       selection: dict | None = None, max_bytes: int = 16384,
+                       internal: bool = False) -> dict:
         path = self._path(value)
         approved = path in self.sources or path in {
             self.session_root / name for name in ("session.json", "session-events.jsonl", "user-input.jsonl", "public-messages.jsonl", "observation.json", "efficiency-round.json", "efficiency-progress.jsonl")
@@ -1228,13 +1414,55 @@ class DeliverySession:
                     }
                     if approved:
                         break
-        if not approved or not path.is_file():
-            raise ValueError("artifact is outside approved sources and bound run evidence")
-        if path.stat().st_size > 2_000_000:
-            raise ValueError("artifact exceeds read bound; use incremental run events")
-        raw = path.read_bytes()
-        return {"path": str(path), "text": raw.decode("utf-8"),
-                "content_digest": "sha256:" + hashlib.sha256(raw).hexdigest()}
+        # Operations grant only their actual record/log files. Resolving both
+        # sides of an operation path must not turn a symlink into a grant.
+        for operation_id in self.operation_ids:
+            record_path = self.repository_root / ".delivery-ops" / f"{operation_id}.json"
+            if record_path.is_symlink():
+                continue
+            try:
+                record = json.loads(record_path.read_text())
+                if record.get("operation_id") != operation_id:
+                    continue
+                candidates = [record_path, *[self.repository_root / item
+                    for item in (record.get("log_paths") or {}).values() if isinstance(item, str)]]
+                approved = approved or any(not item.is_symlink() and item.resolve() == path
+                    and item.resolve().is_relative_to(record_path.parent) for item in candidates)
+            except (OSError, ValueError):
+                continue
+        for operation_id in self.verification_ids:
+            try:
+                status = verification_status(operation_id=operation_id, session_root=self.session_root)
+                candidates = [Path(status["record_path"]),
+                              *[Path(item) for item in (status.get("logs") or {}).values()]]
+                approved = approved or any(not item.is_symlink() and item.resolve() == path
+                    and item.resolve().is_relative_to(self.session_root / "repair-verification" / operation_id)
+                    for item in candidates)
+            except (OSError, ValueError, KeyError):
+                continue
+        if not approved:
+            raise HostOpError("artifact_forbidden", "artifact is outside approved sources and bound run evidence",
+                              retryable=True, next_action="select an approved source or bound artifact")
+        try:
+            raw = path.read_bytes()
+        except OSError as exc:
+            raise HostOpError("artifact_unavailable", str(exc), obj=str(path), retryable=True,
+                              next_action="check the bound path and retry") from exc
+        if selection is None:
+            if source_ref is not None:
+                raise HostOpError("artifact_selection_invalid", "source_ref requires a selection",
+                                  retryable=True, next_action="use bytes or literal JSON selection")
+            if not internal and len(raw) > 2_000_000:
+                raise HostOpError("artifact_selection_invalid", "artifact exceeds full read bound",
+                                  retryable=True, next_action="use a paginated bytes selection")
+            try:
+                return {"path": str(path), "text": raw.decode("utf-8"),
+                        "content_digest": _digest_bytes(raw), "source_ref": _source_ref(path, raw),
+                        "read_complete": True, "source_complete": True}
+            except UnicodeError as exc:
+                raise HostOpError("artifact_corrupt", "artifact is not UTF-8", obj=str(path),
+                                  retryable=True, next_action="inspect or correct the original encoding") from exc
+        return _selected_artifact(path, raw, source_ref, selection, max_bytes)
 
     def _permission(self, name: str) -> str:
         if name in _READ:
@@ -1293,7 +1521,13 @@ class DeliverySession:
                 raise ValueError("undeclared Delivery tool")
             if name in HANDOFF_TOOL_NAMES:
                 return self._material_tool(name, arguments)
-            validate(arguments, self._tools[name]["inputSchema"])
+            try:
+                validate(arguments, self._tools[name]["inputSchema"])
+            except ValidationError as exc:
+                if name != "read_delivery_artifact":
+                    raise
+                raise HostOpError("artifact_selection_invalid", "invalid artifact read parameters",
+                    retryable=True, next_action="use path, optional source_ref/selection and max_bytes 1..16384") from exc
             if name == "record_efficiency_progress":
                 from datetime import datetime, timezone
                 path = self.session_root / "efficiency-round.json"
@@ -1323,7 +1557,8 @@ class DeliverySession:
                 self._append("public-messages.jsonl", message)
                 return {"ok": True}
             if name == "read_delivery_artifact":
-                return {"ok": True, "data": self._read_artifact(arguments["path"])}
+                return {"ok": True, "data": self._read_artifact(**{("value" if key == "path" else key): value
+                    for key, value in arguments.items()})}
             if name == "finish_delivery":
                 self.work_result = arguments["conclusion"]
                 results = {}
@@ -1570,9 +1805,7 @@ class DeliverySession:
             "status": self.call_tool("get_run_status", {"run_id": run_id}),
             "pending": self.call_tool("get_pending_actions", {"run_id": run_id}),
             "events": self._observe_run_events(run_id),
-            "request_ledger": self.call_tool("read_delivery_artifact", {
-                "path": f"workspaces/modeling-runs/{run_id}/control/host-requests.jsonl",
-            }),
+            "request_ledger": self._observe_request_ledger(run_id),
         } for run_id in sorted(self.run_ids)}, "operations": {
             operation_id: self.call_tool("get_repair_status" if self.operation_kinds.get(operation_id) == "repair" else "get_evaluation_status", {"operation_id": operation_id})
             for operation_id in sorted(self.operation_ids)
@@ -1581,91 +1814,392 @@ class DeliverySession:
             for operation_id in sorted(self.verification_ids)
         }}
 
-    def record_observation(self, observation: dict) -> bool:
-        """Persist the full observation; wake the model only for decision changes.
+    def _observe_request_ledger(self, run_id: str) -> dict:
+        try:
+            root, _ = resolve_run_root(run_id, repository_root=self.repository_root)
+            return {"ok": True, "data": self._read_artifact(
+                str(root / "control/host-requests.jsonl"), internal=True)}
+        except HostOpError as exc:
+            return {"ok": False, "error": exc.as_envelope()}
 
-        The wakeup fingerprint is computed from
-        :func:`_decision_observation`, which folds each run's incremental
-        events page into a per-process cumulative chain of seen decision
-        events.  The full raw observation is still persisted below; a wakeup
-        delivers its :meth:`_model_observation` view, which leaves out only
-        the pure noise-source records and points at this stored artifact.
-        """
+    def _request_projection(self, run_id: str, ledger: dict) -> dict:
+        from .host_ops import _receipt_outcome
+
+        if ledger.get("ok") is not True:
+            return ledger
+        data = ledger.get("data", {})
+        text = data.get("text", "")
+        raw = text.encode("utf-8")
+        entries, uncorrelated, limitations = {}, [], []
+        offset = 0
+        for line in raw.splitlines(keepends=True):
+            locator = {"path": data.get("path"), "byte_offset": offset, "byte_length": len(line),
+                       "source_ref": data.get("source_ref")}
+            try:
+                entry = json.loads(line)
+                if not isinstance(entry, dict) or not line.endswith(b"\n"):
+                    raise ValueError("incomplete or non-object ledger line")
+                request_id = entry.get("request_id")
+                if not isinstance(request_id, str) or not request_id:
+                    uncorrelated.append({"outcome": "uncorrelated", "ledger_ref": locator})
+                else:
+                    entries[request_id] = (entry, locator)
+            except (ValueError, UnicodeError):
+                limitations.append({"code": "request_ledger_corrupt", "ledger_ref": locator,
+                                    "content_digest": _digest_bytes(line)})
+            offset += len(line)
+        receipts = {}
+        try:
+            root, _ = resolve_run_root(run_id, repository_root=self.repository_root)
+            receipt_path = root / "evidence/outer-input-receipts.jsonl"
+            receipt_raw = receipt_path.read_bytes() if receipt_path.exists() else b""
+            receipt_ref = _source_ref(receipt_path, receipt_raw)
+            offset = 0
+            for line in receipt_raw.splitlines(keepends=True):
+                try:
+                    receipt = json.loads(line)
+                    if not isinstance(receipt, dict) or not line.endswith(b"\n"):
+                        raise ValueError("partial receipt line")
+                    if isinstance(receipt.get("request_id"), str):
+                        receipts[receipt["request_id"]] = (receipt, {
+                            "path": str(receipt_path), "byte_offset": offset,
+                            "byte_length": len(line), "source_ref": receipt_ref})
+                except (ValueError, UnicodeError):
+                    limitations.append({"code": "request_receipt_corrupt", "byte_offset": offset,
+                                        "source_ref": receipt_ref})
+                offset += len(line)
+        except (HostOpError, OSError) as exc:
+            limitations.append({"code": "request_receipt_unavailable", "message": str(exc)})
+        pending, settled = list(uncorrelated), []
+        for request_id, (entry, locator) in entries.items():
+            receipt, receipt_locator = receipts.get(request_id, (None, None))
+            if receipt is not None:
+                if entry.get("content_digest") != receipt.get("content_digest"):
+                    result = {"ok": False, "error": {
+                        "code": "request_id_conflict", "message": "ledger and receipt digest conflict",
+                        "next_action": "inspect the original ledger and receipt before resending"}}
+                else:
+                    result = {"ok": True, "data": _receipt_outcome(run_id, request_id, receipt)}
+                    # Preserve additional rejection facts, including the exact
+                    # message/retry binding, without redefining receipt outcome.
+                    if result["data"]["outcome"] == "rejected":
+                        result["data"]["receipt"] = receipt
+            else:
+                result = self.call_tool("get_request_result", {"run_id": run_id, "request_id": request_id})
+                if isinstance(result.get("data"), dict):
+                    result = copy.deepcopy(result)
+                    result["data"].pop("observed_at", None)
+            item = {"run_id": run_id, "request_id": request_id, "action": entry.get("action"),
+                    "content_digest": entry.get("content_digest"), "result": result,
+                    "ledger_ref": locator, "receipt_ref": receipt_locator}
+            if result.get("ok") and result.get("data", {}).get("outcome") == "accepted":
+                settled.append(item)
+            else:
+                pending.append(item)
+        return {"ok": True, "data": {"pending": pending, "settled": settled,
+            "coverage": {"total": len(entries) + len(uncorrelated), "complete": not limitations},
+            "limitations": limitations}}
+
+    def _locate_decision_events(self, run_id: str, events: list) -> None:
+        """Use source bytes, never the incremental page's local line number."""
+        try:
+            root, _ = resolve_run_root(run_id, repository_root=self.repository_root)
+        except HostOpError:
+            return
+        sources = {}
+        for event in events:
+            if not isinstance(event, dict):
+                continue
+            source, offset = event.get("source"), event.get("byte_offset")
+            if not isinstance(source, str) or Path(source).name != source or type(offset) is not int:
+                continue
+            path = root / "evidence" / source
+            if not path.resolve().is_relative_to(root.resolve()):
+                continue
+            try:
+                if source not in sources:
+                    sources[source] = path.read_bytes()
+                raw = sources[source]
+                if not 0 <= offset < len(raw):
+                    continue
+                end = raw.find(b"\n", offset)
+                if end < 0:
+                    event["source_limitation"] = "partial source line; not a complete event"
+                    continue
+                end += 1
+                event["byte_length"] = end - offset
+                event["source_ref"] = _source_ref(path, raw)
+                event["selection"] = {"kind": "bytes", "offset": offset, "length": end - offset}
+            except OSError:
+                event["source_limitation"] = "original event source unavailable; preserve observation"
+
+    def _restore_decision_inputs(self) -> None:
+        self._pending_decisions = []
+        self._last_current = {}
+        self._decision_event_state = {}
+        path = self.session_root / "session-events.jsonl"
+        if not path.exists():
+            return
+        offset = 0
+        for line in path.read_bytes().splitlines(keepends=True):
+            try:
+                record = json.loads(line)
+            except ValueError:
+                raise ValueError(f"session journal is corrupt at byte {offset}; preserve and repair it")
+            event = record.get("event")
+            if "event_cursors" in record:
+                self._event_cursors.update(record["event_cursors"])
+            if event == "delivery_decision_input":
+                self._pending_decisions.append({"input_id": record["input_id"], "byte_offset": offset,
+                    "byte_length": len(line), "offset": 0, "delivery_status": "pending"})
+                self._last_current = record["fingerprint_state"]
+                self._last_decision_digest = record["decision_digest"]
+                self._event_cursors.update(record.get("event_cursors", {}))
+                self._decision_event_state = {
+                    key: {"seen": set(value["seen"]), "chain": value["chain"]}
+                    for key, value in record.get("decision_event_state", {}).items()}
+            elif event == "delivery_input_dispatch":
+                for item in list(self._pending_decisions):
+                    if item["input_id"] != record["input_id"]:
+                        continue
+                    item["delivery_status"] = record["status"]
+                    if record["status"] == "accepted":
+                        if record["complete"]:
+                            self._pending_decisions.remove(item)
+                        else:
+                            item["offset"] = record["next_offset"]
+            offset += len(line)
+        # An attempt without a durable acknowledgement is uncertain, including
+        # interruption between native acceptance and journal persistence.
+        for item in self._pending_decisions:
+            if item["delivery_status"] == "attempted":
+                item["delivery_status"] = "unknown"
+
+    def record_observation(self, observation: dict, *, force_delivery: bool = False) -> bool:
         path = self.session_root / "observation.json"
         previous = json.loads(path.read_text()) if path.exists() else {}
-        event_state = getattr(self, "_decision_event_state", None)
-        if event_state is None:
-            # Per-process like ``_last_decision_digest``: on resume the first
-            # page re-folds its decision events once, matching the resumed
-            # context rebuild; nothing is persisted beyond the raw
-            # observation and the existing event cursors.
-            event_state = {}
-            self._decision_event_state = event_state
-        decision = json.dumps(
-            _decision_observation(observation, event_state), ensure_ascii=False, sort_keys=True)
-        digest = hashlib.sha256(decision.encode()).hexdigest()
-        changed = digest != getattr(self, "_last_decision_digest", None)
-        self._last_decision_digest = digest
-        record = {
-            "observation_count": previous.get("observation_count", 0) + 1,
-            "wake_count": previous.get("wake_count", 0) + int(changed),
-            "decision_digest": digest,
-            "data": observation,
-        }
+        projected = copy.deepcopy(observation)
+        for run_id, run in projected.get("runs", {}).items():
+            run["requests"] = self._request_projection(run_id, run.get("request_ledger", {}))
+        projected["session"] = {"session_id": self.session_id,
+            "authorization_reference": self.authorization,
+            "authorization_valid_until": self.authorization_valid_until,
+            "allowed_operations": sorted(self.allowed_operations), "activity": self.activity,
+            "work_result": self.work_result, "flow_confirmation": self.flow_confirmation}
+        decision = _decision_observation(projected, self._decision_event_state)
+        # Appendix lengths/digests change with ordinary appends. The identity
+        # of a specific request result is the receipt and ledger line itself.
+        def remove_source_identity(value):
+            if not isinstance(value, dict):
+                return
+            for item in value.get("data", {}).get("pending", []) + value.get("data", {}).get("settled", []):
+                for key in ("ledger_ref", "receipt_ref"):
+                    if isinstance(item.get(key), dict):
+                        item[key].pop("source_ref", None)
+        for run in decision.get("runs", {}).values():
+            remove_source_identity(run.get("requests", {}))
+        digest = _digest_bytes(_json_bytes(decision))
+        changed = force_delivery or digest != getattr(self, "_last_decision_digest", None)
+        record = {"observation_count": previous.get("observation_count", 0) + 1,
+                  "wake_count": previous.get("wake_count", 0) + int(changed),
+                  "decision_digest": digest, "data": observation}
         temporary = path.with_suffix(".tmp")
-        temporary.write_text(json.dumps(record, ensure_ascii=False))
+        temporary.write_bytes(_json_bytes(record))
         temporary.replace(path)
+        if changed:
+            changed_operations = {collection: [key for key, value in decision.get(collection, {}).items()
+                if self._last_current and value != self._last_current.get(collection, {}).get(key)]
+                for collection in ("operations", "repair_verifications")}
+            current = _decision_observation(projected, copy.deepcopy(self._decision_event_state))
+            # Keep the actual incremental event bodies in the input, never
+            # replace them with the cumulative fingerprint chain.
+            excluded = 0
+            for run_id, run in current.get("runs", {}).items():
+                envelope = projected["runs"][run_id].get("events", {})
+                if envelope.get("ok") is True:
+                    envelope = copy.deepcopy(envelope)
+                    page = envelope.get("data", {})
+                    events = page.get("events", [])
+                    page["events"] = [item for item in events if not isinstance(item, dict)
+                        or item.get("source") not in _DECISION_EVENT_NOISE_SOURCES]
+                    excluded += len(events) - len(page["events"])
+                    self._locate_decision_events(run_id, page["events"])
+                run["events"] = envelope
+            current["schema_version"] = "delivery-decision-input/v1"
+            current["raw_observation"] = {"path": str(path), "reader": "read_delivery_artifact",
+                "source_ref": _source_ref(path, _json_bytes(record)),
+                "excluded_noise_event_records": excluded}
+            changes = _value_changes(self._last_current, decision)
+            input_id = uuid.uuid4().hex
+            journal = self.session_root / "session-events.jsonl"
+            offset = journal.stat().st_size if journal.exists() else 0
+            packet = {"event": "delivery_decision_input", "input_id": input_id,
+                "snapshot": current, "changes": changes, "fingerprint_state": decision,
+                "changed_operations": changed_operations,
+                "decision_digest": digest, "event_cursors": self._event_cursors,
+                "decision_event_state": {key: {"seen": sorted(value["seen"]), "chain": value["chain"]}
+                    for key, value in self._decision_event_state.items()}}
+            encoded = _json_bytes(packet) + b"\n"
+            with journal.open("ab") as handle:
+                handle.write(encoded)
+                handle.flush()
+                os.fsync(handle.fileno())
+            self._pending_decisions.append({"input_id": input_id, "byte_offset": offset,
+                "byte_length": len(encoded), "offset": 0, "delivery_status": "pending"})
+            self._last_current = decision
+            self._last_decision_digest = digest
+        # Persist the cursor only after the full raw observation and change
+        # packet have been saved; recovery can also read the journal first.
+        self._save("active")
         return changed
 
-    def _model_observation(self, observation: Any) -> Any:
-        """Project the observation handed to the native model.
+    def _model_observation(self, observation: Any = None) -> dict:
+        if not self._pending_decisions:
+            if observation is not None:
+                self.record_observation(observation)
+            if not self._pending_decisions:
+                return {"schema_version": "delivery-decision-input/v1", "coverage": {"complete": True}}
+        item = self._pending_decisions[0]
+        journal = self.session_root / "session-events.jsonl"
+        with journal.open("rb") as handle:
+            raw = handle.read(item["byte_offset"] + item["byte_length"])
+        packet = json.loads(raw[item["byte_offset"]:])
+        reference = {"path": str(journal), "source_ref": _source_ref(journal, raw),
+            "selection": {"kind": "bytes", "offset": item["byte_offset"], "length": item["byte_length"]}}
+        snapshot = packet["snapshot"]
+        for run in snapshot.get("runs", {}).values():
+            data = run.get("requests", {}).get("data", {})
+            history = data.pop("settled", [])
+            data["settled_index"] = {"total": len(history), "returned": 0,
+                                     "complete": not history, "evidence": reference}
+        histories = {}
+        for collection in ("operations", "repair_verifications"):
+            history = []
+            for key, envelope in list(snapshot.get(collection, {}).items()):
+                data = envelope.get("data", {})
+                terminal = (data.get("status") in {"exited", "stopped", "launch_failed"}
+                            or data.get("process", {}).get("state") in {"exited", "stopped"})
+                # Unqualified reports, failures and pending control/consult stay
+                # actionable even after process exit. Never equate exit to PASS.
+                qualified = ((data.get("report_binding") or {}).get("valid") is True
+                             or (data.get("result") or {}).get("effect_verified") is True
+                             or data.get("effect_verified") is True)
+                control_pending = any(isinstance(value, dict) and value.get("status")
+                    in {"pending", "unknown", "submitted"}
+                    for value in (data.get("control_receipts") or {}).values())
+                if (terminal and qualified and not control_pending and not data.get("consult_replies")
+                        and key not in packet.get("changed_operations", {}).get(collection, [])):
+                    history.append({"operation_id": key, "status": data.get("status"),
+                        "report_binding": data.get("report_binding"), "result": data.get("result"),
+                        "record_path": data.get("record_path")})
+                    del snapshot[collection][key]
+            histories[collection] = {"total": len(history), "returned": 0,
+                                     "complete": not history, "evidence": reference}
+        snapshot["operation_history"] = histories
+        changes = []
+        for change in packet["changes"]:
+            parts = change["path"]
+            # Historical settled bodies are indexed, including on resume;
+            # changed/new outcomes remain available through the exact packet.
+            if "settled" in parts and len(_json_bytes(change)) > 2048:
+                changes.append({"path": parts, "change": change["change"], "evidence": reference})
+            elif len(_json_bytes(change)) > 2048:
+                changes.append({"path": parts, "change": change["change"], "evidence": reference})
+            else:
+                changes.append(change)
+        referenced_values = []
+        def bound(value, parts=()):
+            if len(_json_bytes(value)) <= 2048:
+                return value
+            if isinstance(value, dict):
+                return {key: bound(item, (*parts, key)) for key, item in value.items()}
+            if isinstance(value, list):
+                return [bound(item, (*parts, index)) for index, item in enumerate(value)]
+            referenced_values.append(list(parts))
+            packet_path = list(parts) if parts and parts[0] == "changes" else ["snapshot", *parts]
+            if len(parts) >= 2 and parts[0] == "first_blockers":
+                packet_path = ["snapshot", "runs", parts[1], "status", "data", "first_blocker", *parts[2:]]
+            return {"read_complete": False, "evidence": reference, "packet_path": packet_path,
+                    "note": "large value retained in the exact decision packet"}
+        # Put authorization/control and first blockers ahead of bulk collections.
+        payload = bound({"schema_version": snapshot["schema_version"],
+                         "session": snapshot.get("session", {}),
+                         "first_blockers": {key: run.get("status", {}).get("data", {}).get("first_blocker")
+                             for key, run in snapshot.get("runs", {}).items()
+                             if run.get("status", {}).get("data", {}).get("first_blocker")},
+                         **snapshot, "input_id": item["input_id"],
+                         "changes": changes, "evidence": reference,
+                         "coverage": {"complete": True, "collections": {
+                             name: {"total": len(snapshot.get(name, {})) + histories.get(name, {}).get("total", 0),
+                                    "returned": len(snapshot.get(name, {})),
+                                    "complete": not histories.get(name, {}).get("total", 0)}
+                             for name in ("runs", "operations", "repair_verifications")}}})
+        if len(self._pending_decisions) > 1:
+            latest = self._pending_decisions[-1]
+            with journal.open("rb") as handle:
+                latest_raw = handle.read(latest["byte_offset"] + latest["byte_length"])
+            payload["current_state"] = {"input_id": latest["input_id"],
+                "path": str(journal), "source_ref": _source_ref(journal, latest_raw),
+                "selection": {"kind": "bytes", "offset": latest["byte_offset"],
+                              "length": latest["byte_length"]},
+                "note": "snapshot here is historical; reconcile this newer current state before acting"}
+        payload["coverage"].update(values_complete=not referenced_values,
+                                   referenced_values=referenced_values)
+        current_state = payload.pop("current_state", None)
+        encoded = _json_bytes(payload)
+        if current_state:
+            payload["current_state"] = current_state
+        if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= 32000:
+            payload["delivery_status"] = item["delivery_status"]
+            payload["delivery_range"] = {"next_offset": len(encoded), "complete": True}
+            if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= 32000:
+                return payload
+        # Oversized sets and single values use deterministic UTF-8 pages. The
+        # complete packet remains readable and no unreturned change is acked.
+        offset = item["offset"]
+        text, end = _utf8_page(encoded, offset, 12000)
+        return {"schema_version": "delivery-decision-input/v1", "input_id": item["input_id"],
+            "delivery_status": item["delivery_status"], "evidence": reference,
+            "session": bound(snapshot.get("session", {})),
+            "current_state": current_state,
+            "page": {"text": text, "offset": offset, "next_offset": end,
+                     "note": "partial JSON; concatenate all pages before using unreturned collections"},
+            "coverage": {"complete": end == len(encoded), "total_bytes": len(encoded),
+                "returned_bytes": end - offset, "collections": {
+                    name: {"total": len(snapshot.get(name, {})), "returned": "unknown",
+                           "complete": False, "evidence": reference}
+                    for name in ("runs", "operations", "repair_verifications")},
+                "changes": {"total": len(changes), "returned": "unknown", "complete": False,
+                            "evidence": reference}},
+            "delivery_range": {"next_offset": end, "complete": end == len(encoded)}}
 
-        All three delivery paths — the initial resume ``observed_state``, a
-        busy-turn steer and an idle send — use this one view: records whose
-        source is in ``_DECISION_EVENT_NOISE_SOURCES`` are dropped from each
-        run's incremental events page, because the raw app-server log is
-        native model activity, never a Delivery decision.  Everything else
-        passes through complete and unmodified — status, pending questions,
-        blockers, write and request receipts, reports, public handoffs,
-        failed tool envelopes and truncated placeholders included — and
-        nothing is truncated, summarized or re-written.  The payload carries
-        the raw-observation reference so the model can read the excluded
-        records on demand through the existing ``read_delivery_artifact``
-        tool; the complete observation itself stays in the stored
-        ``observation.json``.
-        """
-        if not isinstance(observation, dict):
-            return observation
-        excluded = 0
-        runs: dict[str, Any] = {}
-        for run_id, run in (observation.get("runs") or {}).items():
-            events = run.get("events") if isinstance(run, dict) else None
-            page = events.get("data") if isinstance(events, dict) else None
-            if (isinstance(page, dict) and events.get("ok") is True
-                    and isinstance(page.get("events"), list)):
-                kept: list[Any] = []
-                for event in page["events"]:
-                    if (isinstance(event, dict)
-                            and event.get("source") in _DECISION_EVENT_NOISE_SOURCES):
-                        excluded += 1
-                        continue
-                    kept.append(event)
-                if len(kept) != len(page["events"]):
-                    run = {**run, "events": {**events, "data": {**page, "events": kept}}}
-            runs[run_id] = run
-        payload = {**observation, "runs": runs}
-        payload["raw_observation"] = {
-            "path": str(self.session_root / "observation.json"),
-            "reader": "read_delivery_artifact",
-            "excluded_noise_event_records": excluded,
-            "excluded_noise_sources": sorted(_DECISION_EVENT_NOISE_SOURCES),
-            "note": ("Pure native app-server notification records are excluded "
-                     "from this payload; the complete raw observation including "
-                     "every excluded record is stored at the path above and "
-                     "readable on demand. No business, approval or receipt "
-                     "content was truncated or summarized."),
-        }
-        return payload
+    def _dispatch_observation(self, runtime: DeliveryRuntime, payload: dict, *, steer: bool) -> bool:
+        item = self._pending_decisions[0] if self._pending_decisions else None
+        if item is None:
+            return True
+        self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
+            "input_id": item["input_id"], "status": "attempted"})
+        try:
+            (runtime.steer if steer else runtime.send)(json.dumps(payload, ensure_ascii=False))
+        except DeliveryRuntimeError as exc:
+            status = "rejected" if exc.category == "rejected" else "unknown"
+            item["delivery_status"] = status
+            self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
+                "input_id": item["input_id"], "status": status})
+            self._save("active")
+            return False
+        data = payload.get("observed_state") if payload.get("kind") == "delivery_resume" else payload.get("data")
+        data = data or payload
+        received = data["delivery_range"]
+        self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
+            "input_id": item["input_id"], "status": "accepted", **received})
+        if received["complete"]:
+            self._pending_decisions.pop(0)
+        else:
+            item["offset"] = received["next_offset"]
+            item["delivery_status"] = "pending"
+        self._save("active")
+        return True
 
 
 def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
@@ -1733,14 +2267,17 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
             # from the first turn.  One startup observe feeds both the stored
             # record and the delivered state, so no events page is consumed
             # twice and no duplicate startup observation is recorded.
-            session.record_observation(initial_observation)
+            session.record_observation(initial_observation, force_delivery=True)
             observed_state = session._model_observation(initial_observation)
-        runtime.send(json.dumps({"kind": "delivery_resume" if resume else "delivery_start", "config": config,
-                                  "observed_state": observed_state,
-                                  "session_reference": str(session_root / "session.json")}, ensure_ascii=False))
+        initial_packet = {"kind": "delivery_resume" if resume else "delivery_start", "config": config,
+                          "observed_state": observed_state,
+                          "session_reference": str(session_root / "session.json")}
+        if resume and session._pending_decisions:
+            session._dispatch_observation(runtime, initial_packet, steer=False)
+        else:
+            runtime.send(json.dumps(initial_packet, ensure_ascii=False))
         next_observation = 0.0
         pending_input: list[dict] = []
-        pending_observation: dict | None = None
         steer_blocked_turn: str | None = None
         eof = False
         while not session.finished:
@@ -1792,6 +2329,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                 # Submission is not process exit. Keep the Delivery owner online until bound
                 # owners have actually stopped; do not start inference while collecting exits.
                 observation = session.observe()
+                session.record_observation(observation)
                 runs_stopped = all(
                     result.get("status", {}).get("data", {}).get("recorded_state", {}).get("state") in {"CLEANED", "STOPPED"}
                     and (result.get("status", {}).get("data", {}).get("liveness", {}).get("process_observation", {}).get("pid_alive") is False
@@ -1844,17 +2382,12 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     and time.monotonic() >= next_observation):
                 observation = session.observe()
                 next_observation = time.monotonic() + 2
-                if session.record_observation(observation):
-                    pending_observation = {"kind": "host_observation",
-                                           "data": session._model_observation(observation)}
-            if (runtime.busy and not pending_input and pending_observation is not None
+                session.record_observation(observation)
+            if (runtime.busy and not pending_input and session._pending_decisions
                     and steer_blocked_turn != runtime.turn_id):
-                try:
-                    runtime.steer(json.dumps(pending_observation, ensure_ascii=False))
-                except DeliveryRuntimeError:
+                packet = {"kind": "host_observation", "data": session._model_observation()}
+                if not session._dispatch_observation(runtime, packet, steer=True):
                     steer_blocked_turn = runtime.turn_id
-                else:
-                    pending_observation = None
             if not runtime.busy:
                 if pending_input:
                     current = pending_input.pop(0)
@@ -1872,17 +2405,18 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         if session.conversation:
                             session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native")
                     steer_blocked_turn = None
-                elif pending_observation is not None:
-                    runtime.send(json.dumps(pending_observation, ensure_ascii=False))
-                    pending_observation = None
+                elif session._pending_decisions:
+                    packet = {"kind": "host_observation", "data": session._model_observation()}
+                    if not session._dispatch_observation(runtime, packet, steer=False):
+                        raise DeliveryRuntimeError("Delivery observation receipt unknown")
                     steer_blocked_turn = None
                 elif time.monotonic() >= next_observation:
                     observation = session.observe()
                     next_observation = time.monotonic() + 2
                     if session.record_observation(observation):
-                        runtime.send(json.dumps(
-                            {"kind": "host_observation",
-                             "data": session._model_observation(observation)}, ensure_ascii=False))
+                        packet = {"kind": "host_observation", "data": session._model_observation()}
+                        if not session._dispatch_observation(runtime, packet, steer=False):
+                            raise DeliveryRuntimeError("Delivery observation receipt unknown")
                     elif eof and server is None:
                         session._save("supervision_interrupted", reason="business input closed", observation=observation)
                         return 2

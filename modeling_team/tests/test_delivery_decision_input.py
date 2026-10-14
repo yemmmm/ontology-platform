@@ -1,0 +1,369 @@
+"""R4.3-022 real files/receipts and offline Delivery dispatch contracts (A1-A4)."""
+import copy
+import importlib
+import json
+
+import pytest
+
+from modeling_team.delivery import DeliverySession
+from modeling_team.runtimes.delivery import DeliveryRuntimeError
+from modeling_team.tests.test_delivery_session import ROOT, _StubNativeRuntime, session
+from modeling_team.tests.test_delivery_wakeups import observation, _events_page, _receipt_event
+
+
+def read(host, path, **args):
+    return host.call_tool("read_delivery_artifact", {"path": str(path), **args})
+
+
+def ack(host):
+    data = host._model_observation()
+    assert host._dispatch_observation(_StubNativeRuntime(), {"kind": "host_observation", "data": data}, steer=False)
+    return data
+
+
+def bound_run(tmp_path, monkeypatch):
+    host = session(tmp_path)
+    root = tmp_path / "run"
+    (root / "control").mkdir(parents=True)
+    (root / "evidence").mkdir()
+    (root / "state.json").write_text('{"state":"RUNNING"}')
+    for name in ("modeling_team.delivery", "modeling_team.host_ops"):
+        monkeypatch.setattr(importlib.import_module(name), "resolve_run_root", lambda *a, **k: (root, tmp_path))
+    host.run_ids.add("run")
+    return host, root
+
+
+@pytest.mark.parametrize("key", ["observed_at", "evidence_refs", "ordinal", "stdout_tail", "heartbeat_count"])
+def test_business_keys_are_not_recursive_noise(tmp_path, key):
+    host = session(tmp_path)
+    initial = observation()
+    initial["runs"]["run"]["pending"]["data"]["items"][0][key] = "business-1"
+    host.record_observation(initial)
+    initial["runs"]["run"]["pending"]["data"]["items"][0][key] = "business-2"
+    assert host.record_observation(initial)
+    ack(host)
+    assert ack(host)["runs"]["run"]["pending"]["data"]["items"][0][key] == "business-2"
+
+
+def test_request_receipt_projection_preserves_uncertain_rejected_conflict_and_legacy(tmp_path, monkeypatch):
+    host, root = bound_run(tmp_path, monkeypatch)
+    ledger = [{"request_id": name, "action": "submit_cq_review", "content_digest": name}
+              for name in ("accepted", "rejected", "conflict", "unknown")]
+    ledger += [{"action": "legacy"}]
+    path = root / "control/host-requests.jsonl"
+    path.write_text("".join(json.dumps(row) + "\n" for row in ledger))
+    receipts = [{"request_id": "accepted", "outcome": "accepted", "content_digest": "accepted"},
+                {"request_id": "rejected", "outcome": "rejected", "content_digest": "rejected",
+                 "code": "cq-input-rejected", "message": "业务限定必须保留", "next_action": "fix draft"},
+                {"request_id": "conflict", "outcome": "accepted", "content_digest": "different"}]
+    (root / "evidence/outer-input-receipts.jsonl").write_text("".join(json.dumps(row) + "\n" for row in receipts))
+    raw = observation()
+    raw["runs"]["run"]["request_ledger"] = host._observe_request_ledger("run")
+    host.record_observation(raw)
+    data = ack(host)["runs"]["run"]["requests"]["data"]
+    assert data["settled_index"]["total"] == 1
+    pending = data["pending"]
+    assert {row.get("request_id") for row in pending} == {None, "rejected", "conflict", "unknown"}
+    rejected = next(row for row in pending if row.get("request_id") == "rejected")
+    assert rejected["result"]["data"]["receipt"]["message"] == "业务限定必须保留"
+    assert next(row for row in pending if row.get("request_id") == "conflict")["result"]["error"]["code"] == "request_id_conflict"
+    assert next(row for row in pending if row.get("request_id") == "unknown")["result"]["data"]["outcome"] == "unknown"
+    assert next(row for row in pending if row.get("request_id") is None)["outcome"] == "uncorrelated"
+
+
+def test_large_ledger_retained_and_settled_history_not_resent(tmp_path, monkeypatch):
+    host, root = bound_run(tmp_path, monkeypatch)
+    rows = [{"request_id": f"r{i}", "content_digest": f"d{i}", "body": "历史" * 350} for i in range(1100)]
+    ledger = root / "control/host-requests.jsonl"
+    ledger.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
+    (root / "evidence/outer-input-receipts.jsonl").write_text("".join(json.dumps({
+        "request_id": row["request_id"], "content_digest": row["content_digest"], "outcome": "accepted"}) + "\n" for row in rows))
+    assert ledger.stat().st_size > 2_000_000
+    raw = observation()
+    raw["runs"]["run"]["request_ledger"] = host._observe_request_ledger("run")
+    assert raw["runs"]["run"]["request_ledger"]["data"]["text"] == ledger.read_text()
+    host.record_observation(raw)
+    payload = ack(host)
+    assert payload["runs"]["run"]["requests"]["data"]["settled_index"]["total"] == 1100
+    assert len(json.dumps(payload, ensure_ascii=False).encode()) < 32768
+    assert "历史" not in json.dumps(payload, ensure_ascii=False)
+    assert not host.record_observation(raw)
+    assert read(host, ledger)["error"]["code"] == "artifact_selection_invalid"
+
+
+def test_partial_and_corrupt_ledger_are_not_complete(tmp_path, monkeypatch):
+    host, root = bound_run(tmp_path, monkeypatch)
+    (root / "control/host-requests.jsonl").write_bytes(b'{"request_id":"partial"}\nBAD\n{"request_id":"half"}')
+    raw = observation()
+    raw["runs"]["run"]["request_ledger"] = host._observe_request_ledger("run")
+    host.record_observation(raw)
+    data = ack(host)["runs"]["run"]["requests"]["data"]
+    assert data["coverage"]["complete"] is False
+    assert len([row for row in data["limitations"] if row["code"] == "request_ledger_corrupt"]) == 2
+
+
+def test_byte_pages_preserve_chinese_and_prefix_identity(tmp_path):
+    host = session(tmp_path)
+    path = host.session_root / "session-events.jsonl"
+    before = path.read_bytes()
+    result = read(host, path, selection={"kind": "bytes", "offset": 0}, max_bytes=1)
+    assert result["ok"]
+    data = result["data"]
+    path.write_bytes(before + b'{}\n')
+    chunks = [data["text"]]
+    while not data["read_complete"]:
+        result = read(host, path, **data["continuation"], max_bytes=71)
+        assert result["ok"]
+        data = result["data"]
+        chunks.append(data["text"])
+    assert "".join(chunks).encode() == before
+    assert data["source_ref"]["byte_length"] == len(before)
+    path.write_bytes(b'X' + path.read_bytes()[1:])
+    assert read(host, path, source_ref=data["source_ref"], selection={"kind": "bytes", "offset": 0})["error"]["code"] == "artifact_changed"
+
+
+def test_json_literal_paths_null_missing_and_changed_source(tmp_path):
+    host = session(tmp_path)
+    source = next(iter(host.sources))
+    source.write_text(json.dumps({"reports": [{"verdict": None}], "a.b": "中" * 17000, "secret": "private"}, ensure_ascii=False))
+    paths = [["reports", 0, "verdict"], ["absent"], ["a.b"]]
+    result = read(host, source, selection={"kind": "json", "paths": paths}, max_bytes=7)
+    assert result["ok"]
+    data, chunks = result["data"], [result["data"]["text"]]
+    while not data["read_complete"]:
+        result = read(host, source, **data["continuation"])
+        assert result["ok"]
+        data = result["data"]
+        chunks.append(data["text"])
+    fields = json.loads("".join(chunks))["fields"]
+    assert fields[0]["found"] and fields[0]["value"] is None
+    assert fields[1]["found"] is False and "value" not in fields[1]
+    assert fields[2]["value"] == "中" * 17000
+    assert not data["source_complete"] and data["omitted"]["other_source_fields"]
+    source.write_text('{}')
+    assert read(host, source, source_ref=data["source_ref"], selection={"kind": "json", "paths": paths})["error"]["code"] == "artifact_changed"
+
+
+@pytest.mark.parametrize("args", [
+    {"selection": {"kind": "json", "paths": []}},
+    {"selection": {"kind": "json", "paths": [[True]]}},
+    {"selection": {"kind": "json", "paths": [[-1]]}},
+    {"selection": {"kind": "bytes", "offset": -1}},
+    {"selection": {"kind": "bytes", "offset": 1}},
+    {"selection": {"kind": "json", "paths": [["x"]], "filter": "*"}},
+    {"selection": {"kind": "bytes"}, "max_bytes": 16385},
+])
+def test_invalid_selection_is_recoverable(tmp_path, args):
+    host = session(tmp_path)
+    source = next(iter(host.sources))
+    result = read(host, source, **args)
+    assert result["error"]["code"] == "artifact_selection_invalid"
+    assert result["error"]["retryable"] is True
+    assert read(host, source)["ok"]
+
+
+def test_corruption_unavailable_and_forbidden_are_distinct(tmp_path):
+    host = session(tmp_path)
+    source = next(iter(host.sources))
+    source.write_text('bad JSON')
+    assert read(host, source, selection={"kind": "json", "paths": [["x"]]})["error"]["code"] == "artifact_corrupt"
+    assert read(host, source, selection={"kind": "bytes"})["ok"]
+    source.unlink()
+    assert read(host, source)["error"]["code"] == "artifact_unavailable"
+    source.write_bytes(b'\xff')
+    assert read(host, source)["error"]["code"] == "artifact_corrupt"
+    result = read(host, tmp_path / "forbidden")
+    assert result["error"]["code"] == "artifact_forbidden"
+    assert "content_digest" not in result["error"]
+
+
+def test_continuation_cannot_switch_json_paths(tmp_path):
+    host = session(tmp_path)
+    source = next(iter(host.sources))
+    source.write_text('{"a":"long", "b":"other"}')
+    data = read(host, source, selection={"kind": "json", "paths": [["a"]]}, max_bytes=1)["data"]
+    assert read(host, source, source_ref=data["source_ref"], selection={"kind": "json", "paths": [["b"]]})["error"]["code"] == "artifact_selection_invalid"
+
+
+def test_unreceived_changes_survive_later_observations_and_resume(tmp_path):
+    host = session(tmp_path)
+    first = observation()
+    host.record_observation(first)
+    second = copy.deepcopy(first)
+    second["runs"]["run"]["pending"]["data"]["items"] = []
+    second["runs"]["run"]["events"] = _events_page([_receipt_event(100, "E2")], next_cursor="c2")
+    host.record_observation(second)
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root, config=host.config, resume=True)
+    assert len(reopened._pending_decisions) == 2
+    assert ack(reopened)["runs"]["run"]["pending"]["data"]["items"][0]["id"] == "question-1"
+    last = ack(reopened)
+    assert last["runs"]["run"]["pending"]["data"]["items"] == []
+    assert any(row["path"][-1] == "items" for row in last["changes"])
+    assert not reopened._pending_decisions
+
+
+def test_unknown_dispatch_keeps_input_and_does_not_claim_acceptance(tmp_path):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    class LostReceipt:
+        def send(self, text):
+            raise DeliveryRuntimeError("lost")
+    packet = {"kind": "host_observation", "data": host._model_observation()}
+    assert not host._dispatch_observation(LostReceipt(), packet, steer=False)
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root, config=host.config, resume=True)
+    assert reopened._model_observation()["delivery_status"] == "unknown"
+    assert len(reopened._pending_decisions) == 1
+
+
+def test_oversized_pending_input_pages_cover_all_values(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    raw["runs"]["run"]["pending"]["data"]["items"] = [{"id": str(i), "unknown_write": True,
+        "description": "业务条件" * 40} for i in range(130)]
+    host.record_observation(raw)
+    chunks = []
+    while host._pending_decisions:
+        data = ack(host)
+        assert len(json.dumps(data, ensure_ascii=False).encode()) <= 32768
+        chunks.append(data["page"]["text"])
+    content = json.loads("".join(chunks))
+    assert len(content["runs"]["run"]["pending"]["data"]["items"]) == 130
+    assert all(item["unknown_write"] for item in content["runs"]["run"]["pending"]["data"]["items"])
+
+
+def test_only_bound_operation_files_are_readable_and_private_not_published(tmp_path):
+    host = session(tmp_path)
+    host.repository_root = tmp_path
+    directory = tmp_path / ".delivery-ops"
+    directory.mkdir()
+    log = directory / "bound.err.log"
+    log.write_text("HOST-PRIVATE-CANARY")
+    record = directory / "bound.json"
+    record.write_text(json.dumps({"operation_id": "bound", "log_paths": {"stderr": str(log)}}))
+    host.operation_ids.add("bound")
+    assert read(host, log)["data"]["text"] == "HOST-PRIVATE-CANARY"
+    assert read(host, record)["ok"]
+    adjacent = directory / "other.err.log"
+    adjacent.write_text("not bound")
+    assert read(host, adjacent)["error"]["code"] == "artifact_forbidden"
+    log.unlink()
+    log.symlink_to(adjacent)
+    assert read(host, log)["error"]["code"] == "artifact_forbidden"
+    assert host.drain_messages() == []
+
+
+def test_stable_operations_are_indexed_but_invalid_reports_and_control_remain(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    raw["operations"] = {f"done-{i}": {"ok": True, "data": {
+        "operation_id": f"done-{i}", "status": "exited", "request_binding": {"private": "历史" * 200},
+        "report_binding": {"valid": True, "path": f"report-{i}", "content_digest": str(i)}}}
+        for i in range(100)}
+    raw["operations"]["invalid"] = {"ok": True, "data": {"status": "exited",
+        "report_status": "new_report_rejected", "report_binding": {"valid": False,
+        "validation_errors": ["binding changed"]}}}
+    raw["operations"]["controlled"] = {"ok": True, "data": {"status": "exited",
+        "report_binding": {"valid": True}, "control_receipts": {"pause": {"status": "unknown"}}}}
+    host.record_observation(raw)
+    data = ack(host)
+    assert data["operation_history"]["operations"]["total"] == 100
+    assert set(data["operations"]) == {"invalid", "controlled"}
+    assert "历史" not in json.dumps(data, ensure_ascii=False)
+    assert data["operations"]["invalid"]["data"]["report_binding"]["valid"] is False
+    raw["operations"]["done-1"]["data"]["report_binding"]["content_digest"] = "changed"
+    host.record_observation(raw)
+    assert ack(host)["operations"]["done-1"]["data"]["report_binding"]["content_digest"] == "changed"
+
+
+def test_exact_event_locator_uses_source_offset_not_page_line(tmp_path, monkeypatch):
+    host, root = bound_run(tmp_path, monkeypatch)
+    path = root / 'evidence/settled.jsonl'
+    prefix = b'{"old":true}\n' * 50
+    line = '{"business":"完整业务事件"}\n'.encode()
+    path.write_bytes(prefix + line)
+    event = {"source": "settled.jsonl", "line_no": 1, "byte_offset": len(prefix),
+             "data": {"business": "完整业务事件"}}
+    raw = observation()
+    raw['runs']['run']['events'] = _events_page([event], next_cursor='c')
+    host.record_observation(raw)
+    located = ack(host)['runs']['run']['events']['data']['events'][0]
+    result = read(host, path, source_ref=located['source_ref'], selection=located['selection'])
+    assert result['data']['text'].encode() == line
+    assert located['byte_length'] == len(line)
+    assert result['data']['source_complete'] is False
+
+
+def test_resume_uses_journal_when_session_save_was_interrupted(tmp_path, monkeypatch):
+    host = session(tmp_path)
+    original_save = host._save
+    monkeypatch.setattr(host, '_save', lambda *a, **k: (_ for _ in ()).throw(OSError('save interrupted')))
+    host._event_cursors['run'] = 'cursor-after-page'
+    with pytest.raises(OSError, match='save interrupted'):
+        host.record_observation(observation())
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root, config=host.config, resume=True)
+    assert reopened._event_cursors['run'] == 'cursor-after-page'
+    assert len(reopened._pending_decisions) == 1
+    monkeypatch.setattr(host, '_save', original_save)
+    packet = {'kind': 'host_observation', 'data': host._model_observation()}
+    monkeypatch.setattr(host, '_save', lambda *a, **k: (_ for _ in ()).throw(OSError('ack save interrupted')))
+    with pytest.raises(OSError, match='ack save interrupted'):
+        host._dispatch_observation(_StubNativeRuntime(), packet, steer=False)
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root, config=host.config, resume=True)
+    assert not reopened._pending_decisions
+
+
+def test_event_cursor_not_saved_until_observation_and_input_are_retained(tmp_path, monkeypatch):
+    host = session(tmp_path)
+    monkeypatch.setattr(host, 'call_tool', lambda *a, **k: _events_page([], next_cursor='new-cursor'))
+    host._observe_run_events('run')
+    assert host._event_cursors['run'] == 'new-cursor'
+    assert json.loads((host.session_root / 'session.json').read_text())['event_cursors'] == {}
+    host.record_observation(observation())
+    assert json.loads((host.session_root / 'session.json').read_text())['event_cursors']['run'] == 'new-cursor'
+
+
+def test_resume_rebuilds_current_input_even_when_last_input_was_accepted(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    host.record_observation(raw)
+    ack(host)
+    reopened = DeliverySession(repository_root=ROOT, session_root=host.session_root, config=host.config, resume=True)
+    assert not reopened.record_observation(raw)
+    assert reopened.record_observation(raw, force_delivery=True)
+    assert ack(reopened)["runs"]["run"]["status"]["data"]["recorded_state"]["state"] == "RUNNING"
+
+
+def test_pending_historical_input_identifies_new_current_state(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    host.record_observation(raw)
+    raw["runs"]["run"]["status"]["data"]["write_phase"] = "unknown"
+    host.record_observation(raw)
+    data = host._model_observation()
+    current = data["current_state"]
+    original = read(host, current["path"], source_ref=current["source_ref"], selection=current["selection"])
+    packet = json.loads(original["data"]["text"])
+    assert packet["snapshot"]["runs"]["run"]["status"]["data"]["write_phase"] == "unknown"
+
+
+def test_large_blocker_reference_points_to_original_value(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    raw["runs"]["run"]["status"]["data"]["first_blocker"] = {"message": "原始阻塞" * 1000}
+    host.record_observation(raw)
+    payload = host._model_observation()
+    value_ref = payload["first_blockers"]["run"]["message"]
+    evidence = value_ref["evidence"]
+    chunks = []
+    result = read(host, evidence["path"], source_ref=evidence["source_ref"], selection=evidence["selection"])
+    while True:
+        assert result["ok"]
+        data = result["data"]
+        chunks.append(data["text"])
+        if data["read_complete"]:
+            break
+        result = read(host, evidence["path"], **data["continuation"])
+    original = json.loads("".join(chunks))
+    for part in value_ref["packet_path"]:
+        original = original[part]
+    assert original == "原始阻塞" * 1000
