@@ -415,7 +415,9 @@ _PROVIDER_HTTP_VARIANTS = frozenset(
 # retry (``willRetry=false``) these variants enter an observable per-role wait
 # instead of the terminal runtime-failure latch.  Identity/protocol damage
 # (malformed notifications, ownership mismatches) and non-external variants
-# (context window, session budget, policy, sandbox, bad request) stay fatal.
+# (context window, session budget, policy, sandbox) stay fatal.  ``badRequest``
+# is provider-correctable here because the SDK uses it for a host-visible 400
+# rejection; recovery still requires the explicit bound action below.
 _PROVIDER_WAIT_VARIANTS = frozenset(
     {
         "rateLimitExceeded",
@@ -423,6 +425,7 @@ _PROVIDER_WAIT_VARIANTS = frozenset(
         "serverOverloaded",
         "internalServerError",
         "unauthorized",
+        "badRequest",
         "httpConnectionFailed",
         "responseStreamConnectionFailed",
         "responseStreamDisconnected",

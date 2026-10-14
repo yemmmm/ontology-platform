@@ -55,6 +55,16 @@ not resend the candidate or reconstruct the acceptance-stage handoff.
 For an R3 multi-slice CQ Task with `acceptance_target: cq_semantic`, the formal R2.3-005
 readiness/ticket/explicit-terminal-handoff sequence does not apply. Reuse the actual bounded
 Protocol completion result and report your production result when your semantic work is complete.
+During this route's existing stage review, identify the candidate item/location or concrete
+disposition for important source facts and necessary dependencies of the current chain and its
+approved public questions. A source declaration can be known while customer meaning remains
+unknown: preserve that distinction and its source locator in permitted definitions/text or the
+existing handoff. A Task excluding executable SQL/API mappings does not itself exclude relevant
+source-structure evidence. Do not promote it to a customer rule, create mappings without approval
+or expand to all columns. If representation or business confirmation is missing, name the precise
+delivery gap and its effect. Excluding full master-data coverage is not sufficient grounds to
+exclude a minimal shared dependency. Coordinate that disposition before freezing the candidate;
+do not read private CQ reviews or hidden material, and do not introduce a new field or hard gate.
 For a Task mounting R4.0-024, semantic work includes the pre-terminal association check below;
 an applied candidate or provisional completion request is not whole-run terminal.
 The Host publishes the CQ handoff after production roles settle; do not wait for its independent

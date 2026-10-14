@@ -48,7 +48,8 @@ execution evidence and must not be inferred from the ontology alone.
 ## Check every required answer point before review
 
 After generating both public and hidden questions, and before panorama-review or slice-review,
-check every answer point against three criteria: an approved source supports it; the question
+check every answer point against three criteria: an approved source supports it within the current
+Task's authorized output scope; the question
 explicitly asks for it or a correct answer necessarily needs it; omitting it changes the business
 judgment or violates the question's stated answer scope. Merely appearing in the source does not
 make a statement required in every answer. Preserve necessary implicit conditions, such as an
@@ -69,6 +70,15 @@ when they affect the conclusion. An answer that actively contradicts a boundary 
 Content corrections use the existing review/version lifecycle, not `note` to override frozen
 text. Self-checking does not approve a question. After reordering points, locate them within the
 new content version. Keep all hidden check reasons private with the draft and review records.
+
+In the same check note, distinguish confirmed business meaning, declared source-structure evidence
+and a supported unknown. A physical declaration does not confirm customer meaning or business
+cardinality; unknown business meaning does not erase the declaration. Excluding executable
+SQL/API mappings does not automatically exclude source evidence relevant to the approved chain.
+If Task output scope and a proposed required point disagree, clarify that point through review
+before freezing; do not silently expand the Task or tailor obligations to a prior model failure.
+The reviewed question/points must state the intended distinction clearly enough to judge from
+the frozen approved basis, without production context or a new packet field.
 
 ## Check coverage and independence
 

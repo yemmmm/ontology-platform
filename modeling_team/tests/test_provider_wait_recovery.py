@@ -84,6 +84,7 @@ def _provider_error(
         "serverOverloaded",
         "internalServerError",
         "unauthorized",
+        "badRequest",
         "responseStreamConnectionFailed",
     ],
 )
@@ -124,6 +125,23 @@ def test_repeated_exhausted_notifications_deduplicate_one_wait(tmp_path: Path) -
     wait = adapter.provider_wait_status(agent.agent_id)
     assert wait["notifications"] == 3
     assert wait["epoch"] == 1 and wait["wait_id"] == f"{agent.agent_id}:1"
+
+
+def test_bad_request_will_retry_does_not_auto_recover(tmp_path: Path) -> None:
+    adapter = CodexRuntimeAdapter(repository_root=tmp_path)
+    adapter._run_root = tmp_path
+    agent = _agent(tmp_path)
+    adapter.agents[agent.agent_id] = agent
+
+    adapter._notification(agent, _provider_error(will_retry=True, variant="badRequest"))
+
+    assert agent.runtime_failure is None
+    assert agent.provider_wait is None
+    assert agent.state == "running"
+    assert agent.active_turn_id == "turn-1"
+    assert agent.turn_provider_error is not None
+    assert agent.turn_provider_error["variant"] == "badRequest"
+    assert adapter.consume_provider_waits() == []
 
 
 def test_waiting_state_does_not_arm_the_inactivity_watchdog(tmp_path: Path) -> None:
@@ -272,22 +290,29 @@ class _FakeAppServer:
         os.close(self._response_write)
 
 
-def _waiting_agent_with_server(tmp_path: Path, adapter: CodexRuntimeAdapter) -> tuple[_Agent, _FakeAppServer]:
+def _waiting_agent_with_server(
+    tmp_path: Path, adapter: CodexRuntimeAdapter, *, variant: str = "rateLimitExceeded"
+) -> tuple[_Agent, _FakeAppServer]:
     server = _FakeAppServer()
     agent = _agent(tmp_path)
     agent.process = SimpleNamespace(stdin=server.request, stdout=server.stdout, pid=None, terminate=server.terminate)
     adapter.agents[agent.agent_id] = agent
-    adapter._notification(agent, _provider_error(variant="rateLimitExceeded"))
+    adapter._notification(agent, _provider_error(variant=variant))
     return agent, server
 
 
-def test_bound_recovery_starts_a_new_turn_on_the_same_thread(tmp_path: Path) -> None:
+@pytest.mark.parametrize("variant", ["rateLimitExceeded", "badRequest"])
+def test_bound_recovery_starts_a_new_turn_on_the_same_thread(
+    tmp_path: Path, variant: str
+) -> None:
     from modeling_team.runtimes.codex import RuntimeDelivery
 
     adapter = CodexRuntimeAdapter(repository_root=tmp_path)
     adapter._run_root = tmp_path
-    agent, server = _waiting_agent_with_server(tmp_path, adapter)
+    agent, server = _waiting_agent_with_server(tmp_path, adapter, variant=variant)
     try:
+        wait = adapter.provider_wait_status(agent.agent_id)
+        assert wait is not None and wait["variant"] == variant
         receipt = adapter.recover_provider_wait(
             agent.agent_id, RECOVERY_TEXT, sender_id="user/outer"
         )
@@ -300,6 +325,8 @@ def test_bound_recovery_starts_a_new_turn_on_the_same_thread(tmp_path: Path) -> 
         assert server.terminated is False
         evidence = (tmp_path / "evidence" / "provider-wait-recovered.jsonl").read_text()
         assert "额度" not in evidence  # message content retained only as digest
+        assert variant in evidence
+        assert "provider text" not in evidence
         last_request = json.loads(server.lines[-1])
         assert last_request["method"] == "turn/start"
         assert last_request["params"]["threadId"] == "thread-protocol"

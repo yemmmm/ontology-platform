@@ -872,7 +872,7 @@ def test_session_listens_only_on_loopback_and_rejects_non_responses_surfaces(
         session.stop()
 
 
-def test_non_2xx_upstream_body_is_dropped_with_fixed_local_failure(
+def test_non_2xx_upstream_status_is_preserved_with_body_dropped(
     json_upstream,
 ) -> None:
     sentinel = b"provider-controlled-boom-text-418"
@@ -897,7 +897,7 @@ def test_non_2xx_upstream_body_is_dropped_with_fixed_local_failure(
             "POST", "/responses", body=b"{}", headers={"Content-Type": "application/json"}
         )
         response = connection.getresponse()
-        assert response.status == 502
+        assert response.status == 500
         body = response.read()
         assert body == b""
         connection.close()

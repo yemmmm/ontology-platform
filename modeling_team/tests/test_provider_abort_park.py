@@ -155,19 +155,20 @@ def test_exhausted_retries_count_exactly_one_consecutive_failure(
     _ScriptedUpstream.statuses = [(429, None)] * 8
     try:
         response = _post(session)
-        assert response.status == 502
+        assert response.status == 429
         assert response.read() == b""  # provider body is discarded, never relayed
         assert session._consecutive_upstream_failures == 1
         assert failures == []
 
         response = _post(session)
-        assert response.status == 502
+        assert response.status == 429
         response.read()
     finally:
         session.stop()
     # The threshold semantics are unchanged: the signal fires once at the
     # second consecutive exhausted request, not once per retried attempt.
     assert session.snapshot()["upstream_errors"] == 2
+    assert session.snapshot()["upstream_retries"] == 2 * (session.max_upstream_attempts - 1)
     assert failures == [RESPONSES_UPSTREAM_FAILURE]
     assert session._consecutive_upstream_failures == 0
 

@@ -29,6 +29,13 @@ evidence bundle for that question. Submit one verdict entry with exactly these
 fields: `schema_version`, `batch_id`, `question_id`, `verdict`, `failure_layer`,
 `conflicting_evidence`, `note`.
 
+Respect the distinctions in the frozen question and approved basis: declared source structure is
+evidence, not automatic confirmation of customer meaning or business cardinality. A supported
+business unknown does not erase a relevant known source declaration. Judge only the question's
+necessary supported obligations; a physical locator alone does not authorize an added business
+rule. A scope ambiguity uses question-answer-review with its evidence and coverage gap, not a
+changed frozen point or production-context lookup.
+
 * `pass` — the necessary answer points are supported by the modeled semantics
   and the evidence. A declared unknown that the material justifies and that the
   Examiner preserved is a pass. Verbatim wording is not required.

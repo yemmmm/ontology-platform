@@ -40,6 +40,29 @@ class _UpstreamHandler(BaseHTTPRequestHandler):
         return
 
 
+class _ErrorUpstreamHandler(BaseHTTPRequestHandler):
+    """Return provider-controlled error details for local proxy assertions."""
+
+    status = 400
+    hits = 0
+    protocol_version = "HTTP/1.1"
+
+    def do_POST(self) -> None:  # noqa: N802 - stdlib hook
+        length = int(self.headers.get("Content-Length", "0"))
+        self.rfile.read(length)
+        type(self).hits += 1
+        body = b'{"error":"provider-secret-body"}'
+        self.send_response(type(self).status, "provider-secret-reason")
+        self.send_header("X-Provider-Leak", "provider-secret-header")
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *_args: object) -> None:
+        return
+
+
 @pytest.fixture()
 def upstream():
     _UpstreamHandler.seen.clear()
@@ -52,6 +75,63 @@ def upstream():
         server.shutdown()
         server.server_close()
         thread.join(timeout=1)
+
+
+@pytest.fixture()
+def error_upstream():
+    _ErrorUpstreamHandler.status = 400
+    _ErrorUpstreamHandler.hits = 0
+    server = HTTPServer(("127.0.0.1", 0), _ErrorUpstreamHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=1)
+
+
+@pytest.mark.parametrize(
+    "status,max_attempts,expected_hits",
+    [(400, 3, 1), (402, 3, 1), (429, 2, 2), (503, 2, 2)],
+)
+def test_provider_proxy_preserves_upstream_error_status_without_provider_details(
+    error_upstream, status: int, max_attempts: int, expected_hits: int
+) -> None:
+    _ErrorUpstreamHandler.status = status
+    proxy = DeepSeekProviderProxy(
+        b"file-only-sentinel",
+        upstream_url=f"http://127.0.0.1:{error_upstream.server_port}/responses",
+        max_upstream_attempts=max_attempts,
+        retry_backoff_seconds=(0.0, 0.0, 0.0),
+    )
+    proxy.start()
+    try:
+        connection = http.client.HTTPConnection(
+            "127.0.0.1", int(proxy.base_url.rsplit(":", 1)[1])
+        )
+        connection.request(
+            "POST", "/responses", body=b"{}", headers={"Content-Type": "application/json"}
+        )
+        response = connection.getresponse()
+        headers = {name.casefold(): value for name, value in response.getheaders()}
+        assert response.status == status
+        assert "provider-secret" not in response.reason.casefold()
+        assert response.read() == b""
+        assert headers["connection"] == "close"
+        assert headers["content-length"] == "0"
+        assert "content-type" not in headers
+        assert "x-provider-leak" not in headers
+        connection.close()
+    finally:
+        proxy.stop()
+    assert _ErrorUpstreamHandler.hits == expected_hits
+    snapshot = proxy.snapshot()
+    assert snapshot["upstream_errors"] == 1
+    assert snapshot["upstream_retries"] == expected_hits - 1
+    if status in {400, 402}:
+        assert snapshot["upstream_retries"] == 0
 
 
 def test_credential_preflight_and_runtime_revalidation_are_secret_free(tmp_path: Path) -> None:

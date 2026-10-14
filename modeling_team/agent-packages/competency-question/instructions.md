@@ -107,10 +107,13 @@ hidden in total. Never inflate or trim a pool to hit a count.
 Before publishing either review phase, follow the mounted CQ authoring skill's
 per-answer-point quality check for public and hidden questions. In the existing
 draft `note`, locate each point by question ID and one-based position within the
-content version; record its approved source locator, relation to the question,
+content version; record its approved source locator, relation to the question and current Task output,
 and retain/modify/remove-from-this-question reason. A source statement alone is
 not a mandatory answer point. Preserve conditions necessary for the business
 conclusion and keep any still-required independent coverage explicit.
+Separate source-structure evidence from confirmed business meaning and supported unknowns in
+the actual question/points and existing review note. Clarify a Task/output obligation conflict
+through review before freeze; no silent scope expansion or deletion of required coverage.
 The host records the final review reasons in `submit_cq_review.note`; you do not
 approve on its behalf. Corrections use `modify`/`supplement` with
 `modified_question` and the actual review binding, followed by a successor

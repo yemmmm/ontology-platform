@@ -35,7 +35,7 @@ not an alternative candidate schema. Protocol performs deterministic translation
 ## Review a staged handoff or content revision
 
 ```text
-Source-to-candidate check: <important facts, relation direction, conditions/exceptions, knowns and unknowns mapped to item IDs or concrete gaps>
+Source-to-candidate check: <important facts, dependencies, relation direction and conditions mapped to candidate locations or concrete gaps; distinguish known source declarations from unconfirmed business interpretations>
 Candidate-to-source check: <basis for each material assertion, or the unsupported claim to remove/qualify>
 Disposition: <confirmed / deferred / unknown / out-of-scope, with reason, impact and next role/input>
 Delivery state: <analyzed / candidate-published / plan-approved / applied / feedback-pending>

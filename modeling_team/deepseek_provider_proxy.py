@@ -436,7 +436,10 @@ class _SessionHandler(BaseHTTPRequestHandler):
                 continue
             session._count("upstream_errors")
             session.note_upstream_failure()
-            self._reject(_LOCAL_FAILURE_STATUS)
+            # Preserve only the upstream status after the bounded retry budget
+            # is exhausted (or for an immediate structural 4xx).  The body,
+            # headers, and reason phrase remain local and provider-text-free.
+            self._reject(status)
             return
         session.note_upstream_success()
         self.send_response(status)

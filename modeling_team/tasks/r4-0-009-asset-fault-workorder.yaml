@@ -12,6 +12,21 @@ objective: >-
   Contract coverage, SLA clocks, cost/profit metrics, inventory, procurement, API/SQL
   mapping and whole-scenario completion are outside this task. A second chain requires
   an explicit scope extension; broad source documents do not expand this boundary.
+  Excluding executable SQL/API mappings does not exclude relevant declared source
+  structure from this chain's explanation. Preserve needed source fields, declared
+  values and structural constraints as source evidence with their approved locators,
+  separately from unconfirmed customer meanings, business cardinality and lifecycle
+  rules. Use existing permitted definitions/text; do not create executable mappings,
+  assert physical constraints as customer rules, or copy source rows. If the selected
+  representation cannot retain needed evidence, disclose that delivery gap and impact
+  rather than calling the known structure unknown. A required equipment-model shared
+  definition or asset relation is not excluded merely because full model master-data
+  coverage is outside the chain; ground its meaning in approved sources or a scoped
+  business clarification, retaining unknowns where confirmation is absent.
+  Before CQ freeze, check each required point against both this Task and the actual
+  question. State source-structure evidence and unconfirmed business meaning separately.
+  Unsupported or out-of-scope obligations use the existing review/version process;
+  never edit an old freeze, reuse old hidden answers or trim the approved denominator.
   Reuse the existing scenario-map, candidate, approval and staged execution contracts.
   CQ drafts and public/hidden pools cover only this bounded chain and its necessary
   dependencies. Prefer a small pool (about four to six questions overall, including
@@ -34,6 +49,11 @@ objective: >-
   acceptance reads the actual authorized model, cannot repair production and cannot
   consume production context or reveal hidden questions. Public feedback and applied
   receipts do not establish final semantic PASS. Report results only for this chain.
+  At current-stage candidate review, Modeling identifies the candidate location or
+  concrete disposition for source facts and dependencies needed by the current chain
+  and approved public questions. Coordinator checks those actual locations within
+  its visible inputs before calling the stage covered. Reuse the existing handoff
+  and note; no per-column inventory, whole-scenario audit or new platform hard gate.
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source

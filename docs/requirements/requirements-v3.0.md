@@ -911,6 +911,13 @@ R3.0-008B 的逻辑切片分析之后、Ontology 拓扑决策之前，必须执�
 
 ### R3.0-011 能力问题驱动建模与批次级语义验收
 
+2026-10-14 用户授权落实下一轮准备：当前Task排除可执行SQL/API映射，不自动排除
+当前业务链所需源结构证据的普通定义／文本表达。CQ逐点核对获准输出范围及问题
+范围，分开结构已知、业务已确认及有依据的未知；结构约束不升级为客户业务规则。
+CQ作者／审核与Judge沿原版本、冻结和question-answer-review流程，不新增packet字段，
+不改旧题池、裁决或分母。权威指令已更新；工程及实际边界见
+[本次准备记录](../delivery/records/2026-10-14-glm-readiness-followup.md)，下一轮真实效果待证。
+
 2026-10-14 最近两次DeepSeek小链验证：A／B各自冻结7／6题，有效公开及隐藏报告
 同源、同freeze_digest／model_binding_digest，逐题原返回与registry一致，重放stable，
 无漂移／lifecycle error。原独立裁决A3/7、B5/6，均未完整通过；早期零报告及后续

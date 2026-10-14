@@ -1,13 +1,12 @@
-# Preparation config only. Production/evaluation require renewed modeling authorization.
+# Preparation config only. Bind the selected A/B authorization before production/evaluation.
 # No credentials, old freeze, old run IDs or old quota are carried forward.
-session_id: industrial-service-smallchain-prepared-20261014
-authorization_reference: user-20261014-modeling-readiness-engineering-only
+session_id: industrial-service-smallchain-glm-prepared-20261014
+authorization_reference: user-20261014-post-retrospective-glm-preparation
 allowed_operations: [read, supervise]
 business_input_role: user
 base_url: http://127.0.0.1:8001
 task: modeling_team/tasks/r4-0-009-asset-fault-workorder.yaml
 profile: modeling_team/profiles/r3-0-011-competency-question.yaml
-scope: modeling_team/scopes/new-scope-create.yaml
 model_profile: glm-flash-high
 service_tier: default
 run_ids: []
@@ -26,8 +25,18 @@ delivery_objective: >-
   production, evaluation or repair operation. At an authorized future start,
   bind the actual authorization, fresh session/run IDs and allowed operations.
   Model only the asset-fault-work-order chain selected by the Task. The user
-  supplies missing business meaning and reviews CQ unless explicitly delegating
+  supplies missing business meaning and reviews CQ unless the selected run's authorization delegates
   that review. Preserve private CQ isolation and freeze the new bounded pool.
+  The next production and independent acceptance use glm-direct/glm-5.3-flash/high
+  for all eight model roles via glm-flash-high. Do not resume a DeepSeek provider
+  wait or hot-switch the frozen old run. Preserve the existing A/B models and
+  use the established incremental entry with the selected Project/Ontology IDs,
+  a new request/session/run and the current authorization/work window. A new
+  GLM semantic start consumes that group's next modeling round; keep its
+  previous starts, failures and budget use. The old B request is immutable.
+  The fresh-scope startup entry is deliberately absent from this preparation.
+  Retain relevant known source structure as evidence alongside specific customer
+  unknowns; current CQ obligations must agree with the Task's output scope.
   Use the current checked-in role/tool contracts in fresh processes. Delivery
   observes the first applied chain and its materialization_progress checkpoint,
   freeze_id and approved public selection, then starts public-feedback through

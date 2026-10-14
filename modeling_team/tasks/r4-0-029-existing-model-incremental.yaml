@@ -12,6 +12,15 @@ objective: 'Continue this round''s bounded new business, revision or public-feed
   only with its original source and valid-at time. Conflicts require business clarification;
   feedback observations are not confirmed business facts.
 
+  Keep source declarations and unconfirmed customer interpretation separate. When
+  needed by this objective, retain relevant source structure and its approved locator
+  as evidence in existing permitted definitions/text; excluding executable mappings
+  does not exclude such evidence. Do not assert physical constraints as customer rules
+  or copy business rows. At the existing stage review, identify the candidate location
+  or concrete delivery gap for important source facts and necessary dependencies;
+  broad unknowns or whole-area exclusions do not establish coverage. Use the current
+  handoff/note rather than a per-column inventory or new platform gate.
+
   Modeling describes reuse/addition/modification/justified deletion and unknowns in
   business meaning and Coordinator review; retain the normal candidate schema and
   do not guess platform IRIs. Protocol binds existing identities from current governed
@@ -35,7 +44,9 @@ objective: 'Continue this round''s bounded new business, revision or public-feed
   clean only this run''s credentials and owned Sessions/Leases.
 
   Generate, review and freeze new CQ for this round''s additions/changes, cross-business
-  relations and affected previous questions. Public feedback/regression is not hidden
+  relations and affected previous questions. Before freeze, align necessary answer points with this objective
+  and the actual question, distinguishing source evidence, confirmed meaning and
+  supported unknowns through the existing review/version process. Public feedback/regression is not hidden
   blind acceptance. Preserve old questions/reports and do not combine previous PASS
   or claim untested model coverage. Independent Consumer/Judge stay read-only and
   do not repair production. Perform the current production association self-check

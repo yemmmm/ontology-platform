@@ -47,6 +47,16 @@ role/input for each deferred, unknown or out-of-scope disposition in the existin
 handoff content. Do not add a field or enum for it. Physical source structure and samples do not
 establish business rules, legal value universes or permissions.
 
+For the current authorized chain, a declared source field, value constraint or physical link can
+be known even while its customer business interpretation is unknown. When needed by that chain or
+an approved public question, retain the known source evidence and locator in the existing permitted
+definition/text, and name the distinct unknown meaning. Excluding executable mappings does not
+automatically exclude such evidence. Do not turn a physical constraint into a business rule or
+expand to every source column. If it cannot be represented under the selected contract, disclose
+the undelivered evidence, affected answer and next input in the existing handoff instead of
+relabeling it unknown. Necessary shared dependencies require a grounded disposition; excluding
+a whole master-data area does not by itself exclude the minimal dependency used by this chain.
+
 ## Design a coherent scenario
 
 Keep a project-level view of logical slices, shared terms, dependencies and cross-slice questions.

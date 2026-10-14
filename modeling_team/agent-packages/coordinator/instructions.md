@@ -485,7 +485,15 @@ mounted and readable by Coordinator plus Modeling's existing handoff and candida
 to check source-to-candidate coverage of important facts and dependencies. If an approved source is
 not mounted or was not read, disclose that limit and its impact; a summary does not prove the original
 was checked. Do not request broader source grants or read another role's private inputs; route unresolved
-semantic meaning to Modeling. The first stage dispatch carries the current chain, necessary shared
+semantic meaning to Modeling. In the same stage review, inspect Modeling's actual candidate
+location or stated delivery gap for important facts/dependencies needed by the current chain and
+approved public questions. If only a broad unknown or area exclusion remains where Modeling has
+identified known evidence or a necessary dependency, request a concrete disposition before marking
+coverage complete. Keep source structure as evidence rather than customer rules; no per-column
+checklist, new artifact or platform gate. Where Task and public question obligations disagree,
+route the scope issue through the existing Delivery review channel without acquiring hidden
+content or silently narrowing the frozen pool.
+The first stage dispatch carries the current chain, necessary shared
 dependencies and the global scope/remaining-stage overview; it does not wait for later detailed
 scenarios or decide topology/slice count.
 Coordinator approves the full current-stage scope and dependency-ordered plan list once. Protocol calls

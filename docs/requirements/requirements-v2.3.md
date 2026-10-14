@@ -2171,6 +2171,14 @@ R2.3-003 的成功 Acceptance-only retry 证明当前 read-model 足以回答两
 
 ## R2.3-007 Modeling Team Responses Provider 路由与逐角色模型配置
 
+2026-10-14 复盘窄修复授权追加：共用Responses代理在既有429／5xx有界重试结束后
+保留上游HTTP状态，不再把400请求错误／402账户不可用统一展示为502；仍丢弃上游
+正文、头和reason phrase，真实传输异常维持本地502。SDK的badRequest沿现有
+provider_wait及显式同线程恢复处理，不新增自动重试／fallback；owner／turn绑定、
+未知写入及非请求类安全／身份错误保护保留。影响包含GLM路由，下一轮八角色采用
+glm-direct／glm-5.3-flash／high，旧run不热换模型。工程与最小真实GLM接口证据见
+[准备记录](../delivery/records/2026-10-14-glm-readiness-followup.md)；不据此称建模或L1通过。
+
 当前状态：`原合同（8ee7aa4）与 2026-08-17 追加的 Luna Codex ChatGPT subscription 认证变更（52dde1f + 修复 5791492）均已实现并独立测试 PASS（Round 4 发现 D1 High 修复后 Round 5 复测 PASS；Round 6 用户授权的 A6 真实 Luna probe PASS——订阅认证、tool-call/terminal、零 secret/residue，1/1 预算零重试）。订阅路由已实证。剩余 followup 仅 G3 真实 mixed formal smoke（需 formal run attempt 单独授权）；G1/G3 原始 BLOCKED 记录保留为历史`
 
 ### 背景与问题
