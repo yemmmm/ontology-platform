@@ -1,0 +1,58 @@
+# R4.3-025 独立设计验收记录
+
+## 授权与证据边界
+
+用户2026-10-15要求“请细化并设计R4.3-025需求，通过独立验收”。本轮交付为需求细化、
+详细设计及独立**设计**验收，不实施代码／活跃合同，不启动服务、调用provider、修改
+模型或恢复生产；建模轮次／额度不变。A1—A10均未执行，不以设计PASS推导025工程、
+024实际Modeling采用／自查或最终独立语义质量／提速已验证。
+
+- 权威条目：[R4.3-025](../../requirements/requirements-v4.3.md#r4-3-025)。
+- 设计：[模型变更的确定性转换与执行](../designs/2026-10-15-r4-3-025-deterministic-model-execution-design.md)。
+- 开始代码基线：`fc8be76`，024设计已通过，但未实施。
+- 无关未跟踪`docs/presentations/`、`slide-deck/`保留。
+- 期间其他任务修改`modeling_team/modeling_readonly.py`、`read_proxy_mcp.py`及其测试；
+  本轮不修改、验证、提交这些代码，不把并行改动当本设计的已交付依赖。
+
+## Round 1 — PASS
+
+独立Reviewer：`/root/r4325_design_review`，`plan_reviewer` Agent，非需求／设计作者。
+只读审阅，不修改文件，不运行产品测试／服务／模型调用，不参与生产证据生成或修复。
+
+最终主输入SHA256（PASS后状态同步前；Reviewer再次核对无变化）：
+
+| 输入 | SHA256 |
+| --- | --- |
+| `docs/requirements/requirements-v4.3.md` | `633d7927632a8ee11c01b3a1533efd0150b750536886afc9009cd5ca82d8a3f7` |
+| `docs/delivery/designs/2026-10-15-r4-3-025-deterministic-model-execution-design.md` | `66f81ee794a4c569408fc30136cb6f4ca3a1c03c9d379b72d89977caf76bb682` |
+
+完整审阅025设计第1—7节、权威F1—F7／D1—D8／A1—A10、024设计和独立验收边界、
+003及适用AGENTS。结论：**PASS；Critical 0、High 0；关键未决假设：无。**
+
+Reviewer实际定向核对源码／合同：
+
+- `modeling_team/staged_decisions.py`、`references/r3-0-009-unified-graph-contract.json`、
+  `references/modeling-batch-item-contract.json`、`protocol_mechanics.py`：统一图弱内层
+  校验、旧转换与绑定helper的格式限制准确，设计没有冒用旧能力。
+- `modeling_team/runner.py`、`capability_mcp.py`、`staged_batch_write_forwarder.py`和
+  `backend/app/services/build_sessions.py`：真实task／scope／Session／lease有现有落点，
+  intent／receipt／恢复复用边界明确，未把旧dry-run／翻译门带进新核心。
+- `backend/app/services/modeling_batches.py`、`modeling_handlers.py`、
+  `semantic_command_compiler.py`、`semantic_export.py`及`backend/app/core/config.py`：
+  outputs_for和显式程序ID可用，Batch递归item-output引用与单批apply_atomic可用；
+  设计保留跨批成功、依赖停止和未知结果原身份对账，不承诺全局事务。持久身份、
+  source map、Finding及实际revision／索引状态区分符合核心要求。
+
+Reviewer没有GitNexus图分析，不宣称图影响覆盖。024实际工具接入、025工程、真实建模
+及独立最终语义验收保留未完成，不受并行读取代理修改影响。
+
+## PASS后同步与文档验证
+
+PASS后只同步需求顶部／总表／025状态和024依赖进度、设计第7节、tracker025及关联进度、
+本记录；未改变需求F1—F7／D1—D8／A1—A10或设计第1—6节。状态同步后的整文件摘要
+不冒称上表审阅原件，不需要无新增实质变化的重复审阅。
+
+本地链接／锚点、Markdown围栏／表格、F／D／A连续编号、源码路径及`git diff --check`
+通过。仅本次四份文档纳入提交，产品代码和活跃Skill未变，本轮不需backend／frontend
+测试、Skill validator或服务重启。文档检查只证明文档一致与可导航；独立设计PASS只
+证明当前方案可交接实施，不证明执行、业务或性能结果。
