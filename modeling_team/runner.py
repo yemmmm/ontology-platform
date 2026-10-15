@@ -5363,7 +5363,7 @@ class TeamRunner:
         )
         if legacy_stage3_required:
             approvals = self._load_staged_approvals(run_root)
-            slot_issue = staged_stage3_issue(run_root, approvals, unified=False)
+            slot_issue = staged_stage3_issue(run_root, approvals, unified=self._unified_graph)
             if slot_issue is not None:
                 # Prerequisite model: intervene without latch or gate close.
                 self._deliver_staged_gate_feedback(
