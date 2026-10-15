@@ -37,6 +37,24 @@ Model Profile 仍按语义角色键控。修复让 prepare 按该已声明 role 
 及相关 Runner／Runtime 测试通过。此次是平台路由兼容修复，不计语义建模轮次，也不代表真实
 semantic-start、模型质量或独立语义验收已通过。
 
+## 2026-10-15 start1b Runtime capability endpoint 修复
+
+绑定兼容修复后的 `start1b` 已创建隔离 scope，但 modeling app-server 在
+`semantic-start` 前退出，公开错误为 `app-server closed its output`。公开运行证据显示
+coordinator 已按 `glm-5.3-flash/high` 建立 thread，而 modeling 只有进程 PID、没有 thread 或
+app-server event。定位到 unified + staged 的非 formal 路径只启动 Protocol capability endpoint；
+直接 Modeling 已由现有 descriptor 配置 Runner capability，namespace 随后 bind 一个尚未启动的
+Modeling socket，导致 app-server 启动失败。
+
+修复在既有 staged 启动段按 `capability_descriptors["modeling"]` 的非空 operations 调用现有
+`capability_endpoint("modeling").start()`，并保留原 descriptor 工具面；没有新增模型、权限、审计、
+重试或业务写入机制。新增真实 `TeamRunner` 配置回归在 roster 边界读取 Modeling AF_UNIX socket
+及 `tools/list`，与 descriptor 完全一致。`start1b` 的 secret audit 发生在进程退出后的 cleanup，
+不作为主动 kill 根因。
+
+本修复仍未启动真实建模、未产生 semantic-start 或语义质量证据；由 Delivery 负责下一次真实
+启动。相关提交为后续 capability endpoint 修复提交。
+
 v2 loader仍要求protocol_tools非空，新Task以一个只读工具名满足现有配置合同；实际
 roster没有Protocol，不产生平台写入路径或额外角色。这次仅增加任务，不扩展loader。
 

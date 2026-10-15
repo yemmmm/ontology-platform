@@ -1,4 +1,6 @@
 """Current run scope and role catalogs without a provider or semantic start."""
+import os
+import stat
 from types import SimpleNamespace
 
 from modeling_team import runner as runner_module
@@ -68,6 +70,41 @@ def test_native_modeling_catalog_and_runtime_descriptor_agree(tmp_path):
         assert "error" in rejected
     finally:
         endpoint.stop()
+        staged.cleanup()
+
+
+def test_nonformal_unified_start_binds_direct_modeling_endpoint_before_roster(tmp_path):
+    staged = _UnifiedRunner(tmp_path)
+    staged.prepare()
+    owner = staged.runner
+    observed = {}
+    original_start_roster = owner.adapter.start_roster
+
+    def probe_start_roster(run, agents):
+        carrier = owner.acceptance
+        assert carrier is not None
+        endpoint = carrier.capability_endpoint("modeling")
+        path = endpoint.socket_path
+        observed["is_socket"] = path.exists() and stat.S_ISSOCK(os.lstat(path).st_mode)
+        observed["tools"] = (
+            [
+                item["name"]
+                for item in _socket_request(
+                    path, carrier.capability_token("modeling"), "tools/list"
+                )["result"]["tools"]
+            ]
+            if observed["is_socket"]
+            else []
+        )
+        return original_start_roster(run, agents)
+
+    owner.adapter.start_roster = probe_start_roster
+    try:
+        owner.start()
+        descriptor = owner.acceptance.capability_descriptors["modeling"]
+        assert observed["is_socket"] is True
+        assert observed["tools"] == descriptor["operations"]
+    finally:
         staged.cleanup()
 
 

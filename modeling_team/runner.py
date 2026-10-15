@@ -2473,8 +2473,9 @@ class TeamRunner:
                 # above never runs; the protocol role still declares the
                 # staged run operations (batch submission and the #17 evidence
                 # repost) in its private config, so exactly that endpoint must be
-                # live before any roster process is launched.  Nothing else starts
-                # here: a non-staged non-formal run keeps every endpoint stopped.
+                # live before any roster process is launched.  Unified direct
+                # Modeling also declares a Runner capability in this non-formal
+                # path, so start that endpoint before its namespace binds it.
                 self.acceptance.capability_endpoint("protocol").start()
                 self._append_evidence(
                     "staged-decisions",
@@ -2483,6 +2484,21 @@ class TeamRunner:
                         "operations": list(self.acceptance.capability_endpoint("protocol").operations),
                     },
                 )
+                modeling_descriptor = self.acceptance.capability_descriptors.get("modeling")
+                if (
+                    isinstance(modeling_descriptor, dict)
+                    and modeling_descriptor.get("operations")
+                ):
+                    self.acceptance.capability_endpoint("modeling").start()
+                    self._append_evidence(
+                        "staged-decisions",
+                        {
+                            "event": "modeling-capability-endpoint-started",
+                            "operations": list(
+                                self.acceptance.capability_endpoint("modeling").operations
+                            ),
+                        },
+                    )
             if self._competency_questions and self.acceptance is not None:
                 # R3.0-011: only the CQ endpoint is live in a (non-formal) CQ
                 # run, and it is live before any roster process is launched.
