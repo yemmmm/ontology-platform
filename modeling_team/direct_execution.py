@@ -415,6 +415,8 @@ class DirectModelExecutor:
                 errors.append(self._error(code=exc.code, message=exc.message, actual=exc.actual, retryable=exc.retryable))
         return {"closed": False, "session_id": self.session_id, "leases": sorted(self._leases), "errors": errors}
 
+    finish_session = close_session
+
     def _prepare_batch(self, batch: Mapping[str, Any], index: int) -> dict[str, Any]:
         if not isinstance(batch, Mapping):
             raise DirectExecutionError("compiled_batch_invalid", "batch is not an object")

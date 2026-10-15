@@ -929,3 +929,36 @@ def test_command_index_source_map_maps_findings_to_candidate(tmp_path, index_key
     }})
     assert result["errors"][0]["item_id"] == "candidate-1"
     assert result["errors"][0]["path"] == "/items/7/value/label"
+
+
+@pytest.mark.parametrize("released", [True, False])
+def test_finish_session_alias_preserves_release_and_ownership_contract(tmp_path, released):
+    scope = _Scope()
+    original_request = scope.request
+
+    def request(method, path, body, key):
+        if path.endswith(":release") and not released:
+            scope.calls.append((method, path, body, key))
+            return 200, {"state": "active"}
+        return original_request(method, path, body, key)
+
+    scope.request = request
+    executor = DirectModelExecutor(scope, tmp_path, "run-1", "task-1", _applied_response,
+                                   lambda tool, args: {"workspace": {"model_revision": 4}})
+    assert executor.execute(_batch())["status"] == "completed"
+    result = executor.finish_session(summary="Finished", unresolved_items=["gap-1"])
+    assert set(result) == {"closed", "session_id", "leases", "errors"}
+    assert result["closed"] is released
+    completions = [call for call in scope.calls if call[1].endswith(":complete")]
+    if released:
+        assert result == {"closed": True, "session_id": "session-1", "leases": [], "errors": []}
+        assert not scope.owned_session_ids
+        assert completions[0][2]["summary"] == "Finished"
+        assert completions[0][2]["unresolved_items"] == ["gap-1"]
+        assert scope.calls[-2][1].endswith(":release")
+        assert scope.calls[-1][1].endswith(":complete")
+    else:
+        assert result["leases"] == ["onto-1"]
+        assert result["errors"][0]["code"] == "lease_release_unconfirmed"
+        assert scope.owned_session_ids == {"session-1"}
+        assert not completions
