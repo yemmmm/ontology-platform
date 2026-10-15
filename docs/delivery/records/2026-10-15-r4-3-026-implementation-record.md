@@ -1,5 +1,8 @@
 # R4.3-026 材料与任务实现检查
 
+后续真实运行结果见 [三轮建模与独立验收记录](2026-10-15-r4-3-026-live-partial.md)。
+以下保留各阶段当时的检查结论；最新真实语义结论为 PARTIAL／REVISE。
+
 依据：[权威需求](../../requirements/requirements-v4.3.md#r4-3-026)。用户后续明确要求实施。
 基线 HEAD `b6e6c7e`；工作区原有 README.md、docs/presentations/、slide-deck/ 改动不属本次。
 
