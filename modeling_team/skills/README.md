@@ -37,3 +37,7 @@ Coordinator、Modeling、CQ，使用各自精简角色包；其 CQ 方法已收�
 技能目录；`lean-acceptance-examiner` 保留原有无 YAML frontmatter 的专用提示格式，由验收
 Runtime 加载，其他技能具有标准元数据。历史交付记录中的旧路径保留为当时证据，当前维护以
 本目录和加载配置为准。
+
+Skill 的启动合同由 package loader、冻结 baseline、只读 `/skills` 挂载和首轮精确路径注入共同
+保证。Codex 原生 `skills/extraRoots/set`／`skills/list` 只是可选 inventory 发现，不是角色
+启动硬门；原生发现不可用时仍按已加载并冻结的 package Skill 继续 `thread/start`。

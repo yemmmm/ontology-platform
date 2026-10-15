@@ -879,7 +879,7 @@ class CodexIsolationTests(unittest.TestCase):
             self.assertFalse((agent.home / "config.toml").exists())
             self.assertTrue(adapter.cleanup_identifiers()["modeling"]["private_credentials_destroyed"])
 
-    def test_formal_required_skills_have_frontmatter_and_pass_discovery_preflight(self) -> None:
+    def test_formal_required_skills_have_frontmatter_without_native_discovery_gate(self) -> None:
         root = repository_root()
         configuration = load_team_configuration(
             root / "modeling_team/profiles/r2-3-005-modeling-team.yaml",
@@ -916,22 +916,12 @@ class CodexIsolationTests(unittest.TestCase):
             )
             adapter = CodexRuntimeAdapter(repository_root=root)
 
+            calls = []
+
             def fake_rpc(_agent, method, _params):
-                if method == "skills/list":
-                    return {
-                        "data": [
-                            {
-                                "skills": [
-                                    {
-                                        "name": path.parent.name,
-                                        "path": f"/skills/{path.parent.name}/SKILL.md",
-                                        "enabled": True,
-                                    }
-                                    for path in profile_agent.package.required_skills
-                                ]
-                            }
-                        ]
-                    }
+                calls.append(method)
+                if method in {"skills/extraRoots/set", "skills/list"}:
+                    raise AssertionError("native Skill discovery must not gate startup")
                 if method == "thread/start":
                     return {"thread": {"id": "thread-skill-preflight"}}
                 return {}
@@ -940,6 +930,7 @@ class CodexIsolationTests(unittest.TestCase):
             adapter._require_expected_mcp_servers = lambda _agent: None  # type: ignore[method-assign]
             adapter._initialize(agent)
             self.assertEqual(agent.thread_id, "thread-skill-preflight")
+            self.assertEqual(calls, ["initialize", "thread/start"])
 
     def test_formal_stop_destroys_capability_material_and_is_idempotent(self) -> None:
         root = repository_root()

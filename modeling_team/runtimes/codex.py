@@ -6360,38 +6360,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             "initialize",
             {"clientInfo": {"name": "modeling-team", "version": "1"}},
         )
-        # Discovery is a hard preflight, not a structured-input hint.
-        self._rpc(agent, "skills/extraRoots/set", {"extraRoots": ["/skills"]})
-        listed = self._rpc(
-            agent, "skills/list", {"cwds": ["/agent/work"], "forceReload": True}
-        )
-        entries = listed.get("data", [])
-        if not isinstance(entries, list) or len(entries) != 1:
-            raise CodexRuntimeError("Skill discovery returned no exact cwd result")
-        entry = entries[0]
-        if not isinstance(entry, dict) or entry.get("errors"):
-            raise CodexRuntimeError("Skill discovery reported an error")
-        available = entry.get("skills", [])
-        expected = {
-            path.parent.name: f"/skills/{path.parent.name}/SKILL.md"
-            for path in agent.package.required_skills
-        }
-        found: dict[str, str] = {}
-        for item in available if isinstance(available, list) else []:
-            if (
-                isinstance(item, dict)
-                and item.get("enabled") is True
-                and not item.get("error")
-            ):
-                found[str(item.get("name"))] = str(
-                    item.get("path", item.get("canonicalPath", ""))
-                )
-        if set(found) & set(expected) != set(expected) or any(
-            found[name] != path for name, path in expected.items()
-        ):
-            raise CodexRuntimeError(
-                "Skill discovery did not return exact enabled staged paths"
-            )
+        # Skills are a Host/package contract: package loading and the frozen
+        # baseline bind the source bytes, _stage_skills copies them into the
+        # private read-only /skills mount, and start_task injects the exact
+        # staged paths.  Native Codex inventory discovery is advisory and must
+        # not make an otherwise valid role die before thread/start.
         thread_start_params = {
             "cwd": "/agent/work",
             "baseInstructions": "",

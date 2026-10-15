@@ -58,3 +58,23 @@ T0：作用域、源忠实度、当前资源存在、应用原子性及未知写
 GitNexus 对目标符号返回 Target not found，采用定向调用点和回归覆盖，不声称图覆盖。
 宿主另审阅资源对象示例并修正为完整 receipt item；待修复提交后以全新进程进入下一组。
 真实语义质量、正确端点与恢复效果须由新组实际应用、治理读回和独立验收证明。
+
+## 新组启动链补记
+
+新组于 2026-10-15 17:52:08 UTC 激活。首次三次进程启动分别在
+`mcpServerStatus/list`、`initialize`、`thread/start` 无响应退出，均未产生 semantic-start，
+所以新组仍为 0/3；空 scope 已删除，进程退出与范围权限撤销已核实。私有凭据审计匹配
+仍标记 PARTIAL，不宣称整体清理通过。18:12:15 UTC 核对首次 semantic-start 的
+20 分钟完成门未达成，原因是上述真实启动失败及其窄诊断，不重置原起点。
+
+直接 CLI 及三 MCP bwrap 握手探针当下正常，资源压力仅为推断，不能唯一归因。
+进一步真实三角色探针在 CQ 的 `skills/extraRoots/set` 卡住 15+5 秒。按 T0 复核，
+package loader、冻结 baseline、只读技能挂载和首轮精确 `type=skill/name/path` 注入已
+共同提供实际输入合同；原生 Skill inventory 的额外注册与列表精确检查不是独立完成门。
+删除该重复预检，不扩大作用域、不省略实际技能输入，不延长全局超时，保留 initialize、
+thread/start 和必要 MCP 能力核对。
+
+修复后真实三角色 bwrap 的 initialize/thread/start 均成功，显式注入接口成功；没有
+执行 turn/start、语义建模或平台写入。Codex 隔离文件 57 passed、55 subtests passed，
+随后针对启动不调用 discovery 的回归 1 passed、56 deselected。diff 检查通过。
+原生首 turn 实际技能读取仍待新组真实运行核对，探针不替代 semantic-start 或独立验收。
