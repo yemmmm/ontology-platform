@@ -109,3 +109,29 @@ PTY 超长行被截断，改以三片拼接并验证完整摘要；Delivery 已�
 
 持久修复验证：Codex 隔离文件 61 passed、55 subtests passed（1.28 秒）。
 该检查验证完整正文进入首次 turn 参数及 staged 漂移拒绝，不替代 live 实际读取或语义验收。
+
+
+18:40:10 UTC 原 Modeling 通过正式材料读取确认 `read_complete=true`、`truncated=false`，
+完整 4835 字节摘要相同；保持同一初建轮继续。两批 applied，revision 2，18:41:55
+finish 完成。直接数据库只读核对本轮 Session `37730268-2ffb-4a3a-9537-46bbde863ec4`
+为 completed/revision 2，租约于 18:41:55.354752 UTC released；未追加生命周期 mutation。
+18:45:41 原 Team 进入 read-only wait，运行写权限撤销、资源保留、无 pending/unknown writes；
+18:45:51 正式 CQ handoff ready。原生产摘要端点与 apply 回执/最终读回相反，保留
+PARTIAL 及公开证据差异，不凭结构关联 COMPLETE 宣称语义正确。
+
+独立隐藏 Consumer 3/3 完成；18:49:09 attempt-0001 报告 `full_pass=false`、verdicts 为空，
+Judge setup 为 `collaboration_binding_changed: invalid scenario map`。此为协作合同失败，
+不是模型质量裁决；公开 1 题尚未执行，完整分母仍为 4。原地图、模型与报告不修改。
+原 Coordinator 只读定位到 `adjustments[0]` 将普通收尾说明写成 string，而非合同对象。
+修复者 T0 复核：此字段仅协作进度，不是 Judge 语义证据，不应以格式缺陷阻断独立语义验收；
+仅降级该可恢复字段，保留 source/digest 及关键业务/身份绑定硬门。修复和只读复验不扣建模轮。
+
+
+Judge 最小修复只匹配 `map_schema_mismatch` + `adjustments[i]: fields`，从其工作副本
+省略相应进度条并记录 `collaboration_progress_invalid`；原地图、handoff 和摘要不变。
+其他候选/共享定义绑定、plan/identity conflict、review 结构仍硬校验。两套 Coordinator
+权威提示补充 closure/audit/status 不属实质业务变更，应放既有 note/progress。
+相关验证：r4007 34 passed，partial judging 57 passed，minimal chain 10 passed，
+contracts 11 passed、3 subtests；Ruff/diff 检查通过。未做 GitNexus 图分析，定向核对
+`_cq_collaboration_context` → map validator/projection → Judge setup 调用点。
+真实复验仍待执行；已封存原 attempt，不把工程测试当语义恢复通过。

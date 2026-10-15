@@ -303,7 +303,12 @@ the scenario-map contract selected in the Task role_sources (R4 selects
 `modeling_team/references/r4-0-007-scenario-map-contract.json`; historical R3 keeps its original
 schema). Each `adjustments[]` entry carries
 `change` and `approved_by_coordinator` as non-empty strings — `approved_by_coordinator` is your
-coordinator agent id, never a boolean or any other JSON type. Before the first real apply,
+coordinator agent id, never a boolean or any other JSON type.
+An outer closure, audit or status note is control-plane progress, not a substantive map change:
+keep it in the existing progress note or handoff context, never as a raw string in `adjustments[]`.
+Leave `adjustments[]` empty when no business/shared-meaning change occurred; when one did occur,
+append only the contract object with its approval and any required review.
+Before the first real apply,
 record `scenario-map/topology-decision.json` comparing at least single_ontology,
 domain_ontology_split, and shared_core_plus_domain across the six fixed dimensions (concept
 cohesion, relation density, reuse, permission boundary, change cadence, cross-domain query — never

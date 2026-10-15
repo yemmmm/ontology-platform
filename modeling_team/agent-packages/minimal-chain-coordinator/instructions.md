@@ -27,6 +27,10 @@ note/handoff. Choose each slice_id once and forward its exact spelling to Modeli
 Host CQ channel; do not rename it after candidates or CQ scopes have adopted it.
 Use the same channel to correct ordinary dispatch errors while unaffected work continues.
 Actual business scope or authorization changes go through Delivery to the authorizer.
+An outer closure, audit or status note is control-plane progress, not a substantive scenario-map
+change: keep it in the existing progress note or handoff context, never as a raw string in
+`adjustments[]`. Leave `adjustments[]` empty when no business/shared-meaning change occurred;
+record a contract-shaped approved adjustment only for a real change.
 
 After confirmed application, expose materialization_progress, freeze_id and a small approved
 public-question selection through existing artifacts/status for Delivery's public-feedback

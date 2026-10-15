@@ -474,6 +474,41 @@ def test_collaboration_context_skips_non_plan_evidence_keeps_work_state(tmp_path
     assert _cq_collaboration_context(tmp_path, {})[0]["definitions"] == []
 
 
+def test_invalid_ordinary_adjustment_is_ignored_with_judge_warning(tmp_path):
+    from modeling_team.__main__ import _cq_collaboration_context
+
+    _collaboration_run_root(tmp_path)
+    path = tmp_path / "scenario-map/scenario-map.json"
+    value = json.loads(path.read_text())
+    # An outer closure/audit note is progress metadata, not a substantive map
+    # adjustment.  It is intentionally malformed under the closed map schema.
+    value["adjustments"] = ["outer closure audit note"]
+    write_json(path, value)
+    handoff_path = tmp_path / "acceptance-v3/production-handoff.json"
+    handoff = json.loads(handoff_path.read_text())
+    handoff["collaboration_artifact"]["digest"] = digest_file(path)
+    write_json(handoff_path, handoff)
+    original_map = path.read_bytes()
+    original_handoff = handoff_path.read_bytes()
+
+    context, warnings = _cq_collaboration_context(
+        tmp_path, {"cq-1": [{"result": {"iri": "iri:1"}}]}
+    )
+
+    assert context["definitions"] == [dict(
+        definition_id="def-0", resource_iri="iri:1", status="unknown", reviews=[]
+    )]
+    assert warnings == [{
+        "warning": "collaboration_progress_invalid",
+        "reason_code": "map_schema_mismatch",
+        "detail": "adjustments[0]: fields",
+    }]
+    # The handoff-bound source artifacts remain byte-identical; only the Judge
+    # work copy omits the malformed progress entry.
+    assert path.read_bytes() == original_map
+    assert handoff_path.read_bytes() == original_handoff
+
+
 def _superseded_review_run_root(tmp_path, stale_fields):
     plan = _collaboration_run_root(tmp_path)
     path = tmp_path / "scenario-map/scenario-map.json"

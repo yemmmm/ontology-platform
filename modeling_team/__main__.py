@@ -1547,10 +1547,12 @@ def _cq_collaboration_context(
     a Judge-setup hard failure to recorded warnings (T0: in acceptance mode the
     binding authority is the handoff/freeze digest, still hard-checked here,
     and the model state summary, still hard-checked in the report; stale
-    collaboration metadata alone indicates no semantic drift).  The untrusted
-    references are omitted from the Judge's work copy and disclosed as
-    unknown, never trusted or confirmed.  Any other map issue, and the same
-    defects with unknown drift, stay hard failures.
+    collaboration metadata alone indicates no semantic drift).  A malformed
+    ordinary adjustment is also progress metadata, so it is omitted from the
+    Judge's work copy and disclosed as a warning.  The untrusted references
+    are omitted from the Judge's work copy and disclosed as unknown, never
+    trusted or confirmed.  Any other map issue, and the same defects with
+    unknown drift, stay hard failures.
     """
     from .contracts import digest_file
     from .scenario_map import collaboration_projection, load_scenario_map, validate_scenario_map
@@ -1569,6 +1571,7 @@ def _cq_collaboration_context(
         raise TeamConfigurationError("collaboration_binding_changed: handoff content changed")
     scenario_map = load_scenario_map(path)
     superseded_reviews = set()
+    invalid_adjustments: set[int] = set()
     untrusted_candidate_refs: dict[tuple[int, int], str] = {}
     collaboration_warnings: list[dict[str, str]] = []
     for issue in validate_scenario_map(scenario_map, run_root=run_root):
@@ -1581,6 +1584,22 @@ def _cq_collaboration_context(
             r"(?:\.revision: stale|: candidate/item binding)",
             issue.detail,
         )
+        invalid_adjustment = re.fullmatch(r"adjustments\[(\d+)\]: fields", issue.detail)
+        if issue.reason_code == "map_schema_mismatch" and invalid_adjustment is not None:
+            # A malformed ordinary adjustment cannot affect semantic evidence:
+            # the Judge receives only collaboration statuses, while the
+            # handoff digest and all model/identity bindings remain hard gates.
+            # Omit this entry from the immutable work copy and retain the exact
+            # location as a lifecycle warning for diagnosis.
+            invalid_adjustments.add(int(invalid_adjustment[1]))
+            collaboration_warnings.append(
+                {
+                    "warning": "collaboration_progress_invalid",
+                    "reason_code": issue.reason_code,
+                    "detail": issue.detail,
+                }
+            )
+            continue
         if issue.reason_code == "map_dangling_reference" and historical is not None:
             superseded_reviews.add(int(historical[1]))
             continue
@@ -1606,14 +1625,17 @@ def _cq_collaboration_context(
             )
             continue
         raise TeamConfigurationError("collaboration_binding_changed: invalid scenario map")
-    # A handoff-bound map stays immutable. Superseded review progress is not a
-    # binding failure or a current ready/complete claim; omit it only from the
-    # Judge's work-context copy, preserving all other reference validation.
-    if superseded_reviews:
+    # A handoff-bound map stays immutable. Invalid ordinary adjustment progress
+    # and superseded review progress are omitted only from the Judge's work
+    # copy, preserving all other reference validation and original indexes.
+    if invalid_adjustments or superseded_reviews:
         scenario_map = {**scenario_map, "adjustments": [
-            {key: value for key, value in adjustment.items() if key != "review"}
-            if index in superseded_reviews else adjustment
+            (
+                {key: value for key, value in adjustment.items() if key != "review"}
+                if index in superseded_reviews else adjustment
+            )
             for index, adjustment in enumerate(scenario_map["adjustments"])
+            if index not in invalid_adjustments
         ]}
     # Same immutability for the downgraded shared-term references: the Judge's
     # work copy drops exactly the references that cannot be trusted to bind;
