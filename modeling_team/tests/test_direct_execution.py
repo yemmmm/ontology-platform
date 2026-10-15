@@ -876,3 +876,56 @@ def test_binding_boundary_maps_missing_output_to_source_field():
     assert result["errors"][0]["change_id"] == "change-2"
     assert result["errors"][0]["item_id"] == "candidate-2"
     assert result["errors"][0]["path"] == "/items/1/value/source_entity_iri"
+
+
+def test_exact_session_identity_is_created_once_for_ordered_batches(tmp_path):
+    scope = _Scope()
+    batches = _batch() + _batch(item_id="item-2")
+    batches[1]["batch_index"] = 1
+    executor = DirectModelExecutor(scope, tmp_path, "run-1", "task-1", _applied_response,
+                                   lambda tool, args: {"workspace": {"model_revision": 4}})
+    assert executor.execute(batches)["status"] == "completed"
+    creates = [call for call in scope.calls if call[1] == "/api/projects/project-1/build-sessions"]
+    assert len(creates) == 1
+    assert creates[0][2] == {"client_session_id": "direct:run-1:task-1"}
+
+
+def test_missing_read_uses_scoped_rest_workspace_context(tmp_path):
+    scope = _Scope()
+    original_request = scope.request
+
+    def request(method, path, body, key):
+        if path == "/api/ontologies/onto-1/modeling-context":
+            scope.calls.append((method, path, body, key))
+            return 200, {"workspace": {"state": "ready", "model_revision": 17}}
+        return original_request(method, path, body, key)
+
+    scope.request = request
+    submitted = []
+
+    def submit(batch):
+        submitted.append(batch)
+        return _applied_response(batch)
+
+    executor = DirectModelExecutor(scope, tmp_path, "run-1", "task-1", submit, None)
+    assert executor.execute(_batch())["status"] == "completed"
+    assert submitted[0]["expected_model_revision"] == 17
+    assert ("GET", "/api/ontologies/onto-1/modeling-context", None, "protocol-key") in scope.calls
+
+
+@pytest.mark.parametrize("index_key", [0, "0"])
+def test_command_index_source_map_maps_findings_to_candidate(tmp_path, index_key):
+    def submit(batch):
+        return _applied_response(batch, attempt_status="validation_failed", findings=[{
+            "severity": "error", "code": "invalid_label", "client_item_ids": ["item-1"],
+            "path": "/items/0/payload/label",
+        }])
+
+    executor = DirectModelExecutor(_Scope(), tmp_path, "run-1", "task-1", submit,
+                                   lambda tool, args: {"workspace": {"model_revision": 4}})
+    result = executor.execute(_batch(), {index_key: {
+        "item_id": "candidate-1", "json_pointer": "/items/7",
+        "field_map": {"/payload/label": ["/items/7/value/label"]},
+    }})
+    assert result["errors"][0]["item_id"] == "candidate-1"
+    assert result["errors"][0]["path"] == "/items/7/value/label"

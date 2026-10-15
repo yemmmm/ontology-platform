@@ -14,9 +14,11 @@ import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from os import PathLike
 from pathlib import Path
 from typing import Any
 
+from .platform_scope import PlatformScope
 from .staged_batch_write_forwarder import (
     StagedBatchForwardError,
     StagedBatchForwardUnknown,
@@ -236,13 +238,13 @@ class DirectModelExecutor:
 
     def __init__(
         self,
-        scope: Any,
-        run_root: str | Path,
+        scope: PlatformScope,
+        run_root: str | PathLike[str],
         run_id: str,
         task_id: str,
         submit: Callable[[Mapping[str, Any]], Mapping[str, Any]],
         read: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None,
-        observe_result: Callable[..., Any] | None = None,
+        observe_result: Callable[[Mapping[str, Any]], None] | None = None,
     ) -> None:
         self.scope = scope
         self.run_root = Path(run_root)
@@ -503,7 +505,7 @@ class DirectModelExecutor:
             raise DirectExecutionError("scope_binding_required", "Project binding is unavailable")
         if not _nonempty(getattr(self.scope, "protocol_key", None)):
             raise DirectExecutionError("protocol_key_unavailable", "Protocol key is unavailable")
-        client_session_id = _stable_id("r4-3-025-direct", self.run_id, self.task_id)
+        client_session_id = f"direct:{self.run_id}:{self.task_id}"
         response = self._scope_request(
             "POST",
             f"/api/projects/{project_id}/build-sessions",
@@ -559,7 +561,13 @@ class DirectModelExecutor:
         self.session_revision = revision
 
     def _read_context(self, ontology_id: str) -> Mapping[str, Any]:
-        response = self._read_tool("get_modeling_context", {"ontology_id": ontology_id})
+        if callable(self.read):
+            response = self._read_tool("get_modeling_context", {"ontology_id": ontology_id})
+        else:
+            response = _unwrap(self._scope_request(
+                "GET", f"/api/ontologies/{ontology_id}/modeling-context", None,
+                tool="get_modeling_context",
+            ))
         workspace = response.get("workspace") if isinstance(response.get("workspace"), Mapping) else response
         revision = workspace.get("model_revision") if isinstance(workspace, Mapping) else None
         if type(revision) is not int or revision < 0:
@@ -1251,6 +1259,18 @@ class DirectModelExecutor:
                 value = nested.get(item_id)
                 if isinstance(value, Mapping):
                     source = dict(value)
+        if not source:
+            for command_index, item in enumerate(batch.get("items", [])):
+                if item.get("client_item_id") != item_id:
+                    continue
+                value = source_map.get(command_index, source_map.get(str(command_index)))
+                if isinstance(value, str):
+                    source = {"path": value}
+                elif isinstance(value, Mapping) and any(
+                    key in value for key in ("item_id", "path", "json_pointer", "candidate_path", "field_map")
+                ):
+                    source = dict(value)
+                break
         original = DirectModelExecutor._source_item(batch, item_id)
         for key in ("change_id", "item_id", "resource_kind"):
             if source.get(key) is None and original.get(key) is not None:
