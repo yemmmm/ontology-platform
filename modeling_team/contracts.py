@@ -495,6 +495,7 @@ def load_profile(
     root: Path | None = None,
     strict: bool = False,
     multi_slice: bool = False,
+    direct_modeling: bool = False,
 ) -> TeamProfile:
     root = root or repository_root()
     data = _yaml(path)
@@ -553,9 +554,11 @@ def load_profile(
         if profile_id in _FORMAL_PROFILE_IDS:
             raise TeamConfigurationError("multi-slice Profile is not registered")
         role_set = set(roles)
-        if len(roles) != len(role_set) or not MULTI_SLICE_ROLE_VALUES <= role_set:
+        core_roles = {"coordinator", "modeling"} if direct_modeling else MULTI_SLICE_ROLE_VALUES
+        if len(roles) != len(role_set) or not core_roles <= role_set:
             raise TeamConfigurationError(
-                "multi-slice Profile requires exactly one Coordinator, Modeling, and Protocol"
+                "direct Modeling Profile requires Coordinator and Modeling" if direct_modeling
+                else "multi-slice Profile requires exactly one Coordinator, Modeling, and Protocol"
             )
         if any(
             agent.agent_id != agent.package.role
@@ -653,6 +656,8 @@ def load_profile(
             ("protocol", "coordinator"),
             ("protocol", "modeling"),
         }
+        if direct_modeling:
+            required_edges = {("coordinator", "modeling"), ("modeling", "coordinator")}
         if not required_edges <= edges:
             raise TeamConfigurationError("multi-slice Profile communication graph drift")
     parameter_binding = data["parameters"].get("expected_matrix_binding")
@@ -1041,19 +1046,26 @@ def task_declares_cq_semantic_target(task_path: Path) -> bool:
 def load_multi_slice_team_configuration(
     profile_path: Path, task_path: Path, *, root: Path | None = None
 ) -> TeamConfiguration:
-    """Load only the non-formal R3.0-002 three-role multi-slice workflow.
+    """Load the non-formal multi-slice workflow and its current direct writer.
 
     The strict four-role formal check is unchanged; this explicit branch
-    accepts exactly the registered multi-slice Profile paired with a Task that
-    declares ``parameters.multi_slice_workflow: true``.
+    pairs a multi-slice Profile with its Task selector. Current unified Tasks
+    require Coordinator and Modeling; legacy Tasks retain Protocol routing.
     """
 
     root = root or repository_root()
-    profile = load_profile(profile_path, root=root, multi_slice=True)
+    parameters = _yaml(task_path).get("parameters")
+    direct_modeling = isinstance(parameters, dict) and parameters.get(UNIFIED_GRAPH_TASK_PARAMETER) is True
+    profile = load_profile(profile_path, root=root, multi_slice=True, direct_modeling=direct_modeling)
+    source_roles = {agent.package.role for agent in profile.agents}
+    if direct_modeling:
+        # Current Tasks retain optional Protocol reference grants. They do not
+        # require a Protocol actor; source staging follows the actual Profile.
+        source_roles.add("protocol")
     task = load_task(
         task_path,
         root=root,
-        allowed_roles={agent.package.role for agent in profile.agents},
+        allowed_roles=source_roles,
     )
     if task.parameters is None or task.parameters.get(MULTI_SLICE_TASK_PARAMETER) is not True:
         raise TeamConfigurationError(

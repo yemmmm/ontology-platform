@@ -150,7 +150,7 @@ def submit(fixture, ontology, items, mode="apply_atomic", *, session=None):
             expected_model_revision=OntologyModelRevisionService(
                 session, fixture["settings"]
             ).version_for(ontology),
-            lease_token=lease if mode != "dry_run" else None,
+            lease_token=lease,
             items=items,
         ),
     )
@@ -207,7 +207,7 @@ def test_cross_graph_reference_scope_and_final_reverse_integrity(mapping_applica
     assert submit(f, a, [table(f, "left", "source-a")])["attempt_status"] == "applied"
     assert submit(f, b, [table(f, "right", "source-b"), join(f)])["attempt_status"] == "applied"
     # C belongs to the Project but has no approved dependency scope.
-    denied = submit(f, c, [join(f, "unapproved")], "dry_run")
+    denied = submit(f, c, [join(f, "unapproved")])
     assert denied["attempt_status"] == "validation_failed"
     changed = item(
         "change",
@@ -319,8 +319,6 @@ def test_active_protocol_translation_applies_concrete_mapping_kinds(mapping_appl
     assert not plan["conflicts"], plan
     resources = {}
     for batch in plan["batches"]:
-        checked = submit(f, f["ontologies"][0], batch["items"], "dry_run")
-        assert checked["attempt_status"] == "validated", json.dumps(checked, default=str)
         result = submit(f, f["ontologies"][0], batch["items"])
         assert result["attempt_status"] == "applied", json.dumps(result, default=str)
         resources.update({x["client_item_id"]: x["resource_outputs"] for x in result["items"]})
@@ -433,8 +431,6 @@ def test_live_interleaved_cross_graph_writes_preserve_integrity(mapping_applicat
         column_mappings=[{"column": "id", "property_iri": f["base"] + "property/key"}],
         mapping_definition={"source_key": "a", "record_key_columns": ["id"]},
     )
-    assert submit(f, a, [removal], "dry_run")["attempt_status"] == "validated"
-    assert submit(f, b, [join(f)], "dry_run")["attempt_status"] == "validated"
     start = Event()
 
     def apply(ontology, items):
@@ -442,7 +438,8 @@ def test_live_interleaved_cross_graph_writes_preserve_integrity(mapping_applicat
             assert start.wait(10)
             return submit(f, ontology, items, session=session)
 
-    # Both apply requests start from successful independent prechecks.
+    # Both apply requests start concurrently and retain the cross-graph
+    # dependency conflict as the single integrity boundary.
     with ThreadPoolExecutor(max_workers=2) as pool:
         futures = [pool.submit(apply, a, [removal]), pool.submit(apply, b, [join(f)])]
         start.set()

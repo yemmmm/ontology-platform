@@ -1,13 +1,13 @@
-"""R3.0-014 mechanical tests: dry-run first, translation review, gated apply.
+"""Historical proof readers plus the current apply-only execution boundary.
 
 Covers the shared test plan M-cases that are mechanically decidable without a
 live platform or a semantic run:
 
-* M1  — a dry-run passes with rejected/old/format-drifted translation history;
-* M2  — an apply is rejected, in order, by the translation gate then the proof
-        gate, before any intent or forwarder call;
-* M3  — an ``ok``-only forwarder result writes a receipt but never a proof, so
-        the apply gate fails closed on the missing record;
+* retained translation/proof matrices remain pure offline readers for old
+  Batch/Attempt evidence;
+* current unified apply accepts without a translation approval or dry-run proof;
+* retained ``ok``-only receipts without complete Attempt identity never become
+  historical proofs;
 * M5/M24 — the capability response passes the Attempt facts through verbatim;
 * M6/M7/M28/M29 — the translation matrix (exact key, current Coordinator,
         conflicts, drifted entries as history);
@@ -32,7 +32,6 @@ from modeling_team.staged_decisions import (
     ATTEMPT_PROOF_FIELDS,
     ATTEMPT_PROOF_SCHEMA,
     StagedDecisionArtifactError,
-    StagedSubmissionRejection,
     build_attempt_proof,
     platform_content_hash,
     read_attempt_proofs,
@@ -60,7 +59,9 @@ DIGEST = "sha256:" + "a" * 64
 
 
 def _dry_run_batch() -> dict:
-    return _unified_args(_batch_items(), PLAN_REF)["batch"]
+    # Explicit historical fixture only.  The active submission helper defaults
+    # to apply_atomic; this object is never sent to the live Runner.
+    return _unified_args(_batch_items(), PLAN_REF, mode="dry_run")["batch"]
 
 
 def _apply_batch(key: str = "placeholder-key-2") -> dict:
@@ -159,12 +160,13 @@ def test_platform_content_hash_matches_the_backend_service_hash():
         ontology_id=ontology_id,
         idempotency_key="placeholder-key-1",
         expected_model_revision=1,
-        mode="dry_run",
+        mode="apply_atomic",
+        lease_token="lease",
         items=items,
     )
     backend_hash_value = backend_hash(ModelingBatchService._content(payload))
     # Item order, duplicate and unsorted set-valued lists never change the hash
-    # on either side, so a dry-run proof and a same-content apply hash identically.
+    # on either side, so the apply content hash is deterministic.
     assert platform_content_hash({"ontology_id": ontology_id, "items": items}) == backend_hash_value
     assert platform_content_hash(
         {"ontology_id": ontology_id, "items": [items[1], items[0]]}
@@ -182,13 +184,12 @@ def test_platform_content_hash_matches_the_backend_service_hash():
     ) == backend_hash_value
 
 
-# --- M6/M7/M28/M29: the apply-time translation matrix -------------------------
+# --- Historical M6/M7/M28/M29: the translation matrix -------------------------
 
 
 def test_translation_gate_matrix():
-    # An empty translation history is a legal approvals file for the dry-run
-    # stage, but the apply-time gate still reports it: nothing releases an
-    # apply except a current approval for the exact plan key.
+    # This parser remains useful for reading retained historical approvals.
+    # New unified apply does not consult it as a technical gate.
     assert unified_translation_issue(
         _translation_approvals(), plan_ref=PLAN_REF, projection_digest=DIGEST,
         coordinator_id="coordinator-agent-1",
@@ -239,7 +240,7 @@ def test_translation_gate_matrix():
     ).reason_code == "unified_schema_mismatch"
 
 
-# --- M10-M13/M16: the apply-time dry-run proof matrix -------------------------
+# --- Historical M10-M13/M16: the dry-run proof matrix -------------------------
 
 
 def test_dry_run_proof_gate_matrix(tmp_path):
@@ -396,27 +397,13 @@ def _approvals_path(staged) -> Path:
     return staged_decision_artifact_paths(staged.run_root, unified=True)["approvals"]
 
 
-def _record_translation_approval(staged, plan) -> None:
-    approvals = json.loads(_approvals_path(staged).read_text(encoding="utf-8"))
-    approvals["translation_approvals"] = [
-        {
-            "plan_ref": PLAN_REF,
-            "projection_digest": plan["projection_digest"],
-            "approved_by": staged.runner._multi_slice_role_ids()["coordinator"],
-            "decision": "approved",
-            "reason": "translation reviewed",
-        }
-    ]
-    _write_json(_approvals_path(staged), approvals)
-
-
-def test_dry_run_passes_over_rejected_translation_history_and_writes_the_proof(tmp_path):
+def test_apply_ignores_rejected_translation_history_without_a_dry_run_proof(tmp_path):
     forwarder, calls = _attempt_forwarder()
     staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
     try:
         staged.prepare()
         _candidate, plan = _stage_unified(staged.run_root)
-        # Rejected translation history for this very plan must not gate a dry-run.
+        # Retained rejected translation history is not a current apply gate.
         approvals = json.loads(_approvals_path(staged).read_text(encoding="utf-8"))
         approvals["translation_approvals"] = [
             {
@@ -430,35 +417,27 @@ def test_dry_run_passes_over_rejected_translation_history_and_writes_the_proof(t
         _write_json(_approvals_path(staged), approvals)
         _open_platform_gate_unified(staged)
 
-        response = staged.runner._handle_staged_submit_modeling_batch(
-            _unified_args(_batch_items(), PLAN_REF)
-        )
+        response = staged.runner._handle_staged_submit_modeling_batch(_apply_args())
 
-        # M1: the dry-run went through; M5/M24: the Attempt facts pass through.
+        # R4.3-024: apply is the one live write contract; no dry-run proof is
+        # manufactured or required before the platform call.
         assert response["ok"] is True
-        assert response["mode"] == "dry_run"
-        assert response["attempt_id"] == "platform-attempt-dry_run"
+        assert response["mode"] == "apply_atomic"
+        assert response["attempt_id"] == "platform-attempt-apply_atomic"
         assert response["attempt_status"] == "validated"
         assert response["content_hash"] == platform_content_hash(
-            _unified_args(_batch_items(), PLAN_REF)["batch"]
+            _apply_args()["batch"]
         )
-        assert calls[0]["mode"] == "dry_run"
-        assert "lease_token" not in calls[0]
-
-        # The Runner wrote its own proof into host evidence, bound to the plan.
+        assert calls[0]["mode"] == "apply_atomic"
+        assert calls[0]["lease_token"] == "placeholder-lease"
         proofs = read_attempt_proofs(staged.run_root)
-        assert [proof["attempt_id"] for proof in proofs] == ["platform-attempt-dry_run"]
-        proof = proofs[0]
-        assert proof["plan_ref"] == PLAN_REF
-        assert proof["projection_digest"] == plan["projection_digest"]
-        assert proof["mode"] == "dry_run"
-        assert proof["attempt_status"] == "validated"
-        assert proof["receipt_ordinal"] == 1
+        assert [proof["mode"] for proof in proofs] == ["apply_atomic"]
+        assert all(proof["mode"] != "dry_run" for proof in proofs)
     finally:
         staged.cleanup()
 
 
-def test_apply_is_gated_translation_then_proof_before_any_write(tmp_path):
+def test_apply_has_no_translation_or_dry_run_proof_gate_before_write(tmp_path):
     forwarder, calls = _attempt_forwarder()
     staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
     try:
@@ -466,50 +445,20 @@ def test_apply_is_gated_translation_then_proof_before_any_write(tmp_path):
         _candidate, plan = _stage_unified(staged.run_root)
         _open_platform_gate_unified(staged)
 
-        # No translation approval at all: the apply stops at the translation gate.
-        with pytest.raises(StagedSubmissionRejection) as rejection:
-            staged.runner._handle_staged_submit_modeling_batch(_unified_args(_batch_items(), PLAN_REF, mode="apply_atomic"))
-        assert rejection.value.data["reason_code"] == "approval_missing"
-        assert calls == []
-        intents_dir = staged_decision_artifact_paths(staged.run_root, unified=True)["intents_dir"]
-        assert not intents_dir.exists() or not list(intents_dir.iterdir())
-
-        # The approval exists but no dry-run proof does: the proof gate fires.
-        _record_translation_approval(staged, plan)
-        with pytest.raises(StagedSubmissionRejection) as rejection:
-            staged.runner._handle_staged_submit_modeling_batch(_unified_args(_batch_items(), PLAN_REF, mode="apply_atomic"))
-        assert rejection.value.data["reason_code"] == "dry_run_proof_missing"
-        assert calls == []
-
-        # A wrong approver is also a typed translation rejection (M29).
-        approvals = json.loads(_approvals_path(staged).read_text(encoding="utf-8"))
-        approvals["translation_approvals"][0]["approved_by"] = "someone-else"
-        _write_json(_approvals_path(staged), approvals)
-        with pytest.raises(StagedSubmissionRejection) as rejection:
-            staged.runner._handle_staged_submit_modeling_batch(_unified_args(_batch_items(), PLAN_REF, mode="apply_atomic"))
-        assert rejection.value.data["reason_code"] == "approval_missing"
-        assert calls == []
-
-        # The real dry-run, the Coordinator's current approval, then the apply.
-        _record_translation_approval(staged, plan)
-        assert staged.runner._handle_staged_submit_modeling_batch(
-            _unified_args(_batch_items(), PLAN_REF)
-        )["ok"] is True
-        apply_args = _unified_args(_batch_items(), PLAN_REF, mode="apply_atomic")
-        apply_args["batch"]["idempotency_key"] = "placeholder-key-2"
-        response = staged.runner._handle_staged_submit_modeling_batch(apply_args)
+        # No translation approval and no dry-run proof are required for the
+        # current apply contract.
+        response = staged.runner._handle_staged_submit_modeling_batch(_apply_args())
 
         assert response["ok"] is True
         assert response["mode"] == "apply_atomic"
         assert response["attempt_id"] == "platform-attempt-apply_atomic"
-        assert [call["mode"] for call in calls] == ["dry_run", "apply_atomic"]
-        assert calls[1]["lease_token"] == "placeholder-lease"
-        assert calls[1]["items"] == calls[0]["items"]
+        assert [call["mode"] for call in calls] == ["apply_atomic"]
+        assert calls[0]["lease_token"] == "placeholder-lease"
     finally:
         staged.cleanup()
 
 
-def test_stub_forwarder_receipt_is_not_a_proof_and_the_apply_fails_closed(tmp_path):
+def test_apply_does_not_require_a_historical_dry_run_proof_from_a_stub_receipt(tmp_path):
     from modeling_team.tests.test_r30008b_runner_wiring import _ForwarderRecorder
 
     forwarder = _ForwarderRecorder()  # only {"batch_id": ...}: a bare receipt
@@ -519,29 +468,22 @@ def test_stub_forwarder_receipt_is_not_a_proof_and_the_apply_fails_closed(tmp_pa
         _candidate, plan = _stage_unified(staged.run_root)
         _open_platform_gate_unified(staged)
 
-        response = staged.runner._handle_staged_submit_modeling_batch(
-            _unified_args(_batch_items(), PLAN_REF)
-        )
+        response = staged.runner._handle_staged_submit_modeling_batch(_apply_args())
         assert response["ok"] is True
-        # M3: the receipt exists but no Attempt fact was identifiable, so no
-        # proof was written and none may be invented.
+        # A bare legacy fixture receipt does not create proof, but it also does
+        # not add a retired proof gate to the current apply.
         assert read_attempt_proofs(staged.run_root) == []
         assert "attempt_id" not in response
         assert "content_hash" not in response
-
-        _record_translation_approval(staged, plan)
-        with pytest.raises(StagedSubmissionRejection) as rejection:
-            staged.runner._handle_staged_submit_modeling_batch(_unified_args(_batch_items(), PLAN_REF, mode="apply_atomic"))
-        assert rejection.value.data["reason_code"] == "dry_run_proof_missing"
+        assert forwarder.calls[0]["batch"]["mode"] == "apply_atomic"
     finally:
         staged.cleanup()
 
 
-def test_apply_rejects_a_not_validated_or_content_mismatched_dry_run(tmp_path):
-    _candidate, plan = None, None
-    for attempt_status, content_hash, expected in (
-        ("validation_failed", None, "dry_run_proof_not_validated"),
-        (None, "0" * 64, "dry_run_proof_content_mismatch"),
+def test_apply_ignores_historical_invalid_dry_run_records(tmp_path):
+    for attempt_status, content_hash in (
+        ("validation_failed", None),
+        (None, "0" * 64),
     ):
         forwarder, _calls = _attempt_forwarder(
             attempt_status=attempt_status or "validated", content_hash=content_hash
@@ -549,56 +491,56 @@ def test_apply_rejects_a_not_validated_or_content_mismatched_dry_run(tmp_path):
         staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
         try:
             staged.prepare()
-            _candidate, plan = _stage_unified(staged.run_root)
+            _stage_unified(staged.run_root)
             _open_platform_gate_unified(staged)
-            assert staged.runner._handle_staged_submit_modeling_batch(
-                _unified_args(_batch_items(), PLAN_REF)
-            )["ok"] is True
-            _record_translation_approval(staged, plan)
-            with pytest.raises(StagedSubmissionRejection) as rejection:
-                staged.runner._handle_staged_submit_modeling_batch(_apply_args())
-            assert rejection.value.data["reason_code"] == expected
+            # Preserve malformed/failed historical proof data for offline
+            # readers; it must not become a prerequisite for a new apply.
+            _write_proofs(
+                staged.run_root,
+                _proof(
+                    attempt_status=attempt_status or "validated",
+                    content_hash=content_hash or platform_content_hash(_dry_run_batch()),
+                ),
+            )
+            response = staged.runner._handle_staged_submit_modeling_batch(_apply_args())
+            assert response["ok"] is True
+            assert _calls[0]["mode"] == "apply_atomic"
         finally:
             staged.cleanup()
-            _candidate, plan = None, None
 
 
-def test_apply_rejects_reusing_the_dry_run_idempotency_key(tmp_path):
+def test_apply_ignores_historical_dry_run_idempotency_key(tmp_path):
     forwarder, _calls = _attempt_forwarder()
     staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
     try:
         staged.prepare()
         _candidate, plan = _stage_unified(staged.run_root)
         _open_platform_gate_unified(staged)
-        assert staged.runner._handle_staged_submit_modeling_batch(
-            _unified_args(_batch_items(), PLAN_REF)
-        )["ok"] is True
-        _record_translation_approval(staged, plan)
-        # Same idempotency key as the dry-run: a typed conflict, not a replay.
-        with pytest.raises(StagedSubmissionRejection) as rejection:
-            staged.runner._handle_staged_submit_modeling_batch(
-                _unified_args(_batch_items(), PLAN_REF, mode="apply_atomic")
-            )
-        assert rejection.value.data["reason_code"] == "idempotency_conflict"
+        _write_proofs(staged.run_root, _proof())
+        # The key belongs to retained dry-run evidence, not a new live
+        # submission identity.  Apply remains directly executable.
+        response = staged.runner._handle_staged_submit_modeling_batch(
+            _apply_args(key="placeholder-key-1")
+        )
+        assert response["ok"] is True
+        assert _calls[0]["mode"] == "apply_atomic"
     finally:
         staged.cleanup()
 
 
-def test_workspace_drift_is_typed_and_a_timepoint_free_proof_stays_usable(tmp_path):
-    # M16: the dry-run was taken at another workspace version.
+def test_historical_workspace_drift_does_not_gate_apply(tmp_path):
+    # M16 remains an offline historical-proof concern.  A retained proof taken
+    # at another version must not gate a new apply request.
     forwarder, _calls = _attempt_forwarder(workspace_before=0)
     staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
     try:
         staged.prepare()
         _candidate, plan = _stage_unified(staged.run_root)
         _open_platform_gate_unified(staged)
-        assert staged.runner._handle_staged_submit_modeling_batch(
-            _unified_args(_batch_items(), PLAN_REF)
-        )["ok"] is True
-        _record_translation_approval(staged, plan)
-        with pytest.raises(StagedSubmissionRejection) as rejection:
-            staged.runner._handle_staged_submit_modeling_batch(_apply_args())
-        assert rejection.value.data["reason_code"] == "dry_run_proof_workspace_mismatch"
+        _write_proofs(staged.run_root, _proof(workspace_before_version=0))
+        response = staged.runner._handle_staged_submit_modeling_batch(_apply_args())
+        assert response["ok"] is True
+        assert _calls[0]["mode"] == "apply_atomic"
     finally:
         staged.cleanup()
 
@@ -607,7 +549,7 @@ def test_workspace_drift_is_typed_and_a_timepoint_free_proof_stays_usable(tmp_pa
         return {
             "batch_id": "platform-batch-1",
             "client_batch_id": batch["client_batch_id"],
-            "attempt_id": "platform-attempt-dry_run",
+            "attempt_id": "platform-attempt-apply_atomic",
             "idempotency_key": batch["idempotency_key"],
             "mode": batch["mode"],
             "attempt_status": "validated",
@@ -617,15 +559,9 @@ def test_workspace_drift_is_typed_and_a_timepoint_free_proof_stays_usable(tmp_pa
     staged = _UnifiedRunner(tmp_path, forwarder=forward)
     try:
         staged.prepare()
-        _candidate, plan = _stage_unified(staged.run_root)
+        _stage_unified(staged.run_root)
         _open_platform_gate_unified(staged)
-        assert staged.runner._handle_staged_submit_modeling_batch(
-            _unified_args(_batch_items(), PLAN_REF)
-        )["ok"] is True
-        _record_translation_approval(staged, plan)
-        apply_args = _unified_args(_batch_items(), PLAN_REF, mode="apply_atomic")
-        apply_args["batch"]["idempotency_key"] = "placeholder-key-2"
-        assert staged.runner._handle_staged_submit_modeling_batch(apply_args)["ok"] is True
+        assert staged.runner._handle_staged_submit_modeling_batch(_apply_args())["ok"] is True
     finally:
         staged.cleanup()
 

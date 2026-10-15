@@ -28,19 +28,17 @@
 schema_version: 2
 task_id: r3-0-015-checkpoint-recovery
 objective: >-
-  Model the industrial after-service v3 scenario exactly like the
-  r3-0-009-unified-graph-real task (staged order, unified semantic graph,
-  dry-run before translation-reviewed apply), while the Runner additionally
-  persists immutable stage-result checkpoints at the existing publication
-  points: scenario/interview decisions before CQ freeze, the frozen CQ pool
-  with its public projection, approved staged semantic decisions, each
-  confirmed materialization batch receipt, and the production handoff.  A
-  checkpoint save is triggered by the Runner at those publication points or
-  requested by the host/Coordinator through the outer checkpoint action; the
-  Runner always verifies the actual published artifacts on disk and rejects a
-  stage-complete claim without artifacts.  Checkpoints never grant new agent
-  write permission, never package secrets or host-private material into a
-  production-visible projection, and never consume a semantic start; the same
+  Model the industrial after-service v3 scenario exactly like the r3-0-009-unified-graph-real
+  task (staged business decisions, unified semantic graph, direct Modeling changes and single
+  atomic apply under R4.3-024/025), while the Runner additionally persists immutable
+  stage-result checkpoints at the existing publication points: scenario/interview decisions
+  before CQ freeze, the frozen CQ pool with its public projection, approved staged semantic
+  decisions, each confirmed materialization batch receipt, and the production handoff.  A
+  checkpoint save is triggered by the Runner at those publication points or requested by the
+  host/Coordinator through the outer checkpoint action; the Runner always verifies the actual
+  published artifacts on disk and rejects a stage-complete claim without artifacts.
+  Checkpoints never grant new agent write permission, never package secrets or host-private
+  material into a production-visible projection, and never consume a semantic start; the same
   content re-requested under a new request id reuses the existing package.
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
@@ -64,12 +62,15 @@ role_sources:
   - path: modeling_team/references/r3-0-009-unified-graph-contract.json
     classification: coordination
     roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/platform-neutral-candidate-authoring.json
     classification: protocol
     roles: [modeling, protocol]
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
-    roles: [protocol]
+    roles: [protocol, modeling]
 protocol_tools:
   - check_platform_health
   - get_project_build_context

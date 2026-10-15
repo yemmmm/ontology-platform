@@ -97,8 +97,9 @@ def test_modeling_proxy_exact_tools_scope_and_zero_backend_request() -> None:
     assert gate.state == "context_observed"
 
 
+@pytest.mark.parametrize("ontology_ids", [["O"], ["O", "O2"]])
 def test_staged_modeling_bridge_projects_each_tool_to_real_proxy_and_advertises_schema(
-    tmp_path: Path,
+    tmp_path: Path, ontology_ids: list[str],
 ) -> None:
     socket_path = tmp_path / "modeling-read-proxy.sock"
     token_path = tmp_path / "modeling-read-proxy.token"
@@ -119,6 +120,7 @@ def test_staged_modeling_bridge_projects_each_tool_to_real_proxy_and_advertises_
         read_key="read-key",
         project_id="P",
         ontology_id="O",
+        ontology_ids=ontology_ids,
         forward=forward,
     )
     proxy.start()
@@ -127,6 +129,7 @@ def test_staged_modeling_bridge_projects_each_tool_to_real_proxy_and_advertises_
         "PLATFORM_PROXY_MODE": "modeling",
         "PLATFORM_PROXY_PROJECT_ID": "P",
         "PLATFORM_PROXY_ONTOLOGY_ID": "O",
+        "PLATFORM_PROXY_ONTOLOGY_IDS": json.dumps(ontology_ids),
     }
     process = subprocess.Popen(
         [sys.executable, str(staged_bridge), "--stdio", "--socket", str(socket_path), "--token-file", str(token_path)],
@@ -159,6 +162,8 @@ def test_staged_modeling_bridge_projects_each_tool_to_real_proxy_and_advertises_
         assert schemas["get_ontology_read_model"]["required"] == ["ontology_id", "model_name"]
         assert schemas["query_semantic_context"]["required"] == ["project_id", "scope_mode"]
         assert schemas["query_semantic_context"]["properties"]["scope_mode"]["const"] == "ontologies"
+        assert schemas["query_semantic_context"]["properties"]["expansion_strategy"]["default"] == "adaptive"
+        assert schemas["query_semantic_context"]["properties"]["context_order"]["default"] == "relevance"
 
         context_response = request(
             2,
@@ -217,6 +222,17 @@ def test_staged_modeling_bridge_projects_each_tool_to_real_proxy_and_advertises_
             response = request(request_id, "tools/call", arguments)
             assert response["error"]["code"] == -32000
         assert len(forwarded) == 3
+        if len(ontology_ids) > 1:
+            followup = request(20, "tools/call", {
+                "name": "query_semantic_context", "arguments": {
+                    "query": "https://example.org/core", "ontology_ids": ["O2"],
+                    "expansion_strategy": "adaptive", "context_order": "relevance",
+                    "depth": None, "context_detail": "full",
+                },
+            })
+            assert "error" not in followup, followup
+            assert forwarded[-1][1]["ontology_ids"] == ["O2"]
+            assert forwarded[-1][1]["query"] == "https://example.org/core"
     finally:
         if process.stdin is not None:
             process.stdin.close()
@@ -338,3 +354,57 @@ def test_transport_candidate_is_blocked_until_context_receipt(tmp_path: Path) ->
     gate.observe(_context(), call_receipt={"ordinal": 0})
     delivery = broker.send("modeling", "protocol", candidate, expects_reply=True)
     assert delivery.delivery_id == "delivery-1"
+
+
+def test_direct_modeling_reads_authorized_scope_and_followup_questions(tmp_path: Path) -> None:
+    calls = []
+    responses = [
+        {"ok": True, "data": {"model_revision": 4, "warnings": ["lexical_fallback"]}},
+        {"ok": True, "data": {"model_revision": 4, "truncated": True}},
+        {"ok": False, "error": {"code": "cursor_stale"}},
+    ]
+    proxy = ModelingReadProxy(
+        socket_path=tmp_path / "read.sock", token="token", read_key="key",
+        project_id="P", ontology_id="O", ontology_ids=["O", "O2"],
+        forward=lambda tool, args, key: (calls.append((tool, args)) or responses.pop(0)),
+    )
+
+    def query(**overrides):
+        arguments = {
+            "project_id": "P", "scope_mode": "ontologies", "ontology_ids": ["O", "O2"],
+            "query": "How are work orders related to faults?", "depth": None,
+            "expansion_strategy": "adaptive", "context_order": "relevance",
+        }
+        arguments.update(overrides)
+        return proxy.handle({"token": "token", "operation": "tools/call",
+                             "tool": "query_semantic_context", "arguments": arguments})
+
+    first = query()
+    assert first["result"]["data"]["warnings"] == ["lexical_fallback"]
+    second = query(query="https://example.org/work-order", ontology_ids=["O2"], context_detail="full")
+    assert second["result"]["data"]["truncated"] is True
+    stale = query(query="https://example.org/work-order", match_cursor="old-revision")
+    assert stale["result"]["error"]["code"] == "cursor_stale"
+    for overrides in ({"ontology_ids": ["foreign"]}, {"project_id": "foreign"},
+                      {"scope_mode": "project"}, {"ontology_ids": []}):
+        assert query(**overrides)["ok"] is False
+    assert len(calls) == 3
+
+
+def test_modeling_bridge_selects_authorized_ontology_subset() -> None:
+    from modeling_team.read_proxy_mcp import _project_modeling_arguments
+
+    scope = {"PLATFORM_PROXY_PROJECT_ID": "P", "PLATFORM_PROXY_ONTOLOGY_ID": "O",
+             "PLATFORM_PROXY_ONTOLOGY_IDS": '["O", "O2"]'}
+    query = _project_modeling_arguments(
+        "query_semantic_context", {"query": "x", "ontology_ids": ["O2"]}, scope,
+    )
+    assert query["ontology_ids"] == ["O2"]
+    assert query["project_id"] == "P"
+    assert _project_modeling_arguments("get_modeling_context", {"ontology_id": "O2"}, scope) == {
+        "ontology_id": "O2",
+    }
+    # The live proxy, not a stale child environment, checks topology additions.
+    assert _project_modeling_arguments(
+        "query_semantic_context", {"query": "x", "ontology_ids": ["new-authorized"]}, scope,
+    )["ontology_ids"] == ["new-authorized"]

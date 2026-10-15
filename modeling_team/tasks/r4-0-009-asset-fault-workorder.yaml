@@ -3,73 +3,72 @@
 schema_version: 2
 task_id: r4-0-009-asset-fault-workorder
 objective: >-
-  Model one bounded industrial-service business chain: asset, fault and work order,
-  their source-confirmed meanings and relationships, and only the shared definitions
-  required to express that chain. Business-owner confirmation establishes disputed
-  relationship direction, cardinality, lifecycle and terminology; database structure
-  and sample rows are mapping evidence, not business truth. Keep unconfirmed facts
-  explicit. Do not preselect Ontology boundaries or copy source rows into RDF.
-  Contract coverage, SLA clocks, cost/profit metrics, inventory, procurement, API/SQL
-  mapping and whole-scenario completion are outside this task. A second chain requires
-  an explicit scope extension; broad source documents do not expand this boundary.
-  Excluding executable SQL/API mappings does not exclude relevant declared source
-  structure from this chain's explanation. Preserve needed source fields, declared
-  values and structural constraints in the actual model's permitted definitions/text
-  or ordinary nodes/relations, explicitly scoped as declarations of the relevant source
-  structure. Keep unconfirmed customer meanings, business cardinality and lifecycle
-  rules as distinct explicit unknowns. Technical file/line locators and current
-  candidate revision/item references belong in the existing handoff/map note; those
-  notes do not replace model content. Do not create executable mappings,
-  assert physical constraints as customer rules, or copy source rows. If the selected
-  representation cannot retain needed evidence, disclose that delivery gap and impact
-  rather than calling the known structure unknown. A required equipment-model shared
-  definition or asset relation is not excluded merely because full model master-data
-  coverage is outside the chain; ground its meaning in approved sources or a scoped
-  business clarification, retaining unknowns where confirmation is absent.
-  Before CQ freeze, check each required point against both this Task and the actual
-  question. State source-structure evidence and unconfirmed business meaning separately.
-  Unsupported or out-of-scope obligations use the existing review/version process;
-  never edit an old freeze, reuse old hidden answers or trim the approved denominator.
-  Reuse the existing scenario-map, candidate, approval and staged execution contracts.
-  This Task selects unified_semantic_graph=true: author candidates using
-  r3-0-009-unified-graph/v2 and the unified_candidate fields in the mounted
-  r4-0-012-modeling-contract.json. The ordinary candidate-authoring reference supplies
-  shared semantic definitions, not an alternative candidate envelope for this Task.
-  CQ drafts and public/hidden pools cover only this bounded chain and its necessary
-  dependencies. Prefer a small pool (about four to six questions overall, including
-  hidden coverage) that tests identity, relationships and explicit unknowns; counts
-  are advisory and the approved pool controls acceptance. Freeze before semantic
-  modeling. Never reuse the previous full-scenario pool as this task's denominator.
-  Runner supplies the original objective and actual Task identity directly to each
-  production role. Coordinator references that same task_id in stage dispatches to
-  Modeling and Protocol, adding chain/dependencies, remaining scope and actual confirmed
-  business decisions without replacing the Task or changing its representation boundary.
-  If a dispatch conflicts with the Task, Modeling reports the original clause,
+  Model one bounded industrial-service business chain: asset, fault and work order, their
+  source-confirmed meanings and relationships, and only the shared definitions required to
+  express that chain. Business-owner confirmation establishes disputed relationship direction,
+  cardinality, lifecycle and terminology; database structure and sample rows are mapping
+  evidence, not business truth. Keep unconfirmed facts explicit. Do not preselect Ontology
+  boundaries or copy source rows into RDF. Contract coverage, SLA clocks, cost/profit metrics,
+  inventory, procurement, API/SQL mapping and whole-scenario completion are outside this task.
+  A second chain requires an explicit scope extension; broad source documents do not expand
+  this boundary. Excluding executable SQL/API mappings does not exclude relevant declared
+  source structure from this chain's explanation. Preserve needed source fields, declared
+  values and structural constraints in the actual model's permitted definitions/text or
+  ordinary nodes/relations, explicitly scoped as declarations of the relevant source
+  structure. Keep unconfirmed customer meanings, business cardinality and lifecycle rules as
+  distinct explicit unknowns. Technical file/line locators and current candidate revision/item
+  references belong in the existing handoff/map note; those notes do not replace model
+  content. Do not create executable mappings, assert physical constraints as customer rules,
+  or copy source rows. If the selected representation cannot retain needed evidence, disclose
+  that delivery gap and impact rather than calling the known structure unknown. A required
+  equipment-model shared definition or asset relation is not excluded merely because full
+  model master-data coverage is outside the chain; ground its meaning in approved sources or a
+  scoped business clarification, retaining unknowns where confirmation is absent. Before CQ
+  freeze, check each required point against both this Task and the actual question. State
+  source-structure evidence and unconfirmed business meaning separately. Unsupported or
+  out-of-scope obligations use the existing review/version process; never edit an old freeze,
+  reuse old hidden answers or trim the approved denominator. Reuse the existing scenario-map,
+  candidate, approval and staged execution contracts. This Task selects
+  unified_semantic_graph=true: author candidates using r3-0-009-unified-graph/v2 and the
+  unified_candidate fields in the mounted r4-0-012-modeling-contract.json. The ordinary
+  candidate-authoring reference supplies shared semantic definitions, not an alternative
+  candidate envelope for this Task. CQ drafts and public/hidden pools cover only this bounded
+  chain and its necessary dependencies. Prefer a small pool (about four to six questions
+  overall, including hidden coverage) that tests identity, relationships and explicit
+  unknowns; counts are advisory and the approved pool controls acceptance. Freeze before
+  semantic modeling. Never reuse the previous full-scenario pool as this task's denominator.
+  Runner supplies the original objective and actual Task identity directly to each production
+  role. Coordinator references that same task_id in stage dispatches to Modeling and any
+  actually assigned support role, adding chain/dependencies, remaining scope and actual
+  confirmed business decisions without replacing the Task or changing its representation
+  boundary. If a dispatch conflicts with the Task, Modeling reports the original clause,
   conflicting instruction, affected facts/items and proposed correction through Team
-  Transport, continuing unaffected work. Correct ordinary restatement/format errors
-  within the allowed contract without new business authorization; route real scope
-  changes or unresolved business meaning through Coordinator/Delivery to the original
-  authorizer. Keep representation gaps explicitly undelivered, with impact and next step.
-  Protocol creates the BuildSession before its checkpoint and lease, owns platform
-  envelopes and receipts, and executes approved unchanged plans in dependency order.
-  Trust bound successful apply/Attempt/version receipts under R4.3-015; do not replay
-  historical writes or revalidate applied plans against later revisions. Pending
-  writes retain current identity, approval, authorization and dry-run/apply checks.
-  After first-chain application, publish materialization_progress, retain the freeze_id
-  and a small approved public-question selection, and expose the handoff through
-  Coordinator's existing artifacts/status. Delivery observes it and starts the existing
-  public-feedback operation; Coordinator does not send TeamTransport messages to
-  Delivery. Return only public feedback through the existing instruction path.
-  Complete necessary governed business reads and the existing R4.0-024 association
-  self-check before handoff. Preserve defects, unknowns and scope gaps. Final independent
-  acceptance reads the actual authorized model, cannot repair production and cannot
-  consume production context or reveal hidden questions. Public feedback and applied
-  receipts do not establish final semantic PASS. Report results only for this chain.
-  At current-stage candidate review, Modeling identifies the candidate location or
-  concrete disposition for source facts and dependencies needed by the current chain
-  and approved public questions. Coordinator checks those actual locations within
-  its visible inputs before calling the stage covered. Reuse the existing handoff
-  and note; no per-column inventory, whole-scenario audit or new platform hard gate.
+  Transport, continuing unaffected work. Correct ordinary restatement/format errors within the
+  allowed contract without new business authorization; route real scope changes or unresolved
+  business meaning through Coordinator/Delivery to the original authorizer. Keep
+  representation gaps explicitly undelivered, with impact and next step. Modeling submits
+  immutable current-format candidates and explicit changes through
+  modeling_submit_model_changes under R4.3-024/025. The program owns
+  BuildSession/lease/envelopes, actual identity binding and receipts, orders dependencies and
+  performs one atomic apply per batch; Protocol is optional support, with no translation or
+  dry-run prerequisite. Trust bound successful apply/Attempt/version receipts under R4.3-015;
+  do not replay historical writes or revalidate applied plans against later revisions. Pending
+  writes retain necessary business decisions, actual identity, authorization, version checks
+  and request-internal validation. After first-chain application, publish
+  materialization_progress, retain the freeze_id and a small approved public-question
+  selection, and expose the handoff through Coordinator's existing artifacts/status. Delivery
+  observes it and starts the existing public-feedback operation; Coordinator does not send
+  TeamTransport messages to Delivery. Return only public feedback through the existing
+  instruction path. Complete necessary governed business reads and the existing R4.0-024
+  association self-check before handoff. Preserve defects, unknowns and scope gaps. Final
+  independent acceptance reads the actual authorized model, cannot repair production and
+  cannot consume production context or reveal hidden questions. Public feedback and applied
+  receipts do not establish final semantic PASS. Report results only for this chain. At
+  current-stage candidate review, Modeling identifies the candidate location or concrete
+  disposition for source facts and dependencies needed by the current chain and approved
+  public questions. Coordinator checks those actual locations within its visible inputs before
+  calling the stage covered. Reuse the existing handoff and note; no per-column inventory,
+  whole-scenario audit or new platform hard gate.
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source
@@ -91,7 +90,10 @@ role_sources:
     roles: [coordinator, protocol]
   - path: modeling_team/references/r3-0-009-unified-graph-contract.json
     classification: coordination
-    roles: [coordinator, protocol]
+    roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/r4-0-012-modeling-contract.json
     classification: coordination
     roles: [modeling]
@@ -103,7 +105,7 @@ role_sources:
     roles: [modeling, protocol]
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
-    roles: [protocol]
+    roles: [protocol, modeling]
   - path: modeling_team/references/r3-0-011-competency-question-contract.json
     classification: coordination
     roles: [competency-question]

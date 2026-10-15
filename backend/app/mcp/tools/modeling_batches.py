@@ -89,10 +89,10 @@ def register_modeling_batches(server: FastMCP) -> None:
         idempotency_key: str,
         expected_model_revision: int,
         items: list[McpModelingItemInput],
-        mode: str = "apply_atomic",
+        mode: Literal["apply_atomic", "apply_partial"] = "apply_atomic",
         lease_token: str | None = None,
     ) -> dict[str, Any]:
-        """Dry-run or idempotently apply one immutable Ontology Modeling Batch."""
+        """Idempotently apply one immutable Ontology Modeling Batch."""
         return _run_tool(
             lambda session, _driver, _embedding: _service(session).submit(
                 session_id,

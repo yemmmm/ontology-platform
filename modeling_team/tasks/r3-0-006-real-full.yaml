@@ -35,53 +35,39 @@
 schema_version: 2
 task_id: r3-0-006-real-full
 objective: >-
-  Model the complete industrial after-service v3 scenario through the staged
-  order with the R3.0-011 competency-question stage ahead of base semantics:
-  scenario understanding and interview, panorama competency questions with the
-  user-reviewed approved public projection, logical slicing fed by that
-  approved public projection only, per-slice competency questions with user
-  review and the frozen public/hidden grouping before any neutral candidate is
-  modeled, the platform neutral base-graph candidates and commonality
-  abstraction under
-  modeling_team/references/r3-0-009-unified-graph-contract.json, the R3.0-002
-  topology decision, base business semantics modeling with value analysis
-  recorded as analyzed_not_materialized conclusions, database mapping and value
-  semantics materialization through the staged submission capability, and the
-  joint acceptance checklist. Modeling writes the neutral candidate artifacts
-  (entities, relations, properties and shapes with business meaning, evidence,
-  logical slice and shared scope) under stage3-neutral-graph/candidates/
-  together with the r3-0-009-stage3-slot/v1 slot carrying
-  candidate_contract r3-0-009-unified-graph/v1; the Coordinator records
-  per-item commonality decisions and translation approvals in the
-  r3-0-009-approvals/v1 artifact; Protocol publishes the
-  r3-0-009-materialization-plan/v1 materialization plan with the complete
-  approved projection; and the Runner binds the projection, its digest and the
-  candidate/approval bindings into the r3-0-009-submission-intent/v1 and
-  r3-0-009-submission-receipt/v1 records. Modeling and Coordinator register
-  every controlled-value candidate as an analysis conclusion in analyzed status
-  under value-semantics/conclusions/analysis-conclusions.json with evidence
-  refs, proposed level, blocking unknowns, and an immutable archived revision
-  chain, and never self-confirm a value from database samples; Coordinator
-  approves conclusion transitions only after business confirmation, records
-  the approvals artifact and the materialization unlock, and maintains the
-  joint acceptance checklist with the seven fixed items. Protocol alone
-  submits Modeling Batches exclusively through the
-  protocol_staged_submit_modeling_batch capability with verbatim envelopes,
-  value traces naming the confirmed conclusions, and L3 nodes only for
-  confirmed L3 conclusions, maintains the materialization ledger against
-  authoritative receipts, and never bypasses the capability with a direct
-  platform write. Public competency questions and answers are read only from
-  the highest-ordinal
-  competency-questions/public/public-projection-*.json projection; hidden
-  questions, hidden answers and the frozen pool stay host-only and are never
-  written into platform content, candidates or messages. All staged artifacts
-  follow the mounted
-  modeling_team/references/r3-0-008b-staged-decisions-contract.json and
-  modeling_team/references/r3-0-009-unified-graph-contract.json. Existing
-  entities may be bound with a legal zero Class state through the 009 read
-  model. Keep business rows in PostgreSQL: never create RDF individuals for
-  source rows; treat schema names and samples as mapping evidence, not
-  business truth.
+  Model the complete industrial after-service v3 scenario through the staged order with the
+  R3.0-011 competency-question stage ahead of base semantics: scenario understanding and
+  interview, panorama competency questions with the user-reviewed approved public projection,
+  logical slicing fed by that approved public projection only, per-slice competency questions
+  with user review and the frozen public/hidden grouping before any neutral candidate is
+  modeled, the platform neutral base-graph candidates and commonality abstraction under
+  modeling_team/references/r3-0-009-unified-graph-contract.json, the R3.0-002 topology
+  decision, base business semantics modeling with value analysis recorded as
+  analyzed_not_materialized conclusions, database mapping and value semantics materialization
+  through the staged submission capability, and the joint acceptance checklist. Modeling
+  writes immutable r3-0-009-unified-graph/v2 candidates and the existing stage3 slot;
+  Coordinator confirms business scope/commonality and the existing topology. Modeling submits
+  explicit model changes through modeling_submit_model_changes under the mounted R4.3-024/025
+  contract. Modeling and Coordinator register every controlled-value candidate as an analysis
+  conclusion in analyzed status under value-semantics/conclusions/analysis-conclusions.json
+  with evidence refs, proposed level, blocking unknowns, and an immutable archived revision
+  chain, and never self-confirm a value from database samples; Coordinator approves conclusion
+  transitions only after business confirmation, records the approvals artifact and the
+  materialization unlock, and maintains the joint acceptance checklist with the seven fixed
+  items. The program fills actual bindings and execution fields, validates and applies each
+  batch atomically, and retains actual intent/receipt/Attempt evidence. Modeling and
+  Coordinator keep value-confirmation state and the existing materialization ledger aligned
+  with those receipts. Modeling immediately recalls approved business questions and expands
+  actual IRIs, preserving revisions, index degradation and explicit unknowns. No Protocol
+  translation or dry-run prerequisite is used. Public competency questions and answers are
+  read only from the highest-ordinal competency-questions/public/public-projection-*.json
+  projection; hidden questions, hidden answers and the frozen pool stay host-only and are
+  never written into platform content, candidates or messages. All staged artifacts follow the
+  mounted modeling_team/references/r3-0-008b-staged-decisions-contract.json and
+  modeling_team/references/r3-0-009-unified-graph-contract.json. Existing entities may be
+  bound with a legal zero Class state through the 009 read model. Keep business rows in
+  PostgreSQL: never create RDF individuals for source rows; treat schema names and samples as
+  mapping evidence, not business truth.
 role_sources:
   # R3.0-016 ledger #21: Protocol's terminal duties quote business scope and
   # terms verbatim into evidence excerpts, but its sandbox had neither owner
@@ -110,12 +96,15 @@ role_sources:
   - path: modeling_team/references/r3-0-009-unified-graph-contract.json
     classification: coordination
     roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/platform-neutral-candidate-authoring.json
     classification: protocol
     roles: [modeling, protocol]
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
-    roles: [protocol]
+    roles: [protocol, modeling]
   - path: modeling_team/references/r3-0-011-competency-question-contract.json
     classification: coordination
     roles: [competency-question]

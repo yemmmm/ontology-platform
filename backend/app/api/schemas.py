@@ -494,7 +494,7 @@ class ModelingBatchSubmit(ModelingBatchSchema):
     client_batch_id: str = Field(min_length=1, max_length=255)
     ontology_id: str = Field(min_length=1, max_length=36)
     idempotency_key: str = Field(min_length=1, max_length=255)
-    mode: Literal["dry_run", "apply_atomic", "apply_partial"] = "apply_atomic"
+    mode: Literal["apply_atomic", "apply_partial"] = "apply_atomic"
     expected_model_revision: int = Field(ge=0, strict=True)
     lease_token: str | None = Field(default=None, min_length=1, max_length=1024)
     # Compatibility hint only.  The authenticated REST/MCP principal is the
@@ -504,7 +504,7 @@ class ModelingBatchSubmit(ModelingBatchSchema):
 
 
 class ModelingOperationPlanRead(ModelingBatchSchema):
-    """Public dry-run operation plan envelope."""
+    """Persisted operation plan envelope for an applied Modeling Batch."""
 
 
 class ValidationFindingRead(BaseModel):

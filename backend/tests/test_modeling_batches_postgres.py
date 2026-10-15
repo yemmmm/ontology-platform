@@ -89,6 +89,13 @@ def test_concurrent_same_batch_and_attempt_converge_to_one_record() -> None:
         build, _created = BuildSessionService(session, settings).create_session(
             project_id, BuildSessionCreate(client_session_id=f"agent-{suffix}")
         )
+        lease = BuildSessionService(session, settings).acquire_ontology_lease(
+            build["id"],
+            ontology_id,
+            OntologyLeaseAcquire(
+                client_request_id=f"lease-{suffix}", expected_session_revision=1
+            ),
+        )
         version = OntologyModelRevisionService(session, settings).version_for(ontology_id)
 
     def submit() -> tuple[str, str]:
@@ -99,8 +106,9 @@ def test_concurrent_same_batch_and_attempt_converge_to_one_record() -> None:
                     client_batch_id="same-batch",
                     ontology_id=ontology_id,
                     idempotency_key="same-attempt",
-                    mode="dry_run",
+                    mode="apply_atomic",
                     expected_model_revision=version,
+                    lease_token=lease["lease_token"],
                     items=[_item("same-item")],
                 ),
             )

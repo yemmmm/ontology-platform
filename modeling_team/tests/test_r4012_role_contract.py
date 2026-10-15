@@ -31,12 +31,16 @@ def test_active_modeling_contract_is_visible_without_protocol_execution_contract
     }
     assert "r4-0-012-modeling-contract.json" in sources
     assert "platform-neutral-candidate-authoring.json" in sources
+    assert "r4-3-025-direct-modeling-contract.json" in sources
+    # Modeling reads the unified candidate and the current batch-field syntax;
+    # the legacy staged and acceptance handoff schemas stay protocol-only. The
+    # direct contract defines the current apply boundary.
+    assert "r3-0-009-unified-graph-contract.json" in sources
     assert {
         "r3-0-008b-staged-decisions-contract.json",
-        "r3-0-009-unified-graph-contract.json",
-        "modeling-batch-item-contract.json",
         "acceptance-stage-handoff-contract.json",
     }.isdisjoint(sources)
+    assert "modeling-batch-item-contract.json" in sources
 
 
 def test_visible_slot_contract_can_produce_an_accepted_current_slot():

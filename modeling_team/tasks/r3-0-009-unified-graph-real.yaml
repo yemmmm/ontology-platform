@@ -1,52 +1,24 @@
-# R3.0-009 unified semantic graph and commonality abstraction task (frozen
-# configuration asset; see design §9).
-#
-# GATE (double): like r3-0-008b-staged-real this task MUST NOT be started
-# before the user-authorized modeling start for the real v3.0 run is granted.
-# It declares parameters.unified_semantic_graph, which rides on the R3.0-002
-# multi-slice workflow and the R3.0-008B staged decisions capability; the
-# dependency is enforced by modeling_team/contracts.py.
-#
-# role_sources: the same four business inputs as the 008B real task plus the
-# 008B staged contract and the 009 unified-graph contract. The 009 contract is
-# the only new mounted truth; it is a platform contract, not business input.
-#
-# protocol_tools deliberately OMITS submit_modeling_batch: every Modeling
-# Batch submission goes through the Runner-private
-# protocol_staged_submit_modeling_batch capability only, and in this task it
-# additionally requires plan_ref with the approved materialization plan.
-#
-# R3.0-014: the staged submission order is dry-run first. The plan's first
-# submission is a real platform dry_run; translation_approvals never gate it.
-# The Coordinator reviews the translation and records the approval for the
-# exact (plan_ref, projection_digest); only then does the same-content
-# apply_atomic clear the apply gates (current translation approval plus the
-# Runner-recorded validated dry-run Attempt proof). See the mounted 009
-# contract's acceptance_timing rules.
+# Current unified modeling execution: R4.3-024/025.
+# A real semantic start still requires explicit user authorization.
+# Historical retained runs are not migrated or resumed by editing this Task.
 schema_version: 2
 task_id: r3-0-009-unified-graph-real
 objective: >-
-  Model the industrial after-service v3 scenario through the staged order and
-  additionally publish the unified semantic graph commonality layer: Modeling
-  writes the neutral candidate artifacts (entities, relations, properties and
-  shapes with business meaning, evidence, logical slice and shared scope) under
-  stage3-neutral-graph/candidates/ together with the r3-0-009-stage3-slot/v1
-  slot, the Coordinator records per-item commonality decisions and translation
-  approvals in the r3-0-009-approvals/v1 artifact, Protocol publishes the
-  r3-0-009-materialization-plan/v1 materialization plan with the complete
-  approved projection, and the Runner binds the projection, its digest and the
-  candidate/approval bindings into the r3-0-009-submission-intent/v1 and
-  r3-0-009-submission-receipt/v1 records. Per R3.0-014 the plan is first
-  submitted to the real platform as a dry_run, its technical findings are
-  answered by fixing and re-running the dry-run, the Coordinator records the
-  translation approval for the exact (plan_ref, projection_digest), and the
-  same-content apply_atomic is accepted only after that current approval and
-  the Runner-recorded validated dry-run Attempt proof. All staged artifacts
-  follow the mounted modeling_team/references/r3-0-009-unified-graph-contract.json and
-  modeling_team/references/r3-0-008b-staged-decisions-contract.json. Existing
-  entities may be bound with a legal zero Class state through the 009 read
-  model; keep business rows in PostgreSQL and never create RDF individuals for
-  source rows.
+  Model the industrial after-service v3 scenario through the existing source/interview,
+  logical slicing, business commonality and confirmed topology stages. Modeling authors
+  immutable r3-0-009-unified-graph/v2 candidates with business meaning, explicit
+  relationships, logical slice/shared scope and unknowns, together with the existing stage3
+  slot needed for business scope/topology review. Coordinator confirms those business
+  decisions. Modeling directly submits selected explicit changes through
+  modeling_submit_model_changes under the mounted r4-3-025-direct-modeling-contract.json; the
+  program binds actual resources, fills execution fields, orders dependencies and performs one
+  apply_atomic per batch, retaining actual intent/receipt/Attempt evidence. There is no
+  mandatory Protocol translation, plan authoring, translation approval or dry-run. On success
+  Modeling recalls approved questions and expands actual IRIs; preserve partial/index status
+  and unknowns. Before handoff complete the existing global coverage and production
+  association self-check; independent semantic acceptance remains separate. A legal zero Class
+  state is supported. Keep business rows in PostgreSQL and never create RDF individuals for
+  source rows. Source fidelity and necessary business confirmation are unchanged.
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source
@@ -69,12 +41,15 @@ role_sources:
   - path: modeling_team/references/r3-0-009-unified-graph-contract.json
     classification: coordination
     roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/platform-neutral-candidate-authoring.json
     classification: protocol
     roles: [modeling, protocol]
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
-    roles: [protocol]
+    roles: [protocol, modeling]
 protocol_tools:
   - check_platform_health
   - get_project_build_context

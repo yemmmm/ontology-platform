@@ -92,8 +92,6 @@ def test_bad_fields_and_references_repair_then_apply_without_shape_dependency(in
             "business_meaning": "未验收工单不能关闭；SLA 从报修时间开始计时",
             "applicability": "工单", "conflicting_meanings": ["超时例外待确认"]},
     })
-    dry = service.submit(session_id, batches._request(version, [rule], key="fixed-dry", batch="fixed"))
-    assert dry["attempt_status"] == "validated", dry["findings"]
     applied = service.submit(session_id, batches._request(version, [rule], key="fixed-apply",
         batch="fixed", mode="apply_atomic", token=lease["lease_token"]))
     assert applied["attempt_status"] == "applied", applied["findings"]

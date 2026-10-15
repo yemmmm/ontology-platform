@@ -120,26 +120,16 @@ def test_live_writes_reads_and_rule_retirement_without_trace_collection():
         batch = {
             "client_batch_id": suffix,
             "ontology_id": ontology_id,
-            "idempotency_key": f"dry-{suffix}",
-            "mode": "dry_run",
+            "idempotency_key": f"apply-{suffix}",
+            "mode": "apply_atomic",
             "expected_model_revision": version,
+            "lease_token": lease["lease_token"],
             "items": items,
         }
         path = f"/build-sessions/{session_id}/modeling-batches"
-        dry_run = post(path, batch)
-        assert dry_run["attempt_status"] == "validated"
-        assert "operation_plan" not in dry_run
-        assert not any("evidence" in finding["code"] for finding in dry_run["findings"])
-        _assert_no_trace_fields(dry_run)
-        applied_request = dict(
-            batch,
-            mode="apply_atomic",
-            idempotency_key=f"apply-{suffix}",
-            lease_token=lease["lease_token"],
-        )
-        applied = post(path, applied_request)
+        applied = post(path, batch)
         assert applied["attempt_status"] == "applied"
-        replay = post(path, applied_request)
+        replay = post(path, batch)
         assert replay["attempt_id"] == applied["attempt_id"]
         _assert_no_trace_fields(applied)
         assert "Evidence inspection equipment" in store.get_graph(

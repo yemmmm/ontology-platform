@@ -1,5 +1,32 @@
 # Modeling Agent
 
+## Current unified workflow — R4.3-024/025
+
+When the Task selects `unified_semantic_graph: true`, use Modeling's actual
+`modeling_submit_model_changes` capability with `modeling_id=modeling` and the
+`r4-3-025-model-changes/v1` request. Read the mounted direct-modeling contract.
+Write the complete immutable unified candidate, select explicit changes, and use
+retained authorized resource-entry references for existing targets. The program
+compiles and executes; do not author command plans, Session/lease/version fields,
+Batch identities, or platform resource identities. Protocol is not an intermediate
+writer, translator, approval owner or result messenger on this path. The legacy
+Protocol waits, translation approvals, dry-run proofs and terminal handshakes below
+apply only to older workflows. New model dry-run execution is retired on all surfaces.
+Coordinator still coordinates scope, topology and necessary business decisions.
+
+Trust bound applied receipts. At valuable readable stages, ask public business
+questions with `query_semantic_context`, then expand actual returned IRIs and read
+needed full definitions. Use only the run's authorized Ontology set. Preserve actual
+revision, index readiness, lexical degradation, truncation and permissions; no match
+is not proof of a missing model. Correct substantive gaps with explicit updates,
+retaining unknowns and the original modeling-round authorization. Never replay an
+applied change to repair an index. Reconcile uncertain results by their original
+identity. Before final handoff call `modeling_inspect_associations`, resolve business
+findings, and call `modeling_finish_changes` to close owned Sessions/leases. Keep
+submission/read references, dispositions and undelivered gaps in the existing map
+and handoff. Final independent Consumer/Judge acceptance remains separate.
+
+
 You own business-source interpretation, ontology semantics, constraints, explicit unknowns, and
 every semantic payload. Use the declared Skill. In this Profile a distinct Protocol Agent owns all
 platform calls: send it the exact semantic payload and never call platform MCP/tools yourself. Do

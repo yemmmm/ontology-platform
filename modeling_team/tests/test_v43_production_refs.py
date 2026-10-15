@@ -141,7 +141,7 @@ def execute_args(production):
             "lease_tokens": {ontology: "owned-lease" for ontology in production.versions}}
 
 
-def test_native_plan_refs_execute_ordered_complete_projections_and_do_not_replay(production):
+def test_native_plan_refs_apply_ordered_complete_projections_and_do_not_replay(production):
     with _protocol_capability(production) as endpoint:
         result = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert result["ok"] is True, result
@@ -150,16 +150,15 @@ def test_native_plan_refs_execute_ordered_complete_projections_and_do_not_replay
         assert "real dependencies" in result["required_next_step"]
         assert all(row["resource_readback_status"] == "not_evaluated"
                    for row in result["completed"])
-        assert [c["mode"] for c in production.calls] == ["dry_run", "apply_atomic"] * 2
-        assert [c["expected_model_revision"] for c in production.calls] == [1, 1, 4, 4]
+        assert [c["mode"] for c in production.calls] == ["apply_atomic", "apply_atomic"]
+        assert [c["expected_model_revision"] for c in production.calls] == [1, 4]
         for index, plan in enumerate(production.plans):
-            assert production.calls[2 * index]["items"] == plan["projection"]["items"]
-            assert production.calls[2 * index + 1]["items"] == plan["projection"]["items"]
+            assert production.calls[index]["items"] == plan["projection"]["items"]
             assert result["completed"][index]["version_readback_ref"]["artifact_path"]
             assert result["completed"][index]["apply"]["platform_ref"]["artifact_path"]
         replay = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert [row["status"] for row in replay["completed"]] == ["already_applied"] * 2
-        assert len(production.calls) == 4
+        assert len(production.calls) == 2
         assert replay["resource_readback_status"] == "not_evaluated"
         assert all(row["resource_readback_status"] == "not_evaluated"
                    for row in replay["completed"])
@@ -168,86 +167,69 @@ def test_native_plan_refs_execute_ordered_complete_projections_and_do_not_replay
     assert "batch" not in CAPABILITY_TOOL_SCHEMAS["protocol_execute_approved_plans"]["properties"]
 
 
-def test_dry_run_references_preserve_items_without_lease_or_apply(production):
+def test_retired_dry_run_reference_is_rejected_without_forwarding(production):
     args = {**execute_args(production), "mode": "dry_run", "lease_tokens": {}}
     before = dict(production.versions)
     with _protocol_capability(production) as endpoint:
         listing = _socket_request(endpoint.socket_path, endpoint.token, "tools/list")
         tools = {tool["name"]: tool for tool in listing["result"]["tools"]}
         reference = tools["protocol_execute_approved_plans"]
-        assert reference["inputSchema"]["properties"]["mode"]["enum"] == [
-            "dry_run", "apply_atomic",
-        ]
-        assert "dry_run" in reference["description"]
-        assert reference["description"] != tools["protocol_staged_submit_modeling_batch"]["description"]
-        result = call(endpoint, "protocol_execute_approved_plans", args)
-        assert result["ok"] is True and result["status"] == "COMPLETE", result
-        assert result["resource_readback_status"] == "not_applied"
-        assert [row["status"] for row in result["completed"]] == ["validated", "validated"]
-        assert all("apply" not in row for row in result["completed"])
-        replay = call(endpoint, "protocol_execute_approved_plans", args)
-        assert replay["ok"] is True, replay
+        assert reference["inputSchema"]["properties"]["mode"]["enum"] == ["apply_atomic"]
+        assert "dry_run" not in reference["description"]
+        response = _socket_request(
+            endpoint.socket_path,
+            endpoint.token,
+            "tools/call",
+            name="protocol_execute_approved_plans",
+            arguments=args,
+        )
+        assert response["error"]["code"] == -32001
     assert production.versions == before
-    assert [batch["mode"] for batch in production.calls] == ["dry_run", "dry_run"]
-    for batch, plan in zip(production.calls, production.plans):
-        assert batch["items"] == plan["projection"]["items"]
-        assert "lease_token" not in batch
+    assert production.calls == []
 
 
-def test_apply_after_reference_dry_run_reuses_current_proofs(production):
+def test_apply_reference_executes_without_prior_dry_run(production):
     with _protocol_capability(production) as endpoint:
-        validation = call(endpoint, "protocol_execute_approved_plans", {
-            **execute_args(production), "mode": "dry_run", "lease_tokens": {},
-        })
-        assert validation["ok"] is True, validation
         applied = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert applied["ok"] is True, applied
-    assert [batch["mode"] for batch in production.calls] == [
-        "dry_run", "dry_run", "apply_atomic", "apply_atomic",
-    ]
+    assert [batch["mode"] for batch in production.calls] == ["apply_atomic", "apply_atomic"]
     assert all(row["status"] == "applied" for row in applied["completed"])
 
 
-def test_reference_dry_run_does_not_require_translation_approval_but_apply_does(production):
+def test_apply_does_not_require_translation_approval_or_dry_run_proof(production):
     paths = staged_decision_artifact_paths(production.run_root, unified=True)
     approvals = json.loads(paths["approvals"].read_text())
     approvals["translation_approvals"] = []
     _write_json(paths["approvals"], approvals)
     with _protocol_capability(production) as endpoint:
-        validation = call(endpoint, "protocol_execute_approved_plans", {
-            **execute_args(production), "mode": "dry_run", "lease_tokens": {},
-        })
-        assert validation["ok"] is True, validation
         applied = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
-        assert applied["ok"] is False, applied
-        assert applied["error"]["reason_code"] == "approval_missing"
-    assert [batch["mode"] for batch in production.calls] == ["dry_run", "dry_run"]
+        assert applied["ok"] is True, applied
+    assert [batch["mode"] for batch in production.calls] == ["apply_atomic", "apply_atomic"]
+    assert all(row["status"] == "applied" for row in applied["completed"])
 
 
-def test_second_plan_obtains_dry_run_at_version_advanced_by_first(production):
-    # Same ontology: this directly catches dry-running every plan up front.
+def test_second_plan_obtains_current_version_after_first_apply(production):
+    # Same ontology: the second apply must read the revision advanced by the first.
     plan = production.plans[1]
     plan["projection"]["ontology_id"] = production.plans[0]["projection"]["ontology_id"]
     plan["projection_digest"] = projection_digest(plan["projection"])
     _write_json(production.run_root / PLAN2, plan)
     paths = staged_decision_artifact_paths(production.run_root, unified=True)
     approvals = json.loads(paths["approvals"].read_text())
-    approvals["translation_approvals"][1]["projection_digest"] = plan["projection_digest"]
-    _write_json(paths["approvals"], approvals)
     with _protocol_capability(production) as endpoint:
         result = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
     assert result["ok"] is True, result
-    assert [c["expected_model_revision"] for c in production.calls] == [1, 1, 2, 2]
+    assert [c["mode"] for c in production.calls] == ["apply_atomic", "apply_atomic"]
+    assert [c["expected_model_revision"] for c in production.calls] == [1, 2]
 
 
-@pytest.mark.parametrize("mode", ["dry_run", "apply_atomic"])
-def test_unapproved_or_changed_projection_returns_location_before_any_write(production, mode):
+def test_unapproved_or_changed_projection_returns_location_before_any_write(production):
     plan = production.plans[1]
     plan["projection"]["items"][0]["rationale"] = "changed after approval"
     _write_json(production.run_root / PLAN2, plan)
     with _protocol_capability(production) as endpoint:
         result = call(endpoint, "protocol_execute_approved_plans", {
-            **execute_args(production), "mode": mode,
+            **execute_args(production), "mode": "apply_atomic",
         })
     assert result["ok"] is False and result["status"] == "PARTIAL"
     assert result["error"]["plan_ref"] == PLAN2
@@ -255,8 +237,7 @@ def test_unapproved_or_changed_projection_returns_location_before_any_write(prod
     assert production.calls == []
 
 
-@pytest.mark.parametrize("retry_mode", ["dry_run", "apply_atomic"])
-def test_unknown_apply_stops_then_retry_never_blindly_resubmits(production, retry_mode):
+def test_unknown_apply_stops_then_retry_never_blindly_resubmits(production):
     original = production.runner.staged_batch_forwarder
 
     def unknown(batch):
@@ -269,10 +250,13 @@ def test_unknown_apply_stops_then_retry_never_blindly_resubmits(production, retr
         first = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert first["error"]["reason_code"] == "staged_batch_forward_unknown"
         retry = call(endpoint, "protocol_execute_approved_plans", {
-            **execute_args(production), "mode": retry_mode,
+            **execute_args(production), "mode": "apply_atomic",
         })
         assert retry["error"]["reason_code"] == "staged_unreconciled_batch"
-        assert len(production.calls) == 1
+        # The forwarding fixture raises before its recorder can observe a
+        # completed platform call.  The first Attempt is still durably marked
+        # unknown, and the retry must stop without invoking the forwarder.
+        assert len(production.calls) == 0
     assert any(i["status"] == "unknown" for i in read_submission_intents(production.run_root))
 
 
@@ -290,12 +274,14 @@ def test_applied_with_failed_readback_can_resume_without_replay(production):
     production.runner.staged_plan_read_forwarder = read_fail
     with _protocol_capability(production) as endpoint:
         result = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
-        assert result["error"]["stage"] == "readback" and len(production.calls) == 2
+        assert result["error"]["stage"] == "readback" and len(production.calls) == 1
         production.runner.staged_plan_read_forwarder = original
         retry = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert retry["ok"] is True, retry
         assert retry["completed"][0]["status"] == "already_applied"
-        assert len(production.calls) == 4
+    # Retry reconciles the applied first plan and then submits the second plan;
+    # it must not replay the first one.
+    assert len(production.calls) == 2
 
 
 def test_coverage_distinguishes_missing_relation_disposition_and_actual_apply(production):
@@ -441,7 +427,7 @@ def test_missing_apply_terminal_proof_requires_reconciliation_before_retry(produ
         assert first["error"]["reason_code"] == "staged_plan_apply_incomplete"
         retry = call(endpoint, "protocol_execute_approved_plans", execute_args(production))
         assert retry["error"]["reason_code"] == "staged_unreconciled_batch"
-        assert len(production.calls) == 2
+        assert len(production.calls) == 1
 
 
 def test_role_contracts_preserve_coverage_and_existing_bounded_public_feedback():

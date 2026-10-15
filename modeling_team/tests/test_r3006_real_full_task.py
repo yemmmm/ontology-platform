@@ -24,17 +24,19 @@ MODELING_INSTRUCTIONS = (
     REPO_ROOT / "modeling_team" / "agent-packages" / "modeling" / "instructions.md"
 )
 
-# Frozen legacy opt-in assets.  The one-time baseline comparison against
+# Retained task assets.  The one-time baseline comparison against
 # 6047d381 (git diff --quiet 6047d381 -- <asset>) was recorded as delivery
 # evidence in developer-progress.md; the persistent test pins the same bytes by
 # content digest so a source/shallow checkout needs no Git history.
-# Current Task revisions remove the two retired engine tools (R4.0-025).
-# Prior hashes remain in git history; frozen run evidence is unchanged.
+# Current Task revisions remove the two retired engine tools (R4.0-025) and
+# use the direct Modeling execution ownership from R4.3-024/025. Prior hashes
+# remain in git history; the current 009 Task is frozen at its current direct
+# execution bytes below.
 FROZEN_ASSET_SHA256 = {
     LEGACY_008B_TASK: "61e691e7fa1703c5ad2fd56f3c21aab9d01b9d89a60219c3e5017f824e1583e0",
-    # Re-frozen once for R3.0-014 (dry-run-first staged order): the objective
-    # and terminal evidence now name the dry-run/translation/apply sequence.
-    LEGACY_009_TASK: "40d1c6f40bb479cd0afe2414fd973fa4c474c526f224a2a9aca4eb63a9344daa",
+    # R4.3-024/025 updates this previously unified Task to direct Modeling
+    # execution; freeze the current retained bytes here.
+    LEGACY_009_TASK: "a8a5462cbf7ef2ecb9f9a81f40ce4bed4f41842b7a279cd032cf635c11277f4c",
 }
 
 
@@ -77,6 +79,7 @@ def test_t_g1_1_full_real_task_loads_with_four_selectors() -> None:
         "r3-0-002-scenario-map-contract.json",
         "r3-0-008b-staged-decisions-contract.json",
         "r3-0-009-unified-graph-contract.json",
+        "r4-3-025-direct-modeling-contract.json",
         "platform-neutral-candidate-authoring.json",
         "modeling-batch-item-contract.json",
         "r3-0-011-competency-question-contract.json",
@@ -101,10 +104,15 @@ def test_t_g1_1_full_real_task_loads_with_four_selectors() -> None:
         "r3-0-009-unified-graph-contract.json",
     ):
         assert by_path[name].roles == frozenset({"coordinator", "modeling", "protocol"})
+    assert by_path["r4-3-025-direct-modeling-contract.json"].roles == frozenset(
+        {"coordinator", "modeling", "protocol"}
+    )
     assert by_path["platform-neutral-candidate-authoring.json"].roles == frozenset(
         {"modeling", "protocol"}
     )
-    assert by_path["modeling-batch-item-contract.json"].roles == frozenset({"protocol"})
+    assert by_path["modeling-batch-item-contract.json"].roles == frozenset(
+        {"modeling", "protocol"}
+    )
     assert by_path["r3-0-011-competency-question-contract.json"].roles == frozenset(
         {"competency-question"}
     )
@@ -173,7 +181,10 @@ def test_t_g1_3_slot_contract_text_matches_validator_dispatch() -> None:
     # deferred form is not an accepted unified contract value.
     assert validate_stage3_slot(_slot(unified=True), unified=True) == ()
     assert validate_stage3_slot(_slot(unified=False), unified=True) != ()
-    # The full real Task objective never reinstates a deferred_contract path.
+    # The full real Task objective never reinstates a deferred_contract path or
+    # the retired Protocol-owned candidate/translation path.
     configuration = load_multi_slice_team_configuration(PROFILE, FULL_TASK)
     assert "deferred_contract" not in configuration.task.objective
-    assert "candidate_contract r3-0-009-unified-graph/v1" in configuration.task.objective
+    assert "candidate_contract r3-0-009-unified-graph/v1" not in configuration.task.objective
+    assert "modeling_submit_model_changes" in configuration.task.objective
+    assert "No Protocol translation or dry-run prerequisite" in configuration.task.objective

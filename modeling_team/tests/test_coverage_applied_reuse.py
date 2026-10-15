@@ -73,7 +73,9 @@ def test_applied_history_keeps_reuse_coverage_after_later_version_changes(produc
     row = next(row for row in result['items'] if row['candidate_item_id'] == 'shared-definition')
     assert result['status'] == 'COMPLETE'
     assert row['reuse_binding']['status'] == 'covered_by_applied_plan'
-    assert len(production.calls) == 2
+    # The current apply contract performs validation and write in one call;
+    # retired per-batch dry_run no longer contributes a preceding forward.
+    assert len(production.calls) == 1
 
 
 def test_pending_plan_still_requires_fresh_reuse_even_with_applied_history(production):

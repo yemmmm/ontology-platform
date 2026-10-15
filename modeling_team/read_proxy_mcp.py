@@ -63,13 +63,13 @@ def _v3_child_tool_schema(schema: dict[str, Any]) -> dict[str, Any]:
 _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "get_modeling_context": {
         "name": "get_modeling_context",
-        "description": "Read the authoritative current state for the bound Ontology.",
+        "description": "Read the authoritative current state for an authorized Ontology.",
         "inputSchema": {
             "type": "object",
             "properties": {
                 "ontology_id": {
                     "type": "string",
-                    "description": "The Runner-bound Ontology ID; the bridge injects the exact value.",
+                    "description": "Select an authorized Ontology; defaults to the Runner-bound Ontology.",
                 },
             },
             "required": ["ontology_id"],
@@ -84,7 +84,7 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
             "properties": {
                 "ontology_id": {
                     "type": "string",
-                    "description": "The Runner-bound Ontology ID; the bridge injects the exact value.",
+                    "description": "Select an authorized Ontology; defaults to the Runner-bound Ontology.",
                 },
                 "model_name": {
                     "type": "string",
@@ -105,7 +105,7 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     },
     "query_semantic_context": {
         "name": "query_semantic_context",
-        "description": "Recall structured semantic context from the bound Ontology.",
+        "description": "Recall semantic context from authorized Ontologies, then expand actual IRI anchors. Preserve revision, index and completeness information.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -123,9 +123,8 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 "ontology_ids": {
                     "type": "array",
                     "minItems": 1,
-                    "maxItems": 1,
                     "items": {"type": "string", "minLength": 1},
-                    "description": "The Runner-bound Ontology ID; the bridge injects the exact singleton list.",
+                    "description": "Select Ontologies within the Runner-authorized set; defaults to the bound Ontology.",
                 },
                 "resource_types": {"type": "array", "items": {"type": "string", "minLength": 1}},
                 "assertion_types": {"type": "array", "items": {"type": "string", "minLength": 1}},
@@ -133,7 +132,9 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                                    "items": {"type": "string", "minLength": 1}},
                 "context_detail": {"type": "string", "enum": ["full", "compact", "preview"]},
                 "search_mode": {"type": "string", "default": "hybrid"},
-                "depth": {"type": "integer", "minimum": 0, "maximum": 3, "default": 1},
+                "expansion_strategy": {"type": "string", "enum": ["adaptive", "fixed"], "default": "adaptive"},
+                "context_order": {"type": "string", "enum": ["relevance", "graph_distance"], "default": "relevance"},
+                "depth": {"type": ["integer", "null"], "minimum": 0, "maximum": 3},
                 "limit": {"type": "integer", "minimum": 1, "default": 20},
                 "context_limit": {"type": "integer", "minimum": 0, "maximum": 1000, "default": 100},
                 "match_cursor": {"type": "string", "minLength": 1},
@@ -179,6 +180,14 @@ def _project_modeling_arguments(
     for field, source in fields.items():
         expected = source if source == "ontologies" else scope[source]
         normalized_expected = [expected] if field == "ontology_ids" else expected
+        if field in {"ontology_id", "ontology_ids"} and field in projected:
+            selected = projected[field] if field == "ontology_ids" else [projected[field]]
+            if (not isinstance(selected, list) or not selected
+                    or any(not isinstance(value, str) or not value for value in selected)):
+                raise ValueError(f"modeling proxy scope mismatch for {field}")
+            # The live proxy owns the authorized set, including Ontologies
+            # created by an approved topology after this bridge was launched.
+            continue
         if field in projected and projected[field] != normalized_expected:
             raise ValueError(f"modeling proxy scope mismatch for {field}")
         projected[field] = normalized_expected
@@ -223,6 +232,7 @@ def main() -> int:
         for key in (
             "PLATFORM_PROXY_PROJECT_ID",
             "PLATFORM_PROXY_ONTOLOGY_ID",
+            "PLATFORM_PROXY_ONTOLOGY_IDS",
             "PLATFORM_PROXY_TICKET_DIGEST",
             "PLATFORM_PROXY_MODEL_STATE_DIGEST",
         )
@@ -316,7 +326,7 @@ def main() -> int:
                     ("evidence_handle",)
                     if v3_mode
                     else ("request_digest", "response_digest", "artifact_path")
-                ) + ("result_ref", "material_error")
+                ) + ("result_ref", "material_error", "platform_ref")
                 digest_locators = {k: response[k] for k in locator_keys if response.get(k)}
                 if digest_locators:
                     payload = {**result_data, **digest_locators} if isinstance(result_data, dict) else {"result": result_data, **digest_locators}

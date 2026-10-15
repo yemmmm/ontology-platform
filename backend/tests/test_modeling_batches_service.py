@@ -21,6 +21,7 @@ from app.repositories.models import (
     EvidenceReferenceModel,
     ModelingBatchAttemptModel,
     ModelingBatchModel,
+    ModelingItemModel,
     OntologyModel,
     OntologyWriteFenceModel,
     ProjectModel,
@@ -131,6 +132,9 @@ def _settings() -> Settings:
     )
 
 
+_DEFAULT_LEASE_TOKEN: str | None = None
+
+
 @pytest.fixture()
 def modeling(in_memory_session: Session):
     settings = _settings()
@@ -153,6 +157,8 @@ def modeling(in_memory_session: Session):
     rdf = FakeRdfStore()
     service = ModelingBatchService(in_memory_session, settings, rdf)  # type: ignore[arg-type]
     version = OntologyModelRevisionService(in_memory_session, settings).version_for(ONTOLOGY_ID)
+    global _DEFAULT_LEASE_TOKEN
+    _DEFAULT_LEASE_TOKEN = lease["lease_token"]
     return service, in_memory_session, rdf, session_id, lease, version
 
 
@@ -167,7 +173,9 @@ def _item(item_id: str, *, name: str = "Customer", **overrides):
     return ModelingItemInput(**data)
 
 
-def _request(version, items, *, key="attempt-1", batch="batch-1", mode="dry_run", token=None):
+def _request(version, items, *, key="attempt-1", batch="batch-1", mode="apply_atomic", token=None):
+    if token is None and mode in {"apply_atomic", "apply_partial"}:
+        token = _DEFAULT_LEASE_TOKEN
     return ModelingBatchSubmit(
         client_batch_id=batch,
         ontology_id=ONTOLOGY_ID,
@@ -179,25 +187,103 @@ def _request(version, items, *, key="attempt-1", batch="batch-1", mode="dry_run"
     )
 
 
-def test_dry_run_is_persistent_deterministic_and_has_zero_side_effects(modeling):
+def test_apply_is_persistent_and_deterministic(modeling):
     service, db, rdf, session_id, _lease, version = modeling
     payload = _request(version, [_item("customer")])
 
     first = service.submit(session_id, payload)
     retry = service.submit(session_id, payload)
 
-    assert first["attempt_status"] == "validated"
+    assert first["attempt_status"] == "applied"
     assert first["created_batch"] is True and first["created_attempt"] is True
     assert retry["created_batch"] is False and retry["created_attempt"] is False
     assert first["items"][0]["resource_outputs"] == retry["items"][0]["resource_outputs"]
-    assert rdf.deltas == []
+    assert len(rdf.deltas) == 1
     assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
     assert db.scalar(select(func.count(ModelingBatchModel.id))) == 1
     assert db.scalar(select(func.count(ModelingBatchAttemptModel.id))) == 1
     assert "lease" not in json.dumps(first, default=str).lower()
+    assert first["mode"] == "apply_atomic"
+    assert '"mode": "dry_run"' not in json.dumps(first, default=str)
 
 
-def test_dry_run_rejects_inline_evidence_input(modeling):
+def test_new_service_submission_rejects_dry_run_before_persistence_or_compile(modeling, monkeypatch):
+    service, db, rdf, session_id, _lease, version = modeling
+    payload = ModelingBatchSubmit.model_construct(
+        client_batch_id="retired-dry-run",
+        ontology_id=ONTOLOGY_ID,
+        idempotency_key="retired-dry-run-attempt",
+        mode="dry_run",
+        expected_model_revision=version,
+        lease_token=None,
+        actor=None,
+        items=[_item("customer")],
+    )
+    monkeypatch.setattr(
+        service,
+        "_compile",
+        lambda *_args: pytest.fail("retired dry_run must be rejected before compilation"),
+    )
+
+    with pytest.raises(ModelingBatchError) as rejected:
+        service.submit(session_id, payload)
+
+    assert rejected.value.code == "dry_run_retired"
+    assert rejected.value.status_code == 422
+    assert db.scalar(select(func.count(ModelingBatchModel.id))) == 0
+    assert db.scalar(select(func.count(ModelingBatchAttemptModel.id))) == 0
+    assert rdf.deltas == []
+
+
+def test_historical_dry_run_batch_and_attempt_remain_readable(modeling):
+    service, db, _rdf, session_id, _lease, version = modeling
+    batch = ModelingBatchModel(
+        id="historical-dry-run-batch",
+        project_id=PROJECT_ID,
+        ontology_id=ONTOLOGY_ID,
+        build_session_id=session_id,
+        client_batch_id="historical-dry-run",
+        content_hash="h" * 64,
+        status="open",
+    )
+    batch.items.append(
+        ModelingItemModel(
+            id="historical-dry-run-item",
+            client_item_id="customer",
+            ordinal=0,
+            command_kind="create_class",
+            payload={"name": "Customer"},
+            depends_on=[],
+            rationale="historical fixture",
+            competency_question_ids=[],
+        )
+    )
+    batch.attempts.append(
+        ModelingBatchAttemptModel(
+            id="historical-dry-run-attempt",
+            build_session_id=session_id,
+            idempotency_key="historical-dry-run-key",
+            request_hash="r" * 64,
+            mode="dry_run",
+            status="validated",
+            expected_model_revision=version,
+            model_revision_before=version,
+            findings=[{"code": "historical_finding"}],
+            groups=[],
+            recovery_detail={"history": []},
+        )
+    )
+    db.add(batch)
+    db.commit()
+
+    detail = service.get_batch(batch.id)
+
+    assert detail["attempts"][0]["mode"] == "dry_run"
+    assert detail["attempts"][0]["attempt_status"] == "validated"
+    assert detail["attempts"][0]["findings"] == [{"code": "historical_finding"}]
+
+
+def test_apply_rejects_inline_evidence_input(modeling):
     service, db, _rdf, session_id, _lease, version = modeling
     excerpt = "Customer is a domain term."
     with pytest.raises(ValidationError):
@@ -205,7 +291,7 @@ def test_dry_run_rejects_inline_evidence_input(modeling):
     assert db.scalar(select(func.count(EvidenceReferenceModel.id))) == 0
 
 
-def test_dry_run_without_evidence_has_no_trace_warning_or_projection(modeling):
+def test_apply_without_evidence_has_no_trace_warning_or_projection(modeling):
     service, db, _rdf, session_id, _lease, version = modeling
     result = service.submit(
         session_id,
@@ -288,12 +374,12 @@ def test_operation_can_target_class_created_by_item_ref(modeling):
         _request(version, [_item("workflow", name="Workflow"), operation], batch="operation"),
     )
 
-    assert result["attempt_status"] == "validated"
+    assert result["attempt_status"] == "applied"
     outputs = {item["client_item_id"]: item["resource_outputs"] for item in result["items"]}
     assert outputs["publish"]["resource_iri"].endswith("/operation/publish-workflow")
 
 
-def test_32_item_dry_run_accepts_generated_operation_id_and_shared_status_vocab(modeling):
+def test_32_item_apply_accepts_generated_operation_id_and_shared_status_vocab(modeling):
     service, _db, _rdf, session_id, _lease, version = modeling
     classes = [_item(f"workflow-class-{index}") for index in range(8)]
     operation = _item(
@@ -395,7 +481,7 @@ def test_32_item_dry_run_accepts_generated_operation_id_and_shared_status_vocab(
         _request(version, items, batch="mixed-operation-and-relation-vocabulary"),
     )
 
-    assert result["attempt_status"] == "validated"
+    assert result["attempt_status"] == "applied"
     assert not any(finding["blocking"] for finding in result["findings"])
     outputs = {item["client_item_id"]: item["resource_outputs"] for item in result["items"]}
     assert outputs["invoke-published-workflow"]["resource_id"]
@@ -404,7 +490,7 @@ def test_32_item_dry_run_accepts_generated_operation_id_and_shared_status_vocab(
     )
 
 
-def test_operation_dry_run_treats_not_yet_physical_ontology_graph_as_empty(modeling):
+def test_operation_apply_treats_not_yet_physical_ontology_graph_as_empty(modeling):
     service, _db, _rdf, session_id, _lease, version = modeling
     service.rdf_store = MissingNamedGraphRdfStore()  # type: ignore[assignment]
     operation = _item(
@@ -444,7 +530,7 @@ def test_operation_dry_run_treats_not_yet_physical_ontology_graph_as_empty(model
         ),
     )
 
-    assert result["attempt_status"] == "validated"
+    assert result["attempt_status"] == "applied"
     assert not any(finding["blocking"] for finding in result["findings"])
 
 
@@ -455,14 +541,14 @@ def test_batch_and_attempt_idempotency_conflicts_are_request_level(modeling):
     with pytest.raises(ModelingBatchError) as changed_batch:
         service.submit(
             session_id,
-            _request(version, [_item("customer", name="Buyer")], key="attempt-2"),
+            _request(version + 1, [_item("customer", name="Buyer")], key="attempt-2"),
         )
     assert changed_batch.value.code == "batch_content_conflict"
 
     with pytest.raises(ModelingBatchError) as changed_attempt:
         service.submit(
             session_id,
-            _request(version, [_item("customer")], key="attempt-1", mode="apply_atomic", token="x"),
+            _request(version, [_item("customer")], key="attempt-1", mode="apply_partial", token="x"),
         )
     assert changed_attempt.value.code == "idempotency_conflict"
 
@@ -612,7 +698,7 @@ def test_item_ref_cycle_forms_atomic_group_without_becoming_an_error(modeling):
         },
     )
     result = service.submit(session_id, _request(version, [first, second]))
-    assert result["attempt_status"] == "validated"
+    assert result["attempt_status"] == "applied"
     assert len(result["groups"]) == 1
     assert result["groups"][0]["cyclic"] is True
 
@@ -662,7 +748,7 @@ def test_modeling_context_and_cross_session_history_hide_internal_targets(modeli
     history = service.list_ontology_batches(ONTOLOGY_ID)
     detail = service.get_batch(submitted["batch_id"])
 
-    assert context["workspace"]["model_revision"] == version
+    assert context["workspace"]["model_revision"] == version + 1
     assert context["query_entries"]["classes"]["rest"].startswith("/api/ontologies/")
     assert context["recent_batches"][0]["batch_id"] == submitted["batch_id"]
     assert context["recent_batches_next_cursor"] is None
@@ -672,7 +758,7 @@ def test_modeling_context_and_cross_session_history_hide_internal_targets(modeli
     assert "graph_set_id" not in safe_json and "graph_iri" not in safe_json
 
 
-@pytest.mark.parametrize("mode", ["dry_run", "apply_partial"])
+@pytest.mark.parametrize("mode", ["apply_atomic", "apply_partial"])
 def test_candidate_contract_failure_is_a_finding_before_fence(modeling, monkeypatch, mode):
     service, db, rdf, session_id, lease, version = modeling
 
@@ -688,7 +774,7 @@ def test_candidate_contract_failure_is_a_finding_before_fence(modeling, monkeypa
             version,
             [_item("customer")],
             mode=mode,
-            token=lease["lease_token"] if mode != "dry_run" else None,
+            token=lease["lease_token"],
         ),
     )
 
@@ -758,7 +844,7 @@ def test_missing_rule_update_fails_validation_without_leaving_a_fence(modeling):
     assert db.get(OntologyWriteFenceModel, ONTOLOGY_ID) is None
 
 
-def test_bare_entity_property_key_is_absolute_after_dry_run_and_unchanged_apply(modeling):
+def test_bare_entity_property_key_is_absolute_on_apply(modeling):
     service, _db, rdf, session_id, lease, version = modeling
     schema = service.submit(
         session_id,
@@ -801,15 +887,6 @@ def test_bare_entity_property_key_is_absolute_after_dry_run_and_unchanged_apply(
         )
     ]
     entity_version = schema["workspace"]["after_version"]
-    dry_run = service.submit(
-        session_id,
-        _request(
-            entity_version,
-            entity_items,
-            batch="bare-property-entity",
-            key="bare-property-entity-dry",
-        ),
-    )
     applied = service.submit(
         session_id,
         _request(
@@ -823,7 +900,6 @@ def test_bare_entity_property_key_is_absolute_after_dry_run_and_unchanged_apply(
     )
 
     assert schema["attempt_status"] == "applied"
-    assert dry_run["attempt_status"] == "validated"
     assert applied["attempt_status"] == "applied"
     predicates = {predicate for _subject, predicate, _object, _graph in rdf.deltas[-1].inserts}
     assert "<https://r004.test/resource/property/is_latest>" in predicates
@@ -923,7 +999,7 @@ def test_entity_cascade_delete_conflicts_with_new_incoming_relation(modeling):
 
 
 @pytest.mark.parametrize("invalid_field", ["source_entity_iri", "relation_type_iri", "target_entity_iri"])
-def test_relation_dry_run_rejects_relative_iri_without_side_effects(modeling, invalid_field):
+def test_apply_rejects_relative_iri_without_side_effects(modeling, invalid_field):
     service, db, rdf, session_id, _lease, version = modeling
     payload = {
         "source_entity_iri": "https://r004.test/resource/entity/source",
@@ -969,7 +1045,7 @@ def test_multiple_relation_targets_for_same_subject_and_type_are_valid(modeling)
 
     result = service.submit(session_id, _request(version, relations))
 
-    assert result["attempt_status"] == "validated"
+    assert result["attempt_status"] == "applied"
     assert "conflicting_item_effects" not in {finding["code"] for finding in result["findings"]}
 
 
@@ -1021,7 +1097,7 @@ def test_relation_target_replacement_for_same_subject_and_type_is_valid(modeling
 
     result = service.submit(session_id, _request(version, replacement))
 
-    assert result["attempt_status"] == "validated"
+    assert result["attempt_status"] == "applied"
     assert "conflicting_item_effects" not in {
         finding["code"] for finding in result["findings"]
     }

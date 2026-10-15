@@ -2302,6 +2302,24 @@ PLATFORM_PROXY_READ_TOOLS: tuple[str, ...] = (
     "inspect_semantic_statement_provenance",
 )
 
+# Producer-only reconciliation reads. These are not part of any Examiner or
+# Modeling child tool catalog and must never enter their ticket inventories.
+DIRECT_EXECUTION_READ_SCHEMAS: dict[str, dict[str, Any]] = {
+    "get_modeling_batch": {
+        "type": "object", "properties": {"batch_id": {"type": "string", "minLength": 1}},
+        "required": ["batch_id"], "additionalProperties": False,
+    },
+    "list_session_modeling_batches": {
+        "type": "object", "properties": {
+            "session_id": {"type": "string", "minLength": 1},
+            "cursor": {"type": ["string", "null"]},
+            "limit": {"type": "integer", "minimum": 1},
+            "status": {"type": ["array", "null"], "items": {"type": "string"}},
+        },
+        "required": ["session_id"], "additionalProperties": False,
+    },
+}
+
 
 # The R2.3-006 wrapper schema is deliberately represented as a small JSON-Schema
 # subset.  It is frozen here rather than inferred from a backend response: unknown,
@@ -3310,7 +3328,8 @@ class McpReadForwarder:
         normalized = tuple(str(tool) for tool in expected_tools)
         if not normalized or len(set(normalized)) != len(normalized):
             raise ChildRuntimeError("forwarder tool inventory is invalid")
-        if any(tool not in PLATFORM_PROXY_READ_TOOLS for tool in normalized):
+        if any(tool not in PLATFORM_PROXY_READ_TOOLS and tool not in DIRECT_EXECUTION_READ_SCHEMAS
+               for tool in normalized):
             raise ChildRuntimeError("forwarder tool inventory is not read-only")
         self.repository_root = repository_root.resolve()
         self.read_key = read_key
@@ -3340,6 +3359,10 @@ class McpReadForwarder:
             if exact_schemas is not None
             else None
         )
+        internal_schemas = {tool: DIRECT_EXECUTION_READ_SCHEMAS[tool] for tool in normalized
+                            if tool in DIRECT_EXECUTION_READ_SCHEMAS}
+        if internal_schemas:
+            self.exact_schemas = {**(self.exact_schemas or {}), **internal_schemas}
         self.backend_calls = 0
         self.schema_rejections = 0
         self._queue: queue.Queue[_ForwardRequest | None] = queue.Queue()

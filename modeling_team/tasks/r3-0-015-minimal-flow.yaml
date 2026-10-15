@@ -1,26 +1,30 @@
 # Artificial source, real runtime; R3.0-015 L0 only.
 schema_version: 2
 task_id: r3-0-015-minimal-flow
-objective: Run the user-authorized minimal artificial R3.0-015 L0 flow test through actual application,
-  production_handoff, and independent CQ acceptance. The sole business source fully defines Service Site,
-  Installed Asset and their installation-location relationship. Model the entire bounded source faithfully;
-  no SQL, lifecycle, values, customers, equipment models or work orders are required. Preserve those exclusions
-  as unknown/out of scope, never as a generic reason to withhold this bounded handoff. The user requested
-  this artificial scenario and permits the normal approved dry-run/application/handoff path. Do not claim
-  authorization is missing merely because the earlier industrial-service checkpoint task stopped at dry-run.
-  Keep source review, CQ review/freeze, business candidate approval, current translation review, deterministic
-  dry-run/application, Evidence and authorized retrieval gates. Use real published artifacts and receipts;
-  never fabricate stage completion. The Host will request checkpoints and safely stop after the first
-  validated dry-run to test production continuation. In a resumed run, reuse confirmed business decisions,
-  create a fresh Session and execution identities, re-review translation, rerun dry-run, then apply when
-  the current exact plan is approved and safe. After application, complete the bounded validation/reasoning/retrieval
-  and Evidence handoff rather than stopping at dry-run. Report readiness with exact artifact and receipt
-  references so the Host can publish cq_handoff_complete through the normal contract. A genuine in-scope
-  gap must be reported precisely and repaired where possible. All roles must send their required terminal
-  report; CQ must follow its direct-channel handoff contract. Checkpoint packages are Host-owned and not
-  mounted in role workspaces. For standalone Team Transport requests omit reply_to_delivery_id; for replies
-  use an actual active expects_reply request ID. Modeling sends its complete candidate to Protocol as
-  a new expects_reply request and scoped status to Coordinator, preserving source/CQ visibility boundaries.
+objective: >-
+  Run the user-authorized minimal artificial R3.0-015 L0 flow test through actual application,
+  production_handoff, and independent CQ acceptance. The sole business source fully defines
+  Service Site, Installed Asset and their installation-location relationship. Model the entire
+  bounded source faithfully; no SQL, lifecycle, values, customers, equipment models or work
+  orders are required. Preserve those exclusions as unknown/out of scope, never as a generic
+  reason to withhold this bounded handoff. The user requested this artificial scenario. Keep
+  source review, CQ review/freeze, necessary business candidate approval, request-internal
+  validation, atomic application and authorized retrieval. Modeling submits changes directly
+  under R4.3-024/025; the program owns execution identities, lifecycle and receipts. No
+  Protocol conversion, translation review or dry-run is required. Use real published artifacts
+  and receipts; never fabricate stage completion. The Host may request checkpoints and stop
+  after the first confirmed applied stage to test authorized production continuation. Resume
+  confirmed business decisions and completed writes without replay; reconcile uncertain
+  original identities before continuing remaining changes. Complete bounded governed business
+  reads, association self-check and handoff. Report readiness with exact artifact and receipt
+  references so the Host can publish cq_handoff_complete through the normal contract. A
+  genuine in-scope gap must be reported precisely and repaired where possible. All roles must
+  send their required terminal report; CQ must follow its direct-channel handoff contract.
+  Checkpoint packages are Host-owned and not mounted in role workspaces. For standalone Team
+  Transport requests omit reply_to_delivery_id; for replies use an actual active expects_reply
+  request ID. Modeling submits the complete immutable candidate and explicit changes through
+  its native capability, and sends scoped progress to Coordinator while preserving source/CQ
+  visibility boundaries.
 role_sources:
 - path: docs/evaluation-scenarios/checkpoint-minimal/modeling-input/scenario.md
   classification: business-source
@@ -42,10 +46,10 @@ role_sources:
   - protocol
 - path: modeling_team/references/r3-0-009-unified-graph-contract.json
   classification: coordination
-  roles:
-  - coordinator
-  - modeling
-  - protocol
+  roles: [coordinator, modeling, protocol]
+- path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+  classification: coordination
+  roles: [coordinator, modeling, protocol]
 - path: modeling_team/references/platform-neutral-candidate-authoring.json
   classification: protocol
   roles:
@@ -53,8 +57,7 @@ role_sources:
   - protocol
 - path: modeling_team/references/modeling-batch-item-contract.json
   classification: protocol
-  roles:
-  - protocol
+  roles: [protocol, modeling]
 - path: modeling_team/references/r3-0-011-competency-question-contract.json
   classification: coordination
   roles:

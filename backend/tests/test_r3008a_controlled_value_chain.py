@@ -4,7 +4,7 @@ In-process FastAPI ``TestClient`` over the real platform control plane and a
 real Oxigraph RDF store — never the live 8001 service — following the
 R3.0-005 precedent (``test_r3005_authorized_sql_chain.py``). The fixture
 seeds the L1/L2/L3 controlled-value shapes through the real product write
-path (``KEY_MODEL`` -> Build Session -> Modeling Batch dry-run -> apply) on
+path (``KEY_MODEL`` -> Build Session -> applied Modeling Batch) on
 top of the R3.0-001 ``industrial_service_v3`` baseline tables/columns; the
 domain vocabulary (缺料 / PART_SHORTAGE / WAITING_PARTS ...) lives only in
 test data and assertions, never in product code.
@@ -434,20 +434,6 @@ def _seed_fixture(env: ChainEnv, settings: Settings, model_revision: int) -> Non
     )
     assert lease.status_code == 200, lease.text
     lease_token = lease.json()["lease_token"]
-
-    dry = _submit_batch(
-        env,
-        settings,
-        session_id,
-        model_revision,
-        _seed_items(env.base),
-        batch="r3008a-seed-dry",
-        key="r3008a-seed-dry-key",
-        mode="dry_run",
-    )
-    assert dry.status_code == 200, dry.text
-    assert dry.json()["attempt_status"] == "validated", dry.json()
-    env.seeding_batch_ids.append(dry.json()["batch_id"])
 
     applied = _submit_batch(
         env,

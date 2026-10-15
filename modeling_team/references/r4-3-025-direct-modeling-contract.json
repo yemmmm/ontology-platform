@@ -1,0 +1,93 @@
+{
+  "schema_version": "r4-3-025-direct-modeling-contract/v1",
+  "scope": "Current unified-semantic-graph Tasks. R4.3-024/025 supersedes older Protocol/dry-run/translation-proof execution requirements. Historical retained runs and evidence are not rewritten or automatically resumed.",
+  "submit_tool": "modeling_submit_model_changes",
+  "arguments": {
+    "modeling_id": "modeling",
+    "request": {
+      "schema_version": "r4-3-025-model-changes/v1",
+      "candidate_ref": "run-relative immutable stage3-neutral-graph/candidates/<candidate>-r<revision>.json, or null for existing fields-only changes",
+      "changes": "nonempty ordered list of the closed change shape below"
+    }
+  },
+  "change": {
+    "required_fields": [
+      "change_id",
+      "action",
+      "resource_kind",
+      "item_id",
+      "target_ref",
+      "fields"
+    ],
+    "actions": [
+      "create",
+      "update",
+      "delete",
+      "set_fact",
+      "delete_fact"
+    ],
+    "resource_kinds": [
+      "entity",
+      "property",
+      "relation",
+      "class",
+      "relation_type",
+      "operation",
+      "mapping",
+      "table_mapping",
+      "join_mapping",
+      "enum_meaning",
+      "metric_definition",
+      "fact"
+    ],
+    "rules": [
+      "change_id is a unique neutral operation label. item_id selects the complete current candidate item; fields is null. fields-only existing modifications use item_id=null. Do not copy a candidate into fields.",
+      "create selects a candidate item for the seven unified kinds; target_ref=null. Existing Class/relation_type/Operation/Mapping create uses its supported semantic fields. update/delete/fact operations require a concrete retained target_ref. Missing candidate items never imply deletion.",
+      "target_ref and existing_resource_ref are {artifact_ref,path}; path is a JSON Pointer to one actual authorized governed response or applied receipt entry. No bare guessed resource IRI/ID, Session, lease, version, Batch identity, command_kind, payload envelope or command plan.",
+      "Ontology placement comes from the confirmed topology and trusted run scope, not from guessed table/slice counts. An unresolved placement is a fixable scope_binding_required error."
+    ]
+  },
+  "candidate": {
+    "schema_version": "r3-0-009-unified-graph/v2",
+    "item_kinds": [
+      "entity",
+      "property",
+      "relation",
+      "table_mapping",
+      "join_mapping",
+      "enum_meaning",
+      "metric_definition"
+    ],
+    "value_rules": {
+      "entity": "create_entity semantic fields; label required, no fabricated Class. Class references use definition_ref or authorized existing_resource_ref. properties uses [{property_ref,value}] with unique property refs. Preserve optional semantic_definition/action_definition/parameter_definition.",
+      "property": "name required; explicit predicate_kind=fact|relation. fact requires datatype. datatype and object_class_id are mutually exclusive. Only semantic_definition annotation is supported.",
+      "relation": "value={predicate: definition_ref or existing_resource_ref}; relation_endpoints={from_item_id,to_item_id}. Preserve explicit direction. No silent relation annotation loss: express additional local conditions with ordinary nodes as appropriate.",
+      "table_mapping/join_mapping/enum_meaning/metric_definition": "Use existing current batch create business fields, without technical resource identity. Resolve references only in declared reference slots. Do not introduce SQL/DSN/source_id/run_id import variants."
+    },
+    "unknowns": "Preserve business_meaning and all declared unknowns in supported semantic_definition fields; conflicting same-name meanings are errors. Candidate-level explicit_unknowns remain in submission/handoff gaps; execution success alone never proves they are retrievable or the whole scenario is complete.",
+    "non_relation_endpoints": "null",
+    "legacy_value": "A legal old value that cannot uniquely compile requires an explicit new immutable revision; the program does not guess or rewrite the old artifact."
+  },
+  "execution": "Program compiles all statically checkable input before the first write, preserves candidate item identities and JSON Pointer source maps, orders explicit dependencies, obtains real Session/lease/revision, and calls apply_atomic once per batch. Cross-batch dependencies use successful actual resource outputs. No dry-run, translation approval, or cross-batch transaction claim.",
+  "results": {
+    "schema_version": "r4-3-025-model-change-result/v1",
+    "statuses": [
+      "completed",
+      "not_written",
+      "partial",
+      "uncertain"
+    ],
+    "write_states": [
+      "not_written",
+      "applied",
+      "uncertain"
+    ],
+    "rule": "Trust applied receipts. Index failed/unknown is separate from write state; never reapply to repair search. Reconcile uncertain original identities before dependent writes. Correct ordinary input errors within the same goal. Preserve actual resource kind, source item/change, Batch/Attempt, revisions, index state and first blocker."
+  },
+  "self_check": "At valuable successful stages query_semantic_context with public questions in explicit authorized ontologies scope, then expand actual returned IRI anchors and full definitions. Current hybrid/adaptive/relevance defaults apply. Preserve revision/index/cursor/completeness and authorization limitations; lexical fallback/no match is not proof of model absence or global completeness.",
+  "final_tools": [
+    "modeling_inspect_associations",
+    "modeling_finish_changes"
+  ],
+  "handoff": "Use existing maps/handoffs for submission/query references, findings/dispositions and gaps. Final full governed association check remains required once before handoff, not after every batch. Final Consumer/Judge stays independent and cannot repair the production run. Real modeling starts/repair rounds still require existing user authorization."
+}

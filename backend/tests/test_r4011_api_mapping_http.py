@@ -116,17 +116,11 @@ def test_api_mapping_batch_read_revision_context_and_protection(form):
                 request = dict(
                     client_batch_id=batch_id,
                     ontology_id=ontology_id,
-                    mode="dry_run",
-                    idempotency_key="dry-" + batch_id,
-                    expected_model_revision=version,
-                    items=items,
-                )
-                checked = post(path, request)
-                assert checked["attempt_status"] == "validated", json.dumps(checked["findings"])
-                request.update(
                     mode="apply_atomic",
                     idempotency_key="apply-" + batch_id,
+                    expected_model_revision=version,
                     lease_token=lease["lease_token"],
+                    items=items,
                 )
                 applied = post(path, request)
                 assert applied["attempt_status"] == "applied", json.dumps(applied["findings"])

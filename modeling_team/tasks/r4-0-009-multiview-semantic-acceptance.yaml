@@ -11,72 +11,65 @@
 schema_version: 2
 task_id: r4-0-009-multiview-semantic-acceptance
 objective: >-
-  Model the currently authorized multi-view industrial service scenario from
-  the approved sources and approved interview answers, covering the core
-  objects, classifications, Actions, calls, flows, rules and business
-  responsibilities together with any explicitly authorized mapping scope in
-  the active run. Reuse shared business identity across those views. Missing
-  behavior contracts, scripts, role policies, shared-change facts and mapping
-  meaning require business-owner confirmation; neither schema columns nor
-  examples or tester-only expectations establish those facts. Retain mapping
-  work that is unavailable, unapproved or unverified as an explicit gap.
-  Selecting this task or mounting the R4.0-010/011 contracts does not grant
-  authorization for future mapping work, external database/API access or
-  acceptance beyond the active run's approved scope.
-  CQ review and hidden-pool freezing precede formal semantic modeling; use only
-  the approved public projection. When the host explicitly delegates CQ review
-  to Delivery, record that authorization and the source/question-version basis
-  in submit_cq_review.note; this does not expose private CQ material or weaken
-  the existing review, visibility, freeze, or independent Judge contracts.
-  Independent acceptance consumes modeled
-  semantic resources, not production context, and does not repair this run.  Use the mounted r4-0-007 scenario-map contract for interleaved
-  viewpoints, stable shared definitions, maintenance ownership, explicit
-  unknowns/conflicts and scoped reference reviews before shared changes.
-  Preserve source fidelity, explicit unknowns, competency-question
-  coverage, generic semantic scope, deterministic dry-run/apply/readback,
-  authorization and independent acceptance. Under R4.3-015 trust bound successful
-  apply/Attempt/version receipts without per-batch resource or statement comparisons.
-  authorized-scope-readback-complete means necessary business reads and whole-run actual
-  semantic/association coverage, not repeated proof of each applied plan; apply alone
-  never completes this label. Stage application and quality feedback remain separate.
-  After the existing CQ/public-projection and freeze prerequisites are satisfied,
-  each production stage's first Coordinator dispatch names the current deliverable
-  business chain, its necessary shared dependencies, and the authorized global
-  scope with a remaining-stage overview. A stage candidate and plan cover that chain and its
-  necessary dependencies; later detailed candidates are not a prerequisite, and
-  no Ontology boundary or slice count is selected in advance. During the same
-  stage handoff or content review, use role-visible approved sources and the
-  existing handoff, candidate-item, and scenario-map references for both
-  source-to-candidate and candidate-to-source checks. Do not create a field table,
-  private schema, extra Agent, or new hard gate for these checks.
-  Narrow unknowns to the specific unconfirmed business meaning while retaining
-  source-confirmed facts and the current accurate scope. Physical source structure
-  and samples do not establish business rules, legal value universes, or permissions.
-  Keep confirmation state separate from delivery state; each deferred, unknown, or
-  out-of-scope disposition states its reason, impact, and next responsible role/input
-  in the existing reason/note or handoff content.
-  Do not materialize mapping semantics without the applicable mapping approval; a
-  legitimate deferral is not whole-scope completion.
-  After the first chain has reviewed candidate/plan coverage and its real dependencies
-  and is successfully applied, Coordinator explicitly requests Delivery's existing
-  `public-feedback` evaluation with its published `materialization_progress` checkpoint,
-  current freeze_id and a small approved public-question selection; final handoff is not
-  a prerequisite. Reviewed unchanged plans continue by reference in dependency order;
-  a valid current-version dry-run remains bound to its immediate apply without a new
-  per-batch semantic review.
-  Modeling candidates contain
-  semantic meaning, shared slice scope and unknowns only; Protocol owns Batch
-  envelopes, platform IDs, write receipts and read handles.  The active flow
-  does not create, attach or complete source-tracing records and does not use
-  their absence as a semantic failure.  Relational source rows remain in the
-  source database and are not copied into RDF individuals.
-  Before whole-run terminal and production handoff, perform the mounted R4.0-024
-  production association self-check over the actual authorized model. Coordinator
-  organizes it, Protocol reads and supplies mechanical association candidates,
-  and Modeling judges business meaning and revises confirmed defects. Complete
-  required repair/readback/rechecks while all production roles remain active.
-  Retain partial coverage, explicit unknowns and unresolved defects; this check
-  is not independent acceptance or a new irreversible platform gate.
+  Model the currently authorized multi-view industrial service scenario from the approved
+  sources and approved interview answers, covering the core objects, classifications, Actions,
+  calls, flows, rules and business responsibilities together with any explicitly authorized
+  mapping scope in the active run. Reuse shared business identity across those views. Missing
+  behavior contracts, scripts, role policies, shared-change facts and mapping meaning require
+  business-owner confirmation; neither schema columns nor examples or tester-only expectations
+  establish those facts. Retain mapping work that is unavailable, unapproved or unverified as
+  an explicit gap. Selecting this task or mounting the R4.0-010/011 contracts does not grant
+  authorization for future mapping work, external database/API access or acceptance beyond the
+  active run's approved scope. CQ review and hidden-pool freezing precede formal semantic
+  modeling; use only the approved public projection. When the host explicitly delegates CQ
+  review to Delivery, record that authorization and the source/question-version basis in
+  submit_cq_review.note; this does not expose private CQ material or weaken the existing
+  review, visibility, freeze, or independent Judge contracts. Independent acceptance consumes
+  modeled semantic resources, not production context, and does not repair this run.  Use the
+  mounted r4-0-007 scenario-map contract for interleaved viewpoints, stable shared
+  definitions, maintenance ownership, explicit unknowns/conflicts and scoped reference reviews
+  before shared changes. Preserve source fidelity, explicit unknowns, competency-question
+  coverage, generic semantic scope, request-internal validation, atomic apply and necessary
+  business readback, authorization and independent acceptance. Under R4.3-015 trust bound
+  successful apply/Attempt/version receipts without per-batch resource or statement
+  comparisons. authorized-scope-readback-complete means necessary business reads and whole-run
+  actual semantic/association coverage, not repeated proof of each applied plan; apply alone
+  never completes this label. Stage application and quality feedback remain separate. After
+  the existing CQ/public-projection and freeze prerequisites are satisfied, each production
+  stage's first Coordinator dispatch names the current deliverable business chain, its
+  necessary shared dependencies, and the authorized global scope with a remaining-stage
+  overview. A stage candidate and plan cover that chain and its necessary dependencies; later
+  detailed candidates are not a prerequisite, and no Ontology boundary or slice count is
+  selected in advance. During the same stage handoff or content review, use role-visible
+  approved sources and the existing handoff, candidate-item, and scenario-map references for
+  both source-to-candidate and candidate-to-source checks. Do not create a field table,
+  private schema, extra Agent, or new hard gate for these checks. Narrow unknowns to the
+  specific unconfirmed business meaning while retaining source-confirmed facts and the current
+  accurate scope. Physical source structure and samples do not establish business rules, legal
+  value universes, or permissions. Keep confirmation state separate from delivery state; each
+  deferred, unknown, or out-of-scope disposition states its reason, impact, and next
+  responsible role/input in the existing reason/note or handoff content. Do not materialize
+  mapping semantics without the applicable mapping approval; a legitimate deferral is not
+  whole-scope completion. After the first chain has reviewed candidate/plan coverage and its
+  real dependencies and is successfully applied, Coordinator explicitly requests Delivery's
+  existing `public-feedback` evaluation with its published `materialization_progress`
+  checkpoint, current freeze_id and a small approved public-question selection; final handoff
+  is not a prerequisite. Reviewed unchanged business changes continue in real dependency order
+  through a single atomic apply per batch, without per-batch technical approval or replay of
+  successful stages. Modeling authors immutable current-format candidates and submits explicit
+  changes directly through modeling_submit_model_changes under R4.3-024/025. The program owns
+  actual resource binding, Batch envelopes, lifecycle fields and receipts. Modeling uses its
+  scoped read tools for immediate public-question recall and actual IRI expansion. No Protocol
+  translation, translation approval or dry-run is required.  The active flow does not create,
+  attach or complete source-tracing records and does not use their absence as a semantic
+  failure.  Relational source rows remain in the source database and are not copied into RDF
+  individuals. Before whole-run terminal and production handoff, perform the mounted R4.0-024
+  production association self-check over the actual authorized model. Coordinator organizes
+  it; Modeling calls modeling_inspect_associations, judges business meaning and revises
+  confirmed defects. The program supplies mechanical association candidates through existing
+  governed reads. Complete required repair/readback/rechecks while all production roles remain
+  active. Retain partial coverage, explicit unknowns and unresolved defects; this check is not
+  independent acceptance or a new irreversible platform gate.
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source
@@ -98,7 +91,10 @@ role_sources:
     roles: [coordinator, protocol]
   - path: modeling_team/references/r3-0-009-unified-graph-contract.json
     classification: coordination
-    roles: [coordinator, protocol]
+    roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/r4-0-012-modeling-contract.json
     classification: coordination
     roles: [modeling]
@@ -116,7 +112,7 @@ role_sources:
     roles: [modeling, protocol]
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
-    roles: [protocol]
+    roles: [protocol, modeling]
   - path: modeling_team/references/r3-0-011-competency-question-contract.json
     classification: coordination
     roles: [competency-question]

@@ -252,6 +252,23 @@ class ModelingBatchService:
         authorization: ModelingAuthorizationContext | None = None,
         request_bytes: int | None = None,
     ) -> dict[str, Any]:
+        # Model Batch dry-run was a live execution mode in the original R-004
+        # contract.  It is retired for new submissions; keep this guard before
+        # any lock, persistence, compilation, or authorization side effect so
+        # direct service callers cannot bypass the public schema.
+        mode = getattr(payload, "mode", None)
+        if mode == "dry_run":
+            raise ModelingBatchError(
+                "dry_run_retired",
+                "Modeling Batch dry_run mode is retired for new submissions",
+                status_code=422,
+            )
+        if mode not in {"apply_atomic", "apply_partial"}:
+            raise ModelingBatchError(
+                "unsupported_mode",
+                "Modeling Batch mode must be apply_atomic or apply_partial",
+                status_code=422,
+            )
         auth = authorization or ModelingAuthorizationContext()
         if not auth.can_write:
             raise ModelingBatchError(
@@ -297,11 +314,7 @@ class ModelingBatchService:
             raise ModelingBatchError(
                 "ontology_not_found", "Ontology was not found", status_code=404
             )
-        if payload.mode == "dry_run" and payload.lease_token is not None:
-            raise ModelingBatchError(
-                "invalid_lease_token", "dry_run must omit lease_token", status_code=422
-            )
-        if payload.mode != "dry_run" and payload.lease_token is None:
+        if payload.lease_token is None:
             raise ModelingBatchError("ontology_lease_conflict", "apply requires lease_token")
 
         content = self._content(payload)
@@ -352,30 +365,28 @@ class ModelingBatchService:
         batch, created_batch = self._get_or_create_batch(
             build_session, ontology, payload.client_batch_id, content_hash, content
         )
-        if batch.status == "failed" and payload.mode != "dry_run":
+        if batch.status == "failed":
             raise ModelingBatchError("batch_failed", "Modeling Batch cannot be applied again")
-        if batch.status in {"applied", "partially_applied"} and payload.mode != "dry_run":
+        if batch.status in {"applied", "partially_applied"}:
             terminal = next(
                 attempt
                 for attempt in reversed(batch.attempts)
                 if attempt.status in {"applied", "partially_applied"}
             )
             return self._attempt_response(terminal, False, False)
-        authorization_result: dict[str, Any] | None = None
-        if payload.mode != "dry_run":
-            try:
-                authorization_result = BuildSessionService(
-                    self.session, self.settings
-                ).authorize_apply(
-                    session_id=build_session_id,
-                    ontology_id=payload.ontology_id,
-                    lease_token=payload.lease_token or "",
-                    expected_model_revision=payload.expected_model_revision,
-                )
-            except BuildSessionError as exc:
-                raise ModelingBatchError(
-                    exc.code, exc.message, status_code=exc.status_code, **exc.detail
-                ) from exc
+        try:
+            authorization_result = BuildSessionService(
+                self.session, self.settings
+            ).authorize_apply(
+                session_id=build_session_id,
+                ontology_id=payload.ontology_id,
+                lease_token=payload.lease_token,
+                expected_model_revision=payload.expected_model_revision,
+            )
+        except BuildSessionError as exc:
+            raise ModelingBatchError(
+                exc.code, exc.message, status_code=exc.status_code, **exc.detail
+            ) from exc
 
         attempt = ModelingBatchAttemptModel(
             id=_id(),
@@ -427,10 +438,9 @@ class ModelingBatchService:
                     break
                 attributable = any(finding["client_item_ids"] for finding in validation_findings)
                 if payload.mode != "apply_partial" or not attributable:
-                    if payload.mode != "dry_run":
-                        for item_id in selected:
-                            statuses[item_id] = "not_applied"
-                        selected.clear()
+                    for item_id in selected:
+                        statuses[item_id] = "not_applied"
+                    selected.clear()
                     break
                 previous = set(selected)
                 selected, statuses = self._select_items(
@@ -442,11 +452,7 @@ class ModelingBatchService:
                 candidate_delta = union_delta(
                     [prepared[item_id] for item_id in selected if item_id in prepared]
                 )
-            delta = (
-                candidate_delta
-                if payload.mode == "dry_run"
-                else union_delta([prepared[item_id] for item_id in selected])
-            )
+            delta = union_delta([prepared[item_id] for item_id in selected])
             normalized_delta = self._delta_dict(delta)
             plan = {
                 "selected_client_item_ids": sorted(selected),
@@ -495,11 +501,7 @@ class ModelingBatchService:
             attempt.audit_id = plan["audit_id"]
             self._save_item_results(attempt, batch, statuses, groups, findings)
             has_error = any(finding["blocking"] for finding in findings)
-            if (
-                payload.mode == "dry_run"
-                or (payload.mode == "apply_atomic" and has_error)
-                or not selected
-            ):
+            if (payload.mode == "apply_atomic" and has_error) or not selected:
                 attempt.status = "validation_failed" if has_error else "validated"
                 attempt.completed_at = self._now()
                 self.session.commit()
@@ -1319,11 +1321,11 @@ class ModelingBatchService:
             elif mode == "apply_atomic" and has_error:
                 statuses[item.client_item_id] = "not_applied"
             else:
-                statuses[item.client_item_id] = "validated" if mode == "dry_run" else "applied"
+                statuses[item.client_item_id] = "applied"
         selected = {
             item_id
             for item_id, status in statuses.items()
-            if status in ({"validated"} if mode == "dry_run" else {"applied"})
+            if status == "applied"
         }
         if mode == "apply_atomic" and has_error:
             selected.clear()

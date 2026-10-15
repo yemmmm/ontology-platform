@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import ast
 import json
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -178,9 +179,18 @@ class DeletePropertyContractTests(unittest.TestCase):
         )
 
     def _backend_literal(self, name: str) -> object:
-        # Importing app.services.modeling_handlers needs the backend virtualenv;
-        # read the same real allowlist/forbidden-set literals instead of
-        # restating them here.
+        if name == "ALLOWED_FIELDS":
+            # The current module adds common semantic/action fields after its
+            # base literal. Compare the executable contract, including those
+            # additions, using the required backend test environment.
+            backend = str(self.root / "backend")
+            sys.path.insert(0, backend)
+            try:
+                from app.services.modeling_handlers import ALLOWED_FIELDS
+                return ALLOWED_FIELDS
+            finally:
+                sys.path.remove(backend)
+        # The remaining immutable set needs no runtime dependency.
         source = (self.root / "backend/app/services/modeling_handlers.py").read_text(
             encoding="utf-8"
         )
@@ -196,9 +206,12 @@ class DeletePropertyContractTests(unittest.TestCase):
 
     def test_delete_property_payload_contract_matches_backend_allowlist(self) -> None:
         contract = self._contract()
-        self.assertEqual(set(contract["delete_payloads"]), {"delete_property"})
         schema = contract["delete_payloads"]["delete_property"]
         allowed = self._backend_literal("ALLOWED_FIELDS")
+        self.assertEqual(set(contract["delete_payloads"]),
+                         {name for name in allowed if name.startswith("delete_")})
+        for name, documented in contract["delete_payloads"].items():
+            self.assertEqual(set(documented["fields"]), set(allowed[name]), name)
         forbidden = self._backend_literal("FORBIDDEN_TARGET_FIELDS")
         self.assertEqual(set(schema["fields"]), set(allowed["delete_property"]))
         self.assertEqual(set(schema["fields"]), {"property_id", "property_iri"})
@@ -208,7 +221,7 @@ class DeletePropertyContractTests(unittest.TestCase):
         self.assertIn("ontology_id belongs to the Batch envelope", schema["identity"])
         self.assertTrue(all(not field["required"] for field in schema["fields"].values()))
 
-    def test_create_and_update_payload_sections_stay_unchanged(self) -> None:
+    def test_create_payloads_and_completed_update_field_contracts(self) -> None:
         contract = self._contract()
         self.assertEqual(
             set(contract["create_payloads"]),
@@ -225,9 +238,11 @@ class DeletePropertyContractTests(unittest.TestCase):
                 "create_relation",
             },
         )
-        self.assertEqual(
-            set(contract["update_payloads"]), {"update_property", "update_entity"}
-        )
+        allowed = self._backend_literal("ALLOWED_FIELDS")
+        self.assertEqual(set(contract["update_payloads"]),
+                         {name for name in allowed if name.startswith("update_")})
+        for name, documented in contract["update_payloads"].items():
+            self.assertEqual(set(documented["fields"]), set(allowed[name]), name)
 
     def test_delete_candidate_closes_through_existing_identity_binding(self) -> None:
         from modeling_team.staged_decisions import unified_identity_issue

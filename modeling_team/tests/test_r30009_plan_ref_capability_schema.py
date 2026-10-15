@@ -1,17 +1,14 @@
-"""R3.0-009 capability-entry coverage for the ``plan_ref`` argument.
+"""Capability-entry contracts for the current R4.3-024/025 write boundary.
 
-``protocol_staged_submit_modeling_batch`` is the only platform-write channel.
-Its advertised input schema must accept the complete 009 argument set --
-``protocol_id``, ``batch``, ``value_traces``, ``l3_nodes`` and ``plan_ref`` --
-so a contract-correct request reaches the staged handler.  The handler, never
-the schema, owns the 009 requirement: ``plan_ref`` stays optional here so 008B
-runs without one keep working, while the existing Runner contract still rejects
-a 009 submission that omits it.
+The old ``plan_ref`` argument belonged to the retired per-batch dry-run and
+translation-proof handshake.  Current Modeling submits an explicit
+``r4-3-025-model-changes/v1`` request through ``modeling_submit_model_changes``
+and the retained Protocol recovery surface accepts ``apply_atomic`` only.
 
-Every case below goes through the real capability entry: the prepared run's own
-``RunnerCapabilityEndpoint`` over its AF_UNIX socket, wired to the real
-``RunnerAcceptanceCarrier._dispatch_capability`` chain.  The downstream platform
-write is a recorder, so no semantic run starts.
+The legacy staged helper remains covered here only for its closed external
+schema boundary; historical positive receipts are exercised by the recovery
+fixtures.  Every case uses the prepared run's real capability endpoint over
+its AF_UNIX socket.
 """
 
 from __future__ import annotations
@@ -20,15 +17,11 @@ import json
 from contextlib import contextmanager
 from pathlib import Path
 
-from modeling_team.capability_mcp import STAGED_PROTOCOL_OPERATION
+from modeling_team.capability_mcp import DIRECT_MODELING_OPERATIONS, STAGED_PROTOCOL_OPERATION
 from modeling_team.staged_decisions import staged_decision_artifact_paths
 from modeling_team.tests.test_r30008b_runner_wiring import (
-    _capability_args,
     _ForwarderRecorder,
-    _materialization_valid,
-    _open_platform_gate,
     _socket_request,
-    _StagedRunner,
 )
 from modeling_team.tests.test_r30009_runner_wiring import (
     _batch_items,
@@ -80,58 +73,30 @@ def _intent_files(staged, *, unified: bool) -> list[Path]:
     return sorted(intents_dir.iterdir()) if intents_dir.exists() else []
 
 
-# --- 009: the complete argument set must reach the staged handler -------------
-
-
-def test_009_capability_entry_accepts_plan_ref_and_binds_it_to_the_intent(tmp_path):
-    forwarder = _ForwarderRecorder()
-    staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
-    forwarder.intents_dir = staged_decision_artifact_paths(
-        staged.run_root, unified=True
-    )["intents_dir"]
+def test_025_modeling_capability_advertises_direct_change_contract(tmp_path):
+    staged = _UnifiedRunner(tmp_path)
+    staged.prepare()
+    endpoint = staged.runner.acceptance.capability_endpoint("modeling")
+    endpoint.start()
     try:
-        staged.prepare()
-        _open_platform_gate_unified(staged)
-        arguments = _unified_args(_batch_items(), PLAN_REF)
-        with _protocol_capability(staged) as endpoint:
-            response = _call(endpoint, arguments)
+        response = _socket_request(endpoint.socket_path, endpoint.token, "tools/list")
+        tools = {entry["name"]: entry for entry in response["result"]["tools"]}
+        assert set(tools) == set(DIRECT_MODELING_OPERATIONS)
 
-        # The request passed the entry: no opaque -32001 and no schema audit record.
-        assert "error" not in response, response
-        structured = response["result"]["structuredContent"]
-        assert structured["ok"] is True, structured
-        assert [record for record in _audit_records(staged) if record.get("ok")] != []
-
-        # It reached the staged handler: the host-side forward ran exactly once
-        # with the verbatim platform envelope, which never carries plan_ref.
-        assert len(forwarder.calls) == 1
-        forwarded = forwarder.calls[0]["batch"]
-        assert forwarded["items"] == arguments["batch"]["items"]
-        assert "plan_ref" not in forwarded
-        assert "value_traces" not in forwarded and "l3_nodes" not in forwarded
-
-        # The full plan_ref is preserved in the durable bindings, unmodified.
-        intent = json.loads(
-            (
-                staged_decision_artifact_paths(staged.run_root, unified=True)[
-                    "intents_dir"
-                ]
-                / "intent-1.json"
-            ).read_text(encoding="utf-8")
-        )
-        assert intent["plan_ref"] == PLAN_REF
-        assert intent["schema_version"] == "r3-0-009-submission-intent/v1"
-        receipt = json.loads(
-            (
-                staged_decision_artifact_paths(staged.run_root, unified=True)[
-                    "receipts_dir"
-                ]
-                / "receipt-1.json"
-            ).read_text(encoding="utf-8")
-        )
-        assert receipt["plan_ref"] == PLAN_REF
-        assert receipt["submitted_via"] == STAGED_PROTOCOL_OPERATION
+        submit = tools["modeling_submit_model_changes"]
+        schema = submit["inputSchema"]
+        request = schema["properties"]["request"]
+        assert schema["required"] == ["modeling_id", "request"]
+        assert request["required"] == ["schema_version", "candidate_ref", "changes"]
+        assert request["properties"]["schema_version"]["enum"] == [
+            "r4-3-025-model-changes/v1"
+        ]
+        assert request["properties"]["candidate_ref"]["type"] == ["string", "null"]
+        assert "mode" not in request["properties"]
+        assert "plan_ref" not in request["properties"]
+        assert "translation_approval" not in request["properties"]
     finally:
+        endpoint.stop()
         staged.cleanup()
 
 
@@ -165,63 +130,55 @@ def test_009_capability_entry_still_rejects_unknown_or_mistyped_fields(tmp_path)
         staged.cleanup()
 
 
-# --- 009 without plan_ref is still the Runner contract's rejection ------------
-
-
-def test_009_capability_entry_without_plan_ref_still_fails_the_runner_contract(
-    tmp_path,
-):
+def test_025_direct_submit_rejects_retired_dry_run_shape_before_forwarding(tmp_path):
     forwarder = _ForwarderRecorder()
     staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
     try:
         staged.prepare()
-        _open_platform_gate_unified(staged)
-        arguments = _unified_args(_batch_items(), None)
-        assert "plan_ref" not in arguments
-        with _protocol_capability(staged) as endpoint:
-            response = _call(endpoint, arguments)
+        request = {
+            "schema_version": "r4-3-025-model-changes/v1",
+            "candidate_ref": None,
+            "changes": [
+                {
+                    "change_id": "change-1",
+                    "action": "create",
+                    "resource_kind": "entity",
+                }
+            ],
+            "mode": "dry_run",
+        }
+        endpoint = staged.runner.acceptance.capability_endpoint("modeling")
+        endpoint.start()
+        try:
+            response = _socket_request(
+                endpoint.socket_path,
+                endpoint.token,
+                "tools/call",
+                name="modeling_submit_model_changes",
+                arguments={"modeling_id": "modeling", "request": request},
+            )
+        finally:
+            endpoint.stop()
 
-        # The schema admitted the call (no opaque rejection); the typed refusal
-        # is the existing 009 contract check, with nothing written or forwarded.
-        assert "error" not in response, response
-        structured = response["result"]["structuredContent"]
-        assert structured["ok"] is False
-        assert structured["error"]["reason_code"] == "missing_candidate_reference"
+        assert response["error"]["code"] == -32001
         assert forwarder.calls == []
-        assert _intent_files(staged, unified=True) == []
+        assert _audit_records(staged)[-1]["error_type"] == "schema_or_operation_rejected"
     finally:
         staged.cleanup()
 
 
-# --- 008B compatibility -------------------------------------------------------
-
-
-def test_008b_capability_entry_still_accepts_a_submission_without_plan_ref(tmp_path):
-    forwarder = _ForwarderRecorder()
-    staged = _StagedRunner(tmp_path, forwarder=forwarder)
-    forwarder.intents_dir = staged_decision_artifact_paths(staged.run_root)[
-        "intents_dir"
-    ]
+def test_025_protocol_plan_execution_schema_allows_apply_only(tmp_path):
+    staged = _UnifiedRunner(tmp_path)
+    staged.prepare()
+    endpoint = staged.runner.acceptance.capability_endpoint("protocol")
+    endpoint.start()
     try:
-        staged.prepare()
-        _open_platform_gate(staged)
-        _materialization_valid(staged.run_root)
-        arguments = _capability_args()
-        assert "plan_ref" not in arguments
-        with _protocol_capability(staged) as endpoint:
-            response = _call(endpoint, arguments)
-
-        assert "error" not in response, response
-        assert response["result"]["structuredContent"]["ok"] is True
-        assert len(forwarder.calls) == 1
-        intent = json.loads(
-            (
-                staged_decision_artifact_paths(staged.run_root)["intents_dir"]
-                / "intent-1.json"
-            ).read_text(encoding="utf-8")
-        )
-        # The 008B intent stays exactly what it was: no 009 sidecar fields.
-        assert "plan_ref" not in intent
-        assert intent["schema_version"] == "r3-0-008b-submission-intent/v1"
+        response = _socket_request(endpoint.socket_path, endpoint.token, "tools/list")
+        tools = {entry["name"]: entry for entry in response["result"]["tools"]}
+        execute = tools["protocol_execute_approved_plans"]
+        assert execute["inputSchema"]["properties"]["mode"]["enum"] == ["apply_atomic"]
+        assert "dry_run" not in execute["description"]
+        assert "translation approval" not in execute["description"].lower()
     finally:
+        endpoint.stop()
         staged.cleanup()

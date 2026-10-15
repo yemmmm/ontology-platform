@@ -445,7 +445,9 @@ def test_a8_no_change_plan_cannot_hide_pending_unknown_write(production):
     second = production.runner._handle_execute_approved_plans({"protocol_id": "protocol", "plan_refs": [PLAN1]})
     assert second["ok"] is False
     assert second["error"]["reason_code"] == "staged_unreconciled_batch"
-    assert len(production.calls) == 1  # Only original dry-run; apply reply is unknown.
+    # The apply forward is rejected before the fixture's recorder is reached;
+    # retired dry_run no longer contributes a preceding forward.
+    assert len(production.calls) == 0
 
 
 def test_a3_batch_cannot_write_outside_round_bound_ontology_ids(production):

@@ -39,6 +39,8 @@ ONTOLOGY_GRAPH = f"{GRAPH}ontology/{ONTOLOGY_ID}"
 DATA_GRAPH = f"{GRAPH}ontology/{ONTOLOGY_ID}"
 FOREIGN_GRAPH = f"{GRAPH}ontology/{FOREIGN_ONTOLOGY_ID}"
 
+_DEFAULT_LEASE_TOKEN: str | None = None
+
 RDF_TYPE = "<http://www.w3.org/1999/02/22-rdf-syntax-ns#type>"
 OWL_CLASS = "<http://www.w3.org/2002/07/owl#Class>"
 OWL_DATATYPE_PROPERTY = "<http://www.w3.org/2002/07/owl#DatatypeProperty>"
@@ -135,6 +137,8 @@ def modeling(in_memory_session: Session):
     version = OntologyModelRevisionService(in_memory_session, settings).version_for(
         ONTOLOGY_ID
     )
+    global _DEFAULT_LEASE_TOKEN
+    _DEFAULT_LEASE_TOKEN = lease["lease_token"]
     return service, in_memory_session, rdf, session_id, lease, version
 
 
@@ -149,7 +153,9 @@ def _item(item_id: str, command_kind: str, payload: dict, **overrides):
     return ModelingItemInput(**data)
 
 
-def _request(version, items, *, key="attempt-1", batch="batch-1", mode="dry_run", token=None):
+def _request(version, items, *, key="attempt-1", batch="batch-1", mode="apply_atomic", token=None):
+    if token is None and mode in {"apply_atomic", "apply_partial"}:
+        token = _DEFAULT_LEASE_TOKEN
     return ModelingBatchSubmit(
         client_batch_id=batch,
         ontology_id=ONTOLOGY_ID,
@@ -535,7 +541,7 @@ def test_b5_deleting_unpointed_entity_passes(modeling):
             [_item("del-entity", "delete_entity", {"entity_iri": ENTITY_SUPPLY_CHAIN})],
         ),
     )
-    assert result["attempt_status"] == "validated", result["findings"]
+    assert result["attempt_status"] == "applied", result["findings"]
 
 
 # ---------------------------------------------------------------------------

@@ -54,7 +54,7 @@ class FakeRdfStore:
         )
 
 
-def test_exact_four_plan_compiles_and_service_dry_run_has_zero_rdf_side_effects():
+def test_exact_four_plan_compiles_and_service_apply_writes_one_rdf_delta():
     root = Path(__file__).resolve().parents[2]
     candidate, _selected = _generated_candidate(load_matrix(root))
     evidence_map = build_candidate_item_evidence_map(
@@ -131,7 +131,7 @@ def test_exact_four_plan_compiles_and_service_dry_run_has_zero_rdf_side_effects(
             project_id,
             BuildSessionCreate(client_session_id="p2a-agent-session"),
         )
-        build.acquire_ontology_lease(
+        lease = build.acquire_ontology_lease(
             build_session["id"],
             ontology_id,
             OntologyLeaseAcquire(
@@ -146,21 +146,23 @@ def test_exact_four_plan_compiles_and_service_dry_run_has_zero_rdf_side_effects(
             ModelingBatchSubmit(
                 client_batch_id="p2a-exact-four",
                 ontology_id=ontology_id,
-                idempotency_key="p2a-exact-four-dry-run",
-                mode="dry_run",
+                idempotency_key="p2a-exact-four-apply",
+                mode="apply_atomic",
                 expected_model_revision=version,
+                lease_token=lease["lease_token"],
                 items=items,
             ),
         )
 
     engine.dispose()
-    assert result["attempt_status"] == "validated"
+    assert result["attempt_status"] == "applied"
     assert [item["client_item_id"] for item in result["items"]] == list(
         ASSERTION_CLIENT_ITEM_IDS.values()
     )
     assert "operation_plan" not in result
     assert not any(finding["blocking"] for finding in result["findings"])
-    assert rdf.deltas == []
+    assert len(rdf.deltas) == 1
+    assert not rdf.deltas[0].is_empty
     normalized = json.dumps(result["normalized_delta"], sort_keys=True)
     assert "published" in normalized
     assert "http://www.w3.org/2001/XMLSchema#string" not in normalized

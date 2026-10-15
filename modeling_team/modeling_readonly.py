@@ -26,7 +26,6 @@ MODELING_READ_TOOLS: tuple[str, ...] = (
     "query_semantic_context",
 )
 MODELING_READ_MODELS = frozenset({"classes", "entities", "facts", "rules"})
-_QUERY_CURSOR_FIELDS = frozenset({"match_cursor", "context_cursor"})
 
 
 def _canonical_default(item: Any) -> Any:
@@ -96,7 +95,7 @@ def _candidate_value(text: Any) -> Mapping[str, Any] | None:
 
 
 class ModelingReadProxy:
-    """A local AF_UNIX proxy with a strict three-tool, P/O-bound policy."""
+    """A local three-tool proxy restricted to a Project's authorized Ontologies."""
 
     def __init__(
         self,
@@ -106,24 +105,30 @@ class ModelingReadProxy:
         read_key: str,
         project_id: str,
         ontology_id: str,
+        ontology_ids: list[str] | None = None,
         forward: Callable[[str, Mapping[str, Any], str], Mapping[str, Any]] | None = None,
         on_context: Callable[[Mapping[str, Any], ModelingReadCallReceipt], object] | None = None,
+        on_result: Callable[[str, Mapping[str, Any], Mapping[str, Any]], Any] | None = None,
     ) -> None:
         self.socket_path = socket_path
         self.token = _id(token, "proxy token")
         self._read_key: str | None = _id(read_key, "read key")
         self.project_id = _id(project_id, "project_id")
         self.ontology_id = _id(ontology_id, "ontology_id")
+        self.ontology_ids = tuple(dict.fromkeys(
+            _id(value, "ontology_id")
+            for value in (ontology_ids if ontology_ids is not None else [ontology_id])
+        ))
         self.allowed_tools = MODELING_READ_TOOLS
         self._forward = forward
         self._on_context = on_context
+        self._on_result = on_result
         self._server: socket.socket | None = None
         self._thread: threading.Thread | None = None
         self._stop = threading.Event()
         self._lock = threading.RLock()
         self.requests: list[dict[str, Any]] = []
         self._call_receipts: list[ModelingReadCallReceipt] = []
-        self._query_binding: str | None = None
         self.post_revoke_denials = 0
 
     @property
@@ -142,7 +147,7 @@ class ModelingReadProxy:
             "ontology_id": self.ontology_id,
             "allowed_tools": list(self.allowed_tools),
             "models": sorted(MODELING_READ_MODELS),
-            "query_scope": {"scope_mode": "ontologies", "ontology_ids": [self.ontology_id]},
+            "query_scope": {"scope_mode": "ontologies", "ontology_ids": list(self.ontology_ids)},
         }
         return ModelingProxyReceipt(
             socket_identity="/agent/home/modeling-read-proxy.sock",
@@ -160,7 +165,7 @@ class ModelingReadProxy:
 
     def _validate_arguments(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
         if tool == "get_modeling_context":
-            if set(arguments) != {"ontology_id"} or arguments.get("ontology_id") != self.ontology_id:
+            if set(arguments) != {"ontology_id"} or arguments.get("ontology_id") not in self.ontology_ids:
                 raise ModelingReadError("get_modeling_context requires exact ontology scope")
         elif tool == "get_ontology_read_model":
             allowed = {
@@ -169,7 +174,7 @@ class ModelingReadProxy:
             }
             if not set(arguments).issubset(allowed):
                 raise ModelingReadError("ontology read-model arguments are outside the Modeling policy")
-            if arguments.get("ontology_id") != self.ontology_id:
+            if arguments.get("ontology_id") not in self.ontology_ids:
                 raise ModelingReadError("ontology read-model requires exact ontology scope")
             if arguments.get("model_name") not in MODELING_READ_MODELS:
                 raise ModelingReadError("ontology read-model name is outside the Modeling policy")
@@ -195,13 +200,17 @@ class ModelingReadProxy:
                 "project_id", "scope_mode", "query", "queries", "ontology_ids", "resource_types",
                 "assertion_types", "search_mode", "depth", "limit", "context_limit",
                 "match_cursor", "context_cursor", "semantic_roles", "context_detail",
+                "expansion_strategy", "context_order",
             }
             if not set(arguments).issubset(allowed):
                 raise ModelingReadError("semantic query arguments are outside the Modeling policy")
             if (
                 arguments.get("project_id") != self.project_id
                 or arguments.get("scope_mode") != "ontologies"
-                or arguments.get("ontology_ids") != [self.ontology_id]
+                or not isinstance(arguments.get("ontology_ids"), list)
+                or not arguments["ontology_ids"]
+                or any(not isinstance(value, str) or value not in self.ontology_ids
+                       for value in arguments["ontology_ids"])
             ):
                 raise ModelingReadError("semantic query requires exact Project/Ontology scope")
             for field in ("resource_types", "assertion_types", "semantic_roles"):
@@ -212,6 +221,8 @@ class ModelingReadProxy:
                 ):
                     raise ModelingReadError(f"semantic query {field} is invalid")
             for field in ("depth", "limit", "context_limit"):
+                if field == "depth" and arguments.get(field) is None:
+                    continue
                 if field in arguments and (
                     isinstance(arguments[field], bool)
                     or not isinstance(arguments[field], int)
@@ -232,13 +243,9 @@ class ModelingReadProxy:
                 or any(not isinstance(item, str) or not item.strip() for item in arguments["queries"])
             ):
                 raise ModelingReadError("semantic query requires a non-empty query list")
-            binding = canonical_digest(
-                {key: value for key, value in arguments.items() if key not in _QUERY_CURSOR_FIELDS}
-            )
-            if self._query_binding is None:
-                self._query_binding = binding
-            elif self._query_binding != binding:
-                raise ModelingReadError("semantic query cursor scope drifted")
+            # The query service binds each cursor to its query, scope, revisions
+            # and index snapshot. A proxy-wide query lock prevents legitimate
+            # follow-up questions and IRI expansion after a successful apply.
         else:
             raise ModelingReadError("tool is outside the Modeling read allowlist")
         return dict(arguments)
@@ -296,9 +303,11 @@ class ModelingReadProxy:
                         "code": "context-gate-rejected",
                         "error": "context-gate-rejected",
                     }
+            platform_ref = self._on_result(tool, normalized, result) if self._on_result else None
             return {
                 "ok": True,
                 "result": result,
+                **({"platform_ref": platform_ref} if platform_ref is not None else {}),
                 "request_digest": request_digest,
                 "response_digest": response_digest,
                 "call_receipt_digest": canonical_digest(self._call_receipts[-1].__dict__),

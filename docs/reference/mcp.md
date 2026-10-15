@@ -68,9 +68,10 @@ pointer 状态，因此按 `admin + org-only + mutates_state` 执行，而不是
    与 Modeling Coverage Matrix，再进入建模。
 4. 外部 Agent 自行读取资料理解和核对语义；三个子角色
    使用独立只读上下文，只有主 Agent 持有 MCP credential。
-5. 主 Agent 保存模型草案，调用 `submit_modeling_batch` dry-run；独立 reviewer 读取原资料、产物和
-   每个带 fingerprint 的 Finding，只有 PASS 才进入 apply。
-6. 主 Agent 获取 lease 并 apply exact reviewed batch；不经过旧 Proposal/Review/Publish 队列。
+5. 当前统一图路径由 Modeling 调用 `modeling_submit_model_changes`，提交完整候选引用及显式变更意图。
+   程序转换、绑定真实 Session／lease／revision，并在单次 `apply_atomic` 内校验和原子写入。
+6. 新模型 Batch 的 `dry_run` 已退役，不要求 Protocol 翻译审批或成功证明；历史读取保留。
+   已确认成功后进行获准自然语言召回、实际 IRI 展开及必要完整定义自查，保留索引和完整性限制。
 7. 用 Context Query、scoped SPARQL、read model 和 validation 验证，保存 verification
    artifact/event、checkpoint，并完成或取消 Build Session。
 
@@ -191,7 +192,7 @@ Root／Protocol 通过现有 Ontology 更新接口声明同一 Project 内获准
 `get_ontology_workspace_context` 返回 Ontology 及模型状态，`get_semantic_read_model` 和
 `export_semantic_ontology` 直接读取指定的模型；无需图集合或成员管理。
 
-映射或声明依赖的写入仍必须走 Modeling Batch 的 `dry_run`／`apply_atomic`、Attempt、Project
+映射或声明依赖的写入仍必须走 Modeling Batch 的请求内校验／`apply_atomic`、Attempt、Project
 fence 与恢复回执。MCP 的 `submit_semantic_edit`、canonical command 及 raw RDF import 遵循同一
 边界；绕过 Batch 会返回 `mapping_batch_required`。依赖 Project 有未收敛写入时返回可恢复的
 `mapping_reference_write_fenced`，客户端先读取／reconcile 原 Attempt 与 fence，再重试原目标。
@@ -251,7 +252,7 @@ PASS，Modeling 作业务处置，Protocol 经既有批准流程落实修复并�
 | build_sessions | `renew_ontology_lease` | Renew a valid Ontology lease using its opaque token. | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | client_request_id, expected_lease_revision, lease_token, ontology_id, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `resume_build_session` | Resume an active Build Session without changing its revision. | client_request_id, expected_revision, session_id | client_request_id, expected_revision, session_id | `backend/app/mcp/tools/build_sessions.py` |
 | build_sessions | `save_build_checkpoint` | Idempotently append an Agent-reported Build Checkpoint. | client_checkpoint_id, current_step, expected_revision, phase, session_id | blockers, client_checkpoint_id, current_step, expected_revision, failure, next_step, ontology_id, phase, related_batch_id, session_id, summary | `backend/app/mcp/tools/build_sessions.py` |
-| build_sessions | `submit_modeling_batch` | Dry-run or idempotently apply one immutable Ontology Modeling Batch. | client_batch_id, expected_model_revision, idempotency_key, items, ontology_id, session_id | client_batch_id, expected_model_revision, idempotency_key, items, lease_token, mode, ontology_id, session_id | `backend/app/mcp/tools/modeling_batches.py` |
+| build_sessions | `submit_modeling_batch` | Idempotently apply one immutable Ontology Modeling Batch. | client_batch_id, expected_model_revision, idempotency_key, items, ontology_id, session_id | client_batch_id, expected_model_revision, idempotency_key, items, lease_token, mode, ontology_id, session_id | `backend/app/mcp/tools/modeling_batches.py` |
 | semantic | `add_semantic_protection_set_members` | Batch-add resource IRIs to a protection set (idempotent). | members, protection_set_id | actor, members, protection_set_id | `backend/app/mcp/tools/protection_sets.py` |
 | semantic | `compile_and_apply_canonical_command` | Compile and apply a structured product command through the Phase 7 canonical writer. | command_kind, ontology_id, payload | actor, command_kind, ontology_id, payload, reason | `backend/app/mcp/tools/semantic.py` |
 | semantic | `create_semantic_migration_run` | Create a Phase 7 migration run in dry_run/shadow/dual_write_backfill/cutover/rollback mode. | mode, scope_type | batch_size, created_by, mode, scope_id, scope_type, target_ontology_id | `backend/app/mcp/tools/semantic.py` |
@@ -351,7 +352,10 @@ R4.3-020的Delivery CLI默认`model_context_window: 544000`及
 
 | 工具 | 调用者与输入 | 输出及边界 |
 | --- | --- | --- |
-| `protocol_execute_approved_plans` | unified Protocol；有序 plan_refs、ontology lease_tokens、可选 mode／既有 trace attachments | 默认 `apply_atomic`：当前版本逐批 dry-run/apply；`dry_run` 配合空 lease_tokens 仅按引用验证，无须翻译批准但保留候选／业务批准。apply 的当前翻译批准、原 gate 与每批原子性不变；完成执行不等于实际资源语义读回，后续按原治理读取核对资源／关系 |
+| `modeling_submit_model_changes` | unified Modeling；modeling_id、request（schema_version、candidate_ref、显式 changes） | 程序生成命令、填真实上下文、逐批单次原子 apply；保留原 item／JSON Pointer 错误定位、真实资源／修订／索引、成功去重及不确定身份对账；不裁决业务语义 |
+| `modeling_inspect_associations` | unified Modeling；modeling_id、可选 focus_iris | 在本 run 实际获准 Ontology 集合完整治理分页读取，调用既有关联辅助；部分、权限或修订漂移保持局部结论，不开放任意 SPARQL |
+| `modeling_finish_changes` | unified Modeling；modeling_id | 完成程序持有的 Build Session 并释放租约；不等同最终语义验收 |
+| `protocol_execute_approved_plans` | 保留计划能力；有序 plan_refs、ontology lease_tokens、mode=apply_atomic | apply 请求内校验；新模型 dry-run 和翻译／dry proof 前置门已退役。当前统一图正常写入使用 Modeling 直接能力；历史计划仍可解释 |
 | `protocol_check_plan_coverage` | unified Protocol；同轮 candidate_ref、plan_refs、明确不落地 dispositions | 候选与命令身份覆盖、applied 记录和缺口；不推断业务依赖或模型质量 |
 | `protocol_inspect_associations` | unified Protocol；本轮已观察 semantic_sparql_query read_refs、final_read_ref、project／ontology scope | 保留多页原文按引用进入现有关联扫描，定位／摘要可核对，缺页 PARTIAL；任意路径或其他 run 引用不可读 |
 | `examiner_report.read_frozen_evidence` | v2 引用 Judge；run_id、batch_id、freeze_digest、reference_id | 仅返回已绑定冻结业务原文；同文可复用及重读，记录实际读取回执；无仓库／DB／平台读取权限 |
@@ -365,3 +369,9 @@ Delivery 程序持续观察并保留 observation.json；无关日志／心跳增
 
 详细记录格式见 [同轮计时方法](../../modeling_team/references/efficiency-round-record.md)，
 合同与工程／真实验证边界见 [v4.3 设计](../delivery/designs/2026-10-09-v4-3-modeling-efficiency-design.md)。
+
+R4.3-024／025 的当前直接建模请求、value 规则、资源引用和回执边界见
+[可执行合同](../../modeling_team/references/r4-3-025-direct-modeling-contract.json)。
+Modeling 的三个只读工具通过独立代理绑定 Project 及本 run 实际获准 Ontology 集合，
+支持现行 adaptive／context_order 参数和多次问题／IRI 查询。后端持有分页、授权、修订
+和索引校验；代理不把首次问题锁成整个 run 唯一查询。旧暂停 run 不自动切换或恢复。

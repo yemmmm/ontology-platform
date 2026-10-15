@@ -1,9 +1,12 @@
 {
   "schema_version": "r3-0-009-unified-graph-contract/v2",
-  "purpose": "Agent-readable artifact, approval and submission contract for the R3.0-009 unified semantic graph and commonality abstraction flow. It extends the R3.0-008B staged decisions contract in place: same run root, same seven-gate order, same Runner-private submission capability, plus the versioned 009 candidate, coordinator decisions, translation approvals, materialization plan and the 009 intent/receipt bindings. It is only in force for a Team Task that declares parameters.unified_semantic_graph: true; 008B tasks keep their own schemas and are never re-validated against this contract.",
+  "purpose": "Current unified semantic representation. R4.3-024/025 direct Modeling execution overrides the older Protocol plan/dry-run flow; historical artifact schemas remain readable.",
   "task_parameter": {
     "name": "unified_semantic_graph",
-    "requires": ["multi_slice_workflow", "staged_modeling_decisions"],
+    "requires": [
+      "multi_slice_workflow",
+      "staged_modeling_decisions"
+    ],
     "rule": "The parameter is declared on the v2 Task only. Turning it on inside an existing run to skip a gate is forbidden; a run keeps the schema it started with."
   },
   "schema_dispatch": {
@@ -49,7 +52,15 @@
   },
   "stage3_slot": {
     "schema_version": "r3-0-009-stage3-slot/v1",
-    "fields": ["schema_version", "scenario_id", "produced_by", "approved_by", "candidate_artifacts", "candidate_contract", "slot_note"],
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "produced_by",
+      "approved_by",
+      "candidate_artifacts",
+      "candidate_contract",
+      "slot_note"
+    ],
     "rules": [
       "R4.0-029 reuse: For pending plans, identities with no write command are covered by this run's observed governed get_ontology_read_model response or get_modeling_batch response containing an applied Attempt item bound to this run's intent/receipt/proof, the same current model_revision, and an approved current candidate-item content digest. A plan already applied with bound intent/receipt/Attempt proof retains its approved reuse coverage without re-reading historical evidence against later model revisions. Arbitrary receipts, planned Batch outputs and dry-run Attempts do not prove applied identity. evidence_ref is the artifact_path from protocol_list_platform_artifacts. Empty or partial pages never prove nonexistence. Existing identities cannot create; update/delete targets must equal the bound identity. A wholly read-only plan has items=[] and decision_bindings=[] with nonempty valid identity_bindings; current item approvals suffice without a write translation/dry-run/apply. protocol_check_plan_coverage reports reuse_binding separately from applied_plan_refs and records evidence/plan-coverage.jsonl. Execute nonempty plans through unchanged write gates; read-only plans never forward an empty batch. Pure reuse remains semantic_verdict=not_evaluated until independent acceptance.",
       "candidate_contract replaces the 008B deferred_contract and must name r3-0-009-unified-graph/v2",
@@ -59,8 +70,24 @@
   },
   "candidate": {
     "schema_version": "r3-0-009-unified-graph/v2",
-    "fields": ["schema_version", "scenario_id", "candidate_id", "revision", "items", "explicit_unknowns"],
-    "item_fields": ["item_id", "item_kind", "business_meaning", "value", "relation_endpoints", "slice_ids", "shared_scope", "unknowns"],
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "candidate_id",
+      "revision",
+      "items",
+      "explicit_unknowns"
+    ],
+    "item_fields": [
+      "item_id",
+      "item_kind",
+      "business_meaning",
+      "value",
+      "relation_endpoints",
+      "slice_ids",
+      "shared_scope",
+      "unknowns"
+    ],
     "item_optional_fields": [
       "semantic_definition",
       "action_definition",
@@ -68,48 +95,137 @@
     ],
     "item_kinds": [
       "entity",
+      "property",
       "relation",
-      "property"
+      "table_mapping",
+      "join_mapping",
+      "enum_meaning",
+      "metric_definition"
     ],
     "rules": [
       "items are neutral: no guessed platform IRI, semantic ID, or receipt reference",
       "candidate_id plus revision is immutable once published; a change publishes a new revision file and requires new approvals",
       "a candidate item carries exactly item_fields and nothing else; the set is closed and a submission validates it, so an item carrying any extra field such as scope is rejected as unified_schema_mismatch (candidate item fields drift from the contract)",
       "shared_scope is the only item-level commonality carrier: a short non-empty string label on commonality relations, empty/null on every other item; scope is a Coordinator decision field (a non-empty JSON object mandatory on commonality_relation decisions, null on every other decision) and never appears on a candidate item - authoring the decision's scope mapping onto the item duplicates approved decision content and drifts the item from the closed field set"
-    ]
+    ],
+    "value_rules": {
+      "entity": "create_entity semantic fields; label required, no fabricated Class. Class references use definition_ref or authorized existing_resource_ref. properties uses [{property_ref,value}] with unique property refs. Preserve optional semantic_definition/action_definition/parameter_definition.",
+      "property": "name required; explicit predicate_kind=fact|relation. fact requires datatype. datatype and object_class_id are mutually exclusive. Only semantic_definition annotation is supported.",
+      "relation": "value={predicate: definition_ref or existing_resource_ref}; relation_endpoints={from_item_id,to_item_id}. Preserve explicit direction. No silent relation annotation loss: express additional local conditions with ordinary nodes as appropriate.",
+      "table_mapping/join_mapping/enum_meaning/metric_definition": "Use existing current batch create business fields, without technical resource identity. Resolve references only in declared reference slots. Do not introduce SQL/DSN/source_id/run_id import variants."
+    }
   },
   "approvals": {
     "schema_version": "r3-0-009-approvals/v2",
-    "fields": ["schema_version", "scenario_id", "maintained_by", "entries", "decisions", "translation_approvals"],
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "maintained_by",
+      "entries",
+      "decisions",
+      "translation_approvals"
+    ],
     "entry_rule": "entries keeps the 008B conclusion_confirmation/stage3_slot entries, their fields and their validation, unchanged and unmixed with the new kinds.",
-    "decision_fields": ["decision_id", "target_kind", "target_id", "candidate_id", "content_revision", "content_digest", "decision", "reason", "slice_ids", "shared_scope", "scope"],
-    "decision_kinds": ["approved", "rejected", "deferred"],
-    "decision_target_kinds": ["commonality_node", "member_relation", "commonality_relation"],
-    "translation_approval_fields": ["plan_ref", "projection_digest", "approved_by", "decision", "reason"],
+    "decision_fields": [
+      "decision_id",
+      "target_kind",
+      "target_id",
+      "candidate_id",
+      "content_revision",
+      "content_digest",
+      "decision",
+      "reason",
+      "slice_ids",
+      "shared_scope",
+      "scope"
+    ],
+    "decision_kinds": [
+      "approved",
+      "rejected",
+      "deferred"
+    ],
+    "decision_target_kinds": [
+      "commonality_node",
+      "member_relation",
+      "commonality_relation"
+    ],
+    "translation_approval_fields": [
+      "plan_ref",
+      "projection_digest",
+      "approved_by",
+      "decision",
+      "reason"
+    ],
     "rules": [
       "the Coordinator is the only writer; only an approved current decision releases a translation",
       "scope is mandatory for commonality_relation decisions as a non-empty JSON object (a mapping of scope names to values, never an array or a plain string) and must stay null everywhere else",
       "every decision carries the content_digest of the exact candidate content it approves",
       "a translation approval proves one plan_ref/projection_digest pair, not a mutable file name",
-      "R3.0-014: translation_approvals never gate a dry-run. Empty, old-plan, rejected or format-drifted entries are history: only the list shape itself is validated up front, and the exact-key match is evaluated at apply time only",
-      "R3.0-014: an apply additionally requires one current translation approval keyed exactly to the submitted (plan_ref, projection_digest) whose approved_by is the run's current Coordinator role ID. Equivalent repeats (same key, approver and decision) count as one decision; a genuine decision or approver conflict on the same key is approval_conflict",
-      "R3.0-014: approvals are a keyed read-modify-write surface — the Coordinator re-reads the current artifact and appends its (plan_ref, projection_digest)-keyed entry instead of rewriting history, so concurrent reviewers never erase each other's decisions"
+      "translation_approvals is retained historical data, never a prerequisite for current model writes. Coordinator retains necessary business/topology decisions only."
     ]
   },
   "materialization_plan": {
     "schema_version": "r3-0-009-materialization-plan/v2",
-    "fields": ["schema_version", "plan_id", "revision", "projection", "projection_digest"],
-    "projection_fields": ["task_id", "contract_version", "scenario_id", "session_id", "client_batch_id", "ontology_id", "candidate_id", "candidate_revision", "candidate_digest", "items", "decision_bindings", "identity_bindings"],
-    "projection_item_fields": ["client_item_id", "command_kind", "payload", "depends_on", "rationale", "competency_question_ids"],
-    "decision_binding_fields": ["command_index", "client_item_id", "candidate_item_ids", "candidate_revision", "candidate_content_digests", "decision_ids"],
-    "identity_binding_fields": ["candidate_item_id", "resource_iri", "receipt_ref", "evidence_ref"],
+    "fields": [
+      "schema_version",
+      "plan_id",
+      "revision",
+      "projection",
+      "projection_digest"
+    ],
+    "projection_fields": [
+      "task_id",
+      "contract_version",
+      "scenario_id",
+      "session_id",
+      "client_batch_id",
+      "ontology_id",
+      "candidate_id",
+      "candidate_revision",
+      "candidate_digest",
+      "items",
+      "decision_bindings",
+      "identity_bindings"
+    ],
+    "projection_item_fields": [
+      "client_item_id",
+      "command_kind",
+      "payload",
+      "depends_on",
+      "rationale",
+      "competency_question_ids"
+    ],
+    "decision_binding_fields": [
+      "command_index",
+      "client_item_id",
+      "candidate_item_ids",
+      "candidate_revision",
+      "candidate_content_digests",
+      "decision_ids"
+    ],
+    "identity_binding_fields": [
+      "candidate_item_id",
+      "resource_iri",
+      "receipt_ref",
+      "evidence_ref"
+    ],
     "identity_binding_examples": {
-      "future_create": {"candidate_item_id": "neutral-item", "resource_iri": null, "receipt_ref": "plan-example/batch-example/create-item-example", "evidence_ref": null},
-      "existing_resource": {"candidate_item_id": "neutral-item", "resource_iri": "https://example.test/authorized-read/resource", "receipt_ref": null, "evidence_ref": "authorized-read-binding-example"},
+      "future_create": {
+        "candidate_item_id": "neutral-item",
+        "resource_iri": null,
+        "receipt_ref": "plan-example/batch-example/create-item-example",
+        "evidence_ref": null
+      },
+      "existing_resource": {
+        "candidate_item_id": "neutral-item",
+        "resource_iri": "https://example.test/authorized-read/resource",
+        "receipt_ref": null,
+        "evidence_ref": "authorized-read-binding-example"
+      },
       "note": "Syntax placeholders only, not platform identities, actual receipts or read authority. These examples show ordinary four-key bindings; mapping kinds use the existing resource_kind extension."
     },
     "rules": [
-      "Protocol manually constructs dependency-ordered plans/projections from the complete current immutable unified candidate and the declared command contracts. The legacy translate_candidate_to_batches helper is not a unified candidate translator; do not convert, rewrite or split Modeling's published candidate into a legacy format to use it.",
+      "Current plans are generated deterministically by the program from immutable unified candidates and explicit model changes. Modeling never authors platform command plans and Protocol is not a required translator. Retained historical plan schema fields remain interpretable.",
       "Each ordinary identity binding has exactly identity_binding_fields. candidate_item_id names the current published candidate item; it is connected to forwarded commands by decision_bindings and need not equal any platform resource ID or payload ID.",
       "A future create binding has resource_iri and evidence_ref both null and receipt_ref a nonempty STRING locator for the intended plan/batch/item receipt, never an object. The locator records how to find a future output and does not claim a submission or receipt already happened. Neither Modeling nor Protocol guesses or precomputes platform IRIs; Host may supply an authoritative intended identity using the actual backend outputs_for plus deployed Settings and an explicit resource ID under modeling-batch-item-contract.json create_identity_rules. Preprotection/L3 attachments may use it while this binding stays future, never existing.",
       "An existing binding has receipt_ref null, resource_iri the actual authorized resource IRI and evidence_ref a nonempty approved-read binding string. Exactly one of resource_iri and receipt_ref is present; existing identity cannot be used with a create command.",
@@ -134,25 +250,44 @@
     "projection_digest": "canonical JSON digest of the whole projection object; projection carries no digest field of its own"
   },
   "submission_capability": {
-    "operation": "protocol_staged_submit_modeling_batch",
-    "owner": "protocol (via the runner_capability MCP server)",
-    "unified_arguments": ["protocol_id", "batch", "value_traces", "l3_nodes", "plan_ref"],
-    "plan_ref_rule": "In 009 mode plan_ref is mandatory, must be a run-relative path under stage3-neutral-graph/materialization-plans/, and must not be a symlink or escape the run root.",
-    "acceptance_timing": [
-      "before the request is accepted the current plan is re-read, the approved projection is rebuilt from the payloads actually being forwarded and compared field by field; a self-reported digest never substitutes for matching content",
-      "the projection is then closed against the currently published candidate revision and against the current approved decisions; any drift returns approval_stale or approval_content_mismatch without a partial write",
-      "once the comparison passes, the captured projection is frozen: durable intent and forwarder use that in-memory snapshot only and never re-read a role-writable path",
-      "the intent is written before forwarding; if saving fails, nothing is forwarded and a retry re-checks the current approval",
-      "R3.0-014: the staged order is dry-run first. A dry_run submission clears the three close checks above and is forwarded without consulting translation_approvals; technical findings come back on the attempt and are answered by fixing the plan and re-running the dry-run",
-      "R3.0-014: an apply_atomic submission is additionally gated, in order, on (a) the current-plan translation approval recorded by the run's current Coordinator (approval_missing/approval_conflict) and (b) a Runner-recorded validated dry-run Attempt proof of the same immutable content hash at the submitted workspace timepoint (dry_run_proof_missing/dry_run_proof_not_validated/dry_run_proof_content_mismatch/dry_run_proof_workspace_mismatch); reusing a dry-run idempotency key is idempotency_conflict",
-      "R3.0-014: the proof is Runner-owned host evidence (r3-0-014-attempt-proof/v1, event submission-attempt-proof-written). It is written only when the platform reply carries a complete read-back-verified Attempt identity (batch_id, attempt_id, mode, attempt_status, content_hash); a result without one yields no proof, so the apply gate fails closed on the missing record",
-      "R3.0-014: the capability response passes the Attempt facts through verbatim — mode, attempt_id, attempt_status, content_hash and findings — while ok states only that the receipt was written"
-    ],
-    "isolation": "plan_ref, projection, projection_digest and decision_bindings are Runner-private sidecar fields. They are never added to the platform ModelingItemInput payload, which forbids extra fields, and never leave the Runner sandbox."
+    "operation": "modeling_submit_model_changes",
+    "owner": "modeling via runner_capability",
+    "contract": "r4-3-025-direct-modeling-contract.json",
+    "rule": "Program compiles all statically checkable input before the first write, preserves candidate item identities and JSON Pointer source maps, orders explicit dependencies, obtains real Session/lease/revision, and calls apply_atomic once per batch. Cross-batch dependencies use successful actual resource outputs. No dry-run, translation approval, or cross-batch transaction claim."
   },
   "intent_receipt": {
-    "intent_fields": ["schema_version", "ordinal", "idempotency_key", "client_batch_id", "session_id", "mode", "commands", "value_traces", "l3_nodes", "status", "plan_ref", "projection", "projection_digest", "decision_bindings"],
-    "receipt_fields": ["schema_version", "ordinal", "intent_ordinal", "idempotency_key", "mode", "batch_id", "commands", "value_traces", "l3_nodes", "response_digest", "submitted_via", "plan_ref", "projection_digest", "decision_bindings"],
+    "intent_fields": [
+      "schema_version",
+      "ordinal",
+      "idempotency_key",
+      "client_batch_id",
+      "session_id",
+      "mode",
+      "commands",
+      "value_traces",
+      "l3_nodes",
+      "status",
+      "plan_ref",
+      "projection",
+      "projection_digest",
+      "decision_bindings"
+    ],
+    "receipt_fields": [
+      "schema_version",
+      "ordinal",
+      "intent_ordinal",
+      "idempotency_key",
+      "mode",
+      "batch_id",
+      "commands",
+      "value_traces",
+      "l3_nodes",
+      "response_digest",
+      "submitted_via",
+      "plan_ref",
+      "projection_digest",
+      "decision_bindings"
+    ],
     "rules": [
       "the receipt copies plan_ref, projection_digest and decision_bindings from the saved intent; it never rebuilds them",
       "a 009 receipt whose projection_digest or plan_ref drifts from its intent is a kill-switch trigger",
@@ -176,5 +311,6 @@
     "auto-clustering, inheritance or any abstraction scoring engine",
     "extending read authorization with candidate or approval evidence",
     "modifying modeling_team/r23003_contract.py or the backend ModelingItemInput schema"
-  ]
+  ],
+  "execution_contract": "r4-3-025-direct-modeling-contract.json"
 }

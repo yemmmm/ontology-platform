@@ -3843,6 +3843,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         formal_run = self._coordination_enabled or (
             run is not None and self._is_formal_acceptance_run(run)
         )
+        if role == "modeling" and self._acceptance is not None:
+            descriptors = getattr(self._acceptance, "capability_descriptors", {})
+            operations = descriptors.get("modeling", {}).get("operations", [])
+            if operations and set(operations).issubset(ROLE_OPERATIONS["modeling"]):
+                return tuple(operations)
         if not formal_run or self._acceptance is None:
             if (
                 role == "protocol"
@@ -4772,10 +4777,10 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         ]
         modeling_read_proxy = (
             getattr(run, "modeling_read_proxy", None)
-            if agent.package.role == "modeling" and self._is_r23003_run(run)
+            if agent.package.role == "modeling" and (self._is_r23003_run(run) or self._is_unified_graph_run(run))
             else None
         )
-        if agent.package.role == "modeling" and self._is_r23003_run(run):
+        if agent.package.role == "modeling" and (self._is_r23003_run(run) or self._is_unified_graph_run(run)):
             if modeling_read_proxy is None or not getattr(modeling_read_proxy, "active", False):
                 raise CodexRuntimeError("R2.3-003 Modeling read proxy is unavailable")
             proxy_token_path = agent.home / "modeling-read-proxy.token"
@@ -4797,8 +4802,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "required = true",
                     "[mcp_servers.modeling_read_proxy.env]",
                     'PLATFORM_PROXY_MODE = "modeling"',
-                    f'PLATFORM_PROXY_PROJECT_ID = {json.dumps(str(run.scope["project_id"]))}',
-                    f'PLATFORM_PROXY_ONTOLOGY_ID = {json.dumps(str(run.scope["ontology_id"]))}',
+                    f'PLATFORM_PROXY_PROJECT_ID = {json.dumps(str(modeling_read_proxy.project_id))}',
+                    f'PLATFORM_PROXY_ONTOLOGY_ID = {json.dumps(str(modeling_read_proxy.ontology_id))}',
                 ]
             )
         if agent.package.role == "protocol":
@@ -5327,7 +5332,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 str(self._acceptance.capability_socket_path(agent.package.role)),
                 "/agent/home/runner-capability.sock",
             ]
-        if agent.package.role == "modeling" and self._is_r23003_run(self._active_run):
+        if agent.package.role == "modeling" and (self._is_r23003_run(self._active_run) or self._is_unified_graph_run(self._active_run)):
             proxy = getattr(self._active_run, "modeling_read_proxy", None)
             socket_path = getattr(proxy, "socket_path", None)
             if not isinstance(socket_path, Path) or not socket_path.exists():
@@ -6244,7 +6249,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 and server_name == "protocol_mechanics"
             ) or (
                 agent.package.role == "modeling"
-                and self._is_r23003_run(self._active_run)
+                and (self._is_r23003_run(self._active_run) or self._is_unified_graph_run(self._active_run))
                 and server_name == "modeling_read_proxy"
             ) or (
                 bool(self._role_capability_operations(agent.package.role))
@@ -6460,7 +6465,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 }
                 if self._coordination_enabled:
                     expected["protocol_mechanics"].add("build_candidate_conflict")
-        if agent.package.role == "modeling" and self._is_r23003_run(getattr(self, "_active_run", None)):
+        if agent.package.role == "modeling" and (self._is_r23003_run(getattr(self, "_active_run", None)) or self._is_unified_graph_run(getattr(self, "_active_run", None))):
             expected["modeling_read_proxy"] = set(MODELING_READ_TOOLS)
         capability_operations = self._role_capability_operations(agent.package.role)
         if capability_operations:

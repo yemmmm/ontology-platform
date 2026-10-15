@@ -49,7 +49,8 @@ Batch 必须提交整数 `expected_model_revision`；旧 `expected_workspace_ver
 字符串哈希不再有效。漂移仍返回 `workspace_revision_conflict`，详情包含
 `current_model_revision`；重新读取后使用新的幂等键继续。Attempt 的
 `workspace.expected_version/before_version/after_version` 保留现有回执结构，值均为编号。
-模型写入已提交才推进编号，dry-run、失败未写入、索引重建和搜索配置变化不推进。
+模型写入已提交才推进编号，失败未写入、索引重建和搜索配置变化不推进；历史 dry-run
+Attempt 也不推进编号。
 Embedding／投影配置仍单独校验；旧索引降级为词面召回，重建成功后恢复当前向量索引。
 恢复未收敛时，现有写入围栏阻止将不确定 RDF 内容作为稳定模型读取；反馈指向待协调 Attempt。
 迁移 `0035_ontology_model_revision` 保留原 Ontology 编号与历史哈希列，不翻译旧回执。
@@ -140,7 +141,9 @@ workspace repair 操作修复。
 ### 外部 Agent 建模
 
 外部 Agent 使用 Build Session 和 Ontology Lease 管理恢复与并发，再通过 Modeling Batch 完成
-`dry_run` 和 apply。平台保存建模结果、幂等状态、冲突和审计，不在 HTTP 层替 Agent 做领域判断。
+`apply_atomic` 或 `apply_partial`。新模型 Batch 不接受 `dry_run`；历史 dry-run Batch、Attempt
+和 Finding 仍可通过读取接口查看。平台保存建模结果、幂等状态、冲突和审计，不在 HTTP 层替
+Agent 做领域判断。
 
 同一多值关系槽（相同主体与谓词）可在一个 `apply_atomic` Batch 中删除旧对象的关系并新增
 不同对象的关系，以原子切换引用。该豁免不适用于单值竞争写、同一确切 statement 的增删，
@@ -347,7 +350,7 @@ statement。完整值先经过主体访问过滤，再计算列表／计数／cu
 同一 Project 关系不会隐式开放其他模型。取消依赖前会在已有 Project／Ontology 锁和 fence 下
 重验存量映射；会使引用悬空时返回 `mapping_reference_scope_in_use`，修订映射后可重试。
 
-映射资源或其声明依赖的直接编辑必须进入已有 Modeling Batch 的 `dry_run`／`apply_atomic`、
+映射资源或其声明依赖的直接编辑必须进入已有 Modeling Batch 的 `apply_atomic`／`apply_partial`、
 Attempt、Project fence 和恢复回执；`POST /api/semantic/edits`、原始 TriG／N-Quads／JSON-LD
 导入及其他 raw import 也沿用同一合同，不能用绕过 Batch 的写入闭合引用。没有合适 Batch 时返回
 `mapping_batch_required`。如果依赖 Project 存在尚未收敛的写入，返回可重试的
@@ -658,8 +661,9 @@ Context Query 的 `assertion_types` 仅支持 `asserted`；`asserted-plus-reason
 普通显式分类、子类和关系照常保存读取，不产生未表达的推导事实。
 
 写入不再带 SHACL 开关或 Shape 图参数。必要字段、类型格式、批次引用、授权、
-图版本、原子 dry-run/apply、实际读回与未知写入恢复继续有效。Protocol 当前交接合同为
-`r2-3-005-acceptance-stage-handoff/v2`，只绑定 dry-run、apply、readback 三个真实阶段；
+图版本、原子 apply、实际读回与未知写入恢复继续有效；历史 dry-run 仅保留读取。
+Protocol 当前交接合同为
+`r2-3-005-acceptance-stage-handoff/v2`，新提交不再绑定 dry-run 证明；
 不伪造 validation／reasoning 回执。关联完整性生产自查沿用 R4.0-024 的普通图扫描。
 
 历史运行表、结果图、规则注解、共享图登记、版本和检查点数据保留，支持历史证据与资源恢复；

@@ -8,7 +8,11 @@ description: "Start, resume and actively supervise authorized OntoWeave modeling
 本 Skill 供技术宿主选择入口、交接配置、持续监看和接续已有任务。采用独立 Delivery 时，
 Delivery 执行启动、故障归因、修复协调、恢复和证据交接；外层主智能体仍负责主动观察实际
 建模进展、发现问题并跟踪处理结果。委派不解除监督责任。旧手动模式由外层承担执行与监督。
-语义判断与候选内容归建模 Team；平台调用遵循选定 Profile 的 Protocol 边界。
+语义判断与候选内容归建模 Team。当前统一图路径按 R4.3-024／025 由 Modeling 直接提交
+变更意图，程序填充执行上下文并单次原子 apply；不经 Protocol 翻译／技术审批，不执行模型
+ dry-run。成功后 Modeling 在获准范围内召回与节点展开自查，最终保留原关联检查及独立验收。
+其他旧 Profile 保留其适用角色边界；历史 dry-run 证据不改写。索引失败不代表未写入，
+不确定结果沿原 Batch／Attempt 身份对账；不以本次代码升级自动恢复暂停 run 或追加额度。
 Team 内部的 [ontology-modeling](../../modeling_team/skills/ontology-modeling/SKILL.md) 提供 Modeling 角色的
 语义建模方法，各成员的技能对应关系见 [Team 技能目录](../../modeling_team/skills/README.md)。
 Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧工作流，不加入生产角色的挂载输入。

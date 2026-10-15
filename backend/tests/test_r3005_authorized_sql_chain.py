@@ -3,7 +3,7 @@
 In-process FastAPI ``TestClient`` over the real platform control plane
 (SQLAlchemy session) and a real Oxigraph RDF store — never the live 8001
 service. Fixture semantics are seeded through the real product write path
-(``KEY_MODEL`` principal -> Build Session -> Modeling Batch dry-run -> apply),
+(``KEY_MODEL`` principal -> Build Session -> applied Modeling Batch),
 following the R3.0-003 precedent; table/column names are relocated onto the
 R3.0-001 ``industrial_service_v3`` baseline loaded by the scenario loader.
 
@@ -497,11 +497,6 @@ def _seed_fixture(env: ChainEnv, model_revision: int) -> None:
             headers=headers,
         )
 
-    dry = submit("dry_run", "r3005-seed-dry", "r3005-seed-dry-key")
-    assert dry.status_code == 200, dry.text
-    assert dry.json()["attempt_status"] == "validated", dry.json()
-    env.seeding_batch_ids.append(dry.json()["batch_id"])
-
     applied = submit(
         "apply_atomic", "r3005-seed-apply", "r3005-seed-apply-key", token=lease_token
     )
@@ -846,9 +841,8 @@ class AuthorizedChain:
 
 
 def test_seeding_batches_applied_and_registered_as_baseline(chain_env):
-    """F6 baseline: the only Modeling Batches are the seeding dry-run and
-    apply batches (the registered baseline); exactly one Build Session."""
-    assert len(chain_env.seeding_batch_ids) == 2
+    """F6 baseline: the only Modeling Batch is the applied seeding baseline."""
+    assert len(chain_env.seeding_batch_ids) == 1
     with chain_env.client.app.state.session_factory() as session:
         batches = session.scalars(select(ModelingBatchModel.id)).all()
         sessions = session.scalars(select(BuildSessionModel.id)).all()

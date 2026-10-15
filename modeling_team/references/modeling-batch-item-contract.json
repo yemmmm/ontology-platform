@@ -1406,6 +1406,476 @@
         }
       },
       "annotation_update": "Annotations replace as objects, clear with null, and remain unchanged when omitted."
+    },
+    "update_class": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "aliases": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "class_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "class_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "description": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "parent_class_ids": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_relation_type": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "description": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "inverse_name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "relation_type_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "relation_type_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "source_class_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "target_class_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_fact": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "new_object_is_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "new_object_value": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "old_object_is_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "old_object_value": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "predicate_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "subject_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_mapping": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "confidence": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "join_key": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "mapping_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "mapping_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "owner": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "run_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "source_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "target_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "target_type": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_operation": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "aliases": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "credential_requirements": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "description": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "effects": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "idempotency": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "operation_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "operation_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "parameters": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "possible_failures": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "preconditions": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "risk_level": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "schema_version": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "status": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "target_resource_type_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "tool_bindings": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_table_mapping": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "column_mappings": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "description": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "mapping_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "schema_source": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_version": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "table_mapping_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "table_mapping_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "table_name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_join_mapping": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "description": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "join_direction": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "join_mapping_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "join_mapping_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "join_path": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "mapping_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "schema_source": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_version": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_enum_meaning": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "business_meaning": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "column": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "description": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "enum_meaning_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "enum_meaning_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "enum_value": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "mapping_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "schema_source": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_value": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_version": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "table_mapping_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "update_metric_definition": {
+      "additional_properties": false,
+      "rules": [
+        "Existing handler patch semantics apply: absent fields do not change; null and empty values retain the specific handler behavior.",
+        "R4.3-025 Modeling fields exclude resource identity, ontology_id, source_id and run_id; the program binds the existing identity from target_ref."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "aggregation": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "denominator_rule": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "description": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "filters": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "grain": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "mapping_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "measure_property_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "metric_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "metric_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "name": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "null_value_rule": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "schema_source": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_definition": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_version": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "time_field": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "value_expression": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
     }
   },
   "delete_payloads": {
@@ -1431,6 +1901,229 @@
         "The target must be an existing resource referenced by authorized reads or receipts; a concept/fact no_match response does not establish property absence. Deletion is destructive: dry_run the identical content first, require the prepared write to match the approved deletion intent and identity binding, then apply_atomic and keep the receipt. Existing confirmation, approval, protection and application gates stay mandatory; this payload adds no process, count, or role gate.",
         "server_current_acceptance: the compiler accepts exactly property_id and property_iri (at least one required); unknown payload fields and forbidden target fields such as ontology_id are rejected before compilation. The write is a subject-scoped wildcard triple removal for the property inside the ontology graph only, and this command carries no semantic_definition and no impact-receipt fields."
       ]
+    },
+    "delete_class": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "class_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "class_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_relation_type": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "relation_type_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "relation_type_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_entity": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "entity_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "entity_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "expected_class": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "impact_receipt": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "impact_receipt_digest": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "semantic_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_relation": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "relation_type_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "source_entity_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "target_entity_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_fact": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "object_is_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "object_value": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "predicate_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "subject_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_mapping": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "mapping_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "mapping_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "run_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "source_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_operation": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "operation_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "operation_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_table_mapping": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "table_mapping_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "table_mapping_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_join_mapping": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "join_mapping_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "join_mapping_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_enum_meaning": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "enum_meaning_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "enum_meaning_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
+    },
+    "delete_metric_definition": {
+      "additional_properties": false,
+      "rules": [
+        "R4.3-025 delete uses explicit target_ref and fields=null; the program fills the actual identity and required tool-owned impact receipt. Missing candidate items never imply deletion."
+      ],
+      "source": "backend/app/services/modeling_handlers.py::ALLOWED_FIELDS",
+      "fields": {
+        "metric_id": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        },
+        "metric_iri": {
+          "required": false,
+          "description": "Optional existing handler field; follow the patch and program-owned identity rules below."
+        }
+      }
     }
   },
   "ordered_schedule": "class -> property/relation type -> entity -> receipt/read bind generated IDs/IRIs -> relation"

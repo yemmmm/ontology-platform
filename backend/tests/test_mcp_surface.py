@@ -185,6 +185,9 @@ def test_check_platform_health_takes_no_arguments() -> None:
 def test_submit_modeling_batch_schema_exposes_nested_modeling_items() -> None:
     tools = {tool.name: tool for tool in asyncio.run(mcp.list_tools())}
     schema = tools["submit_modeling_batch"].inputSchema or {}
+    mode = schema["properties"]["mode"]
+    assert mode["enum"] == ["apply_atomic", "apply_partial"]
+    assert mode["default"] == "apply_atomic"
     items = schema["properties"]["items"]
     item_ref = items["items"]["$ref"]
     assert item_ref.startswith("#/$defs/")

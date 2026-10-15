@@ -508,6 +508,8 @@ class TeamRunner:
         # read-only McpReadForwarder/PLATFORM_PROXY_READ_TOOLS surface.
         self.staged_batch_forwarder = staged_batch_forwarder
         self.staged_plan_read_forwarder = None
+        self._direct_model_executor = None
+        self._direct_receipt_refs: dict[tuple[str, str], str] = {}
         # These paths are constructor-only test seams.  Production callers leave
         # them unset and therefore bind each route's fixed external credential
         # location; a profile only ever reads the routes it actually names.
@@ -1256,6 +1258,7 @@ class TeamRunner:
             ),
             handoff_handler=self._cq_material_call if self._competency_questions else None,
             staged_plan_handler=(self._handle_execute_approved_plans if self._unified_graph else None),
+            direct_modeling_handler=(self._handle_direct_modeling if self._unified_graph else None),
             staged_coverage_handler=(self._handle_check_plan_coverage if self._unified_graph else None),
             staged_protocol_capability=self._staged_decisions,
         )
@@ -1451,10 +1454,14 @@ class TeamRunner:
                 os.chmod(target, 0o444)
                 manifest.append({"path": source.name, "sha256": digest_file(source), "roles": ["all"]})
         else:
+            active_roles = {agent.package.role for agent in self.run.configuration.profile.agents}
             for agent in self.run.configuration.profile.agents:
                 (sources / agent.package.role).mkdir(mode=0o700, parents=True, exist_ok=True)
             for source in task.role_sources:
-                for role in source.roles:
+                staged_roles = source.roles & active_roles
+                if not staged_roles:
+                    continue
+                for role in staged_roles:
                     target = sources / role / source.relative_path
                     target.parent.mkdir(parents=True, mode=0o700, exist_ok=True)
                     shutil.copyfile(source.path, target)
@@ -1463,7 +1470,7 @@ class TeamRunner:
                     {
                         "path": source.relative_path.as_posix(),
                         "classification": source.classification,
-                        "roles": sorted(source.roles),
+                        "roles": sorted(staged_roles),
                         "sha256": digest_file(source.path),
                     }
                 )
@@ -1593,6 +1600,10 @@ class TeamRunner:
                 / MODEL_PROFILE_DIRECTORY
                 / f"{selected_profile_id}.yaml"
             )
+        if (configuration.task.parameters or {}).get(UNIFIED_GRAPH_TASK_PARAMETER) is True:
+            files["modeling_readonly"] = self.repository_root / "modeling_team/modeling_readonly.py"
+            for module in ("direct_modeling", "direct_execution", "direct_binding", "direct_submission"):
+                files[module] = self.repository_root / f"modeling_team/{module}.py"
         if formal_acceptance_contract:
             assert formal_contract is not None
             if formal_contract.requirement_id == "R2.3-003":
@@ -2311,7 +2322,7 @@ class TeamRunner:
                 self.run.protocol_key = self.scope.protocol_key
                 if self.run.configuration.task.schema_version == 2:
                     self.run.protocol_context = self.scope.read_protocol_context()
-                if self._is_r23003_modeling_run():
+                if self._is_r23003_modeling_run() or self._unified_graph:
                     self._ensure_modeling_read_surface()
             role_agents = {
                 agent.package.role: agent.agent_id for agent in self.run.configuration.profile.agents
@@ -2330,23 +2341,24 @@ class TeamRunner:
 
             # R3.0-006 M2: the dependency graph is derived from the Profile's
             # actual role set instead of a hard-coded four-role roster.  The
-            # three message-routing core roles stay mandatory (fail-closed
-            # typed error); extra roles (future dynamic Agents) carry no
-            # terminal dependency.  For every historical roster that includes
+            # Legacy routing keeps its three core roles. Current unified
+            # Modeling has no Protocol dependency. For historical rosters with
             # Acceptance this graph is byte-identical to the previous one.
-            missing_core_roles = RUNNER_CORE_ROLE_VALUES - set(role_agents)
+            required_roles = ({"coordinator", "modeling"} if self._unified_graph else RUNNER_CORE_ROLE_VALUES)
+            missing_core_roles = required_roles - set(role_agents)
             if missing_core_roles:
                 raise TeamConfigurationError(
                     "Team Profile is missing the core roles: "
                     + ",".join(sorted(missing_core_roles))
                 )
-            coordinator_dependencies = {role_agents["modeling"], role_agents["protocol"]}
+            coordinator_dependencies = {role_agents[role] for role in ("modeling", "protocol") if role in role_agents}
             if "acceptance" in role_agents:
                 coordinator_dependencies.add(role_agents["acceptance"])
-            terminal_dependencies = {
-                role_agents["protocol"]: {role_agents["modeling"]},
-                role_agents["coordinator"]: coordinator_dependencies,
-            }
+            terminal_dependencies = {role_agents["coordinator"]: coordinator_dependencies}
+            if "protocol" in role_agents:
+                terminal_dependencies[role_agents["protocol"]] = {role_agents["modeling"]}
+            if self._unified_graph:
+                terminal_dependencies = {role_agents["coordinator"]: {role_agents["modeling"]}}
             if formal_coordination:
                 # Formal Acceptance is the semantic gate for the Modeling
                 # terminal. Keep the historical non-formal dependency graph
@@ -2530,7 +2542,7 @@ class TeamRunner:
             agent.package.role: set() for agent in self.run.configuration.profile.agents
         }
         for source in self.run.configuration.task.role_sources:
-            for role in source.roles:
+            for role in source.roles & expected.keys():
                 expected[role].add(source.relative_path)
         result: dict[str, Any] = {}
         for role, paths in expected.items():
@@ -3068,7 +3080,7 @@ class TeamRunner:
     def _ensure_modeling_read_surface(self) -> None:
         """Create the short-lived Modeling read key and local policy proxy."""
 
-        if not self._is_r23003_modeling_run() or self.run is None:
+        if not (self._is_r23003_modeling_run() or self._unified_graph) or self.run is None:
             return
         if self.scope is None:
             raise ModelingReadError("Modeling read surface requires a prepared PlatformScope")
@@ -3079,9 +3091,10 @@ class TeamRunner:
         record = None
         proxy = None
         try:
+            bound_scope = self._cq_scope_binding()
             record = lifecycle.create(
-                project_id=self.run.scope["project_id"],
-                ontology_id=self.run.scope["ontology_id"],
+                project_id=bound_scope["project_id"],
+                ontology_id=getattr(self.scope, "ontology_id", None) or bound_scope["ontology_ids"][0],
                 run_id=self.run.run_id,
             )
             socket_path = self.run.root / "modeling-read-proxy.sock"
@@ -3097,8 +3110,12 @@ class TeamRunner:
                 read_key=lifecycle.plaintext_for(record.key_id),
                 project_id=record.project_id,
                 ontology_id=record.ontology_id,
+                ontology_ids=self._cq_scope_binding()["ontology_ids"],
                 forward=lifecycle.forwarder_for(record.key_id),
-                on_context=self._observe_modeling_context,
+                on_context=(self._observe_modeling_context if self._is_r23003_modeling_run() else None),
+                on_result=(lambda tool, arguments, result: self.acceptance.register_platform_tool_result(
+                    tool=tool, arguments=dict(arguments), result={"structuredContent": dict(result)}
+                )) if self._unified_graph else None,
             )
             proxy.start()
         except Exception:
@@ -3502,6 +3519,46 @@ class TeamRunner:
                     "Include this non-secret generation unchanged in the role's fixed "
                     "`send_coordination` call."
                 )
+            if self._unified_graph and role in {"modeling", "coordinator", "protocol"}:
+                text += (
+                    "\nCurrent execution contract: R4.3-024/025. Model dry-run execution, "
+                    "Protocol translation/review, and their proof/terminal prerequisites are retired. "
+                    "Read the mounted r4-3-025-direct-modeling-contract.json. Keep scope/topology "
+                    "and necessary business decisions with Coordinator; no per-batch technical approval. "
+                )
+                text += "\nCurrent authorized read scope (no credentials): " + json.dumps(self._cq_scope_binding(), sort_keys=True)
+                if role == "modeling":
+                    text += (
+                        "Publish a complete immutable unified candidate, then directly call "
+                        "modeling_submit_model_changes(modeling_id=modeling, request=...). The request "
+                        "has schema_version=r4-3-025-model-changes/v1, candidate_ref, changes; each "
+                        "change has change_id,action,resource_kind,item_id,target_ref,fields. "
+                        "Use actual retained resource-entry references; never author command plans or "
+                        "Session/lease/version/Batch identities. Correct typed not-written errors; "
+                        "reconcile uncertain results by original identity and never replay an applied "
+                        "change for an index failure. After readable stages use query_semantic_context "
+                        "for public business questions, then actual IRI anchors and full definitions. "
+                        "Use explicit ontologies scope within the run's authorized set; preserve actual "
+                        "revision/index/completeness and unknowns. Before final handoff call "
+                        "modeling_inspect_associations, resolve business findings, and "
+                        "modeling_finish_changes. Record references and gaps in existing handoff/map; "
+                        "self-check does not establish independent semantic acceptance."
+                    )
+                elif role == "coordinator":
+                    text += (
+                        "Dispatch the authorized business stage to Modeling with the original Task "
+                        "identity, source facts, scope and shared dependencies. Maintain the existing "
+                        "map and public feedback. Do not wait for Protocol messages or terminal results "
+                        "to permit Modeling submission, self-check or production_handoff."
+                    )
+                else:
+                    text += (
+                        "Support only work actually assigned by Coordinator; Modeling submits and "
+                        "self-checks directly. Do not hand-author replacement plans or perform retired "
+                        "dry-run/translation approval. Report your assigned work without a mandatory "
+                        "candidate receipt handshake."
+                    )
+                return text + objective_suffix
             if role == "acceptance":
                 report_projection = (
                     f"an ordered standard-owned set of {question_count} competency questions"
@@ -5217,7 +5274,7 @@ class TeamRunner:
         #    instead of escaping this monitor tick and crashing the run
         #    (design section 4.1: every failure is typed and fail-closed).
         try:
-            intent_issues = staged_intent_receipt_issues(run_root)
+            intent_issues = staged_intent_receipt_issues(run_root, include_unknown=not self._unified_graph)
         except StagedDecisionArtifactError as exc:
             self._staged_gate_kill_switch(exc.reason_code, exc.detail)
             return False
@@ -5280,9 +5337,193 @@ class TeamRunner:
                 raise StagedSubmissionRejection(issue.reason_code, issue.detail)
         return plan
 
+    def _direct_platform_read(self, tool: str, arguments: Mapping[str, Any]) -> dict[str, Any]:
+        forward = self.staged_plan_read_forwarder
+        if not callable(forward):
+            raise StagedSubmissionRejection("modeling_read_unavailable", "The run's governed read forwarder is unavailable")
+        result = dict(forward(tool, dict(arguments)))
+        if self.acceptance is not None:
+            reference = self.acceptance.register_platform_tool_result(
+                tool=tool, arguments=dict(arguments), result={"structuredContent": result},
+            )
+            result["platform_ref"] = reference
+        return result
+
+    def _direct_ontology_placement(self, candidate: Mapping[str, Any] | None,
+                                   request: Mapping[str, Any], bindings: Any) -> dict[str, str]:
+        scope = self._cq_scope_binding()
+        ids = scope["ontology_ids"]
+        placement: dict[str, str] = {}
+        items = (candidate or {}).get("items", [])
+        items = [item for item in items if isinstance(item, Mapping) and isinstance(item.get("item_id"), str)] if isinstance(items, list) else []
+        changes = request.get("changes", [])
+        changes = changes if isinstance(changes, list) else []
+        if len(ids) == 1:
+            placement.update({item["item_id"]: ids[0] for item in items})
+            placement.update({change["change_id"]: ids[0] for change in changes
+                              if isinstance(change, Mapping) and isinstance(change.get("change_id"), str)})
+        else:
+            topology_path = self.run.root / "scenario-map/topology-decision.json"
+            topology = json.loads(topology_path.read_text()) if topology_path.is_file() else {}
+            plan = topology.get("ontology_plan") or []
+            plan_ids = getattr(self.scope, "ontology_plan_ids", None) or ids
+            if len(plan) == len(plan_ids):
+                for item in items:
+                    owners = {plan_ids[index] for index, entry in enumerate(plan)
+                              if set(item.get("slice_ids") or []) & set(entry.get("slice_ids") or [])}
+                    if len(owners) == 1:
+                        placement[item["item_id"]] = owners.pop()
+        for change in changes:
+            if isinstance(change, Mapping) and isinstance(change.get("change_id"), str) and change.get("target_ref"):
+                placement[change["change_id"]] = bindings.resolve(change["target_ref"])["ontology_id"]
+        return placement
+
+    def _handle_direct_modeling(self, operation: str, args: Mapping[str, Any]) -> dict[str, Any]:
+        from .direct_execution import DirectModelExecutor
+        from .direct_modeling import ModelChangeCompilationError, compile_model_changes
+        from .direct_submission import (
+            ObservedModelBindings, SubmissionInputError, candidate_snapshot, retained_submission_plan,
+        )
+
+        if not self._unified_graph or self.run is None:
+            raise StagedSubmissionRejection("direct_modeling_unavailable", "This run has no direct Modeling capability")
+        if operation == "modeling_inspect_associations":
+            return self._inspect_direct_modeling_associations(args)
+        if operation == "modeling_finish_changes":
+            return (self._direct_model_executor.close_session() if self._direct_model_executor is not None
+                    else {"closed": True, "session_id": None, "errors": []})
+        request = args.get("request")
+        if not isinstance(request, Mapping):
+            raise StagedSubmissionRejection("model_change_request_invalid", "Use the current model-change request contract")
+        ticket = self._cq_write_admission.admit("modeling_submit_model_changes")
+        if ticket is None:
+            raise StagedSubmissionRejection("staged_write_quiescing", "Checkpoint capture or independent acceptance has closed new model writes; retry after authorized production resumes")
+        reference = None
+        digest = None
+        try:
+            if not candidate_gate_open(self.run.root):
+                raise SubmissionInputError("scope_binding_required", "Wait for the existing confirmed scope/topology before model writes")
+            if self._competency_questions and self._cq_freeze is None:
+                raise SubmissionInputError("cq_freeze_pending", "The approved public competency-question projection is not frozen")
+            scope = self._cq_scope_binding()
+            candidate = candidate_snapshot(self.run.root, request.get("candidate_ref"))
+            retained = retained_submission_plan(self.run.root, request, candidate,
+                                                scope["project_id"], scope["ontology_ids"])
+            if retained is not None:
+                plan, digest = retained
+                reference = f"value-semantics/submission-intents/submission-{digest}.json"
+                batches, source_map = plan["batches"], plan["source_map"]
+            else:
+                bindings = ObservedModelBindings(
+                    self.run.root, self.acceptance._platform_read_artifacts,
+                    scope["project_id"], scope["ontology_ids"], self._direct_platform_read,
+                )
+                placement = self._direct_ontology_placement(candidate, request, bindings)
+                snapshot = {"request": dict(request), "candidate": candidate,
+                            "ontology_placement": placement, "project_id": scope["project_id"]}
+                digest = hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True,
+                                                  separators=(",", ":")).encode()).hexdigest()
+                reference = f"value-semantics/submission-intents/submission-{digest}.json"
+                path = self.run.root / reference
+                if not path.exists():
+                    self._atomic_json(path, dict(request))
+                inputs_path = path.with_name(f"submission-{digest}-inputs.json")
+                if not inputs_path.exists():
+                    self._atomic_json(inputs_path, snapshot)
+                from app.core.config import Settings
+                capacity = Settings(_env_file=self.repository_root / "backend/.env").modeling_batch_max_items
+                for change in request.get("changes", []):
+                    if (isinstance(change, Mapping) and change.get("action") == "delete"
+                            and change.get("resource_kind") == "entity" and change.get("target_ref")):
+                        bindings.prepare_delete(change["target_ref"], digest)
+                batches, source_map = compile_model_changes(
+                    request, candidate=candidate, ontology_by_item=placement,
+                    resolve_binding=bindings.resolve, batch_max_items=capacity,
+                )
+                for group in source_map.values():
+                    if isinstance(group, Mapping):
+                        for source in group.values():
+                            if isinstance(source, dict) and source.get("artifact_ref") is None:
+                                source["artifact_ref"] = reference
+                plan_path = path.with_name(f"submission-{digest}-plan.json")
+                if not plan_path.exists():
+                    self._atomic_json(plan_path, {"batches": batches, "source_map": source_map})
+            source_map["submission_ref"] = reference
+            source_map["submission_digest"] = digest
+            if self._direct_model_executor is None:
+                def observe(event):
+                    if event["tool"] == "submit_modeling_batch":
+                        observed = self.acceptance.register_platform_tool_result(
+                            tool=event["tool"], arguments=event["arguments"],
+                            result={"structuredContent": {"ok": True, "data": event["result"]}},
+                        )
+                        raw = event["result"]
+                        self._direct_receipt_refs[(raw.get("batch_id"), raw.get("attempt_id"))] = observed["artifact_path"]
+                self._direct_model_executor = DirectModelExecutor(
+                    self.scope, self.run.root, self.run.run_id, self.run.configuration.task.task_id,
+                    submit=self.staged_batch_forwarder, read=self._direct_platform_read, observe_result=observe,
+                )
+            from .direct_binding import execute_bound_model_changes
+            result = execute_bound_model_changes(self._direct_model_executor, batches, source_map)
+            result["submission_ref"], result["submission_digest"] = reference, digest
+            for batch in result.get("batches", []):
+                observed = self._direct_receipt_refs.get((batch.get("batch_id"), batch.get("attempt_id")))
+                if observed:
+                    batch["receipt_ref"] = observed
+            self._save_checkpoint_after_trigger(CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
+                                                trigger="direct-modeling-result")
+            return result
+        except (ModelChangeCompilationError, SubmissionInputError) as exc:
+            errors = exc.errors if isinstance(exc, ModelChangeCompilationError) else [{
+                "code": exc.code, "message": str(exc), "path": exc.path,
+            }]
+            return {"schema_version": "r4-3-025-model-change-result/v1", "submission_ref": reference,
+                    "submission_digest": digest, "status": "not_written", "batches": [],
+                    "errors": [{field: error.get(field, True if field == "retryable" else "" if field == "path" else None)
+                                for field in ("code", "change_id", "item_id", "path", "message", "expected", "actual", "platform_ref", "retryable")}
+                               for error in errors], "pending_changes": list(request.get("changes") or [])}
+        finally:
+            # Durable intent/Attempt records carry uncertainty and its eventual
+            # reconciliation; do not introduce a second permanent run latch.
+            self._cq_write_admission.complete(ticket, "recorded")
+
+    def _inspect_direct_modeling_associations(self, args: Mapping[str, Any]) -> dict[str, Any]:
+        from .protocol_mechanics import MODEL_CHECK_QUERY
+
+        scope = self._cq_scope_binding()
+        if not scope["project_id"] or not scope["ontology_ids"]:
+            return {"ok": False, "code": "modeling_scope_not_ready", "status": "PARTIAL"}
+        pages = []
+        offset = 0
+        while True:
+            request = {**scope, "scope_mode": "ontologies", "result_limit": 500,
+                       "query": MODEL_CHECK_QUERY + f"\nOFFSET {offset}"}
+            result = self._direct_platform_read("semantic_sparql_query", request)
+            pages.append(result["platform_ref"]["artifact_path"])
+            data = result.get("data", {})
+            rows = data.get("result", {}).get("results", {}).get("bindings", [])
+            if result.get("ok") is not True or not data.get("truncated") or not rows:
+                break
+            offset += len(rows)
+        final = self._direct_platform_read("semantic_sparql_query", {
+            **scope, "scope_mode": "ontologies", "result_limit": 500,
+            "query": MODEL_CHECK_QUERY + "\nOFFSET 0",
+        })
+        base = (self.run.protocol_context or {}).get("semantic_base_iri")
+        if not base:
+            context = self._direct_platform_read("get_modeling_context", {"ontology_id": scope["ontology_ids"][0]})
+            base = context.get("data", {}).get("semantic_base_iri")
+        if not base:
+            return {"ok": False, "code": "modeling_namespace_unavailable", "status": "PARTIAL", "read_refs": pages}
+        return self.acceptance.protocol_inspect_associations({
+            **scope, "read_refs": pages, "final_read_ref": final["platform_ref"]["artifact_path"],
+            "semantic_base_iri": base, "focus_iris": args.get("focus_iris"),
+        })
+
     def _handle_execute_approved_plans(self, args: Mapping[str, Any]) -> dict[str, Any]:
         """Execute each exact approved projection in dependency order, without replay."""
-        dry_only = args.get("mode", "apply_atomic") == "dry_run"
+        if args.get("mode", "apply_atomic") != "apply_atomic":
+            raise StagedSubmissionRejection("modeling_dry_run_retired", "Submit apply_atomic; model dry-run execution is retired")
         refs = args.get("plan_refs")
         if not isinstance(refs, list) or not refs or len(set(refs)) != len(refs):
             raise StagedSubmissionRejection("staged_submit_schema_mismatch", "use unique ordered plan_refs")
@@ -5324,10 +5565,10 @@ class TeamRunner:
             # existing submission gate re-reads its plan and approvals again.
             for ref in refs:
                 current_ref = ref
-                self._reference_plan(ref, require_translation=not dry_only)
+                self._reference_plan(ref, require_translation=False)
             for ref in refs:
                 current_ref = ref
-                plan = self._reference_plan(ref, require_translation=not dry_only)
+                plan = self._reference_plan(ref, require_translation=False)
                 projection = plan["projection"]
                 receipts = read_submission_receipts(self.run.root)
                 intents = read_submission_intents(self.run.root)
@@ -5368,7 +5609,7 @@ class TeamRunner:
                     continue
                 version = data["workspace"]["model_revision"]
                 token = args.get("lease_tokens", {}).get(projection["ontology_id"])
-                if not dry_only and not token:
+                if not token:
                     raise StagedSubmissionRejection("staged_submit_schema_mismatch", "lease_tokens must cover each approved ontology")
                 batch = {key: projection[key] for key in ("session_id", "client_batch_id", "ontology_id", "items")}
                 batch["expected_model_revision"] = version
@@ -5380,24 +5621,6 @@ class TeamRunner:
                 # are reused only when exact content and current version match.
                 key_seed = hashlib.sha256(json.dumps([ref, plan["projection_digest"], version,
                                                        len(intents)], sort_keys=True).encode()).hexdigest()
-                proofs = read_attempt_proofs(self.run.root)
-                dry = next((proof for proof in reversed(proofs)
-                            if proof.get("plan_ref") == ref
-                            and proof.get("projection_digest") == plan["projection_digest"]
-                            and proof.get("workspace_before_version") == version
-                            and proof.get("mode") == "dry_run"
-                            and proof.get("attempt_status") == "validated"), None)
-                stage = "dry-run"
-                if dry is None:
-                    batch.update(mode="dry_run", idempotency_key=f"ref-{key_seed}-dry")
-                    dry = self._handle_staged_submit_modeling_batch(submission)
-                    if dry.get("attempt_status") != "validated":
-                        raise StagedSubmissionRejection("dry_run_proof_not_validated", json.dumps(dry))
-                if dry_only:
-                    completed.append({"plan_ref": ref, "projection_digest": plan["projection_digest"],
-                                      "status": "validated", "dry_run": dict(dry),
-                                      "resource_readback_status": "not_applied"})
-                    continue
                 stage = "apply"
                 batch.update(mode="apply_atomic", idempotency_key=f"ref-{key_seed}-apply", lease_token=token)
                 apply = self._handle_staged_submit_modeling_batch(submission)
@@ -5408,7 +5631,7 @@ class TeamRunner:
                 if after["workspace"]["model_revision"] < version:
                     raise StagedSubmissionRejection("staged_plan_read_failed", "readback revision precedes apply")
                 completed.append({"plan_ref": ref, "projection_digest": plan["projection_digest"],
-                                  "status": "applied", "dry_run": dict(dry), "apply": apply,
+                                  "status": "applied", "apply": apply,
                                   "version_readback_ref": read_ref,
                                   "resource_readback_status": "not_evaluated",
                                   "model_revision": after["workspace"]["model_revision"]})
@@ -5419,11 +5642,6 @@ class TeamRunner:
             return {"ok": False, "status": "PARTIAL", "completed": completed,
                     "error": {**detail, "plan_ref": current_ref, "stage": stage},
                     "retry": "correct the named reference/approval/read or reconcile unknown writes, then retry; applied plans are not replayed"}
-        if dry_only:
-            return {"ok": True, "status": "COMPLETE", "completed": completed,
-                    "resource_readback_status": "not_applied",
-                    "required_next_step": "Obtain current translation approval and apply authorization before apply_atomic; validation is not materialization or semantic acceptance",
-                    "semantic_verdict": "not_evaluated"}
         return {"ok": True, "status": "COMPLETE", "completed": completed,
                 "resource_readback_status": "not_evaluated",
                 "required_next_step": "Continue approved work along real dependencies; obtain public business feedback at valuable milestones and complete necessary global coverage and association checks before whole-run production handoff",
@@ -5670,6 +5888,10 @@ class TeamRunner:
         self, args: Mapping[str, Any]
     ) -> dict[str, Any]:
         """The admitted submission body; runs with a live admission ticket."""
+        if args.get("batch", {}).get("mode") == "dry_run":
+            raise StagedSubmissionRejection(
+                "modeling_dry_run_retired", "Model Batch dry-run is retired; submit apply_atomic"
+            )
 
         # R3.0-011 freeze ordering is enforced at this, the only platform write
         # channel: while the competency-question pool is unfrozen, Modeling
@@ -5834,32 +6056,6 @@ class TeamRunner:
             )
             if close_issue is None:
                 close_issue = unified_approval_issue(approvals, projection)
-            if close_issue is None and batch.get("mode") != "dry_run":
-                # R3.0-014 (design §3.3): a dry-run keeps its baseline
-                # behavior — stale or rejected translation history never
-                # blocks it.  An apply must additionally clear the
-                # current-plan translation approval recorded by this run's
-                # current Coordinator, and a Runner-owned validated dry-run
-                # proof of the exact same content at the submitted workspace
-                # timepoint.
-                close_issue = unified_translation_issue(
-                    approvals,
-                    plan_ref=str(plan_ref or ""),
-                    projection_digest=plan_digest,
-                    coordinator_id=self._multi_slice_role_ids().get("coordinator") or "",
-                )
-                if close_issue is None:
-                    try:
-                        close_issue = unified_dry_run_proof_issue(
-                            run_root,
-                            batch,
-                            plan_ref=str(plan_ref or ""),
-                            projection_digest=plan_digest,
-                        )
-                    except StagedDecisionArtifactError as exc:
-                        raise StagedSubmissionRejection(
-                            exc.reason_code, exc.detail
-                        ) from exc
             if close_issue is not None:
                 raise StagedSubmissionRejection(close_issue.reason_code, close_issue.detail)
         try:
@@ -6252,7 +6448,9 @@ class TeamRunner:
                 )
                 return
         role_ids = self._multi_slice_role_ids()
-        protocol_agent_id = role_ids.get("protocol", "protocol")
+        # The retained gate uses legacy field names; bind its actual writer
+        # instead of inventing a Protocol actor in a direct Modeling roster.
+        protocol_agent_id = role_ids["modeling"] if self._unified_graph else role_ids.get("protocol", "protocol")
         identity = {
             "run_id": self.run.run_id,
             "protocol_agent_id": protocol_agent_id,
@@ -6419,6 +6617,8 @@ class TeamRunner:
 
         if not self.run or not ontology_ids:
             return
+        if self._modeling_read_proxy is not None and self._unified_graph:
+            self._modeling_read_proxy.ontology_ids = tuple(ontology_ids)
         protocol = self._multi_slice_role_ids().get("protocol", "protocol")
         notice = {
             "schema_version": "r3-0-006-multi-slice-ontology-plan/v1",
@@ -6429,6 +6629,15 @@ class TeamRunner:
                 "authoritative; this delivery is a supplementary notification."
             ),
         }
+        if self._unified_graph:
+            modeling = self._multi_slice_role_ids()["modeling"]
+            self.adapter.send_message(modeling, RuntimeDelivery(
+                sender_id="runner/multi-slice-gate", recipient_id=modeling,
+                kind="multi-slice-ontology-plan",
+                text=json.dumps(notice, ensure_ascii=False, sort_keys=True), expects_reply=False,
+            ))
+            if "protocol" not in self._multi_slice_role_ids():
+                return
         delivery = RuntimeDelivery(
             sender_id="runner/multi-slice-gate",
             recipient_id=protocol,
@@ -7945,7 +8154,8 @@ class TeamRunner:
     def _cq_production_roles(self) -> list[str]:
         """Roles allowed to read the CQ public projection (design §3.2)."""
 
-        production_roles = {"coordinator", "modeling", "protocol"}
+        production_roles = ({"coordinator", "modeling"} if getattr(self, "_unified_graph", False)
+                            else {"coordinator", "modeling", "protocol"})
         if self.run is None:
             return sorted(production_roles)
         return sorted(

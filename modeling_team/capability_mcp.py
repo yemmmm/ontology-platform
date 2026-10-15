@@ -75,6 +75,9 @@ STAGED_UNIFIED_PROTOCOL_OPERATIONS: tuple[str, ...] = (
 )
 UNIFIED_PROTOCOL_OPERATIONS: tuple[str, ...] = (*PROTOCOL_OPERATIONS, *UNIFIED_PROTOCOL_RUN_OPERATIONS)
 MODELING_OPERATIONS: tuple[str, ...] = ("modeling_publish_staged_candidate",)
+DIRECT_MODELING_OPERATIONS: tuple[str, ...] = (
+    "modeling_submit_model_changes", "modeling_inspect_associations", "modeling_finish_changes",
+)
 ACCEPTANCE_OPERATIONS: tuple[str, ...] = (
     "acceptance_get_ticket",
     "acceptance_child_start",
@@ -90,7 +93,7 @@ ROLE_OPERATIONS: dict[str, tuple[str, ...]] = {
     # operation in the role registry lets the dispatcher validate it without
     # advertising the delivery-bound capability to an unbound carrier.
     "coordinator": COORDINATOR_FORMAL_OPERATIONS,
-    "modeling": MODELING_OPERATIONS,
+    "modeling": (*MODELING_OPERATIONS, *DIRECT_MODELING_OPERATIONS),
     "protocol": UNIFIED_PROTOCOL_OPERATIONS,
     "acceptance": ACCEPTANCE_OPERATIONS,
 }
@@ -109,6 +112,27 @@ ROLE_OPERATIONS[COMPETENCY_QUESTION_ROLE] = CQ_OPERATIONS
 
 
 CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
+    "modeling_submit_model_changes": {
+        "type": "object", "properties": {
+            "modeling_id": {"type": "string"},
+            "request": {"type": "object", "properties": {
+                "schema_version": {"type": "string", "enum": ["r4-3-025-model-changes/v1"]},
+                "candidate_ref": {"type": ["string", "null"]},
+                "changes": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+            }, "required": ["schema_version", "candidate_ref", "changes"], "additionalProperties": False},
+        }, "required": ["modeling_id", "request"],
+        "additionalProperties": False,
+    },
+    "modeling_inspect_associations": {
+        "type": "object", "properties": {
+            "modeling_id": {"type": "string"},
+            "focus_iris": {"type": "array", "items": {"type": "string"}},
+        }, "required": ["modeling_id"], "additionalProperties": False,
+    },
+    "modeling_finish_changes": {
+        "type": "object", "properties": {"modeling_id": {"type": "string"}},
+        "required": ["modeling_id"], "additionalProperties": False,
+    },
     "modeling_publish_staged_candidate": {
         "type": "object",
         "properties": {"modeling_id": {"type": "string"}},
@@ -221,7 +245,7 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
         "type": "object",
         "properties": {
             "protocol_id": {"type": "string"},
-            "mode": {"type": "string", "enum": ["dry_run", "apply_atomic"],
+            "mode": {"type": "string", "enum": ["apply_atomic"],
                      "default": "apply_atomic"},
             "plan_refs": {"type": "array", "minItems": 1, "uniqueItems": True,
                           "items": {"type": "string"}},
@@ -802,19 +826,29 @@ class RunnerCapabilityEndpoint:
         method = request.get("method")
         if method == "tools/list":
             protocol_descriptions = {
+                "modeling_submit_model_changes": (
+                    "Submit explicit semantic changes against the current immutable unified candidate. "
+                    "The program compiles, binds real execution context and calls apply_atomic once "
+                    "per batch. No command plan, technical identity, dry-run or Protocol approval. "
+                    "Trust applied receipts; reconcile uncertain original requests."
+                ),
+                "modeling_inspect_associations": (
+                    "Read this run's complete authorized asserted graph with existing governed "
+                    "pagination and return deterministic association candidates for business review. "
+                    "Preserves partial/forbidden/drift feedback; no write or semantic verdict."
+                ),
+                "modeling_finish_changes": "Complete owned Build Sessions and release leases before final production handoff.",
                 "protocol_execute_approved_plans": (
-                    "Execute immutable plan_refs without copying items. Default apply_atomic "
-                    "performs current-version dry-run, approved apply and version readback per plan. "
-                    "For validation only, use mode=dry_run and lease_tokens={}; this never applies "
-                    "model resources and does not require translation approval. Semantic approvals "
-                    "and existing gates remain required. Confirmed applied receipts allow dependency-ordered "
+                    "Execute retained immutable plan_refs with apply_atomic and current-version "
+                    "validation inside that apply. Model dry-run execution and translation-proof "
+                    "prerequisites are retired. Confirmed applied receipts allow dependency-ordered "
                     "continuation without per-batch full resource comparisons. Resource readback and "
                     "semantic verdict remain not_evaluated; business feedback and final association "
                     "checks use actual governed reads."
                 ),
                 "protocol_staged_submit_modeling_batch": (
                     "Legacy/manual inline staged batch submission. Unified plans should use "
-                    "protocol_execute_approved_plans, including mode=dry_run for validation only, "
+                    "protocol_execute_approved_plans with apply_atomic, "
                     "to preserve every approved item field without transcription. For a receipted "
                     "applying/recovering Attempt, continue the exact retained original batch "
                     "through this tool with unchanged session, key, payload, version and lease; "

@@ -31,6 +31,8 @@ GRAPH = "https://r3003.test/graph/"
 OP = f"{BASE}vocab/"
 ONTOLOGY_GRAPH = f"{GRAPH}ontology/{ONTOLOGY_ID}"
 
+_DEFAULT_LEASE_TOKEN: str | None = None
+
 
 class SeededRdfStore:
     """Fake store whose graphs can be pre-seeded with already-applied state."""
@@ -89,6 +91,8 @@ def modeling(in_memory_session: Session):
     rdf = SeededRdfStore()
     service = ModelingBatchService(in_memory_session, settings, rdf)  # type: ignore[arg-type]
     version = OntologyModelRevisionService(in_memory_session, settings).version_for(ONTOLOGY_ID)
+    global _DEFAULT_LEASE_TOKEN
+    _DEFAULT_LEASE_TOKEN = lease["lease_token"]
     return service, in_memory_session, rdf, session_id, lease, version
 
 
@@ -103,7 +107,9 @@ def _item(item_id: str, command_kind: str, payload: dict, **overrides):
     return ModelingItemInput(**data)
 
 
-def _request(version, items, *, key="attempt-1", batch="batch-1", mode="dry_run", token=None):
+def _request(version, items, *, key="attempt-1", batch="batch-1", mode="apply_atomic", token=None):
+    if token is None and mode in {"apply_atomic", "apply_partial"}:
+        token = _DEFAULT_LEASE_TOKEN
     return ModelingBatchSubmit(
         client_batch_id=batch,
         ontology_id=ONTOLOGY_ID,
@@ -280,7 +286,7 @@ def test_same_batch_class_then_table_mapping_passes(modeling):
         _table_mapping_item("tm-1"),
     ]
     result = service.submit(session_id, _request(version, items))
-    assert result["attempt_status"] == "validated", result["findings"]
+    assert result["attempt_status"] == "applied", result["findings"]
     assert result["items"][1]["resource_outputs"]
 
 
@@ -333,7 +339,7 @@ def test_g3_forward_join_closure_with_same_batch_tables(modeling):
         _join_mapping_item("jm-1"),
     ]
     result = service.submit(session_id, _request(version, items))
-    assert result["attempt_status"] == "validated", result["findings"]
+    assert result["attempt_status"] == "applied", result["findings"]
 
 
 def test_g3_forward_unmapped_table_is_blocked(modeling):
@@ -462,7 +468,7 @@ def test_g3_reverse_allows_unrelated_table_mapping_delete(modeling):
             ],
         ),
     )
-    assert result["attempt_status"] == "validated", result["findings"]
+    assert result["attempt_status"] == "applied", result["findings"]
 
 
 def test_g5_enum_uniqueness_within_batch(modeling):
@@ -522,7 +528,7 @@ def test_g5_enum_distinct_pairs_pass(modeling):
         ),
     ]
     result = service.submit(session_id, _request(version, items))
-    assert result["attempt_status"] == "validated", result["findings"]
+    assert result["attempt_status"] == "applied", result["findings"]
 
 
 def test_g6_create_collision_and_update_not_found(modeling):
@@ -606,7 +612,7 @@ def test_g6_create_then_update_across_batches_passes(modeling):
             batch="batch-2",
         ),
     )
-    assert updated["attempt_status"] == "validated", updated["findings"]
+    assert updated["attempt_status"] == "applied", updated["findings"]
 
 
 def test_metric_g2_reference_and_full_apply(modeling):

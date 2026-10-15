@@ -4308,7 +4308,7 @@ def main() -> int:
                 key = runner.run.protocol_key
                 forwarder = McpReadForwarder(
                     repository_root=root, read_key=key,
-                    expected_tools=["get_modeling_context"],
+                    expected_tools=["get_modeling_context", "get_modeling_batch", "list_session_modeling_batches", "semantic_sparql_query", "query_semantic_context", "get_entity_statement_context"],
                 )
                 try:
                     forwarder.start()

@@ -1691,7 +1691,12 @@ class CodexIsolationTests(unittest.TestCase):
                 root=base,
                 protocol_key=None,
                 scope={"project_id": "project-1", "ontology_id": "ontology-1"},
-                modeling_read_proxy=SimpleNamespace(active=True, token="proxy-token"),
+                modeling_read_proxy=SimpleNamespace(
+                    active=True,
+                    token="proxy-token",
+                    project_id="project-1",
+                    ontology_id="ontology-1",
+                ),
                 configuration=SimpleNamespace(
                     task=SimpleNamespace(schema_version=2),
                     profile=SimpleNamespace(profile_id="r2-3-003-modeling-team"),

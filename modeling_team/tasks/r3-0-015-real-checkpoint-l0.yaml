@@ -1,27 +1,34 @@
 # R3.0-015 bounded real L0 checkpoint/recovery task; L1 quality remains unverified.
 schema_version: 2
 task_id: r3-0-015-real-checkpoint-l0
-objective: Real bounded L0 check of R3.0-015 checkpoint publication and cross-process recovery. Use only
-  one source-grounded logical slice of the industrial after-service input, prefer basic customer, installed-asset
-  and equipment-model relationships where the approved source directly supports them. Mark lifecycle,
-  metrics, values, access and other unresolved business semantics as unknown; do not infer rules from
-  schema or samples. Produce the smallest honest published artifacts needed for scenario_mapped, cq_frozen,
-  semantic_approved and one deterministic dry-run materialization_progress checkpoint; publish production_handoff
-  only if the actual readiness contract is met. Coordinator should request checkpoint saves after the
-  scenario decision and one approved candidate, and hand off the resulting IDs to the host. Do not expand
-  to the complete 21-table scenario or seek an L1 model-quality verdict in this run. Keep the real source,
-  CQ review, candidate approval, staged translation review, deterministic dry-run and application guards
-  in force. If any stage cannot be completed honestly, save the last valid checkpoint, report the exact
-  blocker and exit without fabricating completion. The Host owns checkpoint save/inspect through the outer
-  FIFO; role workspaces do not mount checkpoint packages. Coordinator and Modeling report actual published
-  artifact refs and request IDs to the Host, and must not infer a missing checkpoint from their role-local
-  visibility. A resumed run uses its checkpoint role handoff to skip already confirmed interview/scenario
-  decisions. CQ public review/freeze must precede final candidate business approval and any Modeling Batch
-  submission; an unapproved draft remains pending. For each fresh standalone Team Transport delivery,
-  omit reply_to_delivery_id entirely; never pass the literal string null. Set reply_to_delivery_id only
-  to an actual active request delivery ID whose expects_reply flag is true. Modeling sends its complete
-  candidate to Protocol as a new expects_reply=true request, and sends Coordinator only scoped status
-  without raw source or hidden CQ text.
+objective: >-
+  Real bounded L0 check of R3.0-015 checkpoint publication and cross-process recovery. Use
+  only one source-grounded logical slice of the industrial after-service input, prefer basic
+  customer, installed-asset and equipment-model relationships where the approved source
+  directly supports them. Mark lifecycle, metrics, values, access and other unresolved
+  business semantics as unknown; do not infer rules from schema or samples. Produce the
+  smallest honest published artifacts needed for scenario_mapped, cq_frozen, semantic_approved
+  and one confirmed atomic application materialization_progress checkpoint; publish
+  production_handoff only if the actual readiness contract is met. Coordinator should request
+  checkpoint saves after the scenario decision and one approved candidate, and hand off the
+  resulting IDs to the host. Do not expand to the complete 21-table scenario or seek an L1
+  model-quality verdict in this run. Keep the real source, CQ review, necessary business
+  candidate approval, direct Modeling submission, request-internal validation and atomic
+  application guards under R4.3-024/025 in force. If any stage cannot be completed honestly,
+  save the last valid checkpoint, report the exact blocker and exit without fabricating
+  completion. The Host owns checkpoint save/inspect through the outer FIFO; role workspaces do
+  not mount checkpoint packages. Coordinator and Modeling report actual published artifact
+  refs and request IDs to the Host, and must not infer a missing checkpoint from their
+  role-local visibility. A resumed run uses its checkpoint role handoff to skip already
+  confirmed interview/scenario decisions. CQ public review/freeze must precede final candidate
+  business approval and any Modeling Batch submission; an unapproved draft remains pending.
+  For each fresh standalone Team Transport delivery, omit reply_to_delivery_id entirely; never
+  pass the literal string null. Set reply_to_delivery_id only to an actual active request
+  delivery ID whose expects_reply flag is true. Modeling submits its immutable candidate and
+  explicit changes directly through modeling_submit_model_changes; the program fills execution
+  fields and retains receipts. Modeling sends Coordinator scoped status without raw source or
+  hidden CQ text. Perform governed question/IRI self-checks after application; Protocol
+  translation and dry-run are not prerequisites.
 role_sources:
 - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
   classification: business-source
@@ -59,10 +66,10 @@ role_sources:
   - protocol
 - path: modeling_team/references/r3-0-009-unified-graph-contract.json
   classification: coordination
-  roles:
-  - coordinator
-  - modeling
-  - protocol
+  roles: [coordinator, modeling, protocol]
+- path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+  classification: coordination
+  roles: [coordinator, modeling, protocol]
 - path: modeling_team/references/platform-neutral-candidate-authoring.json
   classification: protocol
   roles:
@@ -70,8 +77,7 @@ role_sources:
   - protocol
 - path: modeling_team/references/modeling-batch-item-contract.json
   classification: protocol
-  roles:
-  - protocol
+  roles: [protocol, modeling]
 - path: modeling_team/references/r3-0-011-competency-question-contract.json
   classification: coordination
   roles:

@@ -58,6 +58,7 @@ class R23002Tests(unittest.TestCase):
         )
 
     def test_protocol_batch_item_reference_matches_handler_and_mcp_envelopes(self) -> None:
+        from pydantic import ValidationError
         from app.api.schemas import ModelingBatchSubmit
         from app.mcp.tools.modeling_batches import McpModelingItemInput
         from app.core.config import Settings
@@ -156,12 +157,14 @@ class R23002Tests(unittest.TestCase):
                 items=[{"client_item_id": "item", "command_kind": "create_class", "payload": {"name": "name"}}],
             )
 
-        with self.assertRaisesRegex(ModelingBatchError, "dry_run must omit lease_token"):
-            ModelingBatchService(Session(), Settings()).submit("session", batch("dry_run", "lease"))
+        # R4.3-024 retires new Batch dry-run construction at the typed API
+        # boundary.  Historical dry-run receipts remain readable, but a new
+        # request cannot reach ModelingBatchService with that mode.
+        with self.assertRaises(ValidationError):
+            batch("dry_run", "lease")
         with self.assertRaisesRegex(ModelingBatchError, "apply requires lease_token"):
             ModelingBatchService(Session(), Settings()).submit("session", batch("apply_atomic", None))
         lease_invariants = reference["batch_envelope"]["fields"]["lease_token"]["invariants"]
-        self.assertEqual(lease_invariants["dry_run"], "MUST be omitted or null")
         self.assertIn("non-empty string", lease_invariants["apply_atomic"])
 
 

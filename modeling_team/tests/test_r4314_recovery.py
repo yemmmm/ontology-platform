@@ -68,7 +68,9 @@ def test_receipted_recovering_attempt_continues_same_request_without_new_identit
         assert recovered["batch_id"] == retained["result"]["batch_id"]
         assert recovered["created_batch"] is False and recovered["created_attempt"] is False
         assert production.versions == version
-        assert len(read_submission_intents(production.run_root)) == 2
+        # The apply intent is reused for same-Attempt recovery; retired dry-run
+        # no longer creates a preceding intent.
+        assert len(read_submission_intents(production.run_root)) == 1
         after = read_submission_receipts(production.run_root)
         assert after[:len(before)] == before
         assert len(after) == len(before) + 1
@@ -76,12 +78,14 @@ def test_receipted_recovering_attempt_continues_same_request_without_new_identit
         replay = call(endpoint, "protocol_staged_submit_modeling_batch",
                       _submit_args(production, retained))
         assert replay["error"]["reason_code"] == "staged_conclusion_already_materialized"
-        assert len(production.calls) == 3  # dry-run, original apply, same Attempt recovery
+        assert len(production.calls) == 2  # original apply and same Attempt recovery
         continued = call(endpoint, "protocol_execute_approved_plans", {
             **execute_args(production), "plan_refs": [PLAN1],
         })
         assert continued["completed"][0]["status"] == "already_applied", continued
-        assert len(production.calls) == 3
+        # The completed Attempt is read from the apply receipt; no follow-up
+        # dry-run or duplicate forward is needed.
+        assert len(production.calls) == 2
 
 
 @pytest.mark.parametrize("field,value", [("lease_token", "replacement-lease"),
@@ -97,7 +101,9 @@ def test_same_attempt_recovery_rejects_changed_original_request(production, fiel
         args["batch"][field] = value
         result = call(endpoint, "protocol_staged_submit_modeling_batch", args)
         assert result["error"]["reason_code"] == "staged_recovery_request_mismatch", result
-        assert len(production.calls) == 2
+        # The initial apply is the only forward before the changed recovery
+        # request is rejected; there is no new dry-run call in R4.3-024.
+        assert len(production.calls) == 1
 
 
 def test_unrelated_ontology_can_continue_while_original_attempt_needs_recovery(production):

@@ -235,10 +235,10 @@ def _stage_unified(run_root: Path) -> tuple[dict, dict]:
 
 
 def _unified_args(
-    batch_items: list[dict], plan_ref: str | None, *, mode: str = "dry_run"
+    batch_items: list[dict], plan_ref: str | None, *, mode: str = "apply_atomic"
 ) -> dict:
-    # R3.0-014: the staged order starts with a real dry-run; apply_atomic is
-    # the gated second stage and must be requested explicitly by name.
+    # R4.3-024: new model submissions use one apply_atomic request.  The
+    # retired dry_run path remains an explicit negative case below.
     args = _capability_args()
     args["batch"]["items"] = batch_items
     args["batch"]["mode"] = mode
@@ -272,28 +272,16 @@ def test_s13_unified_task_selects_the_009_contract(tmp_path):
         staged.cleanup()
 
 
-def test_s13_unified_protocol_prompt_uses_009_candidate_gate(tmp_path):
+def test_s13_unified_protocol_prompt_uses_current_direct_modeling_contract(tmp_path):
     staged = _UnifiedRunner(tmp_path)
     try:
         staged.prepare()
         prompt = staged.runner._task_text("protocol")
-        assert "R3.0-009 unified-graph candidate" in prompt
-        assert "Do not call the R2.3 native build_candidate_receipt" in prompt
-        assert "candidate receipt is successfully built" not in prompt
-        assert "R3.0-014 translation review" in prompt
-        # R3.0-015 issue-4: this branch is the one the source run's Protocol
-        # actually received, and it must state the reply duty.  Without it the
-        # route has no answer obligation at all, and Modeling's terminal report
-        # deadlocks behind a reply slot Protocol was never told to close.
-        assert "Reply obligation on this route" in prompt
-        assert "reply_to_delivery_id" in prompt
-        assert "translation review is not that answer" in prompt
-        assert "report_task_result(status=blocked" in prompt
-        # The broker accepts a completed terminal report while a reply slot is
-        # open, so the prompt states the real duty and never claims the report
-        # itself is refused.
-        assert "A completed terminal report does not answer that candidate" in prompt
-        assert "still undelivered" not in prompt
+        assert "Current execution contract: R4.3-024/025." in prompt
+        assert "Model dry-run execution, Protocol translation/review" in prompt
+        assert "retired" in prompt
+        assert "no per-batch technical approval" in prompt
+        assert "Modeling submits and self-checks directly" in prompt
     finally:
         staged.cleanup()
 
@@ -329,6 +317,24 @@ def test_unified_submission_requires_a_plan_ref(tmp_path):
         assert not staged_decision_artifact_paths(staged.run_root)["intents_dir"].exists() or not list(
             staged_decision_artifact_paths(staged.run_root)["intents_dir"].iterdir()
         )
+    finally:
+        staged.cleanup()
+
+
+def test_unified_submission_rejects_retired_dry_run_before_forwarding(tmp_path):
+    forwarder = _ForwarderRecorder()
+    staged = _UnifiedRunner(tmp_path, forwarder=forwarder)
+    try:
+        staged.prepare()
+        _open_platform_gate_unified(staged)
+        with pytest.raises(StagedSubmissionRejection) as rejection:
+            staged.runner._handle_staged_submit_modeling_batch(
+                _unified_args(_batch_items(), None, mode="dry_run")
+            )
+        assert rejection.value.data["reason_code"] == "modeling_dry_run_retired"
+        assert forwarder.calls == []
+        intents = staged_decision_artifact_paths(staged.run_root, unified=True)["intents_dir"]
+        assert not intents.exists() or not list(intents.iterdir())
     finally:
         staged.cleanup()
 

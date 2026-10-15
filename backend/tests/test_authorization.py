@@ -203,7 +203,7 @@ def _rule_batch_payload(context, command_kind: str, rule_id: str, suffix: str):
         "client_batch_id": f"rule-auth-{suffix}",
         "ontology_id": context["ontology_id"],
         "idempotency_key": f"rule-auth-{suffix}",
-        "mode": "dry_run",
+        "mode": "apply_atomic",
         "expected_model_revision": context["model_revision"],
         "items": [
             {
@@ -215,7 +215,7 @@ def _rule_batch_payload(context, command_kind: str, rule_id: str, suffix: str):
     }
 
 
-def test_project_model_key_cannot_dry_run_retired_rule_with_new_id(r008_client):
+def test_project_model_key_cannot_submit_retired_rule_with_new_id(r008_client):
     context = _project_modeling_rule_context(r008_client)
     new_rule_id = str(uuid4())
 

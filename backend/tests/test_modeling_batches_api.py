@@ -13,10 +13,10 @@ from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
 from app.api.modeling_batches import router
-from app.api.schemas import BuildSessionCreate
+from app.api.schemas import BuildSessionCreate, OntologyLeaseAcquire
 from app.core.config import Settings
 from app.repositories.models import OntologyModel, ProjectModel
-from app.repositories.rdf_store import SparqlResult
+from app.repositories.rdf_store import GraphWriteResult, SparqlResult
 from app.security.auth import AuthPrincipal
 from app.security.http import principal_dependency
 from app.services.build_sessions import BuildSessionService
@@ -33,6 +33,14 @@ class NoWriteRdfStore:
 
     def query_read_model(self, **_kwargs):
         return SparqlResult(result={"head": {"vars": []}, "results": {"bindings": []}})
+
+    def apply_dataset_delta(self, delta):
+        return GraphWriteResult(
+            graph_iri=delta.affected_graph_iris()[0] if delta.affected_graph_iris() else "",
+            applied=not delta.is_empty,
+            inserted_quad_count=len(delta.inserts),
+            deleted_quad_count=len(delta.deletes),
+        )
 
 
 def test_rest_submit_get_list_and_context_share_the_persisted_contract(
@@ -52,6 +60,11 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     build, _created = BuildSessionService(in_memory_session, settings).create_session(
         "p", BuildSessionCreate(client_session_id="rest-agent")
     )
+    lease = BuildSessionService(in_memory_session, settings).acquire_ontology_lease(
+        build["id"],
+        "o",
+        OntologyLeaseAcquire(client_request_id="rest-lease", expected_session_revision=1),
+    )
     version = OntologyModelRevisionService(in_memory_session, settings).version_for("o")
 
     app = FastAPI()
@@ -64,12 +77,12 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     app.dependency_overrides[get_settings] = lambda: settings
     app.dependency_overrides[get_rdf_store] = lambda: NoWriteRdfStore()
     client = TestClient(app)
-    response = client.post(
+    retired = client.post(
         f"/api/build-sessions/{build['id']}/modeling-batches",
         json={
-            "client_batch_id": "rest-batch",
+            "client_batch_id": "rest-retired",
             "ontology_id": "o",
-            "idempotency_key": "rest-attempt",
+            "idempotency_key": "rest-retired-attempt",
             "mode": "dry_run",
             "expected_model_revision": version,
             "items": [
@@ -81,9 +94,29 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
             ],
         },
     )
+    assert retired.status_code == 422, retired.text
+
+    response = client.post(
+        f"/api/build-sessions/{build['id']}/modeling-batches",
+        json={
+            "client_batch_id": "rest-batch",
+            "ontology_id": "o",
+            "idempotency_key": "rest-attempt",
+            "mode": "apply_atomic",
+            "expected_model_revision": version,
+            "lease_token": lease["lease_token"],
+            "items": [
+                {
+                    "client_item_id": "class",
+                    "command_kind": "create_class",
+                    "payload": {"name": "Customer"},
+                }
+            ],
+        },
+    )
     assert response.status_code == 200, response.text
     submitted = response.json()
-    assert submitted["attempt_status"] == "validated"
+    assert submitted["attempt_status"] == "applied"
     assert "operation_plan" not in submitted
     detail = client.get(f"/api/modeling-batches/{submitted['batch_id']}")
     listed = client.get(f"/api/build-sessions/{build['id']}/modeling-batches")
@@ -91,7 +124,7 @@ def test_rest_submit_get_list_and_context_share_the_persisted_contract(
     assert detail.status_code == listed.status_code == context.status_code == 200
     assert detail.json()["attempts"][0]["attempt_id"] == submitted["attempt_id"]
     assert listed.json()["batches"][0]["batch_id"] == submitted["batch_id"]
-    assert context.json()["workspace"]["model_revision"] == version
+    assert context.json()["workspace"]["model_revision"] == version + 1
     delta = client.get("/api/ontologies/o/semantic-read-models/delta")
     assert delta.status_code == 400, delta.text
     assert delta.json()["detail"]["code"] == "unsupported_read_model"

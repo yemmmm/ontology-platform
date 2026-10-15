@@ -1443,6 +1443,7 @@ class RunnerAcceptanceCarrier:
         candidate_conflict_builder: Callable[[str, str, str, str], Mapping[str, Any]] | None = None,
         staged_submission_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         staged_plan_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
+        direct_modeling_handler: Callable[[str, Mapping[str, Any]], Mapping[str, Any]] | None = None,
         staged_coverage_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
         staged_protocol_capability: bool = False,
         cq_draft_handler: Callable[[Mapping[str, Any]], Mapping[str, Any]] | None = None,
@@ -1495,6 +1496,7 @@ class RunnerAcceptanceCarrier:
         # staged runs, leaving every non-staged assembly byte-identical.
         self._staged_submission_handler = staged_submission_handler
         self._staged_plan_handler = staged_plan_handler
+        self._direct_modeling_handler = direct_modeling_handler
         self._staged_coverage_handler = staged_coverage_handler
         # R3.0-008B/#17: the staged evidence-repost path.  It is Runner-owned for
         # the same reason as the submission handler (the Runner, not the Protocol
@@ -1585,7 +1587,7 @@ class RunnerAcceptanceCarrier:
             "protocol": secrets.token_urlsafe(32),
             "acceptance": secrets.token_urlsafe(32),
         }
-        if candidate_publisher is not None:
+        if candidate_publisher is not None or direct_modeling_handler is not None:
             self._capability_tokens["modeling"] = secrets.token_urlsafe(32)
         if cq_draft_handler is not None:
             # R3.0-011: only a run that selected the competency-question stage
@@ -1627,6 +1629,14 @@ class RunnerAcceptanceCarrier:
                 operations = COORDINATOR_OPERATIONS
             elif role == "coordinator":
                 operations = COORDINATOR_FORMAL_OPERATIONS
+            elif role == "modeling":
+                from .capability_mcp import DIRECT_MODELING_OPERATIONS
+                operations = (
+                    (*MODELING_OPERATIONS, *DIRECT_MODELING_OPERATIONS)
+                    if direct_modeling_handler is not None else MODELING_OPERATIONS
+                )
+                if candidate_publisher is None:
+                    operations = tuple(op for op in operations if op != "modeling_publish_staged_candidate")
             elif role == "protocol" and staged_protocol_capability:
                 # R3.0-008B staged runs: the protocol role additionally owns the
                 # Runner-private staged run operations (batch submission and the
@@ -2744,7 +2754,7 @@ class RunnerAcceptanceCarrier:
         if "modeling" in self._capability_tokens:
             descriptors["modeling"] = {
                 "token_digest": token_digest(self._capability_tokens["modeling"]),
-                "operations": list(MODELING_OPERATIONS),
+                "operations": list(self._capability_endpoints["modeling"].operations),
                 "socket_mode": "0600",
                 "token_file_mode": "0400",
             }
@@ -3829,6 +3839,11 @@ class RunnerAcceptanceCarrier:
             _error("Runner capability operation is not available to this role")
         args = dict(arguments)
         capability = self.capability_token(role)
+        if role == "modeling" and operation != "modeling_publish_staged_candidate":
+            self._check_capability("modeling", args["modeling_id"], capability)
+            if self._direct_modeling_handler is None:
+                _error("direct modeling capability is unavailable")
+            return self._direct_modeling_handler(operation, args)
         if role == COMPETENCY_QUESTION_ROLE and operation != CQ_OPERATION:
             if self._handoff_handler is None:
                 _error("competency-question material capability is unavailable")

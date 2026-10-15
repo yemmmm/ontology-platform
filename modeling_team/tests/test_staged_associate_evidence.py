@@ -389,5 +389,8 @@ def test_staged_contract_files_enumerate_both_staged_operations():
     assert "staged_evidence_capability" not in contract
 
     unified = json.loads(CONTRACT_009.read_text(encoding="utf-8"))
-    assert unified["submission_capability"]["operation"] == STAGED_PROTOCOL_OPERATION
+    # R4.3-025 moves normal unified submission to Modeling's direct change
+    # program.  The retained staged Protocol operation remains a recovery /
+    # legacy surface and is still covered by the 008B contract above.
+    assert unified["submission_capability"]["operation"] == "modeling_submit_model_changes"
     assert "evidence_capability" not in unified

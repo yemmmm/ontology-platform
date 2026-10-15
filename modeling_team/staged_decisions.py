@@ -3160,8 +3160,10 @@ def _decision_binding_issue(value: Any) -> StagedDecisionIssue | None:
     return None
 
 
-def staged_intent_receipt_issues(run_root: Path) -> tuple[StagedDecisionIssue, ...]:
-    """Intent/receipt cross-checks; every issue is a kill-switch trigger."""
+def staged_intent_receipt_issues(
+    run_root: Path, *, include_unknown: bool = True,
+) -> tuple[StagedDecisionIssue, ...]:
+    """Check durable integrity; direct execution reconciles uncertainty per scope."""
 
     intents = read_submission_intents(run_root)
     receipts = read_submission_receipts(run_root)
@@ -3211,7 +3213,7 @@ def staged_intent_receipt_issues(run_root: Path) -> tuple[StagedDecisionIssue, .
         if schema_issue is not None:
             issues.append(schema_issue)
             continue
-        if intent.get("status") == "unknown":
+        if intent.get("status") == "unknown" and include_unknown:
             issues.append(
                 StagedDecisionIssue(
                     "staged_unreconciled_batch",

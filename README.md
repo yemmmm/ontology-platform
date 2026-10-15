@@ -185,3 +185,8 @@ CI 会校验生成清单、关键文档现状、新 `ontology-modeling` Skill �
 - [Platform Guide](docs/guides/platform-guide.md)
 - [Glossary](docs/reference/glossary.md)
 - [v1.0 requirements](docs/requirements/requirements-v1.0.md)
+
+当前统一图建模按 R4.3-024／025 由 Modeling 直接提交候选引用及显式变更，程序转换并在
+单次原子 apply 内校验；新模型 dry-run 已暂退，历史 Batch／Attempt 保留读取。
+成功阶段可立即作获准自然语言召回和实际 IRI 周边自查，最终保留独立语义验收。
+请求与结果见 [直接建模合同](modeling_team/references/r4-3-025-direct-modeling-contract.json)。

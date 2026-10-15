@@ -60,8 +60,9 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
                     "business_meaning": "未验收工单不能关闭；SLA 从报修时间开始计时",
                     "applicability": "工单", "unknowns": ["超时例外待确认"]},
             }}
-            request = dict(client_batch_id=token, ontology_id=ontology_id, mode="dry_run",
-                           idempotency_key="dry", expected_model_revision=version, items=[item])
+            request = dict(client_batch_id=token, ontology_id=ontology_id, mode="apply_atomic",
+                           idempotency_key="apply", expected_model_revision=version,
+                           lease_token=lease["lease_token"], items=[item])
             invalid = {**request, "client_batch_id": token + "-invalid", "idempotency_key": "invalid",
                        "mode": "apply_atomic", "lease_token": lease["lease_token"], "items": [item,
                        {"client_item_id": "bad", "command_kind": "create_entity",
@@ -70,8 +71,6 @@ def test_retirement_ordinary_rule_atomic_write_readback_and_protection():
             assert bad["attempt_status"] == "validation_failed"
             assert any("bad" in finding["client_item_ids"] for finding in bad["findings"])
             assert not get("/semantic/statements", {"ontology_id": graph_set})["items"]
-            assert post(batch_path, request)["attempt_status"] == "validated"
-            request.update(mode="apply_atomic", idempotency_key="apply", lease_token=lease["lease_token"])
             applied = post(batch_path, request)
             assert applied["attempt_status"] == "applied", applied["findings"]
             assert post(batch_path, request)["attempt_id"] == applied["attempt_id"]

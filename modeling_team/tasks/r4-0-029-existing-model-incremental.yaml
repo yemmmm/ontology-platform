@@ -2,59 +2,53 @@
 # This template grants no runtime authorization.
 schema_version: 2
 task_id: r4-0-029-existing-model-incremental
-objective: 'Continue this round''s bounded new business, revision or public-feedback
-  objective on the currently authorized existing Project and explicit Ontology IDs.
-  Start a new Team/run; do not resume an old goal, inherit old conversations, hidden
-  CQ/answers, Judge reasons or old run directories. Protocol first reads relevant
-  current authorized definitions, identities, relationships, rules, mappings, unknowns
-  and shared dependencies. Read only what the business goal needs; retain pagination/permission
-  limitations and do not infer absence from empty results. Reuse public source material
-  only with its original source and valid-at time. Conflicts require business clarification;
-  feedback observations are not confirmed business facts.
-
-  Keep source declarations and unconfirmed customer interpretation separate. When
-  needed by this objective, retain relevant source structure and its approved locator
-  as evidence in existing permitted definitions/text; excluding executable mappings
-  does not exclude such evidence. Do not assert physical constraints as customer rules
-  or copy business rows. At the existing stage review, identify the candidate location
-  or concrete delivery gap for important source facts and necessary dependencies;
-  broad unknowns or whole-area exclusions do not establish coverage. Use the current
-  handoff/note rather than a per-column inventory or new platform gate.
-
-  Modeling describes reuse/addition/modification/justified deletion and unknowns in
-  business meaning and Coordinator review; retain the normal candidate schema and
-  do not guess platform IRIs. Protocol binds existing identities from current governed
-  reads or receipts. Preserve compatible identities and inspect direct references
-  plus relevant indirect shared dependencies before modification (R4.0-007). Do not
-  merge by name or create duplicates instead of modifying; unsupported commands return
-  a locatable gap. Reuse items have no write command. For a wholly no-change round
-  publish an approved materialization plan with empty items and decision_bindings
-  and valid identity_bindings for every reused item; protocol_check_plan_coverage
-  verifies the bound observed read, current revision and candidate approval. No fake
-  update, dry-run or apply is needed for a read-only plan. Execute only nonempty write
-  plans through the unchanged candidate/translation approval, dry-run/apply and atomic
-  version-protected contract. Successful write receipts do not require per-batch full
-  comparisons.
-
-  Topology reuses explicit authorized ontology_id entries, or creates name entries
-  only when this round''s allow_new_ontologies permits it and business topology is
-  approved. Do not precreate a first Ontology or bind by name. All work remains in
-  the existing Project. Unknown writes/create responses reconcile the original request
-  and never replay with new IDs. Retain existing and newly applied resources on failure;
-  clean only this run''s credentials and owned Sessions/Leases.
-
-  Generate, review and freeze new CQ for this round''s additions/changes, cross-business
-  relations and affected previous questions. Before freeze, align necessary answer points with this objective
-  and the actual question, distinguishing source evidence, confirmed meaning and
-  supported unknowns through the existing review/version process. Public feedback/regression is not hidden
-  blind acceptance. Preserve old questions/reports and do not combine previous PASS
-  or claim untested model coverage. Independent Consumer/Judge stay read-only and
-  do not repair production. Perform the current production association self-check
-  before handoff. Report reused/added/modified/deleted/pending scope, revisions, actual
-  application, acceptance scope and independent verdict separately; retain unknown/PARTIAL/REVISE.
-  Same-goal correction stays in its active run; checkpoint recovery retains its original
-  goal; standby consultation never reopens writes. Completion uses normal R4.0-028
-  standby; explicit stop destroys this round''s Team.'
+objective: >-
+  Continue this round's bounded new business, revision or public-feedback objective on the
+  currently authorized existing Project and explicit Ontology IDs. Start a new Team/run; do
+  not resume an old goal, inherit old conversations, hidden CQ/answers, Judge reasons or old
+  run directories. Modeling first reads relevant current authorized definitions, identities,
+  relationships, rules, mappings, unknowns and shared dependencies. Read only what the
+  business goal needs; retain pagination/permission limitations and do not infer absence from
+  empty results. Reuse public source material only with its original source and valid-at time.
+  Conflicts require business clarification; feedback observations are not confirmed business
+  facts. Keep source declarations and unconfirmed customer interpretation separate. When
+  needed by this objective, retain relevant source structure and its approved locator as
+  evidence in existing permitted definitions/text; excluding executable mappings does not
+  exclude such evidence. Do not assert physical constraints as customer rules or copy business
+  rows. At the existing stage review, identify the candidate location or concrete delivery gap
+  for important source facts and necessary dependencies; broad unknowns or whole-area
+  exclusions do not establish coverage. Use the current handoff/note rather than a per-column
+  inventory or new platform gate. Modeling describes reuse/addition/modification/justified
+  deletion and unknowns in business meaning and Coordinator review; retain the normal
+  candidate schema and do not guess platform IRIs. The program binds existing identities from
+  Modeling-selected entries in current governed reads or receipts; do not guess resource IDs
+  or IRIs. Preserve compatible identities and inspect direct references plus relevant indirect
+  shared dependencies before modification (R4.0-007). Do not merge by name or create
+  duplicates instead of modifying; unsupported commands return a locatable gap. Reuse items
+  have no write command. For a wholly no-change round retain the approved reuse decisions,
+  actual read/revision references and coverage in the existing handoff/map; do not manufacture
+  updates or writes. Modeling submits only explicit nonempty changes through
+  modeling_submit_model_changes; the program compiles, binds and applies atomically under
+  R4.3-024/025. Keep necessary business confirmation, authorization and version protection; no
+  Protocol translation, translation approval or dry-run is used. Successful write receipts do
+  not require per-batch full comparisons. Topology reuses explicit authorized ontology_id
+  entries, or creates name entries only when this round's allow_new_ontologies permits it and
+  business topology is approved. Do not precreate a first Ontology or bind by name. All work
+  remains in the existing Project. Unknown writes/create responses reconcile the original
+  request and never replay with new IDs. Retain existing and newly applied resources on
+  failure; clean only this run's credentials and owned Sessions/Leases. Generate, review and
+  freeze new CQ for this round's additions/changes, cross-business relations and affected
+  previous questions. Before freeze, align necessary answer points with this objective and the
+  actual question, distinguishing source evidence, confirmed meaning and supported unknowns
+  through the existing review/version process. Public feedback/regression is not hidden blind
+  acceptance. Preserve old questions/reports and do not combine previous PASS or claim
+  untested model coverage. Independent Consumer/Judge stay read-only and do not repair
+  production. Perform the current production association self-check before handoff. Report
+  reused/added/modified/deleted/pending scope, revisions, actual application, acceptance scope
+  and independent verdict separately; retain unknown/PARTIAL/REVISE. Same-goal correction
+  stays in its active run; checkpoint recovery retains its original goal; standby consultation
+  never reopens writes. Completion uses normal R4.0-028 standby; explicit stop destroys this
+  round's Team.
 role_sources:
 - path: modeling_team/references/r4-0-007-scenario-map-contract.json
   classification: coordination
@@ -69,9 +63,10 @@ role_sources:
   - protocol
 - path: modeling_team/references/r3-0-009-unified-graph-contract.json
   classification: coordination
-  roles:
-  - coordinator
-  - protocol
+  roles: [coordinator, modeling, protocol]
+- path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+  classification: coordination
+  roles: [coordinator, modeling, protocol]
 - path: modeling_team/references/r4-0-012-modeling-contract.json
   classification: coordination
   roles:
@@ -100,8 +95,7 @@ role_sources:
   - protocol
 - path: modeling_team/references/modeling-batch-item-contract.json
   classification: protocol
-  roles:
-  - protocol
+  roles: [protocol, modeling]
 - path: modeling_team/references/r3-0-011-competency-question-contract.json
   classification: coordination
   roles:

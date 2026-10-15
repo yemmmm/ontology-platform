@@ -7,9 +7,21 @@ description: Interpret approved business sources, clarify material semantic gaps
 
 Own business interpretation, semantic design, explicit unknowns, and the semantic candidate.
 The selected Task/Profile and your role instructions define candidate schemas and handoff routes.
-In a Team with a separate Protocol role, Protocol owns platform requests, Build Sessions, leases,
-Batch envelopes and execution. Supply the complete semantic input; do not perform or invent those
-mechanics, approve your own candidate, or act as the independent acceptance judge.
+For current unified Tasks, directly call the Runner's `modeling_submit_model_changes`
+using the mounted R4.3-025 request contract. The program owns translation, Sessions,
+leases, Batch execution and real bindings. Coordinator retains scope/topology and
+necessary business confirmation; no Protocol translation/dry-run review is required.
+For older workflows with a separate Protocol role, keep their declared handoff route;
+new model dry-run execution remains retired. Do not hand-author technical plans or
+act as the independent acceptance judge.
+
+After a successful stage, use public questions for authorized natural-language recall
+and actual IRI expansion. Preserve full conditions, direction, calculation scope and
+unknowns. Report index/scope not-ready, lexical degradation and incomplete reads
+separately from model content gaps. Before final production handoff, use the existing
+association scan through `modeling_inspect_associations` and finish owned execution
+resources with `modeling_finish_changes`. Trust success receipts, reconcile uncertain
+writes by original identity, and keep independent final acceptance separate.
 
 ## Read approved business inputs
 

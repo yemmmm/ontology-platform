@@ -6,21 +6,22 @@
 schema_version: 2
 task_id: r4-0-012-tracing-suspension
 objective: >-
-  Model a bounded multi-slice semantic scenario from the approved business
-  sources.  Use the mounted r4-0-007 scenario-map contract for interleaved
-  viewpoints, stable shared definitions, maintenance ownership, explicit
-  unknowns/conflicts and scoped reference reviews before shared changes.
-  Preserve source fidelity, explicit unknowns, competency-question
-  coverage, generic semantic scope, deterministic dry-run/apply/readback,
-  authorization and independent acceptance. If the host explicitly delegates
-  CQ review to Delivery, submit_cq_review.note records the authorization and
-  source/question-version basis; review, hidden visibility, freeze, and
-  independent Judge contracts remain unchanged. Modeling candidates contain
-  semantic meaning, shared slice scope and unknowns only; Protocol owns Batch
-  envelopes, platform IDs, write receipts and read handles.  The active flow
-  does not create, attach or complete source-tracing records and does not use
-  their absence as a semantic failure.  Relational source rows remain in the
-  source database and are not copied into RDF individuals.
+  Model a bounded multi-slice semantic scenario from the approved business sources.  Use the
+  mounted r4-0-007 scenario-map contract for interleaved viewpoints, stable shared
+  definitions, maintenance ownership, explicit unknowns/conflicts and scoped reference reviews
+  before shared changes. Preserve source fidelity, explicit unknowns, competency-question
+  coverage, generic semantic scope, request-internal validation, atomic apply and necessary
+  business readback, authorization and independent acceptance. If the host explicitly
+  delegates CQ review to Delivery, submit_cq_review.note records the authorization and
+  source/question-version basis; review, hidden visibility, freeze, and independent Judge
+  contracts remain unchanged. Modeling authors immutable current-format candidates and submits
+  explicit changes directly through modeling_submit_model_changes under R4.3-024/025. The
+  program owns actual resource binding, Batch envelopes, lifecycle fields and receipts.
+  Modeling uses its scoped read tools for immediate public-question recall and actual IRI
+  expansion. No Protocol translation, translation approval or dry-run is required.  The active
+  flow does not create, attach or complete source-tracing records and does not use their
+  absence as a semantic failure.  Relational source rows remain in the source database and are
+  not copied into RDF individuals.
 role_sources:
   - path: docs/evaluation-scenarios/industrial-service-v3/modeling-input/scenario-brief.md
     classification: business-source
@@ -42,7 +43,10 @@ role_sources:
     roles: [coordinator, protocol]
   - path: modeling_team/references/r3-0-009-unified-graph-contract.json
     classification: coordination
-    roles: [coordinator, protocol]
+    roles: [coordinator, modeling, protocol]
+  - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+    classification: coordination
+    roles: [coordinator, modeling, protocol]
   - path: modeling_team/references/r4-0-012-modeling-contract.json
     classification: coordination
     roles: [modeling]
@@ -57,7 +61,7 @@ role_sources:
     roles: [modeling, protocol]
   - path: modeling_team/references/modeling-batch-item-contract.json
     classification: protocol
-    roles: [protocol]
+    roles: [protocol, modeling]
   - path: modeling_team/references/r3-0-011-competency-question-contract.json
     classification: coordination
     roles: [competency-question]

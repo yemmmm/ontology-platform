@@ -6,11 +6,12 @@ import asyncio
 from typing import Any
 
 import pytest
+from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.mcp.server import mcp
 from app.core.config import Settings
-from app.repositories.models import OntologyModel, ProjectModel
+from app.repositories.models import ModelingBatchModel, OntologyModel, ProjectModel
 
 
 BUILD_SESSION_TOOLS = {
@@ -82,6 +83,43 @@ def _data(result: dict[str, Any]) -> dict[str, Any]:
     assert result["ok"] is True, result
     assert isinstance(result["data"], dict)
     return result["data"]
+
+
+def test_mcp_submit_rejects_retired_dry_run_before_persistence(mcp_scope) -> None:
+    created = _data(
+        _tool("create_build_session").fn(
+            project_id="mcp-build-project",
+            client_session_id="mcp-dry-run-session",
+            previous_session_id=None,
+            initial_checkpoint=None,
+        )
+    )
+    session = created.get("session", created)
+
+    rejected = _tool("submit_modeling_batch").fn(
+        session_id=session["id"],
+        client_batch_id="mcp-retired-dry-run",
+        ontology_id="mcp-build-ontology",
+        idempotency_key="mcp-retired-dry-run-attempt",
+        expected_model_revision=0,
+        items=[
+            {
+                "client_item_id": "customer",
+                "command_kind": "create_class",
+                "payload": {"name": "Customer"},
+            }
+        ],
+        mode="dry_run",
+    )
+
+    assert rejected["ok"] is False
+    assert rejected["error_code"] == "validation_error"
+    assert "apply_atomic" in rejected["error"]
+    assert mcp_scope.scalar(
+        select(ModelingBatchModel).where(
+            ModelingBatchModel.client_batch_id == "mcp-retired-dry-run"
+        )
+    ) is None
 
 
 def test_mcp_create_checkpoint_resume_and_get_use_shared_revision_semantics(mcp_scope) -> None:

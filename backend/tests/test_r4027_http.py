@@ -77,18 +77,14 @@ def test_numbered_writes_drift_reads_and_rebuild():
             request = dict(
                 client_batch_id=token,
                 ontology_id=ontology_id,
-                mode="dry_run",
-                idempotency_key="dry",
+                mode="apply_atomic",
+                idempotency_key="apply",
                 expected_model_revision=0,
+                lease_token=lease["lease_token"],
                 items=items,
             )
             for invalid in ("legacy-hash", "0", True, -1):
                 post(batch_path, {**request, "expected_model_revision": invalid}, 422)
-            assert post(batch_path, request)["attempt_status"] == "validated"
-            assert get(context_path)["workspace"]["model_revision"] == 0
-            request.update(
-                mode="apply_atomic", idempotency_key="apply", lease_token=lease["lease_token"]
-            )
             applied = post(batch_path, request)
             assert applied["attempt_status"] == "applied", applied["findings"]
             assert applied["workspace"]["before_version"] == 0

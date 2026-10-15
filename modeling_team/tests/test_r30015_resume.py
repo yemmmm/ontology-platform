@@ -1410,6 +1410,7 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
         ModelingBatchSubmit,
         ModelingItemInput,
         OntologyLeaseAcquire,
+        OntologyLeaseRelease,
     )
     from app.core.config import Settings
     from app.repositories.models import OntologyModel, ProjectModel
@@ -1504,6 +1505,23 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
             project_id, BuildSessionCreate(client_session_id="resume-agent")
         )
         session_b_id = session_b["id"]
+        build.release_ontology_lease(
+            session_a_id,
+            ontology_id,
+            OntologyLeaseRelease(
+                client_request_id="r3015-release-a",
+                lease_token=lease["lease_token"],
+                expected_lease_revision=lease["lease_revision"],
+            ),
+        )
+        lease_b = build.acquire_ontology_lease(
+            session_b_id,
+            ontology_id,
+            OntologyLeaseAcquire(
+                client_request_id="r3015-lease-b",
+                expected_session_revision=1,
+            ),
+        )
         version_after = versions.version_for(ontology_id)
         duplicate = service.submit(
             session_b_id,
@@ -1511,8 +1529,9 @@ def test_m16_real_service_keys_do_not_dedupe_across_sessions_and_the_index_block
                 client_batch_id="cb-r3015-real",
                 ontology_id=ontology_id,
                 idempotency_key="idem-r3015-real",
-                mode="dry_run",
+                mode="apply_atomic",
                 expected_model_revision=version_after,
+                lease_token=lease_b["lease_token"],
                 items=[item("item-real-1")],
             ),
         )

@@ -232,20 +232,6 @@ def test_v1_full_chain_http_mcp_recovery_and_isolation(live: tuple[httpx.Client,
                 "payload": _operation(suffix),
             },
         ]
-        dry = _request(
-            client,
-            "POST",
-            f"/build-sessions/{build['id']}/modeling-batches",
-            json={
-                "client_batch_id": f"dry-{suffix}",
-                "ontology_id": o1["id"],
-                "idempotency_key": f"dry-{suffix}",
-                "mode": "dry_run",
-                "expected_model_revision": version,
-                "items": items,
-            },
-        )
-        assert dry["attempt_status"] == "validated"
         applied_payload = {
             "client_batch_id": f"apply-{suffix}",
             "ontology_id": o1["id"],

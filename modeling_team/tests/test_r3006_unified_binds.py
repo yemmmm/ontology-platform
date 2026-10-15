@@ -148,6 +148,14 @@ def test_t_g2_2_unified_mount_sequences_match_the_design(tmp_path):
         # the production roles keep their read-only public projection bind.
         assert PARENT not in sequences["competency-question"]
         assert PLANS not in sequences["competency-question"]
+        # The active unified Modeling role also receives the scoped read
+        # surface.  Namespace construction requires the socket to exist, so
+        # provide the same small host-side endpoint that a prepared run owns.
+        modeling_read_socket = root / "modeling-read.sock"
+        modeling_read_socket.touch()
+        adapter._active_run.modeling_read_proxy = SimpleNamespace(
+            socket_path=modeling_read_socket
+        )
         for role in ("coordinator", "modeling", "protocol"):
             command = adapter.namespace_command(agents[role])
             assert (

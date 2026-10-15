@@ -231,23 +231,16 @@ def test_public_four_kind_write_receipt_exact_read_context_and_export():
             request = {
                 "client_batch_id": token,
                 "ontology_id": ontology_id,
-                "mode": "dry_run",
-                "idempotency_key": "dry-" + token,
+                "mode": "apply_atomic",
+                "idempotency_key": "apply-" + token,
                 "expected_model_revision": version,
+                "lease_token": lease["lease_token"],
                 "items": items,
             }
             path = f"/build-sessions/{build['id']}/modeling-batches"
-            checked = post(path, request)
-            assert checked["attempt_status"] == "validated", json.dumps(checked["findings"])
-            applied_request = dict(
-                request,
-                mode="apply_atomic",
-                idempotency_key="apply-" + token,
-                lease_token=lease["lease_token"],
-            )
-            applied = post(path, applied_request)
+            applied = post(path, request)
             assert applied["attempt_status"] == "applied", applied["findings"]
-            assert post(path, applied_request)["attempt_id"] == applied["attempt_id"]
+            assert post(path, request)["attempt_id"] == applied["attempt_id"]
             resources = {
                 entry["client_item_id"]: entry["resource_outputs"]["resource_iri"]
                 for entry in applied["items"]
