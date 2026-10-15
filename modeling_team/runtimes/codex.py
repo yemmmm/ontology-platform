@@ -341,6 +341,16 @@ _AUTH_SECRET_KEY_NAMES = frozenset(
 # (an absolute deadline) this is an inactivity timer driven by observed stdout activity.
 _LLM_INACTIVITY_TIMEOUT_SECONDS = 300.0
 
+# App-server startup can spend longer in local discovery/initialization than a
+# normal control RPC.  Keep this as one bounded wait on the original request:
+# startup has no model turn or platform write in flight, so a late response is
+# useful diagnostic evidence and a replay would create a second request.
+_RPC_TIMEOUT_SECONDS = 15.0
+_STARTUP_RPC_TIMEOUT_SECONDS = 60.0
+_STARTUP_RPC_METHODS = frozenset(
+    {"initialize", "thread/start", "mcpServerStatus/list"}
+)
+
 # These are the current App Server notification methods whose payloads represent
 # actual turn/item/tool work.  Keep this explicit: generic status, warning,
 # startup, and unknown notifications must not postpone the inactivity watchdog.
@@ -5591,6 +5601,39 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             return self._rpc_locked(agent, method, params)
 
     @staticmethod
+    def _rpc_timeout_seconds(method: str) -> float:
+        return (
+            _STARTUP_RPC_TIMEOUT_SECONDS
+            if method in _STARTUP_RPC_METHODS
+            else _RPC_TIMEOUT_SECONDS
+        )
+
+    def _record_rpc_timeout(
+        self,
+        agent: _Agent,
+        method: str,
+        started: float,
+        frames_received: int,
+    ) -> None:
+        process = agent.process
+        poll = getattr(process, "poll", None) if process is not None else None
+        process_poll = poll() if callable(poll) else None
+        try:
+            self._append_runtime_evidence(
+                "rpc-timeout",
+                {
+                    "method": method,
+                    "elapsed_seconds": round(max(0.0, time.monotonic() - started), 3),
+                    "frames_received": frames_received,
+                    "process_poll": process_poll,
+                },
+            )
+        except OSError:
+            # Timeout evidence is diagnostic only; an evidence-filesystem issue
+            # must not replace the original bounded RPC failure.
+            pass
+
+    @staticmethod
     def _turn_digest(turn_id: str | None) -> str | None:
         if not isinstance(turn_id, str) or not turn_id:
             return None
@@ -6016,11 +6059,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             + "\n"
         )
         agent.process.stdin.flush()
-        deadline = time.monotonic() + 15
+        started = time.monotonic()
+        deadline = started + self._rpc_timeout_seconds(method)
+        frames_received = 0
         while time.monotonic() < deadline:
             line = self._read_output_line(agent, deadline - time.monotonic())
             if line is None:
                 continue
+            frames_received += 1
             try:
                 value = json.loads(line)
             except json.JSONDecodeError as exc:
@@ -6035,6 +6081,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             self._notification(agent, value)
             if getattr(agent, "runtime_failure", None) is not None:
                 raise CodexRuntimeError("runtime failure is latched")
+        self._record_rpc_timeout(agent, method, started, frames_received)
         raise CodexRuntimeError(f"app-server did not answer {method}")
 
     def _first_turn_rpc_locked(
@@ -6052,6 +6099,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             raise CodexRuntimeError("app-server is unavailable")
         agent.request_id += 1
         request_id = agent.request_id
+        started = time.monotonic()
         try:
             agent.process.stdin.write(
                 json.dumps(
@@ -6060,12 +6108,14 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 + "\n"
             )
             agent.process.stdin.flush()
-            deadline = time.monotonic() + 15
+            deadline = started + _RPC_TIMEOUT_SECONDS
             buffered: list[dict[str, Any]] = []
+            frames_received = 0
             while time.monotonic() < deadline:
                 line = self._read_output_line(agent, deadline - time.monotonic())
                 if line is None:
                     continue
+                frames_received += 1
                 try:
                     value = json.loads(line)
                 except json.JSONDecodeError as exc:
@@ -6108,6 +6158,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                 # them as ordinary events and replay once auth is gone.
                 buffered.append(value)
             self._unlink_auth_barrier(agent)
+            self._record_rpc_timeout(agent, method, started, frames_received)
             raise CodexRuntimeError(f"app-server did not answer {method}")
         except CodexRuntimeError:
             # Error/timeout paths remove auth but intentionally do not replay buffered

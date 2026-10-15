@@ -78,3 +78,13 @@ thread/start 和必要 MCP 能力核对。
 执行 turn/start、语义建模或平台写入。Codex 隔离文件 57 passed、55 subtests passed，
 随后针对启动不调用 discovery 的回归 1 passed、56 deselected。diff 检查通过。
 原生首 turn 实际技能读取仍待新组真实运行核对，探针不替代 semantic-start 或独立验收。
+
+移除 inventory 后 `start1d` 仍在 `thread/start` 的 15 秒窗口失败，无 semantic-start，
+表明 discovery 不是全部初始化故障。复核运维等待与正确性边界后，仅将 initialize、
+thread/start、mcpServerStatus/list 单次等待改为 60 秒，等待同一 request id、不重放。
+首次 turn/start 鉴权屏障和其他业务/控制 RPC 仍为 15 秒；EOF、显式 error、解析失败
+立即报错。新增超时观察仅记录 method、耗时、帧数和子进程 poll，不含输入或凭据。
+若 60 秒仍无响应，保留初始化阻塞，不继续增加机制或放宽。
+
+该最小变更的隔离文件 60 passed、55 subtests passed；新 RPC focused 3 passed、
+鉴权相关 2 passed；Ruff 与 diff 检查通过。尚未证明真实启动恢复，须新进程实测。

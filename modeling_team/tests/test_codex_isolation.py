@@ -1219,6 +1219,141 @@ class CodexIsolationTests(unittest.TestCase):
             finally:
                 os.close(write_fd)
 
+    def test_startup_rpc_timeout_is_sixty_seconds_once_and_is_observable(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            records: list[tuple[str, dict[str, object]]] = []
+            read_timeouts: list[float] = []
+            agent = _Agent(
+                "coordinator",
+                _load_package(root, "coordinator"),
+                base / "home",
+                base / "work",
+                base / "skills",
+                process=SimpleNamespace(
+                    stdin=StringIO(), stdout=object(), poll=lambda: None
+                ),
+            )
+
+            def no_frame(_agent: _Agent, timeout: float) -> None:
+                read_timeouts.append(timeout)
+                return None
+
+            adapter._read_output_line = no_frame  # type: ignore[method-assign]
+            adapter._append_runtime_evidence = (  # type: ignore[method-assign]
+                lambda name, value: records.append((name, value))
+            )
+            clock = iter((0.0, 0.0, 0.0, 60.1, 60.1))
+            with patch("modeling_team.runtimes.codex.time.monotonic", side_effect=clock):
+                with self.assertRaisesRegex(
+                    CodexRuntimeError, "app-server did not answer initialize"
+                ):
+                    adapter._rpc(agent, "initialize", {})
+
+            self.assertEqual(read_timeouts, [60.0])
+            self.assertEqual(agent.request_id, 1)
+            self.assertEqual(agent.process.stdin.getvalue().count('"id": 1'), 1)
+            self.assertEqual(
+                [adapter._rpc_timeout_seconds(method) for method in (
+                    "initialize",
+                    "thread/start",
+                    "mcpServerStatus/list",
+                )],
+                [60.0, 60.0, 60.0],
+            )
+            self.assertEqual(adapter._rpc_timeout_seconds("turn/start"), 15.0)
+            self.assertEqual(adapter._rpc_timeout_seconds("send_team_message"), 15.0)
+            self.assertEqual(records, [
+                (
+                    "rpc-timeout",
+                    {
+                        "method": "initialize",
+                        "elapsed_seconds": 60.1,
+                        "frames_received": 0,
+                        "process_poll": None,
+                    },
+                )
+            ])
+
+    def test_first_turn_auth_rpc_keeps_fifteen_second_budget_and_one_request(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            records: list[tuple[str, dict[str, object]]] = []
+            read_timeouts: list[float] = []
+            agent = _Agent(
+                "modeling",
+                _load_package(root, "modeling"),
+                base / "home",
+                base / "work",
+                base / "skills",
+                process=SimpleNamespace(
+                    stdin=StringIO(), stdout=object(), poll=lambda: None
+                ),
+                auth_barrier_pending=True,
+                credential_mode="provider_proxy",
+            )
+
+            def no_frame(_agent: _Agent, timeout: float) -> None:
+                read_timeouts.append(timeout)
+                return None
+
+            adapter._read_output_line = no_frame  # type: ignore[method-assign]
+            adapter._append_runtime_evidence = (  # type: ignore[method-assign]
+                lambda name, value: records.append((name, value))
+            )
+            clock = iter((0.0, 0.0, 0.0, 15.1, 15.1, 15.1))
+            with patch("modeling_team.runtimes.codex.time.monotonic", side_effect=clock):
+                with self.assertRaisesRegex(
+                    CodexRuntimeError, "app-server did not answer turn/start"
+                ):
+                    adapter._rpc(agent, "turn/start", {})
+
+            self.assertEqual(read_timeouts, [15.0])
+            self.assertEqual(agent.request_id, 1)
+            self.assertEqual(agent.process.stdin.getvalue().count('"id": 1'), 1)
+            self.assertFalse(agent.auth_barrier_pending)
+            self.assertEqual(records[-1], (
+                "rpc-timeout",
+                {
+                    "method": "turn/start",
+                    "elapsed_seconds": 15.1,
+                    "frames_received": 0,
+                    "process_poll": None,
+                },
+            ))
+
+    def test_rpc_eof_still_fails_immediately_without_timeout_observation(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            records: list[tuple[str, dict[str, object]]] = []
+            read_fd, write_fd = os.pipe()
+            stream = os.fdopen(read_fd, "r", encoding="utf-8")
+            os.close(write_fd)
+            self.addCleanup(stream.close)
+            agent = _Agent(
+                "coordinator",
+                _load_package(root, "coordinator"),
+                base / "home",
+                base / "work",
+                base / "skills",
+                process=SimpleNamespace(
+                    stdin=StringIO(), stdout=stream, poll=lambda: 0
+                ),
+            )
+            adapter._append_runtime_evidence = (  # type: ignore[method-assign]
+                lambda name, value: records.append((name, value))
+            )
+
+            with self.assertRaisesRegex(CodexRuntimeError, "app-server closed its output"):
+                adapter._rpc(agent, "initialize", {})
+            self.assertEqual(records, [])
+
     def test_dynamic_exec_reads_only_staged_skill_and_source(self) -> None:
         root = repository_root()
         with tempfile.TemporaryDirectory() as directory:
