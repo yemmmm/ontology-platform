@@ -19,9 +19,23 @@
 - 场景说明保留“最小链→资产—故障—工单小链→完整工业服务”的独立回归顺序、原checkpoint
   用途及逐层未验证边界，列明既有计时／019用量采集要求，缺值unknown，不设新预算。
 
-未修改平台可执行实现、接口、编排、存储、通用角色包或原场景；无backend/frontend改动，
-不需要全后端／前端套件或服务重启。新测试只检验配置、数据合同和离线prepare路径，
+初始材料交付阶段未修改平台接口、编排、存储、通用角色包或原场景；本次启动前兼容修复仅改
+`modeling_team` 的模型路由与 Runner，无backend/frontend改动，不需要全后端／前端套件或服务重启。
+新测试只检验配置、数据合同和离线prepare路径，
 不是新验收器或语义裁判。
+
+## 2026-10-15 启动前模型绑定兼容修复
+
+首次 `glm-5.3-flash/high` 预启动在未创建 semantic-start、未写入平台前失败；公开错误记录为
+`workspaces/modeling-runs/.host-launches/r4326-20261015-glmhigh-start1.err.log` 中的
+`missing roster role bindings: minimal-chain-competency-question, minimal-chain-coordinator, minimal-chain-modeling`。
+精简包的 `package.yaml.role` 已声明为 `competency-question`、`coordinator`、`modeling`，而
+Model Profile 仍按语义角色键控。修复让 prepare 按该已声明 role 解析现有绑定，并只在 Runtime
+入口投影为 canonical package key；原始 package、baseline 和 profile YAML 均保持不变。
+
+修复回归覆盖 `glm-flash-high` 对三项精简包的 prepare 与 Runtime key 投影；validate、baseline
+及相关 Runner／Runtime 测试通过。此次是平台路由兼容修复，不计语义建模轮次，也不代表真实
+semantic-start、模型质量或独立语义验收已通过。
 
 v2 loader仍要求protocol_tools非空，新Task以一个只读工具名满足现有配置合同；实际
 roster没有Protocol，不产生平台写入路径或额外角色。这次仅增加任务，不扩展loader。

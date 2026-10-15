@@ -13,7 +13,7 @@ import threading
 import time
 from copy import deepcopy
 from datetime import UTC, datetime
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Mapping, Sequence
 
@@ -39,6 +39,7 @@ from .model_routing import (
     MODEL_PROFILE_DIRECTORY,
     MODEL_PROFILE_PACKAGE_IDS,
     TeamModelProfile,
+    TeamModelProfileError,
     load_team_model_profile,
     preflight_codex_subscription_auth,
     preflight_profile_credentials,
@@ -778,6 +779,55 @@ class TeamRunner:
             return value
         raise TeamConfigurationError("ledger factory signature is invalid")
 
+    @staticmethod
+    def _profile_binding_for_agent(
+        profile: TeamModelProfile, agent: Any
+    ) -> Any | None:
+        """Resolve a selected profile binding by package ID or package role."""
+
+        try:
+            return profile.binding_for(
+                agent.package.package_id,
+                semantic_role=agent.package.role,
+            )
+        except TeamModelProfileError:
+            return None
+
+    def _runtime_profile_agents(self) -> tuple[Any, ...]:
+        """Give the Runtime a canonical package key for role-bound aliases.
+
+        R4.3-026 deliberately uses compact package IDs while the frozen model
+        profile remains keyed by semantic role. Runtime code still validates
+        its final lookup by package ID, so only the Runtime-facing immutable
+        package view is canonicalized; the run configuration and baseline keep
+        the original package identity and digest.
+        """
+
+        if self.run is None:
+            raise RuntimeError("Runner is not prepared")
+        profile = self.run.team_model_profile
+        agents = self.run.configuration.profile.agents
+        if profile is None:
+            return agents
+        resolved: list[Any] = []
+        for profile_agent in agents:
+            package = profile_agent.package
+            if self._profile_binding_for_agent(profile, profile_agent) is None:
+                raise TeamConfigurationError(
+                    "team model profile is missing roster role binding for "
+                    + package.package_id
+                )
+            if package.package_id in profile.bindings:
+                resolved.append(profile_agent)
+                continue
+            resolved.append(
+                replace(
+                    profile_agent,
+                    package=replace(package, package_id=package.role),
+                )
+            )
+        return tuple(resolved)
+
     def prepare(
         self,
         *,
@@ -844,11 +894,9 @@ class TeamRunner:
                 self.repository_root, selected_model_profile_id
             )
             missing_roles = sorted(
-                {
-                    agent.package.package_id
-                    for agent in config.profile.agents
-                }
-                - set(team_model_profile.bindings)
+                agent.package.package_id
+                for agent in config.profile.agents
+                if self._profile_binding_for_agent(team_model_profile, agent) is None
             )
             if missing_roles:
                 raise TeamConfigurationError(
@@ -2454,7 +2502,7 @@ class TeamRunner:
                 )
                 self._append_evidence("coordination-phase", assignment)
             identities = self.adapter.start_roster(
-                self.run, self.run.configuration.profile.agents
+                self.run, self._runtime_profile_agents()
             )
             roster = [identity.agent_id for identity in identities]
             # R3.0-006 M1: the pre-delivery visibility probe and the

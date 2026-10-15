@@ -181,6 +181,48 @@ def test_runner_stages_exact_private_sources_and_freezes_compact_packages(tmp_pa
         rmtree(run_root, ignore_errors=True)
 
 
+def test_glm_profile_binds_compact_packages_by_role_and_runtime_uses_canonical_keys(tmp_path):
+    run_id = "r4326-glm-profile-" + uuid4().hex[:10]
+    run_root = ROOT / "workspaces/modeling-runs" / run_id
+    credential = tmp_path / "glm.env"
+    credential.write_text("GLM_API_KEY=r4326-test-sentinel\n", encoding="utf-8")
+    credential.chmod(0o600)
+    runner = TeamRunner(
+        repository_root=ROOT,
+        adapter=CapturingAdapter(),
+        glm_credential_path=credential,
+        freeze_started_at=datetime.now(UTC).isoformat(),
+    )
+    try:
+        run = runner.prepare(
+            run_id=run_id,
+            profile_path=PROFILE,
+            task_path=TASK,
+            scope={"mode": "create"},
+            model_profile_id="glm-flash-high",
+        )
+        assert run.team_model_profile is not None
+        assert [agent.package.package_id for agent in run.configuration.profile.agents] == [
+            "minimal-chain-coordinator",
+            "minimal-chain-modeling",
+            "minimal-chain-competency-question",
+        ]
+        runtime_agents = runner._runtime_profile_agents()
+        assert [agent.package.package_id for agent in runtime_agents] == [
+            "coordinator",
+            "modeling",
+            "competency-question",
+        ]
+        assert [agent.package.role for agent in runtime_agents] == [
+            "coordinator",
+            "modeling",
+            "competency-question",
+        ]
+    finally:
+        runner.cleanup()
+        rmtree(run_root, ignore_errors=True)
+
+
 @pytest.mark.parametrize("task_name", [
     "r4-0-009-asset-fault-workorder", "r4-0-009-multiview-semantic-acceptance",
     "r3-0-015-minimal-flow",

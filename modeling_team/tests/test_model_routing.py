@@ -374,6 +374,20 @@ def test_profile_accepts_a_declared_subset_of_the_role_universe(
     assert set(profile.bindings) == {"modeling", "competency-question"}
 
 
+def test_profile_binding_can_resolve_task_package_id_by_declared_role() -> None:
+    profile = load_team_model_profile(ROOT, "glm-flash-high")
+
+    binding = profile.binding_for(
+        "minimal-chain-coordinator", semantic_role="coordinator"
+    )
+
+    assert binding.package_id == "coordinator"
+    assert binding.model == "glm-5.3-flash"
+    assert binding.requested_effort == binding.effective_effort == "high"
+    with pytest.raises(TeamConfigurationError, match="minimal-chain-coordinator"):
+        profile.binding_for("minimal-chain-coordinator")
+
+
 def test_profile_rejects_null_and_unknown_role_declarations(tmp_path: Path) -> None:
     _write_profile(tmp_path, "null-role-fixture", dict(_MIXED_ROLES))
     directory = tmp_path / "modeling_team" / "model-profiles"

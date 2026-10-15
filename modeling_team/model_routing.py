@@ -233,13 +233,26 @@ class TeamModelProfile:
     digest: str
     bindings: Mapping[str, RoleModelBinding]
 
-    def binding_for(self, package_id: str) -> RoleModelBinding:
-        try:
-            return self.bindings[package_id]
-        except KeyError as exc:
-            raise TeamModelProfileError(
-                f"team model profile has no declaration for {package_id}"
-            ) from exc
+    def binding_for(
+        self, package_id: str, *, semantic_role: str | None = None
+    ) -> RoleModelBinding:
+        """Resolve a package binding, falling back to its declared semantic role.
+
+        Profiles are keyed by the closed semantic-role vocabulary. A task may
+        use a task-specific package ID for the same role, so callers that have
+        already loaded that package may provide its declared role as the
+        compatibility lookup key. The direct package-ID binding always wins;
+        no new profile role is admitted by this fallback.
+        """
+
+        binding = self.bindings.get(package_id)
+        if binding is None and semantic_role is not None:
+            binding = self.bindings.get(semantic_role)
+        if binding is not None:
+            return binding
+        raise TeamModelProfileError(
+            f"team model profile has no declaration for {package_id}"
+        )
 
     def provider_ids(self) -> tuple[str, ...]:
         return tuple(sorted({binding.provider_id for binding in self.bindings.values()}))
