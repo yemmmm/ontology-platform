@@ -55,6 +55,21 @@ Modeling socket，导致 app-server 启动失败。
 本修复仍未启动真实建模、未产生 semantic-start 或语义质量证据；由 Delivery 负责下一次真实
 启动。相关提交为后续 capability endpoint 修复提交。
 
+## 2026-10-15 start1c CQ review phase 提示修复
+
+`start1c` 已产生一次真实 `semantic-start`，但在任何模型应用前，Host 触发 CQ freeze 被
+Runner 以 `cq_freeze_schema_mismatch` 拒绝。公开 stdout 的完整反馈为 `phase=slice-draft`
+以及 `publish and review at least one question first`；公开的 review acknowledgements
+同样显示了 `panorama-draft` 与 `slice-draft`。Runner 的冻结题池只纳入
+`panorama-review`／`slice-review`，所以 preparation draft 虽被接受为 review 输入，最终题池
+为空；没有冻结消费或业务模型写入。
+
+持久修复只收窄两个运行提示：精简 CQ 角色必须用 `phase` exactly
+`panorama-review`／`slice-review` 发布正式 review，preparation phase 只能更正并重新发布；
+Delivery 在提交 review 或 freeze 前核对这两个 exact 值，发现 draft phase 时要求 CQ 角色
+以新 review 版本更正，不批准或循环重试 freeze。没有增加 Runner 拒绝门、模型配置、重试或
+平台机制。当前运行由 Delivery 通过既有 Host 私有 CQ 通道纠正并沿原 thread 继续。
+
 v2 loader仍要求protocol_tools非空，新Task以一个只读工具名满足现有配置合同；实际
 roster没有Protocol，不产生平台写入路径或额外角色。这次仅增加任务，不扩展loader。
 

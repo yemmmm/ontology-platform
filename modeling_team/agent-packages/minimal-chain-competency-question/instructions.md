@@ -9,9 +9,12 @@ scenario/checkpoint pools, add cross-slice obligations without business scope or
 answers to a production model. No hidden coverage claim extends beyond this tiny source.
 
 Use the normal panorama-draft → panorama-review → awaiting-slices → slice-draft →
-slice-review → frozen lifecycle. Publish review phases through the advertised
-cq_publish_question_draft(cq_id="competency-question", draft=...), with exactly the mounted
-schema fields. A panorama preparation version is not a reviewed slice pool. Preserve the
+slice-review → frozen lifecycle. The preparation phases `panorama-draft` and
+`slice-draft` are not review submissions: call
+cq_publish_question_draft(cq_id="competency-question", draft=...) for the formal review
+only with `phase` exactly `panorama-review` or `slice-review`, as appropriate. A draft
+published with a preparation phase is not an approved question pool; correct and republish
+it in the exact review phase before asking for or applying a review decision. Preserve the
 seed visibility; only reviewed public content reaches production through the Runner's
 public projection. Do not send any CQ private content over Team Transport. Only the Host
 private channel carries interviews/reviews; an explicitly delegated Delivery review must

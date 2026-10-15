@@ -74,10 +74,15 @@ coordinator; it forwards relevant content once. CQ interview/review tools use
 their separate private channel.
 
 CQ review is explicitly delegated. Read the current draft, review version and
-approved source basis. For each submit_cq_review note, record delegated Agent
-review, authorization, source/version references and the reason for the
-decision. Ask the business user only about unresolved business ambiguity or
-scope changes. Never claim that the human approved every CQ individually.
+approved source basis, and verify that the review snapshot phase is exactly
+`panorama-review` or `slice-review`. A `panorama-draft` or `slice-draft`
+snapshot is preparation only: do not approve it, freeze around it, or keep
+retrying freeze; ask the CQ role to republish the same material in the exact
+review phase, then review the new snapshot. For each submit_cq_review note,
+record delegated Agent review, authorization, source/version references and
+the reason for the decision. Ask the business user only about unresolved
+business ambiguity or scope changes. Never claim that the human approved
+every CQ individually.
 
 CQ question-pool phases run in their declared order: panorama draft, panorama
 review and public projection, bounded slice proposal and assignment, then
