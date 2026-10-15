@@ -51,8 +51,9 @@ Missing fields, ordinary input/format errors, and review/upstream waits are reco
 feedback or waiting states, not runtime issues; preserve the first real blocker and write
 state instead of reporting a runtime failure. In particular, CQ drafting/freeze pending is
 ordinary upstream waiting: prepare unaffected work, notify the Host through the existing
-channel and wait for its freeze confirmation without creating a business_clarification
-issue solely for that wait. For an actual typed issue, use the advertised
+channel and wait for its freeze confirmation in this same session. Do not report
+`status=blocked` or terminate the role solely because that dependency is pending, and do not
+create a business_clarification issue solely for that wait. For an actual typed issue, use the advertised
 `issue_control` pause with the exact `issue_id`, `reporter_id`, and `control_epoch` binding,
 then wait for the Host's persisted `issue_resolution`. The Runner automatically settles the
 bound broker `resume` or `abort` and wakes the original reporter after that resolution; do

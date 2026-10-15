@@ -307,9 +307,11 @@ def tool_complete_cq_handoff(
 
     Bindings come from the ``cq_handoff`` pending item.  Success moves the
     run to ``acceptance_pending`` and reports the acceptance attempt id and
-    report directory; in-flight or unknown staged writes keep their
-    original typed rejection.  A completed handoff is not the whole run's
-    completion.
+    report directory, and the Host-readable ``model_handoff`` path (also as
+    ``model_handoff_relative``).  The Runner publishes that file at
+    ``<run-root>/acceptance-v3/production-handoff.json``; in-flight or unknown
+    staged writes keep their original typed rejection.  A completed handoff
+    is not the whole run's completion.
     """
     return _call(
         complete_cq_handoff,
@@ -457,6 +459,11 @@ def tool_start_run(
     already exists, a live registration or a dead one is reported instead of
     silently reusing it, and no old run is ever stopped implicitly.  Launch
     accepted is not a semantic start: read ``get_run_status``.
+    ``task``, ``profile`` and ``scope`` must be the exact configured values from
+    the current Host configuration/authorization (normally repository-relative).
+    Do not reuse a prior run's ``task.snapshot.yaml``/``profile.snapshot.yaml``
+    or an ``/agent/work`` mount path; those paths belong to the isolated Agent
+    view and are not valid Host launch inputs.
     ``service_tier`` is unset (inherit), fast, or default (explicit off),
     affecting only the new child environment, never existing threads.
     """
@@ -665,6 +672,11 @@ def tool_start_evaluation(
     Host must inject an authorized read-only platform credential as
     ``R3011_ACCEPTANCE_PLATFORM_READ_KEY`` in this process environment before
     launch; production/Host admin credentials do not substitute for it.
+    For ``mode="cq-acceptance"``, ``model_handoff`` must be the exact Host
+    path returned by ``complete_cq_handoff`` (or its returned
+    ``model_handoff_relative`` repository path).  The Runner publishes it at
+    ``<run-root>/acceptance-v3/production-handoff.json``; an ``/agent/work``
+    path from an isolated role is not discoverable by Host.
     Pass ``session_timeout`` explicitly for evaluations needing more than
     the CLI's default 300 seconds. Query ``get_evaluation_status`` for bound
     stderr/stdout tails and the actual report outcome.

@@ -25,8 +25,18 @@ unified candidate kinds do not include Class/relation_type: create those definit
 item_id=null, target_ref=null and their semantic fields in an explicit change request;
 candidate_ref=null is supported when no candidate items are selected. Publish this complete
 immutable request as the semantic delivery. Create needed Classes first, then refer to their
-actual retained receipt entries using existing_resource_ref to define the relation_type.
-Do not use fields-only change IDs as candidate definition_ref or guess platform IDs.
+actual retained receipt entries using existing_resource_ref to define the relation_type. The
+retained MCP response is an envelope: a read-model resource item is addressed under
+`/structuredContent/data/items/N`, while an
+applied batch item is addressed at that same complete item path and exposes the platform
+identity in its `resource_outputs` object, including both `resource_id` and `resource_iri`.
+For `source_class_id`/`target_class_id`, use the complete applied Class receipt item so
+the compiler retains its request metadata and receives the real UUID. A read-model `id`/`iri`/
+`class_iri` is a semantic IRI and must stay in an IRI slot; never URL-decode it, derive a
+UUID from it, or use it as a resource ID. If a later applied batch has advanced the current
+revision, retain the exact earlier applied receipt and let the governed current read confirm
+that its exact resource IRI is still visible before reusing its UUID. Do not use fields-only
+change IDs as candidate definition_ref or guess platform IDs.
 Do not put required meaning only in a handoff or invent relation
 annotation fields. Preserve supplied unknowns in supported semantic_definition fields and
 report candidate-only unknowns as delivery gaps when they are not retrievable.
@@ -34,9 +44,10 @@ report candidate-only unknowns as delivery gaps when they are not retrievable.
 After Coordinator confirms the business scope/topology and Host confirms CQ freeze,
 submit explicit intended changes using modeling_submit_model_changes. Retain actual slice
 IDs verbatim; do not normalize hyphens or underscores. Before freeze you may prepare the
-delivery and end the turn waiting. cq_freeze_pending is ordinary upstream feedback, not a
-business clarification or runtime issue: notify Coordinator once and wait for the existing
-Host confirmation instead of escalating it into a new typed issue. Retain all actual results
+delivery and keep this session waiting. `cq_freeze_pending` is ordinary upstream dependency
+waiting, not a blocked/terminal result, business clarification, or runtime issue: notify
+Coordinator once and continue the same session after the existing Host confirmation instead
+of reporting `status=blocked` or terminating the role. Retain all actual results
 and correct only identified gaps. Protocol conversion, translation approval and
 model dry-run are absent from this path. An applied receipt proves application, not semantic
 quality. Read the current authorized model with public business questions; expand real IRI

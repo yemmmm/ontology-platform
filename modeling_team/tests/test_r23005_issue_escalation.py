@@ -678,7 +678,7 @@ class IssueEscalationTests(unittest.TestCase):
             self.assertEqual(output[0]["type"], "issue")
             self.assertEqual(output[0]["issue"]["state"], "waiting_owner")
 
-    def test_runner_resume_requires_reporter_to_finish_paused_turn(self) -> None:
+    def test_runner_resume_steers_reporter_with_active_turn(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             run = SimpleNamespace(
@@ -775,17 +775,10 @@ class IssueEscalationTests(unittest.TestCase):
             )
             output: list[dict[str, object]] = []
             runner._dispatch_issue_control(runner._issue_control_from_payload(resume), output)
-            self.assertEqual(adapter.sent, [])
-            self.assertEqual(runner.transport.issue_ledger.state, "resume_sent")
-            self.assertEqual(output[0]["reason_code"], "resume_waiting_reporter")
-            self.assertEqual(len(runner._issue_event_queue), 1)
-
-            adapter.agents["modeling"].active_turn_id = None
-            resumed_output: list[dict[str, object]] = []
-            runner._handle_issue_events(resumed_output)
             self.assertEqual(len(adapter.sent), 1)
             self.assertEqual(runner.transport.issue_ledger.state, "resolved")
-            self.assertEqual(resumed_output[0]["type"], "issue-control")
+            self.assertEqual(output[0]["type"], "issue-control")
+            self.assertEqual(runner._issue_event_queue, [])
 
     def test_cleanup_is_deferred_while_issue_is_pending(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

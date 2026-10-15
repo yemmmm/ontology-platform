@@ -228,6 +228,8 @@ def test_t1_1_verified_handoff_publishes_with_pending_checklist():
         assert ack["ok"] is True
         assert ack["acceptance_attempt_id"] == "attempt-0001"
         assert ack["report_directory"] == "acceptance-v3/reports/batch-r3012/attempt-0001"
+        assert ack["model_handoff"] == str(_handoff_path(runner))
+        assert ack["model_handoff_relative"] == str(_handoff_path(runner).relative_to(REPO_ROOT))
 
         path = _handoff_path(runner)
         assert path.is_file()
@@ -258,6 +260,8 @@ def test_t1_1_verified_handoff_publishes_with_pending_checklist():
         event = _read_evidence(runner, "cq-handoff-complete")[-1]
         assert event["handoff_digest"] == ack["handoff_digest"]
         assert event["acceptance_attempt_id"] == "attempt-0001"
+        assert event["model_handoff"] == str(path)
+        assert event["model_handoff_relative"] == str(path.relative_to(REPO_ROOT))
         assert event["readiness"]["ready"] is True
         assert runner._cq_wait_windows.has_open_window is False
         assert runner._cq_write_admission.phase == "read-only"

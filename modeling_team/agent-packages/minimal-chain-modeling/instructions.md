@@ -18,6 +18,16 @@ never author command plans or await translation approval/model dry-run. The pack
 platform:none denies raw platform calls; the run-bound direct capabilities and authorized
 read proxy supply the current route.
 
+Direct reference paths point into the exact retained MCP envelope. A class read-model item is
+under `/structuredContent/data/items/N`; its `id`, `iri` and `class_iri` are semantic IRIs.
+For a later `*_id` field, point `existing_resource_ref` at the corresponding complete applied
+Class receipt item, for example `/structuredContent/data/items/0`. Its `resource_outputs`
+object exposes both the UUID `resource_id` and its `resource_iri`; retain the complete item
+so the resolver also has its request metadata. Keep the earlier applied receipt when a later
+batch advances `model_revision`; the direct resolver rechecks the exact IRI in the current
+authorized read before reusing that UUID. Never use a read-model IRI as a resource ID, decode
+or reshape it into a UUID, or substitute a label/business name.
+
 Use query_semantic_context for public business questions in explicit authorized ontologies
 scope, followed by actual returned IRI anchors/full definitions as needed. Preserve actual
 model revision, index state, truncation/cursors and authorization limits; no_match alone
@@ -36,6 +46,9 @@ Standalone requests omit reply_to_delivery_id, replies bind an actual active
 expects_reply ID. Correct typed not_written errors within this goal; trust applied receipts,
 never replay them for an index failure, and reconcile uncertain original writes before
 retry/dependent work. A substantive repair round still requires remaining user authorization.
-Report concrete blockers with the first failure layer and write state; an ordinary wait is
-not runtime_recovery. On a sourced user pause, stop advancing, disclose in-flight work and
+Report concrete blockers with the first failure layer and write state. An ordinary upstream
+wait, including `cq_freeze_pending`, is a continuation state: notify Coordinator once, keep
+the same session alive, and resume after the existing Host confirmation. Do not report
+`status=blocked` or terminate the role merely because that dependency is pending. On a sourced
+user pause, stop advancing, disclose in-flight work and
 acknowledge Coordinator; retain accepted work for an authorized resume.

@@ -91,6 +91,33 @@ def _nonempty(value: Any) -> bool:
     return isinstance(value, str) and bool(value.strip())
 
 
+def _forward_failure_actual(exc: Exception, batch: Mapping[str, Any]) -> dict[str, Any]:
+    """Retain the definite/unknown forward boundary with its request identity."""
+
+    actual = getattr(exc, "actual", None)
+    detail = dict(actual) if isinstance(actual, Mapping) else {}
+    detail.setdefault("message", str(exc))
+    for field in ("client_batch_id", "idempotency_key"):
+        if field in batch:
+            detail.setdefault(field, batch[field])
+    return detail
+
+
+def _forward_failure_response(
+    code: str, exc: Exception, batch: Mapping[str, Any]
+) -> dict[str, Any]:
+    """Shape one rejected/unknown submit response for the existing observer."""
+
+    return {
+        "ok": False,
+        "error_code": code,
+        "error": str(exc),
+        "actual": _forward_failure_actual(exc, batch),
+        "client_batch_id": batch.get("client_batch_id"),
+        "idempotency_key": batch.get("idempotency_key"),
+    }
+
+
 def _stable_id(prefix: str, *parts: Any, limit: int = 255) -> str:
     raw = ":".join(str(part) for part in parts)
     value = f"{prefix}:{raw}"
@@ -754,20 +781,70 @@ class DirectModelExecutor:
                 self._notify("submit_modeling_batch", platform_batch, detail)
                 receipt = self._persist_receipt(intent, detail, platform_batch)
                 return self._batch_from_platform(detail, result_batch, intent, receipt, index, source_map)
-            raise DirectExecutionError("staged_batch_forward_unknown", str(exc), retryable=True) from exc
+            self._notify(
+                "submit_modeling_batch",
+                platform_batch,
+                _forward_failure_response("staged_batch_forward_unknown", exc, platform_batch),
+            )
+            raise DirectExecutionError(
+                "staged_batch_forward_unknown",
+                str(exc),
+                actual=_forward_failure_actual(exc, platform_batch),
+                retryable=True,
+            ) from exc
         except StagedBatchForwardError as exc:
             self._mark_intent(intent, "rejected")
-            raise DirectExecutionError("staged_batch_forward_failed", str(exc), retryable=True) from exc
+            self._notify(
+                "submit_modeling_batch",
+                platform_batch,
+                _forward_failure_response("staged_batch_forward_failed", exc, platform_batch),
+            )
+            raise DirectExecutionError(
+                "staged_batch_forward_failed",
+                str(exc),
+                actual=_forward_failure_actual(exc, platform_batch),
+                retryable=True,
+            ) from exc
         except Exception as exc:  # noqa: BLE001 - external forwarder boundary
             self._mark_intent(intent, "unknown")
-            raise DirectExecutionError("staged_batch_forward_unknown", str(exc), retryable=True) from exc
+            self._notify(
+                "submit_modeling_batch",
+                platform_batch,
+                _forward_failure_response("staged_batch_forward_unknown", exc, platform_batch),
+            )
+            raise DirectExecutionError(
+                "staged_batch_forward_unknown",
+                str(exc),
+                actual=_forward_failure_actual(exc, platform_batch),
+                retryable=True,
+            ) from exc
         if not isinstance(result, Mapping):
             self._mark_intent(intent, "unknown")
-            raise DirectExecutionError("staged_batch_forward_unknown", "forwarder returned no mapping")
+            failure = RuntimeError("forwarder returned no mapping")
+            self._notify(
+                "submit_modeling_batch",
+                platform_batch,
+                _forward_failure_response("staged_batch_forward_unknown", failure, platform_batch),
+            )
+            raise DirectExecutionError(
+                "staged_batch_forward_unknown",
+                "forwarder returned no mapping",
+                actual=_forward_failure_actual(
+                    failure, platform_batch
+                ),
+            )
         self._notify("submit_modeling_batch", platform_batch, result)
         if not _nonempty(result.get("batch_id")):
             self._mark_intent(intent, "unknown")
-            raise DirectExecutionError("staged_batch_forward_unknown", "forwarder returned no batch identity")
+            raise DirectExecutionError(
+                "staged_batch_forward_unknown",
+                "forwarder returned no batch identity",
+                actual={
+                    "message": "forwarder returned no batch identity",
+                    "client_batch_id": platform_batch.get("client_batch_id"),
+                    "idempotency_key": platform_batch.get("idempotency_key"),
+                },
+            )
         receipt = self._persist_receipt(intent, result, platform_batch)
         return self._batch_from_platform(result, result_batch, intent, receipt, index, source_map)
 
@@ -1186,6 +1263,16 @@ class DirectModelExecutor:
             ],
             "batch_id": None,
             "attempt_id": None,
+            "client_batch_id": (
+                exc.actual.get("client_batch_id")
+                if isinstance(exc.actual, Mapping)
+                else None
+            ),
+            "idempotency_key": (
+                exc.actual.get("idempotency_key")
+                if isinstance(exc.actual, Mapping)
+                else None
+            ),
             "write_state": (
                 "uncertain"
                 if any(
@@ -1198,7 +1285,14 @@ class DirectModelExecutor:
             "resource_bindings": [],
             "model_revision_before": None,
             "model_revision_after": None,
-            "retrieval_indexes": {"status": "unknown"},
+            "retrieval_indexes": {
+                "status": "unknown"
+                if any(
+                    marker in exc.code
+                    for marker in ("unknown", "unreconciled", "receipt", "attempt_proof", "snapshot")
+                )
+                else "not_applicable"
+            },
             "receipt_ref": None,
             "errors": self._errors_from_exception(exc, batch_index=index, source_map=source_map, batch=batch),
         }

@@ -580,6 +580,7 @@ def test_malformed_items_report_without_creating_session(tmp_path):
 def test_definite_forward_failure_is_not_written_and_does_not_replay(tmp_path):
     scope = _Scope()
     submitted: list[dict[str, object]] = []
+    observed: list[dict[str, object]] = []
 
     def submit(batch):
         submitted.append(dict(batch))
@@ -588,12 +589,25 @@ def test_definite_forward_failure_is_not_written_and_does_not_replay(tmp_path):
     def read(tool, arguments):
         return {"ok": True, "data": {"workspace": {"state": "ready", "model_revision": 4}}}
 
-    executor = DirectModelExecutor(scope, tmp_path, "run-1", "task-1", submit, read)
+    executor = DirectModelExecutor(
+        scope, tmp_path, "run-1", "task-1", submit, read, observe_result=observed.append
+    )
     first = executor.execute(_batch(), _source_map())
     second = executor.execute(_batch(), _source_map())
 
     assert first["status"] == second["status"] == "not_written"
     assert first["batches"][0]["write_state"] == "not_written"
+    rejected_batch = first["batches"][0]
+    assert rejected_batch["client_batch_id"]
+    assert rejected_batch["idempotency_key"]
+    assert rejected_batch["retrieval_indexes"] == {"status": "not_applicable"}
+    assert rejected_batch["errors"][0]["actual"]["message"] == "validation rejected before write"
+    rejected_response = next(event["result"] for event in observed if event["tool"] == "submit_modeling_batch")
+    assert rejected_response["ok"] is False
+    assert rejected_response["error_code"] == "staged_batch_forward_failed"
+    assert rejected_response["client_batch_id"] == rejected_batch["client_batch_id"]
+    assert rejected_response["idempotency_key"] == rejected_batch["idempotency_key"]
+    assert rejected_response["actual"]["message"] == "validation rejected before write"
     assert second["errors"][0]["code"] == "staged_batch_rejected"
     assert len(submitted) == 1
     assert executor.close_session()["closed"] is True

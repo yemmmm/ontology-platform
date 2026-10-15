@@ -7,12 +7,22 @@ import re
 from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 
 class SubmissionInputError(ValueError):
     def __init__(self, code: str, message: str, path: str = "") -> None:
         super().__init__(message)
         self.code, self.path = code, path
+
+
+def _absolute_iri(value: Any) -> bool:
+    """Recognize an IRI so it cannot cross the resource-id boundary."""
+
+    if not isinstance(value, str) or not value.strip() or any(char.isspace() for char in value):
+        return False
+    parsed = urlparse(value)
+    return bool(parsed.scheme and (parsed.netloc or parsed.scheme == "urn"))
 
 
 def json_pointer(value: Any, pointer: str) -> Any:
@@ -77,18 +87,51 @@ class ObservedModelBindings:
             if data.get("attempt_status") != "applied":
                 raise SubmissionInputError("resource_not_applied", "Only an applied Attempt proves an existing resource")
             revision = data.get("workspace", {}).get("after_version")
+        result = dict(entry.get("resource_outputs", entry))
+        if "resource_iri" not in result:
+            for iri_key in (
+                "iri",
+                "class_iri",
+                "property_iri",
+                "relation_type_iri",
+                "entity_iri",
+                "operation_iri",
+            ):
+                if isinstance(entry.get(iri_key), str):
+                    result["resource_iri"] = entry[iri_key]
+                    break
+        if "resource_id" not in result:
+            for identity in (entry.get("semantic_id"), entry.get("id")):
+                if isinstance(identity, str) and not _absolute_iri(identity):
+                    result["resource_id"] = identity
+                    break
+        elif _absolute_iri(result.get("resource_id")):
+            # Read-model ``id`` is a semantic IRI.  Treat an IRI supplied in
+            # the resource-id slot as missing instead of allowing the compiler
+            # to turn it into an encoded platform ID.
+            result.pop("resource_id", None)
         current = self.read("get_modeling_context", {"ontology_id": ontology_id})
         workspace = current.get("data", {}).get("workspace", {})
-        if type(revision) is not int or current.get("ok") is not True or workspace.get("model_revision") != revision:
+        current_revision = workspace.get("model_revision")
+        if type(revision) is not int or current.get("ok") is not True or type(current_revision) is not int:
             raise SubmissionInputError("resource_revision_conflict", "Refresh the governed resource read and recheck the original modeling intent")
-        result = dict(entry.get("resource_outputs", entry))
+        if current_revision != revision:
+            # An applied batch receipt carries the platform UUID and the
+            # resource IRI together.  The UUID remains the resource identity
+            # after later batches advance the workspace revision, but it is
+            # reusable only when the current governed read below still sees
+            # that exact IRI.  Read-model ``id``/``iri`` values alone never
+            # cross this boundary.
+            if (
+                record["tool"] != "submit_modeling_batch"
+                or current_revision < revision
+                or not isinstance(result.get("resource_id"), str)
+                or _absolute_iri(result.get("resource_id"))
+                or not _absolute_iri(result.get("resource_iri"))
+            ):
+                raise SubmissionInputError("resource_revision_conflict", "Refresh the governed resource read and recheck the original modeling intent")
+            revision = current_revision
         result.update(ontology_id=ontology_id, model_revision=revision, reference=dict(reference))
-        if "resource_iri" not in result and isinstance(entry.get("iri"), str):
-            result["resource_iri"] = entry["iri"]
-        if "resource_id" not in result:
-            identity = entry.get("semantic_id", entry.get("id"))
-            if isinstance(identity, str):
-                result["resource_id"] = identity
         command = next((item.get("command_kind") for item in request.get("items", [])
                         if item.get("client_item_id") == entry.get("client_item_id")), None)
         if command:

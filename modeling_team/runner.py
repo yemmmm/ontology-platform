@@ -5558,12 +5558,21 @@ class TeamRunner:
             if self._direct_model_executor is None:
                 def observe(event):
                     if event["tool"] == "submit_modeling_batch":
+                        raw = event["result"]
+                        if isinstance(raw, Mapping) and raw.get("ok") is False:
+                            observed_result = {"structuredContent": dict(raw)}
+                        else:
+                            observed_result = {"structuredContent": {"ok": True, "data": raw}}
                         observed = self.acceptance.register_platform_tool_result(
                             tool=event["tool"], arguments=event["arguments"],
-                            result={"structuredContent": {"ok": True, "data": event["result"]}},
+                            result=observed_result,
                         )
-                        raw = event["result"]
-                        self._direct_receipt_refs[(raw.get("batch_id"), raw.get("attempt_id"))] = observed["artifact_path"]
+                        if (
+                            isinstance(raw, Mapping)
+                            and raw.get("batch_id")
+                            and raw.get("attempt_id")
+                        ):
+                            self._direct_receipt_refs[(raw["batch_id"], raw["attempt_id"])] = observed["artifact_path"]
                 self._direct_model_executor = DirectModelExecutor(
                     self.scope, self.run.root, self.run.run_id, self.run.configuration.task.task_id,
                     submit=self.staged_batch_forwarder, read=self._direct_platform_read, observe_result=observe,
@@ -8695,9 +8704,12 @@ class TeamRunner:
             # T1-10/T1-14 analog: an already-released handoff only acknowledges
             # a duplicate complete.  The immutable handoff file and its events
             # are never rewritten, and the acknowledgment carries no new state.
+            model_handoff = self.run.root / "acceptance-v3" / "production-handoff.json"
             return {
                 "ok": True,
                 "freeze_id": self._cq_freeze["batch_id"],
+                "model_handoff": str(model_handoff),
+                "model_handoff_relative": model_handoff.relative_to(self.repository_root).as_posix(),
                 "idempotent": True,
             }
         readiness = self._cq_production_readiness()
@@ -8794,6 +8806,8 @@ class TeamRunner:
                 "handoff_digest": handoff["handoff_digest"],
                 "acceptance_attempt_id": handoff["acceptance_attempt_id"],
                 "report_directory": handoff["report_directory"],
+                "model_handoff": handoff["model_handoff"],
+                "model_handoff_relative": handoff["model_handoff_relative"],
                 "write_phase": "read-only",
                 "acceptance_phase": self._cq_acceptance_phase,
             },
@@ -8804,6 +8818,8 @@ class TeamRunner:
             "handoff_digest": handoff["handoff_digest"],
             "acceptance_attempt_id": handoff["acceptance_attempt_id"],
             "report_directory": handoff["report_directory"],
+            "model_handoff": handoff["model_handoff"],
+            "model_handoff_relative": handoff["model_handoff_relative"],
             "acceptance_phase": self._cq_acceptance_phase,
         }
 
@@ -8952,11 +8968,15 @@ class TeamRunner:
             stream.flush()
             os.fsync(stream.fileno())
         handoff_digest = f"sha256:{hashlib.sha256(encoded).hexdigest()}"
+        model_handoff = str(path)
+        model_handoff_relative = path.relative_to(self.repository_root).as_posix()
         self._cq_acceptance_attempt = {
             **attempt,
             "batch_id": batch_id,
             "freeze_digest": self._cq_freeze["snapshot_digest"],
             "handoff_digest": handoff_digest,
+            "model_handoff": model_handoff,
+            "model_handoff_relative": model_handoff_relative,
         }
         # R3.0-015 S1: a published handoff is the automatic production_handoff
         # save point (design §3.1).  The admission phase is read-only here, so
@@ -8969,7 +8989,12 @@ class TeamRunner:
                 "acceptance_attempt_id": attempt["acceptance_attempt_id"],
             },
         )
-        return {**attempt, "handoff_digest": handoff_digest}
+        return {
+            **attempt,
+            "handoff_digest": handoff_digest,
+            "model_handoff": model_handoff,
+            "model_handoff_relative": model_handoff_relative,
+        }
 
     def _handle_cq_acceptance_complete(self, message: dict[str, Any]) -> dict[str, Any]:
         """Host-only ``cq_acceptance_complete``: end the acceptance wait (§4.5).
@@ -9805,35 +9830,11 @@ class TeamRunner:
             control.action == "resume"
             and control.reporter_id == control.coordinator_id
         )
-        if control.action == "resume" and not self_resumed and before_turn is not None:
-            # Broker persistence has already moved the ledger to
-            # ``resume_sent``.  Keep that exact control and its resolution
-            # pending until the reporter finishes this turn; converting a
-            # transient busy observation into ``rebind_required`` would burn
-            # the one live recovery path before any Runtime send occurred.
-            pending_event = {
-                "kind": "issue_control",
-                "control": control.as_dict(),
-            }
-            with self._issue_event_lock:
-                self._issue_event_queue.append(pending_event)
-            waiting = {
-                "type": "issue-control-waiting",
-                "reason_code": "resume_waiting_reporter",
-                **control.as_dict(),
-            }
-            output.append(waiting)
-            self._append_evidence(
-                "issue-control",
-                {
-                    "event": "resume_waiting_reporter",
-                    "issue_id": control.issue_id,
-                    "reporter_id": control.reporter_id,
-                    "control_epoch": control.control_epoch,
-                    "turn_id": before_turn,
-                },
-            )
-            return
+        # CodexRuntimeAdapter.send_message already routes a live reporter turn
+        # through the bound ``turn/steer`` API.  Waiting here for
+        # ``active_turn_id`` to clear creates a self-requeue loop: the live
+        # turn never receives the persisted resolution, and the inactivity
+        # watchdog eventually kills an otherwise recoverable run.
         receipt: RuntimeDispatchReceipt | None = None
         # 2026-09-14 provider-recovery: a reporter parked in a provider wait can
         # neither receive an ordinary control turn nor be rebound — its process
@@ -9926,14 +9927,14 @@ class TeamRunner:
         if (
             control.action == "resume"
             and not self_resumed
-            and getattr(receipt, "mode", None) != "start"
+            and getattr(receipt, "mode", None) not in {"start", "steer"}
         ):
             self.transport.fail_issue_rebind(
                 issue_id=control.issue_id,
                 reporter_id=control.reporter_id,
-                reason="resume did not start a new turn",
+                reason="resume did not dispatch a new or steered turn",
             )
-            raise TeamConfigurationError("issue resume did not start a new turn")
+            raise TeamConfigurationError("issue resume did not dispatch a new or steered turn")
         if before_thread != after_thread:
             self.transport.fail_issue_rebind(
                 issue_id=control.issue_id,

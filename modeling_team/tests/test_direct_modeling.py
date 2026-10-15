@@ -125,6 +125,44 @@ def test_concept_definitions_use_existing_class_and_relation_type_fields_without
     assert "cardinality" not in item["payload"]
 
 
+def test_relation_type_uses_receipt_resource_ids_for_class_endpoints():
+    source_iri = "http://ontology-platform.local/semantic/class/source-class"
+    target_iri = "http://ontology-platform.local/semantic/class/target-class"
+
+    def binding(ref):
+        index = int(ref["path"].rsplit("/", 1)[1])
+        return {
+            "resource_kind": "class",
+            "ontology_id": "ontology-1",
+            "resource_id": f"class-{index}",
+            "resource_iri": (source_iri, target_iri)[index],
+            "model_revision": 2,
+        }
+
+    relation = _change("relation", "create", "relation_type", fields={
+        "name": "installed at",
+        "source_class_id": {"existing_resource_ref": {
+            "artifact_ref": "evidence/class-apply.json", "path": "/items/0",
+        }},
+        "target_class_id": {"existing_resource_ref": {
+            "artifact_ref": "evidence/class-apply.json", "path": "/items/1",
+        }},
+        "semantic_definition": {"business_meaning": "Source points to target.", "unknowns": []},
+    })
+
+    batches, _ = compile_model_changes(
+        _request([relation], candidate_ref=None),
+        candidate=None,
+        ontology_by_item={"relation": "ontology-1"},
+        resolve_binding=binding,
+    )
+    payload = batches[0]["items"][0]["payload"]
+
+    assert payload["source_class_id"] == "class-0"
+    assert payload["target_class_id"] == "class-1"
+    assert "%3A" not in payload["source_class_id"] + payload["target_class_id"]
+
+
 def test_compiles_current_candidate_in_stable_dependency_order_and_maps_sources():
     candidate = _candidate(
         [

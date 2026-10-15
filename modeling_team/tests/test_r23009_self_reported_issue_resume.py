@@ -5,10 +5,10 @@ coordinator id) and later dispatches the resume control from inside its own
 live turn.  The previous resume gate demanded an idle reporter and a freshly
 started turn — expectations a self-reporting Coordinator can never satisfy —
 so the owner's resolution tore the whole run down with a fatal
-``issue resume requires an idle reporter``.  The dispatch must instead skip
-the redundant reporter delivery (the Coordinator already holds the ruling it
-passed in) and queue a busy non-coordinator reporter's resume until its current
-turn is idle.
+``issue resume requires an idle reporter``. The dispatch must instead skip the
+redundant reporter delivery for a self-reported Coordinator (the Coordinator
+already holds the ruling it passed in) and steer a busy non-coordinator
+reporter's active turn through the Runtime adapter.
 """
 
 from __future__ import annotations
@@ -129,7 +129,7 @@ def test_self_reported_issue_resumes_from_coordinator_live_turn() -> None:
         assert ledger.state == "resolved"
 
 
-def test_busy_non_coordinator_reporter_still_fails_closed() -> None:
+def test_busy_non_coordinator_reporter_is_steered_without_self_requeue() -> None:
     with tempfile.TemporaryDirectory() as directory:
         root = Path(directory)
         runner, resume = _runner_with_paused_issue(root, reporter="modeling")
@@ -139,14 +139,7 @@ def test_busy_non_coordinator_reporter_still_fails_closed() -> None:
         )
         output: list[dict] = []
         runner._dispatch_issue_control(runner._issue_control_from_payload(resume), output)
-        assert runner.adapter.sent == []
-        assert output[0]["reason_code"] == "resume_waiting_reporter"
-        assert runner.transport.issue_ledger.state == "resume_sent"
-        assert len(runner._issue_event_queue) == 1
-
-        runner.adapter.agents["modeling"].active_turn_id = None
-        resumed_output: list[dict] = []
-        runner._handle_issue_events(resumed_output)
         assert len(runner.adapter.sent) == 1
-        assert resumed_output[0]["type"] == "issue-control"
+        assert output[0]["type"] == "issue-control"
         assert runner.transport.issue_ledger.state == "resolved"
+        assert runner._issue_event_queue == []

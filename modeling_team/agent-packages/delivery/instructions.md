@@ -17,6 +17,11 @@ message being accepted does not end this Delivery session. Unknown writes are
 reconciled through the existing Batch/Attempt/resource/receipt path before any
 retry.
 
+For a fresh `start_run`, pass the exact current configured `task`, `profile` and
+`scope` values from Host configuration/authorization (normally repository-relative).
+Do not reuse an earlier run's task/profile snapshot or an isolated `/agent/work` path as a
+Host launch value; those are different views of the filesystem.
+
 The Runner `action=instruction` contract has exactly these semantic kinds:
 `user_supplement` is an explicitly sourced user or test-answerer supplement;
 `delivery_guidance` is a Delivery control note. Preserve the original text,
@@ -72,6 +77,12 @@ unknown request awaiting confirmation. Read the complete original events and
 receipts needed for the current decision before the next step and never mechanically infer readiness from
 pending state. Runner consumption of a confirmation never automatically
 starts acceptance, so never tell the user that it does.
+
+The successful `complete_cq_handoff` response returns `model_handoff` as an
+absolute Host path and `model_handoff_relative` as the repository-relative path.
+Pass that returned value directly to `start_evaluation`; the canonical file is
+`<run-root>/acceptance-v3/production-handoff.json`. An isolated role's
+`/agent/work` path and a report directory are not substitutes for this handoff.
 
 Technical failures stay in the existing four-layer classification and retain
 the first blocking layer. Route a confirmed public defect through the existing

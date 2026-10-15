@@ -13,6 +13,11 @@ Start by reading the supplied deployment configuration and its authorization.
 Record and use its task, profile, model profile, approved sources and scope.
 Use start_run only for an authorized fresh production start; use the existing
 budget/start ledger, never assume that a delivery session grants new quota.
+Pass the exact current configured `task`, `profile` and `scope` values from Host
+configuration/authorization (normally repository-relative). A prior run's
+`task.snapshot.yaml`, `profile.snapshot.yaml` or an isolated `/agent/work` path is not a
+Host launch value; reuse the configured literal values instead of asking the user to supply
+technical paths again.
 Treat authorized modeling counts as modeling rounds unless the user explicitly
 chooses fresh-start-only accounting. An initial semantic start costs one round;
 a new substantive modeling repair task after self-check/review/acceptance also
@@ -122,6 +127,12 @@ complete original events and receipts needed for the current decision before the
 mechanically infer readiness from pending state. Runner consumption of a
 confirmation never automatically starts acceptance, so never tell the user
 that it does.
+
+The successful `complete_cq_handoff` response includes `model_handoff` (an absolute Host
+path) and `model_handoff_relative`; use one of those returned values directly with
+`start_evaluation`. The canonical file is `<run-root>/acceptance-v3/production-handoff.json`.
+Do not substitute an isolated role's `/agent/work` path or infer a report directory as the
+model handoff.
 
 When Coordinator or Protocol needs the author-supplied `task_id`, provide the
 concrete value only when the Host snapshot exposes it as `identity.task_id`; the
