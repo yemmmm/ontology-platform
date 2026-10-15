@@ -1,0 +1,16 @@
+schema_version: 1
+profile_id: r4-3-026-minimal-installation-chain
+runtime: codex
+agents:
+  - agent_id: coordinator
+    package: minimal-chain-coordinator
+  - agent_id: modeling
+    package: minimal-chain-modeling
+  - agent_id: competency-question
+    package: minimal-chain-competency-question
+communication:
+  - from: coordinator
+    to: [modeling]
+  - from: modeling
+    to: [coordinator]
+parameters: {}

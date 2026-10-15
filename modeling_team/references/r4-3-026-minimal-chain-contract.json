@@ -1,0 +1,241 @@
+{
+  "schema_version": "r4-3-026-minimal-chain-contract/v1",
+  "purpose": "Compact reading guide to existing schemas for the paired R4.3-026 Task/Profile only. Not a new platform schema or validator. Business truth comes only from the mounted scenario. Current R4.3-024/025 execution supersedes historical Protocol/plan/dry-run requirements.",
+  "scenario_map": {
+    "schema_version": "r4-0-007-scenario-map/v1",
+    "required_sections": [
+      "slices",
+      "shared_terms",
+      "cross_slice_dependencies",
+      "cross_slice_competency_questions",
+      "explicit_unknowns",
+      "adjustments"
+    ],
+    "identity_fields": [
+      "scenario_id",
+      "topology_decision_ref"
+    ],
+    "slices_item_fields": [
+      "slice_id",
+      "name",
+      "scope",
+      "owner",
+      "status",
+      "viewpoints"
+    ],
+    "identity_rules": [
+      "schema_version is exactly r4-0-007-scenario-map/v1; scenario_id is a nonempty string.",
+      "topology_decision_ref is a string: empty/whitespace while undecided, otherwise its trimmed value is exactly topology-decision.json. Recording a reference does not create or approve the topology artifact.",
+      "All six required_sections are arrays; slices has at least one item, while the other five arrays may be empty. The three inherited sections below are top-level arrays, never fields inside slices[]."
+    ],
+    "viewpoints": {
+      "fields": [
+        "viewpoint",
+        "status",
+        "note"
+      ],
+      "viewpoint": [
+        "object",
+        "behavior",
+        "rule",
+        "role",
+        "process",
+        "data_mapping",
+        "interface_mapping"
+      ],
+      "status": [
+        "pending",
+        "modeled",
+        "unknown",
+        "not_applicable"
+      ],
+      "rules": [
+        "An array, possibly empty; no repeated viewpoint per slice; note is nonempty.",
+        "Absent viewpoints are unassessed, never implicitly not_applicable. No mandatory seven-phase sequence or one Agent per viewpoint.",
+        "Partial expression takes modeled with remaining work/unknowns in note. An expression that correctly preserves necessary unknowns may also be modeled; it does not confirm those facts.",
+        "Judge current content, not monotonic status upgrades: when a revision invalidates expression, retain only still-valid scope and identify old references as historical. slices[].status remains a textual overview, not a state machine or percentage.",
+        "Note locates the current complete immutable candidate_id/revision/key item_id or approved path, explains analyzed/expressed scope, remaining work/unknowns and next responsible role/input. Note references are semantically checked by Coordinator, not a new structured field or regex gate."
+      ]
+    },
+    "shared_terms": {
+      "required_fields": [
+        "term",
+        "used_by_slices",
+        "owner_slice",
+        "definition_id",
+        "meaning_scope",
+        "status",
+        "candidate_refs"
+      ],
+      "optional_fields": [
+        "notes"
+      ],
+      "status": [
+        "proposed",
+        "confirmed",
+        "unknown",
+        "conflict"
+      ],
+      "candidate_ref_fields": [
+        "candidate_id",
+        "revision",
+        "item_id"
+      ],
+      "rules": [
+        "definition_id is a stable neutral semantic key, not an IRI; it is unique within the scenario/authorized Project. Same term with different meaning_scope may have distinct keys. Do not merge unconfirmed synonyms.",
+        "owner_slice is an existing slices[].slice_id, and used_by_slices contains existing slice IDs; maintenance ownership grants no semantic access.",
+        "candidate_refs may be empty before publication; otherwise each points to an item in a complete immutable unified candidate at its current revision.",
+        "Same definition across candidates reuses the approved read/receipt-bound platform identity; never create a synonymous duplicate. confirmed means business confirmation only."
+      ]
+    },
+    "cross_slice_dependencies": {
+      "fields": [
+        "from_slice",
+        "to_slice",
+        "direction",
+        "connection_points"
+      ],
+      "rules": [
+        "Each item is an object with exactly these fields. from_slice and to_slice are existing slices[].slice_id values.",
+        "direction is a nonempty string, with no structural enum. connection_points is a nonempty array of nonempty strings.",
+        "Record actual dependencies from authorized inputs and explain their direction; example values illustrate syntax only and prescribe no business dependency."
+      ]
+    },
+    "cross_slice_competency_questions": {
+      "fields": [
+        "question_id",
+        "question",
+        "spans_slices"
+      ],
+      "rules": [
+        "Each item is an object with exactly these fields. question_id and question are nonempty strings.",
+        "spans_slices is an array with at least two entries, each an existing slices[].slice_id value. Structural validation does not impose a uniqueness check.",
+        "Use authorized public questions only; this section is not approval and must not contain hidden acceptance questions or expected answers."
+      ]
+    },
+    "explicit_unknowns": {
+      "fields": [
+        "topic",
+        "needed_from",
+        "status"
+      ],
+      "rules": [
+        "Each item is an object with exactly these fields; all three values are nonempty strings. status has no structural enum.",
+        "Record actual unresolved topics and who or what is needed to resolve them; do not invent missing business facts."
+      ]
+    },
+    "adjustments": {
+      "fields": [
+        "change",
+        "approved_by_coordinator"
+      ],
+      "rule": "Nonempty strings. Use [] when no substantive change; this fresh bounded task does not require shared-definition change review."
+    },
+    "rules": [
+      "Closed top-level keys: schema_version, scenario_id, topology_decision_ref and the six required_sections. All sections are arrays; slices is nonempty. Contract metadata is not artifact content.",
+      "Slices use nonempty strings and unique slice_id; viewpoints is an array and may be empty. No mandatory view count or sequence. Shared terms may be empty when no cross-slice reuse; otherwise keep a unique definition_id and a known owner_slice.",
+      "Cross-slice questions only use actual public projection entries spanning at least two actual slices. With no cross-slice scope use [], retain that limited coverage; do not invent a second slice or wider acceptance.",
+      "Coordinator alone writes scenario-map/scenario-map.json and scenario-map/topology-decision.json. Before terminal, check current candidate content and update locatable progress in notes; a bound handoff map is never overwritten later."
+    ]
+  },
+  "topology_decision": {
+    "schema_version": "r3-0-002-topology-decision/v1",
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "options",
+      "selected_option",
+      "rationale",
+      "decided_by"
+    ],
+    "required_option_ids": [
+      "single_ontology",
+      "domain_ontology_split",
+      "shared_core_plus_domain"
+    ],
+    "option_fields": [
+      "option_id",
+      "assessment"
+    ],
+    "dimensions": [
+      "concept_cohesion",
+      "relation_density",
+      "reuse",
+      "permission_boundary",
+      "change_cadence",
+      "cross_domain_query"
+    ],
+    "rules": [
+      "at least three options and always the three required option_ids; custom options may be appended",
+      "each options entry has exactly the two option_fields: option_id is a non-empty string, and assessment is an object whose keys are exactly the six dimensions listed above, each with a non-empty value; the dimensions are assessment keys, never an option-level dimensions container (a wrong option shape is reported as topology_schema_mismatch)",
+      "every option assesses all six dimensions with non-empty values; the dimensions are concept cohesion, relation density, reuse, permission boundary, change cadence, and cross-domain query, never table count or team count",
+      "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
+      "selected_option must be one of the listed options and rationale must be non-empty",
+      "R4.0-029 existing topology: entries are mutually exclusive {ontology_id, slice_ids} for explicit authorized existing IDs or {name, slice_ids} for new creation. New entries require allow_new_ontologies and current business topology approval; do not adopt same-name resources or precreate a first Ontology. A single_ontology selection may supply exactly one existing-ID entry. Original create topology keeps its name-based at-least-two plan contract. Each slice must be covered; slices may overlap.",
+      "For fresh create scope, omit ontology_plan when selected_option=single_ontology; every other selection requires a name-based plan with at least two entries covering all actual slices. Existing-ID scope follows its explicit authorized binding rules above."
+    ],
+    "optional_fields": {
+      "ontology_plan": {
+        "entry_fields": [
+          "name",
+          "slice_ids"
+        ],
+        "rules": [
+          "create/name-only plans require at least two; an existing-ID single_ontology plan may contain one",
+          "name or ontology_id values are non-empty and unique within the plan",
+          "slice_ids is a non-empty list of distinct slice_ids of the current scenario map",
+          "every scenario-map slice belongs to at least one planned Ontology; a slice may be served by more than one planned Ontology",
+          "existing mode supports explicit ID entries and a single existing-ID entry for single_ontology; create/new-name entries still require authorization and receipt reconciliation"
+        ],
+        "existing_entry_fields": [
+          "ontology_id",
+          "slice_ids"
+        ]
+      }
+    }
+  },
+  "candidate": {
+    "schema_version": "r3-0-009-unified-graph/v2",
+    "fields": [
+      "schema_version",
+      "scenario_id",
+      "candidate_id",
+      "revision",
+      "items",
+      "explicit_unknowns"
+    ],
+    "item_fields": [
+      "item_id",
+      "item_kind",
+      "business_meaning",
+      "value",
+      "relation_endpoints",
+      "slice_ids",
+      "shared_scope",
+      "unknowns"
+    ],
+    "item_optional_fields": [
+      "semantic_definition",
+      "action_definition",
+      "parameter_definition"
+    ],
+    "item_kinds": [
+      "entity",
+      "property",
+      "relation",
+      "table_mapping",
+      "join_mapping",
+      "enum_meaning",
+      "metric_definition"
+    ],
+    "rules": [
+      "Publish under stage3-neutral-graph/candidates/<candidate_id>-r<revision>.json. schema_version and all listed fields are required; each item has item_fields plus only supported item_optional_fields. revision is an integer >=1, item_id is unique and neutral; scenario_id/candidate_id are nonempty strings. New revisions are complete and immutable.",
+      "items is a nonempty array. business_meaning is a string, unknowns and explicit_unknowns are string arrays. slice_ids is a nonempty string array of actual scope IDs. shared_scope is null/empty except a scoped commonality relation. relation_endpoints is null for non-relations and {from_item_id,to_item_id} for relations.",
+      "Use the mounted direct-modeling contract for value rules and definition_ref/existing_resource_ref. Fields are semantic, never command envelopes or guessed platform identities. Business meaning and item unknowns become supported semantic_definition fields; semantic_definition uses business_meaning/unknowns when needed.",
+      "For this Task entity/property/relation suffice to express the business scope; other registered kinds are not an invitation to add mappings or metrics. A predicate definition may be a separate technical item; do not infer business scope or Ontology topology from item count.",
+      "Relations do not accept semantic_definition. Preserve meaningful relationship text and unknowns on the predicate definition or supported ordinary definition resources. For a relation the business_meaning must agree with its predicate definition; keep relation item unknowns empty if its required semantics are already expressed on that definition.",
+      "No stage3 slot, translation approval, dry-run proof or Protocol handshake is a prerequisite to direct submission. Coordinator retains necessary source/scope/topology decisions in its existing notes."
+    ]
+  },
+  "handoff": "Modeling submits directly, keeps actual application/read/association-check references and closes owned resources. Coordinator synchronizes current map and reports after Modeling. Host seals production and releases CQ, then starts existing independent read-only Consumer/Judge acceptance; no production evidence generation or repair during acceptance."
+}

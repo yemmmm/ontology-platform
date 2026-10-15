@@ -1,0 +1,63 @@
+# Material/Task delivery only; a real run needs separate current authorization.
+schema_version: 2
+task_id: r4-3-026-minimal-installation-chain
+objective: >-
+  Model the complete artificial installation-location chain in
+  minimal-installation-chain-source-v1: two distinct concepts and one directed relationship,
+  with only the supplied meanings and explicit unknowns. This is a new independent Task,
+  not the checkpoint-recovery experiment or the industrial-service scenario. Do not infer
+  cardinality, named instances, ownership, customers, models, faults, work orders, lifecycle,
+  metrics or SQL/API mappings. Agent-chosen technical representation and Ontology topology
+  do not add business concepts. Use the paired minimal-installation-chain Profile and its
+  compact contracts. CQ uses its private task-specific question seeds, adapts them to actual
+  approved slices and submits them for normal review and a fresh public/hidden freeze;
+  counts are advisory. Do not import any historical pool or answer. After Host confirms the
+  freeze, Coordinator dispatches this Task identity and confirmed topology to Modeling.
+  Modeling publishes a complete immutable unified candidate and submits explicit changes
+  through R4.3-024/025. The program owns execution fields and atomic application; no
+  Protocol translation approval or model dry-run prerequisite. Trust bound successful
+  receipts; reconcile uncertain writes before retry. Perform actual governed business reads
+  on the current revision, association self-check and resource closure before handoff.
+  Final Consumer/Judge acceptance is independent and read-only. Report only this bounded
+  scope, exact evidence, unknowns and the first blocker. Host records elapsed time to apply,
+  first effective answer and independent acceptance, semantic/technical/wait time and
+  R4.3-019 usage coverage; missing values remain unknown. No fixed performance or token
+  budget is supplied. Do not checkpoint-stop/resume as an experiment, start another task,
+  change an old verdict or consume a modeling round without user authorization.
+role_sources:
+  - path: docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md
+    classification: business-source
+    roles: [coordinator, modeling, competency-question]
+  - path: modeling_team/references/r4-3-026-minimal-chain-contract.json
+    classification: coordination
+    roles: [coordinator, modeling]
+  - path: modeling_team/references/r4-3-025-direct-modeling-contract.json
+    classification: coordination
+    roles: [coordinator, modeling]
+  - path: modeling_team/references/r3-0-011-competency-question-contract.json
+    classification: coordination
+    roles: [competency-question]
+  - path: docs/evaluation-scenarios/minimal-installation-chain/cq-private/question-seeds.json
+    classification: consumer-question
+    roles: [competency-question]
+# Existing v2 loader requires a nonempty allowlist. No Protocol actor is created;
+# this read-only entry does not add a prerequisite or an execution role.
+protocol_tools: [query_semantic_context]
+expected_terminal_evidence:
+  - source-version-and-confirmed-scope-topology
+  - task-specific-reviewed-and-frozen-public-hidden-pool
+  - immutable-unified-candidate-and-direct-application-receipts
+  - current-revision-governed-business-reads-and-explicit-unknowns
+  - association-self-check-and-owned-resource-closure
+  - production-handoff-or-precise-typed-blocker
+retain_nonempty: true
+semantic_start_evidence:
+  - canonical-mode-http-200-rdf-primary
+  - role-visible-source-manifest
+  - frozen-runtime-baseline
+parameters:
+  multi_slice_workflow: true
+  staged_modeling_decisions: true
+  unified_semantic_graph: true
+  competency_question_acceptance: true
+  acceptance_target: cq_semantic

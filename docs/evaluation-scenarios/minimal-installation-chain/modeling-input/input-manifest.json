@@ -1,0 +1,12 @@
+{
+  "schema_version": "minimal-installation-chain-input/v1",
+  "source_id": "minimal-installation-chain-source-v1",
+  "business_sources": [
+    {
+      "path": "docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md",
+      "sha256": "ac3d7f91620f292b2a3dcd64d218b4f8d482353b96f5be4c3955e1318a090566"
+    }
+  ],
+  "derived_from": "checkpoint-minimal-source-v1; definitions only, no checkpoint experiment or historical evidence",
+  "note": "Host manifest, not an additional role source. Task role_sources controls mounting. Runner freezes its actual source/baseline digests separately."
+}

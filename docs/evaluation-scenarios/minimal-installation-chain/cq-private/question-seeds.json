@@ -1,0 +1,78 @@
+{
+  "schema_version": "minimal-installation-chain-question-seeds/v1",
+  "source_id": "minimal-installation-chain-source-v1",
+  "status": "unreviewed",
+  "note": "Private CQ review seeds only. Use actual approved slice IDs for slice scope. Normal review, successor versions and fresh freeze remain required. These seeds are not frozen questions, execution evidence or a semantic verdict.",
+  "questions": [
+    {
+      "question_id": "mic-concepts",
+      "scope_kind": "panorama",
+      "proposed_visibility": "public",
+      "question": "现场和安装资产各表示什么，两者有什么区别？",
+      "answer_points": [
+        "现场是安装设备以提供服务的物理地点。",
+        "安装资产是已安装、用于提供服务的单件设备；设备与地点是不同概念。"
+      ],
+      "evidence_refs": [
+        {
+          "source": "docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md",
+          "locator": "业务定义 1、2、4"
+        }
+      ],
+      "unknown": []
+    },
+    {
+      "question_id": "mic-direction",
+      "scope_kind": "slice",
+      "proposed_visibility": "hidden",
+      "question": "要说明一件安装资产的物理安装位置，应从哪个概念沿什么方向关联到哪个概念？",
+      "answer_points": [
+        "从安装资产指向现场。",
+        "关系表示设备的物理安装位置。"
+      ],
+      "evidence_refs": [
+        {
+          "source": "docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md",
+          "locator": "业务定义 3"
+        }
+      ],
+      "unknown": []
+    },
+    {
+      "question_id": "mic-ownership",
+      "scope_kind": "slice",
+      "proposed_visibility": "hidden",
+      "question": "某设备安装于某现场，能据此认定现场拥有该设备吗？",
+      "answer_points": [
+        "不能；本场景的安装关系不表示所有权。"
+      ],
+      "evidence_refs": [
+        {
+          "source": "docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md",
+          "locator": "业务定义 4"
+        }
+      ],
+      "unknown": []
+    },
+    {
+      "question_id": "mic-unknowns",
+      "scope_kind": "slice",
+      "proposed_visibility": "hidden",
+      "question": "仅按本场景资料，能确定一个现场可安装多少资产，以及某件具体资产安装在哪个具名现场吗？",
+      "answer_points": [
+        "没有给定基数约束，不能推断资产数量限制。",
+        "没有提供具名资产、具名现场或实例事实，不能确定具体资产的位置。"
+      ],
+      "evidence_refs": [
+        {
+          "source": "docs/evaluation-scenarios/minimal-installation-chain/modeling-input/scenario.md",
+          "locator": "范围与未知"
+        }
+      ],
+      "unknown": [
+        "基数约束未给定。",
+        "具名资产与现场及其安装事实未给定。"
+      ]
+    }
+  ]
+}

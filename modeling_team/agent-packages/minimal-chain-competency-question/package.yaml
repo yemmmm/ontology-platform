@@ -1,0 +1,15 @@
+schema_version: 1
+package_id: minimal-chain-competency-question
+role: competency-question
+description: Own the private task-specific minimal-chain CQ review and freeze lifecycle.
+instructions: instructions.md
+required_skills: []
+references: []
+permissions:
+  team_transport: true
+  platform: none
+runtime:
+  codex:
+    sandbox: read-only
+task_input:
+  required: [task, allowed_sources, roster]

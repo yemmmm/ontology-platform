@@ -1,0 +1,16 @@
+schema_version: 1
+package_id: minimal-chain-modeling
+role: modeling
+description: Model the bounded R4.3-026 installation-location chain directly.
+instructions: instructions.md
+required_skills:
+  - modeling_team/skills/minimal-chain-modeling/SKILL.md
+references: []
+permissions:
+  team_transport: true
+  platform: none
+runtime:
+  codex:
+    sandbox: read-only
+task_input:
+  required: [task, allowed_sources, roster]

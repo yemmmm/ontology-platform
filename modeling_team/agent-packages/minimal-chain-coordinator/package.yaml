@@ -1,0 +1,15 @@
+schema_version: 1
+package_id: minimal-chain-coordinator
+role: coordinator
+description: Coordinate the bounded R4.3-026 direct-modeling chain.
+instructions: instructions.md
+required_skills: []
+references: []
+permissions:
+  team_transport: true
+  platform: none
+runtime:
+  codex:
+    sandbox: read-only
+task_input:
+  required: [task, allowed_sources, roster]
