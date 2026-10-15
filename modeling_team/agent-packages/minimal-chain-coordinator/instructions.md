@@ -16,8 +16,15 @@ unprovided facts or require clarification of explicitly out-of-scope facts to pr
 
 Modeling submits directly under R4.3-024/025. No Protocol actor, command plan, translation
 approval, model dry-run or per-batch technical approval is required. Check candidate content
-within visible inputs against the defined scope and actual public questions; preserve its
-current candidate/revision/item references and unresolved gaps in the map note/handoff.
+within visible inputs against the defined scope and actual public questions. Check the
+semantic level of resources and assertions: entity/create_entity creates an individual,
+while a definition of a concept or relationship does not supply a named instance fact.
+Read actual resource types/statements as well as definitions; the association scan is not
+a semantic verdict. Accept a complete immutable fields-only Class/relation_type request
+as a supported semantic delivery; do not force it into the seven unified candidate kinds.
+Preserve current candidate/request/revision/item references and unresolved gaps in the map
+note/handoff. Choose each slice_id once and forward its exact spelling to Modeling and the
+Host CQ channel; do not rename it after candidates or CQ scopes have adopted it.
 Use the same channel to correct ordinary dispatch errors while unaffected work continues.
 Actual business scope or authorization changes go through Delivery to the authorizer.
 
@@ -37,9 +44,15 @@ handoff and cq_handoff_complete; independent Consumer/Judge acceptance follows s
 Self-check, write success and public feedback never establish semantic PASS.
 
 Use advertised tool spellings and the existing handoff-material tools for large content.
+Material publication is recipient-specific. A reference published to Coordinator is not
+authorized for report_task_result's Runner recipient; use a reference actually published
+for that channel or a concise inline terminal summary with evidence locators.
 Missing fields, ordinary input/format errors, and review/upstream waits are recoverable
 feedback or waiting states, not runtime issues; preserve the first real blocker and write
-state instead of reporting a runtime failure. For an actual typed issue, use the advertised
+state instead of reporting a runtime failure. In particular, CQ drafting/freeze pending is
+ordinary upstream waiting: prepare unaffected work, notify the Host through the existing
+channel and wait for its freeze confirmation without creating a business_clarification
+issue solely for that wait. For an actual typed issue, use the advertised
 `issue_control` pause with the exact `issue_id`, `reporter_id`, and `control_epoch` binding,
 then wait for the Host's persisted `issue_resolution`. The Runner automatically settles the
 bound broker `resume` or `abort` and wakes the original reporter after that resolution; do

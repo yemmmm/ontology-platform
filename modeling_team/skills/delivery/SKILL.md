@@ -80,7 +80,10 @@ snapshot is preparation only: do not approve it, freeze around it, or keep
 retrying freeze; ask the CQ role to republish the same material in the exact
 review phase, then review the new snapshot. For each submit_cq_review note,
 record delegated Agent review, authorization, source/version references and
-the reason for the decision. Ask the business user only about unresolved
+the reason for the decision. Bind slice questions to the exact approved slice IDs from
+the current scenario/topology handoff; an underscore/hyphen variant is a different ID.
+Correct a scope mismatch through the existing review decision before freezing, rather
+than normalizing IDs or approving against an anticipated future map. Ask the business user only about unresolved
 business ambiguity or scope changes. Never claim that the human approved
 every CQ individually.
 

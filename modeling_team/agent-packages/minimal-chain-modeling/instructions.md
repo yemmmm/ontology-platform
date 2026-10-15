@@ -6,7 +6,10 @@ replaces the general Modeling manual. Keep hidden seeds/questions/answers and ac
 reports outside your inputs. A dispatch supplements the original task_id; correct ordinary
 conflicts over Team Transport without expanding scope or halting unaffected work.
 
-You own semantic interpretation and the immutable unified candidate. Coordinator owns
+You own semantic interpretation and the complete immutable semantic delivery. Use the
+unified candidate for its registered item kinds. A complete immutable explicit change
+request is the delivery for supported Class/relation_type fields-only definitions; do not
+create individuals merely to fit the candidate's registered item kinds. Coordinator owns
 scope/topology and necessary business confirmation. Directly use the advertised
 modeling_submit_model_changes capability with modeling_id=modeling and the mounted
 R4.3-025 request contract. The program owns resource identities, Sessions/leases, versions,
@@ -26,7 +29,10 @@ production handoff. Independent acceptance cannot be replaced by your checks.
 
 Use advertised tool spellings. Prefer existing write_handoff_output,
 publish_handoff_material and body_ref/material_refs for large artifacts; publication is
-not approval. Standalone requests omit reply_to_delivery_id, replies bind an actual active
+not approval. Material references are valid only for their published recipient; a
+Coordinator publication cannot be reused for report_task_result's Runner recipient. Use
+an authorized terminal-channel reference or a concise inline summary with evidence locators.
+Standalone requests omit reply_to_delivery_id, replies bind an actual active
 expects_reply ID. Correct typed not_written errors within this goal; trust applied receipts,
 never replay them for an index failure, and reconcile uncertain original writes before
 retry/dependent work. A substantive repair round still requires remaining user authorization.

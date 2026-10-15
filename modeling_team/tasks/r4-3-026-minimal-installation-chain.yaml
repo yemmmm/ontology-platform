@@ -13,7 +13,9 @@ objective: >-
   approved slices and submits them for normal review and a fresh public/hidden freeze;
   counts are advisory. Do not import any historical pool or answer. After Host confirms the
   freeze, Coordinator dispatches this Task identity and confirmed topology to Modeling.
-  Modeling publishes a complete immutable unified candidate and submits explicit changes
+  Retain actual approved slice IDs verbatim across dispatch, modeling and CQ; do not normalize
+  their spelling. Modeling publishes a complete immutable semantic delivery using registered
+  unified candidate kinds or supported fields-only concept/relationship definitions, and submits explicit changes
   through R4.3-024/025. The program owns execution fields and atomic application; no
   Protocol translation approval or model dry-run prerequisite. Trust bound successful
   receipts; reconcile uncertain writes before retry. Perform actual governed business reads
@@ -46,7 +48,7 @@ protocol_tools: [query_semantic_context]
 expected_terminal_evidence:
   - source-version-and-confirmed-scope-topology
   - task-specific-reviewed-and-frozen-public-hidden-pool
-  - immutable-unified-candidate-and-direct-application-receipts
+  - immutable-semantic-delivery-and-direct-application-receipts
   - current-revision-governed-business-reads-and-explicit-unknowns
   - association-self-check-and-owned-resource-closure
   - production-handoff-or-precise-typed-blocker

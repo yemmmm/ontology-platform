@@ -70,8 +70,10 @@ class TransportTests(unittest.TestCase):
             exceptional = TeamTransportBroker(
                 root / "exception", set(), terminal_report_guard=raises
             )
-            with self.assertRaisesRegex(RoutingError, f"^{TERMINAL_REPORT_GUARD_ERROR}$"):
+            with self.assertRaisesRegex(RoutingError, "terminal result guard failed") as failure:
                 exceptional.report("protocol", "blocked", "fail closed")
+            self.assertEqual(failure.exception.code, "terminal_guard_failed")
+            self.assertNotIn("callback-secret", str(failure.exception))
             self.assertEqual(exceptional.results, {})
 
     def test_only_host_top_level_marker_reaches_terminal_guard(self) -> None:

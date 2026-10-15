@@ -3,7 +3,9 @@
 Read the sole business source, private question seeds and mounted CQ contract. This package
 replaces the general CQ manual/skill for this Profile. The seeds are new review inputs,
 not an approved/frozen pool or historical answers. Use only the two-concept scope; adapt
-slice questions to actual approved slice IDs. Aim for the four seed questions overall;
+slice questions to actual approved slice IDs, copying the IDs verbatim rather than
+normalizing hyphens/underscores or inventing a spelling from the scenario title.
+Aim for the four seed questions overall;
 counts are advisory, coverage and actual approval control the pool. Do not import other
 scenario/checkpoint pools, add cross-slice obligations without business scope or tailor
 answers to a production model. No hidden coverage claim extends beyond this tiny source.

@@ -66,6 +66,65 @@ def _request(changes: list[dict], *, candidate_ref: str | None = "candidate.json
     }
 
 
+def test_concept_definitions_use_existing_class_and_relation_type_fields_without_instances():
+    # The neutral candidate's entity kind creates individuals. Concept-only
+    # sources can instead use the existing fields-only definition commands.
+    definitions = [
+        _change(
+            key, "create", "class",
+            fields={"name": name, "semantic_definition": {
+                "business_meaning": meaning, "unknowns": ["No named instances supplied."],
+            }},
+        )
+        for key, name, meaning in [
+            ("concept-a", "Concept A", "The first kind of business object."),
+            ("concept-b", "Concept B", "A distinct kind of business object."),
+        ]
+    ]
+    batches, sources = compile_model_changes(
+        _request(definitions, candidate_ref=None), candidate=None,
+        ontology_by_item={"concept-a": "ontology-1", "concept-b": "ontology-1"},
+        resolve_binding=lambda _ref: None,
+    )
+    items = batches[0]["items"]
+    assert [item["command_kind"] for item in items] == ["create_class", "create_class"]
+    assert items[0]["payload"]["semantic_definition"] == {
+        "business_meaning": "The first kind of business object.",
+        "unknowns": ["No named instances supplied."],
+    }
+    assert {entry["change_id"] for entry in sources["0"].values()} == {
+        "concept-a", "concept-b",
+    }
+
+    # Fields-only definitions are connected in a subsequent submission using
+    # actual retained receipt entries, not guessed IDs or an unbound local ref.
+    def binding(ref):
+        index = int(ref["path"].rsplit("/", 1)[1])
+        return {"resource_kind": "class", "ontology_id": "ontology-1",
+                "resource_id": f"retained-class-{index}",
+                "resource_iri": f"https://example.test/class/{index}", "model_revision": 1}
+
+    relation = _change("concept-direction", "create", "relation_type", fields={
+        "name": "related to",
+        "source_class_id": {"existing_resource_ref": {
+            "artifact_ref": "receipts/definitions.json", "path": "/resources/0"}},
+        "target_class_id": {"existing_resource_ref": {
+            "artifact_ref": "receipts/definitions.json", "path": "/resources/1"}},
+        "semantic_definition": {"business_meaning": "Concept A relates to Concept B.",
+                                "unknowns": ["No cardinality supplied."]},
+    })
+    batches, _ = compile_model_changes(
+        _request([relation], candidate_ref=None), candidate=None,
+        ontology_by_item={"concept-direction": "ontology-1"}, resolve_binding=binding,
+    )
+    item = batches[0]["items"][0]
+    assert item["command_kind"] == "create_relation_type"
+    assert item["payload"]["source_class_id"] == "retained-class-0"
+    assert item["payload"]["target_class_id"] == "retained-class-1"
+    assert item["payload"]["semantic_definition"]["unknowns"] == ["No cardinality supplied."]
+    assert "cardinality" not in item["payload"]
+
+
 def test_compiles_current_candidate_in_stable_dependency_order_and_maps_sources():
     candidate = _candidate(
         [

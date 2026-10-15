@@ -51,6 +51,7 @@ from modeling_team.tests.test_r30008b_staged_decisions import (
     _stage3_slot,
     _trace,
 )
+from modeling_team.transport_mcp import RoutingError
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_SOURCE = REPO_ROOT / "modeling_team" / "runner.py"
@@ -712,10 +713,13 @@ def test_s10_terminal_gate_blocks_completed_until_checklist_valid(tmp_path):
     try:
         staged.prepare()
         coordinator = _coordinator_id(staged.runner)
-        assert staged.runner._terminal_report_guard(coordinator, status="completed") is True
+        with pytest.raises(RoutingError) as missing:
+            staged.runner._terminal_report_guard(coordinator, status="completed")
+        assert missing.value.code == "acceptance_checklist_missing"
         assert "acceptance_checklist_missing" in _staged_reasons(staged.adapter)
         # Deduplicated feedback.
-        staged.runner._terminal_report_guard(coordinator, status="completed")
+        with pytest.raises(RoutingError):
+            staged.runner._terminal_report_guard(coordinator, status="completed")
         assert _staged_reasons(staged.adapter).count("acceptance_checklist_missing") == 1
         # A blocked report always passes (T0 exit).
         assert staged.runner._terminal_report_guard(coordinator, status="blocked") is False
@@ -726,7 +730,9 @@ def test_s10_terminal_gate_blocks_completed_until_checklist_valid(tmp_path):
         broken = _checklist()
         broken["items"] = broken["items"][:-1]
         _write_json(staged_decision_artifact_paths(staged.run_root)["checklist"], broken)
-        assert staged.runner._terminal_report_guard(coordinator, status="completed") is True
+        with pytest.raises(RoutingError) as invalid:
+            staged.runner._terminal_report_guard(coordinator, status="completed")
+        assert invalid.value.code == "acceptance_checklist_schema_mismatch"
         assert "acceptance_checklist_schema_mismatch" in _staged_reasons(staged.adapter)
     finally:
         staged.cleanup()

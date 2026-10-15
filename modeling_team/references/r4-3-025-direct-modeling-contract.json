@@ -6,7 +6,7 @@
     "modeling_id": "modeling",
     "request": {
       "schema_version": "r4-3-025-model-changes/v1",
-      "candidate_ref": "run-relative immutable stage3-neutral-graph/candidates/<candidate>-r<revision>.json, or null for existing fields-only changes",
+      "candidate_ref": "run-relative immutable stage3-neutral-graph/candidates/<candidate>-r<revision>.json, or null for supported fields-only changes including Class/relation_type creation",
       "changes": "nonempty ordered list of the closed change shape below"
     }
   },
@@ -42,7 +42,7 @@
     ],
     "rules": [
       "change_id is a unique neutral operation label. item_id selects the complete current candidate item; fields is null. fields-only existing modifications use item_id=null. Do not copy a candidate into fields.",
-      "create selects a candidate item for the seven unified kinds; target_ref=null. Existing Class/relation_type/Operation/Mapping create uses its supported semantic fields. update/delete/fact operations require a concrete retained target_ref. Missing candidate items never imply deletion.",
+      "create selects a candidate item for the seven unified kinds; target_ref=null. Supported Class/relation_type/Operation/Mapping create uses item_id=null, target_ref=null and fields containing its semantic fields. update/delete/fact operations require a concrete retained target_ref. Missing candidate items never imply deletion.",
       "target_ref and existing_resource_ref are {artifact_ref,path}; path is a JSON Pointer to one actual authorized governed response or applied receipt entry. No bare guessed resource IRI/ID, Session, lease, version, Batch identity, command_kind, payload envelope or command plan.",
       "Ontology placement comes from the confirmed topology and trusted run scope, not from guessed table/slice counts. An unresolved placement is a fixable scope_binding_required error."
     ]
@@ -68,6 +68,7 @@
     "non_relation_endpoints": "null",
     "legacy_value": "A legal old value that cannot uniquely compile requires an explicit new immutable revision; the program does not guess or rewrite the old artifact."
   },
+  "semantic_level": "entity/create_entity creates an owl:NamedIndividual, including when no Class is supplied. An asserted relation between individuals states an instance fact. Class/relation_type definitions are available as fields-only changes for concept-level semantics; do not force concepts into individuals or invent candidate kinds. A complete immutable fields-only change request is a semantic delivery, not a command plan. definition_ref selects a candidate item in this submission, not a fields-only change_id. To connect new fields-only Classes, first create them, then use actual retained receipt entries through existing_resource_ref for the relationship definition. The program executes the selected semantics and does not choose this business distinction for Modeling.",
   "execution": "Program compiles all statically checkable input before the first write, preserves candidate item identities and JSON Pointer source maps, orders explicit dependencies, obtains real Session/lease/revision, and calls apply_atomic once per batch. Cross-batch dependencies use successful actual resource outputs. No dry-run, translation approval, or cross-batch transaction claim.",
   "results": {
     "schema_version": "r4-3-025-model-change-result/v1",

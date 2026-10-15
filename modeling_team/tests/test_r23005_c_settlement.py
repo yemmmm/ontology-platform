@@ -648,7 +648,7 @@ class R23005CSettlementTests(unittest.TestCase):
                 modeling_agent_id="modeling",
                 terminal_report_guard=runner._terminal_report_guard,
             )
-            with self.assertRaisesRegex(RoutingError, "Protocol retrieval evidence is incomplete"):
+            with self.assertRaisesRegex(RoutingError, "Acceptance settlement"):
                 broker.report("acceptance", "completed", "premature")
             self.assertNotIn("acceptance", broker.results)
             # R2.3-009 follow-up (user 2026-08-20): ``blocked`` is a

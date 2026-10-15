@@ -52,6 +52,17 @@ TERMINAL_REPORT_GUARD_ERROR = (
     "Protocol retrieval evidence is incomplete: a stateful call reset it to query_required;"
     " before terminal report re-run query_semantic_context or pass verify_scoped_retrieval_fallback"
 )
+# Shared with the Runner and native transport relay: only fixed prerequisite
+# messages may cross the Agent boundary, never internal exception payloads.
+TERMINAL_REPORT_GUARD_REJECTIONS = {
+    "issue_pending": "terminal result is blocked by an active issue; wait for its resolution and automatic resume",
+    "cq_handoff_pending": "terminal result awaits CQ freeze and Host cq_handoff_complete; continue the existing CQ session",
+    "acceptance_settlement_pending": "terminal result awaits Acceptance settlement; continue the existing acceptance handoff",
+    "acceptance_checklist_missing": "terminal result requires joint-acceptance/joint-acceptance-checklist.json for full_joint",
+    "acceptance_checklist_unparsable": "terminal result requires a readable joint acceptance checklist for full_joint; correct its JSON",
+    "acceptance_checklist_schema_mismatch": "terminal result requires a valid joint acceptance checklist for full_joint; correct the reported fields",
+    "terminal_guard_failed": "terminal result guard failed; preserve writes and report the runtime failure for diagnosis",
+}
 COORDINATION_OBSERVER_ERROR = "coordination evidence observer failed"
 _MCP_TOOL_ERROR_CODE = -32000
 _MCP_TOOL_ERROR_MESSAGE = "Team Transport request rejected"
@@ -898,8 +909,13 @@ class TeamTransportBroker:
                     already_synchronized,
                     status,
                 )
+            except RoutingError:
+                raise
             except Exception:
-                raise RoutingError(TERMINAL_REPORT_GUARD_ERROR) from None
+                raise RoutingError(
+                    TERMINAL_REPORT_GUARD_REJECTIONS["terminal_guard_failed"],
+                    code="terminal_guard_failed",
+                ) from None
             if allowed is not False:
                 raise RoutingError(TERMINAL_REPORT_GUARD_ERROR)
         if status not in {"completed", "blocked"} or not isinstance(summary, str):

@@ -229,7 +229,12 @@ from .start_ledger import (
     StartLedgerConfig,
     resolve_ledger_config,
 )
-from .transport_mcp import RoutingError, TeamTransportBroker, _call_terminal_report_guard
+from .transport_mcp import (
+    TERMINAL_REPORT_GUARD_REJECTIONS,
+    RoutingError,
+    TeamTransportBroker,
+    _call_terminal_report_guard,
+)
 from .task_overlay import TaskInputOverlay, load_task_input_overlay
 from .modeling_readonly import (
     MODELING_READ_TOOLS,
@@ -2122,7 +2127,9 @@ class TeamRunner:
 
         issue_ledger = self._issue_ledger()
         if issue_ledger is not None and issue_ledger.pending:
-            return True
+            raise RoutingError(
+                TERMINAL_REPORT_GUARD_REJECTIONS["issue_pending"], code="issue_pending"
+            )
         # R2.3-009 follow-up (user 2026-08-20): a role self-declares that its
         # task is complete or definitively stuck, so the host-side Runtime
         # guard (e.g. Protocol retrieval-evidence completeness) gates only
@@ -2138,8 +2145,13 @@ class TeamRunner:
                     status,
                 ):
                     return True
+            except RoutingError:
+                raise
             except Exception:
-                return True
+                raise RoutingError(
+                    TERMINAL_REPORT_GUARD_REJECTIONS["terminal_guard_failed"],
+                    code="terminal_guard_failed",
+                ) from None
         # R3.0-011: the competency-question role may only report terminal after
         # the host-only ``cq_handoff_complete`` admission.  A premature report is
         # rejected for this call only, with the current phase and the
@@ -2149,7 +2161,10 @@ class TeamRunner:
         cq_reason = self._cq_terminal_block_reason(agent_id)
         if cq_reason is not None and status != "blocked":
             self._deliver_cq_terminal_rejection(agent_id, cq_reason)
-            return True
+            raise RoutingError(
+                TERMINAL_REPORT_GUARD_REJECTIONS["cq_handoff_pending"],
+                code="cq_handoff_pending",
+            )
         if self._formal_coordination_enabled() and self.run is not None:
             role_ids = {
                 agent.package.role: agent.agent_id
@@ -2164,7 +2179,12 @@ class TeamRunner:
                 # reach the agent-blocked exit instead of deadlocking to T3.
                 if status == "blocked":
                     return False
-                return self.acceptance is None or not self.acceptance.is_settled
+                if self.acceptance is None or not self.acceptance.is_settled:
+                    raise RoutingError(
+                        TERMINAL_REPORT_GUARD_REJECTIONS["acceptance_settlement_pending"],
+                        code="acceptance_settlement_pending",
+                    )
+                return False
             acceptance_id = role_ids.get("acceptance", "acceptance")
             if agent_id == acceptance_id:
                 # Acceptance cannot terminate after merely producing a
@@ -2180,7 +2200,12 @@ class TeamRunner:
                 if status != "completed":
                     return True
                 self._finalize_acceptance_if_ready()
-                return self.acceptance is None or not self.acceptance.is_settled
+                if self.acceptance is None or not self.acceptance.is_settled:
+                    raise RoutingError(
+                        TERMINAL_REPORT_GUARD_REJECTIONS["acceptance_settlement_pending"],
+                        code="acceptance_settlement_pending",
+                    )
+                return False
         # R3.0-008B staged runs: the Coordinator may not report ``completed``
         # while the joint acceptance checklist is missing or structurally
         # invalid (design section 3.7 terminal gate).  A ``blocked`` report
@@ -2188,6 +2213,7 @@ class TeamRunner:
         if (
             status == "completed"
             and getattr(self, "_staged_decisions", False)
+            and self._acceptance_target == "full_joint"
             and self.run is not None
             and agent_id
             == {
@@ -2200,7 +2226,9 @@ class TeamRunner:
                 self._deliver_staged_gate_feedback(
                     issue.reason_code, issue.artifact or issue.detail
                 )
-                return True
+                raise RoutingError(
+                    TERMINAL_REPORT_GUARD_REJECTIONS[issue.reason_code], code=issue.reason_code
+                )
         return False
 
     def _finalize_acceptance_if_ready(self) -> None:
@@ -3593,7 +3621,11 @@ class TeamRunner:
                 text += "\nCurrent authorized read scope (no credentials): " + json.dumps(self._cq_scope_binding(), sort_keys=True)
                 if role == "modeling":
                     text += (
-                        "Publish a complete immutable unified candidate, then directly call "
+                        "Publish a complete immutable semantic delivery: use a unified candidate "
+                        "for its registered item kinds, or explicit semantic fields for supported "
+                        "Class/relation_type definitions. Do not create individuals solely to fit "
+                        "the candidate kinds. For fields-only changes item_id=null; candidate_ref "
+                        "may be null when no candidate item is selected. Then directly call "
                         "modeling_submit_model_changes(modeling_id=modeling, request=...). The request "
                         "has schema_version=r4-3-025-model-changes/v1, candidate_ref, changes; each "
                         "change has change_id,action,resource_kind,item_id,target_ref,fields. "

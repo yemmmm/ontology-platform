@@ -87,6 +87,7 @@ from ..handoff_materials import HANDOFF_TOOL_NAMES
 from ..transport_mcp import (
     TERMINAL_REPLY_BINDING_PATTERNS,
     TERMINAL_REPORT_GUARD_ERROR,
+    TERMINAL_REPORT_GUARD_REJECTIONS,
     issue_control_transport_error,
     report_rejection_category,
     terminal_reply_binding_error,
@@ -7630,6 +7631,7 @@ class CodexRuntimeAdapter(RuntimeAdapter):
             return value
         fixed = {
             TERMINAL_REPORT_GUARD_ERROR,
+            *TERMINAL_REPORT_GUARD_REJECTIONS.values(),
             "recipient is not allowed by frozen Profile",
             "terminal result is invalid",
             "Agent already reported a terminal result",
