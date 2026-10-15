@@ -928,12 +928,20 @@ class RunnerCapabilityEndpoint:
         }
 
 
+_CAPABILITY_CONNECT_TIMEOUT_SECONDS = 15.0
+
+
 def _stdio_request(socket_path: str, token: str, request: Mapping[str, Any]) -> dict[str, Any]:
     payload = {**dict(request), "token": token}
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as connection:
-        connection.settimeout(15)
+        # Keep endpoint connection and request writes bounded.  A capability
+        # may be applying a model change while the response is pending; the
+        # native MCP/session budget owns that wait, so a shorter local read
+        # timeout would let the apply continue after the caller lost its ID.
+        connection.settimeout(_CAPABILITY_CONNECT_TIMEOUT_SECONDS)
         connection.connect(socket_path)
         connection.sendall((json.dumps(payload, ensure_ascii=False) + "\n").encode("utf-8"))
+        connection.settimeout(None)
         line = connection.makefile("r", encoding="utf-8").readline(1_048_577)
     value = json.loads(line)
     return value if isinstance(value, dict) else {"jsonrpc": "2.0", "id": request.get("id"), "error": {"code": -32001, "message": "Runner capability request rejected"}}
@@ -953,6 +961,7 @@ def run_stdio_client(socket_path: str, token_file: Path, *, stdin: Any = None, s
     if not token:
         return 2
     for line in input_stream:
+        request_id: Any = None
         try:
             request = json.loads(line)
             if not isinstance(request, Mapping):
@@ -978,7 +987,7 @@ def run_stdio_client(socket_path: str, token_file: Path, *, stdin: Any = None, s
         except Exception:
             response = {
                 "jsonrpc": "2.0",
-                "id": None,
+                "id": request_id,
                 "error": {"code": -32001, "message": "Runner capability request rejected"},
             }
             output_stream.write(json.dumps(response, ensure_ascii=False) + "\n")

@@ -28,16 +28,21 @@ in ``test_r3011_runner_wiring.py``.
 
 from __future__ import annotations
 
+import io
 import json
+import threading
 import tempfile
+import time
 from pathlib import Path
 from typing import Any
 
+from modeling_team import capability_mcp
 from modeling_team.acceptance import RunnerAcceptanceCarrier
 from modeling_team.capability_mcp import (
     COMPETENCY_QUESTION_ROLE,
     CQ_OPERATION,
     _stdio_request,
+    run_stdio_client,
 )
 
 # Synthetic envelope only: the advertised schema fixes ``draft`` as an object,
@@ -113,3 +118,76 @@ def test_cq_socket_tools_call_reaches_the_configured_draft_handler() -> None:
     assert records[-1]["operation"] == CQ_OPERATION
     assert records[-1]["ok"] is True
     assert "error_type" not in records[-1]
+
+
+def test_stdio_request_returns_delayed_real_socket_response(monkeypatch, tmp_path) -> None:
+    original_socket = capability_mcp.socket.socket
+    socket_path = tmp_path / "capability-return.sock"
+    dispatch_count = 0
+
+    server = original_socket(capability_mcp.socket.AF_UNIX, capability_mcp.socket.SOCK_STREAM)
+    server.bind(str(socket_path))
+    server.listen(1)
+
+    def serve_once() -> None:
+        nonlocal dispatch_count
+        try:
+            connection, _ = server.accept()
+            with connection:
+                request = json.loads(connection.makefile("r", encoding="utf-8").readline())
+                dispatch_count += 1
+                time.sleep(0.08)
+                response = {
+                    "jsonrpc": "2.0",
+                    "id": request["id"],
+                    "result": {"ok": True, "write_state": "applied"},
+                }
+                connection.sendall((json.dumps(response) + "\n").encode("utf-8"))
+        finally:
+            server.close()
+
+    worker = threading.Thread(target=serve_once)
+    worker.start()
+
+    class _ShortTimeoutSocket(original_socket):
+        def settimeout(self, value: float | None) -> None:
+            # Make the historical 15-second read budget a 20ms fixture budget.
+            # The fixed implementation clears this after the request is sent.
+            super().settimeout(0.02 if value == 15 else value)
+
+    monkeypatch.setattr(capability_mcp.socket, "socket", _ShortTimeoutSocket)
+    try:
+        response = _stdio_request(
+            str(socket_path),
+            "token",
+            {"jsonrpc": "2.0", "id": "delayed", "method": "tools/call"},
+        )
+    finally:
+        worker.join(timeout=2)
+
+    assert response == {
+        "jsonrpc": "2.0",
+        "id": "delayed",
+        "result": {"ok": True, "write_state": "applied"},
+    }
+    assert dispatch_count == 1
+
+
+def test_stdio_client_keeps_each_request_id_on_forwarding_errors(tmp_path, monkeypatch) -> None:
+    def fail_forward(*_args, **_kwargs):
+        raise TimeoutError("capability response did not arrive")
+
+    monkeypatch.setattr(capability_mcp, "_stdio_request", fail_forward)
+    token_file = tmp_path / "token"
+    token_file.write_text("token\n", encoding="utf-8")
+    input_stream = io.StringIO(
+        '{"jsonrpc":"2.0","id":"string-id","method":"tools/call"}\n'
+        '{"jsonrpc":"2.0","id":17,"method":"tools/call"}\n'
+        '{"jsonrpc":"2.0","id":\n'
+    )
+    output_stream = io.StringIO()
+
+    assert run_stdio_client("/tmp/capability-return.sock", token_file, stdin=input_stream, stdout=output_stream) == 0
+
+    responses = [json.loads(line) for line in output_stream.getvalue().splitlines()]
+    assert [response["id"] for response in responses] == ["string-id", 17, None]
