@@ -2,6 +2,9 @@
 
 import hashlib
 import json
+import os
+import socket
+import stat
 from datetime import UTC, datetime
 from pathlib import Path
 from shutil import rmtree
@@ -29,6 +32,29 @@ TASK = ROOT / "modeling_team/tasks/r4-3-026-minimal-installation-chain.yaml"
 
 def read(path):
     return json.loads(path.read_text())
+
+
+def _socket_tools(socket_path: Path, token: str) -> list[str]:
+    with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+        client.settimeout(5)
+        client.connect(str(socket_path))
+        client.sendall(
+            (
+                json.dumps(
+                    {
+                        "jsonrpc": "2.0",
+                        "id": 1,
+                        "token": token,
+                        "method": "tools/list",
+                        "params": {},
+                    }
+                )
+                + "\n"
+            ).encode()
+        )
+        line = client.makefile("r", encoding="utf-8").readline(1_048_577)
+    assert line
+    return [item["name"] for item in json.loads(line)["result"]["tools"]]
 
 
 def test_pair_loads_current_direct_route_without_protocol_or_checkpoint_experiment():
@@ -218,6 +244,44 @@ def test_glm_profile_binds_compact_packages_by_role_and_runtime_uses_canonical_k
             "modeling",
             "competency-question",
         ]
+    finally:
+        runner.cleanup()
+        rmtree(run_root, ignore_errors=True)
+
+
+def test_nonformal_unified_start_starts_direct_modeling_endpoint_before_roster(tmp_path):
+    run_id = "r4326-endpoint-" + uuid4().hex[:10]
+    run_root = ROOT / "workspaces/modeling-runs" / run_id
+    adapter = CapturingAdapter()
+    runner = TeamRunner(
+        repository_root=ROOT,
+        adapter=adapter,
+        ledger_root=tmp_path / "ledger",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+    )
+    observed = {}
+    original_start_roster = adapter.start_roster
+
+    def probe_start_roster(run, agents):
+        carrier = runner.acceptance
+        assert carrier is not None
+        endpoint = carrier.capability_endpoint("modeling")
+        path = endpoint.socket_path
+        observed["is_socket"] = path.exists() and stat.S_ISSOCK(os.lstat(path).st_mode)
+        observed["tools"] = (
+            _socket_tools(path, carrier.capability_token("modeling"))
+            if observed["is_socket"]
+            else []
+        )
+        return original_start_roster(run, agents)
+
+    adapter.start_roster = probe_start_roster
+    try:
+        runner.prepare(run_id=run_id, profile_path=PROFILE, task_path=TASK, scope={"mode": "create"})
+        runner.start()
+        descriptor = runner.acceptance.capability_descriptors["modeling"]
+        assert observed["is_socket"] is True
+        assert observed["tools"] == descriptor["operations"]
     finally:
         runner.cleanup()
         rmtree(run_root, ignore_errors=True)
