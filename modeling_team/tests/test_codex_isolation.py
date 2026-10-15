@@ -17,7 +17,7 @@ from types import SimpleNamespace
 import yaml
 
 from modeling_team.capability_mcp import COMPETENCY_QUESTION_ROLE, CQ_OPERATION, CQ_OPERATIONS
-from modeling_team.contracts import _load_package, load_team_configuration, repository_root
+from modeling_team.contracts import digest_file, _load_package, load_team_configuration, repository_root
 from modeling_team.handoff_materials import HANDOFF_TOOL_NAMES
 from modeling_team.protocol_mcp_launch import canonical_protocol_mcp_mode_contract, protocol_mcp_launch_spec
 from modeling_team.protocol_mechanics import protocol_mechanics_contract, protocol_mechanics_contract_bytes
@@ -931,6 +931,67 @@ class CodexIsolationTests(unittest.TestCase):
             adapter._initialize(agent)
             self.assertEqual(agent.thread_id, "thread-skill-preflight")
             self.assertEqual(calls, ["initialize", "thread/start"])
+
+    def test_start_task_includes_staged_skill_body_and_rejects_staged_drift(self) -> None:
+        root = repository_root()
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            package = _load_package(root, "minimal-chain-modeling")
+            agent = _Agent(
+                "modeling",
+                package,
+                base / "home",
+                base / "work",
+                base / "skills",
+                thread_id="thread-skill-body",
+            )
+            for path in (agent.home, agent.work, agent.skills):
+                path.mkdir(parents=True, mode=0o700)
+            adapter = CodexRuntimeAdapter(repository_root=root)
+            adapter.agents[agent.agent_id] = agent
+            adapter._stage_skills(agent)
+            calls: list[dict[str, object]] = []
+
+            def fake_rpc(_agent, method, params):
+                calls.append({"method": method, "params": params})
+                return {"turn": {"id": "turn-skill-body"}}
+
+            adapter._rpc = fake_rpc  # type: ignore[method-assign]
+            source = package.required_skills[0]
+            staged = agent.skills / source.parent.name / source.name
+            body = staged.read_bytes().decode("utf-8")
+            adapter.start_task(
+                agent.agent_id,
+                "read the frozen skill",
+                [str(source)],
+                [agent.agent_id],
+            )
+
+            first_turn_input = calls[0]["params"]["input"]
+            self.assertEqual(first_turn_input[0], {
+                "type": "skill",
+                "name": source.parent.name,
+                "path": f"/skills/{source.parent.name}/{source.name}",
+            })
+            text = first_turn_input[-1]["text"]
+            self.assertIn(body, text)
+            self.assertIn(f"source_path={source.as_posix()}", text)
+            self.assertIn(
+                f"staged_path=/skills/{source.parent.name}/{source.name}", text
+            )
+            self.assertIn(f"sha256={digest_file(source)}", text)
+
+            staged.chmod(0o644)
+            staged.write_text("staged bytes drifted", encoding="utf-8")
+            staged.chmod(0o444)
+            with self.assertRaisesRegex(CodexRuntimeError, "Skill injection evidence drift"):
+                adapter.start_task(
+                    agent.agent_id,
+                    "read the frozen skill again",
+                    [str(source)],
+                    [agent.agent_id],
+                )
+            self.assertEqual(len(calls), 1)
 
     def test_formal_stop_destroys_capability_material_and_is_idempotent(self) -> None:
         root = repository_root()

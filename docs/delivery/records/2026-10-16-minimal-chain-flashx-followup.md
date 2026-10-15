@@ -88,3 +88,24 @@ thread/start、mcpServerStatus/list 单次等待改为 60 秒，等待同一 req
 
 该最小变更的隔离文件 60 passed、55 subtests passed；新 RPC focused 3 passed、
 鉴权相关 2 passed；Ruff 与 diff 检查通过。尚未证明真实启动恢复，须新进程实测。
+
+## 新组首轮实际输入与技术补齐
+
+`r4326-20261016-postfix-flashx-start1e` 于 18:32:01.700119 UTC 实际开始，
+新组已用 1/3，剩余 2，fresh semantic starts=1；启动代码含 `d23846f`。
+启动恢复已证实，但首次启动 20 分钟门仍失败，不重置耗时或覆盖前述预启动失败。
+
+原生 transcript 仅有 `type=skill` 元数据而无正文，Modeling 随后确认未读到必需技能。
+因此此前显式注入接口成功不能证明实际正文到达；inventory 删除的判断须补此证据缺口。
+持久修复在初 turn 显式加入只读 staged Skill 完整原文、路径和摘要，保留原 Skill 元数据，
+不恢复易卡住的 inventory；源/staged 摘要漂移在发送前返回原有输入错误。
+当前原进程不热更新：沿原 Delivery/Coordinator 通道补发同一获准技能，不新增业务事实。
+核对无 intent、receipt 或未知写入后保持普通等待；完整读取确认前不得写入。
+
+完整 staged Skill 为 4835 字节，SHA-256
+`4956333945968e8fcad46d2ca346fc67fcd56352923c9ca029db5794e201703f`。
+PTY 超长行被截断，改以三片拼接并验证完整摘要；Delivery 已确认拼接一致，截断材料未转发。
+此为同轮输入技术补齐，不另扣轮次，也不计 Delivery 无宿主补位的自主交付通过。
+
+持久修复验证：Codex 隔离文件 61 passed、55 subtests passed（1.28 秒）。
+该检查验证完整正文进入首次 turn 参数及 staged 漂移拒绝，不替代 live 实际读取或语义验收。

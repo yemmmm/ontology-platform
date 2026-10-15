@@ -6555,9 +6555,26 @@ class CodexRuntimeAdapter(RuntimeAdapter):
     ) -> None:
         agent = self.agents[agent_id]
         injected = []
+        skill_blocks = []
         for path in skill_paths:
             source = Path(path)
-            staged = f"/skills/{source.parent.name}/SKILL.md"
+            staged = f"/skills/{source.parent.name}/{source.name}"
+            staged_file = agent.skills / source.parent.name / source.name
+            if (
+                staged_file.parent.is_symlink()
+                or not staged_file.parent.is_dir()
+                or staged_file.is_symlink()
+                or not staged_file.is_file()
+            ):
+                raise CodexRuntimeError("Skill injection evidence drift")
+            try:
+                source_digest = digest_file(source)
+                staged_digest = digest_file(staged_file)
+                skill_body = staged_file.read_bytes().decode("utf-8")
+            except (OSError, UnicodeDecodeError) as exc:
+                raise CodexRuntimeError("Skill injection evidence drift") from exc
+            if source_digest != staged_digest:
+                raise CodexRuntimeError("Skill injection evidence drift")
             injected.append(
                 {
                     "type": "skill",
@@ -6565,11 +6582,20 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     "path": staged,
                 }
             )
-        prompt = task_text + "\n\nFrozen roster: " + ", ".join(roster)
+            skill_blocks.append(
+                "Frozen Skill metadata: "
+                f"source_path={source.as_posix()} "
+                f"staged_path={staged} sha256={staged_digest}\n"
+                "Frozen Skill body (verbatim):\n"
+                + skill_body
+            )
+        prompt = "\n\n".join(
+            [
+                *skill_blocks,
+                task_text + "\n\nFrozen roster: " + ", ".join(roster),
+            ]
+        )
         agent.first_turn_input = injected + [{"type": "text", "text": prompt}]
-        # Retain model-visible material, then verify exact Skills were included.
-        if any(not digest_file(Path(path)) for path in skill_paths):
-            raise CodexRuntimeError("Skill injection evidence drift")
         result = self._rpc(
             agent,
             "turn/start",
