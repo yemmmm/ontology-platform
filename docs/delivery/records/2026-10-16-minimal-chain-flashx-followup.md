@@ -157,3 +157,39 @@ client_item_id/元数据和实际 label/IRI 匹配完整 receipt，不按列表�
 未新增平台业务规则、字段或硬门；未注入历史 UUID 或私有验收答案。
 验证：R4.3-026/contracts 21 passed、3 subtests；direct_submission/direct_modeling
 29 passed；提示合同检查与 diff 检查通过。新轮实际效果待验证。
+
+
+## 新组最终状态（PARTIAL）
+
+- 第 2 轮 `r4326-20261016-postfix-flashx-round2` 于 19:03:10.065835 UTC 真实开始，
+  新进程代码 `64cf733`。Modeling native user message 已核对包含完整 staged Skill
+  5831 字节，SHA-256 `84e7e6bc3e8abbb3c3632641f3047e55c4df4ebbc8e0d740e01364869a2390cb`。
+- 19:09:09 冻结公开 1 / 隐藏 3 题，19:11:53 原 Coordinator 转交确认。
+  19:12:02 Classes applied；19:13:09 relation applied 后，治理自查再次发现端点反向。
+- 第 3 轮为同 run 的实质语义修模：19:13:48.676 原 Modeling 实际提交
+  `update-installed-at-endpoints`，19:14:05.550 applied，Batch
+  `cf4445f5-7d28-4c43-aabc-1e6e35aa56d2` / Attempt
+  `1f4c1b0a-4227-4234-acc6-a987c6410357`。按自查后实质修模口径另计轮，
+  不能以同 run 或总体目标免扣。新组最终 **3/3 用尽，fresh semantic starts=2**。
+- 最后版本 3，修正结果的原回执/只读对账确认设备到地点端点；未完成最终自查、关联闭环
+  或独立语义验收，不能把 applied 推导为最终模型接受。
+- 原调用 `call_9f3b36d0c0a1473a89b727fc` 在 native transcript 有 function_call，
+  app-server 有 item/started 和已 resolved 的 elicitation，capability 有 ok/applied，
+  但无 native function_call_output/item-completed。首个可证断点为既有结果回传链，
+  尚不能细分 runner stdout 或 MCP bridge。19:18:48.794396 watchdog idle=300.008557，
+  Modeling 退出；与前组同见 inactivity 模式，不能据此断言内部同根。
+- 三个 Batch 和三个 Attempt 均经实际数据库对账为 applied，无在途或未知写入；
+  19:22:36 Host 使用既有 HTTP cancel API 关闭 owned Session（cancelled/revision 2），
+  回读租约 released、run model/read/admin keys revoked。临时 Host key 已撤销。
+  原模型、workspace、事件及 runtime-failure state 保留，未伪造 handoff、未重放写入。
+
+新组首轮公开 1/1 PASS、隐藏 Consumer 3/3 completed 但 Judge 未裁决；新组后两轮
+没有完整独立验收。源证据与全部分母保持不变，整体结果 PARTIAL。当前额度 0，停止新
+semantic start 与实质修模；Delivery 会话保留待命。主机生命周期补位不算 Delivery
+自主交付 PASS。清理仅证明上述 Session/lease/run key，不宣称所有私有凭据清理通过。
+技术修复、协作等待占本次观察主要时间，有效语义时间未完整计量，保持 unknown；
+停止扩展平台/harness，不用更多机制替代缺失语义证据。
+
+本轮相关提交：`27af453` 模型配置、`d357b24` 引用/同线程交接修复、`f488627`
+移除重复 inventory、`d23846f` 有界启动等待、`704ead8` 首 turn 正文、`07bf217`
+Judge 非语义进度降级、`64cf733` 端点身份/自查提示。工程验证与真实证据边界见上文。
