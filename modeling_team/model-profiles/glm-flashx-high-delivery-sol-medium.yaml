@@ -1,0 +1,36 @@
+# User-selected mixed binding: production/acceptance GLM flashx high; Delivery Sol medium.
+schema_version: 1
+model_profile_id: glm-flashx-high-delivery-sol-medium
+roles:
+  coordinator:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  modeling:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  protocol:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  competency-question:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  acceptance:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  source-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  platform-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: high
+  delivery:
+    model_provider: openai-codex
+    model: gpt-6.1-sol
+    model_reasoning_effort: medium
