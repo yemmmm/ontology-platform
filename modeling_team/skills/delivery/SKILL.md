@@ -229,6 +229,17 @@ a delivery receipt alone stays pending. Do not interrupt or install a global pau
 switch. 取消/撤回预算 preserve their separate authorization-revocation contract. A host interruption is recorded as supervision interrupted,
 not success. Resume from real state without silently relaunching production.
 
+For the technical issue channel, distinguish missing fields, ordinary review/upstream
+waits and recoverable format feedback from an actual typed issue report; the former do
+not justify a runtime failure or a new issue. For a real issue, use the existing Host
+resolution path with its bound `issue_id`, `reporter_id` and `control_epoch` after the
+required pause is observed. Runner persists that resolution and automatically settles
+the bound broker `resume` or `abort`, waking the original reporter on the same thread.
+Do not tell the Coordinator to repeat `issue_control resume` or send a second resume
+yourself. If a stale-control response appears, read the request/result and issue-control
+receipts first; treat it as a duplicate against the already-settled resolution unless a
+new typed issue report proves a new issue.
+
 Before standby/seal/CQ handoff, when production operations have ended, no
 in-flight or unknown writes remain and this round's evidence is preserved,
 first normally complete this round's OWNED work Build Session: through the

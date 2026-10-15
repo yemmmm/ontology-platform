@@ -5352,15 +5352,24 @@ class TeamRunner:
                 self._staged_gate_kill_switch(issue.reason_code, issue.detail)
                 return False
             self._deliver_staged_gate_feedback(issue.reason_code, issue.artifact, details=(issue.detail,))
-        # 3) Stage 3 minimal slot prerequisite (approval cross-validated).
-        approvals = self._load_staged_approvals(run_root)
-        slot_issue = staged_stage3_issue(run_root, approvals, unified=self._unified_graph)
-        if slot_issue is not None:
-            # Prerequisite model: intervene without latch or gate close.
-            self._deliver_staged_gate_feedback(
-                slot_issue.reason_code, slot_issue.artifact, details=(slot_issue.detail,)
-            )
-            return False
+        # 3) The legacy staged path requires the stage 3 minimal slot
+        # prerequisite (approval cross-validated).  R4.3-024/025 unified
+        # direct Modeling submits use the confirmed scope/topology and their
+        # candidate/intent/receipt contracts instead; a missing legacy slot
+        # must not prevent the topology gate from checking that binding.
+        legacy_stage3_required = not self._unified_graph or any(
+            source.path.name == "r3-0-009-unified-graph-contract.json"
+            for source in self.run.configuration.task.role_sources
+        )
+        if legacy_stage3_required:
+            approvals = self._load_staged_approvals(run_root)
+            slot_issue = staged_stage3_issue(run_root, approvals, unified=False)
+            if slot_issue is not None:
+                # Prerequisite model: intervene without latch or gate close.
+                self._deliver_staged_gate_feedback(
+                    slot_issue.reason_code, slot_issue.artifact, details=(slot_issue.detail,)
+                )
+                return False
         return True
 
     def _reference_plan(

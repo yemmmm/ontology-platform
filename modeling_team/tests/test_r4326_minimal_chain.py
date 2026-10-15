@@ -287,6 +287,31 @@ def test_nonformal_unified_start_starts_direct_modeling_endpoint_before_roster(t
         rmtree(run_root, ignore_errors=True)
 
 
+def test_unified_direct_path_does_not_require_legacy_stage3_slot(tmp_path):
+    run_id = "r4326-unified-gate-" + uuid4().hex[:10]
+    run_root = ROOT / "workspaces/modeling-runs" / run_id
+    runner = TeamRunner(
+        repository_root=ROOT,
+        adapter=CapturingAdapter(),
+        ledger_root=tmp_path / "ledger",
+        freeze_started_at=datetime.now(UTC).isoformat(),
+    )
+    try:
+        runner.prepare(run_id=run_id, profile_path=PROFILE, task_path=TASK, scope={"mode": "create"})
+        assert runner._unified_graph is True
+        assert not any(
+            source.path.name == "r3-0-009-unified-graph-contract.json"
+            for source in runner.run.configuration.task.role_sources
+        )
+        # R4.3-024/025 direct modeling relies on confirmed scope/topology and
+        # direct candidate/intent/receipt checks; no legacy stage3 slot exists.
+        assert runner._check_staged_decision_gates() is True
+        assert runner._multi_slice_gate_opened is False
+    finally:
+        runner.cleanup()
+        rmtree(run_root, ignore_errors=True)
+
+
 @pytest.mark.parametrize("task_name", [
     "r4-0-009-asset-fault-workorder", "r4-0-009-multiview-semantic-acceptance",
     "r3-0-015-minimal-flow",

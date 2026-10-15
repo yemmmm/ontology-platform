@@ -132,3 +132,31 @@ roster没有Protocol，不产生平台写入路径或额外角色。这次仅增
 
 后续真实验证须依当时授权选本Task/Profile，保留独立run、freeze、模型版本、应用／检索／
 裁决证据与019用量覆盖；每层单独结论。材料交付不会解除暂停或自动追加运行／修模轮次。
+
+## 2026-10-15 issue resolution 提示纠偏
+
+公开运行证据显示，Runner 的既有 `issue_resolution` 路径会先持久化 resolution，再通过同一
+broker 自动发出绑定的 `issue_control` `resume`／`abort` 并唤醒原 reporter。原 issue 的
+`resume` 已由该路径在 05:08:43 结算；随后再次手动 `resume` 属于 stale control，不能当作
+持久化丢失或新 issue。此前指导 Coordinator 在 resolution 后重复 resume，造成了错误的新
+issue 观测。
+
+本次持久修复只更新精简 Coordinator 与 Delivery 提示：缺字段、普通格式错误及 review／上游
+等待保持可恢复等待，不上报 runtime issue；真实 typed issue 按现有 pause／resolution 绑定
+处理，Host resolution 后等待 Runner 自动 settle/wake，先核对回执再判断异常。没有新增 Runner
+硬门、issue 控制或重试机制；当前 live run 不因此新启或扣除 semantic-start。
+
+## 2026-10-15 unified direct apply 的 legacy stage3 门修复
+
+公开 `start1c` 的 `candidate-gate/state.json` 仍为 `closed/topology_missing_artifact`，而
+`evidence/staged-decisions.jsonl` 记录的首个阻塞是 `stage3_missing_artifact`；同一公开 run 的
+`scenario-map.json` 与 `topology-decision.json` 经现有 `validate_scenario_map`／
+`validate_topology_decision` 校验均无问题。Runner 原先在每个 drain tick 先执行旧 stage3 slot
+前置检查，只有该检查通过才进入已确认拓扑的 gate，导致当前 R4.3-024/025 direct
+`modeling_submit_model_changes` 在 scope/topology 绑定前被 legacy slot 阻塞。
+
+修复仅让未挂载旧 `r3-0-009-unified-graph-contract.json` 的 unified direct Task 跳过该 legacy
+slot 检查；旧 unified Task 仍保留原 stage3 前置。写完整性、审批跨件检查、scenario-map／
+topology 校验、candidate/scope binding 以及 direct intent/receipt 完整性均保留。没有修改
+模型、平台接口或运行时重试机制；当前进程不能安全热加载，下一次 fresh start 由 Delivery
+按既有授权计为 round2，旧 run 保留且无模型写入。

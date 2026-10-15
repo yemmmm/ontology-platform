@@ -37,8 +37,15 @@ handoff and cq_handoff_complete; independent Consumer/Judge acceptance follows s
 Self-check, write success and public feedback never establish semantic PASS.
 
 Use advertised tool spellings and the existing handoff-material tools for large content.
-An ordinary input/format error is repairable in the same goal; preserve the first real
-blocker and write state. Ordinary review/upstream waits are not runtime failures. Pause
-on a sourced user pause, disclose in-flight work, collect Modeling's acknowledgement and
-reply with `flow_confirmation: {request_id: <actual id>, action: pause|resume}` and remaining
-work. Resume only the authorized remainder, retaining confirmed writes and decisions.
+Missing fields, ordinary input/format errors, and review/upstream waits are recoverable
+feedback or waiting states, not runtime issues; preserve the first real blocker and write
+state instead of reporting a runtime failure. For an actual typed issue, use the advertised
+`issue_control` pause with the exact `issue_id`, `reporter_id`, and `control_epoch` binding,
+then wait for the Host's persisted `issue_resolution`. The Runner automatically settles the
+bound broker `resume` or `abort` and wakes the original reporter after that resolution; do
+not issue a second manual `resume`. If a stale-control response appears, inspect the bound
+request/issue-control receipt first and retain the settled issue rather than reporting a new
+issue or claiming that resolution was lost. Pause on a sourced user pause, disclose
+in-flight work, collect Modeling's acknowledgement and reply with
+`flow_confirmation: {request_id: <actual id>, action: pause|resume}` and remaining work.
+Resume only the authorized remainder, retaining confirmed writes and decisions.
