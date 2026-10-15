@@ -30,13 +30,18 @@ retained MCP response is an envelope: a read-model resource item is addressed un
 `/structuredContent/data/items/N`, while an
 applied batch item is addressed at that same complete item path and exposes the platform
 identity in its `resource_outputs` object, including both `resource_id` and `resource_iri`.
-For `source_class_id`/`target_class_id`, use the complete applied Class receipt item so
-the compiler retains its request metadata and receives the real UUID. A read-model `id`/`iri`/
-`class_iri` is a semantic IRI and must stay in an IRI slot; never URL-decode it, derive a
-UUID from it, or use it as a resource ID. If a later applied batch has advanced the current
-revision, retain the exact earlier applied receipt and let the governed current read confirm
-that its exact resource IRI is still visible before reusing its UUID. Do not use fields-only
-change IDs as candidate definition_ref or guess platform IDs.
+For `source_class_id`/`target_class_id`, bind the intended concept to the complete applied
+receipt item by its stable `client_item_id`/request metadata and the current read's label and
+IRI; keep the label, client item ID, JSON Pointer, `resource_outputs.resource_id`, and
+`resource_outputs.resource_iri` together. Never infer a business endpoint from `N`, list or
+change order, or a later reordered read. The compiler must receive the UUID from that exact
+receipt item. A read-model `id`/`iri`/`class_iri` is a semantic IRI and must stay in an IRI slot;
+never URL-decode it, derive a UUID from it, or use it as a resource ID. If a later applied batch
+has advanced the current revision, retain the exact earlier applied receipt and let the governed
+current read confirm that its exact resource IRI and label are still visible before reusing its
+UUID. Do not use fields-only change IDs as candidate `definition_ref` or guess platform IDs.
+If the receipt metadata, label, and IRI do not agree, stop and reread the complete receipt and
+current model; do not swap endpoints by position.
 Do not put required meaning only in a handoff or invent relation
 annotation fields. Preserve supplied unknowns in supported semantic_definition fields and
 report candidate-only unknowns as delivery gaps when they are not retrievable.
@@ -56,6 +61,12 @@ unknown handling without using private questions or asserting global completenes
 page flag. Compare retrieved resource kinds/types and asserted statements against the source,
 not only their labels or definition text. Source absence of named instances must agree with
 the applied graph, and relationship definitions must not become asserted instance facts.
-A complete association scan checks structure; it does not make this semantic decision.
+A complete association scan checks structure; it does not make this semantic decision. After
+an applied relation, inspect the actual relation `sourceClassId`/`targetClassId` values and the
+`rdfs:domain`/`rdfs:range` endpoint IRIs, expand each endpoint to its authorized Class label
+and type, and compare them one by one with the approved direction and definition. Do not claim
+the direction is confirmed or assert handoff semantic readiness from your own summary, labels alone,
+or an association `COMPLETE` result. Host technical locators may identify artifacts and paths
+but do not choose the business endpoints.
 Close the association self-check and owned resources before reporting handoff
 readiness; preserve missing evidence rather than treating it as PASS.

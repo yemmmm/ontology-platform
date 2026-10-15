@@ -20,19 +20,28 @@ read proxy supply the current route.
 
 Direct reference paths point into the exact retained MCP envelope. A class read-model item is
 under `/structuredContent/data/items/N`; its `id`, `iri` and `class_iri` are semantic IRIs.
-For a later `*_id` field, point `existing_resource_ref` at the corresponding complete applied
-Class receipt item, for example `/structuredContent/data/items/0`. Its `resource_outputs`
-object exposes both the UUID `resource_id` and its `resource_iri`; retain the complete item
-so the resolver also has its request metadata. Keep the earlier applied receipt when a later
-batch advances `model_revision`; the direct resolver rechecks the exact IRI in the current
-authorized read before reusing that UUID. Never use a read-model IRI as a resource ID, decode
-or reshape it into a UUID, or substitute a label/business name.
+For a later `*_id` field, bind the intended concept to the corresponding complete applied
+Class receipt item by stable `client_item_id`/request metadata and the current read's label
+and IRI; keep the label, client item ID, JSON Pointer, `resource_outputs.resource_id`, and
+`resource_outputs.resource_iri` together. Retain the complete item so the resolver also has
+its request metadata. Never choose a business endpoint from `N`, list or change order, or a
+reordered read. Keep the earlier applied receipt when a later batch advances `model_revision`;
+the direct resolver rechecks the exact IRI in the current authorized read before reusing that
+UUID. Never use a read-model IRI as a resource ID, decode or reshape it into a UUID, or
+substitute a label/business name. If receipt metadata, label, and IRI disagree, reread the
+complete receipt/current model and do not swap endpoints by position.
 
 Use query_semantic_context for public business questions in explicit authorized ontologies
 scope, followed by actual returned IRI anchors/full definitions as needed. Preserve actual
 model revision, index state, truncation/cursors and authorization limits; no_match alone
-does not prove absence. Before handoff, use modeling_inspect_associations, resolve or
-disclose findings, then modeling_finish_changes to close owned execution resources.
+does not prove absence. Before handoff, use modeling_inspect_associations, resolve or disclose
+findings, then inspect actual relation `sourceClassId`/`targetClassId` and
+`rdfs:domain`/`rdfs:range` endpoint IRIs. Expand each endpoint to its authorized Class label
+and type and compare them one by one with the approved direction and definition. Do not treat a
+self-authored summary or association `COMPLETE` as endpoint evidence, and do not claim
+the direction is confirmed until this check matches. Host supplies technical locators only; it does
+not choose business endpoints. Then use modeling_finish_changes to close owned execution
+resources.
 Send current candidate/submission/read references, coverage, unknowns and gaps to
 Coordinator. Report your own completed/blocked result exactly once; Host owns the final
 production handoff. Independent acceptance cannot be replaced by your checks.

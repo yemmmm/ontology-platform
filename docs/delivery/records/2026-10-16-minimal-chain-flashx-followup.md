@@ -135,3 +135,25 @@ Judge 最小修复只匹配 `map_schema_mismatch` + `adjustments[i]: fields`，�
 contracts 11 passed、3 subtests；Ruff/diff 检查通过。未做 GitNexus 图分析，定向核对
 `_cq_collaboration_context` → map validator/projection → Judge setup 调用点。
 真实复验仍待执行；已封存原 attempt，不把工程测试当语义恢复通过。
+
+
+公开 regression `mic-concepts` 独立 Judge pass，full_pass=true，版本无漂移；仍不能
+代表隐藏方向题通过。隐藏恢复的 production_handoff checkpoint 保存返回
+`checkpoint_selector_required`：本轮未启 modeling_checkpoints；未手工造包或覆盖报告，
+保留三题 Consumer completed、Judge 未裁决。当前运行恢复缺口不扩为新恢复框架。
+
+端点差异经原 intent/receipt 定向核对确认为 Modeling 质量缺陷：Class 回执 item0 为
+Installed Asset (`6a6f2854-9556-53c9-9c28-2cd547d5eedc`)，item1 为 Service Site
+(`b769ef4d-8d59-50b7-a2d2-65a703b005e0`)；关系意图选 source `/items/1`、target
+`/items/0`，平台按完整 Pointer 和对应 resource_outputs 如实执行，并非 UUID 映射错误。
+交付摘要自报与真实结构相反，自查未核对实际 domain/range 对应的端点 label。
+下一轮仅修正此实际结构与定义一致性，仍沿获准范围/显式未知；新实质修模将另计第 2 轮。
+开始前先修复权威技能中的身份匹配及实际结构自查提示，不注入隐藏题/答案。
+
+
+端点提示修复已落盘于 minimal-chain-modeling Skill 与 paired instructions：根据
+client_item_id/元数据和实际 label/IRI 匹配完整 receipt，不按列表位置推断；应用后按
+真实 sourceClassId/targetClassId/domain/range 展开端点 label/type，与批准定义逐项核对。
+未新增平台业务规则、字段或硬门；未注入历史 UUID 或私有验收答案。
+验证：R4.3-026/contracts 21 passed、3 subtests；direct_submission/direct_modeling
+29 passed；提示合同检查与 diff 检查通过。新轮实际效果待验证。
