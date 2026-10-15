@@ -160,3 +160,19 @@ slot 检查；旧 unified Task 仍保留原 stage3 前置。写完整性、审�
 topology 校验、candidate/scope binding 以及 direct intent/receipt 完整性均保留。没有修改
 模型、平台接口或运行时重试机制；当前进程不能安全热加载，下一次 fresh start 由 Delivery
 按既有授权计为 round2，旧 run 保留且无模型写入。
+
+## 2026-10-15 round2 Coordinator provider-wait 投递修复
+
+公开 round2 证据显示，Coordinator 因 provider `rateLimitExceeded` 进入 `coordinator:1`
+等待；随后 Modeling 报告 `business_clarification`／`cq_freeze_pending`，状态为
+`not_written`，没有 batch、receipt 或资源写入。Runner 原 issue-report 投递异常分支只对
+`runtime_recovery` 延迟，业务 issue 在 Coordinator provider wait 期间误走
+`fail_issue_rebind`，最终形成 `issue Coordinator delivery failed`。
+
+修复复用现有 provider-wait deferral：任意 issue category 在该可恢复等待下均保留 issue
+ledger、回队同一 issue report，进入 `WAITING_OWNER`，待 provider 恢复后再次投递；非
+provider 的普通业务投递失败仍保留原 typed failure，未放宽写完整性。新增回归覆盖业务 issue
+在 provider wait 下延迟及恢复投递。未新增 cleanup、重试框架或安全控制，未启动新的
+semantic-start。round2 现有 Runner／MCP／bwrap 进程的收口仅做只读诊断；FIFO 已消失且
+主进程仍在等待，后续应由 Root/Delivery 使用既有显式 stop、revoke、empty-scope 接口并
+保留公开证据，本修复不自行 kill 或清理。

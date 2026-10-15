@@ -819,6 +819,98 @@ class IssueEscalationTests(unittest.TestCase):
                 },
             )
 
+    def test_business_issue_delivery_defers_while_coordinator_provider_waits(self) -> None:
+        """A recoverable Coordinator wait must not rebind a business issue."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            states: list[tuple[str, dict[str, object]]] = []
+            evidence: list[tuple[str, dict[str, object]]] = []
+            runner = object.__new__(TeamRunner)
+            runner.run = SimpleNamespace(
+                run_id="run-provider-issue",
+                root=root,
+                configuration=SimpleNamespace(
+                    task=SimpleNamespace(schema_version=2, task_id="r4-3-026-minimal-installation-chain"),
+                    profile=SimpleNamespace(
+                        agents=[
+                            SimpleNamespace(agent_id="modeling", package=SimpleNamespace(role="modeling")),
+                            SimpleNamespace(agent_id="coordinator", package=SimpleNamespace(role="coordinator")),
+                        ],
+                    ),
+                ),
+            )
+
+            class Adapter:
+                def __init__(self) -> None:
+                    self.waiting = True
+                    self.sent: list[tuple[str, RuntimeDelivery]] = []
+                    self.agents = {
+                        "modeling": SimpleNamespace(thread_id="modeling-thread"),
+                        "coordinator": SimpleNamespace(thread_id="coordinator-thread"),
+                    }
+
+                def provider_wait_status(self, agent_id: str):
+                    if agent_id == "coordinator" and self.waiting:
+                        return {"wait_id": "coordinator:1", "state": "waiting"}
+                    return None
+
+                def send_message(self, recipient_id: str, delivery: RuntimeDelivery):
+                    if recipient_id == "coordinator" and self.waiting:
+                        raise RuntimeError("provider wait rejects delivery")
+                    self.sent.append((recipient_id, delivery))
+                    return RuntimeDispatchReceipt("start", "turn-coordinator")
+
+            adapter = Adapter()
+            runner.adapter = adapter
+            runner._candidate_progress = None
+            runner._append_evidence = lambda name, payload: evidence.append((name, payload))
+            runner._state = lambda value, **extra: states.append((value, extra))
+            runner._issue_event_lock = threading.Lock()
+            runner._issue_event_queue = []
+
+            def issue_event_callback(event: dict[str, object]) -> None:
+                with runner._issue_event_lock:
+                    runner._issue_event_queue.append(dict(event))
+
+            runner.transport = TeamTransportBroker(
+                root / "transport" / "broker",
+                {("modeling", "coordinator"), ("coordinator", "modeling")},
+                coordinator_agent_id="coordinator",
+                issue_escalation_enabled=True,
+                issue_event_callback=issue_event_callback,
+            )
+            report = runner.transport.report_issue(
+                "modeling",
+                category="business_clarification",
+                summary="CQ freeze is pending",
+                failing_operation="modeling_submit_model_changes",
+                error="cq_freeze_pending",
+                mutation_state="not_written",
+                requested_action="freeze the approved projection",
+            )
+
+            runner._handle_issue_events([])
+
+            assert adapter.sent == []
+            assert runner.transport.issue_ledger.state == "reported"
+            assert runner.transport.issue_ledger.pending is True
+            assert len(runner._issue_event_queue) == 1
+            assert runner._issue_event_queue[0]["kind"] == "issue_report"
+            assert runner._issue_event_queue[0]["issue"]["issue_id"] == report["issue_id"]
+            assert states[-1][0] == "WAITING_OWNER"
+            deferred = [
+                payload for name, payload in evidence
+                if name == "provider-wait" and payload.get("event") == "issue-delivery-deferred"
+            ]
+            assert deferred and deferred[-1]["category"] == "business_clarification"
+
+            adapter.waiting = False
+            runner._handle_issue_events([])
+            assert not runner._issue_event_queue
+            assert len(adapter.sent) == 1
+            assert adapter.sent[0][0] == "coordinator"
+            assert json.loads(adapter.sent[0][1].text)["issue_id"] == report["issue_id"]
+
     def test_outer_stop_settles_a_pending_issue_with_a_truthful_terminal_state(self) -> None:
         """R3.0-015 issue-4: the host stop must not leave a stale WAITING_OWNER.
 

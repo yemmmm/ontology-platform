@@ -9612,11 +9612,32 @@ class TeamRunner:
                         ),
                     )
                 except Exception as exc:
-                    if issue.get("category") == "runtime_recovery":
+                    if self._provider_rejection_pending(coordinator):
                         # 2026-09-14 provider-recovery: the Coordinator became
                         # unavailable between the health check and this delivery.
-                        # The provider wait stays observable in evidence and the
-                        # host recovery action remains usable; no rebind.
+                        # Any issue category must stay pending while its provider
+                        # wait is recoverable; do not rebind or tear down the
+                        # reported issue before the Coordinator can review it.
+                        self._append_evidence(
+                            "provider-wait",
+                            {
+                                "event": "issue-delivery-deferred",
+                                "issue_id": issue.get("issue_id"),
+                                "reporter_id": issue.get("reporter_id"),
+                                "category": issue.get("category"),
+                                "detail": str(exc)[:200],
+                            },
+                        )
+                        with self._issue_event_lock:
+                            self._issue_event_queue.append(event)
+                        if self._candidate_progress is not None:
+                            self._candidate_progress.pause(now=self.monotonic_clock())
+                        self._state("WAITING_OWNER", issue_id=issue.get("issue_id"))
+                        continue
+                    if issue.get("category") == "runtime_recovery":
+                        # A runtime-recovery report remains owner-visible even
+                        # when its Coordinator send fails for a non-provider
+                        # reason; preserve the existing soft-fail behavior.
                         self._append_evidence(
                             "provider-wait",
                             {
