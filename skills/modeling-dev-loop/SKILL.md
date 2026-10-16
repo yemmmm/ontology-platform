@@ -6,8 +6,10 @@ description: "Start, resume and actively supervise authorized OntoWeave modeling
 # 建模开发推进
 
 本 Skill 供技术宿主选择入口、交接配置、持续监看和接续已有任务。采用独立 Delivery 时，
-Delivery 执行启动、故障归因、修复协调、恢复和证据交接；外层主智能体仍负责主动观察实际
-建模进展、发现问题并跟踪处理结果。委派不解除监督责任。旧手动模式由外层承担执行与监督。
+Delivery 执行启动、流程控制、技术定位、宿主交接、恢复和证据交接；CQ 私有审核及平台代码／
+配置修复由当前获准宿主沿既有 Host 入口承接，不由 Delivery 启动修复子 Agent。外层主智能体
+仍负责主动观察实际建模进展、发现问题并跟踪处理结果。委派不解除监督责任。旧手动模式由外层
+承担执行与监督。
 语义判断与候选内容归建模 Team。当前统一图路径按 R4.3-024／025 由 Modeling 直接提交
 变更意图，程序填充执行上下文并单次原子 apply；不经 Protocol 翻译／技术审批，不执行模型
  dry-run。成功后 Modeling 在获准范围内召回与节点展开自查，最终保留原关联检查及独立验收。
@@ -23,7 +25,7 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
   或本轮已有 Delivery 配置／session 时，按[独立 Delivery 启动与接续](references/team-runbook.md#独立-delivery-启动与接续r40-023)
   准备获准配置、建立或接续 `modeling_team delivery` 会话。独立角色加载
   [delivery 技能](../../modeling_team/skills/delivery/SKILL.md)，通过受限 Host 工具推进全程。
-  外层负责部署准备、业务输入转接和持续监督；通常通过 Delivery 推进启动、冻结、修复与验收，
+  外层负责部署准备、业务输入转接和持续监督；通常通过 Delivery 推进启动、冻结、宿主交接与验收，
   主动检查其处理结果，不等待 Delivery 通知或用户询问才看进度。
   真实运行若需要外层技术补位，保留原因和实际动作，不能记为 Delivery 自主交付通过。
 - 未采用独立 Delivery 的已有手动 run，或本轮明确选择旧手动入口时，保留原 run、授权、冻结和证据，按下文宿主流程
@@ -33,9 +35,44 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
   读取隐藏材料的监督会话不能切换身份充当代答者。回答可为未知，并保留测试来源。
 
 下文“宿主／主智能体”指技术交付责任方，不指业务用户或测试代答者。旧手动模式由外层执行；
-独立模式中执行职责归 Delivery，外层持续核对进展、第一阻塞与下一动作，并协调必要的技术
-补位，不另建相互竞争的写入或修复链。通用方法可复用，具体动作以 Delivery 已声明工具为准，
-不把整份宿主手册注入其会话。
+独立模式中流程控制归 Delivery，宿主保留私有 CQ 审核、平台修复和正式 issue 恢复责任。外层
+持续核对进展、第一阻塞与下一动作，并协调必要的技术补位，不另建相互竞争的写入或修复链。
+通用方法可复用，具体动作以 Delivery 已声明工具和 Host 私有入口为准，不把整份宿主手册注入
+生产角色会话。
+
+## R4.3-029 角色责任与宿主私有交接
+
+在本需求路径中，Delivery 负责授权／轮次、阶段推进、流程阻塞、技术定位、交接、验收组织和
+资源收尾。普通 Agent 消息、推理、工具成功、心跳和无决策变化的日志继续由程序保留而不持续
+注入 Delivery；阶段、错误、未知写入、用户控制、报告资格、宿主待办和必要存活异常按既有
+`delivery-decision-input/v1` 唤醒。Delivery 不读私有 CQ 题目、答案点、审核依据或 Judge 评分，
+也不承担语义审核。
+
+CQ 待审时，Delivery 通过现有 session 私有 journal 的 `request_host_action` 提交窄的
+`kind="cq_review"` 请求；`bindings` 只携带当前待办的 `review_id`、`content_version`、
+`content_digest`、`question_ids`，以及已有待办提供的 `phase`、`review_snapshot_ref`、
+`draft_ref` 技术引用。run/session 与授权上下文来自 Delivery session，不复制题目。宿主在已有代审授权内读取快照并直接
+调用 `submit_cq_review`，Delivery 仅核对真实审核回执、当前 digest、完整选题范围后调用
+`freeze_cq`。宿主代审不取代独立 Consumer/Judge，冻结也不等于语义 PASS。
+
+平台或运行缺陷由 Delivery 先按请求、参数、回执、版本、权限、写入状态和运行证据定位；确认
+需要代码／配置修改、测试、部署或重启时，通过同一 journal 的 `request_host_action` 提交
+`kind="platform_repair"`；若已有正式 issue，必须用真实 `issue_id`、`reporter_id`、
+`control_epoch` 绑定当前 issue；尚未建 issue 的技术异常可用空 `bindings` 先交接，但不能走
+正式 `resolve_issue`。再按需填写 `expected_behavior`、`actual_behavior`、`blocked_step`、`evidence_references`、
+`checked`、`hypotheses`、`write_state`。宿主按 AGENTS 的 T0 复核并实施最窄授权修复，在同一 journal 追加
+`host_action_result`（绑定 request、来源、`completed|blocked|failed`、结果引用和限制），并在
+issue 路径直接用当前 `issue_id`、`reporter_id`、`control_epoch` 调用
+`resolve_issue(resolution_type="repair_completed")`。Delivery 只观察真实 Host 回执和
+issue-control 状态，再对账写入并恢复原步骤；request receipt、guidance、自然语言回复或工程
+检查本身都不是修复完成。没有 Host 结果或验证原件时保持受影响步骤阻塞，不盲重放未知写入。
+
+Coordinator 负责生产侧语义定位：使用 scenario-map、共享决定、候选／应用／治理读回引用和未决
+项定位受影响的 slice／概念／关系，派原 Modeling 做局部查证；不默认全文重读、扩展源权限或
+创建常驻诊断角色。它不是最终独立裁决者。失败仍限
+`modeling-quality`、`platform-contract`、`collaboration/routing`、`runtime/infrastructure`；
+证据不足写“尚未定位”并保留已查内容、竞争解释、缺口和下一步。隐藏反馈只传获准失败信号，
+不得用隐藏题／答案／评分理由生成生产修模指导。
 
 ## 开始或接续任务
 
@@ -142,9 +179,11 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 
 每次观察核对实际进程／角色工具活动、最近有效产物、待答问题、第一阻塞和下一责任人。
 发现问题后保留证据，向 Delivery 交接具体失败与处理目标，随后检查其动作、新回执和原失败
-步骤是否恢复。发送通知、修复任务已启动或进程仍在运行都不是问题已解决。Delivery 无法
-读取必要日志或执行获准操作时，外层在已有授权内补充最窄技术证据／动作并记录边界；平台
-优化与实现修复仍交本轮指定执行者，不由监督者改写业务语义或扩展平台范围。
+步骤是否恢复。发送通知、修复任务已启动或进程仍在运行都不是问题已解决。独立 Delivery 写入
+`request_host_action` 后，宿主在同一 session 私有 journal 中读取新增待办及原 Host pending
+actions，按授权处理并追加 `host_action_result`；没有后台常驻接单者时如实报告等待。Delivery
+无法读取必要日志或执行获准操作时，外层在已有授权内补充最窄技术证据／动作并记录边界；平台
+优化与实现修复仍交宿主／本轮指定执行者，不由监督者改写业务语义或扩展平台范围。
 
 检查实际返回的完整性：展示文本可能在截断后仍能解析，不能据此判断字段缺失、清单为空
 或操作完成。需要时核对原始事件／响应和哈希，提供角色已授权可读取的原结果；未核实前
@@ -179,9 +218,10 @@ Skill 本身不能建立后台任务，也不能保证唤醒当前 Codex 会话�
 按可见证据检查获批范围、阶段及输入/写入边界，发现业务语义疑点交给建模 Team 澄清，
 不要由宿主改写候选、指定本体拓扑或通过平台补造业务事实。
 
-- **等待用户**：独立模式由 Delivery 提出业务问题；已有委托的 CQ 审核由 Delivery 按下节
-  完成，仅将业务歧义或范围变化交用户。旧手动模式按原授权转交业务问题或 CQ 审核。
-  宿主直接代答仅限已有明确授权的旧手动模式；独立模式由真实用户或隔离的测试代答者提供业务输入。
+- **等待用户**：独立模式由 Delivery 提出业务问题；CQ 审核由获准宿主按下节私有 Host
+  入口完成，Delivery 只核对绑定和回执；仅将业务歧义或范围变化交用户。旧手动模式按原授权
+  转交业务问题或 CQ 审核。宿主直接代答仅限已有明确授权的旧手动模式；独立模式由真实用户
+  或隔离的测试代答者提供业务输入。
   两种模式都可复用同一项目有来源、仍适用的既有确认；获准补充须标识为“授权新增业务定义/
   场景补充”并保留来源与修订，不冒称原始证据、不改冻结源、不据隐藏答案补料。资料不能
   支持的内容保留未知；超出获准范围的问题仍问用户，不反复请求已有授权。旧手动代答记录
@@ -190,15 +230,16 @@ Skill 本身不能建立后台任务，也不能保证唤醒当前 Codex 会话�
 - **重复错误、相互等待或已退出**：保留第一异常和相关事件，检查具体阻塞与写状态，再进入归因。
 - **收到交付**：核对回执、阶段与产物，按当前验收阶段交给独立验收者；正常结束不是语义 PASS。
 
-### CQ 必答点审核与验收诊断（R4.0-013）
+### CQ 必答点审核与验收诊断（R4.0-013，R4.3-029覆盖）
 
-独立模式由 Delivery 依据 R4.0-023 的已记录委托组织审核，在 note 中注明 Agent 代审、授权
-和资料／题目版本；依据充分且范围内的题目不再逐项请用户批准，旧人工记录保持原样。
+CQ 逐点审核属于获准宿主的私有 Host 工作。独立 Delivery 不读取题目、答案点、来源依据或
+审核理由，也不根据宿主自然语言重写审核意见；宿主直接沿当前 `review_id`、question、
+content version/digest 调用 `submit_cq_review`，并在私有 note 记录授权、依据和逐点决定。
+`panorama-draft`／`slice-draft` 不能批准或冻结，必须等待对应 review 阶段的当前快照。
 
-生成后、冻结前，按[运行参考](references/team-runbook.md#cq-必答点审核与验收诊断r40-013)
-在现有审核中复核公开／隐藏题的每个必答点，将获准依据、题意对应及保留／修改／移出理由
-写入 `submit_cq_review.note`。自查不等于批准，代审只使用已有明确授权；内容修订走现有
-决定与版本合同，不用 note 改冻结题，也不把私有理由传给生产角色。
+Delivery 只从 `request_host_action(kind="cq_review")`、Host 审核回执和待办变化核对绑定、
+完整选题范围和当前 digest，随后按既有顺序执行冻结。自查不等于批准，宿主代审不取代独立
+Consumer/Judge；内容修订走现有决定与版本合同，不用 note 改冻结题，也不把私有理由传给生产角色。
 
 交付验收报告时分别说明端到端结果、逐点诊断和覆盖缺口。`model-recall-insufficient`／
 `modeling-quality` 只表示端到端语义消费未满足，不能据其数量推导模型缺失率或知识覆盖率。
@@ -325,13 +366,17 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 
 ## 委派修复并核验
 
-独立模式由 Delivery 使用 `prepare_repair_task → start_repair → get_repair_status`，再经
-`verify_repair → get_repair_verification_status` 核验生效后恢复原步骤；配置与工具边界见
-[独立 Delivery 修复](references/claude-repair.md#独立-delivery-模式r40-023)。下述外层派发方式仅用于旧手动模式。
+独立模式由 Delivery 先用 `request_host_action(kind="platform_repair")` 把最小技术定位
+交给当前获准宿主。Delivery 不再使用 `prepare_repair_task`、`start_repair` 或 `verify_repair`
+启动新平台修复；这些历史操作只用于已在途任务的观察和收尾。宿主使用当前台账指定的修复
+执行者，在 AGENTS T0 复核后完成窄代码／配置修复、测试、部署或重启，并通过既有 Host
+`resolve_issue(repair_completed)` 提交正式恢复；配置与证据边界见
+[接口修复后继续同一 run](references/team-runbook.md#接口修复后继续同一-run)。
 
-使用 [当前台账指定修复 Agent 的交接](references/claude-repair.md) 提供明确的目标、范围、输入、证据、
-权限、文件归属和完成标准。平台实现缺陷交外部 Agent 修复；流程设计问题由主智能体完成设计
-判断，更新权威合同后再交其开发。仅需当前 Team 纠正输入时，通过既有反馈通道处理。
+交接材料提供明确的目标、范围、输入、证据、权限、文件归属和完成标准，不包含隐藏题、答案、
+私有评分或凭据。宿主在同一 session journal 追加 `host_action_result`，绑定原请求、来源、
+状态和结果限制；Delivery 与外层只据真实回执、验证原件和 issue-control 状态判断下一步。
+流程设计问题由主智能体更新权威合同后再交开发；仅需当前 Team 纠正输入时，通过既有反馈通道处理。
 
 主智能体在修复期间继续观察 Team 与外部进程；同一文件有一个明确写入责任人，保留其他人的
 改动。外部 Agent 发现范围变化或重大不确定性应及时返回；主智能体按上节裁决，避免逐层加审批。
@@ -341,11 +386,12 @@ S4 起宿主可用 `checkpoint resume --mode acceptance` 对一个 COMPLETE
 ## 恢复原目标
 
 外部接口故障可通过当前 Team 的 `report_issue → pause → issue_resolution → resume` 保留
-live Runner、原 Agent thread 和已完成产物。用户告知“接口已经修复完成，请继续”后，宿主
-读取当前 active issue 的 run/reporter/epoch 和写入状态，按
-[接口修复后继续同一 run](references/team-runbook.md#接口修复后继续同一-run) 发送绑定的
-修复通知；已有授权内的同 run 续跑不重复申请授权。仅在已确认无写入且修复对当前进程生效时
-复测原失败步骤；通知本身不是成功证据，也不能解除未知写入的关闭状态。
+live Runner、原 Agent thread 和已完成产物。宿主收到 Delivery 的平台修复请求后，读取当前
+active issue 的 run/reporter/epoch 和写入状态；完成 T0、修复、测试和必要部署／重启后，按
+[接口修复后继续同一 run](references/team-runbook.md#接口修复后继续同一-run) 直接提交绑定的
+`resolve_issue(repair_completed)`，并在 session journal 追加 `host_action_result`。已有授权内
+的同 run 续跑不重复申请授权。仅在已确认无写入且修复对当前进程生效时复测原失败步骤；Host
+回执或通知本身不是成功证据，也不能解除未知写入的关闭状态。
 
 1. 若存在不确定写入，先查询实际 Batch、Attempt、资源及回执；明确落库状态前不重放 apply、
    删除资源或以 fresh start 掩盖现场。保留失败证据及资源归属。

@@ -40,8 +40,10 @@ preselect an Ontology topology or slice count. After dispatching, receive each A
 completed or blocked report, and summarize only after all Agents and Runtime are settled. You may
 directly use Team Transport to forward Delivery's verbatim, explicitly marked
 supplement/correction/scope change/modeling instruction; ordinary conversation stays with Delivery.
-Do not open a user window or ask the user to clarify technical messages. You do not review ontology semantics, manufacture results,
-call the Semantic Platform, or change the roster/Profile.
+Do not open a user window or ask the user to clarify technical messages. You do not issue a final
+independent semantic verdict, manufacture results, call the Semantic Platform, or change the
+roster/Profile. You do organize the production-side semantic localization described below and
+dispatch the original Modeling role for scoped evidence and authorized correction.
 
 Use the Runner's direct original `Task objective` and concrete `Task identity` as the selected
 task, together with actual authorized supplements. Reference that same task_id in each stage
@@ -58,6 +60,32 @@ business authorization. Actual scope changes or disputed business meanings go th
 to the original authorizer. Keep genuine representation gaps explicitly undelivered with their
 impact and next step; do not end the run, relax the schema or await independent acceptance merely
 to resolve a dispatch conflict.
+
+For R4.3-029, production Coordinator work includes semantic localization, not a final independent
+verdict. When public feedback, a typed issue, or an authorized delivery guidance identifies a gap,
+use the current scenario-map, shared semantic decisions, candidate/item revisions, application and
+governed-read references, and unresolved items to locate the affected slice, concept, relation or
+dependency. Dispatch the original Modeling role to inspect only the relevant authorized source,
+candidate, actual application and readback, then carry the result back through the existing map and
+handoff. Do not reconstruct a full model summary, reread every source, or create a resident
+diagnostic role. If a required source is not mounted, report that boundary and request scoped
+evidence from the role that owns it; do not infer a model defect from missing access.
+
+Use the narrowest evidence-supported route: a source requirement omitted or misexpressed in the
+candidate goes to Modeling for an authorized repair round; a correct candidate with a malformed
+request goes to its caller; an applied receipt that disagrees with actual structure, revision or
+governed retrieval goes to Delivery/Host for platform investigation; content already returned but
+misread goes to an independent Consumer follow-up. Before treating a legal governed-read failure
+as a platform defect, check authorization, read scope, request parameters, normal filters, requested
+version and projection/cache freshness. If a question's source basis or answer coverage is wrong,
+route only the public technical signal to the Host's private CQ review; a revised question requires
+a new review and a complete-pool freeze followed by full selected-scope revalidation, while the
+prior result remains retained. Keep `modeling-quality`, `platform-contract`,
+`collaboration/routing`, and `runtime/infrastructure` as the only failure layers. When evidence is
+missing, write “尚未定位” with checked facts, competing explanations, the concrete gap and next
+step. A next handler is not a proof of fault. Never use HTTP success, empty retrieval, or a Consumer
+mistake as a semantic verdict, and never send hidden CQ text, answers, scoring reasons, or private
+Judge material into production dispatches.
 
 When the roster includes a `competency-question` role, that role has no Team Transport
 communication edge: the host Runner handles its interview and review traffic over the private
@@ -534,8 +562,8 @@ approved public questions. If only a broad unknown or area exclusion remains whe
 identified known evidence or a necessary dependency, request a concrete disposition before marking
 coverage complete. Keep source structure as evidence rather than customer rules; no per-column
 checklist, new artifact or platform gate. Where Task and public question obligations disagree,
-route the scope issue through the existing Delivery review channel without acquiring hidden
-content or silently narrowing the frozen pool.
+route the scope issue through Delivery's flow-control handoff to the authorized Host's private
+CQ review, without acquiring hidden content or silently narrowing the frozen pool.
 The first stage dispatch references the Runner's actual task_id and original objective, and
 carries the current chain, necessary shared
 dependencies and the global scope/remaining-stage overview; it does not wait for later detailed
@@ -575,13 +603,14 @@ reply-required Team message to pause new dry-run/apply submissions. No new edge,
 needed.
 
 The published `materialization_progress` checkpoint, current freeze_id and selected approved public
-question_ids establish feedback eligibility only. Delivery must then start the existing
-`public-feedback` operation with an explicit `session_timeout=<positive bounded value from root
-configuration>`, perform the governed reads and Consumer answers, and verify its report binding,
-content digest and complete body. A successful checkpoint is not the feedback report; if the
-operation is unavailable, times out, or its report cannot be read, record feedback as not executed
-or PARTIAL while the applied Attempt remains applied. Do not change the running Task or require final
-`production_handoff`; this existing checkpoint prerequisite is not a new phase gate.
+question_ids establish feedback eligibility only. Delivery starts the existing `public-feedback`
+operation with an explicit `session_timeout=<positive bounded value from root configuration>` and
+verifies its lifecycle, report binding and content digest. Coordinator reads the governed public
+feedback body and Consumer answers through the bound report, then uses those visible findings for
+production-side semantic localization. A successful checkpoint is not the feedback report; if the
+operation is unavailable, times out, or its bound body cannot be read, record feedback as
+not executed or PARTIAL while the applied Attempt remains applied. Do not change the running Task or
+require final `production_handoff`; this existing checkpoint prerequisite is not a new phase gate.
 
 R4.3-015: trust the tool's bound applied Attempt and version confirmation; do not routinely read
 all resources or compare every approved statement after successful apply. Applied and business

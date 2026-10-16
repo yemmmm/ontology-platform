@@ -116,146 +116,34 @@ def _repair_arguments(operation_id, task, authorization="user-test"):
     }
 
 
-def test_scope_rejection_does_not_block_corrected_repair_from_stopping(tmp_path, monkeypatch):
-    """A proven pre-launch scope rejection must not become a stop-loop owner."""
-    import importlib
-
-    module = importlib.import_module("modeling_team.delivery")
+def test_host_only_actions_are_unavailable_even_with_old_repair_config(tmp_path):
     host, task = _repair_session(tmp_path)
-    host.repository_root = tmp_path
-    (tmp_path / "owned").mkdir()
-    task.write_text(
-        "Authorized bounded repair.\n"
-        + json.dumps(
-            {
-                "authorization_reference": "user-test",
-                "source_references": ["business.md"],
-                "owned_paths": ["owned"],
-            }
-        )
-        + "\nRepair only the confirmed issue.\n"
-    )
-    rejected = host.call_tool("start_repair", _repair_arguments("repair-01", task))
-    assert not rejected["ok"]
-    assert rejected["error"]["code"] == "repair_scope_invalid"
-    assert "repair-01" not in host.operation_ids
-    assert not (tmp_path / ".delivery-ops" / "repair-01.json").exists()
-    assert json.loads((host.session_root / "session.json").read_text())["operation_ids"] == []
-
-    monkeypatch.setattr(
-        module.host_ops_mcp,
-        "start_repair",
-        lambda **kwargs: {
-            "operation_id": kwargs["operation_id"],
-            "kind": "repair",
-            "status": "running",
-        },
-    )
-    started = host.call_tool("start_repair", _repair_arguments("repair-02", task))
-    assert started["ok"]
-    assert host.operation_ids == {"repair-02"}
-
-    stopped: list[str] = []
-    monkeypatch.setattr(
-        module.host_ops_mcp,
-        "stop_delivery_operation",
-        lambda **kwargs: stopped.append(kwargs["operation_id"]) or {
-            "operation_id": kwargs["operation_id"],
-            "status": "stopped",
-        },
-    )
-    control = host.apply_user_control("停止")
-    assert control["results"].keys() == {"repair-02"}
-    assert stopped == ["repair-02"]
+    for name in ("submit_cq_review", "prepare_repair_task", "start_repair", "verify_repair"):
+        assert name not in {spec["name"] for spec in host.tool_specs()}
+        result = host.call_tool(name, _repair_arguments("new-repair", task))
+        assert not result["ok"]
+    assert not host.operation_ids
+    assert not host.verification_ids
 
 
-def test_input_path_rejection_does_not_retain_a_phantom_repair_owner(tmp_path):
-    """A path containment refusal proves no repair process was read or started."""
-    host, _task = _repair_session(tmp_path)
-    host.repository_root = tmp_path
-    outside = tmp_path.parent / f"{tmp_path.name}-outside-repair-task.md"
-    outside.write_text("authorized repair task")
-    host.repair_task_files.add(outside.resolve())
-
-    rejected = host.call_tool(
-        "start_repair",
-        _repair_arguments("repair-path-invalid", outside),
-    )
-    assert not rejected["ok"]
-    assert rejected["error"]["code"] == "input_path_invalid"
-    assert "repair-path-invalid" not in host.operation_ids
-    assert not (tmp_path / ".delivery-ops" / "repair-path-invalid.json").exists()
-    assert json.loads((host.session_root / "session.json").read_text())["operation_ids"] == []
-
-
-def test_existing_operation_rejection_keeps_new_session_owner(tmp_path, monkeypatch):
-    """An existing Host record is still an owner when this session lacks its history."""
-    import importlib
-
+def test_legacy_repair_owner_remains_observable_and_stoppable(tmp_path, monkeypatch):
     module = importlib.import_module("modeling_team.delivery")
-    host, task = _repair_session(tmp_path)
-    host.repository_root = tmp_path
-    records = tmp_path / ".delivery-ops"
-    records.mkdir()
-    (records / "repair-existing.json").write_text(
-        json.dumps({"kind": "repair", "operation_id": "repair-existing", "status": "running"})
-    )
-
-    def reject_existing(**_kwargs):
-        raise HostOpError(
-            "delivery_operation_exists",
-            "an existing Delivery operation record owns this id",
-            retryable=False,
-        )
-
-    monkeypatch.setattr(module.host_ops_mcp, "start_repair", reject_existing)
-    rejected = host.call_tool("start_repair", _repair_arguments("repair-existing", task))
-    assert not rejected["ok"]
-    assert rejected["error"]["code"] == "delivery_operation_exists"
-    assert host.operation_ids == {"repair-existing"}
-
-
-def test_unknown_repair_start_keeps_owner_and_missing_status_is_not_terminal(tmp_path, monkeypatch):
-    """A lost start receipt remains owned until a terminal status is observed."""
-    import importlib
-
-    module = importlib.import_module("modeling_team.delivery")
-    host, task = _repair_session(tmp_path)
-
-    def lose_receipt(**_kwargs):
-        raise RuntimeError("native start receipt was lost")
-
-    monkeypatch.setattr(module.host_ops_mcp, "start_repair", lose_receipt)
-    result = host.call_tool("start_repair", _repair_arguments("repair-unknown", task))
-    assert not result["ok"] and result["error"]["code"] == "delivery_tool_failed"
-    assert host.operation_ids == {"repair-unknown"}
-    assert json.loads((host.session_root / "session.json").read_text())["operation_ids"] == [
-        "repair-unknown"
-    ]
-
+    host, _ = _repair_session(tmp_path)
+    # Simulate an operation retained from a pre-029 session, including unknown start.
+    host.operation_ids.add("repair-unknown")
+    host.operation_kinds["repair-unknown"] = "repair"
+    host._save("active")
+    restored = module.DeliverySession(repository_root=ROOT, session_root=host.session_root,
+                                      config=host.config, resume=True)
     def missing_status(**_kwargs):
-        raise HostOpError(
-            "delivery_operation_not_found",
-            "operation record is unavailable",
-            retryable=False,
-        )
-
+        raise HostOpError("delivery_operation_not_found", "operation record is unavailable")
     monkeypatch.setattr(module.host_ops_mcp, "get_repair_status", missing_status)
-    observed = host.observe()
-    missing = observed["operations"]["repair-unknown"]
+    missing = restored.observe()["operations"]["repair-unknown"]
     assert not missing["ok"]
-    assert missing.get("data", {}).get("status") not in {"exited", "stopped", "launch_failed"}
-
-    stopped: list[str] = []
-    monkeypatch.setattr(
-        module.host_ops_mcp,
-        "stop_delivery_operation",
-        lambda **kwargs: stopped.append(kwargs["operation_id"]) or {
-            "operation_id": kwargs["operation_id"],
-            "status": "unknown",
-        },
-    )
-    host.apply_user_control("停止")
+    stopped = []
+    monkeypatch.setattr(module.host_ops_mcp, "stop_delivery_operation",
+        lambda **kwargs: stopped.append(kwargs["operation_id"]) or {"status": "unknown"})
+    restored.apply_user_control("停止")
     assert stopped == ["repair-unknown"]
 
 

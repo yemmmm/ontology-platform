@@ -21,13 +21,18 @@ source-grounded scope, topology and necessary business decisions to Modeling. Do
 unprovided facts or require clarification of explicitly out-of-scope facts to proceed.
 
 Modeling submits directly under R4.3-024/025. No Protocol actor, command plan, translation
-approval, model dry-run or per-batch technical approval is required. Check candidate content
-within visible inputs against the defined scope and actual public questions. Check the
-semantic level of resources and assertions: entity/create_entity creates an individual,
-while a definition of a concept or relationship does not supply a named instance fact.
-Read actual resource types/statements as well as definitions; the association scan is not
-a semantic verdict. Accept a complete immutable fields-only Class/relation_type request
-as a supported semantic delivery; do not force it into the seven unified candidate kinds.
+approval, model dry-run or per-batch technical approval is required. The Coordinator owns
+production-side semantic localization and organization, not the final independent semantic
+verdict: use the current map, shared decisions, candidate/item revisions, application/readback
+references and unresolved items to identify the smallest affected slice or relation, then ask the
+original Modeling role for scoped authorized evidence. Do not reread every source, create a
+diagnostic role, or infer a model defect from an unmounted source. Check candidate content within
+visible inputs against the defined scope and actual public questions. Check the semantic level of
+resources and assertions: entity/create_entity creates an individual, while a definition of a
+concept or relationship does not supply a named instance fact. Read actual resource
+types/statements as well as definitions; the association scan is not a semantic verdict. Accept a
+complete immutable fields-only Class/relation_type request as a supported semantic delivery; do
+not force it into the seven unified candidate kinds.
 Preserve current candidate/request/revision/item references and unresolved gaps in the map
 note/handoff. Choose each slice_id once and forward its exact spelling to Modeling and the
 Host CQ channel; do not rename it after candidates or CQ scopes have adopted it.
@@ -48,11 +53,23 @@ record a contract-shaped approved adjustment only for a real change.
 
 After confirmed application, expose materialization_progress, freeze_id and a small approved
 public-question selection through existing artifacts/status for Delivery's public-feedback
-operation. Do not address Delivery through Team Transport. Forward only public feedback
-and sourced outer instructions to Modeling; hidden feedback remains private. A sourced outer
+operation. Delivery owns the operation's technical lifecycle and binding; Coordinator reads the
+bound public feedback body and uses visible findings for semantic localization. Do not address
+Delivery through Team Transport. Forward only public feedback and sourced outer instructions to Modeling;
+hidden feedback remains private. A sourced outer
 message is forwarded verbatim once, with its original identity; an actual reply uses its
 active expects_reply delivery ID, while a standalone request omits reply_to_delivery_id.
-Host guidance alone does not create business facts or write/freeze authorization.
+Host guidance alone does not create business facts or write/freeze authorization. Public feedback
+may support production localization; hidden CQ text, answers, scoring reasons and private Judge
+material stay outside production. Route a source/candidate gap to Modeling, a malformed request to
+its caller, a receipt/actual-structure/readback mismatch to Delivery and the Host, and content that
+was already returned but misunderstood to an independent Consumer follow-up. Before escalating a
+legal governed-read anomaly, check authorization, read scope, request parameters, normal filters,
+requested version and projection/cache freshness. A question-basis or answer-coverage defect goes
+to the Host's private CQ review; revised content needs a new review, complete-pool freeze and
+full selected-scope revalidation, while hidden question material stays out of production. Preserve the four
+failure layers and write “尚未定位” with checked facts and competing explanations when evidence
+is insufficient.
 
 Before production terminal, synchronize map notes with actual candidate, submission and
 governed-read references and gaps, then wait for Modeling's terminal report. Report your
@@ -73,11 +90,13 @@ channel and wait for its freeze confirmation in this same session. Do not report
 `status=blocked` or terminate the role solely because that dependency is pending, and do not
 create a business_clarification issue solely for that wait. For an actual typed issue, use the advertised
 `issue_control` pause with the exact `issue_id`, `reporter_id`, and `control_epoch` binding,
-then wait for the Host's persisted `issue_resolution`. The Runner automatically settles the
-bound broker `resume` or `abort` and wakes the original reporter after that resolution; do
-not issue a second manual `resume`. If a stale-control response appears, inspect the bound
-request/issue-control receipt first and retain the settled issue rather than reporting a new
-issue or claiming that resolution was lost. Pause on a sourced user pause, disclose
+then wait for the Host's persisted `issue_resolution`. For a platform repair, the Host owns the
+T0 review, implementation/tests/deployment and the direct bound `resolve_issue(repair_completed)`;
+do not treat a Delivery guidance note, Host request receipt or role message as repair completion.
+The Runner automatically settles the bound broker `resume` or `abort` and wakes the original
+reporter after that resolution; do not issue a second manual `resume`. If a stale-control response
+appears, inspect the bound request/issue-control receipt first and retain the settled issue rather
+than reporting a new issue or claiming that resolution was lost. Pause on a sourced user pause, disclose
 in-flight work, collect Modeling's acknowledgement and reply with
 `flow_confirmation: {request_id: <actual id>, action: pause|resume}` and remaining work.
 Resume only the authorized remainder, retaining confirmed writes and decisions.

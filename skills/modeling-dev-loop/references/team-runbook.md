@@ -71,12 +71,14 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
    `business_input_role: test-answerer`，代答者另开会话，仅接收获准业务资料、允许的测试
    补充和业务问题，可回答“无法确认”；不继承监督历史、私有目录、Host 工具或隐藏材料。
    不仅改一个 role 字段就把已读私有材料的宿主当作隔离代答者。
-5. Delivery 负责状态查询、真实问题绑定答复、`submit_instruction` 主动补充、委托 CQ
-   审核／冻结、交接、验收及修复。live 验收由 `start_evaluation/get_evaluation_status`
+5. Delivery 负责状态查询、真实问题绑定答复、`submit_instruction` 主动补充、Host
+   私有审核请求／冻结、交接、验收及技术定位。CQ 逐点审核由获准宿主直接经现有私有
+   `submit_cq_review` 完成；Delivery 不读取题目、答案点或审核理由。平台代码／配置修复、
+   修复测试、部署、重启及正式 issue 恢复由宿主承担。live 验收由 `start_evaluation/get_evaluation_status`
    托管并按原合同收口；S4 由其完成 checkpoint 核对、源只读封口或原退出证据及
    `resume_from_checkpoint(mode=acceptance)`。外层保持对话、进程承载与主动监督，按
    [保持观察和推进](../SKILL.md#保持观察和推进) 检查实际成果、首阻塞和 Delivery 处理结果，
-   不因已启动就退出观察。通常由 Delivery 发送 Host 指令和安排冻结／修复／验收；
+   不因已启动就退出观察。通常由 Delivery 发送 Host 指令和安排冻结／宿主交接／验收；
    实际需要技术补位时记录首阻塞、动作和证据，
    A13 保持失败／未验证，不能借外层完成了流程宣称 Delivery 自主交付 PASS。
 6. 中断后使用同一配置加 `--resume`，先由 Delivery 核对真实 run／operation、请求台账与
@@ -92,6 +94,34 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 不依照旧 CLI／FIFO 示例再开相互竞争的控制链，但仍持续发现问题、交接和核验恢复结果。
 保留旧手动入口不构成独立 Delivery 的完成证据。
 
+### R4.3-029 宿主私有接单与回传
+
+Delivery 发现 CQ 审核或平台修复需要宿主动作时，只使用当前独立 session 的
+`request_host_action` 窄入口；允许的 `kind` 只有 `cq_review` 与 `platform_repair`。请求使用稳定
+`request_id` 和当前 `run_id`；CQ 的 `bindings` 必须是当前 pending 的 `review_id`、
+`content_version`、`content_digest`、`question_ids`，可带 `phase`、`review_snapshot_ref`、
+`draft_ref` 技术引用。正式 issue 修复的 `bindings` 必须是当前 issue 的 `issue_id`、`reporter_id`、
+`control_epoch`；尚未建 issue 的技术异常可用空 `bindings` 先交接，不能以此调用正式
+`resolve_issue`。诊断只使用 `expected_behavior`、`actual_behavior`、`blocked_step`、
+`evidence_references`、`checked`、`hypotheses`、`write_state` 这些字段。Delivery session
+提供授权上下文；不把授权或私有内容复制进字段。CQ 请求不带
+题目、答案点或评分理由；平台请求不带隐藏内容、完整对话或凭据。同 `request_id` 同内容必须
+幂等，冲突返回可恢复错误；接单回执不表示动作已执行或成功。
+
+宿主监督时按进度检查读取该 session 私有 journal 的新增请求和原 Host pending actions，只有
+实际有待办才处理。宿主在已有授权内读取 CQ 私有快照并直接调用 `submit_cq_review`；完成全选题
+审核后，Delivery 按原回执／当前 digest 核对并调用 `freeze_cq`。平台修复先按 AGENTS 的 T0
+复核，再做最窄代码／配置修复、相关测试和必要部署／重启；宿主随后直接调用绑定当前
+`issue_id`、`reporter_id`、`control_epoch` 的 `resolve_issue(resolution_type="repair_completed")`。
+
+宿主动作终态沿同一 journal 追加 `host_action_result`，绑定原 request、宿主来源、状态
+`completed|blocked|failed`、结果原件引用和限制。结果原件必须保存在当前 session 私有目录并沿
+现有权限读取；不能接受任意外部路径，也不能通过公开对话回传私有证明。Delivery 只核对 Host
+请求／回执、issue-control 状态、before/after digest 和验证原件，然后对账未知写入并恢复原步骤。
+没有结果、旧 epoch、来源不符或验证原件不可读时保持受影响步骤阻塞；不以 guidance、自然语言、
+HTTP 2xx、工程测试或“已接单”冒充修复完成。无后台常驻接单服务，宿主中断后保留待办，恢复
+监督先对账再动作。
+
 ## 授权时的模型调度
 
 先引用已有 session 台账中的最新适用指令：执行者、model/profile、effort、service tier、
@@ -100,8 +130,9 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
 
 只有台账选择 Claude Code 修复者时才读取和执行本节 Claude CLI/provider 步骤；
 选择 Codex 子 Agent 等执行者时沿其既有入口传递获准配置，不运行 cc-switch。
-旧手动模式未被用户覆盖的修复默认执行者仍为 Claude Code；独立 Delivery 的修复使用
-部署配置与当前隔离工具能力，不继承此默认。未指定的 Team 模型调度仍沿下表。
+旧手动模式未被用户覆盖的修复默认执行者仍为 Claude Code；独立 Delivery 只负责把窄平台
+定位交给获准宿主，实际修复使用宿主台账中的部署配置与工具能力，不继承此默认。未指定的
+Team 模型调度仍沿下表。
 下列 Claude 命令于 2026-09-10 对本机核实：`cc-switch --help`、`cc-switch -a claude provider list`、
 `cc-switch -a claude provider switch <ID>`；`claude --help` 支持 `--model` 与 `--effort max`。
 高峰/非高峰划分是用户指定调度表，不代表已核实官方价格。
@@ -303,7 +334,7 @@ JSONL 行；主智能体保存各日志行号/字节偏移，避免每轮重新�
 | `state.json` | 顶层生命周期；不是每个 Agent 的实时进展或写入证明 |
 | `evidence/app-server-events.jsonl` | 角色工具/turn 事件；可能含完整参数，禁止整份注入生产或修复 Agent |
 | `evidence/staged-decisions.jsonl`、`multi-slice-gate.jsonl` | 阶段推进及具体门反馈；缺文件可能只是尚未到该阶段 |
-| `evidence/competency-questions.jsonl` | CQ 审核与冻结元数据；私有审核快照仅在获准 Host/CQ 边界读取，独立模式由 Delivery 审核，不转给生产或测试代答者 |
+| `evidence/competency-questions.jsonl` | CQ 审核与冻结元数据；私有审核快照仅在获准 Host/CQ 边界读取，独立模式由宿主审核，Delivery 只读绑定与回执，不转给生产或测试代答者 |
 | `evidence/outer-question.jsonl`、`outer-user.jsonl` | 实际访谈与回答绑定；按当前 run 发出的 ID 处理 |
 | `evidence/runtime-failure.jsonl`、`terminal-classification.jsonl` | 第一失败及终态归因；不存在时不要猜出终态 |
 | `state.json` 的 `cleanup`、宿主终态输出的清理结果、`evidence/cq-cleanup.jsonl` | 清理/保留证据；状态可能被后续终态覆盖，保留原输出，并用平台 Batch/Attempt 与资源读取核实实际状态 |
@@ -357,12 +388,12 @@ idle-inquiry 每 300 秒循环唤醒、每次产出新的文本方言。宿主�
   历史缺 ID 的 fatal 不再作为注册假问题的理由。当前实现对无副作用的字段/问题绑定错误返回
   `outer-input-rejected`（含 `code`、`retryable`、`issue_id`），修正消息后仍可输入，
   不消耗问题或 issue。持久化/实际发送失败不属于这一保证；答完即消费，同 ID 不可重放。
-- CQ 的 `cq_interview`、`cq_review`、`cq_freeze`、`cq_handoff_complete` 走直接通道，不能
-  通过 Coordinator 转发私有问题或答案。审核使用当前 `review_id`、revision/digest，不能
-  未经本次明确委托由宿主代批，也不能就地改写冻结题池。R4.0-023 独立模式中，Delivery
-  按已记录委托完成逐点审核，note 保留授权、来源／题目版本及理由；仅业务歧义和范围变化
-  交用户，不逐题重问、不冒称人工逐项批准。旧手动模式仍沿原批准合同。具体见
-  [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
+- CQ 的 `cq_interview`、`cq_review`、`cq_freeze`、`cq_handoff_complete` 走直接私有 Host
+  通道，不能通过 Coordinator 转发私有问题或答案。审核使用当前 `review_id`、revision/digest；
+  Delivery 只提交 `request_host_action(kind="cq_review")` 并核对回执，不读取题目、答案点或
+  审核理由。获准宿主直接调用 `submit_cq_review`，无代审授权时交原业务授权人；不能就地改写
+  冻结题池。审核完成后 Delivery 执行原 `freeze_cq`，再沿现有 handoff。旧手动模式仍沿原批准
+  合同。具体见 [CQ 设计](../../../docs/delivery/designs/2026-09-08-r3-0-011-competency-question-batch-acceptance-design.md)。
 - 已存在 `issue_resolution` 合同的 issue，读取该 issue 的绑定和允许 resolution 后再提交；
   接口修复使用下节步骤，不把此 action 当成任意 run 的通用修复命令。
 - **任何 issue（含 coordinator 自报）都只能由 `issue_resolution` 信封解除
@@ -771,20 +802,18 @@ root-run 锁，互斥不并发。手工清理时同样先核对 `recovery/origin
 
 ## 接口修复后继续同一 run
 
-收到“接口已经修复完成，请继续”时，由宿主读取当前 live run 的唯一 pending issue、
-`reporter_id`、`control_epoch`、mutation state 和修复对象，组装下列消息。占位值必须来自
-当前 issue，epoch 也使用当前值；不要重用旧 run 的 ID。此步骤由宿主理解用户意图，Runner
-只接收结构化输入，不解析自然语言关键词。
+收到 Delivery 的 `platform_repair` 请求后，由宿主读取当前 live run 的唯一 pending issue、
+`reporter_id`、`control_epoch`、mutation state 和修复对象，按 AGENTS 的 T0 复核执行最窄
+授权修复、相关测试及必要部署／重启。成功、受阻或失败都在当前 session 私有 journal 追加
+`host_action_result`，绑定原 request、宿主来源、结果原件和限制；自然语言“接口已经修复完成”
+不能替代这些证据。
 
-```json
-{"action":"issue_resolution","run_id":"<当前 run>","issue_id":"<当前 issue>","reporter_id":"<当前 reporter>","control_epoch":1,"resolution_type":"repair_completed","repair_component":"external_service","resolution_text":"接口已经修复完成，请继续原失败步骤。"}
-```
-
-新简短修复格式必须显式包含 `run_id`，错投会在保存 resolution 前被拒绝。修复对象支持
-`external_service`、`shared_backend_service`、`shared_backend_data`；后两者必须确实是当前
-外部共享依赖，不能用来声称已热更新 Runner、Transport 或冻结提示。已确认无写入时不强制
-提供 digest 或额外健康探针，责任 Agent 续跑原失败操作验证修复。旧五字段修复格式及 guidance
-继续兼容；省略 run_id 的旧消息依赖目标 FIFO 绑定，不具备显式 run_id 的跨 run 防错投保护。
+issue-linked repair 由宿主直接经现有 Host `resolve_issue` 提交正式恢复，字段必须绑定当前
+`run_id`、`issue_id`、`reporter_id`、`control_epoch`、`resolution_type="repair_completed"`、
+`repair_component`、`before_digest`、`after_digest`、`verification_reference` 及必要的
+`mutation_reconciliation`。占位值必须来自当前 issue，epoch 也使用当前值；不要重用旧 run 的
+ID。没有有效验证原件、旧 epoch、未闭合写入或来源无法读取时，补证或保持 issue 阻塞，不用
+`delivery_guidance` 冒充正式恢复。
 
 Runner 保存通知并交给 Coordinator，通过绑定 `resume` 在原 thread 创建新 turn。
 `resume_waiting_reporter` 表示暂停 turn 尚未结束，Runner 保留原控制并在 reporter 空闲后
@@ -865,6 +894,33 @@ pause/resume/stop → 检查点保存/接续/结算 → 核对处理结果）走
   R4.0-023 已增加 instruction、验收／修复托管和对账工具，不再用“恰好 20 个”判安装正确。
   独立 Delivery 自动注册 Host 工具及本地包装，调用受 session 配置限制，无需业务用户安装 MCP；
   生产角色和测试代答者不获得 Host 生命周期／私有工具。
+
+### R4.3-029 Delivery↔Host 私有接口
+
+`request_host_action` 是 Delivery 本地包装，不是 `host_ops_mcp` 的业务语义工具。它只把一个
+绑定当前 session/run 的请求追加到私有 `session-events.jsonl`，允许的 `kind` 为
+`cq_review` 或 `platform_repair`，不执行审核、修复或结果认证。CQ 请求的 `bindings` 必须包含
+当前 pending 的 `review_id`、`content_version`、`content_digest`、`question_ids`，可带
+`phase`、`review_snapshot_ref`、`draft_ref` 技术引用；正式 issue 修复请求的 `bindings` 必须包含
+当前 issue 的 `issue_id`、`reporter_id`、`control_epoch`；尚未建 issue 的技术异常可用空
+`bindings` 先交接，不能以此调用正式 `resolve_issue`。平台请求可带
+`expected_behavior`、`actual_behavior`、`blocked_step`、`evidence_references`、`checked`、
+`hypotheses`、`write_state`。授权上下文由 Delivery session 写入，字段中不得放题目、答案、
+评分、凭据或完整对话。同一 `request_id` 同内容幂等，内容冲突可恢复拒绝。
+
+获准宿主把结果原件放在当前 session 的私有 `host-results/` 目录后，使用仓库根目录执行：
+
+```bash
+python -m modeling_team.delivery_host_actions \
+  --session-root <session-root> \
+  --request-id <request-id> \
+  --status completed|blocked|failed \
+  --result-path <host-results/result-file>
+```
+
+该 CLI 只允许读取当前 session 私有目录内的结果原件，并在同一锁保护的 journal 中追加
+`host_action_result`，绑定原 request、`source=host_agent`、终态、结果摘要和限制；结果正文不复制
+进 journal。Delivery 读取这两个事件重建状态并继续对账，不能调用结果写入器或把接单回执当成动作完成。
 
 ### S1/S2 基础工具最小用法
 
@@ -1043,7 +1099,7 @@ Examiner／只读 proxy／report sink，只发送公开题干、内容
 消费正式 attempt 或切换生产／验收 phase。反馈存于
 `<run-root>/early-feedback/<invocation-id>/feedback.json` 及该目录下 retained platform-read
 artifacts；每次新目录、旧件不覆盖。标准 per-question reports 保留答案、引用、显式未知与
-首失败；宿主按公开题意审核覆盖、缺口和可见证据，不自动给业务 PASS。运行时接受证据必须
+首失败；Coordinator 按公开题意读取并组织覆盖、缺口和可见证据，不自动给业务 PASS。运行时接受证据必须
 来自实际启动的 run-owned MCP operation 的 `initialize`／`tools/list` 或 version 报告；HTTP
 health 响应或 service restart 只能证明 HTTP 服务响应，不能证明运行中的 MCP 已使用目标版本。
 
@@ -1071,9 +1127,10 @@ write_positions；指导已接收不等于排空。分析、候选和后续计�
 
 已发布的 materialization_progress checkpoint 只证明反馈具备读取资格，不是反馈报告。实际
 报告仍须沿原 `start_evaluation(mode="public-feedback", session_timeout=<root-configured
-positive bound>)` operation 完成 governed reads、Consumer answers 以及 report_binding／
-content_digest／正文读回；缺少报告、timeout 或正文不可读时只把反馈记为未执行／PARTIAL，保留
-已应用 Attempt 的状态，不增 phase gate。
+positive bound>)` operation 完成 governed reads、Consumer answers 并产生
+report_binding／content_digest。Delivery 核对 operation 状态、绑定和 digest；Coordinator 读取
+绑定正文用于生产侧语义定位。缺少报告、timeout 或正文不可读时只把反馈记为未执行／PARTIAL，
+保留已应用 Attempt 的状态，不增 phase gate。
 
 窗口持续至 Consumer 实际读取及前后绑定核对完成。沿绑定的原 start_evaluation
 (mode="public-feedback")／get_evaluation_status 或 manual Host 原入口读取状态；无 retained
@@ -1082,11 +1139,12 @@ completed；有 owner 时看 task_closed 等原任务封口回执，不等进程
 unavailable 或 superseded 也结束正常提交等待，原通道明确解除后继续安全工作；未知写入和
 用户暂停保持原约束。超时／返回丢失则查询同一 operation，未证实结束不释放、不另起反馈。
 
-Delivery 从原 operation 的有效 report_binding 定位反馈，用 read_delivery_artifact 读取绑定
-run 的 `early-feedback/<invocation-id>/feedback.json` 及其保留响应，对照 content_digest 与绑定
-digest。旧／
-拒绝绑定、digest 变化、正文不可读或超出既有大小限制都不能用题数摘要替代答案；反馈记
-不足，任务确认结束后仍解除正常提交等待。变化结果保留 superseded，不拼不同状态证据。
+Delivery 从原 operation 的有效 report_binding 定位反馈，对照 content_digest 与绑定 digest，
+并把 bound report reference、状态和技术限制交给 Coordinator；Coordinator 通过其获准入口读取
+绑定 run 的 `early-feedback/<invocation-id>/feedback.json` 及其公开响应，组织语义定位。Delivery
+只在平台故障定位确有需要时读取该目录下的 retained platform response，不把反馈正文作为日常
+决策输入。旧／拒绝绑定、digest 变化、正文不可读或超出既有大小限制都不能用题数摘要替代答案；
+反馈记不足，任务确认结束后仍解除正常提交等待。变化结果保留 superseded，不拼不同状态证据。
 
 缺陷只暂停真实受影响内容及其依赖，包括共享引用；其他工作可继续。变更经原审核、有效
 dry-run/apply，复核受影响公开题和关联，不重放成功内容。实际业务读发现漏／错写属于平台

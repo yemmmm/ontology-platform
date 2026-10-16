@@ -38,6 +38,9 @@ from .runtimes.delivery import DeliveryRuntime, DeliveryRuntimeError
 from .delivery_verification import start_verification, verification_status, stop_verification
 from .efficiency import begin_round, summarize_round
 from .delivery_conversation import ConversationLog, ConversationServer, ConversationError, now
+from .delivery_host_actions import (
+    append_session_event, request_host_action, host_action_state, read_session_journal,
+)
 
 _PUBLIC_KINDS = {"status", "business_question", "decision_request", "final"}
 _READ = {
@@ -88,20 +91,78 @@ _DECISION_EVENT_NOISE_KEYS = frozenset({
     "next_cursor", "has_more", "ordering", "complete", "limitations",
     "line_no", "byte_offset",
 })
-# The raw app-server notification log replays every token/reasoning delta and
-# turn-progress notification of the Team's native sessions.  It is retained as
-# run evidence and inside the stored raw observation, but it is model
-# activity, never a Delivery decision, so it must not wake the model and must
-# not be pushed back into the model context either:
-# The same event predicate is used for fingerprints and model input.
-_DECISION_EVENT_NOISE_SOURCES = frozenset({"app-server-events.jsonl"})
+# Native activity is retained as raw evidence. Only recognized routine events
+# are folded; failures, malformed records and new event kinds remain visible.
+
+
+def _event_needs_action(value: Any) -> bool:
+    """Read explicit protocol fields, never infer issues from business prose."""
+    if isinstance(value, list):
+        return any(_event_needs_action(item) for item in value)
+    if not isinstance(value, dict):
+        return False
+    for key, item in value.items():
+        if key in {"error", "error_type", "diagnostic", "pending_actions"} and item:
+            return True
+        if key in {"ok", "complete"} and item is False:
+            return True
+        if key in {"status", "state", "outcome", "result", "write_state", "mutation_state"} and isinstance(item, str) and item in {
+            "unknown", "incomplete", "failed", "blocked", "rejected", "interrupted",
+            "pending", "forbidden", "error", "cancelled",
+        }:
+            return True
+        if _event_needs_action(item):
+            return True
+    return False
 
 
 def _is_decision_event_noise(event: Any) -> bool:
     if not isinstance(event, dict):
         return False
-    if event.get("source") in _DECISION_EVENT_NOISE_SOURCES:
-        return True
+    if event.get("corrupt") or event.get("truncated"):
+        return False
+    source, data = event.get("source"), event.get("data")
+    if not isinstance(data, dict):
+        return False
+    # Explicit errors/unknown outcomes override otherwise routine activity.
+    if _event_needs_action(data):
+        return False
+    if source == "app-server-events.jsonl":
+        method = data.get("method")
+        if method in {"item/started", "item/completed", "turn/completed", "turn/finished"}:
+            params = data.get("params")
+            if not isinstance(params, dict):
+                return False
+            item = params.get("item") or params.get("turn")
+            if not isinstance(item, dict) or not isinstance(item.get("status"), str):
+                return False
+            # Terminal failures remain visible; ordinary native content is
+            # already represented by actual phase/pending/report observations.
+            return item.get("status") in {"completed", "inProgress", "running"}
+        return method in {
+            "item/agentMessage/delta", "item/reasoning/textDelta",
+            "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded",
+            "thread/tokenUsage/updated", "turn/started", "thread/status/changed",
+            "item/commandExecution/outputDelta", "item/plan/delta",
+        }
+    if source == "formal-candidate-progress.jsonl":
+        return data.get("event") == "candidate-receipt-registered"
+    if source == "multi-slice-gate.jsonl":
+        return data.get("event") in {"ontology-plan-applied", "mapping-reference-ontologies-applied"}
+    if source == "coordinator.jsonl":
+        return data.get("type") == "coordinator"
+    if source == "capability-calls.jsonl":
+        # Write and reporting calls may return an application-level unknown;
+        # a successful transport acknowledgement alone cannot hide them.
+        return data.get("ok") is True and data.get("operation") in {
+            "get_ontology_read_model", "get_modeling_batch", "search_semantic_context",
+            "get_semantic_context", "protocol_list_platform_artifacts",
+        }
+    if source == "dynamic-tool-calls.jsonl":
+        return data.get("result") == "accepted" and data.get("tool") in {
+            "read_handoff_material", "inspect_handoff_material",
+            "list_handoff_materials", "get_run_status",
+        }
     if event.get("source") != "provider-attempts.jsonl":
         return False
     receipt = event.get("data")
@@ -115,6 +176,69 @@ def _is_decision_event_noise(event: Any) -> bool:
     status = receipt.get("http_status")
     return (receipt.get("event") == "attempt_end" and receipt.get("status") == "completed"
             and type(status) is int and 200 <= status < 300)
+
+
+# Content stays in the original event. Delivery receives identifiers and state;
+# CQ question text, answer points and review notes never enter its default input.
+_EVENT_METADATA_KEYS = frozenset({
+    "event", "type", "status", "state", "ok", "run_id", "agent_id", "sender_id",
+    "recipient_id", "message_kind", "message_id", "terminal", "settles", "phase",
+    "review_id", "question_id", "question_ids", "content_version", "content_digest",
+    "candidate_digest", "model_revision", "request_id", "issue_id", "reporter_id",
+    "control_epoch", "operation_id", "batch_id", "freeze_id", "freeze_digest",
+    "decision", "decision_ref", "draft_ref", "review_snapshot_ref", "classification",
+    "reason_code", "code", "error", "error_type", "retry", "next_action", "outcome",
+    "report_binding", "report_path", "work_state", "method", "tool", "operation",
+    "result", "generation", "phase_event", "category", "ack", "ack_type", "denial_category",
+    "recorded_at", "message", "reason", "detail", "retryable", "limitations",
+})
+
+
+def _decision_event_metadata(event: Any) -> Any:
+    if not isinstance(event, dict):
+        return {"event_shape": type(event).__name__, "content_reference": "raw observation"}
+    if "data" not in event:
+        return event
+    if not isinstance(event.get("data"), dict):
+        return {**event, "data": {"malformed_data_shape": type(event["data"]).__name__,
+                "content_reference": {"source": event.get("source"), "byte_offset": event.get("byte_offset")}}}
+    source = event.get("source", "")
+    if not isinstance(source, str):
+        return event
+    data = event["data"]
+    if source == "provider-attempts.jsonl":
+        return event
+    projected = {key: value for key, value in data.items() if key in _EVENT_METADATA_KEYS}
+    if isinstance(projected.get("result"), (dict, list)):
+        projected.pop("result")
+    if source == "app-server-events.jsonl" and isinstance(data.get("params"), dict):
+        params = data["params"]
+        anomaly = {key: value for key, value in params.items()
+                   if key in {"error", "status", "threadId", "turnId"}}
+        for key in ("item", "turn"):
+            if isinstance(params.get(key), dict):
+                anomaly[key] = {field: value for field, value in params[key].items()
+                                if field in {"error", "status", "id"}}
+        if anomaly:
+            projected["runtime_state"] = anomaly
+    if source == "settled.jsonl" and isinstance(data.get("results"), dict):
+        projected["results"] = {
+            actor: {key: value for key, value in result.items()
+                    if key in {"status", "agent_id", "artifact_refs", "report_ref"}}
+            for actor, result in data["results"].items() if isinstance(result, dict)}
+    if source.startswith("cq-"):
+        # Review decision documents can contain a full modified question. Only
+        # scalar identities and question-id lists belong in Delivery input.
+        projected = {key: value for key, value in projected.items()
+                     if value is None or isinstance(value, (str, bool, int, float))
+                     or (key == "question_ids" and isinstance(value, list)
+                         and all(isinstance(item, str) for item in value))}
+    if projected != data:
+        projected["content_reference"] = {
+            "source": source, "byte_offset": event.get("byte_offset"),
+            "note": "original content retained; read only for an authorized decision gap",
+        }
+    return {**event, "data": projected}
 
 
 def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]]) -> Any:
@@ -141,6 +265,7 @@ def _decision_events(run_id: str, events: Any, state: dict[str, dict[str, Any]])
     for event in page.get("events") or []:
         if _is_decision_event_noise(event):
             continue
+        event = _decision_event_metadata(event)
         canonical: Any = event
         identity: str | None = None
         if isinstance(event, dict):
@@ -178,6 +303,19 @@ def _decision_observation(observation: dict,
     stores the full raw observation.
     """
     projected = copy.deepcopy(observation)
+    host_actions = projected.get("host_actions", {})
+    host_keys = {"request_id", "session_id", "run_id", "kind", "authorization_reference",
+                 "bindings", "content_digest", "request_digest", "source", "status",
+                 "result_ref", "result_digest", "journal_ref", "write_state"}
+    for collection in ("requests", "results"):
+        if collection in host_actions:
+            host_actions[collection] = {key: {field: value for field, value in item.items()
+                                             if field in host_keys}
+                                       for key, item in host_actions[collection].items()}
+    for collection in ("pending", "unresolved", "completed"):
+        if collection in host_actions:
+            host_actions[collection] = [{key: value for key, value in item.items() if key in host_keys}
+                                        for item in host_actions[collection]]
     # Strip metadata only at its owning path. Business dictionaries may use
     # exactly the same keys, including evidence_refs and observed_at.
     for run in projected.get("runs", {}).values():
@@ -191,7 +329,12 @@ def _decision_observation(observation: dict,
         for owner in (liveness, liveness.get("process_observation", {})):
             for key in ("observed_at", "heartbeat_at", "last_heartbeat_at", "heartbeat_count"):
                 owner.pop(key, None)
-        run.get("pending", {}).get("data", {}).pop("observed_at", None)
+        pending = run.get("pending", {}).get("data", {})
+        pending.pop("observed_at", None)
+        for item in pending.get("items", []):
+            if item.get("type") == "cq_review":
+                item["available_actions"] = [{"action": "request_host_action",
+                    "kind": "cq_review", "note": "Host reviews the private snapshot directly; Delivery only checks bindings and receipts"}]
         # Source identity is retained in the raw snapshot, but log append is
         # not an independent decision when the parsed request set is unchanged.
         run.pop("request_ledger", None)
@@ -437,6 +580,24 @@ _LOCAL_SPECS = [
 # already-approved host path, while these operations create and consume an
 # immutable, recipient-scoped handoff package.
 _LOCAL_SPECS.extend(HANDOFF_TOOL_SPECS)
+_LOCAL_SPECS.append({
+    "name": "request_host_action",
+    "description": "Request private Host CQ review or platform repair; records a pending handoff, never executes or certifies it.",
+    "inputSchema": {"type": "object", "properties": {
+        "request_id": {"type": "string"}, "run_id": {"type": "string"},
+        "kind": {"enum": ["cq_review", "platform_repair"]},
+        "bindings": {"type": "object"}, "expected_behavior": {"type": "string"},
+        "actual_behavior": {"type": "string"}, "blocked_step": {"type": "string"},
+        "evidence_references": {"type": "array", "items": {"type": "object"}},
+        "checked": {"type": "array", "items": {"type": "string"}},
+        "hypotheses": {"type": "array", "items": {"type": "string"}},
+        "write_state": {"type": "string"}},
+        "required": ["request_id", "run_id", "kind", "bindings"],
+        "additionalProperties": False},
+})
+_DELIVERY_HOST_ONLY_TOOLS = frozenset({
+    "submit_cq_review", "prepare_repair_task", "start_repair", "verify_repair",
+})
 
 
 class DeliverySession:
@@ -555,6 +716,8 @@ class DeliverySession:
             self._tools[tool.name] = {"name": tool.name, "description": tool.description,
                                       "inputSchema": schema}
         self._tools.update({item["name"]: copy.deepcopy(item) for item in _LOCAL_SPECS})
+        for name in _DELIVERY_HOST_ONLY_TOOLS:
+            self._tools.pop(name, None)
         self._restore_decision_inputs()
         self._save("ready")
 
@@ -1326,8 +1489,11 @@ class DeliverySession:
                 self._public_state = state
 
     def _append(self, filename: str, value: dict) -> None:
-        with (self.session_root / filename).open("a") as handle:
-            handle.write(json.dumps(value, ensure_ascii=False) + "\n")
+        if filename == "session-events.jsonl":
+            append_session_event(self.session_root, value)
+        else:
+            with (self.session_root / filename).open("a") as handle:
+                handle.write(json.dumps(value, ensure_ascii=False) + "\n")
 
     def tool_specs(self) -> list[dict]:
         return list(self._tools.values())
@@ -1409,8 +1575,22 @@ class DeliverySession:
     def _read_artifact(self, value: str, *, source_ref: dict | None = None,
                        selection: dict | None = None, max_bytes: int = 16384,
                        internal: bool = False) -> dict:
-        path = self._path(value)
-        approved = path in self.sources or path in {
+        host_results = host_action_state(self.session_root)
+        bound_host_ref = None
+        for result in host_results.get("results", {}).values():
+            ref = result.get("result_ref") or {}
+            relative = ref.get("path")
+            if not isinstance(relative, str):
+                continue
+            candidate = (self.session_root / relative).resolve()
+            if not candidate.is_relative_to(self.session_root / "host-results"):
+                continue
+            if value == relative or self._path(value) == candidate:
+                bound_host_ref = ref
+                break
+        path = ((self.session_root / bound_host_ref["path"]).resolve()
+                if bound_host_ref else self._path(value))
+        approved = bound_host_ref is not None or path in self.sources or path in {
             self.session_root / name for name in ("session.json", "session-events.jsonl", "user-input.jsonl", "public-messages.jsonl", "observation.json", "efficiency-round.json", "efficiency-progress.jsonl")
         }
         approved = approved or path in {
@@ -1469,6 +1649,9 @@ class DeliverySession:
         except OSError as exc:
             raise HostOpError("artifact_unavailable", str(exc), obj=str(path), retryable=True,
                               next_action="check the bound path and retry") from exc
+        if bound_host_ref and _digest_bytes(raw) != bound_host_ref.get("content_digest"):
+            raise HostOpError("host_result_changed", "Host result original differs from its journal binding",
+                retryable=True, next_action="ask the Host to retain and register the current result original")
         if selection is None:
             if source_ref is not None:
                 raise HostOpError("artifact_selection_invalid", "source_ref requires a selection",
@@ -1549,6 +1732,63 @@ class DeliverySession:
                     raise
                 raise HostOpError("artifact_selection_invalid", "invalid artifact read parameters",
                     retryable=True, next_action="use path, optional source_ref/selection and max_bytes 1..16384") from exc
+            if name == "request_host_action":
+                if "supervise" not in self.allowed_operations:
+                    raise ValueError("Host handoff requires current supervision authorization")
+                run_id = arguments["run_id"]
+                if run_id not in self.run_ids:
+                    raise ValueError("run is outside this Delivery session")
+                # Re-reading an already journaled request is not a new Host action.
+                # Preserve its identity even after the pending review/issue has closed.
+                existing = host_action_state(self.session_root).get("requests", {}).get(arguments["request_id"])
+                if existing is not None:
+                    replay = copy.deepcopy(arguments)
+                    if arguments["kind"] == "cq_review":
+                        old_binding = existing.get("bindings", {})
+                        required = {"review_id", "content_version", "content_digest", "question_ids"}
+                        if (required <= arguments["bindings"].keys()
+                                and all(old_binding.get(key) == value for key, value in arguments["bindings"].items())):
+                            replay = {"request_id": arguments["request_id"], "run_id": run_id,
+                                      "kind": "cq_review", "bindings": old_binding}
+                    return {"ok": True, "data": request_host_action(
+                        self.session_root, self.session_id, self.run_ids, self.authorization, replay)}
+                # Validate against actual pending bindings, never model-selected CQ text.
+                pending = self.call_tool("get_pending_actions", {"run_id": run_id})
+                if not pending.get("ok"):
+                    return pending
+                binding = arguments["bindings"]
+                kind = arguments["kind"]
+                if kind == "platform_repair":
+                    for ref in arguments.get("evidence_references", []):
+                        if ref.get("material_id"):
+                            try:
+                                self.handoff_materials.authorize_ref("delivery", "runner", ref)
+                                if self._is_private_cq_material(ref):
+                                    raise MaterialError("material_forbidden", "private CQ material is not repair evidence")
+                            except MaterialError as exc:
+                                raise HostOpError("host_action_evidence_forbidden", str(exc),
+                                    retryable=True, next_action="use an authorized public or technical reference") from exc
+                items = pending.get("data", {}).get("items", [])
+                required = (("review_id", "content_version", "content_digest", "question_ids")
+                            if kind == "cq_review" else ("issue_id", "reporter_id", "control_epoch"))
+                matches = [item for item in items
+                           if item.get("type") == ("cq_review" if kind == "cq_review" else "issue_wait")
+                           and all(binding.get(key) == item.get("bindings", {}).get(key)
+                                   and key in binding for key in required)]
+                if (kind == "cq_review" or binding.get("issue_id")) and not matches:
+                    raise HostOpError("host_action_binding_stale", "current pending binding differs",
+                        retryable=True, next_action="read current pending actions and use their exact binding")
+                if kind == "cq_review":
+                    allowed = {*required, "phase", "review_snapshot_ref", "draft_ref"}
+                    if set(binding) - allowed:
+                        raise ValueError("CQ handoff contains non-metadata fields")
+                    if matches:
+                        binding = {key: value for key, value in matches[0]["bindings"].items()
+                                   if key in allowed}
+                    arguments = {"request_id": arguments["request_id"], "run_id": run_id,
+                                 "kind": kind, "bindings": binding}
+                return {"ok": True, "data": request_host_action(
+                    self.session_root, self.session_id, self.run_ids, self.authorization, arguments)}
             if name == "record_efficiency_progress":
                 from datetime import datetime, timezone
                 path = self.session_root / "efficiency-round.json"
@@ -1822,7 +2062,7 @@ class DeliverySession:
             return {"ok": False, "error": {"code": "delivery_tool_failed", "message": "check tool schema and bound inputs"}}
 
     def observe(self) -> dict:
-        return {"runs": {run_id: {
+        return {"host_actions": host_action_state(self.session_root), "runs": {run_id: {
             "status": self.call_tool("get_run_status", {"run_id": run_id}),
             "pending": self.call_tool("get_pending_actions", {"run_id": run_id}),
             "events": self._observe_run_events(run_id),
@@ -1962,7 +2202,7 @@ class DeliverySession:
         if not path.exists():
             return
         offset = 0
-        for line in path.read_bytes().splitlines(keepends=True):
+        for line in read_session_journal(self.session_root).splitlines(keepends=True):
             try:
                 record = json.loads(line)
             except ValueError:
@@ -2000,6 +2240,7 @@ class DeliverySession:
         path = self.session_root / "observation.json"
         previous = json.loads(path.read_text()) if path.exists() else {}
         projected = copy.deepcopy(observation)
+        projected["host_actions"] = host_action_state(self.session_root)
         for run_id, run in projected.get("runs", {}).items():
             run["requests"] = self._request_projection(run_id, run.get("request_ledger", {}))
         projected["session"] = {"session_id": self.session_id,
@@ -2041,7 +2282,8 @@ class DeliverySession:
                     envelope = copy.deepcopy(envelope)
                     page = envelope.get("data", {})
                     events = page.get("events", [])
-                    page["events"] = [item for item in events if not _is_decision_event_noise(item)]
+                    page["events"] = [_decision_event_metadata(item) for item in events
+                                      if not _is_decision_event_noise(item)]
                     excluded += len(events) - len(page["events"])
                     self._locate_decision_events(run_id, page["events"])
                 run["events"] = envelope
@@ -2051,21 +2293,15 @@ class DeliverySession:
                 "excluded_noise_event_records": excluded}
             changes = _value_changes(self._last_current, decision)
             input_id = uuid.uuid4().hex
-            journal = self.session_root / "session-events.jsonl"
-            offset = journal.stat().st_size if journal.exists() else 0
             packet = {"event": "delivery_decision_input", "input_id": input_id,
                 "snapshot": current, "changes": changes, "fingerprint_state": decision,
                 "changed_operations": changed_operations,
                 "decision_digest": digest, "event_cursors": self._event_cursors,
                 "decision_event_state": {key: {"seen": sorted(value["seen"]), "chain": value["chain"]}
                     for key, value in self._decision_event_state.items()}}
-            encoded = _json_bytes(packet) + b"\n"
-            with journal.open("ab") as handle:
-                handle.write(encoded)
-                handle.flush()
-                os.fsync(handle.fileno())
+            offset, byte_length = append_session_event(self.session_root, packet)
             self._pending_decisions.append({"input_id": input_id, "byte_offset": offset,
-                "byte_length": len(encoded), "offset": 0, "delivery_status": "pending"})
+                "byte_length": byte_length, "offset": 0, "delivery_status": "pending"})
             self._last_current = decision
             self._last_decision_digest = digest
         # Persist the cursor only after the full raw observation and change

@@ -493,3 +493,62 @@ def test_model_observation_keeps_decisions_complete_and_failures_untouched(tmp_p
     projected = host._model_observation(failed)
     assert projected["runs"]["run"]["events"] == {
         "ok": False, "error": {"code": "run_missing", "message": "gone"}}
+
+
+@pytest.mark.parametrize("source,data", [
+    ("coordinator.jsonl", {"type": "coordinator", "text": "ordinary model discussion"}),
+    ("app-server-events.jsonl", {"method": "thread/tokenUsage/updated", "params": {"tokens": 12}}),
+    ("dynamic-tool-calls.jsonl", {"tool": "read_handoff_material", "result": "accepted"}),
+    ("capability-calls.jsonl", {"operation": "get_ontology_read_model", "ok": True}),
+])
+def test_r4329_known_routine_activity_does_not_wake(tmp_path, source, data):
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    update = observation()
+    update["runs"]["run"]["events"] = _events_page([
+        {"source": source, "byte_offset": 0, "data": data}], next_cursor="next")
+    assert not host.record_observation(update)
+    assert json.loads((host.session_root / "observation.json").read_text())["data"] == update
+
+
+@pytest.mark.parametrize("event", [
+    {"source": "coordinator.jsonl", "data": {"type": "coordinator", "status": "blocked"}},
+    {"source": "app-server-events.jsonl", "corrupt": True},
+    {"source": "app-server-events.jsonl", "data": {"method": "error", "params": {"error": "down"}}},
+    {"source": "app-server-events.jsonl", "data": {"method": "new/unknown"}},
+    {"source": "app-server-events.jsonl", "data": {"method": "item/completed", "params": "malformed"}},
+    {"source": "app-server-events.jsonl", "data": {"method": "item/completed", "params": {"item": {"status": {"unexpected": True}}}}},
+    {"source": "dynamic-tool-calls.jsonl", "data": {"tool": "read_handoff_material", "result": "accepted", "status": "unknown"}},
+    {"source": "capability-calls.jsonl", "data": {"operation": "modeling_apply_batch", "ok": True}},
+    {"source": "dynamic-tool-calls.jsonl", "data": {"tool": "read_handoff_material", "result": "accepted", "data": {"write_state": "unknown"}}},
+    {"source": "unknown-new-event.jsonl", "data": {"event": "unrecognized"}},
+])
+def test_r4329_anomalies_and_ambiguous_write_success_remain_visible(tmp_path, event):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    host._dispatch_observation(_StubNativeRuntime(), {
+        "kind": "host_observation", "data": host._model_observation()}, steer=False)
+    update = observation()
+    update["runs"]["run"]["events"] = _events_page([event], next_cursor="next")
+    assert host.record_observation(update)
+    delivered = host._model_observation()["runs"]["run"]["events"]["data"]["events"]
+    assert delivered[0]["source"] == event["source"]
+
+
+def test_r4329_private_cq_body_is_referenced_without_default_injection(tmp_path):
+    host = session(tmp_path)
+    update = observation()
+    update["runs"]["run"]["events"] = _events_page([{
+        "source": "cq-review-request.jsonl", "byte_offset": 0,
+        "data": {"review_id": "review-1", "content_digest": "digest", "question_ids": ["q1"],
+                 "text": "PRIVATE QUESTION", "mandatory_answer_points": ["HIDDEN ANSWER"],
+                 "material_refs": [{"body": "PRIVATE SOURCE"}]},
+    }], next_cursor="next")
+    host.record_observation(update)
+    payload = host._model_observation()
+    encoded = json.dumps(payload)
+    assert "PRIVATE QUESTION" not in encoded and "HIDDEN ANSWER" not in encoded
+    assert "PRIVATE SOURCE" not in encoded
+    metadata = payload["runs"]["run"]["events"]["data"]["events"][0]["data"]
+    assert metadata["review_id"] == "review-1" and metadata["content_reference"]
+    assert json.loads((host.session_root / "observation.json").read_text())["data"] == update

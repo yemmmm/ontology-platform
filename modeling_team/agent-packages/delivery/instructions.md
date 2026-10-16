@@ -57,30 +57,36 @@ host path, another run's package, private CQ/review or hidden acceptance
 material as a workaround for a missing recipient grant; a rejected reference
 can be corrected and retried without resubmitting the original action.
 
-When organizing CQ review, use only the approved sources, interview decisions,
-and the current question version. `submit_cq_review.note` must say that the
-review was an explicitly delegated Delivery review, identify the authorization
-and source/version basis, and record the point-by-point reason. This is an
-Agent decision under user delegation, not a claim that a human approved every
-question. Preserve hidden visibility, immutable review bindings, and the
-independent Consumer/Judge contract; do not copy hidden text or answer points
-into production messages or repair tasks.
+When a CQ review is pending, Delivery only prepares a bound Host request and
+checks its technical completion. Do not read the private question, answer
+points, source basis, or review rationale into the Delivery decision input, and
+do not call `submit_cq_review` yourself. Use the narrow
+`request_host_action` entry with `kind="cq_review"`. Its `bindings` must use
+the current pending values `review_id`, `content_version`, `content_digest`,
+and `question_ids`; an existing pending item may also expose only the
+technical `phase`, `review_snapshot_ref`, or `draft_ref` references. The
+Delivery session supplies the run/session and authorization context. The
+request must not copy question text, answers, hidden scoring, or
+full conversation. Host review requires an existing delegated review authority;
+without it, route the business ambiguity to the original authorizer. A request
+receipt means only that the Host has a private pending action.
 
 Freezing the CQ pool and completing the production handoff are two separate
 phases; a freeze is only the precondition for formal production, never a
-substitute for modeling or production completion. Phase one: once every
-selected question's draft and review stages have actually completed, call the
-existing freeze_cq Host tool yourself, verify the real freeze binding and the
-public projection, and send the located public projection plus the explicit
-Host freeze confirmation to the original Coordinator through
-submit_instruction with kind `delivery_guidance`, so formal semantic
-Modeling/Protocol production continues. That note carries no hidden questions
-or answers and creates no new business definition or authorization. Phase two:
-call complete_cq_handoff only when production has actually completed under the
+substitute for modeling or production completion. Phase one: wait until the
+Host has submitted the current review decisions through the existing private
+Host binding and the complete selected pool is actually review-complete. Then
+call the existing `freeze_cq` Host tool, verify the real freeze binding and
+public projection, and send the projection plus explicit Host freeze
+confirmation to the original Coordinator through `submit_instruction` with
+kind `delivery_guidance`. That note carries no hidden questions or answers and
+creates no new business definition or authorization. Phase two: call
+`complete_cq_handoff` only when production has actually completed under the
 existing readiness and hard-gate outcomes — necessary dry-run/apply receipts
 and read-back/self-check evidence exist, no pending or unknown writes remain,
-and the Runner's current handoff-ready binding (freeze_id and freeze_digest)
-is complete — then continue the existing independent acceptance flow.
+and the Runner's current handoff-ready binding (`freeze_id` and
+`freeze_digest`) is complete — then continue the existing independent
+acceptance flow.
 frozen_awaiting_handoff or a CQ pending item that merely lists an available
 action does not prove handoff readiness; submitted is not consumed; a
 cq-input-rejected reply is an explicit rejection to read in full, not an
@@ -96,30 +102,44 @@ Pass that returned value directly to `start_evaluation`; the canonical file is
 `/agent/work` path and a report directory are not substitutes for this handoff.
 
 Technical failures stay in the existing four-layer classification and retain
-the first blocking layer. Route a confirmed public defect through the existing
-Coordinator/Modeling/Protocol path, provide a bounded repair task only when
-the current authorization covers it, verify that the repair actually took
-effect, and request a new independent read/acceptance. Do not write model
-candidates, apply platform changes, alter a Judge verdict, or treat a local
-self-check as semantic acceptance.
+the first blocking layer. Delivery may inspect the request, parameters,
+receipt, version, authorization, runtime and handoff state, then record the
+smallest supported next step. Route a confirmed public semantic defect through
+the existing Coordinator/Modeling path. For a platform or runtime defect,
+submit a bounded private Host request with
+`request_host_action(kind="platform_repair")`. Bind it to the current
+`issue_id`, `reporter_id`, and `control_epoch` when an issue is pending, and
+use the optional technical fields `expected_behavior`, `actual_behavior`,
+`blocked_step`, `evidence_references`, `checked`, `hypotheses`, and
+`write_state` for the narrow diagnosis. Do not write model candidates,
+modify platform code or runtime configuration, run repair tests, deploy,
+restart, or launch a repair child from Delivery. Do not alter a Judge verdict
+or treat a local self-check as semantic acceptance.
 
-Copy the configured repair executor, model ID and effort exactly from the
-approved session binding; the production model binding is a separate choice.
-Do not probe aliases or alternate triples after a binding rejection. If the
-exact binding is unavailable, request that configuration fact from Host once.
-Repair task `owned_paths` must list existing regular files, not directories;
-narrow the list to the files required by the observed defect.
+The platform-repair request contains the current session/run, authorization,
+issue binding when present, expected and actual behavior, blocked step,
+request/receipt/version references, checked facts and competing explanations,
+current write state, and the minimum public/technical artifact references.
+Keep hidden questions, answers, private scoring, full conversation and
+credentials out of it. Same `request_id` plus identical content is idempotent;
+conflicting reuse is a recoverable error. A request receipt is not repair
+execution or success.
 
-For an issue-linked repair, copy `issue_id`, `reporter_id`, and `control_epoch`
-from the current `get_pending_actions` binding. Pass `issue_id` to `start_repair`
-so its verification can support `resolve_issue(repair_completed)`; that
-resolution also needs the exact verified result path as
-`verification_reference`. Every `resolve_issue` call requires `control_epoch`.
-For a recoverable guidance resolution, send `resolution_text` without repair
-fields. Keep resolution text free of credential names and secret-like markers;
-reference the retained verification artifact instead of copying credentials or
-environment variable names into the Runner message. Check the Runner request
-result before claiming that an accepted submission resumed the original role.
+The Host performs the AGENTS T0 review and the narrow authorized code/config
+repair, tests, deployment or restart, then appends `host_action_result` to the
+same private session journal with the original request binding, source, status
+(`completed`, `blocked`, or `failed`), result references and limitations. For
+an issue-linked repair, the Host directly submits the existing
+`resolve_issue(resolution_type="repair_completed")` with the current
+`issue_id`, `reporter_id`, `control_epoch`, repair component, before/after
+digests, verification reference, and any required mutation reconciliation.
+Delivery only observes the Host receipt and issue-control state; it does not
+use its former `verification_ids` path or a guidance note as a repair proof.
+Missing, stale, or unreadable Host evidence keeps the affected step blocked;
+after a verified result, reconcile writes and resume the original step without
+replaying uncertain requests. Existing historical repair operations may still
+be observed or cleaned up when already in flight, but they do not grant a new
+Delivery repair launch.
 
 
 ## Unified conversation and retained Team (R4.2-008 / R4.0-028)
@@ -217,8 +237,9 @@ grants or fall back to an unrelated key. Confirm the launched operation's actual
 `initialize`/`tools/list` or version evidence; an HTTP health response or service restart alone does
 not prove that the run is using the intended MCP version.
 
-Query the original get_evaluation_status operation through the actual request, governed Consumer
-reads, complete feedback body and final binding/digest check. Without a retained owner,
+Query the original get_evaluation_status operation through the actual request, lifecycle status,
+report binding and digest. Coordinator owns the governed Consumer reads and public feedback body;
+Delivery does not routinely read `feedback.json` or answer content. Without a retained owner,
 status="exited" plus actual exit_code and ended_at proves the
 operation ended even when work_state remains working. With an owner, use its actual task_closed
 receipt; do not wait for owner exit. A nonzero exit also ends this normal submission wait, while
@@ -227,13 +248,15 @@ not a second evaluation or early release. Once the original task is confirmed en
 normal submission wait through the same guidance/Team channel for observed, partial, unavailable
 or superseded outcomes. Unresolved writes and explicit user pauses retain their original limits.
 
-Only an operation's valid current report_binding qualifies feedback for business use. Read its
-feedback.json with read_delivery_artifact, compare the returned content_digest to the bound digest,
-and read necessary retained platform responses under this bound run's early-feedback directory.
-An accepted guidance or request, an applied receipt, and the status/question-count summary are not
-feedback or a quality PASS, and the summary is not a Consumer answer. Old/rejected bindings, changed digests,
-missing files or size limits mean insufficient evidence; preserve the original result and do not
-combine model states. Report eligibility and actual task completion are separate decisions.
+Only an operation's valid current report_binding qualifies feedback for Coordinator's business use.
+Delivery verifies the binding and content_digest, then passes the bound report reference and technical
+status through the existing guidance channel; Coordinator reads the governed public body. Delivery may
+use `read_delivery_artifact` for a retained platform response only when a current technical diagnosis
+requires it, never as a routine feedback-body read. An accepted guidance or request, an applied receipt,
+and the status/question-count summary are not feedback or a quality PASS, and the summary is not a
+Consumer answer. Old/rejected bindings, changed digests, missing files or size limits mean insufficient
+evidence; preserve the original result and do not combine model states. Report eligibility and actual
+task completion are separate decisions.
 
 Route public findings to Coordinator/Modeling/Protocol without hidden questions or answers.
 Pause only affected content and real dependents, including shared identities; independent work
@@ -277,16 +300,19 @@ correcting the read, not abandoning the modeling goal.
 A delivery_status of unknown means the native receipt is uncertain and this
 observation may already have been received. Reconcile current facts; never
 replay platform actions because a Delivery input was resent. For CQ review,
-read the selected questions and necessary business basis. For public feedback,
-read all actual answers, read evidence and complete feedback for the selected
-questions. For faults, read the exact event/receipt/log; for final delivery,
-verify original report qualification, versions and independent verdicts.
+read only the current technical binding, Host request/result metadata and
+review/freeze receipts; the Host owns the selected questions and business
+basis. For public feedback, read only its operation metadata, valid binding/digest
+and technical evidence needed for flow control; Coordinator reads the governed
+public report body. For faults, read the exact event/receipt/log;
+for final delivery, verify original report qualification, versions and
+independent verdicts.
 Compact inputs do not establish PASS or reduce the required question denominator.
 When current_state identifies a newer packet, this packet snapshot is historical;
 read and reconcile the newer necessary state before state-dependent actions.
-Host-private Judge/CQ content, references and decision packets remain private;
-reading them grants no permission to forward them to production, repair or a
-test answerer. Existing public projection/material routes and role duties apply.
+Host-private Judge/CQ content, references and decision packets remain outside
+Delivery's normal input; they never enter production, repair or a test
+answerer. Existing public projection/material routes and role duties apply.
 Byte reductions alone do not establish token savings or net cost improvement.
 
 ## Deterministic phase progression after a semantic decision
@@ -308,8 +334,10 @@ Use the existing tools to carry out already-decided deterministic follow-through
 without another planning-only turn: copy returned bindings, submit the original
 request, reconcile its actual receipt, and continue the next ready authorized step.
 Batch independent reads in one turn; keep dependent writes/confirmations ordered.
-For CQ review always copy the current review_id, question_id, content_version and
-content_digest; these are technical bindings, not additional review decisions.
+For the Delivery-to-Host CQ request copy the current `review_id`,
+`content_version`, `content_digest`, and `question_ids`; these are technical
+bindings, not additional review decisions. The Host alone later uses the
+existing per-question `question_id` binding when it calls `submit_cq_review`.
 Use Attempt status for applied batch counts, not the number of receipts. Pause for
 a genuine unresolved semantic/authorization choice or unknown write, not a successful
 receipt or a retained idle owner. Do not invent an extra phase or bypass declared

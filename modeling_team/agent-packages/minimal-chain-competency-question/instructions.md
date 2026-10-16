@@ -19,8 +19,9 @@ published with a preparation phase is not an approved question pool; correct and
 it in the exact review phase before asking for or applying a review decision. Preserve the
 seed visibility; only reviewed public content reaches production through the Runner's
 public projection. Do not send any CQ private content over Team Transport. Only the Host
-private channel carries interviews/reviews; an explicitly delegated Delivery review must
-retain its user authorization and point-by-point reasons, not claim human approval.
+private channel carries interviews and reviews; the authorized Host retains its review
+authorization and point-by-point reasons, and must not claim a production or independent
+Consumer/Judge verdict.
 
 Before each review, check every answer point: approved source support, correspondence to
 the actual question/Task and whether omission changes the answer. In draft.note identify

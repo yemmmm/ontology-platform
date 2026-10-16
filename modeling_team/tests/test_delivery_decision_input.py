@@ -367,3 +367,60 @@ def test_large_blocker_reference_points_to_original_value(tmp_path):
     for part in value_ref["packet_path"]:
         original = original[part]
     assert original == "原始阻塞" * 1000
+
+
+def test_r4329_host_request_validates_live_cq_binding(tmp_path, monkeypatch):
+    host, root = bound_run(tmp_path, monkeypatch)
+    host.allowed_operations.add("supervise")
+    module = importlib.import_module("modeling_team.delivery")
+    binding = {"review_id": "r1", "content_version": 2, "content_digest": "digest-2",
+               "question_ids": ["q1"], "phase": "slice-review",
+               "review_snapshot_ref": "competency-questions/reviews/r1.json"}
+    monkeypatch.setattr(module.host_ops_mcp, "get_pending_actions", lambda **kw: {
+        "items": [{"type": "cq_review", "bindings": binding}], "run_id": "run"})
+    args = {"request_id": "cq-host", "run_id": "run", "kind": "cq_review",
+            "bindings": dict(binding, content_digest="stale")}
+    stale = host.call_tool("request_host_action", args)
+    assert not stale["ok"] and stale["error"]["code"] == "host_action_binding_stale"
+    args["bindings"] = binding
+    result = host.call_tool("request_host_action", args)
+    assert result["ok"], result
+    assert host.call_tool("request_host_action", args)["ok"]
+    monkeypatch.setattr(module.host_ops_mcp, "get_pending_actions", lambda **kw: {"items": []})
+    assert host.call_tool("request_host_action", args)["ok"]
+    changed = dict(args, bindings=dict(binding, content_digest="different"))
+    assert not host.call_tool("request_host_action", changed)["ok"]
+    records = [json.loads(line) for line in (host.session_root / "session-events.jsonl").read_text().splitlines()]
+    assert sum(row.get("event") == "host_action_request" for row in records) == 1
+    assert not host.call_tool("submit_cq_review", {})["ok"]
+    host.allowed_operations.discard("supervise")
+    assert not host.call_tool("request_host_action", args)["ok"]
+
+
+def test_r4329_host_result_wakes_and_survives_undelivered_resume(tmp_path, monkeypatch):
+    from modeling_team.delivery_host_actions import record_host_action_result
+    host, root = bound_run(tmp_path, monkeypatch)
+    host.allowed_operations.add("supervise")
+    module = importlib.import_module("modeling_team.delivery")
+    monkeypatch.setattr(module.host_ops_mcp, "get_pending_actions", lambda **kw: {"items": []})
+    args = {"request_id": "repair-host", "run_id": "run", "kind": "platform_repair",
+            "bindings": {}, "expected_behavior": "current revision readback",
+            "actual_behavior": "stale revision", "write_state": "unknown"}
+    result = host.call_tool("request_host_action", args)
+    assert result["ok"], result
+    host.record_observation(observation())
+    ack(host)
+    results_dir = host.session_root / "host-results"
+    results_dir.mkdir(exist_ok=True)
+    original = results_dir / "repair.json"
+    original.write_text(json.dumps({"request_id": "repair-host", "session_id": host.session_id,
+        "run_id": "run", "status": "completed", "limitations": "engineering only"}))
+    record_host_action_result(host.session_root, "repair-host", "completed", original)
+    assert host.record_observation(observation())
+    packet = host._model_observation()
+    assert "repair-host" in json.dumps(packet["host_actions"])
+    assert not (root / "control/host-requests.jsonl").exists()
+    resumed = DeliverySession(repository_root=ROOT, session_root=host.session_root,
+        config=host.config, resume=True)
+    assert resumed._model_observation()["input_id"] == packet["input_id"]
+    assert resumed._model_observation()["host_actions"] == packet["host_actions"]

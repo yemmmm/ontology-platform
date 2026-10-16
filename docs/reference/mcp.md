@@ -312,20 +312,52 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 
 ## 独立 Delivery Host 工具（R4.0-023）
 
-上述宿主服务保留 S1 的 12 项及 S2 的 8 项原语义，另提供以下 8 项交付接线。
+上述宿主服务保留 S1 的 12 项及 S2 的 8 项原语义，另提供交付接线。
 它们不进入平台 MCP inventory 或生产角色权限。Delivery 会话通过原生结构化工具调用
-使用同一操作层；业务入口只输出显式发布的业务消息，不透传内部工具响应。
+使用同一操作层；业务入口只输出显式发布的业务消息，不透传内部工具响应。R4.3-029
+将 CQ 私有审核和新平台修复交由获准 Host；Delivery 只发起窄的私有请求、做技术对账，
+不再启动新的 Delivery repair operation。
 
 | 工具 | 输入／作用 | 完成依据与限制 |
 | --- | --- | --- |
 | `submit_instruction` | run ID、`user_supplement`／`delivery_guidance`、原文、来源／授权、request ID | 既有 FIFO 与 Runner 实际投递回执；不伪造问题绑定 |
 | `start_evaluation` | run／freeze、cq-acceptance 或 public-feedback、交接／checkpoint、题集与模型配置 | 包装现有 CLI，记录调用与 PID；不提供 unexecuted-report |
 | `get_evaluation_status` | operation ID | 进程状态及本次新报告的真实请求绑定；旧报告、错误绑定或未执行不算有效结果 |
-| `start_repair` | repair-task 文件、指定 executor／model／effort、授权及 issue | 文件 stdin 与 typed argv；修复 workspace 隔离，启动不等于生效 |
-| `get_repair_status` | operation ID | 退出、受控日志及结果证据，`effect_verified` 不因 exit 0 变为 true |
+| `start_repair` | Host 获准的 repair-task、executor／model／effort、授权及 issue | 底层 Host 接口保留供宿主复用；R4.3-029 不向 Delivery 暴露新修复启动，历史任务仍可收尾 |
+| `get_repair_status` | operation ID | 读取既有任务退出、受控日志及结果证据；`effect_verified` 不因 exit 0 变为 true |
 | `stop_delivery_operation` | operation ID、reason | 核对本次拥有的 PID／进程组后终止，保留日志／回执；不控制无关进程 |
 | `read_platform_record` | batch／session／ontology_batches 的 ID 与精确 project／ontology scope | 既有只读读回；返回记录与读取次数，无 apply/delete |
 | `reconcile_write_state` | 本次 run、project／ontology scope | 既有写者证据与 Batch／Attempt／资源／回执对账；不补做隐藏根因查询 |
+
+### R4.3-029 Delivery→Host 私有接单
+
+`request_host_action` 是 Delivery 本地工具，不属于 `host_ops_mcp` 或平台 MCP inventory。
+它在当前 session 私有 `session-events.jsonl` 追加 `host_action_request`，只接受
+`kind=cq_review|platform_repair`，绑定 `request_id`、当前 `run_id` 和 `bindings`，不执行审核、
+修复或结果认证。CQ `bindings` 使用当前 pending 的 `review_id`、`content_version`、
+`content_digest`、`question_ids`，可带 `phase`、`review_snapshot_ref`、`draft_ref`；正式 issue
+平台修复使用真实 `issue_id`、`reporter_id`、`control_epoch`，尚未建 issue 的技术异常可用空
+`bindings` 先交接，但不能据此调用正式 `resolve_issue`。平台诊断可带
+`expected_behavior`、`actual_behavior`、`blocked_step`、`evidence_references[]`、`checked[]`、
+`hypotheses[]`、`write_state`。同一 `request_id` 同内容幂等，内容冲突可恢复拒绝；请求回执
+不表示 Host 已执行或成功。字段不包含 CQ 题目、答案、评分、凭据或完整对话。
+
+Host 将结果原件保存在当前 session 的私有 `host-results/` 后，在仓库根目录运行：
+
+```bash
+python -m modeling_team.delivery_host_actions \
+  --session-root <session-root> \
+  --request-id <request-id> \
+  --status completed|blocked|failed \
+  --result-path <host-results/result-file>
+```
+
+CLI 只接受当前 session 私有目录内的结果原件，并在同一锁保护的 journal 追加
+`host_action_result`（绑定原 request、`source=host_agent`、终态、结果摘要和限制）；结果正文不
+复制进 journal。CQ 由 Host 读取私有快照并调用现有 `submit_cq_review`，Delivery 只核对回执／
+digest 后执行 `freeze_cq`。平台修复由 Host 按 T0、最窄修复、测试及必要部署／重启后，直接用
+正式 issue 绑定调用 `resolve_issue(resolution_type="repair_completed")`；Delivery 不调用旧的
+新修复启动／验证路径。
 
 `start_run`／`resume_from_checkpoint` 新增可选 `host_session_ref` 透传；它仅关联宿主记录，
 不授予权限或证明 semantic start。Delivery 原生工具投影隐藏 `repository_root`、
@@ -341,9 +373,9 @@ R4.3-020的Delivery CLI默认`model_context_window: 544000`及
 原生模型保留自身容量上限；直接复用DeliveryRuntime的测试代答者默认不设置窗口。
 实际生效检查及真实效果边界见
 [局部交付记录](../delivery/records/2026-10-14-modeling-cache-cost-requirements-registration.md#delivery窗口翻倍的后续授权与局部实现)。
-独立原生会话另有宿主专用 `verify_repair`／`get_repair_verification_status`，按绑定修复
-运行固定 repo 检查与明确授权的本地服务部署。它们不属于上述 stdio MCP 的 28 项清单，
-不开放通用 shell；实际命令、退出码、健康与目标摘要保存在交付私有回执中，不能代替语义验收。
+Delivery 不再暴露 `verify_repair`，保留 `get_repair_verification_status` 观察历史操作；
+底层 `delivery_verification` 仍供获准 Host 按需复用。R4.3-029 新平台修复由 Host 执行
+相关检查、必要部署及正式 issue 恢复；这些入口不属于上述 stdio MCP 清单，不能代替语义验收。
 部署、授权、业务输入和证据边界见 [实施记录](../delivery/records/2026-10-08-r4-0-023-delivery-agent.md)。
 
 ## v4.3 Team 引用与效率工具
