@@ -159,7 +159,7 @@ def _handoff_binding(frozen: dict) -> dict:
     }
 
 
-def _freeze() -> dict:
+def _freeze(question_count: int = 2) -> dict:
     items = [
         _question(
             "cq-9",
@@ -176,14 +176,18 @@ def _freeze() -> dict:
             source=INTERVIEW_REF,
         ),
     ]
+    for index in range(3, question_count + 1):
+        item = json.loads(json.dumps(items[0]))
+        item["question_id"] = f"cq-extra-{index}"
+        items.append(item)
     return freeze_question_pool(
         {
             "schema_version": CQ_FREEZE_SCHEMA,
             "batch_id": "batch-cli-r3011",
             "material_digest": "material-cli-r3011",
-            "panorama_question_ids": ["cq-9"],
+            "panorama_question_ids": [item["question_id"] for item in items if item["scope"]["kind"] == "panorama"],
             "slice_question_ids": ["cq-7"],
-            "ordering": ["cq-9", "cq-7"],
+            "ordering": [item["question_id"] for item in items],
             "review_binding": {
                 "review_id": "cq-review-cli-0001",
                 "review_content_version": 1,
@@ -194,11 +198,11 @@ def _freeze() -> dict:
     )
 
 
-def _build_scenario(tmp: Path, *, drift_after: int = 0, fail_read_after: int = 0) -> dict:
+def _build_scenario(tmp: Path, *, drift_after: int = 0, fail_read_after: int = 0, question_count: int = 2) -> dict:
     """Write a legal run root, handoff, fixture ``codex`` and canonical state."""
 
     run_root = tmp / "run"
-    frozen = _freeze()
+    frozen = _freeze(question_count)
     (run_root / "competency-questions" / "frozen").mkdir(parents=True)
     (run_root / "acceptance-v3").mkdir(parents=True)
     (run_root / "competency-questions" / "private").mkdir(parents=True)
@@ -291,12 +295,11 @@ def _build_scenario(tmp: Path, *, drift_after: int = 0, fail_read_after: int = 0
         "fixture_codex": fixture_codex,
         "state_path": state_path,
         "batch_id": frozen["batch_id"],
-        "question_ids": ["cq-9", "cq-7"],
+        "question_ids": [item["question_id"] for item in frozen["questions"]],
     }
 
 
 def _run_cli(scenario: dict, *extra: str, timeout: float = 45.0, flow_role: str | None = None, consult: bool = False) -> dict:
-    preexisting = {item.name for item in Path("/tmp").glob("r3011-acceptance-*")}
     process = subprocess.Popen(
         [
             sys.executable,
@@ -340,6 +343,10 @@ def _run_cli(scenario: dict, *extra: str, timeout: float = 45.0, flow_role: str 
         except (OSError, ValueError):
             owner = {}
         current = owner.get("current") or {}
+        if flow_role:
+            current = next((member for member in owner.get("active_members", [])
+                if member["role"] == flow_role and (flow_role == "acceptance"
+                    or "cq-9" in member.get("question_ids", []))), {})
         if flow_role and current.get("role") == flow_role and pause_id is None:
             pause_id = str(uuid.uuid4())
             waiting_identity = (current["thread_id"], current["pid"])
@@ -389,7 +396,6 @@ def _run_cli(scenario: dict, *extra: str, timeout: float = 45.0, flow_role: str 
         raise AssertionError(f"CLI did not publish/stop: {stdout[-1000:]} {stderr[-1000:]}")
     completed = subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
     scenario["final_owner"] = json.loads((owner_path / "state.json").read_text()) if (owner_path / "state.json").exists() else None
-    scenario["preexisting_roots"] = preexisting
     scenario["proc"] = completed
     scenario["stdout_json"] = None
     for line in completed.stdout.splitlines():
@@ -403,11 +409,10 @@ def _run_cli(scenario: dict, *extra: str, timeout: float = 45.0, flow_role: str 
     scenario["report_dir"] = report_dir
     report_path = report_dir / "batch-report.json"
     scenario["report"] = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else None
-    scenario["new_private_roots"] = sorted(
-        item.name
-        for item in Path("/tmp").glob("r3011-acceptance-*")
-        if item.name not in preexisting
-    )
+    # Use this owner's resource evidence, independent of other live runs/tests.
+    scenario["new_private_roots"] = [item["thread_id"]
+        for item in (scenario["final_owner"] or {}).get("destroyed_members", [])
+        if not item["private_root_removed"]]
     return scenario
 
 
@@ -484,13 +489,13 @@ def _assert_mounted_v3_prompts(markers: dict[str, str], *, platform: bool) -> No
         ), markers
 
 
-def _assert_batch_cleanup(report: dict, expected_children: int = 2) -> None:
+def _assert_batch_cleanup(report: dict, expected_children: int = 3) -> None:
     """The batch's own teardown outcome: forwarder stopped, every child gone.
 
     The evidence is the per-child teardown the runtime boundary observed after
     ``destroy`` -- never a global scan -- so a concurrently running batch can
-    never be reported as this batch's cleanup.  ``expected_children`` is 2 for
-    the happy batch (one Platform Examiner batch child + one judge) and 1 when
+    never be reported as this batch's cleanup. ``expected_children`` is 3 for
+    the happy batch (two independent Consumers + one judge) and 2 when
     the batch failed before the judge session was started at all.
     """
 
@@ -557,7 +562,7 @@ def test_tg41_two_v3_sessions_complete_the_batch_through_real_sockets(happy_run:
     assert sorted(report["executed_question_ids"]) == sorted(scenario["question_ids"])
     assert report["unexecuted_question_ids"] == []
     assert report["blind_status"]["blind_status"] == "blind"
-    # Two sessions: one platform Examiner batch session and one judge session.
+    # Two independent Consumers plus one Judge; all retain the same denominator.
     assert report["sessions"]["platform_examiner"]["reports"] == 2
     assert report["sessions"]["platform_examiner"]["missing_question_ids"] == []
     assert report["sessions"]["platform_examiner"]["failure_reason"] is None
@@ -715,7 +720,7 @@ def test_tg46_post_read_drift_keeps_reports_and_fails_the_batch(tmp_path) -> Non
     assert report["sessions"]["lifecycle_errors"] == []
     # Cleanup still happened for real; the judge was skipped, so one child.
     assert scenario["new_private_roots"] == []
-    _assert_batch_cleanup(report, expected_children=1)
+    _assert_batch_cleanup(report, expected_children=2)
     _assert_no_key_leak(scenario)
 
 
@@ -734,7 +739,7 @@ def test_tg46_post_read_failure_is_runtime_incomplete_and_retained(tmp_path) -> 
     assert report["full_pass"] is False
     assert "verdicts" not in report["sessions"]["acceptance_judge"]
     assert scenario["new_private_roots"] == []
-    _assert_batch_cleanup(report, expected_children=1)
+    _assert_batch_cleanup(report, expected_children=2)
     _assert_no_key_leak(scenario)
 
 
@@ -748,7 +753,7 @@ def test_tg47_mid_batch_child_exit_retains_executed_report(tmp_path) -> None:
     # exits, exactly like a crashed examiner process.
     first = state["ontologies"]
     assert first  # state sanity before the directive is bound below
-    _patch_first_question_directive(scenario, "exit-after-first-report")
+    _patch_first_question_directive(scenario, "exit-before-report")
     result = _run_cli(scenario)
     proc = result["proc"]
     assert proc.returncode == 1, f"stdout={proc.stdout[-2000:]}\nstderr={proc.stderr[-2000:]}"
@@ -756,8 +761,8 @@ def test_tg47_mid_batch_child_exit_retains_executed_report(tmp_path) -> None:
     assert report is not None
     # The accepted first report is retained after real cleanup; the rest is
     # recorded as unexecuted with the typed failure layer/reason.
-    assert report["executed_question_ids"] == ["cq-9"], report["executed_question_ids"]
-    assert report["unexecuted_question_ids"] == ["cq-7"]
+    assert report["executed_question_ids"] == ["cq-7"], report["executed_question_ids"]
+    assert report["unexecuted_question_ids"] == ["cq-9"]
     sessions = report["sessions"]
     failure_reason = str(sessions["platform_examiner"]["failure_reason"])
     assert failure_reason
@@ -773,13 +778,13 @@ def test_tg47_mid_batch_child_exit_retains_executed_report(tmp_path) -> None:
     # examiner child died mid-batch -- the judge runs for that question, the
     # unreported one stays unexecuted, and the whole batch still cannot pass.
     assert sessions["acceptance_judge"]["verdicts"] == 1
-    assert sessions["acceptance_judge"]["judged_question_ids"] == ["cq-9"]
+    assert sessions["acceptance_judge"]["judged_question_ids"] == ["cq-7"]
     stages = [entry["stage"] for entry in sessions["lifecycle_errors"]]
     assert "platform-examiner-session" in stages
     # Real teardown of this batch's own resources, observed after the CLI exited;
     # the examiner and judge children were both started and both cleaned up.
     assert result["new_private_roots"] == []
-    _assert_batch_cleanup(report, expected_children=2)
+    _assert_batch_cleanup(report, expected_children=3)
     _assert_no_key_leak(result)
 
 
@@ -824,8 +829,10 @@ def test_native_owner_waits_on_original_thread_resumes_remaining_reports_and_ret
     assert result["report"]["full_pass"] is True
     assert [report["question_id"] for report in result["report"]["examiner_reports"]] == result["question_ids"]
     assert [report["question_id"] for report in result["report"]["verdicts"]] == result["question_ids"]
+    assert "consult_owner" in result, {"stderr": result["proc"].stderr, "stdout": result["proc"].stdout, "owner": result["final_owner"]}
     retained = result["consult_owner"]["retained_members"][0]
-    teardown = next(child for child in result["report"]["sessions"]["cleanup"]["children"] if child.get("consumer_retained"))
+    teardown = next(child for child in result["report"]["sessions"]["cleanup"]["children"]
+                    if child.get("consumer_retained") and child["thread_id"] == retained["thread_id"])
     assert (retained["thread_id"], retained["pid"]) == (teardown["thread_id"], teardown["pid"])
     final = result["final_owner"]
     assert final["lifecycle"] == "stopped" and not final["retained_members"]

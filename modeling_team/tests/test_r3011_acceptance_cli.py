@@ -831,7 +831,8 @@ def test_a_failed_post_batch_state_read_blocks_the_judge_with_resolvable_evidenc
 
         def run_v3_acceptance_child(self, packet, *, role_instructions, reports, **kwargs):
             assert packet.role == "platform-examiner", "no judge child may start here"
-            reports.extend(dict(report) for report in emitted)
+            assigned = {q["question_id"] for q in packet.payload["questions"]}
+            reports.extend(dict(report) for report in emitted if report["question_id"] in assigned)
             return list(reports)
 
     monkeypatch.setattr("modeling_team.__main__.CodexRuntimeAdapter", _StubAdapter)
@@ -890,7 +891,8 @@ def test_a_canonical_forwarder_runtime_error_at_the_post_read_is_bounded(
 
         def run_v3_acceptance_child(self, packet, *, role_instructions, reports, **kwargs):
             assert packet.role == "platform-examiner", "no judge child may start here"
-            reports.extend(dict(report) for report in emitted)
+            assigned = {q["question_id"] for q in packet.payload["questions"]}
+            reports.extend(dict(report) for report in emitted if report["question_id"] in assigned)
             return list(reports)
 
     monkeypatch.setattr("modeling_team.__main__.CodexRuntimeAdapter", _StubAdapter)

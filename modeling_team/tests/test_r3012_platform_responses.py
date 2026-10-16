@@ -1398,7 +1398,7 @@ def _retaining_adapter(
             request = dict(_QUERY_REQUEST)
             request_digest = canonical_read_digest({"tool": tool, "arguments": request})
             response_digest = canonical_read_digest(result)
-            artifact_path = f"acceptance/r3011-{packet.batch_id}/platform-read/{'a' * 64}/0.json"
+            artifact_path = f"acceptance/r3011-{packet.batch_id}/platform-read/{packet.canonical_digest.removeprefix('sha256:')}/0.json"
             persistence(
                 artifact_path,
                 {
@@ -1490,9 +1490,7 @@ def test_the_executed_batch_collects_rechecks_and_projects_responses(
     report = _read_report(run_root, frozen["batch_id"])
 
     # The retained artifact is on disk under the Runner-relative locator.
-    artifact = run_root.joinpath(
-        *PurePosixPath(f"acceptance/r3011-{frozen['batch_id']}/platform-read/{'a' * 64}/0.json").parts
-    )
+    artifact = run_root / report["platform_read_responses"]["cq-1"][0]["artifact_path"]
     document = json.loads(artifact.read_text(encoding="utf-8"))
     assert document["result"] == _RETAINED_QUERY_RESULT
 
@@ -1512,7 +1510,7 @@ def test_the_executed_batch_collects_rechecks_and_projects_responses(
     assert report["evidence_recheck"]["replayed_responses"] == 2
     assert report["sessions"]["platform_read_responses"] == {
         "questions_with_responses": 2,
-        "retained_receipts": 1,
+        "retained_receipts": 2,
         "persistence_failures": 0,
         "rejected_refs": [],
     }
@@ -1588,7 +1586,7 @@ def test_unmatched_refs_and_persistence_failures_surface_and_fail_closed(
     session = report["sessions"]["platform_read_responses"]
     assert session["questions_with_responses"] == 0
     assert session["retained_receipts"] == 0
-    assert session["persistence_failures"] == 1
+    assert session["persistence_failures"] == 2
     assert [item["reason"] for item in session["rejected_refs"]] == [
         "receipt-unmatched",
         "receipt-unmatched",

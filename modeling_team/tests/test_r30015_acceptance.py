@@ -908,10 +908,12 @@ def test_public_s4_reexecutes_after_hidden_pass_with_public_denominator_and_isol
             forwarder_factory=_Factory(_DualForwarder(_platform_context(), [_RETAINED_QUERY_RESULT] * 2)),
         )
         assert code == 0
-        assert len(packets) == 1  # A hidden PASS must not close public verification.
-        assert [item["question_id"] for item in packets[0]["questions"]] == ["public-1", "public-2"]
+        assert len(packets) == 2  # A hidden PASS must not close public verification.
+        assert all(len(packet["questions"]) == 1 for packet in packets)
+        assert sorted(item["question_id"] for packet in packets
+                      for item in packet["questions"]) == ["public-1", "public-2"]
         assert all(set(item) == {"question_id", "content_version", "question", "scope"}
-                   for item in packets[0]["questions"])
+                   for packet in packets for item in packet["questions"])
         assert [item["question_id"] for item in state["judge_payload"]["questions"]] == ["public-1", "public-2"]
         report = json.loads((output_root / "acceptance-v3/reports" / frozen["batch_id"] / "attempt-0002/batch-report.json").read_text())
         assert report["question_selection"] == {"visibility": "public", "question_ids": ["public-1", "public-2"]}
@@ -1027,11 +1029,11 @@ def test_m44_continuation_sessions_bind_runtime_evidence_to_their_output_root(mo
             ),
         )
         assert code == 0
-        assert model_bindings == ["openai-sol-medium", "openai-sol-medium"]
-        # Both sessions of the re-executed attempt (platform Examiner, then
+        assert model_bindings == ["openai-sol-medium"] * 3
+        # All sessions of the re-executed attempt (two Consumers, then
         # independent judge) write their runtime evidence under the
         # continuation's output root, never the read-only source run.
-        assert evidence_state["evidence_roots"] == [output_root, output_root]
+        assert evidence_state["evidence_roots"] == [output_root] * 3
         assert (output_root / "evidence" / "runtime-evidence.jsonl").is_file()
         assert not (run_root / "evidence").exists()
         assert _tree_state(run_root) == before
@@ -1065,7 +1067,7 @@ def test_m44_plain_acceptance_sessions_bind_runtime_evidence_to_the_run_root(
     )
     assert code == 0
     # Without a continuation the run root IS the attempt's artifact root.
-    assert evidence_state["evidence_roots"] == [run_root, run_root]
+    assert evidence_state["evidence_roots"] == [run_root] * 3
     assert (run_root / "evidence" / "runtime-evidence.jsonl").is_file()
 
 

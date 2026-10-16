@@ -996,6 +996,8 @@ def test_v3_child_reports_its_own_teardown_outcome(tmp_path):
     assert [report["question_id"] for report in verdicts] == ["cq-1", "cq-2"]
     assert teardown == {
         "child_stopped": True,
+        "thread_id": None,
+        "model_usage": None,
         "child_destroyed": True,
         "report_sink_stopped": True,
         "proxy_stopped": True,

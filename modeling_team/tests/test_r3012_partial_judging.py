@@ -132,7 +132,7 @@ def _batch_adapter(
                 on_examiner_packet(packet)
             tool = "query_semantic_context"
             request = dict(_QUERY_REQUEST)
-            artifact_path = f"acceptance/{packet.batch_id}/platform-read/{'a' * 64}/0.json"
+            artifact_path = f"acceptance/{packet.batch_id}/platform-read/{packet.canonical_digest.removeprefix('sha256:')}/0.json"
             persistence(
                 artifact_path,
                 {
@@ -1059,7 +1059,7 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
 
     def adapter_factory(repository_root):
         constructions.append(True)
-        if len(constructions) == 1:
+        if len(constructions) <= len(questions):
             return platform(repository_root=repository_root)
         process = SimpleNamespace(
             stdin=StringIO(), stdout=StringIO(), stderr=StringIO(),
@@ -1139,7 +1139,7 @@ def test_oversized_judge_groups_use_real_factory_sink_and_global_denominator(
     assert code == (0 if complete else 1)
     cleanup = report["sessions"]["cleanup"]
     assert cleanup["children_destroyed"] is True
-    assert len(cleanup["children"]) == 1 + len(sinks)
+    assert len(cleanup["children"]) == len(questions) + len(sinks)
     if oversized_ids:
         assert set(report["sessions"]["question_judging"]["skipped"]) == oversized_ids
         failures = report["sessions"]["acceptance_judge"]["input_failures"]

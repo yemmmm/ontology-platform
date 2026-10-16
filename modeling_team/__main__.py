@@ -8,6 +8,7 @@ import re
 import select
 import sys
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
 from typing import Mapping
@@ -2394,6 +2395,70 @@ def _cq_run_platform_session(
     ))
 
 
+def _cq_run_platform_questions(
+    args, root, artifacts, profile, contract, questions, binding, observed,
+    read_tools, read_key, forwarder, ontology_ids, report_dir,
+):
+    """Run independent single-question Consumers, with at most three in flight."""
+    started = time.monotonic()
+
+    def run_question(index_question):
+        index, question = index_question
+        reports, observables, teardown = [], {}, {}
+        packet = _cq_platform_packet(contract, [question], binding, observed, read_tools)
+        task = {
+            "question_id": question["question_id"],
+            "question_content_version": question["content_version"],
+            "batch_id": binding["batch_id"], "freeze_digest": binding["freeze_digest"],
+            "packet_digest": packet.canonical_digest,
+            "model_binding_digest": content_digest(observed),
+            "started_at": datetime.now(UTC).isoformat(),
+            "started_offset_seconds": time.monotonic() - started,
+            "status": "running",
+        }
+        task_path = report_dir / "question-tasks" / f"{index + 1:04d}.json"
+        task_path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        _write_host_only_json(task_path, task)
+        try:
+            reports[:] = _cq_run_platform_session(
+                args, root, artifacts, profile, packet, reports, read_key,
+                forwarder, observables, ontology_ids, teardown,
+            )
+            task["status"] = "complete" if reports else "runtime-incomplete"
+        except Exception as exc:
+            # Keep partial reports and the first blocker; independent questions
+            # continue even when one external session or its setup fails.
+            task.update(status="runtime-incomplete", failure=_cq_typed_failure(exc))
+        finally:
+            task.update(
+                finished_at=datetime.now(UTC).isoformat(),
+                finished_offset_seconds=time.monotonic() - started,
+                reports=len(reports), teardown=teardown,
+                model_usage=teardown.get("model_usage"),
+                usage_gap=("native-metrics-only; absent fields may be normalized to zero; "
+                           "provider cost not reconciled" if teardown.get("model_usage")
+                           else "no-native-usage-observation"),
+            )
+            task["wall_seconds"] = task["finished_offset_seconds"] - task["started_offset_seconds"]
+            _write_host_only_json(task_path, {**task, "examiner_reports": reports})
+        return task, reports, observables, teardown
+
+    executor = ThreadPoolExecutor(max_workers=3, thread_name_prefix="cq-question")
+    try:
+        # map preserves the frozen order in the aggregate; workers refill slots
+        # immediately, independently of this iteration's first slow result.
+        results = list(executor.map(run_question, enumerate(questions)))
+    finally:
+        owner = getattr(args, "_retained_owner", None)
+        if owner is not None and owner.retained:
+            # bwrap --die-with-parent is tied to the launching OS thread.
+            # Keep these workers alive for the retained Consumers' lifetime.
+            owner.executors.append(executor)
+        else:
+            executor.shutdown(wait=True)
+    return results, time.monotonic() - started
+
+
 def _cq_execute_batch(
     args: argparse.Namespace,
     root: Path,
@@ -2431,6 +2496,8 @@ def _cq_execute_batch(
     output root; both default to the original single-root behavior.
     """
 
+    batch_started = time.monotonic()
+    batch_started_at = datetime.now(UTC).isoformat()
     artifacts = run_root if artifact_root is None else Path(artifact_root)
     if getattr(args, "_retention_enabled", False) and getattr(args, "_retained_owner", None) is None:
         from .evaluation_owner import EvaluationOwner
@@ -2487,25 +2554,33 @@ def _cq_execute_batch(
         # rules: its authorized project/Ontology/tool set bounds ``pre_binding``.
         packet = _cq_platform_packet(contract, hidden, binding, pre_binding, read_tools)
         if packet is not None and hidden:
-            teardown_platform: dict[str, object] = {}
-            typed_failure: dict[str, object] | None = None
-            try:
-                reports = _cq_run_platform_session(
-                    args, root, artifacts, profile, packet, reports,
-                    read_key, forwarder, examiner_observables, ontology_ids, teardown_platform,
-                )
-            except (ExaminerRuntimeBlocked, ChildRuntimeError, CodexRuntimeError) as exc:
-                typed_failure = _cq_typed_failure(exc)
-                failure_reason = _cq_failure_summary(typed_failure)
-                lifecycle_errors.append(
-                    {
-                        "stage": "platform-examiner-session",
-                        "reason": failure_reason,
-                        "failure": typed_failure,
-                    }
-                )
-            finally:
-                child_teardowns.append(teardown_platform)
+            results, consumer_wall = _cq_run_platform_questions(
+                args, root, artifacts, profile, contract, hidden, binding, pre_binding,
+                read_tools, read_key, forwarder, ontology_ids, report_dir,
+            )
+            tasks = [result[0] for result in results]
+            reports = [report for result in results for report in result[1]]
+            examiner_observables["by_question"] = {
+                str(task["question_id"]): obs for task, _, obs, _ in results
+            }
+            examiner_observables["receipts"] = [
+                receipt for _, _, obs, _ in results for receipt in obs.get("receipts", [])
+            ]
+            examiner_observables["persistence_failures"] = sum(
+                int(obs.get("persistence_failures") or 0) for _, _, obs, _ in results
+            )
+            child_teardowns.extend(result[3] for result in results)
+            failures = sorted(
+                (task for task in tasks if task.get("failure")),
+                key=lambda task: task["finished_offset_seconds"],
+            )
+            typed_failure = failures[0]["failure"] if failures else None
+            failure_reason = _cq_failure_summary(typed_failure) if typed_failure else None
+            for task in failures:
+                lifecycle_errors.append({
+                    "stage": "platform-examiner-session", "question_id": task["question_id"],
+                    "reason": _cq_failure_summary(task["failure"]), "failure": task["failure"],
+                })
             reported_ids = {
                 str(report["question_id"])
                 for report in reports
@@ -2522,7 +2597,8 @@ def _cq_execute_batch(
                 if str(question["question_id"]) in reported_ids
             ]
             sessions["platform_examiner"] = {
-                "mode": "single-continuous-batch",
+                "mode": "parallel-single-question", "concurrency_limit": 3,
+                "wall_seconds": consumer_wall, "tasks": tasks,
                 "reports": len(reports),
                 "missing_question_ids": [
                     str(question["question_id"])
@@ -2580,12 +2656,15 @@ def _cq_execute_batch(
         rejected_refs: list[dict[str, object]] = []
         evidence_recheck: dict[str, object] | None = None
         if packet is not None:
-            platform_read_responses, rejected_refs = _cq_collect_platform_read_responses(
-                reports,
-                examiner_observables.get("receipts") or [],
-                artifacts,
-                read_tools,
-            )
+            # p0 is local to one child. Resolve against that question's receipts
+            # before merging response projections, never a global ordinal map.
+            for question_id, obs in examiner_observables.get("by_question", {}).items():
+                responses, rejected = _cq_collect_platform_read_responses(
+                    [report for report in reports if report.get("question_id") == question_id],
+                    obs.get("receipts") or [], artifacts, read_tools,
+                )
+                platform_read_responses.update(responses)
+                rejected_refs.extend(rejected)
             response_projection = {
                 question_id: [
                     {key: entry[key] for key in _CQ_RESPONSE_PROJECTION_FIELDS}
@@ -2642,6 +2721,7 @@ def _cq_execute_batch(
             and evidence_bundle is not None
             and post_read_ok
             and not post_drift
+            and not getattr(getattr(args, "_retained_owner", None), "stopping", False)
         ):
             judgeable_set = set(judgeable)
             judge_questions = [
@@ -2869,6 +2949,9 @@ def _cq_execute_batch(
     )
     report["sessions"] = {
         **sessions,
+        "timing": {"started_at": batch_started_at,
+                   "finished_at": datetime.now(UTC).isoformat(),
+                   "wall_seconds": time.monotonic() - batch_started},
         "model_profile": profile_id,
         "batch_model_binding": pre_binding,
         "post_batch_model_binding": post_binding,

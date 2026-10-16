@@ -293,6 +293,12 @@ def _platform_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dic
     submitted: list[dict[str, Any]] = []
     for question in payload["questions"]:
         question_id = str(question["question_id"])
+        global WAIT_DIRECTIVE_USED
+        if "wait-consumer-control" in _directives(str(question["question"])) and not WAIT_DIRECTIVE_USED:
+            WAIT_DIRECTIVE_USED = True
+            break
+        if "exit-before-report" in _directives(str(question["question"])):
+            os._exit(9)
         if question_id in COMPLETED_QUESTIONS:
             continue
         needed = _needs(str(question["question"])) or scope[0]
@@ -336,7 +342,6 @@ def _platform_turn(payload: dict[str, Any], mounted: dict[str, Any]) -> list[dic
         }
         submitted.append(_submit_report("submit_examiner_report", report))
         COMPLETED_QUESTIONS.add(question_id)
-        global WAIT_DIRECTIVE_USED
         directive = "wait-judge-control" if "evidence_bundle" in payload else "wait-consumer-control"
         if directive in _directives(str(question["question"])) and not WAIT_DIRECTIVE_USED:
             WAIT_DIRECTIVE_USED = True
@@ -455,7 +460,7 @@ def _serve_turn(text: str) -> dict[str, Any]:
 
 def main() -> int:
     _spawn_mounted_mcp_servers()
-    thread_id = "thr-fixture-acceptance"
+    thread_id = "thr-fixture-acceptance-" + os.urandom(8).hex()
     turn_number = 0
     for line in sys.stdin:
         try:

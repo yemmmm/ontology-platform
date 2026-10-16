@@ -704,9 +704,15 @@ staged 校验器一律重算，布尔 gate-open 状态永不还原；CQ 冻结�
 ## 验收续跑（R3.0-015 S4）
 
 Judge 完整首回合超过原生输入上限时，Runner 在同一 attempt 按冻结顺序连续贪心分组，
-每组保留完整本题证据与当前 Consumer 报告，不传前组裁决；Consumer 仍为一个连续会话。
-报告须披露实际 Judge 组数、packet digest、失败与清理；宿主会话统计按 Consumer 加实际
-Judge 组数，不称单会话完整证据。全部所选题都有有效裁决才可完整 PASS；单题仍超限
+每组保留完整本题证据与当前 Consumer 报告，不传前组裁决。R4.3-027起，CQ验收每题
+使用独立Consumer会话，同批最多三题同时在途，完成后立即接续剩余题；Judge在Consumer
+阶段结束、绑定和证据重验后沿现有分组裁决。公开／隐藏仍按原同源锁分批，不通过启动
+三份整池绕过锁。每题回执句柄仅在其Consumer内解析，最终按冻结题目顺序汇总。
+报告须披露每题任务起止、packet/model binding digest、原生用量或缺测、失败与清理，
+以及实际Judge组数和批次墙钟；宿主会话统计按实际Consumer题数加实际Judge组数。
+任务进度在本attempt的`question-tasks/NNNN.json`，最终汇总在
+`sessions.platform_examiner.tasks`；批次耗时在`sessions.timing`。
+全部所选题都有有效裁决才可完整 PASS；单题仍超限
 逐题记录 `judge-input-too-large` 并跳过该题，继续其他合格题；不得删证据或缩小分母。
 所有题均超限时不创建 Judge，cleanup 仅记录实际调用的 child。
 

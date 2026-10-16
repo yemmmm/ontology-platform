@@ -975,6 +975,10 @@ def _v3_child_teardown_evidence(
 
     return {
         "child_stopped": bool(getattr(resource, "stopped", False)),
+        "thread_id": getattr(resource, "thread_id", None),
+        "model_usage": (resource.metrics.as_dict()
+                        if getattr(resource, "metrics", None) is not None
+                        and resource.metrics.token_usage_increments else None),
         "child_destroyed": bool(getattr(resource, "destroyed", False)),
         "report_sink_stopped": _sink_stopped(report_sink),
         "proxy_stopped": _stopped(proxy),
@@ -1132,6 +1136,7 @@ class _CodexChildResource:
             return
         while not self._pump_stop.is_set():
             output_stage = "read"
+            flow_confirmation = None
             try:
                 with agent.io_lock:
                     if self._pump_stop.is_set():
@@ -1170,6 +1175,13 @@ class _CodexChildResource:
                     method = value.get("method")
                     params = value.get("params")
                     item = params.get("item") if isinstance(params, Mapping) else None
+                    owner = self.spec.get("_evaluation_owner")
+                    if (owner is not None and method == "item/completed"
+                            and isinstance(item, Mapping) and item.get("type") == "agentMessage"):
+                        try:
+                            flow_confirmation = json.loads(item.get("text", "")).get("flow_confirmation")
+                        except (ValueError, AttributeError, TypeError):
+                            pass
                     lean_message = (
                         bool(self.spec.get("lean_examiner"))
                         and not getattr(self, "task_closed", False)
@@ -1208,6 +1220,13 @@ class _CodexChildResource:
                         adapter._notification(agent, value)
                     if getattr(agent, "runtime_failure", None) is not None:
                         return
+                # Never acquire the owner lock while holding the agent IO lock:
+                # owner polling drains retained agents in the opposite order.
+                if flow_confirmation is not None:
+                    try:
+                        owner.confirm(self, flow_confirmation)
+                    except (ValueError, AttributeError, TypeError):
+                        pass
             except CodexRuntimeError:
                 if not self._watchdog_stop.is_set() and getattr(agent, "runtime_failure", None) is None:
                     self._record_failure("runtime", "child-output-closed")
@@ -2292,9 +2311,9 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         private_root = str(resource.spec.get("private_root") or "")
         socket_root = str(resource.spec.get("_runtime_socket_root") or "")
         task_complete = False
-        if cooperative_owner is not None:
-            cooperative_owner.bind(self, resource)
         try:
+            if cooperative_owner is not None:
+                cooperative_owner.bind(self, resource)
             sink = getattr(resource, "report_sink", None)
             contract = getattr(sink, "batch_contract", None)
             if not isinstance(contract, V3BatchReportContract):
@@ -2416,9 +2435,8 @@ class CodexRuntimeAdapter(RuntimeAdapter):
                     destroy = getattr(resource, "destroy", None)
                     if callable(destroy):
                         destroy()
-                    if cooperative_owner is not None and cooperative_owner.current is resource:
-                        cooperative_owner.current = None
-                        cooperative_owner._save()
+                    if cooperative_owner is not None:
+                        cooperative_owner.release(resource)
             except Exception as exc:
                 # Legacy ``destroy`` stays unmodified; its failure is teardown
                 # evidence, never a reason to skip restoring the caller's
