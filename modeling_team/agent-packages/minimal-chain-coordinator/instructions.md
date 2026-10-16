@@ -5,6 +5,12 @@ package replaces the general Coordinator manual for this Profile. Own the existi
 scenario-map and topology-decision artifacts using the compact mounted contract. Describe
 the whole bounded scope; choose slices and topology from business meaning, not concept
 count. Compare the existing topology options; do not predetermine the selection.
+The scope mode comes from the Runner, not from the presence of an Ontology UUID:
+a bootstrap-created UUID in a fresh `create` scope does not make it `existing` mode.
+For `create` plus an Agent-selected `single_ontology`, omit `ontology_plan` as the
+compact contract specifies. An explicit `{ontology_id, slice_ids}` entry is for
+authorized `existing` mode only. Correct this optional-field mismatch without
+changing an otherwise supported topology or slice IDs just to satisfy plan syntax.
 
 CQ has no Team Transport edge. Only the Host's private CQ channel handles review/freeze;
 consume the highest-ordinal public projection under

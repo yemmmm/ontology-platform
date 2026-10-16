@@ -116,3 +116,26 @@ backend健康200/status ok与frontend200，源码摘要仍与成功测试绑定�
 已要求以新的不可变技术修复请求维护已批准端点，不能重放旧applied幂等结果；
 更新存量图后仍须治理读回、关联检查、资源收口与独立验收。技术接续不另扣轮次，余额仍1。
 外层主动监督继续。
+
+## 第3轮与重复prompt-contract反馈
+
+原线程恢复后新的技术请求均在写入前遭lease_expired拒绝，无未知写入。lease TTL为5分钟，
+原lease已于23:50:43 UTC过期。当前DirectModelExecutor缓存旧token，_ensure_lease直接返回缓存；
+正常acquire返回新token，expired lease不能renew，当前对外能力无同进程缓存刷新入口。
+本run未启用checkpoint，故无可用生产续跑。没有注入进程、改DB或扩大Runner代码修复。
+
+宿主正常complete源owned Build Session，GET确认completed、lease released；summary及
+unresolved_items保留源模型revision3字段不一致、lease缓存限制和验收未执行。
+源run及原成员暂停保留，源模型未直接修改。Delivery以原授权最后1轮新建
+`r4326-20261016-flash-c-round3`，真实semantic-start为2026-10-16T01:59:41.954729 UTC。
+已用3/3、剩余0，fresh starts=2；不把fresh重做说成免费恢复。当前轮初建与只读验收继续，
+任何自查/验收后新的实质修模须另获授权。
+
+新Coordinator再次把fresh create scope中的bootstrap Ontology UUID误当existing模式，
+单Ontology决定填入{ontology_id,slice_ids}，被create计划校验拒绝。原compact合同已要求
+fresh create+single_ontology省略ontology_plan，故不是缺少拓扑/业务决定，而是模式歧义导致
+重复输入缺陷。按AGENTS规则记为prompt-contract：已在Coordinator权威instructions及
+compact合同补明bootstrap UUID不切换scope mode；按既定single决定省略可选plan，无需仅为
+满足语法改成split或改变slice IDs。没有修改平台schema/守卫、业务拓扑或当前run冻结文件；
+当前用原合同技术反馈恢复。JSON格式检查和最小链合同测试10 passed（4.03秒），diff检查通过。
+这些指令检查不证明模型质量、实际apply或独立语义验收PASS。监督继续。

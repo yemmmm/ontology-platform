@@ -172,7 +172,7 @@
       "selecting single_ontology does not waive the comparison: the full three-option, six-dimension record is still required",
       "selected_option must be one of the listed options and rationale must be non-empty",
       "R4.0-029 existing topology: entries are mutually exclusive {ontology_id, slice_ids} for explicit authorized existing IDs or {name, slice_ids} for new creation. New entries require allow_new_ontologies and current business topology approval; do not adopt same-name resources or precreate a first Ontology. A single_ontology selection may supply exactly one existing-ID entry. Original create topology keeps its name-based at-least-two plan contract. Each slice must be covered; slices may overlap.",
-      "For fresh create scope, omit ontology_plan when selected_option=single_ontology; every other selection requires a name-based plan with at least two entries covering all actual slices. Existing-ID scope follows its explicit authorized binding rules above."
+      "For fresh create scope, omit ontology_plan when selected_option=single_ontology; every other selection requires a name-based plan with at least two entries covering all actual slices. A bootstrap-created Ontology UUID in a create scope does not switch the scope to existing mode and cannot justify an existing-ID plan entry. Correct that optional-field mismatch without changing an otherwise supported topology or slice IDs merely to satisfy syntax. Existing-ID scope follows its explicit authorized binding rules above."
     ],
     "optional_fields": {
       "ontology_plan": {
