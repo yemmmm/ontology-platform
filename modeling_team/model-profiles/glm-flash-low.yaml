@@ -1,0 +1,36 @@
+# User-authorized GLM Flash low binding for all production, Delivery and acceptance roles.
+schema_version: 1
+model_profile_id: glm-flash-low
+roles:
+  coordinator:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
+  modeling:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
+  protocol:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
+  competency-question:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
+  acceptance:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
+  source-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
+  platform-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
+  delivery:
+    model_provider: glm-direct
+    model: glm-5.3-flash
+    model_reasoning_effort: low
