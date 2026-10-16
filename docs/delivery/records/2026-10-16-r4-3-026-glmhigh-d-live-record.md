@@ -81,3 +81,13 @@ Runner写能力已封口，宿主额外启动admin凭据于04:43:51 UTC撤销。
 的质量／效率结论不改变。本轮中用户新增的
 [R4.3-027](../../requirements/requirements-v4.3.md#r4-3-027)仅登记，提交`c42dc86`；
 当前验收仍使用现有批内串行实现，未实施三个题目任务并行。
+
+## 2026-10-16 用户显式关闭
+
+用户后续要求“关闭本轮建模任务”。沿原Delivery发送`停止`，撤回生产／验收启动权限；
+原Team、两批验收Consumer和Delivery均已实际退出。正常清理记录保留：只读凭据撤销
+出现`ModelingReadError`，宿主按原key身份补充撤销；Runner已落盘`CLEANED`但自有
+MCP子进程及owner未退出，宿主精确SIGTERM后Delivery正常退出0。没有修改平台代码。
+最终核对本轮五把临时平台凭据均已撤销，无所属进程残留，两份验收报告SHA256未变；
+模型资源和证据保留。消耗仍为1轮，未使用2轮随本任务关闭，不再自动启动。
+实际关闭核查见[停止记录](../../../workspaces/minimal-chain-20261016-glmhigh-d/stop-completion.json)。
