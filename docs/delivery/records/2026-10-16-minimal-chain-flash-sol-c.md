@@ -1,5 +1,10 @@
 # 最小安装链新组三轮授权（Flash high / Delivery Sol medium）
 
+最新结果（2026-10-16 02:36:58 UTC）：当前保留模型完成独立只读回归，公开1/1、隐藏3/3，
+完整分母4/4通过，性质为`non-blind-regression`。实际用量4/3，越界1轮未获追认，
+余额0、fresh starts=2；生产已封存为只读，原start1保留PARTIAL。资源关闭和部署核验有外层
+实际补位，不记Delivery自主交付PASS。只读验收已完成，不再启动建模或修改。
+
 用户本轮原文：“开启新的一轮建模，授权三次，模型使用glm-5.3-flash high, deliver使用GPT-6.1-Sol medium”。
 沿用 [R4.3-026](../../requirements/requirements-v4.3.md#r4-3-026) 最小安装链范围；
 原组已用3/3，旧模型、冻结题及报告保留，新组不导入其候选或私有验收材料。
@@ -139,3 +144,68 @@ compact合同补明bootstrap UUID不切换scope mode；按既定single决定省�
 满足语法改成split或改变slice IDs。没有修改平台schema/守卫、业务拓扑或当前run冻结文件；
 当前用原合同技术反馈恢复。JSON格式检查和最小链合同测试10 passed（4.03秒），diff检查通过。
 这些指令检查不证明模型质量、实际apply或独立语义验收PASS。监督继续。
+
+## 第4轮越界与只读验收授权
+
+第3轮完成两批初建后，Modeling在治理读回及关联自查后又开始
+`correct-installed-at-endpoints`实质语义修模：请求时间02:14:40.979 UTC，
+02:15:00.320956 UTC实际applied，Batch `87956af3-b048-4a15-958d-8787d964604f`，
+Attempt `77815c22-fb22-420c-805a-6ae740753cc0`，模型revision由2到3。
+这不是免费技术纠错；实际已用4/3轮、越界1轮、余额0，fresh starts仍为2。
+此前已明确告知无第4轮授权，故保留为真实授权越界，不以同run、原意不变或pointer错误免责。
+
+外层发现后立即要求停止后续模型变更，向用户披露并保留所有实际写入及原事件。
+Modeling在delivery-8/9实际确认停止，无in-flight或unknown写入；没有删除、回滚或fresh start。
+其正常finish遇到lease_expired。外层通过正常REST完成所属Build Session
+`25c6dc83-a125-49b1-91de-d1bbd009bd77`，实际GET确认completed、lease released，
+三批均applied且无待定写入。真实补位回执追加在当前run
+`evidence/outer-host-authorization-hold-lifecycle.json`；不改写失败finish或伪称Delivery自主完成。
+
+用户随后明确答复“仅继续只读独立验收”，对应问题已限定不追认越界、不授权新建模或修改。
+此最新授权已传递Delivery及Coordinator/Modeling，并经既有issue-resolution通道允许只读收口。
+后续仅允许实际只读核查、事实交接及独立Consumer/Judge完整验收；发现缺口也不得修模。
+原start1继续暂停、保留PARTIAL。当前正式交接及独立报告尚待完成，不能把资源关闭、
+关联检查COMPLETE或指令accepted当作语义PASS。外层继续主动监督。
+
+Modeling只读终态在02:23:27 UTC被Coordinator接收。首次Host交接被
+`cq_batch_scope_unauthorized`拒绝；该粗粒度码并不证明冻结范围错误，当前实际缺少
+Coordinator自身的生产终态。外层只读定位runner中的pending_agents分支后交Delivery反馈，
+Coordinator补齐自己的事实终态，没有修改冻结题池、业务范围或模型。
+02:28:18.822787 UTC第二次交接正式成功：ready=true、pending_agents=[]、
+write_phase=read-only，handoff digest为
+`sha256:7c45370b15ceb09043bd89b85f641a2554b1c3f4362abad602785bb4b8f4a823`。
+02:30:21.502231 UTC启动独立只读验收`flash-c-round3-cq-acceptance-1`，
+绑定同一冻结池及正式handoff，GLM flash high、session_timeout=900。
+现有工具按可见性分组，先hidden3再public1；完整4题未齐前不得声明整体PASS。
+
+## 独立只读验收最终结果与停止
+
+两份独立Consumer/Judge原报告分别保留，不合并改写：
+
+- 隐藏3题：当前run的`acceptance-v3/reports/cq-batch-0001/attempt-0001/batch-report.json`，
+  三题verdict均pass，full_pass=true，执行分母3/3，无unexecuted题。
+  文件SHA256为`1b3f7e5d0e371790e0a599a4bfbc278bb5f03c8341a2dc9544178458ba76c844`；
+  canonical report_digest为`8d56ea64bd25c8d6873d20c62070d12166626750f125e83351554dc269bd36fa`。
+- 公开1题：`acceptance-v3/public-regression/cq-batch-0001/attempt-0001/batch-report.json`，
+  verdict为pass，full_pass=true，执行分母1/1，无unexecuted题。
+  文件SHA256为`19b3979abe15981c76dddb6f73d33c7b34ca48a4dbd8e0919897d5dcc609b0bd`；
+  canonical report_digest为`eb0805e14b321739707e4774b013bea55b1d9999087d9b0d8b5d87894f06c636`。
+
+两组绑定同一原冻结摘要、同一model_binding_digest
+`sha256:576bfb4b5d9afbb45df66e7ef9df8d0550ab4b9bab28f3b1131b3e8e82a578de`。
+证据重读无drift/unavailable，验收前后模型状态无漂移，生命周期errors/warnings均为空。
+完整4题均pass；原报告明确`non-blind-regression`，不能追称盲测。
+02:36:58.802667 UTC，既有complete_cq_acceptance正式获Runner接受，
+`evidence/cq-acceptance-complete.jsonl`记录acceptance_complete及cq_verdict=pass，
+绑定隐藏原报告文件digest；公开报告独立保留，不伪称该单份回执包含4题。
+
+当前run为READ_ONLY_WAIT，实际写凭据已失效、owned Session已terminal、模型revision3，
+三批完整applied，无pending/in-flight/unknown写入；原Team及Consumer按既有合同保留只读待命。
+原start1仍暂停PARTIAL，其模型字段不一致及租约缓存问题没有被后续成功覆盖。
+最终质量结果不追认第4轮，不证明授权合规、L2/L3或Delivery自主交付通过；额度仍4/3、余额0。
+本轮实际获准只读验收已完成，外层在此结束主动监督，没有另行声称后台会唤醒自己。
+
+耗时边界：本组首semantic-start至最终验收收口墙钟约3小时1分27秒，包含监督空档、等待、
+修复和测试，不等同语义有效时间。两次后端全套分别912.78秒及897.86秒；独立隐藏验收于
+02:30:21启动、公开验收于02:34:55启动、02:36:58收口。完整有效语义/等待/评审与各Agent
+重叠累计时间尚未重建，标为unknown，不作性能PASS；不再扩展平台或harness取代语义目标。
