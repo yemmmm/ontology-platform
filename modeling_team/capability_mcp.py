@@ -115,6 +115,12 @@ CAPABILITY_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
     "modeling_submit_model_changes": {
         "type": "object", "properties": {
             "modeling_id": {"type": "string"},
+            "placement_ref": {
+                "type": ["object", "null"], "required": ["artifact_ref", "path"],
+                "properties": {key: {"type": "string", "minLength": 1} for key in ("artifact_ref", "path")},
+                "additionalProperties": False,
+                "description": "Copy a confirmed ontology-plan placement_ref from the Host notification; optional for existing unambiguous placement.",
+            },
             "request": {"type": "object", "properties": {
                 "schema_version": {"type": "string", "enum": ["r4-3-025-model-changes/v1"]},
                 "candidate_ref": {"type": ["string", "null"]},
@@ -837,6 +843,7 @@ class RunnerCapabilityEndpoint:
                     "Submit explicit semantic changes against the current immutable unified candidate. "
                     "The program compiles, binds real execution context and calls apply_atomic once "
                     "per batch. No command plan, technical identity, dry-run or Protocol approval. "
+                    "Optional placement_ref selects one Host-confirmed frozen plan entry for fields-only creation. "
                     "Trust applied receipts; reconcile uncertain original requests."
                 ),
                 "modeling_inspect_associations": (

@@ -564,6 +564,7 @@ class TeamRunner:
         self._multi_slice_workflow = False
         self._multi_slice_artifact_paths: dict[str, Path] = {}
         self._multi_slice_gate_opened = False
+        self._direct_topology_snapshot: dict[str, Any] | None = None
         self._multi_slice_gate_feedback_fingerprints: set[str] = set()
         # R3.0-008B segment 1: staged modeling decision state.  Every flag stays
         # False for tasks without ``staged_modeling_decisions``.
@@ -1146,6 +1147,7 @@ class TeamRunner:
             # this directory (runtimes/codex.py), so it must exist up front.
             (root / "scenario-map").mkdir(mode=0o700, exist_ok=True)
             self._multi_slice_gate_opened = False
+            self._direct_topology_snapshot = None
             self._multi_slice_gate_feedback_fingerprints = set()
             multi_slice_gate.close("topology_missing_artifact")
             self._append_evidence(
@@ -3620,14 +3622,26 @@ class TeamRunner:
                     "and necessary business decisions with Coordinator; no per-batch technical approval. "
                 )
                 text += "\nCurrent authorized read scope (no credentials): " + json.dumps(self._cq_scope_binding(), sort_keys=True)
+                text += "\nCurrent mapping_reference_direction: " + str(getattr(self.scope, "mapping_reference_direction", None))
+                if self._direct_topology_snapshot is not None:
+                    text += "\nConfirmed placements: " + json.dumps(self._direct_placements(), sort_keys=True)
                 if role == "modeling":
                     text += (
+                        "Before writing, read current context for relevant authorized Ontologies. "
+                        "Discover existing connection points using multiple business expressions across "
+                        "the explicit full authorized ontology_ids set, then read selected actual IRIs "
+                        "in their own Ontology with context_detail=full. Compare definitions, RDF types, "
+                        "conditions, direction and relevant uses before reuse/create/connect/update. "
+                        "No match, lexical fallback or truncated previews do not establish absence. "
+                        "Keep important selected/excluded candidates, read revisions, reasons and "
+                        "unresolved gaps in existing notes. Read the mounted contract's existing_model_awareness. "
                         "Publish a complete immutable semantic delivery: use a unified candidate "
                         "for its registered item kinds, or explicit semantic fields for supported "
                         "Class/relation_type definitions. Do not create individuals solely to fit "
                         "the candidate kinds. For fields-only changes item_id=null; candidate_ref "
                         "may be null when no candidate item is selected. Then directly call "
-                        "modeling_submit_model_changes(modeling_id=modeling, request=...). The request "
+                        "modeling_submit_model_changes(modeling_id=modeling, request=..., placement_ref=... "
+                        "only when choosing an existing confirmed placement). The request "
                         "has schema_version=r4-3-025-model-changes/v1, candidate_ref, changes; each "
                         "change has change_id,action,resource_kind,item_id,target_ref,fields. "
                         "Use actual retained resource-entry references; never author command plans or "
@@ -5456,7 +5470,9 @@ class TeamRunner:
         return result
 
     def _direct_ontology_placement(self, candidate: Mapping[str, Any] | None,
-                                   request: Mapping[str, Any], bindings: Any) -> dict[str, str]:
+                                   request: Mapping[str, Any], bindings: Any,
+                                   selected_ontology: str | None = None) -> dict[str, str]:
+        from .direct_submission import SubmissionInputError
         scope = self._cq_scope_binding()
         ids = scope["ontology_ids"]
         placement: dict[str, str] = {}
@@ -5482,7 +5498,137 @@ class TeamRunner:
         for change in changes:
             if isinstance(change, Mapping) and isinstance(change.get("change_id"), str) and change.get("target_ref"):
                 placement[change["change_id"]] = bindings.resolve(change["target_ref"])["ontology_id"]
+        if selected_ontology is not None:
+            for index, change in enumerate(changes):
+                if not isinstance(change, Mapping) or not isinstance(change.get("change_id"), str):
+                    continue
+                key = change.get("item_id") or change["change_id"]
+                actual = placement.get(key) or placement.get(change["change_id"])
+                if actual is not None and actual != selected_ontology:
+                    raise SubmissionInputError("scope_binding_required", "placement_ref conflicts with the candidate or target ownership; select its confirmed plan entry", f"/changes/{index}")
+                if change.get("action") == "create" and change.get("item_id") is None:
+                    placement[change["change_id"]] = selected_ontology
         return placement
+
+    def _retain_direct_topology(self, decision: Mapping[str, Any]) -> None:
+        """Freeze the Host-applied plan; mutable Coordinator files are not references."""
+        if not self._unified_graph:
+            return
+        value = {"project_id": self.scope.project_id, "run_id": self.run.run_id,
+                 "topology": dict(decision),
+                 "ontology_plan_ids": list(getattr(self.scope, "ontology_plan_ids", None) or self.scope.ontology_ids)}
+        raw = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
+        digest = hashlib.sha256(raw).hexdigest()
+        ref = f"value-semantics/submission-intents/topology-{digest}.json"
+        path = self.run.root / ref
+        if not path.exists():
+            self._atomic_json(path, value)
+        self._direct_topology_snapshot = {"artifact_ref": ref, "digest": digest, "value": value}
+
+    def _direct_placements(self) -> list[dict[str, Any]]:
+        snapshot = self._direct_topology_snapshot
+        if snapshot is None:
+            return []
+        value = snapshot["value"]
+        return [{"placement_ref": {"artifact_ref": snapshot["artifact_ref"], "path": f"/topology/ontology_plan/{index}"},
+                 "slice_ids": entry.get("slice_ids", []), "ontology_id": ontology_id}
+                for index, (entry, ontology_id) in enumerate(zip(
+                    value["topology"]["ontology_plan"], value["ontology_plan_ids"]))]
+
+    def _resolve_direct_placement(self, reference: Any) -> dict[str, Any] | None:
+        from .direct_submission import SubmissionInputError
+
+        if reference is None:
+            return None
+        snapshot = self._direct_topology_snapshot
+        message = "Use the current Host multi-slice-ontology-plan placement_ref; request a refreshed notification if the confirmed plan changed"
+        if not isinstance(reference, Mapping) or snapshot is None:
+            raise SubmissionInputError("scope_binding_required", message, "/placement_ref")
+        selected = next((entry for entry in self._direct_placements() if entry["placement_ref"] == reference), None)
+        path = self.run.root / snapshot["artifact_ref"]
+        try:
+            actual = json.loads(path.read_bytes())
+            topology = json.loads((self.run.root / "scenario-map/topology-decision.json").read_bytes())
+        except (OSError, ValueError) as exc:
+            raise SubmissionInputError("scope_binding_required", message, "/placement_ref") from exc
+        scope = self._cq_scope_binding()
+        if (selected is None or path.is_symlink() or actual != snapshot["value"]
+                or topology != actual["topology"] or actual["run_id"] != self.run.run_id
+                or actual["project_id"] != scope["project_id"]
+                or actual["ontology_plan_ids"] != list(self.scope.ontology_plan_ids or self.scope.ontology_ids)
+                or selected["ontology_id"] not in scope["ontology_ids"]):
+            raise SubmissionInputError("scope_binding_required", message, "/placement_ref")
+        return {"reference": dict(reference), "topology_digest": snapshot["digest"],
+                "ontology_id": selected["ontology_id"]}
+
+    def _prepare_direct_mapping_references(self, batches: list[dict[str, Any]],
+                                           source_map: Mapping[str, Any]) -> None:
+        """Prepare only declared Mapping references, using confirmed dependency direction."""
+        from .direct_submission import SubmissionInputError
+
+        mapping_kinds = {"mapping", "table_mapping", "join_mapping", "enum_meaning", "metric_definition"}
+        requirements: list[tuple[str, str, str]] = []
+        owners_by_item = {item["client_item_id"]: batch["ontology_id"]
+                          for batch in batches for item in batch["items"]}
+        for index, batch in enumerate(batches):
+            for item in batch["items"]:
+                if item["resource_kind"] not in mapping_kinds or item["command_kind"].startswith("delete_"):
+                    continue
+                source = source_map[str(index)][item["client_item_id"]]
+                for ref in source.get("resource_references", []):
+                    target = ref["ontology_id"]
+                    if target != batch["ontology_id"]:
+                        requirements.append((batch["ontology_id"], target, ref["path"]))
+                for pointer, slot in source.get("reference_slots", {}).items():
+                    target = owners_by_item.get(slot["depends_on"])
+                    if target and target != batch["ontology_id"]:
+                        path = (source.get("field_map", {}).get(pointer) or [source["json_pointer"]])[0]
+                        requirements.append((batch["ontology_id"], target, path))
+        if not requirements:
+            return
+        try:
+            current_refs = {owner: set(self.scope._ok("GET", f"/api/ontologies/{owner}").get("reference_ontology_ids") or [])
+                            for owner in {owner for owner, _, _ in requirements}}
+        except (PlatformScopeError, OSError) as exc:
+            raise SubmissionInputError("mapping_reference_scope_required", "Read the affected owner's current Mapping references, then retry: " + str(exc), requirements[0][2]) from exc
+        requirements = [(owner, target, path) for owner, target, path in requirements if target not in current_refs[owner]]
+        if not requirements:
+            return
+        path = requirements[0][2]
+        message = "Confirm the required owner-to-dependency cross_slice_dependencies with Coordinator using this run's mapping_reference_direction, then retry the same goal"
+        direction = getattr(self.scope, "mapping_reference_direction", None)
+        if direction not in {"from_slice_depends_on_to_slice", "to_slice_depends_on_from_slice"}:
+            raise SubmissionInputError("mapping_reference_scope_required", message + "; this historical Task has no bound direction", path)
+        try:
+            decision = json.loads((self.run.root / "scenario-map/topology-decision.json").read_bytes())
+            scenario = json.loads((self.run.root / "scenario-map/scenario-map.json").read_bytes())
+            plan = decision["ontology_plan"]
+            ids = self.scope.ontology_plan_ids or self.scope.ontology_ids
+            if len(plan) != len(ids) or not set(ids).issubset(self._cq_scope_binding()["ontology_ids"]):
+                raise ValueError("Current confirmed plan binding is unavailable")
+            if self._direct_topology_snapshot is not None and (
+                decision != self._direct_topology_snapshot["value"]["topology"]
+                or list(ids) != self._direct_topology_snapshot["value"]["ontology_plan_ids"]
+            ):
+                raise ValueError("Refresh the Host confirmed topology binding")
+            slices = {slice_id: oid for entry, oid in zip(plan, ids) for slice_id in entry["slice_ids"]}
+            confirmed = set()
+            for dependency in scenario["cross_slice_dependencies"]:
+                left, right = dependency["from_slice"], dependency["to_slice"]
+                if direction == "to_slice_depends_on_from_slice":
+                    left, right = right, left
+                confirmed.add((slices[left], slices[right]))
+            for owner, target, ref_path in requirements:
+                if (owner, target) not in confirmed:
+                    raise SubmissionInputError("mapping_reference_scope_required", message, ref_path)
+            self.scope.apply_mapping_reference_ontologies(
+                scenario, plan, dependent_direction=direction,
+                owner_ids={owner for owner, _, _ in requirements},
+            )
+        except SubmissionInputError:
+            raise
+        except (OSError, ValueError, KeyError, PlatformScopeError, TimeoutError) as exc:
+            raise SubmissionInputError("mapping_reference_scope_required", message + ": " + str(exc), path) from exc
 
     def _handle_direct_modeling(self, operation: str, args: Mapping[str, Any]) -> dict[str, Any]:
         from .direct_execution import DirectModelExecutor
@@ -5513,20 +5659,32 @@ class TeamRunner:
                 raise SubmissionInputError("cq_freeze_pending", "The approved public competency-question projection is not frozen")
             scope = self._cq_scope_binding()
             candidate = candidate_snapshot(self.run.root, request.get("candidate_ref"))
+            placement_binding = self._resolve_direct_placement(args.get("placement_ref"))
+            topology_digest = self._direct_topology_snapshot["digest"] if self._direct_topology_snapshot else None
             retained = retained_submission_plan(self.run.root, request, candidate,
-                                                scope["project_id"], scope["ontology_ids"])
+                                                scope["project_id"], scope["ontology_ids"], placement_binding, topology_digest)
             if retained is not None:
                 plan, digest = retained
                 reference = f"value-semantics/submission-intents/submission-{digest}.json"
                 batches, source_map = plan["batches"], plan["source_map"]
             else:
+                from app.core.config import Settings
+                from app.services.semantic_export import namespace_from_settings
+
+                settings = Settings(_env_file=self.repository_root / "backend/.env")
                 bindings = ObservedModelBindings(
                     self.run.root, self.acceptance._platform_read_artifacts,
                     scope["project_id"], scope["ontology_ids"], self._direct_platform_read,
+                    namespace=namespace_from_settings(settings),
                 )
-                placement = self._direct_ontology_placement(candidate, request, bindings)
+                placement = self._direct_ontology_placement(candidate, request, bindings,
+                    placement_binding["ontology_id"] if placement_binding else None)
                 snapshot = {"request": dict(request), "candidate": candidate,
                             "ontology_placement": placement, "project_id": scope["project_id"]}
+                if placement_binding is not None:
+                    snapshot["placement_binding"] = placement_binding
+                if topology_digest is not None:
+                    snapshot["topology_digest"] = topology_digest
                 digest = hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True,
                                                   separators=(",", ":")).encode()).hexdigest()
                 reference = f"value-semantics/submission-intents/submission-{digest}.json"
@@ -5536,8 +5694,7 @@ class TeamRunner:
                 inputs_path = path.with_name(f"submission-{digest}-inputs.json")
                 if not inputs_path.exists():
                     self._atomic_json(inputs_path, snapshot)
-                from app.core.config import Settings
-                capacity = Settings(_env_file=self.repository_root / "backend/.env").modeling_batch_max_items
+                capacity = settings.modeling_batch_max_items
                 for change in request.get("changes", []):
                     if (isinstance(change, Mapping) and change.get("action") == "delete"
                             and change.get("resource_kind") == "entity" and change.get("target_ref")):
@@ -5578,6 +5735,19 @@ class TeamRunner:
                     self.scope, self.run.root, self.run.run_id, self.run.configuration.task.task_id,
                     submit=self.staged_batch_forwarder, read=self._direct_platform_read, observe_result=observe,
                 )
+            # Reuse the existing write fence for the original placement too:
+            # changing a plan reference cannot evade an uncertain prior apply.
+            for inputs in (self.run.root / "value-semantics/submission-intents").glob("*-inputs.json"):
+                previous = json.loads(inputs.read_bytes())
+                if (previous.get("request") == request and previous.get("candidate") == candidate
+                        and previous.get("project_id") == scope["project_id"]
+                        and (previous.get("placement_binding") != placement_binding
+                             or previous.get("topology_digest", topology_digest) != topology_digest)):
+                    intents, receipts = self._direct_model_executor._load_records()
+                    for owner in set(previous["ontology_placement"].values()):
+                        if self._direct_model_executor._unresolved_ontology_write(owner, intents, receipts):
+                            raise SubmissionInputError("ontology_write_frozen", "Reconcile the original submission at its original placement before selecting another placement", "/placement_ref")
+            self._prepare_direct_mapping_references(batches, source_map)
             from .direct_binding import execute_bound_model_changes
             result = execute_bound_model_changes(self._direct_model_executor, batches, source_map)
             result["submission_ref"], result["submission_digest"] = reference, digest
@@ -6670,6 +6840,7 @@ class TeamRunner:
             recoverable_failure(str(exc))
             return
         self._refresh_platform_binding()
+        self._retain_direct_topology(decision)
         self._append_evidence(
             "multi-slice-gate",
             {
@@ -6747,6 +6918,8 @@ class TeamRunner:
             "schema_version": "r3-0-006-multi-slice-ontology-plan/v1",
             "run_id": self.run.run_id,
             "ontology_ids": list(ontology_ids),
+            "placements": self._direct_placements(),
+            "mapping_reference_direction": getattr(self.scope, "mapping_reference_direction", None),
             "source_of_truth": (
                 "get_project_build_context lists every planned Ontology and is "
                 "authoritative; this delivery is a supplementary notification."

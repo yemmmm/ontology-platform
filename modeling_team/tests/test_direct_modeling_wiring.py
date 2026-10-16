@@ -180,3 +180,29 @@ def test_unified_profile_prepares_without_protocol_but_legacy_keeps_its_dependen
         task_path.write_text(yaml.safe_dump(task))
         with pytest.raises(TeamConfigurationError, match="Protocol"):
             load_multi_slice_team_configuration(profile_path, task_path, root=root)
+
+
+def test_current_packages_actually_load_existing_model_awareness_and_explicit_placements(tmp_path):
+    from modeling_team.contracts import load_multi_slice_team_configuration
+    from modeling_team.tests.test_r4326_minimal_chain import PROFILE, TASK, ROOT
+    compact = load_multi_slice_team_configuration(PROFILE, TASK, root=ROOT)
+    package = next(agent.package for agent in compact.profile.agents if agent.package.role == 'modeling')
+    assert package.required_skills[0].parent.name == 'minimal-chain-modeling'
+    assert 'Existing-model awareness' in package.required_skills[0].read_text()
+    staged = _UnifiedRunner(tmp_path)
+    staged.prepare()
+    try:
+        owner = staged.runner
+        package = next(agent.package for agent in owner.run.configuration.profile.agents if agent.package.role == 'modeling')
+        assert any('Existing-model awareness' in path.read_text() for path in package.required_skills)
+        text = owner._task_text('modeling')
+        assert 'multiple business expressions' in text and 'context_detail=full' in text
+        assert 'mapping_reference_direction' in text
+        catalog = owner.acceptance.capability_endpoint('modeling').handle({'id': 1, 'token': owner.acceptance.capability_token('modeling'), 'method': 'tools/list'})
+        schema = next(t['inputSchema'] for t in catalog['result']['tools'] if t['name'] == 'modeling_submit_model_changes')
+        assert 'placement_ref' in schema['properties']
+        assert 'placement_ref' not in schema['required']
+        assert set(schema['properties']['request']['properties']['changes']['items']['required']) == {
+            'change_id', 'action', 'resource_kind', 'item_id', 'target_ref', 'fields'}
+    finally:
+        staged.cleanup()

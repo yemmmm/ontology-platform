@@ -5,6 +5,54 @@ description: Model the two-concept installation-location scope in the R4.3-026 T
 
 # Minimal chain modeling
 
+## Existing-model awareness for current unified Tasks
+
+Before writing into an existing model, read get_modeling_context for the relevant authorized
+Ontologies: scope, revision, read/write and index/degradation state. Form a bounded working overview
+from business-related candidates and surrounding summaries, not counts, names, old memory or the
+first list page. Discover connection points with multiple business expressions for the new objects,
+actions, roles, conditions and dependencies; explicitly pass the full authorized ontology_ids set
+for initial discovery (omitting it searches only the primary Ontology). Read selected actual IRIs
+with context_detail=full in each candidate's own Ontology; inspect definitions, RDF types,
+incoming/outgoing relationships and necessary intermediate paths. Continue match_cursor and
+context_cursor separately with unchanged scope/query/config, or start a fresh query for a new
+expression/anchor. Fixed read models have no invented cursor. Truncation, lexical fallback,
+forbidden and no match do not prove global absence; rephrase or disclose the precise unread gap.
+
+Compare meaning, concept versus instance, scope, conditions, direction and unknowns before deciding
+reuse, create and connect, modify, or clarify. Similarity is discovery evidence, never equivalence
+or a reason to add a business edge. Reuse matching identities and suitable relations, avoid synonym
+duplicates, and do not force unrelated new concepts into the old graph. Before modifying shared
+meaning inspect relevant direct uses and known indirect dependencies; report incomplete impact.
+Refresh only affected judgments after revision/permission changes. Record business intent, key read
+references/revisions, important selected/excluded candidates and reasons, actual reused/modified
+identities and gaps in existing handoff/map notes. Stop discovery when necessary decisions have
+support; no fixed search count, full-graph preload or extra approval. If everything is reused with
+no change, follow the existing no-write handoff instead of manufacturing an update.
+
+For an old resource with no current-run creation receipt, bind a concrete observed read-model item
+at /structuredContent/data/items/N or a full Context Query primary match at
+/structuredContent/data/primary_matches/N, using that response's platform_ref.artifact_path.
+A preview neighbor or statement is not a concrete Class binding. The program checks scope,
+revision, current full RDF type and canonical native namespace before recovering execution identity;
+the Agent never decodes an IRI or reads an old run. External IRIs remain usable in supported IRI
+slots; an ID-slot gap is repairable, never grounds to copy an old node. After a new write advances
+the revision, reread affected old resources by their exact IRI before binding them. Successful
+current-run resource_bindings are still selected by change_id/item_id, never array order.
+For multi-Ontology fields-only creates, copy optional placement_ref from the Host's confirmed
+multi-slice-ontology-plan notification; it selects one frozen plan entry for this request. It is
+outside the six-field changes and fields, and must agree with existing candidate/target ownership.
+Different owners require separate submissions; relation endpoints do not choose the relation owner.
+Cross-graph Mapping references also require confirmed cross_slice_dependencies under the Host's
+actual mapping_reference_direction: report the concrete owner/dependency need to Coordinator.
+The Host prepares only affected owners and preserves existing references. Read scope and placement
+alone do not prove Mapping reference readiness; mapping_reference_scope_required is repairable in
+the same goal. Ordinary relation_type endpoints do not acquire this Mapping gate.
+After a valuable stage check new business and connection semantics with public questions, adding
+affected-old-business regression when shared meanings change. Trust applied receipts. Independent
+final semantic acceptance remains separate, and real runs still require existing authorization.
+
+
 Read the complete sole business source and distinguish supplied meanings from absent facts.
 Express the two concepts, their distinction, installation direction/meaning and supported
 unknowns faithfully. Technical node/property counts are representation choices, not new
@@ -38,8 +86,8 @@ the raw receipt `items` order: never turn a binding's array index into a receipt
 For an older result without that reference, read the actual retained receipt, find the intended
 definition's `client_item_id`, and use its actual item path. Before relation submission, match
 each source/target concept to the named change and actual resource identity and compare the
-direction with the approved definition. The compiler must receive the UUID from that exact
-receipt item. A read-model `id`/`iri`/`class_iri` is a semantic IRI and must stay in an IRI slot;
+direction with the approved definition. For current-run created resources, the compiler receives the identity from that exact
+receipt item. Old resources instead use the current governed read binding described above. A read-model `id`/`iri`/`class_iri` is a semantic IRI and must stay in an IRI slot;
 never URL-decode it, derive a UUID from it, or use it as a resource ID. If a later applied batch
 has advanced the current revision, retain the exact earlier applied receipt and let the governed
 current read confirm that its exact resource IRI and label are still visible before reusing its

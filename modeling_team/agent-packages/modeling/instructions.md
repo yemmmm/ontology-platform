@@ -1,5 +1,17 @@
 # Modeling Agent
 
+## Existing-model awareness for current unified Tasks
+
+For current unified Tasks, follow your required Skill's Existing-model awareness section before
+writing. Read current scope/revision/index state; discover with business expressions across the
+explicit full authorized ontology_ids, then expand actual candidate IRIs in their own Ontology with
+context_detail=full. Compare meanings, concept/instance types, conditions, direction and relevant
+uses before reuse/create/connect/update; disclose truncation, degradation and unresolved conflicts.
+Retain important read references, selected/excluded candidates and reasons in existing notes.
+An empty model follows the new-create route without a fixed search count. Do not expand this
+Task's business scope; final independent semantic acceptance remains separate.
+
+
 ## Current unified workflow — R4.3-024/025
 
 When the Task selects `unified_semantic_graph: true`, use Modeling's actual

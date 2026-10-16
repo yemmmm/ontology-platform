@@ -569,6 +569,7 @@ class _Context:
     ontology_by_item: Mapping[str, str]
     resolve_binding: Callable[[Mapping[str, str]], Mapping[str, Any] | None]
     bindings: dict[str, Mapping[str, Any]] = field(default_factory=dict)
+    resource_references: dict[str, list[dict[str, Any]]] = field(default_factory=dict)
     errors: list[dict[str, Any]] = field(default_factory=list)
 
     def item_path(self, item_id: str | None, suffix: str = "") -> str | None:
@@ -951,7 +952,7 @@ def _binding_value(
         if not _is_nonempty(resource_id):
             ctx.error(
                 "binding_identity_missing",
-                f"verified binding must expose a resource_id for {field}",
+                f"Current read cannot provide a native execution identity for {field}; use a current native resource read or applied receipt, never derive an ID from an external IRI",
                 change=change,
                 field="target_ref" if field == "target_ref" else field,
             )
@@ -1015,7 +1016,7 @@ def _resolve_existing_ref(
         try:
             binding = ctx.resolve_binding(ref)
         except Exception as exc:  # trusted adapter boundary
-            ctx.error("binding_lookup_failed", f"verified resource reference could not be loaded: {exc}", change=change, field=path, candidate_path=_candidate_input_path(ctx, change, path))
+            ctx.error(getattr(exc, "code", "binding_lookup_failed"), f"verified resource reference could not be loaded: {exc}", change=change, field=path, candidate_path=_candidate_input_path(ctx, change, path))
             return None, set()
         if not isinstance(binding, Mapping):
             ctx.error("binding_not_found", "existing_resource_ref has no verified resource binding", change=change, field=path, candidate_path=_candidate_input_path(ctx, change, path))
@@ -1025,6 +1026,10 @@ def _resolve_existing_ref(
     if not _check_binding_kind(binding, expected_kinds, ctx, change, path):
         return None, set()
     resolved = _binding_value(binding, output, ctx, change, path)
+    ctx.resource_references.setdefault(str(change["change_id"]), []).append({
+        "ontology_id": binding.get("ontology_id"), "resource_iri": binding.get("resource_iri"),
+        "path": _source_pointer(ctx, change, path), "reference": deepcopy(dict(ref)),
+    })
     return resolved, set()
 
 
@@ -1065,6 +1070,11 @@ def _resolve_definition(
         ):
             return None, set()
         resolved = _binding_value(binding, output, ctx, target, path)
+        if isinstance(binding, Mapping):
+            ctx.resource_references.setdefault(str(change["change_id"]), []).append({
+                "ontology_id": binding.get("ontology_id"), "resource_iri": binding.get("resource_iri"),
+                "path": _source_pointer(ctx, change, path), "reference": deepcopy(target.get("target_ref")),
+            })
         return resolved, set()
     ctx.error("invalid_definition_target", f"definition_ref {ref_id!r} does not identify a resource-producing change", change=change, field=path, candidate_path=ctx.item_path(ref_id))
     return None, set()
@@ -1366,6 +1376,7 @@ def _resolve_declared_mapping_value(
             change,
             child_source,
             require_wrapper=True,
+            expected_kinds={"class"} if key in {"source_class_id", "target_class_id", "parent_class_ids"} else None,
             output=output,
         )
         dependencies.update(found)
@@ -2378,6 +2389,7 @@ def _compile_plan(
         if build is not None and not ctx.errors:
             nodes.append({"change": change, "build": build, "ontology_id": ontology_id})
             source = source_entries[str(change["change_id"])]
+            source["resource_references"] = ctx.resource_references.get(str(change["change_id"]), [])
             source["field_map"] = deepcopy(build.field_map)
             source["reference_slots"] = deepcopy(build.reference_slots)
             source["deferred_property_keys"] = deepcopy(build.deferred_property_keys)

@@ -352,7 +352,7 @@ R4.3-020的Delivery CLI默认`model_context_window: 544000`及
 
 | 工具 | 调用者与输入 | 输出及边界 |
 | --- | --- | --- |
-| `modeling_submit_model_changes` | unified Modeling；modeling_id、request（schema_version、candidate_ref、显式 changes） | 程序生成命令、填真实上下文、逐批单次原子 apply；保留原 item／JSON Pointer 错误定位、真实资源／修订／索引、成功去重及不确定身份对账；不裁决业务语义 |
+| `modeling_submit_model_changes` | unified Modeling；modeling_id、request（schema_version、candidate_ref、显式 changes）、可选 placement_ref | 程序生成命令、填真实上下文、逐批单次原子 apply；保留原 item／JSON Pointer 错误定位、真实资源／修订／索引、成功去重及不确定身份对账；不裁决业务语义 |
 | `modeling_inspect_associations` | unified Modeling；modeling_id、可选 focus_iris | 在本 run 实际获准 Ontology 集合完整治理分页读取，调用既有关联辅助；部分、权限或修订漂移保持局部结论，不开放任意 SPARQL |
 | `modeling_finish_changes` | unified Modeling；modeling_id | 完成程序持有的 Build Session 并释放租约；不等同最终语义验收 |
 | `protocol_execute_approved_plans` | 保留计划能力；有序 plan_refs、ontology lease_tokens、mode=apply_atomic | apply 请求内校验；新模型 dry-run 和翻译／dry proof 前置门已退役。当前统一图正常写入使用 Modeling 直接能力；历史计划仍可解释 |
@@ -367,6 +367,28 @@ item_id=null，创建时target_ref=null。工具宣告已有合法枚举及语�
 操作组合、引用和内容校验，可修正内层错误返回原字段诊断，不变成不透明的认证拒绝。
 `semantic_definition`仅使用现有六类字段，不支持exclusions；业务排除条件保留在有依据
 的语义说明中。后续关系端点复制实际回执的resource_bindings引用，不能按数组位置猜。
+
+028增量路径在写入前按显式获准Ontology集合进行业务表达检索，再按候选所属图及实际IRI
+补读完整定义、RDF类型、有向关系和必要路径；无匹配、词面降级或截断不证明不存在。
+旧资源可引用本run真实保留的读模型`/structuredContent/data/items/N`或Context Query
+`/structuredContent/data/primary_matches/N`，artifact_ref取platform_ref.artifact_path。
+程序在原scope／revision／当前full类型核对后，使用当前Settings原生命名空间及原resource
+编码方法往返一致地恢复执行ID；外部IRI不猜ID，仍可用于支持IRI的字段。Agent不解码
+IRI或读取旧run。新写入推进修订后，刷新受影响的旧读取；成功回执仍沿原合同复用。
+
+`placement_ref={artifact_ref,path}`仅选择Host已确认并冻结的本run拓扑条目，由
+`multi-slice-ontology-plan`通知及已有确认后的任务提示提供；不改变request版本或六字段
+change，不在fields内填Ontology ID。一个请求选一个归属；与candidate／target真实归属
+冲突、快照变化或当前plan绑定失效返回可修正`scope_binding_required`。归属和确认plan
+身份参与原submission快照和去重；不允许换placement绕过原不确定写入。
+
+跨图Mapping另沿所属图reference_ontology_ids合同；未就绪时需Coordinator确认具体
+cross_slice_dependencies及Host已绑定mapping_reference_direction。029新任务省略该选项
+时固定采用`from_slice_depends_on_to_slice`，显式反向只允许
+`to_slice_depends_on_from_slice`。开门后新确认的依赖可在原run直接Mapping提交前准备，
+仅合并受影响owner的引用且保留旧引用；缺确认或配置失败返回带原字段路径的
+`mapping_reference_scope_required`，可修正后继续。普通relation_type不增加此Mapping门。
+
 
 当前Modeling／Consumer读目录仅宣告合法资源类型及hybrid／lexical模式；省略筛选包含
 概念定义，专用rule／rules读取已退役。内部slice ID不是默认业务检索词；从问题业务

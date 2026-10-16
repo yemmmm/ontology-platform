@@ -552,6 +552,9 @@ class _MappingScopeClient:
         self.calls.append((method, path, body))
         if method == "GET" and path == "/api/projects/project/ontologies":
             return 200, [{"id": oid} for oid in self.ontology_ids]
+        if method == "GET" and path.startswith("/api/ontologies/"):
+            ontology_id = path.split("/")[-1]
+            return 200, {"id": ontology_id, "reference_ontology_ids": self.references.get(ontology_id, [])}
         if method == "PATCH" and path.startswith("/api/ontologies/"):
             ontology_id = path.split("/")[-1]
             self.references[ontology_id] = body["reference_ontology_ids"]
@@ -598,3 +601,18 @@ def test_platform_scope_activates_only_selected_mapping_dependencies_and_reuses_
     ) == selected
     assert client.references == {"ontology-a": ["ontology-b"]}
     assert all(method in {"GET", "PATCH"} for method, _, _ in client.calls)
+
+
+def test_mapping_activation_merges_existing_references_and_limits_owners():
+    client = _MappingScopeClient()
+    client.references = {'ontology-a': ['old-authorized-at-another-time'], 'ontology-b': ['keep-b']}
+    scope = PlatformScope('unused', 'run', lambda: ('admin', 'aid'), lambda _: True, client,
+        admin_key='admin', project_id='project', ontology_ids=client.ontology_ids)
+    plan = [{'slice_ids': ['a']}, {'slice_ids': ['b']}, {'slice_ids': ['c']}]
+    scenario = {'cross_slice_dependencies': [
+        {'from_slice': 'a', 'to_slice': 'b', 'direction': 'confirmed', 'connection_points': ['x']},
+        {'from_slice': 'b', 'to_slice': 'c', 'direction': 'confirmed', 'connection_points': ['y']}]}
+    scope.apply_mapping_reference_ontologies(scenario, plan,
+        dependent_direction='from_slice_depends_on_to_slice', owner_ids={'ontology-a'})
+    assert client.references == {'ontology-a': ['old-authorized-at-another-time', 'ontology-b'], 'ontology-b': ['keep-b']}
+    assert [path for method, path, _ in client.calls if method == 'PATCH'] == ['/api/ontologies/ontology-a']

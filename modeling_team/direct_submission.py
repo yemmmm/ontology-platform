@@ -41,9 +41,10 @@ def json_pointer(value: Any, pointer: str) -> Any:
 
 class ObservedModelBindings:
     def __init__(self, root: Path, observations: Mapping[str, Any], project_id: str,
-                 ontology_ids: list[str], read: Any) -> None:
+                 ontology_ids: list[str], read: Any, namespace: Any = None) -> None:
         self.root, self.observations = root, observations
         self.project_id, self.ontology_ids, self.read = project_id, ontology_ids, read
+        self.namespace = namespace
         self._snapshots: dict[str, Any] = {}
         self._delete_bindings: dict[str, dict[str, Any]] = {}
 
@@ -180,6 +181,66 @@ class ObservedModelBindings:
             matches = visible.get("data", {}).get("primary_matches", [])
             if visible.get("ok") is not True or not any(item.get("iri") == iri for item in matches):
                 raise SubmissionInputError("forbidden", "The referenced resource is not currently readable in the authorized scope")
+            visible_revision = next((item.get("model_revision")
+                                     for item in visible.get("data", {}).get("scope", {}).get("ontologies", [])
+                                     if item.get("ontology_id") == ontology_id), revision)
+            if visible_revision != revision:
+                raise SubmissionInputError("resource_revision_conflict", "The resource changed during binding; refresh its governed read and recheck the affected intent", reference["path"])
+            if self.namespace is not None and "resource_id" not in result:
+                # Search categories (e.g. concept) are hints. Only the actual
+                # current RDF type can authorize recovering a native identity.
+                from app.services.modeling_handlers import CREATE_RESOURCES
+
+                types = {rdf_type for item in matches if item.get("iri") == iri
+                         for rdf_type in item.get("data", {}).get("rdf_types", [])}
+                vocab = self.namespace.vocab
+                type_kinds = {
+                    "http://www.w3.org/2002/07/owl#Class": "class",
+                    "http://www.w3.org/2000/01/rdf-schema#Class": "class",
+                    "http://www.w3.org/2002/07/owl#NamedIndividual": "entity",
+                    "http://www.w3.org/2002/07/owl#DatatypeProperty": "property",
+                    "http://www.w3.org/2002/07/owl#AnnotationProperty": "property",
+                    "http://www.w3.org/2002/07/owl#ObjectProperty": "relation_type",
+                    **{str(vocab[name]): kind for name, kind in {
+                        "Operation": "operation", "SemanticMapping": "mapping",
+                        "TableMapping": "table_mapping", "JoinMapping": "join_mapping",
+                        "EnumValueMeaning": "enum_meaning", "MetricDefinition": "metric_definition",
+                    }.items()},
+                }
+                observed_types = set(entry.get("data", {}).get("rdf_types", [])) & type_kinds.keys()
+                if observed_types and observed_types != types & type_kinds.keys():
+                    raise SubmissionInputError("binding_kind_mismatch", "The current full RDF type differs from the observed resource; refresh the resource and recheck its intended kind", reference["path"])
+                kinds = {type_kinds[value] for value in types if value in type_kinds}
+                if not kinds:
+                    # An externally typed resource may still fill an existing
+                    # IRI-only slot. It supplies no verified native ID.
+                    return result
+                # Broad CQ categories and the old ObjectProperty fallback do
+                # not distinguish platform Property from relation_type. Use
+                # full RDF types plus the original native creation namespace.
+                declared_kind = entry.get("resource_kind")
+                if command or request.get("model_name") in {
+                    "entities", "entity-list", "entity-detail", "classes", "class-hierarchy",
+                }:
+                    declared_kind = result.get("resource_kind")
+                if "http://www.w3.org/2002/07/owl#ObjectProperty" in types:
+                    kinds.add("property")
+                    native_kinds = {value for value in {"property", "relation_type"}
+                                    if self.namespace.resource_identifier(
+                                        CREATE_RESOURCES["create_" + value][1], iri) is not None}
+                    # External ObjectProperties retain the existing IRI-slot
+                    # interpretation; their namespace never supplies an ID.
+                    selected = native_kinds or {declared_kind or result.get("resource_kind", "relation_type")}
+                    kinds = (kinds - {"property", "relation_type"}) | selected
+                if len(kinds) != 1 or (declared_kind is not None and declared_kind not in kinds):
+                    raise SubmissionInputError("binding_kind_mismatch", "Read the full resource with an unambiguous RDF type matching its intended kind", reference["path"])
+                kind = kinds.pop()
+                result["resource_kind"] = kind
+                native = CREATE_RESOURCES.get("create_" + kind)
+                if native:
+                    identity = self.namespace.resource_identifier(native[1], iri)
+                    if identity is not None:
+                        result["resource_id"] = identity
         return result
 
     def prepare_delete(self, reference: Mapping[str, Any], submission_digest: str) -> None:
@@ -253,12 +314,16 @@ def candidate_snapshot(root: Path, reference: str | None) -> dict[str, Any] | No
 
 
 def retained_submission_plan(root: Path, request: Mapping[str, Any], candidate: Any,
-                             project_id: str, ontology_ids: list[str]) -> tuple[dict[str, Any], str] | None:
+                             project_id: str, ontology_ids: list[str],
+                             placement_binding: Any = None,
+                             topology_digest: str | None = None) -> tuple[dict[str, Any], str] | None:
     """Reuse the bound inputs before stale target reads can reject a retry."""
     for path in (root / "value-semantics/submission-intents").glob("*-inputs.json"):
         snapshot = json.loads(path.read_bytes())
         if (snapshot.get("request") != request or snapshot.get("candidate") != candidate
                 or snapshot.get("project_id") != project_id
+                or snapshot.get("placement_binding") != placement_binding
+                or snapshot.get("topology_digest", topology_digest) != topology_digest
                 or not set(snapshot.get("ontology_placement", {}).values()).issubset(ontology_ids)):
             continue
         digest = hashlib.sha256(json.dumps(snapshot, ensure_ascii=False, sort_keys=True,

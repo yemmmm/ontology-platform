@@ -12,6 +12,7 @@ def runner(tmp_path):
     item = TeamRunner.__new__(TeamRunner)
     item.run = SimpleNamespace(root=tmp_path, run_id="new-run", scope={"project_id": "requested"})
     item.scope = None
+    item._unified_graph = False
     item._append_evidence = lambda *_args: None
     item._deliver_multi_slice_ontology_ids = lambda *_args: None
     return item

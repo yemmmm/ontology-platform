@@ -8,7 +8,8 @@
       "schema_version": "r4-3-025-model-changes/v1",
       "candidate_ref": "run-relative immutable stage3-neutral-graph/candidates/<candidate>-r<revision>.json, or null for supported fields-only changes including Class/relation_type creation",
       "changes": "nonempty ordered list of the closed change shape below"
-    }
+    },
+    "placement_ref": "optional {artifact_ref,path} copied from a Host-confirmed frozen ontology-plan entry; omit when placement is already unambiguous"
   },
   "change": {
     "required_fields": [
@@ -159,5 +160,6 @@
         }
       ]
     }
-  }
+  },
+  "existing_model_awareness": "Follow the required Modeling Skill for bounded current-model discovery, semantic comparison and reuse/create/connect/update decisions. Initial discovery explicitly selects the complete authorized ontology_ids set; then read actual candidate IRIs in their own Ontology with context_detail=full. No match, lexical fallback, forbidden or truncated reads are not proof of global absence. Preserve important read revisions, selected/excluded candidates and reasons, real identities and gaps in existing map/handoff. Recheck affected judgments on revision/permission changes; no full-graph preload, search-count gate or semantic approval is added.\nOld resources without this run's creation receipts use actual observed entries at /structuredContent/data/items/N or /structuredContent/data/primary_matches/N with artifact_ref=platform_ref.artifact_path. The program checks current scope/revision/full RDF type and canonical native namespace before recovering ID; external IRIs retain IRI-slot support. The Agent never decodes IRIs or reads old runs. Refresh affected old reads after a new write advances revision.\nOptional placement_ref selects a Host-confirmed frozen ontology-plan entry, outside the six-field change/fields. It must agree with candidate/target ownership; endpoints do not choose relation ownership. Cross-graph Mapping also needs current owner.reference_ontology_ids. For missing references, report the concrete dependency to Coordinator under Host mapping_reference_direction; the Host prepares only affected owners, preserving existing references. mapping_reference_scope_required is repairable in the same goal; ordinary relation_type has no Mapping gate. Verify new connections and affected old meanings after valuable stages; applied receipts prove application, not independent semantics or net efficiency."
 }

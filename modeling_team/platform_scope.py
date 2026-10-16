@@ -394,6 +394,7 @@ class PlatformScope:
         plan: Any,
         *,
         dependent_direction: str | None = None,
+        owner_ids: set[str] | None = None,
     ) -> dict[str, str]:
         """Activate the selected cross-Ontology mapping reference scope.
 
@@ -402,12 +403,9 @@ class PlatformScope:
         This bridge fixes the host interpretation explicitly: ``from_slice``
         is the referencing/dependent slice and ``to_slice`` is the dependency.
         The opposite interpretation is available only by an explicit argument.
-        For each referencing Ontology, update its reference_ontology_ids to the
-        selected dependency Ontologies. No other Project Ontology is admitted.
-
-        The accepted plan supplies the complete reference set. The platform
-        validates Project ownership and rejects a shrink that would break
-        retained mappings before updating the Ontology.
+        Merge confirmed dependencies into current references, optionally only
+        for owners affected by the current Mapping submission. Never shrink an
+        existing reference set or expose those other references to the Agent.
         """
 
         dependent_direction = dependent_direction or self.mapping_reference_direction
@@ -432,6 +430,8 @@ class PlatformScope:
             raise PlatformScopeError(
                 "mapping reference scope requires the applied ontology plan and IDs"
             )
+        if not set(plan_ids).issubset(self.ontology_ids):
+            raise PlatformScopeError("mapping reference plan contains an unauthorized Ontology")
         if not self.project_id or not self.ontology_ids:
             raise PlatformScopeError("mapping reference scope identity is unavailable")
 
@@ -493,10 +493,21 @@ class PlatformScope:
 
         selected = {}
         for owner, dependency_ids in dependencies_by_owner.items():
-            self._ok("PATCH", f"/api/ontologies/{owner}",
-                     {"reference_ontology_ids": sorted(dependency_ids)})
+            if owner_ids is not None and owner not in owner_ids:
+                continue
+            current = self._ok("GET", f"/api/ontologies/{owner}")
+            previous = set(current.get("reference_ontology_ids") or [])
+            wanted = previous | dependency_ids
+            if wanted != previous:
+                try:
+                    self._ok("PATCH", f"/api/ontologies/{owner}",
+                             {"reference_ontology_ids": sorted(wanted)})
+                except Exception:
+                    actual = self._ok("GET", f"/api/ontologies/{owner}")
+                    if not wanted.issubset(actual.get("reference_ontology_ids") or []):
+                        raise
             selected[owner] = owner
-        self.mapping_reference_ontology_ids = selected
+        self.mapping_reference_ontology_ids.update(selected)
         return dict(selected)
 
     def _empty_context(self) -> dict[str, Any]:

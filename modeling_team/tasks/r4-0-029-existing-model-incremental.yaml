@@ -7,7 +7,12 @@ objective: >-
   currently authorized existing Project and explicit Ontology IDs. Start a new Team/run; do
   not resume an old goal, inherit old conversations, hidden CQ/answers, Judge reasons or old
   run directories. Modeling first reads relevant current authorized definitions, identities,
-  relationships, rules, mappings, unknowns and shared dependencies. Read only what the
+  relationships, rules, mappings, unknowns and shared dependencies. Follow the mounted direct
+  contract existing_model_awareness: explicitly search the full authorized Ontology set with
+  multiple business expressions, then read actual candidate IRIs and compare definitions/types,
+  conditions, directed relations and relevant uses before reuse/create/connect/update. Respect
+  the Host-injected mapping_reference_direction when confirming dependency endpoints. Copy
+  optional placement_ref only from a Host-confirmed plan notification for fields-only creation. Read only what the
   business goal needs; retain pagination/permission limitations and do not infer absence from
   empty results. Reuse public source material only with its original source and valid-at time.
   Conflicts require business clarification; feedback observations are not confirmed business

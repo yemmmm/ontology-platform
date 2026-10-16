@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 
 from rdflib import Namespace
 from rdflib.namespace import OWL, RDF, RDFS, SH, SKOS, XSD
@@ -25,6 +25,19 @@ class SemanticNamespace:
         from rdflib import URIRef
 
         return URIRef(f"{self.base_iri.rstrip('/')}/{kind}/{quote(str(identifier), safe='')}")
+
+    def resource_identifier(self, kind: str, iri: str) -> str | None:
+        """Invert only a canonical native resource IRI, using the original encoder."""
+        prefix = f"{self.base_iri.rstrip('/')}/{kind}/"
+        if not iri.startswith(prefix):
+            return None
+        try:
+            identifier = unquote(iri[len(prefix):], encoding="utf-8", errors="strict")
+        except UnicodeDecodeError:
+            return None
+        if not identifier or str(self.resource(kind, identifier)) != iri:
+            return None
+        return identifier
 
     def graph(self, kind: str, identifier: str):
         from rdflib import URIRef

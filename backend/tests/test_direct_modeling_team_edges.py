@@ -407,7 +407,7 @@ def test_forged_and_out_of_scope_references_are_rejected_without_write(monkeypat
     assert len(run.store.writes) == 1
 
 
-def test_backend_finding_rejects_entire_final_batch_without_partial_rdf_write(direct_run):  # noqa: F811
+def test_invalid_semantic_field_rejects_entire_submission_before_batch_write(direct_run):  # noqa: F811
     run = direct_run
     request = _candidate_request(
         run,
@@ -427,15 +427,14 @@ def test_backend_finding_rejects_entire_final_batch_without_partial_rdf_write(di
 
     result = call(run, request)
     assert result["status"] == "not_written", json.dumps(result, ensure_ascii=False, default=str)
-    assert len(run.calls) == 1
-    assert result["batches"][0]["attempt_status"] in {"validation_failed", "failed", "rejected"}
-    assert result["batches"][0]["write_state"] == "not_written"
-    assert result["errors"] or result["batches"][0]["errors"]
-    error = (result["errors"] or result["batches"][0]["errors"])[0]
-    assert error["code"] == "invalid_command_payload"
+    # R4.3-028's existing compiler now catches this unsupported field before
+    # opening a Session or forwarding a Batch, rather than waiting for apply.
+    assert run.calls == [] and result["batches"] == []
+    error = result["errors"][0]
+    assert error["code"] == "unsupported_semantic_field"
     assert error["change_id"] == "create-bad"
-    assert error["path"] == "/items/1/payload"
-    assert error["platform_ref"]
+    assert error["path"].endswith("/semantic_definition/unsupported_field")
+    assert not run.runner.scope.owned_session_ids
     assert run.store.writes == []
     assert not any(str(obj) in {"Good", "Bad"} for _, _, obj, _ in run.store.dataset.quads((None, None, None, None)))
 

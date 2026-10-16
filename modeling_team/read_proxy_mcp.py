@@ -124,7 +124,7 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "type": "array",
                     "minItems": 1,
                     "items": {"type": "string", "minLength": 1},
-                    "description": "Select Ontologies within the Runner-authorized set; defaults to the bound Ontology.",
+                    "description": "Select Ontologies within the Runner-authorized set. For initial existing-model discovery explicitly pass the full authorized set; omission searches only the bound primary Ontology.",
                 },
                 "resource_types": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["concept", "instance", "relation", "fact", "operation", "mapping", "metric"]}},
                 "assertion_types": {"type": "array", "items": {"type": "string", "minLength": 1}},

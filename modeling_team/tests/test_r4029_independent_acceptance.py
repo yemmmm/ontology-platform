@@ -549,3 +549,24 @@ def test_a5_existing_identity_commands_preserve_exact_target(production, command
     candidate = json.loads((production.run_root / CANDIDATE).read_text())
     issue = unified_identity_issue(projection, {row["item_id"]: row for row in candidate["items"]})
     assert (issue is None) is expected
+
+
+@pytest.mark.parametrize('direction', [None, 'from_slice_depends_on_to_slice', 'to_slice_depends_on_from_slice'])
+def test_incremental_preparation_always_binds_mapping_direction(incremental_request, direction):
+    root, request = incremental_request
+    if direction is not None:
+        request['mapping_reference_direction'] = direction
+    result = prepare_incremental(request, repository_root=root, scope_probe=lambda _: {})
+    config = yaml.safe_load((root / result['config']).read_text())
+    expected = direction or 'from_slice_depends_on_to_slice'
+    assert yaml.safe_load((root / config['scope']).read_text())['mapping_reference_direction'] == expected
+    assert config['readback_scope']['mapping_reference_direction'] == expected
+    assert result['semantic_start'] == 'not_observed'
+
+
+@pytest.mark.parametrize('direction', [None, '', 'guess from objective', 'sideways'])
+def test_incremental_direction_rejects_invalid_explicit_value(incremental_request, direction):
+    root, request = incremental_request
+    request['mapping_reference_direction'] = direction
+    with pytest.raises(IncrementalError, match='mapping_reference_direction'):
+        prepare_incremental(request, repository_root=root, scope_probe=lambda _: {})

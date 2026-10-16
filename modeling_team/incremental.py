@@ -58,7 +58,7 @@ def validate_request(request: dict, *, check_authorization: bool = True) -> dict
     required = {"request_id", "project_id", "ontology_ids", "objective", "approved_sources",
                 "profile", "model_profile", "authorization_reference", "valid_until",
                 "production_start_limit", "acceptance_scope"}
-    optional = {"allow_new_ontologies", "feedback_ids", "base_url", "service_tier"}
+    optional = {"allow_new_ontologies", "feedback_ids", "base_url", "service_tier", "mapping_reference_direction"}
     if required - request.keys() or request.keys() - required - optional:
         raise IncrementalError("incremental_input_invalid", "request fields differ from the 029 contract")
     for field in required - {"ontology_ids", "approved_sources", "production_start_limit"}:
@@ -79,6 +79,10 @@ def validate_request(request: dict, *, check_authorization: bool = True) -> dict
         raise IncrementalError("incremental_scope_invalid", "ontology_ids must be nonempty unique explicit IDs")
     if type(request.get("allow_new_ontologies", False)) is not bool:
         raise IncrementalError("incremental_scope_invalid", "allow_new_ontologies must be boolean")
+    if request.get("mapping_reference_direction", "from_slice_depends_on_to_slice") not in {
+        "from_slice_depends_on_to_slice", "to_slice_depends_on_from_slice",
+    }:
+        raise IncrementalError("incremental_scope_invalid", "mapping_reference_direction is invalid")
     if not isinstance(request["approved_sources"], list) or not request["approved_sources"]:
         raise IncrementalError("incremental_sources_invalid", "approved business sources are required")
     feedback = request.get("feedback_ids", [])
@@ -146,6 +150,7 @@ def prepare_incremental(request: dict, *, repository_root: Path, scope_probe=Non
         validate_request(request)
         scope = {"mode": "existing", "project_id": request["project_id"],
                  "ontology_ids": request["ontology_ids"],
+                 "mapping_reference_direction": request.get("mapping_reference_direction", "from_slice_depends_on_to_slice"),
                  "allow_new_ontologies": request.get("allow_new_ontologies", False)}
         if scope_probe is None:
             from .__main__ import _bootstrap_helpers
