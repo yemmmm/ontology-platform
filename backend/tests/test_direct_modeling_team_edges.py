@@ -8,6 +8,7 @@ compiler or apply results.
 from __future__ import annotations
 
 import json
+from datetime import UTC, datetime, timedelta
 
 from rdflib import URIRef
 
@@ -17,6 +18,78 @@ from backend.tests.test_direct_modeling_team_integration import (
     direct_run,  # noqa: F401 - imported so pytest registers the shared fixture
     request_for,
 )
+
+
+def test_returned_resource_references_follow_receipt_order_not_request_order(direct_run):  # noqa: F811
+    run = direct_run
+    definitions = call(run, {"schema_version": "r4-3-025-model-changes/v1",
+        "candidate_ref": None, "changes": [
+            _change("z-place", "create", "class", fields={"name": "Location"}),
+            _change("a-device", "create", "class", fields={"name": "Device"}),
+        ]})
+    assert definitions["status"] == "completed", definitions
+    batch = definitions["batches"][0]
+    receipt = json.loads((run.staged.run_root / batch["receipt_ref"]).read_text())
+    rows = receipt["structuredContent"]["data"]["items"]
+    assert [row["client_item_id"] for row in rows] == ["a-device", "z-place"]
+    bindings = {row["change_id"]: row for row in batch["resource_bindings"]}
+    for change_id, binding in bindings.items():
+        reference = binding["existing_resource_ref"]
+        assert reference["artifact_ref"] == batch["receipt_ref"]
+        item = rows[int(reference["path"].rsplit("/", 1)[1])]
+        assert item["client_item_id"] == change_id
+        assert item["resource_outputs"]["resource_id"] == binding["resource_id"]
+    relation = call(run, {"schema_version": "r4-3-025-model-changes/v1",
+        "candidate_ref": None, "changes": [
+            _change("located-at", "create", "relation_type", fields={
+                "name": "located at",
+                "source_class_id": {"existing_resource_ref": bindings["a-device"]["existing_resource_ref"]},
+                "target_class_id": {"existing_resource_ref": bindings["z-place"]["existing_resource_ref"]},
+            }),
+        ]})
+    assert relation["status"] == "completed", relation
+    payload = run.calls[-1]["items"][0]["payload"]
+    assert payload["source_class_id"] == bindings["a-device"]["resource_id"]
+    assert payload["target_class_id"] == bindings["z-place"]["resource_id"]
+    triples = list(run.store.dataset.quads((None, URIRef("http://www.w3.org/2000/01/rdf-schema#domain"), None)))
+    assert any(str(obj) == bindings["a-device"]["resource_iri"] for _, _, obj, _ in triples)
+
+
+def test_same_executor_continues_and_closes_after_real_lease_expiry(direct_run, monkeypatch):  # noqa: F811
+    from app.services.build_sessions import BuildSessionService
+    from modeling_team import direct_execution
+
+    run = direct_run
+    current = datetime.now(UTC)
+
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return current if tz else current.replace(tzinfo=None)
+
+    monkeypatch.setattr(direct_execution, "datetime", Clock)
+    monkeypatch.setattr(BuildSessionService, "_database_now", lambda _: current)
+
+    def create(change_id):
+        return call(run, {"schema_version": "r4-3-025-model-changes/v1", "candidate_ref": None,
+                          "changes": [_change(change_id, "create", "class", fields={"name": change_id})]})
+
+    first = create("before-pause")
+    assert first["status"] == "completed", first
+    session_id = run.runner._direct_model_executor.session_id
+    old_token = run.calls[0]["lease_token"]
+    current += timedelta(seconds=run.settings.build_session_lease_ttl_seconds + 1)
+    second = create("after-pause")
+    assert second["status"] == "completed", second
+    assert len(run.calls) == 2
+    assert run.calls[-1]["session_id"] == session_id
+    assert run.calls[-1]["lease_token"] != old_token
+    assert run.calls[-1]["expected_model_revision"] == 1
+    current += timedelta(seconds=run.settings.build_session_lease_ttl_seconds + 1)
+    closed = run.runner._direct_model_executor.close_session()
+    assert closed["closed"] is True, closed
+    detail = BuildSessionService(run.db, run.settings).get_session_detail(session_id)
+    assert detail["session"]["status"] == "completed"
 
 
 def _item(

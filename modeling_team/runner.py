@@ -5584,6 +5584,14 @@ class TeamRunner:
                 observed = self._direct_receipt_refs.get((batch.get("batch_id"), batch.get("attempt_id")))
                 if observed:
                     batch["receipt_ref"] = observed
+                for binding in batch.get("resource_bindings", []):
+                    # Bind the pointer to the raw receipt order, which can
+                    # differ from both request and resource_bindings order.
+                    item_path = binding.pop("receipt_item_path", None)
+                    if observed and item_path:
+                        binding["existing_resource_ref"] = {
+                            "artifact_ref": observed, "path": item_path,
+                        }
             self._save_checkpoint_after_trigger(CHECKPOINT_KIND_MATERIALIZATION_PROGRESS,
                                                 trigger="direct-modeling-result")
             return result

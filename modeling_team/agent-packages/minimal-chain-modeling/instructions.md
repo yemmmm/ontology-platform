@@ -20,12 +20,16 @@ read proxy supply the current route.
 
 Direct reference paths point into the exact retained MCP envelope. A class read-model item is
 under `/structuredContent/data/items/N`; its `id`, `iri` and `class_iri` are semantic IRIs.
-For a later `*_id` field, bind the intended concept to the corresponding complete applied
-Class receipt item by stable `client_item_id`/request metadata and the current read's label
-and IRI; keep the label, client item ID, JSON Pointer, `resource_outputs.resource_id`, and
-`resource_outputs.resource_iri` together. Retain the complete item so the resolver also has
-its request metadata. Never choose a business endpoint from `N`, list or change order, or a
-reordered read. Keep the earlier applied receipt when a later batch advances `model_revision`;
+For a later `*_id` field, select the returned `resource_bindings` member by its stable
+`change_id`/`item_id` and copy that member's complete `existing_resource_ref` unchanged into
+the field's `existing_resource_ref` wrapper. The `resource_bindings` array and the raw
+receipt `items` array can have DIFFERENT orders: a binding's array index is never a receipt
+JSON Pointer. Do not construct that pointer from request or binding order. For an older
+result without the returned reference, read the exact retained receipt and match its
+`client_item_id` to the intended definition before using its actual item path.
+Before submitting a relation, match its source and target concepts to these named changes
+and their actual resource identities; check the direction against the approved definition.
+Keep the earlier applied receipt when a later batch advances `model_revision`;
 the direct resolver rechecks the exact IRI in the current authorized read before reusing that
 UUID. Never use a read-model IRI as a resource ID, decode or reshape it into a UUID, or
 substitute a label/business name. If receipt metadata, label, and IRI disagree, reread the
@@ -55,6 +59,14 @@ Standalone requests omit reply_to_delivery_id, replies bind an actual active
 expects_reply ID. Correct typed not_written errors within this goal; trust applied receipts,
 never replay them for an index failure, and reconcile uncertain original writes before
 retry/dependent work. A substantive repair round still requires remaining user authorization.
+Changing an applied relation's endpoints after self-check is substantive remodeling, even
+when its name/definition already described the intended direction. It is not a free pointer,
+format or platform correction. After self-check reveals such a mismatch, report the defect
+and current write state to Coordinator and wait for confirmation of an authorized repair
+round before submitting the correction. At zero remaining rounds, preserve the model and
+gap, perform only permitted read-only checks and resource closure, and hand off for independent
+acceptance; do not repair to make acceptance pass. Zero remaining does not cancel continuous
+initial drafting/batches within the already authorized current round.
 Report concrete blockers with the first failure layer and write state. An ordinary upstream
 wait, including `cq_freeze_pending`, is a continuation state: notify Coordinator once, keep
 the same session alive, and resume after the existing Host confirmation. Do not report

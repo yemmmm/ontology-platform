@@ -71,6 +71,7 @@ class _Lease:
     ontology_id: str
     token: str
     revision: int | None
+    expires_at: datetime | None = None
 
 
 def _canonical(value: Any) -> bytes:
@@ -153,6 +154,16 @@ def _session_value(value: Mapping[str, Any]) -> Mapping[str, Any]:
 def _lease_value(value: Mapping[str, Any]) -> Mapping[str, Any]:
     candidate = value.get("lease")
     return candidate if isinstance(candidate, Mapping) else value
+
+
+def _lease_expiry(value: Any) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        expiry = datetime.fromisoformat(str(value))
+    except ValueError as exc:
+        raise DirectExecutionError("lease_expiry_invalid", "Ontology lease expiry is invalid") from exc
+    return expiry.replace(tzinfo=UTC) if expiry.tzinfo is None else expiry
 
 
 def _attempt_status(value: Mapping[str, Any] | None) -> str | None:
@@ -396,6 +407,9 @@ class DirectModelExecutor:
             return {"closed": True, "session_id": None, "leases": [], "errors": []}
         errors: list[dict[str, Any]] = []
         for ontology_id, lease in list(self._leases.items()):
+            if lease.expires_at is not None and lease.expires_at <= datetime.now(UTC):
+                # The terminal Session operation releases expired leases too.
+                continue
             try:
                 response = self._scope_request(
                     "POST",
@@ -412,7 +426,10 @@ class DirectModelExecutor:
                     raise DirectExecutionError("lease_release_unconfirmed", "Ontology lease release was not confirmed")
                 self._leases.pop(ontology_id, None)
             except DirectExecutionError as exc:
-                errors.append(self._error(code=exc.code, message=exc.message, actual=exc.actual, retryable=exc.retryable))
+                # Normal Session completion releases its leases, including an
+                # expired one. Do not reacquire a write lease merely to finish.
+                if exc.code != "lease_expired":
+                    errors.append(self._error(code=exc.code, message=exc.message, actual=exc.actual, retryable=exc.retryable))
         if not errors:
             try:
                 endpoint = ":complete" if complete else ":cancel"
@@ -437,6 +454,7 @@ class DirectModelExecutor:
                     self.scope.owned_session_ids.discard(self.session_id)
                 session_id = self.session_id
                 self.session_id = None
+                self._leases.clear()
                 return {"closed": True, "session_id": session_id, "leases": [], "errors": []}
             except DirectExecutionError as exc:
                 errors.append(self._error(code=exc.code, message=exc.message, actual=exc.actual, retryable=exc.retryable))
@@ -553,11 +571,12 @@ class DirectModelExecutor:
 
     def _ensure_lease(self, ontology_id: str) -> _Lease:
         existing = self._leases.get(ontology_id)
-        if existing is not None:
+        if (existing is not None and existing.expires_at is not None
+                and existing.expires_at > datetime.now(UTC)):
             return existing
         if not self.session_id:
             raise DirectExecutionError("session_missing", "Build Session is not available")
-        if self.session_revision is None:
+        if self.session_revision is None or existing is not None:
             self._refresh_session_revision()
         response = self._scope_request(
             "POST",
@@ -573,7 +592,7 @@ class DirectModelExecutor:
         token, revision = value.get("lease_token"), value.get("lease_revision")
         if not _nonempty(token) or type(revision) is not int:
             raise DirectExecutionError("lease_identity_missing", "Ontology lease response is incomplete", actual=value)
-        lease = _Lease(ontology_id, str(token), revision)
+        lease = _Lease(ontology_id, str(token), revision, _lease_expiry(value.get("expires_at")))
         self._leases[ontology_id] = lease
         return lease
 
@@ -936,6 +955,7 @@ class DirectModelExecutor:
             else [],
             "session_revision": self.session_revision,
             "lease_revision": lease.revision if lease is not None else None,
+            "lease_expires_at": lease.expires_at.isoformat() if lease and lease.expires_at else None,
         }
         temporary = path.with_name(f".{path.name}.tmp")
         temporary.write_text(
@@ -968,6 +988,7 @@ class DirectModelExecutor:
             "source_items": [dict(item) for item in source_items if isinstance(item, Mapping)],
             "session_revision": payload.get("session_revision"),
             "lease_revision": payload.get("lease_revision"),
+            "lease_expires_at": payload.get("lease_expires_at"),
             "result": dict(payload["result"]) if isinstance(payload.get("result"), Mapping) else None,
         }
 
@@ -1016,7 +1037,10 @@ class DirectModelExecutor:
             raise DirectExecutionError("staged_snapshot_invalid", "submission snapshot Session differs from active Session")
         self.session_id = str(session_id)
         self.session_revision = session_revision
-        self._leases[ontology_id] = _Lease(ontology_id, str(lease_token), lease_revision)
+        self._leases[ontology_id] = _Lease(
+            ontology_id, str(lease_token), lease_revision,
+            _lease_expiry(snapshot.get("lease_expires_at")),
+        )
 
     @staticmethod
     def _receipt_for(intent: Mapping[str, Any], receipts: Sequence[Mapping[str, Any]]) -> Mapping[str, Any] | None:
@@ -1313,14 +1337,14 @@ class DirectModelExecutor:
     ) -> list[dict[str, Any]]:
         rows = result.get("items")
         by_id = {
-            item.get("client_item_id"): item
-            for item in rows
+            item.get("client_item_id"): (index, item)
+            for index, item in enumerate(rows)
             if isinstance(item, Mapping) and _nonempty(item.get("client_item_id"))
         } if isinstance(rows, list) else {}
         bindings: list[dict[str, Any]] = []
         for item in batch.get("items", []):
             client_id = item.get("client_item_id")
-            observed = by_id.get(client_id, {})
+            receipt_index, observed = by_id.get(client_id, (None, {}))
             outputs = observed.get("resource_outputs") if isinstance(observed, Mapping) else None
             source = DirectModelExecutor._source_for_item(batch, source_map, client_id)
             row = {
@@ -1333,6 +1357,7 @@ class DirectModelExecutor:
                 for key in ("resource_id", "resource_iri", "statement", "fact"):
                     if outputs.get(key) is not None:
                         row[key] = outputs[key]
+                row["receipt_item_path"] = f"/structuredContent/data/items/{receipt_index}"
             bindings.append(row)
         return bindings
 

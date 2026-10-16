@@ -1993,6 +1993,10 @@ D1—D8独立设计验收Round 1 PASS保留；用户后续明确compiler／Direc
   read转发填充技术字段，持久保存staged intent／receipt／apply Attempt proof并映射
   Finding。入口固定modeling_submit_model_changes(modeling_id, request)；Runner能力层
   先闭合target_ref及跨批真实输出绑定，Executor不解释target_ref／item_ref／IRI；无Session／lease时只复用已有生命周期调用，越权／未定拓扑／他人租约准确反馈。
+  普通暂停后，缓存lease按真实expires_at判断；过期／旧快照未存期限时，先沿原Session
+  刷新上下文并复用acquire取得新token，再准备新批。不得重放已成功批或借刷新绕过
+  未决写入、他人租约及越权。收尾时过期lease由原Session正常complete／cancel释放，
+  不为收口重新取得写租约；其他释放／终态错误继续如实反馈。
 - **F4 依赖与单批原子。** 确定性排序、按当前部署容量分批；同批depends_on仅指
   同批项，跨批用成功回执绑定，尚未成功的依赖不执行。调用现有apply_atomic，一次
   请求内compile／校验后合法才写入，无独立或隐藏dry-run，无apply_partial降级。
@@ -2008,6 +2012,9 @@ D1—D8独立设计验收Round 1 PASS保留；用户后续明确compiler／Direc
   原Batch／Attempt、索引状态及来源；空索引信息表示未知，索引失败不改称未写入。
   重复相同请求复用原身份和结果；更改内容不能复用旧身份，不确定结果不能换key。
   明确未写入的技术修正可有新Attempt／修订，保留失败证据和已成功阶段。
+  已保留实际资源outputs的resource_bindings逐项返回可复制的existing_resource_ref，
+  按client_item_id匹配真实原回执items生成，不从请求／绑定列表下标推算；业务端点
+  仍由Modeling依据获准材料选择，程序不替其判断方向。
 - **F7 分工与证据。** 复用003的引用读取和既有intent／receipt／恢复，不新增REST
   路由、存储表、审计／恢复框架、预览图或语义裁判。024拥有Modeling实际工具接入、
   dry-run入口及翻译审批退役、自查和最终交接；025提供无旧门的程序核心，不能等024
@@ -2078,6 +2085,13 @@ R4.0-027提供真实修订与索引。025在此范围覆盖旧“Protocol手写�
 不据此宣告A2的获准运行完整条件满足。端点update同步已完成工程修复、部署及相关验证，
 原进程过期lease缓存接续缺口仍未修；更大场景与净效率未验证。详见
 [最近三组复盘](../delivery/modeling-retrospectives/2026-10-16-last-three-groups-retrospective.md)。
+
+后续用户授权排查修复：原生输入确认零余额指令已到达；方向错误定位到提交结果绑定
+列表与原回执items的顺序差异。已实施返回真实资源引用、过期lease在原Session接续及
+正常收尾，并同步实际角色／宿主的修模分类和授权确认指令，见
+[修复记录](../delivery/records/2026-10-16-modeling-direction-lease-authorization-repair.md)。
+隔离真实服务回归通过不改变历史授权越界、PARTIAL或L1裁决；没有新增真实运行，
+下一轮首次方向正确性、授权实际遵守及完整自主交付仍待证。
 
 **问题与目标**：当前资产—故障—工单小链仍带有较多业务细节及配套合同，流程问题与
 业务覆盖问题交织，反馈周期过长。提供一个范围完整、内容极少的独立业务任务，尽快取得

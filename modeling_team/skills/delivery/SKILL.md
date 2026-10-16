@@ -39,6 +39,15 @@ iteration or wait for redundant user approval. User modeling quota and provider
 usage limits are separate. Preserve historical accounting and append corrections
 when the old ledger counted only starts; unresolved round counts stay unverified.
 
+Include the current round goal/balance in dispatch or resume guidance and have Coordinator
+obtain Modeling's acknowledgement. An applied relation's endpoint correction after self-check
+is substantive remodeling even when its original textual meaning was right; it is not a free
+pointer/technical correction. With zero remaining, the current initial round may still finish,
+but any newly discovered semantic gap must be preserved for read-only handoff, not repaired.
+At the self-check transition, confirm that instruction's actual acknowledgement and subsequent
+actions; arrange existing resource closure and sealing after writes settle. Do not equate
+accepted guidance with enforcement or introduce a platform hard counter.
+
 On delivery_resume, inspect the observed real state and receipts before doing
 anything. Read the observed request_ledger and call get_request_result for
 each unresolved request_id before retrying. A previous unknown request must

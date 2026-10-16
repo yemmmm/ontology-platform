@@ -83,7 +83,8 @@
       "applied",
       "uncertain"
     ],
-    "rule": "Trust applied receipts. Index failed/unknown is separate from write state; never reapply to repair search. Reconcile uncertain original identities before dependent writes. Correct ordinary input errors within the same goal. Preserve actual resource kind, source item/change, Batch/Attempt, revisions, index state and first blocker."
+    "rule": "Trust applied receipts. Index failed/unknown is separate from write state; never reapply to repair search. Reconcile uncertain original identities before dependent writes. Correct ordinary input errors within the same goal. Preserve actual resource kind, source item/change, Batch/Attempt, revisions, index state and first blocker.",
+    "resource_references": "Each resource_bindings member with observed resource outputs and a retained receipt includes existing_resource_ref={artifact_ref,path}, computed from its actual raw receipt item matched by client_item_id. Select a member by change_id/item_id and copy its reference into target_ref or an existing_resource_ref wrapper. resource_bindings order and request order need not match the raw receipt items order; never construct receipt pointers from their array indexes. These are technical identities, not inferred business endpoints."
   },
   "self_check": "At valuable successful stages query_semantic_context with public questions in explicit authorized ontologies scope, then expand actual returned IRI anchors and full definitions. Current hybrid/adaptive/relevance defaults apply. Preserve revision/index/cursor/completeness and authorization limitations; lexical fallback/no match is not proof of model absence or global completeness.",
   "final_tools": [

@@ -31,10 +31,14 @@ retained MCP response is an envelope: a read-model resource item is addressed un
 applied batch item is addressed at that same complete item path and exposes the platform
 identity in its `resource_outputs` object, including both `resource_id` and `resource_iri`.
 For `source_class_id`/`target_class_id`, bind the intended concept to the complete applied
-receipt item by its stable `client_item_id`/request metadata and the current read's label and
-IRI; keep the label, client item ID, JSON Pointer, `resource_outputs.resource_id`, and
-`resource_outputs.resource_iri` together. Never infer a business endpoint from `N`, list or
-change order, or a later reordered read. The compiler must receive the UUID from that exact
+receipt item by selecting the returned `resource_bindings` member by `change_id`/`item_id`.
+Copy that member's `existing_resource_ref` unchanged into the field's
+`existing_resource_ref` wrapper. Request order and `resource_bindings` order can differ from
+the raw receipt `items` order: never turn a binding's array index into a receipt JSON Pointer.
+For an older result without that reference, read the actual retained receipt, find the intended
+definition's `client_item_id`, and use its actual item path. Before relation submission, match
+each source/target concept to the named change and actual resource identity and compare the
+direction with the approved definition. The compiler must receive the UUID from that exact
 receipt item. A read-model `id`/`iri`/`class_iri` is a semantic IRI and must stay in an IRI slot;
 never URL-decode it, derive a UUID from it, or use it as a resource ID. If a later applied batch
 has advanced the current revision, retain the exact earlier applied receipt and let the governed
@@ -68,5 +72,11 @@ and type, and compare them one by one with the approved direction and definition
 the direction is confirmed or assert handoff semantic readiness from your own summary, labels alone,
 or an association `COMPLETE` result. Host technical locators may identify artifacts and paths
 but do not choose the business endpoints.
+An endpoint change after this applied-model self-check is a new substantive repair round,
+even if only the pointers change and the original textual definition stays the same. Report
+the mismatch to Coordinator and await confirmation of a repair round under the existing user
+authorization. If no rounds remain, retain the defect, finish permitted read-only checks and
+resource closure, and hand off without correcting the model. Do not equate the ongoing initial
+round's ordinary batching/format corrections with a new semantic repair after self-check.
 Close the association self-check and owned resources before reporting handoff
 readiness; preserve missing evidence rather than treating it as PASS.

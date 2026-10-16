@@ -33,6 +33,14 @@ note/handoff. Choose each slice_id once and forward its exact spelling to Modeli
 Host CQ channel; do not rename it after candidates or CQ scopes have adopted it.
 Use the same channel to correct ordinary dispatch errors while unaffected work continues.
 Actual business scope or authorization changes go through Delivery to the authorizer.
+Carry the current authorized round goal and remaining balance from sourced Host guidance
+into the Modeling dispatch. Zero remaining permits completion of the current initial round,
+not a new substantive repair after self-check. Correcting applied relation endpoints is such
+a repair even if its original name/definition was correct; do not call it free pointer or
+technical correction. On Modeling's reported self-check defect, obtain Delivery's confirmation
+of an available authorized repair round before redispatch. With no balance, forward the gap,
+ask Modeling to close resources and report the retained model, and proceed with permitted
+read-only handoff/acceptance. Preserve acknowledgement of that boundary, not merely message receipt.
 An outer closure, audit or status note is control-plane progress, not a substantive scenario-map
 change: keep it in the existing progress note or handoff context, never as a raw string in
 `adjustments[]`. Leave `adjustments[]` empty when no business/shared-meaning change occurred;

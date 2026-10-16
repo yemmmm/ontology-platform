@@ -90,3 +90,12 @@ non-blind-regression通过。第一组同时存在底层端点编码缺陷，第
 - 当前源码核对`direct_execution.py::_ensure_lease`与Runner pending_agents交接拒绝分支；
   修复版本及工程验证引用已有交付记录，本次不重跑代码测试、不重启服务。
 - 本次文档相对链接、围栏与diff空白检查通过；这些不构成新的语义验收。
+
+## 后续获准排查与修复
+
+用户后续授权执行上述建议。新证据将最新组方向错误收窄到resource_bindings与原回执
+items顺序不同、Agent跨视图按下标构造引用；额度0指令在原Modeling输入中实际存在，
+不再保留为“是否收到尚未核实”。已修复返回真实引用、过期lease缓存接续／正常收尾，
+并纠正实质修模分类及确认边界提示，见[修复记录](../records/2026-10-16-modeling-direction-lease-authorization-repair.md)。
+上文未修／待定位为复盘时点事实，历史原件不改；新工程证据不撤销旧PARTIAL、越界或
+推导真实下一轮通过，本次未启动或恢复真实建模。

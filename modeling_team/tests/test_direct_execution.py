@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
@@ -36,6 +37,7 @@ class _Scope:
                 "ontology_id": ontology_id,
                 "lease_token": f"lease-{ontology_id}",
                 "lease_revision": 1,
+                "expires_at": "2099-01-01T00:00:00+00:00",
                 "state": "active",
             }
         if "/ontology-leases/" in path and path.endswith(":release"):
@@ -141,6 +143,7 @@ def test_direct_executor_applies_atomic_batch_and_finishes(tmp_path):
             "item_id": "candidate-1",
             "resource_kind": "entity",
             "resource_id": "resource-1",
+            "receipt_item_path": "/structuredContent/data/items/0",
         }
     ]
     assert submitted[0]["mode"] == "apply_atomic"
@@ -156,6 +159,61 @@ def test_direct_executor_applies_atomic_batch_and_finishes(tmp_path):
     assert closed["closed"] is True
     assert not scope.owned_session_ids
     assert all(call[3] == "protocol-key" for call in scope.calls)
+
+
+def test_expired_cached_lease_is_reacquired_before_a_new_batch(tmp_path):
+    scope = _Scope()
+    original = scope.request
+    acquisitions = []
+
+    def request(method, path, body, key):
+        status, value = original(method, path, body, key)
+        if path.endswith(":acquire"):
+            acquisitions.append(body)
+            value = {**value, "lease_token": f"token-{len(acquisitions)}",
+                     "expires_at": (datetime.now(UTC) + timedelta(minutes=5)).isoformat()}
+        return status, value
+
+    scope.request = request
+    submitted = []
+
+    def submit(batch):
+        submitted.append(dict(batch))
+        return _applied_response(batch)
+
+    executor = DirectModelExecutor(scope, tmp_path, "run-1", "task-1", submit,
+        lambda *_: {"workspace": {"state": "ready", "model_revision": 4}})
+    assert executor.execute(_batch())["status"] == "completed"
+    # An ordinary pause outlives the lease; it must not require a new run.
+    executor._leases["onto-1"].expires_at = datetime.now(UTC) - timedelta(seconds=1)
+    result = executor.execute(_batch(item_id="item-2"))
+    assert result["status"] == "completed"
+    assert [batch["lease_token"] for batch in submitted] == ["token-1", "token-2"]
+    assert len(acquisitions) == 2
+    assert {batch["session_id"] for batch in submitted} == {"session-1"}
+    # Confirmed writes are still idempotent, even after the lease was replaced.
+    assert executor.execute(_batch())["status"] == "completed"
+    assert len(submitted) == 2
+
+
+def test_finish_completes_owned_session_after_lease_expiry(tmp_path):
+    scope = _Scope()
+    original = scope.request
+
+    def request(method, path, body, key):
+        if path.endswith(":release"):
+            return 409, {"code": "lease_expired", "message": "Ontology lease has expired"}
+        return original(method, path, body, key)
+
+    scope.request = request
+    executor = DirectModelExecutor(scope, tmp_path, "run-1", "task-1", _applied_response,
+        lambda *_: {"workspace": {"state": "ready", "model_revision": 4}})
+    assert executor.execute(_batch())["status"] == "completed"
+    result = executor.close_session()
+    assert result["closed"] is True
+    assert not scope.owned_session_ids
+    assert not executor._leases
+    assert not any(path.endswith(":acquire") for _, path, _, _ in scope.calls[2:])
 
 
 def test_successful_duplicate_reuses_sidecar_without_readback_or_submit(tmp_path):

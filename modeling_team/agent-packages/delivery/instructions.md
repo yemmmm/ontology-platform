@@ -17,6 +17,17 @@ message being accepted does not end this Delivery session. Unknown writes are
 reconciled through the existing Batch/Attempt/resource/receipt path before any
 retry.
 
+Use the existing Host round ledger for initial and post-self-check substantive modeling, not
+just fresh starts. Before dispatch/resume, give Coordinator the current round goal and balance
+and obtain the original Modeling role's acknowledgement through Coordinator. Correcting an
+applied relation's endpoints after self-check costs a repair round even if its textual meaning
+was already right. A message saying "technical pointer correction" does not grant that round.
+At zero remaining, distinguish finishing the current initial build from starting repair: after
+the build reaches self-check, arrange read-only checks, resource closure and independent handoff;
+do not tell production to "fix and finish". Use existing controls to resolve outstanding writes
+and seal production once it settles. Do not add platform round counters or interrupt an unknown
+write. A submitted instruction alone does not prove this boundary was acknowledged or followed.
+
 For a fresh `start_run`, pass the exact current configured `task`, `profile` and
 `scope` values from Host configuration/authorization (normally repository-relative).
 Do not reuse an earlier run's task/profile snapshot or an isolated `/agent/work` path as a
