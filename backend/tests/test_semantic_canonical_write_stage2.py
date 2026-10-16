@@ -23,8 +23,10 @@ from __future__ import annotations
 from collections.abc import Generator
 from typing import Any
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from rdflib import Dataset, Literal, URIRef
 from sqlalchemy.orm import Session
 
 from app.api.deps import get_db_session, get_rdf_store, get_settings
@@ -34,6 +36,7 @@ from app.repositories.models import SemanticGraphRegistryModel
 from sqlalchemy import select
 from single_model_support import seed_model
 from app.repositories.rdf_store import RdfStoreRepository, SparqlResult, UpdateResult
+from app.services.semantic_command_compiler import compile_command
 
 
 PREFIX = "http://op.local/semantic/"
@@ -373,8 +376,75 @@ def test_update_relation_type_apply_replaces_label_and_endpoints(
         body,
         store,
         _ontology_graph_iri(),
-        ["/ns/relation-type/rel-1>", '"enrolledIn v2"'],
+        [
+            "/ns/relation-type/rel-1>", '"enrolledIn v2"',
+            "/ns/vocab/sourceClassId>", '"class-2"',
+            "/ns/vocab/targetClassId>", '"class-3"',
+        ],
     )
+
+
+@pytest.mark.parametrize("initial_endpoints", [
+    {"source_class_id": "source-old", "target_class_id": "target-old"},
+    {},
+])
+@pytest.mark.parametrize("endpoints", [
+    {"source_class_id": "source-new", "target_class_id": "target-new"},
+    {"source_class_id": "source-new"},
+    {"target_class_id": "target-new"},
+    {},
+    {"source_class_id": None, "target_class_id": None},
+])
+def test_relation_type_endpoint_patch_roundtrips_in_one_store_update(initial_endpoints, endpoints):
+    """Exercise the real delta renderer and SPARQL against created RDF state."""
+    dataset = Dataset()
+
+    class DatasetStore(FakeStore):
+        def update_sparql(self, update):
+            dataset.update(update)
+            return super().update_sparql(update)
+
+    store = DatasetStore()
+    settings = _settings()
+    created = compile_command("create_relation_type", {
+        "ontology_id": "ont-1", "relation_type_id": "rel-1",
+        "name": "connects", "description": "Keep this definition",
+        "symmetric": True, "transitive": True,
+        **initial_endpoints,
+    }, settings)
+    store.apply_dataset_delta(created.delta)
+    graph = dataset.graph(URIRef(_ontology_graph_iri()))
+    subject = URIRef(f"{PREFIX}ns/relation-type/rel-1")
+    # Include unrelated data to catch deletes with a broader subject/scope.
+    graph.add((URIRef(f"{PREFIX}ns/relation-type/other"),
+               URIRef(f"{PREFIX}ns/vocab/sourceClassId"), Literal("source-old")))
+    expected = set(graph)
+    for field, rdfs_name, id_name in (
+        ("source_class_id", "domain", "sourceClassId"),
+        ("target_class_id", "range", "targetClassId"),
+    ):
+        value = endpoints.get(field)
+        if value is None:
+            continue
+        iri_predicate = URIRef(f"http://www.w3.org/2000/01/rdf-schema#{rdfs_name}")
+        id_predicate = URIRef(f"{PREFIX}ns/vocab/{id_name}")
+        expected = {
+            triple for triple in expected
+            if triple[0] != subject or triple[1] not in {iri_predicate, id_predicate}
+        }
+        expected.update({
+            (subject, iri_predicate, URIRef(f"{PREFIX}ns/class/{value}")),
+            (subject, id_predicate, Literal(value)),
+        })
+
+    compiled = compile_command("update_relation_type", {
+        "ontology_id": "ont-1", "relation_type_id": "rel-1", **endpoints,
+    }, settings)
+    before_updates = len(store.updates)
+    store.apply_dataset_delta(compiled.delta)
+
+    assert len(store.updates) - before_updates == int(any(v is not None for v in endpoints.values()))
+    assert set(graph) == expected
 
 
 def test_delete_relation_type_apply_emits_subject_wildcard_delete(

@@ -165,7 +165,7 @@ def test_real_cross_batch_relation_binds_applied_outputs_and_reads_direction(
     ), data["related_context"]
 
 
-def test_receipt_pointer_update_preserves_identity_rejects_old_revision_and_allows_correction(
+def test_receipt_pointer_update_preserves_identity_rejects_stale_read_and_allows_correction(
     direct_run,  # noqa: F811 - pytest resolves the imported shared fixture
 ):
     run = direct_run
@@ -175,6 +175,15 @@ def test_receipt_pointer_update_preserves_identity_rejects_old_revision_and_allo
     resource_iri = create_row["resource_bindings"][0]["resource_iri"]
     receipt_ref = create_row["receipt_ref"]
     target_ref = {"artifact_ref": receipt_ref, "path": "/structuredContent/data/items/0"}
+    observed = run.runner._direct_platform_read("get_ontology_read_model", {
+        "ontology_id": "direct-o", "model_name": "entity-list", "field_set": "full",
+    })
+    position = next(index for index, item in enumerate(observed["data"]["items"])
+                    if item["iri"] == resource_iri)
+    read_target_ref = {
+        "artifact_ref": observed["platform_ref"]["artifact_path"],
+        "path": f"/structuredContent/data/items/{position}",
+    }
 
     invalid = call(
         run,
@@ -234,7 +243,7 @@ def test_receipt_pointer_update_preserves_identity_rejects_old_revision_and_allo
                     "rename-work-order-stale",
                     "update",
                     "entity",
-                    target_ref=target_ref,
+                    target_ref=read_target_ref,
                     fields={"label": "Must not write"},
                 )
             ],
@@ -244,6 +253,32 @@ def test_receipt_pointer_update_preserves_identity_rejects_old_revision_and_allo
     assert stale["errors"][0]["code"] == "resource_revision_conflict"
     assert len(run.calls) == 2
     assert not any(str(obj) == "Must not write" for _, _, obj, _ in run.store.dataset.quads((None, None, None, None)))
+
+    # Applied receipts remain identity anchors across revisions; governed read
+    # snapshots above must instead be refreshed before a new change can use them.
+    correction_request = {
+        "schema_version": "r4-3-025-model-changes/v1",
+        "candidate_ref": None,
+        "changes": [
+            _change(
+                "correct-work-order",
+                "update",
+                "entity",
+                target_ref=target_ref,
+                fields={"label": "Corrected work order"},
+            )
+        ],
+    }
+    corrected = call(run, correction_request)
+    assert corrected["status"] == "completed", corrected
+    assert len(run.calls) == 3
+    assert run.calls[-1]["items"][0]["payload"]["entity_iri"] == resource_iri
+    assert any(
+        subject == URIRef(resource_iri) and str(obj) == "Corrected work order"
+        for subject, _, obj, _ in run.store.dataset.quads((None, None, None, None))
+    )
+    assert call(run, correction_request)["status"] == "completed"
+    assert len(run.calls) == 3
 
 
 def test_forged_and_out_of_scope_references_are_rejected_without_write(monkeypatch, direct_run):  # noqa: F811

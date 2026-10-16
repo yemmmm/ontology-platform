@@ -184,6 +184,57 @@ def test_update_relation_type_replaces_label_and_endpoints():
     assert (rel_term, range_pred, f"<{_class_iri('class-3')}>", graph_iri) in compiled.delta.inserts
 
 
+@pytest.mark.parametrize("identity_key", ["relation_type_id", "relation_type_iri"])
+@pytest.mark.parametrize(
+    "endpoints",
+    [
+        {"source_class_id": "source-new", "target_class_id": "target-new"},
+        {"source_class_id": "source-new"},
+        {"target_class_id": "target-new"},
+        {},
+        {"source_class_id": None, "target_class_id": None},
+    ],
+)
+def test_update_relation_type_synchronizes_only_provided_endpoints(identity_key, endpoints):
+    identity = "rel-1" if identity_key == "relation_type_id" else _relation_iri("rel-1")
+    compiled = compile_command(
+        "update_relation_type",
+        {"ontology_id": "ont-1", identity_key: identity, **endpoints},
+        _settings(),
+    )
+    graph = _ontology_graph_iri("ont-1")
+    subject = f"<{_relation_iri('rel-1')}>"
+    expected_deletes = set()
+    expected_inserts = set()
+    for field, rdfs_name, id_name in (
+        ("source_class_id", "domain", "sourceClassId"),
+        ("target_class_id", "range", "targetClassId"),
+    ):
+        value = endpoints.get(field)
+        if value is None:
+            continue
+        iri_predicate = f"<http://www.w3.org/2000/01/rdf-schema#{rdfs_name}>"
+        id_predicate = f"<http://op.local/ns/vocab/{id_name}>"
+        expected_deletes.update({
+            (subject, iri_predicate, "?o", graph),
+            (subject, id_predicate, "?o", graph),
+        })
+        expected_inserts.update({
+            (subject, iri_predicate, f"<{_class_iri(value)}>", graph),
+            (subject, id_predicate, _literal_term(value), graph),
+        })
+    # Exact deltas also protect unrelated metadata and the omitted endpoint.
+    assert set(compiled.delta.deletes) == expected_deletes
+    assert set(compiled.delta.inserts) == expected_inserts
+    assert compiled.source_ids == [identity]
+    assert compiled.target_graph_iris == [graph]
+    assert compiled.metadata["relation_type_iri"] == _relation_iri("rel-1")
+    assert compiled.metadata["fields_updated"] == [
+        key for key in ("source_class_id", "target_class_id")
+        if endpoints.get(key) is not None
+    ]
+
+
 def test_delete_relation_type_emits_subject_wildcard_deletes():
     payload = {
         "ontology_id": "ont-1",

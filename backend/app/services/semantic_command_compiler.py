@@ -920,6 +920,9 @@ def compile_update_relation_type(
             )
     if source_class_id is not None:
         deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#domain>", "?o", graph_iri))
+        # Keep the ID projection in the same delta as the endpoint IRI.
+        deletes.append((rel_term, f"<{ns.vocab}sourceClassId>", "?o", graph_iri))
+        inserts.append((rel_term, f"<{ns.vocab}sourceClassId>", _literal_term(source_class_id), graph_iri))
         inserts.append(
             (
                 rel_term,
@@ -930,6 +933,8 @@ def compile_update_relation_type(
         )
     if target_class_id is not None:
         deletes.append((rel_term, "<http://www.w3.org/2000/01/rdf-schema#range>", "?o", graph_iri))
+        deletes.append((rel_term, f"<{ns.vocab}targetClassId>", "?o", graph_iri))
+        inserts.append((rel_term, f"<{ns.vocab}targetClassId>", _literal_term(target_class_id), graph_iri))
         inserts.append(
             (
                 rel_term,

@@ -82,3 +82,37 @@ final前核对实际完成、明确暂停/到期、真实接手或已提出具�
 这是指令决策检查，不证明真实后台唤醒、平台修复生效或语义验收PASS。
 
 当前外层主动监督持续中；修复及真实语义结果待后续证据更新，未新建semantic start。
+
+## 端点编译器修复、测试与原线程接续
+
+修复仅在update_relation_type同一delta内同步替换sourceClassId/targetClassId与domain/range，
+保留省略端点、元数据、身份、授权和原子执行。修复者实际退出0，限定三文件diff可读。
+其隔离环境没有pytest，局部真实函数探针不计完整测试，随后由Host执行仓库后端全套。
+
+首次全套为1229 passed、56 skipped、1 failed，912.78秒。唯一失败是既有
+`test_receipt_pointer_update_preserves_identity_rejects_old_revision_and_allows_correction`。
+使用git HEAD原始compiler仅在内存加载运行该单例仍于同一断言失败，3.14秒，未改工作树。
+当前d357b24明确允许旧applied回执在当前IRI可见时作为身份锚点，旧治理读快照仍拒绝跨修订。
+该测试未随原合同更新。另一个同模型medium修复者仅调整这一测试：真实保存治理读快照后
+验证过期拒绝，同时验证applied回执复用身份、纠错与幂等，未修改生产回执逻辑。
+聚焦两文件8 passed、10.55秒；第二次后端全套 **1230 passed、56 skipped**，897.86秒。
+新端点回归包含实际SPARQL create/update读回及单端点、省略端点、无初始端点与无关三元组保留。
+
+GitNexus context未找到compiler符号，staged detect_changes为4文件/0符号；不声称图覆盖。
+根因、调用点、当前diff及真实回归为本次影响判断依据。只暂存本次四个代码/测试文件及本记录，
+保留用户README、presentations和slide-deck工作。
+
+第二次固定验证的全套及写状态对账通过，但重启后的10秒健康窗口先于实际启动完成，
+原attempt2记录为checks_failed并保留。systemd journal显示09:47:52+08后端ready、
+09:47:53前端ready；随后宿主实际核验unit active、WorkingDirectory为当前checkout、
+backend健康200/status ok与frontend200，源码摘要仍与成功测试绑定一致，重新对账无blocked/drift。
+没有改原verifier结果或因同一代码重跑全套；实际外层技术补位回执为
+`workspaces/minimal-chain-20261016-flash-sol-c-repair/outer-runtime-verification.json`，
+并新增到原run evidence供Delivery读取。A13不记自主PASS，语义验收仍待完成。
+
+宿主通过现有resolve_issue正式repair_completed通道提交原issue-1/modeling/epoch1，
+请求`flash-c-endpoint-outer-resolution-1`实际accepted；01:50:48.538451 UTC的issue-control
+确认对原Modeling线程`01a141eb-ba57-7371-89fa-1d12114bc9b3`同线程resume。
+已要求以新的不可变技术修复请求维护已批准端点，不能重放旧applied幂等结果；
+更新存量图后仍须治理读回、关联检查、资源收口与独立验收。技术接续不另扣轮次，余额仍1。
+外层主动监督继续。
