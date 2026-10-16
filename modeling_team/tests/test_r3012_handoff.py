@@ -419,6 +419,30 @@ def test_t1_5_blocked_roles_with_determined_writes_are_ready():
 # --- T1-6/T1-3: unknown writes block, preserve the scene, and recover ----------
 
 
+def test_handoff_summary_does_not_call_validation_failed_receipts_applied(monkeypatch):
+    import modeling_team.runner as runner_module
+
+    harness = _CQRunner()
+    runner = harness.prepare()
+    try:
+        runner.transport = _SettledTransport(runner, "completed")
+        intents = [{"ordinal": n, "mode": "apply_atomic"} for n in [1, 2]]
+        receipts = [{"intent_ordinal": n, "batch_id": f"batch-{n}",
+                     "mode": "apply_atomic", "response_digest": "digest"} for n in [1, 2]]
+        monkeypatch.setattr(runner_module, "read_submission_intents", lambda _: intents)
+        monkeypatch.setattr(runner_module, "read_submission_receipts", lambda _: receipts)
+        monkeypatch.setattr(runner_module, "bound_attempt_proof", lambda _, *, intent, receipt: {
+            "attempt_status": "applied" if intent["ordinal"] == 1 else "validation_failed",
+        }, raising=False)
+        readiness = runner._cq_production_readiness()
+        assert readiness["ready"] is True
+        assert [r["batch_id"] for r in readiness["applied_batches"]] == ["batch-1"]
+        assert readiness["not_applied"][0]["batch_id"] == "batch-2"
+        assert readiness["not_applied"][0]["attempt_status"] == "validation_failed"
+    finally:
+        harness.cleanup()
+
+
 def test_t1_6_unknown_write_blocks_and_stays_quiesced_then_recovers():
     harness = _CQRunner()
     runner = harness.prepare()

@@ -133,6 +133,7 @@ from .staged_decisions import (
     validate_unified_candidate,
     read_attempt_proofs,
     applied_attempt_proof,
+    bound_attempt_proof,
     load_materialization_unlock,
     mark_intent_status,
     next_intent_ordinal,
@@ -8615,10 +8616,31 @@ class TeamRunner:
         try:
             intents = read_submission_intents(self.run.root)
             receipts = read_submission_receipts(self.run.root)
+            applied_receipts = []
+            not_applied_receipts = []
+            intents_by_ordinal = {intent.get("ordinal"): intent for intent in intents}
+            for receipt in receipts:
+                intent = intents_by_ordinal.get(receipt.get("intent_ordinal"), {})
+                if receipt.get("mode") == "apply_atomic":
+                    proof = bound_attempt_proof(self.run.root, intent=intent, receipt=receipt)
+                    status = proof.get("attempt_status") if proof else "unverified"
+                else:
+                    # Legacy apply receipts predate Attempt proofs. A dry-run
+                    # receipt never asserts an application.
+                    status = "applied" if receipt.get("mode") == "apply" else "not_applied"
+                if status == "applied":
+                    applied_receipts.append(receipt)
+                else:
+                    not_applied_receipts.append({
+                        "source": "receipt", "intent_ordinal": receipt.get("intent_ordinal"),
+                        "batch_id": receipt.get("batch_id"), "attempt_status": status,
+                    })
         except StagedDecisionArtifactError as exc:
             unknown_writes.append({"source": "staged-artifacts", "detail": exc.detail})
             intents = []
             receipts = []
+            applied_receipts = []
+            not_applied_receipts = []
         unknown_writes.extend(
             {
                 "source": "intent",
@@ -8660,9 +8682,9 @@ class TeamRunner:
                     "mode": receipt.get("mode"),
                     "response_digest": receipt.get("response_digest"),
                 }
-                for receipt in receipts
+                for receipt in applied_receipts
             ],
-            "not_applied": [
+            "not_applied": not_applied_receipts + [
                 {"source": "admission", "kind": record.get("kind"), "ticket": record.get("ticket")}
                 for record in admission["records"]
                 if record.get("outcome") == "rejected"

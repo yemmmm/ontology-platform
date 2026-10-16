@@ -25,6 +25,9 @@ from .staged_decisions import validate_unified_candidate
 # Reuse the current command field shapes rather than maintaining another
 # list of enum/type constraints beside the platform-facing reference.
 _BATCH_CONTRACT = json.loads((Path(__file__).parent / "references/modeling-batch-item-contract.json").read_text())
+_SEMANTIC_DEFINITION_FIELDS = tuple(json.loads(
+    (Path(__file__).parent / "references/platform-neutral-candidate-authoring.json").read_text()
+)["multiview_semantic_definition"]["fields"])
 
 
 REQUEST_SCHEMA = "r4-3-025-model-changes/v1"
@@ -1153,6 +1156,17 @@ def _semantic_annotation(
     *,
     supported: bool,
 ) -> dict[str, Any] | None:
+    definitions = [(value_semantic, "fields.semantic_definition" if item is None else "value.semantic_definition")]
+    if item is not None:
+        definitions.append((item.get("semantic_definition"), "candidate.semantic_definition"))
+    for definition, field_path in definitions:
+        if isinstance(definition, Mapping):
+            for key in sorted(set(definition) - set(_SEMANTIC_DEFINITION_FIELDS)):
+                ctx.error(
+                    "unsupported_semantic_field",
+                    f"unsupported semantic_definition field {key}; supported: {', '.join(_SEMANTIC_DEFINITION_FIELDS)}",
+                    change=change, field=f"{field_path}.{key}",
+                )
     if item is None:
         if value_semantic is None:
             return None
@@ -1239,7 +1253,7 @@ def _validate_public_fields(
         if regular_fields:
             ctx.error(
                 "unsupported_change_field",
-                f"fields contain unsupported field(s): {', '.join(regular_fields)}",
+                f"fields contain unsupported field(s): {', '.join(regular_fields)}; supported for {command_kind}: {', '.join(sorted(allowed))}",
                 change=change,
                 field=path,
                 candidate_path=candidate_path,
@@ -2158,7 +2172,7 @@ def _validate_request(
     seen: set[str] = set()
     for index, raw in enumerate(raw_changes):
         if not isinstance(raw, Mapping) or set(raw) != _CHANGE_FIELDS:
-            errors.append({"code": "change_schema_mismatch", "change_id": None, "item_id": None, "field": None, "path": f"/request/changes/{index}", "candidate_path": None, "message": "each change must contain exactly change_id, action, resource_kind, item_id, target_ref and fields", "retryable": True})
+            errors.append({"code": "change_schema_mismatch", "change_id": None, "item_id": None, "field": None, "path": f"/request/changes/{index}", "candidate_path": None, "message": "each change must contain exactly change_id, action, resource_kind, item_id, target_ref and fields; " + (f"missing={sorted(_CHANGE_FIELDS - set(raw))}; unexpected={sorted(set(raw) - _CHANGE_FIELDS)}" if isinstance(raw, Mapping) else "expected an object"), "retryable": True})
             continue
         change = deepcopy(dict(raw))
         change_id = change.get("change_id")
@@ -2464,6 +2478,49 @@ def _compile_plan(
     result["batches"] = batches
     result["status"] = "ok"
     return result
+
+
+def model_change_item_schema() -> dict[str, Any]:
+    """Advertise the existing compiler input; the compiler remains its validator."""
+    any_value = {"type": ["string", "integer", "number", "boolean", "array", "object", "null"]}
+    keys = set().union(*_COMMAND_FIELDS.values()) | {"new_object_value", "new_object_is_iri"}
+    fields = {key: deepcopy(any_value) for key in sorted(keys)}
+    fields["semantic_definition"] = {
+        "type": ["object", "null"], "additionalProperties": False,
+        "properties": {
+            key: ({"type": "array", "items": {"type": "string", "minLength": 1}}
+                  if key in {"unknowns", "not_applicable", "conflicting_meanings"}
+                  else {"type": "string", "minLength": 1})
+            for key in _SEMANTIC_DEFINITION_FIELDS
+        },
+    }
+    reference = {
+        "type": ["object", "null"], "required": ["artifact_ref", "path"],
+        "additionalProperties": False,
+        "properties": {key: {"type": "string", "minLength": 1} for key in ["artifact_ref", "path"]},
+        "description": "Copy an actual governed read/applied receipt reference; never guess its pointer.",
+    }
+    return {
+        "type": "object", "additionalProperties": False,
+        "required": sorted(_CHANGE_FIELDS),
+        "properties": {
+            "change_id": {"type": "string", "minLength": 1},
+            "action": {"type": "string", "enum": sorted(_ACTIONS)},
+            "resource_kind": {"type": "string", "enum": sorted(_RESOURCE_KINDS)},
+            "item_id": {"type": ["string", "null"],
+                        "description": "Candidate item_id, or null for fields-only changes. Not a platform ID."},
+            "target_ref": reference,
+            "fields": {
+                "type": ["object", "null"], "properties": fields, "additionalProperties": False,
+                "description": "Semantic fields only; supported keys depend on resource_kind/action. "
+                    "Candidate selection uses fields=null; fields-only uses item_id=null. "
+                    "Create uses target_ref=null; update/delete require an actual target_ref. "
+                    "A concept definition uses class, name and semantic_definition; relation_type "
+                    "uses name, source_class_id and target_class_id wrapping actual existing_resource_ref. "
+                    "Keep change_id/action/resource_kind/item_id/target_ref outside fields.",
+            },
+        },
+    }
 
 
 def compile_model_changes(

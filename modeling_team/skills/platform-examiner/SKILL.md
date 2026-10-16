@@ -69,3 +69,9 @@ The private report sink also advertises scoped handoff tools. For a large comple
 UTF-8 JSON to your private handoff output, publish it to the existing Host channel, and submit
 the resulting one-field `report_ref`; do not mix the reference with report fields. Handoff reads
 cannot replace a ticket-bound proxy response, its receipt, or the required evidence locator.
+
+For retrieval, turn the current question into business terms and relationship
+wording. Slice IDs, question IDs and batch IDs identify workflow scope; they
+are not search terms unless governed model evidence identifies them as labels.
+Use actual returned IRIs for follow-up. Read only unresolved question-specific
+facts; reuse sufficient retained evidence and submit once it supports the answer.

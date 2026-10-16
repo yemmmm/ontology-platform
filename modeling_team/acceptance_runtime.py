@@ -2330,6 +2330,8 @@ _EXAMINER_SCOPE_SCHEMA: dict[str, Any] = {
     "ticket_digest": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
     "model_state_digest": {"type": "string", "pattern": r"^[0-9a-f]{64}$"},
 }
+SEMANTIC_RESOURCE_TYPES = ("concept", "instance", "relation", "fact", "operation", "mapping", "metric")
+
 _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
     "check_platform_health": {},
     "get_project_build_context": {
@@ -2343,7 +2345,7 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
     },
     "get_modeling_context": {},
     "get_ontology_read_model": {
-        "model_name": {"type": "string", "enum": ["classes", "entities", "facts", "rules"]},
+        "model_name": {"type": "string", "enum": ["classes", "entities", "facts"]},
         "include": {"type": "string", "enum": ["asserted"]},
         "allow_stale_derived": {"type": "boolean", "const": False},
         "field_set": {"type": "string", "enum": ["summary", "full"]},
@@ -2367,10 +2369,11 @@ _EXAMINER_TOOL_FIELDS: dict[str, dict[str, dict[str, Any]]] = {
         "scope_mode": {"type": "string", "const": "ontologies"},
         "query": {"type": ["string", "null"]}, "queries": {"type": ["array", "null"], "items": {"type": "string"}},
         "ontology_ids": {"type": "array", "items": {"type": "string"}},
-        "resource_types": {"type": ["array", "null"], "items": {"type": "string"}},
+        "resource_types": {"type": ["array", "null"], "minItems": 1,
+                           "items": {"type": "string", "enum": list(SEMANTIC_RESOURCE_TYPES)}},
         "semantic_roles": {"type": ["array", "null"], "minItems": 1,
                            "items": {"type": "string", "minLength": 1}},
-        "assertion_types": {"type": ["array", "null"], "items": {"type": "string"}}, "search_mode": {"type": "string"},
+        "assertion_types": {"type": ["array", "null"], "items": {"type": "string"}}, "search_mode": {"type": "string", "enum": ["hybrid", "lexical"], "default": "hybrid"},
         "depth": {"type": "integer", "minimum": 0, "maximum": 3},
         "limit": {"type": "integer", "minimum": 1, "maximum": 10},
         "context_limit": {"type": "integer", "minimum": 0, "maximum": 1000},
@@ -2507,14 +2510,16 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
         if "const" in rule and value != rule["const"]:
             raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         if "enum" in rule and value not in rule["enum"]:
-            raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
+            raise ChildRuntimeError(f"{tool}.{key}: expected one of {rule['enum']}; got {value!r}")
         if not _schema_type_matches(value, rule.get("type", "")):
             raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         item_schema = rule.get("items")
         if isinstance(item_schema, Mapping) and isinstance(value, list):
             for item in value:
                 if not _schema_type_matches(item, item_schema.get("type", "")):
-                    raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
+                    raise ChildRuntimeError(f"{tool}.{key}: invalid array item type")
+                if "enum" in item_schema and item not in item_schema["enum"]:
+                    raise ChildRuntimeError(f"{tool}.{key}: expected values from {item_schema['enum']}; got {item!r}")
         if isinstance(value, (int, float)) and "minimum" in rule and value < rule["minimum"]:
             raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
         if isinstance(value, (int, float)) and "maximum" in rule and value > rule["maximum"]:
@@ -2531,21 +2536,17 @@ def validate_examiner_proxy_arguments(tool: str, arguments: Mapping[str, Any], s
     ):
         raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
     if tool == "query_semantic_context":
-        # The consumer needs modeled facts, not ontology scaffolding: default the
-        # resource filter to instance/relation/fact/rule so concept noise and
-        # unrelated class matches stay out of the context.  A caller-supplied
-        # filter may select any existing platform resource kind.
-        allowed_types = {"concept", "instance", "relation", "fact", "rule", "operation", "mapping", "metric"}
+        # Omitted filters must retain every current kind, including concept-level
+        # definitions. Retired dedicated rule resources are not a current kind.
         caller_types = arguments.get("resource_types")
         if caller_types is not None:
-            if not isinstance(caller_types, list) or not caller_types or any(
-                not isinstance(item, str) or item not in allowed_types for item in caller_types
-            ):
-                raise ChildRuntimeError(f"exact argument schema rejected for {tool}")
+            if not isinstance(caller_types, list) or not caller_types:
+                raise ChildRuntimeError(f"{tool}.resource_types: provide a nonempty list or omit")
         else:
-            arguments = {**arguments, "resource_types": ["fact", "instance", "relation", "rule"]}
+            arguments = {**arguments, "resource_types": list(SEMANTIC_RESOURCE_TYPES)}
         # R4.3-009: one global context page of previews, including exact IRI navigation.
         arguments = {**arguments}
+        arguments.setdefault("search_mode", "hybrid")
         arguments.setdefault("depth", 1)
         arguments.setdefault("limit", 5)
         arguments.setdefault("context_limit", 20)
@@ -3121,12 +3122,13 @@ class ScopedReadProxy:
                     arguments = validate_examiner_proxy_arguments(
                         tool, arguments, self.exact_schemas[tool], scope=required
                     )
-                except ChildRuntimeError:
+                except ChildRuntimeError as exc:
                     self.schema_rejections += 1
                     return {
                         "ok": False,
                         "error": "read-arguments-schema",
                         "code": "read-arguments-schema",
+                        "detail": str(exc),
                         "backend_calls": 0,
                     }
             request_digest = _digest({"tool": tool, "arguments": dict(arguments)})

@@ -492,7 +492,8 @@ def _v3_batch_report_schema(*, platform: bool) -> dict[str, Any]:
             "type": ["string", "null"],
             "enum": [*CQ_FAILURE_LAYERS, None],
             "description": (
-                "Failure layer, or an empty layer as the JSON null value or an "
+                "For normal completed answers omit this optional field. Otherwise supply a "
+                "failure layer, or an empty layer as the JSON null value or an "
                 "omitted field (judge: only verdict pass and question-answer-review "
                 "may be empty; model-recall-insufficient and "
                 "platform-runtime-incomplete name one of the enum layers). "

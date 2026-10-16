@@ -230,7 +230,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         valid = {**scope, "query": "release", "scope_mode": "ontologies", "ontology_ids": ["ontology-1"]}
         normalized = validate_examiner_proxy_arguments("query_semantic_context", valid, schema, scope=scope)
         self.assertEqual(normalized["query"], "release")
-        self.assertEqual(normalized["resource_types"], ["fact", "instance", "relation", "rule"])
+        self.assertEqual(normalized["resource_types"], ["concept", "instance", "relation", "fact", "operation", "mapping", "metric"])
         self.assertEqual(normalized["depth"], 1)
         self.assertEqual(normalized["limit"], 5)
         self.assertEqual(normalized["context_limit"], 20)
@@ -257,7 +257,7 @@ class R23006LeanRuntimeTests(unittest.TestCase):
         nullable_valid = {**scope, "scope_mode": "ontologies", "ontology_ids": ["ontology-1"], "queries": ["a", "b"]}
         normalized_nullable = validate_examiner_proxy_arguments("query_semantic_context", nullable_valid, nullable, scope=scope)
         self.assertEqual(normalized_nullable["queries"], ["a", "b"])
-        self.assertEqual(normalized_nullable["resource_types"], ["fact", "instance", "relation", "rule"])
+        self.assertEqual(normalized_nullable["resource_types"], ["concept", "instance", "relation", "fact", "operation", "mapping", "metric"])
         self.assertEqual(normalized_nullable["depth"], 1)
         self.assertEqual(normalized_nullable["limit"], 5)
         self.assertEqual(normalized_nullable["context_limit"], 20)

@@ -88,7 +88,7 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                 },
                 "model_name": {
                     "type": "string",
-                    "enum": ["classes", "entities", "facts", "rules"],
+                    "enum": ["classes", "entities", "facts"],
                 },
                 "include": {"type": "string", "enum": ["asserted"], "default": "asserted"},
                 "allow_stale_derived": {"const": False, "default": False},
@@ -126,12 +126,12 @@ _MODELING_TOOL_SCHEMAS: dict[str, dict[str, Any]] = {
                     "items": {"type": "string", "minLength": 1},
                     "description": "Select Ontologies within the Runner-authorized set; defaults to the bound Ontology.",
                 },
-                "resource_types": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                "resource_types": {"type": "array", "minItems": 1, "items": {"type": "string", "enum": ["concept", "instance", "relation", "fact", "operation", "mapping", "metric"]}},
                 "assertion_types": {"type": "array", "items": {"type": "string", "minLength": 1}},
                 "semantic_roles": {"type": ["array", "null"], "minItems": 1,
                                    "items": {"type": "string", "minLength": 1}},
                 "context_detail": {"type": "string", "enum": ["full", "compact", "preview"]},
-                "search_mode": {"type": "string", "default": "hybrid"},
+                "search_mode": {"type": "string", "enum": ["hybrid", "lexical"], "default": "hybrid"},
                 "expansion_strategy": {"type": "string", "enum": ["adaptive", "fixed"], "default": "adaptive"},
                 "context_order": {"type": "string", "enum": ["relevance", "graph_distance"], "default": "relevance"},
                 "depth": {"type": ["integer", "null"], "minimum": 0, "maximum": 3},
@@ -202,6 +202,10 @@ def _proxy_call(socket_path: str, request: dict[str, Any]) -> dict[str, Any]:
     with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
         client.settimeout(5)
         client.connect(socket_path)
+        # The canonical Host forwarder already bounds a read at 30 seconds.
+        # Let that response (including typed failures) reach the child instead
+        # of replacing a valid in-flight read with an unrelated 5-second error.
+        client.settimeout(35)
         client.sendall((_json(request) + "\n").encode("utf-8"))
         buffer = b""
         while b"\n" not in buffer:

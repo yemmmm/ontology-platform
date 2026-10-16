@@ -582,7 +582,10 @@ CAPABILITY_TOOL_SCHEMAS[CQ_OPERATION] = {
 
 
 if __package__:
+    from .direct_modeling import model_change_item_schema
     from .handoff_materials import HANDOFF_TOOL_SPECS
+
+    CAPABILITY_TOOL_SCHEMAS["modeling_submit_model_changes"]["properties"]["request"]["properties"]["changes"]["items"] = model_change_item_schema()
     CAPABILITY_TOOL_SCHEMAS.update({spec["name"]: spec["inputSchema"] for spec in HANDOFF_TOOL_SPECS})
 
 
@@ -626,6 +629,10 @@ def _matches_schema(value: Any, schema: Mapping[str, Any]) -> bool:
         elif candidate == "integer" and isinstance(value, int) and not isinstance(value, bool):
             valid_type = True
         elif candidate == "array" and isinstance(value, (list, tuple)) and not isinstance(value, str):
+            valid_type = True
+        elif candidate == "boolean" and isinstance(value, bool):
+            valid_type = True
+        elif candidate == "number" and isinstance(value, (int, float)) and not isinstance(value, bool):
             valid_type = True
         elif candidate == "null" and value is None:
             valid_type = True
@@ -874,6 +881,9 @@ class RunnerCapabilityEndpoint:
         operation = params.get("name")
         arguments = params.get("arguments", {})
         schema = CAPABILITY_TOOL_SCHEMAS.get(str(operation))
+        if operation == "modeling_submit_model_changes" and schema is not None:
+            schema = json.loads(json.dumps(schema))
+            schema["properties"]["request"]["properties"]["changes"]["items"] = {"type": "object"}
         if (
             operation not in self.operations
             or schema is None

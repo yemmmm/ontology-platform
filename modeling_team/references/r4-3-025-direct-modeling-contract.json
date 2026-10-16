@@ -91,5 +91,73 @@
     "modeling_inspect_associations",
     "modeling_finish_changes"
   ],
-  "handoff": "Use existing maps/handoffs for submission/query references, findings/dispositions and gaps. Final full governed association check remains required once before handoff, not after every batch. Final Consumer/Judge stays independent and cannot repair the production run. Real modeling starts/repair rounds still require existing user authorization."
+  "handoff": "Use existing maps/handoffs for submission/query references, findings/dispositions and gaps. Final full governed association check remains required once before handoff, not after every batch. Final Consumer/Judge stays independent and cannot repair the production run. Real modeling starts/repair rounds still require existing user authorization.",
+  "fields_only_example": {
+    "note": "Generic supported shape, not scenario business truth. Use actual approved meanings. Each change always has all six outer fields. A later relation_type uses actual returned resource_bindings references selected by change_id; do not copy illustrative locators or infer pointers from positions.",
+    "request": {
+      "schema_version": "r4-3-025-model-changes/v1",
+      "candidate_ref": null,
+      "changes": [
+        {
+          "change_id": "define-object",
+          "action": "create",
+          "resource_kind": "class",
+          "item_id": null,
+          "target_ref": null,
+          "fields": {
+            "name": "Business Object",
+            "semantic_definition": {
+              "business_meaning": "A declared kind of business object.",
+              "unknowns": [
+                "No concrete instances are supplied."
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "semantic_definition_fields": [
+      "semantic_role",
+      "business_meaning",
+      "applicability",
+      "unknowns",
+      "not_applicable",
+      "conflicting_meanings"
+    ],
+    "unsupported_field_guidance": "Do not add exclusions to semantic_definition; preserve an approved exclusion in supported business_meaning/applicability text. Change identity keys belong outside fields.",
+    "relation_request_template": {
+      "schema_version": "r4-3-025-model-changes/v1",
+      "candidate_ref": null,
+      "changes": [
+        {
+          "change_id": "define-relationship",
+          "action": "create",
+          "resource_kind": "relation_type",
+          "item_id": null,
+          "target_ref": null,
+          "fields": {
+            "name": "related to",
+            "source_class_id": {
+              "existing_resource_ref": {
+                "artifact_ref": "<copy actual source binding artifact_ref>",
+                "path": "<copy actual source binding path>"
+              }
+            },
+            "target_class_id": {
+              "existing_resource_ref": {
+                "artifact_ref": "<copy actual target binding artifact_ref>",
+                "path": "<copy actual target binding path>"
+              }
+            },
+            "semantic_definition": {
+              "business_meaning": "The first declared object kind relates to the second.",
+              "unknowns": [
+                "No cardinality is supplied."
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
 }

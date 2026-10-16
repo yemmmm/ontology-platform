@@ -106,29 +106,19 @@ def test_active_roles_mount_interface_contract():
         assert CONTRACT.name in package.instructions_path.read_text()
 
 
-def test_active_consumer_operation_read_example_matches_actual_v3_schema():
+def test_active_consumer_operation_read_matches_actual_v3_schema_and_current_defaults():
     _, instructions, _ = CodexRuntimeAdapter._child_package_assets(
         "platform", ROOT, v3_batch=True
     )
     assert instructions == (
         ROOT / "modeling_team/agent-packages/v3-acceptance-batch/platform-examiner.md"
     )
-    text = instructions.read_text()
-    example = json.loads(text.split("```json\n", 1)[1].split("```", 1)[0])
     scope = {"project_id": "example-project", "ticket_digest": "a" * 64}
-    replacements = {
-        "<packet project_id>": scope["project_id"],
-        "<packet freeze_digest>": scope["ticket_digest"],
-        "<authorized ontology_id>": "example-ontology",
-        "<Operation IRI from authorized evidence>": "https://example.org/operation/example",
+    arguments = {
+        **scope, "scope_mode": "ontologies", "ontology_ids": ["example-ontology"],
+        "query": "https://example.org/operation/example",
+        "resource_types": ["operation"], "context_detail": "full",
     }
-    arguments = json.loads(json.dumps(example))
-    for key, value in arguments.items():
-        arguments[key] = (
-            [replacements.get(item, item) for item in value]
-            if isinstance(value, list)
-            else replacements.get(value, value)
-        )
     schema = v3_examiner_proxy_schemas(["query_semantic_context"])[
         "query_semantic_context"
     ]
@@ -138,12 +128,13 @@ def test_active_consumer_operation_read_example_matches_actual_v3_schema():
     assert normalized["resource_types"] == ["operation"]
     assert normalized["context_detail"] == "full"
     assert normalized["ontology_ids"] == ["example-ontology"]
-    # The documented filter must opt in to Operations; exact IRI alone does not.
+    # Omitted filters now retain all current kinds, matching the backend;
+    # explicit Operation selection remains usable in the same authorized scope.
     omitted = {key: value for key, value in arguments.items() if key != "resource_types"}
     defaulted = validate_examiner_proxy_arguments(
         "query_semantic_context", omitted, schema, scope=scope
     )
-    assert "operation" not in defaulted["resource_types"]
+    assert "operation" in defaulted["resource_types"]
 
 
 @pytest.mark.parametrize("form", ["neutral", "unified"])

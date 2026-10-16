@@ -361,6 +361,17 @@ R4.3-020的Delivery CLI默认`model_context_window: 544000`及
 | `examiner_report.read_frozen_evidence` | v2 引用 Judge；run_id、batch_id、freeze_digest、reference_id | 仅返回已绑定冻结业务原文；同文可复用及重读，记录实际读取回执；无仓库／DB／平台读取权限 |
 | `record_efficiency_progress` | 原生 Delivery；追加 intervals、counts、题集冻结身份或已核对 completion | 仅作用于 Host 配置 efficiency_round 的私有本地记录，不能改变原始起点；计算墙钟与故障并集，不裁决语义／性能 PASS |
 
+R4.3-028：`changes` 每项显式包含 `change_id`、`action`、`resource_kind`、`item_id`、
+`target_ref`、`fields` 六字段。候选入口选择item并使用fields=null；fields-only定义使用
+item_id=null，创建时target_ref=null。工具宣告已有合法枚举及语义字段；编译器仍负责
+操作组合、引用和内容校验，可修正内层错误返回原字段诊断，不变成不透明的认证拒绝。
+`semantic_definition`仅使用现有六类字段，不支持exclusions；业务排除条件保留在有依据
+的语义说明中。后续关系端点复制实际回执的resource_bindings引用，不能按数组位置猜。
+
+当前Modeling／Consumer读目录仅宣告合法资源类型及hybrid／lexical模式；省略筛选包含
+概念定义，专用rule／rules读取已退役。内部slice ID不是默认业务检索词；从问题业务
+用语开始、沿实际IRI按需读取。错误反馈保留字段及合法枚举说明，不影响原授权边界。
+
 Judge 初始 packet 只传冻结资料清单和题目对应；完整获准副本保留 Host，PASS 需要实际读取
 并引用相关原文。平台响应采用无损正文注册表并主动按实际输入体积分组，各组覆盖同一
 冻结完整题集，报告分别披露业务资料和平台响应字节量。

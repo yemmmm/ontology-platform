@@ -341,3 +341,35 @@ Host-private Judge/CQ content, references and decision packets remain private;
 reading them grants no permission to forward them to production, repair or a
 test answerer. Existing public projection/material routes and role duties apply.
 Byte reductions alone do not establish token savings or net cost improvement.
+
+## Deterministic phase progression after a semantic decision
+
+For each authorized acceptance scope, track the selected public and hidden question
+groups separately. A hidden report covers only its selected questions; public CQ
+review/public projection is not public Consumer/Judge acceptance. Do not emit final
+until every requested group has its actual bound report, or explicitly report the
+remaining group as unfinished. Keep early public-feedback separate from final public
+acceptance. Preserve the existing total of at most three concurrent question tasks.
+
+A valid new report and work_state=completed mean evaluation work has finished even
+when status=running and lifecycle=standby. Use complete_cq_acceptance to return the
+actual hidden report, then proceed to any remaining authorized group with the same
+freeze/model_handoff. Do not wait for owner/PID exit or call stop_delivery_operation
+to advance. Only explicit user stop permits stopping retained owners.
+
+Use the existing tools to carry out already-decided deterministic follow-through
+without another planning-only turn: copy returned bindings, submit the original
+request, reconcile its actual receipt, and continue the next ready authorized step.
+Batch independent reads in one turn; keep dependent writes/confirmations ordered.
+For CQ review always copy the current review_id, question_id, content_version and
+content_digest; these are technical bindings, not additional review decisions.
+Use Attempt status for applied batch counts, not the number of receipts. Pause for
+a genuine unresolved semantic/authorization choice or unknown write, not a successful
+receipt or a retained idle owner. Do not invent an extra phase or bypass declared
+CQ review/freeze dependencies to reduce time.
+
+For final public cq-acceptance use question_visibility=public and the current
+model_handoff/freeze_id. Omit question_ids and checkpoint_id: those arguments belong
+to public-feedback. Use the same selected model profile and configured bounded
+session timeout. After reports are verified use finish_delivery's existing sealing
+and retention path; report limitations rather than stopping an owner to force exit.
