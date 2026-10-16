@@ -54,9 +54,9 @@ validate、baseline、run 必须绑定同一本轮 Task；已冻结运行不得�
    不让业务输入方查日志或填写。来源只列获准业务材料，不把隐藏 CQ、凭据或全仓库列为业务源。
 2. Delivery 的模型／effort 使用 profile 中可选 `delivery` binding；未配置时显式继承
    Coordinator 并记录来源。保留最新用户选择及 `service_tier`，不另套默认修复者调度。
-   需要修复时填写本轮指定的 `repair.executor/model/effort`、`repair_owned_paths` 与合法公开
-   依据；当前隔离修复仅支持 Codex，已指定 Claude 时报告 `repair_isolation_unavailable`，
-   不擅自换执行者或退到非隔离 shell。部署权限按[修复参考](claude-repair.md#独立-delivery-模式r40-023)处理。
+   按 R4.3-029，需要平台修复时由 Delivery 提交 `request_host_action(kind="platform_repair")`，
+   获准宿主按当前台账执行；不要求填写旧 Delivery 子修复的 `repair.executor/model/effort`
+   或 `repair_owned_paths`。执行者、修复范围及部署权限按[修复参考](claude-repair.md#独立-delivery-模式r40-023)核对。
 3. 从实际 checkout 启动可交互、可返回控制权的进程，保持 stdin 开放。以下路径为已准备
    配置的示例；凭据沿现有 Host 环境通道，不写入配置、业务输入或角色提示。
 
@@ -890,6 +890,11 @@ pause/resume/stop → 检查点保存/接续/结算 → 核对处理结果）走
 - Claude Code：把片段内容并入项目/用户级 `mcpServers` 配置后重启会话；
   Codex：写入对应宿主配置的 mcp servers 段。两种宿主都只做手工合并，本仓库不提供
   任何自动注册脚本。
+- Claude Code 也可在仓库根目录用 `claude --mcp-config .claude/modeling-team-host-mcp.json`
+  显式加载片段。片段文件存在不等于已经注册；核对当前会话 MCP 连接和实际工具清单，
+  宿主须能调用 `get_pending_actions`、`submit_cq_review` 与 `resolve_issue`。
+  项目技能入口为 `.claude/skills/modeling-dev-loop`，在 Claude Code 中用 `/modeling-dev-loop`；
+  该入口与 Codex 共享同一技能目录，安装或加载都不授予真实建模权限。
 - 工具目录以当前 `host_ops_mcp.py` 和实际 `tools/list` 为准。下表保留 S1/S2 基础工具；
   R4.0-023 已增加 instruction、验收／修复托管和对账工具，不再用“恰好 20 个”判安装正确。
   独立 Delivery 自动注册 Host 工具及本地包装，调用受 session 配置限制，无需业务用户安装 MCP；

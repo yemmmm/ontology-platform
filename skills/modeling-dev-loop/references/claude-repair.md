@@ -1,30 +1,31 @@
 # 当前台账指定修复 Agent 的交接
 
 只在当前已授权目标的实际阻塞需要代码、配置或权威提示修复时读取。独立 Delivery 模式走
-下节受限 Host 工具；其余外层派发／Claude CLI 步骤仅供旧手动模式。技术交付方负责设计
+下节宿主私有交接；任务模板及 Claude CLI 步骤供获准宿主按实际执行者选用。技术交付方负责设计
 裁决和生命周期，修复 Agent 负责明确任务内的开发与自测；高开发权限不扩大任务或业务授权。
 
 ## 独立 Delivery 模式（R4.0-023）
 
-- 由 Delivery 根据可独立核实的公开缺陷形成窄任务，通过 `prepare_repair_task` 保留来源、
-  原始失败、issue、写状态、文件归属和完成目标；再用 `start_repair` 派发，外层或测试
-  代答者不替它写任务、选修复动作。隐藏题、答案及其改写不进入任务；仅有公开引用不证明
-  隐藏诊断已成为合法修复依据。缺公开依据时保留限制，继续独立可做项。
-- 执行者、模型、effort 使用本次配置的 `repair.executor/model/effort`，写范围使用
-  `repair_owned_paths`。当前 Host 隔离执行支持 Codex，Claude 返回可恢复的
-  `repair_isolation_unavailable`；不执行下文默认 Claude 命令、不静默换执行者或在仓库根
-  非隔离运行。已有用户指定继续有效，缺能力时说明具体阻塞；不把技能本身当成修复授权。
-- `get_repair_status` 核对真实退出和限定 diff／结果，Delivery 通过 `read_delivery_artifact`
-  读取自己的修复产物，再调用 `verify_repair`／`get_repair_verification_status`。检查由 Host
-  异步执行，期间继续观察业务输入和运行；退出 0 或修复者自测不代表已生效。
-- backend/frontend 变更只有在配置明确允许 `repair.allow_deployment: true`，且绑定 run
-  当前写入对账成功时才进行固定服务重启与健康检查；部署前还会再次对账。检查失败可在
-  同一修复目标下重新核验并保留每次证据。失败、目标漂移或无部署权限保持未验证，不绕过工具。
-- 使用当前、匹配原 issue 的核验记录提交 `resolve_issue(repair_completed)`，观察原失败步骤
-  的新证据并继续获准独立验收。修复核验不是语义 PASS；Delivery 不改候选、不替 Judge 裁决。
+- 当前按 R4.3-029，由 Delivery 先定位技术异常，再通过
+  `request_host_action(kind="platform_repair")` 写入同一 session 私有 journal。
+  交接保留预期／实际行为、原失败、证据引用、写状态及受阻步骤；已有正式 issue 时绑定
+  真实 `issue_id`、`reporter_id`、`control_epoch`。详细字段见
+  [宿主私有接单与回传](team-runbook.md#r43-029-宿主私有接单与回传)。
+- 获准宿主按 AGENTS T0 复核，使用台账指定的执行者、模型、effort、文件范围与部署权限
+  完成最窄修复。Claude Code 与 Codex 均可承担宿主；旧隔离子修复工具的
+  `repair_isolation_unavailable` 不构成 Claude Code 宿主的能力限制。
+  隐藏题、答案及其改写不进入生产修复任务；缺合法依据时保留限制。
+- 宿主核对实际 diff、原失败复测、必需测试及生效证据。backend/frontend 变更按已有部署
+  授权和 AGENTS 执行重启／健康检查；未知写入先对账，不重放。退出 0 或自测不表示恢复。
+- 宿主直接经现有 Host `resolve_issue(resolution_type="repair_completed")` 提交正式恢复，
+  绑定当前 issue/reporter/epoch；尚未建 issue 的交接不调用该入口。结果原件存入当前 session
+  私有 `host-results/`，用 `modeling_team.delivery_host_actions` 追加 `host_action_result`。
+  Delivery 核对真实结果、回执与写状态后继续原目标；修复完成不等于语义 PASS。
+- Delivery 不再用 `prepare_repair_task`、`start_repair`、`verify_repair` 启动新修复；旧工具与
+  `repair.*` 子修复配置只用于历史在途任务的核对／收尾，不是新宿主修复的前置条件。
 
-以下任务模板可用于核对交接内容；直接写文件、派发进程及服务操作仅由旧手动模式的技术宿主
-执行。独立模式使用上述工具生成和执行任务，不以手动补位替代 Delivery 自主交付证据。
+以下任务模板由获准宿主按需使用；宿主自行修复或交给当前指定执行者，保持唯一写入责任人。
+测试代答者不承担技术修复。流程结果按当前需求取证，不把交接回执写成自主交付或语义 PASS。
 
 ## 发出可验收的任务
 
@@ -67,7 +68,8 @@ Team 的 child service tier 和 production checkpoint profile 限制见
 
 ## Claude Code 启动步骤（仅选择 Claude 时读取）
 
-以下 Claude CLI/provider 命令仅用于旧手动模式台账选定的 Claude Code 执行者；选定 Codex 子 Agent 时
+以下 Claude CLI/provider 命令用于宿主台账选定的 Claude Code 修复执行者；当前宿主自行修复时
+直接使用已有会话与工具，不另起 Claude 子进程。选定 Codex 子 Agent 时
 使用其已有派发入口并显式附上获准 model/effort/service tier，不执行下列 Claude 调度命令。
 
 先检查本机 `claude --version`、`claude --help`。沿用当前台账已记录的 model/effort；

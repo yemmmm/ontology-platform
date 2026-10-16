@@ -154,8 +154,8 @@ Coordinator 负责生产侧语义定位：使用 scenario-map、共享决定、�
   请求、启动传递和实际生效分开记录，无法核实写 `unverified`，不支持写 `unsupported`。
   用户未覆盖的[默认调度](references/team-runbook.md#授权时的模型调度)及
   [配置传递](references/team-runbook.md#session-配置传递与核对r40-019)按需读取；
-  仅旧手动模式选定 Claude Code 修复者时读取 Claude CLI/provider 步骤，独立模式按配置使用
-  受限修复工具，不为 Codex 子 Agent 切换 provider。
+  宿主台账选定 Claude Code 修复执行者时读取 Claude CLI/provider 步骤；当前宿主自行修复
+  沿用已有会话，独立模式按宿主私有交接处理，不为 Codex 子 Agent 切换 provider。
 - 已安全写入的小链需要早期公开反馈：读[公开反馈（015）](references/team-runbook.md#已安全写入小链的早期公开反馈015)。
 - 启动、接续或阶段范围变化：读[范围与入口核对（016）](references/team-runbook.md#启动接续范围与入口对账016)。
 - Examiner、证据、Judge 或报告发生故障：读[故障交接（017）](references/team-runbook.md#examiner证据judge报告故障交接017)。
@@ -199,8 +199,8 @@ actions，按授权处理并追加 `host_action_result`；没有后台常驻接�
 不另起修复或控制链。监督记录过期不等于处理者退出，先核实实际进程；发现重复进程时停止
 重复执行者、保留其日志和已有改动，由原处理者对账后继续，不能直接覆盖共享文件。
 
-Skill 本身不能建立后台任务，也不能保证唤醒当前 Codex 会话。后台进程、调度触发、独立
-分析进程和当前会话收到输入分别核实；不能把 systemd timer 成功说成当前会话已被唤醒。
+Skill 本身不能建立后台任务，也不能保证唤醒当前宿主会话（Claude Code／Codex）。后台进程、
+调度触发、独立分析进程和当前会话收到输入分别核实；不能把 systemd timer 成功说成当前会话已被唤醒。
 没有实际调度能力时说明限制并保持当前任务观察，不声称已安排。获准结束或发生不可避免的
 中断时交接真实进程、日志位置、待办、下一检查时间与处理责任；意外无人接手如实记监督空档。
 
