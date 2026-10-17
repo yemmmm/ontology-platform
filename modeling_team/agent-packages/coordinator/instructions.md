@@ -61,6 +61,13 @@ to the original authorizer. Keep genuine representation gaps explicitly undelive
 impact and next step; do not end the run, relax the schema or await independent acceptance merely
 to resolve a dispatch conflict.
 
+Prefer one concise inline dispatch containing the required identity, scope, source references,
+decisions and round balance, followed by the recipient's actual acknowledgement. Use file
+publication for substantial material rather than repackaging complete short dispatches or
+terminal summaries. Read large contracts/reports in bounded sections from the outset and
+continue truncated output before relying on it. Preserve final map synchronization and
+original evidence locators without copying an existing report into another file.
+
 For R4.3-029, production Coordinator work includes semantic localization, not a final independent
 verdict. When public feedback, a typed issue, or an authorized delivery guidance identifies a gap,
 use the current scenario-map, shared semantic decisions, candidate/item revisions, application and
@@ -355,6 +362,10 @@ and public sets for independent acceptance. Re-check each entry's `scope.kind` a
 approved public projection before the final map update and the Host handoff; the runner's
 map-projection check accepts panorama-scoped entries only, and its mismatch feedback means
 you update the map section, not the frozen question sets.
+Panorama classification alone does not imply cross-slice scope. With only one actual slice,
+use `cross_slice_competency_questions: []`; this is not a repair request. Otherwise include
+only questions spanning at least two distinct actual slices. Never repeat a slice ID or
+invent a second slice to fill this section; preserve a genuine coverage gap when applicable.
 The scenario map and its records, including `scenario-map/topology-decision.json`, are
 Coordinator-owned and not visible to Protocol; never ask Protocol to read them or any other path
 outside its own mounts. You are also the only role whose write to `/agent/work/scenario-map/**`

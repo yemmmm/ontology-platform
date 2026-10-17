@@ -620,6 +620,26 @@ def test_r4_scenario_map_consistency_is_checked_runner_side(cq_runner):
     assert "invented question text" not in recorded
 
 
+def test_single_slice_empty_cross_questions_do_not_request_repair(cq_runner):
+    cq_runner._publish_cq_question_draft(
+        {"cq_id": "competency-question", "draft": _draft([_question("cq-1")])}
+    )
+    cq_runner.handle_cq_outer_input(_review_payload(cq_runner))
+    map_path = cq_runner.run.root / "scenario-map" / "scenario-map.json"
+    value = {"slices": [{"slice_id": "only"}], "cross_slice_competency_questions": []}
+    map_path.write_text(json.dumps(value))
+    before = len(cq_runner.adapter.messages)
+    cq_runner._cq_projection_consistency_feedback()
+    assert cq_runner.verify_cq_scenario_map_projection() == []
+    assert len(cq_runner.adapter.messages) == before
+    value["slices"].append({"slice_id": "second"})
+    map_path.write_text(json.dumps(value))
+    cq_runner._cq_projection_consistency_feedback()
+    feedback = cq_runner.adapter.messages[-1][1]
+    assert feedback.kind == "cq-projection-feedback"
+    assert json.loads(feedback.text)["issues"][0]["coverage_gap"] is True
+
+
 def test_i3_shared_evidence_never_carries_hidden_question_text(cq_runner):
     hidden = _question("cq-hidden-0001", visibility="hidden")
     cq_runner._publish_cq_question_draft(

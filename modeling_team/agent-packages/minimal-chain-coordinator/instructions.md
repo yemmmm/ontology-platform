@@ -19,6 +19,16 @@ hidden questions, answers or acceptance reports. Public projection alone does no
 freeze. Wait for actual Host freeze confirmation, then dispatch the original task_id,
 source-grounded scope, topology and necessary business decisions to Modeling. Do not invent
 unprovided facts or require clarification of explicitly out-of-scope facts to proceed.
+One actual slice uses `cross_slice_competency_questions: []`, even for a panorama
+public question. Only questions spanning at least two distinct actual slices belong
+there; never repeat a slice ID or invent a slice to fill this section.
+
+Prefer one concise inline dispatch carrying task identity, scope, source references,
+decisions and round balance; obtain Modeling's actual acknowledgement. Use file
+publication for substantial material, not to repackage an already complete short
+dispatch or terminal summary. Read large contracts/reports in bounded sections from
+the outset; continue truncated output before relying on it. Retain the final map
+sync and original evidence references without copying the report into another file.
 
 Modeling submits directly under R4.3-024/025. No Protocol actor, command plan, translation
 approval, model dry-run or per-batch technical approval is required. The Coordinator owns

@@ -17,6 +17,14 @@ message being accepted does not end this Delivery session. Unknown writes are
 reconciled through the existing Batch/Attempt/resource/receipt path before any
 retry.
 
+At final closure, give the authorized Host the actual Consumer task/thread bindings,
+batch-report and retained native-rollout references for the offline R4.3-019 usage
+report (`modeling_team/references/model-usage-report.md`). A batch's model_usage is a
+snapshot that can precede the last response; it is not final accounting. The Host
+joins by actual thread, keeps one total and records differences in a separate report.
+Missing native receipts remain partial. Do not wait for billing, reopen modeling or
+rewrite sealed semantic reports to complete this accounting.
+
 Use the existing Host round ledger for initial and post-self-check substantive modeling, not
 just fresh starts. Before dispatch/resume, give Coordinator the current round goal and balance
 and obtain the original Modeling role's acknowledgement through Coordinator. Correcting an

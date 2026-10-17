@@ -233,6 +233,17 @@ def test_m6_scenario_map_keeps_three_fields_and_rejects_new_question_text():
     assert provenance[0]["reason_code"] == "cq_freeze_schema_mismatch"
 
 
+def test_cross_slice_empty_section_respects_actual_slice_scope():
+    projection = public_projection(freeze_question_pool(_freeze()))
+    assert cross_slice_projection_issues([], projection, slice_ids=[SLICE_ID]) == []
+    assert cross_slice_projection_issues([], projection, slice_ids=[SLICE_ID, SLICE_ID]) == []
+    issues = cross_slice_projection_issues([], projection, slice_ids=[SLICE_ID, "second"])
+    assert issues[0]["coverage_gap"] is True
+    # A single slice does not waive question identity or text checks.
+    minted = [{"question_id": "new", "question": "invented", "spans_slices": [SLICE_ID]}]
+    assert cross_slice_projection_issues(minted, projection, slice_ids=[SLICE_ID])
+
+
 # --- M8/I5: shown means permanently public -----------------------------------
 
 

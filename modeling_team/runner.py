@@ -8560,7 +8560,15 @@ class TeamRunner:
             ]
         scenario_map = json.loads(map_path.read_text(encoding="utf-8"))
         entries = (scenario_map or {}).get("cross_slice_competency_questions", [])
-        issues = cross_slice_projection_issues(entries, self._cq_public_projection())
+        slices = (scenario_map or {}).get("slices")
+        slice_ids = (
+            [item["slice_id"] for item in slices
+             if isinstance(item, dict) and isinstance(item.get("slice_id"), str)]
+            if isinstance(slices, list) else None
+        )
+        issues = cross_slice_projection_issues(
+            entries, self._cq_public_projection(), slice_ids=slice_ids
+        )
         if issues:
             self._append_evidence(
                 "cq-projection-consistency",

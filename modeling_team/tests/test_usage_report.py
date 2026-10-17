@@ -57,12 +57,135 @@ def add_source(s, tmp_path, sid, records, kind="receipts", **binding):
     path = tmp_path / f"{sid}.jsonl"
     path.write_text("".join(json.dumps(r) + "\n" for r in records))
     s["sources"].append(dict(id=sid, root=str(tmp_path), path=path.name, kind=kind))
-    s["bindings"].append(dict(source_id=sid, evidence_ref="binding", **{**IDENTITY, **binding}))
+    s["bindings"].append(
+        dict(source_id=sid, evidence_ref="binding", **{**IDENTITY, **binding})
+    )
     return path
 
 
 def tokens(report):
     return report["task_usage"]["tokens"]
+
+
+def consumer_snapshot_source(s, tmp_path, *, thread="thread-a", increments=None):
+    path = tmp_path / "batch-report.json"
+    path.write_text(
+        json.dumps(
+            {
+                "sessions": {
+                    "platform_examiner": {
+                        "tasks": [
+                            {
+                                "finished_at": STAMP,
+                                "model_usage": {
+                                    "fresh_thread_id": thread,
+                                    "fresh_thread": True,
+                                    "metrics_complete": False,
+                                    "token_usage_increments": increments
+                                    or [usage(i=70, c=40, o=15)],
+                                },
+                            }
+                        ]
+                    }
+                }
+            },
+            indent=2,
+        )
+    )
+    s["sources"].append(
+        dict(id="batch", root=str(tmp_path), path=path.name, kind="batch_report")
+    )
+    s["bindings"].append(
+        dict(source_id="batch", evidence_ref="consumer-task-thread", **IDENTITY)
+    )
+    return path
+
+
+def test_consumer_snapshot_is_reconciled_with_native_final_usage_without_double_count(
+    tmp_path,
+):
+    s = scope(tmp_path)
+    # Native receipts include the last response; the sealed snapshot precedes it.
+    native = [
+        {"type": "session_meta", "payload": {"id": "thread-a"}},
+        {
+            "type": "token_usage_record",
+            "timestamp": STAMP,
+            "payload": {"response_id": "r1", "usage": usage()},
+        },
+    ]
+    add_source(s, tmp_path, "native", native, kind="rollout")
+    s["sources"] = [x for x in s["sources"] if x["id"] != "s1"]
+    s["bindings"] = [x for x in s["bindings"] if x["source_id"] != "s1"]
+    batch = consumer_snapshot_source(s, tmp_path)
+    value = json.loads(batch.read_text())
+    value["private_question_text"] = "PRIVATE-QUESTION-DO-NOT-EXPORT"
+    batch.write_text(json.dumps(value))
+    original = batch.read_bytes()
+    report = build_report(s)
+    assert tokens(report)["input_tokens"] == 100
+    comparison = report["consumer_snapshot_comparisons"][0]
+    assert comparison["selected_source"] == "bound_records"
+    assert comparison["difference"]["input_tokens"] == 30
+    assert batch.read_bytes() == original
+    assert "PRIVATE-QUESTION-DO-NOT-EXPORT" not in json.dumps(report)
+
+
+def test_consumer_without_native_keeps_partial_snapshot_once(tmp_path):
+    s = scope(tmp_path)
+    s["sources"].clear()
+    s["bindings"].clear()
+    consumer_snapshot_source(s, tmp_path)
+    # A second copy of the same immutable snapshot does not add usage.
+    s["sources"].append({**s["sources"][0], "id": "copy"})
+    s["bindings"].append({**s["bindings"][0], "source_id": "copy"})
+    report = build_report(s)
+    assert tokens(report)["input_tokens"] == 70
+    assert len(report["cost_units"]) == 1
+    assert report["usage_status"] == "partial"
+    assert (
+        report["consumer_snapshot_comparisons"][0]["selected_source"]
+        == "partial_snapshot"
+    )
+
+
+def test_consumer_thread_conflict_is_not_attributed_or_added(tmp_path):
+    s = scope(tmp_path)
+    consumer_snapshot_source(s, tmp_path, thread="other-thread")
+    report = build_report(s)
+    assert tokens(report)["input_tokens"] == 100
+    assert any(x["code"] == "binding_missing" for x in report["limitations"])
+
+
+@pytest.mark.parametrize("change", ["not_fresh", "invalid_number", "truncated", "empty_thread"])
+def test_consumer_snapshot_invalid_or_inherited_usage_stays_partial(tmp_path, change):
+    s = scope(tmp_path)
+    s["sources"].clear()
+    s["bindings"].clear()
+    path = consumer_snapshot_source(s, tmp_path)
+    value = json.loads(path.read_text())
+    metrics = value["sessions"]["platform_examiner"]["tasks"][0]["model_usage"]
+    if change == "not_fresh":
+        metrics["fresh_thread"] = False
+    elif change == "empty_thread":
+        metrics["fresh_thread_id"] = ""
+    elif change == "invalid_number":
+        metrics["token_usage_increments"][0]["input_tokens"] = -1
+    path.write_text(json.dumps(value))
+    if change == "truncated":
+        path.write_bytes(path.read_bytes()[:-5])
+    report = build_report(s)
+    assert tokens(report)["input_tokens"] is None
+    assert report["usage_status"] != "complete"
+
+
+def test_consumer_partial_snapshot_cannot_establish_bill_match(tmp_path):
+    s = scope(tmp_path)
+    s["sources"].clear()
+    s["bindings"].clear()
+    consumer_snapshot_source(s, tmp_path)
+    bill(s)
+    assert build_report(s)["billing_status"] != "MATCHED"
 
 
 def bill(s, **extra):

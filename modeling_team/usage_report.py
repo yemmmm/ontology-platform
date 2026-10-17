@@ -35,7 +35,7 @@ GROUP = (
     "role",
     "phase",
 )
-SOURCE_KINDS = {"rollout", "app_server", "capture", "receipts", "timing", "metrics"}
+SOURCE_KINDS = {"rollout", "app_server", "capture", "receipts", "timing", "metrics", "batch_report"}
 
 
 class ScopeError(ValueError):
@@ -171,6 +171,7 @@ def _binding(scope, source_id, record, issues, locator):
 
 def _read_sources(scope, base, issues):
     receipts, cumulative, attempts, timings, compactions, sources = [], [], [], [], [], []
+    snapshots = []
     for spec in scope.get("sources", []):
         root = (base / spec.get("root", ".")).resolve()
         path = (root / spec["path"]).resolve()
@@ -205,6 +206,9 @@ def _read_sources(scope, base, issues):
         )
         if "byte_length" in spec and len(raw) != spec["byte_length"]:
             _issue(issues, "source_truncated", {"source_id": spec["id"]})
+        if spec["kind"] == "batch_report":
+            snapshots.extend(_read_consumer_snapshots(scope, spec, raw, issues))
+            continue
         thread_id = spec.get("thread_id")
         config = {}
         position = offset
@@ -414,7 +418,139 @@ def _read_sources(scope, base, issues):
                 receipts.append(normalized)
             else:
                 _issue(issues, "unsupported_record_mode", locator)
-    return receipts, cumulative, attempts, timings, compactions, sources
+    return receipts, cumulative, attempts, timings, compactions, sources, snapshots
+
+
+def _read_consumer_snapshots(scope, spec, raw, issues):
+    """Read numeric task snapshots only; never copy CQ text or answer material."""
+    locator = {
+        "source_id": spec["id"],
+        "byte_offset": spec.get("byte_offset", 0),
+        "byte_length": len(raw),
+    }
+    try:
+        tasks = json.loads(raw)["sessions"]["platform_examiner"]["tasks"]
+        if not isinstance(tasks, list):
+            raise ValueError
+    except (ValueError, TypeError, KeyError):
+        _issue(issues, "consumer_snapshot_invalid", locator)
+        return []
+    records = []
+    for index, task in enumerate(tasks):
+        source = {
+            **locator,
+            "json_pointer": f"/sessions/platform_examiner/tasks/{index}/model_usage",
+        }
+        metrics = task.get("model_usage") if isinstance(task, dict) else None
+        if (not isinstance(metrics, dict)
+                or not isinstance(metrics.get("fresh_thread_id"), str)
+                or not metrics["fresh_thread_id"].strip()):
+            _issue(issues, "consumer_snapshot_missing", source)
+            continue
+        increments = metrics.get("token_usage_increments")
+        # A task snapshot is a thread subtotal only for a genuinely fresh child.
+        if (
+            metrics.get("fresh_thread") is not True
+            or not isinstance(increments, list)
+            or not increments
+        ):
+            _issue(issues, "consumer_snapshot_baseline_unproven", source)
+            continue
+        rows = []
+        for increment in increments:
+            values, invalid = numeric_usage(
+                increment if isinstance(increment, dict) else {}
+            )
+            if invalid or not isinstance(increment, dict):
+                _issue(issues, "invalid_usage", source)
+            rows.append(values)
+        usage = {
+            field: sum(row[field] for row in rows)
+            if all(row[field] is not None for row in rows)
+            else None
+            for field in TOKEN_FIELDS
+        }
+        observed = {
+            "thread_id": metrics["fresh_thread_id"],
+            "timestamp": task.get("finished_at"),
+        }
+        bound, binding = _binding(scope, spec["id"], observed, issues, source)
+        if not binding or not all(
+            bound.get(k) for k in ("task_ref", "provider", "key_ref")
+        ):
+            _issue(issues, "consumer_snapshot_binding_unproven", source)
+            continue
+        records.append(
+            {
+                **bound,
+                "timestamp": observed["timestamp"],
+                "source_mode": "partial_thread_snapshot",
+                "usage": with_derived(usage),
+                "sources": [source],
+                "response_id": None,
+                "request_id": None,
+                "binding_evidence_refs": [binding["evidence_ref"]],
+            }
+        )
+    return records
+
+
+def _reconcile_consumer_snapshots(units, snapshots, issues):
+    """Native usage wins; a snapshot is a partial fallback, never an addition."""
+    groups = defaultdict(list)
+    key_fields = ("task_ref", "provider", "key_ref", "thread_id")
+    for row in snapshots:
+        groups[tuple(row.get(k) for k in key_fields)].append(row)
+    comparisons, fallbacks = [], []
+    for key, rows in groups.items():
+        snapshot = dict(rows[0])
+        snapshot["sources"] = [source for row in rows for source in row["sources"]]
+        snapshot["usage"] = {}
+        for field in FIELDS:
+            values = {row["usage"].get(field) for row in rows} - {None}
+            snapshot["usage"][field] = next(iter(values)) if len(values) == 1 else None
+            if len(values) > 1:
+                _issue(
+                    issues,
+                    "consumer_snapshot_conflict",
+                    rows[0]["sources"][0],
+                    field=field,
+                )
+        snapshot["usage"], invalid = numeric_usage(snapshot["usage"])
+        snapshot["usage"] = with_derived(snapshot["usage"])
+        for field in invalid:
+            _issue(issues, "invalid_merged_usage", rows[0]["sources"][0], field=field)
+        native = [row for row in units if tuple(row.get(k) for k in key_fields) == key]
+        comparison = {
+            "thread_id": key[-1],
+            "snapshot_usage": snapshot["usage"],
+            "snapshot_sources": snapshot["sources"],
+        }
+        if native:
+            final = summarize(native)["tokens"]
+            difference = {
+                field: final[field] - snapshot["usage"][field]
+                if None not in (final[field], snapshot["usage"][field])
+                else None
+                for field in FIELDS
+            }
+            comparison.update(
+                selected_source="bound_records",
+                native_usage=final,
+                native_sources=[s for row in native for s in row["sources"]],
+                difference=difference,
+            )
+            if any(value is not None and value < 0 for value in difference.values()):
+                _issue(issues, "consumer_native_below_snapshot", snapshot["sources"][0])
+        elif any(row.get("thread_id") == key[-1] for row in units):
+            comparison["selected_source"] = "binding_conflict"
+            _issue(issues, "consumer_native_binding_conflict", snapshot["sources"][0])
+        else:
+            comparison["selected_source"] = "partial_snapshot"
+            fallbacks.append(snapshot)
+            _issue(issues, "consumer_snapshot_not_final", snapshot["sources"][0])
+        comparisons.append(comparison)
+    return [*units, *fallbacks], comparisons
 
 
 def _deduplicate(receipts, issues):
@@ -712,6 +848,9 @@ def _billing(scope, canonical, units, attempts, issues):
     selected, boundaries = [], []
     for r in units:
         if any(r.get(k) != billing.get(k) for k in ("provider", "key_ref")):
+            continue
+        if r.get("source_mode") == "partial_thread_snapshot":
+            boundaries.append(r)
             continue
         if r.get("actual_model") != billing.get("model") or not r.get("actual_model"):
             boundaries.append(r)
@@ -1036,11 +1175,12 @@ def _timing(canonical, timings, task_units, task_window):
 def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
     validate_scope(scope)
     issues = []
-    receipts, cumulative, attempts, timings, compactions, sources = _read_sources(
+    receipts, cumulative, attempts, timings, compactions, sources, snapshots = _read_sources(
         scope, base, issues
     )
     canonical, ambiguous = _deduplicate(receipts, issues)
     units, observed = _account(canonical, cumulative, issues)
+    units, snapshot_comparisons = _reconcile_consumer_snapshots(units, snapshots, issues)
     task = []
     task_window = scope.get("task_window") or {}
     window_valid = (
@@ -1224,6 +1364,7 @@ def build_report(scope: dict, *, base: Path = Path(".")) -> dict:
         "ambiguous_responses": ambiguous,
         "cost_units": units,
         "observed_thread_totals": observed,
+        "consumer_snapshot_comparisons": snapshot_comparisons,
         "usage_definitions": sorted(
             {r["usage_definition_ref"] for r in units if r.get("usage_definition_ref")}
         ),
@@ -1330,6 +1471,15 @@ def render_markdown(report):
             for layer in report["layers"]
         ],
     )
+    if report.get("consumer_snapshot_comparisons"):
+        lines += ["", "## Consumer snapshot reconciliation", ""]
+        lines += table(
+            ["Thread", "Selected source", "Snapshot input", "Bound input", "Input difference"],
+            [[row["thread_id"], row["selected_source"], row["snapshot_usage"]["input_tokens"],
+              row.get("native_usage", {}).get("input_tokens"),
+              row.get("difference", {}).get("input_tokens")]
+             for row in report["consumer_snapshot_comparisons"]],
+        )
     lines += [
         "",
         "## Billing",

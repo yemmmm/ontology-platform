@@ -75,6 +75,7 @@ python -m modeling_team.usage_report \
 | `receipts` | 显式规范化逐响应或线程累计 JSONL，结构见下方 |
 | `timing` | 真实唯一绑定的请求／头后／首输出／turn 时间回执 |
 | `metrics` | 当前仅披露不能直接当逐响应 usage／provider TTFT 的缺口，不转换 Examiner ttft_ms |
+| `batch_report` | 完整 batch-report.json 中 Consumer task 的线程绑定及 model_usage 数值快照；不投影题目、答案或评分正文 |
 
 未知 kind、坏行、缺文件及结构错误保留安全小计与限制，不补零。复制响应按
 (provider,key_ref,response_id)合并来源。缺response_id时仅接受带
@@ -99,6 +100,24 @@ reasoning_output是output子集；未知字段为null，估算字节／context�
 `billing_time_evidence_ref`；否则不能把完成时间当开始或结算时间。
 
 ## 累计、压缩与未知
+
+### Consumer 终态用量核对
+
+Host收尾时在同一scope逐个列出原`batch-report.json`（`kind: batch_report`）及实际
+绑定线程的最终保留rollout（`kind: rollout`），继续使用上方离线命令生成独立报告。
+每个batch源可按各task的`model_usage.fresh_thread_id`提供多个binding；每个binding
+仍须有实际线程归属证据、provider／非秘密key_ref、任务及角色，不能按目录或时间猜配。
+batch源须完整JSON；不将分段JSON当完整报告。原语义报告、digest和裁决不修改。
+
+工具按(task_ref, provider, key_ref, thread_id)关联已绑定响应／累计用量，输出
+`consumer_snapshot_comparisons`和Markdown差异表；快照只作核对，不与同线程记录相加。
+因此报告快照早于最后响应时，末段用量来自保留的真实记录。原生回执仍按既有response_id
+去重／累计基线规则处理；不同来源的归属冲突、数值下降或原件不齐继续披露限制。
+
+缺原生记录时，仅有`fresh_thread: true`及数值增量的快照可作为partial小计，重复副本不
+重复累计；冲突字段为unknown。没有fresh基线或实际线程绑定则不计入任务。快照不作为
+最终账单匹配值，`metrics_complete`也不能证明用量已到最终截点。TTFT及其他metrics
+完整性保持原合同。此核对不调用模型、不阻塞建模、不等待账单，也不为统计重启运行。
 
 线程累计行使用 `source_mode: thread_cumulative`、thread_id、timestamp及usage。
 默认只展示 `observed_thread_totals`，不与响应相加。只有binding中的

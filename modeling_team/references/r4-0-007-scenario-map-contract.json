@@ -195,7 +195,7 @@
       ],
       "rules": [
         "Each item is an object with exactly these fields. question_id and question are nonempty strings.",
-        "spans_slices is an array with at least two entries, each an existing slices[].slice_id value. Structural validation does not impose a uniqueness check.",
+        "spans_slices describes at least two distinct actual slices, each an existing slices[].slice_id value. Never repeat a slice ID to simulate cross-slice scope. With only one actual slice use an empty cross_slice_competency_questions list, including for panorama public questions.",
         "Use authorized public questions only; this section is not approval and must not contain hidden acceptance questions or expected answers."
       ]
     },

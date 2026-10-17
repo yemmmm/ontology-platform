@@ -964,7 +964,7 @@ def write_public_projection(path: Any, projection: dict[str, Any]) -> None:
 
 
 def cross_slice_projection_issues(
-    entries: Any, projection: dict[str, Any]
+    entries: Any, projection: dict[str, Any], *, slice_ids: list[str] | None = None
 ) -> list[dict[str, Any]]:
     """Runner-side external consistency check for the scenario-map section.
 
@@ -973,7 +973,7 @@ def cross_slice_projection_issues(
     ``scenario_map.py``) — no provenance field is added (Round 4 follow-up (c)).
     This check lives Runner-side and reports:
 
-    * an explicit empty section as a recorded coverage gap (not an error);
+    * an empty section as a coverage gap unless only one actual slice exists;
     * any entry whose id/text is not exactly one approved public projection
       question as a rejection, so a production role cannot mint a parallel
       question set that bypasses the "shown means public" rule.
@@ -990,6 +990,11 @@ def cross_slice_projection_issues(
         )
         return issues
     if not entries:
+        # Panorama is a question classification, not proof of cross-slice scope.
+        # A single-slice map correctly leaves this section empty. Unknown scope
+        # retains the existing gap feedback rather than assuming no coverage.
+        if slice_ids is not None and len(set(slice_ids)) == 1:
+            return issues
         issues.append(
             {
                 "reason_code": "cq_public_projection_missing",
