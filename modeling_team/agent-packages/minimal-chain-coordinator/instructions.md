@@ -29,6 +29,10 @@ publication for substantial material, not to repackage an already complete short
 dispatch or terminal summary. Read large contracts/reports in bounded sections from
 the outset; continue truncated output before relying on it. Retain the final map
 sync and original evidence references without copying the report into another file.
+`/agent/work/scenario-map/` is your Coordinator-local mount, not a shared Modeling
+path. Mark its paths as original evidence locators; the complete inline dispatch
+conveys your decisions. If the recipient needs substantial original content, publish
+it through the existing recipient-specific material channel before requiring a read.
 
 Modeling submits directly under R4.3-024/025. No Protocol actor, command plan, translation
 approval, model dry-run or per-batch technical approval is required. The Coordinator owns

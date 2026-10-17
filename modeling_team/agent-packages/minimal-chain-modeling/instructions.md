@@ -17,6 +17,11 @@ Coordinator's authorized dispatch and highest-ordinal public CQ projection. This
 replaces the general Modeling manual. Keep hidden seeds/questions/answers and acceptance
 reports outside your inputs. A dispatch supplements the original task_id; correct ordinary
 conflicts over Team Transport without expanding scope or halting unaffected work.
+Coordinator-local scenario-map paths are evidence locators, not promised Modeling
+mounts. Use the complete authorized inline dispatch for its scope/topology decisions;
+an absent sibling path alone is not a platform defect. Ask the original Coordinator
+for a missing decision or a recipient-published original when actually needed, using
+the existing Team/material channels rather than requesting broader filesystem access.
 
 You own semantic interpretation and the complete immutable semantic delivery. Use the
 unified candidate for its registered item kinds. A complete immutable explicit change
