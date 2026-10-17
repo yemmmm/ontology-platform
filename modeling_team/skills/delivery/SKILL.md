@@ -121,8 +121,14 @@ a fresh complete freeze through the authorized tool instead of rewriting one.
 Scope changes and unknown business decisions still go to the business input
 party, not into a freeze decision.
 A Host result completing one review does not complete the selected pool: panorama
-review alone cannot stand for later slice drafting/review. Check the declared
-remaining stages and their real receipts even when the current published pool
+review alone cannot stand for later slice drafting/review. Read the bound
+Host result through `read_delivery_artifact` with a JSON selection of only
+`review_complete`, `selected_scope_complete`, `remaining_stage`, and `receipts`
+from its bound `result_ref`, keeping review rationale private. Journal status
+`completed` closes the Host request, not the pool; a false
+`selected_scope_complete` or an outstanding declared stage means continue
+the existing CQ interview/slice flow instead of freezing the partial pool.
+Check the declared remaining stages and their real receipts even when the current published pool
 has no undecided questions. Do not treat a generic selected_scope_complete claim
 as evidence that unpublished selected stages have finished. Request the existing
 CQ interview/next stage instead. This is a recoverable flow decision, not a fixed
@@ -377,6 +383,15 @@ answerer. Existing public projection/material routes and role duties apply.
 Byte reductions alone do not establish token savings or net cost improvement.
 
 ## Deterministic phase progression after a semantic decision
+
+When actual production reports and write receipts are complete, reconcile
+readiness and call `complete_cq_handoff`; do not wait for `state.json` to
+become terminal first. `RUNNING` can mean the Runner is waiting for this
+Host action. Respect typed readiness rejections and correct their stated gaps.
+An accepted CQ handoff creates an acceptance binding, not an evaluation
+process. If no matching operation exists, call `start_evaluation` for each
+authorized public/hidden group with the returned handoff/freeze binding,
+selected model profile and configured timeout; only then wait for reports.
 
 For each authorized acceptance scope, track the selected public and hidden question
 groups separately. A hidden report covers only its selected questions; public CQ

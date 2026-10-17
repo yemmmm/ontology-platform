@@ -80,6 +80,12 @@ without it, route the business ambiguity to the original authorizer. A request
 receipt means only that the Host has a private pending action.
 
 A completed panorama review is not completion of later selected slice reviews.
+After a CQ Host result, use `read_delivery_artifact` with a JSON selection of
+`review_complete`, `selected_scope_complete`, `remaining_stage`, and `receipts`
+from its bound `result_ref`. Read these technical fields only, not review
+rationale. Journal status `completed` closes the Host request, not the pool.
+If `selected_scope_complete` is false or a declared stage remains, continue
+the existing CQ interview/slice flow; do not freeze the current partial pool.
 Check actual drafting/review stage receipts for the whole selected scope, not
 only the absence of undecided questions in the currently published pool. Ask
 for the existing next CQ stage while any selected stage is still outstanding.
@@ -332,6 +338,15 @@ answerer. Existing public projection/material routes and role duties apply.
 Byte reductions alone do not establish token savings or net cost improvement.
 
 ## Deterministic phase progression after a semantic decision
+
+When the actual production reports and write receipts are complete, reconcile
+their readiness and call `complete_cq_handoff`; do not wait for `state.json`
+to become terminal first. `RUNNING` can mean the Runner is waiting for this
+Host action. Respect any typed readiness rejection and correct its stated gap.
+An accepted CQ handoff creates an acceptance binding, not an evaluation
+process. If no matching operation exists, call `start_evaluation` for each
+authorized public/hidden group with the returned handoff/freeze binding,
+selected model profile and configured timeout; only then wait for reports.
 
 For each authorized acceptance scope, track the selected public and hidden question
 groups separately. A hidden report covers only its selected questions; public CQ

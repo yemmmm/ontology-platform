@@ -1,0 +1,36 @@
+# User-authorized GLM FlashX max binding for all production, Delivery and acceptance roles.
+schema_version: 1
+model_profile_id: glm-flashx-max
+roles:
+  coordinator:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
+  modeling:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
+  protocol:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
+  competency-question:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
+  acceptance:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
+  source-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
+  platform-examiner:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
+  delivery:
+    model_provider: glm-direct
+    model: glm-5.3-flashx
+    model_reasoning_effort: max
