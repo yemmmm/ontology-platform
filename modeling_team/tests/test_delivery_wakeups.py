@@ -552,3 +552,36 @@ def test_r4329_private_cq_body_is_referenced_without_default_injection(tmp_path)
     metadata = payload["runs"]["run"]["events"]["data"]["events"][0]["data"]
     assert metadata["review_id"] == "review-1" and metadata["content_reference"]
     assert json.loads((host.session_root / "observation.json").read_text())["data"] == update
+
+
+@pytest.mark.parametrize('source,data', [
+    ('app-server-events.jsonl', {'method': 'item/started', 'params': {'item': {'type': 'reasoning'}}}),
+    ('app-server-events.jsonl', {'method': 'item/completed', 'params': {'item': {'type': 'reasoning'}}}),
+    ('app-server-events.jsonl', {'method': 'item/completed', 'params': {'item': {'type': 'userMessage'}}}),
+    ('app-server-events.jsonl', {'method': 'serverRequest/resolved', 'params': {'requestId': 1}}),
+    ('app-server-events.jsonl', {'method': 'mcpServer/elicitation/request', 'params': {'_meta': {'codex_approval_kind': 'mcp_tool_call'}}}),
+    ('app-server-events.jsonl', {'method': 'account/rateLimits/updated', 'params': {'rateLimits': {'primary': None, 'secondary': None, 'rateLimitReachedType': None}}}),
+    ('mcp-elicitations.jsonl', {'action': 'accept', 'mode': 'form', 'server_name': 'team_transport'}),
+])
+def test_recognized_native_bookkeeping_does_not_restart_delivery(tmp_path, source, data):
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    update = observation()
+    event = {'source': source, 'byte_offset': 0, 'data': data}
+    update['runs']['run']['events'] = _events_page([event], next_cursor='next')
+    assert not host.record_observation(update)
+    assert event in json.loads((host.session_root / 'observation.json').read_text())['data']['runs']['run']['events']['data']['events']
+
+
+@pytest.mark.parametrize('data', [
+    {'method': 'item/completed', 'params': {'item': {'type': 'reasoning', 'error': 'failed'}}},
+    {'method': 'mcpServer/elicitation/request', 'params': {'message': 'business decision'}},
+    {'method': 'account/rateLimits/updated', 'params': {'rateLimits': {'primary': {'usedPercent': 100}}}},
+    {'method': 'item/completed', 'params': {'item': {'type': 'futureType'}}},
+])
+def test_native_errors_real_limits_and_unrecognized_events_still_wake(tmp_path, data):
+    host = session(tmp_path)
+    assert host.record_observation(observation())
+    update = observation()
+    update['runs']['run']['events'] = _events_page([{'source': 'app-server-events.jsonl', 'byte_offset': 0, 'data': data}], next_cursor='next')
+    assert host.record_observation(update)

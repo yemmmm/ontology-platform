@@ -134,17 +134,44 @@ def _is_decision_event_noise(event: Any) -> bool:
             if not isinstance(params, dict):
                 return False
             item = params.get("item") or params.get("turn")
-            if not isinstance(item, dict) or not isinstance(item.get("status"), str):
+            if not isinstance(item, dict):
+                return False
+            # These native content records have no status field. Their text
+            # is retained, while actual decisions arrive through Host state.
+            if "status" not in item and item.get("type") in {
+                "reasoning", "agentMessage", "userMessage",
+            }:
+                return True
+            if not isinstance(item.get("status"), str):
                 return False
             # Terminal failures remain visible; ordinary native content is
             # already represented by actual phase/pending/report observations.
             return item.get("status") in {"completed", "inProgress", "running"}
+        if method == "mcpServer/elicitation/request":
+            params = data.get("params") or {}
+            return (isinstance(params, dict)
+                    and isinstance(params.get("_meta"), dict)
+                    and params["_meta"].get("codex_approval_kind") == "mcp_tool_call")
+        if method == "account/rateLimits/updated":
+            params = data.get("params") or {}
+            limits = params.get("rateLimits") if isinstance(params, dict) else None
+            return (isinstance(limits, dict) and bool(limits)
+                    and set(limits) <= {
+                        "credits", "individualLimit", "limitId", "limitName",
+                        "normalModelSlug", "planType", "primary", "secondary",
+                        "rateLimitReachedType", "spendControlReached",
+                    }
+                    and all(value is None for key, value in limits.items()
+                            if key != "limitId"))
         return method in {
+            "serverRequest/resolved",
             "item/agentMessage/delta", "item/reasoning/textDelta",
             "item/reasoning/summaryTextDelta", "item/reasoning/summaryPartAdded",
             "thread/tokenUsage/updated", "turn/started", "thread/status/changed",
             "item/commandExecution/outputDelta", "item/plan/delta",
         }
+    if source == "mcp-elicitations.jsonl":
+        return data.get("action") == "accept" and data.get("mode") == "form"
     if source == "formal-candidate-progress.jsonl":
         return data.get("event") == "candidate-receipt-registered"
     if source == "multi-slice-gate.jsonl":

@@ -5226,6 +5226,10 @@ class TeamRunner:
         gate = self._candidate_platform_gate
         if gate is not None:
             gate.close(reason_code)
+        # Keep enforcing the gate on every check, but repeated observations of
+        # the same rejection must not keep steering Delivery's active turn.
+        if fingerprint in self._multi_slice_gate_feedback_fingerprints:
+            return
         self._append_evidence(
             "multi-slice-gate",
             {
@@ -5234,8 +5238,6 @@ class TeamRunner:
                 "artifact": artifact,
             },
         )
-        if fingerprint in self._multi_slice_gate_feedback_fingerprints:
-            return
         self._multi_slice_gate_feedback_fingerprints.add(fingerprint)
         self._deliver_multi_slice_gate_feedback(reason_code, artifact, detail)
 

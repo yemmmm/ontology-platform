@@ -45,7 +45,7 @@ R4.3-029 journal 已有有限实证，Delivery 流程自主性及净成本仍待
 初建和检查后的新实质修模分开扣账，fresh-start单列。结束后停止本组owner/Runner/Delivery，
 撤销临时凭据，保留模型及证据。现场记录置于workspaces/minimal-chain-20261017-flash-retro。
 
-本次仅提示／文档变更；合同与相邻回归结果见本次追加记录。无需产品服务重启，
+启动前为提示／文档变更；启动后又定位下述通用唤醒缺陷。无需产品服务重启，
 工程检查不表示新轮语义或效率PASS。仓库已有未提交文档和演示材料保持原状。
 
 工程验证：backend目录下以env -u DEEPSEEK_API_KEY PYTHONPATH=.. uv run pytest运行
@@ -54,3 +54,22 @@ test_r4329_independent：74 passed、3 subtests passed（4.71s）。delivery和m
 Skill校验通过，Task/Profile/glm-flash-max配置验证通过，git diff --check通过。
 无执行代码改动，无产品重启。GitNexus未索引到所查Host符号且返回旧文档位置，故不宣称
 图覆盖；实际变更以本地diff和合同回归为证据。
+
+## 新轮中发现的通用运行缺陷与窄修复
+
+同一start1启动后出现1292条topology_missing_artifact重复事件（真实反馈仅1次），
+Delivery已观察到34次client_disconnected。关联到程序每次检查写新关闭事件，以及
+无status的reasoning/userMessage、已批准MCP调用、serverRequest/resolved和空限额通知
+未被识别为常规原生记录，持续形成新的决策输入，steer导致当前推理反复重启。
+前述次数为当时观察窗口，不外推为全部调用成本。并非ClaudeCode启动专属问题。
+
+T0：保留拓扑校验和每次gate.close，不删除任何写入约束；同fingerprint复用已有
+反馈去重，首次错误和不同原因仍记录。Delivery只过滤证据已确认的常规事件，真实错误、
+非空限额、未知事件及未知写入仍触发；原始观察继续完整保留，不改变授权/源/模型/验收。
+仅改变重复通知，无新增治理或恢复机制。GitNexus目标未索引，已聚焦检查全部9个
+_multi_slice_gate_reject调用点及Delivery事件投影/发送入口，未声称图覆盖。
+
+反例：重复gate测试修前1 failed（3事件/1反馈），原生常规记录修前7 failed/4 passed；
+修后相关8个测试文件共计结果以运行记录为准。新代码只在重载后的Delivery进程生效，
+保留原run及建模线程，不热写冻结产物；Runner去重在下一新Runner生效，当前拓扑已打开，
+不为验证此修复重开建模或消耗轮次。净收益与完整语义结果后续据本轮证据更新。
