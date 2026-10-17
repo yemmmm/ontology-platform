@@ -480,9 +480,21 @@ class ModelingReadKeyLifecycle:
             return record
         admin, request = getattr(self.scope, "admin_key", None), getattr(self.scope, "request", None)
         plaintext = self._plaintext.get(key_id)
-        if not isinstance(admin, str) or not admin or not callable(request) or not plaintext:
-            raise ModelingReadError("Modeling read-key revoke inputs are unavailable")
+        cleanup_admin_id = None
         try:
+            if not callable(request) or not plaintext:
+                raise ModelingReadError("Modeling read-key revoke inputs are unavailable")
+            if not admin:
+                # Work sealing revokes the producer admin while retaining the
+                # read-only Team. Reuse the Host's existing bootstrap lifecycle
+                # for final key cleanup, without reopening the sealed scope.
+                bootstrap = getattr(self.scope, "bootstrap_admin", None)
+                revoke_admin = getattr(self.scope, "revoke_admin", None)
+                if callable(bootstrap) and callable(revoke_admin):
+                    admin, cleanup_admin_id = bootstrap()
+                    self._evidence[key_id]["cleanup_admin_key_id"] = cleanup_admin_id
+            if not isinstance(admin, str) or not admin:
+                raise ModelingReadError("Modeling read-key revoke inputs are unavailable")
             status, value = request("POST", f"/api/api-keys/{key_id}:revoke", None, admin)
             revoked_at = value.get("revoked_at") if isinstance(value, Mapping) else None
             self._evidence[key_id].update({"revoke_status": status, "revoked_at": revoked_at})
@@ -499,16 +511,20 @@ class ModelingReadKeyLifecycle:
             self._records[key_id] = revoked
             return revoked
         finally:
-            forwarder = self._forwarders.pop(key_id, None)
-            if forwarder is not None:
-                stopper = getattr(forwarder, "stop", None)
-                if callable(stopper):
-                    stopper()
-            # Regardless of the remote outcome, never retain the plaintext after
-            # the revoke boundary.  A failed status/denial proof is surfaced as a
-            # lifecycle error and the run must fail closed rather than retrying
-            # with a still-resident secret.
-            self._plaintext.pop(key_id, None)
+            try:
+                forwarder = self._forwarders.pop(key_id, None)
+                if forwarder is not None:
+                    stopper = getattr(forwarder, "stop", None)
+                    if callable(stopper):
+                        stopper()
+            finally:
+                # Local release also applies when remote revoke inputs fail.
+                self._plaintext.pop(key_id, None)
+                if cleanup_admin_id is not None:
+                    confirmed = self.scope.revoke_admin(cleanup_admin_id)
+                    self._evidence[key_id]["cleanup_admin_revoked"] = bool(confirmed)
+                    if not confirmed:
+                        raise ModelingReadError("temporary cleanup admin revocation failed")
 
     def evidence(self, key_id: str) -> dict[str, Any]:
         return dict(self._evidence.get(key_id, {}))

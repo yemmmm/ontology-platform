@@ -408,3 +408,45 @@ def test_modeling_bridge_selects_authorized_ontology_subset() -> None:
     assert _project_modeling_arguments(
         "query_semantic_context", {"query": "x", "ontology_ids": ["new-authorized"]}, scope,
     )["ontology_ids"] == ["new-authorized"]
+
+
+def test_sealed_scope_read_cleanup_uses_temporary_host_admin(tmp_path):
+    scope, forwarder = _FakeScope(), _FakeForwarder()
+    lifecycle = ModelingReadKeyLifecycle(scope, repository_root=tmp_path,
+                                         forwarder_factory=lambda **_: forwarder)
+    record = lifecycle.create(project_id='P', ontology_id='O', run_id='closed-run')
+    lifecycle.forwarder_for(record.key_id)
+    scope.admin_key = None
+    revoked_admins = []
+    scope.bootstrap_admin = lambda: ('cleanup-admin', 'cleanup-admin-id')
+    scope.revoke_admin = lambda key_id: revoked_admins.append(key_id) or True
+    revoked = lifecycle.revoke(record.key_id)
+    assert revoked.status == 'revoked' and forwarder.stopped
+    assert scope.admin_key is None
+    assert revoked_admins == ['cleanup-admin-id']
+    assert all(key == 'cleanup-admin' for method, path, _, key in scope.calls[1:]
+               if path.startswith('/api/api-keys/'))
+    assert lifecycle.evidence(record.key_id)['cleanup_admin_revoked'] is True
+
+
+@pytest.mark.parametrize('failure', ['missing_admin', 'remote_error', 'admin_cleanup'])
+def test_read_cleanup_always_releases_forwarder_and_plaintext(tmp_path, failure):
+    scope, forwarder = _FakeScope(), _FakeForwarder()
+    lifecycle = ModelingReadKeyLifecycle(scope, repository_root=tmp_path,
+                                         forwarder_factory=lambda **_: forwarder)
+    record = lifecycle.create(project_id='P', ontology_id='O', run_id='closed-run')
+    lifecycle.forwarder_for(record.key_id)
+    scope.admin_key = None
+    revoked_admins = []
+    if failure != 'missing_admin':
+        scope.bootstrap_admin = lambda: ('cleanup-admin', 'cleanup-admin-id')
+        scope.revoke_admin = lambda key_id: revoked_admins.append(key_id) or failure != 'admin_cleanup'
+    if failure == 'remote_error':
+        scope.request = lambda *_: (500, {})
+    with pytest.raises(ModelingReadError):
+        lifecycle.revoke(record.key_id)
+    assert forwarder.stopped
+    assert record.key_id not in lifecycle._plaintext
+    assert record.key_id not in lifecycle._forwarders
+    assert scope.admin_key is None
+    assert revoked_admins == ([] if failure == 'missing_admin' else ['cleanup-admin-id'])

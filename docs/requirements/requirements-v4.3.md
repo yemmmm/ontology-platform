@@ -2121,6 +2121,17 @@ R4.0-027提供真实修订与索引。025在此范围覆盖旧“Protocol手写�
 [复盘](../delivery/modeling-retrospectives/2026-10-15-minimal-chain-glm-high-retrospective.md)。
 后续实质修模须新增轮次授权，不由本次复盘恢复运行。
 
+2026-10-17本次用户授权三轮、全角色`glm-5.3-flash/max`，获准初建1轮即取得revision2上
+公开1/1、隐藏3/3的独立`non-blind-regression`通过，同冻结/模型绑定、读回复核无漂移，
+Runner完成回执pass；其余2轮未用，任务已显式关闭，模型/证据保留，临时凭据与本组进程清零。
+本次复盘修正整池完成/冻结回告/Judge标签一致性提示，并修复029路径的重复事件唤醒及
+sealed scope最终只读key/forwarder清理。提示74项、唤醒147项、最终相关206项开发回归通过，
+凭据修复另有真实API/MCP撤销读回/401及转发器退出证明，无新增建模start。
+整体仍部分验证：首次旧事件唤醒缺陷、Delivery技术重载和宿主收尾补位保留，不能称完整
+自主交付或净效率PASS；最终清理新实现尚未由完整新Runner重验。详见
+[本次复盘与最终证据](../delivery/modeling-retrospectives/2026-10-17-claude-common-flow-fixes.md)。
+
+
 2026-10-16最近三组后续复核：FlashX第一组首轮及Flash最新组最终均取得公开1/1、
 隐藏3/3的独立non-blind-regression通过；前者另有端点编码结构反证，后者实际使用4/3轮、
 越界1轮未追认，且有宿主修复／生命周期补位。保留上述历史REVISE；追加当前最小模型

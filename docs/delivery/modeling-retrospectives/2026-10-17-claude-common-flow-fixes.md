@@ -70,6 +70,58 @@ T0：保留拓扑校验和每次gate.close，不删除任何写入约束；同fi
 _multi_slice_gate_reject调用点及Delivery事件投影/发送入口，未声称图覆盖。
 
 反例：重复gate测试修前1 failed（3事件/1反馈），原生常规记录修前7 failed/4 passed；
-修后相关8个测试文件共计结果以运行记录为准。新代码只在重载后的Delivery进程生效，
+修后相关8个测试文件 **147 passed**（27.07s）。新代码只在重载后的Delivery进程生效，
 保留原run及建模线程，不热写冻结产物；Runner去重在下一新Runner生效，当前拓扑已打开，
 不为验证此修复重开建模或消耗轮次。净收益与完整语义结果后续据本轮证据更新。
+
+## 最终新轮结果与停止（2026-10-17 UTC）
+
+- Run `r4326-20261017-flash-retro-start1`；全角色glm-5.3-flash/max；初建1/3、余2，
+  fresh semantic-start1；实际确认额度边界，无实质修模。达到范围目标即停，未耗尽预算。
+- semantic-start02:55:05；完整首冻03:03:53（公开1+隐藏3）；Delivery03:04:23回告冻结，
+  Coordinator03:06:33正式派单、Modeling03:06:56确认；两批apply03:07:12/03:07:37；
+  revision2为2个Class和1条正确方向关系。治理读回无NamedIndividual/实例安装事实，
+  关联完整无issues，Build Session正常关闭；原读回退化披露保留。
+- 生产handoff03:14:53，pending/unknown/in-flight writes均空、写凭据撤回；
+  公开/隐藏验收03:15:26几乎同时启动（既有027并行能力）。两组分别1/1及3/3，
+  full-pass helper重新核对通过、完整分母、同freeze和model_binding，响应重检无漂移。
+  **non-blind-regression PASS**，不追称盲测泛化；Runner03:18:52记录cq_verdict=pass。
+  报告为run内acceptance-v3/public-regression和reports的cq-batch-0001/attempt-0001。
+  公开文件sha256:59dd235a28820a2772b6ac9f41f152c659bd3a520cf7b4eee9f923e27d3676a6；
+  隐藏文件sha256:c23a773fec8a344d602da3e089f1c77774750c9c69e4995006cf27f0bde9fd16，
+  后者与Runner完成回执一致。
+- 03:19开始显式stop，03:21:57全组退出且凭据回收；项目/模型/持久报告保留。
+  宿主仅补齐本组未撤回的只读key与CLEANED却存活的源owner，未触碰其他会话。
+  收尾原记录披露ModelingReadError，不能冒充自主关闭通过。
+
+### 收尾缺陷：已定位并修复（真实窄验证通过）
+
+sealed scope的seal_work已将admin_key清空，而ModelingReadKeyLifecycle.revoke在进入
+try/finally之前就因缺admin拒绝，导致远端key未撤回、本地forwarder和明文未释放。
+源码McpReadForwarder使用asyncio.to_thread(queue.get)，未stop会留下等待中的executor；
+本次源stdout已有stopped而进程仍活，与该路径吻合。未据此归因其他历史105个进程。
+
+修复复用PlatformScope现有Host bootstrap/revoke回调，仅在最终撤销时使用临时管理key，
+完成原API revoke、状态读回及原只读key401/403证明后撤回临时key；不把admin放回scope，
+不复活生产写权限。所有失败分支均在finally释放本地forwarder/明文，失败仍精确报错。
+T0：资源完整性/真实撤销是必要边界，保留校验，只改清理顺序及已有Host生命周期复用。
+GitNexus类级impact给CRITICAL（已在编辑前告知），精确方法未解析；实际聚焦检查两个
+revoke调用方：启动回滚及最终cleanup，不改公共接口。当前全部相关回归 **206 passed、
+13 subtests passed**（17.06s）；新增4反例修前4 failed。
+真实API/MCP探针：新建测试只读key→原admin撤回→scope保持sealed→新实现撤回read key、
+读回revoked并观察401、临时admin撤回、canonical forwarder退出，探针进程exit0。
+无LLM调用/模型变更/新semantic-start；凭据对账最终活跃数0。原run证据不改，自动完整关闭
+仍待下一获准新Runner采用，不能把宿主补位回填成旧Runner已修好。
+
+### 需求与优化闭环
+
+026追加本次获准1轮的有界模型及四题独立回归通过；整体仍部分验证，原更大业务范围及
+完整自主交付未证明。029宿主两次私有CQ交接、完整首冻和Delivery即时回告实际成立；
+Delivery唤醒窄修重载后流程走通，但首次缺陷/宿主介入/自动收尾失败保留，净效率待证。
+024/025最小两批应用证据追加，不关闭自查发现错误及其他操作范围；013引用交接实际采用，
+原其他范围不自动关闭；015早期反馈未执行，不判效果失败；028未触发增量，保持原状态。
+Judge本轮4/4标签与依据一致，只有一轮正例，不证明错误率消除。
+
+首semantic-start→完整独立回执23m47s，→关闭26m52s；包含本轮诊断/重载及等待，
+不是无故障性能基线。有效语义工时、完整token/费用和净节省unknown，未从存活跨度推算。
+上轮FlashX low与本轮Flash max不可做单因素效率归因。不增加更多平台或harness建设。
