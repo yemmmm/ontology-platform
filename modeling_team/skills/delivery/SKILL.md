@@ -388,6 +388,10 @@ When actual production reports and write receipts are complete, reconcile
 readiness and call `complete_cq_handoff`; do not wait for `state.json` to
 become terminal first. `RUNNING` can mean the Runner is waiting for this
 Host action. Respect typed readiness rejections and correct their stated gaps.
+At this handoff, `cq_batch_scope_unauthorized` is also the existing code for
+pending production role reports. Once they settle, retry the same freeze binding
+with a new request ID; no broader authorization, added `delivery_binding`, or
+terminal `state.json` is required for that retry.
 An accepted CQ handoff creates an acceptance binding, not an evaluation
 process. If no matching operation exists, call `start_evaluation` for each
 authorized public/hidden group with the returned handoff/freeze binding,
