@@ -466,7 +466,7 @@ def test_m12_handoff_requires_the_freeze_and_production_settlement(cq_runner):
                 "delivery_binding": {"delivery_id": "d1"},
             }
         )
-    assert not_ready.value.data["reason_code"] == "cq_batch_scope_unauthorized"
+    assert not_ready.value.data["reason_code"] == "cq_production_pending"
     # The wait window stays open and the run keeps going: nothing is latched.
     assert cq_runner._cq_wait_windows.has_open_window is True
     assert cq_runner._formal_failure_latched is False

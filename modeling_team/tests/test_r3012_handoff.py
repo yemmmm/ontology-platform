@@ -24,6 +24,8 @@ import pytest
 import yaml
 
 from modeling_team.competency_questions import CQ_FREEZE_SCHEMA, CQContractError
+from modeling_team import host_ops
+from modeling_team.__main__ import _handle_foreground_message
 from modeling_team.contracts import (
     ACCEPTANCE_TARGET_CQ_SEMANTIC,
     ACCEPTANCE_TARGET_PARAMETER,
@@ -656,7 +658,7 @@ def test_premature_handoff_does_not_quiesce_production():
         frozen = _freeze(runner)
         with pytest.raises(CQContractError) as premature:
             runner.handle_cq_outer_input(_handoff_message(frozen))
-        assert premature.value.data["reason_code"] == "cq_batch_scope_unauthorized"
+        assert premature.value.data["reason_code"] == "cq_production_pending"
         assert runner._cq_write_admission.phase == "open"
         assert not _handoff_path(runner).exists()
         # Production keeps writing: the capture adapter (no settled roles)
@@ -664,5 +666,43 @@ def test_premature_handoff_does_not_quiesce_production():
         runner.staged_evidence_forwarder = lambda association: {"items": [{"id": "ev-1"}]}
         result = runner._handle_staged_associate_evidence({"association": _association()})
         assert result["items"] == [{"id": "ev-1"}]
+    finally:
+        harness.cleanup()
+
+
+def test_pending_handoff_receipt_preserves_wait_guidance_and_same_binding_can_retry():
+    harness = _CQRunner()
+    runner = harness.prepare()
+    try:
+        frozen = _freeze(runner)
+        message = _handoff_message(frozen)
+        message.pop("delivery_binding")
+        emitted = []
+
+        def submit(request_id):
+            _handle_foreground_message(
+                runner,
+                json.dumps({**message, "request_id": request_id}),
+                emitted.extend,
+                lambda *_: pytest.fail("CQ input must remain a typed, recoverable rejection"),
+            )
+            return host_ops.get_request_result(runner.run.run_id, request_id=request_id)
+
+        waiting = submit("pending-handoff")
+        assert waiting["outcome"] == "rejected"
+        assert waiting["code"] == "cq_production_pending"
+        assert waiting["reason"] == "production roles have not settled their deliveries"
+        assert "pending production agents report" in waiting["next_action"]
+        assert "NEW request_id" in waiting["next_action"]
+        assert "fix the reported binding" not in waiting["next_action"]
+        assert runner._cq_write_admission.phase == "open"
+        assert not _handoff_path(runner).exists()
+
+        # Production settles; no authorization change or delivery_binding is needed.
+        runner.transport = _SettledTransport(runner, "completed")
+        accepted = submit("settled-handoff")
+        assert accepted["outcome"] == "accepted"
+        assert runner._cq_write_admission.phase == "read-only"
+        assert _handoff_path(runner).exists()
     finally:
         harness.cleanup()

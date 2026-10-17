@@ -266,7 +266,8 @@ def _outer_input_receipt_recorder(runner, message):
     envelope it sees today; lines without ``request_id`` behave byte-identically
     and leave no receipt.
 
-    Returns a ``record(outcome, code=None, ack_type=None)`` callable when a
+    Returns a ``record(outcome, code=None, ack_type=None, *, detail=None, retry=None)``
+    callable when a
     usable correlation id was popped and the runner supports evidence appends;
     ``None`` otherwise.  The digest is computed over the envelope *after* the
     pop, matching the host-side submission ledger.  A ``request_id`` that is
@@ -297,7 +298,7 @@ def _outer_input_receipt_recorder(runner, message):
     if not callable(append_evidence):
         return None
 
-    def record(outcome, code=None, ack_type=None):
+    def record(outcome, code=None, ack_type=None, *, detail=None, retry=None):
         receipt = {
             "request_id": request_id,
             "action": action_name,
@@ -308,6 +309,10 @@ def _outer_input_receipt_recorder(runner, message):
             receipt["code"] = code
         if ack_type is not None:
             receipt["ack_type"] = ack_type
+        if detail is not None:
+            receipt["detail"] = detail
+        if retry is not None:
+            receipt["retry"] = retry
         append_evidence("outer-input-receipts", receipt)
 
     return record
@@ -353,7 +358,7 @@ def _handle_cq_outer_message(runner, message, emit_and_observe, receipt=None) ->
         output = handler(message)
     except CQContractError as exc:
         if receipt is not None:
-            receipt("rejected", code=exc.data["reason_code"])
+            receipt("rejected", code=exc.reason_code, detail=str(exc), retry=exc.retry)
         emit_and_observe([{"type": "cq-input-rejected", **exc.data}])
         return True
     if receipt is not None:

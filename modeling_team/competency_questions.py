@@ -70,6 +70,7 @@ CQ_REASON_CODES: tuple[str, ...] = (
     "cq_projection_scenario_map_mismatch",
     "cq_model_binding_missing",
     "cq_batch_scope_unauthorized",
+    "cq_production_pending",
     "cq_batch_context_lost",
     # R3.0-012 (design §4.4): the production handoff cannot publish while a
     # staged platform write is in flight, returned an unknown result, or left

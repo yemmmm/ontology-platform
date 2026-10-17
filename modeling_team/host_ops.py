@@ -2684,7 +2684,7 @@ def _receipt_outcome(
             "note": "acceptance is not modeling progress or a semantic start; "
             "follow the consumption evidence and get_run_events",
         }
-    return {
+    result = {
         "run_id": run_id,
         "request_id": request_id,
         "outcome": "rejected",
@@ -2695,6 +2695,12 @@ def _receipt_outcome(
         "idempotent": idempotent,
         "next_action": "fix the reported binding and resend with a NEW request_id",
     }
+    if receipt.get("detail"):
+        result["reason"] = receipt["detail"]
+    if receipt.get("retry"):
+        result["retryable"] = True
+        result["next_action"] = receipt["retry"] + "; resend with a NEW request_id"
+    return result
 
 
 def get_request_result(

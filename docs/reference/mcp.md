@@ -331,6 +331,14 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 
 ### R4.3-029 Delivery→Host 私有接单
 
+`complete_cq_handoff`在生产角色尚未报告完成时返回可恢复的
+`cq_production_pending`，保持生产写入开放，不改变授权或发布handoff。
+CQ拒绝回执保留`detail`和`retry`；`get_request_result`及同request_id重查返回
+`reason`、`retryable=true`与对应`next_action`。等待真实生产报告完成后，使用原
+freeze绑定及**新request_id**重试，无须扩大授权、补`delivery_binding`或等run先terminal。
+真正的scope授权错误继续使用`cq_batch_scope_unauthorized`；历史缺`detail/retry`的
+回执保持原格式与通用重试提示，不改写旧证据。
+
 `request_host_action` 是 Delivery 本地工具，不属于 `host_ops_mcp` 或平台 MCP inventory。
 它在当前 session 私有 `session-events.jsonl` 追加 `host_action_request`，只接受
 `kind=cq_review|platform_repair`，绑定 `request_id`、当前 `run_id` 和 `bindings`，不执行审核、

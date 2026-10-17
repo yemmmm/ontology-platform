@@ -195,6 +195,7 @@
     "cq_freeze_schema_mismatch",
     "cq_model_binding_missing",
     "cq_batch_scope_unauthorized",
+    "cq_production_pending",
     "cq_batch_context_lost"
   ],
   "recovery_rule": "Each reason code rejects only the current operation and returns the object, phase and retry guidance. The run keeps running; platform or runtime exhaustion produces platform-runtime-incomplete with the matching failure layer instead of a permanent run failure."

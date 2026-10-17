@@ -8932,7 +8932,7 @@ class TeamRunner:
             # quiescing over unsettled roles would wedge their final writes.
             self._cq_wait_windows.open_window("cq-handoff-request", now)
             raise CQContractError(
-                "cq_batch_scope_unauthorized",
+                "cq_production_pending",
                 "production roles have not settled their deliveries",
                 obj="cq_handoff_complete",
                 phase="frozen",
