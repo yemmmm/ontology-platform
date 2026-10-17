@@ -136,7 +136,11 @@ def test_host_pending_and_unacknowledged_result_survive_delivery_resume(tmp_path
     assert first["current_state"]
     assert restored._dispatch_observation(_StubNativeRuntime(), {"data": first}, steer=False)
     latest = restored._model_observation()
-    assert latest["host_actions"]["unresolved"][0]["request_id"] == "repair-1"
+    # v2 delivers the changed Host result and retains its compact unresolved
+    # identity instead of reprinting the unchanged Host snapshot.
+    assert any(row.get("request_id") == "repair-1" and row.get("status") == "blocked"
+               for row in latest["unresolved"])
+    assert "repair-1" in json.dumps(latest["changes"])
 
 
 def _append_parallel(root, index, output):

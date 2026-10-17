@@ -13,6 +13,25 @@ from modeling_team.tests.test_delivery_session import (
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def changed_value(payload, *path):
+    """Read one explicit v2 change, not an inferred or reconstructed snapshot."""
+    return next(row["value"] for row in payload["changes"] if row["path"] == list(path))
+
+
+def changed_events(payload):
+    return changed_value(payload, "runs", "run", "events")
+
+
+def observe_after_bootstrap(raw=None):
+    """Introduce the tested change after the new current-state bootstrap."""
+    calls = 0
+    def observe(self):
+        nonlocal calls
+        calls += 1
+        return copy.deepcopy((raw or observation()) if calls > 1 else {"runs": {}, "operations": {}, "repair_verifications": {}})
+    return observe
+
+
 def _events_page(events, *, next_cursor, has_more=False, limitations=("none",)):
     """One incremental ``get_run_events`` page as Delivery's tool layer wraps it."""
     return {"ok": True, "data": {
@@ -148,7 +167,7 @@ def test_actionable_host_observation_steers_busy_turn(tmp_path, monkeypatch):
     import importlib
     from modeling_team.tests.test_delivery_session import _run_delivery_with_stub
     module = importlib.import_module("modeling_team.delivery")
-    monkeypatch.setattr(module.DeliverySession, "observe", lambda self: observation())
+    monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap())
     runtime, result, _ = _run_delivery_with_stub(tmp_path, monkeypatch, [], run_ids=["bound"])
     assert result == 2
     assert len(runtime.steered) == 1
@@ -160,7 +179,7 @@ def test_observation_steer_race_keeps_decision_for_next_turn(tmp_path, monkeypat
     import importlib
     from modeling_team.tests.test_delivery_session import _run_delivery_with_stub
     module = importlib.import_module("modeling_team.delivery")
-    monkeypatch.setattr(module.DeliverySession, "observe", lambda self: observation())
+    monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap())
     runtime, result, _ = _run_delivery_with_stub(tmp_path, monkeypatch, [], run_ids=["bound"], steer_failures=1)
     assert result == 2
     assert runtime.steer_attempts == 1
@@ -284,9 +303,8 @@ def test_provider_noise_is_excluded_when_business_pending_wakes(tmp_path):
     ], next_cursor="cursor-2")
     assert host.record_observation(updated)
     payload = host._model_observation()
-    run = payload["runs"]["run"]
-    assert run["pending"]["data"]["items"][0]["id"] == "question-2"
-    assert [item["source"] for item in run["events"]["data"]["events"]] == [
+    assert payload["unresolved"][0]["id"] == "question-2"
+    assert [item["source"] for item in changed_events(payload)["data"]["events"]] == [
         "outer-input-receipts.jsonl"]
     assert payload["raw_observation"]["excluded_noise_event_records"] == 2
 
@@ -304,7 +322,7 @@ def test_provider_failures_and_unknown_receipts_still_wake(tmp_path, status, htt
     updated = observation()
     updated["runs"]["run"]["events"] = _events_page([event], next_cursor="cursor-2")
     assert host.record_observation(updated)
-    assert event in host._model_observation()["runs"]["run"]["events"]["data"]["events"]
+    assert event in changed_events(host._model_observation())["data"]["events"]
     assert not host.record_observation(updated)
 
 
@@ -321,7 +339,7 @@ def test_provider_corruption_and_runtime_failures_still_wake(tmp_path, event):
     updated = observation()
     updated["runs"]["run"]["events"] = _events_page([event], next_cursor="cursor-2")
     assert host.record_observation(updated)
-    assert event in host._model_observation()["runs"]["run"]["events"]["data"]["events"]
+    assert event in changed_events(host._model_observation())["data"]["events"]
 
 
 # --- R4.3-013: the delivered payload never carries raw app-server records ----
@@ -431,7 +449,7 @@ def test_resume_persists_full_observation_then_delivers_filtered_state(tmp_path,
 def test_busy_steer_payload_excludes_only_raw_app_server_records(tmp_path, monkeypatch):
     raw = _huge_delta_observation()
     module = importlib.import_module("modeling_team.delivery")
-    monkeypatch.setattr(module.DeliverySession, "observe", lambda self: copy.deepcopy(raw))
+    monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap(raw))
     runtime, result, _record = _run_delivery_with_stub(
         tmp_path, monkeypatch, [], run_ids=["bound"])
     assert result == 2
@@ -439,14 +457,14 @@ def test_busy_steer_payload_excludes_only_raw_app_server_records(tmp_path, monke
     assert steered["kind"] == "host_observation"
     delivered = json.dumps(steered, ensure_ascii=False)
     assert _HUGE_DELTA not in delivered
-    page = steered["data"]["runs"]["run"]["events"]["data"]
+    page = changed_value(steered["data"], "runs", "run")["events"]["data"]
     assert [event["source"] for event in page["events"]] == ["outer-input-receipts.jsonl"]
     # Decisions stay byte-complete: receipt, pending item, request ledger.
     assert page["events"][0] == _receipt_event(620_021, "req-9")
-    assert (steered["data"]["runs"]["run"]["pending"]["data"]["items"]
+    assert (changed_value(steered["data"], "runs", "run")["pending"]["data"]["items"]
             == observation()["runs"]["run"]["pending"]["data"]["items"])
-    assert "request_ledger" not in steered["data"]["runs"]["run"]
-    assert steered["data"]["runs"]["run"]["requests"]["data"]["coverage"]["complete"] is False
+    assert "request_ledger" not in changed_value(steered["data"], "runs", "run")
+    assert changed_value(steered["data"], "runs", "run")["requests"]["data"]["coverage"]["complete"] is False
     assert steered["data"]["raw_observation"]["excluded_noise_event_records"] == 1
 
 
@@ -454,7 +472,7 @@ def test_idle_send_after_steer_race_carries_no_raw_app_server_records(tmp_path, 
     raw = _huge_delta_observation()
     raw["runs"]["run"]["events"]["data"]["events"] =         raw["runs"]["run"]["events"]["data"]["events"][:1]
     module = importlib.import_module("modeling_team.delivery")
-    monkeypatch.setattr(module.DeliverySession, "observe", lambda self: copy.deepcopy(raw))
+    monkeypatch.setattr(module.DeliverySession, "observe", observe_after_bootstrap(raw))
     runtime, result, _record = _run_delivery_with_stub(
         tmp_path, monkeypatch, [], run_ids=["bound"], steer_failures=1)
     assert result == 2
@@ -463,7 +481,7 @@ def test_idle_send_after_steer_race_carries_no_raw_app_server_records(tmp_path, 
     assert sent["kind"] == "host_observation"
     delivered = json.dumps(sent, ensure_ascii=False)
     assert _HUGE_DELTA not in delivered
-    assert sent["data"]["runs"]["run"]["events"]["data"]["events"] == []
+    assert changed_value(sent["data"], "runs", "run")["events"]["data"]["events"] == []
     assert sent["data"]["raw_observation"]["excluded_noise_event_records"] == 1
     assert sent["data"]["raw_observation"]["path"].endswith("observation.json")
 
@@ -511,7 +529,7 @@ def test_model_observation_keeps_decisions_complete_and_failures_untouched(tmp_p
     failed["runs"]["run"]["events"] = {"ok": False,
                                        "error": {"code": "run_missing", "message": "gone"}}
     projected = host._model_observation(failed)
-    assert projected["runs"]["run"]["events"] == {
+    assert changed_events(projected) == {
         "ok": False, "error": {"code": "run_missing", "message": "gone"}}
 
 
@@ -551,7 +569,7 @@ def test_r4329_anomalies_and_ambiguous_write_success_remain_visible(tmp_path, ev
     update = observation()
     update["runs"]["run"]["events"] = _events_page([event], next_cursor="next")
     assert host.record_observation(update)
-    delivered = host._model_observation()["runs"]["run"]["events"]["data"]["events"]
+    delivered = changed_events(host._model_observation())["data"]["events"]
     assert delivered[0]["source"] == event["source"]
 
 

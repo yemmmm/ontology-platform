@@ -329,6 +329,42 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 | `read_platform_record` | batch／session／ontology_batches 的 ID 与精确 project／ontology scope | 既有只读读回；返回记录与读取次数，无 apply/delete |
 | `reconcile_write_state` | 本次 run、project／ontology scope | 既有写者证据与 Batch／Attempt／资源／回执对账；不补做隐藏根因查询 |
 
+### R4.3-030 首批：按需决策与 v2 模型视图
+
+Delivery 本地新增 `yield_delivery`，必填 `input_id`、`phase`、`waiting_for`、
+`next_action`、`reason`、`active_decisions`；可附 `evidence_references`。
+等待对象用当前 session 的 `run_id`、`operation_id`、`host_request_id` 或
+`run_id`＋`request_id`，另附 `condition`。有效决定逐项带 `decision_id`、`text`、
+`source_references` 与显式 `replaces` 列表。工具只向原 session journal 追加
+`delivery_yield`，返回 `waiting_recorded`／`end_current_turn`；不写平台、不确认待送输入、
+不结束原生线程。模型须随后自然结束 turn，实际 `turn/completed` 才是推理结束证据。
+等待列表不限制监督范围；程序继续约2秒观察所有绑定对象，明确任务 deadline、授权期限
+及运行中 operation 的既有 `started_at`＋`session_timeout` 产生一次到期状态变化。
+无期限或正常心跳不臆造超时；期限不会自动续权或重发写入。
+
+模型默认输入为 `delivery-decision-input/v2`：`core` 为当前目标／阶段、授权／控制、
+起点／额度引用、首阻塞及必要结果绑定，`unresolved` 为所有未决紧凑身份／状态，
+`changes` 保留实际变化正文。`mode=changes` 不重复不变快照／历史；
+`mode=bootstrap` 提供必要当前正文、原用户消息／未决问题及最新 yield 接续记录。
+首次启动不再附整份 config；明确选取的 `task_context` 保留 task/profile/scope、获准资料
+与执行约束，未知余额不由 start limit 推算。
+
+`get_run_status`、`get_pending_actions`、`get_evaluation_status`、`get_request_result`
+仅在 Delivery 模型边界返回 `delivery-tool-view/v1` 简明结果；原始结果先存入
+`delivery_tool_result` journal，以 `evidence` 及字段省略 coverage 定位。底层 Host 公开
+合同不变，内部 observe、权限／绑定检查和 finish 使用原始结果；模型不能通过参数
+选择内部视图。未知／损坏／拒绝不补默认成功，compact view 不能用于权威消费判定。
+
+完整原件与原 pending／原生送达回执保留。旧 v1 只读转换，历史分页偏移不混入 v2；
+恢复 bootstrap 仅确认本身，不推进旧 pending 页或 conversation dispatch。
+32,000-byte 展示上限内显式分页，长变化正文不替换成只有引用；原件补读沿
+`read_delivery_artifact` 的原权限、selection 和16,384-byte上限，同 session 的原始
+`conversation-events.jsonl`可按需读取。coverage 指投影／所选页，不表示全源或业务完成。
+unknown 输入只重送事实，依赖状态的动作核对 `current_state` 指向的新绑定。
+
+本批只实现 F1＋F2。F3换线程未实施／默认关闭，F4连续动作另行分项实施；F5真实token
+对照与A6独立语义需另获运行授权。离线检查不证明真实等待行为、token或费用下降。
+
 ### R4.3-029 Delivery→Host 私有接单
 
 Delivery默认观察继续保留当前授权、阶段、待办、首阻塞、未知写入和新增变化。

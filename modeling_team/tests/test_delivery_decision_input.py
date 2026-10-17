@@ -8,7 +8,7 @@ import pytest
 from modeling_team.delivery import DeliverySession
 from modeling_team.runtimes.delivery import DeliveryRuntimeError
 from modeling_team.tests.test_delivery_session import ROOT, _StubNativeRuntime, session
-from modeling_team.tests.test_delivery_wakeups import observation, _events_page, _receipt_event
+from modeling_team.tests.test_delivery_wakeups import observation, _events_page, _receipt_event, changed_value
 
 
 def read(host, path, **args):
@@ -42,7 +42,7 @@ def test_business_keys_are_not_recursive_noise(tmp_path, key):
     initial["runs"]["run"]["pending"]["data"]["items"][0][key] = "business-2"
     assert host.record_observation(initial)
     ack(host)
-    assert ack(host)["runs"]["run"]["pending"]["data"]["items"][0][key] == "business-2"
+    assert changed_value(ack(host), "runs", "run", "pending", "data", "items", 0, key) == "business-2"
 
 
 def test_request_receipt_projection_preserves_uncertain_rejected_conflict_and_legacy(tmp_path, monkeypatch):
@@ -197,7 +197,8 @@ def test_unreceived_changes_survive_later_observations_and_resume(tmp_path):
     assert len(reopened._pending_decisions) == 2
     assert ack(reopened)["runs"]["run"]["pending"]["data"]["items"][0]["id"] == "question-1"
     last = ack(reopened)
-    assert last["runs"]["run"]["pending"]["data"]["items"] == []
+    assert any(row.get("identity") == "question-1" and row["change"] == "removed"
+               for row in last["changes"])
     assert any(row["path"][-1] == "items" for row in last["changes"])
     assert not reopened._pending_decisions
 
@@ -272,7 +273,7 @@ def test_stable_operations_are_indexed_but_invalid_reports_and_control_remain(tm
     assert data["operations"]["invalid"]["data"]["report_binding"]["valid"] is False
     raw["operations"]["done-1"]["data"]["report_binding"]["content_digest"] = "changed"
     host.record_observation(raw)
-    assert ack(host)["operations"]["done-1"]["data"]["report_binding"]["content_digest"] == "changed"
+    assert changed_value(ack(host), "operations", "done-1", "data", "report_binding", "content_digest") == "changed"
 
 
 def test_exact_event_locator_uses_source_offset_not_page_line(tmp_path, monkeypatch):
@@ -346,27 +347,21 @@ def test_pending_historical_input_identifies_new_current_state(tmp_path):
     assert packet["snapshot"]["runs"]["run"]["status"]["data"]["write_phase"] == "unknown"
 
 
-def test_large_blocker_reference_points_to_original_value(tmp_path):
+def test_large_blocker_has_body_in_bounded_pages_and_original_reference(tmp_path):
     host = session(tmp_path)
     raw = observation()
-    raw["runs"]["run"]["status"]["data"]["first_blocker"] = {"message": "原始阻塞" * 1000}
+    raw["runs"]["run"]["status"]["data"]["first_blocker"] = {"message": "原始阻塞" * 5000}
     host.record_observation(raw)
     payload = host._model_observation()
-    value_ref = payload["first_blockers"]["run"]["message"]
-    evidence = value_ref["evidence"]
     chunks = []
+    while host._pending_decisions:
+        chunks.append(ack(host)["page"]["text"])
+    complete = json.loads("".join(chunks))
+    assert complete["core"]["first_blockers"]["run"]["preview_complete"] is False
+    assert complete["runs"]["run"]["status"]["data"]["first_blocker"]["message"] == "原始阻塞" * 5000
+    evidence = payload["evidence"]
     result = read(host, evidence["path"], source_ref=evidence["source_ref"], selection=evidence["selection"])
-    while True:
-        assert result["ok"]
-        data = result["data"]
-        chunks.append(data["text"])
-        if data["read_complete"]:
-            break
-        result = read(host, evidence["path"], **data["continuation"])
-    original = json.loads("".join(chunks))
-    for part in value_ref["packet_path"]:
-        original = original[part]
-    assert original == "原始阻塞" * 1000
+    assert result["ok"]
 
 
 def test_r4329_host_request_validates_live_cq_binding(tmp_path, monkeypatch):
@@ -418,22 +413,23 @@ def test_r4329_host_result_wakes_and_survives_undelivered_resume(tmp_path, monke
     record_host_action_result(host.session_root, "repair-host", "completed", original)
     assert host.record_observation(observation())
     packet = host._model_observation()
-    assert "repair-host" in json.dumps(packet["host_actions"])
+    assert "repair-host" in json.dumps(packet["changes"])
     assert not (root / "control/host-requests.jsonl").exists()
     resumed = DeliverySession(repository_root=ROOT, session_root=host.session_root,
         config=host.config, resume=True)
     assert resumed._model_observation()["input_id"] == packet["input_id"]
-    assert resumed._model_observation()["host_actions"] == packet["host_actions"]
+    assert resumed._model_observation()["changes"] == packet["changes"]
 
     # A completed result is delivered once, then retained through a precise index.
     ack(host)
     later = observation()
     later["runs"]["run"]["status"]["data"]["stage"]["phase"] = "handoff"
     assert host.record_observation(later)
-    history = ack(host)["host_actions"]
-    assert not history["completed"] and not history["requests"] and not history["results"]
-    assert history["completed_index"]["total"] == 1
-    evidence = history["completed_index"]["evidence"]
+    later_packet = ack(host)
+    assert "repair-host" not in json.dumps(later_packet["changes"])
+    history = later_packet["coverage"]["history"]["host_actions"]
+    assert history["total"] == 1
+    evidence = history["evidence"]
     original = json.loads(read(host, evidence["path"], source_ref=evidence["source_ref"],
                               selection=evidence["selection"])["data"]["text"])
     assert original["snapshot"]["host_actions"]["completed"][0]["request_id"] == "repair-host"
@@ -449,24 +445,24 @@ def test_completed_standby_operation_is_indexed_after_completion_delivery(tmp_pa
     operation.update(work_state="completed", lifecycle="standby",
                      consult_replies=[{"role": "consumer", "text": "RETAINED-REPLY"}])
     assert host.record_observation(raw)
-    assert ack(host)["operations"]["op"]["data"]["work_state"] == "completed"
+    assert changed_value(ack(host), "operations", "op", "data", "work_state") == "completed"
     raw["runs"]["run"]["status"]["data"].update(write_phase="unknown")
     assert host.record_observation(raw)
     payload = ack(host)
-    assert "op" not in payload["operations"]
-    assert payload["operation_history"]["operations"]["total"] == 1
-    assert payload["runs"]["run"]["status"]["data"]["write_phase"] == "unknown"
+    assert "op" not in payload["core"]["operations"]
+    assert payload["coverage"]["history"]["operations"]["total"] == 1
+    assert payload["core"]["runs"]["run"]["write_phase"] == "unknown"
     assert "RETAINED-REPLY" not in json.dumps(payload)
     operation["report_binding"]["valid"] = False
     assert host.record_observation(raw)
-    assert ack(host)["operations"]["op"]["data"]["report_binding"]["valid"] is False
+    assert changed_value(ack(host), "operations", "op", "data", "report_binding", "valid") is False
     operation["report_binding"]["valid"] = True
     operation["control_receipts"] = {"consult": {"status": "unknown"}}
     assert host.record_observation(raw)
     ack(host)
     raw["runs"]["run"]["status"]["data"]["stage"]["phase"] = "another-step"
     host.record_observation(raw)
-    assert "op" in ack(host)["operations"]
+    assert "op" in ack(host)["core"]["operations"]
 
 
 def test_finish_standby_has_queryable_receipt_and_native_retry_reuses_request(tmp_path, monkeypatch):

@@ -14,6 +14,7 @@ import threading
 import time
 import uuid
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -47,6 +48,25 @@ _READ = {
     "get_run_status", "get_run_events", "get_pending_actions", "get_request_result",
     "inspect_checkpoints", "get_evaluation_status", "get_repair_status",
     "read_platform_record", "reconcile_write_state",
+}
+_MODEL_QUERIES = {"get_run_status", "get_pending_actions", "get_evaluation_status",
+                  "get_request_result"}
+
+
+def _utc_now() -> datetime:
+    return datetime.now(UTC)
+
+
+# These fields describe current execution and result bindings, not business
+# conclusions. Unknown fields remain in the original result with exact coverage.
+_STATUS_FIELDS = {
+    "run_id", "operation_id", "request_id", "identity", "recorded_state", "stage",
+    "first_blocker", "terminal_conclusion", "lifecycle", "work_state", "write_phase",
+    "liveness", "status", "kind", "mode", "exit_code", "report_status", "report_binding",
+    "request_binding", "control_receipts", "current_role", "record_path", "outcome",
+    "action", "reason", "retryable", "next_action", "consumption_evidence", "receipt",
+    "limitations", "error", "detail", "retry", "freeze_id", "model_handoff", "code",
+    "content_digest", "ack_type", "receipt_ref", "idempotent", "pending_summary",
 }
 _PRODUCTION = {"start_run", "resume_from_checkpoint"}
 _MATERIAL_HOST_TOOLS = {"answer_question", "submit_instruction", "consult_team"}
@@ -563,6 +583,29 @@ def _value_changes(before: Any, after: Any, path: tuple = ()) -> list[dict]:
 
 
 _LOCAL_SPECS = [
+    {"name": "yield_delivery", "description": "Record the current wait and effective decisions, then end this turn. Program observation continues for all bindings; do not poll to confirm the same wait.",
+     "inputSchema": {"type": "object", "properties": {
+         "input_id": {"type": "string", "minLength": 1},
+         "phase": {"type": "string", "minLength": 1},
+         "waiting_for": {"type": "array", "minItems": 1, "items": {
+             "type": "object", "properties": {
+                 **{key: {"type": "string", "minLength": 1} for key in
+                    ("run_id", "request_id", "operation_id", "host_request_id", "condition")}},
+             "required": ["condition"], "additionalProperties": False}},
+         "next_action": {"type": "string", "minLength": 1},
+         "reason": {"type": "string", "minLength": 1},
+         "active_decisions": {"type": "array", "items": {
+             "type": "object", "properties": {
+                 "decision_id": {"type": "string", "minLength": 1},
+                 "text": {"type": "string", "minLength": 1},
+                 "source_references": {"type": "array", "minItems": 1,
+                     "items": {"type": "string", "minLength": 1}},
+                 "replaces": {"type": "array", "items": {"type": "string"}}},
+             "required": ["decision_id", "text", "source_references", "replaces"],
+             "additionalProperties": False}},
+         "evidence_references": {"type": "array", "items": {"type": "object"}}},
+         "required": ["input_id", "phase", "waiting_for", "next_action", "reason", "active_decisions"],
+         "additionalProperties": False}},
     {"name": "record_efficiency_progress", "description": "Append evidence-backed timing intervals or verified completion to the Host-configured round; never resets its start or judges semantic PASS.",
      "inputSchema": {"type": "object", "properties": {
          "intervals": {"type": "array", "items": {"type": "object"}},
@@ -1624,7 +1667,7 @@ class DeliverySession:
         path = ((self.session_root / bound_host_ref["path"]).resolve()
                 if bound_host_ref else self._path(value))
         approved = bound_host_ref is not None or path in self.sources or path in {
-            self.session_root / name for name in ("session.json", "session-events.jsonl", "user-input.jsonl", "public-messages.jsonl", "observation.json", "efficiency-round.json", "efficiency-progress.jsonl")
+            self.session_root / name for name in ("session.json", "session-events.jsonl", "user-input.jsonl", "conversation-events.jsonl", "public-messages.jsonl", "observation.json", "efficiency-round.json", "efficiency-progress.jsonl")
         }
         approved = approved or path in {
             self.repository_root / '.delivery-ops' / f'{operation_id}.{suffix}'
@@ -1751,7 +1794,44 @@ class DeliverySession:
         self.operation_kinds.pop(operation_id, None)
         self._save("active")
 
-    def call_tool(self, name: str, arguments: dict, *, call_identity: str | None = None) -> dict:
+    def call_tool(self, name: str, arguments: dict, *, call_identity: str | None = None,
+                  _model_view: bool = True) -> dict:
+        result = self._call_tool_raw(name, arguments, call_identity=call_identity)
+        if not _model_view or name not in _MODEL_QUERIES:
+            return result
+        # Keep the full result before constructing a model-only view. This
+        # switch is a Python call-site option, never a model tool parameter.
+        record = {"event": "delivery_tool_result", "tool": name,
+                  "arguments": arguments, "result": result}
+        offset, length = append_session_event(self.session_root, record)
+        reference = self._journal_reference(offset, length)
+        shape_valid = result.get("ok") is not True or isinstance(result.get("data"), dict)
+        projected_paths = []
+        if result.get("ok") is not True or not isinstance(result.get("data"), dict):
+            view = copy.deepcopy(result)
+            omitted = []
+        else:
+            data = result["data"]
+            fields = _STATUS_FIELDS | ({"items"} if name == "get_pending_actions" else set())
+            selected = {key: value for key, value in data.items() if key in fields}
+            if name == "get_pending_actions":
+                items = data.get("items")
+                shape_valid = isinstance(items, list) and all(isinstance(item, dict) for item in items)
+                if shape_valid:
+                    selected = _decision_observation({"runs": {"query": {
+                        "pending": {"ok": True, "data": selected}}}}, {})["runs"]["query"]["pending"]["data"]
+                    projected_paths = [["data", "items", index, "available_actions"]
+                        for index, item in enumerate(items) if item.get("type") == "cq_review"]
+            omitted = sorted(data.keys() - selected.keys())
+            view = {"ok": True, "data": selected}
+        view.update(schema_version="delivery-tool-view/v1", evidence=reference,
+                    coverage={"complete": shape_valid, "source_complete": not omitted and not projected_paths,
+                              "limitations": [] if shape_valid else ["unexpected Host result shape; inspect original before deciding"],
+                              "omitted_fields": omitted, "projected_paths": projected_paths,
+                              "evidence": reference})
+        return self._page_view(view, reference)
+
+    def _call_tool_raw(self, name: str, arguments: dict, *, call_identity: str | None = None) -> dict:
         newly_registered_operation = False
         try:
             if name not in self._tools:
@@ -1761,10 +1841,19 @@ class DeliverySession:
             try:
                 validate(arguments, self._tools[name]["inputSchema"])
             except ValidationError as exc:
+                if name == "yield_delivery":
+                    raise HostOpError("delivery_yield_invalid", exc.message,
+                        retryable=True, next_action="correct the yield schema using the current input_id and bound object identities") from exc
                 if name != "read_delivery_artifact":
                     raise
                 raise HostOpError("artifact_selection_invalid", "invalid artifact read parameters",
                     retryable=True, next_action="use path, optional source_ref/selection and max_bytes 1..16384") from exc
+            if name == "yield_delivery":
+                try:
+                    return self._yield_delivery(arguments)
+                except ValueError as exc:
+                    raise HostOpError("delivery_yield_binding_invalid", str(exc),
+                        retryable=True, next_action="use the retained input_id and current session/run/request/operation bindings") from exc
             if name == "request_host_action":
                 if "supervise" not in self.allowed_operations:
                     raise ValueError("Host handoff requires current supervision authorization")
@@ -1786,7 +1875,7 @@ class DeliverySession:
                     return {"ok": True, "data": request_host_action(
                         self.session_root, self.session_id, self.run_ids, self.authorization, replay)}
                 # Validate against actual pending bindings, never model-selected CQ text.
-                pending = self.call_tool("get_pending_actions", {"run_id": run_id})
+                pending = self.call_tool("get_pending_actions", {"run_id": run_id}, _model_view=False)
                 if not pending.get("ok"):
                     return pending
                 binding = arguments["bindings"]
@@ -2103,12 +2192,12 @@ class DeliverySession:
 
     def observe(self) -> dict:
         return {"host_actions": host_action_state(self.session_root), "runs": {run_id: {
-            "status": self.call_tool("get_run_status", {"run_id": run_id}),
-            "pending": self.call_tool("get_pending_actions", {"run_id": run_id}),
+            "status": self.call_tool("get_run_status", {"run_id": run_id}, _model_view=False),
+            "pending": self.call_tool("get_pending_actions", {"run_id": run_id}, _model_view=False),
             "events": self._observe_run_events(run_id),
             "request_ledger": self._observe_request_ledger(run_id),
         } for run_id in sorted(self.run_ids)}, "operations": {
-            operation_id: self.call_tool("get_repair_status" if self.operation_kinds.get(operation_id) == "repair" else "get_evaluation_status", {"operation_id": operation_id})
+            operation_id: self.call_tool("get_repair_status" if self.operation_kinds.get(operation_id) == "repair" else "get_evaluation_status", {"operation_id": operation_id}, _model_view=False)
             for operation_id in sorted(self.operation_ids)
         }, 'repair_verifications': {
             operation_id: self.call_tool('get_repair_verification_status', {'operation_id': operation_id})
@@ -2186,7 +2275,7 @@ class DeliverySession:
                     if result["data"]["outcome"] == "rejected":
                         result["data"]["receipt"] = receipt
             else:
-                result = self.call_tool("get_request_result", {"run_id": run_id, "request_id": request_id})
+                result = self.call_tool("get_request_result", {"run_id": run_id, "request_id": request_id}, _model_view=False)
                 if isinstance(result.get("data"), dict):
                     result = copy.deepcopy(result)
                     result["data"].pop("observed_at", None)
@@ -2234,10 +2323,155 @@ class DeliverySession:
             except OSError:
                 event["source_limitation"] = "original event source unavailable; preserve observation"
 
+    def _journal_reference(self, offset: int, length: int) -> dict:
+        journal = self.session_root / "session-events.jsonl"
+        with journal.open("rb") as handle:
+            raw = handle.read(offset + length)
+        return {"path": str(journal), "source_ref": _source_ref(journal, raw),
+                "selection": {"kind": "bytes", "offset": offset, "length": length}}
+
+    def _task_context(self) -> dict:
+        context = {key: self.config[key] for key in (
+            "objective", "goal", "task", "profile", "scope", "task_overlay", "allowed_sources",
+            "readback_scope", "readback_scopes",
+            "model_profile", "evaluation_model_profile", "business_input_role",
+            "production_start_limit", "incremental_request_id", "incremental_run_id",
+            "deadline", "model_context_window", "model_auto_compact_token_limit",
+        ) if key in self.config}
+        timing = self.config.get("efficiency_round")
+        if timing:
+            context["efficiency_round"] = {key: timing[key] for key in
+                ("identity", "started_at", "start_reference") if key in timing}
+        context["quota_remaining"] = "unknown; use original authorization and round records"
+        return context
+
+    def _recovery_context(self) -> dict:
+        if self.conversation:
+            history = self.conversation.snapshot()
+            path = self.conversation.path
+            return {"user_messages": [row for row in history["messages"]
+                        if row["dispatch"] != "published"],
+                    "pending_questions": history["pending_questions"],
+                    "history_complete": history["history_complete"],
+                    "read_error": history["read_error"],
+                    "source_ref": _source_ref(path, path.read_bytes())}
+        path = self.session_root / "user-input.jsonl"
+        raw = path.read_bytes() if path.exists() else b""
+        try:
+            messages = [json.loads(line) for line in raw.splitlines()]
+            return {"user_messages": messages, "history_complete": True,
+                    "source_ref": _source_ref(path, raw)}
+        except (ValueError, UnicodeError):
+            return {"history_complete": False, "read_error": "user_input_corrupt",
+                    "source_ref": _source_ref(path, raw)}
+
+    def _yield_delivery(self, arguments: dict) -> dict:
+        if arguments["input_id"] not in self._input_ids:
+            raise ValueError("input_id is outside this session's retained decision inputs")
+        actions = host_action_state(self.session_root)
+        for waiting in arguments["waiting_for"]:
+            run_id = waiting.get("run_id")
+            operation_id = waiting.get("operation_id")
+            host_id = waiting.get("host_request_id")
+            request_id = waiting.get("request_id")
+            if not any((run_id, operation_id, host_id, request_id)):
+                raise ValueError("waiting_for requires an actual bound object identity")
+            if run_id and run_id not in self.run_ids:
+                raise ValueError("waiting run is outside this session")
+            if operation_id and operation_id not in self.operation_ids | self.verification_ids:
+                raise ValueError("waiting operation is outside this session")
+            if host_id and (host_id not in actions.get("requests", {}) or (
+                    run_id and actions["requests"][host_id].get("run_id") != run_id)):
+                raise ValueError("waiting Host request is outside the bound session/run")
+            if request_id:
+                requests = self._last_current.get("runs", {}).get(run_id, {}).get("requests", {}).get("data", {})
+                known = any(item.get("request_id") == request_id for item in
+                            requests.get("pending", []) + requests.get("settled", []))
+                if run_id and not known:
+                    # A just-submitted request may predate the next program
+                    # observation. Reconcile its real ledger here, rather than
+                    # requiring an LLM status poll merely to register the wait.
+                    current = self._request_projection(run_id, self._observe_request_ledger(run_id))
+                    data = current.get("data", {})
+                    known = any(item.get("request_id") == request_id for item in
+                                data.get("pending", []) + data.get("settled", []))
+                if not run_id or not known:
+                    raise ValueError("waiting request requires its retained run/request binding")
+        record = {"event": "delivery_yield", "session_id": self.session_id,
+                  "recorded_at": now(), **copy.deepcopy(arguments)}
+        offset, length = append_session_event(self.session_root, record)
+        self.last_yield = record
+        return {"ok": True, "data": {"status": "waiting_recorded", "end_current_turn": True,
+            "evidence": self._journal_reference(offset, length),
+            "note": "End this turn now. All bindings remain under program observation; this is not turn completion."}}
+
+    def _deadline_events(self, observation: dict) -> list[dict]:
+        # A fixed due state participates in the existing digest and durable input
+        # queue. No timer, inferred heartbeat timeout, action replay or renewal.
+        due = []
+        def check(kind, identity, value):
+            if value is None:
+                return
+            try:
+                deadline = datetime.fromisoformat(value.replace("Z", "+00:00"))
+                if deadline.tzinfo is None:
+                    raise ValueError("deadline must include a timezone")
+                if _utc_now() >= deadline:
+                    due.append({"kind": kind, **identity, "deadline": value,
+                        "next_action": "reconcile unfinished work and current authorization; do not replay writes"})
+            except (ValueError, TypeError, AttributeError):
+                due.append({"kind": "deadline_invalid", "deadline_kind": kind,
+                            **identity, "value": value, "next_action": "correct the explicit deadline"})
+        check("authorization_expired", {"session_id": self.session_id}, self.authorization_valid_until)
+        check("task_deadline_reached", {"session_id": self.session_id}, self.config.get("deadline"))
+        for operation_id, envelope in observation.get("operations", {}).items():
+            data = envelope.get("data", {})
+            timeout = (data.get("request_binding") or {}).get("session_timeout")
+            if (data.get("status") != "running" or data.get("work_state") == "completed"
+                    or type(timeout) not in (int, float) or timeout <= 0 or not data.get("started_at")):
+                continue
+            try:
+                started = datetime.fromisoformat(data["started_at"].replace("Z", "+00:00"))
+                check("operation_timeout", {"operation_id": operation_id},
+                      (started + timedelta(seconds=timeout)).isoformat())
+            except (ValueError, TypeError, OverflowError):
+                due.append({"kind": "deadline_invalid", "operation_id": operation_id,
+                            "started_at": data["started_at"], "session_timeout": timeout})
+        return due
+
+    def _page_view(self, payload: dict, reference: dict, *, offset: int = 0) -> dict:
+        # Transport acknowledgement and newer-state locators can change during
+        # paging. Keep them outside the stable JSON whose offsets we acknowledge.
+        encoded = _json_bytes({key: value for key, value in payload.items()
+                               if key not in {"delivery_status", "current_state"}})
+        if offset == 0 and len(json.dumps(payload, ensure_ascii=False).encode()) <= 31800:
+            return payload
+        text, end = _utf8_page(encoded, offset, 12000)
+        return {"schema_version": payload["schema_version"],
+                **{key: payload[key] for key in ("input_id", "mode", "delivery_status", "current_state")
+                   if key in payload},
+                "evidence": reference,
+                "page": {"text": text, "offset": offset, "next_offset": end,
+                         "note": "partial JSON; collect pages or read the original before using unreturned facts"},
+                "coverage": {"complete": end == len(encoded), "total_bytes": len(encoded),
+                             "returned_bytes": end - offset, "source_complete": False,
+                             "remaining_bytes": len(encoded) - end},
+                "delivery_range": {"next_offset": end, "complete": end == len(encoded)},
+                "read_original": reference}
+
+    def _bootstrap_observation(self) -> dict:
+        # The newest forced input belongs to this bootstrap only. Historical
+        # pending inputs and conversation dispatch positions remain untouched.
+        item = self._pending_decisions[-1]
+        self._bootstrap_input_id = item["input_id"]
+        return self._model_observation(_item=item, _bootstrap=True)
+
     def _restore_decision_inputs(self) -> None:
         self._pending_decisions = []
         self._last_current = {}
         self._decision_event_state = {}
+        self._input_ids = set()
+        self.last_yield = None
         path = self.session_root / "session-events.jsonl"
         if not path.exists():
             return
@@ -2251,6 +2485,7 @@ class DeliverySession:
             if "event_cursors" in record:
                 self._event_cursors.update(record["event_cursors"])
             if event == "delivery_decision_input":
+                self._input_ids.add(record["input_id"])
                 self._pending_decisions.append({"input_id": record["input_id"], "byte_offset": offset,
                     "byte_length": len(line), "offset": 0, "delivery_status": "pending"})
                 self._last_current = record["fingerprint_state"]
@@ -2259,6 +2494,8 @@ class DeliverySession:
                 self._decision_event_state = {
                     key: {"seen": set(value["seen"]), "chain": value["chain"]}
                     for key, value in record.get("decision_event_state", {}).items()}
+            elif event == "delivery_yield":
+                self.last_yield = record
             elif event == "delivery_input_dispatch":
                 for item in list(self._pending_decisions):
                     if item["input_id"] != record["input_id"]:
@@ -2268,7 +2505,10 @@ class DeliverySession:
                         if record["complete"]:
                             self._pending_decisions.remove(item)
                         else:
-                            item["offset"] = record["next_offset"]
+                            # A v1 page offset cannot index a v2 projection.
+                            # Resending facts from zero never replays actions.
+                            item["offset"] = (record["next_offset"] if
+                                record.get("view_schema_version") == "delivery-decision-input/v2" else 0)
             offset += len(line)
         # An attempt without a durable acknowledgement is uncertain, including
         # interruption between native acceptance and journal persistence.
@@ -2287,7 +2527,9 @@ class DeliverySession:
             "authorization_reference": self.authorization,
             "authorization_valid_until": self.authorization_valid_until,
             "allowed_operations": sorted(self.allowed_operations), "activity": self.activity,
-            "work_result": self.work_result, "flow_confirmation": self.flow_confirmation}
+            "work_result": self.work_result, "flow_confirmation": self.flow_confirmation,
+            "task_context": self._task_context()}
+        projected["deadline_events"] = self._deadline_events(observation)
         decision = _decision_observation(projected, self._decision_event_state)
         # Appendix lengths/digests change with ordinary appends. The identity
         # of a specific request result is the receipt and ledger line itself.
@@ -2334,6 +2576,9 @@ class DeliverySession:
             changes = _value_changes(self._last_current, decision)
             input_id = uuid.uuid4().hex
             packet = {"event": "delivery_decision_input", "input_id": input_id,
+                "mode": "bootstrap" if force_delivery or not self._last_current else "changes",
+                "continuation": copy.deepcopy(self.last_yield),
+                "recovery_context": self._recovery_context() if force_delivery or not self._last_current else None,
                 "snapshot": current, "changes": changes, "fingerprint_state": decision,
                 "changed_operations": changed_operations,
                 "decision_digest": digest, "event_cursors": self._event_cursors,
@@ -2342,6 +2587,7 @@ class DeliverySession:
             offset, byte_length = append_session_event(self.session_root, packet)
             self._pending_decisions.append({"input_id": input_id, "byte_offset": offset,
                 "byte_length": byte_length, "offset": 0, "delivery_status": "pending"})
+            self._input_ids.add(input_id)
             self._last_current = decision
             self._last_decision_digest = digest
         # Persist the cursor only after the full raw observation and change
@@ -2349,13 +2595,15 @@ class DeliverySession:
         self._save("active")
         return changed
 
-    def _model_observation(self, observation: Any = None) -> dict:
+    def _model_observation(self, observation: Any = None, *, _item: dict | None = None,
+                           _bootstrap: bool = False) -> dict:
         if not self._pending_decisions:
             if observation is not None:
                 self.record_observation(observation)
             if not self._pending_decisions:
-                return {"schema_version": "delivery-decision-input/v1", "coverage": {"complete": True}}
-        item = self._pending_decisions[0]
+                return {"schema_version": "delivery-decision-input/v2", "coverage": {"complete": True}}
+        item = _item or next((item for item in self._pending_decisions
+            if item["input_id"] == getattr(self, "_bootstrap_input_id", None)), self._pending_decisions[0])
         journal = self.session_root / "session-events.jsonl"
         with journal.open("rb") as handle:
             raw = handle.read(item["byte_offset"] + item["byte_length"])
@@ -2410,85 +2658,121 @@ class DeliverySession:
             histories[collection] = {"total": len(history), "returned": 0,
                                      "complete": not history, "evidence": reference}
         snapshot["operation_history"] = histories
-        changes = []
-        for change in packet["changes"]:
-            parts = change["path"]
-            # Historical settled bodies are indexed, including on resume;
-            # changed/new outcomes remain available through the exact packet.
-            if "settled" in parts and len(_json_bytes(change)) > 2048:
-                changes.append({"path": parts, "change": change["change"], "evidence": reference})
-            elif len(_json_bytes(change)) > 2048:
-                changes.append({"path": parts, "change": change["change"], "evidence": reference})
+        bootstrap = _bootstrap or packet.get("mode", "bootstrap") == "bootstrap"
+        first_blockers = {}
+        for key, run in snapshot.get("runs", {}).items():
+            blocker = run.get("status", {}).get("data", {}).get("first_blocker")
+            if not blocker:
+                continue
+            encoded_blocker = _json_bytes(blocker)
+            if len(encoded_blocker) <= 2048:
+                first_blockers[key] = blocker
             else:
-                changes.append(change)
-        referenced_values = []
-        def bound(value, parts=()):
-            if len(_json_bytes(value)) <= 2048:
-                return value
+                preview, _ = _utf8_page(encoded_blocker, 0, 512)
+                first_blockers[key] = {"preview": preview, "preview_complete": False,
+                    "total_bytes": len(encoded_blocker), "evidence": reference,
+                    "packet_path": ["snapshot", "runs", key, "status", "data", "first_blocker"]}
+                # The full body stays in bootstrap/changes and is paged there.
+                # The always-present core must not repeat a large stable body.
+        core = {**snapshot.get("session", {}),
+                "runs": {key: {field: value for field, value in run.get("status", {}).get("data", {}).items()
+                              if field in _STATUS_FIELDS - {"first_blocker"}}
+                         for key, run in snapshot.get("runs", {}).items()},
+                "operations": {key: {field: value for field, value in envelope.get("data", {}).items()
+                                      if field in _STATUS_FIELDS}
+                               for key, envelope in snapshot.get("operations", {}).items()},
+                "first_blockers": first_blockers,
+                "deadline_events": snapshot.get("deadline_events", [])}
+        unresolved = []
+        def add(kind, value, path, **identity):
             if isinstance(value, dict):
-                return {key: bound(item, (*parts, key)) for key, item in value.items()}
-            if isinstance(value, list):
-                return [bound(item, (*parts, index)) for index, item in enumerate(value)]
-            referenced_values.append(list(parts))
-            packet_path = list(parts) if parts and parts[0] == "changes" else ["snapshot", *parts]
-            if len(parts) >= 2 and parts[0] == "first_blockers":
-                packet_path = ["snapshot", "runs", parts[1], "status", "data", "first_blocker", *parts[2:]]
-            return {"read_complete": False, "evidence": reference, "packet_path": packet_path,
-                    "note": "large value retained in the exact decision packet"}
-        # Put authorization/control and first blockers ahead of bulk collections.
-        payload = bound({"schema_version": snapshot["schema_version"],
-                         "session": snapshot.get("session", {}),
-                         "first_blockers": {key: run.get("status", {}).get("data", {}).get("first_blocker")
-                             for key, run in snapshot.get("runs", {}).items()
-                             if run.get("status", {}).get("data", {}).get("first_blocker")},
-                         **snapshot, "input_id": item["input_id"],
-                         "changes": changes, "evidence": reference,
-                         "coverage": {"complete": True, "collections": {
-                             name: {"total": len(snapshot.get(name, {})) + histories.get(name, {}).get("total", 0),
-                                    "returned": len(snapshot.get(name, {})),
-                                    "complete": not histories.get(name, {}).get("total", 0)}
-                             for name in ("runs", "operations", "repair_verifications")}}})
-        if len(self._pending_decisions) > 1:
+                compact = {key: val for key, val in value.items() if key in {
+                    "id", "request_id", "operation_id", "type", "kind", "status", "state",
+                    "outcome", "bindings", "write_state", "content_digest"}}
+            else:
+                compact = {"status": "unknown", "limitation": "unexpected object; inspect original"}
+            unresolved.append({"kind": kind, **identity, **compact, "packet_path": path})
+        for run_id, run in snapshot.get("runs", {}).items():
+            for index, value in enumerate(run.get("pending", {}).get("data", {}).get("items", [])):
+                add("pending_action", value, ["snapshot", "runs", run_id, "pending", "data", "items", index],
+                    run_id=run_id)
+            requests = run.get("requests", {}).get("data", {}).get("pending", [])
+            for index, value in enumerate(requests):
+                add("request", value, ["snapshot", "runs", run_id, "requests", "data", "pending", index],
+                    run_id=run_id)
+                result = value.get("result", {})
+                unresolved[-1]["outcome"] = result.get("data", {}).get("outcome", "unknown")
+                if result.get("ok") is False:
+                    unresolved[-1]["error"] = result.get("error")
+            for kind in ("status", "pending", "requests", "events"):
+                if run.get(kind, {}).get("ok") is False:
+                    add("read_error", run[kind], ["snapshot", "runs", run_id, kind], run_id=run_id)
+                    unresolved[-1]["error"] = run[kind].get("error")
+        for collection in ("operations", "repair_verifications"):
+            for key, envelope in snapshot.get(collection, {}).items():
+                add(collection, envelope.get("data", envelope), ["snapshot", collection, key], operation_id=key)
+                if envelope.get("ok") is False:
+                    unresolved[-1]["error"] = envelope.get("error")
+        for collection in ("pending", "unresolved"):
+            for index, value in enumerate(actions.get(collection, [])):
+                add("host_request", value, ["snapshot", "host_actions", collection, index])
+
+        changes = []
+        if not bootstrap:
+            for change in packet["changes"]:
+                parts = change["path"]
+                # Event fingerprints are only wakeup bookkeeping. Deliver actual
+                # event bodies from the authorized snapshot, never a chain hash.
+                if len(parts) >= 3 and parts[0] == "runs" and parts[2] == "events":
+                    continue
+                if len(parts) == 2 and parts[0] == "runs" and change["change"] == "added":
+                    change = {**change, "value": snapshot["runs"][parts[1]]}
+                changes.append(change)
+            for run_id, run in snapshot.get("runs", {}).items():
+                if changed(("runs", run_id, "events")):
+                    changes.append({"path": ["runs", run_id, "events"], "change": "updated",
+                                    "value": run.get("events", {})})
+        payload = {"schema_version": "delivery-decision-input/v2", "input_id": item["input_id"],
+                   "source_schema_version": packet.get("schema_version", snapshot.get("schema_version")),
+                   "mode": "bootstrap" if bootstrap else "changes", "core": core,
+                   "unresolved": unresolved, "changes": changes, "evidence": reference,
+                   "delivery_status": item["delivery_status"],
+                   "raw_observation": snapshot.get("raw_observation"),
+                   "coverage": {"complete": True, "source_complete": False,
+                       "omitted_sections": ["settled_history"] + ([] if bootstrap else ["unchanged_snapshot"]),
+                       "collections": {name: {
+                           "total": len(snapshot.get(name, {})) + histories.get(name, {}).get("total", 0),
+                           "returned": len(snapshot.get(name, {})) if bootstrap else 0,
+                           "complete": bootstrap and not histories.get(name, {}).get("total", 0),
+                           "evidence": reference}
+                           for name in ("runs", "operations", "repair_verifications")},
+                       "unresolved": {"total": len(unresolved), "returned": len(unresolved), "complete": True},
+                       "history": {"host_actions": actions["completed_index"], **histories},
+                       "changes": {"total": len(changes), "returned": len(changes), "complete": True}}}
+        if bootstrap:
+            # The initial/recovery view has current necessary bodies, but no
+            # full config, native token deltas or settled historical collections.
+            payload.update({key: value for key, value in snapshot.items()
+                            if key not in {"schema_version", "session", "raw_observation"}})
+            payload["continuation"] = packet.get("continuation")
+            payload["recovery_context"] = packet.get("recovery_context")
+        if len(self._pending_decisions) > 1 and item is not self._pending_decisions[-1]:
             latest = self._pending_decisions[-1]
-            with journal.open("rb") as handle:
-                latest_raw = handle.read(latest["byte_offset"] + latest["byte_length"])
             payload["current_state"] = {"input_id": latest["input_id"],
-                "path": str(journal), "source_ref": _source_ref(journal, latest_raw),
-                "selection": {"kind": "bytes", "offset": latest["byte_offset"],
-                              "length": latest["byte_length"]},
-                "note": "snapshot here is historical; reconcile this newer current state before acting"}
-        payload["coverage"].update(values_complete=not referenced_values,
-                                   referenced_values=referenced_values)
-        current_state = payload.pop("current_state", None)
-        encoded = _json_bytes(payload)
-        if current_state:
-            payload["current_state"] = current_state
-        if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= 32000:
-            payload["delivery_status"] = item["delivery_status"]
-            payload["delivery_range"] = {"next_offset": len(encoded), "complete": True}
-            if len(json.dumps(payload, ensure_ascii=False).encode("utf-8")) <= 32000:
-                return payload
-        # Oversized sets and single values use deterministic UTF-8 pages. The
-        # complete packet remains readable and no unreturned change is acked.
-        offset = item["offset"]
-        text, end = _utf8_page(encoded, offset, 12000)
-        return {"schema_version": "delivery-decision-input/v1", "input_id": item["input_id"],
-            "delivery_status": item["delivery_status"], "evidence": reference,
-            "session": bound(snapshot.get("session", {})),
-            "current_state": current_state,
-            "page": {"text": text, "offset": offset, "next_offset": end,
-                     "note": "partial JSON; concatenate all pages before using unreturned collections"},
-            "coverage": {"complete": end == len(encoded), "total_bytes": len(encoded),
-                "returned_bytes": end - offset, "collections": {
-                    name: {"total": len(snapshot.get(name, {})), "returned": "unknown",
-                           "complete": False, "evidence": reference}
-                    for name in ("runs", "operations", "repair_verifications")},
-                "changes": {"total": len(changes), "returned": "unknown", "complete": False,
-                            "evidence": reference}},
-            "delivery_range": {"next_offset": end, "complete": end == len(encoded)}}
+                **self._journal_reference(latest["byte_offset"], latest["byte_length"]),
+                "note": "historical input; reconcile newer bindings/control before acting"}
+        encoded = _json_bytes({key: value for key, value in payload.items()
+                               if key not in {"delivery_status", "current_state"}})
+        result = self._page_view(payload, reference, offset=item["offset"])
+        if "page" not in result:
+            result["delivery_range"] = {"next_offset": len(encoded), "complete": True}
+        return result
 
     def _dispatch_observation(self, runtime: DeliveryRuntime, payload: dict, *, steer: bool) -> bool:
-        item = self._pending_decisions[0] if self._pending_decisions else None
+        data = payload.get("observed_state") if payload.get("kind") in {"delivery_start", "delivery_resume"} else payload.get("data")
+        data = data or payload
+        item = next((item for item in self._pending_decisions
+                     if item["input_id"] == data.get("input_id")), None)
         if item is None:
             return True
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
@@ -2502,13 +2786,12 @@ class DeliverySession:
                 "input_id": item["input_id"], "status": status})
             self._save("active")
             return False
-        data = payload.get("observed_state") if payload.get("kind") == "delivery_resume" else payload.get("data")
-        data = data or payload
         received = data["delivery_range"]
         self._append("session-events.jsonl", {"event": "delivery_input_dispatch",
-            "input_id": item["input_id"], "status": "accepted", **received})
+            "input_id": item["input_id"], "status": "accepted",
+            "view_schema_version": data["schema_version"], **received})
         if received["complete"]:
-            self._pending_decisions.pop(0)
+            self._pending_decisions.remove(item)
         else:
             item["offset"] = received["next_offset"]
             item["delivery_status"] = "pending"
@@ -2577,21 +2860,15 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                     incoming.put({key: value for key, value in message.items() if key not in {
                         "received_seq", "recorded_at", "dispatch", "dispatch_reason", "control"}})
         threading.Thread(target=read_input, daemon=True).start()
-        observed_state = None
-        if resume:
-            initial_observation = session.observe()
-            # Persist the complete raw observation (the existing
-            # observation.json record) before the first model-facing payload,
-            # so the native log records excluded below are readable on demand
-            # from the first turn.  One startup observe feeds both the stored
-            # record and the delivered state, so no events page is consumed
-            # twice and no duplicate startup observation is recorded.
-            session.record_observation(initial_observation, force_delivery=True)
-            observed_state = session._model_observation(initial_observation)
-        initial_packet = {"kind": "delivery_resume" if resume else "delivery_start", "config": config,
+        # Startup and explicit recovery both begin from current facts. This
+        # bootstrap has its own input identity and cannot acknowledge old pages.
+        initial_observation = session.observe()
+        session.record_observation(initial_observation, force_delivery=True)
+        observed_state = session._bootstrap_observation()
+        initial_packet = {"kind": "delivery_resume" if resume else "delivery_start",
                           "observed_state": observed_state,
                           "session_reference": str(session_root / "session.json")}
-        if resume and session._pending_decisions:
+        if session._pending_decisions:
             session._dispatch_observation(runtime, initial_packet, steer=False)
         else:
             runtime.send(json.dumps(initial_packet, ensure_ascii=False))
@@ -2697,8 +2974,7 @@ def _run_delivery(config: dict, *, repository_root: Path, resume: bool) -> int:
                         session.conversation.append("dispatch_result", message_id=current["message_id"], status="accepted_by_native")
             # Continue program observation during an active inference too. Send
             # decisions on its current turn; a heartbeat never starts a turn.
-            if (runtime.busy and (session.run_ids or session.operation_ids or session.verification_ids)
-                    and time.monotonic() >= next_observation):
+            if runtime.busy and time.monotonic() >= next_observation:
                 observation = session.observe()
                 next_observation = time.monotonic() + 2
                 session.record_observation(observation)

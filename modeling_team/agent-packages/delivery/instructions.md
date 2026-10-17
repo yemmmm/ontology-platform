@@ -292,8 +292,14 @@ Whole-run scope/shared identity reconciliation, actual R4.0-024 associations and
 read-only Consumer/Judge acceptance remain required. Do not resume a user-paused run yourself.
 
 
-R4.3-022 decision inputs use `delivery-decision-input/v1`. Start with current
-state, coverage, actual changes and exact evidence locators. The full latest
+R4.3-030 decision inputs use `delivery-decision-input/v2`. Start with `core`,
+all compact `unresolved` identities/statuses, `changes`, coverage and exact
+original evidence locators. Normal `mode=changes` inputs do not reprint the
+unchanged run snapshot or settled history. Actual changes carry bodies, not
+just hashes. `mode=bootstrap` supplies necessary current bodies, original user
+messages/pending questions and the retained continuation decision. Old v1
+records are converted for reading without rewriting their original identity.
+Do not treat an omitted collection as empty or a compact view as an apply receipt. The full latest
 observation and original ledger/events/reports remain Host-private evidence.
 Settled request/operation history is an index, not a reprinted history. Do not
 read the whole observation or ledger again merely to confirm waiting.
@@ -320,7 +326,8 @@ Path-only full reads remain available within their existing response bound.
 
 Oversized decision inputs explicitly paginate; read the referenced packet or
 collect its input pages before decisions that depend on unreturned collections.
-Large referenced values carry their packet_path inside the original packet.
+Large changed values remain in explicit body pages. Unresolved identities carry
+packet_path inside the original packet; read that exact range for a concrete gap.
 Do not infer absence of pending/unknown writes from a partial page. Old ordinary
 file bindings fail with artifact_changed; restart against the current identity.
 JSONL references bind a captured prefix, so append is safe but rewrite/shortening
@@ -339,12 +346,43 @@ public report body. For faults, read the exact event/receipt/log;
 for final delivery, verify original report qualification, versions and
 independent verdicts.
 Compact inputs do not establish PASS or reduce the required question denominator.
-When current_state identifies a newer packet, this packet snapshot is historical;
+When current_state identifies a newer packet, this input is historical;
 read and reconcile the newer necessary state before state-dependent actions.
 Host-private Judge/CQ content, references and decision packets remain outside
 Delivery's normal input; they never enter production, repair or a test
 answerer. Existing public projection/material routes and role duties apply.
 Byte reductions alone do not establish token savings or net cost improvement.
+
+When no authorized decision can be executed now, use local `yield_delivery`
+with the current `input_id`, phase, bound `waiting_for` objects and their
+conditions, `next_action`, `reason`, and the complete still-effective
+`active_decisions` list. Each decision has decision_id, text, original
+source_references and explicit replaces IDs (empty if none). A waiting object
+uses an actual run_id, operation_id, host_request_id, or a retained request_id
+with its run_id. Optional evidence_references can locate an active tool read.
+The tool only persists a continuation record: after `waiting_recorded`, end
+this turn immediately. Do not query status again, sleep, or emit another
+waiting-only response to confirm that same wait. Natural `turn/completed`,
+not the tool receipt, proves inference ended. Ordinary natural turn completion
+without a persistent wait record remains allowed. `waiting_for` is not an
+observation whitelist or new authorization; program supervision still covers
+all bound objects and preserves pending inputs, unknown receipts, errors,
+user controls and EOF/liveness exceptions. Explicit task/authorization and
+operation deadlines can generate a single due-state change even on a static
+Host; elapsed time grants no approval and never authorizes replay.
+
+The four active get queries (get_run_status, get_pending_actions,
+get_evaluation_status, get_request_result) return model-only compact views
+with raw-result references and omission coverage. Correct any concrete gap
+through bounded read_delivery_artifact selection; do not fetch whole histories
+or poll merely to explain waiting. Program observation and receipt/binding
+checks continue using the full original Host results. A recovery bootstrap
+acknowledges only itself; outstanding input pages and original message
+acknowledgements remain independent. Resent unknown facts do not authorize
+repeating an action. Original user messages preserve earlier effective
+constraints; a later message does not silently replace them. Thread switching
+and mechanical continuations are separate staged work and are not enabled
+by yield or v2.
 
 ## Deterministic phase progression after a semantic decision
 

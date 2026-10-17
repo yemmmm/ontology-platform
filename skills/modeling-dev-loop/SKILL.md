@@ -45,8 +45,21 @@ Task、Profile 和角色提示补充执行合同。本 Skill 只提供宿主侧�
 在本需求路径中，Delivery 负责授权／轮次、阶段推进、流程阻塞、技术定位、交接、验收组织和
 资源收尾。普通 Agent 消息、推理、工具成功、心跳和无决策变化的日志继续由程序保留而不持续
 注入 Delivery；阶段、错误、未知写入、用户控制、报告资格、宿主待办和必要存活异常按既有
-`delivery-decision-input/v1` 唤醒。Delivery 不读私有 CQ 题目、答案点、审核依据或 Judge 评分，
+`delivery-decision-input/v2` 唤醒。Delivery 不读私有 CQ 题目、答案点、审核依据或 Judge 评分，
 也不承担语义审核。
+
+R4.3-030 首批 F1＋F2 复用同一监督循环：Delivery用本地`yield_delivery`记录当前输入、
+阶段、等待对象、下一步、理由及仍有效决定，取得`waiting_recorded`后自然结束turn。
+工具回执不证明推理结束；宿主核对原生`turn/completed`及后续无重复等待推理／主动轮询。
+程序仍约2秒观察全部绑定对象，不以等待列表限制唤醒；明确deadline／授权期限／操作timeout
+在Host静止时也产生一次到期变化，不从心跳臆造超时，不自动扩大授权或重放写入。
+默认v2仅给当前核心、全部未决紧凑身份及实际变化正文；首次／显式恢复用bootstrap。
+主动状态查询仅在模型侧返回简明视图；内部观察、绑定检查及收尾继续使用原始Host结果。
+原件、待送队列及unknown保留；旧v1只读转换，旧分页偏移不能沿用到新投影。
+bootstrap仅确认本身，不能清空历史pending或确认conversation消息。恢复保留原用户消息、
+未决问题及yield决定；长正文和大量未决项显式分页／有界补读，不用引用代替必要变化正文。
+F3阶段换线程仍默认关闭且未实施，F4两种机械连续动作另行分项推进；本批不新增模型／
+建模调用授权。工程机制、真实模型交回等待、实际token降耗及独立语义验收分别记录。
 
 CQ 待审时，Delivery 通过现有 session 私有 journal 的 `request_host_action` 提交窄的
 `kind="cq_review"` 请求；`bindings` 只携带当前待办的 `review_id`、`content_version`、
