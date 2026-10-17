@@ -71,6 +71,14 @@ full conversation. Host review requires an existing delegated review authority;
 without it, route the business ambiguity to the original authorizer. A request
 receipt means only that the Host has a private pending action.
 
+A completed panorama review is not completion of later selected slice reviews.
+Check actual drafting/review stage receipts for the whole selected scope, not
+only the absence of undecided questions in the currently published pool. Ask
+for the existing next CQ stage while any selected stage is still outstanding.
+After freezing, immediately send the public projection and confirmation to the
+original Coordinator and check real delivery/progress; do not wait for an idle
+inquiry. This introduces no new question-count or visibility hard gate.
+
 Freezing the CQ pool and completing the production handoff are two separate
 phases; a freeze is only the precondition for formal production, never a
 substitute for modeling or production completion. Phase one: wait until the

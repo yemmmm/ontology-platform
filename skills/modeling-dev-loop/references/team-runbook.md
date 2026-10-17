@@ -110,7 +110,16 @@ Delivery 发现 CQ 审核或平台修复需要宿主动作时，只使用当前�
 
 宿主监督时按进度检查读取该 session 私有 journal 的新增请求和原 Host pending actions，只有
 实际有待办才处理。宿主在已有授权内读取 CQ 私有快照并直接调用 `submit_cq_review`；完成全选题
-审核后，Delivery 按原回执／当前 digest 核对并调用 `freeze_cq`。平台修复先按 AGENTS 的 T0
+审核后，Delivery 按原回执／当前 digest 核对并调用 `freeze_cq`。
+宿主回传须区分本次 `review_complete` 与整池 `selected_scope_complete`：全景审核完成不表示
+切片题已起草／审核。按本 Task 声明的阶段和选题范围，核对全部选定公开／隐藏题的当前
+审核回执；仍待切片草案或审核时明确整池未完成，让 Delivery 继续原 CQ interview／切片
+流程，不因当前没有未决题就授权冻结。不把固定题数或必须有隐藏题推广为所有 Task 的硬门。
+冻结成功后 Delivery 立即经原 Coordinator 发送公开 projection 和明确冻结确认，核对实际
+投递／Coordinator 后续动作；宿主仅在该动作缺位时补位并记录，不等待 idle-inquiry 才转达。
+空题集报告保留 coverage gap；`cq_verdict=fail` 可表示无裁决，不证明模型内容失败。公开组
+与隐藏组各按实际完整分母判断，不用一个组的 PASS 覆盖另一组。
+平台修复先按 AGENTS 的 T0
 复核，再做最窄代码／配置修复、相关测试和必要部署／重启；宿主随后直接调用绑定当前
 `issue_id`、`reporter_id`、`control_epoch` 的 `resolve_issue(resolution_type="repair_completed")`。
 

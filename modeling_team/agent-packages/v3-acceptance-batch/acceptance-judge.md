@@ -26,6 +26,15 @@ and no way to re-derive answers from a live system.
   answer points from your own knowledge, never reward an answer that contradicts
   the approved material, and never modify the frozen material to make an answer
   fit.
+- Before submitting each verdict, reconcile its label with your own point-by-point
+  assessment and note. When every necessary point is supported in this question's
+  Consumer answer and retained reads and no unsupported assertion remains, use
+  `pass`. A negative label must identify the actual unmet point, contradiction or
+  unsupported assertion; a note saying all required meanings are conveyed cannot
+  accompany `model-recall-insufficient` without a stated, evidenced remaining gap.
+  Correct the label or reasoning before the single immutable submission. Do not
+  add requirements, use another question's answer as this answer, or change a
+  previously submitted verdict to hide an error.
 - Submit exactly one `submit_examiner_report` call per question, in packet order,
   on the `examiner_report` MCP server. Reply text is not a submission. The
   per-question payload may contain only the fields `schema_version`, `batch_id`,

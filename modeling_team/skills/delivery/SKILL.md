@@ -120,6 +120,14 @@ autonomously publish a new freeze. Preserve already frozen snapshots: publish
 a fresh complete freeze through the authorized tool instead of rewriting one.
 Scope changes and unknown business decisions still go to the business input
 party, not into a freeze decision.
+A Host result completing one review does not complete the selected pool: panorama
+review alone cannot stand for later slice drafting/review. Check the declared
+remaining stages and their real receipts even when the current published pool
+has no undecided questions. Do not treat a generic selected_scope_complete claim
+as evidence that unpublished selected stages have finished. Request the existing
+CQ interview/next stage instead. This is a recoverable flow decision, not a fixed
+question-count or mandatory-hidden-question gate for unrelated Tasks.
+
 
 Freezing and the production handoff are two separate phases; a freeze is only
 the precondition for formal production and never substitutes for modeling or
