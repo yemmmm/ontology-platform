@@ -424,3 +424,79 @@ def test_r4329_host_result_wakes_and_survives_undelivered_resume(tmp_path, monke
         config=host.config, resume=True)
     assert resumed._model_observation()["input_id"] == packet["input_id"]
     assert resumed._model_observation()["host_actions"] == packet["host_actions"]
+
+    # A completed result is delivered once, then retained through a precise index.
+    ack(host)
+    later = observation()
+    later["runs"]["run"]["status"]["data"]["stage"]["phase"] = "handoff"
+    assert host.record_observation(later)
+    history = ack(host)["host_actions"]
+    assert not history["completed"] and not history["requests"] and not history["results"]
+    assert history["completed_index"]["total"] == 1
+    evidence = history["completed_index"]["evidence"]
+    original = json.loads(read(host, evidence["path"], source_ref=evidence["source_ref"],
+                              selection=evidence["selection"])["data"]["text"])
+    assert original["snapshot"]["host_actions"]["completed"][0]["request_id"] == "repair-host"
+
+
+def test_completed_standby_operation_is_indexed_after_completion_delivery(tmp_path):
+    host = session(tmp_path)
+    raw = observation()
+    operation = raw["operations"]["op"]["data"]
+    operation.update(work_state="working", lifecycle="active", report_binding={"valid": True})
+    host.record_observation(raw)
+    ack(host)
+    operation.update(work_state="completed", lifecycle="standby",
+                     consult_replies=[{"role": "consumer", "text": "RETAINED-REPLY"}])
+    assert host.record_observation(raw)
+    assert ack(host)["operations"]["op"]["data"]["work_state"] == "completed"
+    raw["runs"]["run"]["status"]["data"].update(write_phase="unknown")
+    assert host.record_observation(raw)
+    payload = ack(host)
+    assert "op" not in payload["operations"]
+    assert payload["operation_history"]["operations"]["total"] == 1
+    assert payload["runs"]["run"]["status"]["data"]["write_phase"] == "unknown"
+    assert "RETAINED-REPLY" not in json.dumps(payload)
+    operation["report_binding"]["valid"] = False
+    assert host.record_observation(raw)
+    assert ack(host)["operations"]["op"]["data"]["report_binding"]["valid"] is False
+    operation["report_binding"]["valid"] = True
+    operation["control_receipts"] = {"consult": {"status": "unknown"}}
+    assert host.record_observation(raw)
+    ack(host)
+    raw["runs"]["run"]["status"]["data"]["stage"]["phase"] = "another-step"
+    host.record_observation(raw)
+    assert "op" in ack(host)["operations"]
+
+
+def test_finish_standby_has_queryable_receipt_and_native_retry_reuses_request(tmp_path, monkeypatch):
+    from modeling_team.competency_questions import content_digest
+    from modeling_team.outer_input import OuterInputFifo
+
+    host, root = bound_run(tmp_path, monkeypatch)
+    host.allowed_operations.add("supervise")
+    fifo = OuterInputFifo(root / "control/outer-input.fifo")
+    fifo.open()
+    try:
+        result = host.call_tool("finish_delivery", {"conclusion": "work complete"},
+                                call_identity="native-finish-call")
+        assert result["ok"], result
+        standby = result["data"]["runs"]["run"]["data"]
+        assert standby["request_id"] and standby["next_query"] == "get_request_result"
+        fifo.read_ready()
+        envelope = json.loads(fifo.pop_line())
+        assert envelope.pop("request_id") == standby["request_id"]
+        (root / "evidence/outer-input-receipts.jsonl").write_text(json.dumps({
+            "request_id": standby["request_id"], "outcome": "accepted", "action": "standby",
+            "content_digest": content_digest(envelope), "ack_type": "standby-accepted",
+        }) + "\n")
+        queried = host.call_tool("get_request_result", {
+            "run_id": "run", "request_id": standby["request_id"]})
+        assert queried["data"]["outcome"] == "accepted"
+        retried = host.call_tool("finish_delivery", {"conclusion": "work complete"},
+                                 call_identity="native-finish-call")
+        assert retried["data"]["runs"]["run"]["data"]["idempotent"] is True
+        fifo.read_ready()
+        assert fifo.pop_line() is None
+    finally:
+        fifo.close()

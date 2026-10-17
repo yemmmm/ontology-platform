@@ -331,6 +331,18 @@ run 写过写尾时，该参数显式命名写尾 run（对应 CLI `--write-tail
 
 ### R4.3-029 Delivery→Host 私有接单
 
+Delivery默认观察继续保留当前授权、阶段、待办、首阻塞、未知写入和新增变化。
+正常MCP starting／ready及remoteControl disabled事件只保留原件，不触发模型决策；
+错误、异常状态及损坏事件继续送达。稳定已完成的Host结果用`completed_index`定位，
+工作完成、报告有效且无未决控制的evaluation在standby时也可进入既有
+`operation_history`；新结果／绑定变化仍先送达，原件可通过精确引用补读。
+
+在Delivery本地调用`standby_run`（含`finish_delivery`内部收尾）或
+`complete_cq_acceptance`时，省略request_id会由程序补齐并在结果中返回；
+提交态附`next_query=get_request_result`。同一原生工具调用重投保留关联身份，
+显式传入request_id继续原样使用。独立Host工具的可选参数合同不变；
+submitted只证明提交，实际消费与standby仍以Runner回执／状态为准。
+
 `complete_cq_handoff`在生产角色尚未报告完成时返回可恢复的
 `cq_production_pending`，保持生产写入开放，不改变授权或发布handoff。
 CQ拒绝回执保留`detail`和`retry`；`get_request_result`及同request_id重查返回

@@ -64,6 +64,26 @@ def observation():
     }
 
 
+@pytest.mark.parametrize(("method", "params"), [
+    ("mcpServer/startupStatus/updated", {"status": "starting", "error": None}),
+    ("mcpServer/startupStatus/updated", {"status": "ready", "error": None}),
+    ("remoteControl/status/changed", {"status": "disabled"}),
+])
+def test_successful_runtime_status_is_retained_without_waking_delivery(tmp_path, method, params):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    raw = observation()
+    event = {"source": "app-server-events.jsonl", "byte_offset": 100,
+             "data": {"method": method, "params": params}}
+    raw["runs"]["run"]["events"] = _events_page([event], next_cursor="status-1")
+    assert not host.record_observation(raw)
+    stored = json.loads((host.session_root / "observation.json").read_text())
+    assert stored["data"]["runs"]["run"]["events"]["data"]["events"] == [event]
+    event["byte_offset"] = 200
+    event["data"]["params"] = {**params, "error": {"message": "startup unavailable"}}
+    assert host.record_observation(raw)
+
+
 def test_noise_is_retained_without_repeated_model_wakeup(tmp_path):
     host = session(tmp_path)
     first = observation()

@@ -297,6 +297,15 @@ state, coverage, actual changes and exact evidence locators. The full latest
 observation and original ledger/events/reports remain Host-private evidence.
 Settled request/operation history is an index, not a reprinted history. Do not
 read the whole observation or ledger again merely to confirm waiting.
+Completed Host results use completed_index once their new result has been
+shown. A completed, qualified evaluation may also be indexed while its members
+remain in standby; process exit is not required. New report/binding changes,
+failed reads and pending control receipts stay in current input. Read indexed
+history only for a concrete decision gap.
+For standby_run (including finish_delivery) and complete_cq_acceptance, omitted
+request IDs are filled by Delivery. Follow the returned request_id/next_query
+through get_request_result; submitted is not consumed, and an unknown result
+requires reconciliation rather than a fresh uncorrelated action.
 
 Use `read_delivery_artifact` with `selection={kind:"bytes",offset:...}` (optional
 length) or `selection={kind:"json",paths:[["literal-key",0,"field"]],offset:...}`

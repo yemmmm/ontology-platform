@@ -129,6 +129,12 @@ def _is_decision_event_noise(event: Any) -> bool:
         return False
     if source == "app-server-events.jsonl":
         method = data.get("method")
+        if method == "mcpServer/startupStatus/updated":
+            params = data.get("params")
+            return isinstance(params, dict) and params.get("status") in {"starting", "ready"}
+        if method == "remoteControl/status/changed":
+            params = data.get("params")
+            return isinstance(params, dict) and params.get("status") == "disabled"
         if method in {"item/started", "item/completed", "turn/completed", "turn/finished"}:
             params = data.get("params")
             if not isinstance(params, dict):
@@ -1851,7 +1857,8 @@ class DeliverySession:
                 self.work_result = arguments["conclusion"]
                 results = {}
                 for run_id in sorted(self.run_ids):
-                    results[run_id] = self.call_tool("standby_run", {"run_id": run_id})
+                    results[run_id] = self.call_tool("standby_run", {"run_id": run_id},
+                                                     call_identity=call_identity)
                 observation = self.observe()
                 runs_closed = all(x["status"].get("ok") and x["status"].get("data", {}).get("recorded_state", {}).get("lifecycle") == "standby"
                                   for x in observation["runs"].values())
@@ -1974,6 +1981,10 @@ class DeliverySession:
                 if deadline.tzinfo is None or datetime.now(UTC) >= deadline:
                     raise ValueError("original authorization expired; no automatic renewal")
             args = dict(arguments)
+            if name in {"standby_run", "complete_cq_acceptance"} and args.get("request_id") is None:
+                identity = (hashlib.sha256(_json_bytes([self.session_id, name, args, call_identity])).hexdigest()
+                            if call_identity else uuid.uuid4().hex)
+                args["request_id"] = "delivery-" + identity[:32]
             if "base_url" in inspect.signature(getattr(host_ops_mcp, name)).parameters:
                 args["base_url"] = self.config.get("base_url")
             for key in ("run_id", "source_run_id", "write_tail_run_id"):
@@ -2062,6 +2073,8 @@ class DeliverySession:
             if name not in _READ:
                 self._save("active")
             data = operation(**args)
+            if name in {"standby_run", "complete_cq_acceptance"} and data.get("status") == "submitted":
+                data["next_query"] = "get_request_result"
             if name == "get_run_events" and isinstance(data, dict):
                 data = self._project_run_events(args["run_id"], data)
             if name == 'reconcile_write_state':
@@ -2350,6 +2363,22 @@ class DeliverySession:
         reference = {"path": str(journal), "source_ref": _source_ref(journal, raw),
             "selection": {"kind": "bytes", "offset": item["byte_offset"], "length": item["byte_length"]}}
         snapshot = packet["snapshot"]
+        def changed(parts):
+            return any(tuple(change["path"][:len(parts)]) == parts
+                       or parts[:len(change["path"])] == tuple(change["path"])
+                       for change in packet["changes"])
+
+        actions = snapshot.get("host_actions", {})
+        history_ids = {item["request_id"] for item in actions.get("completed", [])
+                       if not changed(("host_actions", "requests", item["request_id"]))
+                       and not changed(("host_actions", "results", item["request_id"]))}
+        actions["completed"] = [item for item in actions.get("completed", [])
+                                if item["request_id"] not in history_ids]
+        for collection in ("requests", "results"):
+            actions[collection] = {key: value for key, value in actions.get(collection, {}).items()
+                                   if key not in history_ids}
+        actions["completed_index"] = {"total": len(history_ids), "returned": 0,
+                                      "complete": not history_ids, "evidence": reference}
         for run in snapshot.get("runs", {}).values():
             data = run.get("requests", {}).get("data", {})
             history = data.pop("settled", [])
@@ -2361,7 +2390,9 @@ class DeliverySession:
             for key, envelope in list(snapshot.get(collection, {}).items()):
                 data = envelope.get("data", {})
                 terminal = (data.get("status") in {"exited", "stopped", "launch_failed"}
-                            or data.get("process", {}).get("state") in {"exited", "stopped"})
+                            or data.get("process", {}).get("state") in {"exited", "stopped"}
+                            or (data.get("work_state") == "completed"
+                                and data.get("lifecycle") == "standby"))
                 # Unqualified reports, failures and pending control/consult stay
                 # actionable even after process exit. Never equate exit to PASS.
                 qualified = ((data.get("report_binding") or {}).get("valid") is True
@@ -2370,7 +2401,7 @@ class DeliverySession:
                 control_pending = any(isinstance(value, dict) and value.get("status")
                     in {"pending", "unknown", "submitted"}
                     for value in (data.get("control_receipts") or {}).values())
-                if (terminal and qualified and not control_pending and not data.get("consult_replies")
+                if (envelope.get("ok") is True and terminal and qualified and not control_pending
                         and key not in packet.get("changed_operations", {}).get(collection, [])):
                     history.append({"operation_id": key, "status": data.get("status"),
                         "report_binding": data.get("report_binding"), "result": data.get("result"),
