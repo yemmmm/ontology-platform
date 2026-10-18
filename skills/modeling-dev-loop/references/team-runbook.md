@@ -111,8 +111,12 @@ Delivery 发现 CQ 审核或平台修复需要宿主动作时，只使用当前�
 宿主监督时按进度检查读取该 session 私有 journal 的新增请求和原 Host pending actions，只有
 实际有待办才处理。宿主在已有授权内读取 CQ 私有快照并直接调用 `submit_cq_review`；完成全选题
 审核后，Delivery 按原回执／当前 digest 核对并调用 `freeze_cq`。
-宿主回传须区分本次 `review_complete` 与整池 `selected_scope_complete`：全景审核完成不表示
-切片题已起草／审核。按本 Task 声明的阶段和选题范围，核对全部选定公开／隐藏题的当前
+宿主先核对当前快照的 `phase`：正式审核使用 `panorama-review` 或 `slice-review`。
+准备稿误报为待审核时，沿原 CQ 输入通道反馈正确阶段并要求重发布；不将准备稿批准
+当作可冻结题池，不修改旧稿或决定。
+宿主回传须区分本次 `review_complete` 与整池 `selected_scope_complete`：当前审核内
+所有题通过也不自动令后者为 true。全景后仍有 Task 声明的切片阶段时，前者为 true、
+后者为 false。按本 Task 声明的阶段和选题范围，核对全部选定公开／隐藏题的当前
 审核回执；仍待切片草案或审核时明确整池未完成，让 Delivery 继续原 CQ interview／切片
 流程，不因当前没有未决题就授权冻结。不把固定题数或必须有隐藏题推广为所有 Task 的硬门。
 冻结成功后 Delivery 立即经原 Coordinator 发送公开 projection 和明确冻结确认，核对实际
