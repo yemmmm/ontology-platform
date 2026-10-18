@@ -429,7 +429,8 @@ def test_r4329_host_result_wakes_and_survives_undelivered_resume(tmp_path, monke
     assert "repair-host" not in json.dumps(later_packet["changes"])
     history = later_packet["coverage"]["history"]["host_actions"]
     assert history["total"] == 1
-    evidence = history["evidence"]
+    assert history["evidence_ref"] == "evidence"
+    evidence = later_packet["evidence"]
     original = json.loads(read(host, evidence["path"], source_ref=evidence["source_ref"],
                               selection=evidence["selection"])["data"]["text"])
     assert original["snapshot"]["host_actions"]["completed"][0]["request_id"] == "repair-host"

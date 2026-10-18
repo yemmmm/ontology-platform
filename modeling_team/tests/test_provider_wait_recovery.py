@@ -36,6 +36,7 @@ from modeling_team.tests.test_r30006_live_repair_socket import (
 )
 from modeling_team.tests.test_r30009_runner_wiring import _UnifiedRunner
 from modeling_team.tests.test_runner import CapturingAdapter
+from modeling_team.transport_mcp import RoutingError
 
 COORDINATOR_ID = "coordinator"
 RECOVERY_TEXT = "额度已充值恢复，请继续原任务。"
@@ -500,6 +501,32 @@ def test_provider_wait_issue_describes_actual_failure_class(tmp_path, variant, e
             assert 'quota/balance/outage' not in issue.summary
         assert variant in issue.error
         assert not adapter.recoveries
+    finally:
+        staged.cleanup()
+
+
+def test_unavailable_provider_wait_issue_is_reported_once_per_wait(tmp_path: Path) -> None:
+    """A frozen-profile routing failure must not become a drain-time hot loop."""
+
+    staged, adapter, sink = _runner_with_adapter(tmp_path)
+    runner = staged.runner
+    calls: list[tuple[tuple, dict]] = []
+
+    def unavailable(*args, **kwargs):
+        calls.append((args, kwargs))
+        raise RoutingError("issue reporter is not allowed by frozen Profile")
+
+    runner.transport.report_issue = unavailable  # type: ignore[method-assign]
+    try:
+        adapter.inject_wait("protocol")
+        _pump(runner, sink)
+        _pump(runner, sink)
+
+        assert len(calls) == 1
+        evidence = (staged.run_root / "evidence" / "provider-wait.jsonl").read_text()
+        assert evidence.count('"event": "issue-report-unavailable"') == 1
+        assert runner._provider_wait_registry()["protocol"]["wait_id"] == "protocol:1"
+        assert adapter.provider_wait_status("protocol") is not None
     finally:
         staged.cleanup()
 

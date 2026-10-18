@@ -2911,6 +2911,16 @@ class DeliverySession:
             # changes carry any updates; do not repeat its stable body.
             core["task_context"] = {key: value for key, value in core["task_context"].items()
                                     if key != "delivery_objective"}
+        omitted_stable = []
+        if not bootstrap and not changed(("session", "task_context")):
+            core.pop("task_context", None)
+            omitted_stable.append("unchanged_task_context")
+        for run_id, status in core["runs"].items():
+            if not bootstrap and not changed(("runs", run_id, "status", "data", "identity")):
+                if "identity" in status:
+                    status.pop("identity")
+                    if "unchanged_run_identity" not in omitted_stable:
+                        omitted_stable.append("unchanged_run_identity")
         unresolved = []
         def add(kind, value, path, **identity):
             if isinstance(value, dict):
@@ -2967,18 +2977,23 @@ class DeliverySession:
                    "delivery_status": item["delivery_status"],
                    "raw_observation": snapshot.get("raw_observation"),
                    "coverage": {"complete": True, "source_complete": False,
-                       "omitted_sections": ["settled_history"] + ([] if bootstrap else
+                       "omitted_sections": ["settled_history"] + omitted_stable + ([] if bootstrap else
                            ["unchanged_snapshot"] + (["unchanged_delivery_objective"]
                                                      if objective_in_snapshot else [])),
                        "collections": {name: {
                            "total": len(snapshot.get(name, {})) + histories.get(name, {}).get("total", 0),
                            "returned": len(snapshot.get(name, {})) if bootstrap else 0,
                            "complete": bootstrap and not histories.get(name, {}).get("total", 0),
-                           "evidence": reference}
+                           "evidence_ref": "evidence"}
                            for name in ("runs", "operations", "repair_verifications")},
                        "unresolved": {"total": len(unresolved), "returned": len(unresolved), "complete": True},
                        "history": {"host_actions": actions["completed_index"], **histories},
                        "changes": {"total": len(changes), "returned": len(changes), "complete": True}}}
+        # Each index describes the same retained packet. Keep one precise
+        # locator at payload.evidence rather than six copies of its path/hash.
+        for entry in payload["coverage"]["history"].values():
+            entry.pop("evidence", None)
+            entry["evidence_ref"] = "evidence"
         if bootstrap:
             # The initial/recovery view has current necessary bodies, but no
             # full config, native token deltas or settled historical collections.

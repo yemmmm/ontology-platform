@@ -63,6 +63,10 @@ CQ_REVIEW_DECISION_BY_OPERATION: dict[str, str] = {
 
 CQ_REASON_CODES: tuple[str, ...] = (
     "cq_selector_incompatible",
+    # The CQ role may be parked in a Runtime provider wait while the Runner
+    # is delivering an approved-slice notification.  This is recoverable
+    # input routing feedback, not a terminal CQ contract failure.
+    "cq_waiting_provider",
     "cq_review_stale",
     "cq_public_projection_missing",
     "cq_hidden_exposed",

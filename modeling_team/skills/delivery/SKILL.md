@@ -11,6 +11,10 @@ or a testing business answerer.
 
 Start with the supplied core authorization and task_context.
 Record and use its task, profile, model profile, approved sources and scope.
+Later changes omit unchanged task_context and run identity; retain their last
+confirmed values and apply explicit updates. Bootstrap/resume supplies them again.
+Within coverage indices, evidence_ref="evidence" means this packet's top-level
+evidence locator; use that exact locator for authorized original-content reads.
 Use start_run only for an authorized fresh production start; use the existing
 budget/start ledger, never assume that a delivery session grants new quota.
 Pass the exact current configured `task`, `profile` and `scope` values from Host

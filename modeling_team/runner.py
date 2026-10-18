@@ -677,6 +677,11 @@ class TeamRunner:
         self._run_fallback_started: float | None = None
         self._issue_pending_started: float | None = None
         self._issue_pending_elapsed = 0.0
+        # A provider wait is one owner-visible state.  Remember the wait
+        # identity after a failed cooperative issue report so a frozen-profile
+        # routing error is not emitted again on every foreground drain.  The
+        # entry is removed when that wait clears or changes epoch.
+        self._provider_wait_issue_attempts: dict[str, tuple[Any, Any]] = {}
         self._run_fallback_timeout_seconds = 10800.0
         self._candidate_redrive_limit = 3
         self._feedback_escalation_repeat = 3
@@ -7760,6 +7765,12 @@ class TeamRunner:
             self._provider_waits = registry
         return registry
 
+    @staticmethod
+    def _provider_wait_identity(record: Mapping[str, Any]) -> tuple[Any, Any]:
+        """Return the stable identity of one runtime provider-wait epoch."""
+
+        return (record.get("wait_id"), record.get("epoch"))
+
     def _provider_rejection_pending(self, agent_id: str) -> bool:
         """Whether a send failure to this role is explained by a pending wait.
 
@@ -7860,9 +7871,20 @@ class TeamRunner:
         if not self.run:
             return
         registry = self._provider_wait_registry()
+        attempts = getattr(self, "_provider_wait_issue_attempts", None)
+        if attempts is None:
+            attempts = {}
+            self._provider_wait_issue_attempts = attempts
         for agent_id, record in self._consume_provider_waits():
             if not isinstance(record, dict) or record.get("state") != "waiting":
                 continue
+            previous = registry.get(agent_id)
+            if (
+                isinstance(previous, dict)
+                and self._provider_wait_identity(previous)
+                != self._provider_wait_identity(record)
+            ):
+                attempts.pop(agent_id, None)
             registry[agent_id] = dict(record)
             self._append_evidence("provider-wait", {"event": "observed", **record})
             output.append(
@@ -7879,6 +7901,7 @@ class TeamRunner:
         for agent_id in list(registry):
             if not self._provider_wait_active(agent_id):
                 record = registry.pop(agent_id)
+                attempts.pop(agent_id, None)
                 if getattr(self.adapter, "runtime", "codex") == "dsh":
                     self._settle_provider_wait_issue(agent_id, "Original DSH session claimed the authorized recovery input")
                 self._append_evidence(
@@ -7901,7 +7924,23 @@ class TeamRunner:
             )
             return
         for agent_id in sorted(registry):
-            if self._report_provider_wait_issue(agent_id, registry[agent_id]):
+            record = registry[agent_id]
+            wait_identity = self._provider_wait_identity(record)
+            if attempts.get(agent_id) == wait_identity:
+                continue
+            # A blocked/failed Coordinator leaves this wait host-owned.  Do
+            # not mark an attempt here: when the Coordinator actually becomes
+            # available, the same wait is a real routing state change and may
+            # be reported once then.
+            coordinator = self._issue_coordinator_id()
+            if (
+                agent_id == coordinator
+                or self._provider_wait_active(coordinator)
+                or self._coordinator_latched()
+            ):
+                continue
+            attempts[agent_id] = wait_identity
+            if self._report_provider_wait_issue(agent_id, record):
                 # The issue pause itself flips the state to WAITING_OWNER.
                 break
         else:
@@ -8012,6 +8051,25 @@ class TeamRunner:
                 retry="restart the run with the R3.0-011 Task selector enabled",
             )
 
+    def _cq_provider_wait_identity(self) -> tuple[Any, Any] | None:
+        """Return the active CQ provider-wait identity, when observable."""
+
+        agent_id = self._cq_agent_id()
+        if agent_id is None:
+            return None
+        reader = getattr(self.adapter, "provider_wait_status", None)
+        wait = reader(agent_id) if callable(reader) else None
+        if not isinstance(wait, dict):
+            agent = getattr(self.adapter, "agents", {}).get(agent_id)
+            wait = getattr(agent, "provider_wait", None)
+        if not isinstance(wait, dict):
+            return None
+        wait_id = wait.get("wait_id")
+        epoch = wait.get("epoch")
+        if wait_id is None and epoch is None:
+            return None
+        return (wait_id, epoch)
+
     def _cq_next_ordinal(self, directory: Path, prefix: str) -> int:
         existing = [item.name for item in directory.glob(f"{prefix}-*.json")]
         return len(existing) + 1
@@ -8067,9 +8125,10 @@ class TeamRunner:
         CQ role learns the approved slices (with their existing public
         business scope) and can start slice questions before the topology
         decision, the neutral candidate stage, or the freeze exist.  The
-        topology gate and its write protection are untouched.  A failed
-        notification resets the fingerprint, so the next drain retries it even
-        after the topology gate has opened.  Non-011 runs return untouched.
+        topology gate and its write protection are untouched.  Ordinary
+        delivery failures reset the fingerprint so the next drain retries;
+        a typed CQ provider wait keeps the same fingerprint closed until that
+        wait clears or enters a new epoch.  Non-011 runs return untouched.
         """
 
         if self.run is None or not self._competency_questions:
@@ -8097,10 +8156,18 @@ class TeamRunner:
         ]
         fingerprint = content_digest({"map_digest": map_digest, "slices": slices})
         if getattr(self, "_cq_approved_slices_fingerprint", None) == fingerprint:
-            return
+            blocked_wait = getattr(self, "_cq_approved_slices_wait_identity", None)
+            if blocked_wait is None or self._cq_provider_wait_identity() == blocked_wait:
+                return
+            # The same map is now being observed after the parked CQ wait
+            # cleared or entered a new epoch.  Reopen only this delivery; the
+            # validated map and its fingerprint remain unchanged.
+            self._cq_approved_slices_fingerprint = None
+            self._cq_approved_slices_wait_identity = None
         self._cq_approved_slices_fingerprint = fingerprint
-        # A delivery failure resets the fingerprint and is recorded evidence,
-        # so the next drain tick retries (design §3.G3.3 / T0).
+        self._cq_approved_slices_wait_identity = None
+        # Ordinary delivery failures reset the fingerprint and are retried on
+        # the next drain; provider waits use the bounded retry path below.
         self._cq_deliver_approved_slices(slices, map_digest)
 
     def _cq_deliver_approved_slices(self, slices: list[dict[str, Any]], map_digest: str) -> None:
@@ -8125,11 +8192,30 @@ class TeamRunner:
                     "run_id": self.run.run_id,
                 },
             )
+            self._cq_approved_slices_wait_identity = None
         except Exception as exc:
+            if (
+                isinstance(exc, CQContractError)
+                and exc.reason_code == "cq_waiting_provider"
+            ):
+                wait_identity = self._cq_provider_wait_identity()
+                if wait_identity is not None:
+                    # Keep the fingerprint closed while this exact wait is
+                    # active.  A cleared/new wait epoch reopens it above.
+                    self._cq_approved_slices_wait_identity = wait_identity
+                    self._append_evidence(
+                        "competency-questions",
+                        {
+                            "event": "cq-slices-approved-delivery-failed",
+                            "detail": str(exc),
+                        },
+                    )
+                    return
             # A failed notification is recorded evidence only: the map is
             # already validated, and the next drain tick retries it (T0 -- no
             # gate event, no run kill).
             self._cq_approved_slices_fingerprint = None
+            self._cq_approved_slices_wait_identity = None
             self._append_evidence(
                 "competency-questions",
                 {

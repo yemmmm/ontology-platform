@@ -327,6 +327,61 @@ def test_t_g3_3_drain_delivers_approved_slices_before_topology(cq_g3_runner):
         harness.cleanup()
 
 
+def test_t_g3_3_provider_wait_failure_is_deduplicated_until_recovery(cq_g3_runner):
+    """A parked CQ role is retried after recovery, not on every drain tick."""
+
+    harness = _G3Runner(FULL_TASK)
+    runner = harness.prepare()
+    try:
+        root = runner.run.root
+        runner.transport = _DrainTransport()
+        (root / "scenario-map" / "scenario-map.json").write_text(
+            json.dumps(FIXTURES["scenario_map"]["valid"]), encoding="utf-8"
+        )
+        wait = {
+            "agent_id": "competency-question",
+            "wait_id": "competency-question:1",
+            "epoch": 1,
+            "state": "waiting",
+        }
+        waiting = True
+        calls: list[tuple[str, dict]] = []
+
+        def provider_wait_status(agent_id):
+            return dict(wait) if waiting and agent_id == "competency-question" else None
+
+        def blocked_delivery(kind, payload):
+            calls.append((kind, payload))
+            if waiting:
+                raise CQContractError(
+                    "cq_waiting_provider",
+                    "the competency-question role is parked in a provider wait",
+                    obj="competency-question",
+                    retry="recover the provider wait, then resend this input",
+                )
+
+        runner.adapter.provider_wait_status = provider_wait_status
+        runner._deliver_to_cq = blocked_delivery  # type: ignore[method-assign]
+
+        runner.drain()
+        runner.drain()
+        assert len(calls) == 1
+        events = _read_evidence(runner, "competency-questions")
+        assert sum(
+            event.get("event") == "cq-slices-approved-delivery-failed" for event in events
+        ) == 1
+
+        waiting = False
+        runner.drain()
+        assert len(calls) == 2
+        events = _read_evidence(runner, "competency-questions")
+        assert sum(
+            event.get("event") == "cq-slices-approved-delivery-failed" for event in events
+        ) == 1
+    finally:
+        harness.cleanup()
+
+
 def test_t_g3_3_no_map_means_no_delivery(cq_g3_runner):
     harness = _G3Runner(FULL_TASK)
     runner = harness.prepare()

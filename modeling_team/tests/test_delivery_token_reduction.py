@@ -60,6 +60,47 @@ def test_unchanged_host_objective_is_not_resent_but_updates_are_delivered(tmp_pa
     assert "UPDATED-HOST-OBJECTIVE" in json.dumps(ack(host)["changes"])
 
 
+def test_stable_task_context_and_run_identity_are_not_resent_in_delta(tmp_path):
+    host = session(tmp_path)
+    host.config.update(task="task.yaml", scope="scope.yaml")
+    raw = observation()
+    raw["runs"]["run"]["status"]["data"]["identity"] = {"baseline": "BASELINE-IDENTITY"}
+    host.record_observation(raw)
+    first = ack(host)
+    assert first["core"]["task_context"]["task"] == "task.yaml"
+    assert first["core"]["runs"]["run"]["identity"]["baseline"] == "BASELINE-IDENTITY"
+    raw["runs"]["run"]["status"]["data"]["write_phase"] = "unknown"
+    host.record_observation(raw)
+    delta = ack(host)
+    assert "task_context" not in delta["core"]
+    assert "identity" not in delta["core"]["runs"]["run"]
+    assert delta["core"]["runs"]["run"]["write_phase"] == "unknown"
+    assert "unchanged_task_context" in delta["coverage"]["omitted_sections"]
+    assert "unchanged_run_identity" in delta["coverage"]["omitted_sections"]
+    host.config["task"] = "changed-task.yaml"
+    host.record_observation(raw)
+    changed = ack(host)
+    assert changed["core"]["task_context"]["task"] == "changed-task.yaml"
+    host.record_observation(raw, force_delivery=True)
+    restored = ack(host)
+    assert restored["core"]["task_context"]["task"] == "changed-task.yaml"
+    assert restored["core"]["runs"]["run"]["identity"]["baseline"] == "BASELINE-IDENTITY"
+
+
+def test_coverage_indices_share_the_packet_evidence_reference(tmp_path):
+    host = session(tmp_path)
+    host.record_observation(observation())
+    packet = ack(host)
+    reference = packet["evidence"]
+    for section in ("collections", "history"):
+        for entry in packet["coverage"][section].values():
+            assert entry["evidence_ref"] == "evidence"
+            assert "evidence" not in entry
+    original = json.loads(read(host, reference["path"], source_ref=reference["source_ref"],
+                               selection=reference["selection"])["data"]["text"])
+    assert original["input_id"] == packet["input_id"]
+
+
 def test_yield_is_durable_but_does_not_ack_or_manufacture_a_wakeup(tmp_path):
     host = session(tmp_path)
     host.run_ids.add("run")
