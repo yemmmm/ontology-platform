@@ -1,0 +1,15 @@
+schema_version: 1
+model_profile_id: dsh-deepseek-flash-low
+roles:
+  coordinator:
+    model_provider: deepseek-official
+    model: deepseek-flash
+    model_reasoning_effort: low
+  modeling:
+    model_provider: deepseek-official
+    model: deepseek-flash
+    model_reasoning_effort: low
+  competency-question:
+    model_provider: deepseek-official
+    model: deepseek-flash
+    model_reasoning_effort: low

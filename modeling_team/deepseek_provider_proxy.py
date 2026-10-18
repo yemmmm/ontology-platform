@@ -524,7 +524,7 @@ class _SessionHTTPServer(ThreadingHTTPServer):
 
     def __init__(self, address: tuple[str, int], session: "ResponsesProviderSession") -> None:
         self.session = session
-        super().__init__(address, _SessionHandler)
+        super().__init__(address, getattr(session, "handler_class", _SessionHandler))
 
 
 class ResponsesProviderSession:

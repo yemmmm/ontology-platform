@@ -13,7 +13,7 @@ import threading
 import time
 from copy import deepcopy
 from datetime import UTC, datetime
-from dataclasses import dataclass, replace
+from dataclasses import asdict, dataclass, replace
 from pathlib import Path
 from typing import Any, Callable, ClassVar, Mapping, Sequence
 
@@ -350,6 +350,7 @@ class CQWriteAdmission:
         self._condition = threading.Condition()
         self._phase = "open"
         self._capturing = False
+        self._flow_paused = False
         self._in_flight: dict[int, dict[str, Any]] = {}
         self._records: list[dict[str, Any]] = []
         self._next_ticket = 0
@@ -368,7 +369,7 @@ class CQWriteAdmission:
         """Register one staged mutation; ``None`` rejects it as recoverable."""
 
         with self._condition:
-            if self._phase != "open" or self._capturing:
+            if self._phase != "open" or self._capturing or self._flow_paused:
                 return None
             self._next_ticket += 1
             self._in_flight[self._next_ticket] = {
@@ -391,6 +392,12 @@ class CQWriteAdmission:
                 return False
             self._capturing = True
             return True
+
+    def set_flow_paused(self, paused: bool) -> None:
+        """Reversible user control, independent of checkpoint and acceptance barriers."""
+        with self._condition:
+            self._flow_paused = paused
+            self._condition.notify_all()
 
     def end_capture(self) -> None:
         """Reopen admission after a checkpoint capture (idempotent)."""
@@ -446,6 +453,7 @@ class CQWriteAdmission:
             return {
                 "phase": self._phase,
                 "capturing": self._capturing,
+                "flow_paused": self._flow_paused,
                 "in_flight": [dict(item) for item in self._in_flight.values()],
                 "records": [dict(item) for item in self._records],
             }
@@ -915,6 +923,11 @@ class TeamRunner:
                 "model profile selection requires a formal run contract"
             )
         provider_credential_bindings: dict[str, Any] | None = None
+        if team_model_profile is not None:
+            from .model_routing import validate_runtime_model_profile
+            validate_runtime_model_profile(config.profile.runtime, team_model_profile)
+        elif config.profile.runtime == "dsh":
+            raise TeamConfigurationError("DSH requires an explicit authorized Team model profile")
         defer_existing_credential_until_preflight = (
             formal_contract is not None
             and formal_contract.requirement_id == "R2.3-003"
@@ -1593,6 +1606,14 @@ class TeamRunner:
             "examiner_source_skill": self.repository_root / "modeling_team/skills/source-examiner/SKILL.md",
             "examiner_platform_skill": self.repository_root / "modeling_team/skills/platform-examiner/SKILL.md",
         }
+        if configuration.profile.runtime == "dsh":
+            for name, relative in {
+                "dsh_adapter": "runtimes/dsh.py", "dsh_events": "runtimes/dsh_events.py",
+                "dsh_build": "runtimes/dsh_build.py", "dsh_composition": "runtimes/dsh_node/entry.mjs",
+                "role_isolation": "runtimes/role_isolation.py", "messages_proxy": "messages_provider_proxy.py",
+                "model_routing": "model_routing.py", "runtime_contract": "runtimes/base.py",
+            }.items():
+                files[name] = self.repository_root / "modeling_team" / relative
         if expected_binding is not None:
             files.update(
                 {
@@ -2475,6 +2496,8 @@ class TeamRunner:
                     else None
                 ),
                 materials=self.run.handoff_materials,
+                terminal_commit=(getattr(self.adapter, "commit_terminal", None)
+                                 if self.run.configuration.profile.runtime == "dsh" else None),
                 pre_send_validator=(
                     self._validate_modeling_transport_send
                     if self._is_r23003_modeling_run()
@@ -4479,6 +4502,8 @@ class TeamRunner:
         return self.drain()
 
     def _relay_flow_message(self, action: str, message: dict[str, Any]) -> list[dict[str, Any]]:
+        if getattr(self.adapter, "runtime", "codex") == "dsh":
+            return self._control_dsh_flow(action, message)
         coordinator = self._issue_coordinator_id()
         text = message.get("text") or ("请暂停当前工作，通知相关成员，自行等待下一条用户指示。"
                                       if action == "pause" else "请沿原任务和上下文继续，避免重复已完成工作。")
@@ -4494,7 +4519,37 @@ class TeamRunner:
         self._append_evidence("team-lifecycle", event)
         return [{"type": "flow-instruction", **event}]
 
+    def _control_dsh_flow(self, action: str, message: dict[str, Any]) -> list[dict[str, Any]]:
+        # Close write admission before freezing any process. Already admitted Host calls
+        # keep running and persist their original receipts; PAUSED never asserts no write.
+        now = self.monotonic_clock()
+        if action == "pause":
+            self._cq_write_admission.set_flow_paused(True)
+            self._flow_waiting = True
+            self._flow_wait_last_tick = now
+            self._cq_wait_windows.open_window("user-flow-wait", now)
+        try:
+            groups = self.adapter.pause() if action == "pause" else self.adapter.resume()
+        except Exception as exc:
+            event = {"action": action, "status": "pause-pending" if action == "pause" else "resume-pending",
+                     "request_id": message.get("request_id"), "detail": str(exc),
+                     "write_admission": self._cq_write_admission.snapshot()}
+            self._append_evidence("team-lifecycle", event)
+            return [{"type": "flow-control", **event}]
+        if action == "resume":
+            self._flow_waiting = False
+            self._cq_write_admission.set_flow_paused(self._staged_resolution_blocker() is not None)
+            self._cq_wait_windows.close_window("user-flow-wait", now)
+            self._idle_inquiry_baseline = now
+        event = {"action": action, "status": "effective", "request_id": message.get("request_id"),
+                 "groups": groups, "write_admission": self._cq_write_admission.snapshot()}
+        self._append_evidence("team-lifecycle", {**event, "user_control": message})
+        self._state("PAUSED" if action == "pause" else "RUNNING", **event)
+        return [{"type": "flow-control", **event}]
+
     def _observe_flow_confirmation(self, message: Any) -> bool:
+        if getattr(self.adapter, "runtime", "codex") == "dsh":
+            return False
         if message.agent_id != self._issue_coordinator_id():
             return False
         try:
@@ -4525,8 +4580,10 @@ class TeamRunner:
         for configured in self.run.configuration.profile.agents:
             native = getattr(self.adapter, "agents", {}).get(configured.agent_id)
             process = getattr(native, "process", None)
+            identity = getattr(self.adapter, "runtime_identity", lambda _: None)(configured.agent_id)
             members.append({"agent_id": configured.agent_id, "role": configured.package.role,
                             "thread_id": getattr(native, "thread_id", None),
+                            "runtime_identity": asdict(identity) if identity is not None else None,
                             "pid": getattr(process, "pid", None),
                             "alive": process.poll() is None if process is not None else None,
                             "runtime_state": getattr(native, "state", None),
@@ -4691,14 +4748,16 @@ class TeamRunner:
                 "dispatch_mode": receipt.mode,
             },
         )
-        self._settle_provider_wait_issue(agent_id, text)
-        self._state("RUNNING", provider_recovered_agent=agent_id)
+        if getattr(receipt, "mode", None) != "enqueue":
+            self._settle_provider_wait_issue(agent_id, text)
+            self._state("RUNNING", provider_recovered_agent=agent_id)
         return {
             "type": "provider-recovery",
             "agent_id": agent_id,
             "role": pending.get("role"),
             "wait_id": pending.get("wait_id"),
             "dispatch_mode": receipt.mode,
+            "recovery_state": "submitted" if receipt.mode == "enqueue" else "effective",
         }
 
     def _settle_provider_wait_issue(self, agent_id: str, text: str) -> None:
@@ -5035,6 +5094,11 @@ class TeamRunner:
         return modeling, protocol
 
     def _formal_protocol_thread_id(self, protocol_agent_id: str) -> str:
+        reader = getattr(self.adapter, "runtime_identity", None)
+        identity = reader(protocol_agent_id) if callable(reader) else None
+        if identity is not None:
+            return (identity.runtime_identity + ":" + identity.process_instance
+                    if identity.process_instance else identity.runtime_identity)
         agents = getattr(self.adapter, "agents", None)
         agent = agents.get(protocol_agent_id) if isinstance(agents, dict) else None
         thread_id = getattr(agent, "thread_id", None)
@@ -7801,6 +7865,8 @@ class TeamRunner:
         for agent_id in list(registry):
             if not self._provider_wait_active(agent_id):
                 record = registry.pop(agent_id)
+                if getattr(self.adapter, "runtime", "codex") == "dsh":
+                    self._settle_provider_wait_issue(agent_id, "Original DSH session claimed the authorized recovery input")
                 self._append_evidence(
                     "provider-wait",
                     {"event": "cleared", "agent_id": agent_id, "wait_id": record.get("wait_id")},
@@ -7843,8 +7909,7 @@ class TeamRunner:
             return False
         if self._provider_wait_active(coordinator) or self._coordinator_latched():
             return False
-        agent = getattr(self.adapter, "agents", {}).get(agent_id)
-        thread_id = getattr(agent, "thread_id", None) if agent is not None else None
+        thread_id = self._formal_protocol_thread_id(agent_id)
         mutation_state = (
             "unknown"
             if self._staged_resolution_blocker() is not None
@@ -9963,6 +10028,9 @@ class TeamRunner:
         active_issue = self._issue_ledger().active_issue if self._issue_ledger() is not None else None
         if active_issue is None or active_issue.issue_id != control.issue_id:
             raise TeamConfigurationError("issue control issue binding is invalid")
+        pending_native = getattr(self, "_dsh_issue_dispatches", {})
+        if control.issue_id in pending_native:
+            return
         # 2026-09-14 provider-recovery: a failed provider recovery is requeued,
         # but never retried in a tight loop — each retry is spaced by a fixed
         # backoff window (no paid polling, no fixed attempt-count death).
@@ -10033,7 +10101,9 @@ class TeamRunner:
                 reason="issue control candidate binding drift",
             )
             raise TeamConfigurationError("issue control candidate binding drift")
-        before_turn = getattr(agent, "active_turn_id", None) if agent is not None else None
+        native_identity = getattr(self.adapter, "runtime_identity", lambda _: None)(control.reporter_id)
+        before_turn = (native_identity.activity_id if native_identity is not None
+                       else getattr(agent, "active_turn_id", None) if agent is not None else None)
         # R2.3-009 start20: a Coordinator-reported issue is resumed from inside
         # the Coordinator's own live turn, so the idle-reporter and fresh-turn
         # expectations below can never hold for it.  The Coordinator already
@@ -10074,7 +10144,7 @@ class TeamRunner:
                         wait_id=recovery_wait_id,
                         sender_id="runner/issue-control",
                     )
-                    if getattr(receipt, "mode", None) != "start":
+                    if getattr(receipt, "mode", None) not in {"start", "enqueue"}:
                         raise RuntimeError("provider recovery did not start a new turn")
                 elif provider_waiting:
                     # A pause for a parked role needs no Runtime turn: the wait
@@ -10136,11 +10206,13 @@ class TeamRunner:
             )
             raise TeamConfigurationError("issue control Runtime delivery failed") from exc
         after_thread = self._formal_protocol_thread_id(control.reporter_id)
-        after_turn = getattr(agent, "active_turn_id", None) if agent is not None else getattr(receipt, "turn_id", None)
+        native_identity = getattr(self.adapter, "runtime_identity", lambda _: None)(control.reporter_id)
+        after_turn = (native_identity.activity_id if native_identity is not None
+                      else getattr(agent, "active_turn_id", None) if agent is not None else getattr(receipt, "turn_id", None))
         if (
             control.action == "resume"
             and not self_resumed
-            and getattr(receipt, "mode", None) not in {"start", "steer"}
+            and getattr(receipt, "mode", None) not in {"start", "steer", "enqueue"}
         ):
             self.transport.fail_issue_rebind(
                 issue_id=control.issue_id,
@@ -10155,6 +10227,15 @@ class TeamRunner:
                 reason="issue control thread binding changed",
             )
             raise TeamConfigurationError("issue control thread binding changed")
+        if control.action == "resume" and getattr(receipt, "mode", None) == "enqueue":
+            pending_native[control.issue_id] = (control, receipt.dispatch_id, before_thread)
+            self._dsh_issue_dispatches = pending_native
+            self._append_evidence("issue-control", {"event":"recovery-submitted",
+                "issue_id":control.issue_id, "reporter_id":control.reporter_id,
+                "control_epoch":control.control_epoch, "dispatch_id":receipt.dispatch_id,
+                "message_id":receipt.message_id, "runtime_identity":receipt.runtime_identity})
+            output.append({"type":"issue-control", "recovery_state":"submitted", **control.as_dict()})
+            return
         try:
             self.transport.mark_issue_dispatch(control)
         except RoutingError as exc:
@@ -10198,7 +10279,26 @@ class TeamRunner:
                 "dispatch_mode": getattr(receipt, "mode", None),
             },
         )
+
         output.append({"type": "issue-control", **control.as_dict()})
+
+    def _observe_dsh_issue_dispatches(self) -> None:
+        for issue_id, (control, dispatch_id, identity) in list(getattr(self, "_dsh_issue_dispatches", {}).items()):
+            if self._formal_protocol_thread_id(control.reporter_id) != identity:
+                self.transport.fail_issue_rebind(issue_id=issue_id, reporter_id=control.reporter_id,
+                                                reason="native session/process identity changed")
+                del self._dsh_issue_dispatches[issue_id]
+                continue
+            status = next((row for row in self.adapter.dispatch_status(control.reporter_id)
+                           if row["dispatch_id"] == dispatch_id), {})
+            if status.get("state") not in {"claimed", "settled"} or self._provider_wait_active(control.reporter_id):
+                continue
+            self.transport.mark_issue_dispatch(control)
+            del self._dsh_issue_dispatches[issue_id]
+            self._append_evidence("issue-control", {"event":"recovery-effective", "issue_id":issue_id,
+                "control_epoch":control.control_epoch, "dispatch_id":dispatch_id,
+                "native_dispatch":status})
+            self._state("RUNNING", issue_id=issue_id)
 
     def _observe_coordinator_message(self, message: Any) -> None:
         """Retain the coordinator hook without making prose a display authority.
@@ -10840,6 +10940,11 @@ class TeamRunner:
         # Provider waits are reconciled before the fallback clock check so a
         # wait observed on this very tick already excludes its waiting time.
         output: list[dict[str, Any]] = []
+        if getattr(self.adapter, "runtime", "codex") == "dsh" and getattr(self, "_flow_waiting", False):
+            # The event pump and Host application receipts remain live. Do not drain/ack
+            # broker input or dispatch topology/issue feedback to frozen members.
+            return output
+        self._observe_dsh_issue_dispatches()
         if getattr(self, "_flow_waiting", False):
             now = self.monotonic_clock()
             excluded = max(0.0, now - getattr(self, "_flow_wait_last_tick", now))
@@ -11656,7 +11761,7 @@ class TeamRunner:
                     )
                 self._record_runtime_core_hashes("after_cleanup")
                 self._state(
-                    "CLEANED",
+                    "CLEANUP_INCOMPLETE" if evidence.get("runtime", {}).get("complete") is False else "CLEANED",
                     cleanup=evidence,
                     terminal_results=self.run.terminal_results,
                 )

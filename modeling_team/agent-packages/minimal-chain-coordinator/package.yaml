@@ -9,6 +9,8 @@ permissions:
   team_transport: true
   platform: none
 runtime:
+  dsh:
+    sandbox: read-only
   codex:
     sandbox: read-only
 task_input:

@@ -175,10 +175,18 @@ OPENAI_CODEX_ROUTE = ProviderRoute(
         {tier: tier for tier in REQUESTED_EFFORT_TIERS}
     ),
 )
+DEEPSEEK_DSH_ROUTE = ProviderRoute(
+    provider_id="deepseek-official",
+    wire_api="messages",
+    upstream_url="https://api.deepseek.com/anthropic/v1/messages",
+    credential_env="DEEPSEEK_API_KEY",
+    models=frozenset({"deepseek-flash"}),
+    effort_effective=MappingProxyType({tier: tier for tier in ("low", "high", "max")}),
+)
 PROVIDER_CATALOG: Mapping[str, ProviderRoute] = MappingProxyType(
     {
         route.provider_id: route
-        for route in (DEEPSEEK_DIRECT_ROUTE, GLM_DIRECT_ROUTE, OPENAI_CODEX_ROUTE)
+        for route in (DEEPSEEK_DIRECT_ROUTE, GLM_DIRECT_ROUTE, OPENAI_CODEX_ROUTE, DEEPSEEK_DSH_ROUTE)
     }
 )
 
@@ -188,6 +196,19 @@ def uses_external_credential_session(provider_id: str) -> bool:
 
     route = PROVIDER_CATALOG.get(provider_id)
     return route is not None and route.uses_external_credential
+
+
+def validate_runtime_model_profile(runtime: str, profile: TeamModelProfile) -> None:
+    """Validate before reading credentials or starting any runtime; never remap routes."""
+    for binding in profile.bindings.values():
+        supported = (binding.provider_id == "deepseek-official" if runtime == "dsh"
+                     else binding.provider_id != "deepseek-official")
+        if not supported:
+            raise TeamModelProfileError(
+                f"unsupported-runtime-provider: runtime={runtime} provider={binding.provider_id} "
+                f"model={binding.model} effort={binding.requested_effort}; "
+                "select an explicitly authorized compatible model profile"
+            )
 
 
 def profile_requires_codex_subscription_auth(profile: TeamModelProfile) -> bool:
@@ -409,6 +430,11 @@ def load_team_model_profile(root: Path, profile_id: str) -> TeamModelProfile:
                 f"team model profile provider for {package_id} is unknown"
             )
         if model not in route.models:
+            if provider_id == "deepseek-official":
+                raise TeamModelProfileError(
+                    f"unsupported-runtime-model: runtime=dsh provider={provider_id} model={model} "
+                    f"effort={requested_effort}; use the exact native model name"
+                )
             raise TeamModelProfileError(
                 f"team model profile model for {package_id} is unsupported"
             )
@@ -418,6 +444,11 @@ def load_team_model_profile(root: Path, profile_id: str) -> TeamModelProfile:
             )
         effective_effort = route.effective_effort(requested_effort)
         if effective_effort is None:
+            if provider_id == "deepseek-official":
+                raise TeamModelProfileError(
+                    f"unsupported-runtime-effort: runtime=dsh provider={provider_id} model={model} "
+                    f"effort={requested_effort}; native supported efforts are low/high/max"
+                )
             raise TeamModelProfileError(
                 f"team model profile effort for {package_id} has no provider mapping"
             )
@@ -548,12 +579,14 @@ _PROVIDER_CREDENTIAL_PREFLIGHTS: Mapping[
 ] = MappingProxyType(
     {
         "deepseek-direct": preflight_deepseek_credential,
+        "deepseek-official": preflight_deepseek_credential,
         "glm-direct": preflight_glm_credential,
     }
 )
 _PROVIDER_CREDENTIAL_READERS: Mapping[str, Callable[[Any], bytes]] = MappingProxyType(
     {
         "deepseek-direct": read_deepseek_credential,
+        "deepseek-official": read_deepseek_credential,
         "glm-direct": read_glm_credential,
     }
 )
@@ -595,6 +628,7 @@ def preflight_profile_credentials(
 
     paths: dict[str, Path | str | None] = {
         "deepseek-direct": deepseek_credential_path,
+        "deepseek-official": deepseek_credential_path,
         "glm-direct": glm_credential_path,
     }
     bindings: dict[str, Any] = {}
@@ -649,6 +683,10 @@ class ProviderSessionManager:
             if route is None or provider_id not in _PROVIDER_CREDENTIAL_READERS:
                 raise ProviderSessionManagerError(
                     "provider route does not use an external credential session"
+                )
+            if route.wire_api != "responses":
+                raise ProviderSessionManagerError(
+                    f"unsupported-runtime-provider: {provider_id} requires the DSH Messages session"
                 )
             self._bindings[provider_id] = credential_bindings[provider_id]
             self._routes[provider_id] = route

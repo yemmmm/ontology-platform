@@ -4263,6 +4263,10 @@ def main() -> int:
             team_model_profile = None
             if args.command == "validate" and selected_model_profile_id is not None:
                 team_model_profile = load_team_model_profile(root, selected_model_profile_id)
+                from .model_routing import validate_runtime_model_profile
+                validate_runtime_model_profile(getattr(configuration.profile, "runtime", "codex"), team_model_profile)
+            elif args.command == "validate" and getattr(configuration.profile, "runtime", "codex") == "dsh":
+                raise TeamConfigurationError("DSH requires an explicit authorized Team model profile")
     except TeamConfigurationError as exc:
         print(f"validation failed: {exc}", file=sys.stderr)
         return 2
@@ -4294,7 +4298,12 @@ def main() -> int:
     outer_input = None
     resume_lock = None
     try:
-        adapter = CodexRuntimeAdapter(repository_root=root)
+        # Production runtime only. Delivery and independent acceptance keep their
+        # existing explicit Codex constructors until R4.3-032/033 are delivered.
+        from .runtimes.dsh import DshRuntimeAdapter
+        runtime_selection = getattr(getattr(configuration, "profile", None), "runtime", "codex")
+        adapter = (DshRuntimeAdapter(repository_root=root) if runtime_selection == "dsh"
+                   else CodexRuntimeAdapter(repository_root=root))
         formal_acceptance = formal_contract is not None
         if resume_requested:
             # R3.0-015 S2 production resume (design §4.2): the same-machine

@@ -48,6 +48,7 @@ from modeling_team.model_routing import (
     CODEX_SUBSCRIPTION_AUTH_UNAVAILABLE,
     DEFAULT_MODEL_PROFILE_ID,
     DEEPSEEK_DIRECT_ROUTE,
+    DEEPSEEK_DSH_ROUTE,
     DELIVERY_MODEL_PROFILE_PACKAGE_ID,
     GLM_DIRECT_ROUTE,
     MODEL_PROFILE_PACKAGE_IDS,
@@ -259,7 +260,11 @@ def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert DEEPSEEK_DIRECT_ROUTE.effective_effort("none") is None
     for tier in REQUESTED_EFFORT_TIERS:
         assert OPENAI_CODEX_ROUTE.effective_effort(tier) == tier
-    assert set(PROVIDER_CATALOG) == {"deepseek-direct", "glm-direct", "openai-codex"}
+    assert set(PROVIDER_CATALOG) == {"deepseek-direct", "glm-direct", "openai-codex", "deepseek-official"}
+    assert DEEPSEEK_DSH_ROUTE.wire_api == "messages"
+    assert DEEPSEEK_DSH_ROUTE.models == frozenset({"deepseek-flash"})
+    assert DEEPSEEK_DSH_ROUTE.effective_effort("low") == "low"
+    assert DEEPSEEK_DSH_ROUTE.effective_effort("medium") is None
     assert PROVIDER_CATALOG["deepseek-direct"].upstream_url == (
         "https://api.deepseek.com/responses"
     )
@@ -291,7 +296,7 @@ def test_catalog_effort_capability_mapping_is_closed() -> None:
     assert uses_external_credential_session("deepseek-direct") is True
     assert uses_external_credential_session("openai-codex") is False
     for route in PROVIDER_CATALOG.values():
-        assert route.wire_api == "responses"
+        assert route.wire_api == ("messages" if route.provider_id == "deepseek-official" else "responses")
 
 
 def test_mixed_profile_routes_each_role_with_capability_effort(tmp_path: Path) -> None:
@@ -1421,7 +1426,7 @@ def test_external_catalog_routes_are_fully_registered() -> None:
         for provider_id, route in PROVIDER_CATALOG.items()
         if route.uses_external_credential
     }
-    assert external == {"deepseek-direct", "glm-direct"}
+    assert external == {"deepseek-direct", "glm-direct", "deepseek-official"}
     assert external == set(model_routing_module._PROVIDER_CREDENTIAL_PREFLIGHTS)
     assert external == set(model_routing_module._PROVIDER_CREDENTIAL_READERS)
     for provider_id in external:

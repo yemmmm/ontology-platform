@@ -224,6 +224,7 @@ class TeamTransportBroker:
         issue_event_callback: Callable[[dict[str, object]], object] | None = None,
         pre_send_validator: Callable[[str, str, str, bool, str | None], object] | None = None,
         materials: object | None = None,
+        terminal_commit: Callable[[str, str], None] | None = None,
     ):
         self.evidence_root = root
         requested_root = root
@@ -242,6 +243,7 @@ class TeamTransportBroker:
         self.issue_event_callback = issue_event_callback
         self.pre_send_validator = pre_send_validator
         self.materials = materials
+        self.terminal_commit = terminal_commit
         self._issue_lock = threading.Lock()
         self._issues: RecoverableIssueLedger | None = None
         if self.issue_escalation_enabled:
@@ -537,6 +539,9 @@ class TeamTransportBroker:
                 reply_to_delivery_id,
             )
         with self._lock:
+            if self.terminal_commit is not None and recipient_id in self._results:
+                raise RoutingError("recipient already accepted terminal result; retain late input for Host review",
+                                   code="recipient-terminal")
             if reply_to_delivery_id is not None:
                 original = self._delivery_by_id.get(reply_to_delivery_id)
                 if (
@@ -941,6 +946,12 @@ class TeamTransportBroker:
                 if not all(isinstance(role, str) and _TERMINAL_ROLE_ID.fullmatch(role) for role in missing):
                     raise RoutingError("terminal result dependencies are invalid")
                 raise RoutingError("terminal result requires terminal handoffs: " + ", ".join(missing))
+            if self.terminal_commit is not None:
+                if status == "completed" and any(item.recipient_id == agent_id for item in self._deliveries):
+                    raise RoutingError("pending broker input; receive required handoffs before reporting")
+                # The Adapter atomically checks native dispatch state and closes new
+                # dispatch admission. Reporting within the active claimed turn is valid.
+                self.terminal_commit(agent_id, status)
             result = TaskResult(agent_id, status, summary, time.time(), display, body_ref, refs)
             self._results[agent_id] = result
             return result

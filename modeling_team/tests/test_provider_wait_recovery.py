@@ -1461,3 +1461,40 @@ def _resolution_line(run_id: str, issue) -> str:
         },
         ensure_ascii=False,
     )
+
+
+def test_dsh_issue_resume_waits_for_original_native_claim_before_settling(tmp_path: Path) -> None:
+    from modeling_team.runtimes.base import RuntimeDispatchReceipt
+
+    staged, adapter, sink = _runner_with_adapter(tmp_path)
+    runner = staged.runner
+    adapter.runtime = "dsh"
+    native = {"dispatch_id": "host-native-1", "message_id": "native-1", "state": "queued"}
+    adapter.dispatch_status = lambda role: [dict(native)] if role == "protocol" else []
+
+    def enqueue_recovery(agent_id, text, *, wait_id=None, sender_id="user/outer"):
+        adapter.recoveries.append((agent_id, text, wait_id))
+        return RuntimeDispatchReceipt("enqueue", None, "dsh", "host-native-1", "thread-protocol", "native-1")
+
+    adapter.recover_provider_wait = enqueue_recovery
+    try:
+        adapter.inject_wait("protocol")
+        _pump(runner, sink)
+        ledger = runner.transport.issue_ledger
+        issue = ledger.active_issue
+        _control(runner, "pause", issue.issue_id, issue.control_epoch)
+        _pump(runner, sink)
+        assert ledger.state == "waiting_owner"
+        _admit_line(runner, sink, _resolution_line(runner.run.run_id, issue))
+        assert ledger.state == "resume_sent"
+        assert len(adapter.recoveries) == 1
+        _pump(runner, sink)
+        assert ledger.state == "resume_sent"
+        native["state"] = "claimed"
+        adapter.agents["protocol"].provider_wait = None
+        _pump(runner, sink)
+        assert ledger.state == "resolved"
+        assert len(adapter.recoveries) == 1
+        assert not runner._dsh_issue_dispatches
+    finally:
+        staged.cleanup()

@@ -4671,19 +4671,11 @@ class CodexRuntimeAdapter(RuntimeAdapter):
         return result
 
     def _stage_skills(self, agent: _Agent) -> None:
-        seen: set[str] = set()
-        for source in agent.package.required_skills:
-            skill_dir = source.parent
-            target = agent.skills / skill_dir.name
-            if target.name in seen:
-                raise CodexRuntimeError("duplicate staged Skill directory")
-            seen.add(target.name)
-            shutil.copytree(skill_dir, target, symlinks=False)
-            for item in target.rglob("*"):
-                if item.is_symlink():
-                    raise CodexRuntimeError("Skill staging refuses symlinks")
-                if item.is_file():
-                    os.chmod(item, 0o444)
+        from .role_isolation import stage_skills
+        try:
+            stage_skills(agent.package, agent.skills)
+        except RuntimeError as exc:
+            raise CodexRuntimeError(str(exc)) from exc
 
     def _write_config(self, run: Any, agent: _Agent) -> None:
         task = getattr(getattr(run, "configuration", None), "task", None)

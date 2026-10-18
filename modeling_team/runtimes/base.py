@@ -11,6 +11,9 @@ from typing import Any
 class AgentRuntimeIdentity:
     agent_id: str
     runtime_identity: str
+    runtime: str = "codex"
+    process_instance: str | None = None
+    activity_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -31,10 +34,20 @@ class RuntimeDispatchReceipt:
 
     mode: str
     turn_id: str | None
+    runtime: str = "codex"
+    dispatch_id: str | None = None
+    runtime_identity: str | None = None
+    message_id: str | None = None
+    process_instance: str | None = None
 
     def __post_init__(self) -> None:
-        if self.mode not in {"start", "steer"}:
-            raise ValueError("runtime dispatch mode must be start or steer")
+        if self.mode not in {"start", "steer", "enqueue"}:
+            raise ValueError("runtime dispatch mode must be start, steer or enqueue")
+        if self.mode == "enqueue" and (
+            self.runtime != "dsh" or self.turn_id is not None
+            or not all((self.dispatch_id, self.runtime_identity, self.message_id))
+        ):
+            raise ValueError("DSH enqueue requires dispatch/session/message identities and null turn_id")
         if self.turn_id is not None and not isinstance(self.turn_id, str):
             raise TypeError("runtime dispatch turn_id must be a string or null")
 
@@ -63,9 +76,37 @@ class AgentState:
     state: str
     last_started_turn_id: str | None = None
     last_completed_turn_id: str | None = None
+    runtime: str = "codex"
+    runtime_identity: str | None = None
+    activity_id: str | None = None
+    pending_dispatches: tuple[dict[str, Any], ...] = ()
 
 
 class RuntimeAdapter(ABC):
+    runtime = "codex"
+
+    def runtime_identity(self, agent_id: str) -> AgentRuntimeIdentity | None:
+        """Public identity, including the original native Codex thread/turn."""
+        agent = getattr(self, "agents", {}).get(agent_id)
+        identity = getattr(agent, "thread_id", None)
+        return (AgentRuntimeIdentity(agent_id, identity, activity_id=getattr(agent, "active_turn_id", None))
+                if identity else None)
+
+    def dispatch_status(self, agent_id: str) -> list[dict[str, Any]]:
+        return []
+
+    def provider_wait_status(self, agent_id: str) -> dict[str, Any] | None:
+        return getattr(getattr(self, "agents", {}).get(agent_id), "provider_wait", None)
+
+    def consume_provider_waits(self) -> list[tuple[str, dict[str, Any]]]:
+        return []
+
+    def recover_provider_wait(
+        self, agent_id: str, text: str, *, wait_id: str | None = None,
+        sender_id: str = "user/outer",
+    ) -> RuntimeDispatchReceipt:
+        raise NotImplementedError("this runtime does not support provider wait recovery")
+
     def terminal_report_blocked(
         self,
         agent_id: str,

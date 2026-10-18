@@ -1012,13 +1012,83 @@ def run_stdio_client(socket_path: str, token_file: Path, *, stdin: Any = None, s
     return 0
 
 
+ROLE_MATERIAL_TOOL = {
+    "name": "read_role_material",
+    "description": "Read frozen original role material by manifest ID; follow next_offset until read_complete.",
+    "inputSchema": {"type": "object", "properties": {
+        "material_id": {"type": "string"}, "offset": {"type": "integer", "minimum": 0},
+        "limit": {"type": "integer", "minimum": 1, "maximum": 16384}},
+        "required": ["material_id"], "additionalProperties": False},
+}
+
+
+def read_role_material(manifest: Mapping[str, Any], arguments: Mapping[str, Any]) -> dict:
+    """Only frozen IDs resolve to files. Offsets/limits count Unicode characters."""
+    if not _matches_schema(arguments, ROLE_MATERIAL_TOOL["inputSchema"]):
+        raise ValueError("invalid material arguments; use manifest material_id and bounded offset/limit")
+    item = manifest.get(arguments["material_id"])
+    if not isinstance(item, dict):
+        raise ValueError("material not authorized; use a material_id from this role's manifest")
+    path = Path(item["file"])
+    if path.is_symlink():
+        raise ValueError("material changed; request Host manifest repair")
+    payload = path.read_bytes()
+    if sha256(payload).hexdigest() != item["sha256"]:
+        raise ValueError("material changed; request Host manifest repair")
+    content = payload.decode("utf-8")
+    offset, limit = arguments.get("offset", 0), arguments.get("limit", 16384)
+    if limit > 16384:
+        raise ValueError("limit exceeds 16384; follow next_offset to read the remaining original text")
+    if offset > len(content):
+        raise ValueError("offset exceeds material length; use returned next_offset")
+    end = min(len(content), offset + limit)
+    return {"material_id": arguments["material_id"], "source": item["source"],
+            "sha256": item["sha256"], "text": content[offset:end], "offset": offset,
+            "next_offset": end if end < len(content) else None, "read_complete": end == len(content)}
+
+
+def run_role_materials(manifest_path: Path, *, stdin=None, stdout=None) -> int:
+    import sys
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    for line in stdin or sys.stdin:
+        request = json.loads(line)
+        if "id" not in request:
+            continue
+        method = request.get("method")
+        result = {}
+        if method == "initialize":
+            result = {"protocolVersion": request.get("params", {}).get("protocolVersion", "2024-11-05"),
+                      "capabilities": {"tools": {}}, "serverInfo": {"name": "role-materials", "version": "1"}}
+        elif method == "tools/list":
+            result = {"tools": [ROLE_MATERIAL_TOOL]}
+        elif method == "tools/call":
+            try:
+                params = request.get("params", {})
+                if params.get("name") != "read_role_material":
+                    raise ValueError("tool not authorized")
+                value = read_role_material(manifest, params.get("arguments", {}))
+                result = {"content": _text_content(value), "structuredContent": value}
+            except (OSError, ValueError) as exc:
+                result = {"isError": True, "content": _text_content({"error": str(exc)})}
+        else:
+            print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "error": {
+                "code": -32601, "message": "method not available"}}), file=stdout or sys.stdout, flush=True)
+            continue
+        print(json.dumps({"jsonrpc": "2.0", "id": request["id"], "result": result}),
+              file=stdout or sys.stdout, flush=True)
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Runner-private capability stdio MCP client")
     parser.add_argument("--stdio", action="store_true")
-    parser.add_argument("--socket", required=True)
-    parser.add_argument("--token-file", required=True, type=Path)
+    parser.add_argument("--socket")
+    parser.add_argument("--token-file", type=Path)
+    parser.add_argument("--role-materials", type=Path)
     args = parser.parse_args()
-    if not args.stdio:
+    if args.role_materials:
+        return run_role_materials(args.role_materials)
+    if not args.stdio or not args.socket or not args.token_file:
         return 2
     return run_stdio_client(args.socket, args.token_file)
 

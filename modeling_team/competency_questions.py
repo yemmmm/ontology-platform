@@ -132,6 +132,7 @@ ADVISORY_QUESTION_COUNTS: dict[str, tuple[int, int]] = {
 
 # T3 wait-window kinds (design §3.2 H1 revision / Round 4 follow-up (a)).
 CQ_WAIT_WINDOW_KINDS: tuple[str, ...] = (
+    "user-flow-wait",
     "cq-review-request",
     "cq-interview-wait",
     "cq-handoff-request",

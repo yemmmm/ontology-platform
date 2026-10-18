@@ -455,15 +455,21 @@ def _load_package(root: Path, package_id: str) -> AgentPackage:
     task_input = data.get("task_input")
     if (
         not isinstance(runtime, dict)
-        or not isinstance(runtime.get("codex"), dict)
+        or not runtime
+        or set(runtime) - {"codex", "dsh"}
+        or any(not isinstance(block, dict) for block in runtime.values())
         or not isinstance(task_input, dict)
     ):
         raise TeamConfigurationError(
             f"Package {package_id} loader or task input is invalid"
         )
-    sandbox = runtime["codex"].get("sandbox")
-    if sandbox not in {"read-only", "workspace-write"}:
-        raise TeamConfigurationError(f"Package {package_id} has invalid Codex sandbox")
+    for runtime_name, block in runtime.items():
+        if runtime_name == "dsh" and set(block) != {"sandbox"}:
+            raise TeamConfigurationError(f"Package {package_id} runtime.dsh only accepts sandbox")
+        if block.get("sandbox") not in {"read-only", "workspace-write"}:
+            raise TeamConfigurationError(
+                f"Package {package_id} has invalid {runtime_name} sandbox"
+            )
     return AgentPackage(
         package_id,
         role,
@@ -510,9 +516,9 @@ def load_profile(
     }
     if set(data) != profile_fields and set(data) != profile_fields | {"expected_matrix_binding"}:
         raise TeamConfigurationError("Profile fields drift from schema")
-    if data["schema_version"] != 1 or data["runtime"] != "codex":
+    if data["schema_version"] != 1 or data["runtime"] not in ("codex", "dsh"):
         raise TeamConfigurationError(
-            "only schema v1 homogeneous codex Profiles are supported"
+            "only schema v1 homogeneous codex/dsh Profiles are supported"
         )
     profile_id = _safe_id(data["profile_id"], "profile_id")
     agents_raw = data["agents"]
@@ -528,6 +534,11 @@ def load_profile(
         if agent_id in ids:
             raise TeamConfigurationError("Profile duplicates Agent ID")
         package = _load_package(root, _safe_id(item["package"], "package"))
+        if data["runtime"] not in package.runtime:
+            raise TeamConfigurationError(
+                f"Package {package.package_id} has no runtime.{data['runtime']} block; "
+                "declare the selected runtime sandbox explicitly"
+            )
         if package.role in HOST_ONLY_ROLE_VALUES:
             raise TeamConfigurationError(
                 f"{package.role} package is host-only and cannot be placed in a production Profile"
@@ -682,7 +693,7 @@ def load_profile(
             )
     return TeamProfile(
         profile_id,
-        "codex",
+        data["runtime"],
         tuple(agents),
         frozenset(edges),
         data["parameters"],
