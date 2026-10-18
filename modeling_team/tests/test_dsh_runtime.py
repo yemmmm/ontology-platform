@@ -84,6 +84,7 @@ def local_roster(tmp_path):
     run = SimpleNamespace(
         root=root,
         run_id="engineering-only",
+        formal_contract=None,
         configuration=config,
         acceptance=carrier,
         capability_calls=capability_calls,
@@ -123,6 +124,27 @@ def test_real_isolated_roster_loads_exact_tools_and_freezes_all_processes(local_
     assert all(agent.process.poll() is not None for agent in adapter.agents.values())
     baseline = (run.root / "evidence/dsh-baseline.jsonl").read_text()
     assert "test-only-not-a-real-provider-key" not in baseline
+
+
+def test_nonformal_roster_ignores_inactive_coordinator_capability(local_roster):
+    from modeling_team.capability_mcp import COORDINATOR_OPERATIONS
+
+    adapter, run, broker = local_roster
+    # The real carrier retains this formal-only descriptor, while the minimal
+    # chain Runner starts only the Modeling and CQ endpoints.
+    run.acceptance.capability_descriptors["coordinator"] = {
+        "operations": list(COORDINATOR_OPERATIONS),
+    }
+    socket_root = run.acceptance.capability_token_path("modeling").parent
+    (socket_root / "coordinator.token").write_text("test-only-coordinator")
+    run.acceptance.capability_socket_path = lambda role: socket_root / f"{role}.sock"
+    identities = adapter.start_roster(run, run.configuration.profile.agents)
+    assert len(identities) == 3
+    assert all(
+        server != "runner_capability"
+        for server, tool in adapter.agents["coordinator"].expected_tools
+    )
+    assert adapter.probe_role_visibility(run)["modeling"]
 
 
 class LocalMessagesProvider:
@@ -514,6 +536,10 @@ def test_startup_configuration_can_be_corrected_without_replacing_an_admitted_se
     first_base = adapter.agents["coordinator"].base
     assert (first_base / "stderr.log").exists()
     assert adapter.cleanup_identifiers()["complete"]
+    assert all(
+        adapter.provider_wait_status(agent.agent_id) is None
+        for agent in run.configuration.profile.agents
+    )
     adapter._check_tools = original
     identities = adapter.start_roster(run, run.configuration.profile.agents)
     assert len(identities) == 3

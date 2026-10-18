@@ -285,6 +285,10 @@ class DshRuntimeAdapter(RuntimeAdapter):
         expected = [("team_transport", tool) for tool in listing["tools"]]
         carrier = getattr(self._run, "acceptance", None)
         descriptor = getattr(carrier, "capability_descriptors", {}).get(agent.package.role)
+        # The carrier retains historical formal Coordinator metadata even when
+        # this run starts only the direct Modeling and CQ endpoints.
+        if agent.package.role == "coordinator" and self._run.formal_contract is None:
+            descriptor = None
         parameters = self._run.configuration.task.parameters or {}
         if (
             agent.package.role == "modeling"
@@ -848,7 +852,8 @@ class DshRuntimeAdapter(RuntimeAdapter):
 
     def provider_wait_status(self, agent_id):
         with self._lock:
-            value = self.agents[agent_id].wait
+            agent = self.agents.get(agent_id)
+            value = agent.wait if agent is not None else None
             return dict(value) if value else None
 
     def consume_provider_waits(self):
