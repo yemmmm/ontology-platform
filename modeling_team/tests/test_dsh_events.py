@@ -111,7 +111,15 @@ def test_notifications_before_rpc_response_bind_only_the_native_message(tmp_path
     )
     assert receipt.message_id == "native-second"
     assert adapter.dispatch_status("modeling")[0]["state"] == "queued"
-    assert adapter.terminal_report_blocked("modeling")
+    from modeling_team.transport_mcp import RoutingError
+
+    with pytest.raises(RoutingError, match="end this activity") as failure:
+        adapter.terminal_report_blocked("modeling")
+    assert failure.value.code == "runtime_input_pending"
+    assert adapter.terminal_report_blocked("modeling", status="blocked") is False
+    agent.projection.append(event(4, "turn/start", turn=2))
+    agent.projection.append(claim(5))
+    assert adapter.terminal_report_blocked("modeling") is False
 
 
 def test_unknown_enqueue_has_no_invented_native_id_and_only_exact_response_reconciles(tmp_path):

@@ -392,6 +392,16 @@ class DshRuntimeAdapter(RuntimeAdapter):
         instructions += json.dumps(
             {key: {k: v for k, v in item.items() if k != "file"} for key, item in manifest.items()}
         )
+        instructions += (
+            "\nDSH runtime: no shell or general filesystem tool is available. "
+            "For Coordinator scenario-map artifacts, use write_handoff_output with "
+            "scenario-map/ relative paths; the supervising Host transfers your exact bytes "
+            "to the existing Runner paths. Receive dynamic public CQ projections and freeze "
+            "confirmation through sourced Host messages; do not guess material IDs. "
+            "If terminal reporting says native input is pending, naturally end this activity "
+            "to consume the original inbox, then retry once consumed. This ordinary wait "
+            "requires no retrieval, rewrite, new issue or blocked terminal result."
+        )
         config = {
             "modules": {
                 key: "/dsh/" + str(Path(value).relative_to(self.harness_root))
@@ -766,7 +776,7 @@ class DshRuntimeAdapter(RuntimeAdapter):
     def terminal_report_blocked(self, agent_id, already_synchronized=False, status="completed"):
         with self._lock:
             agent = self.agents[agent_id]
-            return bool(
+            blocked = bool(
                 status == "completed"
                 and (
                     agent.dispatching
@@ -776,6 +786,15 @@ class DshRuntimeAdapter(RuntimeAdapter):
                     )
                 )
             )
+            if blocked:
+                from ..transport_mcp import RoutingError
+
+                raise RoutingError(
+                    "unconsumed DSH input; end this activity to receive queued handoffs, "
+                    "then retry report_task_result; unknown dispatches require Host reconciliation",
+                    code="runtime_input_pending",
+                )
+            return False
 
     def commit_terminal(self, agent_id, status):
         with self._lock:

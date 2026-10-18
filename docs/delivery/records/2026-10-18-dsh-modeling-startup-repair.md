@@ -42,3 +42,30 @@ git diff --check
 本次无backend／frontend代码变更，无需重启产品服务。新Runner进程加载修复。
 GitNexus impact未找到DshRuntimeAdapter，risk UNKNOWN；改用直接调用点与diff检查，
 不宣称图覆盖。修复测试不代替真实启动、application或独立语义验收。
+
+## 首次语义运行后的协议反馈修正
+
+修复后的r3于05:49:17Z进入真实semantic start，两个batch原子应用到revision2，
+Modeling原件保留。随后暴露两项真实接线限制：DSH只提供冻结材料读取／handoff输出，
+Coordinator无法直接维护旧scenario-map挂载或动态CQ public文件；宿主已按原字节
+转存其自行生成的图／拓扑，并通过原公开指令传递冻结事实，没有代写语义。
+独立Delivery及一次显式原session恢复均遇provider HTTP400 INVALID_REQUEST，
+外层沿已授权Host工具接管技术流程，未替换角色模型。
+
+DSH terminal guard实际保护未消费的原生消息，但Broker把bool拒绝渲染为历史Protocol
+检索错误，导致重复查询和错误issue归因。原始seq连续、无冲突；逐回合消费完原队列后
+Modeling能报告completed。然而Coordinator已经报告blocked，后续派发触发
+`dsh-dispatch-closed`并清理，未生成正式production handoff，故r3独立验收未执行。
+不能手造Runner交接或把该轮称为语义PASS；模型及原失败证据保留，消耗1轮。
+
+下一次start前持久修正权威DSH instructions：明确现有handoff输出到Host的原字节
+转存方式，以及动态公开CQ输入通道；待收消息应自然结束活动以继续消费，普通等待
+不能用blocked终态结束。Adapter仍保留queued／unknown拒绝，只改为可定位的
+`runtime_input_pending` RoutingError，提示结束活动、消费原队列和核对unknown；
+不再借用Protocol检索错误。没有删除写入／授权／未知结果保护或增加工具。
+T0：未决输入保护确有必要，保留并收窄为可操作反馈；实际治理读回及独立验收仍另证。
+
+先将原回归改为要求真实RoutingError，观察DID NOT RAISE失败；实现后事件／runtime
+首轮15 passed，1条既有文案匹配失败。保留其unconsumed术语后，相关11 passed、
+5 deselected（32.13秒），包含该终态回归、事件身份和工具／原会话路径；5条此前通过
+且未受文案修正影响的测试未重复。Ruff／diff检查通过。原有未提交工作未改动。
